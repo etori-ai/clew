@@ -22,7 +22,7 @@ export { Grid } from '@astryxdesign/core/Grid';
 export { Divider } from '@astryxdesign/core/Divider';
 export { Avatar } from '@astryxdesign/core/Avatar';
 export { Icon } from '@astryxdesign/core/Icon';
-export { Link } from '@astryxdesign/core/Link';
+export { Link, LinkProvider } from '@astryxdesign/core/Link';
 export { Timestamp } from '@astryxdesign/core/Timestamp';
 export { BottomSheet } from '@astryxdesign/core/BottomSheet';
 export { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';

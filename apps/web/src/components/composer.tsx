@@ -8,6 +8,11 @@ export interface ComposerHandle { addChip(chip: ChipRef): void; openConversation
 type Mode = 'idle' | 'focus' | 'chat';
 type Props = {
   mobile: boolean; needsYou: number;
+  /** The conversation named by the route (`/samtal/:id`), or null. */
+  conversationId: string | null;
+  /** The page keeps the route in step: a new or reopened conversation gets its address, closing it returns to the stream. */
+  onConversation: (id: string | null) => void;
+  conversationHref: (id: string) => string;
   onThreadChange: (thread: Thread) => void;
   onOpenView: (view: ViewRef) => void;
   onDo: (capability: string) => void;
@@ -35,7 +40,7 @@ function Group({ title, hint, icon, children }: { title: string; hint?: string; 
  * focus throughout; Esc or a click on the dimmed stream closes the overlay and the conversation is kept under
  * Redan hanterat › Frågor.
  */
-export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ mobile, needsYou, onThreadChange, onOpenView, onDo, onShowHandled, onState }, ref) {
+export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ mobile, needsYou, conversationId, onConversation, conversationHref, onThreadChange, onOpenView, onDo, onShowHandled, onState }, ref) {
   const input = useRef<ChatComposerInputHandle>(null);
   const chips = useRef(new Map<string, ChipRef>());
   const [value, setValue] = useState('');
@@ -58,7 +63,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ mo
   useEffect(() => { if (!chipThread) { setVerbs([]); return; } let alive = true; void api.verbs(chipThread).then(v => { if (alive) setVerbs(v.verbs); }).catch(() => setVerbs([])); return () => { alive = false; }; }, [chipThread, latest]);
 
   const focus = useCallback(() => { input.current?.focus(); setMode(m => m === 'idle' ? 'focus' : m); }, []);
-  const close = useCallback(() => { setMode('idle'); setError(null); }, []);
+  const close = useCallback(() => { setMode('idle'); setError(null); onConversation(null); }, [onConversation]);
   const remember = (chip: ChipRef) => { chips.current.set(chip.ref, chip); };
   const addChip = useCallback((chip: ChipRef) => {
     remember(chip);
@@ -77,11 +82,19 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ mo
     if (handle) { handle.focus(); for (const c of reinsert) handle.insertToken({ value: tokenValue(c.ref), label: c.label, variant: 'neutral' }); setValue(handle.getValue()); }
     setReinsert(null);
   }, [reinsert]);
-  const newConversation = () => { setConversation(null); setLatest(null); setDone(null); setValue(''); setMode('focus'); input.current?.focus(); };
+  const newConversation = () => { setConversation(null); setLatest(null); setDone(null); setValue(''); setMode('focus'); onConversation(null); input.current?.focus(); };
   const openConversation = useCallback(async (threadId: string) => {
     try { const t = await api.thread(threadId); setConversation({ id: t.id, title: t.title, messages: t.messages }); setLatest(null); setDone(null); setMode('chat'); input.current?.focus(); }
     catch (e) { setError(e instanceof ApiError ? e.message : 'Samtalet kunde inte öppnas.'); }
   }, []);
+  // The route names the conversation: arriving at /samtal/:id (a link, the back button, a reload) opens it in the row.
+  const routeConversation = useRef<string | null>(null);
+  useEffect(() => {
+    if (conversationId && conversationId !== conversation?.id) void openConversation(conversationId);
+    // Leaving /samtal/:id by the back button closes the overlay; the conversation stays under Redan hanterat.
+    if (!conversationId && routeConversation.current && mode === 'chat') setMode('idle');
+    routeConversation.current = conversationId;
+  }, [conversationId]);
   useImperativeHandle(ref, () => ({ addChip, openConversation: id => void openConversation(id), close, focus }), [addChip, openConversation, close, focus]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -102,6 +115,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ mo
       setConversation({ id: response.conversationId, title: response.thread.title, messages: response.thread.messages });
       setLatest(response);
       setMode('chat');
+      if (!conversation) onConversation(response.conversationId);
       // Sending clears the text, keeps the chips and never moves focus.
       setValue(''); setReinsert(used);
       if (response.draft) onThreadChange(response.draft.thread);
@@ -150,7 +164,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ mo
       {completions.do.slice(0, 5).map(d => <ListItem key={d.capability} label={d.text} onClick={() => { onDo(d.capability); close(); }} endContent={<Text type="supporting">{d.source}</Text>} />)}
     </Group>}
     <Group title="Tidigare samtal" icon={<Icon icon="clock" size="sm" />}>
-      {completions.recent.map(r => <ListItem key={r.conversationId} label={r.title} onClick={() => void openConversation(r.conversationId)} endContent={<Timestamp value={r.at} format="time" hasTooltip={false} />} />)}
+      {completions.recent.map(r => <ListItem key={r.conversationId} label={r.title} href={conversationHref(r.conversationId)} endContent={<Timestamp value={r.at} format="time" hasTooltip={false} />} />)}
       <ListItem label="Alla samtal" description="Redan hanterat › Frågor" onClick={() => { onShowHandled(); close(); }} />
     </Group>
   </VStack>;
@@ -199,5 +213,5 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ mo
     footerActions={chipped.length === 1 && !plain && verbs.length > 0 ? <HStack gap={1} wrap="wrap" aria-label="Om kortet">{verbs.map(v => <Button key={v.id} size="sm" variant="ghost" label={v.label} isDisabled={busy} onClick={() => ask(v.label)} />)}</HStack> : undefined}
     sendActions={<Dictation onResult={text => setValue(current => (current + ' ' + text).trim())} />}
     status={error ? { type: 'error', message: error } : undefined}
-    onFocus={() => { if (mode === 'idle') setMode('focus'); }} />;
+    onFocus={() => setMode(m => m === 'idle' ? 'focus' : m)} />;
 });

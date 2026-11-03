@@ -1,8 +1,8 @@
-import { StrictMode, useEffect, useState } from 'react';
+import { StrictMode, forwardRef, useEffect, useState, type AnchorHTMLAttributes } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router';
+import { BrowserRouter, Link, Routes, Route, useLocation } from 'react-router';
 import '@clew/ui/styles.css';
-import { Providers, SessionBoundary, type BrowserSession } from '@clew/ui';
+import { LinkProvider, Providers, SessionBoundary, type BrowserSession } from '@clew/ui';
 import type { SessionUser } from '@clew/contracts';
 import { StartPage } from './pages/start';
 import { CalendarPage } from './pages/calendar';
@@ -27,18 +27,36 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
   if (shell === 'anonymous') return <LoginPage returnTo={location.pathname} />;
   return <SessionBoundary session={shell.session}>{children(shell)}</SessionBoundary>;
 }
+/** Every Astryx link navigates client-side through react-router; API and external addresses stay plain anchors. */
+const RouterLink = forwardRef<HTMLAnchorElement, { href?: string; to?: string } & AnchorHTMLAttributes<HTMLAnchorElement>>(function RouterLink({ href, to, ...rest }, ref) {
+  const target = typeof to === 'string' ? to : href;
+  if (!target || /^(https?:)?\/\//.test(target) || target.startsWith('/api/')) return <a ref={ref} href={target} {...rest} />;
+  return <Link ref={ref} to={target} {...rest} />;
+});
+/**
+ * Routes: the start page is one stream with lenses. `/omrade/:area` filters it, `/hanterat` is the person's log,
+ * `/vy/...` opens a view in the side panel and `/samtal/:id` reopens a conversation in the row, all addressable.
+ */
 function App() {
+  const start = <Protected>{shell => <StartPage user={shell.user} />}</Protected>;
   return <Routes>
     <Route path="/login" element={<LoginPage returnTo="/" />} />
     <Route path="/kalender" element={<Protected>{shell => <CalendarPage user={shell.user} />}</Protected>} />
-    <Route path="/" element={<Protected>{shell => <StartPage user={shell.user} />}</Protected>} />
-    <Route path="*" element={<Protected>{shell => <StartPage user={shell.user} />}</Protected>} />
+    <Route path="/" element={start} />
+    <Route path="/omrade/:area" element={start} />
+    <Route path="/hanterat" element={start} />
+    <Route path="/vy/kort/:threadId/:actionId" element={start} />
+    <Route path="/vy/:capability" element={start} />
+    <Route path="/samtal/:conversationId" element={start} />
+    <Route path="*" element={start} />
   </Routes>;
 }
 createRoot(document.getElementById('root')!).render(<StrictMode>
   <Providers>
     <BrowserRouter>
-      <App />
+      <LinkProvider component={RouterLink}>
+        <App />
+      </LinkProvider>
     </BrowserRouter>
   </Providers>
 </StrictMode>);

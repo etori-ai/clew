@@ -11,7 +11,7 @@ const when = (t: Thread) => t.handledAt ?? t.updatedAt;
  * Redan hanterat: the person's own log. Decisions, dismissals, undos and questions grouped by day, filterable, with
  * Ångra while the window is open, Återöppna on dismissed cards and the conversation reopening from a Fråga row.
  */
-export function Handled({ threads, onChange, onOpenConversation }: { threads: Thread[]; onChange: (thread: Thread) => void; onOpenConversation: (threadId: string) => void }) {
+export function Handled({ threads, onChange, conversationHref }: { threads: Thread[]; onChange: (thread: Thread) => void; conversationHref: (threadId: string) => string }) {
   const [filter, setFilter] = useState<Filter>('idag');
   const now = Date.now();
   const keep = (t: Thread) => {
@@ -48,7 +48,7 @@ export function Handled({ threads, onChange, onOpenConversation }: { threads: Th
           : reopenable ? <Button size="sm" label="Återöppna" clickAction={async () => onChange(await api.reopen(t.id))} />
           : <Badge variant="neutral" label={t.state === 'dismissed' ? 'Avfärdad' : question ? 'Fråga' : 'Klart'} />;
         return <ListItem key={t.id} startContent={icon} align="start" label={question ? `Fråga: ${t.title}` : t.title} description={last?.body ?? t.trigger.reason}
-          onClick={question ? () => onOpenConversation(t.id) : undefined} endContent={<HStack gap={2} vAlign="center"><Text type="supporting">{new Date(when(t)).toLocaleTimeString('sv-SE', { timeStyle: 'short' })}</Text>{end}</HStack>} />;
+          href={question ? conversationHref(t.id) : undefined} endContent={<HStack gap={2} vAlign="center"><Text type="supporting">{new Date(when(t)).toLocaleTimeString('sv-SE', { timeStyle: 'short' })}</Text>{end}</HStack>} />;
       })}
     </List>)}
   </VStack>;

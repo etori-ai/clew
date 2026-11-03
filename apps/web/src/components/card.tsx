@@ -4,7 +4,7 @@ import { Badge, Button, Card, CheckboxList, CheckboxListItem, Collapsible, HStac
 import { api, ApiError } from '../api';
 import { useConversation } from './conversation-context';
 
-type Props = { thread: Thread; areaTitle: string; position?: string; compact: boolean; expanded?: boolean; onChange: (thread: Thread) => void; onOpenView: (title: string, output: unknown) => void };
+type Props = { thread: Thread; areaTitle: string; position?: string; compact: boolean; expanded?: boolean; onChange: (thread: Thread) => void; onOpenCardView: (threadId: string, actionId: string) => void };
 const outcomeDot = { done: { variant: 'success', label: 'Klart' }, unknown: { variant: 'warning', label: 'Okänt' }, failed: { variant: 'error', label: 'Misslyckades' }, skipped: { variant: 'neutral', label: 'Inte skickad' } } as const;
 const deadlineLabel = (d: string | null) => d ? new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'short' }).format(new Date(d + 'T12:00:00')) : null;
 const clock = (iso: string) => new Date(iso).toLocaleTimeString('sv-SE', { timeStyle: 'short' });
@@ -30,7 +30,7 @@ export function useLeaveWithUndo(onChange: (thread: Thread) => void) {
  * Avfärda and Varför ser jag detta? behind ⋯), and the receipt read back from the source after an execute.
  * Modules contribute actions, never layout. Cards hold state and actions and never contain a text input (D12).
  */
-export function GenericCard({ thread, areaTitle, position, compact, expanded: expandedByDefault = true, onChange, onOpenView }: Props) {
+export function GenericCard({ thread, areaTitle, position, compact, expanded: expandedByDefault = true, onChange, onOpenCardView }: Props) {
   const [expanded, setExpanded] = useState(expandedByDefault);
   useEffect(() => { setExpanded(expandedByDefault); }, [expandedByDefault]);
   const [selected, setSelected] = useState<string[]>(() => thread.items.filter(i => i.selected).map(i => i.ref));
@@ -53,12 +53,16 @@ export function GenericCard({ thread, areaTitle, position, compact, expanded: ex
   const perform = async (action: ThreadAction) => {
     if (action.confirm && !window.confirm(action.confirm)) return;
     if (action.kind === 'read') {
-      setBusy(true); setError(null);
-      try {
-        const result = await api.act(thread.id, action.id, selectable ? selected : undefined);
-        if (result.kind === 'read' && action.target === 'link' && typeof (result.output as { url?: string }).url === 'string') window.open((result.output as { url: string }).url, '_blank', 'noopener');
-        else if (result.kind !== 'execute') onOpenView(action.label, result.output);
-      } catch (e) { setError(e instanceof ApiError ? e.message : 'Något gick fel.'); } finally { setBusy(false); }
+      if (action.target === 'link') {
+        setBusy(true); setError(null);
+        try {
+          const result = await api.act(thread.id, action.id, selectable ? selected : undefined);
+          if (result.kind === 'read' && typeof (result.output as { url?: string }).url === 'string') window.open((result.output as { url: string }).url, '_blank', 'noopener');
+        } catch (e) { setError(e instanceof ApiError ? e.message : 'Något gick fel.'); } finally { setBusy(false); }
+        return;
+      }
+      // A panel view has an address: /vy/kort/:thread/:action, so it survives reload and the back button closes it.
+      onOpenCardView(thread.id, action.id);
       return;
     }
     await run(async () => { const result = await api.act(thread.id, action.id, selectable ? selected : undefined); if (result.kind !== 'execute') throw new ApiError(500, 'Oväntat svar.'); return result.thread; });

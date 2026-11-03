@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { Area, Attention, CalendarEvent, SessionUser, Thread, TodayView, ViewRef } from '@clew/contracts';
 import { Avatar, Badge, Button, Collapsible, EmptyState, Heading, HStack, Icon, Layout, LayoutContent, LayoutHeader, LayoutPanel, Overlay, Text, VisuallyHidden, VStack, signOut, useMediaQuery } from '@clew/ui';
 import { dayLabel, timeLabel, today } from '@clew/calendar/dates';
@@ -26,7 +27,18 @@ export function StartPage({ user }: { user: SessionUser }) {
   const [attention, setAttention] = useState<Attention | null>(null);
   const [weeks, setWeeks] = useState<Record<string, CalendarEvent[]>>({});
   const [error, setError] = useState<string | null>(null);
-  const [area, setArea] = useState<string | null>(null);
+  // The route is the state: /omrade/:area and /hanterat filter the stream, /vy/… opens the panel, /samtal/:id the row.
+  const navigate = useNavigate();
+  const location = useLocation();
+  const params = useParams<{ area?: string; capability?: string; threadId?: string; actionId?: string; conversationId?: string }>();
+  const [search] = useSearchParams();
+  const area = location.pathname === '/hanterat' ? 'hanterat' : params.area ?? (search.get('omrade') || null);
+  const conversationId = params.conversationId ?? null;
+  const pathFor = (a: string | null) => a === null ? '/' : a === 'hanterat' ? '/hanterat' : `/omrade/${a}`;
+  const withArea = (path: string) => area ? `${path}${path.includes('?') ? '&' : '?'}omrade=${encodeURIComponent(area)}` : path;
+  const viewHref = (capability: string, title: string, input?: Record<string, unknown>) => withArea(`/vy/${capability}?titel=${encodeURIComponent(title)}` + (input && Object.keys(input).length ? `&input=${encodeURIComponent(JSON.stringify(input))}` : ''));
+  const cardViewHref = (threadId: string, actionId: string) => withArea(`/vy/kort/${threadId}/${actionId}`);
+  const conversationHref = (id: string) => withArea(`/samtal/${id}`);
   const [view, setView] = useState<{ title: string; output: unknown } | null>(null);
   const [conversation, setConversation] = useState<{ open: boolean; chipped: string[] }>({ open: false, chipped: [] });
   const composer = useRef<ComposerHandle>(null);
@@ -44,12 +56,28 @@ export function StartPage({ user }: { user: SessionUser }) {
     setThreads(list => list.some(t => t.id === thread.id) ? list.map(t => t.id === thread.id ? thread : t) : [thread, ...list]);
     void api.areas().then(a => setAreas(a.areas)).catch(() => undefined);
   }, []);
-  const openStanding = async (capability: string, label: string) => {
-    try { const { output } = await api.capability(capability); setView({ title: label, output }); } catch (e) { setError(e instanceof ApiError ? e.message : 'Kunde inte hämta.'); }
-  };
-  const openView = useCallback(async (v: ViewRef) => {
-    try { const { output } = await api.capability(v.capability, Object.keys(v.input).length ? v.input : undefined); setView({ title: v.title, output }); } catch (e) { setError(e instanceof ApiError ? e.message : 'Kunde inte hämta.'); }
-  }, []);
+  // A view is addressable (integrations.md, "Answers and views"): the panel follows /vy/:capability or /vy/kort/:thread/:action.
+  const viewInput = search.get('input'), viewTitle = search.get('titel');
+  useEffect(() => {
+    let alive = true;
+    const fail = (e: unknown) => { if (alive) setError(e instanceof ApiError ? e.message : 'Kunde inte hämta.'); };
+    if (params.capability) {
+      let input: unknown; try { input = viewInput ? JSON.parse(viewInput) : undefined; } catch { input = undefined; }
+      api.capability(params.capability, input).then(({ output }) => { if (alive) setView({ title: viewTitle ?? params.capability!, output }); }).catch(fail);
+    } else if (params.threadId && params.actionId) {
+      const threadId = params.threadId, actionId = params.actionId;
+      api.act(threadId, actionId).then(result => {
+        if (!alive) return;
+        const label = threads.find(t => t.id === threadId)?.actions.find(a => a.id === actionId)?.label ?? 'Vy';
+        if (result.kind === 'execute') setView({ title: label, output: result.thread.receipt });
+        else if (typeof (result.output as { url?: string }).url === 'string') window.open((result.output as { url: string }).url, '_blank', 'noopener');
+        else setView({ title: label, output: result.output });
+      }).catch(fail);
+    } else setView(null);
+    return () => { alive = false; };
+  }, [params.capability, params.threadId, params.actionId, viewInput, viewTitle]);
+  const openStanding = (capability: string, label: string) => navigate(viewHref(capability, label));
+  const openView = (v: ViewRef) => navigate(viewHref(v.capability, v.title, v.input));
   const areaTitle = (id: string) => areas.find(a => a.id === id)?.title ?? (id === 'fragor' ? 'Fråga' : id);
   const inArea = (t: Thread) => area === null || area === 'hanterat' || t.area === area;
   const open = threads.filter(t => t.state === 'open');
@@ -64,19 +92,21 @@ export function StartPage({ user }: { user: SessionUser }) {
     addChip: (chip: ChipRef) => composer.current?.addChip(chip),
     openConversation: (id: string) => composer.current?.openConversation(id),
   }), [conversation]);
-  const onDo = useCallback((capability: string) => { const target = areas.find(a => a.standing.some(s => s.capability === capability)); if (target) setArea(target.id); }, [areas]);
+  const onDo = useCallback((capability: string) => { const target = areas.find(a => a.standing.some(s => s.capability === capability)); if (target) navigate(pathFor(target.id)); }, [areas, navigate]);
+  const onConversation = useCallback((id: string | null) => { if (id) navigate(conversationHref(id)); else if (conversationId) navigate(pathFor(area)); }, [navigate, conversationId, area]);
   const onState = useCallback((s: { open: boolean; chipped: string[] }) => setConversation(c => c.open === s.open && c.chipped.join() === s.chipped.join() ? c : s), []);
-  const row = <Composer ref={composer} mobile={mobile} needsYou={needsYou.length} onThreadChange={replace} onOpenView={v => void openView(v)} onDo={onDo} onShowHandled={() => setArea('hanterat')} onState={onState} />;
-  const sidebar = <Areas areas={areas} current={area} onSelect={setArea} compact={mobile} handled={handledToday} />;
+  const row = <Composer ref={composer} mobile={mobile} needsYou={needsYou.length} conversationId={conversationId} onConversation={onConversation} conversationHref={conversationHref}
+    onThreadChange={replace} onOpenView={openView} onDo={onDo} onShowHandled={() => navigate('/hanterat')} onState={onState} />;
+  const sidebar = <Areas areas={areas} current={area} hrefFor={pathFor} compact={mobile} handled={handledToday} />;
 
   const card = (t: Thread, i: number) => t.proposals.length
     ? <ThreadCard key={t.id} thread={t} events={t.week ? weeks[t.week] : undefined} compact onChange={replace} onLoadWeek={loadWeek} />
-    : <GenericCard key={t.id} thread={t} areaTitle={areaTitle(t.area)} position={`${i + 1} av ${needsYou.length}`} compact={mobile} expanded={i === 0} onChange={replace} onOpenView={(title, output) => setView({ title, output })} />;
+    : <GenericCard key={t.id} thread={t} areaTitle={areaTitle(t.area)} position={`${i + 1} av ${needsYou.length}`} compact={mobile} expanded={i === 0} onChange={replace} onOpenCardView={(threadId, actionId) => navigate(cardViewHref(threadId, actionId))} />;
 
   const stream = <VStack gap={4}>
     {mobile && sidebar}
     {error && <Text as="p" role="alert" color="accent">{error}</Text>}
-    {area === 'hanterat' ? <Handled threads={older} onChange={replace} onOpenConversation={id => composer.current?.openConversation(id)} /> : <>
+    {area === 'hanterat' ? <Handled threads={older} onChange={replace} conversationHref={conversationHref} /> : <>
       {current && <VStack gap={2} as="section" aria-label={`Området ${current.title}`}>
         <HStack justify="between" vAlign="end" gap={2} wrap="wrap">
           <Heading level={2}>{current.title}</Heading>
@@ -96,7 +126,7 @@ export function StartPage({ user }: { user: SessionUser }) {
         {needsYou.map(card)}
       </VStack>
       {waiting.length > 0 && <Collapsible defaultIsOpen={false} chevronPosition="start" trigger={<Text type="supporting"><Text as="span" weight="semibold">Pågår utan dig · {waiting.length}</Text> · {waiting.map(t => t.title.split(',')[0]).join(' · ')}</Text>}>
-        <VStack gap={2}>{waiting.map(t => <GenericCard key={t.id} thread={t} areaTitle={areaTitle(t.area)} compact={mobile} onChange={replace} onOpenView={(title, output) => setView({ title, output })} />)}</VStack>
+        <VStack gap={2}>{waiting.map(t => <GenericCard key={t.id} thread={t} areaTitle={areaTitle(t.area)} compact={mobile} onChange={replace} onOpenCardView={(threadId, actionId) => navigate(cardViewHref(threadId, actionId))} />)}</VStack>
       </Collapsible>}
       {current && current.schedules.length > 0 && <VStack gap={1} as="section" aria-label="Så här bevakar jag området">
         <Heading level={3}>Så här bevakar jag området</Heading>
@@ -118,7 +148,7 @@ export function StartPage({ user }: { user: SessionUser }) {
           </HStack>
           <HStack gap={2} vAlign="center" wrap="wrap">
             {remaining !== null && <Badge variant={remaining === 0 ? 'warning' : 'neutral'} icon={<Icon icon="clock" size="sm" />} label={remaining === 0 ? `Inga avbrott kvar · resten ${attention!.bundledUntil}` : `${remaining} avbrott kvar i dag`} />}
-            {(areas.find(a => a.id === 'viktigt-nu')?.needsYou ?? 0) > 0 && <Button variant="secondary" size="sm" label={`Viktigt nu · ${areas.find(a => a.id === 'viktigt-nu')!.needsYou}`} clickAction={() => setArea('viktigt-nu')} />}
+            {(areas.find(a => a.id === 'viktigt-nu')?.needsYou ?? 0) > 0 && <Button variant="secondary" size="sm" label={`Viktigt nu · ${areas.find(a => a.id === 'viktigt-nu')!.needsYou}`} href={pathFor('viktigt-nu')} />}
             <Button variant="ghost" size="sm" label="Kalender" href="/kalender" icon={<Icon icon="calendar" size="sm" />} isIconOnly={mobile} />
             <Button variant="ghost" size="sm" label="Logga ut" clickAction={() => signOut()} />
           </HStack>
@@ -132,6 +162,6 @@ export function StartPage({ user }: { user: SessionUser }) {
         </Overlay>
         <div className="composer-dock">{row}</div>
       </LayoutContent>} />
-    <PanelView title={view?.title ?? null} output={view?.output} onClose={() => setView(null)} />
+    <PanelView title={view?.title ?? null} output={view?.output} onClose={() => navigate(pathFor(area))} />
   </ConversationContext.Provider>;
 }
