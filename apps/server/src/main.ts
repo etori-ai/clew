@@ -4,6 +4,7 @@ import { serve } from '@hono/node-server';
 import { authRoutes } from './routes/auth';
 import { api } from './routes/api';
 import { startScheduler } from './scheduler';
+import { startAssistantProbe } from './assistant';
 import { failure } from './context';
 
 // Local secrets written by `bun run auth:setup`. Never committed, never read by the browser bundle.
@@ -21,4 +22,5 @@ const port = Number(process.env.PORT ?? 3000);
 serve({ fetch: app.fetch, port, hostname: '127.0.0.1' }, info => {
   console.log(`Clew BFF listening on http://127.0.0.1:${info.port}`);
   startScheduler();
+  startAssistantProbe();
 });

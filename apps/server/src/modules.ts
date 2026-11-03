@@ -14,7 +14,7 @@ import { kommunikationModule } from '@clew/modules/mock/kommunikation';
 import { InputError } from './context';
 import { calendarModule } from './calendar-module';
 import { peopleModule } from './people-module';
-import { ensureProposalThread } from './planner';
+import { ensureProposalThread, replan } from './planner';
 
 /**
  * The registry the BFF runs with: the four mock integrations plus the calendar. Every REST route, card action and
@@ -155,6 +155,28 @@ export async function snoozeThread(persona: AuthenticatedContext, threadId: stri
     await addMessage(tx, threadId, 'user', 'Inte nu');
     await writeAudit(tx, { actor: persona.principal.id, action: 'thread.snoozed', subject: 'thread:' + threadId });
   });
+  return (await readThread(persona.id, threadId))!.thread as Thread;
+}
+
+const REOPEN_MS = 10 * 60_000;
+/**
+ * The Ångra row after Avfärda or Inte nu: a dismissed thread comes back within ten minutes, a snoozed one any time.
+ * Proposal threads whose drawn times were declined get them redrawn by the planner.
+ */
+export async function reopenThread(persona: AuthenticatedContext, threadId: string) {
+  const current = await readThread(persona.id, threadId);
+  if (!current) throw new InputError('Tråden finns inte.');
+  const t = current.thread;
+  const snoozed = t.state === 'open' && t.waitingOn === 'i morgon 06:00';
+  const dismissed = t.state === 'dismissed' && !!t.handledAt && Date.now() - Date.parse(t.handledAt) <= REOPEN_MS;
+  if (!snoozed && !dismissed) throw new InputError(t.state === 'dismissed' ? 'Ångerfönstret har gått ut.' : 'Tråden går inte att återöppna.');
+  const now = new Date();
+  await database().transaction(async tx => {
+    await tx.update(schema.threads).set({ state: 'open', handledAt: null, waitingOn: null, updatedAt: now }).where(eq(schema.threads.id, threadId));
+    await addMessage(tx, threadId, 'user', 'Ångra');
+    await writeAudit(tx, { actor: persona.principal.id, action: 'thread.reopened', subject: 'thread:' + threadId, details: { from: snoozed ? 'snoozed' : 'dismissed' } });
+  });
+  if (dismissed && t.week && t.proposals.length && !t.proposals.some(p => p.status === 'proposed')) return replan(persona, threadId, t.week);
   return (await readThread(persona.id, threadId))!.thread as Thread;
 }
 

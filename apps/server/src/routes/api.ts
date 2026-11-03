@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
-import { ActInput, AskInput, ConfirmInput, ReplanInput, ReplyInput, type Attention } from '@clew/contracts';
+import { ActInput, AskInput, ConfirmInput, ConversationInput, ReplanInput, ReplyInput, type Attention } from '@clew/contracts';
+import type { ConversationInput as ConversationInputType } from '@clew/contracts';
 import type { ActInput as ActInputType } from '@clew/contracts';
 import { listThreads, readThread } from '@clew/db/threads';
 import { today, weekStart } from '@clew/calendar/dates';
@@ -11,12 +12,12 @@ import { and, eq, gte, inArray } from 'drizzle-orm';
 import { InputError, protectedRoute, type Env } from '../context';
 import { listWeek, readToday } from '../calendar';
 import { readFigures } from '../figures';
-import { ask, completions, reply } from '../assistant';
+import { ask, completionsFor, converse, listObjects, providerStatus, reply, verbsFor } from '../assistant';
 import { confirm, dismiss, replan, samtalStatus, undo } from '../planner';
-import { act, dismissThread, ensureThreads, listAreas, registry, resetMocks, runCapability, snoozeThread, undoReceipt } from '../modules';
+import { act, dismissThread, ensureThreads, listAreas, registry, reopenThread, resetMocks, runCapability, snoozeThread, undoReceipt } from '../modules';
 
 const ajv = addFormats(new Ajv({ allErrors: false }));
-const validators = { ask: ajv.compile(AskInput), reply: ajv.compile(ReplyInput), confirm: ajv.compile(ConfirmInput), replan: ajv.compile(ReplanInput), act: ajv.compile(ActInput) };
+const validators = { ask: ajv.compile(AskInput), reply: ajv.compile(ReplyInput), confirm: ajv.compile(ConfirmInput), replan: ajv.compile(ReplanInput), act: ajv.compile(ActInput), conversation: ajv.compile(ConversationInput) };
 async function body<T>(request: Request, validate: (value: unknown) => value is T): Promise<T> {
   const text = await request.text();
   if (text.length > 4000) throw new InputError('För stor förfrågan.');
@@ -74,7 +75,17 @@ api.post('/threads/:id/dismiss', async c => {
   return c.json(found.thread.proposals.length ? await dismiss(persona, id) : await dismissThread(persona, id));
 });
 api.post('/ask', async c => c.json(await ask(c.get('session').context, (await body(c.req.raw, validators.ask)).question)));
-api.get('/completions', c => c.json({ completions }));
+api.get('/completions', async c => c.json(await completionsFor(c.get('session').context)));
+/** One conversation turn (D12): text plus chips; answers in one of three shapes; nothing is executed here. */
+api.post('/conversation', async c => c.json(await converse(c.get('session').context, await body(c.req.raw, validators.conversation as unknown as (value: unknown) => value is ConversationInputType))));
+/** What `@` can point at: the objects on the page first, then every capability in scope. */
+api.get('/objects', async c => { const q = c.req.query('q') ?? ''; if (q.length > 80) throw new InputError('För lång sökning.'); return c.json({ objects: await listObjects(c.get('session').context, q) }); });
+api.get('/threads/:id/verbs', async c => {
+  const found = await readThread(c.get('session').context.id, c.req.param('id'));
+  return found ? c.json({ verbs: verbsFor(found.thread) }) : c.json({ error: 'Tråden finns inte.' }, 404);
+});
+api.get('/assistant/status', c => c.json(providerStatus()));
+api.post('/threads/:id/reopen', async c => c.json(await reopenThread(c.get('session').context, c.req.param('id'))));
 api.get('/today', async c => c.json(await readToday(c.get('session').context)));
 api.get('/figures', async c => { const persona = c.get('session').context; return c.json({ figures: readFigures(persona, await samtalStatus(persona)) }); });
 api.get('/calendar', async c => {

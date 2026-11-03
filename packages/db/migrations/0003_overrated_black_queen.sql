@@ -1,0 +1,1 @@
+ALTER TABLE "thread_message" ADD COLUMN "meta" jsonb;

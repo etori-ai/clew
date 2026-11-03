@@ -1,6 +1,6 @@
 import { pgTable, text, integer, jsonb, bigserial, boolean, timestamp, check, primaryKey, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
-import type { Receipt, ThreadAction, ThreadItem } from '@clew/contracts';
+import type { MessageMeta, Receipt, ThreadAction, ThreadItem } from '@clew/contracts';
 
 // Identity. Ported from startsidan: canonical person, explicit subject binding, server-side session with sealed tokens.
 export const people = pgTable('auth_person', {
@@ -65,6 +65,8 @@ export const threads = pgTable('thread', {
 export const threadMessages = pgTable('thread_message', {
   id: text('id').primaryKey(), threadId: text('thread_id').notNull().references(() => threads.id, { onDelete: 'cascade' }),
   role: text('role').$type<'assistant' | 'user'>().notNull(), body: text('body').notNull(),
+  // Conversation memory (D12): chips, refs, answer shape, view, draft, tool calls. Null for card messages.
+  meta: jsonb('meta').$type<MessageMeta | null>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => [index('thread_message_thread').on(t.threadId, t.createdAt), check('thread_message_role', sql`${t.role} IN ('assistant', 'user')`)]);
 // A proposal is the assistant's suggestion; it becomes a calendar event only through the human decision endpoint.

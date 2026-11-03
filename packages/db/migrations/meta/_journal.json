@@ -22,6 +22,13 @@
       "when": 1793722393192,
       "tag": "0002_condemned_umar",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793729203284,
+      "tag": "0003_overrated_black_queen",
+      "breakpoints": true
     }
   ]
 }

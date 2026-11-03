@@ -77,6 +77,51 @@ const ok = (cond: unknown, msg: string) => { if (!cond) throw new Error('FAIL: '
   ok(ack.thread.state === 'handled' && ack.thread.receipt.rows[0].outcome === 'done', 'read receipt executed through the same path');
   ({ threads } = await api('/api/threads'));
   ok(!threads.some((t: any) => t.state === 'open' && t.module === 'kommunikation'), 'acknowledged notice is not pushed again');
+  // Reopen after Inte nu: the Ångra row.
+  const reopened = await api(`/api/threads/${rehab.id}/reopen`, {});
+  ok(reopened.state === 'open' && reopened.waitingOn === null, 'reopen clears the snooze');
+  // The conversation (D12, D8). Without a configured model the router answers; with one, the same calls still pass.
+  const status = await api('/api/assistant/status');
+  console.log('  assistant:', JSON.stringify(status));
+  const c1 = await api('/api/conversation', { text: 'Fakturor att attestera' });
+  console.log('  svar:', c1.assistant, c1.shape, '|', c1.answer.body);
+  ok(c1.thread.kind === 'question' && c1.answer.body.length > 0, 'a question becomes a conversation thread with an answer');
+  ok(status.configured ? ['model', 'router', 'unavailable'].includes(c1.assistant) : c1.assistant === 'router', 'the answer says how it was produced');
+  if (c1.assistant !== 'model') ok(c1.view?.capability === 'raindance.invoices', 'the router found the capability and offers a view');
+  const c2 = await api('/api/conversation', { text: 'Hur ligger budgeten?', conversationId: c1.conversationId });
+  ok(c2.conversationId === c1.conversationId && c2.thread.messages.length === 4, 'a follow-up stays in the same conversation with memory');
+  const invCard = (await api('/api/threads')).threads.find((t: any) => t.state === 'open' && t.module === 'raindance');
+  const chip = { ref: 'thread:' + invCard.id, kind: 'thread', label: invCard.title };
+  const c3 = await api('/api/conversation', { text: 'avfärda det', chips: [chip] });
+  ok(c3.clewActions.length === 1 && c3.clewActions[0].kind === 'dismiss' && c3.verbs?.length > 0, 'with a chip, "avfärda" is proposed as a Clew action with verbs, nothing executed');
+  ok((await api(`/api/threads/${invCard.id}`)).state === 'open', 'the card is still open until the person confirms');
+  const c4 = await api('/api/conversation', { text: 'attestera bara Lekolar', chips: [chip] });
+  ok(c4.draft?.kind === 'select' && c4.draft.thread.items.filter((i: any) => i.selected).length === 2, 'the conversation drafts the selection on the card');
+  ok((await api(`/api/threads/${invCard.id}`)).messages.some((m: any) => m.meta?.draft?.kind === 'select'), 'the draft is remembered on the card');
+  const c5 = await api('/api/conversation', { text: 'varför ser jag detta?', chips: [chip] });
+  ok(/Varför nu\?/.test(c5.answer.body) && c5.answer.source === 'Raindance', 'why answers from the trigger');
+  const { objects } = await api('/api/objects?q=lekolar');
+  ok(objects.some((o: any) => o.kind === 'item' && o.threadId === invCard.id), '@ lists the visible rows first');
+  ok((await api('/api/objects?q=attest')).objects.some((o: any) => o.kind === 'capability'), '@ lists capabilities after the page');
+  const { verbs } = await api(`/api/threads/${invCard.id}/verbs`);
+  ok(verbs.map((v: any) => v.label).includes('Avfärda det') && verbs.map((v: any) => v.label).includes('Varför ser jag detta?'), 'verbs for a card');
+  const comp = await api('/api/completions');
+  ok(comp.ask.some((a: any) => a.capability === 'heroma.whoIsOn' && a.source === 'Heroma'), 'completions list questions with their source');
+  ok(comp.do.some((d: any) => d.capability === 'treserva.report'), 'completions list things to do');
+  ok(comp.recent.some((r: any) => r.conversationId === c1.conversationId), 'completions list the recent conversation');
+  const samtal = (await api('/api/threads')).threads.find((t: any) => t.state === 'open' && t.topic === 'utvecklingssamtal');
+  if (samtal) {
+    ok(samtal.items.length === samtal.proposals.filter((p: any) => p.status === 'proposed').length && samtal.items.every((i: any) => i.ref.startsWith('proposal:')), 'proposal threads carry rows with refs');
+    const week = samtal.week.slice(0, 4);
+    const next = new Date(samtal.week + 'T12:00:00Z'); next.setUTCDate(next.getUTCDate() + 7);
+    const iso = next.toISOString().slice(0, 10);
+    const c6 = await api('/api/conversation', { text: 'nästa vecka i stället', chips: [{ ref: 'thread:' + samtal.id, kind: 'thread', label: samtal.title }] });
+    ok(c6.draft?.kind === 'replan' && c6.draft.thread.week === iso, `replan through the conversation moved the card to ${iso} (year ${week})`);
+    await api(`/api/threads/${samtal.id}/replan`, { week: samtal.week });
+  } else console.log('  (no samtal thread: calendar profile not running, replan skipped)');
+  const dismissedCard = await api(`/api/threads/${invCard.id}/dismiss`, {});
+  ok(dismissedCard.state === 'dismissed', 'dismiss closes the card');
+  ok((await api(`/api/threads/${invCard.id}/reopen`, {})).state === 'open', 'reopen within the window brings it back');
 }
 // Employee
 {
@@ -92,7 +137,13 @@ const ok = (cond: unknown, msg: string) => { if (!cond) throw new Error('FAIL: '
   ok(typeof forbidden === 'string' && /400|behörighet/.test(forbidden), 'scope is enforced on the capability route');
   const shift = await api('/api/cap/heroma.myShift');
   console.log('  shift:', JSON.stringify(shift.output));
+  const comp = await api('/api/completions');
+  ok(!comp.ask.some((a: any) => a.capability === 'heroma.absenceOverview'), 'an employee is not offered manager questions');
+  const c = await api('/api/conversation', { text: 'Mitt pass' });
+  console.log('  svar:', c.assistant, '|', c.answer.body);
+  ok(c.answer.body.length > 0, 'the employee gets an answer');
 }
+{ const r = await fetch(base + '/api/conversation', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"text":"hej"}' }); ok(r.status === 401, 'the conversation needs a session'); }
 { const api = await login('hillevi'); await api('/api/mocks/reset', {}); console.log('  mocks reset again for the next demo'); }
 console.log('\nAll module checks passed.');
 

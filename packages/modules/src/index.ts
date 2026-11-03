@@ -103,7 +103,7 @@ export class Registry {
   /** Tool definitions for the model: only `model: true` capabilities within scope (D8). */
   tools(actor: Actor) {
     return [...this.capabilities.values()].filter(c => c.capability.model && c.capability.scope(actor))
-      .map(c => ({ name: c.capability.name, description: c.capability.description, input: c.capability.input, kind: c.capability.kind }));
+      .map(c => ({ name: c.capability.name, title: c.capability.title, description: c.capability.description, input: c.capability.input, kind: c.capability.kind, source: c.module.source }));
   }
 }
 export const receipt = (result: ExecuteResult, at = new Date()): Receipt => ({

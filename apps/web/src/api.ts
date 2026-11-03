@@ -1,4 +1,4 @@
-import type { Area, Attention, CalendarEvent, Figure, Proposal, Thread, TodayView } from '@clew/contracts';
+import type { Area, AssistantStatus, Attention, CalendarEvent, ClewObject, Completions, ConversationInput, ConversationResponse, Figure, Proposal, Thread, TodayView, Verb } from '@clew/contracts';
 import { sessionFetch } from '@clew/ui';
 
 /** Every call goes through the same-origin proxy with the session CSRF token. Errors carry the server's Swedish message. */
@@ -19,7 +19,13 @@ export const api = {
   undo: (id: string) => post<Thread>(`/api/threads/${id}/undo`),
   replan: (id: string, week: string) => post<Thread>(`/api/threads/${id}/replan`, { week }),
   dismiss: (id: string) => post<Thread>(`/api/threads/${id}/dismiss`),
-  completions: () => call<{ completions: string[] }>('/api/completions'),
+  completions: () => call<Completions>('/api/completions'),
+  thread: (id: string) => call<Thread>(`/api/threads/${id}`),
+  converse: (input: ConversationInput) => post<ConversationResponse>('/api/conversation', input),
+  objects: (q: string) => call<{ objects: ClewObject[] }>('/api/objects?q=' + encodeURIComponent(q)),
+  verbs: (id: string) => call<{ verbs: Verb[] }>(`/api/threads/${id}/verbs`),
+  reopen: (id: string) => post<Thread>(`/api/threads/${id}/reopen`),
+  assistantStatus: () => call<AssistantStatus>('/api/assistant/status'),
   today: () => call<TodayView>('/api/today'),
   figures: () => call<{ figures: Figure[] }>('/api/figures'),
   attention: () => call<Attention>('/api/attention'),

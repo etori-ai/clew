@@ -1,5 +1,5 @@
 import { and, desc, eq, gte, inArray, or } from 'drizzle-orm';
-import type { Proposal, Thread, ThreadMessage } from '@clew/contracts';
+import type { MessageMeta, Proposal, Thread, ThreadMessage } from '@clew/contracts';
 import { database, type Transaction } from './index';
 import { audit, proposals, threadMessages, threads } from './schema';
 
@@ -9,7 +9,7 @@ export type MessageRow = typeof threadMessages.$inferSelect;
 const iso = (d: Date | null) => d ? d.toISOString() : null;
 export const toProposal = (row: ProposalRow): Proposal => ({ id: row.id, threadId: row.threadId, status: row.status, start: row.start.toISOString(), end: row.end.toISOString(),
   participant: { name: row.participantName, email: row.participantEmail }, eventRef: row.eventRef, undoUntil: iso(row.undoUntil) });
-const toMessage = (row: MessageRow): ThreadMessage => ({ id: row.id, role: row.role, body: row.body, createdAt: row.createdAt.toISOString() });
+const toMessage = (row: MessageRow): ThreadMessage => ({ id: row.id, role: row.role, body: row.body, createdAt: row.createdAt.toISOString(), ...(row.meta ? { meta: row.meta } : {}) });
 export function toThread(row: ThreadRow, messages: MessageRow[], proposalRows: ProposalRow[]): Thread {
   return { id: row.id, kind: row.kind, topic: row.topic, title: row.title, state: row.state, trigger: row.trigger, week: row.week,
     module: row.module, area: row.area, summary: row.summary, items: row.items, actions: row.actions, waitingOn: row.waitingOn, deadline: row.deadline, receipt: row.receipt ?? null,
@@ -41,8 +41,8 @@ export async function readThread(personId: string, id: string, tx?: Transaction)
 export async function writeAudit(tx: Transaction, entry: { actor: string; action: string; subject: string; details?: Record<string, unknown> }) {
   await tx.insert(audit).values({ actor: entry.actor, action: entry.action, subject: entry.subject, details: entry.details ?? {} });
 }
-export async function addMessage(tx: Transaction, threadId: string, role: 'assistant' | 'user', body: string) {
-  const [row] = await tx.insert(threadMessages).values({ id: crypto.randomUUID(), threadId, role, body }).returning();
+export async function addMessage(tx: Transaction, threadId: string, role: 'assistant' | 'user', body: string, meta?: MessageMeta) {
+  const [row] = await tx.insert(threadMessages).values({ id: crypto.randomUUID(), threadId, role, body, meta: meta ?? null }).returning();
   await tx.update(threads).set({ updatedAt: new Date() }).where(eq(threads.id, threadId));
   return row!;
 }

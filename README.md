@@ -26,3 +26,14 @@ bun scripts/auth-dev-check.ts hillevi                   # on the host: real Keyc
 ```
 
 Ports on loopback: 3020 web, 3021 Nextcloud (`calendar-admin`), 3022 Mailpit.
+
+## Astryx component docs
+
+Bun's isolated installs keep `@astryxdesign/core` out of the root `node_modules`, so `bun run astryx component <Name>` fails with "Could not find @astryxdesign/core package". Run the CLI from inside the core package instead:
+
+```sh
+docker exec -w /workspace/node_modules/.bun/@astryxdesign+core@0.7.6+65f46399a9db101b/node_modules/@astryxdesign/core clew-app-1 \
+  node /workspace/node_modules/@astryxdesign/cli/clients/cli/bin/astryx.mjs component ChatComposerInput
+```
+
+`--dense` shortens the output; `docs layout/side-panels` and friends work the same way. Adjust the hash in the path after an Astryx upgrade (`ls node_modules/.bun | grep astryxdesign+core`).

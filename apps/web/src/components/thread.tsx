@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CalendarEvent, Thread } from '@clew/contracts';
-import { Badge, Button, Card, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, CheckboxList, CheckboxListItem, Collapsible, HStack, Text, Timestamp, VStack, WeekAgenda, type AgendaItem } from '@clew/ui';
+import { Badge, Button, Card, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, CheckboxList, CheckboxListItem, Collapsible, HStack, MoreMenu, Text, Timestamp, VStack, WeekAgenda, type AgendaItem } from '@clew/ui';
+import { useConversation } from './conversation-context';
+import { useLeaveWithUndo } from './card';
 import { addDays, shortDayLabel, timeRange, weekNumber } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
 
@@ -38,11 +40,19 @@ function Conversation({ messages }: { messages: Thread['messages'] }) {
  * the actions, "varför nu?", and a composer at the bottom so the thread keeps its memory.
  */
 export function ThreadCard({ thread, events = [], compact, onChange, onLoadWeek }: Props) {
-  const [selected, setSelected] = useState<string[]>(() => thread.proposals.filter(p => p.status === 'proposed').map(p => p.id));
+  // The selection is the card's draft (D12): the rows' `selected` flags when the server wrote them, else every proposed time.
+  const seed = () => thread.items.length ? thread.items.filter(i => i.selected).map(i => i.ref.replace(/^proposal:/, '')).filter(id => thread.proposals.some(p => p.id === id && p.status === 'proposed')) : thread.proposals.filter(p => p.status === 'proposed').map(p => p.id);
+  const [selected, setSelected] = useState<string[]>(seed);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [why, setWhy] = useState(false);
   const [now, setNow] = useState(Date.now());
-  useEffect(() => { setSelected(thread.proposals.filter(p => p.status === 'proposed').map(p => p.id)); }, [thread.updatedAt, thread.proposals.length]);
+  const talk = useConversation();
+  const leave = useLeaveWithUndo(onChange);
+  const chipRef = 'thread:' + thread.id;
+  const inConversation = talk.chipped.includes(chipRef);
+  const draft = thread.messages.at(-1)?.meta?.draft;
+  useEffect(() => { setSelected(seed()); }, [thread.updatedAt, thread.proposals.length]);
   useEffect(() => { if (thread.week) onLoadWeek?.(thread.week); }, [thread.week]);
   const undoUntil = thread.proposals.map(p => p.undoUntil).filter((v): v is string => !!v).sort().at(-1);
   const undoOpen = !!undoUntil && Date.parse(undoUntil) > now && thread.proposals.some(p => p.status === 'confirmed');
@@ -63,9 +73,13 @@ export function ThreadCard({ thread, events = [], compact, onChange, onLoadWeek 
   const count = selected.length, plural = count === 1 ? 'inbjudan' : 'inbjudningar';
   const badge = statusBadge(thread);
   return <Card padding={0}>
-    <VStack gap={2} padding={2} as="article" aria-label={`Tråd: ${thread.title}`} id={`thread-${thread.id}`}>
+    <VStack gap={2} padding={2} as="article" aria-label={`Tråd: ${thread.title}`} id={`thread-${thread.id}`} aria-current={inConversation ? 'true' : undefined}>
       <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-        <Badge variant={badge.variant} label={badge.label} />
+        <HStack gap={2} vAlign="center" wrap="wrap">
+          <Badge variant={badge.variant} label={badge.label} />
+          {inConversation && <Badge variant="info" label="I samtalet" />}
+          {draft && open && <Badge variant="info" label="Utkast från samtalet" />}
+        </HStack>
         <Text type="supporting">{thread.trigger.source} · <Timestamp value={thread.trigger.at} format="time" hasTooltip={false} /></Text>
       </HStack>
       {thread.kind === 'pushed' && <>
@@ -83,11 +97,17 @@ export function ThreadCard({ thread, events = [], compact, onChange, onLoadWeek 
         {open && <Button variant="primary" label={`Skicka ${count} ${plural}`} isDisabled={!count || busy} clickAction={() => run(() => api.confirm(thread.id, selected))} />}
         {open && !compact && <Button label="Justera i kalendern" href={`/kalender?vecka=${thread.week}`} />}
         {open && compact && <Button label="Visa i veckan" href={`/kalender?vecka=${thread.week}`} />}
-        {open && nextWeek && <Button variant="ghost" label={`Vecka ${weekNumber(nextWeek)} i stället`} isDisabled={busy} clickAction={() => run(() => api.replan(thread.id, nextWeek))} />}
-        {open && <Button variant="ghost" label="Inte nu" isDisabled={busy} clickAction={() => run(() => api.dismiss(thread.id))} />}
-        {undoOpen && undoUntil && <Button variant="destructive" label={`Ångra (${Math.max(0, Math.ceil((Date.parse(undoUntil) - now) / 60000))} min kvar)`} isDisabled={busy} clickAction={() => run(() => api.undo(thread.id))} />}
+        {open && nextWeek && <Button label={`Vecka ${weekNumber(nextWeek)} i stället`} isDisabled={busy} clickAction={() => run(() => api.replan(thread.id, nextWeek))} />}
+        {open && <Button variant="ghost" label={inConversation ? 'I samtalet ✓' : 'Lägg till i samtalet'} isDisabled={inConversation} onClick={() => talk.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id })} />}
+        {open && <Button variant="ghost" label="Inte nu" isDisabled={busy} clickAction={() => run(async () => { const t = await api.snooze(thread.id); leave(t, 'Tas upp i morgon 06:00 i stället.'); return t; })} />}
+        {open && <MoreMenu label="Fler val" size="sm" variant="ghost" items={[
+          { id: 'dismiss', label: 'Avfärda · inte aktuellt', onClick: () => void run(async () => { const t = await api.dismiss(thread.id); leave(t, 'Avfärdad som inte aktuellt. Förslagen ligger kvar under Redan hanterat i tio minuter.'); return t; }) },
+          { id: 'why', label: 'Varför ser jag detta?', onClick: () => setWhy(v => !v) },
+        ]} />}
+        {undoOpen && undoUntil && <Button variant="destructive" label={`Ångra allt · ${Math.max(0, Math.ceil((Date.parse(undoUntil) - now) / 60000))} min kvar`} isDisabled={busy} clickAction={() => run(() => api.undo(thread.id))} />}
       </HStack>}
-      {thread.kind === 'pushed' && <Text type="supporting" as="p">Varför nu? {thread.trigger.reason}. {open ? 'Skickas via kalendern med möjlighet att ångra i 10 minuter.' : ''}</Text>}
+      {draft && open && <Text type="supporting" as="p">Utkast från samtalet. Inget är skickat förrän du trycker på knappen här.</Text>}
+      {thread.kind === 'pushed' && (why || !open) && <Text type="supporting" as="p">Varför nu? {thread.trigger.reason}. {open ? 'Skickas via kalendern med möjlighet att ångra i 10 minuter.' : ''}</Text>}
     </VStack>
   </Card>;
 }

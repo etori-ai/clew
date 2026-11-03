@@ -17,6 +17,10 @@ const SAMTAL_MINUTES = 60;
 const actorOf = (persona: AuthenticatedContext) => persona.principal.id;
 const interval = (p: { start: Date; end: Date }): Interval => ({ start: p.start.toISOString(), end: p.end.toISOString() });
 
+
+/** Rows with refs for the card (D12): one per drawn proposal, all selected until the person or the conversation changes that. */
+const proposalItems = (rows: { id: string; participantName: string; start: Date; end: Date; status?: string }[], selected?: (id: string) => boolean) =>
+  rows.map(p => ({ ref: 'proposal:' + p.id, label: p.participantName, detail: `${shortDayLabel(p.start.toISOString().slice(0, 10))} ${timeRange(p.start.toISOString(), p.end.toISOString())}`, selectable: true, selected: selected ? selected(p.id) : true }));
 /** What the nightly scan knows: who still lacks a samtal, and which proposals already exist. */
 async function remaining(persona: AuthenticatedContext) {
   const { binding, done } = await heldSamtal(persona, DEADLINE);
@@ -67,7 +71,15 @@ function explain(week: string, planned: number, members: number) {
 export async function ensureProposalThread(persona: AuthenticatedContext, source = 'Nattlig genomgång 06:00'): Promise<Thread | undefined> {
   if (persona.role !== 'manager') return undefined;
   const existing = await openProposalThread(persona.id, TOPIC);
-  if (existing) return (await readThread(persona.id, existing.id))?.thread;
+  if (existing) {
+    const found = await readThread(persona.id, existing.id);
+    // A thread drawn before rows existed gets them now, so the card and the conversation see one draft mechanism.
+    if (found && !found.row.items.length && found.proposalRows.some(p => p.status === 'proposed')) {
+      await database().update(threads).set({ items: proposalItems(found.proposalRows.filter(p => p.status === 'proposed')) }).where(eq(threads.id, existing.id));
+      return (await readThread(persona.id, existing.id))?.thread;
+    }
+    return found?.thread;
+  }
   const week = nextWeekStart(today());
   const { members, planned } = await draw(persona, week);
   if (!members.length) return undefined;
@@ -78,7 +90,9 @@ export async function ensureProposalThread(persona: AuthenticatedContext, source
       module: 'calendar', area: 'utvecklingssamtal', summary: explain(week, planned.length, members.length),
       trigger: { reason: `${members.length} samtal saknar tid före 28 november`, source, at: now.toISOString() } });
     await tx.insert(schema.threadMessages).values({ id: crypto.randomUUID(), threadId: id, role: 'assistant', body: explain(week, planned.length, members.length) });
-    if (planned.length) await tx.insert(proposals).values(planned.map(p => ({ id: crypto.randomUUID(), threadId: id, personId: persona.id, participantEmail: p.participant.email, participantName: p.participant.name, start: new Date(p.start), end: new Date(p.end) })));
+    const rows = planned.map(p => ({ id: crypto.randomUUID(), threadId: id, personId: persona.id, participantEmail: p.participant.email, participantName: p.participant.name, start: new Date(p.start), end: new Date(p.end) }));
+    if (rows.length) await tx.insert(proposals).values(rows);
+    await tx.update(threads).set({ items: proposalItems(rows) }).where(eq(threads.id, id));
     await writeAudit(tx, { actor: 'assistant:scan', action: 'thread.pushed', subject: 'thread:' + id, details: { topic: TOPIC, week, proposals: planned.length, owner: persona.id } });
   });
   return (await readThread(persona.id, id))?.thread;
@@ -91,8 +105,9 @@ export async function replan(persona: AuthenticatedContext, threadId: string, we
   const { members, planned } = await draw(persona, week, threadId);
   await database().transaction(async tx => {
     await tx.update(proposals).set({ status: 'superseded' }).where(and(eq(proposals.threadId, threadId), eq(proposals.status, 'proposed')));
-    if (planned.length) await tx.insert(proposals).values(planned.map(p => ({ id: crypto.randomUUID(), threadId, personId: persona.id, participantEmail: p.participant.email, participantName: p.participant.name, start: new Date(p.start), end: new Date(p.end) })));
-    await tx.update(threads).set({ week, title: `Planera utvecklingssamtal vecka ${weekNumber(week)}`, updatedAt: new Date() }).where(eq(threads.id, threadId));
+    const rows = planned.map(p => ({ id: crypto.randomUUID(), threadId, personId: persona.id, participantEmail: p.participant.email, participantName: p.participant.name, start: new Date(p.start), end: new Date(p.end) }));
+    if (rows.length) await tx.insert(proposals).values(rows);
+    await tx.update(threads).set({ week, title: `Planera utvecklingssamtal vecka ${weekNumber(week)}`, items: proposalItems(rows), updatedAt: new Date() }).where(eq(threads.id, threadId));
     await addMessage(tx, threadId, 'user', `Vecka ${weekNumber(week)} i stället`);
     await addMessage(tx, threadId, 'assistant', explain(week, planned.length, members.length));
     await writeAudit(tx, { actor: actorOf(persona), action: 'proposals.replanned', subject: 'thread:' + threadId, details: { week, proposals: planned.length } });
@@ -131,7 +146,8 @@ export async function confirm(persona: AuthenticatedContext, threadId: string, p
     for (const c of created) await tx.update(proposals).set({ status: 'confirmed', eventUid: c.uid, eventRef: c.ref, eventRevision: c.revision, confirmedAt: now, undoUntil }).where(eq(proposals.id, c.id));
     const declined = current.proposalRows.filter(p => p.status === 'proposed' && !proposalIds.includes(p.id)).map(p => p.id);
     if (declined.length) await tx.update(proposals).set({ status: 'declined' }).where(inArray(proposals.id, declined));
-    await tx.update(threads).set({ state: 'handled', handledAt: now, updatedAt: now }).where(eq(threads.id, threadId));
+    const items = proposalItems(current.proposalRows.filter(p => p.status === 'proposed'), id => proposalIds.includes(id));
+    await tx.update(threads).set({ state: 'handled', handledAt: now, updatedAt: now, items }).where(eq(threads.id, threadId));
     const unknown = created.filter(c => c.outcome === 'unknown').length;
     await addMessage(tx, threadId, 'user', `Bekräftade ${created.length} tider`);
     await addMessage(tx, threadId, 'assistant', unknown ? `${created.length - unknown} inbjudningar är skickade. ${unknown} fick inget svar från kalendern; kontrollera dem i kalendern innan du försöker igen.`

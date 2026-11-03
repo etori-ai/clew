@@ -45,8 +45,44 @@ export const ProposalSchema = object({
 });
 export type Proposal = Static<typeof ProposalSchema>;
 
+
+/** Something rendered on the page that the person can point at in the conversation (D12): a card, a row, an event, a proposal, a capability. */
+export const ChipKind = Type.Union([Type.Literal('thread'), Type.Literal('item'), Type.Literal('event'), Type.Literal('proposal'), Type.Literal('capability')]);
+export type ChipKind = Static<typeof ChipKind>;
+export const ChipSchema = object({ ref: Type.String({ minLength: 1, maxLength: 200, pattern: '^[a-z]+:[A-Za-z0-9:_.@-]+$' }), kind: ChipKind, label: Type.String({ maxLength: 200 }) });
+export type Chip = Static<typeof ChipSchema>;
+export const AnswerShape = Type.Union([Type.Literal('svar'), Type.Literal('vy'), Type.Literal('forslag')]);
+export type AnswerShape = Static<typeof AnswerShape>;
+/** How the answer was produced: the model with read tools, the deterministic router, or the router because the configured model failed (D8). */
+export const AssistantMode = Type.Union([Type.Literal('model'), Type.Literal('router'), Type.Literal('unavailable')]);
+export type AssistantMode = Static<typeof AssistantMode>;
+/** A view the client can open in the side panel: a read capability and its input, rendered by Clew from the output. */
+export const ViewRefSchema = object({ capability: Type.String(), input: Type.Record(Type.String(), Type.Unknown()), title: Type.String(), source: Type.String() });
+export type ViewRef = Static<typeof ViewRefSchema>;
+/** A Clew-side action the conversation proposes; executed only after the person confirms, through the thread endpoints. */
+export const ClewActionSchema = object({ n: Type.Integer(), kind: Type.Union([Type.Literal('dismiss'), Type.Literal('snooze')]), threadId: id, label: Type.String() });
+export type ClewAction = Static<typeof ClewActionSchema>;
+/** A change the conversation made to a card as a draft. The card's own button executes; the conversation never touches a source. */
+export const DraftSchema = object({ kind: Type.Union([Type.Literal('select'), Type.Literal('replan')]), threadId: id, refs: Type.Optional(Type.Array(Type.String())), week: Type.Optional(Type.String()) });
+export type Draft = Static<typeof DraftSchema>;
+/** A verb about one chipped object, derived from its actions and Clew's standard actions, never from the model. */
+export const VerbSchema = object({
+  id: Type.String(), label: Type.String(),
+  kind: Type.Union([Type.Literal('dismiss'), Type.Literal('snooze'), Type.Literal('why'), Type.Literal('primary'), Type.Literal('replan')]),
+  threadId: id, refs: Type.Optional(Type.Array(Type.String())), week: Type.Optional(Type.String()),
+});
+export type Verb = Static<typeof VerbSchema>;
+/** Per-message memory of a conversation: what was pointed at, what came back, and how it was produced. */
+export const MessageMetaSchema = object({
+  chips: Type.Optional(Type.Array(ChipSchema)), refs: Type.Optional(Type.Array(Type.String())),
+  shape: Type.Optional(AnswerShape), view: Type.Optional(ViewRefSchema), draft: Type.Optional(DraftSchema),
+  toolCalls: Type.Optional(Type.Array(object({ capability: Type.String(), input: Type.Unknown() }))),
+  assistant: Type.Optional(AssistantMode), source: Type.Optional(Type.String()),
+});
+export type MessageMeta = Static<typeof MessageMetaSchema>;
 export const ThreadMessageSchema = object({
   id: id, role: Type.Union([Type.Literal('assistant'), Type.Literal('user')]), body: Type.String(), createdAt: instant,
+  meta: Type.Optional(MessageMetaSchema),
 });
 export type ThreadMessage = Static<typeof ThreadMessageSchema>;
 /** A row inside a card: an object with a ref the person can tick, point at or add to the conversation (D12). */
@@ -119,6 +155,39 @@ export type ActInput = Static<typeof ActInput>;
 
 export const AttentionSchema = object({ used: Type.Integer(), budget: Type.Integer(), bundledUntil: Type.Union([Type.String(), Type.Null()]) });
 export type Attention = Static<typeof AttentionSchema>;
+
+/** The composer's input: text plus the chips the person attached (D12). `conversationId` continues an earlier conversation. */
+export const ConversationInput = object({
+  text: Type.String({ minLength: 1, maxLength: 400, pattern: '^[^\\r\\n]+$' }),
+  chips: Type.Optional(Type.Array(ChipSchema, { maxItems: 8 })),
+  conversationId: Type.Optional(id),
+});
+export type ConversationInput = Static<typeof ConversationInput>;
+/** One turn's answer: its shape, where it came from, and what it produced for the page. */
+export const ConversationResponseSchema = object({
+  conversationId: id, thread: ThreadSchema, shape: AnswerShape, assistant: AssistantMode,
+  answer: object({ body: Type.String(), source: Type.String(), at: instant }),
+  view: Type.Optional(ViewRefSchema),
+  forslag: Type.Optional(object({ threadId: id })),
+  draft: Type.Optional(object({ kind: Type.Union([Type.Literal('select'), Type.Literal('replan')]), threadId: id, refs: Type.Optional(Type.Array(Type.String())), week: Type.Optional(Type.String()), thread: ThreadSchema })),
+  clewActions: Type.Array(ClewActionSchema),
+  verbs: Type.Optional(Type.Array(VerbSchema)),
+  followUps: Type.Array(Type.String()),
+});
+export type ConversationResponse = Static<typeof ConversationResponseSchema>;
+/** An object the `@` menu can offer: what is visible on the page first, then everything in scope. */
+export const ObjectSchema = object({ ref: Type.String(), kind: ChipKind, label: Type.String(), detail: Type.String(), threadId: Type.Optional(id), visible: Type.Boolean() });
+export type ClewObject = Static<typeof ObjectSchema>;
+/** What the row offers when it gets focus: questions with their source, things to do, earlier conversations. */
+export const CompletionsSchema = object({
+  completions: Type.Array(Type.String()),
+  ask: Type.Array(object({ text: Type.String(), capability: Type.String(), source: Type.String() })),
+  do: Type.Array(object({ text: Type.String(), capability: Type.String(), source: Type.String(), kind: Type.String() })),
+  recent: Type.Array(object({ conversationId: id, title: Type.String(), at: instant })),
+});
+export type Completions = Static<typeof CompletionsSchema>;
+export const AssistantStatusSchema = object({ configured: Type.Boolean(), available: Type.Boolean(), model: Type.Union([Type.String(), Type.Null()]), checkedAt: Type.Union([instant, Type.Null()]) });
+export type AssistantStatus = Static<typeof AssistantStatusSchema>;
 
 /** Browser inputs. Everything is validated again on the server before it touches a source. */
 export const AskInput = object({ question: Type.String({ minLength: 1, maxLength: 400, pattern: '^[^\\r\\n]+$' }) });

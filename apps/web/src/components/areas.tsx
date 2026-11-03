@@ -14,6 +14,7 @@ export function Areas({ areas, current, onSelect, compact = false, handled }: Pr
   if (compact) return <HStack gap={1} wrap="nowrap" aria-label="Områden">
     <Button size="sm" variant={current === null ? 'primary' : 'secondary'} label={`Allt${total ? ' · ' + total : ''}`} clickAction={() => onSelect(null)} />
     {areas.map(a => <Button key={a.id} size="sm" variant={current === a.id ? 'primary' : 'secondary'} label={`${a.title}${a.needsYou ? ' · ' + a.needsYou : ''}`} clickAction={() => onSelect(a.id)} />)}
+    <Button size="sm" variant={current === 'hanterat' ? 'primary' : 'secondary'} label={`Redan hanterat${handled ? ' · ' + handled : ''}`} clickAction={() => onSelect('hanterat')} />
   </HStack>;
   const upcoming = areas.flatMap(a => a.schedules.map(s => ({ ...s, area: a.title }))).slice(0, 5);
   return <VStack gap={4} as="nav" aria-label="Områden">

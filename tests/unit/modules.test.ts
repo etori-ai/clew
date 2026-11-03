@@ -44,7 +44,7 @@ describe('mock scans push threads a person can act on, and the state survives in
     const topics = drafts.map(d => d.topic);
     expect(topics).toContain('heroma:rehab:heroma:emp:1001');
     expect(topics.filter(t => t.startsWith('heroma:leave:'))).toHaveLength(2);
-    expect(topics.some(t => t.startsWith('raindance:invoices:'))).toBe(true);
+    expect(topics).toContain('raindance:invoices');
     expect(drafts.find(d => d.topic.startsWith('treserva:dev:'))?.waitingOn).toMatch(/skyddsombud/);
     for (const d of drafts) for (const a of d.actions) expect(r.find(a.capability)).toBeDefined();
     expect(drafts.filter(d => d.actions.filter(a => a.role === 'primary').length > 1)).toHaveLength(0);
