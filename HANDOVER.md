@@ -190,7 +190,7 @@ No `apps/worker`: Temporal is not in v1.
 
 ## 9. Session log
 
-Session 5, 2026-11-03: design review against the canvas; conversation endpoint with chips, verbs, drafts, model path and router fallback; composer drawer overlay, card standard actions with undo, Redan hanterat with filters. See section 0.
+Session 5, 2026-11-03: design review against the canvas; conversation endpoint with chips, verbs, drafts, model path and router fallback; composer drawer overlay, card standard actions with undo, Redan hanterat with filters (commit `6eedc14`); real routes for areas, Redan hanterat, panel views and conversations through react-router and Astryx `LinkProvider` (commit `1dddfc9`). See section 0. Next session starts with the live model: set `AI_*` in `apps/server/.env.local`, run `bun scripts/modules-check.ts`, then ask in Chrome.
 
 Session 4, 2026-11-03: module architecture implemented with four mock integrations, the core people module and the calendar as a module; threads generalised to cards with action slots and receipts; mission-control start page. See section 0.
 
