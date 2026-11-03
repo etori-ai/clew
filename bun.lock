@@ -9,6 +9,7 @@
         "@clew/calendar": "workspace:*",
         "@clew/contracts": "workspace:*",
         "@clew/db": "workspace:*",
+        "@clew/modules": "workspace:*",
         "@types/bun": "1.4.4",
         "@types/node": "26.6.6",
         "@types/react": "19.3.0",
@@ -26,7 +27,9 @@
         "@clew/calendar": "workspace:*",
         "@clew/contracts": "workspace:*",
         "@clew/db": "workspace:*",
+        "@clew/modules": "workspace:*",
         "@hono/node-server": "2.1.6",
+        "@sinclair/typebox": "0.34.52",
         "ai": "7.0.162",
         "ajv": "8.20.0",
         "ajv-formats": "3.0.1",
@@ -78,6 +81,14 @@
         "@clew/contracts": "workspace:*",
         "drizzle-orm": "0.45.4",
         "postgres": "3.4.9",
+      },
+    },
+    "packages/modules": {
+      "name": "@clew/modules",
+      "version": "0.0.1",
+      "dependencies": {
+        "@clew/contracts": "workspace:*",
+        "@sinclair/typebox": "0.34.52",
       },
     },
     "packages/ui": {
@@ -186,6 +197,8 @@
     "@clew/contracts": ["@clew/contracts@workspace:packages/contracts"],
 
     "@clew/db": ["@clew/db@workspace:packages/db"],
+
+    "@clew/modules": ["@clew/modules@workspace:packages/modules"],
 
     "@clew/server": ["@clew/server@workspace:apps/server"],
 

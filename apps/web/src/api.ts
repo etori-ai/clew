@@ -1,4 +1,4 @@
-import type { Attention, CalendarEvent, Figure, Proposal, Thread, TodayView } from '@clew/contracts';
+import type { Area, Attention, CalendarEvent, Figure, Proposal, Thread, TodayView } from '@clew/contracts';
 import { sessionFetch } from '@clew/ui';
 
 /** Every call goes through the same-origin proxy with the session CSRF token. Errors carry the server's Swedish message. */
@@ -23,5 +23,12 @@ export const api = {
   today: () => call<TodayView>('/api/today'),
   figures: () => call<{ figures: Figure[] }>('/api/figures'),
   attention: () => call<Attention>('/api/attention'),
+  areas: () => call<{ areas: Area[] }>('/api/areas'),
+  modules: () => call<{ modules: unknown[]; tools: string[] }>('/api/modules'),
+  act: (id: string, actionId: string, refs?: string[]) => post<{ kind: 'execute'; thread: Thread } | { kind: 'read' | 'propose'; output: unknown }>(`/api/threads/${id}/act`, { actionId, refs }),
+  undoReceipt: (id: string) => post<Thread>(`/api/threads/${id}/undo-receipt`),
+  snooze: (id: string) => post<Thread>(`/api/threads/${id}/snooze`),
+  capability: (name: string, input?: unknown) => call<{ output: unknown }>(`/api/cap/${name}` + (input ? `?input=${encodeURIComponent(JSON.stringify(input))}` : '')),
+  runCapability: (name: string, input?: unknown) => post<{ output: unknown }>(`/api/cap/${name}`, input ?? {}),
   calendar: (from?: string) => call<{ from: string; events: CalendarEvent[]; proposals: Proposal[] }>('/api/calendar' + (from ? `?from=${from}` : '')),
 };

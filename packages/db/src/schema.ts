@@ -1,5 +1,6 @@
 import { pgTable, text, integer, jsonb, bigserial, boolean, timestamp, check, primaryKey, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import type { Receipt, ThreadAction, ThreadItem } from '@clew/contracts';
 
 // Identity. Ported from startsidan: canonical person, explicit subject binding, server-side session with sealed tokens.
 export const people = pgTable('auth_person', {
@@ -45,10 +46,21 @@ export const threads = pgTable('thread', {
   state: text('state').$type<'open' | 'handled' | 'dismissed'>().notNull().default('open'),
   trigger: jsonb('trigger').$type<{ reason: string; source: string; at: string }>().notNull(),
   week: text('week'),
+  // Generic cards (D1, D12): the module, a lead sentence, rows with refs, action slots, waiting state and the receipt.
+  module: text('module').notNull().default('calendar'),
+  area: text('area').notNull().default('kalender'),
+  summary: text('summary').notNull().default(''),
+  items: jsonb('items').$type<ThreadItem[]>().notNull().default([]),
+  actions: jsonb('actions').$type<ThreadAction[]>().notNull().default([]),
+  waitingOn: text('waiting_on'),
+  deadline: text('deadline'),
+  receipt: jsonb('receipt').$type<Receipt | null>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   handledAt: timestamp('handled_at', { withTimezone: true }),
 }, t => [index('thread_person_state').on(t.personId, t.state, t.createdAt), check('thread_kind', sql`${t.kind} IN ('pushed', 'question')`),
+  // One open pushed thread per topic and person: the scan is idempotent even when two requests race.
+  uniqueIndex('thread_open_topic').on(t.personId, t.topic).where(sql`${t.state} = 'open' AND ${t.kind} = 'pushed'`),
   check('thread_state', sql`${t.state} IN ('open', 'handled', 'dismissed')`)]);
 export const threadMessages = pgTable('thread_message', {
   id: text('id').primaryKey(), threadId: text('thread_id').notNull().references(() => threads.id, { onDelete: 'cascade' }),
@@ -82,3 +94,11 @@ export const jobs = pgTable('job', {
   startedAt: timestamp('started_at', { withTimezone: true }), finishedAt: timestamp('finished_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => [index('job_due').on(t.status, t.runAt), check('job_status', sql`${t.status} IN ('due', 'running', 'done', 'failed')`)]);
+
+// State of the mock integrations (Heroma, Raindance, Treserva, Kommunikation). This table *is* the synthetic source
+// system, so that approvals and bookings survive a restart. Real adapters never write here.
+export const moduleState = pgTable('module_state', {
+  module: text('module').notNull(), key: text('key').notNull(),
+  value: jsonb('value').$type<unknown>().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [primaryKey({ columns: [t.module, t.key] })]);

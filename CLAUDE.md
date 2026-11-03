@@ -19,5 +19,6 @@ Clew is an open source system that will be shared with other municipalities and 
 - Commands run inside the devcontainer: `docker exec -w /workspace clew-app-1 …` (see `README.md`).
 - Server-side enforcement of identity and scope. No credentials, tokens or trusted identity context in the browser bundle.
 - Every mutation writes its audit row in the same transaction. Assistant proposals are executed only through the human decision endpoint, which is not a tool.
-- Astryx components and documented composition patterns. The week view is the only authorised custom composition.
+- Astryx components and documented composition patterns only, strictly. No custom components, no custom CSS (styles.css holds the Astryx imports and body basics, nothing else), no second component system (no ai-elements, shadcn or Tailwind). Astryx's Chat family covers AI surfaces. Read `bunx astryx component <Name>` before using a component and `bunx astryx docs layout` before laying out a page. The week view is an Astryx Grid agenda, not a time grid.
+- The design canvas (link in HANDOVER.md) is the reference for every screen. Compare against it before calling a screen done.
 - Never add Claude as a co-author on commits.

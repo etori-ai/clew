@@ -1,12 +1,12 @@
 import { Temporal } from 'temporal-polyfill';
-import { eq } from 'drizzle-orm';
 import { database, schema } from '@clew/db';
 import { claimJob, scheduleJob, type JobRow } from '@clew/db/jobs';
 import { timeZone } from '@clew/calendar/dates';
 import { authorizationVersion } from './auth-crypto';
 import { readAccess } from '@clew/db/auth';
 import type { AuthenticatedContext } from '@clew/contracts';
-import { closeUndoWindow, ensureProposalThread } from './planner';
+import { closeUndoWindow } from './planner';
+import { closeReceiptWindow, ensureThreads } from './modules';
 
 /**
  * Postgres-backed scheduler for v1. One nightly scan per manager and one timer per undo window. Jobs are claimed
@@ -26,12 +26,15 @@ async function systemContext(personId: string): Promise<AuthenticatedContext | u
 }
 async function run(job: JobRow) {
   if (job.kind === 'scan-utvecklingssamtal') {
-    const managers = await database().select({ id: schema.accessGrants.personId }).from(schema.accessGrants).where(eq(schema.accessGrants.role, 'manager'));
-    for (const m of managers) { const persona = await systemContext(m.id); if (persona) await ensureProposalThread(persona); }
+    const people = await database().select({ id: schema.accessGrants.personId }).from(schema.accessGrants);
+    for (const p of people) { const persona = await systemContext(p.id); if (persona) await ensureThreads(persona).catch(error => console.error('scan', p.id, error)); }
     await scheduleNightly();
   } else if (job.kind === 'undo-expiry') {
     const threadId = typeof job.payload.threadId === 'string' ? job.payload.threadId : undefined;
     if (threadId) await closeUndoWindow(threadId);
+  } else if (job.kind === 'receipt-final') {
+    const threadId = typeof job.payload.threadId === 'string' ? job.payload.threadId : undefined;
+    if (threadId) await closeReceiptWindow(threadId);
   }
 }
 export async function scheduleNightly() {

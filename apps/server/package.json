@@ -8,19 +8,21 @@
     "start": "tsx src/main.ts"
   },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "3.0.84",
     "@clew/calendar": "workspace:*",
     "@clew/contracts": "workspace:*",
     "@clew/db": "workspace:*",
+    "@clew/modules": "workspace:*",
     "@hono/node-server": "2.1.6",
+    "@sinclair/typebox": "0.34.52",
     "ai": "7.0.162",
-    "@ai-sdk/openai-compatible": "3.0.84",
     "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
     "drizzle-orm": "0.45.4",
     "hono": "4.13.16",
     "jose": "6.2.15",
     "openid-client": "6.8.9",
-    "tsx": "4.23.15",
-    "ajv-formats": "3.0.1",
-    "temporal-polyfill": "1.0.6"
+    "temporal-polyfill": "1.0.6",
+    "tsx": "4.23.15"
   }
 }

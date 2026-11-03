@@ -5,6 +5,7 @@
   "exports": {
     "./model": "./src/model.ts",
     "./dates": "./src/dates.ts",
+    "./adapters": "./src/adapters.ts",
     "./nextcloud": "./src/nextcloud.ts",
     "./proposals": "./src/proposals.ts",
     "./accounts": "./src/accounts.ts"

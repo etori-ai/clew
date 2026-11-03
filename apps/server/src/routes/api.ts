@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
-import { AskInput, ConfirmInput, ReplanInput, ReplyInput, type Attention } from '@clew/contracts';
+import { ActInput, AskInput, ConfirmInput, ReplanInput, ReplyInput, type Attention } from '@clew/contracts';
+import type { ActInput as ActInputType } from '@clew/contracts';
 import { listThreads, readThread } from '@clew/db/threads';
 import { today, weekStart } from '@clew/calendar/dates';
 import { toProposal } from '@clew/db/threads';
@@ -11,10 +12,11 @@ import { InputError, protectedRoute, type Env } from '../context';
 import { listWeek, readToday } from '../calendar';
 import { readFigures } from '../figures';
 import { ask, completions, reply } from '../assistant';
-import { confirm, dismiss, ensureProposalThread, replan, samtalStatus, undo } from '../planner';
+import { confirm, dismiss, replan, samtalStatus, undo } from '../planner';
+import { act, dismissThread, ensureThreads, listAreas, registry, resetMocks, runCapability, snoozeThread, undoReceipt } from '../modules';
 
 const ajv = addFormats(new Ajv({ allErrors: false }));
-const validators = { ask: ajv.compile(AskInput), reply: ajv.compile(ReplyInput), confirm: ajv.compile(ConfirmInput), replan: ajv.compile(ReplanInput) };
+const validators = { ask: ajv.compile(AskInput), reply: ajv.compile(ReplyInput), confirm: ajv.compile(ConfirmInput), replan: ajv.compile(ReplanInput), act: ajv.compile(ActInput) };
 async function body<T>(request: Request, validate: (value: unknown) => value is T): Promise<T> {
   const text = await request.text();
   if (text.length > 4000) throw new InputError('För stor förfrågan.');
@@ -29,9 +31,34 @@ export const api = new Hono<Env>();
 api.use('*', protectedRoute());
 api.get('/threads', async c => {
   const persona = c.get('session').context;
-  await ensureProposalThread(persona, 'Första besöket i dag');
+  await ensureThreads(persona, 'Första besöket i dag');
   return c.json({ threads: await listThreads(persona.id) });
 });
+api.get('/areas', async c => c.json({ areas: await listAreas(c.get('session').context) }));
+/** The registry as data: what the architecture derives everything from. Read-only, scoped to the caller. */
+api.get('/modules', c => {
+  const persona = c.get('session').context;
+  return c.json({ modules: registry.list().map(m => ({ id: m.id, kind: m.kind, source: m.source, areas: m.areas.map(a => ({ id: a.id, title: a.title, roles: a.roles })),
+    capabilities: m.capabilities.map(x => ({ name: x.name, kind: x.kind, title: x.title, model: x.model, inScope: x.scope(persona) })) })), tools: registry.tools(persona).map(t => t.name) });
+});
+/** Standing actions and panel views: run one capability directly. GET for reads (input as JSON in `input`), POST for the rest. */
+api.get('/cap/:name', async c => {
+  const name = c.req.param('name'); const found = registry.find(name);
+  if (!found || found.capability.kind !== 'read') return c.json({ error: 'Okänd förmåga.' }, 404);
+  let input: unknown = {}; const raw = c.req.query('input'); if (raw) { try { input = JSON.parse(raw); } catch { throw new InputError('Ogiltig förfrågan.'); } }
+  return c.json({ output: await runCapability(c.get('session').context, name, input) });
+});
+api.post('/cap/:name', async c => {
+  const name = c.req.param('name'); const found = registry.find(name);
+  if (!found) return c.json({ error: 'Okänd förmåga.' }, 404);
+  const text = await c.req.raw.text(); if (text.length > 8000) throw new InputError('För stor förfrågan.');
+  let input: unknown = {}; try { input = text ? JSON.parse(text) : {}; } catch { throw new InputError('Ogiltig förfrågan.'); }
+  return c.json({ output: await runCapability(c.get('session').context, name, input) });
+});
+api.post('/threads/:id/act', async c => { const input = await body(c.req.raw, validators.act as unknown as (value: unknown) => value is ActInputType); return c.json(await act(c.get('session').context, c.req.param('id'), input.actionId, input.refs)); });
+api.post('/mocks/reset', async c => { await resetMocks(c.get('session').context); return c.json({ ok: true }); });
+api.post('/threads/:id/undo-receipt', async c => c.json(await undoReceipt(c.get('session').context, c.req.param('id'))));
+api.post('/threads/:id/snooze', async c => c.json(await snoozeThread(c.get('session').context, c.req.param('id'))));
 api.get('/threads/:id', async c => {
   const found = await readThread(c.get('session').context.id, c.req.param('id'));
   return found ? c.json(found.thread) : c.json({ error: 'Tråden finns inte.' }, 404);
@@ -40,7 +67,12 @@ api.post('/threads/:id/reply', async c => c.json(await reply(c.get('session').co
 api.post('/threads/:id/confirm', async c => c.json(await confirm(c.get('session').context, c.req.param('id'), (await body(c.req.raw, validators.confirm)).proposalIds)));
 api.post('/threads/:id/undo', async c => c.json(await undo(c.get('session').context, c.req.param('id'))));
 api.post('/threads/:id/replan', async c => c.json(await replan(c.get('session').context, c.req.param('id'), (await body(c.req.raw, validators.replan)).week)));
-api.post('/threads/:id/dismiss', async c => c.json(await dismiss(c.get('session').context, c.req.param('id'))));
+api.post('/threads/:id/dismiss', async c => {
+  const persona = c.get('session').context, id = c.req.param('id');
+  const found = await readThread(persona.id, id);
+  if (!found) return c.json({ error: 'Tråden finns inte.' }, 404);
+  return c.json(found.thread.proposals.length ? await dismiss(persona, id) : await dismissThread(persona, id));
+});
 api.post('/ask', async c => c.json(await ask(c.get('session').context, (await body(c.req.raw, validators.ask)).question)));
 api.get('/completions', c => c.json({ completions }));
 api.get('/today', async c => c.json(await readToday(c.get('session').context)));

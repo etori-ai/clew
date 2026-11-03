@@ -1,0 +1,17 @@
+{
+  "name": "@clew/modules",
+  "private": true,
+  "version": "0.0.1",
+  "exports": {
+    ".": "./src/index.ts",
+    "./memory-state": "./src/memory-state.ts",
+    "./mock/heroma": "./src/mock/heroma.ts",
+    "./mock/raindance": "./src/mock/raindance.ts",
+    "./mock/treserva": "./src/mock/treserva.ts",
+    "./mock/kommunikation": "./src/mock/kommunikation.ts"
+  },
+  "dependencies": {
+    "@clew/contracts": "workspace:*",
+    "@sinclair/typebox": "0.34.52"
+  }
+}

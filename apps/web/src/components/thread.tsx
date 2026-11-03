@@ -1,16 +1,44 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CalendarEvent, Thread } from '@clew/contracts';
-import { Badge, Button, CheckboxInput, Heading, Text, TextInput, WeekView, type WeekItem } from '@clew/ui';
-import { addDays, dateLabel, shortDayLabel, timeLabel, timeRange, weekNumber } from '@clew/calendar/dates';
+import { Badge, Button, Card, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, CheckboxList, CheckboxListItem, Collapsible, HStack, Text, Timestamp, VStack, WeekAgenda, type AgendaItem } from '@clew/ui';
+import { addDays, shortDayLabel, timeRange, weekNumber } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
 
-type Props = { thread: Thread; events?: CalendarEvent[]; mobile: boolean; onChange: (thread: Thread) => void; onLoadWeek?: (week: string) => void };
-const statusLabel: Record<string, string> = { proposed: 'Förslag', confirmed: 'Inbjudan skickad', final: 'Bokad', undone: 'Återkallad', declined: 'Valdes bort', superseded: '' };
+type Props = { thread: Thread; events?: CalendarEvent[]; compact: boolean; onChange: (thread: Thread) => void; onLoadWeek?: (week: string) => void };
 
-/** A thread: title, why-line, memory, the proposals as a small week and the actions. The reply field keeps it alive. */
-export function ThreadCard({ thread, events = [], mobile, onChange, onLoadWeek }: Props) {
+const statusBadge = (thread: Thread) => {
+  if (thread.kind === 'question') return { variant: 'neutral', label: Date.now() - Date.parse(thread.createdAt) < 3600_000 ? 'Du frågade nyss' : 'Du frågade' } as const;
+  if (thread.state === 'dismissed') return { variant: 'neutral', label: 'Avfärdad' } as const;
+  if (thread.proposals.some(p => p.status === 'confirmed')) return { variant: 'success', label: 'Inbjudningar skickade' } as const;
+  if (thread.proposals.some(p => p.status === 'final')) return { variant: 'success', label: 'Bokat' } as const;
+  return { variant: 'info', label: 'Förslag att bekräfta' } as const;
+};
+/** The first assistant message is the lead: one sentence, then the assessment. */
+function split(body: string) {
+  const index = body.search(/[.!?]\s/);
+  return index > 0 ? { lead: body.slice(0, index + 1), rest: body.slice(index + 2).trim() } : { lead: body, rest: '' };
+}
+
+const RECENT = 2;
+/** The memory of the thread: the latest exchange stays visible, older turns fold away but are never lost. */
+function Conversation({ messages }: { messages: Thread['messages'] }) {
+  const older = messages.slice(0, -RECENT), recent = messages.slice(-RECENT);
+  const list = (items: Thread['messages']) => <ChatMessageList density="compact" align="top">
+    {items.map(m => <ChatMessage key={m.id} sender={m.role}>
+      <ChatMessageBubble variant={m.role === 'assistant' ? 'ghost' : 'filled'} metadata={<ChatMessageMetadata timestamp={<Timestamp value={m.createdAt} format="time" hasTooltip={false} />} />}>{m.body}</ChatMessageBubble>
+    </ChatMessage>)}
+  </ChatMessageList>;
+  return <Collapsible defaultIsOpen={false} chevronPosition="start" trigger={<Text type="supporting">Tråden · {messages.length} meddelanden</Text>}>
+    <VStack gap={2}>{older.length > 0 && list(older)}{list(recent)}</VStack>
+  </Collapsible>;
+}
+
+/**
+ * A thread, not a card: status and source on top, one sentence, the assessment, the proposals drawn in the week,
+ * the actions, "varför nu?", and a composer at the bottom so the thread keeps its memory.
+ */
+export function ThreadCard({ thread, events = [], compact, onChange, onLoadWeek }: Props) {
   const [selected, setSelected] = useState<string[]>(() => thread.proposals.filter(p => p.status === 'proposed').map(p => p.id));
-  const [reply, setReply] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(Date.now());
@@ -24,58 +52,42 @@ export function ThreadCard({ thread, events = [], mobile, onChange, onLoadWeek }
     setBusy(true); setError(null);
     try { onChange(await action()); } catch (e) { setError(e instanceof ApiError ? e.message : 'Något gick fel.'); } finally { setBusy(false); }
   };
-  const items = useMemo<WeekItem[]>(() => [
-    ...events.filter(e => !e.title.startsWith('Utvecklingssamtal')).map(e => ({ id: e.id, title: e.title, start: e.start, end: e.end, allDay: e.allDay, tone: e.mine ? 'mine' as const : 'invited' as const })),
-    ...thread.proposals.filter(p => ['proposed', 'confirmed', 'final'].includes(p.status)).map(p => ({ id: p.id, title: 'Utvecklingssamtal', start: p.start, end: p.end, allDay: false,
-      tone: p.status === 'proposed' ? 'proposal' as const : 'booked' as const, selected: p.status !== 'proposed' || selected.includes(p.id) })),
-  ], [events, thread.proposals, selected]);
+  const first = thread.messages.find(m => m.role === 'assistant');
+  const conversation = thread.kind === 'question' ? thread.messages : thread.messages.filter(m => m !== first);
+  const { lead, rest } = split(first?.body ?? thread.title);
+  const items = useMemo<AgendaItem[]>(() => [
+    ...events.filter(e => !e.title.startsWith('Utvecklingssamtal')).map(e => ({ id: e.id, title: e.title, start: e.start, end: e.end, allDay: e.allDay, kind: 'event' as const })),
+    ...thread.proposals.filter(p => ['proposed', 'confirmed', 'final'].includes(p.status)).map(p => ({ id: p.id, title: 'Utvecklingssamtal', start: p.start, end: p.end, allDay: false, kind: p.status === 'proposed' ? 'proposal' as const : 'booked' as const })),
+  ], [events, thread.proposals]);
   const nextWeek = thread.week ? addDays(thread.week, 7) : null;
-  const confirmedCount = thread.proposals.filter(p => p.status === 'confirmed' || p.status === 'final').length;
-  return <article className="thread" data-state={thread.state} aria-labelledby={`thread-${thread.id}`}>
-    <div className="thread-head">
-      <div>
-        <Heading level={2} id={`thread-${thread.id}`}>{thread.title}</Heading>
-        <div className="thread-why">
-          <Text type="supporting">Varför nu? {thread.trigger.reason}.</Text>
-          <Text type="supporting">Källa: {thread.trigger.source}, {dateLabel(thread.trigger.at.slice(0, 10))} {timeLabel(thread.trigger.at)}.</Text>
-        </div>
-      </div>
-      {thread.kind === 'pushed' && <Badge variant={thread.state === 'open' ? 'info' : 'neutral'} label={thread.state === 'open' ? 'Behöver dig' : thread.state === 'handled' ? 'Redan hanterat' : 'Avfärdad'} />}
-    </div>
-    <div className="thread-messages">
-      {thread.messages.map(m => <div key={m.id} className="thread-message" data-role={m.role}>
-        <Text type="supporting">{m.role === 'user' ? 'Du' : 'Assistenten'} · {timeLabel(m.createdAt)}</Text>
-        <Text as="p">{m.body}</Text>
-      </div>)}
-    </div>
-    {thread.proposals.length > 0 && thread.week && <>
-      {!mobile && <WeekView date={thread.week} days={5} items={items} compact hours={[8, 17]} />}
-      <div className="legend" aria-label="Teckenförklaring">
-        <span className="legend-item event-card" data-tone="mine"><span className="legend-swatch" /><Text type="supporting">Dina möten</Text></span>
-        <span className="legend-item event-card" data-tone="proposal"><span className="legend-swatch" /><Text type="supporting">Förslag</Text></span>
-        <span className="legend-item event-card" data-tone="booked"><span className="legend-swatch" /><Text type="supporting">Bokat</Text></span>
-      </div>
-      <div className="proposal-list" role="group" aria-label="Förslag">
-        {thread.proposals.map(p => <div key={p.id} className="proposal-row" data-status={p.status}>
-          {p.status === 'proposed' && open
-            ? <CheckboxInput label={`${shortDayLabel(p.start.slice(0, 10))} ${timeRange(p.start, p.end)} · Utvecklingssamtal`} value={selected.includes(p.id)} onChange={checked => setSelected(s => checked ? [...s, p.id] : s.filter(id => id !== p.id))} />
-            : <Text>{shortDayLabel(p.start.slice(0, 10))} {timeRange(p.start, p.end)} · Utvecklingssamtal</Text>}
-          <Badge variant={p.status === 'proposed' ? 'purple' : p.status === 'confirmed' || p.status === 'final' ? 'success' : 'neutral'} label={statusLabel[p.status] ?? p.status} />
-        </div>)}
-      </div>
-    </>}
-    {error && <Text as="p" color="accent" role="alert">{error}</Text>}
-    <div className="thread-actions">
-      {open && <Button variant="primary" label={`Bekräfta ${selected.length} ${selected.length === 1 ? 'tid' : 'tider'}`} isDisabled={!selected.length || busy} clickAction={() => run(() => api.confirm(thread.id, selected))} />}
-      {open && <Button label="Visa i kalendern" href={`/kalender?vecka=${thread.week}`} />}
-      {open && nextWeek && <Button label={`Vecka ${weekNumber(nextWeek)} i stället`} isDisabled={busy} clickAction={() => run(() => api.replan(thread.id, nextWeek))} />}
-      {open && <Button variant="ghost" label="Inte nu" isDisabled={busy} clickAction={() => run(() => api.dismiss(thread.id))} />}
-      {undoOpen && undoUntil && <Button variant="destructive" label={`Ångra (${Math.max(0, Math.ceil((Date.parse(undoUntil) - now) / 60000))} min kvar)`} isDisabled={busy} clickAction={() => run(() => api.undo(thread.id))} />}
-      {!undoOpen && confirmedCount > 0 && thread.state === 'handled' && <Text type="supporting">{confirmedCount} samtal bokade. Deltagarna ser du i kalendern.</Text>}
-    </div>
-    <form className="thread-reply" onSubmit={event => { event.preventDefault(); if (reply.trim()) { const body = reply.trim(); setReply(''); void run(() => api.reply(thread.id, body)); } }}>
-      <TextInput label="Svara i tråden" isLabelHidden placeholder="Svara i tråden …" value={reply} onChange={setReply} enterKeyHint="send" />
-      <Button type="submit" label="Skicka" isDisabled={!reply.trim() || busy} />
-    </form>
-  </article>;
+  const count = selected.length, plural = count === 1 ? 'inbjudan' : 'inbjudningar';
+  const badge = statusBadge(thread);
+  return <Card padding={0}>
+    <VStack gap={2} padding={2} as="article" aria-label={`Tråd: ${thread.title}`} id={`thread-${thread.id}`}>
+      <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
+        <Badge variant={badge.variant} label={badge.label} />
+        <Text type="supporting">{thread.trigger.source} · <Timestamp value={thread.trigger.at} format="time" hasTooltip={false} /></Text>
+      </HStack>
+      {thread.kind === 'pushed' && <>
+        <Text type="large" weight="medium" as="p">{lead}</Text>
+        {rest && <Text as="p" color="secondary">{rest}</Text>}
+      </>}
+      {thread.proposals.length > 0 && thread.week && (compact
+        ? <CheckboxList label="Förslag" isLabelHidden value={selected} onChange={setSelected} isReadOnly={!open} density="compact">
+          {thread.proposals.filter(p => p.status !== 'declined').map(p => <CheckboxListItem key={p.id} value={p.id} label={`${p.participant.name} · ${shortDayLabel(p.start.slice(0, 10))} ${timeRange(p.start, p.end)}`} isChecked={p.status !== 'proposed' || selected.includes(p.id)} isDisabled={p.status !== 'proposed'} />)}
+        </CheckboxList>
+        : <WeekAgenda week={thread.week} days={5} items={items} label={`Vecka ${weekNumber(thread.week)} med förslagen`} />)}
+      {conversation.length > 0 && <Conversation messages={conversation} />}
+      {error && <Text as="p" role="alert" color="accent">{error}</Text>}
+      {(open || undoOpen) && <HStack gap={2} wrap="wrap">
+        {open && <Button variant="primary" label={`Skicka ${count} ${plural}`} isDisabled={!count || busy} clickAction={() => run(() => api.confirm(thread.id, selected))} />}
+        {open && !compact && <Button label="Justera i kalendern" href={`/kalender?vecka=${thread.week}`} />}
+        {open && compact && <Button label="Visa i veckan" href={`/kalender?vecka=${thread.week}`} />}
+        {open && nextWeek && <Button variant="ghost" label={`Vecka ${weekNumber(nextWeek)} i stället`} isDisabled={busy} clickAction={() => run(() => api.replan(thread.id, nextWeek))} />}
+        {open && <Button variant="ghost" label="Inte nu" isDisabled={busy} clickAction={() => run(() => api.dismiss(thread.id))} />}
+        {undoOpen && undoUntil && <Button variant="destructive" label={`Ångra (${Math.max(0, Math.ceil((Date.parse(undoUntil) - now) / 60000))} min kvar)`} isDisabled={busy} clickAction={() => run(() => api.undo(thread.id))} />}
+      </HStack>}
+      {thread.kind === 'pushed' && <Text type="supporting" as="p">Varför nu? {thread.trigger.reason}. {open ? 'Skickas via kalendern med möjlighet att ångra i 10 minuter.' : ''}</Text>}
+    </VStack>
+  </Card>;
 }

@@ -14,6 +14,6 @@ export function readFigures(persona: AuthenticatedContext, samtal: { held: numbe
     { id: 'budgetavvikelse', label: 'Budgetavvikelse', value: '−1,8 %', comparison: 'prognos −0,9 % i september', tone: 'alert', source: 'Raindance (syntetiskt)', observedAt: now },
     { id: 'hme', label: 'HME', value: '79', comparison: '76 i fjol, kommunen 77', tone: 'ok', source: 'Medarbetarenkät 2026 (syntetiskt)', observedAt: now },
     { id: 'utvecklingssamtal', label: 'Utvecklingssamtal', value: `${remaining} av ${members} kvar`, comparison: samtal.booked ? `${samtal.booked} bokade, senast ${samtal.deadline}` : `senast ${samtal.deadline}`,
-      tone: remaining === 0 ? 'ok' : samtal.booked >= remaining ? 'warn' : 'alert', source: 'Kalendern', observedAt: now },
+      tone: remaining === 0 ? 'ok' : samtal.booked >= remaining ? 'warn' : 'alert', source: 'Kalendern', observedAt: now, progress: { value: samtal.held + samtal.booked, max: members } },
   ];
 }

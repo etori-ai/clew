@@ -1,15 +1,18 @@
 import type { AuthenticatedContext } from '@clew/contracts';
 import { CalendarError, type CalendarAccount, type CalendarProvider } from './model';
-import { NextcloudProvider } from './nextcloud';
+import { createCalendarProvider, type CalendarCredential } from './adapters';
 
 /**
  * Synthetic directory for the POC. The real system would resolve a person's calendar account and
  * unit membership from the directory; here the bindings are explicit and local-only.
  */
 export interface UnitMember extends CalendarAccount { personId: string; }
-const accounts: Record<string, { user: string; password: string; name: string }> = {
-  hillevi: { user: 'hillevi', password: 'calendar-hillevi-local-only', name: 'Hillevi Berg' },
-  hassan: { user: 'hassan', password: 'calendar-hassan-local-only', name: 'Hassan Ali' },
+const calendarUrl = () => process.env.CALENDAR_URL ?? 'http://calendar';
+/** Each account names its adapter. A real directory would carry the same `kind` per person, so a mixed estate (CalDAV and Microsoft 365) is one lookup away. */
+const credential = (user: string): CalendarCredential => ({ kind: 'caldav', url: calendarUrl(), user, password: `calendar-${user}-local-only` });
+const accounts: Record<string, { name: string; credential: CalendarCredential }> = {
+  hillevi: { name: 'Hillevi Berg', credential: credential('hillevi') },
+  hassan: { name: 'Hassan Ali', credential: credential('hassan') },
 };
 const units: Record<string, UnitMember[]> = {
   'unit-skola': [
@@ -25,10 +28,10 @@ export function bindCalendar(persona: Pick<AuthenticatedContext, 'id' | 'unitId'
   const account = accounts[persona.id];
   if (!account) throw new CalendarError('Ditt konto har ingen kalender kopplad.');
   return {
-    provider: new NextcloudProvider(account.user, account.password, process.env.CALENDAR_URL ?? 'http://calendar'),
+    provider: createCalendarProvider(account.credential),
     members: persona.role === 'manager' ? units[persona.unitId] ?? [] : [],
   };
 }
 /** Seed-only access to a member's own calendar, for fixtures. Never used by the application. */
-export function fixtureProvider(user: string) { return new NextcloudProvider(user, `calendar-${user}-local-only`, process.env.CALENDAR_URL ?? 'http://calendar'); }
+export function fixtureProvider(user: string) { return createCalendarProvider(credential(user)); }
 export const unitMembers = (unitId: string) => units[unitId] ?? [];

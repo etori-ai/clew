@@ -4,31 +4,48 @@ import { InternationalizationProvider } from '@astryxdesign/core/i18n';
 import { neutralTheme } from '@astryxdesign/theme-neutral/built';
 import sv from '@astryxdesign/core/locales/sv-SE.json';
 
+// Strictly Astryx: this package re-exports the components the app composes with and adds no components of its own.
 export { Button } from '@astryxdesign/core/Button';
 export { IconButton } from '@astryxdesign/core/IconButton';
 export { Card } from '@astryxdesign/core/Card';
+export { ClickableCard } from '@astryxdesign/core/ClickableCard';
 export { Heading } from '@astryxdesign/core/Heading';
 export { Text } from '@astryxdesign/core/Text';
 export { Badge } from '@astryxdesign/core/Badge';
-export { Banner } from '@astryxdesign/core/Banner';
-export { TextInput } from '@astryxdesign/core/TextInput';
-export { CheckboxInput } from '@astryxdesign/core/CheckboxInput';
-export { Typeahead, createStaticSource, type SearchableItem } from '@astryxdesign/core/Typeahead';
-export { BottomSheet } from '@astryxdesign/core/BottomSheet';
-export { HStack } from '@astryxdesign/core/HStack';
-export { VStack } from '@astryxdesign/core/VStack';
+export { StatusDot } from '@astryxdesign/core/StatusDot';
+export { ProgressBar } from '@astryxdesign/core/ProgressBar';
+export { Token } from '@astryxdesign/core/Token';
+export { List, ListItem } from '@astryxdesign/core/List';
+export { CheckboxList, CheckboxListItem } from '@astryxdesign/core/CheckboxList';
+export { Collapsible } from '@astryxdesign/core/Collapsible';
+export { Grid } from '@astryxdesign/core/Grid';
 export { Divider } from '@astryxdesign/core/Divider';
-export { Spinner } from '@astryxdesign/core/Spinner';
+export { Avatar } from '@astryxdesign/core/Avatar';
 export { Icon } from '@astryxdesign/core/Icon';
-export { Link, LinkProvider } from '@astryxdesign/core/Link';
+export { Link } from '@astryxdesign/core/Link';
+export { Timestamp } from '@astryxdesign/core/Timestamp';
+export { BottomSheet } from '@astryxdesign/core/BottomSheet';
+export { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
+export { EmptyState } from '@astryxdesign/core/EmptyState';
+export { Layout, LayoutHeader, LayoutContent, LayoutFooter, LayoutPanel, VStack, HStack, StackItem } from '@astryxdesign/core/Layout';
+export { SideNav, SideNavItem, SideNavSection, SideNavHeading } from '@astryxdesign/core/SideNav';
+export { MoreMenu } from '@astryxdesign/core/MoreMenu';
+export { Banner } from '@astryxdesign/core/Banner';
+export { Drawer } from '@astryxdesign/core/Drawer';
+export { Skeleton } from '@astryxdesign/core/Skeleton';
+export { ChatComposer, ChatComposerInput, ChatDictationButton, useChatDictation, ChatMessageList, ChatMessage, ChatMessageBubble, ChatMessageMetadata, ChatSystemMessage } from '@astryxdesign/core/Chat';
 export { useMediaQuery } from '@astryxdesign/core/hooks';
 export { SessionBoundary, sessionFetch, signOut, type BrowserSession } from './session';
-export { WeekView, EventChip, type WeekItem } from './week-view';
+export { WeekAgenda, type AgendaItem } from './week-agenda';
 
 // The shipped sv-SE catalog is incomplete. Keys reachable by this POC are covered here.
 export const swedish = { ...sv,
   '@astryx.input.readOnly': { defaultMessage: 'Skrivskyddad' },
-  '@astryx.typeahead.noResults': { defaultMessage: 'Inga förslag' },
+  '@astryx.chatComposer.placeholder': { defaultMessage: 'Skriv ett meddelande …' },
+  '@astryx.chatComposer.send': { defaultMessage: 'Skicka' },
+  '@astryx.chatComposer.stop': { defaultMessage: 'Stoppa' },
+  '@astryx.chatDictation.start': { defaultMessage: 'Tala' },
+  '@astryx.chatDictation.stop': { defaultMessage: 'Sluta tala' },
 };
 /** The plain Astryx look: Neutral theme, Swedish strings. No project theme in the POC. */
 export function Providers({ children }: { children: ReactNode }) {

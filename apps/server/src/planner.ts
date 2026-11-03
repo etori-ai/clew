@@ -75,6 +75,7 @@ export async function ensureProposalThread(persona: AuthenticatedContext, source
   const id = crypto.randomUUID();
   await database().transaction(async tx => {
     await tx.insert(threads).values({ id, personId: persona.id, kind: 'pushed', topic: TOPIC, title: `Planera utvecklingssamtal vecka ${weekNumber(week)}`, week,
+      module: 'calendar', area: 'utvecklingssamtal', summary: explain(week, planned.length, members.length),
       trigger: { reason: `${members.length} samtal saknar tid före 28 november`, source, at: now.toISOString() } });
     await tx.insert(schema.threadMessages).values({ id: crypto.randomUUID(), threadId: id, role: 'assistant', body: explain(week, planned.length, members.length) });
     if (planned.length) await tx.insert(proposals).values(planned.map(p => ({ id: crypto.randomUUID(), threadId: id, personId: persona.id, participantEmail: p.participant.email, participantName: p.participant.name, start: new Date(p.start), end: new Date(p.end) })));

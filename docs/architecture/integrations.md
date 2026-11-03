@@ -20,6 +20,16 @@ dev-time scaffold when writing a new adapter. It is never part of the running sy
 OpenAPI does belong in Clew as **output**: the deterministic REST surface of the BFF is described by a
 document generated from the TypeBox schemas in `packages/contracts`.
 
+**Who meets the contract (D10).** When a system is connected, the integration is first asked to implement
+Clew's API for that domain: the capability descriptors and the module's provider interface. A vendor, a
+dept44 service or another municipality's team that does so needs no adapter. Only when that is not
+possible does Clew write the adapter, in this repository, from the system's protocol to Clew's contract.
+The contract never bends to the adapter. In Sundsvall today that means adapters for Heroma (RPA, no API),
+Raindance and aggregates (dept44 services behind the WSO2 gateway, `service` mode with a `scope` rule) and
+Microsoft 365 (Microsoft Graph, `user-delegated`). The calendar is the pattern: one `CalendarProvider`
+contract, a `caldav` and a `microsoft365` adapter selected per account (D11,
+`packages/calendar/src/adapters.ts`).
+
 ## One capability layer, two faces
 
 ```
@@ -93,12 +103,93 @@ one auth mode:
 
 | Mode | Used when | Mechanism |
 |---|---|---|
-| `user-delegated` | the external system accepts tokens from the shared IdP | OAuth 2.1 token exchange at Keycloak (RFC 8693), audience = the external system |
+| `user-delegated` | the external system accepts tokens from the shared IdP | OAuth 2.1 token exchange at Keycloak (RFC 8693), audience = the external system. For Microsoft 365 the token must be issued by Entra, so Keycloak acts as broker with stored external tokens, or production runs OIDC directly against Entra; open, see HANDOVER item 10 |
 | `bound-credential` | the external system has its own accounts | per-user credential sealed in Clew's DB; what the calendar does today |
 | `service` | the external system only has one integration account | Clew narrows every call with the `scope` rule before it leaves the process |
 
 An out-of-process MCP server owned by Clew receives the user context as a short-lived JWT bound to that
 server's audience. It never acts as "Clew" without a user. Details in `docs/architecture/identity.md`.
+
+## Thread action contract
+
+A module never draws its own card. It contributes **actions** through capability descriptors, and the
+thread card has fixed slots for them, so the page looks the same whether the thread comes from the
+calendar, Heroma or Raindance:
+
+| Slot | Who fills it | Count | Rule |
+|---|---|---|---|
+| Primary | module, `kind: execute` or `propose` | exactly 1 | The verb in the headline. Filled button. |
+| Secondary | module, `kind: read` (a link into the source system or a view) | 0 to 2 | Tonal buttons. The first is usually "open in the source". |
+| Standard | Clew | always the same | `Lägg till i samtalet` (adds the card as a chip, D12), `Inte nu` (snooze to the next bundle), `Avfärda` (closes the thread with a reason, undoable), `Varför ser jag detta?` (trigger, source, time). |
+| Overflow | module, anything beyond the slots above | any | Behind the `⋯` menu together with the standard actions, module items first. |
+
+A module action carries `label`, `capability`, `kind`, and an optional `confirm` text. Clew decides
+placement from `kind` and order; the module cannot ask for a second primary. `Avfärda` and `Inte nu` are
+Clew's because they act on the thread, not on the source system; a module that wants a source-side
+"decline" exposes it as its primary or secondary action ("Avslå med kommentar").
+
+Dismissing writes a thread state `dismissed` with the reason and an undo window, and the module's
+trigger will not re-create the same thread for the same occurrence. Snoozing keeps `open` and moves the
+thread to the next bundle time.
+
+## Answers and views
+
+A question typed in the composer gets one of three shapes, chosen by the server from what came back:
+
+| Shape | When | Where it lands |
+|---|---|---|
+| **Svar** | one or two sentences with source and time | a framed card directly above the composer; the composer gets a target chip so the follow-up stays in the thread; after the day it is listed in Redan hanterat under Frågor |
+| **Vy** | the result is a list or table (per person, whole week, Redan hanterat) | the main column, with "‹ Allt", its own filters and a URL; the sidebar marks it; the composer chip says "I vyn: …" and questions search only what is shown |
+| **Förslag** | the answer implies an action | an ordinary decision card under Behöver dig with the same slots, buttons and undo |
+
+**Where the conversation lives.** Cards hold state and actions. The conversation is an overlay that
+unfolds upward from the composer row over the dimmed stream, in the main column, newest message nearest
+the row; it is never a modal and never a side panel. The row keeps focus for the whole conversation and
+sending never moves it. Esc or a click on the dimmed stream closes the overlay and the conversation is kept
+under Redan hanterat › Frågor. Follow-up suggestions sit in the overlay's footer. Focusing the row first
+shows common questions, questions about what is on screen, actions, and earlier conversations, which
+reopen in the overlay where they ended. That grouped list shows only while the row is empty and has no chips; with a chip it
+shrinks to one row of verbs about that object, derived from the object's actions, so the object stays
+visible. Context is attached as chips (D12): click an object and "Lägg till i
+samtalet", drag it to the row, or type `@`. The dim covers the stream only, the side panel stays live for
+picking, and the chipped objects are highlighted. Without chips the assistant may resolve a reference like
+"mötesförslaget" against the page state and must lift the object it picked.
+Several actions in one sentence become a numbered list to confirm; Clew-side actions (dismiss, reminder)
+are confirmed in the overlay, source-system actions always through the card's own button. What the conversation
+produces goes out to the page: Förslag becomes a card in the stream, Vy opens in the side panel or the
+main column, Svar stays in the overlay. The side panel is for views and apps only (D9).
+
+A view is deterministic and addressable, reachable without the model (D8), and rendered by Clew from the
+output schema of a `read` capability. Modules return rows, never markup. Redan hanterat is the user's
+own log: decisions, dismissals, undos and questions grouped by day, filterable by area and kind, with
+undo while the window is open and Återöppna on dismissed threads. Older than 30 days lives in the audit log.
+
+## Without the model (D8)
+
+The capability layer is why the model is optional. Each descriptor derives a REST route and a UI
+affordance as well as a tool, so the browser can call `calendar.freeBusy` or `leave.approve` directly.
+The model only chooses and phrases; it never holds the sole path to anything.
+
+| Function | With the model | Without it |
+|---|---|---|
+| Free-text question | model picks a capability and arguments | intent router plus typeahead over capability titles |
+| Pushed thread | scheduled job runs deterministic code, model writes the lead sentence | same job, templated sentence from the trigger record |
+| Proposal | deterministic planner, model may suggest alternatives in a reply | deterministic planner only |
+| Reply in a thread | model interprets "flytta Annas till torsdag" | buttons: adjust in the calendar, next week instead, not now |
+| Confirm, execute, undo | never the model | unchanged |
+| Area figures and schedules | unchanged | unchanged |
+
+The provider's health is a first-class status: checked on a timer, shown on the page, written to audit on
+every thread created while it is down.
+
+## Implemented (2026-11-03)
+
+`packages/modules` holds the descriptor types and the `Registry`; the four mock integrations under
+`mock/` implement the pass-through kind against synthetic records with state in `module_state`; the core
+kind is `people` in `apps/server/src/people-module.ts` (Clew's own users and permissions, no adapter, no
+scan) and the calendar is wrapped in `apps/server/src/calendar-module.ts`. The BFF derives
+`/api/areas`, `/api/cap/:name` and the card actions from the registry; `/api/modules` shows the registry as
+data. Tool derivation exists (`registry.tools`) but is not wired to a model yet.
 
 ## Packages
 

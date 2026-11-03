@@ -12,6 +12,7 @@ export const toProposal = (row: ProposalRow): Proposal => ({ id: row.id, threadI
 const toMessage = (row: MessageRow): ThreadMessage => ({ id: row.id, role: row.role, body: row.body, createdAt: row.createdAt.toISOString() });
 export function toThread(row: ThreadRow, messages: MessageRow[], proposalRows: ProposalRow[]): Thread {
   return { id: row.id, kind: row.kind, topic: row.topic, title: row.title, state: row.state, trigger: row.trigger, week: row.week,
+    module: row.module, area: row.area, summary: row.summary, items: row.items, actions: row.actions, waitingOn: row.waitingOn, deadline: row.deadline, receipt: row.receipt ?? null,
     createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(), handledAt: iso(row.handledAt),
     messages: messages.map(toMessage), proposals: proposalRows.filter(p => p.status !== 'superseded').map(toProposal) };
 }

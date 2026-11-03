@@ -55,7 +55,7 @@ export async function ask(persona: AuthenticatedContext, question: string): Prom
   const result = await answer(persona, question);
   const id = crypto.randomUUID(), now = new Date();
   await database().transaction(async tx => {
-    await tx.insert(schema.threads).values({ id, personId: persona.id, kind: 'question', topic: 'question', title: result.title, state: 'open', week: null,
+    await tx.insert(schema.threads).values({ id, personId: persona.id, kind: 'question', topic: 'question', title: result.title, state: 'open', week: null, module: 'startsidan', area: 'fragor', summary: result.body,
       trigger: { reason: result.reason, source: result.source, at: now.toISOString() } });
     await addMessage(tx, id, 'user', question);
     await addMessage(tx, id, 'assistant', result.body);

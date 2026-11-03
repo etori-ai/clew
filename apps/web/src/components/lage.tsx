@@ -1,15 +1,25 @@
 import type { Figure } from '@clew/contracts';
-import { Heading, Text } from '@clew/ui';
-/** "Läget": four figures, always the same shape, lightness as well as hue for status. */
-export function Lage({ figures }: { figures: Figure[] }) {
-  return <section aria-labelledby="lage-heading" className="today">
-    <Heading level={2} id="lage-heading">Läget</Heading>
-    <div className="lage">
-      {figures.map(f => <div key={f.id} className="lage-tile" data-tone={f.tone} role="group" aria-label={`${f.label}: ${f.value}, ${f.comparison}`}>
-        <Text type="supporting">{f.label}</Text>
-        <Text type="large" weight="semibold" hasTabularNumbers>{f.value}</Text>
-        <Text type="supporting">{f.comparison}</Text>
-      </div>)}
-    </div>
-  </section>;
+import { ClickableCard, Grid, Heading, HStack, ProgressBar, StatusDot, Text, VStack } from '@clew/ui';
+
+const dot = { ok: { variant: 'success', label: 'I balans' }, warn: { variant: 'warning', label: 'Bevaka' }, alert: { variant: 'error', label: 'Behöver åtgärd' } } as const;
+type Props = { figures: Figure[]; unitLabel: string; compact?: boolean; onOpen: (figure: Figure) => void };
+
+/** "Läget": always the same four figures, every tile a button that opens the thread behind it. Status is a dot with a label, not a colour alone. */
+export function Lage({ figures, unitLabel, compact = false, onOpen }: Props) {
+  return <VStack gap={2} as="section" aria-label="Läget i din verksamhet">
+    <Heading level={2}>Läget · {unitLabel}{compact ? '' : ' · alltid samma fyra'}</Heading>
+    <Grid columns={compact ? { minWidth: 120 } : { minWidth: 180 }} gap={2}>
+      {figures.map(f => <ClickableCard key={f.id} label={`${f.label}: ${f.value}, ${f.comparison}. ${dot[f.tone].label}`} onClick={() => onOpen(f)} padding={3}>
+        <VStack gap={1}>
+          <HStack gap={2} justify="between" vAlign="center">
+            <Text type="supporting">{f.label}</Text>
+            <StatusDot variant={dot[f.tone].variant} label={dot[f.tone].label} tooltip={dot[f.tone].label} />
+          </HStack>
+          <Text type="large" weight="semibold" hasTabularNumbers>{f.value}</Text>
+          {!compact && <Text type="supporting">{f.comparison}</Text>}
+          {!compact && f.progress && <ProgressBar label={`${f.label}: ${f.progress.value} av ${f.progress.max}`} isLabelHidden value={f.progress.value} max={f.progress.max} variant={f.tone === 'ok' ? 'success' : 'accent'} />}
+        </VStack>
+      </ClickableCard>)}
+    </Grid>
+  </VStack>;
 }

@@ -1,0 +1,39 @@
+import { Type } from '@sinclair/typebox';
+import type { Actor, Capability, ExecuteResult, Module, ThreadDraft } from '../index';
+import type { StateStore } from '../memory-state';
+import { notices } from './data';
+
+/** Mock Kommunikation ("Viktigt nu"). A core-like module: notices with read receipts, outside the attention budget. */
+const MODULE = 'kommunikation';
+const Empty = Type.Object({}, { additionalProperties: false });
+
+export function kommunikationModule(state: StateStore): Module {
+  const acks = () => state.get<Record<string, Record<string, string>>>(MODULE, 'receipts', {});
+  const capabilities: Capability<any, any>[] = [
+    {
+      name: 'kommunikation.notices', kind: 'read', title: 'Viktigt nu', model: true, description: 'Meddelanden från kommunen som kräver läskvitto, och om den inloggade kvitterat.',
+      input: Empty, output: Type.Object({ rows: Type.Array(Type.Object({ ref: Type.String(), title: Type.String(), requiresReceipt: Type.Boolean(), acknowledged: Type.Boolean() })) }),
+      scope: () => true,
+      run: async (actor) => { const a = await acks(); return { rows: notices.filter(n => n.audience === 'all' || actor.role === 'manager').map(n => ({ ref: n.ref, title: n.title, requiresReceipt: n.requiresReceipt, acknowledged: !!a[actor.id]?.[n.ref] })) }; },
+    },
+    {
+      name: 'kommunikation.acknowledge', kind: 'execute', title: 'Jag har läst', model: false, description: 'Kvitterar ett meddelande.',
+      input: Type.Object({ refs: Type.Array(Type.String()) }, { additionalProperties: false }), output: Type.Any(), scope: () => true,
+      run: async (actor, input: { refs: string[] }): Promise<ExecuteResult> => {
+        const a = await acks(); a[actor.id] ??= {}; const at = new Date().toISOString();
+        for (const r of input.refs) a[actor.id]![r] = at; await state.set(MODULE, 'receipts', a);
+        return { headline: 'Läskvittot är registrerat.', rows: input.refs.map(ref => ({ ref, label: notices.find(n => n.ref === ref)?.title ?? 'Meddelande', outcome: 'done' as const, detail: `kvitterat ${new Date(at).toLocaleTimeString('sv-SE', { timeStyle: 'short' })}` })) };
+      },
+    },
+  ];
+  async function scan(actor: Actor): Promise<ThreadDraft[]> {
+    const a = await acks();
+    return notices.filter(n => n.requiresReceipt && (n.audience === 'all' || actor.role === 'manager') && !a[actor.id]?.[n.ref]).map(n => ({
+      topic: `komm:${n.ref}`, area: 'viktigt-nu', title: n.title, summary: n.body, reason: `Publicerat ${new Date(n.publishedAt).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' })} · läskvitto krävs`,
+      items: [{ ref: n.ref, label: n.title, detail: 'kräver läskvitto', selectable: false, selected: true }],
+      actions: [{ id: 'ack', label: 'Jag har läst', capability: 'kommunikation.acknowledge', kind: 'execute', role: 'primary', usesItems: true }] }));
+  }
+  return { id: MODULE, kind: 'core', source: 'Kommunikation',
+    areas: [{ id: 'viktigt-nu', title: 'Viktigt nu', roles: ['manager', 'employee'], standing: ['kommunikation.notices'], schedules: [{ label: 'Nya meddelanden som kräver läskvitto', when: 'Direkt när de publiceras' }] }],
+    capabilities, scan };
+}
