@@ -1,0 +1,23 @@
+# Clew · project instructions
+
+Read `HANDOVER.md` first. It is the only context carried between sessions; update it at the end of every session.
+
+## Open source, always
+
+Clew is an open source system that will be shared with other municipalities and governments to use as they will.
+
+- Never add a closed-source dependency: no proprietary npm packages, SDKs, fonts, icon sets, container images or hosted services that the code cannot run without. Every dependency must carry an OSI-approved licence (MIT, Apache-2.0, BSD, ISC, MPL-2.0, AGPL/GPL for infrastructure components that stay separate processes).
+- Check the licence before pinning anything: `npm view <package>@<version> license`, and the image or project licence for Docker services. Record the result in `HANDOVER.md` section 3.
+- The AI model behind the question box must be reachable through an open protocol (the OpenAI-compatible provider is fine) and the system must work with an open-weight, self-hostable model. A closed model may be configured by an operator, but nothing in the repository may depend on one.
+- No telemetry, licence keys, phone-home calls or vendor accounts required to build, run or test.
+- Prefer standards over vendor APIs: OIDC, CalDAV, iCalendar, MCP, Web `Request`/`Response`.
+
+## Working rules carried over from startsidan
+
+- Swedish only where a person reads it in the product: UI text and API error messages shown in the UI. Everything else is English: identifiers, contracts, comments, console output, script and CLI output, infrastructure messages, thrown configuration errors, documentation. Swedish commit subjects.
+- Bun with exact versions and a frozen lockfile. Bun is the server runtime (decided 2026-11-03, D7 in `docs/decisions.md`; the switch from Node 24 + tsx is pending).
+- Commands run inside the devcontainer: `docker exec -w /workspace clew-app-1 …` (see `README.md`).
+- Server-side enforcement of identity and scope. No credentials, tokens or trusted identity context in the browser bundle.
+- Every mutation writes its audit row in the same transaction. Assistant proposals are executed only through the human decision endpoint, which is not a tool.
+- Astryx components and documented composition patterns. The week view is the only authorised custom composition.
+- Never add Claude as a co-author on commits.

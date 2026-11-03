@@ -1,0 +1,22 @@
+{
+  "name": "Clew POC",
+  "dockerComposeFile": "compose.yaml",
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "portsAttributes": { "5173": { "onAutoForward": "ignore" }, "3000": { "onAutoForward": "ignore" } },
+  "shutdownAction": "stopCompose",
+  "overrideCommand": false,
+  "remoteUser": "root",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1.10.1": {}
+  },
+  "remoteEnv": {
+    "CLEW_HOST_WORKSPACE": "${localWorkspaceFolder}"
+  },
+  "postCreateCommand": "bun install --frozen-lockfile && bun run db:init",
+  "customizations": {
+    "vscode": {
+      "extensions": ["dbaeumer.vscode-eslint"]
+    }
+  }
+}

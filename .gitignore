@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.turbo/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.auth-test.env
+test-results/
+playwright-report/
+.DS_Store
+.claude/state/

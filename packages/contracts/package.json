@@ -1,0 +1,7 @@
+{
+  "name": "@clew/contracts",
+  "private": true,
+  "version": "0.0.1",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": { "@sinclair/typebox": "0.34.52" }
+}

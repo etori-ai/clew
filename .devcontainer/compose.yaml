@@ -1,0 +1,90 @@
+name: clew
+services:
+  app:
+    image: clew-dev:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true
+    working_dir: /workspace
+    command: sleep infinity
+    volumes:
+      - ${CLEW_HOST_WORKSPACE:-..}:/workspace
+      - node_modules:/workspace/node_modules
+      - bun_cache:/root/.bun/install/cache
+    ports:
+      # Only the Vite dev server is published, on loopback. It proxies /api to the BFF inside the container.
+      - "127.0.0.1:3020:5173"
+    extra_hosts:
+      - "keycloak.orb.local:host-gateway"
+    environment:
+      DATABASE_URL: postgres://clew:clew-local@postgres:5432/clew
+      CALENDAR_URL: http://calendar
+      CLEW_POC: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:17-bookworm@sha256:4f736ae292687621d4dbe0d499ffd024a36bd2ee7d8ca6f2ccd4c800f047b394
+    environment:
+      POSTGRES_USER: clew
+      POSTGRES_PASSWORD: clew-local
+      POSTGRES_DB: clew
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clew -d clew"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  calendar:
+    image: clew-calendar:local
+    build:
+      context: ./calendar
+    profiles: ["calendar"]
+    init: true
+    mem_limit: 768m
+    memswap_limit: 768m
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: clew_calendar
+      POSTGRES_USER: clew_calendar
+      POSTGRES_PASSWORD: calendar-local-only
+      NEXTCLOUD_ADMIN_USER: calendar-admin
+      NEXTCLOUD_ADMIN_PASSWORD: calendar-admin-local-only
+      NEXTCLOUD_TRUSTED_DOMAINS: "calendar localhost:3021 127.0.0.1:3021"
+      PHP_MEMORY_LIMIT: 256M
+      PHP_UPLOAD_LIMIT: 8M
+      CLEW_POC: "true"
+    volumes:
+      - calendar_data:/var/www/html
+      - ${CLEW_HOST_WORKSPACE:-..}/.devcontainer/calendar:/opt/clew-calendar:ro
+    ports:
+      - "127.0.0.1:3021:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      calendar-mail:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost/status.php"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+  calendar-mail:
+    image: axllent/mailpit:v1.29.3@sha256:fdaf09bd71dc0829ce8b62e4bfb5180bc5c0674c3e444283fc90681853f5a3c0
+    profiles: ["calendar"]
+    mem_limit: 64m
+    memswap_limit: 64m
+    environment:
+      MP_MAX_MESSAGES: "100"
+      MP_DATABASE: /tmp/mailpit.db
+    tmpfs:
+      - /tmp:size=16m
+    ports:
+      - "127.0.0.1:3022:8025"
+volumes:
+  node_modules:
+  bun_cache:
+  postgres_data:
+  calendar_data:

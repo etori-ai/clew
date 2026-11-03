@@ -1,0 +1,17 @@
+{
+  "name": "@clew/db",
+  "private": true,
+  "version": "0.0.1",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema.ts",
+    "./auth": "./src/auth.ts",
+    "./threads": "./src/threads.ts",
+    "./jobs": "./src/jobs.ts"
+  },
+  "dependencies": {
+    "@clew/contracts": "workspace:*",
+    "drizzle-orm": "0.45.4",
+    "postgres": "3.4.9"
+  }
+}

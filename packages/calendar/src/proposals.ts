@@ -1,0 +1,65 @@
+import { addDays, dayStart, localInstant, minutesOfDay, displayDate } from './dates';
+
+export interface Interval { start: string; end: string; }
+export interface Candidate { participant: { email: string; name: string }; busy: Interval[]; }
+export interface PlanInput {
+  /** Monday of the target week (YYYY-MM-DD). */
+  week: string;
+  /** Instants the manager is already busy, including proposals already drawn for other threads. */
+  managerBusy: Interval[];
+  candidates: Candidate[];
+  /** Earliest acceptable start, so a plan never proposes a slot in the past. */
+  notBefore: string;
+  durationMinutes?: number;
+}
+export interface PlannedSlot { participant: { email: string; name: string }; start: string; end: string; }
+
+const overlaps = (a: Interval, b: Interval) => Date.parse(a.start) < Date.parse(b.end) && Date.parse(b.start) < Date.parse(a.end);
+export const collides = (slot: Interval, busy: Interval[]) => busy.some(b => overlaps(slot, b));
+
+/**
+ * Deterministic slot search for utvecklingssamtal: weekdays 09–16, whole or half hours, lunch kept free,
+ * one conversation per day where possible, earliest first. No model involved; the server validates the
+ * same collision rules again before anything is written.
+ */
+export function planWeek(input: PlanInput): PlannedSlot[] {
+  const duration = input.durationMinutes ?? 60;
+  const days = Array.from({ length: 5 }, (_, i) => addDays(input.week, i));
+  const slots: Interval[] = [];
+  for (const day of days) for (let minutes = 9 * 60; minutes + duration <= 16 * 60; minutes += 30) {
+    if (minutes < 13 * 60 && minutes + duration > 12 * 60) continue; // lunch
+    const hh = String(Math.floor(minutes / 60)).padStart(2, '0'), mm = String(minutes % 60).padStart(2, '0');
+    try {
+      const start = localInstant(`${day}T${hh}:${mm}`), end = new Date(Date.parse(start) + duration * 60000).toISOString();
+      if (Date.parse(start) >= Date.parse(input.notBefore)) slots.push({ start, end });
+    } catch { /* skip ambiguous local times */ }
+  }
+  const taken: Interval[] = [...input.managerBusy];
+  const usedDays = new Map<string, number>();
+  const planned: PlannedSlot[] = [];
+  for (const candidate of input.candidates) {
+    const free = slots.filter(slot => !collides(slot, taken) && !collides(slot, candidate.busy));
+    // Prefer days with no conversation yet, then earliest.
+    const pick = free.sort((a, b) => (usedDays.get(displayDate(a.start)) ?? 0) - (usedDays.get(displayDate(b.start)) ?? 0) || a.start.localeCompare(b.start))[0];
+    if (!pick) continue;
+    planned.push({ participant: candidate.participant, ...pick });
+    taken.push(pick);
+    usedDays.set(displayDate(pick.start), (usedDays.get(displayDate(pick.start)) ?? 0) + 1);
+  }
+  return planned.sort((a, b) => a.start.localeCompare(b.start));
+}
+
+/** Free gaps of at least `minMinutes` between 08 and 17 on one Stockholm day. */
+export function freeGaps(day: string, events: Interval[], minMinutes = 30) {
+  const open = dayStart(day), start = Date.parse(open) + 8 * 3600000, end = Date.parse(open) + 17 * 3600000;
+  const busy = events.map(e => ({ start: Math.max(Date.parse(e.start), start), end: Math.min(Date.parse(e.end), end) })).filter(e => e.end > e.start).sort((a, b) => a.start - b.start);
+  const gaps: Interval[] = [];
+  let cursor = start;
+  for (const b of busy) { if (b.start - cursor >= minMinutes * 60000) gaps.push({ start: new Date(cursor).toISOString(), end: new Date(b.start).toISOString() }); cursor = Math.max(cursor, b.end); }
+  if (end - cursor >= minMinutes * 60000) gaps.push({ start: new Date(cursor).toISOString(), end: new Date(end).toISOString() });
+  return gaps;
+}
+export const withinOfficeHours = (slot: Interval) => {
+  const s = minutesOfDay(slot.start), e = minutesOfDay(slot.end);
+  return s >= 8 * 60 && e <= 17 * 60 && e > s && displayDate(slot.start) === displayDate(slot.end);
+};
