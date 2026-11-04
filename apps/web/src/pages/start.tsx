@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { attentionLevel, attentionLevels, type Area, type AssistantStatus, type Attention, type AttentionLevel, type CalendarEvent, type SessionUser, type Thread, type TodayView, type ViewRef } from '@clew/contracts';
-import { Avatar, Badge, Banner, Button, Collapsible, EmptyState, Heading, HStack, Icon, Layout, LayoutContent, LayoutHeader, LayoutPanel, Overlay, StatusDot, Text, VisuallyHidden, VStack, signOut, useMediaQuery } from '@clew/ui';
+import { Avatar, Badge, Banner, Button, Collapsible, EmptyState, Heading, HStack, Icon, Layout, LayoutContent, LayoutHeader, LayoutPanel, Overlay, StatusDot, Text, VisuallyHidden, VStack, signOut, useMediaQuery, useToast } from '@clew/ui';
 import { dayLabel, timeLabel, today } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
 import { Composer, type ComposerHandle } from '../components/composer';
@@ -43,13 +43,29 @@ export function StartPage({ user }: { user: SessionUser }) {
   const [view, setView] = useState<{ title: string; output: unknown } | null>(null);
   const [conversation, setConversation] = useState<{ open: boolean; chipped: string[] }>({ open: false, chipped: [] });
   const composer = useRef<ComposerHandle>(null);
+  const toast = useToast();
+  // A reminder that fired while the page was open (D17): the card is back in its place with a badge, and a toast says so.
+  // The toast is the announcement: it animates in beside the composer and stays until dismissed; the stream never shifts.
+  const remindedSeen = useRef<Map<string, string | null> | null>(null);
+  const announceReminded = useCallback((list: Thread[]) => {
+    const seen = remindedSeen.current;
+    if (seen) for (const t of list) {
+      if (t.state !== 'open' || !t.remindedAt || seen.get(t.id) === t.remindedAt) continue;
+      const dismiss = toast({ body: `Påminnelse: ${t.title}`, isAutoHide: false, uniqueID: 'reminded:' + t.id,
+        endContent: <Button size="sm" variant="ghost" label="Visa" onClick={() => { document.getElementById('thread-' + t.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); dismiss(); }} /> });
+    }
+    remindedSeen.current = new Map(list.map(t => [t.id, t.remindedAt]));
+  }, [toast]);
   const load = useCallback(async () => {
     try {
       const [t, a, d, at, st] = await Promise.all([api.threads(), api.areas(), api.today().catch(() => null), api.attention(), api.assistantStatus().catch(() => null)]);
       setThreads(t.threads); setAreas(a.areas); setDay(d); setAttention(at); setAssistant(st); setError(null);
+      announceReminded(t.threads);
     } catch (e) { setError(e instanceof ApiError ? e.message : 'Sidan kunde inte läsas.'); }
-  }, []);
+  }, [announceReminded]);
   useEffect(() => { void load(); }, [load]);
+  // Something pushed a card while the page was open (a reminder fired): re-read the stream.
+  useEffect(() => { const refresh = () => void load(); window.addEventListener('clew:refresh', refresh); return () => window.removeEventListener('clew:refresh', refresh); }, [load]);
   const loadWeek = useCallback((week: string) => {
     setWeeks(current => { if (current[week]) return current; void api.calendar(week).then(data => setWeeks(w => ({ ...w, [week]: data.events }))).catch(() => undefined); return current; });
   }, []);
@@ -85,7 +101,9 @@ export function StartPage({ user }: { user: SessionUser }) {
   const needsYou = open.filter(t => t.kind === 'pushed' && !t.waitingOn && inArea(t)).sort((a, b) => (a.deadline ?? '9999').localeCompare(b.deadline ?? '9999') || a.createdAt.localeCompare(b.createdAt));
   // Colour follows the deadline, never the category (canvas "Clew uppmärksamhet"): the stream is grouped by level, each group with a dot and a word.
   const todayDate = today();
-  const groups = attentionLevels.map(level => ({ level, threads: needsYou.filter(t => attentionLevel(t, todayDate) === level) })).filter(g => g.threads.length);
+  // A reminded card keeps its place by deadline (no group pushes the stream down); the badge and the toast do the noticing.
+  const levelOf = (t: Thread): AttentionLevel => { const level = attentionLevel(t, todayDate); return level === 'now' ? attentionLevel({ deadline: t.deadline }, todayDate) : level; };
+  const groups = attentionLevels.map(level => ({ level, threads: needsYou.filter(t => levelOf(t) === level) })).filter(g => g.threads.length);
   const waiting = open.filter(t => t.kind === 'pushed' && !!t.waitingOn && inArea(t));
   const handledToday = threads.filter(t => t.state !== 'open' && t.handledAt && t.handledAt.slice(0, 10) === new Date().toISOString().slice(0, 10)).length;
   const older = [...open.filter(t => t.kind === 'question'), ...threads.filter(t => t.state !== 'open')];
@@ -102,15 +120,15 @@ export function StartPage({ user }: { user: SessionUser }) {
   const sidebar = <Areas areas={areas} current={area} hrefFor={pathFor} compact={mobile} handled={handledToday} chipped={conversation.chipped} />;
 
   const openCardView = (threadId: string, actionId: string) => navigate(cardViewHref(threadId, actionId));
-  const card = (t: Thread) => t.proposals.length
-    ? <ThreadCard key={t.id} thread={t} events={t.week ? weeks[t.week] : undefined} compact onChange={replace} onLoadWeek={loadWeek} />
-    : <GenericCard key={t.id} thread={t} areaTitle={areaTitle(t.area)} position={`${needsYou.indexOf(t) + 1} av ${needsYou.length}`} compact={mobile} expanded={needsYou.indexOf(t) === 0} onChange={replace} onOpenCardView={openCardView} />;
+  const card = (t: Thread) => <VStack key={t.id} id={'thread-' + t.id}>{t.proposals.length
+    ? <ThreadCard thread={t} events={t.week ? weeks[t.week] : undefined} compact onChange={replace} onLoadWeek={loadWeek} />
+    : <GenericCard thread={t} areaTitle={areaTitle(t.area)} position={`${needsYou.indexOf(t) + 1} av ${needsYou.length}`} compact={mobile} expanded={needsYou.indexOf(t) === 0} onChange={replace} onOpenCardView={openCardView} />}</VStack>;
   // The group heading names the level in words beside the colour: a dot for deadlines, an info icon for notices.
   const groupHeading = (level: AttentionLevel, list: Thread[]) => {
     const overdueOrToday = list.every(t => t.deadline && t.deadline.slice(0, 10) <= todayDate);
-    const title = level === 'urgent' ? (overdueOrToday ? 'Måste i dag' : 'Inom tre dagar') : level === 'soon' ? 'Snart' : level === 'later' ? 'Senare' : 'Till kännedom';
+    const title = level === 'now' ? 'Du bad om en påminnelse' : level === 'urgent' ? (overdueOrToday ? 'Måste i dag' : 'Inom tre dagar') : level === 'soon' ? 'Snart' : level === 'later' ? 'Senare' : 'Till kännedom';
     return <HStack gap={1} vAlign="center">
-      {level === 'notice' ? <Icon icon="info" color="info" size="sm" /> : <StatusDot variant={level === 'urgent' ? 'error' : level === 'soon' ? 'warning' : 'neutral'} label={title} />}
+      {level === 'notice' ? <Icon icon="info" color="info" size="sm" /> : <StatusDot variant={level === 'now' || level === 'urgent' ? 'error' : level === 'soon' ? 'warning' : 'neutral'} label={title} />}
       <Heading level={3} color="secondary">{title} · {list.length}</Heading>
     </HStack>;
   };

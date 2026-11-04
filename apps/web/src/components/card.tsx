@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { attentionLevel, daysUntil, type AttentionLevel, type Thread, type ThreadAction } from '@clew/contracts';
-import { Badge, Button, Card, CheckboxList, CheckboxListItem, Collapsible, HStack, Icon, List, ListItem, MoreMenu, StatusDot, Text, Timestamp, VStack, useToast } from '@clew/ui';
+import { Badge, Button, Card, CheckboxList, CheckboxListItem, Collapsible, DropdownMenu, HStack, Icon, List, ListItem, MoreMenu, StatusDot, Text, Timestamp, VStack, useToast } from '@clew/ui';
 import { today } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
 import { useConversation } from './conversation-context';
@@ -18,9 +18,9 @@ export function useCountdown(until: string | null) {
 /** Avfärda and Inte nu: the card leaves the stream and a toast with Ångra takes its place for ten seconds; reopen brings it back. */
 export function useLeaveWithUndo(onChange: (thread: Thread) => void) {
   const toast = useToast();
-  return (thread: Thread, text: string) => {
+  return (thread: Thread, text: string, undo: () => Promise<Thread> = () => api.reopen(thread.id)) => {
     const dismiss = toast({ body: text, autoHideDuration: 10_000, uniqueID: 'leave:' + thread.id,
-      endContent: <Button size="sm" variant="ghost" label="Ångra" clickAction={async () => { onChange(await api.reopen(thread.id)); dismiss(); }} /> });
+      endContent: <Button size="sm" variant="ghost" label="Ångra" clickAction={async () => { onChange(await undo()); dismiss(); }} /> });
   };
 }
 
@@ -29,7 +29,7 @@ export function useLeaveWithUndo(onChange: (thread: Thread) => void) {
  * within thirty, grey beyond, and a word beside every colour so nobody has to read the hue. Notices carry no deadline
  * and are blue rows, not cards.
  */
-const deadlineVariant: Record<AttentionLevel, 'error' | 'warning' | 'neutral' | 'info'> = { urgent: 'error', soon: 'warning', later: 'neutral', notice: 'info' };
+const deadlineVariant: Record<AttentionLevel, 'error' | 'warning' | 'neutral' | 'info'> = { now: 'error', urgent: 'error', soon: 'warning', later: 'neutral', notice: 'info' };
 export function deadlineLabel(deadline: string, now = today()) {
   const days = daysUntil(deadline.slice(0, 10), now);
   if (days < 0) return `Skulle varit klar ${shortDate(deadline)}`;
@@ -86,7 +86,18 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
   };
   const snooze = () => run(async () => { const t = await api.snooze(thread.id); leave(t, 'Tas upp i morgon 06:00 i stället.'); return t; });
   const dismiss = () => run(async () => { const t = await api.dismiss(thread.id); leave(t, `Avfärdad som inte aktuellt. ${thread.trigger.source} skapar inte kortet igen.`); return t; });
-  return { selected, setSelected, selectable, busy, error, why, setWhy, run, perform, snooze, dismiss };
+  /** A person's own timer (D17): the card waits under Pågår utan dig until the timer brings it back; Ångra cancels the timer. */
+  const remind = async (seconds: number) => {
+    setBusy(true); setError(null);
+    try {
+      const r = await api.remind(thread.id, seconds);
+      const when = seconds < 60 ? `om ${seconds} sekunder` : clock(r.fireAt);
+      onChange(r.thread);
+      leave(r.thread, `Påminner dig ${when}. Kortet väntar under Pågår utan dig tills dess.`, () => api.cancelReminder(thread.id, r.id));
+      window.setTimeout(() => window.dispatchEvent(new Event('clew:refresh')), seconds * 1000 + 1_500);
+    } catch (e) { setError(e instanceof ApiError ? e.message : 'Något gick fel.'); } finally { setBusy(false); }
+  };
+  return { selected, setSelected, selectable, busy, error, why, setWhy, run, perform, snooze, dismiss, remind };
 }
 type Actions = ReturnType<typeof useThreadActions>;
 
@@ -101,7 +112,7 @@ function ActionRow({ thread, level, actions }: { thread: Thread; level: Attentio
   const chipRef = 'thread:' + thread.id;
   const inConversation = conversation.chipped.includes(chipRef);
   const open = thread.state === 'open';
-  const { busy, selected, selectable, perform, snooze, dismiss, setWhy, run } = actions;
+  const { busy, selected, selectable, perform, snooze, dismiss, remind, setWhy, run } = actions;
   const primary = thread.actions.find(a => a.role === 'primary');
   const secondary = thread.actions.filter(a => a.role === 'secondary').slice(0, 2);
   const overflow = thread.actions.filter(a => a.role === 'overflow' || (a.role === 'secondary' && !secondary.includes(a)));
@@ -113,6 +124,13 @@ function ActionRow({ thread, level, actions }: { thread: Thread; level: Attentio
     { id: 'dismiss', label: 'Avfärda · inte aktuellt', onClick: () => void dismiss() },
     { id: 'why', label: 'Varför ser jag detta?', onClick: () => setWhy(v => !v) },
   ];
+  /** A person's own timer (D17), a standard action like Inte nu. Ten seconds is the demo entry; the rest are real. */
+  const remindMenu = <DropdownMenu button={{ label: 'Påminn mig', size: 'sm', variant: 'ghost', isDisabled: busy }} presentation="adaptive" items={[
+    { id: '10s', label: 'Om 10 sekunder', description: 'demo', onClick: () => void remind(10) },
+    { id: '10m', label: 'Om 10 minuter', onClick: () => void remind(10 * 60) },
+    { id: '1h', label: 'Om en timme', onClick: () => void remind(60 * 60) },
+    { id: '3h', label: 'Om tre timmar', onClick: () => void remind(3 * 60 * 60) },
+  ]} />;
   const receipt = thread.receipt;
   const undoOpen = !!receipt && thread.state === 'handled' && !!receipt.undoCapability && !!countdown;
   if (open && !thread.waitingOn) return <HStack gap={2} vAlign="center" wrap="wrap">
@@ -120,6 +138,7 @@ function ActionRow({ thread, level, actions }: { thread: Thread; level: Attentio
     {secondary.map(a => <Button key={a.id} size="sm" variant={level === 'notice' ? 'ghost' : 'secondary'} label={a.label} isDisabled={busy} clickAction={() => void perform(a)} />)}
     <Button size="sm" variant="ghost" label={inConversation ? 'I samtalet ✓' : 'Lägg till i samtalet'} isDisabled={inConversation} onClick={() => conversation.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id })} />
     <Button size="sm" variant="ghost" label="Inte nu" isDisabled={busy} clickAction={snooze} />
+    {remindMenu}
     <MoreMenu label="Fler val" size="sm" variant="ghost" items={menu} />
   </HStack>;
   if (undoOpen) return <HStack gap={2} vAlign="center" wrap="wrap">
@@ -129,6 +148,7 @@ function ActionRow({ thread, level, actions }: { thread: Thread; level: Attentio
   </HStack>;
   if (open && thread.waitingOn) return <HStack gap={2} vAlign="center" wrap="wrap">
     <Button size="sm" variant="ghost" label={inConversation ? 'I samtalet ✓' : 'Lägg till i samtalet'} isDisabled={inConversation} onClick={() => conversation.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id })} />
+    {remindMenu}
     <MoreMenu label="Fler val" size="sm" variant="ghost" items={menu} />
   </HStack>;
   return null;
@@ -161,6 +181,7 @@ export function GenericCard({ thread, areaTitle, position, compact, expanded: ex
       <Text type="supporting">{position ? `${position} · ` : ''}{thread.trigger.source} · <Timestamp value={thread.trigger.at} format="time" hasTooltip={false} /></Text>
       {inConversation && <Badge variant="neutral" icon={<Icon icon="checkDouble" size="sm" />} label="I samtalet" />}
       {draft && open && <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Att bekräfta · utkast från samtalet" />}
+      {open && thread.remindedAt && attentionLevel(thread, today()) === 'now' && <Badge variant="error" icon={<Icon icon="clock" size="sm" />} label={`Påminnelse · ${clock(thread.remindedAt)}`} />}
     </HStack>
     {receipt ? <ReceiptBadge thread={thread} /> : thread.waitingOn ? <Badge variant="neutral" label={`Väntar på ${thread.waitingOn}`} /> : <DeadlineBadge thread={thread} />}
   </HStack>;

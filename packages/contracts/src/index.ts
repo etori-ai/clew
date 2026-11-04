@@ -137,6 +137,8 @@ export const ThreadSchema = object({
   waitingOn: Type.Union([Type.String(), Type.Null()]),
   deadline: Type.Union([Type.String(), Type.Null()]),
   receipt: Type.Union([ReceiptSchema, Type.Null()]),
+  /** When a reminder the person set brought the card back (D17). Counts for that day: the card sorts first, marked "Påminnelse". */
+  remindedAt: Type.Union([instant, Type.Null()]),
 });
 export type Thread = Static<typeof ThreadSchema>;
 
@@ -144,15 +146,19 @@ export type Thread = Static<typeof ThreadSchema>;
  * Attention level of an open card (design canvas "Clew uppmärksamhet", 2026-11-04). Colour on the page follows this
  * level, never the category: `urgent` within three days, `soon` within thirty, `later` beyond that, `notice` without a deadline.
  */
-export const AttentionLevelSchema = Type.Union([Type.Literal('urgent'), Type.Literal('soon'), Type.Literal('later'), Type.Literal('notice')]);
+export const AttentionLevelSchema = Type.Union([Type.Literal('now'), Type.Literal('urgent'), Type.Literal('soon'), Type.Literal('later'), Type.Literal('notice')]);
 export type AttentionLevel = Static<typeof AttentionLevelSchema>;
-export const attentionLevels: readonly AttentionLevel[] = ['urgent', 'soon', 'later', 'notice'];
+/** `now` is a card the person asked to be reminded about today: it sorts above every deadline. */
+export const attentionLevels: readonly AttentionLevel[] = ['now', 'urgent', 'soon', 'later', 'notice'];
+/** The calendar date in Stockholm of an instant, as an ISO date. */
+export const stockholmDate = (instant: string) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm' }).format(new Date(instant));
 /** Whole days from `today` to `date`, both ISO dates; negative when the date has passed. */
 export function daysUntil(date: string, today: string): number {
   const utc = (d: string) => Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10)));
   return Math.round((utc(date) - utc(today)) / 86_400_000);
 }
-export function attentionLevel(thread: { deadline: string | null }, today: string): AttentionLevel {
+export function attentionLevel(thread: { deadline: string | null; remindedAt?: string | null }, today: string): AttentionLevel {
+  if (thread.remindedAt && stockholmDate(thread.remindedAt) === today) return 'now';
   if (!thread.deadline) return 'notice';
   const days = daysUntil(thread.deadline.slice(0, 10), today);
   return days <= 3 ? 'urgent' : days <= 30 ? 'soon' : 'later';

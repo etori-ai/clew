@@ -15,9 +15,13 @@ import { readFigures } from '../figures';
 import { ask, completionsFor, converse, listObjects, providerStatus, reply, verbsFor } from '../assistant';
 import { confirm, dismiss, replan, samtalStatus, undo } from '../planner';
 import { act, dismissThread, ensureThreads, listAreas, registry, reopenThread, resetMocks, runCapability, snoozeThread, undoReceipt } from '../modules';
+import { cancelReminder, remind } from '../reminders';
+import { Type } from '@sinclair/typebox';
 
 const ajv = addFormats(new Ajv({ allErrors: false }));
-const validators = { ask: ajv.compile(AskInput), reply: ajv.compile(ReplyInput), confirm: ajv.compile(ConfirmInput), replan: ajv.compile(ReplanInput), act: ajv.compile(ActInput), conversation: ajv.compile(ConversationInput) };
+const RemindInput = Type.Object({ seconds: Type.Integer({ minimum: 1, maximum: 86400 }) }, { additionalProperties: false });
+const CancelReminderInput = Type.Object({ workflowId: Type.String({ minLength: 1, maxLength: 200 }) }, { additionalProperties: false });
+const validators = { remind: ajv.compile(RemindInput), cancelReminder: ajv.compile(CancelReminderInput), ask: ajv.compile(AskInput), reply: ajv.compile(ReplyInput), confirm: ajv.compile(ConfirmInput), replan: ajv.compile(ReplanInput), act: ajv.compile(ActInput), conversation: ajv.compile(ConversationInput) };
 async function body<T>(request: Request, validate: (value: unknown) => value is T): Promise<T> {
   const text = await request.text();
   if (text.length > 4000) throw new InputError('För stor förfrågan.');
@@ -60,6 +64,9 @@ api.post('/threads/:id/act', async c => { const input = await body(c.req.raw, va
 api.post('/mocks/reset', async c => { await resetMocks(c.get('session').context); return c.json({ ok: true }); });
 api.post('/threads/:id/undo-receipt', async c => c.json(await undoReceipt(c.get('session').context, c.req.param('id'))));
 api.post('/threads/:id/snooze', async c => c.json(await snoozeThread(c.get('session').context, c.req.param('id'))));
+/** A person's own timer (D17): a Temporal reminder workflow that pushes a card back at this thread. */
+api.post('/threads/:id/remind', async c => c.json(await remind(c.get('session').context, c.req.param('id'), (await body(c.req.raw, validators.remind as unknown as (value: unknown) => value is { seconds: number })).seconds)));
+api.post('/threads/:id/remind/cancel', async c => c.json(await cancelReminder(c.get('session').context, c.req.param('id'), (await body(c.req.raw, validators.cancelReminder as unknown as (value: unknown) => value is { workflowId: string })).workflowId)));
 api.get('/threads/:id', async c => {
   const found = await readThread(c.get('session').context.id, c.req.param('id'));
   return found ? c.json(found.thread) : c.json({ error: 'Tråden finns inte.' }, 404);

@@ -1,6 +1,6 @@
 # D7 · Bun is the server runtime
 
-**Status:** accepted, switch from Node pending · **Date:** 2026-11-03 · **Area:** platform
+**Status:** superseded by D16 (2026-11-04) · **Date:** 2026-11-03 · **Area:** platform
 
 **Decision.** `apps/server` runs on Bun (`bun --watch` in dev, `bun run` in the container), not on Node with
 `tsx`. Hono serves through Bun's native server instead of `@hono/node-server`. Bun stays the package manager

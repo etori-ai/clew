@@ -119,6 +119,20 @@ const ok = (cond: unknown, msg: string) => { if (!cond) throw new Error('FAIL: '
     ok(c6.draft?.kind === 'replan' && c6.draft.thread.week === iso, `replan through the conversation moved the card to ${iso} (year ${week})`);
     await api(`/api/threads/${samtal.id}/replan`, { week: samtal.week });
   } else console.log('  (no samtal thread: calendar profile not running, replan skipped)');
+  // A person's own timer (D17): "påminn mig om 3 sekunder" starts a Temporal workflow that pushes a card back at the thread.
+  const cancelled = await api(`/api/threads/${invCard.id}/remind`, { seconds: 60 });
+  ok(/^påminnelsen /.test(cancelled.thread.waitingOn), 'setting a reminder parks the card under Pågår utan dig');
+  const restored = await api(`/api/threads/${invCard.id}/remind/cancel`, { workflowId: cancelled.id });
+  ok(restored.waitingOn === null, 'Ångra cancels the timer and puts the card back');
+  const reminded = await api(`/api/threads/${invCard.id}/remind`, { seconds: 3 });
+  ok(/^reminder:/.test(reminded.id) && Date.parse(reminded.fireAt) > Date.now(), 'reminder workflow started with a fire time');
+  const invalid = await api(`/api/threads/${invCard.id}/remind`, { seconds: 0 }).catch((e: Error) => e.message);
+  ok(typeof invalid === 'string' && /400/.test(invalid), 'reminder time is validated');
+  await Bun.sleep(5000);
+  const after = (await api('/api/threads')).threads;
+  const back = after.find((t: any) => t.id === invCard.id);
+  ok(back.state === 'open' && back.waitingOn === null && back.remindedAt && /^Du bad /.test(back.trigger.reason), 'the reminder fired through Temporal and brought the parked card back with the reason');
+  ok(after.filter((t: any) => t.state === 'open' && t.title === invCard.title).length === 1, 'a reminder never creates a second card');
   const dismissedCard = await api(`/api/threads/${invCard.id}/dismiss`, {});
   ok(dismissedCard.state === 'dismissed', 'dismiss closes the card');
   ok((await api(`/api/threads/${invCard.id}/reopen`, {})).state === 'open', 'reopen within the window brings it back');

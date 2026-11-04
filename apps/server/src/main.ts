@@ -5,6 +5,7 @@ import { authRoutes } from './routes/auth';
 import { api } from './routes/api';
 import { startScheduler } from './scheduler';
 import { startAssistantProbe } from './assistant';
+import { startWorker } from './temporal/worker';
 import { failure } from './context';
 
 // Local secrets written by `bun run auth:setup`. Never committed, never read by the browser bundle.
@@ -23,4 +24,5 @@ serve({ fetch: app.fetch, port, hostname: '127.0.0.1' }, info => {
   console.log(`Clew BFF listening on http://127.0.0.1:${info.port}`);
   startScheduler();
   startAssistantProbe();
+  void startWorker();
 });

@@ -21,9 +21,12 @@ services:
       DATABASE_URL: postgres://clew:clew-local@postgres:5432/clew
       CALENDAR_URL: http://calendar
       CLEW_POC: "true"
+      TEMPORAL_ADDRESS: temporal:7233
     depends_on:
       postgres:
         condition: service_healthy
+      temporal:
+        condition: service_started
   postgres:
     image: postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
     environment:
@@ -37,6 +40,37 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+  # Temporal (MIT) runs the durable timers: user-set reminders today, the scan and undo windows later (D17).
+  # auto-setup creates its two databases in the shared Postgres on first start. Dev only; production runs temporalio/server.
+  temporal:
+    image: temporalio/auto-setup:1.29.7@sha256:f14912b699cf73015ad5c4fc18d522d4b014db90e794039214dfb7c022c2644f
+    mem_limit: 512m
+    memswap_limit: 512m
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_SEEDS: postgres
+      POSTGRES_USER: clew
+      POSTGRES_PWD: clew-local
+      DBNAME: temporal
+      VISIBILITY_DBNAME: temporal_visibility
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CLI_ADDRESS: temporal:7233
+    depends_on:
+      postgres:
+        condition: service_healthy
+  temporal-ui:
+    image: temporalio/ui:2.58.0@sha256:d36185e811d0ce1720b8d3ca4d9ac4dac504b67181e9b5e3d3ca72b2294f3590
+    mem_limit: 128m
+    memswap_limit: 128m
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:3023
+    ports:
+      - "127.0.0.1:3023:8080"
+    depends_on:
+      temporal:
+        condition: service_started
   calendar:
     image: clew-calendar:local
     build:

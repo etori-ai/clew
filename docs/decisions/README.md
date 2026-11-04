@@ -13,7 +13,7 @@ the reasoning. Longer designs live in `docs/architecture/`, and the reviews that
 | [D4](D04-foreign-mcp-servers-are-wrapped.md) | Foreign MCP servers are wrapped, not passed through | 2026-11-03 | integrations | accepted |
 | [D5](D05-oidc-and-oauth-only-identification-path.md) | OIDC and OAuth 2.1 with JWT access tokens are the only identification path | 2026-11-03 | identity | accepted |
 | [D6](D06-dev-login-local-only.md) | Dev login with username and password, local only | 2026-11-03 | identity | accepted, not built yet |
-| [D7](D07-bun-is-the-server-runtime.md) | Bun is the server runtime | 2026-11-03 | platform | accepted, switch from Node pending |
+| [D7](D07-bun-is-the-server-runtime.md) | Bun is the server runtime | 2026-11-03 | platform | superseded by D16 |
 | [D8](D08-every-action-works-without-the-model.md) | Every action works without the model | 2026-11-03 | product | accepted |
 | [D9](D09-side-panel-holds-views-and-apps.md) | The side panel holds conversation, Clew views and MCP App views | 2026-11-03 | ui | accepted |
 | [D10](D10-integrations-fulfil-clews-api-first.md) | Integrations fulfil Clew's API; adapters are the fallback | 2026-11-03 | integrations | accepted |
@@ -21,7 +21,9 @@ the reasoning. Longer designs live in `docs/architecture/`, and the reviews that
 | [D12](D12-objects-chips-proposals.md) | Objects, chips, proposals: the general interaction pattern | 2026-11-03 | ui | accepted |
 | [D13](D13-conversation-in-the-composer-drawer.md) | The conversation lives in the composer's drawer; the dim is an Astryx Overlay | 2026-11-03 | ui | accepted |
 | [D14](D14-clew-stands-alone-eneo-enhances.md) | Clew stands alone; Eneo enhances it through an optional module | 2026-11-04 | product | accepted |
-| [D15](D15-postgres-scheduler-now-temporal-later.md) | Postgres-backed scheduler in v1, Temporal later | 2026-11-03 | platform | accepted |
+| [D15](D15-postgres-scheduler-now-temporal-later.md) | Postgres-backed scheduler in v1, Temporal later | 2026-11-03 | platform | accepted, narrowed by D17 |
+| [D16](D16-node-is-the-server-runtime.md) | Node is the server runtime; Bun stays the toolchain | 2026-11-04 | platform | accepted |
+| [D17](D17-temporal-runs-the-durable-timers.md) | Temporal runs the durable timers, starting with a person's own reminders | 2026-11-04 | platform | accepted |
 
 ## Adding a decision
 

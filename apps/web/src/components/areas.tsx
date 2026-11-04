@@ -3,7 +3,7 @@ import { Badge, Button, HStack, Icon, List, ListItem, StatusDot, Text, VStack } 
 
 const tone = { ok: 'success', warn: 'warning', alert: 'error', none: 'neutral' } as const;
 /** The count takes the colour of the worst card in the area: red within three days, yellow within thirty, blue for notices. */
-const countVariant: Record<AttentionLevel, 'error' | 'warning' | 'neutral' | 'info'> = { urgent: 'error', soon: 'warning', later: 'neutral', notice: 'info' };
+const countVariant: Record<AttentionLevel, 'error' | 'warning' | 'neutral' | 'info'> = { now: 'error', urgent: 'error', soon: 'warning', later: 'neutral', notice: 'info' };
 const count = (n: number, level: AttentionLevel | null) => n ? <Badge variant={level ? countVariant[level] : 'neutral'} label={String(n)} /> : undefined;
 type Props = { areas: Area[]; current: string | null; hrefFor: (id: string | null) => string; compact?: boolean; handled: number; chipped?: string[] };
 /** A capability chip in the row (`capability:<module>.<name>`) points at the area that owns it: the lens on that module. */

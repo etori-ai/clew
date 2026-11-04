@@ -10,6 +10,12 @@ which Temporal replaces it. Decided 2026-11-03 (D15). Written 2026-11-04 against
 | `scan-utvecklingssamtal` | Every day 06:00 Europe/Stockholm | For every person with a grant: build a system context from the grant, run every module's `scan`, push one open thread per topic, refresh untouched open cards from their source. Then schedules itself for tomorrow | The server at start and by itself after each run |
 | `undo-expiry` | Ten minutes after a proposal confirmation | Closes the undo window on a calendar confirmation | The planner, in the same transaction as the confirmation |
 | `receipt-final` | When a receipt's undo window ends | Clears `undoUntil` and `undoCapability` on the receipt so the card shows the final state | The card action, in the same transaction as the receipt |
+| `reminder` (Temporal workflow) | When the person asks, "Påminn mig …" on a card; the card is parked under "Pågår utan dig" meanwhile | Waits the requested time (cancellable by signal, `…/remind/cancel`), then the `surfaceReminder` activity brings the same card back: reopens it if dismissed, clears the parking, sets `remindedAt` (red "Påminnelse" badge), rewrites the trigger ("Du bad 09:44 om en påminnelse · …"). The page announces it with a persistent toast with "Visa"; the card keeps its place by deadline. Never a second card | `POST /api/threads/:id/remind`, audited as `reminder.set` and `reminder.cancelled`; the firing as `thread.reminded` |
+
+The first three run on the Postgres `job` table (D15). The fourth runs on Temporal (D17, 2026-11-04):
+the worker lives in the BFF process (`apps/server/src/temporal/`), the server and UI are in the
+devcontainer, and the UI on port 3023 shows every reminder as a workflow. Moving the three job kinds to
+Temporal is the next step; they work as they are until then.
 
 The nightly scan is the push engine of v1: modules decide what needs a person (deterministic, no model,
 idempotent by `topic`), and the scheduler is what makes that happen without anyone opening the page.
@@ -121,7 +127,7 @@ one before the first real trigger means designing workflows against imagined use
 | Step | What | When |
 |---|---|---|
 | 1 | Harden the `job` table: retry with backoff and attempt limit, a timeout that reclaims a stale `running` row, a heartbeat for long jobs, an admin view | Now; about a day of work. Keeps v1 honest until step 2 |
-| 2 | Temporal: the three job kinds become workflows, `scheduleJob` becomes start-or-signal, the server runtime moves to Node, the `job` table is kept for the audit trail or dropped | At the first real trigger from the list above. User-set reminders ("påminn mig om tio minuter") are expected to be that trigger and are close; build them on Temporal from the start rather than on the `job` table and migrate twice |
+| 2 | Temporal: new timers are workflows from the start; the three job kinds become workflows, `scheduleJob` becomes start-or-signal, the `job` table is kept for the audit trail or dropped | Done for the first trigger on 2026-11-04 (D17): user-set reminders run on Temporal in the devcontainer, the runtime is Node (D16). The three job kinds are still on the `job` table |
 
 Lighter engines were looked at and are not the plan. DBOS Transact (MIT core, durable execution
 in-process on Postgres, no server) would avoid a second service, but with hosting operated by a provider

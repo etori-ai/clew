@@ -6,7 +6,7 @@ import { database, schema } from '@clew/db';
 import { postgresState, resetState } from '@clew/db/state';
 import { addMessage, listThreads, openProposalThread, readThread, writeAudit } from '@clew/db/threads';
 import { scheduleJob } from '@clew/db/jobs';
-import { CapabilityError, Registry, receipt, type Actor, type ExecuteResult } from '@clew/modules';
+import { CapabilityError, Registry, receipt, type Actor, type ExecuteResult, type ThreadDraft } from '@clew/modules';
 import { heromaModule } from '@clew/modules/mock/heroma';
 import { raindanceModule } from '@clew/modules/mock/raindance';
 import { treservaModule } from '@clew/modules/mock/treserva';
@@ -66,17 +66,21 @@ async function scanInto(persona: AuthenticatedContext, source: string) {
       await database().update(schema.threads).set({ title: d.title, summary: d.summary, items, actions: d.actions, deadline: d.deadline ?? null }).where(eq(schema.threads.id, existing.id));
       continue;
     }
-    const id = crypto.randomUUID();
-    await database().transaction(async tx => {
-      // The partial unique index (person, topic, open, pushed) makes the insert idempotent across processes.
-      const inserted = await tx.insert(schema.threads).values({ id, personId: persona.id, kind: 'pushed', topic: d.topic, title: d.title, state: 'open', week: null,
-        module: d.module, area: d.area, summary: d.summary, items: d.items ?? [], actions: d.actions, waitingOn: d.waitingOn ?? null, deadline: d.deadline ?? null,
-        trigger: { reason: d.reason, source: registry.module(d.module)?.source ?? d.module, at: now.toISOString() } }).onConflictDoNothing().returning({ id: schema.threads.id });
-      if (!inserted.length) return;
-      await tx.insert(schema.threadMessages).values({ id: crypto.randomUUID(), threadId: id, role: 'assistant', body: d.summary });
-      await writeAudit(tx, { actor: 'assistant:scan', action: 'thread.pushed', subject: 'thread:' + id, details: { module: d.module, topic: d.topic, owner: persona.id } });
-    });
+    await pushDraft(persona, d, 'assistant:scan', now);
   }
+}
+/** Push one card for a person. Idempotent by (person, topic): the partial unique index makes a repeat a no-op across processes. */
+export async function pushDraft(persona: Pick<AuthenticatedContext, 'id'>, d: ThreadDraft & { module: string }, actor: string, now = new Date()) {
+  const id = crypto.randomUUID();
+  return database().transaction(async tx => {
+    const inserted = await tx.insert(schema.threads).values({ id, personId: persona.id, kind: 'pushed', topic: d.topic, title: d.title, state: 'open', week: null,
+      module: d.module, area: d.area, summary: d.summary, items: d.items ?? [], actions: d.actions, waitingOn: d.waitingOn ?? null, deadline: d.deadline ?? null,
+      trigger: { reason: d.reason, source: registry.module(d.module)?.source ?? d.module, at: now.toISOString() } }).onConflictDoNothing().returning({ id: schema.threads.id });
+    if (!inserted.length) return undefined;
+    await tx.insert(schema.threadMessages).values({ id: crypto.randomUUID(), threadId: id, role: 'assistant', body: d.summary });
+    await writeAudit(tx, { actor, action: 'thread.pushed', subject: 'thread:' + id, details: { module: d.module, topic: d.topic, owner: persona.id } });
+    return id;
+  });
 }
 /** Areas with live counts for the sidebar. */
 export async function listAreas(persona: AuthenticatedContext): Promise<Area[]> {

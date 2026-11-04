@@ -1,6 +1,6 @@
 # D15 · Postgres-backed scheduler in v1, Temporal later
 
-**Status:** accepted · **Date:** 2026-11-03 · **Area:** platform
+**Status:** accepted, narrowed by D17 (Temporal adopted 2026-11-04 for new timers; the three job kinds remain on the `job` table until migrated) · **Date:** 2026-11-03 · **Area:** platform
 
 **Decision.** Scheduled work in v1 runs on one Postgres table, `job`, inside the BFF process: natural-key
 job ids so scheduling is idempotent, jobs inserted in the same transaction as the mutation they belong

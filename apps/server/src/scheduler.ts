@@ -16,7 +16,7 @@ const POLL_MS = 15_000;
 let timer: ReturnType<typeof setInterval> | undefined;
 
 /** The scan runs as the assistant on the manager's behalf. The context is built from the current grant, never a session. */
-async function systemContext(personId: string): Promise<AuthenticatedContext | undefined> {
+export async function systemContext(personId: string): Promise<AuthenticatedContext | undefined> {
   const access = await readAccess(personId);
   if (!access) return undefined;
   const version = authorizationVersion(access);

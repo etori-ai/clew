@@ -23,7 +23,7 @@ const card: Thread = {
     { ref: 'raindance:inv:55140', label: 'Städbolaget · 18 650 kr', detail: '6452 · ingen beställning', selectable: true, selected: false },
   ],
   actions: [{ id: 'approve', label: 'Attestera valda', capability: 'raindance.approve', kind: 'execute', role: 'primary', usesItems: true }, { id: 'open', label: 'Öppna i Raindance', capability: 'raindance.open', kind: 'read', role: 'secondary', target: 'link' }],
-  waitingOn: null, deadline: '2026-11-05', receipt: null,
+  waitingOn: null, deadline: '2026-11-05', receipt: null, remindedAt: null,
 };
 const samtal: Thread = {
   ...card, id: 's1', topic: 'utvecklingssamtal', title: 'Planera utvecklingssamtal vecka 46', module: 'calendar', area: 'utvecklingssamtal', week: '2026-11-09', deadline: null,

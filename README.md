@@ -26,7 +26,9 @@ docker exec -w /workspace clew-app-1 bun run test:node  # current server runtime
 bun scripts/auth-dev-check.ts hillevi                   # on the host: real Keycloak login, proposals, confirm, undo
 ```
 
-Ports on loopback: 3020 web, 3021 Nextcloud (`calendar-admin`), 3022 Mailpit.
+Ports on loopback: 3020 web, 3021 Nextcloud (`calendar-admin`), 3022 Mailpit, 3023 Temporal UI.
+
+Temporal (server and UI) starts with the base compose stack and creates its two databases in the shared Postgres on first start; nothing to set up. The BFF runs the Temporal worker in-process and logs `Temporal worker on temporal:7233` when connected. The first workflow is a reminder: `Påminn mig › Om 10 sekunder` on any card brings that card back to the top of the stream ten seconds later, marked Påminnelse. Watch it in the UI at http://localhost:3023.
 
 The calendar image refreshes its pinned Calendar and RoomVox code in an existing data volume before Apache starts, then runs Nextcloud's app migrations. Unchanged versions do nothing; a failed upgrade stays pending and is retried on restart. App downgrades are refused. Back up the calendar volume before applying upgrades; restoring older image pins alone does not undo database migrations.
 

@@ -58,6 +58,8 @@ export const threads = pgTable('thread', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   handledAt: timestamp('handled_at', { withTimezone: true }),
+  // A reminder the person set brought the card back at this time (D17). Only the day it happened counts.
+  remindedAt: timestamp('reminded_at', { withTimezone: true }),
 }, t => [index('thread_person_state').on(t.personId, t.state, t.createdAt), check('thread_kind', sql`${t.kind} IN ('pushed', 'question')`),
   // One open pushed thread per topic and person: the scan is idempotent even when two requests race.
   uniqueIndex('thread_open_topic').on(t.personId, t.topic).where(sql`${t.state} = 'open' AND ${t.kind} = 'pushed'`),
