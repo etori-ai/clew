@@ -69,6 +69,16 @@ export { useAnnounce, useMediaQuery } from '@astryxdesign/core/hooks';
 export { SessionBoundary, sessionFetch, signOut, type BrowserSession } from './session';
 export { WeekAgenda, type AgendaItem } from './week-agenda';
 export { EventCalendar, type CalendarView } from './calendar';
+// The calendar family (D32): the page's grid, the embedded day and list, the date picker, and the one item mapping.
+export { DayStrip, EventList, DatePicker } from './calendar-embeds';
+export { agendaItems } from './agenda-items';
+export { DateTimeInput } from '@astryxdesign/core/DateTimeInput';
+export { TimeInput } from '@astryxdesign/core/TimeInput';
+export { DateInput } from '@astryxdesign/core/DateInput';
+export { Calendar } from '@astryxdesign/core/Calendar';
+export { Selector } from '@astryxdesign/core/Selector';
+export { Field, FieldStatus } from '@astryxdesign/core/Field';
+export { Popover } from '@astryxdesign/core/Popover';
 
 // The shipped sv-SE catalog is incomplete. Keys reachable by this POC are covered here.
 export const swedish = { ...sv,

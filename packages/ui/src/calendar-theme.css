@@ -150,8 +150,8 @@
 /* List view */
 .clew-cal-list-day { display: flex; flex-direction: row; align-items: flex-start; }
 .clew-cal-list-day-header { flex-shrink: 0; width: 33.3333%; max-width: 176px; min-height: 36px; display: flex; flex-direction: row; align-items: center; gap: var(--spacing-2); padding: var(--spacing-2); }
-.clew-cal-list-day-header-main { display: flex; align-items: center; justify-content: center; height: var(--spacing-9); min-width: var(--spacing-9); padding-inline: var(--spacing-2); border-radius: var(--radius-full); font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); }
-.clew-cal-list-day-header-main.clew-cal-today { background-color: var(--color-accent); color: var(--color-on-accent); }
+/* The list's day header is one heading line; today is told by the heading's accent colour, never by a filled pill the text would have to contrast against */
+.clew-cal-list-day-header-main { display: flex; align-items: center; min-height: var(--spacing-9); }
 .clew-cal-list-day-header-alt { font-size: var(--font-size-sm); color: var(--color-text-secondary); text-transform: uppercase; }
 .clew-cal-list-day-body { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--spacing-1); padding-block: var(--spacing-2); }
 .clew-cal-list-event { display: flex; flex-direction: row; align-items: center; gap: var(--spacing-2); padding: var(--spacing-2); border-radius: var(--radius-element); }

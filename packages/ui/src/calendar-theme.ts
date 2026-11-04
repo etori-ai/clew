@@ -59,7 +59,7 @@ export const clewCalendarTheme: PluginInput & { views: Record<string, Record<str
     eventContrastColor: 'var(--color-text-primary)',
     eventClass: (info: { event: { extendedProps: Record<string, unknown> }; isSelected: boolean; isDragging: boolean; isMirror: boolean; isInteractive: boolean; isPast: boolean }) => joinClassNames(
       'clew-cal-event', kindClass(info.event.extendedProps.kind), focusable,
-      info.isInteractive && pressable, info.isSelected && 'clew-cal-selected', info.isDragging && 'clew-cal-dragging', info.isMirror && 'clew-cal-mirror', info.isPast && 'clew-cal-past',
+      info.isInteractive && pressable, (info.isSelected || info.event.extendedProps.selected === true) && 'clew-cal-selected', info.isDragging && 'clew-cal-dragging', info.isMirror && 'clew-cal-mirror', info.isPast && 'clew-cal-past',
     ),
     backgroundEventClass: 'clew-cal-background-event',
     backgroundEventTitleClass: 'clew-cal-background-event-title',

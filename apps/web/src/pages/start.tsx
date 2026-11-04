@@ -11,6 +11,8 @@ import { AreasNav } from '../components/areas';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { GenericCard, ThreadRow } from '../components/card';
 import { PanelView } from '../components/panel';
+import { EventDialog } from '../components/calendar/event-dialog';
+import type { AgendaItem } from '@clew/ui';
 import { Today } from '../components/today';
 import { ThreadCard } from '../components/thread';
 import { Handled } from '../components/handled';
@@ -58,6 +60,8 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const cardViewHref = (threadId: string, actionId: string) => withArea(`/vy/kort/${threadId}/${actionId}`);
   const conversationHref = (id: string) => withArea(`/samtal/${id}`);
   const [view, setView] = useState<{ title: string; output: unknown } | null>(null);
+  // An entry opened from the panel's day view (D32): the same dialog as on the calendar page, over the panel.
+  const [openItem, setOpenItem] = useState<{ item: AgendaItem; dayItems: AgendaItem[] } | null>(null);
   const toast = useToast();
   // A reminder that fired while the page was open (D17): the card is back in its place with a badge, and a toast says so.
   // The toast is the announcement: it animates in beside the composer and stays until dismissed; the stream never shifts.
@@ -291,6 +295,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
             </VStack>
           </LayoutContent>} />}
     </Shell>}</ConversationContext.Consumer>
-    <PanelView title={view?.title ?? null} output={view?.output} onClose={() => navigate(back)} />
+    <PanelView title={view?.title ?? null} output={view?.output} onClose={() => navigate(back)} onOpenItem={(item, dayItems) => setOpenItem({ item, dayItems })} />
+    <EventDialog item={openItem?.item ?? null} dayItems={openItem?.dayItems ?? []} onClose={() => setOpenItem(null)} onChanged={t => { if (t) replace(t); navigate(location.pathname + location.search, { replace: true }); }} />
   </ConversationProvider>;
 }

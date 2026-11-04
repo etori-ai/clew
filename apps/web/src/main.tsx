@@ -46,7 +46,7 @@ function App() {
   const admin = (page: (shell: Shell) => React.ReactNode) => <Protected>{shell => shell.admin ? page(shell) : <NotAdmin />}</Protected>;
   return <Routes>
     <Route path="/login" element={<LoginPage returnTo="/" />} />
-    <Route path="/kalender" element={<Protected>{shell => <CalendarPage user={shell.user} />}</Protected>} />
+    <Route path="/kalender" element={<Protected>{shell => <CalendarPage user={shell.user} admin={shell.admin} />}</Protected>} />
     <Route path="/admin" element={admin(shell => <AdminConnectorsPage user={shell.user} />)} />
     <Route path="/admin/anslutningar" element={admin(shell => <AdminConnectorsPage user={shell.user} />)} />
     <Route path="/admin/anslutningar/:id" element={admin(shell => <AdminConnectorPage user={shell.user} />)} />

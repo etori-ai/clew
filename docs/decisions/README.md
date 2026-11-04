@@ -33,11 +33,12 @@ the reasoning. Longer designs live in `docs/architecture/`, and the reviews that
 | [D24](D24-model-endpoints-are-administered-in-the-product.md) | Model providers and models are administered in the product, and the chat can choose between them | 2026-11-04 | product | proposed |
 | [D25](D25-use-cases-over-ports-fast-tests.md) | Use cases take their ports from a composition root; the unit suite runs on memory adapters held to a store contract | 2026-11-04 | platform | accepted |
 | [D26](D26-questions-over-documents-are-search-not-knowledge.md) | Questions answered from documents are a search fan-out with citations, not a knowledge module | 2026-11-04 | product | proposed |
-| [D27](D27-event-calendar-is-fullcalendar-themed-with-astryx-tokens.md) | The event calendar is FullCalendar 7 Standard, themed with Astryx tokens, behind Astryx components | 2026-11-04 | ui | accepted, theme in progress |
+| [D27](D27-event-calendar-is-fullcalendar-themed-with-astryx-tokens.md) | The event calendar is FullCalendar 7 Standard, themed with Astryx tokens, behind Astryx components | 2026-11-04 | ui | accepted, built; narrowed by D32 |
 | [D28](D28-the-stream-has-two-groups-and-three-piles.md) | The stream has two groups (Nu, Senare) and three piles above the composer; snooze is its own column; the day is drawn as one track | 2026-11-04 | ui | accepted |
 | [D29](D29-inte-nu-is-a-timed-snooze-that-breaks-on-activity.md) | "Inte nu" is a timed snooze with a visible landing time that breaks on activity; conditions wait | 2026-11-04 | product | accepted |
 | [D30](D30-a-proposal-thread-is-an-obligation-with-four-steps.md) | A proposal thread is an obligation with four steps, replies read back, follow-ups as cards under a fixed policy | 2026-11-04 | product | accepted, live run unverified |
 | [D31](D31-the-conversation-swaps-the-stream-inside-one-chatlayout.md) | The conversation swaps the stream inside one ChatLayout; chips live in the composer drawer; the shell is AppShell | 2026-11-04 | ui | accepted |
+| [D32](D32-one-calendar-family-and-the-persons-own-bookings.md) | One calendar family (page grid, embedded day and list, month picker, one item mapping); a person's own bookings and proposal moves are use cases with audit rows, never tools | 2026-11-04 | ui | accepted |
 
 ## Adding a decision
 

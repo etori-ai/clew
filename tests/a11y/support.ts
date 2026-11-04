@@ -1,7 +1,7 @@
 import { test as base, expect, type Page, type Route } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import type { Thread } from '@clew/contracts';
-import { NOW, areas, attention, checkReport, connectorDetail, connectorPreview, connectors, conversation, events, snoozePresets, threads, today, units, user } from './data';
+import { NEXT_WEEK, NOW, WEEK, areas, attention, checkReport, connectorDetail, connectorPreview, connectors, conversation, events, snoozePresets, threads, today, units, user } from './data';
 
 export const desktop = { width: 1280, height: 800 };
 export const phone = { width: 375, height: 667 };
@@ -66,7 +66,16 @@ export class MockApi {
     if (path === '/today') return json(today);
     if (path === '/attention') return json(attention);
     if (path === '/assistant/status') return json({ configured: true, available: true, model: 'test', checkedAt: NOW });
-    if (path === '/calendar') { const from = url.searchParams.get('from') ?? '2026-11-02'; return json({ from, events: events(from), proposals: [] }); }
+    if (path === '/calendar') { const from = url.searchParams.get('from') ?? '2026-11-02'; return json({ from, events: events(from), proposals: from === NEXT_WEEK ? this.threads.find(t => t.id === 'samtal')?.proposals ?? [] : [] }); }
+    // A person's own bookings and proposal moves (D32): the form's lists, the free-busy check, and the writes answered as the server would.
+    if (path === '/calendar/members') return json({ members: [{ name: 'Anna Lindqvist', email: 'anna@clew.test' }, { name: 'Erik Sandström', email: 'erik@clew.test' }] });
+    if (path === '/calendar/rooms') return json({ rooms: [{ ref: 'room:a12', name: 'A12', capacity: 8, equipment: ['skärm'] }] });
+    if (path === '/calendar/availability' && post) return json({ mine: 'free', participants: [{ email: 'anna@clew.test', name: 'Anna Lindqvist', state: 'busy' }], room: { ref: 'room:a12', name: 'A12', state: 'free' } });
+    if (path === '/calendar/events' && post) { const b = request.postDataJSON() as { title: string; start: string; end: string }; return route.fulfill({ status: 201, json: { event: { ...events(WEEK)[0]!, id: 'new', ref: 'memory:new', title: b.title, start: b.start, end: b.end } } }); }
+    if (path === '/calendar/events/reschedule' && post) { const b = request.postDataJSON() as { ref: string; start: string; end: string }; return json({ event: { ...events(WEEK)[0]!, ref: b.ref, start: b.start, end: b.end, revision: 'r2' } }); }
+    if (path === '/calendar/events/cancel' && post) return json({ cancelled: true });
+    if (/^\/threads\/[^/]+\/proposals\/[^/]+\/move$/.test(path) && post) { const b = request.postDataJSON() as { start: string; end: string }; const pid = path.split('/')[4]; const t = this.threads.find(t => t.id === id)!; return json(this.update(id, { proposals: t.proposals.map(p => p.id === pid ? { ...p, start: b.start, end: b.end } : p) })); }
+    if (path === '/cap/calendar.day') { const date = (JSON.parse(url.searchParams.get('input') ?? '{}') as { date?: string }).date ?? '2026-11-04'; return json({ output: { from: date, events: events(date).filter(e => e.start.startsWith(date)), proposals: [] } }); }
     if (path === '/objects') return json({ objects: [] });
     if (path.startsWith('/cap/')) return json({ output: this.output });
     if (path === '/conversation') {
