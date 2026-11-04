@@ -9,7 +9,7 @@ decisions in force, and the ordered next steps. `vision.md` says why Clew exists
 | [`vision.md`](vision.md) | What Clew is, what it is not, the principles, and the line between Clew and Eneo | When the answer to "should Clew do this at all?" changes |
 | [`decisions/`](decisions/README.md) | The decision log, one file per decision (`D01-…`), with an index and a template | Every time something is settled that a later session must not reopen by accident |
 | [`reviews/`](reviews/) | Reviews and comparisons, one file per review, dated (`YYYY-MM-DD-<topic>.md`) | When the project or a part of it is assessed against something: another project, a platform, a canvas row, a vendor |
-| [`architecture/`](architecture/) | Designs that are longer than a decision: `integrations.md` (principles), `integration-paths.md` (the catalogue of supported paths and their status), `identity.md` | When a decision needs a design to be buildable |
+| [`architecture/`](architecture/) | Designs that are longer than a decision: `integrations.md` (principles), `integration-paths.md` (the catalogue of supported paths and their status), `capability-surfaces.md` (how one capability is exposed over REST, as a model tool and over MCP), `identity.md` | When a decision needs a design to be buildable |
 | [`guides/`](guides/README.md) | Step-by-step instructions: creating an integration, with a worked example | When a kind of work recurs and the next person should not have to rediscover the order |
 | [`personas.md`](personas.md) | Nine personas and 35 use cases carried over from startsidan | When a persona or use case changes |
 

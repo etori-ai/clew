@@ -2,7 +2,8 @@
 
 How Clew connects to systems outside its own database: the calendar today, Heroma, Raindance and other
 municipal systems later. Decided 2026-11-03. The decision log is in `docs/decisions/`. This file holds the
-principles; the catalogue of concrete paths, their auth modes and their status is `integration-paths.md`.
+principles; the catalogue of concrete paths, their auth modes and their status is `integration-paths.md`, and
+`capability-surfaces.md` explains how one capability is reached over REST, as a model tool and over MCP.
 
 ## Principle
 
