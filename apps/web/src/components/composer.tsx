@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { Chip, ClewObject, ConversationResponse, ThreadMessage, Verb, ViewRef, Thread } from '@clew/contracts';
-import { Badge, Button, Card, ChatComposer, ChatComposerInput, ChatDictationButton, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, ChatSystemMessage, HStack, Icon, IconButton, Kbd, List, ListItem, ScrollableArea, Text, Timestamp, VStack, useChatDictation, type ChatComposerInputHandle, type ChatComposerTrigger, type SearchableItem } from '@clew/ui';
+import { Badge, Button, Card, ChatComposer, ChatComposerInput, ChatDictationButton, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, ChatSystemMessage, HStack, Icon, IconButton, Kbd, List, ListItem, ScrollableArea, Text, Timestamp, VStack, VisuallyHidden, useAnnounce, useChatDictation, type ChatComposerInputHandle, type ChatComposerTrigger, type SearchableItem } from '@clew/ui';
 import { api, ApiError } from '../api';
 import type { ChipRef } from './conversation-context';
 
@@ -35,6 +35,7 @@ function Dictation({ onResult }: { onResult: (text: string) => void }) {
  */
 export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ mobile, conversationId, onConversation, onThreadChange, onOpenView, onState }, ref) {
   const input = useRef<ChatComposerInputHandle>(null);
+  const announce = useAnnounce();
   const chips = useRef(new Map<string, ChipRef>());
   const [value, setValue] = useState('');
   const [mode, setMode] = useState<Mode>('idle');
@@ -113,10 +114,13 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ mo
     const used = refsIn(raw).map(r => chips.current.get(r)).filter((c): c is ChipRef => !!c);
     if (!text || busy) return;
     setBusy(true); setError(null); setDone(null);
+    announce('Söker svar …');
     try {
       const response = await api.converse({ text, chips: used.map(c => ({ ref: c.ref, kind: c.kind, label: c.label }) as Chip), ...(conversation ? { conversationId: conversation.id } : {}) });
       setConversation({ id: response.conversationId, title: response.thread.title, messages: response.thread.messages });
       setLatest(response);
+      // The message list is a live region only once it is on the page, so an answer that opens it has to be spoken (4.1.3).
+      if (mode !== 'chat') announce(response.answer.body);
       setMode('chat');
       if (!conversation) onConversation(response.conversationId);
       // Sending clears the text, keeps the chips and never moves focus.
@@ -164,7 +168,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ mo
       </HStack>
     </HStack>
     <ChatMessageList density="compact" align="bottom">
-      {conversation.messages.map(m => <ChatMessage key={m.id} sender={m.role}>
+      {conversation.messages.map(m => <ChatMessage key={m.id} sender={m.role} name={<VisuallyHidden>{m.role === 'user' ? 'Du' : 'Assistenten'}</VisuallyHidden>}>
         <ChatMessageBubble variant={m.role === 'assistant' ? 'ghost' : 'filled'} width={m.role === 'assistant' ? '100%' : undefined}
           metadata={<ChatMessageMetadata timestamp={<Timestamp value={m.createdAt} format="time" hasTooltip={false} />} footer={m.role === 'assistant' ? (m.meta?.source ?? undefined) : undefined} />}>
           {/* The chips the person attached sit inside the bubble, above the words with a line of air; the footer under a bubble has no room for them. */}
@@ -184,7 +188,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ mo
                 <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label={latest.clewActions.length === 1 ? 'Att bekräfta' : `Att bekräfta · ${latest.clewActions.length}`} />
                 <Text type="supporting">Inget görs förrän du trycker. Ångra i 10 min efteråt.</Text>
               </HStack>
-              <List density="compact" listStyle="decimal" aria-label="Att bekräfta">{latest.clewActions.map(a => <ListItem key={a.n} label={a.label} description={a.kind === 'dismiss' ? 'Kortet avfärdas och hamnar under Redan hanterat' : 'Kortet tas upp i morgon 06:00 i stället'} />)}</List>
+              <List density="compact" listStyle="decimal" aria-label="Att bekräfta">{latest.clewActions.map(a => <ListItem key={a.n} label={<Text>{a.label}</Text>} description={<Text type="supporting">{a.kind === 'dismiss' ? 'Kortet avfärdas och hamnar under Redan hanterat' : 'Kortet tas upp i morgon 06:00 i stället'}</Text>} />)}</List>
               <HStack gap={2} wrap="wrap">
                 <Button size="sm" variant="primary" label={latest.clewActions.length === 1 ? 'Gör det' : 'Gör båda'} isDisabled={busy} clickAction={() => performActions(latest.clewActions)} />
                 <Button size="sm" variant="ghost" label="Avbryt" onClick={() => setLatest(l => l ? { ...l, clewActions: [] } : l)} />
@@ -210,7 +214,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ mo
       onKeyDown={e => { if (e.key === 'Escape') close(); }} />}
     headerActions={<HStack gap={1} vAlign="center"><Text type="supporting" weight="semibold" color="primary">{scope}</Text><Text type="supporting">· svaret kommer under frågan</Text></HStack>}
     headerContext={<Kbd keys="mod+k" />}
-    footerActions={chipped.length === 1 && !plain && verbs.length > 0 ? <HStack gap={1} wrap="wrap" aria-label="Om kortet">{verbs.map(v => <Button key={v.id} size="sm" variant="ghost" label={v.label} isDisabled={busy} onClick={() => ask(v.label)} />)}</HStack> : undefined}
+    footerActions={chipped.length === 1 && !plain && verbs.length > 0 ? <HStack gap={1} wrap="wrap" role="group" aria-label="Om kortet">{verbs.map(v => <Button key={v.id} size="sm" variant="ghost" label={v.label} isDisabled={busy} onClick={() => ask(v.label)} />)}</HStack> : undefined}
     sendActions={<Dictation onResult={text => setValue(current => (current + ' ' + text).trim())} />}
     status={error ? { type: 'error', message: error } : undefined}
     onFocus={() => setMode(m => m === 'idle' ? 'focus' : m)} />

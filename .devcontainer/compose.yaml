@@ -27,6 +27,18 @@ services:
         condition: service_healthy
       temporal:
         condition: service_started
+  # The WCAG 2.2 AA suite (tests/a11y, scripts/a11y.sh). Playwright is Apache-2.0, axe-core MPL-2.0.
+  # The API is mocked in the browser, so this service needs nothing else from the stack.
+  a11y:
+    image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
+    profiles: [a11y]
+    init: true
+    working_dir: /workspace
+    environment:
+      CI: "true"
+    volumes:
+      - ${CLEW_HOST_WORKSPACE:-..}:/workspace
+      - node_modules:/workspace/node_modules
   postgres:
     image: postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
     environment:

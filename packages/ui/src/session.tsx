@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Card } from '@astryxdesign/core/Card';
+import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { Button } from '@astryxdesign/core/Button';
 import { VStack } from '@astryxdesign/core/VStack';
@@ -40,10 +41,13 @@ export function SessionBoundary({ session, children }: { session: BrowserSession
     transport = { csrf: session.csrfToken, controller };
     const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('clew-session');
     let ended = false, checking = false, lastActivity = 0;
+    // Opacity, never visibility: a hidden document drops keyboard focus, so every return to the window would lose the person's place (2.4.3).
+    const conceal = () => { document.documentElement.style.opacity = '0'; };
+    const reveal = () => { document.documentElement.style.opacity = ''; };
     const end = (broadcast = true) => {
       if (ended) return;
       ended = true; controller.abort(); setState('ended');
-      document.documentElement.style.visibility = '';
+      reveal();
       if (broadcast) channel?.postMessage({ type: 'ended', session: session.sessionKey });
     };
     const check = async () => {
@@ -56,7 +60,7 @@ export function SessionBoundary({ session, children }: { session: BrowserSession
         if (ended) return;
         if (current.sessionKey !== session.sessionKey) return end();
         deadline.current = Date.parse(current.expiresAt);
-        setState('active'); document.documentElement.style.visibility = '';
+        setState('active'); reveal();
       } catch { end(); } finally { checking = false; }
     };
     const activity = async (event: Event) => {
@@ -73,8 +77,8 @@ export function SessionBoundary({ session, children }: { session: BrowserSession
       } catch { end(); }
     };
     const invalidate = () => end();
-    const focus = () => { if (!ended) { document.documentElement.style.visibility = 'hidden'; void check(); } };
-    const pagehide = () => { document.documentElement.style.visibility = 'hidden'; };
+    const focus = () => { if (!ended) { conceal(); void check(); } };
+    const pagehide = () => { conceal(); };
     const timer = setInterval(() => { if (Date.now() >= deadline.current) end(); else void check(); }, 15_000);
     const expiry = setInterval(() => { if (Date.now() >= deadline.current) end(); }, 1000);
     channel?.addEventListener('message', event => {
@@ -93,11 +97,11 @@ export function SessionBoundary({ session, children }: { session: BrowserSession
       for (const name of ['pointerdown','keydown','wheel','touchmove']) window.removeEventListener(name, activity);
       window.removeEventListener('clew-session-ended', invalidate);
       window.removeEventListener('focus', focus); window.removeEventListener('pageshow', focus); window.removeEventListener('pagehide', pagehide);
-      document.documentElement.style.visibility = '';
+      reveal();
       if (transport?.controller === controller) transport = undefined;
     };
   }, [session.sessionKey, session.csrfToken]);
-  if (state !== 'active') return <Card padding={8}><VStack gap={4}><Text role="status">{state === 'checking' ? 'Kontrollerar inloggning…' : 'Din inloggning har avslutats. Logga in igen för att fortsätta.'}</Text>
-    {state === 'ended' && <Button label="Logga in igen" href="/api/auth/login" />}</VStack></Card>;
+  if (state !== 'active') return <main><Card padding={8}><VStack gap={4}><Heading level={1}>Startsidan</Heading><Text role="status">{state === 'checking' ? 'Kontrollerar inloggning…' : 'Din inloggning har avslutats. Logga in igen för att fortsätta.'}</Text>
+    {state === 'ended' && <Button label="Logga in igen" href="/api/auth/login" />}</VStack></Card></main>;
   return children;
 }

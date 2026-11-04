@@ -12,6 +12,7 @@ import { PanelView } from '../components/panel';
 import { Today } from '../components/today';
 import { ThreadCard } from '../components/thread';
 import { Handled } from '../components/handled';
+import { usePageTitle } from '../page-title';
 
 /**
  * Mission control: areas in the sidebar, "Behöver dig" first, "Pågår utan dig" as one collapsed line, the conversation
@@ -21,6 +22,8 @@ import { Handled } from '../components/handled';
  */
 export function StartPage({ user }: { user: SessionUser }) {
   const mobile = useMediaQuery('(max-width: 720px)');
+  // 1.4.10: with 480 px or less in height the header and the row stay out of the way and the whole page scrolls.
+  const short = useMediaQuery('(max-height: 480px)');
   const [threads, setThreads] = useState<Thread[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
   const [day, setDay] = useState<TodayView | null>(null);
@@ -43,6 +46,15 @@ export function StartPage({ user }: { user: SessionUser }) {
   const [view, setView] = useState<{ title: string; output: unknown } | null>(null);
   const [conversation, setConversation] = useState<{ open: boolean; chipped: string[] }>({ open: false, chipped: [] });
   const composer = useRef<ComposerHandle>(null);
+  // The row's real height, for the margin that keeps a focused control above it (2.4.11). A conversation or a chip changes it.
+  const dock = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const row = dock.current;
+    if (!row) return;
+    const observer = new ResizeObserver(() => row.parentElement?.style.setProperty('--composer-height', `${row.offsetHeight}px`));
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, []);
   const toast = useToast();
   // A reminder that fired while the page was open (D17): the card is back in its place with a badge, and a toast says so.
   // The toast is the announcement: it animates in beside the composer and stays until dismissed; the stream never shifts.
@@ -52,7 +64,7 @@ export function StartPage({ user }: { user: SessionUser }) {
     if (seen) for (const t of list) {
       if (t.state !== 'open' || !t.remindedAt || seen.get(t.id) === t.remindedAt) continue;
       const dismiss = toast({ body: `Påminnelse: ${t.title}`, isAutoHide: false, uniqueID: 'reminded:' + t.id,
-        endContent: <Button size="sm" variant="ghost" label="Visa" onClick={() => { document.getElementById('thread-' + t.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); dismiss(); }} /> });
+        endContent: <Button size="sm" variant="ghost" label="Visa" onClick={() => { const shown = document.getElementById('thread-' + t.id); shown?.scrollIntoView({ behavior: 'smooth', block: 'center' }); shown?.focus({ preventScroll: true }); dismiss(); }} /> });
     }
     remindedSeen.current = new Map(list.map(t => [t.id, t.remindedAt]));
   }, [toast]);
@@ -69,10 +81,24 @@ export function StartPage({ user }: { user: SessionUser }) {
   const loadWeek = useCallback((week: string) => {
     setWeeks(current => { if (current[week]) return current; void api.calendar(week).then(data => setWeeks(w => ({ ...w, [week]: data.events }))).catch(() => undefined); return current; });
   }, []);
+  // A card that leaves the stream takes the focused button with it. Focus goes on to the next card, or the heading when none is left (2.4.3).
+  const stream = useRef<HTMLDivElement>(null);
+  const focusAfter = useRef<{ card: string; next: string } | null>(null);
   const replace = useCallback((thread: Thread) => {
+    const cards = [...stream.current?.querySelectorAll('[id^="thread-"]') ?? []].map(el => el.id);
+    const at = cards.indexOf('thread-' + thread.id);
+    if (at >= 0) focusAfter.current = { card: cards[at]!, next: cards[at + 1] ?? cards[at - 1] ?? 'behover-dig' };
     setThreads(list => list.some(t => t.id === thread.id) ? list.map(t => t.id === thread.id ? thread : t) : [thread, ...list]);
     void api.areas().then(a => setAreas(a.areas)).catch(() => undefined);
   }, []);
+  useEffect(() => {
+    const target = focusAfter.current;
+    focusAfter.current = null;
+    if (!target || document.activeElement !== document.body) return;
+    // A snoozed card is still in the document, inside the closed Pågår utan dig.
+    const card = document.getElementById(target.card);
+    (card?.checkVisibility() ? card : document.getElementById(target.next))?.focus();
+  }, [threads]);
   // A view is addressable (integrations.md, "Answers and views"): the panel follows /vy/:capability or /vy/kort/:thread/:action.
   const viewInput = search.get('input'), viewTitle = search.get('titel');
   useEffect(() => {
@@ -109,6 +135,8 @@ export function StartPage({ user }: { user: SessionUser }) {
   const older = [...open.filter(t => t.kind === 'question'), ...threads.filter(t => t.state !== 'open')];
   const remaining = attention ? Math.max(0, attention.budget - attention.used) : null;
   const current = useMemo(() => areas.find(a => a.id === area) ?? null, [areas, area]);
+  const pageTitle = view ? view.title : conversationId ? 'Samtal' : area === 'hanterat' ? 'Redan hanterat' : current?.title ?? (area ? null : 'Behöver dig');
+  usePageTitle(pageTitle, view || conversationId ? false : pageTitle ?? false);
   const conversationApi = useMemo(() => ({
     chipped: conversation.chipped, open: conversation.open,
     addChip: (chip: ChipRef) => composer.current?.addChip(chip),
@@ -120,19 +148,22 @@ export function StartPage({ user }: { user: SessionUser }) {
   const sidebar = <Areas areas={areas} current={area} hrefFor={pathFor} compact={mobile} handled={handledToday} chipped={conversation.chipped} />;
 
   const openCardView = (threadId: string, actionId: string) => navigate(cardViewHref(threadId, actionId));
-  const card = (t: Thread) => <VStack key={t.id} id={'thread-' + t.id}>{t.proposals.length
-    ? <ThreadCard thread={t} events={t.week ? weeks[t.week] : undefined} compact onChange={replace} onLoadWeek={loadWeek} />
-    : <GenericCard thread={t} areaTitle={areaTitle(t.area)} position={`${needsYou.indexOf(t) + 1} av ${needsYou.length}`} compact={mobile} expanded={needsYou.indexOf(t) === 0} onChange={replace} onOpenCardView={openCardView} />}</VStack>;
+  const card = (t: Thread) => t.proposals.length
+    ? <ThreadCard key={t.id} thread={t} events={t.week ? weeks[t.week] : undefined} compact onChange={replace} onLoadWeek={loadWeek} />
+    : <GenericCard key={t.id} thread={t} areaTitle={areaTitle(t.area)} position={`${needsYou.indexOf(t) + 1} av ${needsYou.length}`} compact={mobile} expanded={needsYou.indexOf(t) === 0} onChange={replace} onOpenCardView={openCardView} />;
   // The group heading names the level in words beside the colour: a dot for deadlines, an info icon for notices.
-  const groupHeading = (level: AttentionLevel, list: Thread[]) => {
+  const groupTitle = (level: AttentionLevel, list: Thread[]) => {
     const overdueOrToday = list.every(t => t.deadline && t.deadline.slice(0, 10) <= todayDate);
-    const title = level === 'now' ? 'Du bad om en påminnelse' : level === 'urgent' ? (overdueOrToday ? 'Måste i dag' : 'Inom tre dagar') : level === 'soon' ? 'Snart' : level === 'later' ? 'Senare' : 'Till kännedom';
+    return level === 'now' ? 'Du bad om en påminnelse' : level === 'urgent' ? (overdueOrToday ? 'Måste i dag' : 'Inom tre dagar') : level === 'soon' ? 'Snart' : level === 'later' ? 'Senare' : 'Till kännedom';
+  };
+  const groupHeading = (level: AttentionLevel, list: Thread[]) => {
+    const title = groupTitle(level, list);
     return <HStack gap={1} vAlign="center">
       {level === 'notice' ? <Icon icon="info" color="info" size="sm" /> : <StatusDot variant={level === 'now' || level === 'urgent' ? 'error' : level === 'soon' ? 'warning' : 'neutral'} label={title} />}
       <Heading level={3} color="secondary">{title} · {list.length}</Heading>
     </HStack>;
   };
-  const group = ({ level, threads: list }: { level: AttentionLevel; threads: Thread[] }) => <VStack key={level} gap={1} as="section" aria-label={`${level === 'notice' ? 'Till kännedom' : 'Deadline'}: ${list.length}`}>
+  const group = ({ level, threads: list }: { level: AttentionLevel; threads: Thread[] }) => <VStack key={level} gap={1} as="section" aria-label={`${groupTitle(level, list)}: ${list.length}`}>
     {groupHeading(level, list)}
     {level === 'notice' && !mobile && list.every(t => !t.proposals.length)
       ? <NoticeList threads={list} onChange={replace} onOpenCardView={openCardView} />
@@ -143,30 +174,31 @@ export function StartPage({ user }: { user: SessionUser }) {
     ? `Jag stör inte mer i dag · resten samlas till ${attention.bundledUntil ?? 'i morgon 06:00'}`
     : `Jag stör högst ${attention.budget} gånger i dag`);
 
-  const stream = <VStack gap={4}>
+  const content = <VStack gap={4}>
     {mobile && sidebar}
+    {!current && area !== 'hanterat' && <VisuallyHidden as="div"><Heading level={1}>Startsidan</Heading></VisuallyHidden>}
     {error && <Text as="p" role="alert" color="accent">{error}</Text>}
-    {area === 'hanterat' ? <Handled threads={older} onChange={replace} conversationHref={conversationHref} /> : <>
+    {area === 'hanterat' ? <Handled threads={older} compact={mobile} onChange={replace} conversationHref={conversationHref} /> : <>
       {current && <VStack gap={2} as="section" aria-label={`Området ${current.title}`}>
         <HStack justify="between" vAlign="end" gap={2} wrap="wrap">
-          <Heading level={2}>{current.title}</Heading>
+          <Heading level={2} accessibilityLevel={1}>{current.title}</Heading>
           <Text type="supporting">{current.source}{current.figure ? ` · ${current.figure.label}` : ''}</Text>
         </HStack>
-        {current.standing.length > 0 && <HStack gap={1} wrap="wrap" aria-label="Gör själv">
+        {current.standing.length > 0 && <HStack gap={1} wrap="wrap" role="group" aria-label="Gör själv">
           {current.standing.map(s => <Button key={s.capability} size="sm" variant="secondary" label={s.label} clickAction={() => void openStanding(s.capability, s.label)} />)}
         </HStack>}
       </VStack>}
       {current?.id === 'kalender' && day && <Today view={day} compact={mobile} />}
       <VStack gap={2} as="section" aria-label="Behöver dig">
         <HStack justify="between" vAlign="end" gap={2} wrap="wrap">
-          <Heading level={2}>{needsYou.length === 0 ? 'Inget behöver dig just nu' : `Behöver dig · ${needsYou.length}`}</Heading>
+          <Heading id="behover-dig" tabIndex={-1} level={2}>{needsYou.length === 0 ? 'Inget behöver dig just nu' : `Behöver dig · ${needsYou.length}`}</Heading>
           <Text type="supporting">{needsYou.length ? 'Resten väntar till i morgon 06:00.' : 'Nästa genomgång i morgon 06:00'}</Text>
         </HStack>
         {needsYou.length === 0 && waiting.length === 0 && <EmptyState title="Lugnt läge" description="Assistenten hör av sig när något behöver dig." isCompact />}
         {groups.map(group)}
       </VStack>
       {waiting.length > 0 && <Collapsible defaultIsOpen={false} chevronPosition="start" trigger={<HStack gap={1} vAlign="center" wrap="wrap"><StatusDot variant="neutral" label="Väntar på någon annan" /><Text type="supporting"><Text as="span" weight="semibold">Pågår utan dig · {waiting.length}</Text> · {waiting.map(t => t.title.split(',')[0]).join(' · ')}</Text></HStack>}>
-        <VStack gap={2}>{waiting.map(t => <GenericCard key={t.id} thread={t} areaTitle={areaTitle(t.area)} compact={mobile} onChange={replace} onOpenCardView={(threadId, actionId) => navigate(cardViewHref(threadId, actionId))} />)}</VStack>
+        <VStack gap={2}>{waiting.map(t => <GenericCard key={t.id} thread={t} areaTitle={areaTitle(t.area)} compact={mobile} headingLevel={3} onChange={replace} onOpenCardView={(threadId, actionId) => navigate(cardViewHref(threadId, actionId))} />)}</VStack>
       </Collapsible>}
       {current && current.schedules.length > 0 && <VStack gap={1} as="section" aria-label="Så här bevakar jag området">
         <Heading level={3}>Så här bevakar jag området</Heading>
@@ -176,8 +208,8 @@ export function StartPage({ user }: { user: SessionUser }) {
   </VStack>;
 
   return <ConversationContext.Provider value={conversationApi}>
-    <Layout height="fill" padding={0}
-      header={<LayoutHeader hasDivider padding={mobile ? 3 : 4}>
+    <Layout height={short ? 'auto' : 'fill'} padding={0}
+      header={<LayoutHeader hasDivider role="banner" padding={mobile ? 3 : 4}>
         <HStack justify="between" vAlign="center" gap={3} wrap="wrap">
           <HStack gap={2} vAlign="center">
             {!mobile && <Avatar name={user.name} size="md" />}
@@ -187,15 +219,18 @@ export function StartPage({ user }: { user: SessionUser }) {
             </VStack>
           </HStack>
           <HStack gap={2} vAlign="center" wrap="wrap">
-            {attentionLabel && <Badge variant="neutral" icon={<Icon icon="clock" size="sm" />} label={attentionLabel} />}
+            {/* A Badge stays on one line and this sentence does not fit a phone in one (1.4.10). */}
+            {attentionLabel && (mobile
+              ? <HStack gap={1} vAlign="center"><Icon icon="clock" size="sm" /><Text type="supporting">{attentionLabel}</Text></HStack>
+              : <Badge variant="neutral" icon={<Icon icon="clock" size="sm" />} label={attentionLabel} />)}
             {(areas.find(a => a.id === 'viktigt-nu')?.needsYou ?? 0) > 0 && <Button variant="secondary" size="sm" label={`Viktigt nu · ${areas.find(a => a.id === 'viktigt-nu')!.needsYou}`} href={pathFor('viktigt-nu')} />}
             <Button variant="ghost" size="sm" label="Kalender" href="/kalender" icon={<Icon icon="calendar" size="sm" />} isIconOnly={mobile} />
             <Button variant="ghost" size="sm" label="Logga ut" clickAction={() => signOut()} />
           </HStack>
         </HStack>
       </LayoutHeader>}
-      start={mobile ? undefined : <LayoutPanel hasDivider width={284} role="navigation" padding={2}>{sidebar}</LayoutPanel>}
-      content={<LayoutContent padding={0}>
+      start={mobile ? undefined : <LayoutPanel hasDivider width={284} padding={2}>{sidebar}</LayoutPanel>}
+      content={<LayoutContent padding={0} role="main">
         {/* The dim covers the stream only (D12): the row below and the side panel stay live. A click on the dim closes the conversation. */}
         {/* The column fills the scrollport so the row stays docked at the bottom even when the stream is short. */}
         <div className="stream-column">
@@ -204,9 +239,9 @@ export function StartPage({ user }: { user: SessionUser }) {
             description={`Frågor besvaras av den inbyggda routern tills ${assistant.model ?? 'modellen'} svarar igen. Korten påverkas inte.`}
             endContent={<Button size="sm" variant="secondary" label="Försök igen" clickAction={() => void load()} />} />}
           <Overlay className="stream-fill" isOpen={conversation.open} scrim="light" position="fill" align="end" content={<VisuallyHidden>Samtalet är öppet. Tryck Esc eller klicka här för att stänga.</VisuallyHidden>} onClick={() => { if (conversation.open) composer.current?.close(); }}>
-            <div className="stream">{stream}</div>
+            <div className="stream" ref={stream}>{content}</div>
           </Overlay>
-          <div className="composer-dock">{row}</div>
+          <div className="composer-dock" ref={dock}>{row}</div>
         </div>
       </LayoutContent>} />
     <PanelView title={view?.title ?? null} output={view?.output} onClose={() => navigate(pathFor(area))} />

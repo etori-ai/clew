@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CalendarEvent, Thread } from '@clew/contracts';
-import { Badge, Button, Card, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, CheckboxList, CheckboxListItem, Collapsible, HStack, MoreMenu, Text, Timestamp, VStack, WeekAgenda, type AgendaItem } from '@clew/ui';
+import { Badge, Button, Card, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, CheckboxList, CheckboxListItem, Collapsible, Heading, HStack, MoreMenu, Text, Timestamp, VStack, VisuallyHidden, WeekAgenda, type AgendaItem } from '@clew/ui';
 import { useConversation } from './conversation-context';
 import { useLeaveWithUndo } from './card';
 import { addDays, shortDayLabel, timeRange, weekNumber } from '@clew/calendar/dates';
@@ -26,7 +26,7 @@ const RECENT = 2;
 function Conversation({ messages }: { messages: Thread['messages'] }) {
   const older = messages.slice(0, -RECENT), recent = messages.slice(-RECENT);
   const list = (items: Thread['messages']) => <ChatMessageList density="compact" align="top">
-    {items.map(m => <ChatMessage key={m.id} sender={m.role}>
+    {items.map(m => <ChatMessage key={m.id} sender={m.role} name={<VisuallyHidden>{m.role === 'user' ? 'Du' : 'Assistenten'}</VisuallyHidden>}>
       <ChatMessageBubble variant={m.role === 'assistant' ? 'ghost' : 'filled'} metadata={<ChatMessageMetadata timestamp={<Timestamp value={m.createdAt} format="time" hasTooltip={false} />} />}>{m.body}</ChatMessageBubble>
     </ChatMessage>)}
   </ChatMessageList>;
@@ -58,7 +58,9 @@ export function ThreadCard({ thread, events = [], compact, onChange, onLoadWeek 
   const undoOpen = !!undoUntil && Date.parse(undoUntil) > now && thread.proposals.some(p => p.status === 'confirmed');
   useEffect(() => { if (!undoOpen) return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, [undoOpen]);
   const open = thread.state === 'open' && thread.proposals.some(p => p.status === 'proposed');
+  // Busy never disables the buttons: a disabled button drops the focus it holds (2.4.3). Action-buttons wait on their own promise.
   const run = async (action: () => Promise<Thread>) => {
+    if (busy) return;
     setBusy(true); setError(null);
     try { onChange(await action()); } catch (e) { setError(e instanceof ApiError ? e.message : 'Något gick fel.'); } finally { setBusy(false); }
   };
@@ -73,7 +75,7 @@ export function ThreadCard({ thread, events = [], compact, onChange, onLoadWeek 
   const count = selected.length, plural = count === 1 ? 'inbjudan' : 'inbjudningar';
   const badge = statusBadge(thread);
   return <Card padding={0}>
-    <VStack gap={2} padding={2} as="article" aria-label={`Tråd: ${thread.title}`} id={`thread-${thread.id}`} aria-current={inConversation ? 'true' : undefined}>
+    <VStack gap={2} padding={2} as="article" tabIndex={-1} aria-label={`Tråd: ${thread.title}`} id={`thread-${thread.id}`} aria-current={inConversation ? 'true' : undefined}>
       <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
         <HStack gap={2} vAlign="center" wrap="wrap">
           <Badge variant={badge.variant} label={badge.label} />
@@ -83,28 +85,28 @@ export function ThreadCard({ thread, events = [], compact, onChange, onLoadWeek 
         <Text type="supporting">{thread.trigger.source} · <Timestamp value={thread.trigger.at} format="time" hasTooltip={false} /></Text>
       </HStack>
       {thread.kind === 'pushed' && <>
-        <Text type="large" weight="medium" as="p">{lead}</Text>
+        <Heading level={3} accessibilityLevel={4} weight="medium">{lead}</Heading>
         {rest && <Text as="p" color="secondary">{rest}</Text>}
       </>}
       {thread.proposals.length > 0 && thread.week && (compact
         ? <CheckboxList label="Förslag" isLabelHidden value={selected} onChange={setSelected} isReadOnly={!open} density="compact">
-          {thread.proposals.filter(p => p.status !== 'declined').map(p => <CheckboxListItem key={p.id} value={p.id} label={`${p.participant.name} · ${shortDayLabel(p.start.slice(0, 10))} ${timeRange(p.start, p.end)}`} isChecked={p.status !== 'proposed' || selected.includes(p.id)} isDisabled={p.status !== 'proposed'} />)}
+          {thread.proposals.filter(p => p.status !== 'declined').map(p => <CheckboxListItem key={p.id} value={p.id} label={<Text>{`${p.participant.name} · ${shortDayLabel(p.start.slice(0, 10))} ${timeRange(p.start, p.end)}`}</Text>} isChecked={p.status !== 'proposed' || selected.includes(p.id)} isDisabled={p.status !== 'proposed'} />)}
         </CheckboxList>
-        : <WeekAgenda week={thread.week} days={5} items={items} label={`Vecka ${weekNumber(thread.week)} med förslagen`} />)}
+        : <WeekAgenda week={thread.week} days={5} items={items} dayHeadingLevel={5} label={`Vecka ${weekNumber(thread.week)} med förslagen`} />)}
       {conversation.length > 0 && <Conversation messages={conversation} />}
       {error && <Text as="p" role="alert" color="accent">{error}</Text>}
       {(open || undoOpen) && <HStack gap={2} wrap="wrap">
-        {open && <Button variant="primary" label={`Skicka ${count} ${plural}`} isDisabled={!count || busy} clickAction={() => run(() => api.confirm(thread.id, selected))} />}
+        {open && <Button variant="primary" label={`Skicka ${count} ${plural}`} isDisabled={!count} clickAction={() => run(() => api.confirm(thread.id, selected))} />}
         {open && !compact && <Button label="Justera i kalendern" href={`/kalender?vecka=${thread.week}`} />}
         {open && compact && <Button label="Visa i veckan" href={`/kalender?vecka=${thread.week}`} />}
-        {open && nextWeek && <Button label={`Vecka ${weekNumber(nextWeek)} i stället`} isDisabled={busy} clickAction={() => run(() => api.replan(thread.id, nextWeek))} />}
+        {open && nextWeek && <Button label={`Vecka ${weekNumber(nextWeek)} i stället`} clickAction={() => run(() => api.replan(thread.id, nextWeek))} />}
         {open && <Button variant="ghost" label={inConversation ? 'I samtalet ✓' : 'Lägg till i samtalet'} isDisabled={inConversation} onClick={() => talk.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id })} />}
-        {open && <Button variant="ghost" label="Inte nu" isDisabled={busy} clickAction={() => run(async () => { const t = await api.snooze(thread.id); leave(t, 'Tas upp i morgon 06:00 i stället.'); return t; })} />}
+        {open && <Button variant="ghost" label="Inte nu" clickAction={() => run(async () => { const t = await api.snooze(thread.id); leave(t, 'Tas upp i morgon 06:00 i stället.'); return t; })} />}
         {open && <MoreMenu label="Fler val" size="sm" variant="ghost" items={[
           { id: 'dismiss', label: 'Avfärda · inte aktuellt', onClick: () => void run(async () => { const t = await api.dismiss(thread.id); leave(t, 'Avfärdad som inte aktuellt. Förslagen ligger kvar under Redan hanterat i tio minuter.'); return t; }) },
           { id: 'why', label: 'Varför ser jag detta?', onClick: () => setWhy(v => !v) },
         ]} />}
-        {undoOpen && undoUntil && <Button variant="destructive" label={`Ångra allt · ${Math.max(0, Math.ceil((Date.parse(undoUntil) - now) / 60000))} min kvar`} isDisabled={busy} clickAction={() => run(() => api.undo(thread.id))} />}
+        {undoOpen && undoUntil && <Button variant="destructive" label={`Ångra allt · ${Math.max(0, Math.ceil((Date.parse(undoUntil) - now) / 60000))} min kvar`} clickAction={() => run(() => api.undo(thread.id))} />}
       </HStack>}
       {draft && open && <Text type="supporting" as="p">Utkast från samtalet. Inget är skickat förrän du trycker på knappen här.</Text>}
       {thread.kind === 'pushed' && (why || !open) && <Text type="supporting" as="p">Varför nu? {thread.trigger.reason}. {open ? 'Skickas via kalendern med möjlighet att ångra i 10 minuter.' : ''}</Text>}

@@ -19,7 +19,7 @@ const inConversation = <Badge variant="neutral" icon={<Icon icon="checkDouble" s
 export function Areas({ areas, current, hrefFor, compact = false, handled, chipped = [] }: Props) {
   const total = areas.reduce((n, a) => n + a.needsYou, 0);
   const worst = worstLevel(areas.flatMap(a => a.urgency ? [a.urgency] : []));
-  if (compact) return <HStack gap={1} wrap="nowrap" aria-label="Områden">
+  if (compact) return <HStack gap={1} wrap="wrap" as="nav" aria-label="Områden">
     <Button size="sm" variant={current === null ? 'primary' : 'secondary'} label={`Allt${total ? ' · ' + total : ''}`} href={hrefFor(null)} />
     {areas.map(a => <Button key={a.id} size="sm" variant={current === a.id ? 'primary' : 'secondary'} label={`${a.title}${a.needsYou ? ' · ' + a.needsYou : ''}${chippedArea(a, chipped) ? ' ✓' : ''}`} href={hrefFor(a.id)} />)}
     <Button size="sm" variant={current === 'hanterat' ? 'primary' : 'secondary'} label={`Redan hanterat${handled ? ' · ' + handled : ''}`} href={hrefFor('hanterat')} />
@@ -33,7 +33,7 @@ export function Areas({ areas, current, hrefFor, compact = false, handled, chipp
         endContent={a.needsYou ? count(a.needsYou, a.urgency) : a.waiting ? <Text type="supporting">{a.waiting} pågår</Text> : undefined} />)}
     </List>
     <List density="compact" header={<Text type="supporting" weight="semibold">Kommande</Text>} aria-label="Kommande">
-      {upcoming.map((s, i) => <ListItem key={i} label={s.when} description={s.label} endContent={<Text type="supporting">{s.area}</Text>} />)}
+      {upcoming.map((s, i) => <ListItem key={i} label={<Text>{s.when}</Text>} description={<Text type="supporting">{s.label}</Text>} endContent={<Text type="supporting">{s.area}</Text>} />)}
     </List>
     <List density="compact" aria-label="Historik">
       <ListItem label="Redan hanterat" isSelected={current === 'hanterat'} href={hrefFor('hanterat')} endContent={<Text type="supporting">{handled} i dag</Text>} />

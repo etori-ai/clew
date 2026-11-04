@@ -1,0 +1,89 @@
+import { answer, composer, desktop, expect, focused, hiddenFocusStops, open, test } from './support';
+
+test.use({ viewport: desktop });
+
+test.describe('2.4.7 focus visible', () => {
+  for (const path of ['/', '/hanterat', '/kalender']) test(`every stop on ${path} shows a focus ring`, async ({ page, api: _ }) => {
+    await open(page, path);
+    const { unmarked } = await hiddenFocusStops(page);
+    expect(unmarked).toEqual([]);
+  });
+
+  test('a card that receives focus from the page shows it', async ({ page, api: _ }) => {
+    await open(page, '/');
+    await page.getByRole('button', { name: 'Inte nu' }).first().focus();
+    await page.keyboard.press('Enter');
+    const card = page.locator('#thread-omtanke');
+    await expect(card).toBeFocused();
+    expect(await card.evaluate(el => getComputedStyle(el).outlineStyle)).not.toBe('none');
+  });
+});
+
+test.describe('2.4.3 focus order', () => {
+  test('regaining the window keeps focus where it was', async ({ page, api }) => {
+    await open(page, '/');
+    const button = page.getByRole('button', { name: 'Inte nu' }).first();
+    await button.focus();
+    api.sessionDelay = 200;
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await page.waitForTimeout(350);
+    expect((await focused(page)).text).toBe('Inte nu');
+  });
+
+  test('a collapsed card says it is collapsed and takes focus to its content', async ({ page, api: _ }) => {
+    await open(page, '/');
+    const title = 'Omtankesamtal med Anna Lindqvist';
+    const expand = page.getByRole('button', { name: title, exact: true });
+    await expect(expand).toHaveAttribute('aria-expanded', 'false');
+    await expand.focus();
+    await page.keyboard.press('Enter');
+    const heading = page.getByRole('heading', { name: title });
+    await expect(heading).toBeFocused();
+  });
+
+  test('Inte nu moves focus to the next card instead of losing it', async ({ page, api: _ }) => {
+    await open(page, '/');
+    await page.getByRole('button', { name: 'Inte nu' }).first().focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('region', { name: 'Aviseringar' })).toBeVisible();
+    await expect(page.locator('#thread-omtanke')).toBeFocused();
+  });
+
+  test('Ångra in the toast stays available and reachable by keyboard', async ({ page, api: _ }) => {
+    await page.clock.install({ time: new Date('2026-11-04T08:00:00.000Z') });
+    await open(page, '/');
+    await page.getByRole('button', { name: 'Inte nu' }).first().click();
+    const undo = page.getByRole('button', { name: 'Ångra' });
+    await expect(undo).toBeVisible();
+    await page.clock.fastForward('00:30');
+    await expect(undo, 'the toast has no time limit (2.2.1)').toBeVisible();
+    const { stops } = await hiddenFocusStops(page);
+    expect(stops.some(stop => stop.includes('Ångra')), 'the Tab order reaches the toast').toBe(true);
+    await undo.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('button', { name: 'Attestera · 2' })).toBeVisible();
+  });
+
+  test('the side panel can be closed with a button and hands focus back', async ({ page, api: _ }) => {
+    await open(page, '/omrade/personal');
+    const trigger = page.getByRole('button', { name: 'Vem är på plats?' });
+    await trigger.focus();
+    await page.keyboard.press('Enter');
+    const panel = page.getByRole('dialog');
+    await expect(panel).toBeVisible();
+    await panel.getByRole('button', { name: 'Stäng' }).click();
+    await expect(panel).toBeHidden();
+    await expect(trigger).toBeFocused();
+  });
+
+  test('Esc closes the conversation and focus stays in the row', async ({ page, api: _ }) => {
+    await open(page, '/');
+    const input = composer(page);
+    await input.fill('Vem är på plats?');
+    await input.press('Enter');
+    await expect(answer(page)).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(answer(page)).toBeHidden();
+    await expect(input).toBeFocused();
+  });
+});

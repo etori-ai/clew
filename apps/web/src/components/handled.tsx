@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import type { Thread } from '@clew/contracts';
-import { Badge, Button, HStack, Icon, List, ListItem, SegmentedControl, SegmentedControlItem, Text, VStack } from '@clew/ui';
+import { Badge, Button, Heading, HStack, Icon, List, ListItem, SegmentedControl, SegmentedControlItem, Text, VStack } from '@clew/ui';
 import { api } from '../api';
 
 type Filter = 'idag' | 'veckan' | 'hanterade' | 'avfardade' | 'fragor';
+const filters: { value: Filter; label: string }[] = [{ value: 'idag', label: 'I dag' }, { value: 'veckan', label: 'Veckan' }, { value: 'hanterade', label: 'Hanterade' }, { value: 'avfardade', label: 'Avfärdade' }, { value: 'fragor', label: 'Frågor' }];
 const dayKey = (iso: string) => iso.slice(0, 10);
 const dayHeading = (key: string) => new Intl.DateTimeFormat('sv-SE', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(key + 'T12:00:00'));
 const when = (t: Thread) => t.handledAt ?? t.updatedAt;
@@ -11,7 +12,7 @@ const when = (t: Thread) => t.handledAt ?? t.updatedAt;
  * Redan hanterat: the person's own log. Decisions, dismissals, undos and questions grouped by day, filterable, with
  * Ångra while the window is open, Återöppna on dismissed cards and the conversation reopening from a Fråga row.
  */
-export function Handled({ threads, onChange, conversationHref }: { threads: Thread[]; onChange: (thread: Thread) => void; conversationHref: (threadId: string) => string }) {
+export function Handled({ threads, compact, onChange, conversationHref }: { threads: Thread[]; compact: boolean; onChange: (thread: Thread) => void; conversationHref: (threadId: string) => string }) {
   const [filter, setFilter] = useState<Filter>('idag');
   const now = Date.now();
   const keep = (t: Thread) => {
@@ -28,13 +29,14 @@ export function Handled({ threads, onChange, conversationHref }: { threads: Thre
   const days = [...new Set(shown.map(t => dayKey(when(t))))];
   return <VStack gap={3} as="section" aria-label="Redan hanterat">
     <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-      <Text type="large" weight="semibold">Redan hanterat</Text>
-      <SegmentedControl label="Filter" size="sm" value={filter} onChange={v => setFilter(v as Filter)}>
-        <SegmentedControlItem value="idag" label="I dag" /><SegmentedControlItem value="veckan" label="Veckan" /><SegmentedControlItem value="hanterade" label="Hanterade" /><SegmentedControlItem value="avfardade" label="Avfärdade" /><SegmentedControlItem value="fragor" label="Frågor" />
-      </SegmentedControl>
+      <Heading level={2} accessibilityLevel={1}>Redan hanterat</Heading>
+      {/* Five segments do not fit a phone and SegmentedControl truncates them; there the filter wraps (1.4.10). */}
+      {compact
+        ? <HStack gap={1} wrap="wrap" role="group" aria-label="Filter">{filters.map(f => <Button key={f.value} size="sm" variant={filter === f.value ? 'primary' : 'secondary'} label={f.label} aria-pressed={filter === f.value} onClick={() => setFilter(f.value)} />)}</HStack>
+        : <SegmentedControl label="Filter" size="sm" value={filter} onChange={v => setFilter(v as Filter)}>{filters.map(f => <SegmentedControlItem key={f.value} value={f.value} label={f.label} />)}</SegmentedControl>}
     </HStack>
     {!shown.length && <Text type="supporting">Inget här ännu.</Text>}
-    {days.map(day => <List key={day} hasDividers density="compact" header={<Text type="supporting" weight="semibold">{dayHeading(day)}</Text>}>
+    {days.map(day => <List key={day} hasDividers density="compact" header={<Heading level={6} accessibilityLevel={2} color="secondary">{dayHeading(day)}</Heading>}>
       {shown.filter(t => dayKey(when(t)) === day).map(t => {
         const last = [...t.messages].reverse().find(m => m.role === 'assistant');
         const undoUntil = t.proposals.map(p => p.undoUntil).filter((v): v is string => !!v).sort().at(-1);
@@ -47,7 +49,7 @@ export function Handled({ threads, onChange, conversationHref }: { threads: Thre
           : receiptUndo ? <Button size="sm" label="Ångra" clickAction={async () => onChange(await api.undoReceipt(t.id))} />
           : reopenable ? <Button size="sm" label="Återöppna" clickAction={async () => onChange(await api.reopen(t.id))} />
           : <Badge variant="neutral" label={t.state === 'dismissed' ? 'Avfärdad' : question ? 'Fråga' : 'Klart'} />;
-        return <ListItem key={t.id} startContent={icon} align="start" label={question ? `Fråga: ${t.title}` : t.title} description={last?.body ?? t.trigger.reason}
+        return <ListItem key={t.id} startContent={icon} align="start" label={<Text>{question ? `Fråga: ${t.title}` : t.title}</Text>} description={<Text type="supporting">{last?.body ?? t.trigger.reason}</Text>}
           href={question ? conversationHref(t.id) : undefined} endContent={<HStack gap={2} vAlign="center"><Text type="supporting">{new Date(when(t)).toLocaleTimeString('sv-SE', { timeStyle: 'short' })}</Text>{end}</HStack>} />;
       })}
     </List>)}

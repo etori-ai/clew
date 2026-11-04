@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Theme } from '@astryxdesign/core/theme';
+import { LayerProvider } from '@astryxdesign/core/Layer';
 import { InternationalizationProvider } from '@astryxdesign/core/i18n';
 import { neutralTheme } from '@astryxdesign/theme-neutral/built';
 import sv from '@astryxdesign/core/locales/sv-SE.json';
@@ -32,7 +33,7 @@ export { SideNav, SideNavItem, SideNavSection, SideNavHeading } from '@astryxdes
 export { DropdownMenu } from '@astryxdesign/core/DropdownMenu';
 export { MoreMenu } from '@astryxdesign/core/MoreMenu';
 export { Banner } from '@astryxdesign/core/Banner';
-export { Drawer } from '@astryxdesign/core/Drawer';
+export { Drawer, DrawerHeader } from '@astryxdesign/core/Drawer';
 export { Skeleton } from '@astryxdesign/core/Skeleton';
 export { ChatComposer, ChatComposerInput, ChatComposerDrawer, ChatDictationButton, useChatDictation, ChatMessageList, ChatMessage, ChatMessageBubble, ChatMessageMetadata, ChatSystemMessage, type ChatComposerInputHandle, type ChatComposerTrigger, type ChatComposerToken } from '@astryxdesign/core/Chat';
 export type { SearchSource, SearchableItem } from '@astryxdesign/core/Typeahead';
@@ -41,7 +42,7 @@ export { VisuallyHidden } from '@astryxdesign/core/VisuallyHidden';
 export { Kbd } from '@astryxdesign/core/Kbd';
 export { ScrollableArea } from '@astryxdesign/core/ScrollableArea';
 export { useToast } from '@astryxdesign/core/Toast';
-export { useMediaQuery } from '@astryxdesign/core/hooks';
+export { useAnnounce, useMediaQuery } from '@astryxdesign/core/hooks';
 export { SessionBoundary, sessionFetch, signOut, type BrowserSession } from './session';
 export { WeekAgenda, type AgendaItem } from './week-agenda';
 
@@ -53,10 +54,31 @@ export const swedish = { ...sv,
   '@astryx.chatComposer.stop': { defaultMessage: 'Stoppa' },
   '@astryx.chatDictation.start': { defaultMessage: 'Tala' },
   '@astryx.chatDictation.stop': { defaultMessage: 'Sluta tala' },
+  '@astryx.chatTriggerMenu.searching': { defaultMessage: 'Söker …' },
+  '@astryx.dropdownMenu.backTo': { defaultMessage: 'Tillbaka till {parent}' },
+  '@astryx.kbd.key.alt': { defaultMessage: 'Alt' },
+  '@astryx.kbd.key.backspace': { defaultMessage: 'Backsteg' },
+  '@astryx.kbd.key.command': { defaultMessage: 'Kommando' },
+  '@astryx.kbd.key.control': { defaultMessage: 'Kontroll' },
+  '@astryx.kbd.key.controlShort': { defaultMessage: 'Ctrl' },
+  '@astryx.kbd.key.down': { defaultMessage: 'Nedåtpil' },
+  '@astryx.kbd.key.enter': { defaultMessage: 'Retur' },
+  '@astryx.kbd.key.escape': { defaultMessage: 'Escape' },
+  '@astryx.kbd.key.escapeShort': { defaultMessage: 'Esc' },
+  '@astryx.kbd.key.left': { defaultMessage: 'Vänsterpil' },
+  '@astryx.kbd.key.plus': { defaultMessage: 'Plus' },
+  '@astryx.kbd.key.right': { defaultMessage: 'Högerpil' },
+  '@astryx.kbd.key.shift': { defaultMessage: 'Skift' },
+  '@astryx.kbd.key.tab': { defaultMessage: 'Tabb' },
+  '@astryx.kbd.key.up': { defaultMessage: 'Uppåtpil' },
+  '@astryx.kbd.shortcut': { defaultMessage: '{shortcut} + {key}' },
 };
-/** The plain Astryx look: Neutral theme, Swedish strings. No project theme in the POC. */
+/**
+ * The plain Astryx look: Neutral theme, Swedish strings. No project theme in the POC. LayerProvider keeps the toast stack
+ * inside these providers: without it Astryx mounts a fallback root that gets neither the Swedish catalog nor the theme.
+ */
 export function Providers({ children }: { children: ReactNode }) {
   return <InternationalizationProvider locale="sv-SE" messages={{ 'sv-SE': swedish }}>
-    <Theme theme={neutralTheme} mode="light">{children}</Theme>
+    <Theme theme={neutralTheme} mode="light"><LayerProvider>{children}</LayerProvider></Theme>
   </InternationalizationProvider>;
 }

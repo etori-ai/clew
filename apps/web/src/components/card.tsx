@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { attentionLevel, daysUntil, type AttentionLevel, type Thread, type ThreadAction } from '@clew/contracts';
-import { Badge, Button, Card, CheckboxList, CheckboxListItem, Collapsible, DropdownMenu, HStack, Icon, List, ListItem, MoreMenu, StatusDot, Text, Timestamp, VStack, useToast } from '@clew/ui';
+import { Badge, Button, Card, CheckboxList, CheckboxListItem, Collapsible, DropdownMenu, Heading, HStack, Icon, List, ListItem, MoreMenu, StatusDot, Text, Timestamp, VStack, useToast } from '@clew/ui';
 import { today } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
 import { useConversation } from './conversation-context';
@@ -15,11 +15,14 @@ export function useCountdown(until: string | null) {
   const left = Math.max(0, Date.parse(until) - now);
   return left > 0 ? `${Math.floor(left / 60000)}:${String(Math.floor((left % 60000) / 1000)).padStart(2, '0')}` : null;
 }
-/** Avfärda and Inte nu: the card leaves the stream and a toast with Ångra takes its place for ten seconds; reopen brings it back. */
+/**
+ * Avfärda and Inte nu: the card leaves the stream and a toast with Ångra takes its place; reopen brings it back. The toast
+ * stays until the person closes it: Ångra is the only way back to the card, so it carries no time limit (2.2.1).
+ */
 export function useLeaveWithUndo(onChange: (thread: Thread) => void) {
   const toast = useToast();
   return (thread: Thread, text: string, undo: () => Promise<Thread> = () => api.reopen(thread.id)) => {
-    const dismiss = toast({ body: text, autoHideDuration: 10_000, uniqueID: 'leave:' + thread.id,
+    const dismiss = toast({ body: text, isAutoHide: false, uniqueID: 'leave:' + thread.id,
       endContent: <Button size="sm" variant="ghost" label="Ångra" clickAction={async () => { onChange(await undo()); dismiss(); }} /> });
   };
 }
@@ -63,11 +66,14 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
   useEffect(() => { setSelected(thread.items.filter(i => i.selected).map(i => i.ref)); }, [thread.updatedAt]);
   const leave = useLeaveWithUndo(onChange);
   const selectable = thread.items.some(i => i.selectable);
+  // Busy never disables the buttons: a disabled button drops the focus it holds (2.4.3). Action-buttons wait on their own promise.
   const run = async (fn: () => Promise<Thread>) => {
+    if (busy) return;
     setBusy(true); setError(null);
     try { onChange(await fn()); } catch (e) { setError(e instanceof ApiError ? e.message : 'Något gick fel.'); } finally { setBusy(false); }
   };
   const perform = async (action: ThreadAction) => {
+    if (busy) return;
     if (action.confirm && !window.confirm(action.confirm)) return;
     if (action.kind === 'read') {
       if (action.target === 'link') {
@@ -88,6 +94,7 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
   const dismiss = () => run(async () => { const t = await api.dismiss(thread.id); leave(t, `Avfärdad som inte aktuellt. ${thread.trigger.source} skapar inte kortet igen.`); return t; });
   /** A person's own timer (D17): the card waits under Pågår utan dig until the timer brings it back; Ångra cancels the timer. */
   const remind = async (seconds: number) => {
+    if (busy) return;
     setBusy(true); setError(null);
     try {
       const r = await api.remind(thread.id, seconds);
@@ -112,7 +119,7 @@ function ActionRow({ thread, level, actions }: { thread: Thread; level: Attentio
   const chipRef = 'thread:' + thread.id;
   const inConversation = conversation.chipped.includes(chipRef);
   const open = thread.state === 'open';
-  const { busy, selected, selectable, perform, snooze, dismiss, remind, setWhy, run } = actions;
+  const { selected, selectable, perform, snooze, dismiss, remind, setWhy, run } = actions;
   const primary = thread.actions.find(a => a.role === 'primary');
   const secondary = thread.actions.filter(a => a.role === 'secondary').slice(0, 2);
   const overflow = thread.actions.filter(a => a.role === 'overflow' || (a.role === 'secondary' && !secondary.includes(a)));
@@ -125,7 +132,7 @@ function ActionRow({ thread, level, actions }: { thread: Thread; level: Attentio
     { id: 'why', label: 'Varför ser jag detta?', onClick: () => setWhy(v => !v) },
   ];
   /** A person's own timer (D17), a standard action like Inte nu. Ten seconds is the demo entry; the rest are real. */
-  const remindMenu = <DropdownMenu button={{ label: 'Påminn mig', size: 'sm', variant: 'ghost', isDisabled: busy }} presentation="adaptive" items={[
+  const remindMenu = <DropdownMenu button={{ label: 'Påminn mig', size: 'sm', variant: 'ghost' }} presentation="adaptive" items={[
     { id: '10s', label: 'Om 10 sekunder', description: 'demo', onClick: () => void remind(10) },
     { id: '10m', label: 'Om 10 minuter', onClick: () => void remind(10 * 60) },
     { id: '1h', label: 'Om en timme', onClick: () => void remind(60 * 60) },
@@ -134,16 +141,16 @@ function ActionRow({ thread, level, actions }: { thread: Thread; level: Attentio
   const receipt = thread.receipt;
   const undoOpen = !!receipt && thread.state === 'handled' && !!receipt.undoCapability && !!countdown;
   if (open && !thread.waitingOn) return <HStack gap={2} vAlign="center" wrap="wrap">
-    {primary && <Button size="sm" variant={level === 'notice' ? 'secondary' : 'primary'} label={primaryLabel ?? ''} isDisabled={busy || (selectable && count === 0)} clickAction={() => void perform(primary)} />}
-    {secondary.map(a => <Button key={a.id} size="sm" variant={level === 'notice' ? 'ghost' : 'secondary'} label={a.label} isDisabled={busy} clickAction={() => void perform(a)} />)}
+    {primary && <Button size="sm" variant={level === 'notice' ? 'secondary' : 'primary'} label={primaryLabel ?? ''} isDisabled={selectable && count === 0} clickAction={() => perform(primary)} />}
+    {secondary.map(a => <Button key={a.id} size="sm" variant={level === 'notice' ? 'ghost' : 'secondary'} label={a.label} clickAction={() => perform(a)} />)}
     <Button size="sm" variant="ghost" label={inConversation ? 'I samtalet ✓' : 'Lägg till i samtalet'} isDisabled={inConversation} onClick={() => conversation.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id })} />
-    <Button size="sm" variant="ghost" label="Inte nu" isDisabled={busy} clickAction={snooze} />
+    <Button size="sm" variant="ghost" label="Inte nu" clickAction={snooze} />
     {remindMenu}
     <MoreMenu label="Fler val" size="sm" variant="ghost" items={menu} />
   </HStack>;
   if (undoOpen) return <HStack gap={2} vAlign="center" wrap="wrap">
-    <Button size="sm" variant="destructive" label={`Ångra allt · ${countdown} kvar`} isDisabled={busy} clickAction={() => void run(() => api.undoReceipt(thread.id))} />
-    {secondary.filter(a => a.kind === 'read').map(a => <Button key={a.id} size="sm" label={a.label} isDisabled={busy} clickAction={() => void perform(a)} />)}
+    <Button size="sm" variant="destructive" label={`Ångra allt · ${countdown} kvar`} clickAction={() => run(() => api.undoReceipt(thread.id))} />
+    {secondary.filter(a => a.kind === 'read').map(a => <Button key={a.id} size="sm" label={a.label} clickAction={() => perform(a)} />)}
     <Text type="supporting">Varje rad visar källsystemets svar. Grönt bara när det lästs tillbaka.</Text>
   </HStack>;
   if (open && thread.waitingOn) return <HStack gap={2} vAlign="center" wrap="wrap">
@@ -155,16 +162,20 @@ function ActionRow({ thread, level, actions }: { thread: Thread; level: Attentio
 }
 const WhyLine = ({ thread }: { thread: Thread }) => <Text type="supporting" as="p">Varför nu? {thread.trigger.reason}. Källa: {thread.trigger.source}, {clock(thread.trigger.at)}.</Text>;
 
-type Props = ActionProps & { areaTitle: string; position?: string; compact: boolean; expanded?: boolean };
+type Props = ActionProps & { areaTitle: string; position?: string; compact: boolean; expanded?: boolean; headingLevel?: 3 | 4 };
 /**
  * A generic card for any module's thread (thread action contract): one lead sentence, rows with refs, the shared
  * action row, and the receipt read back from the source after an execute. Modules contribute actions, never layout.
  * Cards hold state and actions and never contain a text input (D12). A card due within three days is lifted
  * (elevation), a card waiting on someone else is muted; nothing else about its shape changes with the level.
  */
-export function GenericCard({ thread, areaTitle, position, compact, expanded: expandedByDefault = true, onChange, onOpenCardView }: Props) {
+export function GenericCard({ thread, areaTitle, position, compact, expanded: expandedByDefault = true, headingLevel = 4, onChange, onOpenCardView }: Props) {
   const [expanded, setExpanded] = useState(expandedByDefault);
   useEffect(() => { setExpanded(expandedByDefault); }, [expandedByDefault]);
+  // The title button is gone once the card is open, and focus goes with it: it continues at the title in the open card (2.4.3).
+  const title = useRef<HTMLHeadingElement>(null);
+  const focusTitle = useRef(false);
+  useEffect(() => { if (expanded && focusTitle.current) { focusTitle.current = false; title.current?.focus(); } }, [expanded]);
   const actions = useThreadActions({ thread, onChange, onOpenCardView });
   const { selected, setSelected, selectable, error, why } = actions;
   const conversation = useConversation();
@@ -190,10 +201,10 @@ export function GenericCard({ thread, areaTitle, position, compact, expanded: ex
   const variant = open && thread.waitingOn ? 'muted' : 'default';
   // Collapsed: the two-line row from the canvas. Title and summary on the left, the actions on the right.
   if (!expanded && !receipt && !compact) return <Card padding={2} elevation={elevation} variant={variant}>
-    <VStack gap={1} as="article" aria-label={`Tråd: ${thread.title}`} id={`thread-${thread.id}`} aria-current={inConversation ? 'true' : undefined}>
+    <VStack gap={1} as="article" tabIndex={-1} aria-label={`Tråd: ${thread.title}`} id={`thread-${thread.id}`} aria-current={inConversation ? 'true' : undefined}>
       {headerRow}
       <HStack justify="between" vAlign="center" gap={3} wrap="wrap">
-        <Button variant="ghost" size="sm" label={thread.title} clickAction={() => setExpanded(true)} />
+        <Heading level={4} accessibilityLevel={headingLevel}><Button variant="ghost" size="sm" label={thread.title} aria-expanded={false} onClick={() => { focusTitle.current = true; setExpanded(true); }} /></Heading>
         {actionRow}
       </HStack>
       <Text type="supporting" as="p">{thread.summary}</Text>
@@ -202,24 +213,24 @@ export function GenericCard({ thread, areaTitle, position, compact, expanded: ex
     </VStack>
   </Card>;
   return <Card padding={2} elevation={elevation} variant={variant}>
-    <VStack gap={2} as="article" aria-label={`Tråd: ${thread.title}`} id={`thread-${thread.id}`} aria-current={inConversation ? 'true' : undefined}>
+    <VStack gap={2} as="article" tabIndex={-1} aria-label={`Tråd: ${thread.title}`} id={`thread-${thread.id}`} aria-current={inConversation ? 'true' : undefined}>
       {headerRow}
-      <Text weight="semibold" as="p">{receipt ? receipt.headline : thread.title}</Text>
+      <Heading ref={title} tabIndex={-1} level={4} accessibilityLevel={headingLevel}>{receipt ? receipt.headline : thread.title}</Heading>
       {!receipt && thread.summary && <Text as="p" color="secondary">{thread.summary}</Text>}
       {thread.items.length > 0 && !receipt && (selectable
         ? <CheckboxList label="Rader" isLabelHidden value={selected} onChange={setSelected} isReadOnly={!open} density="compact">
-          {thread.items.map(i => <CheckboxListItem key={i.ref} value={i.ref} label={`${i.label} · ${i.detail}`} />)}
+          {thread.items.map(i => <CheckboxListItem key={i.ref} value={i.ref} label={<Text>{`${i.label} · ${i.detail}`}</Text>} />)}
         </CheckboxList>
         : <List density="compact" hasDividers>{thread.items.map(i => <ListItem key={i.ref} isSelected={rowChipped(i.ref)} label={<HStack gap={2} vAlign="center"><Text weight="semibold">{i.label}</Text><Text type="supporting">{i.detail}</Text></HStack>} />)}</List>)}
       {receipt && <List density="compact" hasDividers aria-label="Kvitto, rad för rad">
-        {receipt.rows.map(r => <ListItem key={r.ref} label={<HStack gap={2} vAlign="center"><StatusDot variant={outcomeDot[r.outcome].variant} label={outcomeDot[r.outcome].label} /><Text>{r.label}</Text></HStack>} description={r.detail} />)}
+        {receipt.rows.map(r => <ListItem key={r.ref} label={<HStack gap={2} vAlign="center"><StatusDot variant={outcomeDot[r.outcome].variant} label={outcomeDot[r.outcome].label} /><Text>{r.label}</Text></HStack>} description={<Text type="supporting">{r.detail}</Text>} />)}
       </List>}
       {draft && open && <Text type="supporting" as="p">Utkast från samtalet. Inget är skickat förrän du trycker på knappen här.</Text>}
       {error && <Text as="p" role="alert" color="accent">{error}</Text>}
       {actionRow}
       {why && <WhyLine thread={thread} />}
       {thread.messages.length > 2 && <Collapsible defaultIsOpen={false} chevronPosition="start" trigger={<Text type="supporting">Tråden · {thread.messages.length} meddelanden</Text>}>
-        <List density="compact">{thread.messages.map(m => <ListItem key={m.id} label={m.body} description={m.role === 'user' ? 'Du' : thread.trigger.source} />)}</List>
+        <List density="compact">{thread.messages.map(m => <ListItem key={m.id} label={<Text>{m.body}</Text>} description={m.role === 'user' ? 'Du' : thread.trigger.source} />)}</List>
       </Collapsible>}
     </VStack>
   </Card>;
@@ -230,7 +241,7 @@ function NoticeRow({ thread, onChange, onOpenCardView }: ActionProps) {
   const actions = useThreadActions({ thread, onChange, onOpenCardView });
   const { error, why } = actions;
   const conversation = useConversation();
-  return <ListItem align="start" isSelected={conversation.chipped.includes('thread:' + thread.id)} startContent={<Badge variant="info" label="Till kännedom" />}
+  return <ListItem id={`thread-${thread.id}`} tabIndex={-1} align="start" isSelected={conversation.chipped.includes('thread:' + thread.id)} startContent={<Badge variant="info" label="Till kännedom" />}
     label={<Text weight="semibold">{thread.title}</Text>}
     description={<VStack gap={1}>
       <Text type="supporting">{thread.trigger.source} · <Timestamp value={thread.trigger.at} format="time" hasTooltip={false} />{thread.summary ? ` · ${thread.summary}` : ''}</Text>

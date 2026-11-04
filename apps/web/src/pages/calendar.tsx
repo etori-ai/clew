@@ -3,6 +3,7 @@ import type { CalendarEvent, Proposal, SessionUser, Thread } from '@clew/contrac
 import { Badge, Button, ChatComposer, CheckboxList, CheckboxListItem, Divider, Heading, HStack, Icon, IconButton, Layout, LayoutContent, LayoutHeader, LayoutPanel, Text, VStack, WeekAgenda, useMediaQuery, type AgendaItem } from '@clew/ui';
 import { addDays, rangeLabel, shortDayLabel, timeRange, today, weekNumber, weekStart } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
+import { usePageTitle } from '../page-title';
 
 /** The calendar as a page: the week as an agenda, with the proposal thread beside it to confirm or redraw. */
 export function CalendarPage({ user }: { user: SessionUser }) {
@@ -15,6 +16,7 @@ export function CalendarPage({ user }: { user: SessionUser }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  usePageTitle(`Vecka ${weekNumber(from)} · Kalender`, `Vecka ${weekNumber(from)}, ${rangeLabel(from, 5)}`);
   const load = useCallback(async (week: string) => {
     try {
       const [data, t] = await Promise.all([api.calendar(week), api.threads()]);
@@ -25,7 +27,7 @@ export function CalendarPage({ user }: { user: SessionUser }) {
   }, []);
   useEffect(() => { void load(from); }, [from, load]);
   const apply = (t: Thread) => { setThread(t); setSelected(t.proposals.filter(p => p.status === 'proposed').map(p => p.id)); void api.calendar(from).then(d => { setEvents(d.events); setProposals(d.proposals); }); };
-  const run = async (action: () => Promise<Thread>) => { setBusy(true); setError(null); try { apply(await action()); } catch (e) { setError(e instanceof ApiError ? e.message : 'Något gick fel.'); } finally { setBusy(false); } };
+  const run = async (action: () => Promise<Thread>) => { if (busy) return; setBusy(true); setError(null); try { apply(await action()); } catch (e) { setError(e instanceof ApiError ? e.message : 'Något gick fel.'); } finally { setBusy(false); } };
   const items = useMemo<AgendaItem[]>(() => [
     ...events.filter(e => !e.title.startsWith('Utvecklingssamtal')).map(e => ({ id: e.id, title: e.title, start: e.start, end: e.end, allDay: e.allDay, kind: 'event' as const, subtitle: e.participants.length ? e.participants.join(', ') : undefined })),
     ...events.filter(e => e.title.startsWith('Utvecklingssamtal') && !proposals.some(p => p.eventRef && e.id.startsWith(p.eventRef))).map(e => ({ id: e.id, title: e.title, start: e.start, end: e.end, allDay: e.allDay, kind: 'booked' as const })),
@@ -51,16 +53,16 @@ export function CalendarPage({ user }: { user: SessionUser }) {
     {open && <Text type="supporting" as="p">Inbjudningarna skickas först när du bekräftar. Vill du ha andra tider ritar jag om förslagen i en annan vecka.</Text>}
     {error && <Text as="p" role="alert" color="accent">{error}</Text>}
     <HStack gap={2} wrap="wrap">
-      {open && <Button variant="primary" label={`Skicka ${selected.length} ${plural}`} isDisabled={!selected.length || busy} clickAction={() => run(() => api.confirm(thread.id, selected))} />}
-      {open && thread.week && <Button label="Föreslå andra tider" isDisabled={busy} clickAction={() => run(() => api.replan(thread.id, addDays(thread.week!, 7)))} />}
-      {undoOpen && <Button variant="destructive" label="Ångra" isDisabled={busy} clickAction={() => run(() => api.undo(thread.id))} />}
+      {open && <Button variant="primary" label={`Skicka ${selected.length} ${plural}`} isDisabled={!selected.length} clickAction={() => run(() => api.confirm(thread.id, selected))} />}
+      {open && thread.week && <Button label="Föreslå andra tider" clickAction={() => run(() => api.replan(thread.id, addDays(thread.week!, 7)))} />}
+      {undoOpen && <Button variant="destructive" label="Ångra" clickAction={() => run(() => api.undo(thread.id))} />}
       {thread.week && thread.week !== from && <Button variant="ghost" size="sm" label={`Visa vecka ${weekNumber(thread.week)}`} onClick={() => setFrom(thread.week!)} />}
     </HStack>
     <Divider />
     <ChatComposer density="compact" elevation="none" isDisabled={busy} placeholder="Svara här" onSubmit={text => { const body = text.trim(); if (body) void run(() => api.reply(thread.id, body)); }} />
   </VStack>;
   return <Layout height="auto" padding={mobile ? 3 : 4}
-    header={<LayoutHeader hasDivider>
+    header={<LayoutHeader hasDivider role="banner">
       <HStack justify="between" vAlign="center" gap={3} wrap="wrap">
         <HStack gap={2} vAlign="center" wrap="wrap">
           <IconButton label="Tillbaka till startsidan" icon={<Icon icon="chevronLeft" />} variant="ghost" onClick={() => { window.location.assign('/'); }} />
@@ -75,10 +77,10 @@ export function CalendarPage({ user }: { user: SessionUser }) {
       </HStack>
     </LayoutHeader>}
     end={!mobile && thread ? <LayoutPanel width={380} hasDivider role="complementary" label="Förslag">{panel}</LayoutPanel> : undefined}
-    content={<LayoutContent>
+    content={<LayoutContent role="main">
       <VStack gap={4}>
         {!thread && error && <Text as="p" role="alert" color="accent">{error}</Text>}
-        <WeekAgenda week={from} days={5} items={items} detailed label={`Vecka ${weekNumber(from)}`} />
+        <WeekAgenda week={from} days={5} items={items} detailed dayHeadingLevel={2} label={`Vecka ${weekNumber(from)}`} />
         {mobile && panel}
       </VStack>
     </LayoutContent>} />;

@@ -1,0 +1,92 @@
+import { answer, composer, desktop, expect, heading, open, phone, test } from './support';
+
+test.use({ viewport: desktop });
+
+test.describe('2.4.2 page titled', () => {
+  const titles = [
+    ['/', 'Behöver dig · Startsidan'],
+    ['/omrade/personal', 'Personal · Startsidan'],
+    ['/hanterat', 'Redan hanterat · Startsidan'],
+    ['/kalender', 'Vecka 45 · Kalender · Startsidan'],
+    ['/vy/heroma.whoIsOn?titel=Bemanning', 'Bemanning · Startsidan'],
+  ] as const;
+  for (const [path, title] of titles) test(`${path} has its own title`, async ({ page, api: _ }) => {
+    await open(page, path);
+    await expect(page).toHaveTitle(title);
+  });
+  test('the title follows the week', async ({ page, api: _ }) => {
+    await open(page, '/kalender');
+    await page.getByRole('button', { name: 'Nästa vecka' }).click();
+    await expect(page).toHaveTitle('Vecka 46 · Kalender · Startsidan');
+  });
+});
+
+test.describe('1.3.1 and 2.4.6 structure', () => {
+  for (const path of ['/', '/omrade/personal', '/hanterat', '/kalender']) test(`${path} has one h1, a banner and a main`, async ({ page, api: _ }) => {
+    await open(page, path);
+    await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveCount(1);
+    await expect(page.getByRole('main')).toHaveCount(1);
+    await expect(page.getByRole('banner')).toHaveCount(1);
+  });
+
+  test('the start page has one navigation landmark', async ({ page, api: _ }) => {
+    await open(page, '/');
+    await expect(page.getByRole('navigation', { name: 'Områden' })).toHaveCount(1);
+    await page.setViewportSize(phone);
+    await expect(page.getByRole('navigation', { name: 'Områden' })).toHaveCount(1);
+  });
+
+  test('cards and day groups are headings', async ({ page, api: _ }) => {
+    await open(page, '/');
+    await expect(heading(page, 4, 'Attestera 3 fakturor, 48 200 kr')).toBeVisible();
+    await expect(heading(page, 4, 'Omtankesamtal med Anna Lindqvist')).toBeVisible();
+    await open(page, '/hanterat');
+    await expect(heading(page, 1, 'Redan hanterat')).toBeVisible();
+    await page.getByRole('radio', { name: 'Veckan' }).click();
+    await expect(heading(page, 2, 'november').first()).toBeVisible();
+  });
+
+  test('sections have distinct names', async ({ page, api: _ }) => {
+    await open(page, '/');
+    const names = await page.locator('section[aria-label]').evaluateAll(list => list.map(el => el.getAttribute('aria-label')));
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  test('the calendar names its days as headings', async ({ page, api: _ }) => {
+    await open(page, '/kalender');
+    await expect(heading(page, 2, 'ons 4 nov')).toBeVisible();
+  });
+
+  test('the side panel has a heading', async ({ page, api: _ }) => {
+    await open(page, '/vy/heroma.whoIsOn?titel=Bemanning');
+    await expect(page.getByRole('dialog').getByRole('heading', { name: 'Bemanning' })).toBeVisible();
+  });
+});
+
+test.describe('3.1.2 language of parts', () => {
+  test('the conversation names its speakers in Swedish', async ({ page, api: _ }) => {
+    await open(page, '/');
+    const input = composer(page);
+    await input.fill('Vem är på plats?');
+    await input.press('Enter');
+    await expect(answer(page)).toBeVisible();
+    await expect(page.getByRole('article', { name: 'Du', exact: true })).toBeVisible();
+    await expect(page.getByRole('article', { name: 'Assistenten', exact: true })).toBeVisible();
+  });
+
+  test('the keyboard shortcut is spoken in Swedish', async ({ page, api: _ }) => {
+    await open(page, '/');
+    await expect(page.getByRole('img', { name: 'Kontroll + K' })).toBeVisible();
+  });
+
+  test('the side panel shows Swedish labels and readable values', async ({ page, api: _ }) => {
+    await open(page, '/vy/heroma.whoIsOn?titel=Bemanning');
+    const panel = page.getByRole('dialog');
+    await expect(panel).toBeVisible();
+    await expect(panel.getByText('I tjänst', { exact: true })).toBeVisible();
+    await expect(panel.getByText('Frånvarande', { exact: true })).toBeVisible();
+    await expect(panel.getByText('Sara Nyström · sjuk', { exact: true })).toBeVisible();
+    await expect(panel).not.toContainText('onDuty');
+    await expect(panel).not.toContainText('{');
+  });
+});
