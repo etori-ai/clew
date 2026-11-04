@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { isSnoozed, streamGroup, type Area, type AssistantStatus, type Attention, type CalendarEvent, type RhythmPoint, type SessionUser, type Thread, type TodayView, type ViewRef } from '@clew/contracts';
-import { Badge, Banner, Button, Card, ChatLayout, DropdownMenu, EmptyState, Heading, HStack, Icon, Layout, LayoutContent, Step, Stepper, Text, ToggleButton, ToggleButtonGroup, Toolbar, VisuallyHidden, VStack, useMediaQuery, useToast } from '@clew/ui';
+import { Badge, Banner, Button, Card, ChatLayout, DropdownMenu, EmptyState, Heading, HStack, Icon, IconButton, Layout, LayoutContent, MoreMenu, Step, Stepper, Text, ToggleButton, ToggleButtonGroup, Toolbar, VisuallyHidden, VStack, useMediaQuery, useToast } from '@clew/ui';
 import { timeLabel, today } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
-import { Composer, type ComposerHandle } from '../components/composer';
-import { ConversationContext, type ChipRef } from '../components/conversation-context';
+import { Composer } from '../components/composer';
+import { ConversationContext, ConversationProvider } from '../components/conversation-context';
+import { Transcript } from '../components/conversation';
 import { AreasNav } from '../components/areas';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { GenericCard, NoticeList } from '../components/card';
@@ -57,8 +58,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const cardViewHref = (threadId: string, actionId: string) => withArea(`/vy/kort/${threadId}/${actionId}`);
   const conversationHref = (id: string) => withArea(`/samtal/${id}`);
   const [view, setView] = useState<{ title: string; output: unknown } | null>(null);
-  const [conversation, setConversation] = useState<{ open: boolean; chipped: string[] }>({ open: false, chipped: [] });
-  const composer = useRef<ComposerHandle>(null);
   const toast = useToast();
   // A reminder that fired while the page was open (D17): the card is back in its place with a badge, and a toast says so.
   // The toast is the announcement: it animates in beside the composer and stays until dismissed; the stream never shifts.
@@ -142,15 +141,8 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const current = useMemo(() => areas.find(a => a.id === area) ?? null, [areas, area]);
   const pageTitle = view ? view.title : conversationId ? 'Samtal' : pile ? pileTitle[pile] : current?.title ?? (area ? null : 'Behöver dig');
   usePageTitle(pageTitle, view || conversationId ? false : pageTitle ?? false);
-  const conversationApi = useMemo(() => ({
-    chipped: conversation.chipped, open: conversation.open,
-    addChip: (chip: ChipRef) => composer.current?.addChip(chip),
-    openConversation: (id: string) => composer.current?.openConversation(id),
-  }), [conversation]);
   const onConversation = useCallback((id: string | null) => { if (id) navigate(conversationHref(id)); else if (conversationId) navigate(back); }, [navigate, conversationId, back]);
-  const onState = useCallback((s: { open: boolean; chipped: string[] }) => setConversation(c => c.open === s.open && c.chipped.join() === s.chipped.join() ? c : s), []);
-  const row = <Composer ref={composer} mobile={mobile} conversationId={conversationId} onConversation={onConversation} onThreadChange={replace} onOpenView={openView} onState={onState} />;
-  const sidebar = <AreasNav areas={areas} current={pile ? undefined : area} hrefFor={pathFor} chipped={conversation.chipped} />;
+  const row = <Composer />;
 
   const openCardView = (threadId: string, actionId: string) => navigate(cardViewHref(threadId, actionId));
   // Cards sit under an h2 (Nu, Senare, Till kännedom) or under a pile's h1, so their headings are one level down (1.3.1).
@@ -207,6 +199,11 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       <VStack gap={2}>{(pile === 'pagar' ? waiting : snoozed).map(t => card(t, true, undefined, 2))}</VStack>
     </VStack>;
 
+  /** The transcript's lead on a short screen, where there is no pinned toolbar: the title and the way out, in the flow. */
+  const conversationHeader = (talk: { conversation: { title: string } | null; newConversation: () => void; close: () => void }) => <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
+    <Heading level={1}>{talk.conversation?.title}</Heading>
+    <HStack gap={1}><Button size="sm" variant="ghost" label="Nytt samtal" onClick={talk.newConversation} /><Button size="sm" variant="ghost" label="Stäng samtalet" onClick={talk.close} /></HStack>
+  </HStack>;
   const content = <VStack gap={4}>
     {!current && !pile && <VisuallyHidden as="div"><Heading level={1}>Startsidan</Heading></VisuallyHidden>}
     {error && <Text as="p" role="alert" color="accent">{error}</Text>}
@@ -250,23 +247,30 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     </>}
   </VStack>;
 
-  return <ConversationContext.Provider value={conversationApi}>
-    <Shell user={user} admin={admin} current="start" attention={attentionLabel ?? undefined} height={short ? 'auto' : 'fill'} sideNav={sidebar}
+  return <ConversationProvider conversationId={conversationId} onConversation={onConversation} onThreadChange={replace}>
+    <ConversationContext.Consumer>{talk => <Shell user={user} admin={admin} current="start" attention={attentionLabel ?? undefined} height={short ? 'auto' : 'fill'}
+      sideNav={<AreasNav areas={areas} current={pile || talk.open ? undefined : area} hrefFor={pathFor} chipped={talk.chipped} />}
       /* Page level (D8): one Banner in the shell's banner slot when the model is configured but not answering. The router answers meanwhile. */
       banner={assistant && assistant.configured && !assistant.available ? <Banner status="warning" container="section" collapsible={false} title="Modellen svarar inte just nu."
         description={`Frågor besvaras av den inbyggda routern tills ${assistant.model ?? 'modellen'} svarar igen. Korten påverkas inte.`}
         endContent={<Button size="sm" variant="secondary" label="Försök igen" clickAction={() => void load()} />} /> : undefined}>
-      {/* The stream is one bounded column (Layout contentWidth) with the piles pinned in its toolbar; ChatLayout docks the row at the bottom of it (D31). */}
+      {/* The stream is one bounded column (Layout contentWidth) with the piles pinned in its toolbar; ChatLayout docks the row at the bottom of it (D31).
+          A conversation takes the column: the transcript in place of the stream, its title and its way out in the toolbar. */}
       {short
-        ? <VStack gap={4} padding={3}>{piles}{content}{row}</VStack>
+        ? <VStack gap={4} padding={3}>{talk.open ? conversationHeader(talk) : piles}{talk.open ? <Transcript onOpenView={openView} /> : content}{row}</VStack>
         : <Layout height="fill" contentWidth={960} padding={mobile ? 3 : 4} defaultHasDividers
-          header={<Toolbar label="Högar" size="sm" startContent={piles} />}
+          header={talk.open
+            ? <Toolbar label="Samtalet" size="sm" startContent={<Heading level={mobile ? 3 : 1} accessibilityLevel={1}>{talk.conversation?.title}</Heading>}
+              endContent={mobile
+                ? <HStack gap={1} vAlign="center"><IconButton size="sm" variant="ghost" label="Stäng samtalet" icon={<Icon icon="close" />} onClick={talk.close} /><MoreMenu label="Fler val" size="sm" variant="ghost" items={[{ id: 'new', label: 'Nytt samtal', onClick: talk.newConversation }]} /></HStack>
+                : <HStack gap={1} vAlign="center"><Button size="sm" variant="ghost" label="Nytt samtal" onClick={talk.newConversation} /><Button size="sm" variant="ghost" label="Stäng samtalet" icon={<Icon icon="close" size="sm" />} onClick={talk.close} /></HStack>} />
+            : <Toolbar label="Högar" size="sm" startContent={piles} />}
           content={<LayoutContent isScrollable={false}>
             <VStack height="100%">
-              <ChatLayout density="balanced" composer={row}>{content}</ChatLayout>
+              <ChatLayout density="balanced" composer={row}>{talk.open ? <Transcript onOpenView={openView} /> : content}</ChatLayout>
             </VStack>
           </LayoutContent>} />}
-    </Shell>
+    </Shell>}</ConversationContext.Consumer>
     <PanelView title={view?.title ?? null} output={view?.output} onClose={() => navigate(back)} />
-  </ConversationContext.Provider>;
+  </ConversationProvider>;
 }

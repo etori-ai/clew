@@ -1,6 +1,6 @@
 # D31 · The conversation swaps the stream inside one ChatLayout; chips live in the composer drawer
 
-**Status:** proposed · **Date:** 2026-11-04 · **Area:** ui
+**Status:** accepted · **Date:** 2026-11-04 · **Area:** ui
 
 **Decision.** The start page is composed the way Astryx's own `ai-chat` template is, and nothing about the
 composer's placement is written by the project:

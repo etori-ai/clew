@@ -37,7 +37,7 @@ the reasoning. Longer designs live in `docs/architecture/`, and the reviews that
 | [D28](D28-the-stream-has-two-groups-and-three-piles.md) | The stream has two groups (Nu, Senare) and three piles above the composer; snooze is its own column; the day is drawn as one track | 2026-11-04 | ui | accepted |
 | [D29](D29-inte-nu-is-a-timed-snooze-that-breaks-on-activity.md) | "Inte nu" is a timed snooze with a visible landing time that breaks on activity; conditions wait | 2026-11-04 | product | accepted |
 | [D30](D30-a-proposal-thread-is-an-obligation-with-four-steps.md) | A proposal thread is an obligation with four steps, replies read back, follow-ups as cards under a fixed policy | 2026-11-04 | product | accepted, live run unverified |
-| [D31](D31-the-conversation-swaps-the-stream-inside-one-chatlayout.md) | The conversation swaps the stream inside one ChatLayout; chips live in the composer drawer; the shell is AppShell | 2026-11-04 | ui | proposed |
+| [D31](D31-the-conversation-swaps-the-stream-inside-one-chatlayout.md) | The conversation swaps the stream inside one ChatLayout; chips live in the composer drawer; the shell is AppShell | 2026-11-04 | ui | accepted |
 
 ## Adding a decision
 
