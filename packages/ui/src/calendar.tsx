@@ -88,6 +88,8 @@ export function EventCalendar({ view, date, items, label, dayHeadingLevel = 2, a
     <Calendar ref={ref} plugins={plugins} initialView={view} initialDate={date}
       locale={sv} timeZone={timeZone} weekends={false} headerToolbar={false} height="auto"
       events={events} eventInteractive eventOrder="start,-duration,title" eventTimeFormat={timeFormat}
+      // Five columns leave no room for a range on a short block; the block's height tells the end, and the dialog says it.
+      displayEventEnd={view !== 'timeGridWeek'}
       slotDuration="00:30" slotHeaderInterval="01:00" slotMinHeight={compact ? 20 : 28} slotHeaderFormat={timeFormat} slotMinTime={start} slotMaxTime={end} scrollTime={start}
       businessHours={businessHours} nowIndicator allDaySlot dayMaxEvents navLinks={false}
       selectable={!!onSelectRange} selectMirror selectMinDistance={4} snapDuration="00:15" selectConstraint={businessHours}

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
-import type { CalendarEvent, Proposal, SessionUser, Thread } from '@clew/contracts';
+import type { Area, Attention, CalendarEvent, Proposal, SessionUser, Thread } from '@clew/contracts';
 import { Badge, Button, ChatComposer, CheckboxList, CheckboxListItem, DatePicker, Drawer, DrawerHeader, DropdownMenu, EventCalendar, Heading, HStack, Icon, IconButton, Layout, LayoutContent, LayoutFooter, LayoutHeader, LayoutPanel, SegmentedControl, SegmentedControlItem, StatusDot, Text, Toolbar, VStack, agendaItems, useMediaQuery, type AgendaItem, type CalendarView } from '@clew/ui';
 import { addDays, dayLabel, displayDate, monthLabel, occursOn, rangeLabel, shortDayLabel, timeRange, today, weekNumber, weekStart } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
 import { usePageTitle } from '../page-title';
 import { Shell, mobileQuery } from '../components/shell';
+import { AreasNav } from '../components/areas';
 import { EventDialog } from '../components/calendar/event-dialog';
 import { BookingDialog } from '../components/calendar/booking-dialog';
 
@@ -39,6 +40,12 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [thread, setThread] = useState<Thread | null>(null);
+  // The same frame as the start page (D31): the areas in the shell's SideNav and the attention sentence in its TopNav.
+  const [areas, setAreas] = useState<Area[]>([]);
+  const [attention, setAttention] = useState<Attention | null>(null);
+  useEffect(() => { let alive = true; void Promise.all([api.areas(), api.attention()]).then(([a, at]) => { if (alive) { setAreas(a.areas); setAttention(at); } }).catch(() => undefined); return () => { alive = false; }; }, []);
+  const remaining = attention ? Math.max(0, attention.budget - attention.used) : null;
+  const attentionLabel = attention ? (remaining === 0 ? `Inga avbrott kvar i dag · resten samlas till ${attention.bundledUntil ?? 'i morgon 06:00'}` : `${remaining} avbrott kvar i dag`) : undefined;
   const [selected, setSelected] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -125,7 +132,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
       {narrow && thread && <Button variant="secondary" size="sm" label={open ? `Förslag · ${proposed.length}` : 'Förslag'} onClick={() => setPanelOpen(true)} />}
       <Button variant="primary" size="sm" label="Ny bokning" onClick={() => setBooking(nextWholeHour(new Date()))} />
     </HStack>} />;
-  return <Shell user={user} admin={admin} current="kalender"><Layout height="fill" padding={mobile ? 3 : 4}
+  return <Shell user={user} admin={admin} current="kalender" attention={attentionLabel} sideNav={<AreasNav areas={areas} current={undefined} hrefFor={a => a === null ? '/' : `/omrade/${a}`} />}><Layout height="fill" padding={mobile ? 3 : 4}
     header={<LayoutHeader hasDivider>{toolbar}</LayoutHeader>}
     end={!narrow && thread ? <LayoutPanel width={380} hasDivider role="complementary" label="Förslag" padding={0} isScrollable={false}>{panel}</LayoutPanel> : undefined}
     content={<LayoutContent>
