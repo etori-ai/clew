@@ -134,7 +134,7 @@ that. Recorded as D14.
 | Scans and triggers: what needs the person now | **Clew** | Eneo can ask Clew through MCP for the same answer, as the user |
 | Owning records (core connectors), integrations to HR, finance, calendar | **Clew** | Exposed to Eneo as read and propose tools under a release policy |
 | Search across systems: people, cases, documents by where they live, rooms; merged results as objects | **Clew**, through each connector's search capability; people through the directory pass-through connector (Metakatalogen in Sundsvall) | Eneo's retrieval is one more source in the fan-out when installed |
-| Knowledge bases, retrieval over documents and sites, citations | **Eneo** | `eneo.knowledge.search` as a `read` capability in the `eneo` connector, scoped to the user's spaces |
+| Knowledge bases, retrieval over documents and sites, citations | **Eneo** | `eneo.search` and `eneo.fetch` as `read` capabilities in the `eneo` connector, as the person, one source behind Clew's composite search (D26) |
 | Operator-built assistants with prompts, knowledge and sharing | **Eneo** | An Eneo assistant can be opened as a view in Clew's side panel, or answer inside Eneo with Clew's tools |
 | Apps and services: transcription, summarisation, structured prompts | **Eneo** | An app run can be a `propose` capability in the `eneo` connector whose result lands as a card |
 | Model and provider administration, keys, quotas, security classifications | **Eneo** as a product; Clew administers only which OpenAI-compatible endpoints and models its composer may use, with an audience per model (D24) | The `eneo` connector imports classifications as inputs to Clew's own rule about which data may leave |

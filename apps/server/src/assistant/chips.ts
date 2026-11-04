@@ -1,5 +1,5 @@
-import { actorOf } from '@clew/connectors';
-import type { AuthenticatedContext, CalendarEvent, Chip, Thread } from '@clew/contracts';
+import { actorOf, SEARCH_CONNECTOR } from '@clew/connectors';
+import type { AuthenticatedContext, CalendarEvent, Chip, SearchHit, Thread } from '@clew/contracts';
 import { displayDate, weekStart } from '@clew/calendar/dates';
 import { InputError } from '../context';
 import type { ResolvedObject } from './context';
@@ -41,6 +41,13 @@ export async function resolveChips(deps: AssistantDeps, persona: AuthenticatedCo
       try { const { view } = await deps.calendar.listWeek(persona, weekStart(displayDate(deps.clock().toISOString())), 14); event = view.find(e => e.id === id); } catch { event = undefined; }
       if (!event) throw gone();
       objects.push({ kind: 'event', ref: chip.ref, event });
+    } else if (chip.kind === 'document') {
+      // A passage from the panel (D26): fetched again from the connector that found it, so the model reads the source, not the browser's copy.
+      const ref = chip.ref.replace(/^document:/, '');
+      let hit: SearchHit | undefined;
+      try { hit = await deps.run<SearchHit>(persona, SEARCH_CONNECTOR + '.fetchSource', { ref }); } catch { hit = undefined; }
+      if (!hit) throw gone();
+      objects.push({ kind: 'document', ref: chip.ref, hit });
     } else {
       const name = chip.ref.replace(/^capability:/, '');
       const found = deps.registry.allowed(actorOf(persona), name);

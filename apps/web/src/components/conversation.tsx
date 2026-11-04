@@ -1,9 +1,23 @@
 import { useQuery } from '@tanstack/react-query';
-import type { CalendarEvent, Thread, ViewRef } from '@clew/contracts';
-import { Badge, Button, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, ChatSystemMessage, EventList, HStack, Icon, List, ListItem, Markdown, Text, Timestamp, Token, VisuallyHidden, VStack, agendaItems } from '@clew/ui';
+import type { CalendarEvent, SourceCitation, Thread, ViewRef } from '@clew/contracts';
+import { Badge, Button, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, ChatSystemMessage, EventList, HStack, Icon, List, ListItem, Markdown, MetadataList, MetadataListItem, Text, Timestamp, Token, VisuallyHidden, VStack, agendaItems } from '@clew/ui';
 import { weekNumber } from '@clew/calendar/dates';
 import { calendarWeekQuery, threadQuery } from '../queries';
 import { useConversation } from './conversation-context';
+import { reviewLabel, staleLabel } from './panel-labels';
+
+/** The sources an answer cites (D26): `[n]` in the body becomes a numbered citation that opens the document; the first source's owner and review date are named under the answer. */
+function Sources({ sources }: { sources: SourceCitation[] }) {
+  const first = sources[0]!;
+  const stale = sources.find(s => s.stale);
+  return <MetadataList orientation="horizontal" title={<VisuallyHidden>Om källan</VisuallyHidden>}>
+    <MetadataListItem label="Källa">{sources.length === 1 ? first.label : `${first.label} och ${sources.length - 1} till`}</MetadataListItem>
+    {first.owner && <MetadataListItem label="Ägare">{first.owner}</MetadataListItem>}
+    {first.reviewedAt && <MetadataListItem label="Granskad">{reviewLabel(first.reviewedAt).replace(/^granskad /, '')}</MetadataListItem>}
+    {stale && <MetadataListItem label="Obs">{staleLabel(true, stale.reviewedAt)}</MetadataListItem>}
+  </MetadataList>;
+}
+const citationSources = (sources: SourceCitation[]) => Object.fromEntries(sources.map(s => [String(s.n), { title: s.label, ...(s.link ? { url: s.link } : {}) }]));
 
 const EMPTY_EVENTS: CalendarEvent[] = [];
 /** The proposals' week in the transcript (D32): the week's meetings with the drawn times among them, as a list in a ghost bubble, after the `ai-chat` template's card-in-a-bubble. */
@@ -37,8 +51,12 @@ export function Transcript({ onOpenView }: { onOpenView: (view: ViewRef) => void
         {m.role === 'user' && (m.meta?.chips?.length ?? 0) > 0 && <HStack gap={1} wrap="wrap">{m.meta!.chips!.map(c => <Token key={c.ref} size="sm" label={c.label} />)}</HStack>}
         <ChatMessageBubble variant={m.role === 'assistant' ? 'ghost' : 'filled'} width={m.role === 'assistant' ? '100%' : undefined}
           metadata={<ChatMessageMetadata timestamp={<Timestamp value={m.createdAt} format="time" hasTooltip={false} />} footer={m.role === 'assistant' ? (m.meta?.source ?? undefined) : undefined} />}>
-          {m.role === 'assistant' ? <Markdown density="compact" headingLevelStart={2}>{m.body}</Markdown> : m.body}
-          {m.meta?.view && <HStack gap={2}><Button size="sm" label={`Visa ${m.meta.view.title.toLowerCase()}`} onClick={() => onOpenView(m.meta!.view!)} /></HStack>}
+          {m.role === 'assistant' ? <Markdown density="compact" headingLevelStart={2} {...(m.meta?.sources?.length ? { sources: citationSources(m.meta.sources), citationStyle: 'number' as const } : {})}>{m.body}</Markdown> : m.body}
+          {m.meta?.sources && m.meta.sources.length > 0 && <Sources sources={m.meta.sources} />}
+          {(m.meta?.view || m.meta?.sources?.length) && <HStack gap={2} wrap="wrap">
+            {m.meta?.view && <Button size="sm" label={`Visa ${m.meta.view.title.toLowerCase()}`} onClick={() => onOpenView(m.meta!.view!)} />}
+            {m.meta?.sources && m.meta.sources.length > 0 && <Button size="sm" variant="primary" label="Gör till ett kort" isDisabled={busy} clickAction={() => talk.makeCard(m.id)} />}
+          </HStack>}
         </ChatMessageBubble>
         {m.meta?.draft && <ChatSystemMessage icon={<Icon icon="warning" color="warning" size="sm" />}>Utkast i kortet. Inget är skickat förrän du trycker på knappen i kortet.</ChatSystemMessage>}
       </ChatMessage>)}

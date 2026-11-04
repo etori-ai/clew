@@ -37,6 +37,8 @@ export interface ConversationState {
   ask(text: string): void;
   performActions(actions: ClewAction[]): Promise<void>;
   cancelActions(): void;
+  /** "Gör till ett kort" under a cited answer (D26): the sources become a card under Behöver dig; nothing is executed. */
+  makeCard(messageId: string): Promise<void>;
   openConversation(threadId: string): Promise<void>;
   newConversation(): void;
   close(): void;
@@ -47,7 +49,7 @@ const never = async () => undefined;
 const EMPTY_VERBS: Verb[] = [];
 export const ConversationContext = createContext<ConversationState>({
   chips: [], chipped: [], conversation: null, latest: null, done: null, busy: false, error: null, open: false, value: '', verbs: [], input: { current: null },
-  setValue: noop, addChip: noop, removeChip: noop, rememberObject: noop, submit: never, ask: noop, performActions: never, cancelActions: noop, openConversation: never, newConversation: noop, close: noop, focus: noop,
+  setValue: noop, addChip: noop, removeChip: noop, rememberObject: noop, submit: never, ask: noop, performActions: never, cancelActions: noop, makeCard: never, openConversation: never, newConversation: noop, close: noop, focus: noop,
 });
 export const useConversation = () => useContext(ConversationContext);
 
@@ -166,10 +168,21 @@ export function ConversationProvider({ conversationId, onConversation, onThreadC
     finally { setBusy(false); input.current?.focus(); }
   }, [apply]);
   const cancelActions = useCallback(() => setLatest(l => l ? { ...l, clewActions: [] } : l), []);
+  const makeCard = useCallback(async (messageId: string) => {
+    if (!conversation) return;
+    setBusy(true); setError(null);
+    try {
+      const { output } = await api.runCapability('clew.cardFromAnswer', { conversationId: conversation.id, messageId });
+      const thread = await api.thread((output as { threadId: string }).threadId);
+      onThreadChange(thread);
+      setDone({ text: `Klart. Kortet "${thread.title}" ligger under Behöver dig. Knappen på kortet öppnar källan.` });
+    } catch (e) { setError(errorMessage(e, 'Kortet kunde inte skapas.')); }
+    finally { setBusy(false); input.current?.focus(); }
+  }, [conversation, onThreadChange]);
 
   const state = useMemo<ConversationState>(() => ({
     chips, chipped, conversation, latest, done, busy, error, open, value, verbs, input,
-    setValue, addChip, removeChip, rememberObject, submit, ask, performActions, cancelActions, openConversation, newConversation, close, focus,
-  }), [chips, chipped, conversation, latest, done, busy, error, open, value, verbs, addChip, removeChip, rememberObject, submit, ask, performActions, cancelActions, openConversation, newConversation, close, focus]);
+    setValue, addChip, removeChip, rememberObject, submit, ask, performActions, cancelActions, makeCard, openConversation, newConversation, close, focus,
+  }), [chips, chipped, conversation, latest, done, busy, error, open, value, verbs, addChip, removeChip, rememberObject, submit, ask, performActions, cancelActions, makeCard, openConversation, newConversation, close, focus]);
   return <ConversationContext.Provider value={state}>{children}</ConversationContext.Provider>;
 }

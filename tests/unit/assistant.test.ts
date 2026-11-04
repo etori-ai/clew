@@ -9,6 +9,7 @@ import { draftSelection, parseVerb, verbsFor } from '../../apps/server/src/assis
 import { matchCapability, nearest, templatedAnswer } from '../../apps/server/src/assistant/router';
 import { buildTools, createProvider, fromToolName, modelAnswer, ModelUnavailable, systemPrompt, toToolName } from '../../apps/server/src/assistant/model';
 import { serialiseContext } from '../../apps/server/src/assistant/context';
+import { citationsOf, parseAnswer } from '../../apps/server/src/assistant/answer';
 
 const hillevi: Actor = { id: 'hillevi', name: 'Hillevi Berg', unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'manager' };
 const hassan: Actor = { id: 'hassan', name: 'Hassan Ali', unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'employee' };
@@ -89,6 +90,32 @@ describe('the deterministic router matches capabilities by title and description
     expect(b.body).toContain('Heroma');
   });
 });
+describe('a document answer is read in code (D26): the trailer, the steps, the citations', () => {
+  test('the follow-up trailer is lifted off the body and capped at three; steps make the shape "steg"', () => {
+    const parsed = parseAnswer('Lyft inte själv [1]. Ring sjuksköterskan [1].\nFöljdfrågor: Om hen slagit i huvudet | Vem ringer jag på natten? | Anhöriga | En fjärde');
+    expect(parsed).toEqual({ body: 'Lyft inte själv [1]. Ring sjuksköterskan [1].', followUps: ['Om hen slagit i huvudet?', 'Vem ringer jag på natten?', 'Anhöriga?'] });
+    const steps = parseAnswer('1. Lyft inte själv [1].\n2. Ring sjuksköterskan [1].\n3. Skriv avvikelse [2].\n\nFöljdfrågor: Anhöriga?');
+    expect(steps.shape).toBe('steg');
+    expect(steps.body.split('\n')).toHaveLength(3);
+    expect(parseAnswer('Tre på plats. Heroma 08:00.')).toEqual({ body: 'Tre på plats. Heroma 08:00.', followUps: [] });
+    expect(parseAnswer('1. Ett steg bara.\nFöljdfrågor: ').shape).toBeUndefined();
+  });
+  test('citations carry refs, owner and date, never the text', () => {
+    const cited = citationsOf({ rows: [{ ref: 'r1', connector: 'docs', kind: 'document', label: 'Rutin vid fall', snippet: 'hemligt', source: 'Intranätet', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00Z', stale: false, link: 'https://x' }, { ref: 'r2', connector: 'eneo', kind: 'document', label: 'Lathund', snippet: 's', source: 'Eneo', updatedAt: '2024-11-02T00:00:00Z', stale: true }] });
+    expect(cited).toEqual([
+      { n: 1, ref: 'document:docs:r1', label: 'Rutin vid fall', source: 'Intranätet', stale: false, link: 'https://x', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00Z' },
+      { n: 2, ref: 'document:eneo:r2', label: 'Lathund', source: 'Eneo', stale: true, reviewedAt: '2024-11-02T00:00:00Z' },
+    ]);
+    expect(JSON.stringify(cited)).not.toContain('hemligt');
+  });
+  test('the prompt carries the document rules and a chipped passage', () => {
+    const prompt = systemPrompt({ name: 'x', role: 'employee', unitLabel: 'y', now: new Date(now), week: 45, objects: serialiseContext([{ kind: 'document', ref: 'document:docs:r1', hit: { ref: 'r1', kind: 'document', label: 'Rutin vid fall', section: 'Vid fall', snippet: 'Lyft inte själv.', source: 'Intranätet', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00Z' } }]) });
+    expect(prompt).toContain('Följdfrågor:');
+    expect(prompt).toContain('[1]');
+    expect(prompt).toContain('Avsnitt "Rutin vid fall, Vid fall" ur Intranätet (MAS, granskad 2026-03-12): "Lyft inte själv."');
+  });
+});
+
 describe('the model path only reads, and falls back when the provider fails', () => {
   test('tool names round-trip without dots and never include an execute capability', () => {
     expect(fromToolName(toToolName('heroma.whoIsOn'))).toBe('heroma.whoIsOn');

@@ -1,5 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { ThreadActionSchema, ThreadItemSchema } from '@clew/contracts';
+import { SearchHitSchema, SearchKind, SearchOutputSchema, ThreadActionSchema, ThreadItemSchema } from '@clew/contracts';
 
 /**
  * The Clew connector protocol (D21): how a connector that is not part of this repository plugs into a running Clew.
@@ -38,6 +38,7 @@ export const ManifestCapabilitySchema = object({
   input: jsonSchema, output: jsonSchema,
   model: Type.Boolean({ description: 'Offer it to the model as a tool. Must be false for execute (D8).' }),
   scope: ScopeRuleSchema,
+  kinds: Type.Optional(Type.Array(SearchKind, { uniqueItems: true, description: 'For `<id>.search` (D26): what it can find. Its output is a SearchOutput; `<id>.fetch` takes one of its refs back and returns one SearchHit.' })),
 });
 export const ManifestAreaSchema = object({
   id: Type.String({ pattern: '^[a-z][a-z0-9-]*$', maxLength: 40 }), title: swedish('Swedish. The sidebar entry.'),
@@ -46,6 +47,14 @@ export const ManifestAreaSchema = object({
   schedules: Type.Array(object({ label: Type.String(), when: Type.String() })),
   figure: Type.Optional(Type.Boolean({ description: 'Clew asks POST /clew/figure for a one-line figure for this area.' })),
 });
+/**
+ * The connector calls its system as the person (D26): Clew trades the person's session for a token bound to this audience
+ * (RFC 8693 at the IdP) and sends it in `X-Clew-Delegated-Token` beside the assertion. Absent in scans, figures, callbacks
+ * and sessions without an IdP token; the connector then answers `denied`.
+ */
+export const DelegationSchema = object({
+  audience: Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$', description: 'The OAuth audience (an IdP client id) the token must be bound to.' }),
+}, 'The connector acts as the person against its system with a token Clew obtains by token exchange.');
 export const ConnectorManifestSchema = Type.Object({
   protocol: Type.Literal(PROTOCOL_VERSION),
   id: Type.String({ pattern: '^[a-z][a-z0-9-]*$', maxLength: 40, description: 'Must match the id Clew was configured with.' }),
@@ -54,6 +63,7 @@ export const ConnectorManifestSchema = Type.Object({
   areas: Type.Array(ManifestAreaSchema),
   capabilities: Type.Array(ManifestCapabilitySchema),
   scan: Type.Boolean({ description: 'Whether Clew should POST /clew/scan for each person nightly and on first visit.' }),
+  delegation: Type.Optional(DelegationSchema),
 }, { additionalProperties: false, $id: 'https://clew.dev/protocol/1/connector-manifest.schema.json', title: 'Clew connector manifest' });
 export type ConnectorManifest = Static<typeof ConnectorManifestSchema>;
 
@@ -98,6 +108,7 @@ export function protocolSchema() {
       ConnectorManifest: ConnectorManifestSchema, Actor: ActorSchema, CallRequest: CallRequestSchema, CallResponse: CallResponseSchema,
       ProtocolError: ProtocolErrorSchema, ExecuteResult: ExecuteResultSchema, ScanRequest: ScanRequestSchema, ScanResponse: ScanResponseSchema,
       ThreadDraft: ThreadDraftSchema, FigureRequest: FigureRequestSchema, FigureResponse: FigureResponseSchema, CallbackRequest: CallbackRequestSchema,
+      SearchHit: SearchHitSchema, SearchOutput: SearchOutputSchema, Delegation: DelegationSchema,
     },
   };
 }

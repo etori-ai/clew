@@ -1,4 +1,4 @@
-import { Type, type Static } from '@sinclair/typebox';
+import { FormatRegistry, Type, type Static } from '@sinclair/typebox';
 
 /** Identity as the browser may see it. Never carries tokens, bindings or grants. */
 export interface SessionUser { id: string; name: string; unitId: string; unitLabel: string; role: 'manager' | 'employee'; }
@@ -11,11 +11,15 @@ export interface AuthenticatedContext extends SessionUser {
   sessionBinding: string;
   expiresAt: string;
   authorize(): Promise<{ version: string }>;
+  /** A token the IdP issued for `audience` by token exchange from this session (D26). Absent when no session is behind the context; undefined under a session without IdP tokens. */
+  delegate?: (audience: string) => Promise<string | undefined>;
 }
 export const sessionUser = (c: SessionUser): SessionUser => ({ id: c.id, name: c.name, unitId: c.unitId, unitLabel: c.unitLabel, role: c.role });
 
 const object = <T extends Record<string, import('@sinclair/typebox').TSchema>>(properties: T) => Type.Object(properties, { additionalProperties: false });
 const instant = Type.String({ format: 'date-time', maxLength: 40 });
+// TypeBox's own `Value.Check` knows no formats until one is registered; Ajv (the routes) has its own. One definition, here, so every schema with an instant checks the same way.
+if (!FormatRegistry.Has('date-time')) FormatRegistry.Set('date-time', value => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(value) && !Number.isNaN(Date.parse(value)));
 const id = Type.String({ minLength: 1, maxLength: 80 });
 
 /** One figure in the fixed "Läget" row: a sentence with a comparison, never a bare KPI tile. */
@@ -77,18 +81,69 @@ export function replySummary(proposals: Array<{ status: ProposalStatus }>) {
 
 
 /** Something rendered on the page that the person can point at in the conversation (D12): a card, a row, an event, a proposal, a capability. */
-export const ChipKind = Type.Union([Type.Literal('thread'), Type.Literal('item'), Type.Literal('event'), Type.Literal('proposal'), Type.Literal('capability')]);
+export const ChipKind = Type.Union([Type.Literal('thread'), Type.Literal('item'), Type.Literal('event'), Type.Literal('proposal'), Type.Literal('capability'), Type.Literal('document')]);
 export type ChipKind = Static<typeof ChipKind>;
 export const ChipSchema = object({ ref: Type.String({ minLength: 1, maxLength: 200, pattern: '^[a-z]+:[A-Za-z0-9:_.@-]+$' }), kind: ChipKind, label: Type.String({ maxLength: 200 }) });
 export type Chip = Static<typeof ChipSchema>;
-export const AnswerShape = Type.Union([Type.Literal('svar'), Type.Literal('vy'), Type.Literal('forslag')]);
+/** Svar is a sentence or two, vy opens a view, forslag points at a proposal card, steg is a procedure as numbered steps (D26). */
+export const AnswerShape = Type.Union([Type.Literal('svar'), Type.Literal('vy'), Type.Literal('forslag'), Type.Literal('steg')]);
 export type AnswerShape = Static<typeof AnswerShape>;
+/** A source the answer cites as `[n]` (D26): a ref the person can open or add to the conversation, never the text. */
+export const SourceCitationSchema = object({
+  n: Type.Integer({ minimum: 1 }), ref: Type.String({ maxLength: 260 }), label: Type.String(), source: Type.String(),
+  link: Type.Optional(Type.String()), section: Type.Optional(Type.String()), owner: Type.Optional(Type.String()), reviewedAt: Type.Optional(instant),
+  stale: Type.Union([Type.Boolean(), Type.Null()]),
+});
+export type SourceCitation = Static<typeof SourceCitationSchema>;
 /** How the answer was produced: the model with read tools, the deterministic router, or the router because the configured model failed (D8). */
 export const AssistantMode = Type.Union([Type.Literal('model'), Type.Literal('router'), Type.Literal('unavailable')]);
 export type AssistantMode = Static<typeof AssistantMode>;
 /** A view the client can open in the side panel: a read capability and its input, rendered by Clew from the output. */
 export const ViewRefSchema = object({ capability: Type.String(), input: Type.Record(Type.String(), Type.Unknown()), title: Type.String(), source: Type.String() });
 export type ViewRef = Static<typeof ViewRefSchema>;
+
+/** What a search can find (D26): a document or a passage of one, a person, a case, a room. */
+export const SearchKind = Type.Union([Type.Literal('document'), Type.Literal('person'), Type.Literal('case'), Type.Literal('room')]);
+export type SearchKind = Static<typeof SearchKind>;
+/**
+ * One thing a connector's `<id>.search` found (D26): found text with where it lives and who keeps it current. `ref` is
+ * the connector's own id for it, stable, and what `<id>.fetch` takes back. Clew stores refs, never the text.
+ */
+export const SearchHitSchema = object({
+  ref: Type.String({ minLength: 1, maxLength: 200, pattern: '^[A-Za-z0-9:_.@-]+$' }),
+  kind: SearchKind,
+  /** Swedish or the document's own title. */
+  label: Type.String({ minLength: 1, maxLength: 200 }),
+  /** The passage that matched, or a summary; what the model reads and the person sees under the title. */
+  snippet: Type.String({ maxLength: 1200 }),
+  /** Where to open it, in the source system. */
+  link: Type.Optional(Type.String({ maxLength: 1000 })),
+  /** The source as shown to the person: "Eneo", "Intranätet". */
+  source: Type.String({ minLength: 1, maxLength: 80 }),
+  /** The heading of the passage inside the document, when the source knows it. */
+  section: Type.Optional(Type.String({ maxLength: 200 })),
+  /** Who keeps the document current: a role or a unit, never a person's name. */
+  owner: Type.Optional(Type.String({ maxLength: 120 })),
+  updatedAt: Type.Optional(instant),
+  /** When the document was last reviewed, and how often the owner means to; the composite marks it stale from these. */
+  reviewedAt: Type.Optional(instant),
+  reviewIntervalDays: Type.Optional(Type.Integer({ minimum: 1, maximum: 3650 })),
+  /** The source's own relevance, higher is better; only compared within one source. */
+  score: Type.Optional(Type.Number()),
+});
+export type SearchHit = Static<typeof SearchHitSchema>;
+/** What `<id>.search` returns. */
+export const SearchOutputSchema = object({ rows: Type.Array(SearchHitSchema, { maxItems: 50 }) });
+export type SearchOutput = Static<typeof SearchOutputSchema>;
+/** One source's part in a fan-out: it answered, it did not answer, or it did not answer in time. */
+export const SearchSourceSchema = object({ id: Type.String(), source: Type.String(), status: Type.Union([Type.Literal('ok'), Type.Literal('unavailable'), Type.Literal('timeout')]) });
+export type SearchSource = Static<typeof SearchSourceSchema>;
+/** What the composite `clew.search` returns: merged hits, each marked stale or not (null when the source gives no date), and every source's status. */
+export const SearchResultSchema = object({
+  rows: Type.Array(Type.Intersect([SearchHitSchema, object({ stale: Type.Union([Type.Boolean(), Type.Null()]), connector: Type.String() })])),
+  sources: Type.Array(SearchSourceSchema),
+});
+export type SearchResult = Static<typeof SearchResultSchema>;
 /** A Clew-side action the conversation proposes; executed only after the person confirms, through the thread endpoints. */
 export const ClewActionSchema = object({ n: Type.Integer(), kind: Type.Union([Type.Literal('dismiss'), Type.Literal('snooze')]), threadId: id, label: Type.String() });
 export type ClewAction = Static<typeof ClewActionSchema>;
@@ -108,6 +163,9 @@ export const MessageMetaSchema = object({
   shape: Type.Optional(AnswerShape), view: Type.Optional(ViewRefSchema), draft: Type.Optional(DraftSchema),
   toolCalls: Type.Optional(Type.Array(object({ capability: Type.String(), input: Type.Unknown() }))),
   assistant: Type.Optional(AssistantMode), source: Type.Optional(Type.String()),
+  /** The sources a document answer cites (D26), numbered as `[n]` in the body; refs only. */
+  sources: Type.Optional(Type.Array(SourceCitationSchema, { maxItems: 10 })),
+  followUps: Type.Optional(Type.Array(Type.String(), { maxItems: 3 })),
 });
 export type MessageMeta = Static<typeof MessageMetaSchema>;
 export const ThreadMessageSchema = object({
@@ -156,7 +214,7 @@ export const ThreadSchema = object({
   messages: Type.Array(ThreadMessageSchema), proposals: Type.Array(ProposalSchema),
   /** Target week (Monday) for proposal threads. */
   week: Type.Union([Type.String(), Type.Null()]),
-  /** The connector (area) the thread belongs to. `calendar` for proposal threads, `startsidan` for questions. */
+  /** The connector (area) the thread belongs to. `calendar` for proposal threads, `clew` for questions. */
   connector: Type.String(),
   area: Type.String(),
   /** One sentence the card leads with. */
@@ -416,6 +474,7 @@ export const ConversationResponseSchema = object({
   clewActions: Type.Array(ClewActionSchema),
   verbs: Type.Optional(Type.Array(VerbSchema)),
   followUps: Type.Array(Type.String()),
+  sources: Type.Optional(Type.Array(SourceCitationSchema, { maxItems: 10 })),
 });
 export type ConversationResponse = Static<typeof ConversationResponseSchema>;
 /** An object the `@` menu can offer: what is visible on the page first, then everything in scope. */

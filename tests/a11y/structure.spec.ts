@@ -98,6 +98,41 @@ test.describe('3.1.2 language of parts', () => {
   });
 });
 
+test.describe('D26 questions answered from documents', () => {
+  test('the answer is numbered steps with citations that open the document, its source is named under it, and the follow-ups are a group', async ({ page, api: _ }) => {
+    await open(page, '/');
+    const input = composer(page);
+    await input.fill('Brukaren har ramlat, vad gör jag?');
+    await input.press('Enter');
+    const bubble = page.locator('.astryx-chat-message-bubble').filter({ hasText: 'Lyft inte själv' });
+    await expect(bubble).toBeVisible();
+    await expect(bubble.getByRole('list').first().getByRole('listitem')).toHaveCount(3);
+    await expect(bubble.getByRole('link').first()).toHaveAttribute('href', /intra\.example/);
+    await expect(bubble.getByText('MAS', { exact: true })).toBeVisible();
+    await expect(bubble.getByText('12 mars 2026', { exact: true })).toBeVisible();
+    await expect(bubble.getByRole('button', { name: 'Visa källor' })).toBeVisible();
+    await expect(page.getByRole('group', { name: 'Följdfrågor' }).getByRole('button', { name: 'Och om hen slagit i huvudet?' })).toBeVisible();
+    // "Gör till ett kort" proposes; the answer executes nothing. What happened is said in the transcript.
+    await bubble.getByRole('button', { name: 'Gör till ett kort' }).click();
+    await expect(page.getByText(/^Klart\. Kortet "Ny rutin för läkemedelshantering" ligger under Behöver dig/)).toBeVisible();
+  });
+  test('the sources view numbers its rows, names owner and review date, warns about a stale one and says which source did not answer', async ({ page, api: _ }) => {
+    await open(page, '/vy/clew.search?titel=K%C3%A4llor&input=%7B%22query%22%3A%22fall%22%7D');
+    const panel = page.getByRole('dialog');
+    await expect(panel.getByRole('heading', { name: 'Källor' })).toBeVisible();
+    const rows = panel.getByRole('list', { name: 'Källor' }).getByRole('listitem');
+    await expect(rows).toHaveCount(3);
+    await expect(rows.nth(0)).toContainText('Rutin vid fall i ordinärt boende · Vid fall');
+    await expect(rows.nth(0)).toContainText('MAS · granskad 12 mars 2026 · Intranätet');
+    await expect(rows.nth(0).getByRole('link', { name: 'Öppna' })).toHaveAttribute('target', '_blank');
+    await expect(rows.nth(0).getByRole('button', { name: 'Lägg till i samtalet' })).toBeVisible();
+    await expect(rows.nth(2)).toContainText('Granskad för 2 år sedan');
+    await expect(rows.nth(2).getByRole('link', { name: 'Öppna' })).toHaveCount(0);
+    await expect(panel.getByText(/^SharePoint svarade inte\./)).toBeVisible();
+    await expect(panel).not.toContainText('{');
+  });
+});
+
 test.describe('D30 the obligation', () => {
   test('the card carries its steps, its judgement calls and its day loads with names', async ({ page, api: _ }) => {
     await open(page, '/');

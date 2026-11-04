@@ -87,9 +87,9 @@ Clew signs a JWT per call with the connector's shared secret (HS256):
 
 The connector verifies signature, issuer, audience and expiry and takes the actor from the claim. The
 secret is per connector (sealed in Clew's `connector` row, whatever name the connector uses on its side),
-16 characters or more, and is the only credential between the two. The person's own IdP token is not
-forwarded; when token exchange is in place (D5) a `user-delegated` connector gets an audience-bound token in
-the same header and nothing else changes.
+16 characters or more, and is the only credential between the two. The person's own IdP token is never
+forwarded. A connector that must act as the person against its system declares `delegation` (section "Acting as
+the person") and gets a token bound to its own audience in a second header; the assertion stays as it is.
 
 ## Calling back: other connectors' capabilities
 
@@ -131,6 +131,37 @@ their receipts and the audit rows. The connector's own state is the connector's.
 `protocol` is an integer. A change that a connector built against version 1 would not survive is version 2,
 and Clew will accept both for at least one release and say which in the manifest error. Adding an optional
 field is not a version change.
+
+## Being a search source (D26)
+
+A connector whose system holds documents, people, cases or rooms declares a `read` capability named `<id>.search`
+with input `{ query }` and output `{ rows: SearchHit[] }` (`SearchHit` and `SearchOutput` are in the schema's
+`$defs`: `ref`, `kind`, `label`, `snippet`, `link`, `source`, `section`, `owner`, `updatedAt`, `reviewedAt`,
+`reviewIntervalDays`, `score`), and a `<id>.fetch` read that takes one of its refs back and returns one `SearchHit`.
+The capability may carry `kinds` (`document`, `person`, `case`, `room`) so Clew skips it for a question it cannot
+answer. That is all: Clew's composite search `clew.search` asks every such source in the person's scope at the
+same time, under a budget (3 s per source inside 4 s in all), merges the rows, marks each stale from `reviewedAt`
+(or `updatedAt`) and the review interval (a year when none is given), and names the sources that did not answer.
+The model sees the composite only; the person sees the rows as citations and in the sources view and can add one
+to the conversation, which calls `<id>.fetch`. A source with no search of its own brings its own index inside its
+container. Clew stores refs, never the text.
+
+## Acting as the person (D26)
+
+A connector that must call its system as the person, not as a service, declares in its manifest:
+
+```json
+"delegation": { "audience": "eneo" }
+```
+
+On every capability call Clew then trades the person's session for an IdP token bound to that audience (RFC 8693
+token exchange at the IdP, the audience being a client the administrator has set up for the system) and sends it as
+`X-Clew-Delegated-Token` beside the assertion. The connector forwards it as the bearer to its system and nothing
+else: no header from the incoming request, no `Origin`, never stored, never retried after a 401. The token lives
+about a minute. The header is absent on `scan`, `figure`, a callback and a session that holds no IdP token (a dev
+session); the connector then answers `{ error: { code: "denied", … } }`, which the composite search reports as that
+source not answering. `bun scripts/connector-check.ts` has no session, so for a delegating connector a `denied`
+answer is the expected one. `connectors/eneo` is the reference.
 
 ## What stays in Clew
 

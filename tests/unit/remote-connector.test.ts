@@ -77,6 +77,60 @@ describe('a remote connector in the registry', () => {
   });
 });
 
+describe('a user-delegated connector (D26)', () => {
+  const delegating = { ...(helloManifest as object), delegation: { audience: 'eneo' } };
+  /** Hello in-process, with every request's headers recorded; a variant that refuses a call without the person's token. */
+  function delegated(options: { requireToken?: boolean } = {}) {
+    const hello = createConnector({ secret, clewUrl: 'http://clew', fetch: async () => Response.json({ output: { date: '2026-11-04', events: [], gaps: [] } }) });
+    const headers: Record<string, string | null>[] = [];
+    const connectorFetch: FetchLike = (input, init) => {
+      const h = new Headers(init?.headers);
+      headers.push({ auth: h.get('authorization')?.slice(0, 7) ?? null, delegated: h.get('x-clew-delegated-token'), body: String(init?.body) });
+      if (options.requireToken && !h.get('x-clew-delegated-token') && !String(input).endsWith('/clew/manifest')) return Promise.resolve(Response.json({ error: { code: 'denied', message: 'Din inloggning kan inte styrkas mot Eneo i den här sessionen.' } }, { status: 403 }));
+      return hello.handle(new Request(input, init));
+    };
+    const registry = new Registry();
+    registry.register(remoteConnector(parseManifest(delegating, 'hello'), { url: 'http://hello', assert: assertionFor('hello', secret), fetch: connectorFetch }));
+    return { registry, headers };
+  }
+  test('the token travels beside the assertion, only when the manifest asks and the session has one; the body is unchanged', async () => {
+    const { registry, headers } = delegated();
+    const asked: string[] = [];
+    expect(await registry.run(hassan, 'hello.greeting', {}, { delegate: async audience => { asked.push(audience); return 'tok-' + audience; } })).toMatchObject({ text: expect.stringContaining('Hassan') });
+    expect(asked).toEqual(['eneo']);
+    expect(headers.at(-1)).toMatchObject({ auth: 'Bearer ', delegated: 'tok-eneo' });
+    expect(JSON.parse(headers.at(-1)!.body!)).toEqual({ actor: hassan, input: {} });
+    await registry.run(hassan, 'hello.greeting', {});
+    expect(headers.at(-1)!.delegated).toBeNull();
+    await registry.run(hassan, 'hello.greeting', {}, { delegate: async () => undefined });
+    expect(headers.at(-1)!.delegated).toBeNull();
+    // The plain manifest in the same registry never invokes the delegate.
+    const plain = new Registry().register(remoteConnector(parseManifest(helloManifest, 'hello'), { url: 'http://hello', assert: assertionFor('hello', secret), fetch: (i, init) => createConnector({ secret }).handle(new Request(i, init)) }));
+    let invoked = false;
+    await plain.run(hassan, 'hello.greeting', {}, { delegate: async () => { invoked = true; return 'x'; } });
+    expect(invoked).toBe(false);
+  });
+  test('the connector refuses a call without the person\'s token in its own words; an exchange that fails is one Swedish line', async () => {
+    const { registry } = delegated({ requireToken: true });
+    await expect(registry.run(hassan, 'hello.greeting', {}, { delegate: async () => undefined })).rejects.toThrow('Din inloggning kan inte styrkas mot Eneo i den här sessionen.');
+    await expect(registry.run(hassan, 'hello.greeting', {}, { delegate: async () => { throw new Error('keycloak down'); } })).rejects.toThrow('Hello kunde inte få din behörighet just nu.');
+    expect(await registry.run(hassan, 'hello.greeting', {}, { delegate: async () => 'tok' })).toMatchObject({ text: expect.stringContaining('Hassan') });
+  });
+  test('a nested clew.call carries the same delegate; a session-less run carries none', async () => {
+    const { registry, headers } = delegated();
+    registry.register({ id: 'comp', kind: 'derived', source: 'S', areas: [], capabilities: [{ name: 'comp.hi', kind: 'read', title: 'x', description: 'x', input: {} as never, output: {} as never, model: false, scope: {}, run: (_a, _i, clew) => clew.call('hello.greeting') }] });
+    await registry.run(hassan, 'comp.hi', {}, { delegate: async () => 'nested-token' });
+    expect(headers.at(-1)!.delegated).toBe('nested-token');
+    await registry.run(hassan, 'comp.hi', {});
+    expect(headers.at(-1)!.delegated).toBeNull();
+  });
+  test('the manifest field is optional, closed and validated', () => {
+    expect(parseManifest(delegating, 'hello').delegation).toEqual({ audience: 'eneo' });
+    expect(() => parseManifest({ ...delegating, delegation: { audience: '' } })).toThrow(ManifestError);
+    expect(() => parseManifest({ ...delegating, delegation: { audience: 'eneo', extra: 1 } })).toThrow(ManifestError);
+  });
+});
+
 describe('assertions and configuration', () => {
   test('an assertion is accepted only by Clew for the connector it was issued to', async () => {
     const token = await assertionFor('hello', secret)(hillevi);

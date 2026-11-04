@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext, Thread } from '../../packages/contracts/src/index';
-import { actorOf, Registry } from '../../packages/connectors/src/index';
+import { actorOf, Registry, type Connector } from '../../packages/connectors/src/index';
+import { searchConnector } from '../../apps/server/src/modules/search/connector';
+import { searchUsecases } from '../../apps/server/src/modules/search/usecases';
 import { memoryState } from '../../packages/connectors/src/memory-state';
 import { heromaConnector } from '../../packages/connectors/src/mock/heroma';
 import { raindanceConnector } from '../../packages/connectors/src/mock/raindance';
@@ -23,6 +25,7 @@ import type { ModelGenerate } from '../../apps/server/src/assistant/model';
 const persona = (id: string, role: 'manager' | 'employee'): AuthenticatedContext => ({ id, name: id === 'hillevi' ? 'Hillevi Berg' : 'Hassan Ali', unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role,
   organisationId: 'sundsvall', principal: { id: 'person:' + id, kind: 'person' }, capabilities: [], authorizationVersion: 'v1', sessionBinding: 'test', expiresAt: '2099-01-01T00:00:00.000Z', async authorize() { return { version: 'v1' }; } });
 const hillevi = persona('hillevi', 'manager');
+const hassan = persona('hassan', 'employee');
 const T0 = '2026-11-04T07:00:00.000Z';
 const account = { ref: 'memory:account:hillevi', email: 'hillevi@clew.test', name: 'Hillevi Berg' };
 const members = ['Anna Lindqvist', 'Erik Sandström'].map(name => { const first = name.split(' ')[0]!.toLowerCase(); return { personId: first, ref: 'memory:account:' + first, email: first + '@clew.test', name }; });
@@ -50,7 +53,7 @@ describe('a question without the model', () => {
   test('is answered by the router, kept as a question thread and audited; a reply continues the same thread', async () => {
     const w = world();
     const first = await w.assistant.converse(hillevi, { text: 'visa fakturor' });
-    expect(first).toMatchObject({ assistant: 'router', shape: 'vy', answer: { at: T0, source: 'Raindance' }, view: { capability: 'raindance.invoices' }, thread: { kind: 'question', topic: 'question', connector: 'startsidan', area: 'fragor', title: 'visa fakturor', state: 'open' } });
+    expect(first).toMatchObject({ assistant: 'router', shape: 'vy', answer: { at: T0, source: 'Raindance' }, view: { capability: 'raindance.invoices' }, thread: { kind: 'question', topic: 'question', connector: 'clew', area: 'fragor', title: 'visa fakturor', state: 'open' } });
     expect(first.thread.messages.map(m => [m.role, m.body])).toEqual([['user', 'visa fakturor'], ['assistant', first.answer.body]]);
     expect(first.thread.messages[1]!.meta).toMatchObject({ shape: 'vy', assistant: 'router', source: 'Raindance', toolCalls: [{ capability: 'raindance.invoices' }] });
     expect(w.store.audit.at(-1)).toMatchObject({ actor: 'person:hillevi', action: 'conversation.asked', subject: 'thread:' + first.conversationId, at: T0, details: { assistant: 'router', tools: ['raindance.invoices'], view: 'raindance.invoices' } });
@@ -61,6 +64,18 @@ describe('a question without the model', () => {
     expect(second.thread.messages).toHaveLength(4);
     expect(audit(w.store, first.conversationId)).toEqual(['conversation.asked', 'conversation.replied']);
     await expect(w.assistant.converse(hillevi, { text: 'x', conversationId: 'nope' })).rejects.toThrow('Samtalet finns inte.');
+  });
+  test('a question no capability answers goes to the composite search as typed, and the hits become a view (D26, D8)', async () => {
+    const w = world();
+    const docs: Connector = { id: 'docs', kind: 'passthrough', source: 'Intranätet', areas: [], capabilities: [{ name: 'docs.search', kind: 'read', title: 'Sök på intranätet', description: 'x', input: {} as never, output: {} as never, model: true, scope: {},
+      run: async (_a, input: { query: string }) => ({ rows: [{ ref: 'fall-2', kind: 'document', label: 'Rutin vid fall i ordinärt boende', snippet: 'Innan den enskilde hjälps upp …', source: 'Intranätet', section: 'Vid fall', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00Z', link: 'https://intra/fall#' + encodeURIComponent(input.query) }] }) }] };
+    w.registry.register(docs);
+    w.registry.register(searchConnector(searchUsecases({ sources: a => w.registry.searchSources(a), clock: w.deps.clock })));
+    const r = await w.assistant.converse(hassan, { text: 'brukaren har ramlat men verkar oskadd, vad gör jag?' });
+    expect(r).toMatchObject({ assistant: 'router', shape: 'vy', answer: { source: 'Startsidan' }, view: { capability: 'clew.search', input: { query: 'brukaren har ramlat men verkar oskadd, vad gör jag?' }, title: 'Källor' }, followUps: ['Vid fall'] });
+    expect(r.answer.body).toMatch(/^1 träff i rutiner och dokument: Rutin vid fall i ordinärt boende\. Läs själv i panelen/);
+    expect(w.store.audit.at(-1)).toMatchObject({ action: 'conversation.asked', details: { assistant: 'router', tools: ['clew.search'], view: 'clew.search' } });
+    expect(w.registry.tools(actorOf(hassan)).map(t => t.name)).not.toContain('docs.search');
   });
   test('the fixed questions answer from the calendar and the figures, and the samtal question points at the proposal card', async () => {
     const w = world();
@@ -168,5 +183,44 @@ describe('with a model', () => {
     w.model.markAvailable();
     fail = false;
     expect((await w.assistant.converse(hillevi, { text: 'vem är här?' })).assistant).toBe('model');
+  });
+});
+
+describe('a question answered from documents, with the model (D26)', () => {
+  const docs: Connector = { id: 'docs', kind: 'passthrough', source: 'Intranätet', areas: [], capabilities: [
+    { name: 'docs.search', kind: 'read', title: 'Sök på intranätet', description: 'x', input: {} as never, output: {} as never, model: true, scope: {},
+      run: async () => ({ rows: [
+        { ref: 'fall-2', kind: 'document', label: 'Rutin vid fall i ordinärt boende', snippet: 'Innan den enskilde hjälps upp …', source: 'Intranätet', section: 'Vid fall', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00Z', link: 'https://intra/fall' },
+        { ref: 'fall-4', kind: 'document', label: 'Rutin vid fall i ordinärt boende', snippet: 'Varje fall registreras som avvikelse …', source: 'Intranätet', section: 'Avvikelse', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00Z' },
+      ] }) },
+    { name: 'docs.fetch', kind: 'read', title: 'Hämta', description: 'x', input: {} as never, output: {} as never, model: false, scope: {},
+      run: async (_a, input: { ref: string }) => { if (input.ref !== 'fall-2') throw new Error('nope'); return { ref: input.ref, kind: 'document', label: 'Rutin vid fall i ordinärt boende', snippet: 'Innan den enskilde hjälps upp …', source: 'Intranätet', section: 'Vid fall', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00Z' }; } },
+  ] };
+  test('the model searches once, the answer is cited and read as steps, the follow-ups come from the trailer, and a passage can be chipped for the next turn', async () => {
+    const seen: string[] = [];
+    const generate: ModelGenerate = async ({ system, messages, tools }) => {
+      seen.push(system, String(messages.at(-1)!.content));
+      expect(Object.keys(tools)).toContain('clew__search');
+      expect(Object.keys(tools)).not.toContain('docs__search');
+      const output = await (tools['clew__search'] as { execute: (input: unknown, options: unknown) => Promise<unknown> }).execute({ query: 'brukaren har ramlat' }, {});
+      return { text: '1. Lyft inte själv [1].\n2. Ring sjuksköterskan [1].\n3. Skriv avvikelse i Treserva [2].\nFöljdfrågor: Och om hen slagit i huvudet? | Vem ringer jag på natten?', toolCalls: [{ capability: 'clew.search', input: { query: 'brukaren har ramlat' }, output }] };
+    };
+    const w = world({ generate });
+    w.registry.register(docs);
+    w.registry.register(searchConnector(searchUsecases({ sources: a => w.registry.searchSources(a), clock: w.deps.clock })));
+    const r = await w.assistant.converse(hassan, { text: 'Brukaren har ramlat men verkar oskadd, vad gör jag?' });
+    expect(r).toMatchObject({ assistant: 'model', shape: 'steg', answer: { source: 'Startsidan' }, followUps: ['Och om hen slagit i huvudet?', 'Vem ringer jag på natten?'], view: { capability: 'clew.search', title: 'Källor' } });
+    expect(r.answer.body).toBe('1. Lyft inte själv [1].\n2. Ring sjuksköterskan [1].\n3. Skriv avvikelse i Treserva [2].');
+    expect(r.sources).toEqual([
+      { n: 1, ref: 'document:docs:fall-2', label: 'Rutin vid fall i ordinärt boende', source: 'Intranätet', stale: false, link: 'https://intra/fall', section: 'Vid fall', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00Z' },
+      { n: 2, ref: 'document:docs:fall-4', label: 'Rutin vid fall i ordinärt boende', source: 'Intranätet', stale: false, section: 'Avvikelse', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00Z' },
+    ]);
+    expect(r.thread.messages[1]!.meta).toMatchObject({ shape: 'steg', sources: [{ n: 1 }, { n: 2 }], followUps: ['Och om hen slagit i huvudet?', 'Vem ringer jag på natten?'] });
+    expect(w.store.audit.at(-1)).toMatchObject({ action: 'conversation.asked', details: { assistant: 'model', tools: ['clew.search'], sources: ['document:docs:fall-2', 'document:docs:fall-4'] } });
+    expect(JSON.stringify(w.store.audit.at(-1))).not.toContain('Innan den enskilde');
+    const second = await w.assistant.converse(hassan, { text: 'Och om hon slagit i huvudet?', conversationId: r.conversationId, chips: [{ ref: 'document:docs:fall-2', kind: 'document', label: 'ignored' }] });
+    expect(second.conversationId).toBe(r.conversationId);
+    expect(seen.at(-2)).toContain('Avsnitt "Rutin vid fall i ordinärt boende, Vid fall" ur Intranätet (MAS, granskad 2026-03-12)');
+    await expect(w.assistant.converse(hassan, { text: 'x', chips: [{ ref: 'document:docs:nope', kind: 'document', label: 'x' }] })).rejects.toThrow('Något du pekade på finns inte längre.');
   });
 });

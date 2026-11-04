@@ -8,6 +8,8 @@ import { treservaConnector } from '../../packages/connectors/src/mock/treserva';
 import { memoryThreadStore, memoryTimers } from '../../apps/server/src/threads/adapters/memory';
 import { ATTENTION_BUDGET, threadUsecases, type ThreadDeps } from '../../apps/server/src/threads/usecases/cards';
 import { reminderUsecases } from '../../apps/server/src/threads/usecases/reminders';
+import { searchConnector } from '../../apps/server/src/modules/search/connector';
+import { searchUsecases } from '../../apps/server/src/modules/search/usecases';
 
 /**
  * The stream end to end without a server, a database or a timer service (D25): real mock connectors behind the real
@@ -26,8 +28,8 @@ function fakeClock(start = T0) {
 }
 function world() {
   const state = memoryState(), registry = new Registry();
-  for (const m of [heromaConnector(state), raindanceConnector(state), treservaConnector(state)]) registry.register(m);
   const store = memoryThreadStore(), clock = fakeClock();
+  for (const m of [heromaConnector(state), raindanceConnector(state), treservaConnector(state), searchConnector(searchUsecases({ sources: a => registry.searchSources(a), clock }))]) registry.register(m);
   let n = 0;
   const calendar = { calls: [] as string[], today: [] as Array<{ title: string; end: string }>,
     async ensureProposalThread() { calendar.calls.push('ensure'); return undefined; },
@@ -362,5 +364,48 @@ describe('påminn mig', () => {
     await expect(w.reminders.remind(hillevi, card.id, 0)).rejects.toThrow('Ogiltig tid för påminnelsen.');
     await expect(w.reminders.remind(hillevi, card.id, 30 * 24 * 3600 + 1)).rejects.toThrow('Ogiltig tid för påminnelsen.');
     await expect(w.reminders.cancelReminder(hillevi, card.id, 'reminder:other:1')).rejects.toThrow('Okänd påminnelse.');
+  });
+});
+
+describe('a cited answer becomes a card (D26)', () => {
+  const sources = [
+    { n: 1, ref: 'document:docs:fall-2', label: 'Rutin vid fall i ordinärt boende', source: 'Intranätet', stale: false, link: 'https://intra/fall', section: 'Vid fall', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00.000Z' },
+    { n: 2, ref: 'document:eneo:lathund', label: 'Lathund: avvikelser', source: 'Eneo', stale: true, reviewedAt: '2024-11-02T00:00:00.000Z' },
+  ];
+  async function conversation(w: ReturnType<typeof world>, withSources = true) {
+    const at = w.clock().toISOString();
+    await w.store.transaction(async tx => {
+      await tx.insertThread({ id: 'q1', personId: 'hassan', kind: 'question', topic: 'question', title: 'Brukaren har ramlat, vad gör jag?', state: 'open', week: null, connector: 'clew', area: 'fragor', summary: 'svar', items: [], actions: [], waitingOn: null, deadline: null, trigger: { reason: 'Du ställde en fråga', source: 'Startsidan', at }, createdAt: at, updatedAt: at });
+      await tx.addMessage('q1', { role: 'user', body: 'Brukaren har ramlat, vad gör jag?', at });
+      await tx.addMessage('q1', { role: 'assistant', body: '1. Lyft inte själv [1].\n2. Skriv avvikelse [2].', at, meta: { shape: 'steg', ...(withSources ? { sources } : {}) } });
+      await tx.writeAudit({ actor: 'person:hassan', action: 'conversation.asked', subject: 'thread:q1', at });
+    });
+    return (await w.store.readThread('hassan', 'q1'))!;
+  }
+  test('the card carries the sources as rows and the first link as its button; a second click returns the same card', async () => {
+    const w = world();
+    const q = await conversation(w);
+    const answerId = q.messages[1]!.id;
+    const { threadId } = await w.threads.cardFromAnswer(hassan, { conversationId: 'q1', messageId: answerId });
+    const card = (await w.threads.threadFor(hassan, threadId))!;
+    expect(card).toMatchObject({ kind: 'pushed', state: 'open', connector: 'clew', area: 'fragor', topic: 'answer:' + answerId, title: 'Följ upp: Brukaren har ramlat, vad gör jag?', summary: '1. Lyft inte själv [1].\n2. Skriv avvikelse [2].',
+      trigger: { source: 'Startsidan', reason: 'Du frågade 08:00 och gjorde svaret till ett kort' } });
+    expect(card.items).toEqual([
+      { ref: 'document:docs:fall-2', label: '[1] Rutin vid fall i ordinärt boende · Vid fall', detail: 'MAS · granskad 2026-03-12 · Intranätet', selectable: false, selected: false },
+      { ref: 'document:eneo:lathund', label: '[2] Lathund: avvikelser', detail: 'granskad 2024-11-02 · Eneo', selectable: false, selected: false },
+    ]);
+    expect(card.actions).toEqual([{ id: 'open', label: 'Öppna källan', capability: 'clew.openSource', kind: 'read', role: 'primary', target: 'link', input: { ref: 'docs:fall-2' } }]);
+    expect(actions(w.store, threadId)).toEqual(['thread.fromAnswer']);
+    expect(w.store.audit.at(-1)).toMatchObject({ actor: 'person:hassan', action: 'thread.fromAnswer', details: { conversation: 'q1', message: answerId, sources: ['document:docs:fall-2', 'document:eneo:lathund'] } });
+    expect(JSON.stringify(w.store.audit)).not.toContain('Lyft inte själv');
+    expect(await w.threads.cardFromAnswer(hassan, { conversationId: 'q1', messageId: answerId })).toEqual({ threadId });
+    expect((await w.threads.listThreadsFor(hassan)).filter(t => t.topic === 'answer:' + answerId)).toHaveLength(1);
+  });
+  test('refuses a conversation that is not the person\'s, a message without sources, and a card for a pushed thread', async () => {
+    const w = world();
+    const q = await conversation(w, false);
+    await expect(w.threads.cardFromAnswer(hassan, { conversationId: 'q1', messageId: q.messages[1]!.id })).rejects.toThrow('Svaret har inga källor att göra ett kort av.');
+    await expect(w.threads.cardFromAnswer(hillevi, { conversationId: 'q1', messageId: q.messages[1]!.id })).rejects.toThrow('Samtalet finns inte.');
+    await expect(w.threads.cardFromAnswer(hassan, { conversationId: 'q1', messageId: 'nope' })).rejects.toThrow('Svaret har inga källor att göra ett kort av.');
   });
 });

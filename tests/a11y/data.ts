@@ -1,4 +1,4 @@
-import type { Area, Attention, CalendarEvent, SnoozePreset, CheckReport, ConnectorDetail, ConnectorPreview, ConnectorSummary, ConversationResponse, Proposal, SessionUser, Thread, TodayView } from '@clew/contracts';
+import type { Area, Attention, CalendarEvent, SnoozePreset, CheckReport, ConnectorDetail, ConnectorPreview, ConnectorSummary, ConversationResponse, Proposal, SearchResult, SessionUser, SourceCitation, Thread, TodayView } from '@clew/contracts';
 
 /** Synthetic data, typed against the contracts so the suite follows the API. The clock is frozen to this Wednesday. */
 export const NOW = '2026-11-04T08:00:00.000Z';
@@ -62,7 +62,7 @@ export const threads = (): Thread[] => [
         { ref: 'raindance:inv:8', label: 'IT-partner AB', outcome: 'unknown', detail: 'Väntar på svar från Raindance' },
       ] } }),
   thread({ id: 'avfardad', title: 'Påminnelse om brandskyddsrond', topic: 'brand', state: 'dismissed', handledAt: NOW, connector: 'kommunikation', area: 'viktigt-nu' }),
-  thread({ id: 'fraga', title: 'Vem är på plats i dag?', topic: 'fraga', kind: 'question', state: 'handled', handledAt: NOW, connector: 'startsidan', area: 'fragor',
+  thread({ id: 'fraga', title: 'Vem är på plats i dag?', topic: 'fraga', kind: 'question', state: 'handled', handledAt: NOW, connector: 'clew', area: 'fragor',
     messages: [{ id: 'q1', role: 'user', body: 'Vem är på plats i dag?', createdAt: NOW }, { id: 'q2', role: 'assistant', body: 'Tio personer är på plats.', createdAt: NOW }] }),
 ];
 
@@ -103,10 +103,28 @@ export const events = (from: string): CalendarEvent[] => [0, 1, 2, 3, 4].map(off
   return { id: `v${offset}`, title: 'Morgonmöte ledningsgrupp', start: `${day}T07:15:00.000Z`, end: `${day}T07:45:00.000Z`, allDay: false, mine: true, room: 'A12', participants: ['Mona Berg', 'Per Lindahl'], ref: `memory:v${offset}`, revision: 'r1', canCancel: true, recurring: false, organizer: 'Testa Testsson' };
 });
 
+/** The composite search's output (D26): two passages of one routine, a stale lathund, and one source that did not answer. */
+export const searchOutput: SearchResult = {
+  rows: [
+    { ref: 'fall-2', connector: 'intranat', kind: 'document', label: 'Rutin vid fall i ordinärt boende', section: 'Vid fall', snippet: 'Innan den enskilde hjälps upp ska personalen bedöma smärta, yrsel och tecken på huvudskada.', source: 'Intranätet', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00.000Z', link: 'https://intra.example/rutin-fall', stale: false },
+    { ref: 'fall-4', connector: 'intranat', kind: 'document', label: 'Rutin vid fall i ordinärt boende', section: 'Avvikelse', snippet: 'Varje fall registreras som avvikelse i Treserva innan arbetspasset avslutas.', source: 'Intranätet', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00.000Z', link: 'https://intra.example/rutin-fall#avvikelse', stale: false },
+    { ref: 'lathund-7', connector: 'eneo', kind: 'document', label: 'Lathund: avvikelser i Treserva', snippet: 'Öppna Avvikelser, välj Ny och ange brukare.', source: 'Eneo', updatedAt: '2024-11-02T00:00:00.000Z', stale: true },
+  ],
+  sources: [{ id: 'intranat', source: 'Intranätet', status: 'ok' }, { id: 'eneo', source: 'Eneo', status: 'ok' }, { id: 'sharepoint', source: 'SharePoint', status: 'timeout' }],
+};
+const citations: SourceCitation[] = searchOutput.rows.slice(0, 2).map((r, i) => ({ n: i + 1, ref: `document:${r.connector}:${r.ref}`, label: r.label, source: r.source, stale: r.stale, link: r.link!, section: r.section!, owner: r.owner!, reviewedAt: r.reviewedAt! }));
 export const conversation = (source: Thread[], text: string, conversationId = 'konversation'): ConversationResponse => {
-  const body = 'Tio personer är på plats i dag. Sara Nyström är sjuk.';
   const previous = source.find(t => t.id === conversationId)?.messages ?? [];
-  const reply = thread({ id: conversationId, title: 'Vem är på plats i dag?', kind: 'question', connector: 'startsidan', area: 'fragor',
+  // A question about a routine is answered from documents (D26): numbered steps, citations, the sources as a view.
+  if (/ramlat/i.test(text)) {
+    const body = '1. Lyft inte själv [1].\n2. Ring sjuksköterskan på jourtelefonen [1].\n3. Skriv avvikelse i Treserva innan passet slutar [2].';
+    const view = { capability: 'clew.search', input: { query: text }, title: 'Källor', source: 'Startsidan' };
+    const reply = thread({ id: conversationId, title: text.slice(0, 80), kind: 'question', connector: 'clew', area: 'fragor',
+      messages: [...previous, { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW }, { id: `a${previous.length}`, role: 'assistant', body, createdAt: NOW, meta: { source: 'Startsidan', shape: 'steg', view, sources: citations, followUps: ['Och om hen slagit i huvudet?'] } }] });
+    return { conversationId, thread: reply, shape: 'steg', assistant: 'model', answer: { body, source: 'Startsidan', at: NOW }, view, clewActions: [], followUps: ['Och om hen slagit i huvudet?', 'Vem ringer jag på natten?'], sources: citations };
+  }
+  const body = 'Tio personer är på plats i dag. Sara Nyström är sjuk.';
+  const reply = thread({ id: conversationId, title: 'Vem är på plats i dag?', kind: 'question', connector: 'clew', area: 'fragor',
     messages: [...previous, { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW }, { id: `a${previous.length}`, role: 'assistant', body, createdAt: NOW, meta: { source: 'Heroma' } }] });
   return { conversationId, thread: reply, shape: 'svar', assistant: 'router', answer: { body, source: 'Heroma', at: NOW }, clewActions: [], followUps: ['Vem är sjuk i morgon?'] };
 };

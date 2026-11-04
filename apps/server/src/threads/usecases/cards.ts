@@ -251,6 +251,38 @@ export function threadUsecases(deps: ThreadDeps) {
     if (!thread) throw new InputError('Tråden finns inte.');
     return thread.proposals.length ? calendar.dismiss(persona, threadId) : dismissThread(persona, threadId);
   }
-  return { ensureThreads, pushDraft, listAreas, act, undoReceipt, closeReceiptWindow, dismissThread, snoozeThread, snoozeOptions, reopenThread, attentionFor, listThreadsFor, threadFor, dismissAny };
+  /**
+   * A cited answer becomes a card (D26): the sources as rows, the first source's link as the primary button, the answer as
+   * the summary. Idempotent per answer: a second click returns the open card. The answer never executes anything; the card does.
+   */
+  async function cardFromAnswer(persona: Pick<AuthenticatedContext, 'id'>, input: { conversationId: string; messageId: string }) {
+    const conversation = await store.readThread(persona.id, input.conversationId);
+    if (!conversation || conversation.kind !== 'question') throw new InputError('Samtalet finns inte.');
+    const index = conversation.messages.findIndex(m => m.id === input.messageId && m.role === 'assistant');
+    const message = conversation.messages[index];
+    const sources = message?.meta?.sources ?? [];
+    if (!message || !sources.length) throw new InputError('Svaret har inga källor att göra ett kort av.');
+    const topic = 'answer:' + input.messageId;
+    const existing = await store.openThread(persona.id, topic);
+    if (existing) return { threadId: existing.id };
+    const question = [...conversation.messages.slice(0, index)].reverse().find(m => m.role === 'user')?.body ?? conversation.title;
+    const now = clock(), at = now.toISOString(), id = ids();
+    const first = sources[0]!;
+    const reviewed = (s: typeof first) => s.reviewedAt ? 'granskad ' + s.reviewedAt.slice(0, 10) : '';
+    const inserted = await store.transaction(async tx => {
+      const ok = await tx.insertThread({ id, personId: persona.id, kind: 'pushed', topic, title: ('Följ upp: ' + question).slice(0, 120), state: 'open', week: null,
+        connector: 'clew', area: 'fragor', summary: message.body,
+        items: sources.map(s => ({ ref: s.ref, label: `[${s.n}] ${s.label}${s.section ? ' · ' + s.section : ''}`, detail: [s.owner, reviewed(s), s.source].filter(Boolean).join(' · '), selectable: false, selected: false })),
+        actions: first.link ? [{ id: 'open', label: 'Öppna källan', capability: 'clew.openSource', kind: 'read', role: 'primary', target: 'link', input: { ref: first.ref.replace(/^document:/, '') } }] : [],
+        waitingOn: null, deadline: null, trigger: { reason: `Du frågade ${now.toLocaleTimeString('sv-SE', { timeStyle: 'short', timeZone: 'Europe/Stockholm' })} och gjorde svaret till ett kort`, source: 'Startsidan', at }, createdAt: at, updatedAt: at });
+      if (!ok) return false;
+      await tx.addMessage(id, { role: 'assistant', body: message.body, at });
+      await tx.writeAudit({ actor: 'person:' + persona.id, action: 'thread.fromAnswer', subject: 'thread:' + id, at, details: { connector: 'clew', topic, owner: persona.id, conversation: input.conversationId, message: input.messageId, sources: sources.map(s => s.ref) } });
+      return true;
+    });
+    if (!inserted) { const raced = await store.openThread(persona.id, topic); if (raced) return { threadId: raced.id }; throw new InputError('Kortet kunde inte skapas.'); }
+    return { threadId: id };
+  }
+  return { ensureThreads, pushDraft, listAreas, act, undoReceipt, closeReceiptWindow, dismissThread, snoozeThread, snoozeOptions, reopenThread, attentionFor, listThreadsFor, threadFor, dismissAny, cardFromAnswer };
 }
 export type ThreadUsecases = ReturnType<typeof threadUsecases>;

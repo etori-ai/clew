@@ -93,6 +93,19 @@ test.describe('2.4.3 focus order', () => {
   });
 });
 
+test.describe('D26 a source becomes a chip', () => {
+  test('Lägg till i samtalet in the sources view puts the passage in the row\'s drawer and says so on the row', async ({ page, api: _ }) => {
+    await open(page, '/vy/clew.search?titel=K%C3%A4llor&input=%7B%22query%22%3A%22fall%22%7D');
+    const panel = page.getByRole('dialog');
+    const add = panel.getByRole('list', { name: 'Källor' }).getByRole('listitem').nth(0).getByRole('button', { name: 'Lägg till i samtalet' });
+    await add.focus();
+    await page.keyboard.press('Enter');
+    await expect(panel.getByRole('button', { name: 'I samtalet ✓' })).toHaveCount(1);
+    await panel.getByRole('button', { name: 'Stäng' }).click();
+    await expect(page.getByRole('group', { name: 'Objekt i samtalet' }).or(page.getByText('Rutin vid fall i ordinärt boende').first())).toBeVisible();
+  });
+});
+
 test.describe('D29 the Inte nu picker', () => {
   test('every row says when the card comes back, and the free text has a label and a live answer', async ({ page, api: _ }) => {
     await open(page, '/');

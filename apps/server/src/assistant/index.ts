@@ -1,12 +1,13 @@
-import type { AuthenticatedContext, Chip, ClewAction, ConversationInput, ConversationResponse, MessageMeta, Thread, Verb, ViewRef } from '@clew/contracts';
-import { actorOf } from '@clew/connectors';
+import type { AuthenticatedContext, Chip, ClewAction, ConversationInput, ConversationResponse, MessageMeta, SearchResult, SourceCitation, Thread, Verb, ViewRef } from '@clew/contracts';
+import { citationsOf, parseAnswer } from './answer';
+import { actorOf, SEARCH_CONNECTOR } from '@clew/connectors';
 import { displayDate, weekNumber } from '@clew/calendar/dates';
 import { InputError } from '../context';
 import { resolveChips, type ResolvedChips } from './chips';
 import { completionsFor } from './completions';
 import { serialiseContext } from './context';
 import { routeFixed } from './fixed';
-import { matchCapability, nearest, templatedAnswer } from './router';
+import { headingFollowUps, matchCapability, nearest, searchAnswer, templatedAnswer } from './router';
 import { modelAnswer, systemPrompt, type ToolCallRecord } from './model';
 import { listObjects } from './objects';
 import type { AssistantDeps } from './ports';
@@ -17,8 +18,10 @@ export { verbsFor } from './verbs';
 
 type Produced = {
   body: string; source: string; shape: ConversationResponse['shape']; assistant: ConversationResponse['assistant'];
-  view?: ViewRef; draft?: NonNullable<ConversationResponse['draft']>; forslag?: { threadId: string }; clewActions: ClewAction[]; toolCalls?: ToolCallRecord[]; followUps: string[];
+  view?: ViewRef; draft?: NonNullable<ConversationResponse['draft']>; forslag?: { threadId: string }; clewActions: ClewAction[]; toolCalls?: ToolCallRecord[]; followUps: string[]; sources?: SourceCitation[];
 };
+const SEARCH_TOOL = SEARCH_CONNECTOR + '.search';
+const isSearchResult = (v: unknown): v is SearchResult => !!v && typeof v === 'object' && Array.isArray((v as SearchResult).rows) && Array.isArray((v as SearchResult).sources);
 const whyLine = (t: Thread) => `Varför nu? ${t.trigger.reason}. Källa: ${t.trigger.source}, ${new Date(t.trigger.at).toLocaleTimeString('sv-SE', { timeStyle: 'short', timeZone: 'Europe/Stockholm' })}.`;
 
 /**
@@ -65,11 +68,20 @@ export function assistantUsecases(deps: AssistantDeps) {
     const fixed = await routeFixed(deps, persona, text);
     if (fixed) return { body: fixed.body, source: fixed.source, shape: fixed.forslagThreadId ? 'forslag' : 'svar', assistant, clewActions: [], followUps: [], ...(fixed.forslagThreadId ? { forslag: { threadId: fixed.forslagThreadId } } : {}) };
     const tools = registry.tools(actorOf(persona));
-    const match = matchCapability(text, tools);
+    const match = matchCapability(text, tools.filter(t => t.name !== SEARCH_TOOL));
     if (match) {
       const output = await run(persona, match.name, {});
       const answer = templatedAnswer(match, {}, output, clock().toISOString());
       return { body: answer.body, source: match.source, shape: answer.view ? 'vy' : 'svar', assistant, clewActions: [], followUps: nearest(text, tools.filter(t => t.name !== match.name)).map(t => t.title), toolCalls: [{ capability: match.name, input: {}, output }], ...(answer.view ? { view: answer.view } : {}) };
+    }
+    // The catch-all (D26): a question no capability answers goes to the composite search as typed, and the hits become a view the person reads.
+    const searchTool = tools.find(t => t.name === SEARCH_TOOL);
+    if (searchTool) {
+      const input = { query: text };
+      const output = await run<SearchResult>(persona, SEARCH_TOOL, input);
+      const answer = searchAnswer(output, clock().toISOString());
+      return { body: answer.body, source: searchTool.source, shape: 'vy', assistant, clewActions: [], followUps: headingFollowUps(output.rows), toolCalls: [{ capability: SEARCH_TOOL, input, output }],
+        sources: citationsOf(output), view: { capability: SEARCH_TOOL, input, title: 'Källor', source: searchTool.source } };
     }
     const near = nearest(text, tools).map(t => t.title);
     return { body: `Det där kan jag inte svara på ännu. Jag kan svara om ${near.length ? near.map(t => t.toLowerCase()).join(', ') : 'dagen, utvecklingssamtalen, frånvaron, budgeten och HME'}.`, source: 'Startsidan', shape: 'svar', assistant, clewActions: [], followUps: near };
@@ -81,10 +93,19 @@ export function assistantUsecases(deps: AssistantDeps) {
     const now = clock();
     const system = systemPrompt({ name: persona.name, role: persona.role, unitLabel: persona.unitLabel, now, week: weekNumber(displayDate(now.toISOString())), objects: serialiseContext(chips.objects) });
     try {
-      const answer = await modelAnswer({ system, history: history.slice(-20).map(m => ({ role: m.role, body: m.body })), text, tools, run: (name, input) => run(persona, name, input), generate: model.generate });
+      // The search fan-out (D26) takes up to four seconds of its own, so a turn that may search gets a longer budget than a plain read.
+      const timeoutMs = tools.some(t => t.name === SEARCH_TOOL) ? 12_000 : 8_000;
+      const answer = await modelAnswer({ system, history: history.slice(-20).map(m => ({ role: m.role, body: m.body })), text, tools, run: (name, input) => run(persona, name, input), generate: model.generate, timeoutMs });
       model.markAvailable();
       const source = answer.toolCalls.length ? [...new Set(answer.toolCalls.map(c => tools.find(t => t.name === c.capability)?.source ?? 'Startsidan'))].join(', ') : 'Assistenten';
-      return { body: answer.body, source, shape: answer.view ? 'vy' : 'svar', assistant: 'model', clewActions: [], toolCalls: answer.toolCalls, followUps: nearest(text, tools).map(t => t.title), ...(answer.view ? { view: answer.view } : {}) };
+      const searched = answer.toolCalls.find(c => c.capability === SEARCH_TOOL && isSearchResult(c.output));
+      const parsed = parseAnswer(answer.body);
+      const sources = searched ? citationsOf(searched.output as SearchResult) : undefined;
+      // A document answer's view is its sources, named so; follow-ups come from the model's trailer, else the document's headings, else the nearest capabilities.
+      const view = answer.view && answer.view.capability === SEARCH_TOOL ? { ...answer.view, title: 'Källor' } : answer.view;
+      const followUps = parsed.followUps.length ? parsed.followUps : searched ? headingFollowUps((searched.output as SearchResult).rows) : nearest(text, tools).map(t => t.title);
+      const shape: Produced['shape'] = parsed.shape ?? (view ? 'vy' : 'svar');
+      return { body: parsed.body, source, shape, assistant: 'model', clewActions: [], toolCalls: answer.toolCalls, followUps, ...(view ? { view } : {}), ...(sources?.length ? { sources } : {}) };
     } catch (e) {
       model.markUnavailable();
       deps.log('assistant: model unavailable, falling back to the router:', e instanceof Error ? e.message : e);
@@ -107,10 +128,11 @@ export function assistantUsecases(deps: AssistantDeps) {
     const refs = chips.map(c => c.ref);
     const assistantMeta: MessageMeta = { shape: produced.shape, assistant: produced.assistant, source: produced.source,
       ...(produced.view ? { view: produced.view } : {}), ...(produced.draft ? { draft: { kind: produced.draft.kind, threadId: produced.draft.threadId, ...(produced.draft.refs ? { refs: produced.draft.refs } : {}), ...(produced.draft.week ? { week: produced.draft.week } : {}) } } : {}),
-      ...(produced.toolCalls?.length ? { toolCalls: produced.toolCalls.map(c => ({ capability: c.capability, input: c.input })) } : {}) };
+      ...(produced.toolCalls?.length ? { toolCalls: produced.toolCalls.map(c => ({ capability: c.capability, input: c.input })) } : {}),
+      ...(produced.sources?.length ? { sources: produced.sources } : {}), ...(produced.followUps.length ? { followUps: produced.followUps.slice(0, 3) } : {}) };
     await store.transaction(async tx => {
       if (!existing) {
-        await tx.insertThread({ id: conversationId, personId: persona.id, kind: 'question', topic: 'question', title: input.text.slice(0, 80), state: 'open', week: null, connector: 'startsidan', area: 'fragor', summary: produced!.body,
+        await tx.insertThread({ id: conversationId, personId: persona.id, kind: 'question', topic: 'question', title: input.text.slice(0, 80), state: 'open', week: null, connector: 'clew', area: 'fragor', summary: produced!.body,
           items: [], actions: [], waitingOn: null, deadline: null, trigger: { reason: 'Du ställde en fråga', source: produced!.source, at }, createdAt: at, updatedAt: at });
       } else {
         await tx.updateThread(conversationId, { summary: produced!.body, updatedAt: at });
@@ -118,13 +140,14 @@ export function assistantUsecases(deps: AssistantDeps) {
       await tx.addMessage(conversationId, { role: 'user', body: input.text, at, ...(chips.length ? { meta: { chips, refs } } : {}) });
       await tx.addMessage(conversationId, { role: 'assistant', body: produced!.body, at, meta: assistantMeta });
       await tx.writeAudit({ actor: persona.principal.id, action: existing ? 'conversation.replied' : 'conversation.asked', subject: 'thread:' + conversationId, at,
-        details: { assistant: produced!.assistant, shape: produced!.shape, chips: refs, tools: (produced!.toolCalls ?? []).map(c => c.capability), ...(produced!.view ? { view: produced!.view.capability } : {}) } });
+        details: { assistant: produced!.assistant, shape: produced!.shape, chips: refs, tools: (produced!.toolCalls ?? []).map(c => c.capability), ...(produced!.view ? { view: produced!.view.capability } : {}),
+          ...(produced!.sources?.length ? { sources: produced!.sources.map(s => s.ref) } : {}) } });
     });
     const conversation = await thread(persona, conversationId);
     const verbs: Verb[] | undefined = resolved.primaryThread ? verbsFor(produced.draft?.thread ?? resolved.primaryThread) : undefined;
     return { conversationId, thread: conversation, shape: produced.shape, assistant: produced.assistant, answer: { body: produced.body, source: produced.source, at },
       ...(produced.view ? { view: produced.view } : {}), ...(produced.forslag ? { forslag: produced.forslag } : {}), ...(produced.draft ? { draft: produced.draft } : {}),
-      clewActions: produced.clewActions, ...(verbs ? { verbs } : {}), followUps: produced.followUps.slice(0, 3) };
+      clewActions: produced.clewActions, ...(verbs ? { verbs } : {}), followUps: produced.followUps.slice(0, 3), ...(produced.sources?.length ? { sources: produced.sources } : {}) };
   }
   /** Kept for the first-session routes: a question is one conversation turn. */
   async function ask(persona: AuthenticatedContext, question: string): Promise<Thread> {

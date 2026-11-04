@@ -33,6 +33,7 @@ export async function checkConnector(options: CheckOptions): Promise<CheckReport
   try { manifest = await fetchManifest(url, options.id, fetchImpl); }
   catch (error) { fail('manifest: ' + (error as Error).message); return { ok: false, findings }; }
   ok(`manifest valid: ${manifest.capabilities.length} capabilities, ${manifest.areas.length} areas, scan ${manifest.scan}`);
+  if (manifest.delegation) warn(`delegation: acts as the person for audience "${manifest.delegation.audience}"; not verified by this check (it has no session), so a "denied" answer below is the expected one`);
   const registry = new Registry().register(remoteConnector(manifest, { url, assert: options.assert, fetch: fetchImpl }));
   const accepts = options.acceptsEmptyInput ?? (() => true);
   for (const c of manifest.capabilities) {
@@ -48,7 +49,8 @@ export async function checkConnector(options: CheckOptions): Promise<CheckReport
       try { const output = await registry.run(actor, c.name, {}); ok(`${c.name} as ${actor.role}: ${JSON.stringify(output).slice(0, 100)}`); }
       catch (error) {
         const m = (error as Error).message;
-        if (UNAVAILABLE.test(m)) warn(`${c.name} as ${actor.role}: ${m} (a capability that calls back into Clew needs CLEW_URL and a running Clew)`);
+        if (manifest.delegation && /styrkas|behörighet/.test(m)) ok(`${c.name} as ${actor.role}: refused without the person's token, as a delegating connector should (${m})`);
+        else if (UNAVAILABLE.test(m)) warn(`${c.name} as ${actor.role}: ${m} (a capability that calls back into Clew needs CLEW_URL and a running Clew)`);
         else fail(`${c.name} as ${actor.role}: ${m}`);
       }
     }
