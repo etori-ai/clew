@@ -10,7 +10,7 @@ import { AppShell, Badge, BreadcrumbItem, Breadcrumbs, Button, EmptyState, HStac
 export type Crumb = { label: string; href?: string };
 export function AdminShell({ user, crumbs, children }: { user: SessionUser; crumbs: Crumb[]; children: ReactNode }) {
   const mobile = useMediaQuery('(max-width: 720px)');
-  return <AppShell height="fill" variant="section" contentPadding={mobile ? 3 : 6}
+  return <AppShell height="fill" variant="section" contentPadding={0}
     topNav={<TopNav label="Administration" heading={<TopNavHeading heading="Administration" superheading="Startsidan" superheadingHref="/" subheading={mobile ? user.name : `${user.name} · ${user.unitLabel}`} />}
       endContent={<HStack gap={1} vAlign="center">
         <Button variant="ghost" size="sm" label="Till startsidan" href="/" icon={<Icon icon="chevronLeft" size="sm" />} isIconOnly={mobile} />
@@ -25,8 +25,8 @@ export function AdminShell({ user, crumbs, children }: { user: SessionUser; crum
         <Text type="supporting" as="p">Du styr vilka system Startsidan är ansluten till och vem som ser dem. Vad var och en får göra i ett system avgör systemet självt.</Text>
       </SideNavSection>
     </SideNav>}>
-    {/* A bounded page inside the shell's padded main: a Layout here would cancel that padding (it is a full-bleed region). */}
-    <Section variant="transparent" padding={0} maxWidth={1120}>
+    {/* The page's gutters live on this Section: a Layout, or a Section with padding 0, is full-bleed and would cancel the shell's padding. */}
+    <Section variant="transparent" padding={mobile ? 3 : 6} maxWidth={1216}>
       <VStack gap={5}>
         <Breadcrumbs label="Du är här" variant="supporting">
           <BreadcrumbItem href="/">Startsidan</BreadcrumbItem>
