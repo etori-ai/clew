@@ -1,6 +1,6 @@
 # Clew · Startsidan POC
 
-Chat-first start page for Sundsvalls kommun where the assistant takes the initiative. Codename `clew`; the Swedish UI says **Startsidan**. Read `HANDOVER.md` first: it holds the decisions, the state of the build and what comes next. Architecture and the reasoning behind each decision are in `docs/` (`docs/decisions.md`, `docs/architecture/`).
+Chat-first start page for Sundsvalls kommun where the assistant takes the initiative. Codename `clew`; the Swedish UI says **Startsidan**. Read `HANDOVER.md` first: it holds the decisions, the state of the build and what comes next. Architecture and the reasoning behind each decision are in `docs/` (start at `docs/README.md`: `docs/decisions/` for the decision log, `docs/reviews/` for reviews, `docs/architecture/` for designs).
 
 ## Run it
 

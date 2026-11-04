@@ -1,6 +1,6 @@
 # Identity and authorization
 
-Decided 2026-11-03. The decision log is in `docs/decisions.md`.
+Decided 2026-11-03. The decision log is in `docs/decisions/`.
 
 ## Principle
 

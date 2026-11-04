@@ -1,6 +1,6 @@
 # Clew · project instructions
 
-Read `HANDOVER.md` first. It is the only context carried between sessions; update it at the end of every session.
+Read `HANDOVER.md` first. It is the only context carried between sessions; update it at the end of every session. `docs/vision.md` says what Clew is and is not, and where the line to Eneo runs; check a new feature against it. Every settled decision gets a numbered file in `docs/decisions/` (follow `docs/decisions/README.md`); every review or comparison goes in `docs/reviews/`.
 
 ## Open source, always
 
@@ -15,7 +15,7 @@ Clew is an open source system that will be shared with other municipalities and 
 ## Working rules carried over from startsidan
 
 - Swedish only where a person reads it in the product: UI text and API error messages shown in the UI. Everything else is English: identifiers, contracts, comments, console output, script and CLI output, infrastructure messages, thrown configuration errors, documentation. Swedish commit subjects.
-- Bun with exact versions and a frozen lockfile. Bun is the server runtime (decided 2026-11-03, D7 in `docs/decisions.md`; the switch from Node 24 + tsx is pending).
+- Bun with exact versions and a frozen lockfile. Bun is the server runtime (decided 2026-11-03, D7 in `docs/decisions/`; the switch from Node 24 + tsx is pending).
 - Commands run inside the devcontainer: `docker exec -w /workspace clew-app-1 …` (see `README.md`).
 - Server-side enforcement of identity and scope. No credentials, tokens or trusted identity context in the browser bundle.
 - Every mutation writes its audit row in the same transaction. Assistant proposals are executed only through the human decision endpoint, which is not a tool.

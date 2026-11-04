@@ -3,7 +3,7 @@
 Carried over from the startsidan repository (`docs/11-personas-and-use-cases.md`, 35 use cases, 2026-09)
 on 2026-11-03 so that Clew's design ideas are validated against the same people. The text below is the
 original, unchanged except for this header. Use case ids (`UC-<persona>-<n>`) are stable and are cited on the
-design canvas and in `docs/decisions.md`.
+design canvas and in `docs/decisions/`.
 
 ## How the personas map to Clew
 
