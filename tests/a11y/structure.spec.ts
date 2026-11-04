@@ -98,6 +98,8 @@ test.describe('D30 the obligation', () => {
     await expect(card.getByRole('list', { name: 'Steg' })).toBeVisible();
     await expect(card.getByRole('list', { name: 'Steg' }).getByRole('listitem')).toHaveCount(4);
     await expect(card.getByRole('group', { name: 'Oplacerade: 1' })).toContainText('Sara Holm · upptagen hela veckan');
+    // The week agenda with its day loads is the phone's calendar page; a laptop gets the event calendar (D27).
+    await page.setViewportSize(phone);
     await open(page, '/kalender');
     await expect(page.getByRole('progressbar', { name: /^Belastning ons 4 nov/ })).toBeVisible();
   });
