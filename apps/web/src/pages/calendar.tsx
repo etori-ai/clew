@@ -4,10 +4,11 @@ import { Badge, Button, ChatComposer, CheckboxList, CheckboxListItem, Divider, E
 import { addDays, rangeLabel, shortDayLabel, timeRange, today, weekNumber, weekStart } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
 import { usePageTitle } from '../page-title';
+import { Shell, mobileQuery } from '../components/shell';
 
 /** The calendar as a page: the week on a time grid (D27), or as an agenda on a phone, with the proposal thread beside it to confirm or redraw. */
 export function CalendarPage({ user }: { user: SessionUser }) {
-  const mobile = useMediaQuery('(max-width: 720px)');
+  const mobile = useMediaQuery(mobileQuery);
   const requested = new URLSearchParams(window.location.search).get('vecka');
   const [from, setFrom] = useState(() => requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? weekStart(requested) : weekStart(today()));
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -61,23 +62,19 @@ export function CalendarPage({ user }: { user: SessionUser }) {
     <Divider />
     <ChatComposer density="compact" elevation="none" isDisabled={busy} placeholder="Svara här" onSubmit={text => { const body = text.trim(); if (body) void run(() => api.reply(thread.id, body)); }} />
   </VStack>;
-  return <Layout height="auto" padding={mobile ? 3 : 4}
-    header={<LayoutHeader hasDivider role="banner">
-      <HStack justify="between" vAlign="center" gap={3} wrap="wrap">
-        <HStack gap={2} vAlign="center" wrap="wrap">
-          <IconButton label="Tillbaka till startsidan" icon={<Icon icon="chevronLeft" />} variant="ghost" onClick={() => { window.location.assign('/'); }} />
-          <Heading level={1}>Vecka {weekNumber(from)} · {rangeLabel(from, 5)}</Heading>
-          <HStack gap={1} vAlign="center" role="group" aria-label="Byt vecka">
-            <IconButton label="Förra veckan" icon={<Icon icon="chevronLeft" />} variant="ghost" size="sm" onClick={() => setFrom(addDays(from, -7))} />
-            <Button variant="ghost" size="sm" label="I dag" onClick={() => setFrom(weekStart(today()))} />
-            <IconButton label="Nästa vecka" icon={<Icon icon="chevronRight" />} variant="ghost" size="sm" onClick={() => setFrom(addDays(from, 7))} />
-          </HStack>
+  return <Shell user={user} current="kalender"><Layout height="fill" padding={mobile ? 3 : 4}
+    header={<LayoutHeader hasDivider>
+      <HStack gap={2} vAlign="center" wrap="wrap">
+        <Heading level={1}>Vecka {weekNumber(from)} · {rangeLabel(from, 5)}</Heading>
+        <HStack gap={1} vAlign="center" role="group" aria-label="Byt vecka">
+          <IconButton label="Förra veckan" icon={<Icon icon="chevronLeft" />} variant="ghost" size="sm" onClick={() => setFrom(addDays(from, -7))} />
+          <Button variant="ghost" size="sm" label="I dag" onClick={() => setFrom(weekStart(today()))} />
+          <IconButton label="Nästa vecka" icon={<Icon icon="chevronRight" />} variant="ghost" size="sm" onClick={() => setFrom(addDays(from, 7))} />
         </HStack>
-        <Text type="supporting">{user.name}</Text>
       </HStack>
     </LayoutHeader>}
     end={!mobile && thread ? <LayoutPanel width={380} hasDivider role="complementary" label="Förslag">{panel}</LayoutPanel> : undefined}
-    content={<LayoutContent role="main">
+    content={<LayoutContent>
       <VStack gap={4}>
         {!thread && error && <Text as="p" role="alert" color="accent">{error}</Text>}
         {mobile
@@ -85,5 +82,5 @@ export function CalendarPage({ user }: { user: SessionUser }) {
           : <EventCalendar view="timeGridWeek" date={from} items={items} label={`Vecka ${weekNumber(from)}`} dayHeadingLevel={2} />}
         {mobile && panel}
       </VStack>
-    </LayoutContent>} />;
+    </LayoutContent>} /></Shell>;
 }

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { isSnoozed, streamGroup, type Area, type AssistantStatus, type Attention, type CalendarEvent, type RhythmPoint, type SessionUser, type Thread, type TodayView, type ViewRef } from '@clew/contracts';
-import { Avatar, Badge, Banner, Button, Card, EmptyState, Heading, HStack, Icon, Layout, LayoutContent, LayoutHeader, LayoutPanel, Overlay, Step, Stepper, Text, ToggleButton, ToggleButtonGroup, VisuallyHidden, VStack, signOut, useMediaQuery, useToast } from '@clew/ui';
-import { dayLabel, timeLabel, today } from '@clew/calendar/dates';
+import { Badge, Banner, Button, Card, ChatLayout, DropdownMenu, EmptyState, Heading, HStack, Icon, Layout, LayoutContent, Step, Stepper, Text, ToggleButton, ToggleButtonGroup, Toolbar, VisuallyHidden, VStack, useMediaQuery, useToast } from '@clew/ui';
+import { timeLabel, today } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
 import { Composer, type ComposerHandle } from '../components/composer';
 import { ConversationContext, type ChipRef } from '../components/conversation-context';
-import { Areas } from '../components/areas';
+import { AreasNav } from '../components/areas';
+import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { GenericCard, NoticeList } from '../components/card';
 import { PanelView } from '../components/panel';
 import { Today } from '../components/today';
@@ -26,14 +27,14 @@ const pointDetail = (p: RhythmPoint) => p.kind === 'review' ? (p.state === 'done
 /**
  * Mission control (D28): the day as one track on the digest card, then Nu and Senare, notices as rows, and three piles
  * above the conversation row for what waits on others, what the person set aside and what was handled today. Areas
- * in the sidebar are lenses on the same stream. The conversation unfolds from the row over the dimmed stream (D12);
- * the side panel stays live for views. Every card comes from a connector through the registry; the calendar's
- * proposal card keeps its specialised rendering, everything else is the generic card.
+ * in the sidebar are lenses on the same stream. The frame is Astryx's (D31): the shell, a Layout with a bounded content
+ * width and a ChatLayout that docks the row; the side panel stays live for views. Every card comes from a connector
+ * through the registry; the calendar's proposal card keeps its specialised rendering, everything else is the generic card.
  */
 export function StartPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
-  const mobile = useMediaQuery('(max-width: 720px)');
-  // 1.4.10: with 480 px or less in height the header and the row stay out of the way and the whole page scrolls.
-  const short = useMediaQuery('(max-height: 480px)');
+  const mobile = useMediaQuery(mobileQuery);
+  // 1.4.10: with 480 px or less in height nothing is docked; the row joins the page and the whole page scrolls (D31 item 7).
+  const short = useMediaQuery(shortQuery);
   const [threads, setThreads] = useState<Thread[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
   const [day, setDay] = useState<TodayView | null>(null);
@@ -58,15 +59,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const [view, setView] = useState<{ title: string; output: unknown } | null>(null);
   const [conversation, setConversation] = useState<{ open: boolean; chipped: string[] }>({ open: false, chipped: [] });
   const composer = useRef<ComposerHandle>(null);
-  // The dock's real height, for the margin that keeps a focused control above it (2.4.11). A conversation, a chip or the piles change it.
-  const dock = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const row = dock.current;
-    if (!row) return;
-    const observer = new ResizeObserver(() => row.parentElement?.style.setProperty('--composer-height', `${row.offsetHeight}px`));
-    observer.observe(row);
-    return () => observer.disconnect();
-  }, []);
   const toast = useToast();
   // A reminder that fired while the page was open (D17): the card is back in its place with a badge, and a toast says so.
   // The toast is the announcement: it animates in beside the composer and stays until dismissed; the stream never shifts.
@@ -94,10 +86,9 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     setWeeks(current => { if (current[week]) return current; void api.calendar(week).then(data => setWeeks(w => ({ ...w, [week]: data.events }))).catch(() => undefined); return current; });
   }, []);
   // A card that leaves the stream takes the focused button with it. Focus goes on to the next card, or the first heading when none is left (2.4.3).
-  const stream = useRef<HTMLDivElement>(null);
   const focusAfter = useRef<{ card: string; next: string } | null>(null);
   const replace = useCallback((thread: Thread) => {
-    const cards = [...stream.current?.querySelectorAll('[id^="thread-"]') ?? []].map(el => el.id);
+    const cards = [...document.querySelectorAll('[id^="thread-"]')].map(el => el.id);
     const at = cards.indexOf('thread-' + thread.id);
     if (at >= 0) focusAfter.current = { card: cards[at]!, next: cards[at + 1] ?? cards[at - 1] ?? 'behover-dig' };
     setThreads(list => list.some(t => t.id === thread.id) ? list.map(t => t.id === thread.id ? thread : t) : [thread, ...list]);
@@ -159,20 +150,23 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const onConversation = useCallback((id: string | null) => { if (id) navigate(conversationHref(id)); else if (conversationId) navigate(back); }, [navigate, conversationId, back]);
   const onState = useCallback((s: { open: boolean; chipped: string[] }) => setConversation(c => c.open === s.open && c.chipped.join() === s.chipped.join() ? c : s), []);
   const row = <Composer ref={composer} mobile={mobile} conversationId={conversationId} onConversation={onConversation} onThreadChange={replace} onOpenView={openView} onState={onState} />;
-  const sidebar = <Areas areas={areas} current={pile ? null : area} hrefFor={pathFor} compact={mobile} chipped={conversation.chipped} />;
+  const sidebar = <AreasNav areas={areas} current={pile ? undefined : area} hrefFor={pathFor} chipped={conversation.chipped} />;
 
   const openCardView = (threadId: string, actionId: string) => navigate(cardViewHref(threadId, actionId));
   // Cards sit under an h2 (Nu, Senare, Till kännedom) or under a pile's h1, so their headings are one level down (1.3.1).
   const card = (t: Thread, expanded: boolean, position?: string, headingLevel: 2 | 3 = 3) => t.proposals.length
     ? <ThreadCard key={t.id} thread={t} events={t.week ? weeks[t.week] : undefined} compact headingLevel={headingLevel} onChange={replace} onLoadWeek={loadWeek} />
     : <GenericCard key={t.id} thread={t} areaTitle={areaTitle(t.area)} position={position} compact={mobile} expanded={expanded} headingLevel={headingLevel} onChange={replace} onOpenCardView={openCardView} />;
-  // The piles (D28): three toggles above the row, each a count; one opens its rows in place of the stream.
-  // Three toggles do not fit a phone in one row and ToggleButtonGroup never wraps; there the same choice is three buttons that wrap (1.4.10),
-  // placed at the end of the stream instead of on the dock, so the dock keeps its height and never covers a toast (2.4.11).
+  // The piles (D28): three toggles, each a count; one opens its rows in place of the stream. They sit in the column's pinned
+  // toolbar (D31 item 5): ChatLayout's frosted band is sized for one composer, so a second row on the dock would float over the cards.
+  // Three toggles do not fit a phone in one row and ToggleButtonGroup never wraps; there the same choice is one menu whose rows navigate.
   const pileLabels: Record<Pile, string> = { pagar: `Pågår utan dig · ${waiting.length}`, 'inte-nu': `Inte nu · ${snoozed.length}`, klart: `Klart i dag · ${handledToday.length}` };
   const choosePile = (p: Pile | null) => navigate(p ? pileHref(p) : pathFor(area));
   const piles = mobile
-    ? <HStack gap={1} wrap="wrap" role="group" aria-label="Högar">{(Object.keys(pileLabels) as Pile[]).map(p => <Button key={p} size="sm" variant={pile === p ? 'primary' : 'secondary'} label={pileLabels[p]} aria-pressed={pile === p} onClick={() => choosePile(pile === p ? null : p)} />)}</HStack>
+    ? <HStack justify="end"><DropdownMenu presentation="adaptive" button={{ label: `Visa: ${pile ? pileLabels[pile] : 'Strömmen'}`, size: 'sm', variant: 'secondary' }} items={[
+      { id: 'stream', label: 'Strömmen', onClick: () => choosePile(null) },
+      ...(Object.keys(pileLabels) as Pile[]).map(p => ({ id: p, label: pileLabels[p], onClick: () => choosePile(p) })),
+    ]} /></HStack>
     : <ToggleButtonGroup label="Högar" type="single" size="sm" value={pile} onChange={(v: string | null) => choosePile(v as Pile | null)}>
       {(Object.keys(pileLabels) as Pile[]).map(p => <ToggleButton key={p} value={p} label={pileLabels[p]} />)}
     </ToggleButtonGroup>;
@@ -214,7 +208,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     </VStack>;
 
   const content = <VStack gap={4}>
-    {mobile && sidebar}
     {!current && !pile && <VisuallyHidden as="div"><Heading level={1}>Startsidan</Heading></VisuallyHidden>}
     {error && <Text as="p" role="alert" color="accent">{error}</Text>}
     {pile ? pileContent : <>
@@ -255,48 +248,25 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         {current.schedules.map((s, i) => <Text key={i} type="supporting"><Text as="span" weight="semibold">{s.when}</Text> · {s.label}</Text>)}
       </VStack>}
     </>}
-    {mobile && piles}
   </VStack>;
 
   return <ConversationContext.Provider value={conversationApi}>
-    <Layout height={short ? 'auto' : 'fill'} padding={0}
-      header={<LayoutHeader hasDivider role="banner" padding={mobile ? 3 : 4}>
-        <HStack justify="between" vAlign="center" gap={3} wrap="wrap">
-          <HStack gap={2} vAlign="center">
-            {!mobile && <Avatar name={user.name} size="md" />}
-            <VStack gap={0}>
-              <Text weight="semibold">{mobile ? `Hej ${user.name.split(' ')[0]}` : user.name}</Text>
-              <Text type="supporting">{dayLabel(today())} · {timeLabel(now)}{mobile ? '' : ` · ${user.unitLabel}`}</Text>
+    <Shell user={user} admin={admin} current="start" attention={attentionLabel ?? undefined} height={short ? 'auto' : 'fill'} sideNav={sidebar}
+      /* Page level (D8): one Banner in the shell's banner slot when the model is configured but not answering. The router answers meanwhile. */
+      banner={assistant && assistant.configured && !assistant.available ? <Banner status="warning" container="section" collapsible={false} title="Modellen svarar inte just nu."
+        description={`Frågor besvaras av den inbyggda routern tills ${assistant.model ?? 'modellen'} svarar igen. Korten påverkas inte.`}
+        endContent={<Button size="sm" variant="secondary" label="Försök igen" clickAction={() => void load()} />} /> : undefined}>
+      {/* The stream is one bounded column (Layout contentWidth) with the piles pinned in its toolbar; ChatLayout docks the row at the bottom of it (D31). */}
+      {short
+        ? <VStack gap={4} padding={3}>{piles}{content}{row}</VStack>
+        : <Layout height="fill" contentWidth={960} padding={mobile ? 3 : 4} defaultHasDividers
+          header={<Toolbar label="Högar" size="sm" startContent={piles} />}
+          content={<LayoutContent isScrollable={false}>
+            <VStack height="100%">
+              <ChatLayout density="balanced" composer={row}>{content}</ChatLayout>
             </VStack>
-          </HStack>
-          <HStack gap={2} vAlign="center" wrap="wrap">
-            {/* A Badge stays on one line and this sentence does not fit a phone in one (1.4.10). */}
-            {attentionLabel && (mobile
-              ? <HStack gap={1} vAlign="center"><Icon icon="clock" size="sm" /><Text type="supporting">{attentionLabel}</Text></HStack>
-              : <Badge variant="neutral" icon={<Icon icon="clock" size="sm" />} label={attentionLabel} />)}
-            {(areas.find(a => a.id === 'viktigt-nu')?.needsYou ?? 0) > 0 && <Button variant="secondary" size="sm" label={`Viktigt nu · ${areas.find(a => a.id === 'viktigt-nu')!.needsYou}`} href={pathFor('viktigt-nu')} />}
-            <Button variant="ghost" size="sm" label="Kalender" href="/kalender" icon={<Icon icon="calendar" size="sm" />} isIconOnly={mobile} />
-            {admin && <Button variant="ghost" size="sm" label="Administration" href="/admin/anslutningar" icon={<Icon icon="wrench" size="sm" />} isIconOnly={mobile} />}
-            <Button variant="ghost" size="sm" label="Logga ut" clickAction={() => signOut()} />
-          </HStack>
-        </HStack>
-      </LayoutHeader>}
-      start={mobile ? undefined : <LayoutPanel hasDivider width={284} padding={2}>{sidebar}</LayoutPanel>}
-      content={<LayoutContent padding={0} role="main">
-        {/* The dim covers the stream only (D12): the row below and the side panel stay live. A click on the dim closes the conversation. */}
-        {/* The column fills the scrollport so the row stays docked at the bottom even when the stream is short. */}
-        <div className="stream-column">
-          {/* Page level (D8): one Banner under the header when the model is configured but not answering. The router answers meanwhile. */}
-          {assistant && assistant.configured && !assistant.available && <Banner status="warning" container="section" collapsible={false} title="Modellen svarar inte just nu."
-            description={`Frågor besvaras av den inbyggda routern tills ${assistant.model ?? 'modellen'} svarar igen. Korten påverkas inte.`}
-            endContent={<Button size="sm" variant="secondary" label="Försök igen" clickAction={() => void load()} />} />}
-          <Overlay className="stream-fill" isOpen={conversation.open} scrim="light" position="fill" align="end" content={<VisuallyHidden>Samtalet är öppet. Tryck Esc eller klicka här för att stänga.</VisuallyHidden>} onClick={() => { if (conversation.open) composer.current?.close(); }}>
-            <div className="stream" ref={stream}>{content}</div>
-          </Overlay>
-          {/* The piles sit on the dock with the row (D28): always in reach, never pushing the stream. */}
-          <div className="composer-dock" ref={dock}>{mobile ? row : <VStack gap={1}>{piles}{row}</VStack>}</div>
-        </div>
-      </LayoutContent>} />
+          </LayoutContent>} />}
+    </Shell>
     <PanelView title={view?.title ?? null} output={view?.output} onClose={() => navigate(back)} />
   </ConversationContext.Provider>;
 }

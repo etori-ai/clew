@@ -1,4 +1,4 @@
-import { desktop, expect, hiddenFocusStops, narrow, open, reflowProblems, short, snoozeFirst, test } from './support';
+import { desktop, dockOf, expect, hiddenFocusStops, narrow, open, openNav, reflowProblems, short, snoozeFirst, test } from './support';
 
 const routes = [['start', '/'], ['an area', '/omrade/personal'], ['the log', '/hanterat'], ['the calendar page', '/kalender']] as const;
 
@@ -19,7 +19,7 @@ test.describe('1.4.10 reflow', () => {
   test('every area filter on a phone shows its whole name', async ({ page, api: _ }) => {
     await page.setViewportSize(narrow);
     await open(page, '/');
-    const filters = page.getByRole('navigation', { name: 'Områden' }).getByRole('link');
+    const filters = (await openNav(page)).getByRole('group', { name: 'Områden' }).getByRole('link');
     expect(await filters.count()).toBeGreaterThan(5);
     for (const filter of await filters.all()) {
       const text = (await filter.textContent())?.trim() ?? '';
@@ -76,10 +76,9 @@ test.describe('2.4.11 focus not obscured', () => {
     await open(page, '/');
     const title = page.getByRole('heading', { level: 2, name: /^Nu · / });
     await title.evaluate(el => el.scrollIntoView({ block: 'start' }));
-    const below = await title.evaluate(el => {
-      const dock = document.querySelector('.composer-dock')!.getBoundingClientRect();
-      return Math.min(dock.top > 0 ? dock.top : innerHeight, innerHeight) - el.getBoundingClientRect().bottom;
-    });
+    // With 256 px of height nothing is docked (D31 item 7): the row is in the page flow and the stream has the screen.
+    expect(await dockOf(page), 'the row is in the page flow').toBeNull();
+    const below = await title.evaluate(el => innerHeight - el.getBoundingClientRect().bottom);
     expect(below, 'room for the stream under its heading').toBeGreaterThanOrEqual(100);
   });
 });

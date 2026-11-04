@@ -11,7 +11,7 @@ test.describe('2.4.7 focus visible', () => {
 
   test('a card that receives focus from the page shows it', async ({ page, api: _ }) => {
     await open(page, '/');
-    await page.getByRole('button', { name: 'Inte nu' }).first().focus();
+    await page.getByRole('button', { name: 'Inte nu', exact: true }).first().focus();
     await page.keyboard.press('Enter');
     await page.getByRole('menuitem', { name: /^I morgon/ }).focus();
     await page.keyboard.press('Enter');
@@ -24,7 +24,7 @@ test.describe('2.4.7 focus visible', () => {
 test.describe('2.4.3 focus order', () => {
   test('regaining the window keeps focus where it was', async ({ page, api }) => {
     await open(page, '/');
-    const button = page.getByRole('button', { name: 'Inte nu' }).first();
+    const button = page.getByRole('button', { name: 'Inte nu', exact: true }).first();
     await button.focus();
     api.sessionDelay = 200;
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
@@ -45,7 +45,7 @@ test.describe('2.4.3 focus order', () => {
 
   test('Inte nu moves focus to the next card instead of losing it', async ({ page, api: _ }) => {
     await open(page, '/');
-    await page.getByRole('button', { name: 'Inte nu' }).first().focus();
+    await page.getByRole('button', { name: 'Inte nu', exact: true }).first().focus();
     await page.keyboard.press('Enter');
     await page.getByRole('menuitem', { name: /^I morgon/ }).focus();
     await page.keyboard.press('Enter');
@@ -95,7 +95,7 @@ test.describe('2.4.3 focus order', () => {
 test.describe('D29 the Inte nu picker', () => {
   test('every row says when the card comes back, and the free text has a label and a live answer', async ({ page, api: _ }) => {
     await open(page, '/');
-    await page.getByRole('button', { name: 'Inte nu' }).first().click();
+    await page.getByRole('button', { name: 'Inte nu', exact: true }).first().click();
     const menu = page.getByRole('menu');
     await expect(menu).toBeVisible();
     for (const row of ['Om en timme', 'Efter lunch', 'I morgon', 'Nästa vecka', 'När jag är tillbaka från Ledningsgrupp']) await expect(menu.getByRole('menuitem', { name: new RegExp('^' + row) })).toBeVisible();

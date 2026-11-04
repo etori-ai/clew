@@ -1,4 +1,4 @@
-import { answer, composer, desktop, expect, heading, open, phone, test } from './support';
+import { answer, composer, desktop, expect, heading, open, openNav, phone, test } from './support';
 
 test.use({ viewport: desktop });
 
@@ -22,18 +22,22 @@ test.describe('2.4.2 page titled', () => {
 });
 
 test.describe('1.3.1 and 2.4.6 structure', () => {
-  for (const path of ['/', '/omrade/personal', '/hanterat', '/kalender']) test(`${path} has one h1, a banner and a main`, async ({ page, api: _ }) => {
+  for (const path of ['/', '/omrade/personal', '/hanterat', '/kalender']) test(`${path} has one h1, one main and a top navigation`, async ({ page, api: _ }) => {
     await open(page, path);
     await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveCount(1);
     await expect(page.getByRole('main')).toHaveCount(1);
-    await expect(page.getByRole('banner')).toHaveCount(1);
+    await expect(page.getByRole('navigation', { name: 'Övre navigering' })).toHaveCount(1);
   });
 
-  test('the start page has one navigation landmark', async ({ page, api: _ }) => {
+  test('the areas are one navigation landmark, in the drawer on a phone', async ({ page, api: _ }) => {
     await open(page, '/');
-    await expect(page.getByRole('navigation', { name: 'Områden' })).toHaveCount(1);
+    await expect(page.getByRole('navigation', { name: 'Sidonavigering' })).toHaveCount(1);
+    await expect(page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: /^Personal/ })).toBeVisible();
     await page.setViewportSize(phone);
-    await expect(page.getByRole('navigation', { name: 'Områden' })).toHaveCount(1);
+    await expect(page.getByRole('navigation', { name: 'Sidonavigering' })).toHaveCount(0);
+    const nav = await openNav(page);
+    await expect(nav).toHaveCount(1);
+    await expect(nav.getByRole('link', { name: /^Personal/ })).toBeVisible();
   });
 
   test('cards and day groups are headings', async ({ page, api: _ }) => {

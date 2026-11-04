@@ -1,21 +1,18 @@
 import type { ReactNode } from 'react';
 import type { SessionUser } from '@clew/contracts';
-import { AppShell, Badge, BreadcrumbItem, Breadcrumbs, Button, EmptyState, HStack, Heading, Icon, Layout, LayoutContent, Section, SideNav, SideNavItem, SideNavSection, Text, TopNav, TopNavHeading, VStack, signOut, useMediaQuery } from '@clew/ui';
+import { Badge, BreadcrumbItem, Breadcrumbs, Button, EmptyState, HStack, Heading, Layout, LayoutContent, Section, SideNav, SideNavItem, SideNavSection, Text, VStack } from '@clew/ui';
+import { Shell, mobileQuery } from '../../components/shell';
+import { useMediaQuery } from '@clew/ui';
 
 /**
- * The administration surface (D23): Astryx's AppShell with a TopNav for identity and the way out, a SideNav for the
- * admin sections (Anslutna system today, Modeller when D24 lands; the drawer on a phone), and the page inside a
- * Layout with a bounded content width so a table does not run to the edge of a wide screen. Only Astryx.
+ * The administration surface (D23) on the shared shell (D31): the SideNav holds the admin sections (Anslutna system
+ * today, Modeller when D24 lands; the drawer on a phone), and the page sits in a Section with a bounded width so a
+ * table does not run to the edge of a wide screen. Only Astryx.
  */
 export type Crumb = { label: string; href?: string };
 export function AdminShell({ user, crumbs, children }: { user: SessionUser; crumbs: Crumb[]; children: ReactNode }) {
-  const mobile = useMediaQuery('(max-width: 720px)');
-  return <AppShell height="fill" variant="section" contentPadding={0}
-    topNav={<TopNav label="Administration" heading={<TopNavHeading heading="Administration" superheading="Startsidan" superheadingHref="/" subheading={mobile ? user.name : `${user.name} · ${user.unitLabel}`} />}
-      endContent={<HStack gap={1} vAlign="center">
-        <Button variant="ghost" size="sm" label="Till startsidan" href="/" icon={<Icon icon="chevronLeft" size="sm" />} isIconOnly={mobile} />
-        <Button variant="ghost" size="sm" label="Logga ut" clickAction={() => signOut()} />
-      </HStack>} />}
+  const mobile = useMediaQuery(mobileQuery);
+  return <Shell user={user} admin current="admin"
     sideNav={<SideNav>
       <SideNavSection title="Anslutningar">
         <SideNavItem label="Anslutna system" icon="wrench" isSelected href="/admin/anslutningar" />
@@ -36,7 +33,7 @@ export function AdminShell({ user, crumbs, children }: { user: SessionUser; crum
         {children}
       </VStack>
     </Section>
-  </AppShell>;
+  </Shell>;
 }
 /** A signed-in person without the grant capability who reaches /admin: no data, one way back. The server refuses every call anyway. */
 export function NotAdmin() {

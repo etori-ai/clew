@@ -125,11 +125,25 @@ export const composer = (page: Page) => page.getByRole('combobox', { name: 'Frå
 /** A heading by the level assistive technology gets: `aria-level` when Astryx separates it from the visual level. */
 /** "Inte nu" on the first card, the way a person does it (D29): open the picker, choose "I morgon". */
 export async function snoozeFirst(page: Page) {
-  await page.getByRole('button', { name: 'Inte nu' }).first().click();
+  await page.getByRole('button', { name: 'Inte nu', exact: true }).first().click();
   await page.getByRole('menuitem', { name: /^I morgon/ }).click();
 }
 export const heading = (page: Page, level: number, name: string) => page.locator(`h${level}:not([aria-level]), [aria-level="${level}"]`).filter({ hasText: name });
 export const announcements = (page: Page) => page.evaluate(() => (window as unknown as { announcements: string[] }).announcements);
+/** The areas live in the shell's SideNav (D31); below the shell's breakpoint AppShell keeps it in a modal drawer that this opens. */
+export async function openNav(page: Page) {
+  const toggle = page.getByRole('button', { name: 'Öppna navigering' });
+  if (!await toggle.isVisible()) return page.getByRole('navigation', { name: 'Sidonavigering' });
+  await toggle.click();
+  return page.getByRole('dialog', { name: 'Navigering' });
+}
+/** The surface that docks the composer: ChatLayout's sticky wrapper (D31), or null when the row is in the page flow. */
+const dockOf = (page: Page) => page.evaluate(() => {
+  let el = document.querySelector('[role="combobox"]')?.parentElement ?? null;
+  while (el && !['sticky', 'fixed'].includes(getComputedStyle(el).position)) el = el.parentElement;
+  return el ? el.getBoundingClientRect().toJSON() as DOMRect : null;
+});
+export { dockOf };
 
 /** Renders a route and waits for its data, so a check never runs against the empty shell. */
 export async function open(page: Page, path: string) {
@@ -144,9 +158,15 @@ export async function expectNoAxeViolations(page: Page) {
   const tags = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'];
   const { violations } = await new AxeBuilder({ page }).withTags(tags).disableRules(['target-size']).analyze();
   // 2.5.8 is about the targets themselves: measured with the dock in the flow, so a row that has scrolled under the sticky dock is not read as too close to its buttons.
-  const style = await page.addStyleTag({ content: '.composer-dock { position: static !important; }' });
+  const undock = (on: boolean) => page.evaluate(on => {
+    let el = document.querySelector('[role="combobox"]')?.parentElement ?? null;
+    while (el && !['sticky', 'fixed'].includes(getComputedStyle(el).position) && !el.dataset.undocked) el = el.parentElement;
+    if (!el) return;
+    if (on) { el.dataset.undocked = el.style.position; el.style.position = 'static'; } else { el.style.position = el.dataset.undocked ?? ''; delete el.dataset.undocked; }
+  }, on);
+  await undock(true);
   const { violations: sizes } = await new AxeBuilder({ page }).withTags(tags).withRules(['target-size']).analyze();
-  await style.evaluate(el => (el as HTMLElement).remove());
+  await undock(false);
   expect([...violations, ...sizes].map(v => `${v.id}: ${v.help}\n  ${v.nodes.slice(0, 4).map(n => n.target.join(' ')).join('\n  ')}`)).toEqual([]);
 }
 
@@ -198,11 +218,17 @@ export async function hiddenFocusStops(page: Page, limit = 150) {
       if (box.right <= box.left || box.bottom <= box.top) return { name, again, covered: 'outside the viewport' };
       // The top layer (an open popover: the toast stack, a dialog) paints over everything else, so nothing below can obscure it.
       if (active.closest(':popover-open, dialog[open]')) return { name, again, covered: null };
+      const layer = (e: Element) => parseInt(getComputedStyle(e).zIndex) || 0;
+      const a = getComputedStyle(active);
       for (const el of document.querySelectorAll('body *')) {
         const s = getComputedStyle(el);
         if (s.position !== 'sticky' && s.position !== 'fixed') continue;
         if (el.contains(active) || s.visibility === 'hidden') continue;
-        const paints = s.backgroundImage !== 'none' || s.backgroundColor !== 'rgba(0, 0, 0, 0)';
+        // A stop that is itself lifted above the surface (the shell's skip link over its header) is on top, not under it.
+        if ((a.position === 'fixed' || a.position === 'absolute') && layer(active) > layer(el)) continue;
+        // A frosted layer (ChatLayout's dock) hides what is under it as surely as a painted one (D31).
+        const frosted = (e: Element) => getComputedStyle(e).backdropFilter !== 'none' || [...e.children].some(c => getComputedStyle(c).backdropFilter !== 'none');
+        const paints = s.backgroundImage !== 'none' || s.backgroundColor !== 'rgba(0, 0, 0, 0)' || frosted(el);
         const o = el.getBoundingClientRect();
         if (paints && box.top >= o.top && box.bottom <= o.bottom && box.left >= o.left && box.right <= o.right) return { name, again, covered: el.className.toString().slice(0, 40) || el.tagName };
       }

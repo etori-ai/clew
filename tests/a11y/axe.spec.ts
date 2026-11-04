@@ -50,7 +50,10 @@ for (const [layout, viewport] of [['desktop', desktop], ['phone', phone]] as con
 
   test('every card opened has no axe violations', async ({ page, api: _ }) => {
     await open(page, '/');
-    await page.getByRole('button', { name: /Pågår utan dig/ }).click();
+    // The piles are a toggle group on a desktop and a menu on a phone (D31 item 5).
+    const toggle = page.getByRole('button', { name: /Pågår utan dig/ });
+    if (await toggle.isVisible()) await toggle.click();
+    else { await page.getByRole('button', { name: /^Visa:/ }).click(); await page.getByRole('menuitem', { name: /Pågår utan dig/ }).click(); }
     await expect(page.getByText('Skyddsombudet har fått ärendet.')).toBeVisible();
     for (const title of ['Omtankesamtal med Anna Lindqvist', 'Ledighetsansökan från Johan Byström']) {
       const expand = page.getByRole('button', { name: title, exact: true });

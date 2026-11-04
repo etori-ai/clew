@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Theme } from '@astryxdesign/core/theme';
 import { LayerProvider } from '@astryxdesign/core/Layer';
 import { InternationalizationProvider } from '@astryxdesign/core/i18n';
-import { neutralTheme } from '@astryxdesign/theme-neutral/built';
+import { clewTheme } from './theme';
 import sv from '@astryxdesign/core/locales/sv-SE.json';
 
 // Strictly Astryx: this package re-exports the components the app composes with and adds no components of its own.
@@ -37,7 +37,8 @@ export { MoreMenu } from '@astryxdesign/core/MoreMenu';
 export { Banner } from '@astryxdesign/core/Banner';
 export { Drawer, DrawerHeader } from '@astryxdesign/core/Drawer';
 export { Skeleton } from '@astryxdesign/core/Skeleton';
-export { ChatComposer, ChatComposerInput, ChatComposerDrawer, ChatDictationButton, useChatDictation, ChatMessageList, ChatMessage, ChatMessageBubble, ChatMessageMetadata, ChatSystemMessage, type ChatComposerInputHandle, type ChatComposerTrigger, type ChatComposerToken } from '@astryxdesign/core/Chat';
+export { ChatComposer, ChatComposerInput, ChatComposerDrawer, ChatDictationButton, useChatDictation, ChatLayout, ChatMessageList, ChatMessage, ChatMessageBubble, ChatMessageMetadata, ChatSystemMessage, type ChatComposerInputHandle, type ChatComposerTrigger, type ChatComposerToken } from '@astryxdesign/core/Chat';
+export { Markdown } from '@astryxdesign/core/Markdown';
 export type { SearchSource, SearchableItem } from '@astryxdesign/core/Typeahead';
 export { Overlay } from '@astryxdesign/core/Overlay';
 export { VisuallyHidden } from '@astryxdesign/core/VisuallyHidden';
@@ -97,11 +98,11 @@ export const swedish = { ...sv,
   '@astryx.kbd.shortcut': { defaultMessage: '{shortcut} + {key}' },
 };
 /**
- * The plain Astryx look: Neutral theme, Swedish strings. No project theme in the POC. LayerProvider keeps the toast stack
- * inside these providers: without it Astryx mounts a fallback root that gets neither the Swedish catalog nor the theme.
+ * The plain Astryx look: Neutral with the one override in `theme.ts` (D31), Swedish strings. LayerProvider keeps the toast
+ * stack inside these providers: without it Astryx mounts a fallback root that gets neither the Swedish catalog nor the theme.
  */
 export function Providers({ children }: { children: ReactNode }) {
   return <InternationalizationProvider locale="sv-SE" messages={{ 'sv-SE': swedish }}>
-    <Theme theme={neutralTheme} mode="light"><LayerProvider>{children}</LayerProvider></Theme>
+    <Theme theme={clewTheme} mode="light"><LayerProvider>{children}</LayerProvider></Theme>
   </InternationalizationProvider>;
 }

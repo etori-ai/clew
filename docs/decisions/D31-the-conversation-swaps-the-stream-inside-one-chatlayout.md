@@ -18,9 +18,11 @@ composer's placement is written by the project:
    the field through the `@` trigger as before. The "Om n saker" header line goes; the drawer's count says it.
 4. Assistant answers render through `Markdown`. A proposal to confirm is plain content in a ghost bubble
    (one `Badge variant="warning"` "Att bekräfta", a decimal `List`, two buttons), never a `Card` in a bubble.
-5. The three piles (D28) sit in the composer slot above the `ChatComposer` on every width: on a desktop as the
-   `ToggleButtonGroup`, on a phone as a `DropdownMenu presentation="adaptive"` whose items navigate, because the
-   group never wraps and three labels do not fit 320 px.
+5. The three piles (D28) sit in the content `Layout`'s header slot as a `Toolbar`, pinned above the column, on every
+   width: on a desktop as the `ToggleButtonGroup`, on a phone as a `DropdownMenu presentation="adaptive"` whose
+   items navigate, because the group never wraps and three labels do not fit 320 px. They are not on the dock:
+   `ChatLayout`'s frosted band is sized for one composer, and a second row there floats over the cards (verified in
+   the a11y harness 2026-11-04).
 6. `packages/ui/src/styles.css` holds the four Astryx `@import`s and two body rules. Anything else needs a
    decision that names the gap.
 7. Below 480 px of viewport height the composer, the piles and the transcript render in page flow through
@@ -33,7 +35,7 @@ composer's placement is written by the project:
 Known Astryx gaps this decision lives with (recorded here, not filed; the product owner decided 2026-11-04
 that Clew sends no gap reports): no scroll padding under the dock (item 8); no undocked mode (item 7); no
 header slot in `ChatLayout` (the content `Layout` header is used); the dock's blur layer is sized for one
-composer (the piles row is verified visually); `ScrollableArea` has no max-height; `SelectableCard` is a
+composer (verified; the piles went to the toolbar); `ScrollableArea` has no max-height; `SelectableCard` is a
 checkbox, so a single choice between two cards is a `RadioList` or two `ClickableCard`s; no dashed or ghost
 `Card`/`Token` variant; `Card` has no selected state tied to `aria-current`; `SideNavItem` has no description
 line; `Token` labels cannot wrap; `ChatComposerInputHandle` has no `removeToken` (the drawer's remove resets
