@@ -12,7 +12,7 @@ import { calendarConnector } from '../modules/calendar/connector';
 import { calendar, events } from '../composition/calendar';
 import { clock } from '../composition/ambient';
 import { peopleConnector } from '../modules/people/connector';
-import { searchConnector } from '../modules/search/connector';
+import { searchConnector, type AnswerCards } from '../modules/search/connector';
 import { searchUsecases } from '../modules/search/usecases';
 
 /**
@@ -24,7 +24,9 @@ import { searchUsecases } from '../modules/search/usecases';
 export const registry = new Registry();
 /** The composite search (D26) lists its sources from the registry at call time, so a connector enabled by an administrator is searched from the next question on. */
 const search = searchUsecases({ sources: actor => registry.searchSources(actor), clock });
-const bundled = [heromaConnector(postgresState), raindanceConnector(postgresState), treservaConnector(postgresState), kommunikationConnector(postgresState), calendarConnector(calendar, events), peopleConnector(), searchConnector(search)];
+/** The card an answer becomes is the stream's use case; the composition root fills this slot once the stream is built over the registry. */
+export const answerCards: AnswerCards = {};
+const bundled = [heromaConnector(postgresState), raindanceConnector(postgresState), treservaConnector(postgresState), kommunikationConnector(postgresState), calendarConnector(calendar, events), peopleConnector(), searchConnector(search, answerCards)];
 for (const m of bundled) registry.register(m);
 /** The connectors that live in this process: they get a `connector` row at boot so an administrator can govern them too (D23). */
 export const bundledIds = bundled.map(m => m.id);

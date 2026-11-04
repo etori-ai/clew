@@ -1,7 +1,7 @@
 import { test as base, expect, type Page, type Route } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import type { Thread } from '@clew/contracts';
-import { NEXT_WEEK, NOW, WEEK, areas, attention, checkReport, connectorDetail, connectorPreview, connectors, conversation, events, snoozePresets, threads, today, units, user } from './data';
+import { NEXT_WEEK, NOW, WEEK, areas, attention, checkReport, connectorDetail, connectorPreview, connectors, conversation, events, searchOutput, snoozePresets, threads, today, units, user } from './data';
 
 export const desktop = { width: 1280, height: 800 };
 export const phone = { width: 375, height: 667 };
@@ -77,6 +77,8 @@ export class MockApi {
     if (/^\/threads\/[^/]+\/proposals\/[^/]+\/move$/.test(path) && post) { const b = request.postDataJSON() as { start: string; end: string }; const pid = path.split('/')[4]; const t = this.threads.find(t => t.id === id)!; return json(this.update(id, { proposals: t.proposals.map(p => p.id === pid ? { ...p, start: b.start, end: b.end } : p) })); }
     if (path === '/cap/calendar.day') { const date = (JSON.parse(url.searchParams.get('input') ?? '{}') as { date?: string }).date ?? '2026-11-04'; return json({ output: { from: date, events: events(date).filter(e => e.start.startsWith(date)), proposals: [] } }); }
     if (path === '/objects') return json({ objects: [] });
+    if (path === '/cap/startsidan.search') return json({ output: searchOutput });
+    if (path === '/cap/startsidan.cardFromAnswer' && post) return json({ output: { threadId: 'rutin' } });
     if (path.startsWith('/cap/')) return json({ output: this.output });
     if (path === '/conversation') {
       const body = request.postDataJSON() as { text: string; conversationId?: string };

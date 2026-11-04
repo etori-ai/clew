@@ -1,4 +1,4 @@
-import { bundledIds, registry, runCapability } from '../connectors/registry';
+import { answerCards, bundledIds, registry, runCapability } from '../connectors/registry';
 import { assertionFor, registerConnector, secretPurpose, unregisterConnector } from '../connectors/remote';
 import { postgresConnectorStore, postgresUnits } from '../connectors/adapters/postgres';
 import { connectorUsecases } from '../connectors/usecases/admin';
@@ -33,6 +33,8 @@ const timers = temporalTimers();
 export const threads = threadUsecases({ store, registry, run: runCapability, timers, clock, ids, calendar: { ensureProposalThread: calendar.ensureProposalThread, replan: calendar.replan, dismiss: calendar.dismiss,
   todayEvents: persona => calendar.readToday(persona).then(v => v.events.filter(e => !e.allDay).map(e => ({ title: e.title, end: e.end }))).catch(() => []) } });
 export const reminders = reminderUsecases({ store, timers, clock });
+// A cited answer becomes a card (D26) through the search connector's propose; the stream owns the card, so the slot is filled here.
+answerCards.create = (actorId, input) => threads.cardFromAnswer({ id: actorId }, input);
 // The obligation's follow-up cards (D30) land in the invitee's stream like any pushed card.
 notifier.push = (personId, draft) => threads.pushDraft({ id: personId }, { ...draft, connector: 'calendar' }, 'assistant:obligation');
 export const mocks = mockUsecases({ store: postgresMockResetStore(), registry, clock, enabled: process.env.CLEW_POC === 'true' });

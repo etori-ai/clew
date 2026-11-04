@@ -41,6 +41,21 @@ for (const [layout, viewport] of [['desktop', desktop], ['phone', phone]] as con
     await expectNoAxeViolations(page);
   });
 
+  test('the sources view has no axe violations', async ({ page, api: _ }) => {
+    await open(page, '/vy/startsidan.search?titel=K%C3%A4llor&input=%7B%22query%22%3A%22fall%22%7D');
+    await expect(page.getByRole('dialog').getByRole('list', { name: 'Källor' })).toBeVisible();
+    await expectNoAxeViolations(page);
+  });
+
+  test('a document answer with steps and citations has no axe violations', async ({ page, api: _ }) => {
+    await open(page, '/');
+    const input = composer(page);
+    await input.fill('Brukaren har ramlat, vad gör jag?');
+    await input.press('Enter');
+    await expect(page.locator('.astryx-chat-message-bubble').filter({ hasText: 'Lyft inte själv' })).toBeVisible();
+    await expectNoAxeViolations(page);
+  });
+
   test('a toast has no axe violations', async ({ page, api: _ }) => {
     await open(page, '/');
     await snoozeFirst(page);
