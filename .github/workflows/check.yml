@@ -1,0 +1,25 @@
+name: Check
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']
+  pull_request:
+    paths-ignore: ['docs/**', '**/*.md']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Types and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The dev image pins Node and Bun. --no-deps leaves out the stack, which these checks must not need.
+      - name: Run bun run check
+        run: sh scripts/compose.sh run --rm --no-deps --build app sh -c "bun install --frozen-lockfile && bun run check"
