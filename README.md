@@ -36,16 +36,24 @@ The calendar image refreshes its pinned Calendar and RoomVox code in an existing
 ## Connectors
 
 An integration is a connector: its own container behind the connector protocol (D21, D22); the guide is
-`docs/guides/creating-an-external-connector.md`. Run the reference connector inside the app container and check it:
+`docs/guides/creating-a-connector.md`. Run the reference connector inside the app container and check it:
 
 ```sh
 docker exec -w /workspace -e CLEW_CONNECTOR_SECRET=change-me-change-me clew-app-1 node connectors/hello/server.mjs   # :4010 inside the container
 docker exec -w /workspace clew-app-1 bun scripts/connector-check.ts http://127.0.0.1:4010 --secret change-me-change-me
 ```
 
-Wire it into the BFF with `CLEW_CONNECTORS=hello=http://127.0.0.1:4010` and `CLEW_CONNECTOR_SECRET_HELLO=change-me-change-me`
-in `apps/server/.env.local`, restart `bun run dev`, and `GET /api/connectors` lists it next to the bundled connectors
-(D23 moves this into the product: no variables, no restart).
+Register it in Clew's database (D23: connectors are never configured through the environment); `bun run auth:setup`
+seeds `hello` as a draft with a generated secret, so with that secret it is one command, otherwise two:
+
+```sh
+docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts hello --enable
+docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts hello http://127.0.0.1:4010 --secret change-me-change-me --enable
+docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts --list
+```
+
+Restart `bun run dev` and `GET /api/connectors` lists it next to the bundled connectors. The admin page
+(Administration › Anslutna system, `docs/architecture/connector-administration.md`) replaces the script and the restart.
 
 ## Astryx component docs
 

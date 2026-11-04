@@ -31,6 +31,6 @@ dialect on top.
 
 **Replaces.** The "Clew-owned MCP server, `apps/mcp-<name>`" hosting shape in D3 and in
 `capability-surfaces.md` (3b) and `integration-paths.md`: an adapter that must run out of process is a
-module service, not an MCP server. The generic HTTP adapter that `creating-an-integration.md` section 2
+module service, not an MCP server. The generic HTTP adapter that `creating-a-connector.md` section 2
 promised for "native fulfilment" is this transport. D3's three module kinds, D10's order (the system fulfils
 Clew's contract first) and D11's calendar contract are unchanged.

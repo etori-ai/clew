@@ -1,6 +1,6 @@
 # D23 · Connectors are registered and governed in the database by an administrator, not by environment variables
 
-**Status:** proposed · **Date:** 2026-11-04 · **Area:** integrations
+**Status:** accepted, admin API and screens not built yet · **Date:** 2026-11-04 · **Area:** integrations
 
 **Decision.** A running Clew learns about a connector from its own Postgres, never from the environment.
 An administrator adds a connector in the product (address, shared secret, who sees it), Clew fetches the

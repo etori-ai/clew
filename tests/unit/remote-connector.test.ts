@@ -4,7 +4,8 @@ import { Registry, type Actor } from '../../packages/connectors/src/index';
 import { protocolSchema } from '../../packages/connectors/src/protocol';
 import { ManifestError, fetchManifest, parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { createConnector, manifest as helloManifest } from '../../connectors/hello/connector.mjs';
-import { assertionFor, remoteConnectorConfig, verifyAssertion } from '../../apps/server/src/connectors/remote';
+import { assertionFor, loadConnectors, verifyAssertion } from '../../apps/server/src/connectors/remote';
+import type { ConnectorHealth } from '../../packages/db/src/connectors';
 
 const secret = 'test-secret-test-secret';
 const hillevi: Actor = { id: 'hillevi', name: 'Hillevi Berg', unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'manager' };
@@ -86,11 +87,32 @@ describe('assertions and configuration', () => {
     await expect(verifyAssertion(foreign, () => secret)).rejects.toThrow(/Invalid assertion/);
     await expect(verifyAssertion('nonsense', () => secret)).rejects.toThrow(/Malformed/);
   });
-  test('CLEW_CONNECTORS and one secret per connector', () => {
-    expect(remoteConnectorConfig({ CLEW_CONNECTORS: 'hello=http://hello:4010/, my-errands = https://errands.example.se', CLEW_CONNECTOR_SECRET_HELLO: secret, CLEW_CONNECTOR_SECRET_MY_ERRANDS: secret }))
-      .toEqual([{ id: 'hello', url: 'http://hello:4010', secret }, { id: 'my-errands', url: 'https://errands.example.se', secret }]);
-    expect(remoteConnectorConfig({})).toEqual([]);
-    expect(() => remoteConnectorConfig({ CLEW_CONNECTORS: 'hello=http://hello:4010' })).toThrow(/CLEW_CONNECTOR_SECRET_HELLO/);
-    expect(() => remoteConnectorConfig({ CLEW_CONNECTORS: 'Hello=http://x', CLEW_CONNECTOR_SECRET_HELLO: secret })).toThrow(/<id>=<http/);
+  test('the loader registers enabled rows, refreshes the manifest and records health', async () => {
+    const { registry, connectorFetch } = stack();
+    const health: Array<[string, ConnectorHealth['status'], boolean]> = [];
+    const record = async (id: string, h: ConnectorHealth, manifest?: unknown) => { health.push([id, h.status, manifest !== undefined]); };
+    const loaded = await loadConnectors(registry, { rows: async () => [{ id: 'hello', url: 'http://hello', secret, manifest: null }], record, fetch: connectorFetch, attempts: 1, log: () => undefined });
+    expect(loaded).toEqual(['hello']);
+    expect(health).toEqual([['hello', 'ok', true]]);
+    expect(registry.connector('hello')?.source).toBe('Hello');
+    expect(await registry.run(hassan, 'hello.greeting', {})).toMatchObject({ text: expect.stringContaining('Hassan') });
+  });
+  test('a row with a stored manifest is served while its service is down, and the health says so', async () => {
+    const registry = new Registry();
+    const health: ConnectorHealth[] = [];
+    const down: FetchLike = async () => { throw new Error('ECONNREFUSED'); };
+    const loaded = await loadConnectors(registry, { rows: async () => [{ id: 'hello', url: 'http://hello', secret, manifest: helloManifest }], record: async (_id, h) => { health.push(h); }, fetch: down, attempts: 2, delayMs: 1, log: () => undefined });
+    expect(loaded).toEqual([]);
+    expect(health.map(h => h.status)).toEqual(['unreachable']);
+    expect((await registry.areas(hillevi))[0]?.figure).toEqual({ label: 'Hello svarar inte', tone: 'warn' });
+    await expect(registry.run(hassan, 'hello.greeting', {})).rejects.toThrow('Hello svarar inte just nu.');
+  });
+  test('an invalid manifest is recorded once and the row is skipped', async () => {
+    const registry = new Registry();
+    const health: ConnectorHealth[] = [];
+    const bad: FetchLike = async () => Response.json({ protocol: 2 });
+    await loadConnectors(registry, { rows: async () => [{ id: 'hello', url: 'http://hello', secret, manifest: null }], record: async (_id, h) => { health.push(h); }, fetch: bad, attempts: 5, log: () => undefined });
+    expect(health.map(h => h.status)).toEqual(['manifest-invalid']);
+    expect(registry.connector('hello')).toBeUndefined();
   });
 });

@@ -1,3 +1,9 @@
+> **Note (D21, D23).** This example shows the in-process shape (contract, adapter and module inside Clew's
+> process) that predates D21. Since then an integration is a connector: its own service, registered by an
+> administrator, written by whoever is closest to the system (`creating-a-connector.md`). The in-process shape
+> is now used only for Clew's core. The walkthrough is kept for the questions it works through (ownership,
+> scope, auth mode, refs) and will be rewritten as a connector.
+
 # Worked example: Fjällby kommun connects its own employee directory
 
 Fjällby kommun is made up. It runs Clew and has a custom-built employee directory, **Personalregistret**,
@@ -5,7 +11,7 @@ with a JSON API its own IT team maintains. Nothing in Personalregistret knows ab
 its employees to find a colleague's phone number and room from the Clew composer, see a colleague's
 contact card in the side panel, and open the full record in Personalregistret.
 
-This walks the guide in `creating-an-integration.md` from start to finish. Nothing below exists in the
+This walks the guide in `creating-a-connector.md` from start to finish. Nothing below exists in the
 repository yet; the code compiles against today's types in `packages/connectors` and is the shape a real
 directory connector would take. In Sundsvall the same connector would get a `metakatalogen` adapter.
 

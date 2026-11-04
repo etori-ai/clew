@@ -1,0 +1,21 @@
+CREATE TABLE "connector" (
+	"id" text PRIMARY KEY NOT NULL,
+	"url" text NOT NULL,
+	"secret" text NOT NULL,
+	"secret_changed_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"state" text DEFAULT 'draft' NOT NULL,
+	"audience" jsonb DEFAULT '{"mode":"all"}'::jsonb NOT NULL,
+	"scan_enabled" boolean DEFAULT true NOT NULL,
+	"tools_enabled" boolean DEFAULT true NOT NULL,
+	"capabilities" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"manifest" jsonb,
+	"manifest_at" timestamp with time zone,
+	"health" jsonb DEFAULT '{"status":"untested","at":"1970-01-01T00:00:00.000Z"}'::jsonb NOT NULL,
+	"created_by" text NOT NULL,
+	"updated_by" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"version" integer DEFAULT 1 NOT NULL,
+	CONSTRAINT "connector_state" CHECK ("connector"."state" IN ('draft', 'enabled', 'disabled')),
+	CONSTRAINT "connector_id" CHECK ("connector"."id" ~ '^[a-z][a-z0-9-]*$')
+);

@@ -100,3 +100,17 @@ describe('connectors reach each other only through the registry (D20)', () => {
     expect(r.tools(hillevi).some(t => t.name === 'comp.tryExecute')).toBe(false);
   });
 });
+
+describe('the registry changes without a restart (D23)', () => {
+  test('replace swaps a connector and its capabilities; unregister removes them', async () => {
+    const { r } = registry();
+    const names = () => r.list().map(c => c.id);
+    expect(r.unregister('nope')).toBe(false);
+    r.replace({ id: 'heroma', kind: 'passthrough', source: 'Heroma 2', areas: [], capabilities: [{ name: 'heroma.ping', kind: 'read', title: 'x', description: 'x', input: {} as never, output: {} as never, model: false, scope: {}, run: async () => 'pong' }] });
+    expect(r.find('heroma.whoIsOn')).toBeUndefined();
+    expect(await r.run(hassan, 'heroma.ping', {})).toBe('pong');
+    expect(r.unregister('heroma')).toBe(true);
+    expect(names()).not.toContain('heroma');
+    expect(r.find('heroma.ping')).toBeUndefined();
+  });
+});

@@ -1,26 +1,33 @@
 # hello: a Clew connector in one file
 
-The smallest complete integration that a running Clew can load without any change to Clew's code or
-image. It shows every part of the connector protocol (`docs/architecture/connector-protocol.md`): a manifest,
-`read` and `execute` capabilities with a receipt and an undo, a nightly `scan` that pushes a card, a figure
-for the sidebar, the assertion check, and one capability that calls back into Clew to read the person's
-calendar through another connector.
+The smallest complete connector that a running Clew can use without any change to Clew's code or image. It
+shows every part of the connector protocol (`docs/architecture/connector-protocol.md`): a manifest, `read`
+and `execute` capabilities with a receipt and an undo, a nightly `scan` that pushes a card, a figure for the
+sidebar, the assertion check, and one capability that calls back into Clew to read the person's calendar
+through another connector.
+
+Inside the devcontainer (the BFF listens on loopback there, so the connector runs in the same container):
 
 ```sh
-CLEW_CONNECTOR_SECRET=change-me-change-me node connectors/hello/server.mjs      # :4010
-bun scripts/connector-check.ts http://127.0.0.1:4010 --secret change-me-change-me     # conformance report
+CLEW_CONNECTOR_SECRET=change-me-change-me CLEW_URL=http://127.0.0.1:3000 node connectors/hello/server.mjs   # :4010
+bun scripts/connector-check.ts http://127.0.0.1:4010 --secret change-me-change-me                           # conformance report
 ```
 
-Then tell Clew about it (`apps/server/.env.local` in the devcontainer, or the environment of the Clew container):
+Then register it (D23: connectors live in Clew's database, never in its environment). `bun run auth:setup`
+already seeds `hello` as a draft row with a generated secret (`HELLO_CONNECTOR_SECRET` in `.auth-test.env`);
+start the connector with that secret and enable the row, or add it with a secret of your own:
 
-```
-CLEW_CONNECTORS=hello=http://127.0.0.1:4010
-CLEW_CONNECTOR_SECRET_HELLO=change-me-change-me
+```sh
+bun scripts/connector-add.ts hello --enable
+bun scripts/connector-add.ts hello http://127.0.0.1:4010 --secret change-me-change-me --enable
 ```
 
-Restart the BFF: `GET /api/connectors` lists `hello`, the sidebar gets "Hello-anslutningen", a manager gets the
-card after the first visit, and "Dagen med möten" answers through Clew's calendar connector.
+Restart the BFF: the log says `Connector "hello" (Hello) registered …`, `GET /api/connectors` lists it, the
+sidebar gets "Hello-modulen", a manager gets the card after the first visit, and "Dagen med möten" answers
+through Clew's calendar connector. The admin page (Administration › Anslutna system) replaces the script and
+the restart when it is built.
 
 Writing your own: copy `connector.mjs`, change `CONNECTOR`, the manifest and the capability bodies; keep
-`verifyAssertion` and the scope check as they are. Any language works: the protocol is four JSON routes
-and one HMAC check, and `docs/protocol/connector-protocol.schema.json` holds every shape.
+`verifyAssertion` and the scope check as they are. Any language works: the protocol is four JSON routes and
+one HMAC check, and `docs/protocol/connector-protocol.schema.json` holds every shape. Guide:
+`docs/guides/creating-a-connector.md`.

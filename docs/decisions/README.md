@@ -29,7 +29,7 @@ the reasoning. Longer designs live in `docs/architecture/`, and the reviews that
 | [D20](D20-modular-monolith-ports-and-adapters.md) | Backend structure: a modular monolith with ports and adapters, not tactical DDD | 2026-11-04 | platform | accepted |
 | [D21](D21-integrations-are-module-services.md) | Every integration is a module service behind the Clew module protocol | 2026-11-04 | integrations | accepted, vocabulary replaced by D22 (connector) |
 | [D22](D22-connectors-not-modules.md) | Connectors, not modules: the word for an integration that a person, an operator or a vendor meets | 2026-11-04 | integrations | accepted |
-| [D23](D23-connectors-are-managed-in-the-database.md) | Connectors are registered and governed in the database by an administrator, not by environment variables | 2026-11-04 | integrations | proposed |
+| [D23](D23-connectors-are-managed-in-the-database.md) | Connectors are registered and governed in the database by an administrator, not by environment variables | 2026-11-04 | integrations | accepted, admin API and screens not built yet |
 | [D24](D24-model-endpoints-are-administered-in-the-product.md) | Model providers and models are administered in the product, and the chat can choose between them | 2026-11-04 | product | proposed |
 
 ## Adding a decision

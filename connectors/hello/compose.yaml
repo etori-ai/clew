@@ -1,12 +1,11 @@
-# A Clew stack with one third-party connector. The connector is its own image; Clew learns about it from two
-# environment variables and nothing in Clew's image changes. Replace `hello` with your connector.
-#
-#   CLEW_CONNECTORS          "<id>=<url>" per connector, comma separated; the id must equal the manifest id
-#   CLEW_CONNECTOR_SECRET_<ID>  the shared secret for that connector (id upper-cased, '-' as '_')
+# A Clew stack with one connector. The connector is its own image; an administrator registers it in Clew
+# (Administration › Anslutna system, or `bun scripts/connector-add.ts` until that page exists), so nothing on
+# Clew's container names it (D23). Replace `hello` with your connector.
 #
 # Clew's own image is not published yet (HANDOVER next steps); until then run the connector next to the devcontainer:
-#   docker compose -f connectors/hello/compose.yaml up hello
-# and set CLEW_CONNECTORS=hello=http://host.docker.internal:4010 (or the compose network name) in apps/server/.env.local.
+#   HELLO_SECRET=<16+ characters> docker compose -f connectors/hello/compose.yaml up hello
+# and register it from inside the app container with the same secret:
+#   docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts hello http://host.docker.internal:4010 --secret <the secret> --enable
 services:
   hello:
     build: .
@@ -18,7 +17,7 @@ services:
   # clew:
   #   image: <clew image>
   #   environment:
-  #     CLEW_CONNECTORS: hello=http://hello:4010
-  #     CLEW_CONNECTOR_SECRET_HELLO: ${HELLO_SECRET}
+  #     HOST: 0.0.0.0                      # connectors reach /api/connectors/call over the compose network
   #     DATABASE_URL: postgres://clew:...@postgres:5432/clew
   #     TEMPORAL_ADDRESS: temporal:7233
+  #     MASTER_KEY: ...                    # seals connector secrets at rest

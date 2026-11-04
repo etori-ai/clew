@@ -3,7 +3,7 @@
 How a connector that is not part of this repository plugs into a running Clew. Implements D21. The shapes are
 `packages/connectors/src/protocol.ts`; the generated JSON Schema for authors in other languages is
 `docs/protocol/connector-protocol.schema.json` (`bun run protocol:schema` regenerates it and a unit test keeps
-it current). The step-by-step guide is `docs/guides/creating-an-external-connector.md`; the reference connector
+it current). The step-by-step guide is `docs/guides/creating-a-connector.md`; the reference connector
 is `connectors/hello`.
 
 ## What a connector is
@@ -17,7 +17,7 @@ REST, model tools, cards and areas derive from a remote connector exactly as fro
 capability-surfaces page applies unchanged.
 
 ```
-             CLEW_CONNECTORS=hello=http://hello:4010 · CLEW_CONNECTOR_SECRET_HELLO=…
+             connector row: id hello · url http://hello:4010 · sealed secret · state enabled (D23)
    ┌────────────────┐  GET  /clew/manifest           ┌──────────────────────┐
    │  Clew (BFF)    │ ─────────────────────────────► │  connector      │
    │  registry      │  POST /clew/capabilities/{name}│  any language        │
@@ -86,7 +86,7 @@ Clew signs a JWT per call with the connector's shared secret (HS256):
 | `iat`, `exp`, `jti` | issued now, valid two minutes, unique |
 
 The connector verifies signature, issuer, audience and expiry and takes the actor from the claim. The
-secret is per connector (`CLEW_CONNECTOR_SECRET_<ID>` on Clew's side, whatever name the connector uses on its),
+secret is per connector (sealed in Clew's `connector` row, whatever name the connector uses on its side),
 16 characters or more, and is the only credential between the two. The person's own IdP token is not
 forwarded; when token exchange is in place (D5) a `user-delegated` connector gets an audience-bound token in
 the same header and nothing else changes.
@@ -110,18 +110,18 @@ it is for bundled connectors through `clew.call`. The assertion is valid for two
 happens inside the request that triggered it. `CLEW_URL` is the BFF as seen from the connector's network; in
 a container stack Clew listens with `HOST=0.0.0.0`.
 
-## Configuration and deployment
+## Registration and deployment
 
-```
-CLEW_CONNECTORS=hello=http://hello:4010,errands=https://errands.example.se
-CLEW_CONNECTOR_SECRET_HELLO=…
-CLEW_CONNECTOR_SECRET_ERRANDS=…
-```
-
-Clew reads this at start-up, fetches every manifest (20 attempts, 3 s apart, so containers may start in
-any order), registers each connector and logs one line per connector. A manifest that is invalid is logged once
-and skipped. The stack is then Clew's image, Postgres, Temporal and one container per connector, wired by
-compose; `connectors/hello/compose.yaml` shows the shape. Removing a connector is removing its line.
+A connector is registered in Clew's database by an administrator (D23), never through Clew's environment:
+one `connector` row with the id, the address, the secret sealed with the master key, a state (`draft`,
+`enabled`, `disabled`), who may see it, and the last valid manifest. The admin page
+(`connector-administration.md`) writes that row; until it exists, `scripts/connector-add.ts` writes the same
+row from the command line. At boot Clew registers every enabled row: a row with a stored manifest is served
+at once, then the manifest is refetched (20 attempts, 3 s apart, so containers may start in any order) and
+replaced if it changed, and the health is recorded (`ok`, `unreachable`, `manifest-invalid`). A connector
+whose service is down keeps its areas with the warning figure instead of vanishing (D8). The stack is Clew's
+image, Postgres, Temporal and one container per connector; `connectors/hello/compose.yaml` shows the shape,
+and nothing on Clew's container names a connector. Removing a connector is removing its row.
 
 What Clew stores about a remote connector: nothing but what it stores for any connector, the threads it pushed,
 their receipts and the audit rows. The connector's own state is the connector's.

@@ -4,6 +4,9 @@ import { rename, writeFile } from 'node:fs/promises';
 import { and, eq } from 'drizzle-orm';
 import { database, closeDatabase } from '@clew/db';
 import { ABSOLUTE_MS, IDLE_MS, people, accessGrants, identityBindings, authenticationAudit, pruneAuthentication } from '@clew/db/auth';
+import { insertConnector, readConnector } from '@clew/db/connectors';
+import { writeAudit } from '@clew/db/threads';
+import { sealSecret } from '../apps/server/src/auth-crypto';
 const realm = 'clew', issuer = 'http://keycloak.orb.local:8090/realms/' + realm;
 const base = process.env.KEYCLOAK_ADMIN_URL ?? 'http://host.docker.internal:8090';
 const publicUrl = process.env.PUBLIC_URL ?? 'http://localhost:3020';
@@ -67,6 +70,8 @@ try {
   for(const [id,first,last,unit,label,role,capabilities] of [
     ['hillevi','Hillevi','Berg','unit-skola','Bergsåkers skola','manager',['calendar:plan']],
     ['hassan','Hassan','Ali','unit-omsorg','Hemtjänst Centrum','employee',[]],
+    // Mikael is the systemförvaltare persona: administration is a grant capability, not a work role (D23).
+    ['mikael','Mikael','Lund','unit-it','IT och digitalisering','employee',['admin.connectors']],
   ] as const){
     const key='TEST_'+id.toUpperCase()+'_PASSWORD';
     let user=(await objects(root+'/users?exact=true&username='+id)).find(u=>u.username===id);
@@ -83,6 +88,11 @@ try {
     });
   }
   const master=existing.MASTER_KEY??randomBytes(32).toString('base64');
+  // The hello connector (connectors/hello) as a draft row (D23): enable it with `bun scripts/connector-add.ts hello --enable` once it runs on :4010.
+  process.env.MASTER_KEY=master;
+  const helloSecret=previousTest.HELLO_CONNECTOR_SECRET??randomBytes(18).toString('base64url');
+  testPasswords.HELLO_CONNECTOR_SECRET=helloSecret;
+  if(!(await readConnector('hello')))await database().transaction(async tx=>{await insertConnector(tx,{id:'hello',url:'http://127.0.0.1:4010',secret:sealSecret(helloSecret,'connector:secret:hello'),createdBy:'bootstrap:auth'});await writeAudit(tx,{actor:'bootstrap:auth',action:'connector.added',subject:'connector:hello',details:{url:'http://127.0.0.1:4010',draft:true}});});
   const settings={OIDC_ISSUER:issuer,OIDC_CLIENT_ID:'clew-web',OIDC_CLIENT_SECRET:clientSecret,PUBLIC_URL:publicUrl,MASTER_KEY:master,AUTH_LOCAL_HTTP:'true'};
   await writeSettings(localFile,settings);
   await writeSettings(testFile,{...settings,...testPasswords});

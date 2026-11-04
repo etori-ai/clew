@@ -132,7 +132,7 @@ own reports. `treserva.report` is an `execute` with `model: false`, and `treserv
 - **Does an integration work without the model?** Always. Surface 1 is the primary one; surfaces 2 and 3
   are projections of it.
 - **Does a connector author write MCP tools or REST routes?** Neither. They write capability descriptors;
-  the registry derives the rest. See `docs/guides/creating-an-integration.md`.
+  the registry derives the rest. See `docs/guides/creating-a-connector.md`.
 - **Is MCP Clew's integration protocol?** No. The contract is Clew's and lives in TypeScript and TypeBox.
   A connector that runs out of process speaks the connector protocol (3b, D21); MCP is one surface Clew may offer to agents (3a).
 - **Can an external agent make Clew change something?** No. It can read and propose; a person executes

@@ -3,7 +3,7 @@
 How an administrator connects a system to a running Clew, decides who sees it, and keeps it healthy, from
 the browser and without a restart; and, on the same surface, which model providers and models the composer
 may use (D24). Implements D22 (the word), D23 (the database as the only registration path) and D24.
-Status: proposed design, nothing built. The screens need a row on the design canvas
+Status: D23 built up to the boot loader and `scripts/connector-add.ts` (session 15: table, sealed secrets, `loadConnectors`, `Registry.replace`/`unregister`, seed); visibility, the admin API and the screens are not built. The screens need a row on the design canvas
 before they are built (`CLAUDE.md`: the canvas is the reference for every screen).
 
 ## The model
@@ -63,7 +63,7 @@ capability `admin.connectors`.
 
 Every mutation: `persona.authorize()`, one transaction with the row and the audit row, then
 `registry.replace(connector)` or `registry.unregister(id)`. At boot, `loadConnectors()` reads every
-`enabled` row and registers it with the retry loop that `loadRemoteConnectors` has today; a row whose service
+`enabled` row and registers it with the retry loop in `loadConnectors` (built); a row whose service
 is down stays registered with the stored manifest and `health.unreachable`, so its areas show the warning
 figure instead of vanishing (D8: one connector being down never takes the page down).
 
@@ -221,7 +221,7 @@ adapter, the admin permission and the page shell are shared.
 
 1. Rename (D22): folders, package, protocol doc and schema, callback route, hello connector, checker, guide,
    `CLAUDE.md`. Mechanical, one commit, before the uncommitted D21 work lands.
-2. `connector` table and migration; sealed secret adapter; `loadConnectors()` from rows at boot;
+2. (Done, session 15.) `connector` table and migration; sealed secret adapter; `loadConnectors()` from rows at boot;
    `CLEW_CONNECTORS` removed; `scripts/auth-setup.ts` seeds `mikael` with `admin.connectors` and, in the
    calendar profile, the hello connector as a draft.
 3. Visibility in the registry (`inAudience`, state, overrides) applied to areas, tools, scan, figures,
