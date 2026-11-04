@@ -23,7 +23,7 @@ Checks:
 ```sh
 docker exec -w /workspace clew-app-1 bun run check      # tsc + Bun unit tests + Node runtime tests
 docker exec -w /workspace clew-app-1 bun run test:node  # current server runtime, without external services
-sh scripts/a11y.sh                                      # on the host: WCAG 2.2 AA suite in the pinned Playwright image, API mocked
+sh scripts/a11y.sh                                      # on the host: WCAG 2.2 AA suite in the pinned Playwright image, API mocked; also runs in CI
 bun scripts/auth-dev-check.ts hillevi                   # on the host: real Keycloak login, proposals, confirm, undo
 ```
 

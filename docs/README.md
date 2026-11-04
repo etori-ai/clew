@@ -30,4 +30,4 @@ decisions in force, and the ordered next steps. `vision.md` says why Clew exists
 | 2026-11-03 | [Platform review against startsidan](reviews/2026-11-03-platform-review-against-startsidan.md) | D10, D11, HANDOVER next step 10 |
 | 2026-11-04 | [Runtime and dependency review](reviews/2026-11-04-runtime-and-dependency-review.md) | Node 26 LTS, Bun and compatible dependency updates, CalDAV and Node runtime contracts |
 | 2026-11-04 | [SupportManagement integration review](reviews/2026-11-04-support-management-integration-review.md) | Errands as a Clew-owned pass-through domain (`ErrandProvider`), SupportManagement as the first adapter, D18 proposed |
-| 2026-11-04 | [Accessibility, component and motion review](reviews/2026-11-04-accessibility-and-motion-review.md) | Findings 1 to 14 fixed, the `tests/a11y` suite, the WCAG rule in `CLAUDE.md`. The session warning (finding 15) and manual testing are open |
+| 2026-11-04 | [Accessibility, component and motion review](reviews/2026-11-04-accessibility-and-motion-review.md) | Findings 1 to 14 fixed, the `tests/a11y` suite in CI, the WCAG rule in `CLAUDE.md`. The session warning (finding 15) and manual testing are open |

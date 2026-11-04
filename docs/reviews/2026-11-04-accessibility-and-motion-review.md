@@ -170,6 +170,11 @@ pinned Playwright image with `/api` mocked, so it needs no Keycloak, database or
 tests fail on the code before the fixes and all pass after, 222 of 222 over three repeats. The nine that
 pass both ways are guards for behaviour that was already right.
 
+`.github/workflows/a11y.yml` runs the same command on code pushes to `main` and in pull requests, in about
+three minutes. On GitHub's runners the suite passed 222 of 222 over three repeats, and removing `lang` from
+`index.html` failed 20 tests and the run. A red run reports but does not stop anything: branch protection
+needs GitHub Pro or a public repository.
+
 | Findings | Change |
 |---|---|
 | 1, 3, 4 | On a phone the attention line is `Text`, the area filter wraps and is a `nav`, and the week agenda reflows through `Grid columns={{ minWidth, max }}` |
@@ -195,7 +200,7 @@ The drawer got a close button through `DrawerHeader`, and the page background is
 - `thread-<id>` was on two elements after the reminder change.
 
 Still open: finding 15, a skip link, the stream staying in the tab order under the conversation scrim
-(D12), the 44 px target promise, manual testing with NVDA and VoiceOver, CI, the accessibility statement,
+(D12), the 44 px target promise, manual testing with NVDA and VoiceOver, the accessibility statement,
 and the motion spec. Automated checks do not prove conformance on their own.
 
 ## Recommended order
