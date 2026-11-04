@@ -65,6 +65,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
   const source = manifest.source;
   const capabilities: Capability<any, any>[] = manifest.capabilities.map(c => ({
     name: c.name, kind: c.kind, title: c.title, description: c.description, input: c.input as never, output: c.output as never, model: c.model, scope: c.scope,
+    ...(c.kinds ? { kinds: c.kinds } : {}),
     run: async (actor, input) => {
       const { status, json } = await post(transport, source, '/clew/capabilities/' + encodeURIComponent(c.name), actor, { actor, input });
       if (status >= 500 || !Value.Check(CallResponseSchema, json)) throw unavailable(source);

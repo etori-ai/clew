@@ -1,5 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { ThreadActionSchema, ThreadItemSchema } from '@clew/contracts';
+import { SearchHitSchema, SearchKind, SearchOutputSchema, ThreadActionSchema, ThreadItemSchema } from '@clew/contracts';
 
 /**
  * The Clew connector protocol (D21): how a connector that is not part of this repository plugs into a running Clew.
@@ -38,6 +38,7 @@ export const ManifestCapabilitySchema = object({
   input: jsonSchema, output: jsonSchema,
   model: Type.Boolean({ description: 'Offer it to the model as a tool. Must be false for execute (D8).' }),
   scope: ScopeRuleSchema,
+  kinds: Type.Optional(Type.Array(SearchKind, { uniqueItems: true, description: 'For `<id>.search` (D26): what it can find. Its output is a SearchOutput; `<id>.fetch` takes one of its refs back and returns one SearchHit.' })),
 });
 export const ManifestAreaSchema = object({
   id: Type.String({ pattern: '^[a-z][a-z0-9-]*$', maxLength: 40 }), title: swedish('Swedish. The sidebar entry.'),
@@ -98,6 +99,7 @@ export function protocolSchema() {
       ConnectorManifest: ConnectorManifestSchema, Actor: ActorSchema, CallRequest: CallRequestSchema, CallResponse: CallResponseSchema,
       ProtocolError: ProtocolErrorSchema, ExecuteResult: ExecuteResultSchema, ScanRequest: ScanRequestSchema, ScanResponse: ScanResponseSchema,
       ThreadDraft: ThreadDraftSchema, FigureRequest: FigureRequestSchema, FigureResponse: FigureResponseSchema, CallbackRequest: CallbackRequestSchema,
+      SearchHit: SearchHitSchema, SearchOutput: SearchOutputSchema,
     },
   };
 }

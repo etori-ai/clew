@@ -1,5 +1,5 @@
 import type { TSchema } from '@sinclair/typebox';
-import type { Area, CapabilityOverride, ConnectorAudience, ConnectorState, Receipt, ReceiptRow, SessionUser, ThreadAction, ThreadItem } from '@clew/contracts';
+import type { Area, CapabilityOverride, ConnectorAudience, ConnectorState, Receipt, ReceiptRow, SearchKind, SessionUser, ThreadAction, ThreadItem } from '@clew/contracts';
 
 /**
  * The capability layer (D1, D3). A connector owns a Clew contract: capabilities with a kind, a scope and an
@@ -45,8 +45,14 @@ export interface Capability<I = unknown, O = unknown> {
   model: boolean;
   /** Who may call it. Evaluated on every call; never trusts the browser. */
   scope: Scope;
+  /** For a `<id>.search` capability (D26): what it can find, so the composite search skips sources that cannot hold the answer. */
+  kinds?: SearchKind[];
   run: (actor: Actor, input: I, clew: Clew) => Promise<O>;
 }
+/** A capability is a search source when it is named `<id>.search` and is a read (D26); the composite `startsidan.search` is never one itself. */
+export const isSearchSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId: string) => c.kind === 'read' && c.name === connectorId + '.search' && connectorId !== SEARCH_CONNECTOR;
+/** The core connector that owns the composite search and the question area. */
+export const SEARCH_CONNECTOR = 'startsidan';
 /** What an execute capability returns: the source system's answer, row by row, read back. */
 export interface ExecuteResult {
   headline: string;
@@ -204,9 +210,19 @@ export class Registry {
     }
     return drafts;
   }
-  /** Tool definitions for the model: `model: true` capabilities the person may call, from connectors whose tools are on (D8). */
+  /** The search sources a person may use (D26): every `<id>.search` read in scope, except the composite itself. */
+  searchSources(actor: Actor) {
+    return this.capabilitiesFor(actor).filter(c => isSearchSource(c.capability, c.connector.id))
+      .map(c => ({ name: c.capability.name, connectorId: c.connector.id, source: c.connector.source, ...(c.capability.kinds ? { kinds: c.capability.kinds } : {}) }));
+  }
+  /**
+   * Tool definitions for the model: `model: true` capabilities the person may call, from connectors whose tools are on (D8).
+   * The per-connector search sources are left out while the composite search is registered, so the model sees one search tool (D26).
+   */
   tools(actor: Actor) {
+    const composite = this.capabilities.has(SEARCH_CONNECTOR + '.search');
     return this.capabilitiesFor(actor).filter(c => { const g = this.governance(c.connector.id); return c.capability.model && g.toolsEnabled && g.capabilities[c.capability.name]?.model !== false; })
+      .filter(c => !(composite && isSearchSource(c.capability, c.connector.id)))
       .map(c => ({ name: c.capability.name, title: c.capability.title, description: c.capability.description, input: c.capability.input, kind: c.capability.kind, source: c.connector.source }));
   }
 }

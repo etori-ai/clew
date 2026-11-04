@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext, Thread } from '../../packages/contracts/src/index';
-import { actorOf, Registry } from '../../packages/connectors/src/index';
+import { actorOf, Registry, type Connector } from '../../packages/connectors/src/index';
+import { searchConnector } from '../../apps/server/src/modules/search/connector';
+import { searchUsecases } from '../../apps/server/src/modules/search/usecases';
 import { memoryState } from '../../packages/connectors/src/memory-state';
 import { heromaConnector } from '../../packages/connectors/src/mock/heroma';
 import { raindanceConnector } from '../../packages/connectors/src/mock/raindance';
@@ -23,6 +25,7 @@ import type { ModelGenerate } from '../../apps/server/src/assistant/model';
 const persona = (id: string, role: 'manager' | 'employee'): AuthenticatedContext => ({ id, name: id === 'hillevi' ? 'Hillevi Berg' : 'Hassan Ali', unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role,
   organisationId: 'sundsvall', principal: { id: 'person:' + id, kind: 'person' }, capabilities: [], authorizationVersion: 'v1', sessionBinding: 'test', expiresAt: '2099-01-01T00:00:00.000Z', async authorize() { return { version: 'v1' }; } });
 const hillevi = persona('hillevi', 'manager');
+const hassan = persona('hassan', 'employee');
 const T0 = '2026-11-04T07:00:00.000Z';
 const account = { ref: 'memory:account:hillevi', email: 'hillevi@clew.test', name: 'Hillevi Berg' };
 const members = ['Anna Lindqvist', 'Erik Sandström'].map(name => { const first = name.split(' ')[0]!.toLowerCase(); return { personId: first, ref: 'memory:account:' + first, email: first + '@clew.test', name }; });
@@ -61,6 +64,18 @@ describe('a question without the model', () => {
     expect(second.thread.messages).toHaveLength(4);
     expect(audit(w.store, first.conversationId)).toEqual(['conversation.asked', 'conversation.replied']);
     await expect(w.assistant.converse(hillevi, { text: 'x', conversationId: 'nope' })).rejects.toThrow('Samtalet finns inte.');
+  });
+  test('a question no capability answers goes to the composite search as typed, and the hits become a view (D26, D8)', async () => {
+    const w = world();
+    const docs: Connector = { id: 'docs', kind: 'passthrough', source: 'Intranätet', areas: [], capabilities: [{ name: 'docs.search', kind: 'read', title: 'Sök på intranätet', description: 'x', input: {} as never, output: {} as never, model: true, scope: {},
+      run: async (_a, input: { query: string }) => ({ rows: [{ ref: 'fall-2', kind: 'document', label: 'Rutin vid fall i ordinärt boende', snippet: 'Innan den enskilde hjälps upp …', source: 'Intranätet', section: 'Vid fall', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00Z', link: 'https://intra/fall#' + encodeURIComponent(input.query) }] }) }] };
+    w.registry.register(docs);
+    w.registry.register(searchConnector(searchUsecases({ sources: a => w.registry.searchSources(a), clock: w.deps.clock })));
+    const r = await w.assistant.converse(hassan, { text: 'brukaren har ramlat men verkar oskadd, vad gör jag?' });
+    expect(r).toMatchObject({ assistant: 'router', shape: 'vy', answer: { source: 'Startsidan' }, view: { capability: 'startsidan.search', input: { query: 'brukaren har ramlat men verkar oskadd, vad gör jag?' }, title: 'Källor' }, followUps: ['Vid fall'] });
+    expect(r.answer.body).toMatch(/^1 träff i rutiner och dokument: Rutin vid fall i ordinärt boende\. Läs själv i panelen/);
+    expect(w.store.audit.at(-1)).toMatchObject({ action: 'conversation.asked', details: { assistant: 'router', tools: ['startsidan.search'], view: 'startsidan.search' } });
+    expect(w.registry.tools(actorOf(hassan)).map(t => t.name)).not.toContain('docs.search');
   });
   test('the fixed questions answer from the calendar and the figures, and the samtal question points at the proposal card', async () => {
     const w = world();

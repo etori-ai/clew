@@ -1,12 +1,12 @@
-import type { AuthenticatedContext, Chip, ClewAction, ConversationInput, ConversationResponse, MessageMeta, Thread, Verb, ViewRef } from '@clew/contracts';
-import { actorOf } from '@clew/connectors';
+import type { AuthenticatedContext, Chip, ClewAction, ConversationInput, ConversationResponse, MessageMeta, SearchResult, Thread, Verb, ViewRef } from '@clew/contracts';
+import { actorOf, SEARCH_CONNECTOR } from '@clew/connectors';
 import { displayDate, weekNumber } from '@clew/calendar/dates';
 import { InputError } from '../context';
 import { resolveChips, type ResolvedChips } from './chips';
 import { completionsFor } from './completions';
 import { serialiseContext } from './context';
 import { routeFixed } from './fixed';
-import { matchCapability, nearest, templatedAnswer } from './router';
+import { headingFollowUps, matchCapability, nearest, searchAnswer, templatedAnswer } from './router';
 import { modelAnswer, systemPrompt, type ToolCallRecord } from './model';
 import { listObjects } from './objects';
 import type { AssistantDeps } from './ports';
@@ -19,6 +19,7 @@ type Produced = {
   body: string; source: string; shape: ConversationResponse['shape']; assistant: ConversationResponse['assistant'];
   view?: ViewRef; draft?: NonNullable<ConversationResponse['draft']>; forslag?: { threadId: string }; clewActions: ClewAction[]; toolCalls?: ToolCallRecord[]; followUps: string[];
 };
+const SEARCH_TOOL = SEARCH_CONNECTOR + '.search';
 const whyLine = (t: Thread) => `Varför nu? ${t.trigger.reason}. Källa: ${t.trigger.source}, ${new Date(t.trigger.at).toLocaleTimeString('sv-SE', { timeStyle: 'short', timeZone: 'Europe/Stockholm' })}.`;
 
 /**
@@ -65,11 +66,20 @@ export function assistantUsecases(deps: AssistantDeps) {
     const fixed = await routeFixed(deps, persona, text);
     if (fixed) return { body: fixed.body, source: fixed.source, shape: fixed.forslagThreadId ? 'forslag' : 'svar', assistant, clewActions: [], followUps: [], ...(fixed.forslagThreadId ? { forslag: { threadId: fixed.forslagThreadId } } : {}) };
     const tools = registry.tools(actorOf(persona));
-    const match = matchCapability(text, tools);
+    const match = matchCapability(text, tools.filter(t => t.name !== SEARCH_TOOL));
     if (match) {
       const output = await run(persona, match.name, {});
       const answer = templatedAnswer(match, {}, output, clock().toISOString());
       return { body: answer.body, source: match.source, shape: answer.view ? 'vy' : 'svar', assistant, clewActions: [], followUps: nearest(text, tools.filter(t => t.name !== match.name)).map(t => t.title), toolCalls: [{ capability: match.name, input: {}, output }], ...(answer.view ? { view: answer.view } : {}) };
+    }
+    // The catch-all (D26): a question no capability answers goes to the composite search as typed, and the hits become a view the person reads.
+    const searchTool = tools.find(t => t.name === SEARCH_TOOL);
+    if (searchTool) {
+      const input = { query: text };
+      const output = await run<SearchResult>(persona, SEARCH_TOOL, input);
+      const answer = searchAnswer(output, clock().toISOString());
+      return { body: answer.body, source: searchTool.source, shape: 'vy', assistant, clewActions: [], followUps: headingFollowUps(output.rows), toolCalls: [{ capability: SEARCH_TOOL, input, output }],
+        view: { capability: SEARCH_TOOL, input, title: 'Källor', source: searchTool.source } };
     }
     const near = nearest(text, tools).map(t => t.title);
     return { body: `Det där kan jag inte svara på ännu. Jag kan svara om ${near.length ? near.map(t => t.toLowerCase()).join(', ') : 'dagen, utvecklingssamtalen, frånvaron, budgeten och HME'}.`, source: 'Startsidan', shape: 'svar', assistant, clewActions: [], followUps: near };

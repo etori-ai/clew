@@ -1,4 +1,5 @@
-import type { ViewRef } from '@clew/contracts';
+import type { SearchResult, ViewRef } from '@clew/contracts';
+export { headingFollowUps } from '../modules/search/domain';
 
 /** What the deterministic router knows about a capability: the same list the model gets as tools, plus the Swedish title. */
 export interface ToolInfo { name: string; title: string; description: string; kind: string; source: string; }
@@ -28,6 +29,15 @@ export function nearest(text: string, tools: ToolInfo[], count = 3): ToolInfo[] 
     .sort((a, b) => b.s - a.s).slice(0, count).map(x => x.t);
 }
 const clockOf = (at: string) => new Date(at).toLocaleTimeString('sv-SE', { timeStyle: 'short', timeZone: 'Europe/Stockholm' });
+/** The composite search without a model (D26, D8): the hits are named, never read; the sources that did not answer are named too. */
+export function searchAnswer(output: SearchResult, at: string): { body: string } {
+  const missed = output.sources.filter(s => s.status !== 'ok').map(s => s.source);
+  const missedLine = missed.length ? ` ${missed.join(', ')} ${missed.length === 1 ? 'svarade' : 'svarade'} inte.` : '';
+  if (!output.rows.length) return { body: `Jag hittade inget i rutiner och dokument om det här.${missedLine} Startsidan ${clockOf(at)}.` };
+  const names = output.rows.slice(0, 3).map(r => r.label);
+  const sources = [...new Set(output.rows.map(r => r.source))].join(', ');
+  return { body: `${output.rows.length} ${output.rows.length === 1 ? 'träff' : 'träffar'} i rutiner och dokument: ${names.join(', ')}${output.rows.length > 3 ? ' …' : ''}. Läs själv i panelen; jag har inte läst dem åt dig. Källor: ${sources}.${missedLine} Startsidan ${clockOf(at)}.` };
+}
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const rowLabel = (r: Record<string, unknown>) => String(r.name ?? r.title ?? r.label ?? r.supplier ?? r.ref ?? '');
 /** A Swedish sentence from a capability's output without a model: rows become a count and a view, scalars become "key: value". */

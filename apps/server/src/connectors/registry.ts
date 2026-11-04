@@ -10,7 +10,10 @@ import { kommunikationConnector } from '@clew/connectors/mock/kommunikation';
 import { InputError } from '../context';
 import { calendarConnector } from '../modules/calendar/connector';
 import { calendar, events } from '../composition/calendar';
+import { clock } from '../composition/ambient';
 import { peopleConnector } from '../modules/people/connector';
+import { searchConnector } from '../modules/search/connector';
+import { searchUsecases } from '../modules/search/usecases';
 
 /**
  * The registry the BFF runs with: the bundled connectors below plus every enabled connector row
@@ -19,7 +22,9 @@ import { peopleConnector } from '../modules/people/connector';
  * the registry (D20): in-process through the `clew.call` handle, remote through `POST /api/connectors/call`.
  */
 export const registry = new Registry();
-const bundled = [heromaConnector(postgresState), raindanceConnector(postgresState), treservaConnector(postgresState), kommunikationConnector(postgresState), calendarConnector(calendar, events), peopleConnector()];
+/** The composite search (D26) lists its sources from the registry at call time, so a connector enabled by an administrator is searched from the next question on. */
+const search = searchUsecases({ sources: actor => registry.searchSources(actor), clock });
+const bundled = [heromaConnector(postgresState), raindanceConnector(postgresState), treservaConnector(postgresState), kommunikationConnector(postgresState), calendarConnector(calendar, events), peopleConnector(), searchConnector(search)];
 for (const m of bundled) registry.register(m);
 /** The connectors that live in this process: they get a `connector` row at boot so an administrator can govern them too (D23). */
 export const bundledIds = bundled.map(m => m.id);
