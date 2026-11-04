@@ -1,7 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import type { Chip, ClewObject, ConversationResponse, ThreadMessage, Verb, Thread } from '@clew/contracts';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAnnounce, type ChatComposerInputHandle } from '@clew/ui';
-import { api, ApiError } from '../api';
+import { api } from '../api';
+import { errorMessage } from '../query-policy';
+import { threadQuery, verbsQuery } from '../queries';
+import { keys } from '../query-keys';
+import { useThreadAction } from '../mutations';
 
 /** A chip as the page hands it to the composer (D12): the object's ref, kind and label, plus its card when it has one. */
 export interface ChipRef { ref: string; kind: Chip['kind']; label: string; threadId?: string; }
@@ -39,6 +44,7 @@ export interface ConversationState {
 }
 const noop = () => undefined;
 const never = async () => undefined;
+const EMPTY_VERBS: Verb[] = [];
 export const ConversationContext = createContext<ConversationState>({
   chips: [], chipped: [], conversation: null, latest: null, done: null, busy: false, error: null, open: false, value: '', verbs: [], input: { current: null },
   setValue: noop, addChip: noop, removeChip: noop, rememberObject: noop, submit: never, ask: noop, performActions: never, cancelActions: noop, openConversation: never, newConversation: noop, close: noop, focus: noop,
@@ -73,15 +79,18 @@ export function ConversationProvider({ conversationId, onConversation, onThreadC
   const [error, setError] = useState<string | null>(null);
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [latest, setLatest] = useState<ConversationResponse | null>(null);
-  const [verbs, setVerbs] = useState<Verb[]>([]);
   const [done, setDone] = useState<{ text: string; undo?: () => Promise<void> } | null>(null);
+  // Every thread an answer carries goes into the cache (D33) through the page's `onThreadChange`, the same path as a card's action.
+  const client = useQueryClient();
+  const { apply } = useThreadAction({ onChange: onThreadChange });
   const inline = useMemo(() => refsIn(value), [value]);
   const chipped = useMemo(() => [...new Set([...chips.map(c => c.ref), ...inline])], [chips, inline]);
   const plain = value.replace(TOKEN, '').replace(/\s+/g, ' ').trim();
   const open = shown && !!conversation;
   // One chip in the drawer and nothing typed: the verbs about it, from its actions and Clew's standard actions.
   const chipThread = chips.length === 1 && !plain && chips[0]!.threadId ? chips[0]!.threadId : null;
-  useEffect(() => { if (!chipThread) { setVerbs([]); return; } let alive = true; void api.verbs(chipThread).then(v => { if (alive) setVerbs(v.verbs); }).catch(() => setVerbs([])); return () => { alive = false; }; }, [chipThread, latest]);
+  const verbsQ = useQuery({ ...verbsQuery(chipThread ?? ''), enabled: !!chipThread });
+  const verbs = chipThread ? verbsQ.data?.verbs ?? EMPTY_VERBS : EMPTY_VERBS;
 
   const focus = useCallback(() => { input.current?.focus(); }, []);
   // Esc reaches here after a dialog or a menu has already taken it; with nothing open there is nothing to close and focus stays where it is.
@@ -97,9 +106,9 @@ export function ConversationProvider({ conversationId, onConversation, onThreadC
   }, []);
   const newConversation = useCallback(() => { setConversation(null); setLatest(null); setDone(null); setValue(''); setShown(false); onConversation(null); input.current?.focus(); }, [onConversation]);
   const openConversation = useCallback(async (threadId: string) => {
-    try { const t = await api.thread(threadId); setConversation({ id: t.id, title: t.title, messages: t.messages }); setLatest(null); setDone(null); setShown(true); input.current?.focus(); }
-    catch (e) { setError(e instanceof ApiError ? e.message : 'Samtalet kunde inte öppnas.'); }
-  }, []);
+    try { const t = await client.query(threadQuery(threadId)); setConversation({ id: t.id, title: t.title, messages: t.messages }); setLatest(null); setDone(null); setShown(true); input.current?.focus(); }
+    catch (e) { setError(errorMessage(e, 'Samtalet kunde inte öppnas.')); }
+  }, [client]);
   // The route names the conversation: arriving at /samtal/:id (a link, the back button, a reload) puts the transcript on the page.
   const routeConversation = useRef<string | null>(null);
   useEffect(() => {
@@ -135,24 +144,27 @@ export function ConversationProvider({ conversationId, onConversation, onThreadC
       if (!conversation) onConversation(response.conversationId);
       // Sending clears the text, keeps the chips and never moves focus.
       setValue('');
-      if (response.draft) onThreadChange(response.draft.thread);
-      else if (response.forslag) void api.thread(response.forslag.threadId).then(onThreadChange).catch(() => undefined);
-    } catch (e) { setError(e instanceof ApiError ? e.message : 'Frågan kunde inte ställas.'); }
+      // The answer's thread is the truth for the log (Frågor); a draft's or a proposal's thread for its card; the verbs about a chip may have changed.
+      apply(response.thread);
+      if (response.draft) apply(response.draft.thread);
+      else if (response.forslag) void client.query({ ...threadQuery(response.forslag.threadId), staleTime: 0 }).then(apply).catch(() => undefined);
+      void client.invalidateQueries({ queryKey: keys.verbsAll });
+    } catch (e) { setError(errorMessage(e, 'Frågan kunde inte ställas.')); }
     finally { setBusy(false); input.current?.focus(); }
-  }, [chips, busy, conversation, open, announce, onConversation, onThreadChange]);
+  }, [chips, busy, conversation, open, announce, onConversation, apply, client]);
   const ask = useCallback((text: string) => void submit(text), [submit]);
   const performActions = useCallback(async (actions: ClewAction[]) => {
     setBusy(true); setError(null);
     try {
       const threads: Thread[] = [];
       for (const a of actions) threads.push(a.kind === 'dismiss' ? await api.dismiss(a.threadId) : await api.snooze(a.threadId));
-      threads.forEach(onThreadChange);
+      threads.forEach(apply);
       setLatest(l => l ? { ...l, clewActions: [] } : l);
       setDone({ text: actions.length === 1 ? `Klart. ${actions[0]!.kind === 'dismiss' ? 'Kortet är avfärdat och ligger under Redan hanterat.' : 'Kortet tas upp i morgon 06:00.'}` : 'Klart. Båda är gjorda.',
-        undo: async () => { for (const a of actions) onThreadChange(await api.reopen(a.threadId)); setDone({ text: 'Ångrat. Kortet är tillbaka under Nu.' }); } });
-    } catch (e) { setError(e instanceof ApiError ? e.message : 'Något gick fel.'); }
+        undo: async () => { for (const a of actions) apply(await api.reopen(a.threadId)); setDone({ text: 'Ångrat. Kortet är tillbaka under Nu.' }); } });
+    } catch (e) { setError(errorMessage(e, 'Något gick fel.')); }
     finally { setBusy(false); input.current?.focus(); }
-  }, [onThreadChange]);
+  }, [apply]);
   const cancelActions = useCallback(() => setLatest(l => l ? { ...l, clewActions: [] } : l), []);
 
   const state = useMemo<ConversationState>(() => ({

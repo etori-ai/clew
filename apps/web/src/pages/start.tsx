@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
-import { isSnoozed, streamGroup, type Area, type AssistantStatus, type Attention, type CalendarEvent, type RhythmPoint, type SessionUser, type Thread, type TodayView, type ViewRef } from '@clew/contracts';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { isSnoozed, streamGroup, type Area, type RhythmPoint, type SessionUser, type Thread, type ViewRef } from '@clew/contracts';
 import { Banner, Button, ChatLayout, Divider, DropdownMenu, EmptyState, Heading, HStack, Icon, IconButton, Layout, LayoutContent, List, MoreMenu, Step, Stepper, Text, ToggleButton, ToggleButtonGroup, Toolbar, VisuallyHidden, VStack, useMediaQuery, useToast } from '@clew/ui';
 import { timeLabel, today } from '@clew/calendar/dates';
-import { api, ApiError } from '../api';
+import { errorMessage } from '../query-policy';
+import { areasQuery, assistantQuery, attentionQuery, cardViewQuery, threadsQuery, todayQuery, viewQuery } from '../queries';
+import { applyThread } from '../thread-cache';
+import { keys } from '../query-keys';
 import { Composer } from '../components/composer';
 import { ConversationContext, ConversationProvider } from '../components/conversation-context';
 import { Transcript } from '../components/conversation';
@@ -26,6 +30,8 @@ const greeting = (hour: number) => hour < 10 ? 'God morgon' : hour < 18 ? 'God d
 /** The day's rhythm as words (D28): the kind of each point on the track, and what it means for the person. */
 const pointName = (p: RhythmPoint, budget: number, nth: number) => p.kind === 'review' ? 'Genomgång' : p.kind === 'bundle' ? 'Samling' : p.kind === 'quiet' ? 'Tyst' : `Avbrott ${nth} av ${budget}`;
 const pointDetail = (p: RhythmPoint) => p.kind === 'review' ? (p.state === 'done' ? 'allt som behöver dig' : 'nästa genomgång') : p.kind === 'bundle' ? 'resten samlas här' : p.kind === 'quiet' ? 'till 06:00' : p.title ?? '';
+const EMPTY_THREADS: Thread[] = [];
+const EMPTY_AREAS: Area[] = [];
 
 /**
  * Mission control (D28): the day as one track on the digest card, then Nu and Senare, notices as rows, and three piles
@@ -38,13 +44,18 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const mobile = useMediaQuery(mobileQuery);
   // 1.4.10: with 480 px or less in height nothing is docked; the row joins the page and the whole page scrolls (D31 item 7).
   const short = useMediaQuery(shortQuery);
-  const [threads, setThreads] = useState<Thread[]>([]);
-  const [areas, setAreas] = useState<Area[]>([]);
-  const [day, setDay] = useState<TodayView | null>(null);
-  const [attention, setAttention] = useState<Attention | null>(null);
-  const [assistant, setAssistant] = useState<AssistantStatus | null>(null);
-  const [weeks, setWeeks] = useState<Record<string, CalendarEvent[]>>({});
-  const [error, setError] = useState<string | null>(null);
+  // Every read is a query (D33): one cache shared by the page, the cards and the conversation. A mutation writes the thread it returns into it (thread-cache.ts).
+  const client = useQueryClient();
+  const threadsQ = useQuery(threadsQuery);
+  const areasQ = useQuery(areasQuery);
+  const dayQ = useQuery(todayQuery);
+  const attentionQ = useQuery(attentionQuery);
+  const assistantQ = useQuery(assistantQuery);
+  const threads = threadsQ.data?.threads ?? EMPTY_THREADS;
+  const areas = areasQ.data?.areas ?? EMPTY_AREAS;
+  const day = dayQ.data ?? null;
+  const attention = attentionQ.data ?? null;
+  const assistant = assistantQ.data ?? null;
   // The route is the state: /omrade/:area filters the stream, /pagar, /inte-nu and /hanterat open a pile, /vy/… the panel, /samtal/:id the row.
   const navigate = useNavigate();
   const location = useLocation();
@@ -59,7 +70,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const viewHref = (capability: string, title: string, input?: Record<string, unknown>) => withArea(`/vy/${capability}?titel=${encodeURIComponent(title)}` + (input && Object.keys(input).length ? `&input=${encodeURIComponent(JSON.stringify(input))}` : ''));
   const cardViewHref = (threadId: string, actionId: string) => withArea(`/vy/kort/${threadId}/${actionId}`);
   const conversationHref = (id: string) => withArea(`/samtal/${id}`);
-  const [view, setView] = useState<{ title: string; output: unknown } | null>(null);
   // An entry opened from the panel's day view (D32): the same dialog as on the calendar page, over the panel.
   const [openItem, setOpenItem] = useState<{ item: AgendaItem; dayItems: AgendaItem[] } | null>(null);
   const toast = useToast();
@@ -75,32 +85,21 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     }
     remindedSeen.current = new Map(list.map(t => [t.id, t.remindedAt]));
   }, [toast]);
-  const load = useCallback(async () => {
-    try {
-      const [t, a, d, at, st] = await Promise.all([api.threads(), api.areas(), api.today().catch(() => null), api.attention(), api.assistantStatus().catch(() => null)]);
-      setThreads(t.threads); setAreas(a.areas); setDay(d); setAttention(at); setAssistant(st); setError(null);
-      announceReminded(t.threads);
-    } catch (e) { setError(e instanceof ApiError ? e.message : 'Sidan kunde inte läsas.'); }
-  }, [announceReminded]);
-  useEffect(() => { void load(); }, [load]);
-  // Something pushed a card while the page was open (a reminder fired): re-read the stream.
-  useEffect(() => { const refresh = () => void load(); window.addEventListener('clew:refresh', refresh); return () => window.removeEventListener('clew:refresh', refresh); }, [load]);
-  const loadWeek = useCallback((week: string) => {
-    setWeeks(current => { if (current[week]) return current; void api.calendar(week).then(data => setWeeks(w => ({ ...w, [week]: data.events }))).catch(() => undefined); return current; });
-  }, []);
+  // Every list the cache hands over is looked at once: a reminder that fired shows up as a changed `remindedAt`, whether a refetch or a mutation brought it.
+  useEffect(() => { if (threadsQ.data) announceReminded(threadsQ.data.threads); }, [threadsQ.data, announceReminded]);
   // A card that leaves the stream takes the focused button with it. Focus goes on to the next card, or the first heading when none is left (2.4.3).
-  const focusAfter = useRef<{ card: string; next: string } | null>(null);
+  // `replace` is what every card gets as `onChange`: it runs before the cache is written (mutations.ts), so the DOM read here is still the old one.
+  const focusAfter = useRef<{ card: string; next: string; at: number } | null>(null);
   const replace = useCallback((thread: Thread) => {
     const cards = [...document.querySelectorAll('[id^="thread-"]')].map(el => el.id);
     const at = cards.indexOf('thread-' + thread.id);
-    if (at >= 0) focusAfter.current = { card: cards[at]!, next: cards[at + 1] ?? cards[at - 1] ?? 'behover-dig' };
-    setThreads(list => list.some(t => t.id === thread.id) ? list.map(t => t.id === thread.id ? thread : t) : [thread, ...list]);
-    void Promise.all([api.areas(), api.attention()]).then(([a, at]) => { setAreas(a.areas); setAttention(at); }).catch(() => undefined);
+    if (at >= 0) focusAfter.current = { card: cards[at]!, next: cards[at + 1] ?? cards[at - 1] ?? 'behover-dig', at: Date.now() };
   }, []);
   useEffect(() => {
     const target = focusAfter.current;
     focusAfter.current = null;
-    if (!target || document.activeElement !== document.body) return;
+    // A thread that came back unchanged renders nothing (structural sharing), so a stale note is dropped rather than moving focus later.
+    if (!target || Date.now() - target.at > 2_000 || document.activeElement !== document.body) return;
     // A card that moved to a pile is no longer in the stream; a card that only changed state is still here.
     const card = document.getElementById(target.card);
     const next = card?.checkVisibility() ? card : document.getElementById(target.next) ?? document.getElementById('behover-dig') ?? document.getElementById('senare');
@@ -109,24 +108,31 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   }, [threads]);
   // A view is addressable (integrations.md, "Answers and views"): the panel follows /vy/:capability or /vy/kort/:thread/:action.
   const viewInput = search.get('input'), viewTitle = search.get('titel');
+  const capabilityView = useQuery({ ...viewQuery(params.capability ?? '', viewInput), enabled: !!params.capability });
+  const cardView = useQuery({ ...cardViewQuery(params.threadId ?? '', params.actionId ?? ''), enabled: !!params.threadId && !!params.actionId });
+  // What a card action answered is acted on once per answer (StrictMode replays effects): an executed thread goes into the cache, a link opens a tab.
+  const acted = useRef<unknown>(null);
   useEffect(() => {
-    let alive = true;
-    const fail = (e: unknown) => { if (alive) setError(e instanceof ApiError ? e.message : 'Kunde inte hämta.'); };
-    if (params.capability) {
-      let input: unknown; try { input = viewInput ? JSON.parse(viewInput) : undefined; } catch { input = undefined; }
-      api.capability(params.capability, input).then(({ output }) => { if (alive) setView({ title: viewTitle ?? params.capability!, output }); }).catch(fail);
-    } else if (params.threadId && params.actionId) {
-      const threadId = params.threadId, actionId = params.actionId;
-      api.act(threadId, actionId).then(result => {
-        if (!alive) return;
-        const label = threads.find(t => t.id === threadId)?.actions.find(a => a.id === actionId)?.label ?? 'Vy';
-        if (result.kind === 'execute') setView({ title: label, output: result.thread.receipt });
-        else if (typeof (result.output as { url?: string }).url === 'string') window.open((result.output as { url: string }).url, '_blank', 'noopener');
-        else setView({ title: label, output: result.output });
-      }).catch(fail);
-    } else setView(null);
-    return () => { alive = false; };
-  }, [params.capability, params.threadId, params.actionId, viewInput, viewTitle]);
+    const result = cardView.data;
+    if (!result || acted.current === result) return;
+    acted.current = result;
+    if (result.kind === 'execute') { replace(result.thread); void applyThread(client, result.thread); }
+    else if (typeof (result.output as { url?: string }).url === 'string') window.open((result.output as { url: string }).url, '_blank', 'noopener');
+  }, [cardView.data, client, replace]);
+  const view = useMemo(() => {
+    if (params.capability) return capabilityView.data ? { title: viewTitle ?? params.capability, output: capabilityView.data.output } : null;
+    const result = params.threadId && params.actionId ? cardView.data : undefined;
+    if (!result) return null;
+    const label = threads.find(t => t.id === params.threadId)?.actions.find(a => a.id === params.actionId)?.label ?? 'Vy';
+    if (result.kind === 'execute') return { title: label, output: result.thread.receipt };
+    if (typeof (result.output as { url?: string }).url === 'string') return null;
+    return { title: label, output: result.output };
+  }, [params.capability, params.threadId, params.actionId, viewTitle, capabilityView.data, cardView.data, threads]);
+  // The page's one alert: a read that failed before it had anything to show. A failed refetch keeps the old data and says nothing; the day and the model's status are extras.
+  const failed = [threadsQ, areasQ, attentionQ].find(q => q.isError && q.data === undefined);
+  const error = failed ? errorMessage(failed.error, 'Sidan kunde inte läsas.')
+    : capabilityView.isError ? errorMessage(capabilityView.error, 'Kunde inte hämta.')
+    : cardView.isError ? errorMessage(cardView.error, 'Kunde inte hämta.') : null;
   const openStanding = (capability: string, label: string) => navigate(viewHref(capability, label));
   const openView = (v: ViewRef) => navigate(viewHref(v.capability, v.title, v.input));
   const areaTitle = (id: string) => areas.find(a => a.id === id)?.title ?? (id === 'fragor' ? 'Fråga' : id);
@@ -161,7 +167,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     const focusTitle = expandFocus.current === t.id;
     if (focusTitle) expandFocus.current = null;
     return t.proposals.length
-      ? <ThreadCard key={t.id} thread={t} events={t.week ? weeks[t.week] : undefined} compact={mobile} headingLevel={headingLevel} onChange={replace} onLoadWeek={loadWeek} />
+      ? <ThreadCard key={t.id} thread={t} compact={mobile} headingLevel={headingLevel} onChange={replace} />
       : <GenericCard key={t.id} thread={t} areaTitle={areaTitle(t.area)} position={position} compact={mobile} headingLevel={headingLevel} autoFocusTitle={focusTitle} onChange={replace} onOpenCardView={openCardView} />;
   };
   /** A group's threads: runs of rows in one list, a card where a thread is open. */
@@ -277,7 +283,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       /* Page level (D8): one Banner in the shell's banner slot when the model is configured but not answering. The router answers meanwhile. */
       banner={assistant && assistant.configured && !assistant.available ? <Banner status="warning" container="section" collapsible={false} title="Modellen svarar inte just nu."
         description={`Frågor besvaras av den inbyggda routern tills ${assistant.model ?? 'modellen'} svarar igen. Korten påverkas inte.`}
-        endContent={<Button size="sm" variant="secondary" label="Försök igen" clickAction={() => void load()} />} /> : undefined}>
+        endContent={<Button size="sm" variant="secondary" label="Försök igen" clickAction={() => client.invalidateQueries()} />} /> : undefined}>
       {/* The stream is one bounded column (Layout contentWidth) with the piles pinned in its toolbar; ChatLayout docks the row at the bottom of it (D31).
           A conversation takes the column: the transcript in place of the stream, its title and its way out in the toolbar. */}
       {short
@@ -296,6 +302,8 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           </LayoutContent>} />}
     </Shell>}</ConversationContext.Consumer>
     <PanelView title={view?.title ?? null} output={view?.output} onClose={() => navigate(back)} onOpenItem={(item, dayItems) => setOpenItem({ item, dayItems })} />
-    <EventDialog item={openItem?.item ?? null} dayItems={openItem?.dayItems ?? []} onClose={() => setOpenItem(null)} onChanged={t => { if (t) replace(t); navigate(location.pathname + location.search, { replace: true }); }} />
+    <EventDialog item={openItem?.item ?? null} dayItems={openItem?.dayItems ?? []} onClose={() => setOpenItem(null)}
+      /* The day in the panel and every loaded week are read again; a moved proposal's thread goes into the cache like any other answer. */
+      onChanged={t => { if (t) { replace(t); void applyThread(client, t); } void client.invalidateQueries({ queryKey: keys.viewAll }); void client.invalidateQueries({ queryKey: keys.calendarAll }); }} />
   </ConversationProvider>;
 }

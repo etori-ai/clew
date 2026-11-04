@@ -1,14 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import type { CalendarEvent, Thread, ViewRef } from '@clew/contracts';
 import { Badge, Button, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, ChatSystemMessage, EventList, HStack, Icon, List, ListItem, Markdown, Text, Timestamp, Token, VisuallyHidden, VStack, agendaItems } from '@clew/ui';
 import { weekNumber } from '@clew/calendar/dates';
-import { api } from '../api';
+import { calendarWeekQuery, threadQuery } from '../queries';
 import { useConversation } from './conversation-context';
 
+const EMPTY_EVENTS: CalendarEvent[] = [];
 /** The proposals' week in the transcript (D32): the week's meetings with the drawn times among them, as a list in a ghost bubble, after the `ai-chat` template's card-in-a-bubble. */
 function ProposalWeek({ thread }: { thread: Thread }) {
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
-  useEffect(() => { if (!thread.week) return; let alive = true; void api.calendar(thread.week).then(d => { if (alive) setEvents(d.events); }).catch(() => undefined); return () => { alive = false; }; }, [thread.week]);
+  const week = useQuery({ ...calendarWeekQuery(thread.week ?? ''), enabled: !!thread.week });
+  const events = week.data?.events ?? EMPTY_EVENTS;
   if (!thread.week) return null;
   return <ChatMessage sender="assistant" name={<VisuallyHidden>Assistenten</VisuallyHidden>}>
     <ChatMessageBubble variant="ghost" width="100%">
@@ -25,11 +26,10 @@ function ProposalWeek({ thread }: { thread: Thread }) {
 export function Transcript({ onOpenView }: { onOpenView: (view: ViewRef) => void }) {
   const talk = useConversation();
   const { conversation, latest, done, busy } = talk;
-  // A proposal answer names its thread; the draft carries it. Either way the week is drawn under the answer.
-  const [forslag, setForslag] = useState<Thread | null>(null);
+  // A proposal answer names its thread; the draft carries it. Either way the week is drawn under the answer. The named thread comes from the cache the answer wrote it into.
   const forslagId = latest?.forslag?.threadId ?? null;
-  useEffect(() => { if (!forslagId) { setForslag(null); return; } let alive = true; void api.thread(forslagId).then(t => { if (alive) setForslag(t); }).catch(() => undefined); return () => { alive = false; }; }, [forslagId, latest]);
-  const weekThread = latest?.draft?.thread ?? forslag;
+  const forslag = useQuery({ ...threadQuery(forslagId ?? ''), enabled: !!forslagId });
+  const weekThread = latest?.draft?.thread ?? (forslagId ? forslag.data ?? null : null);
   if (!conversation) return null;
   return <VStack gap={3}>
     <ChatMessageList density="balanced" align="bottom" isStreaming={busy}>

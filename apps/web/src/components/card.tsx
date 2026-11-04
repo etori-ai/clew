@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { attentionLevel, dayWord, daysUntil, isSnoozed, parseSwedishTime, snoozeWhen, streamGroup, type AttentionLevel, type SnoozeInput, type SnoozePreset, type Thread, type ThreadAction } from '@clew/contracts';
 import { Badge, Button, Card, CheckboxList, CheckboxListItem, Collapsible, Dialog, DialogHeader, DropdownMenu, Heading, HStack, Icon, List, ListItem, MoreMenu, StatusDot, Text, TextInput, Timestamp, Token, VStack, useToast } from '@clew/ui';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { today } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
+import { snoozePresetsQuery } from '../queries';
+import { useThreadAction } from '../mutations';
+import { invalidateStream } from '../thread-cache';
 import { useConversation } from './conversation-context';
 
 /**
@@ -26,11 +30,11 @@ export function useCountdown(until: string | null) {
  * Avfärda and Inte nu: the card leaves the stream and a toast with Ångra takes its place; reopen brings it back. The toast
  * stays until the person closes it: Ångra is the only way back to the card, so it carries no time limit (2.2.1).
  */
-export function useLeaveWithUndo(onChange: (thread: Thread) => void) {
+export function useLeaveWithUndo(apply: (thread: Thread) => void) {
   const toast = useToast();
   return (thread: Thread, text: string, undo: () => Promise<Thread> = () => api.reopen(thread.id)) => {
     const dismiss = toast({ body: text, isAutoHide: false, uniqueID: 'leave:' + thread.id,
-      endContent: <Button size="sm" variant="ghost" label="Ångra" clickAction={async () => { onChange(await undo()); dismiss(); }} /> });
+      endContent: <Button size="sm" variant="ghost" label="Ångra" clickAction={async () => { apply(await undo()); dismiss(); }} /> });
   };
 }
 
@@ -64,17 +68,9 @@ export function ReceiptStatus({ thread }: { thread: Thread }) {
   return <HStack gap={1} vAlign="center" wrap="wrap"><StatusDot variant="success" label="Läst tillbaka" />{sent}</HStack>;
 }
 
-/** The picker's rows (D29), read once a minute for the whole page: every card shows the same times. */
-let presetCache: { at: number; promise: Promise<SnoozePreset[]> } | null = null;
-function loadPresets() {
-  if (!presetCache || Date.now() - presetCache.at > 60_000) presetCache = { at: Date.now(), promise: api.snoozePresets().then(r => r.presets).catch(() => []) };
-  return presetCache.promise;
-}
-function usePresets() {
-  const [presets, setPresets] = useState<SnoozePreset[]>([]);
-  useEffect(() => { let alive = true; void loadPresets().then(p => { if (alive) setPresets(p); }); return () => { alive = false; }; }, []);
-  return presets;
-}
+/** The picker's rows (D29): one query for the whole page, kept a minute (snoozePresetsQuery), so every card shows the same times. */
+const EMPTY_PRESETS: SnoozePreset[] = [];
+const usePresets = () => useQuery(snoozePresetsQuery).data?.presets ?? EMPTY_PRESETS;
 /**
  * "Inte nu" and "Påminn mig" are the same picker (D29): the presets with the time each lands on, then "Skriv själv …"
  * for free text in the composer's grammar, parsed as the person types so the time is shown before it is set. An
@@ -114,28 +110,23 @@ type ActionProps = { thread: Thread; onChange: (thread: Thread) => void; onOpenC
 /** Everything a card can do, shared by the card and the row: run an action, snooze, dismiss, explain, and keep the selection. */
 function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
   const [selected, setSelected] = useState<string[]>(() => thread.items.filter(i => i.selected).map(i => i.ref));
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [why, setWhy] = useState(false);
   useEffect(() => { setSelected(thread.items.filter(i => i.selected).map(i => i.ref)); }, [thread.updatedAt]);
-  const leave = useLeaveWithUndo(onChange);
-  const selectable = thread.items.some(i => i.selectable);
   // Busy never disables the buttons: a disabled button drops the focus it holds (2.4.3). Action-buttons wait on their own promise.
-  const run = async (fn: () => Promise<Thread>) => {
-    if (busy) return;
-    setBusy(true); setError(null);
-    try { onChange(await fn()); } catch (e) { setError(e instanceof ApiError ? e.message : 'Något gick fel.'); } finally { setBusy(false); }
-  };
+  // The thread an action returns goes into the cache for every screen (D33); `onChange` lets the page move focus first.
+  const { run, apply, busy, error } = useThreadAction({ onChange });
+  const client = useQueryClient();
+  const leave = useLeaveWithUndo(apply);
+  const selectable = thread.items.some(i => i.selectable);
   const perform = async (action: ThreadAction) => {
     if (busy) return;
     if (action.confirm && !window.confirm(action.confirm)) return;
     if (action.kind === 'read') {
       if (action.target === 'link') {
-        setBusy(true); setError(null);
-        try {
+        await run(async () => {
           const result = await api.act(thread.id, action.id, selectable ? selected : undefined);
           if (result.kind === 'read' && typeof (result.output as { url?: string }).url === 'string') window.open((result.output as { url: string }).url, '_blank', 'noopener');
-        } catch (e) { setError(e instanceof ApiError ? e.message : 'Något gick fel.'); } finally { setBusy(false); }
+        });
         return;
       }
       // A panel view has an address: /vy/kort/:thread/:action, so it survives reload and the back button closes it.
@@ -146,18 +137,14 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
   };
   const snooze = (choice: SnoozeInput = {}) => run(async () => { const t = await api.snooze(thread.id, choice); leave(t, `Tas upp ${t.snoozedUntil ? snoozeWhen(t.snoozedUntil, new Date().toISOString()) : 'i morgon 06:00'} i stället.`); return t; });
   const dismiss = () => run(async () => { const t = await api.dismiss(thread.id); leave(t, `Avfärdad som inte aktuellt. ${thread.trigger.source} skapar inte kortet igen.`); return t; });
-  /** A person's own timer (D17): the card waits under Pågår utan dig until the timer brings it back; Ångra cancels the timer. */
-  const remind = async (seconds: number) => {
-    if (busy) return;
-    setBusy(true); setError(null);
-    try {
-      const r = await api.remind(thread.id, seconds);
-      const when = seconds < 60 ? `om ${seconds} sekunder` : clock(r.fireAt);
-      onChange(r.thread);
-      leave(r.thread, `Påminner dig ${when}. Kortet väntar under Pågår utan dig tills dess.`, () => api.cancelReminder(thread.id, r.id));
-      window.setTimeout(() => window.dispatchEvent(new Event('clew:refresh')), seconds * 1000 + 1_500);
-    } catch (e) { setError(e instanceof ApiError ? e.message : 'Något gick fel.'); } finally { setBusy(false); }
-  };
+  /** A person's own timer (D17): the card waits under Pågår utan dig until the timer brings it back; Ångra cancels the timer. When it fires, the stream is read again. */
+  const remind = (seconds: number) => run(async () => {
+    const r = await api.remind(thread.id, seconds);
+    const when = seconds < 60 ? `om ${seconds} sekunder` : clock(r.fireAt);
+    leave(r.thread, `Påminner dig ${when}. Kortet väntar under Pågår utan dig tills dess.`, () => api.cancelReminder(thread.id, r.id));
+    window.setTimeout(() => invalidateStream(client), seconds * 1000 + 1_500);
+    return r.thread;
+  });
   /** The same picker for both (D29): a preset or free text parsed to an instant, or the demo's seconds. */
   const pickSnooze = (choice: SnoozeInput & { seconds?: number }) => { const { seconds: _s, ...input } = choice; void snooze(input); };
   const pickRemind = (choice: SnoozeInput & { seconds?: number }) => { const seconds = choice.seconds ?? (choice.until ? Math.max(1, Math.ceil((Date.parse(choice.until) - Date.now()) / 1000)) : 0); if (seconds) void remind(seconds); };
