@@ -12,13 +12,27 @@ no index and no document store; it holds refs and the audit row. Concretely:
    `label`, `snippet`, `link`, `source`, `owner`, `reviewedAt` and a `stale` flag. Every connector's
    `<id>.search` read capability returns `{ rows: SearchHit[] }`, and a `<id>.fetch` read returns one hit
    by ref. The names are the convention `integration-paths.md` already states for the search fan-out.
-2. **One composite search capability in Clew's core**, `startsidan.search` with input `{ query }`. It fans
-   the query out to every `*.search` in the actor's scope, merges, marks rows stale from `reviewedAt` with a
-   pure domain function, and returns partial results when a source is slow or down, each failure named.
-   The model sees this one tool with `model: true`; the per-connector `*.search` capabilities stay
-   reachable by REST and views but are not offered to the model. This is the composite mechanism of
-   `docs/architecture/working-across-connectors.md`, and it is testable on the memory adapters with a fake
-   search connector, without Eneo.
+2. **One composite search capability in Clew's core**, `startsidan.search` with input `{ query, kinds? }`.
+   It calls every `*.search` in the actor's scope **at the same time, never in series**, with one budget
+   per source (default 3 s) inside one budget for the whole fan-out (default 4 s), merges what has
+   answered when the budget ends, marks rows stale from `reviewedAt` with a pure domain function, and
+   returns the sources that missed the cut by name (`unavailable`, as the protocol already names a
+   connector that does not answer) so the view and the answer can say "SharePoint svarade inte". Ten
+   connected sources cost the same wall-clock as one. A source that keeps missing its budget is reported in
+   the connector's health, not retried inside the request. The model sees this one tool with
+   `model: true`; the per-connector `*.search` capabilities stay reachable by REST and views but are not
+   offered to the model. This is the composite mechanism of `docs/architecture/working-across-connectors.md`,
+   and it is testable on the memory adapters with a fake search connector, without Eneo.
+
+   **Connecting a source is registration, not code.** Any connector whose manifest declares a `read`
+   capability named `<id>.search` with the `SearchHit` output is picked up by the composite the moment an
+   administrator enables it (D23); nothing in Clew names a source. A manifest may add `kinds` on that
+   capability (`document`, `person`, `case`, `room`) so the composite can skip sources that cannot hold the
+   answer and the model can narrow a search. A source with its own search (Eneo, SharePoint, a case system,
+   the directory) is wrapped as a pass-through. A source with no search of its own (a file share, an FTP
+   folder, a static site) brings its own index inside its connector container; that index is the
+   connector's, under its own retention, and Clew still indexes nothing. Clew keeps no cache of hits; a
+   hit lives in the answer's view and in the audit row as a ref.
 3. **The catch-all rule in the router** (D8): when no capability matches the question and `startsidan.search`
    is in scope, the router runs it with the question as `query` and renders the rows as a view. Without a
    model the person gets the hits and reads the routine; with a model the model reads the hits and writes
@@ -32,7 +46,8 @@ no index and no document store; it holds refs and the audit row. Concretely:
 6. **Prompt and answer shape.** For a document answer the system prompt names the document, its owner and
    its review date instead of a system and a clock time, forbids claims beyond the retrieved text, and writes
    citations as `[n]` indexed into the view's rows. The model path gets a budget for retrieval plus
-   generation instead of one eight-second limit. A routine may be answered as numbered steps ("Steg"), a
+   generation instead of one eight-second limit: the fan-out's 4 s sits inside it, and the model is told
+   which sources did not answer so it can say so instead of guessing. A routine may be answered as numbered steps ("Steg"), a
    third answer shape beside Svar and Vy, when the source is a procedure.
 7. **Eneo is one source in the fan-out** (D14): an `eneo` connector under `connectors/`, in its own
    container, with `eneo.search` and `eneo.fetch` over Eneo's retrieval, scoped to the person's spaces.
@@ -60,11 +75,20 @@ Eneo assistant as a side-panel view hands the whole dialogue to Eneo and loses C
 the audit row per turn, no names of individuals, source and time on every answer, and the card as the
 only path to action. It stays available for long sessions; the tool path comes first.
 
-Open, and decided per item later: whether follow-up questions come from the model as a structured field
-or from the document's headings deterministically; how old a source may be before the answer warns, a
-fixed limit or the document's own review interval; what "Fråga ägaren" does; and whether the `eneo`
-connector acts with the person's token or as a service that narrows to their spaces, which is where a
-leak would come from and is the first question for the Eneo spike. Drawn as row 3 (artboards I to L) on
+Settled with the product owner on 2026-11-04, after the decision was drafted:
+
+- **Follow-up questions** come from the model as a structured field (up to three) in the same call; without
+  a model the source's section headings are offered instead, so D8 holds.
+- **Staleness** uses the source's own review interval when the hit carries one; when it carries none, a hit
+  is stale 12 months after `reviewedAt`. Both are computed in the composite's domain function, not by the
+  model.
+- **"Fråga ägaren" is left out.** The answer shows the owner and the review date; the person contacts the
+  owner themselves. Artboard K on the canvas still draws the button and is to be read without it.
+- **"Steg" is a third answer shape** beside Svar and Vy, used only when the source is a procedure. The prose
+  rule of one or two sentences stays for every other answer.
+
+Still open, for the Eneo spike: whether the `eneo` connector acts with the person's token or as a service
+that narrows to their spaces, which is where a leak would come from. Drawn as row 3 (artboards I to L) on
 the canvas "Clew designutforskning · schemaläggning och uppmärksamhet".
 
 **Replaces.** Nothing. Narrows D14's "`eneo.knowledge.search` as a `read` capability" to the connector
