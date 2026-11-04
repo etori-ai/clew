@@ -26,6 +26,7 @@ the reasoning. Longer designs live in `docs/architecture/`, and the reviews that
 | [D17](D17-temporal-runs-the-durable-timers.md) | Temporal runs the durable timers, starting with a person's own reminders | 2026-11-04 | platform | accepted |
 | [D18](D18-errands-are-a-clew-owned-passthrough-domain.md) | Errands are a Clew-owned pass-through domain; SupportManagement is the first adapter | 2026-11-04 | integrations | proposed |
 | [D19](D19-change-notification-is-a-clew-owned-contract.md) | Change notification is a Clew-owned contract: payload-free CloudEvents over HTTP | 2026-11-04 | integrations | proposed |
+| [D20](D20-three-kinds-of-undo-hold-runs-on-temporal.md) | Every execute capability declares its undo: compensating, hold or none; holds run on Temporal | 2026-11-04 | product | proposed |
 
 ## Adding a decision
 
