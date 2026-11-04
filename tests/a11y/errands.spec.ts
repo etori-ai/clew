@@ -23,7 +23,7 @@ test('errand list opens a detail view by keyboard and moves focus with the view'
   await expect(page.getByRole('dialog').getByText('Support Management · exempeldata', { exact: true })).toBeVisible();
   await expectNoAxeViolations(page);
   await page.setViewportSize(narrow);
-  expect(await reflowProblems(page)).toEqual([]);
+  await expect.poll(() => reflowProblems(page)).toEqual([]);
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
@@ -40,5 +40,6 @@ test('a waiting errand keeps its read action available on the card', async ({ pa
   await page.getByRole('button', { name: /Pågår utan dig/ }).click();
   await page.getByRole('button', { name: 'Visa ärendet', exact: true }).click();
   await expect(page.getByRole('dialog').getByText('Beställning av extra bildskärm', { exact: true })).toBeVisible();
-  expect(await reflowProblems(page)).toEqual([]);
+  // Visibility precedes the end of the drawer's slide-in animation; assert its settled layout.
+  await expect.poll(() => reflowProblems(page)).toEqual([]);
 });
