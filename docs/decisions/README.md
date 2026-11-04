@@ -21,6 +21,7 @@ the reasoning. Longer designs live in `docs/architecture/`, and the reviews that
 | [D12](D12-objects-chips-proposals.md) | Objects, chips, proposals: the general interaction pattern | 2026-11-03 | ui | accepted |
 | [D13](D13-conversation-in-the-composer-drawer.md) | The conversation lives in the composer's drawer; the dim is an Astryx Overlay | 2026-11-03 | ui | accepted |
 | [D14](D14-clew-stands-alone-eneo-enhances.md) | Clew stands alone; Eneo enhances it through an optional module | 2026-11-04 | product | accepted |
+| [D15](D15-postgres-scheduler-now-temporal-later.md) | Postgres-backed scheduler in v1, Temporal later | 2026-11-03 | platform | accepted |
 
 ## Adding a decision
 

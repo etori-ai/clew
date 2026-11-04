@@ -47,8 +47,11 @@ person, Clew asks once. Where a workflow today means opening three systems in or
 the organisation chart. It holds the state of an obligation across systems and days: find the slots,
 confirm, send the invitations, wait for the answers, remind, follow up, close. It waits on other people
 ("Pågår utan dig"), retries what came back unknown, expires undo windows, bundles interruptions and
-re-opens what was dismissed too early. The engine is the Postgres scheduler today and Temporal when
-watches with conditions arrive. What Clew does not do is model the organisation's processes: there is no
+re-opens what was dismissed too early. The person has the same engine for their own triggers: "påminn
+mig om tio minuter om det här", "bevaka fakturan tills den är attesterad", set from the conversation and
+changed as casually. The scheduler is therefore a crucial part of the system, not housekeeping. It is the
+Postgres scheduler today and Temporal when the first dynamic trigger, most likely user-set reminders,
+arrives (D15, `docs/architecture/scheduled-work.md`). What Clew does not do is model the organisation's processes: there is no
 process designer, no swimlanes, and a process that is the organisation's record of a case lives in the
 case system, which Clew links to and pushes from.
 
@@ -59,6 +62,12 @@ pass-through but the owner: a core module with its own tables, its own `execute`
 audit. The ladder is pass-through (refs only), derived (a snapshot), core (the record lives here), and a
 domain moves up the ladder only by a numbered decision, because owning a record means owning its
 retention, erasure and export. Clew never copies a record another system owns in order to "own" it.
+
+**Hosted by a provider, self-hostable by anyone.** Most municipalities have no IT department of their
+own and will buy Clew as a hosted service. The open-source rule guarantees that any of them, or a region
+or an agency, can run the whole stack themselves instead. Architecture choices are judged on fitness for
+the work, not on how many containers a self-hosted install needs; a component that earns its place
+(Keycloak, Postgres, Temporal when its trigger arrives) is taken.
 
 **The assistant takes the initiative, the person decides.** Clew pushes; the person reads, asks, adjusts
 and confirms. Every proposal is computed by deterministic code or drafted by the model, and nothing
