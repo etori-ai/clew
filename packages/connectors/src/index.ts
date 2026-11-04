@@ -57,10 +57,10 @@ export interface Capability<I = unknown, O = unknown> {
   kinds?: SearchKind[];
   run: (actor: Actor, input: I, clew: Clew) => Promise<O>;
 }
-/** A capability is a search source when it is named `<id>.search` and is a read (D26); the composite `startsidan.search` is never one itself. */
+/** A capability is a search source when it is named `<id>.search` and is a read (D26); the composite `clew.search` is never one itself. */
 export const isSearchSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId: string) => c.kind === 'read' && c.name === connectorId + '.search' && connectorId !== SEARCH_CONNECTOR;
 /** The core connector that owns the composite search and the question area. */
-export const SEARCH_CONNECTOR = 'startsidan';
+export const SEARCH_CONNECTOR = 'clew';
 /** What an execute capability returns: the source system's answer, row by row, read back. */
 export interface ExecuteResult {
   headline: string;

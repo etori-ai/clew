@@ -67,36 +67,36 @@ describe('the composite search over the registry', () => {
     const calls: string[] = [];
     const w = world([source('docs', [hit({ ref: 'r1', label: 'Rutin vid fall', section: 'Vid fall' })], { calls, delayMs: 10 }), source('intra', [hit({ ref: 'p9', source: 'Intranätet' })], { calls, delayMs: 10 })]);
     const started = Date.now();
-    const result = await w.registry.run<{ rows: { ref: string }[]; sources: unknown[] }>(hassan, 'startsidan.search', { query: 'brukaren har ramlat' });
+    const result = await w.registry.run<{ rows: { ref: string }[]; sources: unknown[] }>(hassan, 'clew.search', { query: 'brukaren har ramlat' });
     expect(Date.now() - started).toBeLessThan(35);
     expect(calls).toEqual(['docs:brukaren har ramlat', 'intra:brukaren har ramlat']);
     expect(result.rows.map(r => r.ref)).toEqual(['r1', 'p9']);
     expect(result.sources).toEqual([{ id: 'docs', source: 'DOCS', status: 'ok' }, { id: 'intra', source: 'INTRA', status: 'ok' }]);
-    expect(w.registry.tools(hassan).map(t => t.name)).toEqual(['startsidan.search']);
+    expect(w.registry.tools(hassan).map(t => t.name)).toEqual(['clew.search']);
     expect(w.registry.searchSources(hassan).map(s => s.name)).toEqual(['docs.search', 'intra.search']);
   });
   test('a slow source is reported as timeout and a failing one as unavailable; the others still answer', async () => {
     const w = world([source('docs', [hit({ ref: 'r1' })]), source('slow', [hit({ ref: 's1' })], { delayMs: 200 }), source('down', [], { fail: true })]);
-    const result = await w.registry.run<{ rows: { ref: string }[]; sources: { id: string; status: string }[] }>(hassan, 'startsidan.search', { query: 'x' });
+    const result = await w.registry.run<{ rows: { ref: string }[]; sources: { id: string; status: string }[] }>(hassan, 'clew.search', { query: 'x' });
     expect(result.rows.map(r => r.ref)).toEqual(['r1']);
     expect(result.sources.map(s => s.id + ':' + s.status)).toEqual(['docs:ok', 'slow:timeout', 'down:unavailable']);
   });
   test('the whole fan-out ends at the total budget with what has answered', async () => {
     const w = world([source('a', [hit({ ref: 'a1' })], { delayMs: 5 }), source('b', [hit({ ref: 'b1' })], { delayMs: 60 })], { perSourceMs: 500, totalMs: 30 });
-    const result = await w.registry.run<{ rows: { ref: string }[]; sources: { id: string; status: string }[] }>(hassan, 'startsidan.search', { query: 'x' });
+    const result = await w.registry.run<{ rows: { ref: string }[]; sources: { id: string; status: string }[] }>(hassan, 'clew.search', { query: 'x' });
     expect(result.rows.map(r => r.ref)).toEqual(['a1']);
     expect(result.sources.map(s => s.id + ':' + s.status)).toEqual(['a:ok', 'b:timeout']);
   });
   test('kinds narrow the fan-out to sources that can hold the answer; a source without kinds is always asked', async () => {
     const calls: string[] = [];
     const w = world([source('docs', [hit({ ref: 'r1' })], { kinds: ['document'], calls }), source('people', [hit({ ref: 'u1', kind: 'person' })], { kinds: ['person'], calls }), source('any', [hit({ ref: 'x1' })], { calls })]);
-    await w.registry.run(hassan, 'startsidan.search', { query: 'q', kinds: ['person'] });
+    await w.registry.run(hassan, 'clew.search', { query: 'q', kinds: ['person'] });
     expect(calls).toEqual(['people:q', 'any:q']);
   });
   test('a source that answers the wrong shape counts as unavailable', async () => {
     const bad: Connector = { id: 'bad', kind: 'passthrough', source: 'Bad', areas: [], capabilities: [{ name: 'bad.search', kind: 'read', title: 'x', description: 'x', input: {} as never, output: {} as never, model: false, scope: {}, run: async () => ({ hits: [] }) }] };
     const w = world([bad]);
-    const result = await w.registry.run<{ sources: { status: string }[] }>(hassan, 'startsidan.search', { query: 'x' });
+    const result = await w.registry.run<{ sources: { status: string }[] }>(hassan, 'clew.search', { query: 'x' });
     expect(result.sources[0]!.status).toBe('unavailable');
   });
   test('openSource and fetchSource go back to the connector that found the hit, and only to sources in scope', async () => {
@@ -104,9 +104,9 @@ describe('the composite search over the registry', () => {
       { name: 'secret.search', kind: 'read', title: 'x', description: 'x', input: {} as never, output: {} as never, model: false, scope: { roles: ['manager'] }, run: async () => ({ rows: [] }) },
       { name: 'secret.fetch', kind: 'read', title: 'x', description: 'x', input: {} as never, output: {} as never, model: false, scope: {}, run: async () => hit({ ref: 'z', link: 'https://leak' }) },
     ] }]);
-    expect(await w.registry.run(hassan, 'startsidan.openSource', { ref: 'docs:r1' })).toEqual({ url: 'https://intra/rutin' });
-    expect(await w.registry.run(hassan, 'startsidan.fetchSource', { ref: 'docs:r1' })).toMatchObject({ ref: 'r1', label: 'Rutin r1' });
-    await expect(w.registry.run(hassan, 'startsidan.openSource', { ref: 'docs:nope' })).rejects.toThrow('Källan går inte att öppna härifrån.');
-    await expect(w.registry.run(hassan, 'startsidan.fetchSource', { ref: 'secret:z' })).rejects.toThrow('Avsnittet finns inte längre.');
+    expect(await w.registry.run(hassan, 'clew.openSource', { ref: 'docs:r1' })).toEqual({ url: 'https://intra/rutin' });
+    expect(await w.registry.run(hassan, 'clew.fetchSource', { ref: 'docs:r1' })).toMatchObject({ ref: 'r1', label: 'Rutin r1' });
+    await expect(w.registry.run(hassan, 'clew.openSource', { ref: 'docs:nope' })).rejects.toThrow('Källan går inte att öppna härifrån.');
+    await expect(w.registry.run(hassan, 'clew.fetchSource', { ref: 'secret:z' })).rejects.toThrow('Avsnittet finns inte längre.');
   });
 });

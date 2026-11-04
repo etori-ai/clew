@@ -42,7 +42,7 @@ for (const [layout, viewport] of [['desktop', desktop], ['phone', phone]] as con
   });
 
   test('the sources view has no axe violations', async ({ page, api: _ }) => {
-    await open(page, '/vy/startsidan.search?titel=K%C3%A4llor&input=%7B%22query%22%3A%22fall%22%7D');
+    await open(page, '/vy/clew.search?titel=K%C3%A4llor&input=%7B%22query%22%3A%22fall%22%7D');
     await expect(page.getByRole('dialog').getByRole('list', { name: 'Källor' })).toBeVisible();
     await expectNoAxeViolations(page);
   });

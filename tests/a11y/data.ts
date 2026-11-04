@@ -62,7 +62,7 @@ export const threads = (): Thread[] => [
         { ref: 'raindance:inv:8', label: 'IT-partner AB', outcome: 'unknown', detail: 'Väntar på svar från Raindance' },
       ] } }),
   thread({ id: 'avfardad', title: 'Påminnelse om brandskyddsrond', topic: 'brand', state: 'dismissed', handledAt: NOW, connector: 'kommunikation', area: 'viktigt-nu' }),
-  thread({ id: 'fraga', title: 'Vem är på plats i dag?', topic: 'fraga', kind: 'question', state: 'handled', handledAt: NOW, connector: 'startsidan', area: 'fragor',
+  thread({ id: 'fraga', title: 'Vem är på plats i dag?', topic: 'fraga', kind: 'question', state: 'handled', handledAt: NOW, connector: 'clew', area: 'fragor',
     messages: [{ id: 'q1', role: 'user', body: 'Vem är på plats i dag?', createdAt: NOW }, { id: 'q2', role: 'assistant', body: 'Tio personer är på plats.', createdAt: NOW }] }),
 ];
 
@@ -118,13 +118,13 @@ export const conversation = (source: Thread[], text: string, conversationId = 'k
   // A question about a routine is answered from documents (D26): numbered steps, citations, the sources as a view.
   if (/ramlat/i.test(text)) {
     const body = '1. Lyft inte själv [1].\n2. Ring sjuksköterskan på jourtelefonen [1].\n3. Skriv avvikelse i Treserva innan passet slutar [2].';
-    const view = { capability: 'startsidan.search', input: { query: text }, title: 'Källor', source: 'Startsidan' };
-    const reply = thread({ id: conversationId, title: text.slice(0, 80), kind: 'question', connector: 'startsidan', area: 'fragor',
+    const view = { capability: 'clew.search', input: { query: text }, title: 'Källor', source: 'Startsidan' };
+    const reply = thread({ id: conversationId, title: text.slice(0, 80), kind: 'question', connector: 'clew', area: 'fragor',
       messages: [...previous, { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW }, { id: `a${previous.length}`, role: 'assistant', body, createdAt: NOW, meta: { source: 'Startsidan', shape: 'steg', view, sources: citations, followUps: ['Och om hen slagit i huvudet?'] } }] });
     return { conversationId, thread: reply, shape: 'steg', assistant: 'model', answer: { body, source: 'Startsidan', at: NOW }, view, clewActions: [], followUps: ['Och om hen slagit i huvudet?', 'Vem ringer jag på natten?'], sources: citations };
   }
   const body = 'Tio personer är på plats i dag. Sara Nyström är sjuk.';
-  const reply = thread({ id: conversationId, title: 'Vem är på plats i dag?', kind: 'question', connector: 'startsidan', area: 'fragor',
+  const reply = thread({ id: conversationId, title: 'Vem är på plats i dag?', kind: 'question', connector: 'clew', area: 'fragor',
     messages: [...previous, { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW }, { id: `a${previous.length}`, role: 'assistant', body, createdAt: NOW, meta: { source: 'Heroma' } }] });
   return { conversationId, thread: reply, shape: 'svar', assistant: 'router', answer: { body, source: 'Heroma', at: NOW }, clewActions: [], followUps: ['Vem är sjuk i morgon?'] };
 };

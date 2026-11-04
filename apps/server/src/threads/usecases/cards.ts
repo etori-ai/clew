@@ -271,13 +271,13 @@ export function threadUsecases(deps: ThreadDeps) {
     const reviewed = (s: typeof first) => s.reviewedAt ? 'granskad ' + s.reviewedAt.slice(0, 10) : '';
     const inserted = await store.transaction(async tx => {
       const ok = await tx.insertThread({ id, personId: persona.id, kind: 'pushed', topic, title: ('Följ upp: ' + question).slice(0, 120), state: 'open', week: null,
-        connector: 'startsidan', area: 'fragor', summary: message.body,
+        connector: 'clew', area: 'fragor', summary: message.body,
         items: sources.map(s => ({ ref: s.ref, label: `[${s.n}] ${s.label}${s.section ? ' · ' + s.section : ''}`, detail: [s.owner, reviewed(s), s.source].filter(Boolean).join(' · '), selectable: false, selected: false })),
-        actions: first.link ? [{ id: 'open', label: 'Öppna källan', capability: 'startsidan.openSource', kind: 'read', role: 'primary', target: 'link', input: { ref: first.ref.replace(/^document:/, '') } }] : [],
+        actions: first.link ? [{ id: 'open', label: 'Öppna källan', capability: 'clew.openSource', kind: 'read', role: 'primary', target: 'link', input: { ref: first.ref.replace(/^document:/, '') } }] : [],
         waitingOn: null, deadline: null, trigger: { reason: `Du frågade ${now.toLocaleTimeString('sv-SE', { timeStyle: 'short', timeZone: 'Europe/Stockholm' })} och gjorde svaret till ett kort`, source: 'Startsidan', at }, createdAt: at, updatedAt: at });
       if (!ok) return false;
       await tx.addMessage(id, { role: 'assistant', body: message.body, at });
-      await tx.writeAudit({ actor: 'person:' + persona.id, action: 'thread.fromAnswer', subject: 'thread:' + id, at, details: { connector: 'startsidan', topic, owner: persona.id, conversation: input.conversationId, message: input.messageId, sources: sources.map(s => s.ref) } });
+      await tx.writeAudit({ actor: 'person:' + persona.id, action: 'thread.fromAnswer', subject: 'thread:' + id, at, details: { connector: 'clew', topic, owner: persona.id, conversation: input.conversationId, message: input.messageId, sources: sources.map(s => s.ref) } });
       return true;
     });
     if (!inserted) { const raced = await store.openThread(persona.id, topic); if (raced) return { threadId: raced.id }; throw new InputError('Kortet kunde inte skapas.'); }

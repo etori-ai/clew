@@ -117,7 +117,7 @@ test.describe('D26 questions answered from documents', () => {
     await expect(page.getByText(/^Klart\. Kortet "Ny rutin för läkemedelshantering" ligger under Behöver dig/)).toBeVisible();
   });
   test('the sources view numbers its rows, names owner and review date, warns about a stale one and says which source did not answer', async ({ page, api: _ }) => {
-    await open(page, '/vy/startsidan.search?titel=K%C3%A4llor&input=%7B%22query%22%3A%22fall%22%7D');
+    await open(page, '/vy/clew.search?titel=K%C3%A4llor&input=%7B%22query%22%3A%22fall%22%7D');
     const panel = page.getByRole('dialog');
     await expect(panel.getByRole('heading', { name: 'Källor' })).toBeVisible();
     const rows = panel.getByRole('list', { name: 'Källor' }).getByRole('listitem');

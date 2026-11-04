@@ -132,7 +132,7 @@ export function assistantUsecases(deps: AssistantDeps) {
       ...(produced.sources?.length ? { sources: produced.sources } : {}), ...(produced.followUps.length ? { followUps: produced.followUps.slice(0, 3) } : {}) };
     await store.transaction(async tx => {
       if (!existing) {
-        await tx.insertThread({ id: conversationId, personId: persona.id, kind: 'question', topic: 'question', title: input.text.slice(0, 80), state: 'open', week: null, connector: 'startsidan', area: 'fragor', summary: produced!.body,
+        await tx.insertThread({ id: conversationId, personId: persona.id, kind: 'question', topic: 'question', title: input.text.slice(0, 80), state: 'open', week: null, connector: 'clew', area: 'fragor', summary: produced!.body,
           items: [], actions: [], waitingOn: null, deadline: null, trigger: { reason: 'Du ställde en fråga', source: produced!.source, at }, createdAt: at, updatedAt: at });
       } else {
         await tx.updateThread(conversationId, { summary: produced!.body, updatedAt: at });

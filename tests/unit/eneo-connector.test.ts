@@ -99,11 +99,11 @@ describe('the Eneo connector', () => {
   test('is one source in the composite search, with its hits marked by connector and the model seeing only the composite', async () => {
     const { registry, context } = stack();
     registry.register(searchConnector(searchUsecases({ sources: a => registry.searchSources(a), clock: () => new Date('2026-11-04T10:42:00Z') })));
-    const result = await registry.run<{ rows: { connector: string; ref: string; stale: boolean | null }[]; sources: unknown[] }>(hassan, 'startsidan.search', { query: 'brukaren har ramlat' }, context);
+    const result = await registry.run<{ rows: { connector: string; ref: string; stale: boolean | null }[]; sources: unknown[] }>(hassan, 'clew.search', { query: 'brukaren har ramlat' }, context);
     expect(result.rows.map(r => [r.connector, r.ref, r.stale])).toEqual([['eneo', 'blob-fall', false]]);
     expect(result.sources).toEqual([{ id: 'eneo', source: 'Eneo', status: 'ok' }]);
-    expect(registry.tools(hassan).map(t => t.name)).toEqual(['startsidan.search']);
-    const withoutToken = await registry.run<{ rows: unknown[]; sources: { id: string; source: string; status: string }[] }>(hassan, 'startsidan.search', { query: 'x' });
+    expect(registry.tools(hassan).map(t => t.name)).toEqual(['clew.search']);
+    const withoutToken = await registry.run<{ rows: unknown[]; sources: { id: string; source: string; status: string }[] }>(hassan, 'clew.search', { query: 'x' });
     expect(withoutToken).toEqual({ rows: [], sources: [{ id: 'eneo', source: 'Eneo', status: 'unavailable' }] });
   });
 });

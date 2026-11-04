@@ -71,6 +71,13 @@
       "when": 1793812610807,
       "tag": "0009_lovely_wendigo",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793822612833,
+      "tag": "0010_clew_connector_id",
+      "breakpoints": true
     }
   ]
 }

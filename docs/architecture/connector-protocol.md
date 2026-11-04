@@ -139,7 +139,7 @@ with input `{ query }` and output `{ rows: SearchHit[] }` (`SearchHit` and `Sear
 `$defs`: `ref`, `kind`, `label`, `snippet`, `link`, `source`, `section`, `owner`, `updatedAt`, `reviewedAt`,
 `reviewIntervalDays`, `score`), and a `<id>.fetch` read that takes one of its refs back and returns one `SearchHit`.
 The capability may carry `kinds` (`document`, `person`, `case`, `room`) so Clew skips it for a question it cannot
-answer. That is all: Clew's composite search `startsidan.search` asks every such source in the person's scope at the
+answer. That is all: Clew's composite search `clew.search` asks every such source in the person's scope at the
 same time, under a budget (3 s per source inside 4 s in all), merges the rows, marks each stale from `reviewedAt`
 (or `updatedAt`) and the review interval (a year when none is given), and names the sources that did not answer.
 The model sees the composite only; the person sees the rows as citations and in the sources view and can add one

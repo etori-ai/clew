@@ -12,7 +12,7 @@ no index and no document store; it holds refs and the audit row. Concretely:
    `label`, `snippet`, `link`, `source`, `owner`, `reviewedAt` and a `stale` flag. Every connector's
    `<id>.search` read capability returns `{ rows: SearchHit[] }`, and a `<id>.fetch` read returns one hit
    by ref. The names are the convention `integration-paths.md` already states for the search fan-out.
-2. **One composite search capability in Clew's core**, `startsidan.search` with input `{ query, kinds? }`.
+2. **One composite search capability in Clew's core**, `clew.search` with input `{ query, kinds? }`.
    It calls every `*.search` in the actor's scope **at the same time, never in series**, with one budget
    per source (default 3 s) inside one budget for the whole fan-out (default 4 s), merges what has
    answered when the budget ends, marks rows stale from `reviewedAt` with a pure domain function, and
@@ -33,7 +33,7 @@ no index and no document store; it holds refs and the audit row. Concretely:
    folder, a static site) brings its own index inside its connector container; that index is the
    connector's, under its own retention, and Clew still indexes nothing. Clew keeps no cache of hits; a
    hit lives in the answer's view and in the audit row as a ref.
-3. **The catch-all rule in the router** (D8): when no capability matches the question and `startsidan.search`
+3. **The catch-all rule in the router** (D8): when no capability matches the question and `clew.search`
    is in scope, the router runs it with the question as `query` and renders the rows as a view. Without a
    model the person gets the hits and reads the routine; with a model the model reads the hits and writes
    the answer. Convenience is removed, correctness kept.

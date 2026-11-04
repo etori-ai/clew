@@ -18,7 +18,7 @@ test.describe('1.4.10 reflow', () => {
 
   test('the sources view reflows at 320×640', async ({ page, api: _ }) => {
     await page.setViewportSize(narrow);
-    await open(page, '/vy/startsidan.search?titel=K%C3%A4llor&input=%7B%22query%22%3A%22fall%22%7D');
+    await open(page, '/vy/clew.search?titel=K%C3%A4llor&input=%7B%22query%22%3A%22fall%22%7D');
     await expect(page.getByRole('dialog').getByRole('list', { name: 'Källor' })).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
   });

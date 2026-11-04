@@ -375,7 +375,7 @@ describe('a cited answer becomes a card (D26)', () => {
   async function conversation(w: ReturnType<typeof world>, withSources = true) {
     const at = w.clock().toISOString();
     await w.store.transaction(async tx => {
-      await tx.insertThread({ id: 'q1', personId: 'hassan', kind: 'question', topic: 'question', title: 'Brukaren har ramlat, vad gör jag?', state: 'open', week: null, connector: 'startsidan', area: 'fragor', summary: 'svar', items: [], actions: [], waitingOn: null, deadline: null, trigger: { reason: 'Du ställde en fråga', source: 'Startsidan', at }, createdAt: at, updatedAt: at });
+      await tx.insertThread({ id: 'q1', personId: 'hassan', kind: 'question', topic: 'question', title: 'Brukaren har ramlat, vad gör jag?', state: 'open', week: null, connector: 'clew', area: 'fragor', summary: 'svar', items: [], actions: [], waitingOn: null, deadline: null, trigger: { reason: 'Du ställde en fråga', source: 'Startsidan', at }, createdAt: at, updatedAt: at });
       await tx.addMessage('q1', { role: 'user', body: 'Brukaren har ramlat, vad gör jag?', at });
       await tx.addMessage('q1', { role: 'assistant', body: '1. Lyft inte själv [1].\n2. Skriv avvikelse [2].', at, meta: { shape: 'steg', ...(withSources ? { sources } : {}) } });
       await tx.writeAudit({ actor: 'person:hassan', action: 'conversation.asked', subject: 'thread:q1', at });
@@ -388,13 +388,13 @@ describe('a cited answer becomes a card (D26)', () => {
     const answerId = q.messages[1]!.id;
     const { threadId } = await w.threads.cardFromAnswer(hassan, { conversationId: 'q1', messageId: answerId });
     const card = (await w.threads.threadFor(hassan, threadId))!;
-    expect(card).toMatchObject({ kind: 'pushed', state: 'open', connector: 'startsidan', area: 'fragor', topic: 'answer:' + answerId, title: 'Följ upp: Brukaren har ramlat, vad gör jag?', summary: '1. Lyft inte själv [1].\n2. Skriv avvikelse [2].',
+    expect(card).toMatchObject({ kind: 'pushed', state: 'open', connector: 'clew', area: 'fragor', topic: 'answer:' + answerId, title: 'Följ upp: Brukaren har ramlat, vad gör jag?', summary: '1. Lyft inte själv [1].\n2. Skriv avvikelse [2].',
       trigger: { source: 'Startsidan', reason: 'Du frågade 08:00 och gjorde svaret till ett kort' } });
     expect(card.items).toEqual([
       { ref: 'document:docs:fall-2', label: '[1] Rutin vid fall i ordinärt boende · Vid fall', detail: 'MAS · granskad 2026-03-12 · Intranätet', selectable: false, selected: false },
       { ref: 'document:eneo:lathund', label: '[2] Lathund: avvikelser', detail: 'granskad 2024-11-02 · Eneo', selectable: false, selected: false },
     ]);
-    expect(card.actions).toEqual([{ id: 'open', label: 'Öppna källan', capability: 'startsidan.openSource', kind: 'read', role: 'primary', target: 'link', input: { ref: 'docs:fall-2' } }]);
+    expect(card.actions).toEqual([{ id: 'open', label: 'Öppna källan', capability: 'clew.openSource', kind: 'read', role: 'primary', target: 'link', input: { ref: 'docs:fall-2' } }]);
     expect(actions(w.store, threadId)).toEqual(['thread.fromAnswer']);
     expect(w.store.audit.at(-1)).toMatchObject({ actor: 'person:hassan', action: 'thread.fromAnswer', details: { conversation: 'q1', message: answerId, sources: ['document:docs:fall-2', 'document:eneo:lathund'] } });
     expect(JSON.stringify(w.store.audit)).not.toContain('Lyft inte själv');

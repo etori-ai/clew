@@ -138,7 +138,7 @@ export type SearchOutput = Static<typeof SearchOutputSchema>;
 /** One source's part in a fan-out: it answered, it did not answer, or it did not answer in time. */
 export const SearchSourceSchema = object({ id: Type.String(), source: Type.String(), status: Type.Union([Type.Literal('ok'), Type.Literal('unavailable'), Type.Literal('timeout')]) });
 export type SearchSource = Static<typeof SearchSourceSchema>;
-/** What the composite `startsidan.search` returns: merged hits, each marked stale or not (null when the source gives no date), and every source's status. */
+/** What the composite `clew.search` returns: merged hits, each marked stale or not (null when the source gives no date), and every source's status. */
 export const SearchResultSchema = object({
   rows: Type.Array(Type.Intersect([SearchHitSchema, object({ stale: Type.Union([Type.Boolean(), Type.Null()]), connector: Type.String() })])),
   sources: Type.Array(SearchSourceSchema),
@@ -214,7 +214,7 @@ export const ThreadSchema = object({
   messages: Type.Array(ThreadMessageSchema), proposals: Type.Array(ProposalSchema),
   /** Target week (Monday) for proposal threads. */
   week: Type.Union([Type.String(), Type.Null()]),
-  /** The connector (area) the thread belongs to. `calendar` for proposal threads, `startsidan` for questions. */
+  /** The connector (area) the thread belongs to. `calendar` for proposal threads, `clew` for questions. */
   connector: Type.String(),
   area: Type.String(),
   /** One sentence the card leads with. */

@@ -5,8 +5,8 @@ import { FetchInputSchema, SearchInputSchema, type FetchInput, type SearchInput 
 import type { SearchUsecases } from './usecases';
 
 /**
- * The composite search as a core connector (D26): `startsidan.search` is the one search tool the model sees and the
- * router's catch-all; `startsidan.openSource` turns a ref back into a link for a card's button; `startsidan.cardFromAnswer`
+ * The composite search as a core connector (D26): `clew.search` is the one search tool the model sees and the
+ * router's catch-all; `clew.openSource` turns a ref back into a link for a card's button; `clew.cardFromAnswer`
  * is the propose that turns a cited answer into a card. It owns the question area, where the conversations already
  * live. The use cases come built from `connectors/registry.ts`, over the registry itself as the list of sources; the
  * card is the stream's business and is handed in as a slot the composition root fills (the stream is built after the registry).

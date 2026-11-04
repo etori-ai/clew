@@ -160,7 +160,7 @@ export function ConversationProvider({ conversationId, onConversation, onThreadC
     if (!conversation) return;
     setBusy(true); setError(null);
     try {
-      const { output } = await api.runCapability('startsidan.cardFromAnswer', { conversationId: conversation.id, messageId });
+      const { output } = await api.runCapability('clew.cardFromAnswer', { conversationId: conversation.id, messageId });
       const thread = await api.thread((output as { threadId: string }).threadId);
       onThreadChange(thread);
       setDone({ text: `Klart. Kortet "${thread.title}" ligger under Behöver dig. Knappen på kortet öppnar källan.` });
