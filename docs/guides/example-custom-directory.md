@@ -6,14 +6,14 @@ its employees to find a colleague's phone number and room from the Clew composer
 contact card in the side panel, and open the full record in Personalregistret.
 
 This walks the guide in `creating-an-integration.md` from start to finish. Nothing below exists in the
-repository yet; the code compiles against today's types in `packages/modules` and is the shape a real
-directory module would take. In Sundsvall the same module would get a `metakatalogen` adapter.
+repository yet; the code compiles against today's types in `packages/connectors` and is the shape a real
+directory connector would take. In Sundsvall the same connector would get a `metakatalogen` adapter.
 
 ## 1. The note before writing
 
 | Question | Fjällby's answer |
 |---|---|
-| Who owns the records? | Personalregistret. Clew stores nothing but refs and audit. **Pass-through.** Clew's own `people` core module keeps only subject, name, unit and role from SCIM. |
+| Who owns the records? | Personalregistret. Clew stores nothing but refs and audit. **Pass-through.** Clew's own `people` core connector keeps only subject, name, unit and role from SCIM. |
 | What makes a person act? | Nothing: this domain is find-and-look. Two reads (`search`, `person`) and a link-out. No propose, no execute, no scan. |
 | Who may see what? | Every authenticated employee may search and see work contact details of every employee. Home address and personal number exist in Personalregistret and are never part of the contract. |
 | How does it recognise the user? | Personalregistret has one API key for integrations. **`service` mode**; Clew narrows every call itself. |
@@ -21,7 +21,7 @@ directory module would take. In Sundsvall the same module would get a `metakatal
 | Licence? | No client library; `fetch` only. Nothing to pin. |
 | Already exposed by someone? | No. |
 
-Because the auth mode is `service`, the module's `scope` and `run` carry the whole authorization. The
+Because the auth mode is `service`, the connector's `scope` and `run` carry the whole authorization. The
 contract excludes the fields the directory holds that Clew must never show, so the adapter cannot leak
 them even by mistake.
 
@@ -62,7 +62,7 @@ export type DirectorySearchResult = Static<typeof DirectorySearchResultSchema>;
 
 /**
  * Clew's directory contract. Every directory system is an adapter behind it (D1, D10). The adapter
- * receives the query and the ref only; who may ask is decided in the module, before this is called.
+ * receives the query and the ref only; who may ask is decided in the connector, before this is called.
  */
 export interface DirectoryProvider {
   search(query: string, limit: number): Promise<DirectorySearchResult[]>;
@@ -149,18 +149,18 @@ export class FjallbyPersonalregistret implements DirectoryProvider {
 }
 ```
 
-## 6. The module: `packages/directory/src/module.ts`
+## 6. The connector: `packages/directory/src/connector.ts`
 
-The module knows Clew: capabilities, scope, Swedish text. It receives a provider and never constructs one.
+The connector knows Clew: capabilities, scope, Swedish text. It receives a provider and never constructs one.
 
 ```ts
 import { Type } from '@sinclair/typebox';
-import type { Capability, Module } from '@clew/modules';
+import type { Capability, Connector } from '@clew/connectors';
 import { DirectoryError, DirectoryPersonSchema, DirectorySearchResultSchema, type DirectoryProvider } from './model';
 
-const MODULE = 'directory';
+const CONNECTOR = 'directory';
 
-export function directoryModule(provider: DirectoryProvider): Module {
+export function directoryConnector(provider: DirectoryProvider): Connector {
   const capabilities: Capability<any, any>[] = [
     {
       name: 'directory.search', kind: 'read', title: 'Hitta en kollega', model: true,
@@ -192,7 +192,7 @@ export function directoryModule(provider: DirectoryProvider): Module {
     },
   ];
   return {
-    id: MODULE, kind: 'passthrough', source: 'Personalregistret',
+    id: CONNECTOR, kind: 'passthrough', source: 'Personalregistret',
     areas: [],            // find-and-look: no sidebar area, no figure, no schedules
     capabilities,         // no scan: the directory never pushes a card
   };
@@ -211,13 +211,13 @@ of the person and the calendar as the source of the time.
 
 ## 7. Register and configure
 
-`apps/server/src/modules.ts`, in the list of modules:
+`apps/server/src/connectors.ts`, in the list of connectors:
 
 ```ts
 import { createDirectoryProvider, directoryCredentialFromEnv } from '@clew/directory/adapters';
-import { directoryModule } from '@clew/directory/module';
+import { directoryConnector } from '@clew/directory/connector';
 // …
-directoryModule(createDirectoryProvider(directoryCredentialFromEnv())),
+directoryConnector(createDirectoryProvider(directoryCredentialFromEnv())),
 ```
 
 `apps/server/.env.example`:
@@ -236,8 +236,8 @@ DIRECTORY_URL=https://personalregistret.fjallby.se
 DIRECTORY_API_KEY=<from the secrets store>
 ```
 
-The package: `packages/directory/package.json` with `exports` for `./model`, `./adapters` and `./module`,
-`@clew/modules` and `@sinclair/typebox` as dependencies, added to the root `devDependencies` as
+The package: `packages/directory/package.json` with `exports` for `./model`, `./adapters` and `./connector`,
+`@clew/connectors` and `@sinclair/typebox` as dependencies, added to the root `devDependencies` as
 `workspace:*`, then:
 
 ```sh
@@ -250,8 +250,8 @@ docker exec -w /workspace clew-app-1 bun install --frozen-lockfile
 
 ```ts
 import { describe, expect, test } from 'bun:test';
-import { Registry, type Actor } from '../../packages/modules/src/index';
-import { directoryModule } from '../../packages/directory/src/module';
+import { Registry, type Actor } from '../../packages/connectors/src/index';
+import { directoryConnector } from '../../packages/directory/src/connector';
 import type { DirectoryProvider } from '../../packages/directory/src/model';
 
 const anna = { ref: 'directory:person:42', name: 'Anna Lind', title: 'Undersköterska', unit: 'Hemtjänst Norra', phone: '060-19 10 00', link: 'https://pr.test/personer/42' };
@@ -260,9 +260,9 @@ const fake: DirectoryProvider = {
   async person(ref) { return ref === anna.ref ? anna : null; },
 };
 const hassan: Actor = { id: 'hassan', name: 'Hassan Ali', unitId: 'unit-hemtjanst', unitLabel: 'Hemtjänst Norra', role: 'employee' };
-const registry = () => new Registry().register(directoryModule(fake));
+const registry = () => new Registry().register(directoryConnector(fake));
 
-describe('directory module', () => {
+describe('directory connector', () => {
   test('search returns rows with refs and a link, and nothing private', async () => {
     const out = await registry().run<{ rows: Array<Record<string, unknown>> }>(hassan, 'directory.search', { query: 'Anna' });
     expect(out.rows).toHaveLength(1);
@@ -291,13 +291,13 @@ link-out, add Anna as a chip and ask for a meeting.
 - Landscape table in `docs/architecture/integration-paths.md`: a row for Personalregistret, pass-through
   read in `service` mode, `directory.search` in the fan-out, link-out for everything else.
 - `HANDOVER.md` section 3: no new dependency; section 8: `packages/directory`.
-- No decision needed: a pass-through module with reads only. If Fjällby later wants "update my phone
+- No decision needed: a pass-through connector with reads only. If Fjällby later wants "update my phone
   number" from Clew, that is an `execute` with a receipt, and it still needs no decision; if they want
-  Clew to be the directory, that is a core module and does (see `docs/vision.md`, "Owning the model").
+  Clew to be the directory, that is a core connector and does (see `docs/vision.md`, "Owning the model").
 
 ## What changes for Sundsvall
 
 Same package, one more adapter: `adapters/metakatalogen.ts` implementing `DirectoryProvider` against
 Metakatalogen's API, in whichever auth mode Metakatalogen supports, selected by
-`DIRECTORY_ADAPTER=metakatalogen`. The module, the capabilities, the tests above and the UI do not change.
+`DIRECTORY_ADAPTER=metakatalogen`. The connector, the capabilities, the tests above and the UI do not change.
 That is the whole point of writing the contract first.

@@ -91,7 +91,7 @@ export const ThreadItemSchema = object({
   selectable: Type.Boolean(), selected: Type.Boolean(),
 });
 export type ThreadItem = Static<typeof ThreadItemSchema>;
-/** One action slot on a card (thread action contract). Modules contribute actions, never layout. */
+/** One action slot on a card (thread action contract). Connectors contribute actions, never layout. */
 export const ActionRole = Type.Union([Type.Literal('primary'), Type.Literal('secondary'), Type.Literal('overflow')]);
 export const ThreadActionSchema = object({
   id: id, label: Type.String(), capability: Type.String(),
@@ -126,8 +126,8 @@ export const ThreadSchema = object({
   messages: Type.Array(ThreadMessageSchema), proposals: Type.Array(ProposalSchema),
   /** Target week (Monday) for proposal threads. */
   week: Type.Union([Type.String(), Type.Null()]),
-  /** The module (area) the thread belongs to. `calendar` for proposal threads, `startsidan` for questions. */
-  module: Type.String(),
+  /** The connector (area) the thread belongs to. `calendar` for proposal threads, `startsidan` for questions. */
+  connector: Type.String(),
   area: Type.String(),
   /** One sentence the card leads with. */
   summary: Type.String(),
@@ -166,9 +166,9 @@ export function attentionLevel(thread: { deadline: string | null; remindedAt?: s
 /** The highest level in a list, or null when the list is empty. */
 export const worstLevel = (levels: AttentionLevel[]): AttentionLevel | null => levels.length ? attentionLevels[Math.min(...levels.map(l => attentionLevels.indexOf(l)))]! : null;
 
-/** An area in the sidebar: a lens on one module for one role (D3). Configuration, not code. */
+/** An area in the sidebar: a lens on one connector for one role (D3). Configuration, not code. */
 export const AreaSchema = object({
-  id: Type.String(), title: Type.String(), module: Type.String(), source: Type.String(),
+  id: Type.String(), title: Type.String(), connector: Type.String(), source: Type.String(),
   figure: Type.Union([object({ label: Type.String(), tone: Type.Union([Type.Literal('ok'), Type.Literal('warn'), Type.Literal('alert'), Type.Literal('none')]) }), Type.Null()]),
   needsYou: Type.Integer(), waiting: Type.Integer(),
   /** The highest attention level among the open cards that need the person; the sidebar count takes its colour from it. */

@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { fieldLabels, fieldValue, hiddenFields } from '../../apps/web/src/components/panel-labels';
-import { memoryState } from '../../packages/modules/src/memory-state';
-import { heromaModule } from '../../packages/modules/src/mock/heroma';
-import { kommunikationModule } from '../../packages/modules/src/mock/kommunikation';
-import { raindanceModule } from '../../packages/modules/src/mock/raindance';
-import { treservaModule } from '../../packages/modules/src/mock/treserva';
+import { memoryState } from '../../packages/connectors/src/memory-state';
+import { heromaConnector } from '../../packages/connectors/src/mock/heroma';
+import { kommunikationConnector } from '../../packages/connectors/src/mock/kommunikation';
+import { raindanceConnector } from '../../packages/connectors/src/mock/raindance';
+import { treservaConnector } from '../../packages/connectors/src/mock/treserva';
 
 type Schema = { properties?: Record<string, Schema>; items?: Schema; anyOf?: Schema[] };
 const keys = (schema: Schema): string[] => [
@@ -14,10 +14,10 @@ const keys = (schema: Schema): string[] => [
 ];
 
 describe('side panel labels (3.1.2)', () => {
-  test('every field a module returns has a Swedish name', () => {
+  test('every field a connector returns has a Swedish name', () => {
     const state = memoryState();
-    const modules = [heromaModule(state), raindanceModule(state), treservaModule(state), kommunikationModule(state)];
-    const fields = new Set(modules.flatMap(m => m.capabilities.flatMap(c => keys(c.output as Schema))));
+    const connectors = [heromaConnector(state), raindanceConnector(state), treservaConnector(state), kommunikationConnector(state)];
+    const fields = new Set(connectors.flatMap(m => m.capabilities.flatMap(c => keys(c.output as Schema))));
     expect(fields.size).toBeGreaterThan(20);
     expect([...fields].filter(key => !fieldLabels[key] && !hiddenFields.has(key))).toEqual([]);
   });

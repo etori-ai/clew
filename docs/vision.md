@@ -28,11 +28,11 @@ decisions and receipts.
 
 **Find, then act.** Search is the first thing employees ask for: a colleague's phone number, a document,
 a case, a room. Today that means knowing which system holds it. Clew is the place you search from: one
-box, results from every module in the person's scope, each result an object (D12) that can be opened,
+box, results from every connector in the person's scope, each result an object (D12) that can be opened,
 added to the conversation or turned into a card. Clew does not own the employee directory. It holds only
 what it needs to identify and scope a person (subject, name, unit, role, from SCIM); everything else about
 a colleague, such as phone, title, location and manager, is read from the organisation's directory as a
-pass-through module. In Sundsvall that is Metakatalogen, the established system where all employee data
+pass-through connector. In Sundsvall that is Metakatalogen, the established system where all employee data
 is kept. Documents and cases are found
 where they live, through the source's own search as the user, and through Eneo's retrieval over indexed
 knowledge when Eneo is installed. Clew does not build an index of other systems' content; it asks, merges
@@ -58,7 +58,7 @@ case system, which Clew links to and pushes from.
 **Own the model where nobody else does.** Some domains have no system of record, or one so poor that
 people keep the real state in mail and spreadsheets: who has had their utvecklingssamtal this year, which
 delegations expire when, the onboarding checklist, what was decided and when. For these Clew is not a
-pass-through but the owner: a core module with its own tables, its own `execute` capabilities and its own
+pass-through but the owner: a core connector with its own tables, its own `execute` capabilities and its own
 audit. The ladder is pass-through (refs only), derived (a snapshot), core (the record lives here), and a
 domain moves up the ladder only by a numbered decision, because owning a record means owning its
 retention, erasure and export. Clew never copies a record another system owns in order to "own" it.
@@ -80,14 +80,15 @@ cards, the buttons and the receipts.
 - Not an intranet, a news site or a document store. Editorial content can appear as a card with a link;
   it is not authored here.
 - Not a page builder. There is no operator-composed layout; the page is the stream, the areas and the
-  composer. Operators configure modules, scopes and bundle times, not blocks.
+  composer. Operators configure connectors, scopes and bundle times, not blocks.
 - Not a search index over other systems' content. Clew is the place you search from; the index stays in
   the source system or in Eneo, and Clew asks them as the user.
-- Not a data warehouse or a federated query engine. Clew does not run queries across sources; a module
-  returns rows, search is a fan-out, and work that spans modules is composed in code on Clew's own keys
-  (`docs/architecture/working-across-modules.md`).
+- Not a data warehouse or a federated query engine. Clew does not run queries across sources; a connector
+  returns rows, search is a fan-out, and work that spans connectors is composed in code on Clew's own keys
+  (`docs/architecture/working-across-connectors.md`).
 - Not an AI platform. Clew has no knowledge bases, no document ingestion, no assistant builder and no model
-  administration beyond "which endpoint". That is Eneo's product, below.
+  administration beyond which endpoints and models the composer may use and who may pick them (D24). That
+  is Eneo's product, below.
 - Not a process-modelling tool or a case system. Clew orchestrates a person's work across systems and
   owns the state of its own threads and obligations; the organisation's record of a case, and the design
   of its processes, live in the case system.
@@ -98,7 +99,7 @@ cards, the buttons and the receipts.
    Full rule in `CLAUDE.md`.
 2. **Clew owns every contract the model or the UI sees** (D1). Integrations are asked to meet it; adapters
    are the fallback (D10).
-3. **The server decides.** Identity, scope, module state and audit are enforced server-side; the browser
+3. **The server decides.** Identity, scope, connector state and audit are enforced server-side; the browser
    and the model are untrusted.
 4. **Every mutation is audited in the same transaction.** Every receipt is a read-back, never a sent request.
 5. **The person sees why.** Every thread answers "varför ser jag detta?" with trigger, source and time.
@@ -120,7 +121,7 @@ in itself. Clew must work with an inference endpoint and nothing else; Eneo make
 
 **Standalone, enhanced, never dependent.** Clew is a separate system with its own identity, data and
 deployment. Nothing in this repository imports Eneo, calls Eneo at build or test time, or fails when Eneo
-is absent. Adding Eneo to an installation gives Clew more capabilities through an optional `eneo` module
+is absent. Adding Eneo to an installation gives Clew more capabilities through an optional `eneo` connector
 that degrades to the standard fallback when Eneo is disabled or down. The same rule the other way: Eneo
 does not need Clew; Clew registers with Eneo as one more external tool source when the municipality wants
 that. Recorded as D14.
@@ -131,17 +132,17 @@ that. Recorded as D14.
 | The agent loop: system prompts, choosing a capability, drafting cards, conversation memory with retention | **Clew** | Not exposed to Eneo |
 | Proposals, the human decision endpoint, receipts, undo, audit | **Clew**, deterministic | Never a tool, for anyone |
 | Scans and triggers: what needs the person now | **Clew** | Eneo can ask Clew through MCP for the same answer, as the user |
-| Owning records (core modules), integrations to HR, finance, calendar | **Clew** | Exposed to Eneo as read and propose tools under a release policy |
-| Search across systems: people, cases, documents by where they live, rooms; merged results as objects | **Clew**, through each module's search capability; people through the directory pass-through module (Metakatalogen in Sundsvall) | Eneo's retrieval is one more source in the fan-out when installed |
-| Knowledge bases, retrieval over documents and sites, citations | **Eneo** | `eneo.knowledge.search` as a `read` capability in the `eneo` module, scoped to the user's spaces |
+| Owning records (core connectors), integrations to HR, finance, calendar | **Clew** | Exposed to Eneo as read and propose tools under a release policy |
+| Search across systems: people, cases, documents by where they live, rooms; merged results as objects | **Clew**, through each connector's search capability; people through the directory pass-through connector (Metakatalogen in Sundsvall) | Eneo's retrieval is one more source in the fan-out when installed |
+| Knowledge bases, retrieval over documents and sites, citations | **Eneo** | `eneo.knowledge.search` as a `read` capability in the `eneo` connector, scoped to the user's spaces |
 | Operator-built assistants with prompts, knowledge and sharing | **Eneo** | An Eneo assistant can be opened as a view in Clew's side panel, or answer inside Eneo with Clew's tools |
-| Apps and services: transcription, summarisation, structured prompts | **Eneo** | An app run can be a `propose` capability in the `eneo` module whose result lands as a card |
-| Model and provider administration, keys, quotas, security classifications | **Eneo** where installed, else one environment variable in Clew | The `eneo` module imports classifications as inputs to Clew's own rule about which data may leave |
+| Apps and services: transcription, summarisation, structured prompts | **Eneo** | An app run can be a `propose` capability in the `eneo` connector whose result lands as a card |
+| Model and provider administration, keys, quotas, security classifications | **Eneo** as a product; Clew administers only which OpenAI-compatible endpoints and models its composer may use, with an audience per model (D24) | The `eneo` connector imports classifications as inputs to Clew's own rule about which data may leave |
 | Identity | **The IdP**, shared | Both use the same OIDC issuer; mappings are verified by issuer and subject, never by e-mail |
 
 **Deciding future cases.** When a new AI capability is wanted, ask: is it *about* Clew's threads, cards,
 capabilities and decisions? Then it belongs in Clew. Is it a capability a person would want without Clew
-existing? Then it belongs in Eneo and reaches Clew through the `eneo` module. If it is both, split it the
+existing? Then it belongs in Eneo and reaches Clew through the `eneo` connector. If it is both, split it the
 same way.
 
 **What is known about Eneo's side (startsidan, 2026-10-07).** Eneo registers external MCP servers over
@@ -150,7 +151,7 @@ per assistant. It has no OAuth, token exchange or per-user credential for MCP se
 registration against Clew acts for the one person whose token it holds. Whether Eneo exposes an
 OpenAI-compatible completion endpoint with tool passthrough, knowledge search as a separate operation,
 classifications through the API, and a streaming endpoint fit for an embedded view, is unverified. These
-are the questions for the first Eneo spike; their answers decide how thick the `eneo` module is, not
+are the questions for the first Eneo spike; their answers decide how thick the `eneo` connector is, not
 whether the line is right.
 
 ## Open questions this vision does not settle

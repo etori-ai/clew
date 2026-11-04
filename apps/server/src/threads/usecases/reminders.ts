@@ -2,9 +2,9 @@ import type { AuthenticatedContext } from '@clew/contracts';
 import { eq } from 'drizzle-orm';
 import { database, schema } from '@clew/db';
 import { addMessage, readThread, writeAudit } from '@clew/db/threads';
-import { InputError } from './context';
-import { TASK_QUEUE, temporalClient } from './temporal/client';
-import type { reminder } from './temporal/workflows';
+import { InputError } from '../../context';
+import { TASK_QUEUE, temporalClient } from '../../temporal/client';
+import type { reminder } from '../../temporal/workflows';
 
 export const MAX_REMINDER_SECONDS = 24 * 60 * 60;
 const clock = (d: Date) => d.toLocaleTimeString('sv-SE', { timeZone: 'Europe/Stockholm', timeStyle: 'short' });

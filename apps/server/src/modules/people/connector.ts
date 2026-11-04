@@ -1,14 +1,14 @@
 import { Type } from '@sinclair/typebox';
 import { eq } from 'drizzle-orm';
-import type { Module } from '@clew/modules';
+import type { Connector } from '@clew/connectors';
 import { database, schema } from '@clew/db';
 
 /**
- * People and permissions: a core module (D3). The records are Clew's own (`auth_person`, `auth_access_grant`,
- * provisioned by SCIM later), so there is no adapter, no mock state and no scan. Every other module's `scope`
+ * People and permissions: a core connector (D3). The records are Clew's own (`auth_person`, `auth_access_grant`,
+ * provisioned by SCIM later), so there is no adapter, no mock state and no scan. Every other connector's `scope`
  * reads the actor's role and unit from here; the mock integrations link their records by `personId`.
  */
-export function peopleModule(): Module {
+export function peopleConnector(): Connector {
   return {
     id: 'people', kind: 'core', source: 'Startsidan',
     areas: [],

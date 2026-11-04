@@ -1,17 +1,17 @@
 import { Type } from '@sinclair/typebox';
-import type { Actor, Capability, ExecuteResult, Module, ThreadDraft } from '../index';
+import type { Actor, Capability, ExecuteResult, Connector, ThreadDraft } from '../index';
 import type { StateStore } from '../memory-state';
 import { deviations, employees, managerOf, shortDate, UNIT } from './data';
 
 /** Mock Treserva (deviations and incidents). Pass-through: reports are filed here, Clew keeps the thread. */
-const MODULE = 'treserva';
+const CONNECTOR = 'treserva';
 const isManagerOf = (actor: Actor) => actor.role === 'manager' && managerOf[UNIT] === actor.id;
 const own = (actor: Actor) => employees.find(e => e.personId === actor.id);
 const Empty = Type.Object({}, { additionalProperties: false });
 interface Report { ref: string; by: string; unitId: string; title: string; text: string; at: string; }
 
-export function treservaModule(state: StateStore): Module {
-  const reports = () => state.get<Report[]>(MODULE, 'reports', []);
+export function treservaConnector(state: StateStore): Connector {
+  const reports = () => state.get<Report[]>(CONNECTOR, 'reports', []);
   const capabilities: Capability<any, any>[] = [
     {
       name: 'treserva.deviations', kind: 'read', title: 'Avvikelser och tillbud', model: true, description: 'Öppna avvikelser och tillbud i enheten, med vad de väntar på.',
@@ -32,7 +32,7 @@ export function treservaModule(state: StateStore): Module {
       run: async (actor, input: { title: string; text: string }): Promise<ExecuteResult> => {
         const filed = await reports(); const ref = `treserva:dev:${new Date().getFullYear()}-${1200 + filed.length}`;
         filed.push({ ref, by: own(actor)?.ref ?? actor.id, unitId: UNIT, title: input.title, text: input.text, at: new Date().toISOString() });
-        await state.set(MODULE, 'reports', filed);
+        await state.set(CONNECTOR, 'reports', filed);
         return { headline: 'Avvikelsen är skickad till Treserva. Din chef får den i sitt flöde.', rows: [{ ref, label: input.title, outcome: 'done', detail: 'registrerad i Treserva' }], undoCapability: 'treserva.withdraw', undoMinutes: 10 };
       },
     },
@@ -41,7 +41,7 @@ export function treservaModule(state: StateStore): Module {
       input: Type.Object({ refs: Type.Array(Type.String()) }, { additionalProperties: false }), output: Type.Any(),
       scope: actor => !!own(actor) || isManagerOf(actor),
       run: async (_actor, input: { refs: string[] }): Promise<ExecuteResult> => {
-        const filed = (await reports()).filter(r => !input.refs.includes(r.ref)); await state.set(MODULE, 'reports', filed);
+        const filed = (await reports()).filter(r => !input.refs.includes(r.ref)); await state.set(CONNECTOR, 'reports', filed);
         return { headline: 'Rapporten är borttagen.', rows: input.refs.map(ref => ({ ref, label: 'Avvikelse', outcome: 'done' as const, detail: 'borttagen i Treserva' })) };
       },
     },
@@ -61,7 +61,7 @@ export function treservaModule(state: StateStore): Module {
     return drafts;
   }
   return {
-    id: MODULE, kind: 'passthrough', source: 'Treserva',
+    id: CONNECTOR, kind: 'passthrough', source: 'Treserva',
     areas: [{ id: 'arbetsmiljo', title: 'Arbetsmiljö', roles: ['manager'], standing: ['treserva.deviations', 'treserva.report'],
       schedules: [{ label: 'Avvikelser som väntat mer än fem dagar', when: 'Varje vardag 06:00' }],
       figure: async () => { const open = deviations.filter(d => d.unitId === UNIT && d.state !== 'closed').length; return { label: open ? `${open} öppen${open > 1 ? 'na' : ''} avvikelse${open > 1 ? 'r' : ''}` : 'Inga öppna avvikelser', tone: open ? 'warn' : 'ok' }; } }],

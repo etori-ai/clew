@@ -1,4 +1,4 @@
-/** Swedish names for what read capabilities return. `tests/unit/panel-labels.test.ts` holds every module output to this list. */
+/** Swedish names for what read capabilities return. `tests/unit/panel-labels.test.ts` holds every connector output to this list. */
 export const fieldLabels: Record<string, string> = {
   absent: 'Frånvarande', account: 'Konto', acknowledged: 'Läst', amount: 'Belopp', at: 'Tid', budget: 'Budget', clash: 'Krock', colleagues: 'Kollegor',
   date: 'Datum', days: 'Dagar', detail: 'Detalj', deviationPct: 'Avvikelse i procent', driver: 'Orsak', due: 'Förfaller', dueBy: 'Senast', end: 'Slutar',

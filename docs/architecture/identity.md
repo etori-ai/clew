@@ -137,7 +137,7 @@ that cannot do better, not alternative identification paths.
 
 ## Users, groups and permissions
 
-- Users and groups are a **core** module in Clew's Postgres. The IdP provisions them through SCIM 2.0:
+- Users and groups are a **core** connector in Clew's Postgres. The IdP provisions them through SCIM 2.0:
   Clew is the SCIM server, Keycloak or Entra is the client, authenticated with a long-lived bearer token
   issued by Clew for that one purpose. SCIM is provisioning, not identification; a provisioned user still
   logs in through OIDC.

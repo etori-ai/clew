@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
-import { LOGIN_TRANSACTION_MS, readSession, revokeSession, touchSession } from '@clew/db/auth';
+import { LOGIN_TRANSACTION_MS, readSession, revokeSession, touchSession } from '../auth';
 import { sessionUser } from '@clew/contracts';
 import { AuthError, authSettings, beginLogin, completeLogin, cookieOptions, logout, receiveLogout, verifyMutation, LOGIN_COOKIE, SESSION_COOKIE } from '../auth';
 import { tokenDigest } from '../auth-crypto';

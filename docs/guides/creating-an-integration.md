@@ -5,7 +5,10 @@ How to connect a system to Clew. Read `docs/architecture/integrations.md` for th
 complete worked example, a municipality with a custom employee directory, is in
 `example-custom-directory.md`.
 
-Two ways exist, and the order between them is fixed (D10):
+Since D21 the default for any new integration, written here or elsewhere, is a connector behind the connector
+protocol: read `creating-an-external-connector.md` first. This guide remains for the two cases that stay in
+process: Clew's core connectors and the calendar until it is lifted. Two ways exist, and the order between them
+is fixed (D10):
 
 1. **The system fulfils Clew's contract.** The system's owner implements the API Clew has defined for the
    domain. Clew needs no code for it beyond configuration. Section 2 says what the owner has to build.
@@ -16,12 +19,12 @@ In both cases the contract is Clew's and does not bend to the system.
 
 ## 1. Before writing anything
 
-Answer these in a short note; they become the top of the module's file comment and a row in the landscape
+Answer these in a short note; they become the top of the connector's file comment and a row in the landscape
 table in `integration-paths.md`.
 
 | Question | Why it matters | Where the answer goes |
 |---|---|---|
-| Who owns the records? | Decides the module kind: pass-through (the system keeps them, Clew stores refs and audit), derived (a scheduled snapshot), core (Clew is the system of record, needs a decision) | `Module.kind` |
+| Who owns the records? | Decides the connector kind: pass-through (the system keeps them, Clew stores refs and audit), derived (a scheduled snapshot), core (Clew is the system of record, needs a decision) | `Connector.kind` |
 | What does a person need from it, today, that makes them act? | Each answer is a capability: a read to look, a propose to draft, an execute to do. If nothing makes a person act, the system may only need link-out and search | The capability list |
 | Who may see and do what, and how is a call narrowed to that person's unit or own records? | Becomes the `scope` function on every capability, evaluated on every call | `Capability.scope` |
 | How does the system recognise the user? Tokens from the shared IdP, its own accounts, or one integration account? | Picks the auth mode: `user-delegated`, `bound-credential` or `service` | The adapter's credential type |
@@ -48,17 +51,17 @@ What the owner of the system implements, so that Clew needs no adapter:
   reply is `unknown`, never success.
 - **A deep-link template per entity type**, for link-out.
 
-Clew's side is then a generic HTTP adapter for that contract plus configuration (base URL, credential,
-auth mode). The generic adapter does not exist yet; the first system that takes this path builds it.
+Clew's side is the connector protocol (D21): the owner serves the manifest and the four routes, Clew is
+configured with the URL and a secret, and no adapter is written. `creating-an-external-connector.md` is the guide.
 
-## 3. Path two: the module and its adapter
+## 3. Path two: the connector and its adapter
 
-An integration in this repository is a **module** (`packages/modules`, the `Module` type) with its
+An integration in this repository is a **connector** (`packages/connectors`, the `Connector` type) with its
 capabilities, areas and scan, and an **adapter** behind it that speaks the system's protocol. Keep the
-two apart from the start: the module knows Clew's contract and nothing about HTTP, SOAP or CalDAV; the
+two apart from the start: the connector knows Clew's contract and nothing about HTTP, SOAP or CalDAV; the
 adapter knows the protocol and nothing about cards or scope. The calendar is the pattern:
 `packages/calendar/src/model.ts` is the contract, `nextcloud.ts` an adapter, `adapters.ts` the factory,
-`apps/server/src/calendar-module.ts` the module.
+`apps/server/src/connectors/calendar/connector.ts` the connector.
 
 Layout for a new domain `<name>`:
 
@@ -67,12 +70,12 @@ packages/<name>/
   src/model.ts          the provider interface: Clew's contract for the domain
   src/adapters.ts       credential union and createXProvider(credential) factory
   src/adapters/<kind>.ts  one file per system, implements the interface
-  src/module.ts         the Module: capabilities, areas, scan, built on the interface
+  src/connector.ts         the Connector: capabilities, areas, scan, built on the interface
   package.json          exact versions, OSI licences only
 tests/unit/<name>.test.ts
 ```
 
-Mock modules under `packages/modules/src/mock/` keep records in a `StateStore` instead of an adapter;
+Mock connectors under `packages/connectors/src/mock/` keep records in a `StateStore` instead of an adapter;
 they are the shape to copy for capabilities, scan and areas.
 
 ## 4. Write the contract first
@@ -81,7 +84,7 @@ they are the shape to copy for capabilities, scan and areas.
 
 - Domain granularity, not endpoint granularity. "Search people", "a person's contact card", "pending
   leave requests for a unit", never "GET /v2/employees?page=".
-- Every row has a `ref`: a string Clew can store and hand back, prefixed with the module id
+- Every row has a `ref`: a string Clew can store and hand back, prefixed with the connector id
   (`heroma:leave:2026-1187`).
 - Outputs are rows the UI renders; no markup, no links to be followed by the browser, no names of
   individuals where a card would show them (the names guardrail; names belong in a panel view or the
@@ -96,7 +99,7 @@ they are the shape to copy for capabilities, scan and areas.
   The factory throws a configuration error for a kind that is decided but not built.
 - Declare the auth mode in the credential type and honour it: `user-delegated` takes a token function
   for the current user, `bound-credential` a per-user secret from Clew's DB, `service` one integration
-  credential and nothing about the user. In `service` mode the module narrows the call (next section);
+  credential and nothing about the user. In `service` mode the connector narrows the call (next section);
   the adapter never widens it.
 - Translate the system's errors into the contract's: not found, denied, unavailable, unknown outcome.
   Never let a protocol exception reach a capability.
@@ -108,13 +111,13 @@ Configuration is read in one place, from the environment: `<NAME>_ADAPTER=<kind>
 credential from a secret, never from source. In dev that is `apps/server/.env.local`; `.env.example` lists
 the keys with empty values.
 
-## 6. Write the module
+## 6. Write the connector
 
-For each capability, in `module.ts`:
+For each capability, in `connector.ts`:
 
 | Field | What to put there |
 |---|---|
-| `name` | `<module>.<verb>`; the registry refuses any other prefix |
+| `name` | `<connector>.<verb>`; the registry refuses any other prefix |
 | `kind` | `read`, `propose` or `execute`. Anything that changes the source is `execute` |
 | `title`, `description` | Swedish; the title is a button label, the description is what the model reads. Say what the capability does and for whom, in one sentence |
 | `input`, `output` | TypeBox schemas with `additionalProperties: false`; the BFF validates input before `run` is called |
@@ -127,21 +130,21 @@ For `execute`, return an `ExecuteResult`: a Swedish `headline`, one `ReceiptRow`
 `undoCapability` plus `undoMinutes` when a compensating capability exists. Green in the UI comes only from
 a read-back, so if the system cannot confirm, the outcome is `unknown`.
 
-`scan(actor)` returns the thread drafts the module wants to push for this person right now:
+`scan(actor)` returns the thread drafts the connector wants to push for this person right now:
 deterministic, no model, and idempotent through `topic` (the same occurrence must produce the same topic
 every night). Each draft names an `area`, a `reason` the card shows under "Varför ser jag detta?", items
 with refs, and actions. Actions follow the thread action contract: at most one primary
 (`execute` or `propose`), up to two secondaries (`read`, with `target: 'panel'` for a view or
 `target: 'link'` for the source system), the rest overflow. Clew adds the standard actions itself.
 
-`areas` are the sidebar entries for this module per role: a title, the roles that see it, the standing
-capabilities under "Gör själv", the schedules the module runs, and optionally a figure. Reuse an existing
-area id when the module belongs in one that exists.
+`areas` are the sidebar entries for this connector per role: a title, the roles that see it, the standing
+capabilities under "Gör själv", the schedules the connector runs, and optionally a figure. Reuse an existing
+area id when the connector belongs in one that exists.
 
 ## 7. Register and configure
 
-- Add the module to the list in `apps/server/src/modules.ts`. That is the only place the BFF names
-  modules; routes, cards, areas and tools derive from the registry.
+- Add the connector to the list in `apps/server/src/modules/registry.ts`. That is the only place the BFF names
+  connectors; routes, cards, areas and tools derive from the registry.
 - Add the package to the root `devDependencies` as `workspace:*` and run `bun install --frozen-lockfile`
   in the devcontainer.
 - Add the environment keys to `apps/server/.env.example` and set them in `.env.local`.
@@ -150,8 +153,8 @@ area id when the module belongs in one that exists.
 
 ## 8. Test
 
-- **Unit, no network:** a fake implementation of the provider interface in the test, the real module on
-  top, the registry around it, as in `tests/unit/modules.test.ts`. Assert scope on every capability for a
+- **Unit, no network:** a fake implementation of the provider interface in the test, the real connector on
+  top, the registry around it, as in `tests/unit/connectors.test.ts`. Assert scope on every capability for a
   person in and out of scope, the shape of every output, that `scan` is idempotent across two runs, that
   an `execute` returns outcomes per ref and that its undo reverses them.
 - **Adapter, against the real system or a recorded fixture:** one test per operation and one per error
@@ -169,16 +172,16 @@ docker exec -w /workspace clew-app-1 bun run check
 ## 9. Document
 
 - A row in the landscape table in `docs/architecture/integration-paths.md` with the path, auth mode and status.
-- The licence check in `HANDOVER.md` section 3 and the module in the repository layout.
+- The licence check in `HANDOVER.md` section 3 and the connector in the repository layout.
 - A decision in `docs/decisions/` only if something was decided that a later session must not reopen:
-  a new core domain, a new auth path, a new transport. Adding a pass-through module needs no decision.
+  a new core domain, a new auth path, a new transport. Adding a pass-through connector needs no decision.
 - A line in the session log.
 
 ## What a review checks
 
 - The contract is Clew's: nothing in `model.ts` names the system's endpoints, IDs or vocabulary.
 - Every capability has a `scope` and `run` narrows further; no capability trusts anything from the browser.
-- No `execute` with `model: true`. No capability that reads a secret or changes a module's state.
+- No `execute` with `model: true`. No capability that reads a secret or changes a connector's state.
 - The adapter stores nothing and logs no rows.
 - Names of individuals appear only in panel views or link-outs, never in a card's title, summary or items.
 - Every `execute` returns one outcome per ref and `unknown` when the source did not answer.

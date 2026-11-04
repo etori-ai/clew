@@ -1,0 +1,1 @@
+ALTER TABLE "thread" RENAME COLUMN "module" TO "connector";

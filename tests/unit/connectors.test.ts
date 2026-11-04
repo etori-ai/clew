@@ -1,14 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import { Registry, receipt, type Actor } from '../../packages/modules/src/index';
-import { memoryState } from '../../packages/modules/src/memory-state';
-import { heromaModule, rehabCandidates } from '../../packages/modules/src/mock/heroma';
-import { raindanceModule } from '../../packages/modules/src/mock/raindance';
-import { treservaModule } from '../../packages/modules/src/mock/treserva';
-import { kommunikationModule } from '../../packages/modules/src/mock/kommunikation';
+import { Registry, receipt, type Actor } from '../../packages/connectors/src/index';
+import { memoryState } from '../../packages/connectors/src/memory-state';
+import { heromaConnector, rehabCandidates } from '../../packages/connectors/src/mock/heroma';
+import { raindanceConnector } from '../../packages/connectors/src/mock/raindance';
+import { treservaConnector } from '../../packages/connectors/src/mock/treserva';
+import { kommunikationConnector } from '../../packages/connectors/src/mock/kommunikation';
 
 const hillevi: Actor = { id: 'hillevi', name: 'Hillevi Berg', unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'manager' };
 const hassan: Actor = { id: 'hassan', name: 'Hassan Ali', unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'employee' };
-const registry = () => { const state = memoryState(); const r = new Registry(); for (const m of [heromaModule(state), raindanceModule(state), treservaModule(state), kommunikationModule(state)]) r.register(m); return { r, state }; };
+const registry = () => { const state = memoryState(); const r = new Registry(); for (const m of [heromaConnector(state), raindanceConnector(state), treservaConnector(state), kommunikationConnector(state)]) r.register(m); return { r, state }; };
 
 describe('registry', () => {
   test('refuses an execute capability exposed as a tool (D8)', () => {
@@ -75,5 +75,28 @@ describe('mock scans push threads a person can act on, and the state survives in
     await r.run(hassan, 'kommunikation.acknowledge', { refs: ['komm:notice:2026-44-1'] });
     expect((await r.scan(hassan)).some(d => d.topic.startsWith('komm:'))).toBe(false);
     expect((await r.scan(hillevi)).some(d => d.topic.startsWith('komm:'))).toBe(true);
+  });
+});
+
+describe('connectors reach each other only through the registry (D20)', () => {
+  const composite = (r: Registry) => r.register({ id: 'comp', kind: 'derived', source: 'Sammansatt', areas: [], capabilities: [
+    { name: 'comp.invoiceCount', kind: 'read', title: 'Antal fakturor', description: 'x', input: {} as never, output: {} as never, model: true, scope: {},
+      run: async (_actor, _input, clew) => ({ count: (await clew.call<{ rows: unknown[] }>('raindance.invoices')).rows.length }) },
+    { name: 'comp.tryExecute', kind: 'read', title: 'x', description: 'x', input: {} as never, output: {} as never, model: false, scope: { roles: ['manager'] },
+      run: async (_actor, _input, clew) => clew.call('raindance.approve', { refs: [] }) },
+  ] });
+  test('the other connector\'s scope applies to the same actor', async () => {
+    const { r } = registry(); composite(r);
+    expect(await r.run(hillevi, 'comp.invoiceCount', {})).toMatchObject({ count: expect.any(Number) });
+    await expect(r.run(hassan, 'comp.invoiceCount', {})).rejects.toThrow(/behörighet/);
+  });
+  test('a connector can never execute in another connector', async () => {
+    const { r } = registry(); composite(r);
+    await expect(r.run(hillevi, 'comp.tryExecute', {})).rejects.toThrow(/annan modul/);
+  });
+  test('declarative scope: no roles means everyone, roles narrow', () => {
+    const { r } = registry(); composite(r);
+    expect(r.tools(hassan).map(t => t.name)).toContain('comp.invoiceCount');
+    expect(r.tools(hillevi).some(t => t.name === 'comp.tryExecute')).toBe(false);
   });
 });

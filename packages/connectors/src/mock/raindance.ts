@@ -1,16 +1,16 @@
 import { Type } from '@sinclair/typebox';
-import type { Actor, Capability, ExecuteResult, Module, ThreadDraft } from '../index';
+import type { Actor, Capability, ExecuteResult, Connector, ThreadDraft } from '../index';
 import type { StateStore } from '../memory-state';
 import { budgets, costCentreOf, invoices, managerOf, money, shortDate, UNIT } from './data';
 
 /** Mock Raindance (economy). Pass-through: invoices and budget live here, Clew keeps refs and audit. */
-const MODULE = 'raindance';
+const CONNECTOR = 'raindance';
 const isManagerOf = (actor: Actor) => actor.role === 'manager' && managerOf[UNIT] === actor.id;
 const Empty = Type.Object({}, { additionalProperties: false });
 const Refs = Type.Object({ refs: Type.Array(Type.String()) }, { additionalProperties: false });
 
-export function raindanceModule(state: StateStore): Module {
-  const approved = () => state.get<Record<string, string>>(MODULE, 'approved', {});
+export function raindanceConnector(state: StateStore): Connector {
+  const approved = () => state.get<Record<string, string>>(CONNECTOR, 'approved', {});
   const pending = async () => { const done = await approved(); return invoices.filter(i => i.costCentre === costCentreOf[UNIT] && !done[i.ref]); };
   const capabilities: Capability<any, any>[] = [
     {
@@ -35,7 +35,7 @@ export function raindanceModule(state: StateStore): Module {
           if (ref.endsWith('55140')) return { ref, label: `${inv.supplier} ${money(inv.amount)}`, outcome: 'unknown' as const, detail: 'Raindance svarade inte, kontrolleras igen om 15 min' };
           done[ref] = at; return { ref, label: `${inv.supplier} ${money(inv.amount)}`, outcome: 'done' as const, detail: 'attesterad i Raindance' };
         });
-        await state.set(MODULE, 'approved', done);
+        await state.set(CONNECTOR, 'approved', done);
         const ok = rows.filter(r => r.outcome === 'done').length, unknown = rows.filter(r => r.outcome === 'unknown').length;
         return { headline: `${ok} ${ok === 1 ? 'faktura attesterad' : 'fakturor attesterade'}${unknown ? `, ${unknown} väntar på svar` : ''}.`, rows, undoCapability: 'raindance.unapprove', undoMinutes: 10 };
       },
@@ -44,7 +44,7 @@ export function raindanceModule(state: StateStore): Module {
       name: 'raindance.unapprove', kind: 'execute', title: 'Ångra attest', model: false, description: 'Tar tillbaka en attest inom ångerfönstret.',
       input: Refs, output: Type.Any(), scope: isManagerOf,
       run: async (_actor, input: { refs: string[] }): Promise<ExecuteResult> => {
-        const done = await approved(); for (const r of input.refs) delete done[r]; await state.set(MODULE, 'approved', done);
+        const done = await approved(); for (const r of input.refs) delete done[r]; await state.set(CONNECTOR, 'approved', done);
         return { headline: 'Attesten är återtagen.', rows: input.refs.map(ref => ({ ref, label: 'Faktura', outcome: 'done' as const, detail: 'väntar igen i Raindance' })) };
       },
     },
@@ -70,7 +70,7 @@ export function raindanceModule(state: StateStore): Module {
       ] }];
   }
   return {
-    id: MODULE, kind: 'passthrough', source: 'Raindance',
+    id: CONNECTOR, kind: 'passthrough', source: 'Raindance',
     areas: [{ id: 'budget', title: 'Budget', roles: ['manager'], standing: ['raindance.invoices', 'raindance.budget'],
       schedules: [{ label: 'Fakturor som förfaller inom en vecka', when: 'Varje vardag 06:00' }, { label: 'Prognosavvikelse', when: 'Månadens första måndag' }],
       figure: async () => { const b = budgets.find(b => b.costCentre === costCentreOf[UNIT])!; const pct = Math.round(1000 * (b.budget - b.forecast) / b.budget) / 10; return { label: `${pct > 0 ? '+' : ''}${String(pct).replace('.', ',')} % · ${b.driver}`, tone: pct < -1.5 ? 'alert' : pct < 0 ? 'warn' : 'ok' }; } }],

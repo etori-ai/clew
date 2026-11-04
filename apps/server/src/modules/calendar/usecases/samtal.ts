@@ -1,13 +1,13 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import type { AuthenticatedContext, Thread } from '@clew/contracts';
 import { database, schema, type Transaction } from '@clew/db';
-import { activeProposals, addMessage, openProposalThread, readThread, toThread, writeAudit } from '@clew/db/threads';
+import { activeProposals, addMessage, openProposalThread, readThread, toProposal, toThread, writeAudit } from '@clew/db/threads';
 import { scheduleJob } from '@clew/db/jobs';
-import { addDays, dayStart, nextWeekStart, today, weekNumber, shortDayLabel, timeRange, localClock } from '@clew/calendar/dates';
+import { addDays, dayStart, nextWeekStart, today, weekNumber, weekStart, shortDayLabel, timeRange, localClock } from '@clew/calendar/dates';
 import { collides, planWeek, type Interval } from '@clew/calendar/proposals';
 import { CalendarError } from '@clew/calendar/model';
-import { InputError } from './context';
-import { calendarFor, heldSamtal, SAMTAL_TITLE } from './calendar';
+import { InputError } from '../../../context';
+import { calendarFor, heldSamtal, listWeek, SAMTAL_TITLE } from './reads';
 
 const { threads, proposals } = schema;
 export const TOPIC = 'utvecklingssamtal';
@@ -87,7 +87,7 @@ export async function ensureProposalThread(persona: AuthenticatedContext, source
   const id = crypto.randomUUID();
   await database().transaction(async tx => {
     await tx.insert(threads).values({ id, personId: persona.id, kind: 'pushed', topic: TOPIC, title: `Planera utvecklingssamtal vecka ${weekNumber(week)}`, week,
-      module: 'calendar', area: 'utvecklingssamtal', summary: explain(week, planned.length, members.length),
+      connector: 'calendar', area: 'utvecklingssamtal', summary: explain(week, planned.length, members.length),
       trigger: { reason: `${members.length} samtal saknar tid före 28 november`, source, at: now.toISOString() } });
     await tx.insert(schema.threadMessages).values({ id: crypto.randomUUID(), threadId: id, role: 'assistant', body: explain(week, planned.length, members.length) });
     const rows = planned.map(p => ({ id: crypto.randomUUID(), threadId: id, personId: persona.id, participantEmail: p.participant.email, participantName: p.participant.name, start: new Date(p.start), end: new Date(p.end) }));
@@ -209,3 +209,10 @@ export async function dismiss(persona: AuthenticatedContext, threadId: string) {
 }
 export { toThread };
 export type { Transaction };
+/** The week view: the person's events plus their live proposals for the agenda. `from` is any date in the week. */
+export async function weekOverview(persona: AuthenticatedContext, from?: string) {
+  const start = weekStart(from && /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : today());
+  const { view } = await listWeek(persona, start, 7);
+  const rows = await database().select().from(proposals).where(and(eq(proposals.personId, persona.id), inArray(proposals.status, ['proposed', 'confirmed', 'final'])));
+  return { from: start, events: view, proposals: rows.map(toProposal) };
+}

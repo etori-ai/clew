@@ -1,47 +1,15 @@
-import { and, eq } from 'drizzle-orm';
-import Ajv from 'ajv';
-import addFormats from 'ajv-formats';
-import { attentionLevel, worstLevel, type AuthenticatedContext, type Area, type Receipt, type Thread } from '@clew/contracts';
+import { and, eq, gte } from 'drizzle-orm';
+import { attentionLevel, worstLevel, type Attention, type AuthenticatedContext, type Area, type Receipt, type Thread } from '@clew/contracts';
 import { database, schema } from '@clew/db';
-import { postgresState, resetState } from '@clew/db/state';
 import { addMessage, listThreads, openProposalThread, readThread, writeAudit } from '@clew/db/threads';
 import { scheduleJob } from '@clew/db/jobs';
-import { CapabilityError, Registry, receipt, type Actor, type ExecuteResult, type ThreadDraft } from '@clew/modules';
-import { heromaModule } from '@clew/modules/mock/heroma';
-import { raindanceModule } from '@clew/modules/mock/raindance';
-import { treservaModule } from '@clew/modules/mock/treserva';
-import { kommunikationModule } from '@clew/modules/mock/kommunikation';
-import { InputError } from './context';
-import { calendarModule } from './calendar-module';
-import { peopleModule } from './people-module';
-import { ensureProposalThread, replan } from './planner';
+import { receipt, type ExecuteResult, type ThreadDraft } from '@clew/connectors';
+import { InputError } from '../../context';
+import { actorOf, registry, runCapability } from '../../connectors/registry';
+import { dismiss, ensureProposalThread, replan } from '../../modules/calendar/usecases/samtal';
 
 /**
- * The registry the BFF runs with: the four mock integrations plus the calendar. Every REST route, card action and
- * (later) tool definition is derived from here. Nothing in `routes/` knows a module by name.
- */
-export const registry = new Registry();
-for (const m of [heromaModule(postgresState), raindanceModule(postgresState), treservaModule(postgresState), kommunikationModule(postgresState), calendarModule(), peopleModule()]) registry.register(m);
-export const actorOf = (persona: AuthenticatedContext): Actor => ({ id: persona.id, name: persona.name, unitId: persona.unitId, unitLabel: persona.unitLabel, role: persona.role });
-
-const ajv = addFormats(new Ajv({ allErrors: false, strict: false }));
-const validators = new Map<string, ReturnType<typeof ajv.compile>>();
-function validateInput(name: string, schemaObject: object, input: unknown) {
-  let v = validators.get(name); if (!v) { v = ajv.compile(schemaObject); validators.set(name, v); }
-  if (!v(input)) throw new InputError('Ogiltig förfrågan till ' + name + '.');
-}
-/** Run a capability through the registry with input validation. The single path for REST, cards and tools. */
-export async function runCapability<O = unknown>(persona: AuthenticatedContext, name: string, input: unknown): Promise<O> {
-  const found = registry.find(name);
-  if (!found) throw new InputError('Okänd förmåga.');
-  validateInput(name, found.capability.input as object, input ?? {});
-  if (found.capability.kind === 'execute') await persona.authorize();
-  try { return await registry.run<O>(actorOf(persona), name, input ?? {}); }
-  catch (error) { if (error instanceof CapabilityError) throw new InputError(error.message); throw error; }
-}
-
-/**
- * First visit of the day and the nightly scan: every module says what it wants to push, one open thread per topic.
+ * First visit of the day and the nightly scan: every connector says what it wants to push, one open thread per topic.
  * The calendar's proposal thread keeps its own path (planner), everything else is a generic card.
  */
 const inFlight = new Map<string, Promise<void>>();
@@ -70,15 +38,15 @@ async function scanInto(persona: AuthenticatedContext, source: string) {
   }
 }
 /** Push one card for a person. Idempotent by (person, topic): the partial unique index makes a repeat a no-op across processes. */
-export async function pushDraft(persona: Pick<AuthenticatedContext, 'id'>, d: ThreadDraft & { module: string }, actor: string, now = new Date()) {
+export async function pushDraft(persona: Pick<AuthenticatedContext, 'id'>, d: ThreadDraft & { connector: string }, actor: string, now = new Date()) {
   const id = crypto.randomUUID();
   return database().transaction(async tx => {
     const inserted = await tx.insert(schema.threads).values({ id, personId: persona.id, kind: 'pushed', topic: d.topic, title: d.title, state: 'open', week: null,
-      module: d.module, area: d.area, summary: d.summary, items: d.items ?? [], actions: d.actions, waitingOn: d.waitingOn ?? null, deadline: d.deadline ?? null,
-      trigger: { reason: d.reason, source: registry.module(d.module)?.source ?? d.module, at: now.toISOString() } }).onConflictDoNothing().returning({ id: schema.threads.id });
+      connector: d.connector, area: d.area, summary: d.summary, items: d.items ?? [], actions: d.actions, waitingOn: d.waitingOn ?? null, deadline: d.deadline ?? null,
+      trigger: { reason: d.reason, source: registry.connector(d.connector)?.source ?? d.connector, at: now.toISOString() } }).onConflictDoNothing().returning({ id: schema.threads.id });
     if (!inserted.length) return undefined;
     await tx.insert(schema.threadMessages).values({ id: crypto.randomUUID(), threadId: id, role: 'assistant', body: d.summary });
-    await writeAudit(tx, { actor, action: 'thread.pushed', subject: 'thread:' + id, details: { module: d.module, topic: d.topic, owner: persona.id } });
+    await writeAudit(tx, { actor, action: 'thread.pushed', subject: 'thread:' + id, details: { connector: d.connector, topic: d.topic, owner: persona.id } });
     return id;
   });
 }
@@ -187,14 +155,22 @@ export async function reopenThread(persona: AuthenticatedContext, threadId: stri
   return (await readThread(persona.id, threadId))!.thread as Thread;
 }
 
-/** Development only: forget every mock decision and close the mocks' open cards, so the next scan starts from the fixtures. */
-export async function resetMocks(persona: AuthenticatedContext) {
-  if (process.env.CLEW_POC !== 'true') throw new InputError('Bara i utvecklingsmiljön.');
-  await resetState();
-  const mockIds = registry.list().filter(m => m.kind === 'passthrough' && m.id !== 'calendar').map(m => m.id).concat('kommunikation');
-  const now = new Date();
-  await database().transaction(async tx => {
-    for (const id of mockIds) await tx.update(schema.threads).set({ state: 'dismissed', handledAt: now, updatedAt: now }).where(and(eq(schema.threads.module, id), eq(schema.threads.state, 'open')));
-    await writeAudit(tx, { actor: persona.principal.id, action: 'mocks.reset', subject: 'module_state', details: { modules: mockIds } });
-  });
+
+/** Attention budget: pushed threads today against a fixed daily budget. The rest is bundled to lunch or the next morning. */
+export const ATTENTION_BUDGET = 3;
+export async function attentionFor(persona: AuthenticatedContext): Promise<Attention> {
+  const since = new Date(); since.setHours(0, 0, 0, 0);
+  const rows = await database().select({ id: schema.threads.id }).from(schema.threads).where(and(eq(schema.threads.personId, persona.id), eq(schema.threads.kind, 'pushed'), gte(schema.threads.createdAt, since)));
+  return { used: rows.length, budget: ATTENTION_BUDGET, bundledUntil: rows.length >= ATTENTION_BUDGET ? 'i morgon 06:00' : null };
+}
+
+/** The person's own threads, newest first, as the stream shows them. */
+export const listThreadsFor = (persona: Pick<AuthenticatedContext, 'id'>) => listThreads(persona.id);
+/** One of the person's threads, or undefined when it is not theirs. */
+export const threadFor = async (persona: Pick<AuthenticatedContext, 'id'>, threadId: string) => (await readThread(persona.id, threadId))?.thread;
+/** Avfärda from the card: proposal threads decline their drawn times through the planner, every other card is dismissed as is. */
+export async function dismissAny(persona: AuthenticatedContext, threadId: string) {
+  const thread = await threadFor(persona, threadId);
+  if (!thread) throw new InputError('Tråden finns inte.');
+  return thread.proposals.length ? dismiss(persona, threadId) : dismissThread(persona, threadId);
 }

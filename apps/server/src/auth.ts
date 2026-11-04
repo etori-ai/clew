@@ -149,3 +149,5 @@ export async function receiveLogout(token: string) {
     || (payload.sub !== undefined && typeof payload.sub !== 'string')) throw new AuthError(401, 'invalid');
   await backchannelRevoke({ issuer: settings.issuer, clientId: settings.clientId, sid: payload.sid as string | undefined, subject: payload.sub, jti: payload.jti });
 }
+/** Session persistence the auth routes need, re-exported so routes never import the database package (D20). */
+export { LOGIN_TRANSACTION_MS, readSession, revokeSession, touchSession } from '@clew/db/auth';

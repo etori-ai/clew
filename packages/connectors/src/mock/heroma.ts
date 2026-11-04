@@ -1,14 +1,14 @@
 import { Type } from '@sinclair/typebox';
 import type { ThreadAction } from '@clew/contracts';
-import type { Actor, Capability, ExecuteResult, Module, ThreadDraft } from '../index';
+import type { Actor, Capability, ExecuteResult, Connector, ThreadDraft } from '../index';
 import type { StateStore } from '../memory-state';
 import { absences, daysBetween, delegations, employees, leaveRequests, managerOf, shifts, shortDate, UNIT } from './data';
 
 /**
- * Mock Heroma (HR and scheduling). A pass-through module: Clew stores refs and audit rows, the records live here.
+ * Mock Heroma (HR and scheduling). A pass-through connector: Clew stores refs and audit rows, the records live here.
  * The contract is Clew's (D1): absences, leave, delegations, shifts, and the actions a manager or employee may take.
  */
-const MODULE = 'heroma';
+const CONNECTOR = 'heroma';
 const isManagerOf = (actor: Actor, unitId: string) => actor.role === 'manager' && managerOf[unitId] === actor.id;
 const own = (actor: Actor) => employees.find(e => e.personId === actor.id);
 const nameOf = (ref: string) => employees.find(e => e.ref === ref)?.name ?? 'Medarbetare';
@@ -28,10 +28,10 @@ export function absentToday(unitId: string, today = todayIso()) {
   return absences.filter(a => a.from <= today && a.to >= today && employees.find(e => e.ref === a.employee)?.unitId === unitId);
 }
 
-export function heromaModule(state: StateStore): Module {
-  const decided = () => state.get<Record<string, { decision: 'approve' | 'reject'; at: string; comment?: string }>>(MODULE, 'leave-decisions', {});
-  const booked = () => state.get<Record<string, { at: string; when: string }>>(MODULE, 'talks', {});
-  const renewed = () => state.get<Record<string, string>>(MODULE, 'delegations-renewed', {});
+export function heromaConnector(state: StateStore): Connector {
+  const decided = () => state.get<Record<string, { decision: 'approve' | 'reject'; at: string; comment?: string }>>(CONNECTOR, 'leave-decisions', {});
+  const booked = () => state.get<Record<string, { at: string; when: string }>>(CONNECTOR, 'talks', {});
+  const renewed = () => state.get<Record<string, string>>(CONNECTOR, 'delegations-renewed', {});
 
   const capabilities: Capability<any, any>[] = [
     {
@@ -76,7 +76,7 @@ export function heromaModule(state: StateStore): Module {
       run: async (_actor, input: { refs: string[]; when?: string }): Promise<ExecuteResult> => {
         const talks = await booked(); const at = new Date().toISOString();
         const rows = input.refs.map(ref => { talks[ref] = { at, when: input.when ?? 'nästa lediga tid' }; return { ref, label: 'Omtankesamtal', outcome: 'done' as const, detail: `registrerat i Heroma ${input.when ? shortDate(input.when) : ''}`.trim() }; });
-        await state.set(MODULE, 'talks', talks);
+        await state.set(CONNECTOR, 'talks', talks);
         return { headline: `${rows.length === 1 ? 'Samtalet är' : rows.length + ' samtal är'} registrerat i Heroma.`, rows, undoCapability: 'heroma.unbookTalk', undoMinutes: 10 };
       },
     },
@@ -84,7 +84,7 @@ export function heromaModule(state: StateStore): Module {
       name: 'heroma.unbookTalk', kind: 'execute', title: 'Ångra bokningen', model: false, description: 'Tar bort ett registrerat samtal inom ångerfönstret.',
       input: Refs, output: Type.Any(), scope: actor => isManagerOf(actor, UNIT),
       run: async (_actor, input: { refs: string[] }): Promise<ExecuteResult> => {
-        const talks = await booked(); for (const r of input.refs) delete talks[r]; await state.set(MODULE, 'talks', talks);
+        const talks = await booked(); for (const r of input.refs) delete talks[r]; await state.set(CONNECTOR, 'talks', talks);
         return { headline: 'Bokningen är borttagen.', rows: input.refs.map(ref => ({ ref, label: 'Omtankesamtal', outcome: 'done' as const, detail: 'borttaget i Heroma' })) };
       },
     },
@@ -112,7 +112,7 @@ export function heromaModule(state: StateStore): Module {
           done[ref] = { decision: input.decision, at, comment: input.comment };
           return { ref, label: `Ansökan ${shortDate(request.from)}–${shortDate(request.to)}`, outcome: 'done' as const, detail: input.decision === 'approve' ? 'godkänd i Heroma, medarbetaren meddelad' : 'avslagen i Heroma, medarbetaren meddelad' };
         });
-        await state.set(MODULE, 'leave-decisions', done);
+        await state.set(CONNECTOR, 'leave-decisions', done);
         return { headline: input.decision === 'approve' ? 'Ansökan är godkänd.' : 'Ansökan är avslagen.', rows, undoCapability: 'heroma.undecideLeave', undoMinutes: 10 };
       },
     },
@@ -120,7 +120,7 @@ export function heromaModule(state: StateStore): Module {
       name: 'heroma.undecideLeave', kind: 'execute', title: 'Ångra beslutet', model: false, description: 'Återställer en ledighetsansökan till väntande inom ångerfönstret.',
       input: Refs, output: Type.Any(), scope: actor => isManagerOf(actor, UNIT),
       run: async (_actor, input: { refs: string[] }): Promise<ExecuteResult> => {
-        const done = await decided(); for (const r of input.refs) delete done[r]; await state.set(MODULE, 'leave-decisions', done);
+        const done = await decided(); for (const r of input.refs) delete done[r]; await state.set(CONNECTOR, 'leave-decisions', done);
         return { headline: 'Beslutet är återtaget; ansökan väntar igen.', rows: input.refs.map(ref => ({ ref, label: 'Ansökan', outcome: 'done' as const, detail: 'väntar igen i Heroma' })) };
       },
     },
@@ -153,7 +153,7 @@ export function heromaModule(state: StateStore): Module {
           if (!d) return { ref, label: 'Delegering', outcome: 'failed' as const, detail: 'inte din delegering' };
           done[ref] = at; return { ref, label: d.title, outcome: 'done' as const, detail: `förnyelse bokad med ${d.renewer}${input.when ? ' ' + input.when : ''}` };
         });
-        await state.set(MODULE, 'delegations-renewed', done);
+        await state.set(CONNECTOR, 'delegations-renewed', done);
         return { headline: 'Förnyelsen är bokad.', rows };
       },
     },
@@ -208,7 +208,7 @@ export function heromaModule(state: StateStore): Module {
   }
 
   return {
-    id: MODULE, kind: 'passthrough', source: 'Heroma',
+    id: CONNECTOR, kind: 'passthrough', source: 'Heroma',
     areas: [
       { id: 'medarbetare', title: 'Medarbetare', roles: ['manager'], standing: ['heroma.whoIsOn', 'heroma.absenceOverview', 'heroma.leaveRequests'],
         schedules: [{ label: 'Frånvaro och mönster enligt rehabrutinen', when: 'Varje vardag 06:00' }, { label: 'Ledighetsansökningar', when: 'När en ansökan kommer' }],

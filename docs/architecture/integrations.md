@@ -23,7 +23,7 @@ OpenAPI does belong in Clew as **output**: the deterministic REST surface of the
 document generated from the TypeBox schemas in `packages/contracts`.
 
 **Who meets the contract (D10).** When a system is connected, the integration is first asked to implement
-Clew's API for that domain: the capability descriptors and the module's provider interface. A vendor, a
+Clew's API for that domain: the capability descriptors and the connector's provider interface. A vendor, a
 dept44 service or another municipality's team that does so needs no adapter. Only when that is not
 possible does Clew write the adapter, in this repository, from the system's protocol to Clew's contract.
 The contract never bends to the adapter. In Sundsvall today that means adapters for Heroma (RPA, no API),
@@ -63,7 +63,7 @@ through a human decision endpoint that is not a tool" is therefore structural: t
 The existing `CalendarProvider` interface in `packages/calendar/src/model.ts` is the first such contract.
 It stays as is; the registry wraps it.
 
-## Three kinds of module
+## Three kinds of connector
 
 Sorted by who owns the data.
 
@@ -71,14 +71,14 @@ Sorted by who owns the data.
 |---|---|---|---|
 | **Core** | Clew's Postgres | users, groups, permissions, threads, audit, jobs | in-process only; no provider interface, they are the system |
 | **Pass-through** | the external system; Clew stores refs, revisions and audit rows only | calendar, Heroma, Raindance | behind a Clew provider interface, in-process first, lifted to an MCP server when needed |
-| **Derived** | a snapshot in Clew's Postgres | "Läget" figures, attention counter | in-process, reads pass-through modules on a schedule |
+| **Derived** | a snapshot in Clew's Postgres | "Läget" figures, attention counter | in-process, reads pass-through connectors on a schedule |
 
 Users and permissions are core. SCIM 2.0 provisioning is an **inbound** interface on them: Clew is the SCIM
 server, the IdP (Keycloak or Entra) is the client. SCIM users and groups land in Clew's own tables, Clew
 roles are derived from group membership plus OIDC claims, and authorization is decided in Clew. SCIM does
 not touch the capability layer. See `docs/architecture/identity.md`.
 
-## When a pass-through module becomes an MCP server
+## When a pass-through connector becomes an MCP server
 
 Lift an adapter out of the BFF process when at least one holds:
 
@@ -89,7 +89,7 @@ Lift an adapter out of the BFF process when at least one holds:
 
 The capability descriptor and the provider interface do not change. The MCP server hosts the same provider
 package (`apps/mcp-<name>` wrapping `packages/<name>`), and the BFF switches from an in-process provider to an
-MCP client for that module.
+MCP client for that connector.
 
 ## Consuming someone else's MCP server
 
@@ -114,23 +114,23 @@ server's audience. It never acts as "Clew" without a user. Details in `docs/arch
 
 ## Thread action contract
 
-A module never draws its own card. It contributes **actions** through capability descriptors, and the
+A connector never draws its own card. It contributes **actions** through capability descriptors, and the
 thread card has fixed slots for them, so the page looks the same whether the thread comes from the
 calendar, Heroma or Raindance:
 
 | Slot | Who fills it | Count | Rule |
 |---|---|---|---|
-| Primary | module, `kind: execute` or `propose` | exactly 1 | The verb in the headline. Filled button. |
-| Secondary | module, `kind: read` (a link into the source system or a view) | 0 to 2 | Tonal buttons. The first is usually "open in the source". |
+| Primary | connector, `kind: execute` or `propose` | exactly 1 | The verb in the headline. Filled button. |
+| Secondary | connector, `kind: read` (a link into the source system or a view) | 0 to 2 | Tonal buttons. The first is usually "open in the source". |
 | Standard | Clew | always the same | `Lägg till i samtalet` (adds the card as a chip, D12), `Inte nu` (snooze to the next bundle), `Påminn mig` (a menu of durations; a Temporal reminder that brings this card back to the top of the stream, D17), `Avfärda` (closes the thread with a reason, undoable), `Varför ser jag detta?` (trigger, source, time). |
-| Overflow | module, anything beyond the slots above | any | Behind the `⋯` menu together with the standard actions, module items first. |
+| Overflow | connector, anything beyond the slots above | any | Behind the `⋯` menu together with the standard actions, connector items first. |
 
-A module action carries `label`, `capability`, `kind`, and an optional `confirm` text. Clew decides
-placement from `kind` and order; the module cannot ask for a second primary. `Avfärda` and `Inte nu` are
-Clew's because they act on the thread, not on the source system; a module that wants a source-side
+A connector action carries `label`, `capability`, `kind`, and an optional `confirm` text. Clew decides
+placement from `kind` and order; the connector cannot ask for a second primary. `Avfärda` and `Inte nu` are
+Clew's because they act on the thread, not on the source system; a connector that wants a source-side
 "decline" exposes it as its primary or secondary action ("Avslå med kommentar").
 
-Dismissing writes a thread state `dismissed` with the reason and an undo window, and the module's
+Dismissing writes a thread state `dismissed` with the reason and an undo window, and the connector's
 trigger will not re-create the same thread for the same occurrence. Snoozing keeps `open` and moves the
 thread to the next bundle time.
 
@@ -162,7 +162,7 @@ produces goes out to the page: Förslag becomes a card in the stream, Vy opens i
 main column, Svar stays in the overlay. The side panel is for views and apps only (D9).
 
 A view is deterministic and addressable, reachable without the model (D8), and rendered by Clew from the
-output schema of a `read` capability. Modules return rows, never markup. Redan hanterat is the user's
+output schema of a `read` capability. Connectors return rows, never markup. Redan hanterat is the user's
 own log: decisions, dismissals, undos and questions grouped by day, filterable by area and kind, with
 undo while the window is open and Återöppna on dismissed threads. Older than 30 days lives in the audit log.
 
@@ -186,16 +186,16 @@ every thread created while it is down.
 
 ## Implemented (2026-11-03)
 
-`packages/modules` holds the descriptor types and the `Registry`; the four mock integrations under
+`packages/connectors` holds the descriptor types and the `Registry`; the four mock integrations under
 `mock/` implement the pass-through kind against synthetic records with state in `module_state`; the core
-kind is `people` in `apps/server/src/people-module.ts` (Clew's own users and permissions, no adapter, no
-scan) and the calendar is wrapped in `apps/server/src/calendar-module.ts`. The BFF derives
-`/api/areas`, `/api/cap/:name` and the card actions from the registry; `/api/modules` shows the registry as
+kind is `people` in `apps/server/src/modules/people/connector.ts` (Clew's own users and permissions, no adapter, no
+scan) and the calendar is wrapped in `apps/server/src/modules/calendar/connector.ts`. The BFF derives
+`/api/areas`, `/api/cap/:name` and the card actions from the registry; `/api/connectors` shows the registry as
 data. Tool derivation exists (`registry.tools`) but is not wired to a model yet.
 
 ## Packages
 
-Existing packages stay where they are. The architecture adds, when the second module lands:
+Existing packages stay where they are. The architecture adds, when the second connector lands:
 
 - `packages/capabilities`: the `Capability` descriptor type, the registry and the derivations (AI SDK tool,
   MCP tool, Hono route, OpenAPI).
@@ -206,4 +206,4 @@ Existing packages stay where they are. The architecture adds, when the second mo
 
 HANDOVER item 1 (wire `generateText` with a calendar read tool) goes through the registry from the start:
 register the calendar reads as `read` capabilities with `model: true`, and the confirm endpoint as `execute`
-with `model: false`. That proves the pattern on one real module before the second use case arrives.
+with `model: false`. That proves the pattern on one real connector before the second use case arrives.

@@ -17,7 +17,7 @@ import { usePageTitle } from '../page-title';
 /**
  * Mission control: areas in the sidebar, "Behöver dig" first, "Pågår utan dig" as one collapsed line, the conversation
  * row docked at the bottom. The conversation unfolds from the row over the dimmed stream (D12); the side panel stays
- * live for views. Every card comes from a module through the registry; the calendar's proposal card keeps its
+ * live for views. Every card comes from a connector through the registry; the calendar's proposal card keeps its
  * specialised rendering, everything else is the generic card.
  */
 export function StartPage({ user }: { user: SessionUser }) {

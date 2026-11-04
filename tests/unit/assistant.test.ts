@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import type { Thread } from '../../packages/contracts/src/index';
-import { Registry, type Actor } from '../../packages/modules/src/index';
-import { memoryState } from '../../packages/modules/src/memory-state';
-import { heromaModule } from '../../packages/modules/src/mock/heroma';
-import { raindanceModule } from '../../packages/modules/src/mock/raindance';
-import { treservaModule } from '../../packages/modules/src/mock/treserva';
+import { Registry, type Actor } from '../../packages/connectors/src/index';
+import { memoryState } from '../../packages/connectors/src/memory-state';
+import { heromaConnector } from '../../packages/connectors/src/mock/heroma';
+import { raindanceConnector } from '../../packages/connectors/src/mock/raindance';
+import { treservaConnector } from '../../packages/connectors/src/mock/treserva';
 import { draftSelection, parseVerb, verbsFor } from '../../apps/server/src/assistant/verbs';
 import { matchCapability, nearest, templatedAnswer } from '../../apps/server/src/assistant/router';
 import { buildTools, createProvider, fromToolName, modelAnswer, ModelUnavailable, systemPrompt, toToolName } from '../../apps/server/src/assistant/model';
@@ -12,11 +12,11 @@ import { serialiseContext } from '../../apps/server/src/assistant/context';
 
 const hillevi: Actor = { id: 'hillevi', name: 'Hillevi Berg', unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'manager' };
 const hassan: Actor = { id: 'hassan', name: 'Hassan Ali', unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'employee' };
-const registry = () => { const state = memoryState(); const r = new Registry(); for (const m of [heromaModule(state), raindanceModule(state), treservaModule(state)]) r.register(m); return r; };
+const registry = () => { const state = memoryState(); const r = new Registry(); for (const m of [heromaConnector(state), raindanceConnector(state), treservaConnector(state)]) r.register(m); return r; };
 const now = '2026-11-03T07:40:00.000Z';
 const card: Thread = {
   id: 'c1', kind: 'pushed', topic: 'raindance:invoices', title: 'Attestera 3 fakturor, 37 050 kr', state: 'open', trigger: { reason: 'Den första förfaller 5 nov', source: 'Raindance', at: now },
-  createdAt: now, updatedAt: now, handledAt: null, messages: [], proposals: [], week: null, module: 'raindance', area: 'budget', summary: 'Tre fakturor väntar.',
+  createdAt: now, updatedAt: now, handledAt: null, messages: [], proposals: [], week: null, connector: 'raindance', area: 'budget', summary: 'Tre fakturor väntar.',
   items: [
     { ref: 'raindance:inv:55120', label: 'Lekolar · 11 200 kr', detail: '6451 · förfaller 5 nov', selectable: true, selected: true },
     { ref: 'raindance:inv:55121', label: 'Lekolar · 7 200 kr', detail: '6451 · förfaller 6 nov', selectable: true, selected: true },
@@ -26,7 +26,7 @@ const card: Thread = {
   waitingOn: null, deadline: '2026-11-05', receipt: null, remindedAt: null,
 };
 const samtal: Thread = {
-  ...card, id: 's1', topic: 'utvecklingssamtal', title: 'Planera utvecklingssamtal vecka 46', module: 'calendar', area: 'utvecklingssamtal', week: '2026-11-09', deadline: null,
+  ...card, id: 's1', topic: 'utvecklingssamtal', title: 'Planera utvecklingssamtal vecka 46', connector: 'calendar', area: 'utvecklingssamtal', week: '2026-11-09', deadline: null,
   trigger: { reason: '4 samtal saknar tid före 28 november', source: 'Kalendern', at: now },
   proposals: [
     { id: 'p1', threadId: 's1', status: 'proposed', start: '2026-11-09T09:15:00.000Z', end: '2026-11-09T10:15:00.000Z', participant: { name: 'Anna Lindqvist', email: 'anna@example.test' }, eventRef: null, undoUntil: null },

@@ -1,8 +1,8 @@
 import type { AuthenticatedContext } from '@clew/contracts';
 import { dayLabel, timeRange, today, weekNumber, nextWeekStart } from '@clew/calendar/dates';
-import { readToday } from '../calendar';
-import { readFigures } from '../figures';
-import { ensureProposalThread, samtalStatus } from '../planner';
+import { readToday } from '../modules/calendar/usecases/reads';
+import { readFigures } from '../modules/figures/domain';
+import { ensureProposalThread, samtalStatus } from '../modules/calendar/usecases/samtal';
 
 export type FixedAnswer = { title: string; body: string; reason: string; source: string; forslagThreadId?: string };
 /** The first-session intent router: a few questions answered from the calendar and the synthetic figures. Deterministic, no registry. */

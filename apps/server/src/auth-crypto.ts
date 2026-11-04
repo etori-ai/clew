@@ -42,3 +42,13 @@ export function localReturnTo(value: string | null) {
   if (url.origin !== 'https://clew.invalid' || url.pathname.startsWith('/api/') || url.pathname === '/login') return '/';
   return url.pathname + url.search;
 }
+/** A connector's shared secret at rest (D23): the token envelope, purpose-bound to the connector id. Never logged or returned. */
+export function sealSecret(value: string, purpose: string) {
+  const dek = randomBytes(32);
+  return JSON.stringify({ version: 1, key: seal(dek, masterKey(), purpose + ':key'), data: seal(Buffer.from(value), dek, purpose + ':data') });
+}
+export function openSecret(value: string, purpose: string): string {
+  const envelope = JSON.parse(value);
+  if (envelope.version !== 1) throw new Error('Invalid envelope');
+  return open(envelope.data, open(envelope.key, masterKey(), purpose + ':key'), purpose + ':data').toString();
+}

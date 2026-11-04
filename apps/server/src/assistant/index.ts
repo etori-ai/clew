@@ -4,8 +4,8 @@ import { database, schema } from '@clew/db';
 import { addMessage, readThread, writeAudit } from '@clew/db/threads';
 import { weekNumber, today } from '@clew/calendar/dates';
 import { InputError } from '../context';
-import { actorOf, registry, runCapability } from '../modules';
-import { replan } from '../planner';
+import { actorOf, registry, runCapability } from '../connectors/registry';
+import { replan } from '../modules/calendar/usecases/samtal';
 import { resolveChips, type ResolvedChips } from './chips';
 import { serialiseContext } from './context';
 import { routeFixed } from './fixed';
@@ -109,7 +109,7 @@ export async function converse(persona: AuthenticatedContext, input: Conversatio
     ...(produced.toolCalls?.length ? { toolCalls: produced.toolCalls.map(c => ({ capability: c.capability, input: c.input })) } : {}) };
   await database().transaction(async tx => {
     if (!existing) {
-      await tx.insert(schema.threads).values({ id: conversationId, personId: persona.id, kind: 'question', topic: 'question', title: input.text.slice(0, 80), state: 'open', week: null, module: 'startsidan', area: 'fragor', summary: produced!.body,
+      await tx.insert(schema.threads).values({ id: conversationId, personId: persona.id, kind: 'question', topic: 'question', title: input.text.slice(0, 80), state: 'open', week: null, connector: 'startsidan', area: 'fragor', summary: produced!.body,
         trigger: { reason: 'Du ställde en fråga', source: produced!.source, at: now.toISOString() } });
     } else {
       await tx.update(schema.threads).set({ summary: produced!.body, updatedAt: now }).where(eq(schema.threads.id, conversationId));

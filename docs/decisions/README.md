@@ -9,7 +9,7 @@ the reasoning. Longer designs live in `docs/architecture/`, and the reviews that
 |---|---|---|---|---|
 | [D1](D01-clew-owns-every-integration-contract.md) | Clew owns every integration contract | 2026-11-03 | integrations | accepted |
 | [D2](D02-no-openapi-to-mcp-conversion.md) | No OpenAPI-to-MCP conversion in the running system | 2026-11-03 | integrations | accepted |
-| [D3](D03-three-module-kinds.md) | Three module kinds: core, pass-through, derived | 2026-11-03 | integrations | accepted |
+| [D3](D03-three-module-kinds.md) | Three module kinds: core, pass-through, derived | 2026-11-03 | integrations | accepted, out-of-process shape replaced by D21 |
 | [D4](D04-foreign-mcp-servers-are-wrapped.md) | Foreign MCP servers are wrapped, not passed through | 2026-11-03 | integrations | accepted |
 | [D5](D05-oidc-and-oauth-only-identification-path.md) | OIDC and OAuth 2.1 with JWT access tokens are the only identification path | 2026-11-03 | identity | accepted |
 | [D6](D06-dev-login-local-only.md) | Dev login with username and password, local only | 2026-11-03 | identity | accepted, not built yet |
@@ -26,6 +26,11 @@ the reasoning. Longer designs live in `docs/architecture/`, and the reviews that
 | [D17](D17-temporal-runs-the-durable-timers.md) | Temporal runs the durable timers, starting with a person's own reminders | 2026-11-04 | platform | accepted |
 | [D18](D18-errands-are-a-clew-owned-passthrough-domain.md) | Errands are a Clew-owned pass-through domain; SupportManagement is the first adapter | 2026-11-04 | integrations | proposed |
 | [D19](D19-change-notification-is-a-clew-owned-contract.md) | Change notification is a Clew-owned contract: payload-free CloudEvents over HTTP | 2026-11-04 | integrations | proposed |
+| [D20](D20-modular-monolith-ports-and-adapters.md) | Backend structure: a modular monolith with ports and adapters, not tactical DDD | 2026-11-04 | platform | accepted |
+| [D21](D21-integrations-are-module-services.md) | Every integration is a module service behind the Clew module protocol | 2026-11-04 | integrations | accepted, vocabulary replaced by D22 (connector) |
+| [D22](D22-connectors-not-modules.md) | Connectors, not modules: the word for an integration that a person, an operator or a vendor meets | 2026-11-04 | integrations | accepted |
+| [D23](D23-connectors-are-managed-in-the-database.md) | Connectors are registered and governed in the database by an administrator, not by environment variables | 2026-11-04 | integrations | proposed |
+| [D24](D24-model-endpoints-are-administered-in-the-product.md) | Model providers and models are administered in the product, and the chat can choose between them | 2026-11-04 | product | proposed |
 
 ## Adding a decision
 

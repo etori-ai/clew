@@ -7,7 +7,7 @@ which Temporal replaces it. Decided 2026-11-03 (D15). Written 2026-11-04 against
 
 | Job kind | When | What it does | Scheduled by |
 |---|---|---|---|
-| `scan-utvecklingssamtal` | Every day 06:00 Europe/Stockholm | For every person with a grant: build a system context from the grant, run every module's `scan`, push one open thread per topic, refresh untouched open cards from their source. Then schedules itself for tomorrow | The server at start and by itself after each run |
+| `scan-utvecklingssamtal` | Every day 06:00 Europe/Stockholm | For every person with a grant: build a system context from the grant, run every connector's `scan`, push one open thread per topic, refresh untouched open cards from their source. Then schedules itself for tomorrow | The server at start and by itself after each run |
 | `undo-expiry` | Ten minutes after a proposal confirmation | Closes the undo window on a calendar confirmation | The planner, in the same transaction as the confirmation |
 | `receipt-final` | When a receipt's undo window ends | Clears `undoUntil` and `undoCapability` on the receipt so the card shows the final state | The card action, in the same transaction as the receipt |
 | `reminder` (Temporal workflow) | When the person asks, "Påminn mig …" on a card; the card is parked under "Pågår utan dig" meanwhile | Waits the requested time (cancellable by signal, `…/remind/cancel`), then the `surfaceReminder` activity brings the same card back: reopens it if dismissed, clears the parking, sets `remindedAt` (red "Påminnelse" badge), rewrites the trigger ("Du bad 09:44 om en påminnelse · …"). The page announces it with a persistent toast with "Visa"; the card keeps its place by deadline. Never a second card | `POST /api/threads/:id/remind`, audited as `reminder.set` and `reminder.cancelled`; the firing as `thread.reminded` |
@@ -17,7 +17,7 @@ the worker lives in the BFF process (`apps/server/src/temporal/`), the server an
 devcontainer, and the UI on port 3023 shows every reminder as a workflow. Moving the three job kinds to
 Temporal is the next step; they work as they are until then.
 
-The nightly scan is the push engine of v1: modules decide what needs a person (deterministic, no model,
+The nightly scan is the push engine of v1: connectors decide what needs a person (deterministic, no model,
 idempotent by `topic`), and the scheduler is what makes that happen without anyone opening the page.
 The first visit of the day runs the same scan on demand.
 
@@ -65,7 +65,7 @@ outside, queries into a running workflow, and a UI that shows every running inst
 that it replaces the Postgres scheduler when the push engine grows past what one function per job can
 carry. The concrete triggers, any one of which is enough:
 
-1. **Watches with conditions.** A person or a module sets "tell me when the sick-leave rate in my unit
+1. **Watches with conditions.** A person or a connector sets "tell me when the sick-leave rate in my unit
    passes 8 %" or "when Anna's certificate is in Heroma". A watch is a long-lived instance that
    re-evaluates on a schedule or on a signal and fires once. That is a workflow, not a job.
 2. **Multi-step obligations with waits.** The second use case that needs send, wait for others, remind,
@@ -83,7 +83,7 @@ carry. The concrete triggers, any one of which is enough:
 
 The fifth trigger is the one the product is heading for. The scheduler is not housekeeping in Clew; it
 is what makes the page come back to a person at the right moment, and user-set reminders and watches
-are the same mechanism as the module scans, owned by the person instead of a module. That is why the
+are the same mechanism as the connector scans, owned by the person instead of a connector. That is why the
 scheduler is treated as a crucial part of the system and why the engine choice is made on fitness, not
 on the size of what runs today.
 
@@ -92,7 +92,7 @@ every municipality that installs Clew, for three job kinds. That is why it is "l
 
 ## What does not change when it does
 
-- Modules still declare capabilities; `scan` still returns thread drafts. Temporal schedules and
+- Connectors still declare capabilities; `scan` still returns thread drafts. Temporal schedules and
   sequences; it never decides what a person needs.
 - Every mutation still goes through a capability with scope, validation and an audit row in the same
   transaction. A workflow activity calls `runCapability` as the person, like a job does today.
@@ -102,7 +102,7 @@ every municipality that installs Clew, for three job kinds. That is why it is "l
 - Job ids stay natural keys; workflow ids will be the same strings, so idempotency carries over.
 
 The migration is bounded: three job kinds become three workflows, `scheduleJob` becomes a start-or-signal
-call, and the `job` table is kept for the audit trail or dropped. Nothing in `packages/modules` notices.
+call, and the `job` table is kept for the audit trail or dropped. Nothing in `packages/connectors` notices.
 
 ## Is Temporal a good fit? (assessed 2026-11-04)
 

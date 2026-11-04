@@ -1,0 +1,103 @@
+import { Type, type Static } from '@sinclair/typebox';
+import { ThreadActionSchema, ThreadItemSchema } from '@clew/contracts';
+
+/**
+ * The Clew connector protocol (D21): how a connector that is not part of this repository plugs into a running Clew.
+ * A connector is an HTTP service. Clew reads its manifest once at start-up and then calls it per request, as the
+ * acting person. The shapes here are the contract; `docs/protocol/connector-manifest.schema.json` is generated
+ * from them (`bun run protocol:schema`) so a connector can be written in any language against plain JSON Schema.
+ *
+ * Routes a connector serves (all JSON, all under the base URL Clew is configured with):
+ *   GET  /clew/manifest                 -> ConnectorManifest
+ *   POST /clew/capabilities/{name}      CallRequest  -> CallResponse
+ *   POST /clew/scan                     ScanRequest  -> ScanResponse        (only when manifest.scan is true)
+ *   POST /clew/figure                   FigureRequest -> FigureResponse     (only for areas with figure: true)
+ * Every POST carries `Authorization: Bearer <assertion>`: a JWT Clew signs (HS256) with the connector's shared
+ * secret, `iss` "clew", `aud` the connector id, `sub` the person id, an `actor` claim, and a short expiry.
+ * The connector sends the same assertion back to `POST {CLEW_URL}/api/connectors/call` to use other connectors'
+ * `read` and `propose` capabilities as that person (CallbackRequest).
+ */
+export const PROTOCOL_VERSION = 1;
+const object = <T extends Record<string, import('@sinclair/typebox').TSchema>>(properties: T, description?: string) => Type.Object(properties, { additionalProperties: false, ...(description ? { description } : {}) });
+const swedish = (description: string) => Type.String({ minLength: 1, maxLength: 200, description });
+/** Any JSON Schema document. Clew validates inputs with it before calling the connector. */
+const jsonSchema = Type.Record(Type.String(), Type.Unknown(), { description: 'A JSON Schema (draft 2020-12 or 7) for the value.' });
+
+export const RoleSchema = Type.Union([Type.Literal('manager'), Type.Literal('employee')]);
+export const ActorSchema = object({
+  id: Type.String({ minLength: 1, maxLength: 80 }), name: Type.String(), unitId: Type.String(), unitLabel: Type.String(), role: RoleSchema,
+}, 'The acting person as Clew knows them. Never a token.');
+export type ProtocolActor = Static<typeof ActorSchema>;
+export const ScopeRuleSchema = object({ roles: Type.Optional(Type.Array(RoleSchema, { uniqueItems: true })) },
+  'Who may call the capability at all. Omitted roles means every signed-in person. The connector narrows further in the call.');
+export const ManifestCapabilitySchema = object({
+  name: Type.String({ pattern: '^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$', maxLength: 80, description: '`<connector id>.<verb>`, stable.' }),
+  kind: Type.Union([Type.Literal('read'), Type.Literal('propose'), Type.Literal('execute')]),
+  title: swedish('Swedish. A button label.'),
+  description: swedish('Swedish. What the model reads when `model` is true.'),
+  input: jsonSchema, output: jsonSchema,
+  model: Type.Boolean({ description: 'Offer it to the model as a tool. Must be false for execute (D8).' }),
+  scope: ScopeRuleSchema,
+});
+export const ManifestAreaSchema = object({
+  id: Type.String({ pattern: '^[a-z][a-z0-9-]*$', maxLength: 40 }), title: swedish('Swedish. The sidebar entry.'),
+  roles: Type.Array(RoleSchema, { minItems: 1, uniqueItems: true }),
+  standing: Type.Array(Type.String(), { description: 'Capability names shown under "Gör själv".' }),
+  schedules: Type.Array(object({ label: Type.String(), when: Type.String() })),
+  figure: Type.Optional(Type.Boolean({ description: 'Clew asks POST /clew/figure for a one-line figure for this area.' })),
+});
+export const ConnectorManifestSchema = Type.Object({
+  protocol: Type.Literal(PROTOCOL_VERSION),
+  id: Type.String({ pattern: '^[a-z][a-z0-9-]*$', maxLength: 40, description: 'Must match the id Clew was configured with.' }),
+  kind: Type.Union([Type.Literal('passthrough'), Type.Literal('derived')], { description: 'Core connectors live in Clew itself (D3).' }),
+  source: swedish('Swedish. The system as shown on cards: "Heroma".'),
+  areas: Type.Array(ManifestAreaSchema),
+  capabilities: Type.Array(ManifestCapabilitySchema),
+  scan: Type.Boolean({ description: 'Whether Clew should POST /clew/scan for each person nightly and on first visit.' }),
+}, { additionalProperties: false, $id: 'https://clew.dev/protocol/1/connector-manifest.schema.json', title: 'Clew connector manifest' });
+export type ConnectorManifest = Static<typeof ConnectorManifestSchema>;
+
+export const CallRequestSchema = object({ actor: ActorSchema, input: Type.Unknown() });
+export type CallRequest = Static<typeof CallRequestSchema>;
+export const ProtocolErrorSchema = object({
+  code: Type.Union([Type.Literal('invalid'), Type.Literal('denied'), Type.Literal('not-found'), Type.Literal('unavailable'), Type.Literal('unknown')]),
+  message: swedish('Swedish. Shown to the person.'),
+});
+export const CallResponseSchema = Type.Union([object({ output: Type.Unknown() }), object({ error: ProtocolErrorSchema })]);
+export type CallResponse = Static<typeof CallResponseSchema>;
+export const ThreadDraftSchema = object({
+  topic: Type.String({ minLength: 1, maxLength: 120, description: 'Idempotency key per person: the same occurrence gives the same topic.' }),
+  area: Type.String(), title: Type.String(), summary: Type.String(),
+  reason: Type.String({ description: 'Swedish. Shown under "Varför ser jag detta?".' }),
+  items: Type.Optional(Type.Array(ThreadItemSchema)), actions: Type.Array(ThreadActionSchema),
+  waitingOn: Type.Optional(Type.Union([Type.String(), Type.Null()])), deadline: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+export const ScanRequestSchema = object({ actor: ActorSchema });
+export const ScanResponseSchema = object({ drafts: Type.Array(ThreadDraftSchema) });
+export type ScanResponse = Static<typeof ScanResponseSchema>;
+export const FigureRequestSchema = object({ actor: ActorSchema, area: Type.String() });
+export const FigureResponseSchema = object({ figure: Type.Union([object({ label: Type.String(), tone: Type.Union([Type.Literal('ok'), Type.Literal('warn'), Type.Literal('alert'), Type.Literal('none')]) }), Type.Null()]) });
+export type FigureResponse = Static<typeof FigureResponseSchema>;
+export const ExecuteResultSchema = object({
+  headline: Type.String(),
+  rows: Type.Array(object({ ref: Type.String(), label: Type.String(), outcome: Type.Union([Type.Literal('done'), Type.Literal('unknown'), Type.Literal('failed'), Type.Literal('skipped')]), detail: Type.String() })),
+  undoCapability: Type.Optional(Type.String()), undoMinutes: Type.Optional(Type.Integer({ minimum: 1, maximum: 1440 })),
+}, 'What an execute capability returns: one outcome per ref, read back from the source.');
+/** What a connector sends to `POST {CLEW_URL}/api/connectors/call` with its assertion to use another connector's capability. */
+export const CallbackRequestSchema = object({ name: Type.String({ maxLength: 80 }), input: Type.Optional(Type.Unknown()) });
+export type CallbackRequest = Static<typeof CallbackRequestSchema>;
+
+/** The whole protocol as one JSON Schema document with `$defs`, for connector authors outside this repository. */
+export function protocolSchema() {
+  return {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://clew.dev/protocol/1/connector-protocol.schema.json',
+    title: 'Clew connector protocol',
+    description: 'Shapes exchanged between Clew and a connector service. See docs/architecture/connector-protocol.md.',
+    $defs: {
+      ConnectorManifest: ConnectorManifestSchema, Actor: ActorSchema, CallRequest: CallRequestSchema, CallResponse: CallResponseSchema,
+      ProtocolError: ProtocolErrorSchema, ExecuteResult: ExecuteResultSchema, ScanRequest: ScanRequestSchema, ScanResponse: ScanResponseSchema,
+      ThreadDraft: ThreadDraftSchema, FigureRequest: FigureRequestSchema, FigureResponse: FigureResponseSchema, CallbackRequest: CallbackRequestSchema,
+    },
+  };
+}

@@ -1,26 +1,21 @@
 import { Type } from '@sinclair/typebox';
-import type { Module } from '@clew/modules';
-import { readAccess } from '@clew/db/auth';
+import type { Connector } from '@clew/connectors';
 import { today, weekStart } from '@clew/calendar/dates';
-import { listWeek, readToday } from './calendar';
-import { samtalStatus } from './planner';
-import type { AuthenticatedContext } from '@clew/contracts';
-import { authorizationVersion } from './auth-crypto';
+import { listWeek, readToday } from './usecases/reads';
+import { samtalStatus } from './usecases/samtal';
+import { systemContext } from '../../system-context';
 
 /**
- * The calendar as a module. The provider interface stays the contract (D11); this wraps the existing reads as
+ * The calendar as a connector. The provider interface stays the contract (D11); this wraps the existing reads as
  * capabilities and declares the two areas. Proposals keep their own path in `planner.ts`: the human decision
  * endpoint is not a capability and never a tool.
  */
-async function personaFor(actorId: string): Promise<AuthenticatedContext> {
-  const access = await readAccess(actorId);
-  if (!access) throw new Error('Okänd person.');
-  const version = authorizationVersion(access);
-  return { id: access.person.id, name: access.person.name, unitId: access.grant.unitId, unitLabel: access.grant.unitLabel, role: access.grant.role,
-    organisationId: access.person.organisationId, principal: { id: 'person:' + actorId, kind: 'person' }, capabilities: access.grant.capabilities,
-    authorizationVersion: version, sessionBinding: 'capability', expiresAt: new Date(Date.now() + 60_000).toISOString(), async authorize() { return { version }; } };
+async function personaFor(actorId: string) {
+  const persona = await systemContext(actorId, 'connector:calendar');
+  if (!persona) throw new Error('Okänd person.');
+  return persona;
 }
-export function calendarModule(): Module {
+export function calendarConnector(): Connector {
   return {
     id: 'calendar', kind: 'passthrough', source: 'Kalendern',
     areas: [

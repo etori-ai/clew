@@ -21,7 +21,7 @@ Open http://localhost:3020. Synthetic accounts: `hillevi` (rektor, manager perso
 Checks:
 
 ```sh
-docker exec -w /workspace clew-app-1 bun run check      # tsc + Bun unit tests + Node runtime tests; also runs in CI
+docker exec -w /workspace clew-app-1 bun run check      # tsc + dependency rules (D20) + Bun unit tests + Node runtime tests; also runs in CI
 docker exec -w /workspace clew-app-1 bun run test:node  # current server runtime, without external services
 sh scripts/a11y.sh                                      # on the host: WCAG 2.2 AA suite in the pinned Playwright image, API mocked; also runs in CI
 bun scripts/auth-dev-check.ts hillevi                   # on the host: real Keycloak login, proposals, confirm, undo
@@ -32,6 +32,20 @@ Ports on loopback: 3020 web, 3021 Nextcloud (`calendar-admin`), 3022 Mailpit, 30
 Temporal (server and UI) starts with the base compose stack and creates its two databases in the shared Postgres on first start; nothing to set up. The BFF runs the Temporal worker in-process and logs `Temporal worker on temporal:7233` when connected. The first workflow is a reminder: `Påminn mig › Om 10 sekunder` on any card brings that card back to the top of the stream ten seconds later, marked Påminnelse. Watch it in the UI at http://localhost:3023.
 
 The calendar image refreshes its pinned Calendar and RoomVox code in an existing data volume before Apache starts, then runs Nextcloud's app migrations. Unchanged versions do nothing; a failed upgrade stays pending and is retried on restart. App downgrades are refused. Back up the calendar volume before applying upgrades; restoring older image pins alone does not undo database migrations.
+
+## Connectors
+
+An integration is a connector: its own container behind the connector protocol (D21, D22); the guide is
+`docs/guides/creating-an-external-connector.md`. Run the reference connector inside the app container and check it:
+
+```sh
+docker exec -w /workspace -e CLEW_CONNECTOR_SECRET=change-me-change-me clew-app-1 node connectors/hello/server.mjs   # :4010 inside the container
+docker exec -w /workspace clew-app-1 bun scripts/connector-check.ts http://127.0.0.1:4010 --secret change-me-change-me
+```
+
+Wire it into the BFF with `CLEW_CONNECTORS=hello=http://127.0.0.1:4010` and `CLEW_CONNECTOR_SECRET_HELLO=change-me-change-me`
+in `apps/server/.env.local`, restart `bun run dev`, and `GET /api/connectors` lists it next to the bundled connectors
+(D23 moves this into the product: no variables, no restart).
 
 ## Astryx component docs
 

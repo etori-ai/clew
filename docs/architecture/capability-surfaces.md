@@ -1,16 +1,16 @@
 # How a capability is exposed: REST, model tools and MCP
 
-For colleagues who need to know what "a module is exposed via MCP and also callable deterministically"
+For colleagues who need to know what "a connector is exposed via MCP and also callable deterministically"
 means in Clew, and where the line between those runs. Written 2026-11-04 against the code as it is; each
 surface says whether it is built.
 
 ## One descriptor, three surfaces
 
-A module does not write endpoints and does not write tools. It declares **capabilities**
-(`packages/modules`, the `Capability` type): a name, a kind (`read`, `propose`, `execute`), Swedish
+A connector does not write endpoints and does not write tools. It declares **capabilities**
+(`packages/connectors`, the `Capability` type): a name, a kind (`read`, `propose`, `execute`), Swedish
 title and description, TypeBox input and output schemas, a `scope` function, a `model` flag and a `run`
 function. The registry projects every descriptor onto the surfaces below. Nothing in `apps/server/src/routes`
-knows a module by name.
+knows a connector by name.
 
 ```
                        ┌──────────────────────────────────────────────┐
@@ -23,12 +23,12 @@ knows a module by name.
                        └──────────────────────────────────────────────┘
                                                                             │
                                             provider in-process ◄───────────┤
-                                            Clew-owned MCP server ◄─────────┤   3b. MCP as a transport
+                                            connector (D21) ◄──────────┤   3b. the connector protocol
                                             foreign MCP server, wrapped ◄───┘       behind the contract
 ```
 
-Everything goes through `registry.run` (`packages/modules/src/index.ts`), which checks `scope` for the
-actor and calls the capability. In the BFF that is wrapped by `runCapability` in `apps/server/src/modules.ts`,
+Everything goes through `registry.run` (`packages/connectors/src/index.ts`), which checks `scope` for the
+actor and calls the capability. In the BFF that is wrapped by `runCapability` in `apps/server/src/connectors/registry.ts`,
 which validates the input against the schema first and, for `execute`, re-checks the session's
 authorization. So the three surfaces differ only in who is calling and how the call arrives; what is
 allowed, validated and audited is the same code path.
@@ -38,7 +38,7 @@ allowed, validated and audited is the same code path.
 | 1. Deterministic REST | The browser (buttons, panel views, standing actions), scripts, tests | `read`, `propose`, `execute` | The person's session cookie | built |
 | 2. Model tools | The model inside the BFF, during a question or a thread reply | `read` and `propose` with `model: true`, in scope | The asking person; the model has no identity | built |
 | 3. Clew as MCP server | A registered external agent (an Eneo assistant, a desktop agent) | `read` and `propose` with `model: true`, in scope, under a release policy | A user-bound OAuth 2.1 token | designed, not built |
-| 3b. MCP as a transport for an adapter | Clew's own BFF, as an MCP client | All kinds the provider interface has; it is the adapter, not a public surface | Audience-bound JWT for the user | decided (D3), not built |
+| 3b. The connector protocol behind a remote connector | Clew's own BFF, as an HTTP client of a connector | All kinds; the service is the connector, not a public surface | A Clew-signed assertion per call naming the person; an audience-bound user token when token exchange exists (D5) | built (D21): `packages/connectors/src/remote.ts`, `connectors/hello` |
 
 ## 1. Deterministic REST: always there, never needs the model
 
@@ -54,7 +54,7 @@ This is the surface D8 guarantees: every capability is reachable without a model
   every proposal against the live calendars before sending. It is an `execute` capability with
   `model: false`, which is the structural form of the guardrail "assistant proposals are executed only
   through a human decision endpoint that is not a tool".
-- `GET /api/modules` lists every module and capability with its kind, whether it is a tool, and whether it
+- `GET /api/connectors` lists every connector and capability with its kind, whether it is a tool, and whether it
   is in scope for the caller. It is the quickest way to see what a given person can reach.
 
 Input is validated against the capability's TypeBox schema before `run` is called. Errors shown to the
@@ -75,7 +75,7 @@ model therefore cannot reach anything the person could not click, and cannot exe
 do is choose and phrase: pick a `read` to answer with, or a `propose` to draft a card. The card's button is
 REST. If the model is down, the intent router and typeahead take over, built on the same tool list.
 
-Tool names are derived from capability names; the model reads the Swedish `description`, so a module
+Tool names are derived from capability names; the model reads the Swedish `description`, so a connector
 author writes that sentence for the model and the `title` for the button, and nothing else.
 
 ## 3. MCP: two different things with one name
@@ -92,16 +92,16 @@ not installed. The directory exists in the code to make this cheap: `registry.to
 JSON Schema tool definitions.
 
 **3b. MCP as a transport behind an adapter.** This is not a surface for anyone outside Clew. When a
-pass-through module's adapter must run out of process (its own network zone, release cadence or owner,
+pass-through connector's adapter must run out of process (its own network zone, release cadence or owner,
 D3), the same provider package is hosted in `apps/mcp-<name>` and the BFF talks to it as an MCP client
-with an audience-bound JWT for the user. The capability descriptors do not change; the module does not
+with an audience-bound JWT for the user. The capability descriptors do not change; the connector does not
 change; only the `run` function now crosses a process boundary. The same holds for a vendor's MCP server:
 Clew wraps its tools in a Clew adapter behind Clew's contract (D4). A foreign tool passed straight to the
 model is a per-tool allowlist entry with a `scope` rule, never the default.
 
-So "the module is exposed via MCP" can mean either that Clew offers the module's reads to an external
-agent (3a) or that the module's adapter happens to speak MCP to its source (3b). The first is about who may
-ask Clew; the second is about how Clew reaches a system. Neither changes what a module author writes.
+So "the connector is exposed via MCP" can mean either that Clew offers the connector's reads to an external
+agent (3a) or that the connector's adapter happens to speak MCP to its source (3b). The first is about who may
+ask Clew; the second is about how Clew reaches a system. Neither changes what a connector author writes.
 
 ## What each surface may do, by kind
 
@@ -125,17 +125,17 @@ own reports. `treserva.report` is an `execute` with `model: false`, and `treserv
 | REST | `GET /api/cap/treserva.deviations` returns the rows for the panel. Clicking "Rapportera avvikelse" posts `treserva.report` through the card action; the receipt shows the Treserva reference and a ten-minute undo. |
 | Model tool | "Vilka avvikelser väntar på mig?" lets the model call `treserva.deviations` and answer with a Svar or a Vy. "Rapportera att en lyft gick fel" lets the model draft a card; the report is sent only when the person presses the button. |
 | Clew as MCP server | An Eneo assistant registered with a release policy could call `treserva.deviations` as the user and get the same rows; it could not call `treserva.report`. Not built. |
-| MCP as transport | If Treserva's adapter had to live inside the care network, `apps/mcp-treserva` would host the same provider; the three capabilities and this table would not change. Not built. |
+| Connector | If Treserva's adapter had to live inside the care network, a `treserva` connector would serve the same three capabilities behind the connector protocol (D21); this table would not change. |
 
 ## Questions colleagues ask
 
 - **Does an integration work without the model?** Always. Surface 1 is the primary one; surfaces 2 and 3
   are projections of it.
-- **Does a module author write MCP tools or REST routes?** Neither. They write capability descriptors;
+- **Does a connector author write MCP tools or REST routes?** Neither. They write capability descriptors;
   the registry derives the rest. See `docs/guides/creating-an-integration.md`.
 - **Is MCP Clew's integration protocol?** No. The contract is Clew's and lives in TypeScript and TypeBox.
-  MCP is one transport an adapter may use (3b) and one surface Clew may offer to agents (3a).
+  A connector that runs out of process speaks the connector protocol (3b, D21); MCP is one surface Clew may offer to agents (3a).
 - **Can an external agent make Clew change something?** No. It can read and propose; a person executes
   through the UI, and the receipt is read back from the source.
-- **Where do I see what a person can reach?** `GET /api/modules` while logged in as them, and the unit
-  tests in `tests/unit/modules.test.ts` that assert scope and tool derivation.
+- **Where do I see what a person can reach?** `GET /api/connectors` while logged in as them, and the unit
+  tests in `tests/unit/connectors.test.ts` that assert scope and tool derivation.

@@ -6,8 +6,8 @@ const tone = { ok: 'success', warn: 'warning', alert: 'error', none: 'neutral' }
 const countVariant: Record<AttentionLevel, 'error' | 'warning' | 'neutral' | 'info'> = { now: 'error', urgent: 'error', soon: 'warning', later: 'neutral', notice: 'info' };
 const count = (n: number, level: AttentionLevel | null) => n ? <Badge variant={level ? countVariant[level] : 'neutral'} label={String(n)} /> : undefined;
 type Props = { areas: Area[]; current: string | null; hrefFor: (id: string | null) => string; compact?: boolean; handled: number; chipped?: string[] };
-/** A capability chip in the row (`capability:<module>.<name>`) points at the area that owns it: the lens on that module. */
-const chippedArea = (a: Area, chipped: string[]) => chipped.some(ref => ref.startsWith('capability:') && (ref.startsWith(`capability:${a.module}.`) || a.standing.some(s => 'capability:' + s.capability === ref)));
+/** A capability chip in the row (`capability:<connector>.<name>`) points at the area that owns it: the lens on that connector. */
+const chippedArea = (a: Area, chipped: string[]) => chipped.some(ref => ref.startsWith('capability:') && (ref.startsWith(`capability:${a.connector}.`) || a.standing.some(s => 'capability:' + s.capability === ref)));
 const inConversation = <Badge variant="neutral" icon={<Icon icon="checkDouble" size="sm" />} label="I samtalet" />;
 
 

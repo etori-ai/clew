@@ -1,5 +1,5 @@
 /**
- * Runs on the host against the published dev port: real Keycloak login, then the module architecture end to end
+ * Runs on the host against the published dev port: real Keycloak login, then the connector architecture end to end
  * through the API. Registry listing, areas, pushed cards from the mock integrations, a card action with a receipt
  * read back row by row, undo within the window, snooze, and the employee view. Passwords come from .auth-test.env.
  */
@@ -33,20 +33,20 @@ const ok = (cond: unknown, msg: string) => { if (!cond) throw new Error('FAIL: '
   const api = await login('hillevi');
   await api('/api/mocks/reset', {});
   console.log('  mocks reset');
-  const { modules, tools } = await api('/api/modules');
-  console.log('  modules:', modules.map((m: any) => `${m.id}(${m.kind})`).join(' '));
+  const { connectors, tools } = await api('/api/connectors');
+  console.log('  connectors:', connectors.map((m: any) => `${m.id}(${m.kind})`).join(' '));
   console.log('  tools:', tools.join(' '));
-  ok(modules.some((m: any) => m.id === 'people' && m.kind === 'core'), 'core module people is registered without an adapter');
+  ok(connectors.some((m: any) => m.id === 'people' && m.kind === 'core'), 'core connector people is registered without an adapter');
   ok(!tools.some((t: string) => /approve|decide|book|acknowledge|report/.test(t)), 'no execute capability is a tool (D8)');
   const { areas } = await api('/api/areas');
   console.log('  areas:', areas.map((a: any) => `${a.id}[${a.needsYou}/${a.waiting}] ${a.figure?.label ?? ''}`).join(' | '));
-  ok(areas.map((a: any) => a.id).join() === 'medarbetare,budget,arbetsmiljo,viktigt-nu,kalender,utvecklingssamtal', 'manager areas derived from modules and role');
+  ok(areas.map((a: any) => a.id).join() === 'medarbetare,budget,arbetsmiljo,viktigt-nu,kalender,utvecklingssamtal', 'manager areas derived from connectors and role');
   let { threads } = await api('/api/threads');
   const open = threads.filter((t: any) => t.state === 'open');
-  console.log('  open threads:', open.map((t: any) => `${t.module}:${t.area} "${t.title}"${t.waitingOn ? ' [väntar]' : ''}`).join('\n    '));
-  ok(open.some((t: any) => t.module === 'heroma' && t.title.includes('omtankesamtal')), 'Heroma pushed the rehab card');
-  ok(open.some((t: any) => t.module === 'treserva' && t.waitingOn), 'Treserva card waits on someone else (Pågår utan dig)');
-  let inv = open.find((t: any) => t.module === 'raindance');
+  console.log('  open threads:', open.map((t: any) => `${t.connector}:${t.area} "${t.title}"${t.waitingOn ? ' [väntar]' : ''}`).join('\n    '));
+  ok(open.some((t: any) => t.connector === 'heroma' && t.title.includes('omtankesamtal')), 'Heroma pushed the rehab card');
+  ok(open.some((t: any) => t.connector === 'treserva' && t.waitingOn), 'Treserva card waits on someone else (Pågår utan dig)');
+  let inv = open.find((t: any) => t.connector === 'raindance');
   ok(inv && inv.items.length === 3 && inv.actions.filter((a: any) => a.role === 'primary').length === 1, 'Raindance card has 3 invoice rows and exactly one primary action');
   const me = await api('/api/cap/people.me');
   ok(me.output.role === 'manager' && me.output.capabilities.length > 0, 'people.me reads Clew-native permissions');
@@ -69,14 +69,14 @@ const ok = (cond: unknown, msg: string) => { if (!cond) throw new Error('FAIL: '
   ok(acted2.thread.receipt.rows[0].outcome === 'unknown', 'a lost reply is recorded as unknown, never as done');
   await api(`/api/threads/${inv.id}/undo-receipt`, {});
   // Snooze and dismiss on a generic card.
-  const rehab = open.find((t: any) => t.module === 'heroma' && t.title.includes('omtankesamtal'));
+  const rehab = open.find((t: any) => t.connector === 'heroma' && t.title.includes('omtankesamtal'));
   const snoozed = await api(`/api/threads/${rehab.id}/snooze`, {});
   ok(snoozed.waitingOn === 'i morgon 06:00', 'snooze moves the card to Pågår utan dig until the next bundle');
-  const notice = open.find((t: any) => t.module === 'kommunikation');
+  const notice = open.find((t: any) => t.connector === 'kommunikation');
   const ack = await api(`/api/threads/${notice.id}/act`, { actionId: 'ack' });
   ok(ack.thread.state === 'handled' && ack.thread.receipt.rows[0].outcome === 'done', 'read receipt executed through the same path');
   ({ threads } = await api('/api/threads'));
-  ok(!threads.some((t: any) => t.state === 'open' && t.module === 'kommunikation'), 'acknowledged notice is not pushed again');
+  ok(!threads.some((t: any) => t.state === 'open' && t.connector === 'kommunikation'), 'acknowledged notice is not pushed again');
   // Reopen after Inte nu: the Ångra row.
   const reopened = await api(`/api/threads/${rehab.id}/reopen`, {});
   ok(reopened.state === 'open' && reopened.waitingOn === null, 'reopen clears the snooze');
@@ -90,7 +90,7 @@ const ok = (cond: unknown, msg: string) => { if (!cond) throw new Error('FAIL: '
   if (c1.assistant !== 'model') ok(c1.view?.capability === 'raindance.invoices', 'the router found the capability and offers a view');
   const c2 = await api('/api/conversation', { text: 'Hur ligger budgeten?', conversationId: c1.conversationId });
   ok(c2.conversationId === c1.conversationId && c2.thread.messages.length === 4, 'a follow-up stays in the same conversation with memory');
-  const invCard = (await api('/api/threads')).threads.find((t: any) => t.state === 'open' && t.module === 'raindance');
+  const invCard = (await api('/api/threads')).threads.find((t: any) => t.state === 'open' && t.connector === 'raindance');
   const chip = { ref: 'thread:' + invCard.id, kind: 'thread', label: invCard.title };
   const c3 = await api('/api/conversation', { text: 'avfärda det', chips: [chip] });
   ok(c3.clewActions.length === 1 && c3.clewActions[0].kind === 'dismiss' && c3.verbs?.length > 0, 'with a chip, "avfärda" is proposed as a Clew action with verbs, nothing executed');
@@ -145,8 +145,8 @@ const ok = (cond: unknown, msg: string) => { if (!cond) throw new Error('FAIL: '
   ok(areas.map((a: any) => a.id).join() === 'mitt-pass,viktigt-nu,kalender', 'employee areas differ from the manager');
   const { threads } = await api('/api/threads');
   const open = threads.filter((t: any) => t.state === 'open');
-  console.log('  open threads:', open.map((t: any) => `${t.module}:${t.area} "${t.title}"${t.waitingOn ? ' [väntar på ' + t.waitingOn + ']' : ''}`).join('\n    '));
-  ok(!open.some((t: any) => t.area === 'medarbetare' || t.module === 'raindance'), 'no manager cards leak to the employee');
+  console.log('  open threads:', open.map((t: any) => `${t.connector}:${t.area} "${t.title}"${t.waitingOn ? ' [väntar på ' + t.waitingOn + ']' : ''}`).join('\n    '));
+  ok(!open.some((t: any) => t.area === 'medarbetare' || t.connector === 'raindance'), 'no manager cards leak to the employee');
   const forbidden = await api('/api/cap/raindance.invoices').catch((e: Error) => e.message);
   ok(typeof forbidden === 'string' && /400|behörighet/.test(forbidden), 'scope is enforced on the capability route');
   const shift = await api('/api/cap/heroma.myShift');
@@ -159,6 +159,6 @@ const ok = (cond: unknown, msg: string) => { if (!cond) throw new Error('FAIL: '
 }
 { const r = await fetch(base + '/api/conversation', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"text":"hej"}' }); ok(r.status === 401, 'the conversation needs a session'); }
 { const api = await login('hillevi'); await api('/api/mocks/reset', {}); console.log('  mocks reset again for the next demo'); }
-console.log('\nAll module checks passed.');
+console.log('\nAll connector checks passed.');
 
 export {};

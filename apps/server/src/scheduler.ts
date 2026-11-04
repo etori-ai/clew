@@ -2,11 +2,9 @@ import { Temporal } from 'temporal-polyfill';
 import { database, schema } from '@clew/db';
 import { claimJob, scheduleJob, type JobRow } from '@clew/db/jobs';
 import { timeZone } from '@clew/calendar/dates';
-import { authorizationVersion } from './auth-crypto';
-import { readAccess } from '@clew/db/auth';
-import type { AuthenticatedContext } from '@clew/contracts';
-import { closeUndoWindow } from './planner';
-import { closeReceiptWindow, ensureThreads } from './modules';
+import { systemContext } from './system-context';
+import { closeUndoWindow } from './modules/calendar/usecases/samtal';
+import { closeReceiptWindow, ensureThreads } from './threads/usecases/cards';
 
 /**
  * Postgres-backed scheduler for v1. One nightly scan per manager and one timer per undo window. Jobs are claimed
@@ -15,15 +13,6 @@ import { closeReceiptWindow, ensureThreads } from './modules';
 const POLL_MS = 15_000;
 let timer: ReturnType<typeof setInterval> | undefined;
 
-/** The scan runs as the assistant on the manager's behalf. The context is built from the current grant, never a session. */
-export async function systemContext(personId: string): Promise<AuthenticatedContext | undefined> {
-  const access = await readAccess(personId);
-  if (!access) return undefined;
-  const version = authorizationVersion(access);
-  return { id: access.person.id, name: access.person.name, unitId: access.grant.unitId, unitLabel: access.grant.unitLabel, role: access.grant.role,
-    organisationId: access.person.organisationId, principal: { id: 'person:' + personId, kind: 'person' }, capabilities: access.grant.capabilities,
-    authorizationVersion: version, sessionBinding: 'system:scan', expiresAt: new Date(Date.now() + 60_000).toISOString(), async authorize() { return { version }; } };
-}
 async function run(job: JobRow) {
   if (job.kind === 'scan-utvecklingssamtal') {
     const people = await database().select({ id: schema.accessGrants.personId }).from(schema.accessGrants);

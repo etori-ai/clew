@@ -109,7 +109,7 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
 type Actions = ReturnType<typeof useThreadActions>;
 
 /**
- * The action row shared by every card: one primary and up to two secondary actions from the module, then Clew's
+ * The action row shared by every card: one primary and up to two secondary actions from the connector, then Clew's
  * standard actions (Lägg till i samtalet, Inte nu, and Avfärda and Varför ser jag detta? behind ⋯). The primary button
  * is black only where something is due; a notice gets a secondary button so it never competes with a deadline.
  */
@@ -164,8 +164,8 @@ const WhyLine = ({ thread }: { thread: Thread }) => <Text type="supporting" as="
 
 type Props = ActionProps & { areaTitle: string; position?: string; compact: boolean; expanded?: boolean; headingLevel?: 3 | 4 };
 /**
- * A generic card for any module's thread (thread action contract): one lead sentence, rows with refs, the shared
- * action row, and the receipt read back from the source after an execute. Modules contribute actions, never layout.
+ * A generic card for any connector's thread (thread action contract): one lead sentence, rows with refs, the shared
+ * action row, and the receipt read back from the source after an execute. Connectors contribute actions, never layout.
  * Cards hold state and actions and never contain a text input (D12). A card due within three days is lifted
  * (elevation), a card waiting on someone else is muted; nothing else about its shape changes with the level.
  */

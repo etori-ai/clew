@@ -1,8 +1,9 @@
+import { inScope } from '@clew/connectors';
 import type { AuthenticatedContext, CalendarEvent, Chip, Thread } from '@clew/contracts';
 import { listThreads, readThread } from '@clew/db/threads';
 import { today, weekStart } from '@clew/calendar/dates';
-import { listWeek } from '../calendar';
-import { registry } from '../modules';
+import { listWeek } from '../modules/calendar/usecases/reads';
+import { registry } from '../connectors/registry';
 import { InputError } from '../context';
 
 import type { ResolvedObject } from './context';
@@ -44,8 +45,8 @@ export async function resolveChips(persona: AuthenticatedContext, chips: Chip[])
     } else {
       const name = chip.ref.replace(/^capability:/, '');
       const found = registry.find(name);
-      if (!found || !found.capability.scope({ id: persona.id, name: persona.name, unitId: persona.unitId, unitLabel: persona.unitLabel, role: persona.role })) throw gone();
-      objects.push({ kind: 'capability', ref: chip.ref, name, title: found.capability.title, source: found.module.source });
+      if (!found || !inScope(found.capability.scope, { id: persona.id, name: persona.name, unitId: persona.unitId, unitLabel: persona.unitLabel, role: persona.role })) throw gone();
+      objects.push({ kind: 'capability', ref: chip.ref, name, title: found.capability.title, source: found.connector.source });
     }
   }
   const ids = [...threads.keys()];

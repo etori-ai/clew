@@ -46,8 +46,8 @@ export const threads = pgTable('thread', {
   state: text('state').$type<'open' | 'handled' | 'dismissed'>().notNull().default('open'),
   trigger: jsonb('trigger').$type<{ reason: string; source: string; at: string }>().notNull(),
   week: text('week'),
-  // Generic cards (D1, D12): the module, a lead sentence, rows with refs, action slots, waiting state and the receipt.
-  module: text('module').notNull().default('calendar'),
+  // Generic cards (D1, D12): the connector, a lead sentence, rows with refs, action slots, waiting state and the receipt.
+  connector: text('connector').notNull().default('calendar'),
   area: text('area').notNull().default('kalender'),
   summary: text('summary').notNull().default(''),
   items: jsonb('items').$type<ThreadItem[]>().notNull().default([]),
@@ -99,10 +99,29 @@ export const jobs = pgTable('job', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => [index('job_due').on(t.status, t.runAt), check('job_status', sql`${t.status} IN ('due', 'running', 'done', 'failed')`)]);
 
-// State of the mock integrations (Heroma, Raindance, Treserva, Kommunikation). This table *is* the synthetic source
-// system, so that approvals and bookings survive a restart. Real adapters never write here.
+// State of the mock connectors (Heroma, Raindance, Treserva, Kommunikation). This table *is* the synthetic source
+// system, so that approvals and bookings survive a restart; `module` is the mock's id. Real adapters never write here.
 export const moduleState = pgTable('module_state', {
   module: text('module').notNull(), key: text('key').notNull(),
   value: jsonb('value').$type<unknown>().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => [primaryKey({ columns: [t.module, t.key] })]);
+
+// Connectors registered by an administrator (D23). One row per connector service; the secret is a sealed envelope
+// (auth-crypto, purpose `connector:secret:<id>`), the manifest is the last valid one so the page works while the
+// service is down. Core connectors in Clew's process are not rows here until the admin page lists them.
+export type ConnectorAudience = { mode: 'all' } | { mode: 'selected'; roles?: Array<'manager' | 'employee'>; units?: string[]; groups?: string[] };
+export type ConnectorHealth = { status: 'ok' | 'unreachable' | 'manifest-invalid' | 'secret-rejected' | 'untested'; at: string; detail?: string };
+export const connectors = pgTable('connector', {
+  id: text('id').primaryKey(), url: text('url').notNull(),
+  secret: text('secret').notNull(), secretChangedAt: timestamp('secret_changed_at', { withTimezone: true }).notNull().defaultNow(),
+  state: text('state').$type<'draft' | 'enabled' | 'disabled'>().notNull().default('draft'),
+  audience: jsonb('audience').$type<ConnectorAudience>().notNull().default({ mode: 'all' }),
+  scanEnabled: boolean('scan_enabled').notNull().default(true), toolsEnabled: boolean('tools_enabled').notNull().default(true),
+  capabilities: jsonb('capabilities').$type<Record<string, { enabled?: false; model?: false }>>().notNull().default({}),
+  manifest: jsonb('manifest').$type<unknown>(), manifestAt: timestamp('manifest_at', { withTimezone: true }),
+  health: jsonb('health').$type<ConnectorHealth>().notNull().default({ status: 'untested', at: '1970-01-01T00:00:00.000Z' }),
+  createdBy: text('created_by').notNull(), updatedBy: text('updated_by').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  version: integer('version').notNull().default(1),
+}, t => [check('connector_state', sql`${t.state} IN ('draft', 'enabled', 'disabled')`), check('connector_id', sql`${t.id} ~ '^[a-z][a-z0-9-]*$'`)]);
