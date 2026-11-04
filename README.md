@@ -7,7 +7,7 @@ Chat-first start page for Sundsvalls kommun where the assistant takes the initia
 Everything runs in Docker. Commands go through `docker exec` into the app container (Claude Code and most editors sit outside the devcontainer).
 
 ```sh
-sh scripts/compose.sh up -d --build --wait app postgres   # app image (Node 26 + Bun 1.4.2) and Postgres 17
+sh scripts/compose.sh up -d --build --wait app postgres   # app image (Node 26.13.0 LTS + Bun 1.4.4) and Postgres 17
 docker exec -w /workspace clew-app-1 bun install --frozen-lockfile
 docker exec -w /workspace clew-app-1 bun run db:init     # Drizzle migrations
 docker start keycloak                                    # the shared local Keycloak 26.2 at keycloak.orb.local:8090
@@ -21,19 +21,21 @@ Open http://localhost:3020. Synthetic accounts: `hillevi` (rektor, manager perso
 Checks:
 
 ```sh
-docker exec -w /workspace clew-app-1 bun run check      # tsc + unit tests
+docker exec -w /workspace clew-app-1 bun run check      # tsc + Bun unit tests + Node runtime tests
+docker exec -w /workspace clew-app-1 bun run test:node  # current server runtime, without external services
 bun scripts/auth-dev-check.ts hillevi                   # on the host: real Keycloak login, proposals, confirm, undo
 ```
 
 Ports on loopback: 3020 web, 3021 Nextcloud (`calendar-admin`), 3022 Mailpit.
 
+The calendar image refreshes its pinned Calendar and RoomVox code in an existing data volume before Apache starts, then runs Nextcloud's app migrations. Unchanged versions do nothing; a failed upgrade stays pending and is retried on restart. App downgrades are refused. Back up the calendar volume before applying upgrades; restoring older image pins alone does not undo database migrations.
+
 ## Astryx component docs
 
-Bun's isolated installs keep `@astryxdesign/core` out of the root `node_modules`, so `bun run astryx component <Name>` fails with "Could not find @astryxdesign/core package". Run the CLI from inside the core package instead:
+The root `astryx` script runs the CLI from `packages/ui`, which owns Core and the theme. It works with Bun's isolated installs without a version-specific cache path:
 
 ```sh
-docker exec -w /workspace/node_modules/.bun/@astryxdesign+core@0.7.6+65f46399a9db101b/node_modules/@astryxdesign/core clew-app-1 \
-  node /workspace/node_modules/@astryxdesign/cli/clients/cli/bin/astryx.mjs component ChatComposerInput
+docker exec -w /workspace clew-app-1 bun run astryx component ChatComposerInput
 ```
 
-`--dense` shortens the output; `docs layout/side-panels` and friends work the same way. Adjust the hash in the path after an Astryx upgrade (`ls node_modules/.bun | grep astryxdesign+core`).
+`--dense` shortens the output; `bun run astryx docs layout/side-panels` and other CLI commands use the same workspace.
