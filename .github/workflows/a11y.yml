@@ -1,0 +1,38 @@
+name: WCAG
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']
+  pull_request:
+    paths-ignore: ['docs/**', '**/*.md']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  a11y:
+    name: WCAG 2.2 AA suite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Installs inside the image so node_modules lands in the volume scripts/a11y.sh mounts.
+      - name: Install dependencies
+        run: |
+          sh scripts/compose.sh --profile a11y run --rm a11y \
+            sh -c "npm install --global $(jq -r .packageManager package.json) && bun install --frozen-lockfile"
+      - name: Run the suite
+        run: sh scripts/a11y.sh
+      - name: Keep the report
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: a11y-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7
