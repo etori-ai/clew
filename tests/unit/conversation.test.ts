@@ -185,3 +185,42 @@ describe('with a model', () => {
     expect((await w.assistant.converse(hillevi, { text: 'vem är här?' })).assistant).toBe('model');
   });
 });
+
+describe('a question answered from documents, with the model (D26)', () => {
+  const docs: Connector = { id: 'docs', kind: 'passthrough', source: 'Intranätet', areas: [], capabilities: [
+    { name: 'docs.search', kind: 'read', title: 'Sök på intranätet', description: 'x', input: {} as never, output: {} as never, model: true, scope: {},
+      run: async () => ({ rows: [
+        { ref: 'fall-2', kind: 'document', label: 'Rutin vid fall i ordinärt boende', snippet: 'Innan den enskilde hjälps upp …', source: 'Intranätet', section: 'Vid fall', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00Z', link: 'https://intra/fall' },
+        { ref: 'fall-4', kind: 'document', label: 'Rutin vid fall i ordinärt boende', snippet: 'Varje fall registreras som avvikelse …', source: 'Intranätet', section: 'Avvikelse', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00Z' },
+      ] }) },
+    { name: 'docs.fetch', kind: 'read', title: 'Hämta', description: 'x', input: {} as never, output: {} as never, model: false, scope: {},
+      run: async (_a, input: { ref: string }) => { if (input.ref !== 'fall-2') throw new Error('nope'); return { ref: input.ref, kind: 'document', label: 'Rutin vid fall i ordinärt boende', snippet: 'Innan den enskilde hjälps upp …', source: 'Intranätet', section: 'Vid fall', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00Z' }; } },
+  ] };
+  test('the model searches once, the answer is cited and read as steps, the follow-ups come from the trailer, and a passage can be chipped for the next turn', async () => {
+    const seen: string[] = [];
+    const generate: ModelGenerate = async ({ system, messages, tools }) => {
+      seen.push(system, String(messages.at(-1)!.content));
+      expect(Object.keys(tools)).toContain('startsidan__search');
+      expect(Object.keys(tools)).not.toContain('docs__search');
+      const output = await (tools['startsidan__search'] as { execute: (input: unknown, options: unknown) => Promise<unknown> }).execute({ query: 'brukaren har ramlat' }, {});
+      return { text: '1. Lyft inte själv [1].\n2. Ring sjuksköterskan [1].\n3. Skriv avvikelse i Treserva [2].\nFöljdfrågor: Och om hen slagit i huvudet? | Vem ringer jag på natten?', toolCalls: [{ capability: 'startsidan.search', input: { query: 'brukaren har ramlat' }, output }] };
+    };
+    const w = world({ generate });
+    w.registry.register(docs);
+    w.registry.register(searchConnector(searchUsecases({ sources: a => w.registry.searchSources(a), clock: w.deps.clock })));
+    const r = await w.assistant.converse(hassan, { text: 'Brukaren har ramlat men verkar oskadd, vad gör jag?' });
+    expect(r).toMatchObject({ assistant: 'model', shape: 'steg', answer: { source: 'Startsidan' }, followUps: ['Och om hen slagit i huvudet?', 'Vem ringer jag på natten?'], view: { capability: 'startsidan.search', title: 'Källor' } });
+    expect(r.answer.body).toBe('1. Lyft inte själv [1].\n2. Ring sjuksköterskan [1].\n3. Skriv avvikelse i Treserva [2].');
+    expect(r.sources).toEqual([
+      { n: 1, ref: 'document:docs:fall-2', label: 'Rutin vid fall i ordinärt boende', source: 'Intranätet', stale: false, link: 'https://intra/fall', section: 'Vid fall', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00Z' },
+      { n: 2, ref: 'document:docs:fall-4', label: 'Rutin vid fall i ordinärt boende', source: 'Intranätet', stale: false, section: 'Avvikelse', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00Z' },
+    ]);
+    expect(r.thread.messages[1]!.meta).toMatchObject({ shape: 'steg', sources: [{ n: 1 }, { n: 2 }], followUps: ['Och om hen slagit i huvudet?', 'Vem ringer jag på natten?'] });
+    expect(w.store.audit.at(-1)).toMatchObject({ action: 'conversation.asked', details: { assistant: 'model', tools: ['startsidan.search'], sources: ['document:docs:fall-2', 'document:docs:fall-4'] } });
+    expect(JSON.stringify(w.store.audit.at(-1))).not.toContain('Innan den enskilde');
+    const second = await w.assistant.converse(hassan, { text: 'Och om hon slagit i huvudet?', conversationId: r.conversationId, chips: [{ ref: 'document:docs:fall-2', kind: 'document', label: 'ignored' }] });
+    expect(second.conversationId).toBe(r.conversationId);
+    expect(seen.at(-2)).toContain('Avsnitt "Rutin vid fall i ordinärt boende, Vid fall" ur Intranätet (MAS, granskad 2026-03-12)');
+    await expect(w.assistant.converse(hassan, { text: 'x', chips: [{ ref: 'document:docs:nope', kind: 'document', label: 'x' }] })).rejects.toThrow('Något du pekade på finns inte längre.');
+  });
+});

@@ -9,7 +9,8 @@ export class ModelUnavailable extends Error { constructor(message: string) { sup
 /** Capability names carry one dot (`heroma.whoIsOn`); OpenAI-style function names do not allow it. */
 export const toToolName = (name: string) => name.replace('.', '__');
 export const fromToolName = (name: string) => name.replace('__', '.');
-const RESULT_LIMIT = 8_000;
+/** Ten search hits with 600-character snippets and their fields fit under this; a longer result is cut, not failed. */
+const RESULT_LIMIT = 12_000;
 const clip = (value: unknown) => { const text = JSON.stringify(value); return text.length > RESULT_LIMIT ? { truncated: true, text: text.slice(0, RESULT_LIMIT) } : value; };
 
 export type ToolSchemaInfo = ToolInfo & { input: unknown };
@@ -36,6 +37,12 @@ export function systemPrompt(ctx: PromptContext): string {
     '- Du utför aldrig något och påstår aldrig att något är gjort. När personen vill göra något: säg vilken knapp på kortet som gör det, eller att det inte går här.',
     '- Nämn inte enskilda medarbetares namn om personen inte själv använde dem.',
     '- Svara i ren text utan rubriker, listor eller markdown.',
+    'När svaret bygger på sökverktyget (rutiner och dokument):',
+    '- Svara bara utifrån de avsnitt som kom tillbaka och hitta aldrig på mer. Om avsnitten inte räcker, säg det.',
+    '- Markera varje påstående med avsnittets nummer i hakparentes, till exempel [1]. Nämn dokumentets namn, vem som äger det och när det senast granskades, i stället för klockslag.',
+    '- Är avsnittet en rutin med steg: svara som numrerade steg, ett per rad, "1. …". Annars en eller två meningar som vanligt.',
+    '- Nämn källor som inte svarade, om sökverktyget rapporterar några.',
+    '- Avsluta med en sista rad "Följdfrågor: fråga ett | fråga två | fråga tre": högst tre korta frågor personen kan ställa härnäst. Bara när sökverktyget användes.',
   ];
   if (ctx.objects.length) lines.push('', 'Du tittar på (det personen lagt till i samtalet):', ...ctx.objects.map(o => `- ${o}`));
   return lines.join('\n');

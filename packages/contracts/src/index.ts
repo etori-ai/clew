@@ -79,12 +79,20 @@ export function replySummary(proposals: Array<{ status: ProposalStatus }>) {
 
 
 /** Something rendered on the page that the person can point at in the conversation (D12): a card, a row, an event, a proposal, a capability. */
-export const ChipKind = Type.Union([Type.Literal('thread'), Type.Literal('item'), Type.Literal('event'), Type.Literal('proposal'), Type.Literal('capability')]);
+export const ChipKind = Type.Union([Type.Literal('thread'), Type.Literal('item'), Type.Literal('event'), Type.Literal('proposal'), Type.Literal('capability'), Type.Literal('document')]);
 export type ChipKind = Static<typeof ChipKind>;
 export const ChipSchema = object({ ref: Type.String({ minLength: 1, maxLength: 200, pattern: '^[a-z]+:[A-Za-z0-9:_.@-]+$' }), kind: ChipKind, label: Type.String({ maxLength: 200 }) });
 export type Chip = Static<typeof ChipSchema>;
-export const AnswerShape = Type.Union([Type.Literal('svar'), Type.Literal('vy'), Type.Literal('forslag')]);
+/** Svar is a sentence or two, vy opens a view, forslag points at a proposal card, steg is a procedure as numbered steps (D26). */
+export const AnswerShape = Type.Union([Type.Literal('svar'), Type.Literal('vy'), Type.Literal('forslag'), Type.Literal('steg')]);
 export type AnswerShape = Static<typeof AnswerShape>;
+/** A source the answer cites as `[n]` (D26): a ref the person can open or add to the conversation, never the text. */
+export const SourceCitationSchema = object({
+  n: Type.Integer({ minimum: 1 }), ref: Type.String({ maxLength: 260 }), label: Type.String(), source: Type.String(),
+  link: Type.Optional(Type.String()), section: Type.Optional(Type.String()), owner: Type.Optional(Type.String()), reviewedAt: Type.Optional(instant),
+  stale: Type.Union([Type.Boolean(), Type.Null()]),
+});
+export type SourceCitation = Static<typeof SourceCitationSchema>;
 /** How the answer was produced: the model with read tools, the deterministic router, or the router because the configured model failed (D8). */
 export const AssistantMode = Type.Union([Type.Literal('model'), Type.Literal('router'), Type.Literal('unavailable')]);
 export type AssistantMode = Static<typeof AssistantMode>;
@@ -153,6 +161,9 @@ export const MessageMetaSchema = object({
   shape: Type.Optional(AnswerShape), view: Type.Optional(ViewRefSchema), draft: Type.Optional(DraftSchema),
   toolCalls: Type.Optional(Type.Array(object({ capability: Type.String(), input: Type.Unknown() }))),
   assistant: Type.Optional(AssistantMode), source: Type.Optional(Type.String()),
+  /** The sources a document answer cites (D26), numbered as `[n]` in the body; refs only. */
+  sources: Type.Optional(Type.Array(SourceCitationSchema, { maxItems: 10 })),
+  followUps: Type.Optional(Type.Array(Type.String(), { maxItems: 3 })),
 });
 export type MessageMeta = Static<typeof MessageMetaSchema>;
 export const ThreadMessageSchema = object({
@@ -461,6 +472,7 @@ export const ConversationResponseSchema = object({
   clewActions: Type.Array(ClewActionSchema),
   verbs: Type.Optional(Type.Array(VerbSchema)),
   followUps: Type.Array(Type.String()),
+  sources: Type.Optional(Type.Array(SourceCitationSchema, { maxItems: 10 })),
 });
 export type ConversationResponse = Static<typeof ConversationResponseSchema>;
 /** An object the `@` menu can offer: what is visible on the page first, then everything in scope. */
