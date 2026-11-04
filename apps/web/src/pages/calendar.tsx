@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CalendarEvent, Proposal, SessionUser, Thread } from '@clew/contracts';
-import { Badge, Button, ChatComposer, CheckboxList, CheckboxListItem, Divider, Heading, HStack, Icon, IconButton, Layout, LayoutContent, LayoutHeader, LayoutPanel, Text, VStack, WeekAgenda, useMediaQuery, type AgendaItem } from '@clew/ui';
+import { Badge, Button, ChatComposer, CheckboxList, CheckboxListItem, Divider, EventCalendar, Heading, HStack, Icon, IconButton, Layout, LayoutContent, LayoutHeader, LayoutPanel, Text, VStack, WeekAgenda, useMediaQuery, type AgendaItem } from '@clew/ui';
 import { addDays, rangeLabel, shortDayLabel, timeRange, today, weekNumber, weekStart } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
 import { usePageTitle } from '../page-title';
 
-/** The calendar as a page: the week as an agenda, with the proposal thread beside it to confirm or redraw. */
+/** The calendar as a page: the week on a time grid (D27), or as an agenda on a phone, with the proposal thread beside it to confirm or redraw. */
 export function CalendarPage({ user }: { user: SessionUser }) {
   const mobile = useMediaQuery('(max-width: 720px)');
   const requested = new URLSearchParams(window.location.search).get('vecka');
@@ -80,7 +80,9 @@ export function CalendarPage({ user }: { user: SessionUser }) {
     content={<LayoutContent role="main">
       <VStack gap={4}>
         {!thread && error && <Text as="p" role="alert" color="accent">{error}</Text>}
-        <WeekAgenda week={from} days={5} items={items} detailed dayHeadingLevel={2} label={`Vecka ${weekNumber(from)}`} />
+        {mobile
+          ? <WeekAgenda week={from} days={5} items={items} detailed dayHeadingLevel={2} label={`Vecka ${weekNumber(from)}`} />
+          : <EventCalendar view="timeGridWeek" date={from} items={items} label={`Vecka ${weekNumber(from)}`} dayHeadingLevel={2} />}
         {mobile && panel}
       </VStack>
     </LayoutContent>} />;

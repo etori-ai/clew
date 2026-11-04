@@ -65,6 +65,7 @@ export { Section } from '@astryxdesign/core/Section';
 export { useAnnounce, useMediaQuery } from '@astryxdesign/core/hooks';
 export { SessionBoundary, sessionFetch, signOut, type BrowserSession } from './session';
 export { WeekAgenda, type AgendaItem } from './week-agenda';
+export { EventCalendar, type CalendarView } from './calendar';
 
 // The shipped sv-SE catalog is incomplete. Keys reachable by this POC are covered here.
 export const swedish = { ...sv,

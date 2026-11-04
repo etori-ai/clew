@@ -110,9 +110,11 @@
         "@astryxdesign/theme-neutral": "0.7.7",
         "@clew/calendar": "workspace:*",
         "@clew/contracts": "workspace:*",
+        "@fullcalendar/react": "7.1.4",
         "@stylexjs/stylex": "0.19.1",
         "react": "19.3.1",
         "react-dom": "19.3.1",
+        "temporal-polyfill": "1.0.7",
       },
     },
   },
@@ -289,6 +291,12 @@
     "@formatjs/icu-messageformat-parser": ["@formatjs/icu-messageformat-parser@3.5.18", "", { "dependencies": { "@formatjs/icu-skeleton-parser": "2.1.11" } }, "sha512-wX1efcL8d7K5QapOTRsP/OLTA/kpwe4LwqWyNxDNg5iRs8i9jJbCyxB5P8jc4KOW5oiLzz2DJr+BRY5xMV9+bA=="],
 
     "@formatjs/icu-skeleton-parser": ["@formatjs/icu-skeleton-parser@2.1.11", "", {}, "sha512-j8cUmOJzVgkHuS0QiQ6ga76UIoLOFSAMWhs7aZJztH3aAdCOAE6vpC8KVvFB4cU10ON0y2/5oOVmPJ43s2lTwA=="],
+
+    "@full-ui/headless-calendar": ["@full-ui/headless-calendar@7.1.4", "", { "peerDependencies": { "temporal-polyfill": "^1.0.7" } }, "sha512-b0o9zsbJKpeM+e5eh27paqfDseQgMQkOy4jjp+nCLABmUQWn2kJ+vV3QdSNXL/9R7S+SwN6Ky21p1hDYvDdgUg=="],
+
+    "@fullcalendar/core": ["@fullcalendar/core@7.1.4", "", { "peerDependencies": { "@full-ui/headless-calendar": "7.1.4", "temporal-polyfill": "^1.0.7" } }, "sha512-Pkjagkqa4U9n2PemmdjrejmgrbiN6UyeP0pd0qKSjnvPDZzMJGPJvQ00sgm67KL0FAyQSnKMy0odSz9yv6s2XA=="],
+
+    "@fullcalendar/react": ["@fullcalendar/react@7.1.4", "", { "dependencies": { "@full-ui/headless-calendar": "7.1.4", "@fullcalendar/core": "7.1.4" }, "peerDependencies": { "react": "^17 || ^18 || ^19", "react-dom": "^17 || ^18 || ^19", "temporal-polyfill": "^1.0.7" } }, "sha512-2gaRBEnO5sIpH/Abqk9cMp46Ax7e8XeKBL+MPb/NLUvjF3an50rnOB3f71BnW2htcEWPPzk6S0SVrmnH5m5xzg=="],
 
     "@grpc/grpc-js": ["@grpc/grpc-js@1.14.7", "", { "dependencies": { "@grpc/proto-loader": "^0.8.0", "@js-sdsl/ordered-map": "^4.4.2" } }, "sha512-W4W/fcBMGRVtG6dW2c7cw2mnpS3hvbBd+oQXjh2iYFTZDk1JJmcNqkM5KSaPubQpamlUUurrlb7G1s9NJeERmQ=="],
 

@@ -33,6 +33,7 @@ the reasoning. Longer designs live in `docs/architecture/`, and the reviews that
 | [D24](D24-model-endpoints-are-administered-in-the-product.md) | Model providers and models are administered in the product, and the chat can choose between them | 2026-11-04 | product | proposed |
 | [D25](D25-use-cases-over-ports-fast-tests.md) | Use cases take their ports from a composition root; the unit suite runs on memory adapters held to a store contract | 2026-11-04 | platform | accepted |
 | [D26](D26-questions-over-documents-are-search-not-knowledge.md) | Questions answered from documents are a search fan-out with citations, not a knowledge module | 2026-11-04 | product | proposed |
+| [D27](D27-event-calendar-is-fullcalendar-themed-with-astryx-tokens.md) | The event calendar is FullCalendar 7 Standard, themed with Astryx tokens, behind Astryx components | 2026-11-04 | ui | accepted, theme in progress |
 
 ## Adding a decision
 
