@@ -64,6 +64,25 @@ async function client(id:string, origins:string[], backchannel:string) {
   const secret=await (await admin(root+'/clients/'+current.id+'/client-secret')).json() as {value:string};return secret.value;
 }
 const clientSecret=await client('clew-web',[publicUrl],'http://host.docker.internal:3020/api/auth/backchannel-logout');
+/**
+ * Delegation (D26): clew-web may trade the person's token for one bound to a connector's audience (standard token exchange,
+ * RFC 8693, Keycloak 26.2). Each audience is a client of its own that nothing logs in as, plus a client scope carrying the
+ * audience mapper, optional on clew-web and requested as `scope=<audience>-audience` in the exchange.
+ */
+async function enableTokenExchange(id:string){
+  const found=(await objects(root+'/clients?clientId='+id)).find(c=>c.clientId===id)!;
+  await admin(root+'/clients/'+found.id,'PUT',{...found,attributes:{...(found.attributes as Record<string,string>),'standard.token.exchange.enabled':'true'}});
+}
+async function audienceClient(audience:string){
+  if(!(await objects(root+'/clients?clientId='+audience)).some(c=>c.clientId===audience))await admin(root+'/clients','POST',{clientId:audience,protocol:'openid-connect',enabled:true,publicClient:false,standardFlowEnabled:false,implicitFlowEnabled:false,directAccessGrantsEnabled:false,serviceAccountsEnabled:false,redirectUris:[],webOrigins:[],attributes:{}});
+  const scopeName=audience+'-audience';
+  if(!(await objects(root+'/client-scopes')).some(s=>s.name===scopeName))await admin(root+'/client-scopes','POST',{name:scopeName,protocol:'openid-connect',attributes:{'include.in.token.scope':'true','display.on.consent.screen':'false'},
+    protocolMappers:[{name:audience,protocol:'openid-connect',protocolMapper:'oidc-audience-mapper',consentRequired:false,config:{'included.client.audience':audience,'access.token.claim':'true','id.token.claim':'false','introspection.token.claim':'true'}}]});
+  const scope=(await objects(root+'/client-scopes')).find(s=>s.name===scopeName)!, web=(await objects(root+'/clients?clientId=clew-web')).find(c=>c.clientId==='clew-web')!;
+  await admin(root+'/clients/'+web.id+'/optional-client-scopes/'+scope.id,'PUT');
+}
+await enableTokenExchange('clew-web');
+await audienceClient('eneo');
 const testPasswords:Record<string,string>={};
 try {
   // Hillevi is the manager persona (rektor); Hassan the employee persona (undersköterska, mobile).

@@ -47,6 +47,14 @@ export const ManifestAreaSchema = object({
   schedules: Type.Array(object({ label: Type.String(), when: Type.String() })),
   figure: Type.Optional(Type.Boolean({ description: 'Clew asks POST /clew/figure for a one-line figure for this area.' })),
 });
+/**
+ * The connector calls its system as the person (D26): Clew trades the person's session for a token bound to this audience
+ * (RFC 8693 at the IdP) and sends it in `X-Clew-Delegated-Token` beside the assertion. Absent in scans, figures, callbacks
+ * and sessions without an IdP token; the connector then answers `denied`.
+ */
+export const DelegationSchema = object({
+  audience: Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$', description: 'The OAuth audience (an IdP client id) the token must be bound to.' }),
+}, 'The connector acts as the person against its system with a token Clew obtains by token exchange.');
 export const ConnectorManifestSchema = Type.Object({
   protocol: Type.Literal(PROTOCOL_VERSION),
   id: Type.String({ pattern: '^[a-z][a-z0-9-]*$', maxLength: 40, description: 'Must match the id Clew was configured with.' }),
@@ -55,6 +63,7 @@ export const ConnectorManifestSchema = Type.Object({
   areas: Type.Array(ManifestAreaSchema),
   capabilities: Type.Array(ManifestCapabilitySchema),
   scan: Type.Boolean({ description: 'Whether Clew should POST /clew/scan for each person nightly and on first visit.' }),
+  delegation: Type.Optional(DelegationSchema),
 }, { additionalProperties: false, $id: 'https://clew.dev/protocol/1/connector-manifest.schema.json', title: 'Clew connector manifest' });
 export type ConnectorManifest = Static<typeof ConnectorManifestSchema>;
 
@@ -99,7 +108,7 @@ export function protocolSchema() {
       ConnectorManifest: ConnectorManifestSchema, Actor: ActorSchema, CallRequest: CallRequestSchema, CallResponse: CallResponseSchema,
       ProtocolError: ProtocolErrorSchema, ExecuteResult: ExecuteResultSchema, ScanRequest: ScanRequestSchema, ScanResponse: ScanResponseSchema,
       ThreadDraft: ThreadDraftSchema, FigureRequest: FigureRequestSchema, FigureResponse: FigureResponseSchema, CallbackRequest: CallbackRequestSchema,
-      SearchHit: SearchHitSchema, SearchOutput: SearchOutputSchema,
+      SearchHit: SearchHitSchema, SearchOutput: SearchOutputSchema, Delegation: DelegationSchema,
     },
   };
 }

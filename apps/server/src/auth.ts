@@ -5,6 +5,7 @@ import { database } from '@clew/db';
 import { ABSOLUTE_MS, IDLE_MS, LOGIN_TRANSACTION_MS, activeSession, auditAuth, backchannelRevoke, consumeLogin, loginTransactions,
   readSession, resolveSubject, revokeSession, sessions, authenticationAudit, type SessionRecord } from '@clew/db/auth';
 import { authorizationVersion, decryptTokens, encryptTokens, equalToken, localReturnTo, randomToken, tokenDigest } from './auth-crypto';
+import { delegationFor } from './auth-exchange';
 
 /** Ported from startsidan `packages/platform/src/auth.ts`: Authorization Code + PKCE, opaque server session cookie, sealed tokens. */
 export class AuthError extends Error {
@@ -44,7 +45,7 @@ export async function beginLogin(returnTo: string | null) {
   const cookie = randomToken(), state = randomToken(), nonce = randomToken(), verifier = oidc.randomPKCECodeVerifier();
   await database().insert(loginTransactions).values({ digest: tokenDigest(cookie), state, nonce, verifier,
     returnTo: localReturnTo(returnTo), expiresAt: new Date(Date.now() + LOGIN_TRANSACTION_MS) });
-  const url = oidc.buildAuthorizationUrl(config, { redirect_uri: settings.callback, scope: 'openid profile',
+  const url = oidc.buildAuthorizationUrl(config, { redirect_uri: settings.callback, scope: 'openid profile email',
     state, nonce, code_challenge: await oidc.calculatePKCECodeChallenge(verifier), code_challenge_method: 'S256',
     prompt: 'login', max_age: '0', ui_locales: 'sv' });
   return { cookie, url };
@@ -93,8 +94,38 @@ async function refreshSession(row: SessionRecord): Promise<SessionRecord> {
       if (!updated) throw new AuthError(401, 'expired');
       return updated;
     });
-  } catch { await revokeSession(row.digest, 'refresh-failed'); throw new AuthError(401, 'expired'); }
+  } catch { delegation.forget(row.digest); await revokeSession(row.digest, 'refresh-failed'); throw new AuthError(401, 'expired'); }
 }
+/**
+ * Delegation (D26): a connector that acts as the person gets a token bound to its own audience, by RFC 8693 token exchange at
+ * the IdP from the session's access token. The subject token is read fresh (and refreshed under the same row lock as every
+ * request); the IdP's answer is never logged, only its error code, at most once a minute per audience.
+ */
+const TOKEN_EXCHANGE = 'urn:ietf:params:oauth:grant-type:token-exchange';
+const ACCESS_TOKEN_TYPE = 'urn:ietf:params:oauth:token-type:access_token';
+const exchangeFailures = new Map<string, number>();
+const delegation = delegationFor({
+  clock: Date.now,
+  async subjectToken(digest) {
+    let row = await readSession(digest);
+    if (!row) throw new AuthError(401, 'expired');
+    if (!row.tokens) return undefined;
+    row = await refreshSession(row);
+    return decryptTokens(row.tokens, row.digest).access_token;
+  },
+  async exchange(subject, audience) {
+    const config = await oidcConfiguration();
+    try {
+      const r = await oidc.genericGrantRequest(config, TOKEN_EXCHANGE, { subject_token: subject, subject_token_type: ACCESS_TOKEN_TYPE, requested_token_type: ACCESS_TOKEN_TYPE, audience, scope: audience + '-audience' });
+      return { access_token: r.access_token, ...(typeof r.expires_in === 'number' ? { expires_in: r.expires_in } : {}) };
+    } catch (e) {
+      const code = e instanceof oidc.ResponseBodyError ? e.error : e instanceof Error ? e.name : 'unknown';
+      const last = exchangeFailures.get(audience) ?? 0;
+      if (Date.now() - last > 60_000) { exchangeFailures.set(audience, Date.now()); console.error(`token exchange for audience ${audience} failed: ${code}`); }
+      throw new AuthError(503, 'unavailable');
+    }
+  },
+});
 export type Session = Awaited<ReturnType<typeof authenticate>>;
 export async function authenticate(raw: string | undefined) {
   if (!raw) throw new AuthError(401, 'expired');
@@ -117,6 +148,7 @@ export async function authenticate(raw: string | undefined) {
       if (!latest || latest.person.id !== row.personId || authorizationVersion(latest) !== version) throw new AuthError(403, 'denied');
       return { version };
     },
+    delegate: audience => delegation.token(digest, audience),
   };
   return { context, csrfToken: row.csrf, sessionKey: digest.slice(0, 24) + version.slice(0, 16), row };
 }
@@ -126,6 +158,7 @@ export function verifyMutation(request: Request, csrf: string) {
 export async function logout(raw: string | undefined) {
   if (!raw) return authSettings().origin + '/login';
   const digest = tokenDigest(raw);
+  delegation.forget(digest);
   await revokeSession(digest);
   try {
     // Keycloak can ask for logout confirmation. Never send retained tokens through a browser URL.

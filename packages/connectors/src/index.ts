@@ -29,7 +29,15 @@ export const inScope = (scope: Scope, actor: Actor) => typeof scope === 'functio
 export interface Clew {
   /** Run another connector's `read` or `propose` as the same actor. Scope applies; `execute` is refused. */
   call<O = unknown>(name: string, input?: unknown): Promise<O>;
+  /**
+   * The person's IdP token for an audience, by token exchange from the session behind this call (D26). Missing when no
+   * session is behind the run (a scan, a figure, a connector's callback); resolves undefined under a session without IdP
+   * tokens. Never logged, never in an output.
+   */
+  delegate?: (audience: string) => Promise<string | undefined>;
 }
+/** What a caller with a session adds to a run. The registry carries it into every nested `clew.call`. */
+export interface RunContext { delegate?: Clew['delegate'] }
 
 export interface Capability<I = unknown, O = unknown> {
   /** `connector.verb`, stable, e.g. `raindance.approveInvoices`. */
@@ -162,24 +170,26 @@ export class Registry {
   listFor(actor: Actor) { return this.list().filter(c => this.visible(actor, c.id)); }
   capabilitiesFor(actor: Actor) { return [...this.capabilities.values()].filter(c => this.allowed(actor, c.capability.name)); }
   /** The handle a connector gets to reach the rest of Clew as one actor: reads and proposals only, scope re-checked. */
-  clewFor(actor: Actor): Clew {
+  clewFor(actor: Actor, context: RunContext = {}): Clew {
     return {
       call: async <O,>(name: string, input: unknown = {}) => {
         const found = this.capabilities.get(name);
         if (found?.capability.kind === 'execute') throw new CapabilityError('En anslutning kan inte utföra åtgärder i en annan anslutning.');
-        return this.run<O>(actor, name, input);
+        return this.run<O>(actor, name, input, context);
       },
+      ...(context.delegate ? { delegate: context.delegate } : {}),
     };
   }
   /**
    * Run a capability for an actor. Visibility, the capability switch and scope are checked here, so every path (REST,
    * tool, card action, connector callback) is equal. A hidden connector answers exactly as an unknown capability does.
+   * The context (the session's delegate) travels into every nested call the capability makes.
    */
-  async run<O = unknown>(actor: Actor, name: string, input: unknown): Promise<O> {
+  async run<O = unknown>(actor: Actor, name: string, input: unknown, context: RunContext = {}): Promise<O> {
     const found = this.capabilities.get(name);
     if (!found || !this.visible(actor, found.connector.id) || this.governance(found.connector.id).capabilities[name]?.enabled === false) throw new CapabilityError(UNKNOWN);
     if (!inScope(found.capability.scope, actor)) throw new CapabilityError('Du saknar behörighet för åtgärden.');
-    return found.capability.run(actor, input, this.clewFor(actor)) as Promise<O>;
+    return found.capability.run(actor, input, this.clewFor(actor, context)) as Promise<O>;
   }
   /**
    * Areas for one actor: one entry per area definition of a visible connector whose roles include the actor's role.

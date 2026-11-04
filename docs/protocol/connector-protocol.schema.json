@@ -244,6 +244,21 @@
         "scan": {
           "description": "Whether Clew should POST /clew/scan for each person nightly and on first visit.",
           "type": "boolean"
+        },
+        "delegation": {
+          "additionalProperties": false,
+          "description": "The connector acts as the person against its system with a token Clew obtains by token exchange.",
+          "type": "object",
+          "required": [
+            "audience"
+          ],
+          "properties": {
+            "audience": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$",
+              "description": "The OAuth audience (an IdP client id) the token must be bound to.",
+              "type": "string"
+            }
+          }
         }
       }
     },
@@ -1198,6 +1213,21 @@
               }
             }
           }
+        }
+      }
+    },
+    "Delegation": {
+      "additionalProperties": false,
+      "description": "The connector acts as the person against its system with a token Clew obtains by token exchange.",
+      "type": "object",
+      "required": [
+        "audience"
+      ],
+      "properties": {
+        "audience": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$",
+          "description": "The OAuth audience (an IdP client id) the token must be bound to.",
+          "type": "string"
         }
       }
     }

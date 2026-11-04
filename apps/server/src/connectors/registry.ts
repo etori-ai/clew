@@ -44,7 +44,7 @@ export async function runCapability<O = unknown>(persona: AuthenticatedContext, 
   if (!found) throw new InputError('Okänd förmåga.');
   validateInput(name, found.capability.input as object, input ?? {});
   if (found.capability.kind === 'execute') await persona.authorize();
-  try { return await registry.run<O>(actorOf(persona), name, input ?? {}); }
+  try { return await registry.run<O>(actorOf(persona), name, input ?? {}, persona.delegate ? { delegate: persona.delegate } : {}); }
   catch (error) { if (error instanceof CapabilityError) throw new InputError(error.message); throw error; }
 }
 /** A connector's call into another connector (D20, D21): reads and proposals only, scope re-checked for the same actor, never execute. */

@@ -11,6 +11,8 @@ export interface AuthenticatedContext extends SessionUser {
   sessionBinding: string;
   expiresAt: string;
   authorize(): Promise<{ version: string }>;
+  /** A token the IdP issued for `audience` by token exchange from this session (D26). Absent when no session is behind the context; undefined under a session without IdP tokens. */
+  delegate?: (audience: string) => Promise<string | undefined>;
 }
 export const sessionUser = (c: SessionUser): SessionUser => ({ id: c.id, name: c.name, unitId: c.unitId, unitLabel: c.unitLabel, role: c.role });
 

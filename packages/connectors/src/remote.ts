@@ -1,5 +1,5 @@
 import { Value } from '@sinclair/typebox/value';
-import { CapabilityError, type Actor, type Capability, type Connector } from './index';
+import { CapabilityError, type Actor, type Capability, type Clew, type Connector } from './index';
 import { CallResponseSchema, FigureResponseSchema, ConnectorManifestSchema, ScanResponseSchema, type ConnectorManifest } from './protocol';
 
 /**
@@ -40,12 +40,19 @@ export async function fetchManifest(url: string, expectedId?: string, fetchImpl:
 }
 
 function unavailable(source: string) { return new CapabilityError(`${source} svarar inte just nu.`); }
-async function post(transport: RemoteTransport, source: string, path: string, actor: Actor, body: unknown) {
+/** The person's own token for the connector's system (D26), beside the assertion that proves Clew. Only when the manifest asks and a session is behind the call. */
+export const DELEGATED_TOKEN_HEADER = 'x-clew-delegated-token';
+async function delegated(manifest: ConnectorManifest, clew: Clew | undefined, source: string): Promise<string | undefined> {
+  if (!manifest.delegation || !clew?.delegate) return undefined;
+  try { return await clew.delegate(manifest.delegation.audience); }
+  catch { throw new CapabilityError(`${source} kunde inte få din behörighet just nu.`); }
+}
+async function post(transport: RemoteTransport, source: string, path: string, actor: Actor, body: unknown, token?: string) {
   const fetchImpl = transport.fetch ?? fetch;
   let response: Response;
   try {
     response = await fetchImpl(transport.url + path, {
-      method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json', authorization: 'Bearer ' + await transport.assert(actor) },
+      method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json', authorization: 'Bearer ' + await transport.assert(actor), ...(token ? { [DELEGATED_TOKEN_HEADER]: token } : {}) },
       body: JSON.stringify(body), signal: AbortSignal.timeout(transport.timeoutMs ?? 10_000),
     });
   } catch { throw unavailable(source); }
@@ -66,8 +73,8 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
   const capabilities: Capability<any, any>[] = manifest.capabilities.map(c => ({
     name: c.name, kind: c.kind, title: c.title, description: c.description, input: c.input as never, output: c.output as never, model: c.model, scope: c.scope,
     ...(c.kinds ? { kinds: c.kinds } : {}),
-    run: async (actor, input) => {
-      const { status, json } = await post(transport, source, '/clew/capabilities/' + encodeURIComponent(c.name), actor, { actor, input });
+    run: async (actor, input, clew) => {
+      const { status, json } = await post(transport, source, '/clew/capabilities/' + encodeURIComponent(c.name), actor, { actor, input }, await delegated(manifest, clew, source));
       if (status >= 500 || !Value.Check(CallResponseSchema, json)) throw unavailable(source);
       if ('error' in json) failWith(json, source);
       return json.output;
