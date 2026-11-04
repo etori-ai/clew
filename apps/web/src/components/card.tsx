@@ -154,6 +154,7 @@ function ActionRow({ thread, level, actions }: { thread: Thread; level: Attentio
     <Text type="supporting">Varje rad visar källsystemets svar. Grönt bara när det lästs tillbaka.</Text>
   </HStack>;
   if (open && thread.waitingOn) return <HStack gap={2} vAlign="center" wrap="wrap">
+    {secondary.filter(a => a.kind === 'read').map(a => <Button key={a.id} size="sm" variant="ghost" label={a.label} clickAction={() => perform(a)} />)}
     <Button size="sm" variant="ghost" label={inConversation ? 'I samtalet ✓' : 'Lägg till i samtalet'} isDisabled={inConversation} onClick={() => conversation.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id })} />
     {remindMenu}
     <MoreMenu label="Fler val" size="sm" variant="ghost" items={menu} />

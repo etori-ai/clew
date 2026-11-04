@@ -1,0 +1,53 @@
+classDiagram
+    direction LR
+    class ErrandSummary {
+        ref
+        errandNumber
+        category
+        type
+        status
+        phase
+        relationships
+        waitingOn
+        suspendedUntil
+        deadlines
+        unreadEvents
+        version
+    }
+    class ErrandStatus {
+        code
+        label
+        closed
+    }
+    class Deadline {
+        ref
+        label
+        dueAt
+    }
+    class UnreadEvent {
+        id
+        label
+        at
+    }
+    class ErrandDetail {
+        title
+        description
+        lastCommunication
+    }
+    class Communication {
+        channel
+        direction
+        body
+        at
+    }
+    class ErrandAccess {
+        read
+        acknowledge
+    }
+
+    ErrandSummary *-- "1" ErrandStatus
+    ErrandSummary *-- "0..*" Deadline
+    ErrandSummary *-- "0..*" UnreadEvent
+    ErrandSummary <|-- ErrandDetail : extends
+    ErrandDetail *-- "0..1" Communication
+    ErrandAccess ..> ErrandSummary : checked separately

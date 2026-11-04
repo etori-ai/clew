@@ -22,7 +22,7 @@ export async function resolveChips(persona: AuthenticatedContext, chips: Chip[])
       if (!found) throw gone();
       threads.set(found.thread.id, found.thread);
       objects.push({ kind: 'thread', ref: chip.ref, thread: found.thread });
-    } else if (chip.kind === 'item') {
+    } else if (chip.kind === 'item' || chip.kind === 'errand') {
       const thread = (await openThreads()).find(t => t.items.some(i => i.ref === chip.ref));
       const item = thread?.items.find(i => i.ref === chip.ref);
       if (!thread || !item) throw gone();

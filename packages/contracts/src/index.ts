@@ -47,7 +47,7 @@ export type Proposal = Static<typeof ProposalSchema>;
 
 
 /** Something rendered on the page that the person can point at in the conversation (D12): a card, a row, an event, a proposal, a capability. */
-export const ChipKind = Type.Union([Type.Literal('thread'), Type.Literal('item'), Type.Literal('event'), Type.Literal('proposal'), Type.Literal('capability')]);
+export const ChipKind = Type.Union([Type.Literal('thread'), Type.Literal('item'), Type.Literal('errand'), Type.Literal('event'), Type.Literal('proposal'), Type.Literal('capability')]);
 export type ChipKind = Static<typeof ChipKind>;
 export const ChipSchema = object({ ref: Type.String({ minLength: 1, maxLength: 200, pattern: '^[a-z]+:[A-Za-z0-9:_.@-]+$' }), kind: ChipKind, label: Type.String({ maxLength: 200 }) });
 export type Chip = Static<typeof ChipSchema>;

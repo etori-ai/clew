@@ -4,6 +4,9 @@
 decisions in force, and the ordered next steps. `vision.md` says why Clew exists. Everything else under
 `docs/` is the reasoning behind the build.
 
+The first mock errand contract, its field rationale and the demo scenarios are described in
+[`architecture/errands.md`](architecture/errands.md).
+
 | Folder or file | Holds | When to write here |
 |---|---|---|
 | [`vision.md`](vision.md) | What Clew is, what it is not, the principles, and the line between Clew and Eneo | When the answer to "should Clew do this at all?" changes |

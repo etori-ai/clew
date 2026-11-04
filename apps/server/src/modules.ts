@@ -11,17 +11,19 @@ import { heromaModule } from '@clew/modules/mock/heroma';
 import { raindanceModule } from '@clew/modules/mock/raindance';
 import { treservaModule } from '@clew/modules/mock/treserva';
 import { kommunikationModule } from '@clew/modules/mock/kommunikation';
+import { mockSupportManagement } from '@clew/errands/mock-support-management';
 import { InputError } from './context';
 import { calendarModule } from './calendar-module';
 import { peopleModule } from './people-module';
+import { errandModule } from './errand-module';
 import { ensureProposalThread, replan } from './planner';
 
 /**
- * The registry the BFF runs with: the four mock integrations plus the calendar. Every REST route, card action and
+ * The registry the BFF runs with: mock integrations, calendar and core people. Every REST route, card action and
  * (later) tool definition is derived from here. Nothing in `routes/` knows a module by name.
  */
 export const registry = new Registry();
-for (const m of [heromaModule(postgresState), raindanceModule(postgresState), treservaModule(postgresState), kommunikationModule(postgresState), calendarModule(), peopleModule()]) registry.register(m);
+for (const m of [heromaModule(postgresState), raindanceModule(postgresState), treservaModule(postgresState), kommunikationModule(postgresState), errandModule(mockSupportManagement(postgresState)), calendarModule(), peopleModule()]) registry.register(m);
 export const actorOf = (persona: AuthenticatedContext): Actor => ({ id: persona.id, name: persona.name, unitId: persona.unitId, unitLabel: persona.unitLabel, role: persona.role });
 
 const ajv = addFormats(new Ajv({ allErrors: false, strict: false }));

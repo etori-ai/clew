@@ -1,0 +1,32 @@
+sequenceDiagram
+    autonumber
+    actor Person
+    participant API as Decision endpoint
+    participant Provider as Provider
+    participant Mock as Mock state
+    participant Core as Clew core
+
+    Person->>API: Markera som läst (ref + displayed event ids)
+    API->>API: Validate session, input and scope
+    API->>Provider: access(actor, ref)
+    Provider-->>API: Acknowledge permission
+    API->>Provider: acknowledge(actor, ref, event ids)
+    Provider->>Provider: Check case and every event owner
+    Provider->>Mock: Persist actor / event read markers
+    Mock-->>Provider: Stored
+    Provider-->>API: Write completed
+    API->>Provider: get(actor, ref) - read back
+
+    alt Read-back confirms the events are read
+        Provider-->>API: Updated unreadEvents
+        API->>API: Receipt outcome = done
+    else Read-back fails or is unconfirmed
+        Provider-->>API: Error / unconfirmed
+        API->>API: Receipt outcome = unknown
+    end
+
+    API->>Core: Transaction: handled thread + receipt + audit
+    Core-->>API: Committed
+    API-->>Person: Receipt (done / unknown)
+    Note over API,Core: Source and core writes are separate.<br/>Unknown still marks the thread handled. Reconciliation is pending.
+    Note over Person,Provider: Case status and version stay unchanged

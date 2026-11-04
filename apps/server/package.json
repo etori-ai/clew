@@ -13,6 +13,7 @@
     "@clew/calendar": "workspace:*",
     "@clew/contracts": "workspace:*",
     "@clew/db": "workspace:*",
+    "@clew/errands": "workspace:*",
     "@clew/modules": "workspace:*",
     "@hono/node-server": "2.1.6",
     "@sinclair/typebox": "0.34.52",
