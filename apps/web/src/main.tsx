@@ -1,7 +1,9 @@
-import { StrictMode, forwardRef, useEffect, useState, type AnchorHTMLAttributes } from 'react';
+import { StrictMode, Suspense, forwardRef, lazy, useEffect, useState, type AnchorHTMLAttributes } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Link, Routes, Route, useLocation } from 'react-router';
+import { QueryClientProvider } from '@tanstack/react-query';
 import '@clew/ui/styles.css';
+import { createQueryClient } from './query-client';
 import { LinkProvider, Providers, SessionBoundary, type BrowserSession } from '@clew/ui';
 import type { SessionUser } from '@clew/contracts';
 import { StartPage } from './pages/start';
@@ -12,9 +14,15 @@ import { AdminConnectorPage } from './pages/admin/connector';
 import { NotAdmin } from './pages/admin/shell';
 
 type Shell = { session: BrowserSession; user: SessionUser; admin: boolean };
-/** The protected tree mounts only after a live session is confirmed. No user content is kept in browser storage. */
+/** The cache inspector, development only: the production bundle, the a11y suite and a deployment never carry it. */
+const Devtools = import.meta.env.DEV ? lazy(() => import('@tanstack/react-query-devtools').then(m => ({ default: m.ReactQueryDevtools }))) : null;
+/**
+ * The protected tree mounts only after a live session is confirmed. No user content is kept in browser storage: the
+ * query cache (D33) is one client per confirmed session, in memory, emptied once the boundary has shown the ended card.
+ */
 function Protected({ children }: { children: (shell: Shell) => React.ReactNode }) {
   const [shell, setShell] = useState<Shell | 'loading' | 'anonymous'>('loading');
+  const [client] = useState(createQueryClient);
   const location = useLocation();
   useEffect(() => {
     let cancelled = false;
@@ -28,7 +36,12 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
   }, []);
   if (shell === 'loading') return null;
   if (shell === 'anonymous') return <LoginPage returnTo={location.pathname} />;
-  return <SessionBoundary session={shell.session}>{children(shell)}</SessionBoundary>;
+  return <SessionBoundary session={shell.session} onEnded={() => client.clear()}>
+    <QueryClientProvider client={client}>
+      {children(shell)}
+      {Devtools && <Suspense fallback={null}><Devtools initialIsOpen={false} buttonPosition="bottom-left" /></Suspense>}
+    </QueryClientProvider>
+  </SessionBoundary>;
 }
 /** Every Astryx link navigates client-side through react-router; API and external addresses stay plain anchors. */
 const RouterLink = forwardRef<HTMLAnchorElement, { href?: string; to?: string } & AnchorHTMLAttributes<HTMLAnchorElement>>(function RouterLink({ href, to, ...rest }, ref) {
