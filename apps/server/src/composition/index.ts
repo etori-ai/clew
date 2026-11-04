@@ -19,7 +19,7 @@ import { temporalTimers } from '../threads/adapters/temporal';
 import { reminderUsecases } from '../threads/usecases/reminders';
 import { threadUsecases } from '../threads/usecases/cards';
 import { clock, ids } from './ambient';
-import { calendar, notifier } from './calendar';
+import { calendar, events, notifier } from './calendar';
 
 /**
  * The composition root (D25): the one place that pairs use cases with their live adapters. Routes, the scheduler and
@@ -28,7 +28,7 @@ import { calendar, notifier } from './calendar';
  * `calendar.ts`, before the registry, because the registry's calendar connector is built over it.
  */
 const store = postgresThreadStore();
-export { calendar };
+export { calendar, events };
 const timers = temporalTimers();
 export const threads = threadUsecases({ store, registry, run: runCapability, timers, clock, ids, calendar: { ensureProposalThread: calendar.ensureProposalThread, replan: calendar.replan, dismiss: calendar.dismiss,
   todayEvents: persona => calendar.readToday(persona).then(v => v.events.filter(e => !e.allDay).map(e => ({ title: e.title, end: e.end }))).catch(() => []) } });

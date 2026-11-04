@@ -94,13 +94,13 @@ export const attention: Attention = { used: 3, budget: 3, bundledUntil: 'i morgo
 ] };
 export const today: TodayView = {
   date: '2026-11-04',
-  events: [{ id: 'e1', title: 'Rektorsmöte', start: '2026-11-04T08:30:00.000Z', end: '2026-11-04T09:30:00.000Z', allDay: false, mine: true, room: 'A12', participants: [] }],
+  events: [{ id: 'e1', title: 'Rektorsmöte', start: '2026-11-04T08:30:00.000Z', end: '2026-11-04T09:30:00.000Z', allDay: false, mine: true, room: 'A12', participants: [], ref: 'memory:e1', revision: 'r1', canCancel: true, recurring: false, organizer: 'Testa Testsson' }],
   gaps: [{ start: '2026-11-04T09:30:00.000Z', end: '2026-11-04T11:00:00.000Z' }],
 };
 /** A meeting every weekday: a filled week is what pushes the columns past the screen. */
 export const events = (from: string): CalendarEvent[] => [0, 1, 2, 3, 4].map(offset => {
   const day = new Date(Date.parse(from) + offset * 86_400_000).toISOString().slice(0, 10);
-  return { id: `v${offset}`, title: 'Morgonmöte ledningsgrupp', start: `${day}T07:15:00.000Z`, end: `${day}T07:45:00.000Z`, allDay: false, mine: true, room: 'A12', participants: ['Mona Berg', 'Per Lindahl'] };
+  return { id: `v${offset}`, title: 'Morgonmöte ledningsgrupp', start: `${day}T07:15:00.000Z`, end: `${day}T07:45:00.000Z`, allDay: false, mine: true, room: 'A12', participants: ['Mona Berg', 'Per Lindahl'], ref: `memory:v${offset}`, revision: 'r1', canCancel: true, recurring: false, organizer: 'Testa Testsson' };
 });
 
 export const conversation = (source: Thread[], text: string, conversationId = 'konversation'): ConversationResponse => {

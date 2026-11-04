@@ -9,7 +9,7 @@ import { treservaConnector } from '@clew/connectors/mock/treserva';
 import { kommunikationConnector } from '@clew/connectors/mock/kommunikation';
 import { InputError } from '../context';
 import { calendarConnector } from '../modules/calendar/connector';
-import { calendar } from '../composition/calendar';
+import { calendar, events } from '../composition/calendar';
 import { peopleConnector } from '../modules/people/connector';
 
 /**
@@ -19,7 +19,7 @@ import { peopleConnector } from '../modules/people/connector';
  * the registry (D20): in-process through the `clew.call` handle, remote through `POST /api/connectors/call`.
  */
 export const registry = new Registry();
-const bundled = [heromaConnector(postgresState), raindanceConnector(postgresState), treservaConnector(postgresState), kommunikationConnector(postgresState), calendarConnector(calendar), peopleConnector()];
+const bundled = [heromaConnector(postgresState), raindanceConnector(postgresState), treservaConnector(postgresState), kommunikationConnector(postgresState), calendarConnector(calendar, events), peopleConnector()];
 for (const m of bundled) registry.register(m);
 /** The connectors that live in this process: they get a `connector` row at boot so an administrator can govern them too (D23). */
 export const bundledIds = bundled.map(m => m.id);

@@ -54,6 +54,9 @@ export function proposalStoreContract(name: string, make: () => Promise<Proposal
       await store.transaction(tx => tx.updateProposals([p3.id], { eventUid: null, eventRef: null, eventRevision: null, confirmedAt: null, undoUntil: null }));
       expect((await store.readThread(a, t.id))!.proposals.find(p => p.id === p3.id)).toMatchObject({ eventUid: null, eventRef: null, confirmedAt: null, undoUntil: null });
       expect(await store.transaction(tx => tx.transition(t.id, 'proposed', { status: 'declined' }))).toEqual([]);
+      // A moved proposal (D28) keeps everything but its time.
+      await store.transaction(tx => tx.updateProposals([p1.id], { start: '2026-11-11T13:00:00.000Z', end: '2026-11-11T14:00:00.000Z' }));
+      expect((await store.readThread(a, t.id))!.proposals.find(p => p.id === p1.id)).toMatchObject({ status: 'superseded', participant: p1.participant, start: '2026-11-11T13:00:00.000Z', end: '2026-11-11T14:00:00.000Z' });
     });
     test('messages, the thread patch, the audit row and the job commit together and roll back together', async () => {
       const { store, people: [a], auditFor, hasJob } = await make();

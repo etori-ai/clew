@@ -2,6 +2,7 @@ import { Type } from '@sinclair/typebox';
 import type { Connector } from '@clew/connectors';
 import { systemContext } from '../../system-context';
 import type { CalendarUsecases } from './usecases/samtal';
+import type { EventUsecases } from './usecases/events';
 
 /**
  * The calendar as a connector. The provider interface stays the contract (D11); this wraps the module's reads as
@@ -13,7 +14,7 @@ async function personaFor(actorId: string) {
   if (!persona) throw new Error('Okänd person.');
   return persona;
 }
-export function calendarConnector(calendar: Pick<CalendarUsecases, 'readToday' | 'weekView' | 'samtalStatus'>): Connector {
+export function calendarConnector(calendar: Pick<CalendarUsecases, 'readToday' | 'weekView' | 'samtalStatus'>, events: Pick<EventUsecases, 'dayView'>): Connector {
   return {
     id: 'calendar', kind: 'passthrough', source: 'Kalendern',
     areas: [
@@ -28,6 +29,9 @@ export function calendarConnector(calendar: Pick<CalendarUsecases, 'readToday' |
       { name: 'calendar.week', kind: 'read', title: 'Hela veckan', model: true, description: 'Veckans möten för den inloggade. Ange måndagen som from, annars denna vecka.',
         input: Type.Object({ from: Type.Optional(Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' })) }, { additionalProperties: false }), output: Type.Any(), scope: () => true,
         run: async (actor, input: { from?: string }) => calendar.weekView(await personaFor(actor.id), input.from) },
+      { name: 'calendar.day', kind: 'read', title: 'En dag', model: true, description: 'En dags möten och förslag för den inloggade. Ange dagen som date.',
+        input: Type.Object({ date: Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' }) }, { additionalProperties: false }), output: Type.Any(), scope: () => true,
+        run: async (actor, input: { date: string }) => events.dayView(await personaFor(actor.id), input.date) },
     ],
   };
 }

@@ -9,7 +9,8 @@ export function toEvent(event: EventOccurrence, binding: CalendarBinding, ownNam
   const names = new Map<string, string>([[binding.provider.account.email.toLowerCase(), ownName], ...binding.members.map(m => [m.email.toLowerCase(), m.name] as const)]);
   const mine = event.organizer.toLowerCase() === binding.provider.account.email.toLowerCase();
   return { id: event.id, title: event.title, start: event.start, end: event.end, allDay: event.allDay, mine, room: event.room,
-    participants: event.participants.filter(p => !p.resource).map(p => names.get(p.email.toLowerCase()) ?? p.name ?? 'Deltagare') };
+    participants: event.participants.filter(p => !p.resource).map(p => names.get(p.email.toLowerCase()) ?? p.name ?? 'Deltagare'),
+    ref: event.ref, revision: event.revision, canCancel: event.canCancel, recurring: event.recurring, organizer: names.get(event.organizer.toLowerCase()) ?? event.organizerName ?? 'Okänd' };
 }
 /** Addresses that already have an utvecklingssamtal among these events. */
 export function heldAddresses(events: EventOccurrence[]) {

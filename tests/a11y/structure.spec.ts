@@ -105,10 +105,10 @@ test.describe('D30 the obligation', () => {
     await expect(card.getByRole('list', { name: 'Steg' })).toBeVisible();
     await expect(card.getByRole('list', { name: 'Steg' }).getByRole('listitem')).toHaveCount(4);
     await expect(card.getByRole('group', { name: 'Oplacerade: 1' })).toContainText('Sara Holm · upptagen hela veckan');
-    // The week agenda with its day loads is the phone's calendar page; a laptop gets the event calendar (D27).
+    // The phone's calendar week is FullCalendar's list with a heading per day (D32); the day loads live on the card.
     await page.setViewportSize(phone);
     await open(page, '/kalender');
-    await expect(page.getByRole('progressbar', { name: /^Belastning ons 4 nov/ })).toBeVisible();
+    await expect(heading(page, 2, 'ons 4 nov')).toBeVisible();
   });
   test('the waiting obligation shows the sum and lets the manager remind from the keyboard', async ({ page, api: _ }) => {
     await open(page, '/pagar');

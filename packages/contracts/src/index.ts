@@ -33,6 +33,8 @@ export type Figure = Static<typeof FigureSchema>;
 export const CalendarEventSchema = object({
   id: id, title: Type.String(), start: Type.String(), end: Type.String(), allDay: Type.Boolean(),
   mine: Type.Boolean(), room: Type.String(), participants: Type.Array(Type.String()),
+  /** What a write needs (D11): the source's handle and its revision, whether the person may move or cancel it, and the organizer's name. */
+  ref: Type.String(), revision: Type.String(), canCancel: Type.Boolean(), recurring: Type.Boolean(), organizer: Type.String(),
 });
 export type CalendarEvent = Static<typeof CalendarEventSchema>;
 
@@ -437,6 +439,23 @@ export const ConfirmInput = object({ proposalIds: Type.Array(id, { minItems: 1, 
 export const ReplanInput = object({ week: Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' }) });
 export type AskInput = Static<typeof AskInput>; export type ReplyInput = Static<typeof ReplyInput>;
 export type ConfirmInput = Static<typeof ConfirmInput>; export type ReplanInput = Static<typeof ReplanInput>;
+/** A person's own booking and changes to it (D28): one event, one call, re-validated by the use case before the calendar is written. */
+const email = Type.String({ format: 'email', maxLength: 200 });
+export const CreateEventInput = object({ title: Type.String({ minLength: 1, maxLength: 200, pattern: '^[^\\r\\n]+$' }), start: instant, end: instant, participants: Type.Array(email, { maxItems: 8, uniqueItems: true }), room: Type.Optional(Type.String({ minLength: 1, maxLength: 400 })) });
+export const RescheduleEventInput = object({ ref: Type.String({ minLength: 1, maxLength: 400 }), revision: Type.String({ minLength: 1, maxLength: 200 }), start: instant, end: instant });
+export const CancelEventInput = object({ ref: Type.String({ minLength: 1, maxLength: 400 }), revision: Type.String({ minLength: 1, maxLength: 200 }) });
+export const MoveProposalInput = object({ start: instant, end: instant });
+export const AvailabilityInput = object({ start: instant, end: instant, participants: Type.Array(email, { maxItems: 8, uniqueItems: true }), room: Type.Optional(Type.String({ minLength: 1, maxLength: 400 })) });
+export const DayInput = object({ date: Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' }) });
+export type CreateEventInput = Static<typeof CreateEventInput>; export type RescheduleEventInput = Static<typeof RescheduleEventInput>; export type CancelEventInput = Static<typeof CancelEventInput>;
+export type MoveProposalInput = Static<typeof MoveProposalInput>; export type AvailabilityInput = Static<typeof AvailabilityInput>; export type DayInput = Static<typeof DayInput>;
+/** Who and what a booking form can offer: the unit's members and the rooms the calendar knows. */
+export interface CalendarMember { name: string; email: string; }
+export interface CalendarRoom { ref: string; name: string; capacity: number; equipment: string[]; }
+export type AvailabilityState = 'free' | 'busy' | 'unknown';
+export interface AvailabilityResult { mine: AvailabilityState; participants: Array<{ email: string; name: string; state: AvailabilityState }>; room: { ref: string; name: string; state: AvailabilityState } | null; }
 
 export interface TodayView { date: string; events: CalendarEvent[]; gaps: { start: string; end: string }[]; }
 export interface WeekView { from: string; events: CalendarEvent[]; proposals: Proposal[]; }
+/** One day with the person's live proposals: the side panel's day view and the dialog's day strip (D28). */
+export type DayView = WeekView;

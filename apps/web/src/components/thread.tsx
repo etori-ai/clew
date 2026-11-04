@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { obligationStep, obligationSteps, replySummary, type CalendarEvent, type Thread } from '@clew/contracts';
-import { Avatar, AvatarGroup, AvatarGroupOverflow, Badge, Button, Card, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, CheckboxList, CheckboxListItem, Collapsible, Heading, HStack, Icon, List, ListItem, MoreMenu, ProgressBar, Step, Stepper, Text, Timestamp, Token, VStack, VisuallyHidden, WeekAgenda, type AgendaItem } from '@clew/ui';
+import { Avatar, AvatarGroup, AvatarGroupOverflow, Badge, Button, Card, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, CheckboxList, CheckboxListItem, Collapsible, Heading, HStack, Icon, List, ListItem, MoreMenu, ProgressBar, Step, Stepper, Text, Timestamp, Token, VStack, VisuallyHidden, WeekAgenda, agendaItems } from '@clew/ui';
 import { useConversation } from './conversation-context';
 import { useLeaveWithUndo } from './card';
 import { addDays, shortDayLabel, timeRange, weekNumber } from '@clew/calendar/dates';
@@ -77,10 +77,7 @@ export function ThreadCard({ thread, events = [], compact, headingLevel = 3, onC
   const first = thread.messages.find(m => m.role === 'assistant');
   const conversation = thread.kind === 'question' ? thread.messages : thread.messages.filter(m => m !== first);
   const { lead, rest } = split(first?.body ?? thread.title);
-  const items = useMemo<AgendaItem[]>(() => [
-    ...events.filter(e => !e.title.startsWith('Utvecklingssamtal')).map(e => ({ id: e.id, title: e.title, short: e.title.split(' ')[0]!, start: e.start, end: e.end, allDay: e.allDay, kind: 'event' as const })),
-    ...thread.proposals.filter(p => ['proposed', 'confirmed', 'final'].includes(p.status)).map(p => ({ id: p.id, title: 'Utvecklingssamtal', short: 'Samtal', subtitle: p.participant.name, start: p.start, end: p.end, allDay: false, kind: p.status === 'proposed' ? 'proposal' as const : 'booked' as const })),
-  ], [events, thread.proposals]);
+  const items = useMemo(() => agendaItems(events, thread.proposals), [events, thread.proposals]);
   const nextWeek = thread.week ? addDays(thread.week, 7) : null;
   const count = selected.length, plural = count === 1 ? 'inbjudan' : 'inbjudningar';
   const status = statusLine(thread);
@@ -123,7 +120,7 @@ export function ThreadCard({ thread, events = [], compact, headingLevel = 3, onC
         ? <CheckboxList label="Förslag" isLabelHidden value={selected} onChange={setSelected} isReadOnly={!open} density="compact">
           {thread.proposals.filter(p => p.status !== 'declined').map(p => <CheckboxListItem key={p.id} value={p.id} label={<Text>{`${p.participant.name} · ${shortDayLabel(p.start.slice(0, 10))} ${timeRange(p.start, p.end)}`}</Text>} isChecked={p.status !== 'proposed' || selected.includes(p.id)} isDisabled={p.status !== 'proposed'} />)}
         </CheckboxList>
-        : <WeekAgenda week={thread.week} days={5} items={items} dayHeadingLevel={5} label={`Vecka ${weekNumber(thread.week)} med förslagen`} />)}
+        : <WeekAgenda week={thread.week} days={5} items={items} label={`Vecka ${weekNumber(thread.week)} med förslagen`} />)}
       {conversation.length > 0 && <Conversation messages={conversation} />}
       {error && <Text as="p" role="alert" color="accent">{error}</Text>}
       {roster && !open && thread.state === 'open' && !undoOpen && <HStack gap={2} wrap="wrap">
@@ -134,8 +131,8 @@ export function ThreadCard({ thread, events = [], compact, headingLevel = 3, onC
       </HStack>}
       {(open || undoOpen) && <HStack gap={2} wrap="wrap">
         {open && <Button variant="primary" label={`Skicka ${count} ${plural}`} isDisabled={!count} clickAction={() => run(() => api.confirm(thread.id, selected))} />}
-        {open && !compact && <Button label="Justera i kalendern" href={`/kalender?vecka=${thread.week}`} />}
-        {open && compact && <Button label="Visa i veckan" href={`/kalender?vecka=${thread.week}`} />}
+        {open && !compact && <Button label="Justera i kalendern" href={`/kalender?datum=${thread.week}&vy=vecka`} />}
+        {open && compact && <Button label="Visa i veckan" href={`/kalender?datum=${thread.week}&vy=vecka`} />}
         {open && nextWeek && <Button label={`Vecka ${weekNumber(nextWeek)} i stället`} clickAction={() => run(() => api.replan(thread.id, nextWeek))} />}
         {open && <Button variant="ghost" label={inConversation ? 'I samtalet ✓' : 'Lägg till i samtalet'} isDisabled={inConversation} onClick={() => talk.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id })} />}
         {open && <Button variant="ghost" label="Inte nu" clickAction={() => run(async () => { const t = await api.snooze(thread.id); leave(t, 'Tas upp i morgon 06:00 i stället.'); return t; })} />}

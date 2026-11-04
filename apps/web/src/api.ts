@@ -1,4 +1,4 @@
-import type { SnoozeInput, SnoozePreset, AddConnectorInput, Area, AssistantStatus, Attention, CalendarEvent, CheckReport, ClewObject, Completions, ConnectorDetail, ConnectorHealth, ConnectorPatchInput, ConnectorPreview, ConnectorSummary, ConversationInput, ConversationResponse, Figure, ManifestDiff, Proposal, Role, Thread, TodayView, Verb } from '@clew/contracts';
+import type { SnoozeInput, SnoozePreset, AddConnectorInput, Area, AssistantStatus, Attention, AvailabilityInput, AvailabilityResult, CalendarEvent, CalendarMember, CalendarRoom, CancelEventInput, CreateEventInput, DayView, MoveProposalInput, RescheduleEventInput, CheckReport, ClewObject, Completions, ConnectorDetail, ConnectorHealth, ConnectorPatchInput, ConnectorPreview, ConnectorSummary, ConversationInput, ConversationResponse, Figure, ManifestDiff, Proposal, Role, Thread, TodayView, Verb } from '@clew/contracts';
 import { sessionFetch } from '@clew/ui';
 
 /** Every call goes through the same-origin proxy with the session CSRF token. Errors carry the server's Swedish message. */
@@ -56,4 +56,13 @@ export const api = {
     preview: (id: string, role: Role, unitId?: string) => call<ConnectorPreview>(`/api/admin/connectors/${id}/preview?role=${role}` + (unitId ? `&unitId=${encodeURIComponent(unitId)}` : '')),
   },
   calendar: (from?: string) => call<{ from: string; events: CalendarEvent[]; proposals: Proposal[] }>('/api/calendar' + (from ? `?from=${from}` : '')),
+  // A person's own bookings and proposal moves (D28). The day view is a read capability, so the side panel reaches it the same way as any view.
+  calendarDay: (date: string) => call<{ output: DayView }>(`/api/cap/calendar.day?input=${encodeURIComponent(JSON.stringify({ date }))}`).then(r => r.output),
+  members: () => call<{ members: CalendarMember[] }>('/api/calendar/members'),
+  rooms: () => call<{ rooms: CalendarRoom[] }>('/api/calendar/rooms'),
+  availability: (input: AvailabilityInput) => post<AvailabilityResult>('/api/calendar/availability', input),
+  createEvent: (input: CreateEventInput) => post<{ event: CalendarEvent }>('/api/calendar/events', input).then(r => r.event),
+  rescheduleEvent: (input: RescheduleEventInput) => post<{ event: CalendarEvent }>('/api/calendar/events/reschedule', input).then(r => r.event),
+  cancelEvent: (input: CancelEventInput) => post<{ cancelled: true }>('/api/calendar/events/cancel', input),
+  moveProposal: (threadId: string, proposalId: string, input: MoveProposalInput) => post<Thread>(`/api/threads/${threadId}/proposals/${proposalId}/move`, input),
 };

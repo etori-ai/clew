@@ -2,14 +2,15 @@ import { actorOf } from '@clew/connectors';
 import { Hono } from 'hono';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
-import { ActInput, AskInput, ConfirmInput, ConversationInput, ReplanInput, ReplyInput, SnoozeInput } from '@clew/contracts';
+import { ActInput, AskInput, AvailabilityInput, CancelEventInput, ConfirmInput, ConversationInput, CreateEventInput, MoveProposalInput, ReplanInput, ReplyInput, RescheduleEventInput, SnoozeInput } from '@clew/contracts';
+import type { AvailabilityInput as AvailabilityInputType, CancelEventInput as CancelEventInputType, CreateEventInput as CreateEventInputType, MoveProposalInput as MoveProposalInputType, RescheduleEventInput as RescheduleEventInputType } from '@clew/contracts';
 import type { ConversationInput as ConversationInputType } from '@clew/contracts';
 import type { ActInput as ActInputType } from '@clew/contracts';
 import { InputError, protectedRoute, type Env } from '../context';
 import { readFigures } from '../modules/figures/domain';
 import { verbsFor } from '../assistant/verbs';
 import { registry, runCapability } from '../connectors/registry';
-import { assistant, calendar, mocks, reminders, threads } from '../composition';
+import { assistant, calendar, events, mocks, reminders, threads } from '../composition';
 import { Type } from '@sinclair/typebox';
 
 const { act, attentionFor, dismissAny, ensureThreads, listAreas, listThreadsFor, reopenThread, snoozeOptions, snoozeThread, threadFor, undoReceipt } = threads;
@@ -20,7 +21,8 @@ const { ask, completionsFor, converse, listObjects, reply } = assistant;
 const ajv = addFormats(new Ajv({ allErrors: false }));
 const RemindInput = Type.Object({ seconds: Type.Integer({ minimum: 1, maximum: 30 * 86400 }) }, { additionalProperties: false });
 const CancelReminderInput = Type.Object({ workflowId: Type.String({ minLength: 1, maxLength: 200 }) }, { additionalProperties: false });
-const validators = { remind: ajv.compile(RemindInput), snooze: ajv.compile(SnoozeInput), cancelReminder: ajv.compile(CancelReminderInput), ask: ajv.compile(AskInput), reply: ajv.compile(ReplyInput), confirm: ajv.compile(ConfirmInput), replan: ajv.compile(ReplanInput), act: ajv.compile(ActInput), conversation: ajv.compile(ConversationInput) };
+const validators = { remind: ajv.compile(RemindInput), snooze: ajv.compile(SnoozeInput), cancelReminder: ajv.compile(CancelReminderInput), ask: ajv.compile(AskInput), reply: ajv.compile(ReplyInput), confirm: ajv.compile(ConfirmInput), replan: ajv.compile(ReplanInput), act: ajv.compile(ActInput), conversation: ajv.compile(ConversationInput),
+  createEvent: ajv.compile(CreateEventInput), rescheduleEvent: ajv.compile(RescheduleEventInput), cancelEvent: ajv.compile(CancelEventInput), moveProposal: ajv.compile(MoveProposalInput), availability: ajv.compile(AvailabilityInput) };
 async function body<T>(request: Request, validate: (value: unknown) => value is T): Promise<T> {
   const text = await request.text();
   if (text.length > 4000) throw new InputError('För stor förfrågan.');
@@ -92,4 +94,12 @@ api.post('/threads/:id/remind-invitees', async c => c.json(await calendar.remind
 api.get('/today', async c => c.json(await readToday(c.get('session').context)));
 api.get('/figures', async c => { const persona = c.get('session').context; return c.json({ figures: readFigures(persona, await samtalStatus(persona), new Date().toISOString()) }); });
 api.get('/calendar', async c => c.json(await weekOverview(c.get('session').context, c.req.query('from'))));
+/** A person's own bookings (D28): members and rooms for the form, a free-busy check, create, move and cancel; a proposal moved by drag or keyboard. */
+api.get('/calendar/members', async c => c.json({ members: await events.listMembers(c.get('session').context) }));
+api.get('/calendar/rooms', async c => c.json({ rooms: await events.listRooms(c.get('session').context) }));
+api.post('/calendar/availability', async c => c.json(await events.checkAvailability(c.get('session').context, await body(c.req.raw, validators.availability as unknown as (value: unknown) => value is AvailabilityInputType))));
+api.post('/calendar/events', async c => c.json({ event: await events.createEvent(c.get('session').context, await body(c.req.raw, validators.createEvent as unknown as (value: unknown) => value is CreateEventInputType)) }, 201));
+api.post('/calendar/events/reschedule', async c => c.json({ event: await events.rescheduleEvent(c.get('session').context, await body(c.req.raw, validators.rescheduleEvent as unknown as (value: unknown) => value is RescheduleEventInputType)) }));
+api.post('/calendar/events/cancel', async c => c.json(await events.cancelEvent(c.get('session').context, await body(c.req.raw, validators.cancelEvent as unknown as (value: unknown) => value is CancelEventInputType))));
+api.post('/threads/:id/proposals/:proposalId/move', async c => c.json(await events.moveProposal(c.get('session').context, c.req.param('id'), c.req.param('proposalId'), await body(c.req.raw, validators.moveProposal as unknown as (value: unknown) => value is MoveProposalInputType))));
 api.get('/attention', async c => c.json(await attentionFor(c.get('session').context)));
