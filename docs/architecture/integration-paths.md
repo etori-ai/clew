@@ -122,8 +122,9 @@ Kept for the record so the next session does not reinvent or rediscover them.
 
 - **Dataset manifests, semantic types, the view DSL and the query engine.** Startsidan let operators compose
   pages from datasets joined on semantic types. Clew has no page builder and no cross-source join; a
-  module's `read` capability returns rows in its own output schema and Clew renders them. If a second
-  consumer ever needs a shared vocabulary across modules, start from startsidan doc 26, not from scratch.
+  module's `read` capability returns rows in its own output schema and Clew renders them. How work that
+  spans modules is composed instead is in `working-across-modules.md`. If a second consumer ever needs a
+  shared vocabulary across modules, start from startsidan doc 26, not from scratch.
 - **The three bindings (in-process, NATS, HTTP) and the connector host.** Replaced by in-process plus the
   Clew-owned MCP server shape.
 - **Operator-defined datasets and the Register module.** Owning a new domain in Clew is a core module in

@@ -74,8 +74,9 @@ cards, the buttons and the receipts.
   composer. Operators configure modules, scopes and bundle times, not blocks.
 - Not a search index over other systems' content. Clew is the place you search from; the index stays in
   the source system or in Eneo, and Clew asks them as the user.
-- Not a data warehouse or a federated query engine. Clew does not join sources; a module returns rows, and
-  search is a fan-out to modules, never a join.
+- Not a data warehouse or a federated query engine. Clew does not run queries across sources; a module
+  returns rows, search is a fan-out, and work that spans modules is composed in code on Clew's own keys
+  (`docs/architecture/working-across-modules.md`).
 - Not an AI platform. Clew has no knowledge bases, no document ingestion, no assistant builder and no model
   administration beyond "which endpoint". That is Eneo's product, below.
 - Not a process-modelling tool or a case system. Clew orchestrates a person's work across systems and
