@@ -1,6 +1,6 @@
 # D33 · Browser reads go through one query cache; a mutation's thread is written into it
 
-**Status:** proposed · **Date:** 2026-11-04 · **Area:** ui
+**Status:** accepted · **Date:** 2026-11-04 · **Area:** ui
 
 **Decision.** `apps/web` reads the server through TanStack Query (`@tanstack/react-query` 5.105.3, MIT) and in no
 other way:
