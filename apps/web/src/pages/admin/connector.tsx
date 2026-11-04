@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import type { CheckReport, ConnectorAudience, ConnectorDetail, ManifestDiff, SessionUser } from '@clew/contracts';
-import { AlertDialog, Badge, Banner, Button, Code, Dialog, DialogHeader, DropdownMenu, EmptyState, FormLayout, HStack, Heading, InfoTip, List, ListItem, MetadataList, MetadataListItem, StatusDot, Switch, Tab, TabList, Table, Text, TextInput, Timestamp, Toolbar, VStack, useMediaQuery, useToast } from '@clew/ui';
+import { AlertDialog, Badge, Banner, Button, Code, Dialog, DialogHeader, DropdownMenu, EmptyState, FormLayout, HStack, Heading, InfoTip, List, ListItem, MetadataList, MetadataListItem, Section, StatusDot, Switch, Tab, TabList, Table, Text, TextInput, Timestamp, Toolbar, VStack, useMediaQuery, useToast } from '@clew/ui';
 import { api, ApiError } from '../../api';
 import { usePageTitle } from '../../page-title';
 import { AudienceEditor, AudiencePreview } from './audience';
 import { actionLabel, actorLabel, audienceLabel, capabilityKindLabel, healthLabel, kindLabel, roleLabel, statusOf } from './labels';
-import { AdminShell } from './shell';
+import { AdminShell, PageLead } from './shell';
 
 /** One connector (D23): overview and actions, capabilities with their switches, areas, who sees it, and its history. */
 type TabId = 'oversikt' | 'formagor' | 'omraden' | 'publik' | 'historik';
@@ -65,24 +65,30 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
   ];
   const removeLabel = `Ta bort ${c.source}`;
   return <AdminShell user={user} crumbs={[{ label: 'Anslutna system', href: '/admin/anslutningar' }, { label: c.source }]}>
-    <HStack justify="between" vAlign="center" gap={3} wrap="wrap">
-      <HStack gap={2} vAlign="center" wrap="wrap">
-        <Heading level={1}>{c.source}</Heading>
-        <StatusDot variant={s.tone} label={s.label} /><Text type="supporting">{s.label}</Text>
-        {c.kind && <Badge variant="neutral" label={kindLabel[c.kind]} />}{c.bundled && <Badge variant="neutral" label="Inbyggd" />}
-      </HStack>
-      <Switch label={c.state === 'enabled' ? 'På' : 'Av'} labelPosition="start" value={c.state === 'enabled'} isDisabled={busy || (c.state === 'draft' && !c.counts.capabilities)} disabledMessage="Utkastet saknar manifest: kontrollera anslutningen först." changeAction={on => run(async () => { await api.admin.update(id, { state: on ? 'enabled' : 'disabled' }); return `${c.source} ${on ? 'är på' : 'är avstängd'}.`; })} />
-    </HStack>
+    <PageLead title={<HStack gap={2} vAlign="center" wrap="wrap"><Heading level={1}>{c.source}</Heading>{c.kind && <Badge variant="neutral" label={kindLabel[c.kind]} />}{c.bundled && <Badge variant="neutral" label="Inbyggd" />}</HStack>}
+      actions={<Switch label={c.state === 'enabled' ? 'På' : 'Av'} labelPosition="start" value={c.state === 'enabled'} isDisabled={busy || (c.state === 'draft' && !c.counts.capabilities)} disabledMessage="Utkastet saknar manifest: kontrollera anslutningen först." changeAction={on => run(async () => { await api.admin.update(id, { state: on ? 'enabled' : 'disabled' }); return `${c.source} ${on ? 'är på' : 'är avstängd'}.`; })} />}>
+      <HStack gap={1} vAlign="center" wrap="wrap"><StatusDot variant={s.tone} label={s.label} /><Text color="secondary">{s.label}{c.bundled ? ' · körs i Clews egen process' : c.url ? ` · ${c.url}` : ''}</Text></HStack>
+    </PageLead>
     {unhealthy && <Banner status={c.health.status === 'unreachable' ? 'warning' : 'error'} container="section" collapsible={false} title={`${c.source}: ${healthLabel[c.health.status].toLowerCase()}${c.health.at ? ' sedan ' : ''}`}
       description={`${c.health.detail ?? ''} Kort och figurer visas från senast kända läge.`.trim()} endContent={<Timestamp value={c.health.at} format="date_time" />} />}
     {error && <Text as="p" role="alert" color="accent">{error}</Text>}
+    <Section padding={0} dividers={['top', 'bottom', 'start', 'end']}>
     {/* Five tabs do not fit 320 px without scrolling (1.4.10), so a phone gets the sections as a menu with the same panels. */}
-    {mobile
-      ? <DropdownMenu button={{ label: `Visa: ${tabs.find(t => t.id === tab)!.label}`, size: 'sm', variant: 'secondary' }} presentation="adaptive" items={tabs.map(t => ({ id: t.id, label: t.label, onClick: () => setTab(t.id) }))} />
-      : <TabList value={tab} onChange={v => setTab(v as TabId)} role="tablist" hasDivider>
-        {tabs.map(t => <Tab key={t.id} value={t.id} label={t.label} panelId={panel(t.id)} />)}
-      </TabList>}
+    <Section variant="transparent" paddingInline={4} paddingBlock={mobile ? 3 : 0}>
+      {mobile
+        ? <DropdownMenu button={{ label: `Visa: ${tabs.find(t => t.id === tab)!.label}`, size: 'sm', variant: 'secondary' }} presentation="adaptive" items={tabs.map(t => ({ id: t.id, label: t.label, onClick: () => setTab(t.id) }))} />
+        : <TabList value={tab} onChange={v => setTab(v as TabId)} role="tablist" hasDivider>
+          {tabs.map(t => <Tab key={t.id} value={t.id} label={t.label} panelId={panel(t.id)} />)}
+        </TabList>}
+    </Section>
+    <Section variant="transparent" padding={4}>
     {tab === 'oversikt' && <div id={panel('oversikt')} role={mobile ? "region" : "tabpanel"} aria-label="Översikt"><VStack gap={4}>
+      {!c.bundled && <Toolbar label="Åtgärder" size="sm" variant="muted" startContent={<>
+        <Button variant="secondary" label="Testa anslutning" isDisabled={busy} clickAction={() => run(async () => { const r = await api.admin.test(id); setReport(r); return r.ok ? 'Kontrollen gick bra.' : 'Kontrollen hittade fel, se listan.'; })} />
+        <Button variant="secondary" label="Hämta manifest igen" isDisabled={busy} clickAction={() => run(async () => { const r = await api.admin.refresh(id, false); if (r.diff.same) return 'Manifestet är oförändrat.'; setDiff(r.diff); })} />
+        <Button variant="secondary" label="Byt nyckel" isDisabled={busy} onClick={() => setSecretOpen(true)} />
+        <Button variant="destructive" label="Ta bort" isDisabled={busy} onClick={() => setRemoveOpen(true)} />
+      </>} />}
       <MetadataList columns={mobile ? 'single' : 'multi'}>
         <MetadataListItem label="Id">{c.id}</MetadataListItem>
         <MetadataListItem label="Källa">{c.source}</MetadataListItem>
@@ -97,12 +103,6 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
         {c.secretChangedAt && <MetadataListItem label="Nyckel bytt"><Timestamp value={c.secretChangedAt} format="date_time" /></MetadataListItem>}
         <MetadataListItem label="Tillagd">{actorLabel(c.createdBy)} · <Timestamp value={c.createdAt} format="date_time" /></MetadataListItem>
       </MetadataList>
-      {!c.bundled && <HStack gap={2} wrap="wrap">
-        <Button variant="secondary" label="Testa anslutning" isDisabled={busy} clickAction={() => run(async () => { const r = await api.admin.test(id); setReport(r); return r.ok ? 'Kontrollen gick bra.' : 'Kontrollen hittade fel, se listan.'; })} />
-        <Button variant="secondary" label="Hämta manifest igen" isDisabled={busy} clickAction={() => run(async () => { const r = await api.admin.refresh(id, false); if (r.diff.same) return 'Manifestet är oförändrat.'; setDiff(r.diff); })} />
-        <Button variant="secondary" label="Byt nyckel" isDisabled={busy} onClick={() => setSecretOpen(true)} />
-        <Button variant="destructive" label="Ta bort" isDisabled={busy} onClick={() => setRemoveOpen(true)} />
-      </HStack>}
       {report && <List density="compact" aria-label="Kontrollens resultat" header={<Text type="supporting" weight="semibold">Senaste kontroll</Text>}>
         {report.findings.map((f, i) => <ListItem key={i} startContent={<StatusDot variant={f.level === 'ok' ? 'success' : f.level === 'warn' ? 'warning' : 'error'} label={f.level === 'ok' ? 'Ok' : f.level === 'warn' ? 'Varning' : 'Fel'} />} label={<Text>{f.text}</Text>} />)}
       </List>}
@@ -133,6 +133,8 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
         {[...c.history].reverse().map((h, i) => <ListItem key={i} label={<Text>{actionLabel[h.action] ?? h.action}</Text>} description={<Text type="supporting">{actorLabel(h.actor)}{Object.keys(h.details).length ? ' · ' + JSON.stringify(h.details) : ''}</Text>} endContent={<Timestamp value={h.at} format="date_time" />} />)}
       </List>}
     </div>}
+    </Section>
+    </Section>
     <Dialog isOpen={secretOpen} onOpenChange={open => { if (!open) { setSecretOpen(false); setSecret(''); } }} width={480} purpose="form" padding={4}>
       <VStack gap={4}>
         <DialogHeader title="Byt nyckel" subtitle="Den gamla nyckeln slutar gälla direkt. Starta om tjänsten med den nya." onOpenChange={() => { setSecretOpen(false); setSecret(''); }} />
