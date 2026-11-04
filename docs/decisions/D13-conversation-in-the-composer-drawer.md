@@ -1,6 +1,6 @@
 # D13 · The conversation lives in the composer's drawer; the dim is an Astryx Overlay
 
-**Status:** accepted · **Date:** 2026-11-03 · **Area:** ui
+**Status:** superseded by D31 · **Date:** 2026-11-03 · **Area:** ui
 
 **Decision.** The conversation overlay described in D12 and `integrations.md` ("unfolds upward from the composer
 row over the dimmed stream") is built with two Astryx components and no custom CSS: the grouped focus list and the
