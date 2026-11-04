@@ -1,0 +1,37 @@
+flowchart TB
+    subgraph SOURCE["Simulated source"]
+        snapshots["Fixture snapshots<br/>Errands + related resources"]
+        acknowledgements[("Mock state<br/>Actor / event read markers")]
+    end
+
+    subgraph CONTRACT["Shared read contract"]
+        adapter["Provider adapter<br/>Identity + access + mapping"]
+        summary["ErrandSummary<br/>Metadata, tasks, unread events"]
+        detail["ErrandDetail<br/>On-demand free text"]
+    end
+
+    subgraph APPLICATION["Existing Clew application"]
+        module["Errand module<br/>Capabilities + scan"]
+        overview["Lists and cards<br/>Existing stream"]
+        panel["Detail panel<br/>Not a model tool"]
+        core[("Core state<br/>Threads, audit, receipts")]
+    end
+
+    snapshots -->|"actor-scoped read"| adapter
+    acknowledgements --> adapter
+    adapter --> summary
+    adapter --> detail
+    summary --> module
+    detail --> module
+    module --> overview
+    module --> panel
+    module --> core
+    module -->|"acknowledge event ids"| adapter
+    adapter -->|"read markers"| acknowledgements
+
+    classDef source fill:#f1f5f9,stroke:#64748b,color:#0f172a,stroke-width:1.5px;
+    classDef contract fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e,stroke-width:1.5px;
+    classDef app fill:#ecfdf5,stroke:#059669,color:#064e3b,stroke-width:1.5px;
+    class snapshots,acknowledgements source;
+    class adapter,summary,detail contract;
+    class module,overview,panel,core app;

@@ -244,6 +244,6 @@ export function StartPage({ user }: { user: SessionUser }) {
           <div className="composer-dock" ref={dock}>{row}</div>
         </div>
       </LayoutContent>} />
-    <PanelView title={view?.title ?? null} output={view?.output} onClose={() => navigate(pathFor(area))} />
+    <PanelView title={view?.title ?? null} output={view?.output} onOpenView={openView} onClose={() => navigate(pathFor(area))} />
   </ConversationContext.Provider>;
 }

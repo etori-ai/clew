@@ -1,0 +1,13 @@
+{
+  "name": "@clew/errands",
+  "private": true,
+  "version": "0.0.1",
+  "exports": {
+    ".": "./src/model.ts",
+    "./mock-support-management": "./src/mock-support-management.ts"
+  },
+  "dependencies": {
+    "@clew/modules": "workspace:*",
+    "@sinclair/typebox": "0.34.52"
+  }
+}
