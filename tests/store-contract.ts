@@ -86,6 +86,17 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       });
       expect(await store.countPushedSince(a, T0)).toBe(2);
     });
+    test('a thread can be locked inside a transaction by its owner only, and reads the same as outside', async () => {
+      const { store, people: [a, b] } = await make();
+      const t = draft(a);
+      await store.transaction(async tx => { await tx.insertThread(t); await tx.addMessage(t.id, { role: 'assistant', body: 'Hej', at: plus(T0, 1000) }); });
+      const outside = await store.readThread(a, t.id);
+      const inside = await store.transaction(async tx => ({ mine: await tx.lockThread(a, t.id), theirs: await tx.lockThread(b, t.id) }));
+      expect(inside.mine).toEqual(outside);
+      expect(inside.theirs).toBeUndefined();
+      await store.transaction(async tx => { const locked = (await tx.lockThread(a, t.id))!; await tx.updateThread(locked.id, { remindedAt: plus(T0, 2000), trigger: { ...locked.trigger, reason: 'igen' } }); });
+      expect(await store.readThread(a, t.id)).toMatchObject({ remindedAt: plus(T0, 2000), trigger: { reason: 'igen', source: t.trigger.source } });
+    });
     test('an audit row and a job commit with the writes they belong to, and roll back with them', async () => {
       const { store, people: [a], auditFor, hasJob } = await make();
       const t = draft(a);

@@ -15,8 +15,13 @@ export interface NewMessage { role: 'assistant' | 'user'; body: string; at: stri
 export interface AuditEntry { actor: string; action: string; subject: string; at: string; details?: Record<string, unknown> }
 export interface JobInput { id: string; kind: string; runAt: string; payload?: Record<string, unknown> }
 
+/** What a reminder timer carries back when it fires (D17). Declared here so the workflow, the activity and the use case share one shape. */
+export interface ReminderInput { personId: string; threadId: string; title: string; area: string; seconds: number; requestedAt: string }
+
 /** Writes inside one transaction. The audit row of a mutation is written through the same `tx`, so it commits or rolls back with the rest. */
 export interface ThreadTx {
+  /** The person's thread, held against concurrent writers until the transaction ends (a row lock in Postgres). */
+  lockThread(personId: string, id: string): Promise<Thread | undefined>;
   /** False when an open pushed thread with the same topic already exists for the person: the scan is idempotent. */
   insertThread(thread: NewThread): Promise<boolean>;
   updateThread(id: string, patch: ThreadPatch): Promise<void>;

@@ -1,6 +1,6 @@
 import type { AuthenticatedContext } from '@clew/contracts';
 import { InputError } from '../../context';
-import type { ReminderTimers, ThreadStore } from '../model';
+import type { ReminderInput, ReminderTimers, ThreadStore } from '../model';
 
 export const MAX_REMINDER_SECONDS = 24 * 60 * 60;
 const clock = (d: Date) => d.toLocaleTimeString('sv-SE', { timeZone: 'Europe/Stockholm', timeStyle: 'short' });
@@ -47,6 +47,28 @@ export function reminderUsecases(deps: ReminderDeps) {
     });
     return (await store.readThread(persona.id, threadId))!;
   }
-  return { remind, cancelReminder };
+  /**
+   * The timer fired: the card comes back, never a second one (D17). The thread is reopened if it was dismissed or
+   * snoozed meanwhile, marked `remindedAt` so it sorts first under "Nu" for the day, and its trigger says why it is
+   * back. A card already handled with a receipt is left alone: the work is done. Idempotent: a retried timer sees
+   * `remindedAt` already at or after the fire time and does nothing. Runs as the Temporal activity `surfaceReminder`.
+   */
+  async function surface(input: ReminderInput): Promise<'surfaced' | 'skipped'> {
+    const at = deps.clock().toISOString();
+    return store.transaction(async tx => {
+      const row = await tx.lockThread(input.personId, input.threadId);
+      if (!row || row.receipt) return 'skipped';
+      if (row.remindedAt && Date.parse(row.remindedAt) >= Date.parse(input.requestedAt) + input.seconds * 1000) return 'skipped';
+      const asked = clock(new Date(input.requestedAt));
+      await tx.updateThread(row.id, {
+        state: 'open', handledAt: null, waitingOn: row.waitingOn && !isReminderWaiting(row.waitingOn) && row.waitingOn !== 'i morgon 06:00' ? row.waitingOn : null, remindedAt: at, updatedAt: at,
+        trigger: { reason: `Du bad ${asked} om en påminnelse · ${row.trigger.reason}`, source: row.trigger.source, at },
+      });
+      await tx.addMessage(row.id, { role: 'assistant', body: `Påminnelse: du bad ${asked} om att få det här kortet igen.`, at });
+      await tx.writeAudit({ actor: 'assistant:reminder', action: 'thread.reminded', subject: 'thread:' + row.id, at, details: { requestedAt: input.requestedAt, seconds: input.seconds, wasState: row.state, owner: input.personId } });
+      return 'surfaced';
+    });
+  }
+  return { remind, cancelReminder, surface };
 }
 export type ReminderUsecases = ReturnType<typeof reminderUsecases>;

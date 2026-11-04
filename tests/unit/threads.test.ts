@@ -246,6 +246,29 @@ describe('påminn mig', () => {
     expect(w.timers.cancelled).toEqual([set.id]);
     expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'reminder.set', 'reminder.cancelled']);
   });
+  test('when the timer fires the card comes back once, reopened and marked, with the reason on its trigger', async () => {
+    const w = world();
+    const card = await invoices(w);
+    const set = await w.reminders.remind(hillevi, card.id, 600);
+    await w.threads.dismissThread(hillevi, card.id);
+    w.clock.advance(10 * MINUTE);
+    const fired = { personId: 'hillevi', threadId: card.id, title: card.title, area: card.area, seconds: 600, requestedAt: T0 };
+    expect(await w.reminders.surface(fired)).toBe('surfaced');
+    const back = (await w.threads.threadFor(hillevi, card.id))!;
+    const at = new Date(Date.parse(T0) + 10 * MINUTE).toISOString();
+    expect(back).toMatchObject({ state: 'open', handledAt: null, waitingOn: null, remindedAt: at, trigger: { reason: `Du bad 08:00 om en påminnelse · ${card.trigger.reason}`, source: card.trigger.source, at } });
+    expect(back.messages.at(-1)!.body).toBe('Påminnelse: du bad 08:00 om att få det här kortet igen.');
+    expect(w.store.audit.at(-1)).toMatchObject({ actor: 'assistant:reminder', action: 'thread.reminded', subject: 'thread:' + card.id, at, details: { requestedAt: T0, seconds: 600, wasState: 'dismissed', owner: 'hillevi' } });
+    // A retried activity finds remindedAt at the fire time already and does nothing; a stranger's id never matches.
+    expect(await w.reminders.surface(fired)).toBe('skipped');
+    expect(await w.reminders.surface({ ...fired, personId: 'hassan' })).toBe('skipped');
+    expect(w.store.audit.filter(e => e.action === 'thread.reminded')).toHaveLength(1);
+    // A card handled with a receipt is left alone: the work is done.
+    await w.threads.act(hillevi, card.id, 'approve');
+    expect(await w.reminders.surface({ ...fired, requestedAt: at })).toBe('skipped');
+    expect((await w.threads.threadFor(hillevi, card.id))!.state).toBe('handled');
+    void set;
+  });
   test('leaves the card untouched when the timer service is away, and refuses bad input', async () => {
     const w = world();
     const card = await invoices(w);

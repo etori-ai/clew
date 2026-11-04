@@ -19,14 +19,15 @@ events), because most records live in other systems and Clew holds refs and audi
 ```
 apps/server/src/
   main.ts  context.ts  auth.ts  auth-crypto.ts  system-context.ts  scheduler.ts     platform
-  composition/       the composition root (D25): ambient.ts (clock, ids), calendar.ts (the calendar over Postgres and bindCalendar, before the registry), index.ts (threads, reminders, mocks over the registry)
+  composition/       the composition root (D25): ambient.ts (clock, ids), calendar.ts (the calendar over Postgres and bindCalendar, before the registry), index.ts (threads, reminders, mocks, assistant, scheduler over the registry)
+  scheduler/         model.ts (JobQueue, People), usecases.ts (createScheduler: nightly scan, undo and receipt timers), adapters/postgres.ts
   routes/            auth.ts, api.ts, connectors.ts     HTTP only: parse, validate, call one use case, map errors
   threads/           the stream (Clew core)
     model.ts         its ports: ThreadStore, ThreadTx, ReminderTimers (D25)
     usecases/        cards.ts, reminders.ts: scan into cards, act, undo, snooze, dismiss, reminders, attention; factories over the ports
-    adapters/        postgres.ts and temporal.ts (live), memory.ts (tests)
-  assistant/         router, model, chips, objects…     the composer's deterministic router and the optional model (D8)
-  temporal/          worker, workflows, activities      durable timers (D17)
+    adapters/        postgres.ts and temporal.ts (live), memory.ts (tests); ThreadTx.lockThread holds a row while a reminder surfaces
+  assistant/         index.ts (assistantUsecases), ports.ts (ModelProvider, AssistantDeps), router, model, verbs, chips, objects, fixed, completions; adapters/provider.ts (the model from the environment), adapters/memory.ts
+  temporal/          worker, workflows, activities      durable timers (D17); the activity is one line over reminders.surface from the composition root
   connectors/        platform: the connector registry and the remote transport
     registry.ts      the registry the BFF runs with: bundled connectors + remote connectors; runCapability, callFromConnector
     remote.ts        remote-connector configuration, assertions, loader (D21)

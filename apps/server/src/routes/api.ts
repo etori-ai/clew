@@ -7,15 +7,16 @@ import type { ConversationInput as ConversationInputType } from '@clew/contracts
 import type { ActInput as ActInputType } from '@clew/contracts';
 import { InputError, protectedRoute, type Env } from '../context';
 import { readFigures } from '../modules/figures/domain';
-import { ask, completionsFor, converse, listObjects, providerStatus, reply, verbsFor } from '../assistant';
+import { verbsFor } from '../assistant/verbs';
 import { registry, runCapability } from '../connectors/registry';
-import { calendar, mocks, reminders, threads } from '../composition';
+import { assistant, calendar, mocks, reminders, threads } from '../composition';
 import { Type } from '@sinclair/typebox';
 
 const { act, attentionFor, dismissAny, ensureThreads, listAreas, listThreadsFor, reopenThread, snoozeThread, threadFor, undoReceipt } = threads;
 const { cancelReminder, remind } = reminders;
 const { confirm, readToday, replan, samtalStatus, undo, weekOverview } = calendar;
 const { resetMocks } = mocks;
+const { ask, completionsFor, converse, listObjects, reply } = assistant;
 const ajv = addFormats(new Ajv({ allErrors: false }));
 const RemindInput = Type.Object({ seconds: Type.Integer({ minimum: 1, maximum: 86400 }) }, { additionalProperties: false });
 const CancelReminderInput = Type.Object({ workflowId: Type.String({ minLength: 1, maxLength: 200 }) }, { additionalProperties: false });
@@ -82,7 +83,7 @@ api.get('/threads/:id/verbs', async c => {
   const thread = await threadFor(c.get('session').context, c.req.param('id'));
   return thread ? c.json({ verbs: verbsFor(thread) }) : c.json({ error: 'Tråden finns inte.' }, 404);
 });
-api.get('/assistant/status', c => c.json(providerStatus()));
+api.get('/assistant/status', c => c.json(assistant.status()));
 api.post('/threads/:id/reopen', async c => c.json(await reopenThread(c.get('session').context, c.req.param('id'))));
 api.get('/today', async c => c.json(await readToday(c.get('session').context)));
 api.get('/figures', async c => { const persona = c.get('session').context; return c.json({ figures: readFigures(persona, await samtalStatus(persona), new Date().toISOString()) }); });

@@ -9,13 +9,14 @@ import { join, relative } from 'node:path';
 const root = join(import.meta.dirname, '..');
 const roots = ['apps/server/src', 'packages', 'connectors'];
 /** Pure by rule: every domain file, and every use case folder that has been ported to ports (D25). Grows as files are ported. */
-const covered = (path: string) => /(^|\/)domain(\.ts$|\/)/.test(path) || /^apps\/server\/src\/(threads|modules\/[^/]+)\/usecases/.test(path) || path === 'packages/calendar/src/proposals.ts';
+const covered = (path: string) => /(^|\/)domain(\.ts$|\/)/.test(path) || (/^apps\/server\/src\/(threads|modules\/[^/]+|scheduler|assistant)\//.test(path) && !/\/adapters\/|\/connector\.ts$/.test(path)) || path === 'packages/calendar/src/proposals.ts';
 const banned: Array<{ pattern: RegExp; why: string }> = [
   { pattern: /\bDate\.now\(/, why: 'reads the clock; take `clock()` from deps' },
   { pattern: /\bnew Date\(\)/, why: 'reads the clock; take `clock()` from deps' },
   { pattern: /\bprocess\.env\b/, why: 'reads configuration; the composition root passes it in' },
   { pattern: /\brandomUUID\(/, why: 'draws an id; take `ids()` from deps' },
   { pattern: /\bMath\.random\(/, why: 'is nondeterministic; take it from deps' },
+  { pattern: /\btoday\(\)|\bisPast\(/, why: 'reads the clock through @clew/calendar/dates; derive the date from `clock()`' },
 ];
 function* files(dir: string): Generator<string> {
   for (const name of readdirSync(dir)) {

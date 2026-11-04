@@ -26,7 +26,7 @@ const weekStartMismatch = (week: string) => { try { const d = new Date(week + 'T
 export function calendarUsecases(deps: CalendarDeps) {
   const { store, bind, clock, ids } = deps;
   const principal = (persona: AuthenticatedContext) => persona.principal.id;
-  const today = () => displayDate(clock().toISOString());
+  const todayDate = () => displayDate(clock().toISOString());
   const thread = async (persona: Pick<AuthenticatedContext, 'id'>, threadId: string) => (await store.readThread(persona.id, threadId))!.thread;
 
   async function listWeek(persona: AuthenticatedContext, from: string, days = 7) {
@@ -35,13 +35,13 @@ export function calendarUsecases(deps: CalendarDeps) {
     return { binding, events, view: events.map(e => toEvent(e, binding, persona.name)) };
   }
   async function readToday(persona: AuthenticatedContext): Promise<TodayView> {
-    const date = today();
+    const date = todayDate();
     const { view } = await listWeek(persona, date, 1);
     return { date, events: view, gaps: freeGaps(date, view.filter(e => !e.allDay)) };
   }
   /** The week's events for the agenda and the model; `from` is any date in the week, this week when absent. */
   async function weekView(persona: AuthenticatedContext, from?: string): Promise<Omit<WeekView, 'proposals'>> {
-    const start = weekStart(from && /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : today());
+    const start = weekStart(from && /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : todayDate());
     return { from: start, events: (await listWeek(persona, start, 7)).view };
   }
   /** The week view with the person's live proposals for the agenda. */
@@ -52,7 +52,7 @@ export function calendarUsecases(deps: CalendarDeps) {
   async function heldSamtal(persona: AuthenticatedContext) {
     const binding = bind(persona);
     // The provider caps a read at 32 days: from the start of this week to the day after the deadline.
-    const events = await binding.provider.list(dayStart(weekStart(today())), dayStart(addDays(DEADLINE, 1)));
+    const events = await binding.provider.list(dayStart(weekStart(todayDate())), dayStart(addDays(DEADLINE, 1)));
     return { binding, done: heldAddresses(events) };
   }
   /** What the nightly scan knows: who still lacks a samtal, and which proposals already exist. */
@@ -114,7 +114,7 @@ export function calendarUsecases(deps: CalendarDeps) {
       }
       return existing.thread;
     }
-    const week = nextWeekStart(today());
+    const week = nextWeekStart(todayDate());
     const { members, planned } = await draw(persona, week);
     if (!members.length) return undefined;
     const at = clock().toISOString(), id = ids();
@@ -134,7 +134,7 @@ export function calendarUsecases(deps: CalendarDeps) {
   async function replan(persona: AuthenticatedContext, threadId: string, week: string) {
     const current = await store.readThread(persona.id, threadId);
     if (!current || current.thread.state !== 'open') throw new InputError('Tråden är redan hanterad.');
-    if (Date.parse(dayStart(week)) < Date.parse(dayStart(today())) || weekStartMismatch(week)) throw new InputError('Välj en kommande vecka.');
+    if (Date.parse(dayStart(week)) < Date.parse(dayStart(todayDate())) || weekStartMismatch(week)) throw new InputError('Välj en kommande vecka.');
     const { members, planned } = await draw(persona, week, threadId);
     const at = clock().toISOString();
     await store.transaction(async tx => {

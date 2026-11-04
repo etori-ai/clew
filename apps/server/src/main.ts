@@ -6,8 +6,7 @@ import { api } from './routes/api';
 import { connectorRoutes } from './routes/connectors';
 import { registry } from './connectors/registry';
 import { loadConnectors } from './connectors/remote';
-import { startScheduler } from './scheduler';
-import { startAssistantProbe } from './assistant';
+import { scheduler, startAssistantProbe } from './composition';
 import { startWorker } from './temporal/worker';
 import { failure } from './context';
 
@@ -28,7 +27,7 @@ const port = Number(process.env.PORT ?? 3000);
 // Loopback by default (Vite proxies to it in dev); a container stack sets HOST=0.0.0.0 so connector services can call back.
 serve({ fetch: app.fetch, port, hostname: process.env.HOST ?? '127.0.0.1' }, info => {
   console.log(`Clew BFF listening on http://${info.address}:${info.port}`);
-  startScheduler();
+  scheduler.start();
   startAssistantProbe();
   void startWorker();
   void loadConnectors(registry).catch(error => console.error('connectors', error));

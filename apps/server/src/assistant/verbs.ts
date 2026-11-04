@@ -1,5 +1,5 @@
 import type { Thread, ThreadItem, Verb } from '@clew/contracts';
-import { addDays, mondayOfWeek, today, weekNumber, weekStart } from '@clew/calendar/dates';
+import { addDays, mondayOfWeek, weekNumber, weekStart } from '@clew/calendar/dates';
 
 /**
  * Verbs about one chipped object (D12). They come from the object's actions and Clew's standard actions, never from
@@ -35,9 +35,9 @@ function namedItems(rest: string, items: ThreadItem[]) {
 }
 /**
  * Read a verb out of free text about the chipped thread. No match returns undefined and the caller may ask the
- * model or the router with the chip as context.
+ * model or the router with the chip as context. `today` (YYYY-MM-DD) decides which "vecka 47" is still ahead.
  */
-export function parseVerb(text: string, thread: Thread): Verb | undefined {
+export function parseVerb(text: string, thread: Thread, today: string): Verb | undefined {
   const q = normalise(text);
   if (thread.state !== 'open') return undefined;
   if (/^(avfärda|ta bort kortet|inte aktuellt)/.test(q) || /\bavfärda\b/.test(q)) return { id: 'dismiss', label: 'Avfärda det', kind: 'dismiss', threadId: thread.id };
@@ -47,7 +47,7 @@ export function parseVerb(text: string, thread: Thread): Verb | undefined {
   if (week && thread.week && thread.proposals.length) {
     const n = Number(week[1]);
     const year = Number(thread.week.slice(0, 4));
-    const candidates = [mondayOfWeek(year, n), mondayOfWeek(year + 1, n)].filter(w => Date.parse(w) >= Date.parse(weekStart(today())));
+    const candidates = [mondayOfWeek(year, n), mondayOfWeek(year + 1, n)].filter(w => Date.parse(w) >= Date.parse(weekStart(today)));
     if (candidates.length) return { id: `week-${n}`, label: `Vecka ${n} i stället`, kind: 'replan', threadId: thread.id, week: candidates[0]! };
   }
   if (/\bnästa vecka\b/.test(q) && thread.week && thread.proposals.length) {

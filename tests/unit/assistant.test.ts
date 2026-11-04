@@ -14,6 +14,7 @@ const hillevi: Actor = { id: 'hillevi', name: 'Hillevi Berg', unitId: 'unit-skol
 const hassan: Actor = { id: 'hassan', name: 'Hassan Ali', unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'employee' };
 const registry = () => { const state = memoryState(); const r = new Registry(); for (const m of [heromaConnector(state), raindanceConnector(state), treservaConnector(state)]) r.register(m); return r; };
 const now = '2026-11-03T07:40:00.000Z';
+const today = '2026-11-03';
 const card: Thread = {
   id: 'c1', kind: 'pushed', topic: 'raindance:invoices', title: 'Attestera 3 fakturor, 37 050 kr', state: 'open', trigger: { reason: 'Den första förfaller 5 nov', source: 'Raindance', at: now },
   createdAt: now, updatedAt: now, handledAt: null, messages: [], proposals: [], week: null, connector: 'raindance', area: 'budget', summary: 'Tre fakturor väntar.',
@@ -52,16 +53,16 @@ describe('verbs about a chipped card come from its actions, never the model', ()
     expect(verbsFor({ ...card, state: 'handled' })).toEqual([]);
   });
   test('free text about the card parses to one verb, or nothing', () => {
-    expect(parseVerb('avfärda det', card)?.kind).toBe('dismiss');
-    expect(parseVerb('Inte nu, ta det i morgon', card)?.kind).toBe('snooze');
-    expect(parseVerb('varför ser jag detta?', card)?.kind).toBe('why');
-    expect(parseVerb('attestera bara Lekolar', card)?.refs).toEqual(['raindance:inv:55120', 'raindance:inv:55121']);
-    expect(parseVerb('skicka bara Anna och Johan', samtal)?.refs).toEqual(['proposal:p1', 'proposal:p2']);
-    const replan = parseVerb('vecka 47 i stället', samtal);
+    expect(parseVerb('avfärda det', card, today)?.kind).toBe('dismiss');
+    expect(parseVerb('Inte nu, ta det i morgon', card, today)?.kind).toBe('snooze');
+    expect(parseVerb('varför ser jag detta?', card, today)?.kind).toBe('why');
+    expect(parseVerb('attestera bara Lekolar', card, today)?.refs).toEqual(['raindance:inv:55120', 'raindance:inv:55121']);
+    expect(parseVerb('skicka bara Anna och Johan', samtal, today)?.refs).toEqual(['proposal:p1', 'proposal:p2']);
+    const replan = parseVerb('vecka 47 i stället', samtal, today);
     expect(replan?.kind).toBe('replan');
     expect(replan?.week).toBe('2026-11-16');
-    expect(parseVerb('vecka 47 i stället', card)).toBeUndefined();
-    expect(parseVerb('hur många fakturor är det?', card)).toBeUndefined();
+    expect(parseVerb('vecka 47 i stället', card, today)).toBeUndefined();
+    expect(parseVerb('hur många fakturor är det?', card, today)).toBeUndefined();
   });
   test('a draft selects the named rows and leaves non-selectable rows alone', () => {
     const items = draftSelection([...card.items, { ref: 'x', label: 'Fast rad', detail: '', selectable: false, selected: true }], ['raindance:inv:55140']);

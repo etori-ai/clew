@@ -21,6 +21,15 @@ async function read(db: Transaction | ReturnType<typeof database>, where: Return
   return toThread(row, messages, proposalRows);
 }
 const txOf = (tx: Transaction): ThreadTx => ({
+  async lockThread(personId, id) {
+    const [row] = await tx.select().from(threads).where(and(eq(threads.id, id), eq(threads.personId, personId))).for('update');
+    if (!row) return undefined;
+    const [messages, proposalRows] = await Promise.all([
+      tx.select().from(threadMessages).where(eq(threadMessages.threadId, id)).orderBy(threadMessages.createdAt),
+      tx.select().from(proposals).where(eq(proposals.threadId, id)).orderBy(proposals.start),
+    ]);
+    return toThread(row, messages, proposalRows);
+  },
   async insertThread(thread) {
     const { personId, ...t } = thread;
     const inserted = await tx.insert(threads).values({ id: t.id, personId, kind: t.kind, topic: t.topic, title: t.title, state: t.state, week: t.week, connector: t.connector, area: t.area,

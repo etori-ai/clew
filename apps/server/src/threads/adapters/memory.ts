@@ -20,6 +20,7 @@ export function memoryThreadStore(): MemoryThreadStore {
   const copy = <T>(value: T): T => structuredClone(value);
   const own = (personId: string, id: string) => { const row = threads.get(id); return row && row.personId === personId ? row : undefined; };
   const tx: ThreadTx = {
+    async lockThread(personId, id) { const row = own(personId, id); return row ? copy(row.thread) : undefined; },
     async insertThread(thread) {
       const { personId, ...rest } = thread;
       const clash = [...threads.values()].some(r => r.personId === personId && r.thread.topic === rest.topic && r.thread.state === 'open' && r.thread.kind === 'pushed');

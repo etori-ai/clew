@@ -42,7 +42,7 @@ export function systemPrompt(ctx: PromptContext): string {
 }
 export type ModelGenerate = (request: { system: string; messages: ModelMessage[]; tools: ToolSet; timeoutMs: number }) => Promise<{ text: string; toolCalls: ToolCallRecord[] }>;
 /** The provider from the environment, or undefined when the model is not configured. The system runs fully without it (D8). */
-export function createProvider(env: Record<string, string | undefined> = process.env, fetchImpl?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>): { generate: ModelGenerate; model: string; baseURL: string; apiKey: string | undefined } | undefined {
+export function createProvider(env: Record<string, string | undefined>, fetchImpl?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>): { generate: ModelGenerate; model: string; baseURL: string; apiKey: string | undefined } | undefined {
   const baseURL = env.AI_BASE_URL?.trim();
   if (!baseURL) return undefined;
   const model = env.AI_MODEL?.trim();

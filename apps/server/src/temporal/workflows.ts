@@ -1,20 +1,14 @@
 /**
  * Workflow code. This file runs inside Temporal's deterministic sandbox: it may import only `@temporalio/workflow`
- * and types. Side effects happen in activities (`activities.ts`), which run in Node with the database.
+ * and types. Side effects happen in activities (`activities.ts`), which run in Node with the live adapters.
  */
 import { condition, defineSignal, proxyActivities, setHandler } from '@temporalio/workflow';
 import type * as activities from './activities';
+import type { ReminderInput } from '../threads/model';
 
 const { surfaceReminder } = proxyActivities<typeof activities>({ startToCloseTimeout: '1 minute', retry: { maximumAttempts: 5 } });
 
-export interface ReminderInput {
-  personId: string;
-  threadId: string;
-  title: string;
-  area: string;
-  seconds: number;
-  requestedAt: string;
-}
+export type { ReminderInput };
 /** "Glöm det": a reminder can be cancelled until it fires. */
 export const cancelReminder = defineSignal('cancel');
 

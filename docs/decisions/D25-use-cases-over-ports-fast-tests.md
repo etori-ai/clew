@@ -6,8 +6,11 @@
 configuration on its own. It is built by a factory that receives those as ports: `threadUsecases(deps)` and
 `reminderUsecases(deps)` in `apps/server/src/threads/usecases/` over `threads/model.ts` (`ThreadStore`, `ThreadTx`,
 `ReminderTimers`), `calendarUsecases(deps)` in `modules/calendar/usecases/samtal.ts` over `modules/calendar/model.ts`
-(`ProposalStore`, `ProposalTx`, `CalendarBinder`) and the `CalendarProvider` port from D11, and `mockUsecases(deps)`
-over `modules/mocks/model.ts`; `clock()` and `ids()` are plain functions in `deps`. `apps/server/src/composition/`
+(`ProposalStore`, `ProposalTx`, `CalendarBinder`) and the `CalendarProvider` port from D11, `mockUsecases(deps)`
+over `modules/mocks/model.ts`, `createScheduler(deps)` in `scheduler/usecases.ts` over `scheduler/model.ts`
+(`JobQueue`, `People`) and `assistantUsecases(deps)` in `assistant/index.ts` over `assistant/ports.ts`
+(`ModelProvider`) and the thread store; `clock()` and `ids()` are plain functions in `deps`. The Temporal activity
+`surfaceReminder` is `reminders.surface` from the composition root, over `ThreadTx.lockThread`. `apps/server/src/composition/`
 is the one place that pairs use cases with their live adapters (`*/adapters/postgres.ts`, `threads/adapters/temporal.ts`,
 the cached `bindCalendar`): `calendar.ts` first, because the registry builds the calendar connector over those use
 cases, then `index.ts` for the stream over the registry. Routes, the scheduler, the assistant and the registry import
@@ -48,6 +51,5 @@ is meant to expose.
 **Replaces.** Nothing. It narrows D20's import table: a use case may no longer import `@clew/db` or an adapter;
 it imports its ports and gets the adapter from `composition/`. The D20 debt item "`threads/usecases/cards.ts`
 imports the calendar's proposal use cases" is now a `deps.calendar` port handed in by the composition root, still
-a coupling, now in one visible place. Still writing threads directly, outside any `usecases` folder and recorded in
-`testing.md` as next: `temporal/activities.ts` (`surfaceReminder`, an adapter by D20) and the clock reads in
-`packages/calendar/src/dates.ts` (`today()`, `isPast()`).
+a coupling, now in one visible place. What stays outside the pattern on purpose is listed at the end of
+`testing.md`: identity and connector loading (platform code over `@clew/db`), and the connector descriptors.

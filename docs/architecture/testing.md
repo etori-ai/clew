@@ -87,21 +87,26 @@ sh scripts/a11y.sh                                           # the WCAG suite
 bun scripts/modules-check.ts                                 # the smoke script on the host, against the dev stack
 ```
 
-## What is ported and what is next
+## What is ported
 
-Every `usecases` folder is over ports (D25): `threads/usecases/{cards,reminders}.ts` over `threads/model.ts`,
-`modules/calendar/usecases/samtal.ts` over `modules/calendar/model.ts` and the `CalendarProvider` port, and
-`modules/mocks/usecases.ts` over `modules/mocks/model.ts`; each with `adapters/postgres.ts` (and `temporal.ts` for
-the timers) beside `adapters/memory.ts`, wired in `apps/server/src/composition/`.
+Everything in the server that holds logic is over ports (D25), each with `adapters/postgres.ts` (plus `temporal.ts`
+or `provider.ts` where a service is involved) beside `adapters/memory.ts`, wired in `apps/server/src/composition/`:
 
-Next, each with its scenario tests and a contract case where a port grows:
+| Folder | Factory | Ports (`model.ts` or `ports.ts`) | Scenario tests |
+|---|---|---|---|
+| `threads/usecases/` | `threadUsecases`, `reminderUsecases` (including `surface`, the Temporal activity's body) | `ThreadStore`, `ThreadTx` (with `lockThread`), `ReminderTimers` | `tests/unit/threads.test.ts` |
+| `modules/calendar/usecases/` | `calendarUsecases` | `ProposalStore`, `CalendarBinder`, `CalendarProvider` (D11) | `tests/unit/samtal.test.ts` |
+| `modules/mocks/` | `mockUsecases` | `MockResetStore` | (dev reset, covered by the smoke script) |
+| `scheduler/` | `createScheduler` | `JobQueue`, `People` | `tests/unit/scheduler.test.ts` |
+| `assistant/` | `assistantUsecases` | `ThreadStore`, `ModelProvider` | `tests/unit/conversation.test.ts` |
 
-1. `temporal/activities.ts` (`surfaceReminder`) writes threads directly; it is an adapter by D20 and may, but the
-   reminder's return is untested until it goes over `ThreadStore`.
-2. `packages/calendar/src/dates.ts`: `today()` and `isPast()` read the clock; callers pass `now` instead. The
-   assistant still uses `today()`.
-3. The assistant: its model provider is already a port; the fixed answers and chips call the calendar use cases
-   from the composition root, which a test can replace with memory ones once the assistant is a factory too.
+`temporal/activities.ts` and `temporal/workflows.ts` are thin: the activity calls `reminders.surface` from the
+composition root, the workflow proxies it. `today()` and `isPast()` in `@clew/calendar/dates` are for the browser;
+the server derives the date from `clock()` and the purity guard refuses them.
+
+Still outside the pattern, on purpose: `auth.ts`, `system-context.ts` and `connectors/remote.ts` (identity and
+connector loading, platform code over `@clew/db` directly) and the connector descriptors `modules/*/connector.ts`
+(`people` reads the grant tables; it is Clew's own core record and has no port yet).
 
 When integration tests are the right answer: proving a query against the real database (the contract), a protocol
 against a recorded response (fixtures), and the stack end to end before a release (the smoke script, by hand).
