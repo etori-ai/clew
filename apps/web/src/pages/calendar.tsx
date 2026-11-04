@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CalendarEvent, Proposal, SessionUser, Thread } from '@clew/contracts';
-import { Badge, Button, ChatComposer, CheckboxList, CheckboxListItem, Divider, EventCalendar, Heading, HStack, Icon, IconButton, Layout, LayoutContent, LayoutHeader, LayoutPanel, StatusDot, Text, VStack, WeekAgenda, useMediaQuery, type AgendaItem } from '@clew/ui';
+import { Badge, Button, ChatComposer, CheckboxList, CheckboxListItem, EventCalendar, Heading, HStack, Icon, IconButton, Layout, LayoutContent, LayoutFooter, LayoutHeader, LayoutPanel, StatusDot, Text, Toolbar, VStack, WeekAgenda, useMediaQuery, type AgendaItem } from '@clew/ui';
 import { addDays, rangeLabel, shortDayLabel, timeRange, today, weekNumber, weekStart } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
 import { usePageTitle } from '../page-title';
@@ -40,7 +40,8 @@ export function CalendarPage({ user }: { user: SessionUser }) {
   const undoOpen = !!undoUntil && Date.parse(undoUntil) > Date.now() && !!thread?.proposals.some(p => p.status === 'confirmed');
   const lead = thread?.messages.find(m => m.role === 'assistant')?.body.split(/(?<=[.!?])\s/)[0];
   const plural = selected.length === 1 ? 'inbjudan' : 'inbjudningar';
-  const panel = thread && <VStack gap={3}>
+  // The panel is its own Layout (side-panels guide): the lead and the list scroll, the reply field is the pinned footer.
+  const panelBody = thread && <VStack gap={3}>
     <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
       {open ? <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Förslag att bekräfta" /> : <Text type="supporting" weight="semibold">Hanterad</Text>}
       {open && <Text type="supporting">{selected.length} av {proposed.length} valda</Text>}
@@ -57,30 +58,30 @@ export function CalendarPage({ user }: { user: SessionUser }) {
       {open && <Button variant="primary" label={`Skicka ${selected.length} ${plural}`} isDisabled={!selected.length} clickAction={() => run(() => api.confirm(thread.id, selected))} />}
       {open && thread.week && <Button label="Föreslå andra tider" clickAction={() => run(() => api.replan(thread.id, addDays(thread.week!, 7)))} />}
       {undoOpen && <Button variant="destructive" label="Ångra" clickAction={() => run(() => api.undo(thread.id))} />}
-      {thread.week && thread.week !== from && <Button variant="ghost" size="sm" label={`Visa vecka ${weekNumber(thread.week)}`} onClick={() => setFrom(thread.week!)} />}
+      {thread.week && thread.week !== from && <Button variant="ghost" label={`Visa vecka ${weekNumber(thread.week)}`} onClick={() => setFrom(thread.week!)} />}
     </HStack>
-    <Divider />
-    <ChatComposer density="compact" elevation="none" isDisabled={busy} placeholder="Svara här" onSubmit={text => { const body = text.trim(); if (body) void run(() => api.reply(thread.id, body)); }} />
   </VStack>;
+  const reply = thread && <ChatComposer density="compact" elevation="none" isDisabled={busy} placeholder="Svara här" onSubmit={text => { const body = text.trim(); if (body) void run(() => api.reply(thread.id, body)); }} />;
+  const panel = thread && <Layout height="fill" padding={0} content={<LayoutContent>{panelBody}</LayoutContent>} footer={<LayoutFooter hasDivider>{reply}</LayoutFooter>} />;
+  // The header carries controls, so it is a Toolbar (headers-and-footers guide); the Dag/Vecka/Månad switch and Ny bokning join it when D27 builds them.
   return <Shell user={user} current="kalender"><Layout height="fill" padding={mobile ? 3 : 4}
-    header={<LayoutHeader hasDivider>
-      <HStack gap={2} vAlign="center" wrap="wrap">
+    header={<LayoutHeader hasDivider><Toolbar label="Vecka" size="sm"
+      startContent={<HStack gap={3} vAlign="center" wrap="wrap">
         <Heading level={1}>Vecka {weekNumber(from)} · {rangeLabel(from, 5)}</Heading>
         <HStack gap={1} vAlign="center" role="group" aria-label="Byt vecka">
           <IconButton label="Förra veckan" icon={<Icon icon="chevronLeft" />} variant="ghost" size="sm" onClick={() => setFrom(addDays(from, -7))} />
           <Button variant="ghost" size="sm" label="I dag" onClick={() => setFrom(weekStart(today()))} />
           <IconButton label="Nästa vecka" icon={<Icon icon="chevronRight" />} variant="ghost" size="sm" onClick={() => setFrom(addDays(from, 7))} />
         </HStack>
-      </HStack>
-    </LayoutHeader>}
-    end={!mobile && thread ? <LayoutPanel width={380} hasDivider role="complementary" label="Förslag">{panel}</LayoutPanel> : undefined}
+      </HStack>} /></LayoutHeader>}
+    end={!mobile && thread ? <LayoutPanel width={380} hasDivider role="complementary" label="Förslag" padding={0} isScrollable={false}>{panel}</LayoutPanel> : undefined}
     content={<LayoutContent>
       <VStack gap={4}>
         {!thread && error && <Text as="p" role="alert" color="accent">{error}</Text>}
         {mobile
           ? <WeekAgenda week={from} days={5} items={items} detailed dayHeadingLevel={2} label={`Vecka ${weekNumber(from)}`} />
           : <EventCalendar view="timeGridWeek" date={from} items={items} label={`Vecka ${weekNumber(from)}`} dayHeadingLevel={2} />}
-        {mobile && panel}
+        {mobile && thread && <VStack gap={3} as="section" aria-label="Förslag">{panelBody}{reply}</VStack>}
       </VStack>
     </LayoutContent>} /></Shell>;
 }
