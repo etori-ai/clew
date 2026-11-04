@@ -1,4 +1,4 @@
-import { actorOf, inScope } from '@clew/connectors';
+import { actorOf } from '@clew/connectors';
 import type { AuthenticatedContext, CalendarEvent, Chip, Thread } from '@clew/contracts';
 import { displayDate, weekStart } from '@clew/calendar/dates';
 import { InputError } from '../context';
@@ -43,8 +43,8 @@ export async function resolveChips(deps: AssistantDeps, persona: AuthenticatedCo
       objects.push({ kind: 'event', ref: chip.ref, event });
     } else {
       const name = chip.ref.replace(/^capability:/, '');
-      const found = deps.registry.find(name);
-      if (!found || !inScope(found.capability.scope, actorOf(persona))) throw gone();
+      const found = deps.registry.allowed(actorOf(persona), name);
+      if (!found) throw gone();
       objects.push({ kind: 'capability', ref: chip.ref, name, title: found.capability.title, source: found.connector.source });
     }
   }

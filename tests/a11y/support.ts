@@ -1,7 +1,7 @@
 import { test as base, expect, type Page, type Route } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import type { Thread } from '@clew/contracts';
-import { NOW, areas, attention, conversation, events, threads, today, user } from './data';
+import { NOW, areas, attention, checkReport, connectorDetail, connectorPreview, connectors, conversation, events, threads, today, units, user } from './data';
 
 export const desktop = { width: 1280, height: 800 };
 export const phone = { width: 375, height: 667 };
@@ -10,6 +10,7 @@ export const narrow = { width: 320, height: 640 };
 export const short = { width: 320, height: 256 };
 
 const session = { csrfToken: 'test', sessionKey: 'test', expiresAt: '2026-11-04T16:00:00.000Z', user };
+import type { ConnectorSummary } from '@clew/contracts';
 
 /** The API as the browser sees it, held in memory per test. `/api/**` never leaves the page. */
 export class MockApi {
@@ -17,6 +18,9 @@ export class MockApi {
   answerDelay = 0;
   sessionDelay = 0;
   signedIn = true;
+  /** The session says the person may administer connectors (D23). Off by default so the other suites see the ordinary page. */
+  admin = false;
+  connectors: ConnectorSummary[] = connectors();
   output: unknown = { date: '2026-11-04', onDuty: ['Anna Lindqvist 07:00–16:00'], absent: [{ name: 'Sara Nyström', kind: 'short' }] };
   unmocked: string[] = [];
   private update(id: string, change: Partial<Thread>) {
@@ -29,9 +33,34 @@ export class MockApi {
     const id = path.split('/')[2] ?? '';
     if (path === '/auth/session') {
       if (this.sessionDelay) await new Promise(resolve => setTimeout(resolve, this.sessionDelay));
-      return this.signedIn ? json(session) : route.fulfill({ status: 401, json: { error: 'Ingen session' } });
+      return this.signedIn ? json({ ...session, admin: this.admin }) : route.fulfill({ status: 401, json: { error: 'Ingen session' } });
     }
     if (path === '/auth/activity') return json({ expiresAt: session.expiresAt });
+    if (path.startsWith('/admin/')) {
+      if (!this.admin) return route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } });
+      const method = request.method();
+      const cid = path.split('/')[3] ?? '';
+      const found = () => this.connectors.find(c => c.id === cid);
+      if (path === '/admin/units') return json({ units });
+      if (path === '/admin/connectors' && method === 'GET') return json({ connectors: this.connectors });
+      if (path === '/admin/connectors' && method === 'POST') {
+        const input = request.postDataJSON() as { id: string; url: string };
+        const c: ConnectorSummary = { ...connectorDetail({ ...this.connectors[2]!, id: input.id, source: 'Nytt system', url: input.url, state: 'draft', registered: false, health: { status: 'ok', at: NOW } }) };
+        this.connectors = [...this.connectors, c];
+        return route.fulfill({ status: 201, json: { connector: connectorDetail(c), report: { ok: true, findings: checkReport.findings.filter(f => f.level === 'ok') } } });
+      }
+      if (path === `/admin/connectors/${cid}/test`) return json({ ...checkReport, health: { status: 'secret-rejected', at: NOW } });
+      if (path === `/admin/connectors/${cid}/refresh`) { const c = found(); return c ? json({ diff: { added: ['hello.remind'], removed: ['hello.openItems'], changed: [], areasAdded: [], areasRemoved: [], same: false }, connector: connectorDetail(c) }) : route.fulfill({ status: 400, json: { error: 'Anslutningen finns inte.' } }); }
+      if (path === `/admin/connectors/${cid}/preview`) return json(connectorPreview(url.searchParams.get('role') === 'employee' ? 'employee' : 'manager'));
+      if (path === `/admin/connectors/${cid}/secret`) { const c = found(); return c ? json(connectorDetail({ ...c, secretChangedAt: NOW })) : route.fulfill({ status: 400, json: { error: 'Anslutningen finns inte.' } }); }
+      if (path === `/admin/connectors/${cid}`) {
+        const c = found();
+        if (!c) return route.fulfill({ status: 400, json: { error: 'Anslutningen finns inte.' } });
+        if (method === 'DELETE') { this.connectors = this.connectors.filter(x => x.id !== cid); return json({ closedCards: 1 }); }
+        if (method === 'PATCH') { const patch = request.postDataJSON() as Partial<ConnectorSummary>; const next = { ...c, ...('state' in patch ? { state: patch.state! } : {}), ...('audience' in patch ? { audience: patch.audience! } : {}), ...('scanEnabled' in patch ? { scanEnabled: patch.scanEnabled! } : {}), ...('toolsEnabled' in patch ? { toolsEnabled: patch.toolsEnabled! } : {}), updatedAt: NOW }; this.connectors = this.connectors.map(x => x.id === cid ? next : x); return json(connectorDetail(next)); }
+        return json(connectorDetail(c));
+      }
+    }
     if (path === '/threads') return json({ threads: this.threads });
     if (path === '/areas') return json({ areas });
     if (path === '/today') return json(today);

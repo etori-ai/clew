@@ -20,7 +20,7 @@ module.exports = {
     { name: 'modules-do-not-import-the-platform', comment: 'A module knows its contract, the registry handle and its adapter, never routes, the stream or the assistant. The connector registry is platform code and is kept out of modules/ for that reason.',
       severity: 'error', from: { path: '^apps/server/src/modules/' }, to: { path: '^apps/server/src/(routes|threads|assistant|temporal|scheduler|main)' } },
     { name: 'usecases-reach-stores-through-ports', comment: 'A use case depends on the ports in its model.ts, never on Drizzle, Postgres, Temporal or an adapter (D25). The live adapters are paired in composition/. Connector descriptors (connector.ts) and adapters are the exceptions.',
-      severity: 'error', from: { path: '^apps/server/src/(threads|modules/[^/]+|scheduler|assistant)/', pathNot: '/adapters/|/connector\\.ts$' }, to: { path: store + '|' + timers + '|' + adapters + '|' + liveAdapters } },
+      severity: 'error', from: { path: '^apps/server/src/(threads|modules/[^/]+|scheduler|assistant|connectors/usecases)/', pathNot: '/adapters/|/connector\\.ts$' }, to: { path: store + '|' + timers + '|' + adapters + '|' + liveAdapters } },
     { name: 'unit-tests-stay-fast', comment: 'tests/unit runs without Postgres, Temporal or a network (D25): it imports use cases, domain and the memory adapters, never a live adapter or the composition root.',
       severity: 'error', from: { path: '^tests/unit/' }, to: { path: store + '|' + timers + '|' + liveAdapters, pathNot: '^packages/db/src/schema\\.ts$' } },
     { name: 'packages-do-not-import-apps', severity: 'error', from: { path: '^packages/' }, to: { path: '^apps/' } },

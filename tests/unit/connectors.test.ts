@@ -92,7 +92,7 @@ describe('connectors reach each other only through the registry (D20)', () => {
   });
   test('a connector can never execute in another connector', async () => {
     const { r } = registry(); composite(r);
-    await expect(r.run(hillevi, 'comp.tryExecute', {})).rejects.toThrow(/annan modul/);
+    await expect(r.run(hillevi, 'comp.tryExecute', {})).rejects.toThrow(/annan anslutning/);
   });
   test('declarative scope: no roles means everyone, roles narrow', () => {
     const { r } = registry(); composite(r);
@@ -112,5 +112,65 @@ describe('the registry changes without a restart (D23)', () => {
     expect(r.unregister('heroma')).toBe(true);
     expect(names()).not.toContain('heroma');
     expect(r.find('heroma.ping')).toBeUndefined();
+  });
+});
+
+describe('governance: an administrator decides who sees a connector (D23)', () => {
+  const hassanIt = { ...hassan, unitId: 'unit-it' };
+  test('outside the audience a connector does not exist: no area, no tool, no capability, and a call reads like an unknown capability', async () => {
+    const { r } = registry();
+    r.govern('raindance', { state: 'enabled', audience: { mode: 'selected', roles: ['manager'] }, scanEnabled: true, toolsEnabled: true, capabilities: {} });
+    expect(r.visible(hillevi, 'raindance')).toBe(true);
+    expect(r.visible(hassan, 'raindance')).toBe(false);
+    expect((await r.areas(hassan)).some(a => a.connector === 'raindance')).toBe(false);
+    expect(r.tools(hassan).some(t => t.name.startsWith('raindance.'))).toBe(false);
+    expect(r.capabilitiesFor(hassan).some(c => c.connector.id === 'raindance')).toBe(false);
+    expect(r.listFor(hassan).map(c => c.id)).not.toContain('raindance');
+    await expect(r.run(hassan, 'raindance.budget', {})).rejects.toThrow('Okänd förmåga.');
+    await expect(r.run(hassan, 'raindance.nope', {})).rejects.toThrow('Okänd förmåga.');
+    expect((await r.scan(hassan)).some(d => d.connector === 'raindance')).toBe(false);
+    expect(r.listFor(hillevi).map(c => c.id)).toContain('raindance');
+  });
+  test('a unit in the audience is enough; the connector\'s own scope still applies on top', async () => {
+    const { r } = registry();
+    r.govern('heroma', { state: 'enabled', audience: { mode: 'selected', units: ['unit-it'] }, scanEnabled: true, toolsEnabled: true, capabilities: {} });
+    expect(r.visible(hassan, 'heroma')).toBe(false);
+    expect(r.visible(hassanIt, 'heroma')).toBe(true);
+    await expect(r.run(hassanIt, 'heroma.absenceOverview', {})).rejects.toThrow(/behörighet/);
+  });
+  test('disabled or draft hides the connector from everyone; enabling it again brings it back without re-registering', async () => {
+    const { r } = registry();
+    const g = { audience: { mode: 'all' as const }, scanEnabled: true, toolsEnabled: true, capabilities: {} };
+    r.govern('heroma', { ...g, state: 'disabled' });
+    expect(r.visible(hillevi, 'heroma')).toBe(false);
+    await expect(r.run(hillevi, 'heroma.whoIsOn', {})).rejects.toThrow('Okänd förmåga.');
+    r.govern('heroma', { ...g, state: 'enabled' });
+    expect(r.visible(hillevi, 'heroma')).toBe(true);
+    expect(r.connector('heroma')?.source).toBe('Heroma');
+  });
+  test('a switched-off capability leaves standing actions, tools and run; a tool switch only removes the tool; the scan switch stops the cards', async () => {
+    const { r } = registry();
+    const before = r.tools(hillevi).map(t => t.name);
+    expect(before).toContain('heroma.whoIsOn');
+    r.govern('heroma', { state: 'enabled', audience: { mode: 'all' }, scanEnabled: false, toolsEnabled: true, capabilities: { 'heroma.whoIsOn': { enabled: false }, 'heroma.absenceOverview': { model: false } } });
+    expect(r.tools(hillevi).map(t => t.name)).not.toContain('heroma.whoIsOn');
+    expect(r.tools(hillevi).map(t => t.name)).not.toContain('heroma.absenceOverview');
+    await expect(r.run(hillevi, 'heroma.whoIsOn', {})).rejects.toThrow('Okänd förmåga.');
+    expect(await r.run(hillevi, 'heroma.absenceOverview', {})).toMatchObject({ rows: expect.any(Array) });
+    expect((await r.areas(hillevi)).flatMap(a => a.standing.map(s => s.capability))).not.toContain('heroma.whoIsOn');
+    expect((await r.scan(hillevi)).some(d => d.connector === 'heroma')).toBe(false);
+    r.govern('heroma', { state: 'enabled', audience: { mode: 'all' }, scanEnabled: true, toolsEnabled: false, capabilities: {} });
+    expect(r.tools(hillevi).some(t => t.name.startsWith('heroma.'))).toBe(false);
+    expect(await r.run(hillevi, 'heroma.whoIsOn', {})).toMatchObject({ date: expect.any(String) });
+  });
+  test('governance survives a replace and is forgotten on unregister; an ungoverned connector is open to everyone', () => {
+    const { r } = registry();
+    r.govern('heroma', { state: 'disabled', audience: { mode: 'all' }, scanEnabled: true, toolsEnabled: true, capabilities: {} });
+    r.replace({ id: 'heroma', kind: 'passthrough', source: 'Heroma 2', areas: [], capabilities: [] });
+    expect(r.governance('heroma').state).toBe('disabled');
+    r.unregister('heroma');
+    expect(r.governance('heroma').state).toBe('enabled');
+    expect(r.visible(hillevi, 'heroma')).toBe(false);
+    expect(r.visible(hillevi, 'raindance')).toBe(true);
   });
 });

@@ -52,8 +52,9 @@ docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts hello http://1
 docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts --list
 ```
 
-Restart `bun run dev` and `GET /api/connectors` lists it next to the bundled connectors. The admin page
-(Administration › Anslutna system, `docs/architecture/connector-administration.md`) replaces the script and the restart.
+Within a few seconds `GET /api/connectors` lists it next to the bundled connectors; nothing is restarted. The admin page
+(Administration › Anslutna system, `docs/architecture/connector-administration.md`) does the same in the browser for a
+person with the grant capability `admin.connectors` (`mikael` in the dev realm, created by `bun run auth:setup`).
 
 ## Astryx component docs
 

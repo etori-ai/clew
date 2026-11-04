@@ -166,6 +166,70 @@ export function attentionLevel(thread: { deadline: string | null; remindedAt?: s
 /** The highest level in a list, or null when the list is empty. */
 export const worstLevel = (levels: AttentionLevel[]): AttentionLevel | null => levels.length ? attentionLevels[Math.min(...levels.map(l => attentionLevels.indexOf(l)))]! : null;
 
+/**
+ * Who an administrator lets a connector reach (D23). `all` is every signed-in person; `selected` matches a person whose
+ * role is in `roles`, or whose unit is in `units`, or who belongs to a group in `groups` (groups arrive with SCIM and
+ * match nothing until then). Any-of across the three lists.
+ */
+export const RoleSchema = Type.Union([Type.Literal('manager'), Type.Literal('employee')]);
+export type Role = Static<typeof RoleSchema>;
+export const ConnectorAudienceSchema = Type.Union([
+  object({ mode: Type.Literal('all') }),
+  object({ mode: Type.Literal('selected'), roles: Type.Optional(Type.Array(RoleSchema, { uniqueItems: true, maxItems: 2 })),
+    units: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 80 }), { uniqueItems: true, maxItems: 200 })),
+    groups: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 80 }), { uniqueItems: true, maxItems: 200 })) }),
+]);
+export type ConnectorAudience = Static<typeof ConnectorAudienceSchema>;
+export const ConnectorStateSchema = Type.Union([Type.Literal('draft'), Type.Literal('enabled'), Type.Literal('disabled')]);
+export type ConnectorState = Static<typeof ConnectorStateSchema>;
+export const ConnectorHealthSchema = object({
+  status: Type.Union([Type.Literal('ok'), Type.Literal('unreachable'), Type.Literal('manifest-invalid'), Type.Literal('secret-rejected'), Type.Literal('untested')]),
+  at: Type.String(), detail: Type.Optional(Type.String()),
+});
+export type ConnectorHealth = Static<typeof ConnectorHealthSchema>;
+/** An administrator's per-capability switch. Narrowing only: `false` is the only value, so nothing can be switched on past the manifest. */
+export const CapabilityOverrideSchema = object({ enabled: Type.Optional(Type.Literal(false)), model: Type.Optional(Type.Literal(false)) });
+export type CapabilityOverride = Static<typeof CapabilityOverrideSchema>;
+const connectorId = Type.String({ pattern: '^[a-z][a-z0-9-]*$', minLength: 1, maxLength: 40 });
+const connectorUrl = Type.String({ pattern: '^https?://[^\\s]+$', minLength: 8, maxLength: 500 });
+const connectorSecret = Type.String({ minLength: 16, maxLength: 500 });
+/** Administration inputs (D23). Validated again on the server; a secret never comes back out. */
+export const AddConnectorInput = object({ id: connectorId, url: connectorUrl, secret: connectorSecret });
+export type AddConnectorInput = Static<typeof AddConnectorInput>;
+export const ConnectorPatchInput = Type.Partial(object({
+  state: ConnectorStateSchema, audience: ConnectorAudienceSchema, scanEnabled: Type.Boolean(), toolsEnabled: Type.Boolean(),
+  capabilities: Type.Record(Type.String({ maxLength: 80 }), CapabilityOverrideSchema), url: connectorUrl,
+}));
+export type ConnectorPatchInput = Static<typeof ConnectorPatchInput>;
+export const RotateSecretInput = object({ secret: connectorSecret });
+export type RotateSecretInput = Static<typeof RotateSecretInput>;
+export const RefreshManifestInput = object({ apply: Type.Optional(Type.Boolean()) });
+export type RefreshManifestInput = Static<typeof RefreshManifestInput>;
+export const PreviewQuery = object({ role: RoleSchema, unitId: Type.Optional(Type.String({ maxLength: 80 })) });
+export type PreviewQuery = Static<typeof PreviewQuery>;
+/** One line of the conformance check (the CLI prints them, the admin page lists them). */
+export interface CheckFinding { level: 'ok' | 'warn' | 'fail'; text: string }
+export interface CheckReport { ok: boolean; findings: CheckFinding[] }
+/** What the administrator sees of a capability: the manifest's facts plus the effective switches. */
+export interface ConnectorCapabilityView { name: string; kind: 'read' | 'propose' | 'execute'; title: string; description: string; model: boolean; roles: Role[] | null; enabled: boolean; tool: boolean }
+export interface ConnectorAreaView { id: string; title: string; roles: Role[]; standing: string[]; figure: boolean }
+export interface ConnectorSummary {
+  id: string; bundled: boolean; source: string; kind: 'core' | 'passthrough' | 'derived' | null; url: string | null;
+  state: ConnectorState; health: ConnectorHealth; audience: ConnectorAudience; scanEnabled: boolean; toolsEnabled: boolean;
+  /** Registered in the live registry right now (a remote draft with no manifest is not). */
+  registered: boolean;
+  counts: { capabilities: number; execute: number; tools: number };
+  manifestAt: string | null; secretChangedAt: string | null; createdAt: string; updatedAt: string;
+}
+export interface AuditEntryView { at: string; actor: string; action: string; details: Record<string, unknown> }
+export interface ConnectorDetail extends ConnectorSummary {
+  protocol: number | null; scan: boolean; createdBy: string; updatedBy: string;
+  capabilities: ConnectorCapabilityView[]; areas: ConnectorAreaView[]; history: AuditEntryView[];
+}
+/** The structural preview: what a person with this role and unit would get from one connector. No data, no call to the service. */
+export interface ConnectorPreview { role: Role; unitId: string | null; visible: boolean; areas: Array<{ id: string; title: string; standing: string[] }>; tools: string[] }
+export interface ManifestDiff { added: string[]; removed: string[]; changed: string[]; areasAdded: string[]; areasRemoved: string[]; same: boolean }
+
 /** An area in the sidebar: a lens on one connector for one role (D3). Configuration, not code. */
 export const AreaSchema = object({
   id: Type.String(), title: Type.String(), connector: Type.String(), source: Type.String(),

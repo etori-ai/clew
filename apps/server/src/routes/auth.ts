@@ -31,7 +31,8 @@ authRoutes.get('/callback', async c => {
 });
 authRoutes.get('/session', protectedRoute(), c => {
   const session = c.get('session');
-  return c.json({ user: sessionUser(session.context), csrfToken: session.csrfToken, sessionKey: session.sessionKey, expiresAt: session.context.expiresAt });
+  // `admin` only decides whether the browser shows the entry point; every admin call is checked again on the server (D23).
+  return c.json({ user: sessionUser(session.context), admin: session.context.capabilities.includes('admin.connectors'), csrfToken: session.csrfToken, sessionKey: session.sessionKey, expiresAt: session.context.expiresAt });
 });
 authRoutes.post('/activity', protectedRoute(), async c => {
   const row = await touchSession(c.get('session').row.digest);

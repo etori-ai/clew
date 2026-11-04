@@ -1,5 +1,5 @@
 import type { TSchema } from '@sinclair/typebox';
-import type { Area, Receipt, ReceiptRow, SessionUser, ThreadAction, ThreadItem } from '@clew/contracts';
+import type { Area, CapabilityOverride, ConnectorAudience, ConnectorState, Receipt, ReceiptRow, SessionUser, ThreadAction, ThreadItem } from '@clew/contracts';
 
 /**
  * The capability layer (D1, D3). A connector owns a Clew contract: capabilities with a kind, a scope and an
@@ -80,9 +80,29 @@ export interface Connector {
 
 export class CapabilityError extends Error { constructor(message: string) { super(message); this.name = 'CapabilityError'; } }
 
+/**
+ * What an administrator decided about a connector (D23): on or off, who sees it, whether it pushes cards and offers
+ * tools, and per-capability switches. The default is "enabled for everyone", which is what a connector without a row
+ * gets. Narrowing only: an override can switch a capability or its tool off, never on.
+ */
+export interface Governance {
+  state: ConnectorState;
+  audience: ConnectorAudience;
+  scanEnabled: boolean;
+  toolsEnabled: boolean;
+  capabilities: Record<string, CapabilityOverride>;
+}
+export const openGovernance = (): Governance => ({ state: 'enabled', audience: { mode: 'all' }, scanEnabled: true, toolsEnabled: true, capabilities: {} });
+/** A person is in the audience by role, by unit or by group (any of). Groups match nothing until SCIM provides them. */
+export const inAudience = (audience: ConnectorAudience, actor: Actor) =>
+  audience.mode === 'all' || !!audience.roles?.includes(actor.role) || !!audience.units?.includes(actor.unitId);
+/** Everything the person may not reach reads like "unknown", so a hidden connector cannot be probed (D23). */
+export const UNKNOWN = 'Okänd förmåga.';
+
 export class Registry {
   private connectors = new Map<string, Connector>();
   private capabilities = new Map<string, { connector: Connector; capability: Capability<any, any> }>();
+  private governed = new Map<string, Governance>();
   register(connector: Connector) {
     if (this.connectors.has(connector.id)) throw new Error(`Connector ${connector.id} is already registered.`);
     for (const c of connector.capabilities) {
@@ -94,57 +114,99 @@ export class Registry {
     this.connectors.set(connector.id, connector);
     return this;
   }
-  /** Remove a connector and its capabilities; cards it pushed stay in the database. */
+  /** Remove a connector and its capabilities; cards it pushed stay in the database. Its governance is forgotten too. */
   unregister(id: string) {
     const found = this.connectors.get(id);
+    this.governed.delete(id);
     if (!found) return false;
     for (const c of found.capabilities) this.capabilities.delete(c.name);
     this.connectors.delete(id);
     return true;
   }
-  /** Register, replacing an earlier registration with the same id (a refetched manifest, a changed secret). */
-  replace(connector: Connector) { this.unregister(connector.id); return this.register(connector); }
+  /** Register, replacing an earlier registration with the same id (a refetched manifest, a changed secret). Governance survives. */
+  replace(connector: Connector) {
+    const governance = this.governed.get(connector.id);
+    this.unregister(connector.id);
+    this.register(connector);
+    if (governance) this.governed.set(connector.id, governance);
+    return this;
+  }
+  /** Apply an administrator's decision. Takes effect on the next call; nothing is restarted. */
+  govern(id: string, governance: Governance) { this.governed.set(id, governance); return this; }
+  governance(id: string): Governance { return this.governed.get(id) ?? openGovernance(); }
+  /** Every registered connector, governed or not: for the loader and the administrator, never for a person's page. */
   list() { return [...this.connectors.values()]; }
   connector(id: string) { return this.connectors.get(id); }
+  /** Lookup by name without any check: for validation and routing. Use `allowed` before acting for a person. */
   find(name: string) { return this.capabilities.get(name); }
+  /** A connector exists for this person: registered, switched on and the person is in its audience. */
+  visible(actor: Actor, connectorId: string) {
+    if (!this.connectors.has(connectorId)) return false;
+    const g = this.governance(connectorId);
+    return g.state === 'enabled' && inAudience(g.audience, actor);
+  }
+  /** A capability the person may call: visible connector, capability not switched off, and the connector's own scope. */
+  allowed(actor: Actor, name: string) {
+    const found = this.capabilities.get(name);
+    if (!found || !this.visible(actor, found.connector.id)) return undefined;
+    if (this.governance(found.connector.id).capabilities[name]?.enabled === false) return undefined;
+    return inScope(found.capability.scope, actor) ? found : undefined;
+  }
+  /** The connectors a person can see, and the capabilities they may call: what `/api/connectors`, search and the typeahead list. */
+  listFor(actor: Actor) { return this.list().filter(c => this.visible(actor, c.id)); }
+  capabilitiesFor(actor: Actor) { return [...this.capabilities.values()].filter(c => this.allowed(actor, c.capability.name)); }
   /** The handle a connector gets to reach the rest of Clew as one actor: reads and proposals only, scope re-checked. */
   clewFor(actor: Actor): Clew {
     return {
       call: async <O,>(name: string, input: unknown = {}) => {
         const found = this.capabilities.get(name);
-        if (found?.capability.kind === 'execute') throw new CapabilityError('En modul kan inte utföra åtgärder i en annan modul.');
+        if (found?.capability.kind === 'execute') throw new CapabilityError('En anslutning kan inte utföra åtgärder i en annan anslutning.');
         return this.run<O>(actor, name, input);
       },
     };
   }
-  /** Run a capability for an actor. Scope is checked here, so every path (REST, tool, card action, connector) is equal. */
+  /**
+   * Run a capability for an actor. Visibility, the capability switch and scope are checked here, so every path (REST,
+   * tool, card action, connector callback) is equal. A hidden connector answers exactly as an unknown capability does.
+   */
   async run<O = unknown>(actor: Actor, name: string, input: unknown): Promise<O> {
     const found = this.capabilities.get(name);
-    if (!found) throw new CapabilityError('Okänd förmåga.');
+    if (!found || !this.visible(actor, found.connector.id) || this.governance(found.connector.id).capabilities[name]?.enabled === false) throw new CapabilityError(UNKNOWN);
     if (!inScope(found.capability.scope, actor)) throw new CapabilityError('Du saknar behörighet för åtgärden.');
     return found.capability.run(actor, input, this.clewFor(actor)) as Promise<O>;
   }
-  /** Areas for one actor: one entry per area definition whose roles include the actor's role. Counts are filled in by the caller. */
-  async areas(actor: Actor): Promise<Omit<Area, 'needsYou' | 'waiting' | 'urgency'>[]> {
+  /**
+   * Areas for one actor: one entry per area definition of a visible connector whose roles include the actor's role.
+   * Counts are filled in by the caller. `figures: false` skips the figure calls (the administrator's structural preview).
+   */
+  async areas(actor: Actor, options: { figures?: boolean; connector?: string } = {}): Promise<Omit<Area, 'needsYou' | 'waiting' | 'urgency'>[]> {
     const out: Omit<Area, 'needsYou' | 'waiting' | 'urgency'>[] = [];
     const clew = this.clewFor(actor);
-    for (const m of this.connectors.values()) for (const a of m.areas) {
-      if (!a.roles.includes(actor.role)) continue;
-      const standing = a.standing.map(n => this.capabilities.get(n)).filter((c): c is NonNullable<typeof c> => !!c && inScope(c.capability.scope, actor))
-        .map(c => ({ capability: c.capability.name, label: c.capability.title, kind: c.capability.kind }));
-      out.push({ id: a.id, title: a.title, connector: m.id, source: m.source, figure: a.figure ? await a.figure(actor, clew) : null, standing, schedules: a.schedules });
+    for (const m of this.connectors.values()) {
+      if (options.connector && m.id !== options.connector) continue;
+      if (!this.visible(actor, m.id)) continue;
+      for (const a of m.areas) {
+        if (!a.roles.includes(actor.role)) continue;
+        const standing = a.standing.map(n => this.allowed(actor, n)).filter((c): c is NonNullable<typeof c> => !!c)
+          .map(c => ({ capability: c.capability.name, label: c.capability.title, kind: c.capability.kind }));
+        out.push({ id: a.id, title: a.title, connector: m.id, source: m.source, figure: a.figure && options.figures !== false ? await a.figure(actor, clew) : null, standing, schedules: a.schedules });
+      }
     }
     return out;
   }
+  /** Drafts from every visible connector whose scan is switched on. */
   async scan(actor: Actor): Promise<Array<ThreadDraft & { connector: string }>> {
     const drafts: Array<ThreadDraft & { connector: string }> = [];
     const clew = this.clewFor(actor);
-    for (const m of this.connectors.values()) if (m.scan) for (const d of await m.scan(actor, clew)) drafts.push({ ...d, connector: m.id });
+    for (const m of this.connectors.values()) {
+      if (!m.scan || !this.visible(actor, m.id) || !this.governance(m.id).scanEnabled) continue;
+      for (const d of await m.scan(actor, clew)) drafts.push({ ...d, connector: m.id });
+    }
     return drafts;
   }
-  /** Tool definitions for the model: only `model: true` capabilities within scope (D8). */
+  /** Tool definitions for the model: `model: true` capabilities the person may call, from connectors whose tools are on (D8). */
   tools(actor: Actor) {
-    return [...this.capabilities.values()].filter(c => c.capability.model && inScope(c.capability.scope, actor))
+    return this.capabilitiesFor(actor).filter(c => { const g = this.governance(c.connector.id); return c.capability.model && g.toolsEnabled && g.capabilities[c.capability.name]?.model !== false; })
       .map(c => ({ name: c.capability.name, title: c.capability.title, description: c.capability.description, input: c.capability.input, kind: c.capability.kind, source: c.connector.source }));
   }
 }

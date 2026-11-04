@@ -7,8 +7,11 @@ import type { SessionUser } from '@clew/contracts';
 import { StartPage } from './pages/start';
 import { CalendarPage } from './pages/calendar';
 import { LoginPage } from './pages/login';
+import { AdminConnectorsPage } from './pages/admin/connectors';
+import { AdminConnectorPage } from './pages/admin/connector';
+import { NotAdmin } from './pages/admin/shell';
 
-type Shell = { session: BrowserSession; user: SessionUser };
+type Shell = { session: BrowserSession; user: SessionUser; admin: boolean };
 /** The protected tree mounts only after a live session is confirmed. No user content is kept in browser storage. */
 function Protected({ children }: { children: (shell: Shell) => React.ReactNode }) {
   const [shell, setShell] = useState<Shell | 'loading' | 'anonymous'>('loading');
@@ -19,7 +22,7 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
       if (cancelled) return;
       if (!response.ok) { setShell('anonymous'); return; }
       const data = await response.json();
-      setShell({ session: { csrfToken: data.csrfToken, sessionKey: data.sessionKey, expiresAt: data.expiresAt }, user: data.user });
+      setShell({ session: { csrfToken: data.csrfToken, sessionKey: data.sessionKey, expiresAt: data.expiresAt }, user: data.user, admin: data.admin === true });
     }).catch(() => { if (!cancelled) setShell('anonymous'); });
     return () => { cancelled = true; };
   }, []);
@@ -38,10 +41,15 @@ const RouterLink = forwardRef<HTMLAnchorElement, { href?: string; to?: string } 
  * `/vy/...` opens a view in the side panel and `/samtal/:id` reopens a conversation in the row, all addressable.
  */
 function App() {
-  const start = <Protected>{shell => <StartPage user={shell.user} />}</Protected>;
+  const start = <Protected>{shell => <StartPage user={shell.user} admin={shell.admin} />}</Protected>;
+  // Administration (D23): the entry point shows only to an administrator, and every call is checked again on the server.
+  const admin = (page: (shell: Shell) => React.ReactNode) => <Protected>{shell => shell.admin ? page(shell) : <NotAdmin />}</Protected>;
   return <Routes>
     <Route path="/login" element={<LoginPage returnTo="/" />} />
     <Route path="/kalender" element={<Protected>{shell => <CalendarPage user={shell.user} />}</Protected>} />
+    <Route path="/admin" element={admin(shell => <AdminConnectorsPage user={shell.user} />)} />
+    <Route path="/admin/anslutningar" element={admin(shell => <AdminConnectorsPage user={shell.user} />)} />
+    <Route path="/admin/anslutningar/:id" element={admin(shell => <AdminConnectorPage user={shell.user} />)} />
     <Route path="/" element={start} />
     <Route path="/omrade/:area" element={start} />
     <Route path="/hanterat" element={start} />

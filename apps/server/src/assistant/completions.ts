@@ -1,4 +1,4 @@
-import { actorOf, inScope } from '@clew/connectors';
+import { actorOf } from '@clew/connectors';
 import type { AuthenticatedContext, Completions } from '@clew/contracts';
 import type { AssistantDeps } from './ports';
 
@@ -10,7 +10,7 @@ export async function completionsFor(deps: AssistantDeps, persona: Authenticated
   const ask = deps.registry.tools(actor).filter(t => t.kind === 'read').map(t => ({ text: t.title, capability: t.name, source: t.source }));
   const areas = await deps.registry.areas(actor);
   const standing = new Set(areas.flatMap(a => a.standing.map(s => s.capability)));
-  const doList = deps.registry.list().flatMap(m => m.capabilities.filter(c => c.kind !== 'read' && standing.has(c.name) && inScope(c.scope, actor)).map(c => ({ text: c.title, capability: c.name, source: m.source, kind: c.kind })));
+  const doList = deps.registry.capabilitiesFor(actor).filter(({ capability: c }) => c.kind !== 'read' && standing.has(c.name)).map(({ connector: m, capability: c }) => ({ text: c.title, capability: c.name, source: m.source, kind: c.kind }));
   const recent = (await deps.store.listThreads(persona.id, deps.clock().toISOString())).filter(t => t.kind === 'question').slice(0, 5).map(t => ({ conversationId: t.id, title: t.title, at: t.updatedAt }));
   return { completions: [...fixedQuestions, ...ask.map(a => a.text)], ask, do: doList, recent };
 }

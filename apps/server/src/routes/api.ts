@@ -1,4 +1,4 @@
-import { inScope } from '@clew/connectors';
+import { actorOf } from '@clew/connectors';
 import { Hono } from 'hono';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
@@ -37,11 +37,11 @@ api.get('/threads', async c => {
   return c.json({ threads: await listThreadsFor(persona) });
 });
 api.get('/areas', async c => c.json({ areas: await listAreas(c.get('session').context) }));
-/** The registry as data: what the architecture derives everything from. Read-only, scoped to the caller. */
+/** The registry as data: what the architecture derives everything from. Read-only, and only what the caller can see (D23). */
 api.get('/connectors', c => {
-  const persona = c.get('session').context;
-  return c.json({ connectors: registry.list().map(m => ({ id: m.id, kind: m.kind, source: m.source, areas: m.areas.map(a => ({ id: a.id, title: a.title, roles: a.roles })),
-    capabilities: m.capabilities.map(x => ({ name: x.name, kind: x.kind, title: x.title, model: x.model, inScope: inScope(x.scope, persona) })) })), tools: registry.tools(persona).map(t => t.name) });
+  const actor = actorOf(c.get('session').context);
+  return c.json({ connectors: registry.listFor(actor).map(m => ({ id: m.id, kind: m.kind, source: m.source, areas: m.areas.map(a => ({ id: a.id, title: a.title, roles: a.roles })),
+    capabilities: m.capabilities.map(x => ({ name: x.name, kind: x.kind, title: x.title, model: x.model, inScope: !!registry.allowed(actor, x.name) })) })), tools: registry.tools(actor).map(t => t.name) });
 });
 /** Standing actions and panel views: run one capability directly. GET for reads (input as JSON in `input`), POST for the rest. */
 api.get('/cap/:name', async c => {

@@ -1,4 +1,4 @@
-import { actorOf, inScope } from '@clew/connectors';
+import { actorOf } from '@clew/connectors';
 import type { AuthenticatedContext, ClewObject } from '@clew/contracts';
 import { displayDate, shortDayLabel, timeRange } from '@clew/calendar/dates';
 import type { AssistantDeps } from './ports';
@@ -15,7 +15,8 @@ export async function listObjects(deps: AssistantDeps, persona: AuthenticatedCon
   }
   try { const day = await deps.calendar.readToday(persona); for (const e of day.events) visible.push({ ref: 'event:' + e.id, kind: 'event', label: e.title, detail: `i dag · ${e.allDay ? 'heldag' : timeRange(e.start, e.end)}`, visible: true }); } catch { /* the calendar is optional here */ }
   const actor = actorOf(persona);
-  const everything: ClewObject[] = deps.registry.list().flatMap(m => m.capabilities.filter(c => inScope(c.scope, actor)).map(c => ({ ref: 'capability:' + c.name, kind: 'capability' as const, label: c.title, detail: `${m.source} · ${c.kind === 'read' ? 'fråga' : 'gör något'}`, visible: false })));
+  // Only what the person may call (D23): a connector outside their audience has no capabilities to find.
+  const everything: ClewObject[] = deps.registry.capabilitiesFor(actor).map(({ connector: m, capability: c }) => ({ ref: 'capability:' + c.name, kind: 'capability' as const, label: c.title, detail: `${m.source} · ${c.kind === 'read' ? 'fråga' : 'gör något'}`, visible: false }));
   const all = [...visible, ...everything];
   const hit = (o: ClewObject) => !needle || o.label.toLowerCase().includes(needle) || o.detail.toLowerCase().includes(needle);
   return all.filter(hit).slice(0, 20);

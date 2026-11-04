@@ -1,6 +1,6 @@
 import { pgTable, text, integer, jsonb, bigserial, boolean, timestamp, check, primaryKey, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
-import type { MessageMeta, Receipt, ThreadAction, ThreadItem } from '@clew/contracts';
+import type { ConnectorAudience, ConnectorHealth, MessageMeta, Receipt, ThreadAction, ThreadItem } from '@clew/contracts';
 
 // Identity. Ported from startsidan: canonical person, explicit subject binding, server-side session with sealed tokens.
 export const people = pgTable('auth_person', {
@@ -109,12 +109,12 @@ export const moduleState = pgTable('module_state', {
 
 // Connectors registered by an administrator (D23). One row per connector service; the secret is a sealed envelope
 // (auth-crypto, purpose `connector:secret:<id>`), the manifest is the last valid one so the page works while the
-// service is down. Core connectors in Clew's process are not rows here until the admin page lists them.
-export type ConnectorAudience = { mode: 'all' } | { mode: 'selected'; roles?: Array<'manager' | 'employee'>; units?: string[]; groups?: string[] };
-export type ConnectorHealth = { status: 'ok' | 'unreachable' | 'manifest-invalid' | 'secret-rejected' | 'untested'; at: string; detail?: string };
+// service is down. A bundled connector (Clew's own process: people, the calendar, the mocks until they are lifted) gets a
+// row at boot with `bundled` true and no url or secret, so an audience and the switches govern it the same way.
+export type { ConnectorAudience, ConnectorHealth };
 export const connectors = pgTable('connector', {
-  id: text('id').primaryKey(), url: text('url').notNull(),
-  secret: text('secret').notNull(), secretChangedAt: timestamp('secret_changed_at', { withTimezone: true }).notNull().defaultNow(),
+  id: text('id').primaryKey(), bundled: boolean('bundled').notNull().default(false), url: text('url'),
+  secret: text('secret'), secretChangedAt: timestamp('secret_changed_at', { withTimezone: true }).notNull().defaultNow(),
   state: text('state').$type<'draft' | 'enabled' | 'disabled'>().notNull().default('draft'),
   audience: jsonb('audience').$type<ConnectorAudience>().notNull().default({ mode: 'all' }),
   scanEnabled: boolean('scan_enabled').notNull().default(true), toolsEnabled: boolean('tools_enabled').notNull().default(true),
@@ -124,4 +124,6 @@ export const connectors = pgTable('connector', {
   createdBy: text('created_by').notNull(), updatedBy: text('updated_by').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   version: integer('version').notNull().default(1),
-}, t => [check('connector_state', sql`${t.state} IN ('draft', 'enabled', 'disabled')`), check('connector_id', sql`${t.id} ~ '^[a-z][a-z0-9-]*$'`)]);
+}, t => [check('connector_state', sql`${t.state} IN ('draft', 'enabled', 'disabled')`), check('connector_id', sql`${t.id} ~ '^[a-z][a-z0-9-]*$'`),
+  // A remote connector has an address and a secret; a bundled one has neither.
+  check('connector_remote', sql`${t.bundled} OR (${t.url} IS NOT NULL AND ${t.secret} IS NOT NULL)`)]);

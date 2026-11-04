@@ -9,7 +9,7 @@ import { join, relative } from 'node:path';
 const root = join(import.meta.dirname, '..');
 const roots = ['apps/server/src', 'packages', 'connectors'];
 /** Pure by rule: every domain file, and every use case folder that has been ported to ports (D25). Grows as files are ported. */
-const covered = (path: string) => /(^|\/)domain(\.ts$|\/)/.test(path) || (/^apps\/server\/src\/(threads|modules\/[^/]+|scheduler|assistant)\//.test(path) && !/\/adapters\/|\/connector\.ts$/.test(path)) || path === 'packages/calendar/src/proposals.ts';
+const covered = (path: string) => /(^|\/)domain(\.ts$|\/)/.test(path) || (/^apps\/server\/src\/(threads|modules\/[^/]+|scheduler|assistant|connectors\/usecases)\//.test(path) && !/\/adapters\/|\/connector\.ts$/.test(path)) || path === 'packages/calendar/src/proposals.ts';
 const banned: Array<{ pattern: RegExp; why: string }> = [
   { pattern: /\bDate\.now\(/, why: 'reads the clock; take `clock()` from deps' },
   { pattern: /\bnew Date\(\)/, why: 'reads the clock; take `clock()` from deps' },

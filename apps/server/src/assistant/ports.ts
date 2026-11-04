@@ -18,7 +18,7 @@ export interface ModelProvider {
 }
 export interface AssistantDeps {
   store: ThreadStore;
-  registry: Pick<Registry, 'tools' | 'areas' | 'list' | 'find'>;
+  registry: Pick<Registry, 'tools' | 'areas' | 'list' | 'find' | 'allowed' | 'capabilitiesFor'>;
   run: <O = unknown>(persona: AuthenticatedContext, name: string, input: unknown) => Promise<O>;
   calendar: Pick<CalendarUsecases, 'listWeek' | 'readToday' | 'samtalStatus' | 'ensureProposalThread' | 'replan'>;
   model: ModelProvider;

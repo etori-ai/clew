@@ -131,7 +131,7 @@ Until the admin page exists, the same row is written from the command line insid
 docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts errands http://errands:4010 --secret <secret> --enable
 ```
 
-The BFF registers enabled rows at boot, so restart `bun run dev` after the first enable. In the devcontainer
+The BFF registers enabled rows at boot and watches the rows every few seconds, so nothing is restarted after an enable. In the devcontainer
 the BFF listens on loopback, so a connector under development runs inside the app container
 (`node your-connector.mjs` on a port) with `CLEW_URL=http://127.0.0.1:3000`; `bun run auth:setup` seeds the
 hello connector as a draft with a generated secret (`HELLO_CONNECTOR_SECRET` in `.auth-test.env`).

@@ -19,7 +19,10 @@ import { peopleConnector } from '../modules/people/connector';
  * the registry (D20): in-process through the `clew.call` handle, remote through `POST /api/connectors/call`.
  */
 export const registry = new Registry();
-for (const m of [heromaConnector(postgresState), raindanceConnector(postgresState), treservaConnector(postgresState), kommunikationConnector(postgresState), calendarConnector(calendar), peopleConnector()]) registry.register(m);
+const bundled = [heromaConnector(postgresState), raindanceConnector(postgresState), treservaConnector(postgresState), kommunikationConnector(postgresState), calendarConnector(calendar), peopleConnector()];
+for (const m of bundled) registry.register(m);
+/** The connectors that live in this process: they get a `connector` row at boot so an administrator can govern them too (D23). */
+export const bundledIds = bundled.map(m => m.id);
 export { actorOf };
 
 const ajv = addFormats(new Ajv({ allErrors: false, strict: false }));

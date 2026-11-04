@@ -20,7 +20,7 @@ import { usePageTitle } from '../page-title';
  * live for views. Every card comes from a connector through the registry; the calendar's proposal card keeps its
  * specialised rendering, everything else is the generic card.
  */
-export function StartPage({ user }: { user: SessionUser }) {
+export function StartPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
   const mobile = useMediaQuery('(max-width: 720px)');
   // 1.4.10: with 480 px or less in height the header and the row stay out of the way and the whole page scrolls.
   const short = useMediaQuery('(max-height: 480px)');
@@ -225,6 +225,7 @@ export function StartPage({ user }: { user: SessionUser }) {
               : <Badge variant="neutral" icon={<Icon icon="clock" size="sm" />} label={attentionLabel} />)}
             {(areas.find(a => a.id === 'viktigt-nu')?.needsYou ?? 0) > 0 && <Button variant="secondary" size="sm" label={`Viktigt nu · ${areas.find(a => a.id === 'viktigt-nu')!.needsYou}`} href={pathFor('viktigt-nu')} />}
             <Button variant="ghost" size="sm" label="Kalender" href="/kalender" icon={<Icon icon="calendar" size="sm" />} isIconOnly={mobile} />
+            {admin && <Button variant="ghost" size="sm" label="Administration" href="/admin/anslutningar" icon={<Icon icon="wrench" size="sm" />} isIconOnly={mobile} />}
             <Button variant="ghost" size="sm" label="Logga ut" clickAction={() => signOut()} />
           </HStack>
         </HStack>

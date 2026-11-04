@@ -22,7 +22,7 @@ async function login(user: string) {
   if (!jar.has('clew-session')) throw new Error('Ingen session efter inloggning');
   const session = await (await go(base + '/api/auth/session')).json();
   const headers = { 'content-type': 'application/json', origin: base, 'x-csrf-token': session.csrfToken };
-  const api = async (path: string, body?: unknown) => { const r = await go(base + path, body !== undefined ? { method: 'POST', headers, body: JSON.stringify(body) } : { headers }); const json = await r.json(); if (!r.ok) throw new Error(`${path}: ${r.status} ${JSON.stringify(json)}`); return json; };
+  const api = async (path: string, body?: unknown, method = 'POST') => { const r = await go(base + path, body !== undefined ? { method, headers, body: JSON.stringify(body) } : { headers }); const json = await r.json(); if (!r.ok) throw new Error(`${path}: ${r.status} ${JSON.stringify(json)}`); return json; };
   console.log(`\n== ${session.user.name} (${session.user.role})`);
   return api;
 }
@@ -156,6 +156,42 @@ const ok = (cond: unknown, msg: string) => { if (!cond) throw new Error('FAIL: '
   const c = await api('/api/conversation', { text: 'Mitt pass' });
   console.log('  svar:', c.assistant, '|', c.answer.body);
   ok(c.answer.body.length > 0, 'the employee gets an answer');
+}
+// Administration (D23): Mikael limits Raindance to managers, Hassan loses every trace of it, Mikael restores it. No restart anywhere.
+if (!env.TEST_MIKAEL_PASSWORD) console.log('\n== (mikael is not provisioned: run `bun run auth:setup` once to get the administration checks)');
+else {
+  const admin = await login('mikael');
+  const denied = await admin('/api/cap/raindance.budget').catch((e: Error) => e.message);
+  ok(typeof denied === 'string', 'an administrator is still an ordinary employee on the page');
+  const { connectors } = await admin('/api/admin/connectors');
+  console.log('  governed:', connectors.map((c: any) => `${c.id}${c.bundled ? '*' : ''}:${c.state}/${c.health.status}`).join(' '));
+  ok(connectors.some((c: any) => c.id === 'raindance' && c.bundled && c.state === 'enabled'), 'bundled connectors have rows and are enabled');
+  const detail = await admin('/api/admin/connectors/raindance');
+  ok(detail.capabilities.length > 0 && detail.areas.length > 0 && detail.history.length >= 0, 'the detail view describes a bundled connector like a manifest');
+  const narrowed = await admin('/api/admin/connectors/raindance', { audience: { mode: 'selected', roles: ['manager'] } }, 'PATCH');
+  ok(narrowed.audience.mode === 'selected', 'the audience is narrowed to managers');
+  const preview = await admin('/api/admin/connectors/raindance/preview?role=employee');
+  ok(preview.visible === false, 'the structural preview says an employee sees nothing');
+  try {
+    const hassan = await login('hassan');
+    const seen = await hassan('/api/connectors');
+    ok(!seen.connectors.some((c: any) => c.id === 'raindance'), 'Hassan: Raindance is not in the connector listing');
+    const { areas } = await hassan('/api/areas');
+    ok(!areas.some((a: any) => a.connector === 'raindance'), 'Hassan: no Raindance area');
+    const { objects } = await hassan('/api/objects?q=budget');
+    ok(!objects.some((o: any) => o.ref.startsWith('capability:raindance.')), 'Hassan: no Raindance capability in search');
+    const probe = await hassan('/api/cap/raindance.budget').catch((e: Error) => e.message);
+    ok(typeof probe === 'string' && /Okänd förmåga|404/.test(probe) && !/behörighet/.test(probe), 'Hassan: a Raindance capability answers like an unknown one, never "denied"');
+    const comp = await hassan('/api/completions');
+    ok(!comp.ask.some((a: any) => a.capability.startsWith('raindance.')), 'Hassan: no Raindance question in the typeahead');
+  } finally {
+    const restored = await admin('/api/admin/connectors/raindance', { audience: { mode: 'all' } }, 'PATCH');
+    ok(restored.audience.mode === 'all', 'the audience is restored to everyone');
+  }
+  const history = (await admin('/api/admin/connectors/raindance')).history;
+  ok(history.filter((h: any) => h.action === 'connector.audience').length >= 2, 'both audience changes are in the audit log');
+  const forbidden = await (await login('hassan'))('/api/admin/connectors').catch((e: Error) => e.message);
+  ok(typeof forbidden === 'string' && /403|behörighet/.test(forbidden), 'administration needs the grant capability');
 }
 { const r = await fetch(base + '/api/conversation', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"text":"hej"}' }); ok(r.status === 401, 'the conversation needs a session'); }
 { const api = await login('hillevi'); await api('/api/mocks/reset', {}); console.log('  mocks reset again for the next demo'); }

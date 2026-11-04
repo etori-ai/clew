@@ -1,4 +1,4 @@
-import type { Area, AssistantStatus, Attention, CalendarEvent, ClewObject, Completions, ConversationInput, ConversationResponse, Figure, Proposal, Thread, TodayView, Verb } from '@clew/contracts';
+import type { AddConnectorInput, Area, AssistantStatus, Attention, CalendarEvent, CheckReport, ClewObject, Completions, ConnectorDetail, ConnectorHealth, ConnectorPatchInput, ConnectorPreview, ConnectorSummary, ConversationInput, ConversationResponse, Figure, ManifestDiff, Proposal, Role, Thread, TodayView, Verb } from '@clew/contracts';
 import { sessionFetch } from '@clew/ui';
 
 /** Every call goes through the same-origin proxy with the session CSRF token. Errors carry the server's Swedish message. */
@@ -11,6 +11,8 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 const post = <T,>(path: string, body?: unknown) => call<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}) });
+const patch = <T,>(path: string, body: unknown) => call<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
+const del = <T,>(path: string) => call<T>(path, { method: 'DELETE' });
 export const api = {
   threads: () => call<{ threads: Thread[] }>('/api/threads'),
   ask: (question: string) => post<Thread>('/api/ask', { question }),
@@ -38,5 +40,18 @@ export const api = {
   cancelReminder: (id: string, workflowId: string) => post<Thread>(`/api/threads/${id}/remind/cancel`, { workflowId }),
   capability: (name: string, input?: unknown) => call<{ output: unknown }>(`/api/cap/${name}` + (input ? `?input=${encodeURIComponent(JSON.stringify(input))}` : '')),
   runCapability: (name: string, input?: unknown) => post<{ output: unknown }>(`/api/cap/${name}`, input ?? {}),
+  // Administration (D23). Every call is checked again on the server; no secret ever comes back.
+  admin: {
+    connectors: () => call<{ connectors: ConnectorSummary[] }>('/api/admin/connectors'),
+    units: () => call<{ units: Array<{ id: string; label: string }> }>('/api/admin/units'),
+    connector: (id: string) => call<ConnectorDetail>(`/api/admin/connectors/${id}`),
+    add: (input: AddConnectorInput) => post<{ connector: ConnectorDetail; report: CheckReport }>('/api/admin/connectors', input),
+    update: (id: string, input: ConnectorPatchInput) => patch<ConnectorDetail>(`/api/admin/connectors/${id}`, input),
+    remove: (id: string) => del<{ closedCards: number }>(`/api/admin/connectors/${id}`),
+    rotateSecret: (id: string, secret: string) => post<ConnectorDetail>(`/api/admin/connectors/${id}/secret`, { secret }),
+    test: (id: string) => post<CheckReport & { health: ConnectorHealth }>(`/api/admin/connectors/${id}/test`),
+    refresh: (id: string, apply: boolean) => post<{ diff: ManifestDiff; connector: ConnectorDetail }>(`/api/admin/connectors/${id}/refresh`, { apply }),
+    preview: (id: string, role: Role, unitId?: string) => call<ConnectorPreview>(`/api/admin/connectors/${id}/preview?role=${role}` + (unitId ? `&unitId=${encodeURIComponent(unitId)}` : '')),
+  },
   calendar: (from?: string) => call<{ from: string; events: CalendarEvent[]; proposals: Proposal[] }>('/api/calendar' + (from ? `?from=${from}` : '')),
 };

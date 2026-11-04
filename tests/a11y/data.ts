@@ -1,4 +1,4 @@
-import type { Area, Attention, CalendarEvent, ConversationResponse, Proposal, SessionUser, Thread, TodayView } from '@clew/contracts';
+import type { Area, Attention, CalendarEvent, CheckReport, ConnectorDetail, ConnectorPreview, ConnectorSummary, ConversationResponse, Proposal, SessionUser, Thread, TodayView } from '@clew/contracts';
 
 /** Synthetic data, typed against the contracts so the suite follows the API. The clock is frozen to this Wednesday. */
 export const NOW = '2026-11-04T08:00:00.000Z';
@@ -89,3 +89,25 @@ export const conversation = (source: Thread[], text: string, conversationId = 'k
     messages: [...previous, { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW }, { id: `a${previous.length}`, role: 'assistant', body, createdAt: NOW, meta: { source: 'Heroma' } }] });
   return { conversationId, thread: reply, shape: 'svar', assistant: 'router', answer: { body, source: 'Heroma', at: NOW }, clewActions: [], followUps: ['Vem är sjuk i morgon?'] };
 };
+
+/** Administration (D23): two bundled connectors, one remote that is down, one draft. Typed against the admin contracts. */
+const summary = (values: Partial<ConnectorSummary> & Pick<ConnectorSummary, 'id' | 'source'>): ConnectorSummary => ({
+  bundled: false, kind: 'passthrough', url: `http://${values.id}:4010`, state: 'enabled', health: { status: 'ok', at: NOW }, audience: { mode: 'all' }, scanEnabled: true, toolsEnabled: true, registered: true,
+  counts: { capabilities: 5, execute: 2, tools: 3 }, manifestAt: NOW, secretChangedAt: NOW, createdAt: '2026-11-03T06:00:00.000Z', updatedAt: NOW, ...values });
+export const connectors = (): ConnectorSummary[] => [
+  summary({ id: 'heroma', source: 'Heroma', bundled: true, url: null, secretChangedAt: null, counts: { capabilities: 9, execute: 3, tools: 5 } }),
+  summary({ id: 'raindance', source: 'Raindance', bundled: true, url: null, secretChangedAt: null, audience: { mode: 'selected', roles: ['manager'], units: ['unit-skola'] }, counts: { capabilities: 4, execute: 1, tools: 2 } }),
+  summary({ id: 'hello', source: 'Hello', health: { status: 'unreachable', at: NOW, detail: 'ECONNREFUSED' } }),
+  summary({ id: 'errands', source: 'SupportManagement', state: 'draft', registered: false, health: { status: 'untested', at: NOW }, manifestAt: null, counts: { capabilities: 6, execute: 2, tools: 4 } }),
+];
+export const connectorDetail = (c: ConnectorSummary): ConnectorDetail => ({ ...c, protocol: 1, scan: true, createdBy: 'person:mikael', updatedBy: 'person:mikael',
+  capabilities: [
+    { name: `${c.id}.overview`, kind: 'read', title: 'Översikt', description: 'Läget just nu.', model: true, roles: null, enabled: true, tool: c.toolsEnabled },
+    { name: `${c.id}.approve`, kind: 'execute', title: 'Godkänn valda', description: 'Godkänner raderna.', model: false, roles: ['manager'], enabled: true, tool: false },
+    { name: `${c.id}.draft`, kind: 'propose', title: 'Föreslå svar', description: 'Ett utkast.', model: true, roles: ['manager'], enabled: false, tool: false },
+  ],
+  areas: [{ id: c.id, title: c.source, roles: ['manager', 'employee'], standing: [`${c.id}.overview`], figure: true }],
+  history: [{ at: '2026-11-03T06:00:00.000Z', actor: 'person:mikael', action: 'connector.added', details: { url: c.url } }, { at: NOW, actor: 'person:mikael', action: 'connector.enabled', details: {} }] });
+export const checkReport: CheckReport = { ok: false, findings: [{ level: 'ok', text: 'manifest valid: 5 capabilities, 1 areas, scan true' }, { level: 'warn', text: 'hello.dayWithMeetings as manager: Hello svarar inte just nu.' }, { level: 'fail', text: 'a call signed with another secret answered 200, expected 401' }] };
+export const connectorPreview = (role: 'manager' | 'employee'): ConnectorPreview => ({ role, unitId: null, visible: role === 'manager', areas: role === 'manager' ? [{ id: 'budget', title: 'Budget', standing: ['Budget mot prognos'] }] : [], tools: role === 'manager' ? ['raindance.budget'] : [] });
+export const units = [{ id: 'unit-skola', label: 'Bergsåkers skola' }, { id: 'unit-omsorg', label: 'Hemtjänst Centrum' }, { id: 'unit-it', label: 'IT och digitalisering' }];

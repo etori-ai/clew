@@ -22,10 +22,10 @@ bun scripts/connector-add.ts hello --enable
 bun scripts/connector-add.ts hello http://127.0.0.1:4010 --secret change-me-change-me --enable
 ```
 
-Restart the BFF: the log says `Connector "hello" (Hello) registered …`, `GET /api/connectors` lists it, the
+Within a few seconds, with no restart (the BFF watches the rows), the log says `Connector "hello" (Hello) registered …`, `GET /api/connectors` lists it, the
 sidebar gets "Hello-modulen", a manager gets the card after the first visit, and "Dagen med möten" answers
-through Clew's calendar connector. The admin page (Administration › Anslutna system) replaces the script and
-the restart when it is built.
+through Clew's calendar connector. The admin page (Administration › Anslutna system, for a person with the grant capability
+`admin.connectors`, `mikael` in the dev realm) does the same in the browser, with the conformance check built in.
 
 Writing your own: copy `connector.mjs`, change `CONNECTOR`, the manifest and the capability bodies; keep
 `verifyAssertion` and the scope check as they are. Any language works: the protocol is four JSON routes and

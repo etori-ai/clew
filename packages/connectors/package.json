@@ -10,7 +10,8 @@
     "./mock/heroma": "./src/mock/heroma.ts",
     "./mock/raindance": "./src/mock/raindance.ts",
     "./mock/treserva": "./src/mock/treserva.ts",
-    "./mock/kommunikation": "./src/mock/kommunikation.ts"
+    "./mock/kommunikation": "./src/mock/kommunikation.ts",
+    "./check": "./src/check.ts"
   },
   "dependencies": {
     "@clew/contracts": "workspace:*",

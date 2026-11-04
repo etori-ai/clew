@@ -1,4 +1,13 @@
-import { registry, runCapability } from '../connectors/registry';
+import { bundledIds, registry, runCapability } from '../connectors/registry';
+import { assertionFor, registerConnector, secretPurpose, unregisterConnector } from '../connectors/remote';
+import { postgresConnectorStore, postgresUnits } from '../connectors/adapters/postgres';
+import { connectorUsecases } from '../connectors/usecases/admin';
+import type { LiveRegistration, Secrets } from '../connectors/model';
+import type { ReconcileDeps as ConnectorReconcileDeps } from '../connectors/reconcile';
+import { openSecret, sealSecret } from '../auth-crypto';
+import { fetchManifest } from '@clew/connectors/remote';
+import { checkConnector } from '@clew/connectors/check';
+import { SignJWT } from 'jose';
 import { liveModelProvider } from '../assistant/adapters/provider';
 import { assistantUsecases } from '../assistant';
 import { postgresMockResetStore } from '../modules/mocks/adapters/postgres';
@@ -27,4 +36,12 @@ const model = liveModelProvider();
 export const assistant = assistantUsecases({ store, registry, run: runCapability, calendar, model, clock, ids, log: console.error });
 /** The model's health probe (D8), started by main.ts beside the server. */
 export const startAssistantProbe = () => model.startProbe();
+/** Connector administration (D23): sealing with the master key, the live registry's remote side, and the conformance check with a real signer. */
+const connectorSecrets: Secrets = { seal: (value, id) => sealSecret(value, secretPurpose(id)), open: (sealed, id) => openSecret(sealed, secretPurpose(id)) };
+const connectorLive: LiveRegistration = { register: (source, manifest) => registerConnector(registry, source, manifest), unregister: id => unregisterConnector(registry, id) };
+const sign = (secret: string, audience: string) => (actor: { id: string }) => new SignJWT({ actor }).setProtectedHeader({ alg: 'HS256', typ: 'JWT' }).setIssuer('clew').setAudience(audience).setSubject(actor.id).setIssuedAt().setExpirationTime('2m').sign(new TextEncoder().encode(secret));
+const connectorStore = postgresConnectorStore();
+export const connectorAdmin = connectorUsecases({ store: connectorStore, registry, secrets: connectorSecrets, live: connectorLive, units: postgresUnits(), clock,
+  transport: { fetchManifest: (url, id) => fetchManifest(url, id), check: ({ url, id, secret }) => checkConnector({ url, id, assert: assertionFor(id, secret), assertForeign: sign('wrong-secret-wrong-secret-' + id, id) }) } });
+export const connectorReconcile: ConnectorReconcileDeps = { registry, store: connectorStore, secrets: connectorSecrets, live: connectorLive, bundled: bundledIds, clock, log: console.log };
 export const scheduler = createScheduler({ jobs: postgresJobQueue(), people: postgresPeople(), threads, calendar, clock, log: console.error });

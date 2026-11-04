@@ -3,18 +3,23 @@
 How an administrator connects a system to a running Clew, decides who sees it, and keeps it healthy, from
 the browser and without a restart; and, on the same surface, which model providers and models the composer
 may use (D24). Implements D22 (the word), D23 (the database as the only registration path) and D24.
-Status: D23 built up to the boot loader and `scripts/connector-add.ts` (session 15: table, sealed secrets, `loadConnectors`, `Registry.replace`/`unregister`, seed); visibility, the admin API and the screens are not built. The screens need a row on the design canvas
-before they are built (`CLAUDE.md`: the canvas is the reference for every screen).
+Status: D23 built 2026-11-04 (sessions 15 and 18): the rows, the loader, governance in the registry, bundled connectors as
+rows, the admin use cases and API, the shared checker, reconciliation without a restart, the screens and their tests.
+The canvas row for the screens is still to be drawn and compared against (`CLAUDE.md`). D24 (section Modeller) is not built.
 
 ## The model
 
-One row per connector in Postgres, one `Connector` in the live registry per enabled row.
+One row per connector in Postgres, one `Connector` in the live registry per enabled row. Bundled connectors (people, the
+calendar, the mocks until they are lifted) get a row at boot with `bundled` true and no url or secret, so the same
+audience and switches govern them; they cannot be removed or re-addressed, only switched off. Decided 2026-11-04 so
+the Hassan demo works with today's mocks.
 
 ```
 connector
   id                  text pk        'heroma', what the manifest must declare
-  url                 text           base URL of the service as seen from Clew
-  secret              text           sealed envelope (auth-crypto), purpose 'connector:secret:<id>'
+  bundled             boolean        true for a connector in Clew's own process (no url, no secret)
+  url                 text, null     base URL of the service as seen from Clew
+  secret              text, null     sealed envelope (auth-crypto), purpose 'connector:secret:<id>'
   secret_changed_at   timestamptz
   state               text           'draft' | 'enabled' | 'disabled'
   audience            jsonb          { mode: 'all' } | { mode: 'selected', roles?: Role[], units?: string[], groups?: string[] }
@@ -44,10 +49,15 @@ the calendar for everyone, Raindance for chefer and ekonomer.
 
 ## Server
 
-Folder `apps/server/src/connectors/` (D22): `registry.ts` and `remote.ts` move here; new `usecases.ts`
-(one function per admin action, actor first, step-up, transaction, audit row, then registry update) and
-`adapters/` for the Drizzle rows and the sealed secret. Routes in `routes/admin.ts`, guarded by the grant
-capability `admin.connectors`.
+Folder `apps/server/src/connectors/` (D22, D25): `registry.ts` (the live registry, `bundledIds`), `remote.ts` (assertions,
+the boot loader), `model.ts` (the ports: `ConnectorStore`, `ConnectorTx`, `Secrets`, `Transport`, `LiveRegistration`,
+`Units`), `usecases/admin.ts` (`connectorUsecases(deps)`: one function per admin action, actor first, step-up,
+transaction with the audit row, then the live registry), `adapters/postgres.ts` and `adapters/memory.ts`,
+`describe.ts` (a bundled connector in the manifest's shape), `reconcile.ts` (bundled rows at boot, governance applied,
+a watcher that polls row versions every five seconds so a change from the CLI or another instance lands without a
+restart) and the shared checker in `packages/connectors/src/check.ts`. Routes in `routes/admin.ts`; the use cases
+refuse anyone without the grant capability `admin.connectors` (`ForbiddenError`, 403), and `GET /api/auth/session`
+says `admin: true` so the browser shows the entry point.
 
 | Route | Does |
 |---|---|
@@ -58,7 +68,8 @@ capability `admin.connectors`.
 | `POST /api/admin/connectors/:id/secret` | replace the secret; the response says only that it was replaced |
 | `POST /api/admin/connectors/:id/test` | run the checker now, store and return health |
 | `POST /api/admin/connectors/:id/refresh` | refetch the manifest; diff against the stored one is returned |
-| `GET /api/admin/connectors/:id/preview?role=&unit=` | structural preview: the areas, standing actions and tool names an actor with that role and unit would get (no data, no call to the service) |
+| `GET /api/admin/units` | the units the grants name, for the audience editor |
+| `GET /api/admin/connectors/:id/preview?role=&unitId=` | structural preview: the areas, standing actions and tool names an actor with that role and unit would get (no data, no call to the service) |
 | `DELETE /api/admin/connectors/:id` | remove; open cards from it are closed with reason `connector.removed` |
 
 Every mutation: `persona.authorize()`, one transaction with the row and the audit row, then
@@ -213,6 +224,20 @@ through all four steps by keyboard with the failure state, detail with every tab
 Switches have visible labels and announce their new state; the checker's progress is a live region;
 tables reflow to lists at 320 px; focus returns to the row's switch after a PATCH, to the list heading
 after a removal (the pattern the stream uses when a card leaves).
+
+## Built, and what to know
+
+- Visibility is one check in the registry (`visible`, `allowed`, `listFor`, `capabilitiesFor`): `run` answers
+  "Okänd förmåga." for a hidden connector, and `areas`, `scan`, `tools`, the search objects, the typeahead and
+  `GET /api/connectors` all go through it. The stream hides open cards from a hidden connector while handled ones
+  stay (`threads/usecases/cards.ts`).
+- The structural preview cannot satisfy a scope written as code (the mocks narrow by identity), so it lists areas
+  and only the tools a declarative scope allows; the page says so.
+- Screens: `apps/web/src/pages/admin/` (`shell.tsx`, `connectors.tsx`, `add.tsx`, `connector.tsx`, `audience.tsx`,
+  `labels.ts`), routes `/admin`, `/admin/anslutningar`, `/admin/anslutningar/:id`, the entry "Administration" in
+  the start page header for an administrator, `NotAdmin` for anyone else. Tests: `tests/a11y/admin.spec.ts`,
+  `tests/unit/connector-admin.test.ts`, `tests/unit/connectors.test.ts` (governance), the connector store contract
+  on both adapters, and the administration flow in `scripts/modules-check.ts`.
 
 ## Order of work
 

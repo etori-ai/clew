@@ -3,6 +3,9 @@ import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import { authRoutes } from './routes/auth';
 import { api } from './routes/api';
+import { adminRoutes } from './routes/admin';
+import { connectorReconcile } from './composition';
+import { applyAllRows, syncBundledRows, watchConnectors } from './connectors/reconcile';
 import { connectorRoutes } from './routes/connectors';
 import { registry } from './connectors/registry';
 import { loadConnectors } from './connectors/remote';
@@ -18,6 +21,7 @@ app.get('/api/health', c => c.json({ ok: true }));
 app.route('/api/auth', authRoutes);
 // Connector callbacks authenticate with Clew's own assertion, not a session, so they are mounted before the session guard.
 app.route('/api/connectors', connectorRoutes);
+app.route('/api/admin', adminRoutes);
 app.route('/api', api);
 app.notFound(c => c.json({ error: 'Okänd adress.' }, 404));
 // Hono hands handler errors to onError, not to the middleware chain: map auth, calendar and input errors here.
@@ -30,5 +34,6 @@ serve({ fetch: app.fetch, port, hostname: process.env.HOST ?? '127.0.0.1' }, inf
   scheduler.start();
   startAssistantProbe();
   void startWorker();
-  void loadConnectors(registry).catch(error => console.error('connectors', error));
+  // Rows first, then governance for every row, then the watcher that applies later changes without a restart (D23).
+  void loadConnectors(registry).then(() => syncBundledRows(connectorReconcile)).then(() => applyAllRows(connectorReconcile)).then(() => { watchConnectors(connectorReconcile); }).catch(error => console.error('connectors', error));
 });

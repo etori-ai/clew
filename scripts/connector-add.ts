@@ -2,7 +2,7 @@
  * Register a connector in the database (D23) from the command line, until the admin page exists. Runs inside the app
  * container with the server's local settings (MASTER_KEY, DATABASE_URL). Fetches the manifest, runs the same validation
  * the loader does, seals the secret and writes the row and its audit row in one transaction. The BFF registers enabled
- * rows at boot; restart it (or wait for the admin page) after enabling.
+ * rows at boot and watches the rows every few seconds, so a change here reaches it without a restart.
  *
  *   bun scripts/connector-add.ts <id> <url> --secret <shared secret> [--enable]      add or update
  *   bun scripts/connector-add.ts <id> --enable | --disable | --remove                 change state
@@ -25,7 +25,7 @@ const [id, url] = positional;
 const actor = 'bootstrap:connector';
 try {
   if (flag('list')) {
-    for (const row of await listConnectors()) console.log(`${row.id.padEnd(16)} ${row.state.padEnd(9)} ${row.health.status.padEnd(17)} ${row.url}`);
+    for (const row of await listConnectors()) console.log(`${row.id.padEnd(16)} ${row.state.padEnd(9)} ${row.health.status.padEnd(17)} ${row.bundled ? '(inbyggd)' : row.url}`);
   } else if (!id || !/^[a-z][a-z0-9-]*$/.test(id)) {
     console.error('Usage: bun scripts/connector-add.ts <id> <url> --secret <secret> [--enable] | <id> --enable|--disable|--remove | --list'); process.exit(2);
   } else if (flag('remove')) {

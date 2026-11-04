@@ -38,7 +38,7 @@ export async function verifyAssertion(token: string, lookup: (connectorId: strin
 
 /** What the loader needs from a row: the secret already opened. The admin use cases and the CLI build the same shape. */
 export interface ConnectorSource { id: string; url: string; secret: string; manifest: unknown }
-export const sourceOf = (row: ConnectorRow): ConnectorSource => ({ id: row.id, url: row.url, secret: openSecret(row.secret, secretPurpose(row.id)), manifest: row.manifest });
+export const sourceOf = (row: ConnectorRow): ConnectorSource => ({ id: row.id, url: row.url ?? '', secret: row.secret ? openSecret(row.secret, secretPurpose(row.id)) : '', manifest: row.manifest });
 export interface LoadOptions {
   rows?: () => Promise<ConnectorSource[]>;
   record?: (id: string, health: ConnectorHealth, manifest?: unknown) => Promise<void>;

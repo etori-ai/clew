@@ -1,5 +1,5 @@
 import { attentionLevel, worstLevel, type Attention, type AuthenticatedContext, type Area, type Receipt, type Thread } from '@clew/contracts';
-import { actorOf, receipt, type ExecuteResult, type Registry, type ThreadDraft } from '@clew/connectors';
+import { actorOf, receipt, type Actor, type ExecuteResult, type Registry, type ThreadDraft } from '@clew/connectors';
 import { InputError } from '../../context';
 import type { ThreadStore } from '../model';
 
@@ -10,7 +10,7 @@ import type { ThreadStore } from '../model';
  */
 export interface ThreadDeps {
   store: ThreadStore;
-  registry: Pick<Registry, 'scan' | 'areas' | 'connector'>;
+  registry: Pick<Registry, 'scan' | 'areas' | 'connector' | 'visible'>;
   /** Run a capability as the person, with input validation and scope: `runCapability` in the server. */
   run: <O = unknown>(persona: AuthenticatedContext, name: string, input: unknown) => Promise<O>;
   /** The calendar's proposal path, the one coupling the stream has to a module (recorded as debt in D20). */
@@ -92,7 +92,7 @@ export function threadUsecases(deps: ThreadDeps) {
    * and record the receipt. Execute actions close the thread; read actions return their output for the panel.
    */
   async function act(persona: AuthenticatedContext, threadId: string, actionId: string, refs?: string[]) {
-    const thread = await store.readThread(persona.id, threadId);
+    const thread = await threadFor(persona, threadId);
     if (!thread) throw new InputError('Tråden finns inte.');
     const action = thread.actions.find(a => a.id === actionId);
     if (!action) throw new InputError('Okänd handling.');
@@ -140,7 +140,7 @@ export function threadUsecases(deps: ThreadDeps) {
     });
   }
   async function dismissThread(persona: AuthenticatedContext, threadId: string, reason = 'inte aktuellt') {
-    const thread = await store.readThread(persona.id, threadId);
+    const thread = await threadFor(persona, threadId);
     if (!thread || thread.state !== 'open') throw new InputError('Tråden är redan hanterad.');
     const at = clock().toISOString();
     await store.transaction(async tx => {
@@ -152,7 +152,7 @@ export function threadUsecases(deps: ThreadDeps) {
   }
   /** Snooze: keep the thread open but hide it until the next bundle (tomorrow 06:00). Stored as a deadline-free `waitingOn`. */
   async function snoozeThread(persona: AuthenticatedContext, threadId: string) {
-    const thread = await store.readThread(persona.id, threadId);
+    const thread = await threadFor(persona, threadId);
     if (!thread || thread.state !== 'open') throw new InputError('Tråden är redan hanterad.');
     const at = clock().toISOString();
     await store.transaction(async tx => {
@@ -186,10 +186,15 @@ export function threadUsecases(deps: ThreadDeps) {
     const used = await store.countPushedSince(persona.id, since.toISOString());
     return { used, budget: ATTENTION_BUDGET, bundledUntil: used >= ATTENTION_BUDGET ? 'i morgon 06:00' : null };
   }
+  /**
+   * An open card from a connector the person cannot see (switched off, or they are outside its audience, D23) is not
+   * theirs to find: it stays in the store and comes back if the connector does. Handled cards stay: they are the person's history.
+   */
+  const hidden = (persona: Actor, t: Thread) => t.kind === 'pushed' && t.state === 'open' && !registry.visible(persona, t.connector);
   /** The person's own threads, newest first, as the stream shows them. */
-  const listThreadsFor = (persona: Pick<AuthenticatedContext, 'id'>) => store.listThreads(persona.id, clock().toISOString());
+  const listThreadsFor = async (persona: Actor) => (await store.listThreads(persona.id, clock().toISOString())).filter(t => !hidden(persona, t));
   /** One of the person's threads, or undefined when it is not theirs. */
-  const threadFor = (persona: Pick<AuthenticatedContext, 'id'>, threadId: string) => store.readThread(persona.id, threadId);
+  const threadFor = async (persona: Actor, threadId: string) => { const t = await store.readThread(persona.id, threadId); return t && !hidden(persona, t) ? t : undefined; };
   /** Avfärda from the card: proposal threads decline their drawn times through the planner, every other card is dismissed as is. */
   async function dismissAny(persona: AuthenticatedContext, threadId: string) {
     const thread = await threadFor(persona, threadId);

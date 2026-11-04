@@ -50,6 +50,13 @@
       "when": 1793804970328,
       "tag": "0006_gorgeous_starbolt",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793808074083,
+      "tag": "0007_lame_dexter_bennett",
+      "breakpoints": true
     }
   ]
 }
