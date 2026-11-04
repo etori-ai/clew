@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import type { CheckReport, ConnectorAudience, ConnectorDetail, ManifestDiff, SessionUser } from '@clew/contracts';
-import { AlertDialog, Badge, Banner, Button, Code, Dialog, DialogHeader, DropdownMenu, EmptyState, FormLayout, HStack, Heading, InfoTip, List, ListItem, MetadataList, MetadataListItem, Section, StatusDot, Switch, Tab, TabList, Table, Text, TextInput, Timestamp, Toolbar, VStack, useMediaQuery, useToast } from '@clew/ui';
+import { AlertDialog, Badge, Banner, Button, Card, Code, Dialog, DialogHeader, DropdownMenu, EmptyState, FormLayout, HStack, Heading, InfoTip, List, ListItem, MetadataList, MetadataListItem, Section, StatusDot, Switch, Tab, TabList, Table, Text, TextInput, Timestamp, Toolbar, VStack, useMediaQuery, useToast } from '@clew/ui';
 import { api, ApiError } from '../../api';
 import { usePageTitle } from '../../page-title';
 import { AudienceEditor, AudiencePreview } from './audience';
@@ -72,7 +72,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
     {unhealthy && <Banner status={c.health.status === 'unreachable' ? 'warning' : 'error'} container="section" collapsible={false} title={`${c.source}: ${healthLabel[c.health.status].toLowerCase()}${c.health.at ? ' sedan ' : ''}`}
       description={`${c.health.detail ?? ''} Kort och figurer visas från senast kända läge.`.trim()} endContent={<Timestamp value={c.health.at} format="date_time" />} />}
     {error && <Text as="p" role="alert" color="accent">{error}</Text>}
-    <Section padding={0} dividers={['top', 'bottom', 'start', 'end']}>
+    <Card padding={0}>
     {/* Five tabs do not fit 320 px without scrolling (1.4.10), so a phone gets the sections as a menu with the same panels. */}
     <Section variant="transparent" paddingInline={4} paddingBlock={mobile ? 3 : 0}>
       {mobile
@@ -134,7 +134,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
       </List>}
     </div>}
     </Section>
-    </Section>
+    </Card>
     <Dialog isOpen={secretOpen} onOpenChange={open => { if (!open) { setSecretOpen(false); setSecret(''); } }} width={480} purpose="form" padding={4}>
       <VStack gap={4}>
         <DialogHeader title="Byt nyckel" subtitle="Den gamla nyckeln slutar gälla direkt. Starta om tjänsten med den nya." onOpenChange={() => { setSecretOpen(false); setSecret(''); }} />

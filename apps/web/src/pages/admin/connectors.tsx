@@ -65,7 +65,8 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
     </HStack>}
     {error && <Text as="p" role="alert" color="accent">{error}</Text>}
     {connectors === null && <Text type="supporting" role="status">Läser anslutningarna …</Text>}
-    {connectors !== null && <Section padding={0} dividers={['top', 'bottom', 'start', 'end']}>
+    {/* A Section with padding 0 bleeds over the page's gutters (it is edge-to-edge by definition); the bordered box is a Card. */}
+    {connectors !== null && <Card padding={0}>
       <Toolbar label="Anslutningar" size="sm" dividers={['bottom']} startContent={<SegmentedControl label="Visa" size="sm" value={filter} onChange={v => setFilter(v as Filter)}>{filters.map(f => <SegmentedControlItem key={f.value} value={f.value} label={f.label} />)}</SegmentedControl>}
         endContent={<Text type="supporting">{shown.length === all.length ? `${all.length} anslutningar` : `${shown.length} av ${all.length}`}</Text>} />
       {shown.length === 0 && <Section variant="transparent" padding={6}><EmptyState isCompact title={filter === 'alla' ? 'Inga anslutningar ännu' : 'Inget att visa'} description={filter === 'alla' ? 'Anslut det första systemet så får det en rad här.' : 'Inga anslutningar matchar filtret.'} actions={filter === 'alla' ? <Button label="Anslut system" onClick={() => setAdding(true)} /> : undefined} /></Section>}
@@ -74,7 +75,7 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
           {shown.map(c => <ListItem key={c.id} href={`/admin/anslutningar/${c.id}`} label={name(c)} description={<VStack gap={0}><HStack gap={1} vAlign="center">{status(c)}<Text type="supporting">{statusOf(c).label} · {audienceLabel(c.audience)}</Text></HStack><Text type="supporting">{counts(c)}</Text></VStack>} endContent={toggle(c)} />)}
         </List>
         : <Table<Row> data={shown.map(c => ({ id: c.id, c }))} idKey="id" columns={columns} density="balanced" hasHover />)}
-    </Section>}
+    </Card>}
     <AddConnectorDialog isOpen={adding} units={units} onClose={added => { setAdding(false); if (added) void load(); }} />
   </AdminShell>;
 }
