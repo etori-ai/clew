@@ -8,7 +8,8 @@
     "./adapters": "./src/adapters.ts",
     "./nextcloud": "./src/nextcloud.ts",
     "./proposals": "./src/proposals.ts",
-    "./accounts": "./src/accounts.ts"
+    "./accounts": "./src/accounts.ts",
+    "./memory": "./src/memory.ts"
   },
   "dependencies": {
     "@clew/contracts": "workspace:*",

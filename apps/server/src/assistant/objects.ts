@@ -2,7 +2,7 @@ import { inScope } from '@clew/connectors';
 import type { AuthenticatedContext, ClewObject } from '@clew/contracts';
 import { listThreads } from '@clew/db/threads';
 import { shortDayLabel, timeRange } from '@clew/calendar/dates';
-import { readToday } from '../modules/calendar/usecases/reads';
+import { calendar } from '../composition';
 import { actorOf, registry } from '../connectors/registry';
 
 /** What `@` offers (D12): the objects on the page first, then every capability in scope. */
@@ -15,7 +15,7 @@ export async function listObjects(persona: AuthenticatedContext, q: string): Pro
     for (const i of t.items) visible.push({ ref: i.ref, kind: 'item', label: i.label, detail: `rad · ${i.detail}`, threadId: t.id, visible: true });
     for (const p of t.proposals.filter(p => p.status === 'proposed')) visible.push({ ref: 'proposal:' + p.id, kind: 'proposal', label: p.participant.name, detail: `förslag · ${shortDayLabel(p.start.slice(0, 10))} ${timeRange(p.start, p.end)}`, threadId: t.id, visible: true });
   }
-  try { const day = await readToday(persona); for (const e of day.events) visible.push({ ref: 'event:' + e.id, kind: 'event', label: e.title, detail: `i dag · ${e.allDay ? 'heldag' : timeRange(e.start, e.end)}`, visible: true }); } catch { /* the calendar is optional here */ }
+  try { const day = await calendar.readToday(persona); for (const e of day.events) visible.push({ ref: 'event:' + e.id, kind: 'event', label: e.title, detail: `i dag · ${e.allDay ? 'heldag' : timeRange(e.start, e.end)}`, visible: true }); } catch { /* the calendar is optional here */ }
   const actor = actorOf(persona);
   const everything: ClewObject[] = registry.list().flatMap(m => m.capabilities.filter(c => inScope(c.scope, actor)).map(c => ({ ref: 'capability:' + c.name, kind: 'capability' as const, label: c.title, detail: `${m.source} · ${c.kind === 'read' ? 'fråga' : 'gör något'}`, visible: false })));
   const all = [...visible, ...everything];

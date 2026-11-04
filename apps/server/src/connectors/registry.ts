@@ -2,13 +2,14 @@ import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import type { AuthenticatedContext } from '@clew/contracts';
 import { postgresState } from '@clew/db/state';
-import { CapabilityError, Registry, type Actor } from '@clew/connectors';
+import { actorOf, CapabilityError, Registry } from '@clew/connectors';
 import { heromaConnector } from '@clew/connectors/mock/heroma';
 import { raindanceConnector } from '@clew/connectors/mock/raindance';
 import { treservaConnector } from '@clew/connectors/mock/treserva';
 import { kommunikationConnector } from '@clew/connectors/mock/kommunikation';
 import { InputError } from '../context';
 import { calendarConnector } from '../modules/calendar/connector';
+import { calendar } from '../composition/calendar';
 import { peopleConnector } from '../modules/people/connector';
 
 /**
@@ -18,8 +19,8 @@ import { peopleConnector } from '../modules/people/connector';
  * the registry (D20): in-process through the `clew.call` handle, remote through `POST /api/connectors/call`.
  */
 export const registry = new Registry();
-for (const m of [heromaConnector(postgresState), raindanceConnector(postgresState), treservaConnector(postgresState), kommunikationConnector(postgresState), calendarConnector(), peopleConnector()]) registry.register(m);
-export const actorOf = (persona: AuthenticatedContext): Actor => ({ id: persona.id, name: persona.name, unitId: persona.unitId, unitLabel: persona.unitLabel, role: persona.role });
+for (const m of [heromaConnector(postgresState), raindanceConnector(postgresState), treservaConnector(postgresState), kommunikationConnector(postgresState), calendarConnector(calendar), peopleConnector()]) registry.register(m);
+export { actorOf };
 
 const ajv = addFormats(new Ajv({ allErrors: false, strict: false }));
 const validators = new Map<string, ReturnType<typeof ajv.compile>>();

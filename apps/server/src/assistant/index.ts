@@ -5,7 +5,7 @@ import { addMessage, readThread, writeAudit } from '@clew/db/threads';
 import { weekNumber, today } from '@clew/calendar/dates';
 import { InputError } from '../context';
 import { actorOf, registry, runCapability } from '../connectors/registry';
-import { replan } from '../modules/calendar/usecases/samtal';
+import { calendar } from '../composition';
 import { resolveChips, type ResolvedChips } from './chips';
 import { serialiseContext } from './context';
 import { routeFixed } from './fixed';
@@ -38,7 +38,7 @@ async function chipPath(persona: AuthenticatedContext, text: string, thread: Thr
       clewActions: [{ n: 1, kind: 'snooze', threadId: thread.id, label: `Inte nu: "${thread.title}" tas upp i morgon 06:00` }] };
     case 'why': return { ...base, shape: 'svar', source: thread.trigger.source, body: whyLine(thread) };
     case 'replan': {
-      const updated = await replan(persona, thread.id, verb.week!);
+      const updated = await calendar.replan(persona, thread.id, verb.week!);
       return { ...base, shape: 'forslag', source: 'Kalendern', body: `Jag har ritat om förslagen i vecka ${weekNumber(verb.week!)}. Inget är skickat förrän du trycker på knappen i kortet.`, draft: { kind: 'replan', threadId: thread.id, week: verb.week!, thread: updated } };
     }
     case 'primary': {

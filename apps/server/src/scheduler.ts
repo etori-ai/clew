@@ -3,8 +3,7 @@ import { database, schema } from '@clew/db';
 import { claimJob, scheduleJob, type JobRow } from '@clew/db/jobs';
 import { timeZone } from '@clew/calendar/dates';
 import { systemContext } from './system-context';
-import { closeUndoWindow } from './modules/calendar/usecases/samtal';
-import { closeReceiptWindow, ensureThreads } from './threads/usecases/cards';
+import { calendar, threads } from './composition';
 
 /**
  * Postgres-backed scheduler for v1. One nightly scan per manager and one timer per undo window. Jobs are claimed
@@ -16,14 +15,14 @@ let timer: ReturnType<typeof setInterval> | undefined;
 async function run(job: JobRow) {
   if (job.kind === 'scan-utvecklingssamtal') {
     const people = await database().select({ id: schema.accessGrants.personId }).from(schema.accessGrants);
-    for (const p of people) { const persona = await systemContext(p.id); if (persona) await ensureThreads(persona).catch(error => console.error('scan', p.id, error)); }
+    for (const p of people) { const persona = await systemContext(p.id); if (persona) await threads.ensureThreads(persona).catch(error => console.error('scan', p.id, error)); }
     await scheduleNightly();
   } else if (job.kind === 'undo-expiry') {
     const threadId = typeof job.payload.threadId === 'string' ? job.payload.threadId : undefined;
-    if (threadId) await closeUndoWindow(threadId);
+    if (threadId) await calendar.closeUndoWindow(threadId);
   } else if (job.kind === 'receipt-final') {
     const threadId = typeof job.payload.threadId === 'string' ? job.payload.threadId : undefined;
-    if (threadId) await closeReceiptWindow(threadId);
+    if (threadId) await threads.closeReceiptWindow(threadId);
   }
 }
 export async function scheduleNightly() {

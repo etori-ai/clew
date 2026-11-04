@@ -15,6 +15,8 @@ export type CapabilityKind = 'read' | 'propose' | 'execute';
 export type ConnectorKind = 'core' | 'passthrough' | 'derived';
 /** The caller as capabilities see it: identity and scope, never tokens. */
 export type Actor = Pick<SessionUser, 'id' | 'name' | 'unitId' | 'unitLabel' | 'role'>;
+/** The actor a capability sees, cut from an authenticated context: identity and scope, never tokens. */
+export const actorOf = (persona: Actor): Actor => ({ id: persona.id, name: persona.name, unitId: persona.unitId, unitLabel: persona.unitLabel, role: persona.role });
 /**
  * Who may call a capability. Declarative so a remote manifest can carry it: no `roles` means every signed-in
  * person. A bundled connector may give a function instead. Either way `run` narrows further (unit, own records).

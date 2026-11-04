@@ -5,7 +5,7 @@ import { protocolSchema } from '../../packages/connectors/src/protocol';
 import { ManifestError, fetchManifest, parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { createConnector, manifest as helloManifest } from '../../connectors/hello/connector.mjs';
 import { assertionFor, loadConnectors, verifyAssertion } from '../../apps/server/src/connectors/remote';
-import type { ConnectorHealth } from '../../packages/db/src/connectors';
+import type { ConnectorHealth } from '../../packages/db/src/schema';
 
 const secret = 'test-secret-test-secret';
 const hillevi: Actor = { id: 'hillevi', name: 'Hillevi Berg', unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'manager' };

@@ -6,16 +6,16 @@ import { ActInput, AskInput, ConfirmInput, ConversationInput, ReplanInput, Reply
 import type { ConversationInput as ConversationInputType } from '@clew/contracts';
 import type { ActInput as ActInputType } from '@clew/contracts';
 import { InputError, protectedRoute, type Env } from '../context';
-import { readToday } from '../modules/calendar/usecases/reads';
 import { readFigures } from '../modules/figures/domain';
 import { ask, completionsFor, converse, listObjects, providerStatus, reply, verbsFor } from '../assistant';
-import { confirm, replan, samtalStatus, undo, weekOverview } from '../modules/calendar/usecases/samtal';
 import { registry, runCapability } from '../connectors/registry';
-import { act, attentionFor, dismissAny, ensureThreads, listAreas, listThreadsFor, reopenThread, snoozeThread, threadFor, undoReceipt } from '../threads/usecases/cards';
-import { resetMocks } from '../modules/mocks/usecases';
-import { cancelReminder, remind } from '../threads/usecases/reminders';
+import { calendar, mocks, reminders, threads } from '../composition';
 import { Type } from '@sinclair/typebox';
 
+const { act, attentionFor, dismissAny, ensureThreads, listAreas, listThreadsFor, reopenThread, snoozeThread, threadFor, undoReceipt } = threads;
+const { cancelReminder, remind } = reminders;
+const { confirm, readToday, replan, samtalStatus, undo, weekOverview } = calendar;
+const { resetMocks } = mocks;
 const ajv = addFormats(new Ajv({ allErrors: false }));
 const RemindInput = Type.Object({ seconds: Type.Integer({ minimum: 1, maximum: 86400 }) }, { additionalProperties: false });
 const CancelReminderInput = Type.Object({ workflowId: Type.String({ minLength: 1, maxLength: 200 }) }, { additionalProperties: false });
@@ -85,6 +85,6 @@ api.get('/threads/:id/verbs', async c => {
 api.get('/assistant/status', c => c.json(providerStatus()));
 api.post('/threads/:id/reopen', async c => c.json(await reopenThread(c.get('session').context, c.req.param('id'))));
 api.get('/today', async c => c.json(await readToday(c.get('session').context)));
-api.get('/figures', async c => { const persona = c.get('session').context; return c.json({ figures: readFigures(persona, await samtalStatus(persona)) }); });
+api.get('/figures', async c => { const persona = c.get('session').context; return c.json({ figures: readFigures(persona, await samtalStatus(persona), new Date().toISOString()) }); });
 api.get('/calendar', async c => c.json(await weekOverview(c.get('session').context, c.req.query('from'))));
 api.get('/attention', async c => c.json(await attentionFor(c.get('session').context)));

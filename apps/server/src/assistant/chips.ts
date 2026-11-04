@@ -2,7 +2,7 @@ import { inScope } from '@clew/connectors';
 import type { AuthenticatedContext, CalendarEvent, Chip, Thread } from '@clew/contracts';
 import { listThreads, readThread } from '@clew/db/threads';
 import { today, weekStart } from '@clew/calendar/dates';
-import { listWeek } from '../modules/calendar/usecases/reads';
+import { calendar } from '../composition';
 import { registry } from '../connectors/registry';
 import { InputError } from '../context';
 
@@ -39,7 +39,7 @@ export async function resolveChips(persona: AuthenticatedContext, chips: Chip[])
     } else if (chip.kind === 'event') {
       const id = chip.ref.replace(/^event:/, '');
       let event: CalendarEvent | undefined;
-      try { const { view } = await listWeek(persona, weekStart(today()), 14); event = view.find(e => e.id === id); } catch { event = undefined; }
+      try { const { view } = await calendar.listWeek(persona, weekStart(today()), 14); event = view.find(e => e.id === id); } catch { event = undefined; }
       if (!event) throw gone();
       objects.push({ kind: 'event', ref: chip.ref, event });
     } else {
