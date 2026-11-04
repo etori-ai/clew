@@ -1,9 +1,16 @@
 import { useEffect, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AvailabilityResult, CalendarMember, CalendarRoom } from '@clew/contracts';
 import { Banner, Button, DateTimeInput, Dialog, DialogHeader, FormLayout, HStack, List, ListItem, MultiSelector, Selector, StatusDot, Text, TextInput, TimeInput, VStack, useAnnounce, useMediaQuery, useToast } from '@clew/ui';
 import { localClock, localInstant, shortDayLabel, timeRange } from '@clew/calendar/dates';
-import { api, ApiError } from '../../api';
+import { api } from '../../api';
+import { membersQuery, roomsQuery } from '../../queries';
+import { errorMessage } from '../../query-policy';
+import { keys } from '../../query-keys';
 import { mobileQuery } from '../shell';
+
+const EMPTY_MEMBERS: CalendarMember[] = [];
+const EMPTY_ROOMS: CalendarRoom[] = [];
 
 type Props = {
   isOpen: boolean;
@@ -29,17 +36,16 @@ export function BookingDialog({ isOpen, initial, onClose }: Props) {
   const [end, setEnd] = useState('');
   const [participants, setParticipants] = useState<string[]>([]);
   const [room, setRoom] = useState('');
-  const [members, setMembers] = useState<CalendarMember[]>([]);
-  const [rooms, setRooms] = useState<CalendarRoom[]>([]);
+  // The unit's members and the rooms come from the cache and are kept a while (D33), so the dialog opens with them.
+  const client = useQueryClient();
+  const members = useQuery({ ...membersQuery, enabled: isOpen }).data?.members ?? EMPTY_MEMBERS;
+  const rooms = useQuery({ ...roomsQuery, enabled: isOpen }).data?.rooms ?? EMPTY_ROOMS;
   const [availability, setAvailability] = useState<AvailabilityResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ text: string; uncertain: boolean } | null>(null);
   useEffect(() => {
     if (!isOpen) return;
     setTitle(''); setStart(localClock(initial.start)); setEnd(hhmm(initial.end)); setParticipants([]); setRoom(''); setAvailability(null); setError(null);
-    let alive = true;
-    void Promise.all([api.members(), api.rooms()]).then(([m, r]) => { if (alive) { setMembers(m.members); setRooms(r.rooms); } }).catch(() => undefined);
-    return () => { alive = false; };
   }, [isOpen, initial.start, initial.end]);
   useEffect(() => { setAvailability(null); }, [start, end, participants, room]);
   const startAt = start ? localInstant(start) : null;
@@ -51,17 +57,19 @@ export function BookingDialog({ isOpen, initial, onClose }: Props) {
     if (!startAt || !endAt || endFirst) return;
     setError(null);
     try { const result = await api.availability(input()); setAvailability(result); announce(`Du är ${stateWord[result.mine]}. ${result.participants.map(p => `${p.name} ${stateWord[p.state]}`).join(', ')}${result.room ? `. Rummet ${result.room.name} ${stateWord[result.room.state]}` : ''}.`); }
-    catch (e) { setError({ text: e instanceof ApiError ? e.message : 'Något gick fel.', uncertain: false }); }
+    catch (e) { setError({ text: errorMessage(e, 'Något gick fel.'), uncertain: false }); }
   };
   const book = async () => {
     if (!ready || busy) return;
     setBusy(true); setError(null);
     try {
       const event = await api.createEvent({ title: title.trim(), ...input() });
+      // The booking is in the calendar: every loaded week is read again (D33).
+      void client.invalidateQueries({ queryKey: keys.calendarAll });
       toast({ body: `Bokat: ${event.title} ${shortDayLabel(event.start.slice(0, 10))} ${timeRange(event.start, event.end)}`, uniqueID: 'booked:' + event.id });
       onClose(true);
     } catch (e) {
-      const text = e instanceof ApiError ? e.message : 'Något gick fel.';
+      const text = errorMessage(e, 'Något gick fel.');
       setError({ text, uncertain: /osäker/.test(text) });
     } finally { setBusy(false); }
   };

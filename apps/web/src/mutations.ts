@@ -29,7 +29,7 @@ export function useThreadAction({ onChange, fallback = 'Något gick fel.' }: { o
     inFlight.current = true;
     try { await mutateAsync(fn); } catch { /* the error is in the mutation's state */ } finally { inFlight.current = false; }
   }, [mutateAsync]);
-  return { run, apply, busy: mutation.isPending, error: mutation.isError ? errorMessage(mutation.error, fallback) : null };
+  return { run, apply, busy: mutation.isPending, error: mutation.isError ? errorMessage(mutation.error, fallback) : null, reset: mutation.reset };
 }
 
 /**
@@ -53,5 +53,5 @@ export function useAdminAction({ fallback = 'Något gick fel.', invalidate = [ke
     inFlight.current = true;
     try { await mutateAsync(fn); } catch { /* the error is in the mutation's state */ } finally { inFlight.current = false; }
   }, [mutateAsync]);
-  return { run, busy: mutation.isPending, error: mutation.isError ? errorMessage(mutation.error, fallback) : null };
+  return { run, busy: mutation.isPending, error: mutation.isError ? errorMessage(mutation.error, fallback) : null, reset: mutation.reset };
 }
