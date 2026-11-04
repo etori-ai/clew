@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
-import type { AuthenticatedContext, Area, Receipt, Thread } from '@clew/contracts';
+import { attentionLevel, worstLevel, type AuthenticatedContext, type Area, type Receipt, type Thread } from '@clew/contracts';
 import { database, schema } from '@clew/db';
 import { postgresState, resetState } from '@clew/db/state';
 import { addMessage, listThreads, openProposalThread, readThread, writeAudit } from '@clew/db/threads';
@@ -82,8 +82,11 @@ async function scanInto(persona: AuthenticatedContext, source: string) {
 export async function listAreas(persona: AuthenticatedContext): Promise<Area[]> {
   const [areas, threads] = await Promise.all([registry.areas(actorOf(persona)), listThreads(persona.id)]);
   const open = threads.filter(t => t.state === 'open' && t.kind === 'pushed');
-  const all = areas.map(a => ({ ...a, needsYou: open.filter(t => t.area === a.id && !t.waitingOn).length, waiting: open.filter(t => t.area === a.id && !!t.waitingOn).length }));
-  return all;
+  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm' }).format(new Date());
+  return areas.map(a => {
+    const needsYou = open.filter(t => t.area === a.id && !t.waitingOn);
+    return { ...a, needsYou: needsYou.length, waiting: open.filter(t => t.area === a.id && !!t.waitingOn).length, urgency: worstLevel(needsYou.map(t => attentionLevel(t, today))) };
+  });
 }
 /**
  * A card action: resolve the action on the thread, merge its fixed input with the selected refs, run the capability,

@@ -1,22 +1,19 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { Chip, ClewObject, Completions, ConversationResponse, ThreadMessage, Verb, ViewRef, Thread } from '@clew/contracts';
-import { Badge, Button, ChatComposer, ChatComposerDrawer, ChatComposerInput, ChatDictationButton, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, ChatSystemMessage, HStack, Icon, IconButton, Kbd, List, ListItem, ScrollableArea, Text, Timestamp, VStack, useChatDictation, type ChatComposerInputHandle, type ChatComposerTrigger, type SearchableItem } from '@clew/ui';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import type { Chip, ClewObject, ConversationResponse, ThreadMessage, Verb, ViewRef, Thread } from '@clew/contracts';
+import { Badge, Button, Card, ChatComposer, ChatComposerInput, ChatDictationButton, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, ChatSystemMessage, HStack, Icon, IconButton, Kbd, List, ListItem, ScrollableArea, Text, Timestamp, VStack, useChatDictation, type ChatComposerInputHandle, type ChatComposerTrigger, type SearchableItem } from '@clew/ui';
 import { api, ApiError } from '../api';
 import type { ChipRef } from './conversation-context';
 
 export interface ComposerHandle { addChip(chip: ChipRef): void; openConversation(threadId: string): void; close(): void; focus(): void; }
 type Mode = 'idle' | 'focus' | 'chat';
 type Props = {
-  mobile: boolean; needsYou: number;
+  mobile: boolean;
   /** The conversation named by the route (`/samtal/:id`), or null. */
   conversationId: string | null;
   /** The page keeps the route in step: a new or reopened conversation gets its address, closing it returns to the stream. */
   onConversation: (id: string | null) => void;
-  conversationHref: (id: string) => string;
   onThreadChange: (thread: Thread) => void;
   onOpenView: (view: ViewRef) => void;
-  onDo: (capability: string) => void;
-  onShowHandled: () => void;
   onState: (state: { open: boolean; chipped: string[] }) => void;
 };
 const TOKEN = /@\[([a-z]+:[^\]]+)\]/g;
@@ -28,26 +25,21 @@ function Dictation({ onResult }: { onResult: (text: string) => void }) {
   const dictation = useChatDictation({ lang: 'sv-SE', onResult });
   return <ChatDictationButton dictation={dictation} />;
 }
-/** A group in the focus list: a heading with its hint, rows with the source on the right. */
-function Group({ title, hint, icon, children }: { title: string; hint?: string; icon: ReactNode; children: ReactNode }) {
-  return <List density="compact" header={<HStack gap={1} vAlign="center">{icon}<Text type="supporting" weight="semibold">{title}</Text>{hint && <Text type="supporting">· {hint}</Text>}</HStack>}>{children}</List>;
-}
-
 /**
- * The conversation row (D12). The row is always here; focusing it unfolds the grouped list in the composer's drawer,
- * sending unfolds the conversation in the same place, newest nearest the row. Objects become chips as tokens in the
+ * The conversation row (D12). The row is always here; focusing it dims the stream and lifts the chipped cards, nothing
+ * else (the suggestion list was dropped with the design canvas, row Chips); sending unfolds the conversation in the
+ * composer's drawer, newest nearest the row. Objects become chips as tokens in the
  * field, by `@` or "Lägg till i samtalet"; with a chip the list shrinks to verbs about that object. The row keeps
  * focus throughout; Esc or a click on the dimmed stream closes the overlay and the conversation is kept under
  * Redan hanterat › Frågor.
  */
-export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ mobile, needsYou, conversationId, onConversation, conversationHref, onThreadChange, onOpenView, onDo, onShowHandled, onState }, ref) {
+export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ mobile, conversationId, onConversation, onThreadChange, onOpenView, onState }, ref) {
   const input = useRef<ChatComposerInputHandle>(null);
   const chips = useRef(new Map<string, ChipRef>());
   const [value, setValue] = useState('');
   const [mode, setMode] = useState<Mode>('idle');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [completions, setCompletions] = useState<Completions | null>(null);
   const [conversation, setConversation] = useState<{ id: string; title: string; messages: ThreadMessage[] } | null>(null);
   const [latest, setLatest] = useState<ConversationResponse | null>(null);
   const [verbs, setVerbs] = useState<Verb[]>([]);
@@ -57,7 +49,6 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ mo
   const plain = value.replace(TOKEN, '').replace(/\s+/g, ' ').trim();
   const open = mode !== 'idle';
   useEffect(() => { onState({ open, chipped: chipped.map(c => c.ref) }); }, [open, chipped, onState]);
-  useEffect(() => { if (open && !completions) void api.completions().then(setCompletions).catch(() => undefined); }, [open, completions]);
   // One chipped card and nothing typed: the verbs about it, from its actions and Clew's standard actions.
   const chipThread = chipped.length === 1 && chipped[0]!.threadId ? chipped[0]!.threadId : null;
   useEffect(() => { if (!chipThread) { setVerbs([]); return; } let alive = true; void api.verbs(chipThread).then(v => { if (alive) setVerbs(v.verbs); }).catch(() => setVerbs([])); return () => { alive = false; }; }, [chipThread, latest]);
@@ -65,23 +56,35 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ mo
   const focus = useCallback(() => { input.current?.focus(); setMode(m => m === 'idle' ? 'focus' : m); }, []);
   const close = useCallback(() => { setMode('idle'); setError(null); onConversation(null); }, [onConversation]);
   const remember = (chip: ChipRef) => { chips.current.set(chip.ref, chip); };
-  const addChip = useCallback((chip: ChipRef) => {
-    remember(chip);
+  /**
+   * Insert chips once the editor owns focus: an insert in the same tick as focus() lands before the caret does, and a
+   * token with nothing after it leaves the caret outside any text node, so Backspace cannot reach it. A trailing space
+   * puts the caret in text after the token. A programmatic insert does not emit onChange: the controlled value follows
+   * the serialized draft so the scope and the verbs update.
+   */
+  const insertChips = useCallback((list: ChipRef[]) => {
     const handle = input.current;
     if (!handle) return;
     handle.focus();
-    // A programmatic insert does not emit onChange: the controlled value follows the serialized draft so the scope and the verbs update.
-    if (!refsIn(handle.getValue()).includes(chip.ref)) { handle.insertToken({ value: tokenValue(chip.ref), label: chip.label, variant: 'neutral' }); setValue(handle.getValue()); }
-    setMode(m => m === 'idle' ? 'focus' : m);
+    requestAnimationFrame(() => {
+      const present = refsIn(handle.getValue());
+      for (const c of list) if (!present.includes(c.ref)) { handle.insertToken({ value: tokenValue(c.ref), label: c.label, variant: 'neutral' }); if (!handle.getValue().endsWith(' ')) handle.insertText(' '); }
+      setValue(handle.getValue());
+      handle.focus();
+    });
   }, []);
+  const addChip = useCallback((chip: ChipRef) => {
+    remember(chip);
+    insertChips([chip]);
+    setMode(m => m === 'idle' ? 'focus' : m);
+  }, [insertChips]);
   // After a turn the text is cleared but the chips stay: an external value clears the field, so the tokens are put back on the next render.
   const [reinsert, setReinsert] = useState<ChipRef[] | null>(null);
   useEffect(() => {
     if (!reinsert) return;
-    const handle = input.current;
-    if (handle) { handle.focus(); for (const c of reinsert) handle.insertToken({ value: tokenValue(c.ref), label: c.label, variant: 'neutral' }); setValue(handle.getValue()); }
+    insertChips(reinsert);
     setReinsert(null);
-  }, [reinsert]);
+  }, [reinsert, insertChips]);
   const newConversation = () => { setConversation(null); setLatest(null); setDone(null); setValue(''); setMode('focus'); onConversation(null); input.current?.focus(); };
   const openConversation = useCallback(async (threadId: string) => {
     try { const t = await api.thread(threadId); setConversation({ id: t.id, title: t.title, messages: t.messages }); setLatest(null); setDone(null); setMode('chat'); input.current?.focus(); }
@@ -150,28 +153,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ mo
 
   const scope = chipped.length ? `Om ${chipped.length} ${chipped.length === 1 ? 'sak' : 'saker'}` : conversation && mode === 'chat' ? 'Samtalet' : 'Allt';
   // With a chip in the field the verb row is the hint; a placeholder would be drawn over the token after a programmatic insert.
-  const placeholder = chipped.length ? '' : mode === 'chat' ? 'Fråga vidare … (fokus ligger kvar här)' : mode === 'focus' ? 'Skriv, välj ovan, eller @ för att peka på något …' : 'Fråga, be om något, eller lägg till något från sidan …';
-
-  const focusList = completions && <VStack gap={3}>
-    <Group title="Fråga om verksamheten" hint="svaret hämtas ur källsystemen" icon={<Icon icon="search" size="sm" />}>
-      {completions.ask.slice(0, 6).map(a => <ListItem key={a.capability} label={a.text} onClick={() => ask(a.text)} endContent={<Text type="supporting">{a.source}</Text>} />)}
-    </Group>
-    <Group title="Om det som visas på sidan" hint="eller lägg till ett kort i samtalet" icon={<Icon icon="info" size="sm" />}>
-      {needsYou > 0 && <ListItem label={`Vad är mest bråttom av de ${needsYou}?`} onClick={() => ask(`Vad är mest bråttom av de ${needsYou} under Behöver dig?`)} endContent={<Text type="supporting">Behöver dig</Text>} />}
-      <ListItem label="Varför ser jag detta?" onClick={() => ask('Varför ser jag detta?')} endContent={<Text type="supporting">Startsidan</Text>} />
-    </Group>
-    {completions.do.length > 0 && <Group title="Gör något" hint="bekräftas innan det utförs" icon={<Icon icon="check" size="sm" />}>
-      {completions.do.slice(0, 5).map(d => <ListItem key={d.capability} label={d.text} onClick={() => { onDo(d.capability); close(); }} endContent={<Text type="supporting">{d.source}</Text>} />)}
-    </Group>}
-    <Group title="Tidigare samtal" icon={<Icon icon="clock" size="sm" />}>
-      {completions.recent.map(r => <ListItem key={r.conversationId} label={r.title} href={conversationHref(r.conversationId)} endContent={<Timestamp value={r.at} format="time" hasTooltip={false} />} />)}
-      <ListItem label="Alla samtal" description="Redan hanterat › Frågor" onClick={() => { onShowHandled(); close(); }} />
-    </Group>
-  </VStack>;
+  const placeholder = chipped.length ? '' : mode === 'chat' ? 'Fråga vidare … (fokus ligger kvar här)' : mode === 'focus' ? 'Skriv, eller @ för att peka på något på sidan …' : 'Fråga, be om något, eller lägg till något från sidan …';
 
   const chat = conversation && <VStack gap={2}>
     <HStack justify="between" vAlign="center" gap={2}>
-      <Text type="supporting"><Text as="span" weight="semibold">Samtal</Text> · {conversation.title}</Text>
+      <HStack gap={2} vAlign="center"><Badge variant="neutral" label="Samtal" /><Text weight="semibold">{conversation.title}</Text></HStack>
       <HStack gap={1} vAlign="center">
         <Button size="sm" variant="ghost" label="Nytt samtal" onClick={newConversation} />
         <IconButton size="sm" variant="ghost" label="Stäng samtalet" icon={<Icon icon="close" />} onClick={close} />
@@ -180,38 +166,53 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer({ mo
     <ChatMessageList density="compact" align="bottom">
       {conversation.messages.map(m => <ChatMessage key={m.id} sender={m.role}>
         <ChatMessageBubble variant={m.role === 'assistant' ? 'ghost' : 'filled'} width={m.role === 'assistant' ? '100%' : undefined}
-          metadata={<ChatMessageMetadata timestamp={<Timestamp value={m.createdAt} format="time" hasTooltip={false} />}
-            footer={m.role === 'assistant' ? (m.meta?.source ?? undefined) : m.meta?.chips?.length ? <HStack gap={1} wrap="wrap">{m.meta.chips.map(c => <Badge key={c.ref} variant="neutral" label={c.label} />)}</HStack> : undefined} />}>
-          {m.body}
+          metadata={<ChatMessageMetadata timestamp={<Timestamp value={m.createdAt} format="time" hasTooltip={false} />} footer={m.role === 'assistant' ? (m.meta?.source ?? undefined) : undefined} />}>
+          {/* The chips the person attached sit inside the bubble, above the words with a line of air; the footer under a bubble has no room for them. */}
+          {m.role === 'user' && m.meta?.chips?.length
+            ? <VStack gap={2}><HStack gap={1} wrap="wrap">{m.meta.chips.map(c => <Badge key={c.ref} variant="neutral" label={c.label} />)}</HStack><Text>{m.body}</Text></VStack>
+            : m.body}
           {m.meta?.view && <HStack gap={2}><Button size="sm" label={`Visa ${m.meta.view.title.toLowerCase()}`} onClick={() => onOpenView(m.meta!.view!)} /></HStack>}
-          {m.meta?.draft && <Text type="supporting" as="p">Utkast i kortet. Inget är skickat förrän du trycker på knappen i kortet.</Text>}
+          {m.meta?.draft && <HStack gap={2} vAlign="center" wrap="wrap"><Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Utkast i kortet" /><Text type="supporting">Inget är skickat förrän du trycker på knappen i kortet.</Text></HStack>}
         </ChatMessageBubble>
       </ChatMessage>)}
       {latest && latest.clewActions.length > 0 && <ChatMessage sender="assistant">
         <ChatMessageBubble variant="ghost" width="100%">
-          <VStack gap={2}>
-            <List density="compact" listStyle="decimal" aria-label="Att bekräfta">{latest.clewActions.map(a => <ListItem key={a.n} label={a.label} description="Clew · ångra i 10 min" />)}</List>
-            <HStack gap={2} wrap="wrap">
-              <Button size="sm" variant="primary" label={latest.clewActions.length === 1 ? 'Gör det' : 'Gör båda'} isDisabled={busy} clickAction={() => performActions(latest.clewActions)} />
-              <Button size="sm" variant="ghost" label="Avbryt" onClick={() => setLatest(l => l ? { ...l, clewActions: [] } : l)} />
-            </HStack>
-          </VStack>
+          {/* A proposal waits for a decision: the same yellow "att bekräfta" as a draft on a card, nothing is done until the black button. */}
+          <Card padding={2} elevation="low">
+            <VStack gap={2}>
+              <HStack gap={2} vAlign="center" wrap="wrap">
+                <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label={latest.clewActions.length === 1 ? 'Att bekräfta' : `Att bekräfta · ${latest.clewActions.length}`} />
+                <Text type="supporting">Inget görs förrän du trycker. Ångra i 10 min efteråt.</Text>
+              </HStack>
+              <List density="compact" listStyle="decimal" aria-label="Att bekräfta">{latest.clewActions.map(a => <ListItem key={a.n} label={a.label} description={a.kind === 'dismiss' ? 'Kortet avfärdas och hamnar under Redan hanterat' : 'Kortet tas upp i morgon 06:00 i stället'} />)}</List>
+              <HStack gap={2} wrap="wrap">
+                <Button size="sm" variant="primary" label={latest.clewActions.length === 1 ? 'Gör det' : 'Gör båda'} isDisabled={busy} clickAction={() => performActions(latest.clewActions)} />
+                <Button size="sm" variant="ghost" label="Avbryt" onClick={() => setLatest(l => l ? { ...l, clewActions: [] } : l)} />
+              </HStack>
+            </VStack>
+          </Card>
         </ChatMessageBubble>
       </ChatMessage>}
-      {done && <ChatSystemMessage icon={<Icon icon="check" size="sm" />}>{done.text}{done.undo && <> <Button size="sm" variant="ghost" label="Ångra" clickAction={done.undo} /></>}</ChatSystemMessage>}
+      {done && <ChatSystemMessage icon={<Icon icon="check" size="sm" color="success" />}>{done.text}{done.undo && <> <Button size="sm" variant="ghost" label="Ångra" clickAction={done.undo} /></>}</ChatSystemMessage>}
     </ChatMessageList>
     {latest && latest.followUps.length > 0 && <HStack gap={1} wrap="wrap">{latest.followUps.map(f => <Button key={f} size="sm" variant="secondary" label={f} isDisabled={busy} onClick={() => ask(f)} />)}</HStack>}
-    <Text type="supporting">Esc stänger · samtalet sparas under Redan hanterat</Text>
+    <Text type="supporting" justify="end">{latest?.draft || conversation.messages.some(m => m.meta?.draft) ? 'Esc stänger · kortet behåller utkastet' : 'Esc stänger · samtalet sparas under Redan hanterat'}</Text>
   </VStack>;
 
-  const drawer = open && (mode === 'chat' ? chat : chipped.length ? null : focusList);
-  return <ChatComposer value={value} onChange={setValue} onSubmit={text => void submit(text)} isDisabled={busy} density="compact" elevation="low" placeholder={placeholder}
+  // The conversation is its own white card above the row, detached from it (canvas row Chips). It fits a short
+  // conversation; only a long one scrolls, since ScrollableArea has no max height.
+  const panel = open && mode === 'chat' ? chat : null;
+  const long = !!conversation && conversation.messages.length > 4;
+  return <VStack gap={2}>
+    {panel && <Card padding={3} elevation="low" aria-label="Samtalet">{long ? <ScrollableArea label="Samtalet" height={mobile ? 360 : '56vh'}>{panel}</ScrollableArea> : panel}</Card>}
+    <ChatComposer value={value} onChange={setValue} onSubmit={text => void submit(text)} isDisabled={busy} density="compact" elevation="low" placeholder={placeholder}
     input={<ChatComposerInput handleRef={input} label="Fråga, be om något eller svara om ett kort" maxRows={3} hasHistory={false} triggers={[trigger]} placeholder={placeholder}
       onKeyDown={e => { if (e.key === 'Escape') close(); }} />}
-    drawer={drawer ? <ChatComposerDrawer label="Samtalet"><ScrollableArea label="Samtalet" height={mobile ? 360 : '56vh'} padding={2}>{drawer}</ScrollableArea></ChatComposerDrawer> : undefined}
-    headerContext={<HStack gap={1} vAlign="center"><Text type="supporting" weight="semibold">{scope}</Text><Text type="supporting">· svaret kommer här</Text><Kbd keys="mod+k" /></HStack>}
+    headerActions={<HStack gap={1} vAlign="center"><Text type="supporting" weight="semibold" color="primary">{scope}</Text><Text type="supporting">· svaret kommer under frågan</Text></HStack>}
+    headerContext={<Kbd keys="mod+k" />}
     footerActions={chipped.length === 1 && !plain && verbs.length > 0 ? <HStack gap={1} wrap="wrap" aria-label="Om kortet">{verbs.map(v => <Button key={v.id} size="sm" variant="ghost" label={v.label} isDisabled={busy} onClick={() => ask(v.label)} />)}</HStack> : undefined}
     sendActions={<Dictation onResult={text => setValue(current => (current + ' ' + text).trim())} />}
     status={error ? { type: 'error', message: error } : undefined}
-    onFocus={() => setMode(m => m === 'idle' ? 'focus' : m)} />;
+    onFocus={() => setMode(m => m === 'idle' ? 'focus' : m)} />
+  </VStack>;
 });

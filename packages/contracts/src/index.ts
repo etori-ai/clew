@@ -140,11 +140,33 @@ export const ThreadSchema = object({
 });
 export type Thread = Static<typeof ThreadSchema>;
 
+/**
+ * Attention level of an open card (design canvas "Clew uppmärksamhet", 2026-11-04). Colour on the page follows this
+ * level, never the category: `urgent` within three days, `soon` within thirty, `later` beyond that, `notice` without a deadline.
+ */
+export const AttentionLevelSchema = Type.Union([Type.Literal('urgent'), Type.Literal('soon'), Type.Literal('later'), Type.Literal('notice')]);
+export type AttentionLevel = Static<typeof AttentionLevelSchema>;
+export const attentionLevels: readonly AttentionLevel[] = ['urgent', 'soon', 'later', 'notice'];
+/** Whole days from `today` to `date`, both ISO dates; negative when the date has passed. */
+export function daysUntil(date: string, today: string): number {
+  const utc = (d: string) => Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10)));
+  return Math.round((utc(date) - utc(today)) / 86_400_000);
+}
+export function attentionLevel(thread: { deadline: string | null }, today: string): AttentionLevel {
+  if (!thread.deadline) return 'notice';
+  const days = daysUntil(thread.deadline.slice(0, 10), today);
+  return days <= 3 ? 'urgent' : days <= 30 ? 'soon' : 'later';
+}
+/** The highest level in a list, or null when the list is empty. */
+export const worstLevel = (levels: AttentionLevel[]): AttentionLevel | null => levels.length ? attentionLevels[Math.min(...levels.map(l => attentionLevels.indexOf(l)))]! : null;
+
 /** An area in the sidebar: a lens on one module for one role (D3). Configuration, not code. */
 export const AreaSchema = object({
   id: Type.String(), title: Type.String(), module: Type.String(), source: Type.String(),
   figure: Type.Union([object({ label: Type.String(), tone: Type.Union([Type.Literal('ok'), Type.Literal('warn'), Type.Literal('alert'), Type.Literal('none')]) }), Type.Null()]),
   needsYou: Type.Integer(), waiting: Type.Integer(),
+  /** The highest attention level among the open cards that need the person; the sidebar count takes its colour from it. */
+  urgency: Type.Union([AttentionLevelSchema, Type.Null()]),
   /** "Gör själv": capabilities the person may start without a thread. */
   standing: Type.Array(object({ capability: Type.String(), label: Type.String(), kind: Type.Union([Type.Literal('read'), Type.Literal('propose'), Type.Literal('execute')]) })),
   schedules: Type.Array(object({ label: Type.String(), when: Type.String() })),

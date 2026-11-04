@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
-import type { Area, Attention, CalendarEvent, SessionUser, Thread, TodayView, ViewRef } from '@clew/contracts';
-import { Avatar, Badge, Button, Collapsible, EmptyState, Heading, HStack, Icon, Layout, LayoutContent, LayoutHeader, LayoutPanel, Overlay, Text, VisuallyHidden, VStack, signOut, useMediaQuery } from '@clew/ui';
+import { attentionLevel, attentionLevels, type Area, type AssistantStatus, type Attention, type AttentionLevel, type CalendarEvent, type SessionUser, type Thread, type TodayView, type ViewRef } from '@clew/contracts';
+import { Avatar, Badge, Banner, Button, Collapsible, EmptyState, Heading, HStack, Icon, Layout, LayoutContent, LayoutHeader, LayoutPanel, Overlay, StatusDot, Text, VisuallyHidden, VStack, signOut, useMediaQuery } from '@clew/ui';
 import { dayLabel, timeLabel, today } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
 import { Composer, type ComposerHandle } from '../components/composer';
 import { ConversationContext, type ChipRef } from '../components/conversation-context';
 import { Areas } from '../components/areas';
-import { GenericCard } from '../components/card';
+import { GenericCard, NoticeList } from '../components/card';
 import { PanelView } from '../components/panel';
 import { Today } from '../components/today';
 import { ThreadCard } from '../components/thread';
@@ -25,6 +25,7 @@ export function StartPage({ user }: { user: SessionUser }) {
   const [areas, setAreas] = useState<Area[]>([]);
   const [day, setDay] = useState<TodayView | null>(null);
   const [attention, setAttention] = useState<Attention | null>(null);
+  const [assistant, setAssistant] = useState<AssistantStatus | null>(null);
   const [weeks, setWeeks] = useState<Record<string, CalendarEvent[]>>({});
   const [error, setError] = useState<string | null>(null);
   // The route is the state: /omrade/:area and /hanterat filter the stream, /vy/… opens the panel, /samtal/:id the row.
@@ -44,8 +45,8 @@ export function StartPage({ user }: { user: SessionUser }) {
   const composer = useRef<ComposerHandle>(null);
   const load = useCallback(async () => {
     try {
-      const [t, a, d, at] = await Promise.all([api.threads(), api.areas(), api.today().catch(() => null), api.attention()]);
-      setThreads(t.threads); setAreas(a.areas); setDay(d); setAttention(at); setError(null);
+      const [t, a, d, at, st] = await Promise.all([api.threads(), api.areas(), api.today().catch(() => null), api.attention(), api.assistantStatus().catch(() => null)]);
+      setThreads(t.threads); setAreas(a.areas); setDay(d); setAttention(at); setAssistant(st); setError(null);
     } catch (e) { setError(e instanceof ApiError ? e.message : 'Sidan kunde inte läsas.'); }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -82,6 +83,9 @@ export function StartPage({ user }: { user: SessionUser }) {
   const inArea = (t: Thread) => area === null || area === 'hanterat' || t.area === area;
   const open = threads.filter(t => t.state === 'open');
   const needsYou = open.filter(t => t.kind === 'pushed' && !t.waitingOn && inArea(t)).sort((a, b) => (a.deadline ?? '9999').localeCompare(b.deadline ?? '9999') || a.createdAt.localeCompare(b.createdAt));
+  // Colour follows the deadline, never the category (canvas "Clew uppmärksamhet"): the stream is grouped by level, each group with a dot and a word.
+  const todayDate = today();
+  const groups = attentionLevels.map(level => ({ level, threads: needsYou.filter(t => attentionLevel(t, todayDate) === level) })).filter(g => g.threads.length);
   const waiting = open.filter(t => t.kind === 'pushed' && !!t.waitingOn && inArea(t));
   const handledToday = threads.filter(t => t.state !== 'open' && t.handledAt && t.handledAt.slice(0, 10) === new Date().toISOString().slice(0, 10)).length;
   const older = [...open.filter(t => t.kind === 'question'), ...threads.filter(t => t.state !== 'open')];
@@ -92,16 +96,34 @@ export function StartPage({ user }: { user: SessionUser }) {
     addChip: (chip: ChipRef) => composer.current?.addChip(chip),
     openConversation: (id: string) => composer.current?.openConversation(id),
   }), [conversation]);
-  const onDo = useCallback((capability: string) => { const target = areas.find(a => a.standing.some(s => s.capability === capability)); if (target) navigate(pathFor(target.id)); }, [areas, navigate]);
   const onConversation = useCallback((id: string | null) => { if (id) navigate(conversationHref(id)); else if (conversationId) navigate(pathFor(area)); }, [navigate, conversationId, area]);
   const onState = useCallback((s: { open: boolean; chipped: string[] }) => setConversation(c => c.open === s.open && c.chipped.join() === s.chipped.join() ? c : s), []);
-  const row = <Composer ref={composer} mobile={mobile} needsYou={needsYou.length} conversationId={conversationId} onConversation={onConversation} conversationHref={conversationHref}
-    onThreadChange={replace} onOpenView={openView} onDo={onDo} onShowHandled={() => navigate('/hanterat')} onState={onState} />;
-  const sidebar = <Areas areas={areas} current={area} hrefFor={pathFor} compact={mobile} handled={handledToday} />;
+  const row = <Composer ref={composer} mobile={mobile} conversationId={conversationId} onConversation={onConversation} onThreadChange={replace} onOpenView={openView} onState={onState} />;
+  const sidebar = <Areas areas={areas} current={area} hrefFor={pathFor} compact={mobile} handled={handledToday} chipped={conversation.chipped} />;
 
-  const card = (t: Thread, i: number) => t.proposals.length
+  const openCardView = (threadId: string, actionId: string) => navigate(cardViewHref(threadId, actionId));
+  const card = (t: Thread) => t.proposals.length
     ? <ThreadCard key={t.id} thread={t} events={t.week ? weeks[t.week] : undefined} compact onChange={replace} onLoadWeek={loadWeek} />
-    : <GenericCard key={t.id} thread={t} areaTitle={areaTitle(t.area)} position={`${i + 1} av ${needsYou.length}`} compact={mobile} expanded={i === 0} onChange={replace} onOpenCardView={(threadId, actionId) => navigate(cardViewHref(threadId, actionId))} />;
+    : <GenericCard key={t.id} thread={t} areaTitle={areaTitle(t.area)} position={`${needsYou.indexOf(t) + 1} av ${needsYou.length}`} compact={mobile} expanded={needsYou.indexOf(t) === 0} onChange={replace} onOpenCardView={openCardView} />;
+  // The group heading names the level in words beside the colour: a dot for deadlines, an info icon for notices.
+  const groupHeading = (level: AttentionLevel, list: Thread[]) => {
+    const overdueOrToday = list.every(t => t.deadline && t.deadline.slice(0, 10) <= todayDate);
+    const title = level === 'urgent' ? (overdueOrToday ? 'Måste i dag' : 'Inom tre dagar') : level === 'soon' ? 'Snart' : level === 'later' ? 'Senare' : 'Till kännedom';
+    return <HStack gap={1} vAlign="center">
+      {level === 'notice' ? <Icon icon="info" color="info" size="sm" /> : <StatusDot variant={level === 'urgent' ? 'error' : level === 'soon' ? 'warning' : 'neutral'} label={title} />}
+      <Heading level={3} color="secondary">{title} · {list.length}</Heading>
+    </HStack>;
+  };
+  const group = ({ level, threads: list }: { level: AttentionLevel; threads: Thread[] }) => <VStack key={level} gap={1} as="section" aria-label={`${level === 'notice' ? 'Till kännedom' : 'Deadline'}: ${list.length}`}>
+    {groupHeading(level, list)}
+    {level === 'notice' && !mobile && list.every(t => !t.proposals.length)
+      ? <NoticeList threads={list} onChange={replace} onOpenCardView={openCardView} />
+      : <VStack gap={2}>{list.map(card)}</VStack>}
+  </VStack>;
+  // The assistant's own cap on interruptions, worded as its promise: it never counts anything the person does.
+  const attentionLabel = attention && (remaining === 0
+    ? `Jag stör inte mer i dag · resten samlas till ${attention.bundledUntil ?? 'i morgon 06:00'}`
+    : `Jag stör högst ${attention.budget} gånger i dag`);
 
   const stream = <VStack gap={4}>
     {mobile && sidebar}
@@ -120,12 +142,12 @@ export function StartPage({ user }: { user: SessionUser }) {
       <VStack gap={2} as="section" aria-label="Behöver dig">
         <HStack justify="between" vAlign="end" gap={2} wrap="wrap">
           <Heading level={2}>{needsYou.length === 0 ? 'Inget behöver dig just nu' : `Behöver dig · ${needsYou.length}`}</Heading>
-          <Text type="supporting">{needsYou.length ? 'Efter deadline. Resten väntar till i morgon 06:00.' : 'Nästa genomgång i morgon 06:00'}</Text>
+          <Text type="supporting">{needsYou.length ? 'Resten väntar till i morgon 06:00.' : 'Nästa genomgång i morgon 06:00'}</Text>
         </HStack>
         {needsYou.length === 0 && waiting.length === 0 && <EmptyState title="Lugnt läge" description="Assistenten hör av sig när något behöver dig." isCompact />}
-        {needsYou.map(card)}
+        {groups.map(group)}
       </VStack>
-      {waiting.length > 0 && <Collapsible defaultIsOpen={false} chevronPosition="start" trigger={<Text type="supporting"><Text as="span" weight="semibold">Pågår utan dig · {waiting.length}</Text> · {waiting.map(t => t.title.split(',')[0]).join(' · ')}</Text>}>
+      {waiting.length > 0 && <Collapsible defaultIsOpen={false} chevronPosition="start" trigger={<HStack gap={1} vAlign="center" wrap="wrap"><StatusDot variant="neutral" label="Väntar på någon annan" /><Text type="supporting"><Text as="span" weight="semibold">Pågår utan dig · {waiting.length}</Text> · {waiting.map(t => t.title.split(',')[0]).join(' · ')}</Text></HStack>}>
         <VStack gap={2}>{waiting.map(t => <GenericCard key={t.id} thread={t} areaTitle={areaTitle(t.area)} compact={mobile} onChange={replace} onOpenCardView={(threadId, actionId) => navigate(cardViewHref(threadId, actionId))} />)}</VStack>
       </Collapsible>}
       {current && current.schedules.length > 0 && <VStack gap={1} as="section" aria-label="Så här bevakar jag området">
@@ -147,7 +169,7 @@ export function StartPage({ user }: { user: SessionUser }) {
             </VStack>
           </HStack>
           <HStack gap={2} vAlign="center" wrap="wrap">
-            {remaining !== null && <Badge variant={remaining === 0 ? 'warning' : 'neutral'} icon={<Icon icon="clock" size="sm" />} label={remaining === 0 ? `Inga avbrott kvar · resten ${attention!.bundledUntil}` : `${remaining} avbrott kvar i dag`} />}
+            {attentionLabel && <Badge variant="neutral" icon={<Icon icon="clock" size="sm" />} label={attentionLabel} />}
             {(areas.find(a => a.id === 'viktigt-nu')?.needsYou ?? 0) > 0 && <Button variant="secondary" size="sm" label={`Viktigt nu · ${areas.find(a => a.id === 'viktigt-nu')!.needsYou}`} href={pathFor('viktigt-nu')} />}
             <Button variant="ghost" size="sm" label="Kalender" href="/kalender" icon={<Icon icon="calendar" size="sm" />} isIconOnly={mobile} />
             <Button variant="ghost" size="sm" label="Logga ut" clickAction={() => signOut()} />
@@ -157,10 +179,17 @@ export function StartPage({ user }: { user: SessionUser }) {
       start={mobile ? undefined : <LayoutPanel hasDivider width={284} role="navigation" padding={2}>{sidebar}</LayoutPanel>}
       content={<LayoutContent padding={0}>
         {/* The dim covers the stream only (D12): the row below and the side panel stay live. A click on the dim closes the conversation. */}
-        <Overlay isOpen={conversation.open} scrim="light" position="fill" align="end" content={<VisuallyHidden>Samtalet är öppet. Tryck Esc eller klicka här för att stänga.</VisuallyHidden>} onClick={() => { if (conversation.open) composer.current?.close(); }}>
-          <div className="stream">{stream}</div>
-        </Overlay>
-        <div className="composer-dock">{row}</div>
+        {/* The column fills the scrollport so the row stays docked at the bottom even when the stream is short. */}
+        <div className="stream-column">
+          {/* Page level (D8): one Banner under the header when the model is configured but not answering. The router answers meanwhile. */}
+          {assistant && assistant.configured && !assistant.available && <Banner status="warning" container="section" collapsible={false} title="Modellen svarar inte just nu."
+            description={`Frågor besvaras av den inbyggda routern tills ${assistant.model ?? 'modellen'} svarar igen. Korten påverkas inte.`}
+            endContent={<Button size="sm" variant="secondary" label="Försök igen" clickAction={() => void load()} />} />}
+          <Overlay className="stream-fill" isOpen={conversation.open} scrim="light" position="fill" align="end" content={<VisuallyHidden>Samtalet är öppet. Tryck Esc eller klicka här för att stänga.</VisuallyHidden>} onClick={() => { if (conversation.open) composer.current?.close(); }}>
+            <div className="stream">{stream}</div>
+          </Overlay>
+          <div className="composer-dock">{row}</div>
+        </div>
       </LayoutContent>} />
     <PanelView title={view?.title ?? null} output={view?.output} onClose={() => navigate(pathFor(area))} />
   </ConversationContext.Provider>;

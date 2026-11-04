@@ -7,7 +7,7 @@ Chat-first start page for Sundsvalls kommun where the assistant takes the initia
 Everything runs in Docker. Commands go through `docker exec` into the app container (Claude Code and most editors sit outside the devcontainer).
 
 ```sh
-sh scripts/compose.sh up -d --build --wait app postgres   # app image (Node 24 + Bun 1.4.2) and Postgres 17
+sh scripts/compose.sh up -d --build --wait app postgres   # app image (Node 26 + Bun 1.4.2) and Postgres 17
 docker exec -w /workspace clew-app-1 bun install --frozen-lockfile
 docker exec -w /workspace clew-app-1 bun run db:init     # Drizzle migrations
 docker start keycloak                                    # the shared local Keycloak 26.2 at keycloak.orb.local:8090

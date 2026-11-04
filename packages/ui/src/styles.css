@@ -10,10 +10,19 @@ body { margin: 0; background: var(--color-background-wash); }
 /* The composer floats over the stream: sticky at the bottom of the scrolling content, so cards slide underneath it.
    A short fade to the page wash separates it from the content; no blur. The wash is the Neutral theme's value
    (#f1f1f1) written out because a var() inside a gradient does not resolve here. The composer itself is the Astryx ChatComposer. */
-.composer-dock { position: sticky; bottom: 0; z-index: 2; margin-top: 8px; padding: 36px 16px 20px; pointer-events: none;
+.stream-column { min-height: 100%; display: flex; flex-direction: column; }
+.stream-fill { flex: 1 0 auto; }
+.composer-dock { position: sticky; bottom: 0; z-index: 2; margin-top: 8px; padding: 36px 32px 20px; pointer-events: none;
   background: linear-gradient(to bottom, rgba(241, 241, 241, 0), #f1f1f1 36px); }
-.composer-dock > * { pointer-events: auto; max-width: 816px; margin: 0 auto; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05), 0 8px 24px rgba(0, 0, 0, 0.12); border-radius: 18px; }
+/* The row is as wide as the stream's content: the same column (944 px) minus the same side padding (32 px). */
+.composer-dock > * { pointer-events: auto; max-width: 880px; margin: 0 auto; }
 
 /* The stream is one centred column, as on the canvas: cards never run edge to edge. */
 .stream { box-sizing: border-box; max-width: 944px; margin: 0 auto; padding: 20px 32px 24px; }
-@media (max-width: 720px) { .stream { padding: 12px 16px 24px; } }
+@media (max-width: 720px) { .stream { padding: 12px 16px 24px; } .composer-dock { padding: 24px 16px 16px; } }
+
+/* A card in the conversation stays live above the dim (D12, canvas row Chips): a ring in the accent colour and a lift.
+   The card's article, or a row inside it (ListItem isSelected), carries aria-current while its chip is in the row. The ring
+   sits on the card, never on the row, so it is never clipped by the card's rounded edge; the row itself shows the selected
+   background. The scrim has no z-index, so 1 lifts the card above it and keeps it under the row (z-index 2). */
+.stream .astryx-card:has([aria-current="true"]) { position: relative; z-index: 1; box-shadow: 0 0 0 3px var(--color-accent), 0 12px 28px var(--color-shadow); }

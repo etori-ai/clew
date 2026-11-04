@@ -85,8 +85,8 @@ export class Registry {
     return found.capability.run(actor, input) as Promise<O>;
   }
   /** Areas for one actor: one entry per area definition whose roles include the actor's role. Counts are filled in by the caller. */
-  async areas(actor: Actor): Promise<Omit<Area, 'needsYou' | 'waiting'>[]> {
-    const out: Omit<Area, 'needsYou' | 'waiting'>[] = [];
+  async areas(actor: Actor): Promise<Omit<Area, 'needsYou' | 'waiting' | 'urgency'>[]> {
+    const out: Omit<Area, 'needsYou' | 'waiting' | 'urgency'>[] = [];
     for (const m of this.modules.values()) for (const a of m.areas) {
       if (!a.roles.includes(actor.role)) continue;
       const standing = a.standing.map(n => this.capabilities.get(n)).filter((c): c is NonNullable<typeof c> => !!c && c.capability.scope(actor))
