@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CheckReport, ConnectorAudience, ConnectorDetail } from '@clew/contracts';
 import { Banner, Button, Dialog, DialogHeader, FormLayout, HStack, Heading, List, ListItem, MetadataList, MetadataListItem, Spinner, StatusDot, Step, Stepper, Switch, Text, TextInput, VStack } from '@clew/ui';
-import { api, ApiError } from '../../api';
+import { api } from '../../api';
+import { useAdminAction } from '../../mutations';
 import { AudienceEditor } from './audience';
 import { audienceLabel } from './labels';
 
@@ -16,8 +17,8 @@ export function AddConnectorDialog({ isOpen, onClose, units }: Props) {
   const [step, setStep] = useState(0);
   const [id, setId] = useState(''); const [url, setUrl] = useState(''); const [secret, setSecret] = useState('');
   const [touched, setTouched] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Each step's call re-reads the admin lists on success (the draft row exists from the check on); the error is the dialog's own line.
+  const { run, busy, error, reset: clearError } = useAdminAction();
   const [result, setResult] = useState<{ connector: ConnectorDetail; report: CheckReport } | null>(null);
   const [audience, setAudience] = useState<ConnectorAudience>({ mode: 'all' });
   const [scan, setScan] = useState(true); const [tools, setTools] = useState(true);
@@ -28,9 +29,8 @@ export function AddConnectorDialog({ isOpen, onClose, units }: Props) {
   const urlError = touched && !/^https?:\/\/\S+$/.test(url) ? 'En adress som börjar med http:// eller https://.' : undefined;
   const secretError = touched && secret.length < 16 ? 'Minst 16 tecken.' : undefined;
   const valid = ID.test(id) && /^https?:\/\/\S+$/.test(url) && secret.length >= 16;
-  const reset = () => { setStep(0); setId(''); setUrl(''); setSecret(''); setTouched(false); setError(null); setResult(null); setAudience({ mode: 'all' }); setScan(true); setTools(true); };
+  const reset = () => { setStep(0); setId(''); setUrl(''); setSecret(''); setTouched(false); clearError(); setResult(null); setAudience({ mode: 'all' }); setScan(true); setTools(true); };
   const close = (added: boolean) => { reset(); onClose(added); };
-  const run = async (fn: () => Promise<void>) => { setBusy(true); setError(null); try { await fn(); } catch (e) { setError(e instanceof ApiError ? e.message : 'Något gick fel.'); } finally { setBusy(false); } };
   const check = () => run(async () => { setResult(await api.admin.add({ id, url, secret })); setStep(1); });
   const retry = () => run(async () => { if (!result) return; const report = await api.admin.test(result.connector.id); const connector = await api.admin.connector(result.connector.id); setResult({ connector, report }); });
   const finish = (state: 'draft' | 'enabled') => run(async () => { if (!result) return; await api.admin.update(result.connector.id, { audience, scanEnabled: scan, toolsEnabled: tools, ...(state === 'enabled' ? { state } : {}) }); close(true); });
