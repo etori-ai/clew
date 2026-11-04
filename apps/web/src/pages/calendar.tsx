@@ -1,9 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
-import type { Area, Attention, CalendarEvent, Proposal, SessionUser, Thread } from '@clew/contracts';
+import { keepPreviousData, useQueries, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
+import type { Area, CalendarEvent, Proposal, SessionUser, Thread } from '@clew/contracts';
 import { Badge, Button, ChatComposer, CheckboxList, CheckboxListItem, DatePicker, Drawer, DrawerHeader, DropdownMenu, EventCalendar, Heading, HStack, Icon, IconButton, Layout, LayoutContent, LayoutFooter, LayoutHeader, LayoutPanel, SegmentedControl, SegmentedControlItem, StatusDot, Text, Toolbar, VStack, agendaItems, useMediaQuery, type AgendaItem, type CalendarView } from '@clew/ui';
 import { addDays, dayLabel, displayDate, monthLabel, occursOn, rangeLabel, shortDayLabel, timeRange, today, weekNumber, weekStart } from '@clew/calendar/dates';
-import { api, ApiError } from '../api';
+import { api } from '../api';
+import { areasQuery, attentionQuery, calendarWeekQuery, threadsQuery } from '../queries';
+import { pickProposalThread } from '../thread-cache';
+import { useThreadAction } from '../mutations';
+import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { Shell, mobileQuery } from '../components/shell';
 import { AreasNav } from '../components/areas';
@@ -22,6 +27,20 @@ const addMonths = (date: string, months: number) => { const d = new Date(Date.UT
 /** The Mondays whose weeks the month grid shows, so the whole grid is read with the week endpoint the API already has. */
 const weeksOfMonth = (date: string) => { const first = weekStart(monthStart(date)), last = weekStart(addDays(addMonths(date, 1), -1)); const weeks: string[] = []; for (let w = first; w <= last; w = addDays(w, 7)) weeks.push(w); return weeks; };
 const nextWholeHour = (now: Date) => { const d = new Date(now); d.setMinutes(0, 0, 0); d.setHours(d.getHours() + 1); return { start: d.toISOString(), end: new Date(d.getTime() + 3600_000).toISOString() }; };
+const EMPTY_AREAS: Area[] = [];
+const EMPTY_PROPOSALS: Proposal[] = [];
+type Week = { from: string; events: CalendarEvent[]; proposals: Proposal[] };
+/** The loaded weeks as one calendar. Weeks overlap at the month's edges; an occurrence is one id at one start. A stable function, so useQueries re-combines only when an answer changes. */
+const combineWeeks = (results: UseQueryResult<Week>[]) => {
+  const parts = results.map(r => r.data).filter((d): d is Week => d !== undefined);
+  const seen = new Set<string>();
+  return {
+    events: parts.flatMap(p => p.events).filter(e => { const key = `${e.id}@${e.start}`; if (seen.has(key)) return false; seen.add(key); return true; }),
+    proposals: parts[0]?.proposals ?? EMPTY_PROPOSALS,
+    failed: results.find(r => r.isError && r.data === undefined)?.error,
+  };
+};
+const selectProposalThread = (data: { threads: Thread[] }) => pickProposalThread(data.threads);
 
 /**
  * The calendar as a page (D27, D32): one day, one week or one month on FullCalendar under Clew's theme, inside the one
@@ -37,18 +56,20 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const view: View = views.includes(params.get('vy') as View) ? params.get('vy') as View : 'vecka';
   const anchor = view === 'vecka' ? weekStart(date) : view === 'manad' ? monthStart(date) : date;
   const go = (next: { date?: string; view?: View }) => setParams(p => { const q = new URLSearchParams(p); q.delete('vecka'); q.set('datum', next.date ?? date); q.set('vy', next.view ?? view); return q; });
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [proposals, setProposals] = useState<Proposal[]>([]);
-  const [thread, setThread] = useState<Thread | null>(null);
-  // The same frame as the start page (D31): the areas in the shell's SideNav and the attention sentence in its TopNav.
-  const [areas, setAreas] = useState<Area[]>([]);
-  const [attention, setAttention] = useState<Attention | null>(null);
-  useEffect(() => { let alive = true; void Promise.all([api.areas(), api.attention()]).then(([a, at]) => { if (alive) { setAreas(a.areas); setAttention(at); } }).catch(() => undefined); return () => { alive = false; }; }, []);
+  // The same frame as the start page (D31), from the same cache (D33): the areas in the shell's SideNav and the attention sentence in its TopNav.
+  const client = useQueryClient();
+  const areas = useQuery(areasQuery).data?.areas ?? EMPTY_AREAS;
+  const attention = useQuery(attentionQuery).data ?? null;
   const remaining = attention ? Math.max(0, attention.budget - attention.used) : null;
   const attentionLabel = attention ? (remaining === 0 ? `Inga avbrott kvar i dag · resten samlas till ${attention.bundledUntil ?? 'i morgon 06:00'}` : `${remaining} avbrott kvar i dag`) : undefined;
+  // The proposal thread beside the grid is picked from the stream's own list, so a confirm here and the card on the start page agree.
+  const threadsQ = useQuery({ ...threadsQuery, select: selectProposalThread });
+  const thread = threadsQ.data ?? null;
+  // The selection is the panel's draft: every proposed time, seeded again when the thread itself changes.
   const [selected, setSelected] = useState<string[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  useEffect(() => { setSelected(thread ? thread.proposals.filter(p => p.status === 'proposed').map(p => p.id) : []); }, [thread?.id, thread?.updatedAt]);
+  const { run, apply, busy, error: actionError } = useThreadAction();
+  const [moveError, setMoveError] = useState<string | null>(null);
   const [openItem, setOpenItem] = useState<AgendaItem | null>(null);
   const [booking, setBooking] = useState<{ start: string; end: string } | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -57,27 +78,14 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   usePageTitle(`${short} · Kalender`, view === 'vecka' ? `Vecka ${weekNumber(anchor)}, ${rangeLabel(anchor, 5)}` : `${view === 'dag' ? 'Dagvy' : 'Månadsvy'}, ${title}`);
   /** The weeks the view needs: one for a day or a week, every week the month grid shows. */
   const weeks = useMemo(() => view === 'manad' ? weeksOfMonth(anchor) : [weekStart(anchor)], [view, anchor]);
-  const loadCalendar = useCallback(async () => {
-    const parts = await Promise.all(weeks.map(w => api.calendar(w)));
-    // Weeks overlap at the month's edges; an occurrence is one id at one start.
-    const seen = new Set<string>();
-    setEvents(parts.flatMap(p => p.events).filter(e => { const key = `${e.id}@${e.start}`; if (seen.has(key)) return false; seen.add(key); return true; }));
-    setProposals(parts[0]?.proposals ?? []);
-  }, [weeks]);
-  const load = useCallback(async () => {
-    try {
-      const [, t] = await Promise.all([loadCalendar(), api.threads()]);
-      setError(null);
-      const open = t.threads.find(x => x.state === 'open' && x.topic === 'utvecklingssamtal') ?? t.threads.find(x => x.topic === 'utvecklingssamtal') ?? null;
-      setThread(open); setSelected(open ? open.proposals.filter(p => p.status === 'proposed').map(p => p.id) : []);
-    } catch (e) { setError(e instanceof ApiError ? e.message : 'Kalendern kunde inte läsas.'); }
-  }, [loadCalendar]);
-  useEffect(() => { void load(); }, [load]);
-  const apply = (t: Thread) => { setThread(t); setSelected(t.proposals.filter(p => p.status === 'proposed').map(p => p.id)); void loadCalendar(); };
-  const run = async (action: () => Promise<Thread>) => { if (busy) return; setBusy(true); setError(null); try { apply(await action()); } catch (e) { setError(e instanceof ApiError ? e.message : 'Något gick fel.'); } finally { setBusy(false); } };
+  // Each week is one query, shared with the cards on the start page; the previous answer stays on the grid while the next week loads, and answers can no longer land out of order.
+  const { events, proposals, failed } = useQueries({ queries: weeks.map(w => ({ ...calendarWeekQuery(w), placeholderData: keepPreviousData })), combine: combineWeeks });
+  const readError = failed ? errorMessage(failed, 'Kalendern kunde inte läsas.') : threadsQ.isError && threadsQ.data === undefined ? errorMessage(threadsQ.error, 'Kalendern kunde inte läsas.') : null;
+  const error = actionError ?? moveError ?? readError;
   const items = useMemo(() => agendaItems(events, proposals), [events, proposals]);
   const dayItems = useMemo(() => openItem ? items.filter(i => occursOn(i, displayDate(openItem.start))) : [], [items, openItem]);
-  const moveProposal = (item: AgendaItem, start: string, end: string) => { const p = item.proposal!; return api.moveProposal(p.threadId, p.id, { start, end }).then(apply).catch(e => { setError(e instanceof ApiError ? e.message : 'Något gick fel.'); throw e; }); };
+  // A drop on the grid: the promise has to reject for the calendar to put the block back, so this one does not go through `run`.
+  const moveProposal = (item: AgendaItem, start: string, end: string) => { const p = item.proposal!; setMoveError(null); return api.moveProposal(p.threadId, p.id, { start, end }).then(apply).catch(e => { setMoveError(errorMessage(e, 'Något gick fel.')); throw e; }); };
   const step = (direction: 1 | -1) => go({ date: view === 'dag' ? addDays(anchor, direction) : view === 'manad' ? addMonths(anchor, direction) : addDays(anchor, 7 * direction) });
   const calendarView: CalendarView = view === 'dag' ? 'timeGridDay' : view === 'manad' ? 'dayGridMonth' : mobile ? 'listWeek' : 'timeGridWeek';
   const stepLabel = view === 'dag' ? 'dag' : view === 'manad' ? 'månad' : 'vecka';
@@ -148,7 +156,8 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
     {narrow && thread && <Drawer isOpen={panelOpen} onOpenChange={setPanelOpen} side="end" width={420} label="Förslag">
       <Layout height="fill" padding={0} header={<DrawerHeader title="Förslag" onOpenChange={setPanelOpen} />} content={<LayoutContent>{panelBody}</LayoutContent>} footer={<LayoutFooter hasDivider>{reply}</LayoutFooter>} />
     </Drawer>}
-    <EventDialog item={openItem} dayItems={dayItems} onClose={() => setOpenItem(null)} onChanged={t => { if (t) apply(t); else void loadCalendar(); }} onOpenDay={d => go({ date: d, view: 'dag' })} />
-    <BookingDialog isOpen={!!booking} initial={booking ?? nextWholeHour(new Date())} onClose={created => { setBooking(null); if (created) void loadCalendar(); }} />
+    {/* Both dialogs write the cache themselves (D33): a moved proposal's thread, or the loaded weeks read again. */}
+    <EventDialog item={openItem} dayItems={dayItems} onClose={() => setOpenItem(null)} onOpenDay={d => go({ date: d, view: 'dag' })} />
+    <BookingDialog isOpen={!!booking} initial={booking ?? nextWholeHour(new Date())} onClose={() => setBooking(null)} />
   </Shell>;
 }

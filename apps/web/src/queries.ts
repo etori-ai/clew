@@ -1,0 +1,43 @@
+import { queryOptions } from '@tanstack/react-query';
+import type { Role } from '@clew/contracts';
+import { api } from './api';
+import { keys } from './query-keys';
+
+/**
+ * Every read the browser makes, as query options (D33): the key from `query-keys.ts`, the call from `api.ts`, and the
+ * one policy that differs from the client's defaults. A screen spreads these into `useQuery`; a mutation that returns a
+ * Thread writes the cache through `thread-cache.ts` instead of reloading a page.
+ */
+export const threadsQuery = queryOptions({ queryKey: keys.threads, queryFn: () => api.threads() });
+export const threadQuery = (id: string) => queryOptions({ queryKey: keys.thread(id), queryFn: () => api.thread(id) });
+export const areasQuery = queryOptions({ queryKey: keys.areas, queryFn: () => api.areas() });
+/** The day and the model's status are extras on the page: a failure is tolerated, never retried, never shown as the page's error. */
+export const todayQuery = queryOptions({ queryKey: keys.today, queryFn: () => api.today(), retry: false });
+export const attentionQuery = queryOptions({ queryKey: keys.attention, queryFn: () => api.attention() });
+export const assistantQuery = queryOptions({ queryKey: keys.assistant, queryFn: () => api.assistantStatus(), retry: false });
+export const calendarWeekQuery = (week: string) => queryOptions({ queryKey: keys.calendar(week), queryFn: () => api.calendar(week) });
+export const membersQuery = queryOptions({ queryKey: keys.members, queryFn: () => api.members(), staleTime: 5 * 60_000 });
+export const roomsQuery = queryOptions({ queryKey: keys.rooms, queryFn: () => api.rooms(), staleTime: 5 * 60_000 });
+/** The picker's rows (D29), read once a minute for the whole page so every card shows the same times. */
+export const snoozePresetsQuery = queryOptions({ queryKey: keys.snoozePresets, queryFn: () => api.snoozePresets(), staleTime: 60_000 });
+export const verbsQuery = (threadId: string) => queryOptions({ queryKey: keys.verbs(threadId), queryFn: () => api.verbs(threadId) });
+
+const parseInput = (json: string | null): unknown => { if (!json) return undefined; try { return JSON.parse(json); } catch { return undefined; } };
+/** A view in the side panel, addressed by `/vy/:capability?input=…`. */
+export const viewQuery = (capability: string, inputJson: string | null) => queryOptions({ queryKey: keys.view(capability, inputJson), queryFn: () => api.capability(capability, parseInput(inputJson)) });
+/**
+ * A card action opened as a view (`/vy/kort/:thread/:action`). The call is a POST, so it is de-duplicated, never retried
+ * and never refetched on its own: within the session a revisit replays the answer, which is right for a read action.
+ */
+export const cardViewQuery = (threadId: string, actionId: string) => queryOptions({
+  queryKey: keys.cardView(threadId, actionId), queryFn: () => api.act(threadId, actionId),
+  staleTime: Infinity, refetchOnWindowFocus: false, refetchOnReconnect: false, retry: false,
+});
+
+/** Administration (D23). The detail read keeps its 400 for the page to turn into "Anslutningen finns inte". */
+export const adminQueries = {
+  connectors: queryOptions({ queryKey: keys.admin.connectors, queryFn: () => api.admin.connectors() }),
+  units: queryOptions({ queryKey: keys.admin.units, queryFn: () => api.admin.units() }),
+  connector: (id: string) => queryOptions({ queryKey: keys.admin.connector(id), queryFn: () => api.admin.connector(id) }),
+  preview: (id: string, role: Role) => queryOptions({ queryKey: keys.admin.preview(id, role), queryFn: () => api.admin.preview(id, role) }),
+};

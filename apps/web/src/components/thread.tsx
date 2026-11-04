@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { obligationStep, obligationSteps, replySummary, type CalendarEvent, type Thread } from '@clew/contracts';
 import { Avatar, AvatarGroup, AvatarGroupOverflow, Badge, Button, Card, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, CheckboxList, CheckboxListItem, Collapsible, Heading, HStack, Icon, List, ListItem, MoreMenu, ProgressBar, Step, Stepper, Text, Timestamp, Token, VStack, VisuallyHidden, WeekAgenda, agendaItems } from '@clew/ui';
 import { useConversation } from './conversation-context';
 import { useLeaveWithUndo } from './card';
 import { addDays, shortDayLabel, timeRange, weekNumber } from '@clew/calendar/dates';
-import { api, ApiError } from '../api';
+import { api } from '../api';
+import { calendarWeekQuery } from '../queries';
+import { useThreadAction } from '../mutations';
 
-type Props = { thread: Thread; events?: CalendarEvent[]; compact: boolean; headingLevel?: 2 | 3 | 4; onChange: (thread: Thread) => void; onLoadWeek?: (week: string) => void };
+type Props = { thread: Thread; compact: boolean; headingLevel?: 2 | 3 | 4; onChange: (thread: Thread) => void };
+const EMPTY_EVENTS: CalendarEvent[] = [];
 
 const stepLabel = { forslag: 'Förslag', inbjudningar: 'Inbjudningar', svar: 'Svar', klart: 'Klart' } as const;
 /** The thread's state in words; the Stepper carries it too (D30). Only a proposal waiting for the person is a status that needs action, and the one badge. */
@@ -43,21 +47,23 @@ function Conversation({ messages }: { messages: Thread['messages'] }) {
  * A thread, not a card: status and source on top, one sentence, the assessment, the proposals drawn in the week,
  * the actions, "varför nu?", and a composer at the bottom so the thread keeps its memory.
  */
-export function ThreadCard({ thread, events = [], compact, headingLevel = 3, onChange, onLoadWeek }: Props) {
+export function ThreadCard({ thread, compact, headingLevel = 3, onChange }: Props) {
   // The selection is the card's draft (D12): the rows' `selected` flags when the server wrote them, else every proposed time.
   const seed = () => { const rows = thread.items.filter(i => i.ref.startsWith('proposal:')); return rows.length ? rows.filter(i => i.selected).map(i => i.ref.slice('proposal:'.length)).filter(id => thread.proposals.some(p => p.id === id && p.status === 'proposed')) : thread.proposals.filter(p => p.status === 'proposed').map(p => p.id); };
   const [selected, setSelected] = useState<string[]>(seed);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [why, setWhy] = useState(false);
   const [now, setNow] = useState(Date.now());
   const talk = useConversation();
-  const leave = useLeaveWithUndo(onChange);
+  // Busy never disables the buttons: a disabled button drops the focus it holds (2.4.3). Action-buttons wait on their own promise.
+  const { run, apply, error } = useThreadAction({ onChange });
+  const leave = useLeaveWithUndo(apply);
+  // The week the proposals are drawn in, from the same cache as the calendar page; read again whenever a proposal thread changes.
+  const week = useQuery({ ...calendarWeekQuery(thread.week ?? ''), enabled: !!thread.week });
+  const events = week.data?.events ?? EMPTY_EVENTS;
   const chipRef = 'thread:' + thread.id;
   const inConversation = talk.chipped.includes(chipRef);
   const draft = thread.messages.at(-1)?.meta?.draft;
   useEffect(() => { setSelected(seed()); }, [thread.updatedAt, thread.proposals.length]);
-  useEffect(() => { if (thread.week) onLoadWeek?.(thread.week); }, [thread.week]);
   const undoUntil = thread.proposals.map(p => p.undoUntil).filter((v): v is string => !!v).sort().at(-1);
   const undoOpen = !!undoUntil && Date.parse(undoUntil) > now && thread.proposals.some(p => p.status === 'confirmed');
   useEffect(() => { if (!undoOpen) return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, [undoOpen]);
@@ -68,12 +74,6 @@ export function ThreadCard({ thread, events = [], compact, headingLevel = 3, onC
   const accepted = thread.proposals.filter(p => p.status === 'accepted'), waiting = thread.proposals.filter(p => p.status === 'confirmed' || p.status === 'final');
   const saidNo = thread.proposals.filter(p => p.status === 'declined-by-invitee' || p.status === 'counter');
   const roster = step === 'inbjudningar' || step === 'svar' || step === 'klart';
-  // Busy never disables the buttons: a disabled button drops the focus it holds (2.4.3). Action-buttons wait on their own promise.
-  const run = async (action: () => Promise<Thread>) => {
-    if (busy) return;
-    setBusy(true); setError(null);
-    try { onChange(await action()); } catch (e) { setError(e instanceof ApiError ? e.message : 'Något gick fel.'); } finally { setBusy(false); }
-  };
   const first = thread.messages.find(m => m.role === 'assistant');
   const conversation = thread.kind === 'question' ? thread.messages : thread.messages.filter(m => m !== first);
   const { lead, rest } = split(first?.body ?? thread.title);

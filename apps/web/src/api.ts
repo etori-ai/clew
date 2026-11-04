@@ -1,8 +1,10 @@
 import type { SnoozeInput, SnoozePreset, AddConnectorInput, Area, AssistantStatus, Attention, AvailabilityInput, AvailabilityResult, CalendarEvent, CalendarMember, CalendarRoom, CancelEventInput, CreateEventInput, DayView, MoveProposalInput, RescheduleEventInput, CheckReport, ClewObject, Completions, ConnectorDetail, ConnectorHealth, ConnectorPatchInput, ConnectorPreview, ConnectorSummary, ConversationInput, ConversationResponse, Figure, ManifestDiff, Proposal, Role, Thread, TodayView, Verb } from '@clew/contracts';
 import { sessionFetch } from '@clew/ui';
 
+import { ApiError } from './api-error';
+export { ApiError };
+
 /** Every call goes through the same-origin proxy with the session CSRF token. Errors carry the server's Swedish message. */
-export class ApiError extends Error { status: number; constructor(status: number, message: string) { super(message); this.status = status; this.name = 'ApiError'; } }
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await sessionFetch(path, { ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) } });
   const text = await response.text();

@@ -39,6 +39,7 @@ the reasoning. Longer designs live in `docs/architecture/`, and the reviews that
 | [D30](D30-a-proposal-thread-is-an-obligation-with-four-steps.md) | A proposal thread is an obligation with four steps, replies read back, follow-ups as cards under a fixed policy | 2026-11-04 | product | accepted, live run unverified |
 | [D31](D31-the-conversation-swaps-the-stream-inside-one-chatlayout.md) | The conversation swaps the stream inside one ChatLayout; chips live in the composer drawer; the shell is AppShell | 2026-11-04 | ui | accepted |
 | [D32](D32-one-calendar-family-and-the-persons-own-bookings.md) | One calendar family (page grid, embedded day and list, month picker, one item mapping); a person's own bookings and proposal moves are use cases with audit rows, never tools | 2026-11-04 | ui | accepted |
+| [D33](D33-browser-reads-go-through-one-query-cache.md) | Browser reads go through one query cache (TanStack Query) per session; a mutation's thread is written into it; no page-level reloads | 2026-11-04 | ui | accepted, live pass against Keycloak pending |
 
 ## Adding a decision
 

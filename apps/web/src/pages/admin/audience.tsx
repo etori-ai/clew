@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useQueries } from '@tanstack/react-query';
 import type { ConnectorAudience, ConnectorPreview, Role } from '@clew/contracts';
 import { CheckboxList, CheckboxListItem, Collapsible, MultiSelector, RadioList, RadioListItem, Text, VStack } from '@clew/ui';
-import { api } from '../../api';
+import { adminQueries } from '../../queries';
 import { roleLabel } from './labels';
 
 /**
@@ -27,14 +27,12 @@ export function AudienceEditor({ value, onChange, units }: { value: ConnectorAud
   </VStack>;
 }
 /** The structural preview: what a manager and an employee would get from this connector. No data, no call to the service. */
-export function AudiencePreview({ connectorId, version }: { connectorId: string; version: number }) {
-  const [previews, setPreviews] = useState<ConnectorPreview[] | null>(null);
-  useEffect(() => {
-    let alive = true;
-    Promise.all((['manager', 'employee'] as Role[]).map(role => api.admin.preview(connectorId, role))).then(p => { if (alive) setPreviews(p); }).catch(() => { if (alive) setPreviews([]); });
-    return () => { alive = false; };
-  }, [connectorId, version]);
-  if (!previews) return <Text type="supporting" role="status">Räknar fram vad var och en ser …</Text>;
+const roles: Role[] = ['manager', 'employee'];
+export function AudiencePreview({ connectorId }: { connectorId: string }) {
+  // One query per role from the admin cache (D33); every action on the page invalidates them, so the preview follows the saved audience.
+  const results = useQueries({ queries: roles.map(role => adminQueries.preview(connectorId, role)) });
+  if (results.some(r => r.isPending)) return <Text type="supporting" role="status">Räknar fram vad var och en ser …</Text>;
+  const previews = results.map(r => r.data).filter((p): p is ConnectorPreview => !!p);
   return <VStack gap={2} as="section" aria-label="Så här ser det ut">
     {previews.map(p => <Collapsible key={p.role} defaultIsOpen={false} chevronPosition="start" trigger={<Text type="supporting"><Text as="span" weight="semibold">Så här ser det ut för {roleLabel[p.role].toLowerCase()}:</Text> {p.visible ? `${p.areas.length} ${p.areas.length === 1 ? 'område' : 'områden'}, ${p.tools.length} frågor till assistenten` : 'ingenting'}</Text>}>
       <VStack gap={1}>

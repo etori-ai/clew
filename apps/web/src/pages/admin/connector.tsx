@@ -2,7 +2,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import type { CheckReport, ConnectorAudience, ConnectorDetail, ManifestDiff, SessionUser } from '@clew/contracts';
 import { AlertDialog, Badge, Banner, Button, Card, Code, Dialog, DialogHeader, DropdownMenu, EmptyState, FormLayout, HStack, Heading, InfoTip, List, ListItem, MetadataList, MetadataListItem, Section, StatusDot, Switch, Tab, TabList, Table, Text, TextInput, Timestamp, Toolbar, VStack, useMediaQuery, useToast } from '@clew/ui';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api';
+import { adminQueries } from '../../queries';
+import { keys } from '../../query-keys';
+import { useAdminAction } from '../../mutations';
+import { errorMessage } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
 import { AudienceEditor, AudiencePreview } from './audience';
 import { actionLabel, actorLabel, audienceLabel, capabilityKindLabel, healthLabel, kindLabel, roleLabel, statusOf } from './labels';
@@ -12,6 +17,7 @@ import { AdminShell, PageLead } from './shell';
 type TabId = 'oversikt' | 'formagor' | 'omraden' | 'publik' | 'historik';
 const tabs: Array<{ id: TabId; label: string }> = [{ id: 'oversikt', label: 'Översikt' }, { id: 'formagor', label: 'Förmågor' }, { id: 'omraden', label: 'Områden' }, { id: 'publik', label: 'Vem ser det' }, { id: 'historik', label: 'Historik' }];
 interface CapRow extends Record<string, unknown> { name: string; c: ConnectorDetail['capabilities'][number] }
+const EMPTY_UNITS: Array<{ id: string; label: string }> = [];
 
 type CapabilityView = ConnectorDetail['capabilities'][number];
 /** The "Assistent" switch of one capability, disabled with its reason when the manifest, the kind or the connector says no. */
@@ -28,26 +34,27 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const mobile = useMediaQuery('(max-width: 720px)');
-  const toast = useToast();
-  const [c, setC] = useState<ConnectorDetail | null | 'missing'>(null);
+  // The connector and the units from the admin cache (D33); a 400 is the one answer the page turns into "finns inte".
+  const client = useQueryClient();
+  const detail = useQuery(adminQueries.connector(id));
+  const units = useQuery(adminQueries.units).data?.units ?? EMPTY_UNITS;
+  const c = detail.data ?? null;
+  const missing = detail.isError && detail.error instanceof ApiError && detail.error.status === 400;
+  const readError = detail.isError && !missing && detail.data === undefined ? errorMessage(detail.error, 'Anslutningen kunde inte läsas.') : null;
   const [tab, setTab] = useState<TabId>('oversikt');
-  const [units, setUnits] = useState<Array<{ id: string; label: string }>>([]);
-  const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<CheckReport | null>(null);
   const [diff, setDiff] = useState<ManifestDiff | null>(null);
   const [secretOpen, setSecretOpen] = useState(false); const [secret, setSecret] = useState('');
   const [removeOpen, setRemoveOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
+  // The audience draft follows the saved one whenever the connector itself changes, never on a refetch that changed nothing.
   const [audience, setAudience] = useState<ConnectorAudience | null>(null);
-  const [version, setVersion] = useState(0);
-  usePageTitle(c && c !== 'missing' ? c.source : null);
-  const load = useCallback(async () => {
-    try { const d = await api.admin.connector(id); setC(d); setAudience(d.audience); setError(null); }
-    catch (e) { if (e instanceof ApiError && e.status === 400) setC('missing'); else setError(e instanceof ApiError ? e.message : 'Anslutningen kunde inte läsas.'); }
-  }, [id]);
-  useEffect(() => { void load(); api.admin.units().then(u => setUnits(u.units)).catch(() => undefined); }, [load]);
-  const run = async (fn: () => Promise<string | void>) => { if (busy) return; setBusy(true); setError(null); try { const message = await fn(); await load(); setVersion(v => v + 1); if (message) toast({ body: message, uniqueID: 'connector:' + id }); } catch (e) { setError(e instanceof ApiError ? e.message : 'Något gick fel.'); } finally { setBusy(false); } };
-  if (c === 'missing') return <AdminShell user={user} crumbs={[{ label: 'Anslutna system', href: '/admin/anslutningar' }, { label: id }]}><EmptyState headingLevel={1} title="Anslutningen finns inte" description="Den kan ha tagits bort." actions={<Button label="Till listan" href="/admin/anslutningar" />} /></AdminShell>;
+  useEffect(() => { if (c) setAudience(c.audience); }, [c?.id, c?.updatedAt]);
+  usePageTitle(c ? c.source : null);
+  // Every action re-reads the admin queries and then says what it did; removing re-reads the list alone and drops this page's own read before leaving.
+  const { run, busy, error: actionError } = useAdminAction({ toastId: 'connector:' + id });
+  const removal = useAdminAction({ invalidate: [keys.admin.connectors], toastId: 'connector:' + id });
+  const error = actionError ?? removal.error ?? readError;
+  if (missing) return <AdminShell user={user} crumbs={[{ label: 'Anslutna system', href: '/admin/anslutningar' }, { label: id }]}><EmptyState headingLevel={1} title="Anslutningen finns inte" description="Den kan ha tagits bort." actions={<Button label="Till listan" href="/admin/anslutningar" />} /></AdminShell>;
   if (!c) return <AdminShell user={user} crumbs={[{ label: 'Anslutna system', href: '/admin/anslutningar' }, { label: id }]}>{error ? <Text as="p" role="alert" color="accent">{error}</Text> : <Text type="supporting" role="status">Läser anslutningen …</Text>}</AdminShell>;
   const s = statusOf(c);
   const unhealthy = c.state === 'enabled' && !c.bundled && c.health.status !== 'ok';
@@ -126,7 +133,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
         <Button variant="primary" label="Spara" isDisabled={busy || JSON.stringify(audience) === JSON.stringify(c.audience)} clickAction={() => run(async () => { await api.admin.update(id, { audience }); return 'Sparat: ' + audienceLabel(audience) + '.'; })} />
         <Button variant="ghost" label="Ångra ändringar" isDisabled={JSON.stringify(audience) === JSON.stringify(c.audience)} onClick={() => setAudience(c.audience)} />
       </HStack>
-      <AudiencePreview connectorId={id} version={version} />
+      <AudiencePreview connectorId={id} />
     </VStack></div>}
     {tab === 'historik' && <div id={panel('historik')} role={mobile ? "region" : "tabpanel"} aria-label="Historik">
       {c.history.length === 0 ? <Text type="supporting">Ingen historik ännu.</Text> : <List density="compact" aria-label="Historik">
@@ -161,7 +168,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
         </HStack>
       </VStack>}
     </Dialog>
-    <AlertDialog isOpen={removeOpen} onOpenChange={setRemoveOpen} title={removeLabel} description={`Anslutningen försvinner från alla sidor och dess öppna kort stängs. Kvitton i Redan hanterat finns kvar. Nyckeln raderas.`} actionLabel="Ta bort" cancelLabel="Avbryt" isActionLoading={busy}
-      onAction={() => run(async () => { const r = await api.admin.remove(id); setRemoveOpen(false); navigate('/admin/anslutningar'); return `${c.source} är borttagen${r.closedCards ? `, ${r.closedCards} kort stängdes` : ''}.`; })} />
+    <AlertDialog isOpen={removeOpen} onOpenChange={setRemoveOpen} title={removeLabel} description={`Anslutningen försvinner från alla sidor och dess öppna kort stängs. Kvitton i Redan hanterat finns kvar. Nyckeln raderas.`} actionLabel="Ta bort" cancelLabel="Avbryt" isActionLoading={removal.busy}
+      onAction={() => removal.run(async () => { const r = await api.admin.remove(id); setRemoveOpen(false); client.removeQueries({ queryKey: keys.admin.connector(id) }); navigate('/admin/anslutningar'); return `${c.source} är borttagen${r.closedCards ? `, ${r.closedCards} kort stängdes` : ''}.`; })} />
   </AdminShell>;
 }

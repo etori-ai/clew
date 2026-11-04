@@ -1,7 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ConnectorSummary, SessionUser } from '@clew/contracts';
 import { Button, Card, EmptyState, Grid, HStack, Link, List, ListItem, Section, SegmentedControl, SegmentedControlItem, StatusDot, Switch, Table, Text, Timestamp, Toolbar, VStack, pixel, proportional, useMediaQuery, useToast } from '@clew/ui';
-import { api, ApiError } from '../../api';
+import { api } from '../../api';
+import { adminQueries } from '../../queries';
+import { keys } from '../../query-keys';
+import { errorMessage } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
 import { AddConnectorDialog } from './add';
 import { audienceLabel, kindLabel, statusOf } from './labels';
@@ -13,26 +17,26 @@ const filters: Array<{ value: Filter; label: string }> = [{ value: 'alla', label
 const matches = (c: ConnectorSummary, f: Filter) => f === 'alla' || (f === 'pa' ? c.state === 'enabled' : f === 'av' ? c.state !== 'enabled' : c.state === 'enabled' && !c.bundled && c.health.status !== 'ok');
 const counts = (c: ConnectorSummary) => `${c.counts.capabilities} · ${c.counts.execute} ${c.counts.execute === 1 ? 'åtgärd' : 'åtgärder'} · ${c.counts.tools} till assistenten`;
 interface Row extends Record<string, unknown> { id: string; c: ConnectorSummary }
+const EMPTY_UNITS: Array<{ id: string; label: string }> = [];
+const EMPTY_CONNECTORS: ConnectorSummary[] = [];
 
 export function AdminConnectorsPage({ user }: { user: SessionUser }) {
   const mobile = useMediaQuery('(max-width: 720px)');
-  const [connectors, setConnectors] = useState<ConnectorSummary[] | null>(null);
-  const [units, setUnits] = useState<Array<{ id: string; label: string }>>([]);
+  const client = useQueryClient();
+  const list = useQuery(adminQueries.connectors);
+  const units = useQuery(adminQueries.units).data?.units ?? EMPTY_UNITS;
   const [filter, setFilter] = useState<Filter>('alla');
   const [adding, setAdding] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const toast = useToast();
   usePageTitle('Anslutna system');
-  const load = useCallback(async () => {
-    try { const [c, u] = await Promise.all([api.admin.connectors(), api.admin.units().catch(() => ({ units: [] }))]); setConnectors(c.connectors); setUnits(u.units); setError(null); }
-    catch (e) { setError(e instanceof ApiError ? e.message : 'Listan kunde inte läsas.'); setConnectors([]); }
-  }, []);
-  useEffect(() => { void load(); }, [load]);
-  // The switch is the one mutation on this page: on or off, applied live, announced through the toast.
+  // Null while the list is being read (the status line below); an empty list once the read failed, with the alert.
+  const connectors = list.data?.connectors ?? (list.isError ? EMPTY_CONNECTORS : null);
+  const error = list.isError && list.data === undefined ? errorMessage(list.error, 'Listan kunde inte läsas.') : null;
+  // The switch is the one mutation on this page: on or off, applied live, announced through the toast, then every admin read is fresh again (D33).
   const flip = async (c: ConnectorSummary, on: boolean) => {
     try { await api.admin.update(c.id, { state: on ? 'enabled' : 'disabled' }); toast({ body: `${c.source} ${on ? 'är på' : 'är avstängd'}.`, uniqueID: 'connector:' + c.id }); }
-    catch (e) { toast({ body: e instanceof ApiError ? e.message : 'Något gick fel.', isAutoHide: false, uniqueID: 'connector:' + c.id }); }
-    await load();
+    catch (e) { toast({ body: errorMessage(e, 'Något gick fel.'), isAutoHide: false, uniqueID: 'connector:' + c.id }); }
+    await client.invalidateQueries({ queryKey: keys.admin.all });
   };
   const shown = (connectors ?? []).filter(c => matches(c, filter));
   const status = (c: ConnectorSummary) => { const s = statusOf(c); return <StatusDot variant={s.tone} label={s.label} />; };
@@ -79,6 +83,6 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
         </List>
         : <Table<Row> data={shown.map(c => ({ id: c.id, c }))} idKey="id" columns={columns} density="balanced" hasHover />)}
     </Card>}
-    <AddConnectorDialog isOpen={adding} units={units} onClose={added => { setAdding(false); if (added) void load(); }} />
+    <AddConnectorDialog isOpen={adding} units={units} onClose={added => { setAdding(false); if (added) void client.invalidateQueries({ queryKey: keys.admin.all }); }} />
   </AdminShell>;
 }

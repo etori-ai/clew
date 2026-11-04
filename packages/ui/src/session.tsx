@@ -32,10 +32,14 @@ export async function signOut() {
   window.location.replace(url);
 }
 
-/** Memory only: no session/user content in browser storage. Children unmount on invalidation. */
-export function SessionBoundary({ session, children }: { session: BrowserSession; children: ReactNode }) {
+/** Memory only: no session/user content in browser storage. Children unmount on invalidation; `onEnded` is told afterwards. */
+export function SessionBoundary({ session, children, onEnded }: { session: BrowserSession; children: ReactNode; onEnded?: () => void }) {
   const [state, setState] = useState<'checking' | 'active' | 'ended'>('checking');
   const deadline = useRef(Date.parse(session.expiresAt));
+  // Called after the commit that replaced the children with the ended card, so nothing is left observing what the caller clears.
+  const ended = useRef(onEnded);
+  ended.current = onEnded;
+  useEffect(() => { if (state === 'ended') ended.current?.(); }, [state]);
   useEffect(() => {
     const controller = new AbortController();
     transport = { csrf: session.csrfToken, controller };

@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import type { Thread } from '@clew/contracts';
 import { Banner, Button, DateTimeInput, DayStrip, Dialog, DialogHeader, HStack, MetadataList, MetadataListItem, Text, TimeInput, VStack, useAnnounce, useMediaQuery, type AgendaItem } from '@clew/ui';
 import { dayLabel, displayDate, localClock, localInstant, shortDayLabel, timeRange } from '@clew/calendar/dates';
-import { api, ApiError } from '../../api';
+import { api } from '../../api';
+import { useThreadAction } from '../../mutations';
+import { keys } from '../../query-keys';
 import { mobileQuery } from '../shell';
 
 type Mode = 'view' | 'move' | 'cancel';
@@ -11,8 +14,8 @@ type Props = {
   /** Everything on the item's day, for the strip above the details (the "day around it", D9). */
   dayItems: AgendaItem[];
   onClose: () => void;
-  /** The calendar changed: the host reads the week again. A thread comes back when a proposal moved. */
-  onChanged: (thread?: Thread) => void;
+  /** The calendar changed and the cache already knows (D33): the host is told for what it alone shows, such as the panel's day view. A thread comes back when a proposal moved. */
+  onChanged?: (thread?: Thread) => void;
   onOpenDay?: (date: string) => void;
   onAddChip?: (item: AgendaItem) => void;
 };
@@ -31,9 +34,9 @@ export function EventDialog({ item, dayItems, onClose, onChanged, onOpenDay, onA
   const [mode, setMode] = useState<Mode>('view');
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => { setMode('view'); setError(null); if (item) { setStart(localClock(item.start)); setEnd(hhmm(item.end)); } }, [item?.id]);
+  const client = useQueryClient();
+  const { run, error, reset } = useThreadAction();
+  useEffect(() => { setMode('view'); reset(); if (item) { setStart(localClock(item.start)); setEnd(hhmm(item.end)); } }, [item?.id]);
   if (!item) return <Dialog isOpen={false} onOpenChange={onClose}><DialogHeader title="Möte" /></Dialog>;
   const event = item.event, proposal = item.proposal;
   const day = displayDate(item.start);
@@ -42,19 +45,19 @@ export function EventDialog({ item, dayItems, onClose, onChanged, onOpenDay, onA
   const newStart = start ? localInstant(start) : null;
   const newEnd = newStart ? (proposal ? new Date(Date.parse(newStart) + minutes(item) * 60000).toISOString() : localInstant(`${start.slice(0, 10)}T${end}`)) : null;
   const endFirst = !!newStart && !!newEnd && Date.parse(newEnd) <= Date.parse(newStart);
-  const run = async (action: () => Promise<Thread | undefined>, said: string) => {
-    if (busy) return;
-    setBusy(true); setError(null);
-    try { const thread = await action(); announce(said); onChanged(thread); onClose(); }
-    catch (e) { setError(e instanceof ApiError ? e.message : 'Något gick fel.'); }
-    finally { setBusy(false); }
-  };
+  /** Every change goes through the cache (D33): a moved proposal's thread is written in by `run`; an own booking's change reads the loaded weeks again. */
+  const act = (action: () => Promise<Thread | void>, said: string) => run(async () => {
+    const thread = await action();
+    if (!thread) void client.invalidateQueries({ queryKey: keys.calendarAll });
+    announce(said); onChanged?.(thread ?? undefined); onClose();
+    return thread;
+  });
   const save = () => {
     if (!newStart || !newEnd || endFirst) return;
-    if (proposal) return run(() => api.moveProposal(proposal.threadId, proposal.id, { start: newStart, end: newEnd }), `Förslaget ligger nu ${shortDayLabel(displayDate(newStart))} ${timeRange(newStart, newEnd)}.`);
-    if (event) return run(() => api.rescheduleEvent({ ref: event.ref, revision: event.revision, start: newStart, end: newEnd }).then(() => undefined), `Mötet är flyttat till ${shortDayLabel(displayDate(newStart))} ${timeRange(newStart, newEnd)}.`);
+    if (proposal) return act(() => api.moveProposal(proposal.threadId, proposal.id, { start: newStart, end: newEnd }), `Förslaget ligger nu ${shortDayLabel(displayDate(newStart))} ${timeRange(newStart, newEnd)}.`);
+    if (event) return act(() => api.rescheduleEvent({ ref: event.ref, revision: event.revision, start: newStart, end: newEnd }).then(() => undefined), `Mötet är flyttat till ${shortDayLabel(displayDate(newStart))} ${timeRange(newStart, newEnd)}.`);
   };
-  const cancel = () => { if (event) void run(() => api.cancelEvent({ ref: event.ref, revision: event.revision }).then(() => undefined), 'Mötet är inställt.'); };
+  const cancel = () => { if (event) void act(() => api.cancelEvent({ ref: event.ref, revision: event.revision }).then(() => undefined), 'Mötet är inställt.'); };
   const when = item.allDay ? `${dayLabel(day)}, hela dagen` : `${dayLabel(day)} ${timeRange(item.start, item.end)}`;
   return <Dialog isOpen onOpenChange={open => { if (!open) onClose(); }} width={520} purpose={mode === 'view' ? 'info' : 'form'}>
     <DialogHeader title={item.title} subtitle={when} onOpenChange={open => { if (!open) onClose(); }} />
@@ -84,11 +87,11 @@ export function EventDialog({ item, dayItems, onClose, onChanged, onOpenDay, onA
           {movable && <Button size="sm" variant="primary" label={proposal ? 'Flytta förslaget' : 'Flytta'} onClick={() => setMode('move')} />}
         </>}
         {mode === 'move' && <>
-          <Button size="sm" variant="ghost" label="Avbryt" onClick={() => { setMode('view'); setError(null); }} />
+          <Button size="sm" variant="ghost" label="Avbryt" onClick={() => { setMode('view'); reset(); }} />
           <Button size="sm" variant="primary" label="Spara" isDisabled={!newStart || endFirst} clickAction={save} />
         </>}
         {mode === 'cancel' && <>
-          <Button size="sm" variant="ghost" label="Avbryt" onClick={() => { setMode('view'); setError(null); }} />
+          <Button size="sm" variant="ghost" label="Avbryt" onClick={() => { setMode('view'); reset(); }} />
           <Button size="sm" variant="destructive" label="Ja, ställ in" clickAction={cancel} />
         </>}
       </HStack>
