@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CalendarEvent, Proposal, SessionUser, Thread } from '@clew/contracts';
-import { Badge, Button, ChatComposer, CheckboxList, CheckboxListItem, Divider, EventCalendar, Heading, HStack, Icon, IconButton, Layout, LayoutContent, LayoutHeader, LayoutPanel, Text, VStack, WeekAgenda, useMediaQuery, type AgendaItem } from '@clew/ui';
+import { Badge, Button, ChatComposer, CheckboxList, CheckboxListItem, Divider, EventCalendar, Heading, HStack, Icon, IconButton, Layout, LayoutContent, LayoutHeader, LayoutPanel, StatusDot, Text, VStack, WeekAgenda, useMediaQuery, type AgendaItem } from '@clew/ui';
 import { addDays, rangeLabel, shortDayLabel, timeRange, today, weekNumber, weekStart } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
 import { usePageTitle } from '../page-title';
@@ -42,14 +42,14 @@ export function CalendarPage({ user }: { user: SessionUser }) {
   const plural = selected.length === 1 ? 'inbjudan' : 'inbjudningar';
   const panel = thread && <VStack gap={3}>
     <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-      <Badge variant={open ? 'info' : 'neutral'} label={open ? 'Förslag att bekräfta' : 'Hanterad'} />
+      {open ? <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Förslag att bekräfta" /> : <Text type="supporting" weight="semibold">Hanterad</Text>}
       {open && <Text type="supporting">{selected.length} av {proposed.length} valda</Text>}
     </HStack>
     {lead && <Text type="large" weight="medium" as="p">{lead}</Text>}
     <CheckboxList label="Förslag" isLabelHidden value={selected} onChange={setSelected} isReadOnly={!open} hasDividers>
       {thread.proposals.filter(p => p.status !== 'declined').map(p => <CheckboxListItem key={p.id} value={p.id} label={p.participant.name}
         description={`${shortDayLabel(p.start.slice(0, 10))} · ${timeRange(p.start, p.end)}`} isChecked={p.status !== 'proposed' || selected.includes(p.id)} isDisabled={p.status !== 'proposed'}
-        endContent={p.status !== 'proposed' ? <Badge variant={p.status === 'confirmed' || p.status === 'final' ? 'success' : 'neutral'} label={p.status === 'confirmed' ? 'Skickad' : p.status === 'final' ? 'Bokad' : 'Återkallad'} /> : undefined} />)}
+        endContent={p.status !== 'proposed' ? <StatusDot variant={p.status === 'confirmed' || p.status === 'final' ? 'success' : 'neutral'} label={p.status === 'confirmed' ? 'Skickad' : p.status === 'final' ? 'Bokad' : 'Återkallad'} /> : undefined} />)}
     </CheckboxList>
     {open && <Text type="supporting" as="p">Inbjudningarna skickas först när du bekräftar. Vill du ha andra tider ritar jag om förslagen i en annan vecka.</Text>}
     {error && <Text as="p" role="alert" color="accent">{error}</Text>}

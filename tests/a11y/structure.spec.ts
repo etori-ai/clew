@@ -40,14 +40,17 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(nav.getByRole('link', { name: /^Personal/ })).toBeVisible();
   });
 
-  test('cards and day groups are headings', async ({ page, api: _ }) => {
+  test('the open card is a heading, a row is a button that says it is collapsed, the log groups its days', async ({ page, api: _ }) => {
     await open(page, '/');
+    await expect(heading(page, 1, 'God morgon')).toBeVisible();
+    await expect(heading(page, 2, 'Nu · 1')).toBeVisible();
     await expect(heading(page, 3, 'Attestera 3 fakturor, 48 200 kr')).toBeVisible();
-    await expect(heading(page, 3, 'Omtankesamtal med Anna Lindqvist')).toBeVisible();
+    const row = page.getByRole('listitem').filter({ has: page.getByRole('button', { name: 'Omtankesamtal med Anna Lindqvist', exact: true }) });
+    await expect(row.getByRole('button', { name: 'Omtankesamtal med Anna Lindqvist', exact: true })).toHaveAttribute('aria-expanded', 'false');
     await open(page, '/hanterat');
     await expect(heading(page, 1, 'Redan hanterat')).toBeVisible();
     await page.getByRole('radio', { name: 'Veckan' }).click();
-    await expect(heading(page, 2, 'november').first()).toBeVisible();
+    await expect(page.getByRole('list', { name: /november/ }).first()).toBeVisible();
   });
 
   test('sections have distinct names', async ({ page, api: _ }) => {

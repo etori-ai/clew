@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ConnectorSummary, SessionUser } from '@clew/contracts';
-import { Badge, Button, Card, EmptyState, HStack, Link, List, ListItem, Section, SegmentedControl, SegmentedControlItem, StatusDot, Switch, Table, Text, Timestamp, Toolbar, VStack, pixel, proportional, useMediaQuery, useToast } from '@clew/ui';
+import { Button, Card, EmptyState, Grid, HStack, Link, List, ListItem, Section, SegmentedControl, SegmentedControlItem, StatusDot, Switch, Table, Text, Timestamp, Toolbar, VStack, pixel, proportional, useMediaQuery, useToast } from '@clew/ui';
 import { api, ApiError } from '../../api';
 import { usePageTitle } from '../../page-title';
 import { AddConnectorDialog } from './add';
@@ -38,7 +38,7 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
   const status = (c: ConnectorSummary) => { const s = statusOf(c); return <StatusDot variant={s.tone} label={s.label} />; };
   const statusText = (c: ConnectorSummary) => { const s = statusOf(c); return <HStack gap={1} vAlign="center">{status(c)}<Text>{s.label}</Text></HStack>; };
   const toggle = (c: ConnectorSummary) => <Switch size="sm" label={`${c.source} på`} isLabelHidden value={c.state === 'enabled'} changeAction={on => flip(c, on)} />;
-  const name = (c: ConnectorSummary) => <VStack gap={0}><Text weight="semibold">{c.source}</Text><HStack gap={1} vAlign="center" wrap="wrap"><Text type="supporting">{c.id}</Text>{c.kind && <Badge variant="neutral" label={kindLabel[c.kind]} />}{c.bundled && <Badge variant="neutral" label="Inbyggd" />}</HStack></VStack>;
+  const name = (c: ConnectorSummary) => <VStack gap={0}><Text weight="semibold">{c.source}</Text><Text type="supporting">{c.id}{c.bundled ? ' · inbyggd' : ''}{c.kind ? ` · ${kindLabel[c.kind].toLowerCase()}` : ''}</Text></VStack>;
   const columns = [
     { key: 'system', header: 'System', width: proportional(1, { minWidth: 200 }), renderCell: (r: Row) => <VStack gap={0}><Link href={`/admin/anslutningar/${r.c.id}`} weight="semibold">{r.c.source}</Link><Text type="supporting">{r.c.id}{r.c.bundled ? ' · inbyggd' : ''}</Text></VStack> },
     { key: 'status', header: 'Status', width: pixel(150), renderCell: (r: Row) => statusText(r.c) },
@@ -47,7 +47,7 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
     { key: 'seen', header: 'Senast kontakt', width: pixel(160), renderCell: (r: Row) => r.c.bundled ? <Text type="supporting">I processen</Text> : <Timestamp value={r.c.health.at} format="auto" /> },
     { key: 'on', header: 'På', width: pixel(72), renderCell: (r: Row) => toggle(r.c) },
   ];
-  // The lead counts: what is on, what is off, what needs a hand. Tiles are KPI widgets, so Cards (structure guide); the filter stays in the toolbar.
+  // The lead counts: what is on, what is off, what needs a hand. Tiles are KPI widgets, so Cards in a reflowing Grid (structure guide); a problem is a dot with its word, never a coloured card.
   const all = connectors ?? [];
   const tiles = [
     { label: 'På', value: all.filter(c => c.state === 'enabled' && (c.bundled || c.health.status === 'ok')).length },
@@ -58,11 +58,14 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
   return <AdminShell user={user} crumbs={[{ label: 'Anslutna system' }]}>
     <PageLead title="Anslutna system" lead="Systemen Startsidan läser från och agerar i. Här avgör du vem som ser en anslutning; vad var och en får göra avgör systemet självt."
       actions={<Button variant="primary" label="Anslut system" onClick={() => setAdding(true)} />} />
-    {connectors !== null && all.length > 0 && <HStack gap={3} wrap="wrap" as="section" aria-label="Läget">
-      {tiles.map(t => <Card key={t.label} variant={t.label === 'Problem' && t.value > 0 ? 'yellow' : 'muted'} padding={3} width={mobile ? 140 : 180}>
-        <VStack gap={0}><Text type="supporting">{t.label}</Text><Text type="large" weight="semibold">{t.value}</Text></VStack>
+    {connectors !== null && all.length > 0 && <VStack as="section" aria-label="Läget"><Grid columns={{ minWidth: 140, max: 4 }} gap={3}>
+      {tiles.map(t => <Card key={t.label} variant="muted" padding={3}>
+        <VStack gap={0}>
+          <HStack gap={2} justify="between" vAlign="center"><Text type="supporting">{t.label}</Text>{t.label === 'Problem' && t.value > 0 && <StatusDot variant="warning" label="Behöver åtgärd" />}</HStack>
+          <Text type="large" weight="semibold" hasTabularNumbers>{t.value}</Text>
+        </VStack>
       </Card>)}
-    </HStack>}
+    </Grid></VStack>}
     {error && <Text as="p" role="alert" color="accent">{error}</Text>}
     {connectors === null && <Text type="supporting" role="status">Läser anslutningarna …</Text>}
     {/* A Section with padding 0 bleeds over the page's gutters (it is edge-to-edge by definition); the bordered box is a Card. */}

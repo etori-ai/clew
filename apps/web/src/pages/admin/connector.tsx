@@ -58,14 +58,14 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
   const capPatch = (on: boolean, key: 'enabled' | 'model'): { enabled?: false; model?: false } => on ? {} : key === 'enabled' ? { enabled: false } : { model: false };
   const capColumns = [
     { key: 'title', header: 'Förmåga', renderCell: (r: CapRow) => <VStack gap={0}><Text>{r.c.title}</Text><Code>{r.c.name}</Code></VStack> },
-    { key: 'kind', header: 'Typ', renderCell: (r: CapRow) => <Badge variant={r.c.kind === 'execute' ? 'warning' : 'neutral'} label={capabilityKindLabel[r.c.kind]} /> },
+    { key: 'kind', header: 'Typ', renderCell: (r: CapRow) => <Text weight={r.c.kind === 'execute' ? 'semibold' : undefined}>{capabilityKindLabel[r.c.kind]}</Text> },
     { key: 'roles', header: 'Roller enligt manifestet', renderCell: (r: CapRow) => <Text type="supporting">{r.c.roles ? r.c.roles.map(x => roleLabel[x]).join(', ') : 'Alla (regeln ligger i koden)'}</Text> },
     { key: 'on', header: 'På', renderCell: (r: CapRow) => <Switch size="sm" label={`${r.c.title} på`} isLabelHidden value={r.c.enabled} changeAction={on => setCap(r.name, capPatch(on, 'enabled'))} /> },
     { key: 'tool', header: 'Assistent', renderCell: (r: CapRow) => <ToolSwitch row={r.c} toolsEnabled={c.toolsEnabled} onChange={on => setCap(r.name, capPatch(on, 'model'))} /> },
   ];
   const removeLabel = `Ta bort ${c.source}`;
   return <AdminShell user={user} crumbs={[{ label: 'Anslutna system', href: '/admin/anslutningar' }, { label: c.source }]}>
-    <PageLead title={<HStack gap={2} vAlign="center" wrap="wrap"><Heading level={1}>{c.source}</Heading>{c.kind && <Badge variant="neutral" label={kindLabel[c.kind]} />}{c.bundled && <Badge variant="neutral" label="Inbyggd" />}</HStack>}
+    <PageLead title={<HStack gap={2} vAlign="end" wrap="wrap"><Heading level={1}>{c.source}</Heading><Text type="supporting">{[c.kind ? kindLabel[c.kind] : null, c.bundled ? 'inbyggd' : null].filter(Boolean).join(' · ')}</Text></HStack>}
       actions={<Switch label={c.state === 'enabled' ? 'På' : 'Av'} labelPosition="start" value={c.state === 'enabled'} isDisabled={busy || (c.state === 'draft' && !c.counts.capabilities)} disabledMessage="Utkastet saknar manifest: kontrollera anslutningen först." changeAction={on => run(async () => { await api.admin.update(id, { state: on ? 'enabled' : 'disabled' }); return `${c.source} ${on ? 'är på' : 'är avstängd'}.`; })} />}>
       <HStack gap={1} vAlign="center" wrap="wrap"><StatusDot variant={s.tone} label={s.label} /><Text color="secondary">{s.label}{c.bundled ? ' · körs i Clews egen process' : c.url ? ` · ${c.url}` : ''}</Text></HStack>
     </PageLead>

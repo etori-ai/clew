@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { SessionUser } from '@clew/contracts';
-import { Badge, BreadcrumbItem, Breadcrumbs, Button, EmptyState, HStack, Heading, Layout, LayoutContent, Section, SideNav, SideNavItem, SideNavSection, Text, VStack } from '@clew/ui';
+import { BreadcrumbItem, Breadcrumbs, Button, EmptyState, HStack, Heading, Layout, LayoutContent, Section, SideNav, SideNavItem, SideNavSection, Text, VStack } from '@clew/ui';
 import { Shell, mobileQuery } from '../../components/shell';
 import { useMediaQuery } from '@clew/ui';
 
@@ -16,7 +16,7 @@ export function AdminShell({ user, crumbs, children }: { user: SessionUser; crum
     sideNav={<SideNav>
       <SideNavSection title="Anslutningar">
         <SideNavItem label="Anslutna system" icon="wrench" isSelected href="/admin/anslutningar" />
-        <SideNavItem label="Modeller" isDisabled endContent={<Badge variant="neutral" label="Kommer" />} />
+        <SideNavItem label="Modeller" isDisabled endContent={<Text type="supporting">Kommer</Text>} />
       </SideNavSection>
       <SideNavSection title="Om administrationen" isHeaderHidden>
         <Text type="supporting" as="p">Du styr vilka system Startsidan är ansluten till och vem som ser dem. Vad var och en får göra i ett system avgör systemet självt.</Text>

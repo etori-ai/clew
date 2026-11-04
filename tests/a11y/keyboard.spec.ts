@@ -15,9 +15,10 @@ test.describe('2.4.7 focus visible', () => {
     await page.keyboard.press('Enter');
     await page.getByRole('menuitem', { name: /^I morgon/ }).focus();
     await page.keyboard.press('Enter');
-    const card = page.locator('#thread-omtanke');
-    await expect(card).toBeFocused();
-    expect(await card.evaluate(el => getComputedStyle(el).outlineStyle)).not.toBe('none');
+    // The next thread is a row (D31): its title button takes the focus, and the ring is on the button.
+    const title = page.locator('#thread-omtanke').getByRole('button', { name: 'Omtankesamtal med Anna Lindqvist', exact: true });
+    await expect(title).toBeFocused();
+    expect(await title.evaluate(el => getComputedStyle(el).outlineStyle !== 'none' || getComputedStyle(el).boxShadow !== 'none')).toBe(true);
   });
 });
 
@@ -50,7 +51,7 @@ test.describe('2.4.3 focus order', () => {
     await page.getByRole('menuitem', { name: /^I morgon/ }).focus();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('region', { name: 'Aviseringar' })).toBeVisible();
-    await expect(page.locator('#thread-omtanke')).toBeFocused();
+    await expect(page.locator('#thread-omtanke').getByRole('button', { name: 'Omtankesamtal med Anna Lindqvist', exact: true })).toBeFocused();
   });
 
   test('Ångra in the toast stays available and reachable by keyboard', async ({ page, api: _ }) => {

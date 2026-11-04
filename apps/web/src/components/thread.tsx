@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { obligationStep, obligationSteps, replySummary, type CalendarEvent, type Thread } from '@clew/contracts';
-import { Avatar, AvatarGroup, AvatarGroupOverflow, Badge, Button, Card, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, CheckboxList, CheckboxListItem, Collapsible, Heading, HStack, List, ListItem, MoreMenu, ProgressBar, Step, Stepper, Text, Timestamp, Token, VStack, VisuallyHidden, WeekAgenda, type AgendaItem } from '@clew/ui';
+import { Avatar, AvatarGroup, AvatarGroupOverflow, Badge, Button, Card, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, CheckboxList, CheckboxListItem, Collapsible, Heading, HStack, Icon, List, ListItem, MoreMenu, ProgressBar, Step, Stepper, Text, Timestamp, Token, VStack, VisuallyHidden, WeekAgenda, type AgendaItem } from '@clew/ui';
 import { useConversation } from './conversation-context';
 import { useLeaveWithUndo } from './card';
 import { addDays, shortDayLabel, timeRange, weekNumber } from '@clew/calendar/dates';
@@ -9,14 +9,15 @@ import { api, ApiError } from '../api';
 type Props = { thread: Thread; events?: CalendarEvent[]; compact: boolean; headingLevel?: 2 | 3 | 4; onChange: (thread: Thread) => void; onLoadWeek?: (week: string) => void };
 
 const stepLabel = { forslag: 'Förslag', inbjudningar: 'Inbjudningar', svar: 'Svar', klart: 'Klart' } as const;
-const statusBadge = (thread: Thread) => {
-  if (thread.kind === 'question') return { variant: 'neutral', label: Date.now() - Date.parse(thread.createdAt) < 3600_000 ? 'Du frågade nyss' : 'Du frågade' } as const;
-  if (thread.state === 'dismissed') return { variant: 'neutral', label: 'Avfärdad' } as const;
+/** The thread's state in words; the Stepper carries it too (D30). Only a proposal waiting for the person is a status that needs action, and the one badge. */
+const statusLine = (thread: Thread) => {
+  if (thread.kind === 'question') return { badge: false, label: Date.now() - Date.parse(thread.createdAt) < 3600_000 ? 'Du frågade nyss' : 'Du frågade' };
+  if (thread.state === 'dismissed') return { badge: false, label: 'Avfärdad' };
   const step = obligationStep(thread.proposals), sum = replySummary(thread.proposals);
-  if (step === 'klart') return { variant: 'success', label: sum.declined ? `Alla har svarat · ${sum.declined} nej` : 'Alla har svarat ja' } as const;
-  if (step === 'svar') return { variant: 'info', label: `Svar · ${sum.accepted} av ${sum.total}` } as const;
-  if (step === 'inbjudningar') return { variant: 'success', label: 'Inbjudningar skickade' } as const;
-  return { variant: 'info', label: 'Förslag att bekräfta' } as const;
+  if (step === 'klart') return { badge: false, label: sum.declined ? `Alla har svarat · ${sum.declined} nej` : 'Alla har svarat ja' };
+  if (step === 'svar') return { badge: false, label: `Svar · ${sum.accepted} av ${sum.total}` };
+  if (step === 'inbjudningar') return { badge: false, label: 'Inbjudningar skickade' };
+  return { badge: true, label: 'Förslag att bekräfta' };
 };
 /** The first assistant message is the lead: one sentence, then the assessment. */
 function split(body: string) {
@@ -77,21 +78,20 @@ export function ThreadCard({ thread, events = [], compact, headingLevel = 3, onC
   const conversation = thread.kind === 'question' ? thread.messages : thread.messages.filter(m => m !== first);
   const { lead, rest } = split(first?.body ?? thread.title);
   const items = useMemo<AgendaItem[]>(() => [
-    ...events.filter(e => !e.title.startsWith('Utvecklingssamtal')).map(e => ({ id: e.id, title: e.title, start: e.start, end: e.end, allDay: e.allDay, kind: 'event' as const })),
-    ...thread.proposals.filter(p => ['proposed', 'confirmed', 'final'].includes(p.status)).map(p => ({ id: p.id, title: 'Utvecklingssamtal', start: p.start, end: p.end, allDay: false, kind: p.status === 'proposed' ? 'proposal' as const : 'booked' as const })),
+    ...events.filter(e => !e.title.startsWith('Utvecklingssamtal')).map(e => ({ id: e.id, title: e.title, short: e.title.split(' ')[0]!, start: e.start, end: e.end, allDay: e.allDay, kind: 'event' as const })),
+    ...thread.proposals.filter(p => ['proposed', 'confirmed', 'final'].includes(p.status)).map(p => ({ id: p.id, title: 'Utvecklingssamtal', short: 'Samtal', subtitle: p.participant.name, start: p.start, end: p.end, allDay: false, kind: p.status === 'proposed' ? 'proposal' as const : 'booked' as const })),
   ], [events, thread.proposals]);
   const nextWeek = thread.week ? addDays(thread.week, 7) : null;
   const count = selected.length, plural = count === 1 ? 'inbjudan' : 'inbjudningar';
-  const badge = statusBadge(thread);
-  return <Card padding={0} variant={thread.state === 'open' && thread.waitingOn ? 'muted' : 'default'}>
-    <VStack gap={2} padding={2} as="article" tabIndex={-1} aria-label={`Tråd: ${thread.title}`} id={`thread-${thread.id}`} aria-current={inConversation ? 'true' : undefined}>
+  const status = statusLine(thread);
+  return <Card padding={3} variant={thread.state === 'open' && thread.waitingOn ? 'muted' : 'default'} elevation={inConversation || (open && !thread.waitingOn) ? 'low' : 'none'}>
+    <VStack gap={2} as="article" tabIndex={-1} aria-label={`Tråd: ${thread.title}`} id={`thread-${thread.id}`} aria-current={inConversation ? 'true' : undefined}>
       <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
         <HStack gap={2} vAlign="center" wrap="wrap">
-          <Badge variant={badge.variant} label={badge.label} />
-          {inConversation && <Badge variant="info" label="I samtalet" />}
-          {draft && open && <Badge variant="info" label="Utkast från samtalet" />}
+          {status.badge ? <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label={status.label} /> : <Text type="supporting" weight="semibold">{status.label}</Text>}
+          {draft && open && <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Att bekräfta" />}
         </HStack>
-        <HStack gap={2} vAlign="center" wrap="wrap">{thread.state === 'open' && thread.waitingOn && <Badge variant="neutral" label={`Väntar på ${thread.waitingOn}`} />}<Text type="supporting">{thread.trigger.source} · <Timestamp value={thread.trigger.at} format="time" hasTooltip={false} /></Text></HStack>
+        <Text type="supporting">{thread.state === 'open' && thread.waitingOn ? `Väntar på ${thread.waitingOn} · ` : ''}{thread.trigger.source} · <Timestamp value={thread.trigger.at} format="time" hasTooltip={false} /></Text>
       </HStack>
       {thread.kind === 'pushed' && <>
         <Heading level={3} accessibilityLevel={headingLevel} weight="medium">{lead}</Heading>

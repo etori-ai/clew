@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Thread } from '@clew/contracts';
-import { Badge, Button, Heading, HStack, Icon, List, ListItem, SegmentedControl, SegmentedControlItem, Text, VStack } from '@clew/ui';
+import { Button, DropdownMenu, Heading, HStack, Icon, List, ListItem, SegmentedControl, SegmentedControlItem, Text, VStack } from '@clew/ui';
 import { api } from '../api';
 
 type Filter = 'idag' | 'veckan' | 'hanterade' | 'avfardade' | 'fragor';
@@ -30,13 +30,13 @@ export function Handled({ threads, compact, onChange, conversationHref }: { thre
   return <VStack gap={3} as="section" aria-label="Redan hanterat">
     <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
       <Heading level={2} accessibilityLevel={1}>Redan hanterat</Heading>
-      {/* Five segments do not fit a phone and SegmentedControl truncates them; there the filter wraps (1.4.10). */}
+      {/* Five segments do not fit a phone and SegmentedControl truncates them; there the same choice is one menu (1.4.10). */}
       {compact
-        ? <HStack gap={1} wrap="wrap" role="group" aria-label="Filter">{filters.map(f => <Button key={f.value} size="sm" variant={filter === f.value ? 'primary' : 'secondary'} label={f.label} aria-pressed={filter === f.value} onClick={() => setFilter(f.value)} />)}</HStack>
+        ? <DropdownMenu presentation="adaptive" button={{ label: `Visa: ${filters.find(f => f.value === filter)!.label}`, size: 'sm', variant: 'secondary' }} items={filters.map(f => ({ id: f.value, label: f.label, onClick: () => setFilter(f.value) }))} />
         : <SegmentedControl label="Filter" size="sm" value={filter} onChange={v => setFilter(v as Filter)}>{filters.map(f => <SegmentedControlItem key={f.value} value={f.value} label={f.label} />)}</SegmentedControl>}
     </HStack>
     {!shown.length && <Text type="supporting">Inget här ännu.</Text>}
-    {days.map(day => <List key={day} hasDividers density="compact" header={<Heading level={6} accessibilityLevel={2} color="secondary">{dayHeading(day)}</Heading>}>
+    {days.map(day => <List key={day} hasDividers density="compact" header={<Text weight="semibold" type="supporting">{dayHeading(day)}</Text>}>
       {shown.filter(t => dayKey(when(t)) === day).map(t => {
         const last = [...t.messages].reverse().find(m => m.role === 'assistant');
         const undoUntil = t.proposals.map(p => p.undoUntil).filter((v): v is string => !!v).sort().at(-1);
@@ -48,7 +48,7 @@ export function Handled({ threads, compact, onChange, conversationHref }: { thre
         const end = undoOpen ? <Button size="sm" label="Ångra" clickAction={async () => onChange(await api.undo(t.id))} />
           : receiptUndo ? <Button size="sm" label="Ångra" clickAction={async () => onChange(await api.undoReceipt(t.id))} />
           : reopenable ? <Button size="sm" label="Återöppna" clickAction={async () => onChange(await api.reopen(t.id))} />
-          : <Badge variant="neutral" label={t.state === 'dismissed' ? 'Avfärdad' : question ? 'Fråga' : 'Klart'} />;
+          : <Text type="supporting">{t.state === 'dismissed' ? 'Avfärdad' : question ? 'Fråga' : 'Klart'}</Text>;
         return <ListItem key={t.id} startContent={icon} align="start" label={<Text>{question ? `Fråga: ${t.title}` : t.title}</Text>} description={<Text type="supporting">{last?.body ?? t.trigger.reason}</Text>}
           href={question ? conversationHref(t.id) : undefined} endContent={<HStack gap={2} vAlign="center"><Text type="supporting">{new Date(when(t)).toLocaleTimeString('sv-SE', { timeStyle: 'short' })}</Text>{end}</HStack>} />;
       })}

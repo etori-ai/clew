@@ -1,4 +1,4 @@
-import { desktop, dockOf, expect, hiddenFocusStops, narrow, open, openNav, reflowProblems, short, snoozeFirst, test } from './support';
+import { desktop, dockOf, expect, heading, hiddenFocusStops, narrow, open, openNav, reflowProblems, short, snoozeFirst, test } from './support';
 
 const routes = [['start', '/'], ['an area', '/omrade/personal'], ['the log', '/hanterat'], ['the calendar page', '/kalender']] as const;
 
@@ -74,7 +74,7 @@ test.describe('2.4.11 focus not obscured', () => {
   test('the row keeps the stream readable on a short screen', async ({ page, api: _ }) => {
     await page.setViewportSize(short);
     await open(page, '/');
-    const title = page.getByRole('heading', { level: 2, name: /^Nu · / });
+    const title = heading(page, 2, 'Nu · ');
     await title.evaluate(el => el.scrollIntoView({ block: 'start' }));
     // With 256 px of height nothing is docked (D31 item 7): the row is in the page flow and the stream has the screen.
     expect(await dockOf(page), 'the row is in the page flow').toBeNull();
