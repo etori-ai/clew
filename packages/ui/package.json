@@ -8,8 +8,8 @@
     "./styles.css": "./src/styles.css"
   },
   "dependencies": {
-    "@astryxdesign/core": "0.7.6",
-    "@astryxdesign/theme-neutral": "0.7.6",
+    "@astryxdesign/core": "0.7.7",
+    "@astryxdesign/theme-neutral": "0.7.7",
     "@clew/calendar": "workspace:*",
     "@clew/contracts": "workspace:*",
     "@stylexjs/stylex": "0.19.1",

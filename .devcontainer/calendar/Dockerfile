@@ -1,11 +1,11 @@
-FROM nextcloud:33.0.9-apache@sha256:63e74e341d302e94d52a4ee1cf5bdc7ee94c04c3c661823c5e5a5270741310e8
+FROM nextcloud:33.0.10-apache@sha256:53797c68b5b59c983d92be4ef9cc2ece57fbce24d94f1f6981ba6a5e63a59f28
 
 # Published AGPL app archives; do not resolve versions at container startup.
 RUN set -eu; \
-    curl -fsSL --retry 3 https://github.com/nextcloud-releases/calendar/releases/download/v6.5.4/calendar-v6.5.4.tar.gz -o /tmp/calendar.tar.gz; \
-    echo '67c777a6ea974409e9d228c23fc60f2be8e675d376531b6b1b125f2f0365738d  /tmp/calendar.tar.gz' | sha256sum -c -; \
-    curl -fsSL --retry 3 https://github.com/nextcloud/roomvox/releases/download/v1.5.0/roomvox-1.5.0.tar.gz -o /tmp/roomvox.tar.gz; \
-    echo '4b496b416873753ddf3601aa729baa25c3a67aa15f17c9a06e5e8838ea707860  /tmp/roomvox.tar.gz' | sha256sum -c -; \
+    curl -fsSL --retry 3 https://github.com/nextcloud-releases/calendar/releases/download/v6.6.4/calendar-v6.6.4.tar.gz -o /tmp/calendar.tar.gz; \
+    echo '0557b6b5852a467cf3f746e59d56478d227f78bf7a66357b30dfc10cae4c7e3c  /tmp/calendar.tar.gz' | sha256sum -c -; \
+    curl -fsSL --retry 3 https://github.com/nextcloud/RoomVox/releases/download/v1.6.1/roomvox-1.6.1.tar.gz -o /tmp/roomvox.tar.gz; \
+    echo '6002c625688f42f2ad2662ae0eb1f72db2cd0db017335cf4d9f36f61b6079de1  /tmp/roomvox.tar.gz' | sha256sum -c -; \
     mkdir -p /usr/src/nextcloud/custom_apps; \
     tar -xzf /tmp/calendar.tar.gz -C /usr/src/nextcloud/custom_apps; \
     tar -xzf /tmp/roomvox.tar.gz -C /usr/src/nextcloud/custom_apps; \

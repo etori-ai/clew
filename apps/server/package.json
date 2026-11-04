@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/main.ts",
-    "start": "tsx src/main.ts"
+    "start": "tsx src/main.ts",
+    "test:node": "node --import tsx --test --test-concurrency=1 tests/runtime.test.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "3.0.84",
@@ -22,7 +23,7 @@
     "hono": "4.13.16",
     "jose": "6.2.15",
     "openid-client": "6.8.9",
-    "temporal-polyfill": "1.0.6",
+    "temporal-polyfill": "1.0.7",
     "tsx": "4.23.15"
   }
 }

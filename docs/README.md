@@ -28,3 +28,4 @@ decisions in force, and the ordered next steps. `vision.md` says why Clew exists
 | Date | Review | Led to |
 |---|---|---|
 | 2026-11-03 | [Platform review against startsidan](reviews/2026-11-03-platform-review-against-startsidan.md) | D10, D11, HANDOVER next step 10 |
+| 2026-11-04 | [Runtime and dependency review](reviews/2026-11-04-runtime-and-dependency-review.md) | Node 26 LTS, Bun and compatible dependency updates, CalDAV and Node runtime contracts |

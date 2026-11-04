@@ -25,7 +25,7 @@ services:
       postgres:
         condition: service_healthy
   postgres:
-    image: postgres:17-bookworm@sha256:4f736ae292687621d4dbe0d499ffd024a36bd2ee7d8ca6f2ccd4c800f047b394
+    image: postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
     environment:
       POSTGRES_USER: clew
       POSTGRES_PASSWORD: clew-local
@@ -72,7 +72,7 @@ services:
       timeout: 3s
       retries: 60
   calendar-mail:
-    image: axllent/mailpit:v1.29.3@sha256:fdaf09bd71dc0829ce8b62e4bfb5180bc5c0674c3e444283fc90681853f5a3c0
+    image: axllent/mailpit:v1.33.0@sha256:9b3a463be15354c0f0eba91697d80e3e0d8a5623ef0e627cacc836bc17fd5231
     profiles: ["calendar"]
     mem_limit: 64m
     memswap_limit: 64m
