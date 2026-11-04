@@ -55,8 +55,9 @@ no index and no document store; it holds refs and the audit row. Concretely:
    a connector of the same shape; the answers get thinner, the contract and the UI do not change.
 
 What is not built: a knowledge module, document ingestion, a vector store, a Clew-side copy of any
-document, a change to the connector protocol, the database or the scheduler. The side panel's rows gain a
-link-out and "Lägg till i samtalet", which D12 already requires of every rendered object.
+document, a protocol version, the database or the scheduler. The protocol gains two optional manifest
+fields, `kinds` on a capability and `delegation` on the manifest, which is not a version change. The side
+panel's rows gain a link-out and "Lägg till i samtalet", which D12 already requires of every rendered object.
 
 **Why.** The vision draws the line: a capability a person would want without Clew existing belongs in
 Eneo and reaches Clew through the `eneo` connector; retrieval over documents is the textbook case, and
@@ -87,9 +88,27 @@ Settled with the product owner on 2026-11-04, after the decision was drafted:
 - **"Steg" is a third answer shape** beside Svar and Vy, used only when the source is a procedure. The prose
   rule of one or two sentences stays for every other answer.
 
-Still open, for the Eneo spike: whether the `eneo` connector acts with the person's token or as a service
-that narrows to their spaces, which is where a leak would come from. Drawn as row 3 (artboards I to L) on
-the canvas "Clew designutforskning · schemaläggning och uppmärksamhet".
+- **The `eneo` connector acts with the person's token** (settled 2026-11-04, after reading Eneo's source). The
+  manifest declares `delegation: { audience: "eneo" }`; the BFF trades the session's access token for one bound to
+  that audience by RFC 8693 token exchange at Keycloak (standard token exchange, enabled on `clew-web`; a client
+  `eneo` and a client scope `eneo-audience` with an audience mapper, created by `scripts/auth-setup.ts`), caches it
+  per session and audience, and the registry carries a `delegate` in the run context into every nested call, so the
+  composite's fan-out hands the token to the connector in `X-Clew-Delegated-Token` beside the assertion. The
+  assertion stays in `Authorization` because it proves Clew and carries the actor; the connector cannot verify a
+  token meant for Eneo. Scans, figures, callbacks and sessions without IdP tokens carry no token and the connector
+  answers `denied`, which the composite reports as the source not answering. Verified against the dev Keycloak with
+  `scripts/auth-exchange-check.ts`: `aud` eneo, `azp` clew-web, a verified e-mail, 60 s of life. On Eneo's side the
+  token is accepted only in its resource-server mode (`OIDC_RESOURCE_SERVER_ENABLED`, accepted issuer and audience,
+  single tenant, the person matched by e-mail), which is the operator's configuration, documented in
+  `connectors/eneo/README.md`.
+- **What Eneo's API gives** (read from `/Users/alexander/code/eneo`, 2026-11-04): one retrieval endpoint per
+  collection (`POST /api/v1/groups/{id}/searches/`), no cross-collection or website search, no chunk by id; titles
+  and links from `GET /api/v1/info-blobs/{id}/`; the person's collections from their spaces' knowledge. No
+  document carries an owner, a review date or a review interval, so staleness counts from `updatedAt`. The
+  connector therefore lists the person's collections (cached a few minutes), searches them all at once, keeps
+  the best chunks and fetches their documents.
+
+Drawn as row 3 (artboards I to L) on the canvas "Clew designutforskning · schemaläggning och uppmärksamhet".
 
 **Replaces.** Nothing. Narrows D14's "`eneo.knowledge.search` as a `read` capability" to the connector
 convention `eneo.search` plus `eneo.fetch` behind one composite tool, and adds "Steg" as a candidate

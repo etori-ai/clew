@@ -126,6 +126,8 @@ const delegation = delegationFor({
     }
   },
 });
+/** The exchanged token for a session and an audience, for `scripts/auth-exchange-check.ts`; the routes reach it through `context.delegate`. */
+export const delegatedToken = (digest: string, audience: string) => delegation.token(digest, audience);
 export type Session = Awaited<ReturnType<typeof authenticate>>;
 export async function authenticate(raw: string | undefined) {
   if (!raw) throw new AuthError(401, 'expired');

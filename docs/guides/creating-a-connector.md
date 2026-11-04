@@ -88,6 +88,16 @@ Reads and proposals only; scope is the person's.
 Store nothing but what your system already holds. No cache of rows, no log line with a row in it.
 Dependencies: the standard library first; a client library only if its licence allows what you ship.
 
+### Being a search source, and acting as the person
+
+If your system holds documents, people, cases or rooms, declare a `read` named `<id>.search` with input `{ query }`
+and output `{ rows: SearchHit[] }`, plus a `<id>.fetch` that takes one of your refs back; add `kinds` on the search
+so Clew skips it for questions it cannot answer. Clew's composite search then asks you beside every other source,
+under a budget, and your rows become citations and panel rows. If your system must be called as the person rather
+than as a service, declare `delegation: { audience: "<your IdP client id>" }` in the manifest and read
+`X-Clew-Delegated-Token` on every call; answer `denied` without it. Both are described in
+`docs/architecture/connector-protocol.md` ("Being a search source", "Acting as the person"); `connectors/eneo` does both.
+
 ## 3. Check it before connecting it
 
 ```sh
