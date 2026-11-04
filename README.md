@@ -28,6 +28,8 @@ bun scripts/auth-dev-check.ts hillevi                   # on the host: real Keyc
 
 Ports on loopback: 3020 web, 3021 Nextcloud (`calendar-admin`), 3022 Mailpit.
 
+The calendar image refreshes its pinned Calendar and RoomVox code in an existing data volume before Apache starts, then runs Nextcloud's app migrations. Unchanged versions do nothing; a failed upgrade stays pending and is retried on restart. App downgrades are refused. Back up the calendar volume before applying upgrades; restoring older image pins alone does not undo database migrations.
+
 ## Astryx component docs
 
 The root `astryx` script runs the CLI from `packages/ui`, which owns Core and the theme. It works with Bun's isolated installs without a version-specific cache path:

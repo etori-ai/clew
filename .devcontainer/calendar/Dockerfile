@@ -13,3 +13,5 @@ RUN set -eu; \
 
 COPY apache-workers.conf /etc/apache2/mods-available/mpm_prefork.conf
 COPY poc.config.php /usr/src/nextcloud/config/poc.config.php
+COPY refresh-calendar-apps.php /usr/local/lib/clew-calendar-apps.php
+COPY --chmod=755 refresh-calendar-apps.sh /docker-entrypoint-hooks.d/before-starting/10-clew-calendar-apps.sh

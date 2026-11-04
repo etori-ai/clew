@@ -6,6 +6,20 @@ names, upstream release notes and compatibility declarations, and Docker Registr
 
 ## Outcome
 
+Pre-merge review, 2026-11-04: Nextcloud's entrypoint preserves nonempty `custom_apps`, so image pins
+alone would leave old Calendar/RoomVox code on an existing volume. The image now owns a
+`before-starting` hook that validates both versions before copying either app, refreshes only those
+two apps with checksum-based rsync, and runs `occ upgrade --no-interaction` before Apache starts.
+A persistent pending marker makes a failed copy/migration retryable even after app metadata has
+already changed; downgrade attempts fail before any copying. Other apps and meeting data are retained.
+Four filesystem/process contract cases pass with real PHP and rsync in an isolated, cached
+Nextcloud-derived CLI image, as UID 33, with networking disabled, a read-only root and a 256 MiB
+container memory limit. The host command ran under the global supervisor; the container memory limit
+is enforced by Docker, not measured by the host supervisor. The test uses a fixture `occ` process,
+so this does not establish live Nextcloud database migration success. Run the contracts with
+`php tests/calendar-image.php` in an environment with PHP SimpleXML and rsync. Full image rebuild
+and live acceptance checks remain outstanding.
+
 Node 26.13.0 is selected by Dockerfile and `.mise.toml` on `main`; this refresh retains that LTS line
 and aligns Bun and the remaining dependency pins. Node 26 [entered LTS on 28 October](https://nodejs.org/en/blog/release/v26.13.0).
 The existing owners remain: Dockerfile and `.mise.toml` select runtimes; workspace manifests select exact
