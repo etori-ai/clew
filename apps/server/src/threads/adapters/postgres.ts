@@ -8,8 +8,9 @@ import type { ThreadPatch, ThreadStore, ThreadTx } from '../model';
 const { threads, threadMessages, proposals, audit } = schema;
 const date = (value: string | null | undefined) => value === undefined ? undefined : value === null ? null : new Date(value);
 const toRow = (patch: ThreadPatch) => {
-  const { handledAt, updatedAt, remindedAt, ...rest } = patch;
-  return { ...rest, ...(handledAt !== undefined ? { handledAt: date(handledAt) } : {}), ...(updatedAt !== undefined ? { updatedAt: date(updatedAt)! } : {}), ...(remindedAt !== undefined ? { remindedAt: date(remindedAt) } : {}) };
+  const { handledAt, updatedAt, remindedAt, snoozedUntil, ...rest } = patch;
+  return { ...rest, ...(handledAt !== undefined ? { handledAt: date(handledAt) } : {}), ...(updatedAt !== undefined ? { updatedAt: date(updatedAt)! } : {}),
+    ...(remindedAt !== undefined ? { remindedAt: date(remindedAt) } : {}), ...(snoozedUntil !== undefined ? { snoozedUntil: date(snoozedUntil) } : {}) };
 };
 async function read(db: Transaction | ReturnType<typeof database>, where: ReturnType<typeof and>) {
   const [row] = await db.select().from(threads).where(where);

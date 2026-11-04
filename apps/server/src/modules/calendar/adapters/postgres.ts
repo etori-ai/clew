@@ -9,10 +9,11 @@ const { threads, threadMessages, proposals, audit } = schema;
 const iso = (d: Date | null) => d ? d.toISOString() : null;
 const date = (value: string | null | undefined) => value === undefined ? undefined : value === null ? null : new Date(value);
 const toRecord = (r: ProposalRow): ProposalRecord => ({ id: r.id, threadId: r.threadId, personId: r.personId, status: r.status, participant: { email: r.participantEmail, name: r.participantName },
-  start: r.start.toISOString(), end: r.end.toISOString(), eventUid: r.eventUid, eventRef: r.eventRef, eventRevision: r.eventRevision, confirmedAt: iso(r.confirmedAt), undoUntil: iso(r.undoUntil) });
+  start: r.start.toISOString(), end: r.end.toISOString(), eventUid: r.eventUid, eventRef: r.eventRef, eventRevision: r.eventRevision, confirmedAt: iso(r.confirmedAt), undoUntil: iso(r.undoUntil), reminders: r.reminders, remindedAt: iso(r.remindedAt) });
 const toProposalRow = (patch: ProposalPatch) => {
-  const { confirmedAt, undoUntil, ...rest } = patch;
-  return { ...rest, ...(confirmedAt !== undefined ? { confirmedAt: date(confirmedAt) } : {}), ...(undoUntil !== undefined ? { undoUntil: date(undoUntil) } : {}) };
+  const { confirmedAt, undoUntil, remindedAt, start, end, ...rest } = patch;
+  return { ...rest, ...(confirmedAt !== undefined ? { confirmedAt: date(confirmedAt) } : {}), ...(undoUntil !== undefined ? { undoUntil: date(undoUntil) } : {}),
+    ...(remindedAt !== undefined ? { remindedAt: date(remindedAt) } : {}), ...(start !== undefined ? { start: date(start)! } : {}), ...(end !== undefined ? { end: date(end)! } : {}) };
 };
 async function read(personId: string | undefined, id: string): Promise<ProposalThread | undefined> {
   const owner = personId ?? (await database().select({ personId: threads.personId }).from(threads).where(eq(threads.id, id)))[0]?.personId;
@@ -37,7 +38,7 @@ const txOf = (tx: Transaction): ProposalTx => ({
   async insertProposals(rows) {
     if (!rows.length) return;
     await tx.insert(proposals).values(rows.map(p => ({ id: p.id, threadId: p.threadId, personId: p.personId, status: p.status, participantEmail: p.participant.email, participantName: p.participant.name,
-      start: new Date(p.start), end: new Date(p.end), eventUid: p.eventUid, eventRef: p.eventRef, eventRevision: p.eventRevision, confirmedAt: date(p.confirmedAt), undoUntil: date(p.undoUntil) })));
+      start: new Date(p.start), end: new Date(p.end), eventUid: p.eventUid, eventRef: p.eventRef, eventRevision: p.eventRevision, confirmedAt: date(p.confirmedAt), undoUntil: date(p.undoUntil), reminders: p.reminders, remindedAt: date(p.remindedAt) })));
   },
   async updateProposals(ids, patch) { if (ids.length) await tx.update(proposals).set(toProposalRow(patch)).where(inArray(proposals.id, ids)); },
   async transition(threadId, from, patch) {
@@ -56,7 +57,7 @@ export function postgresProposalStore(): ProposalStore {
       return row ? read(personId, row.id) : undefined;
     },
     async activeProposals(personId) {
-      return (await database().select().from(proposals).where(and(eq(proposals.personId, personId), inArray(proposals.status, ['proposed', 'confirmed', 'final'])))).map(toRecord);
+      return (await database().select().from(proposals).where(and(eq(proposals.personId, personId), inArray(proposals.status, ['proposed', 'confirmed', 'final', 'accepted'])))).map(toRecord);
     },
     transaction: fn => database().transaction(tx => fn(txOf(tx))),
   };

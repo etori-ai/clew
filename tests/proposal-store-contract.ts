@@ -14,7 +14,7 @@ const unique = () => Math.random().toString(36).slice(2, 10);
 const draft = (personId: string, overrides: Partial<NewProposalThread> = {}): NewProposalThread => ({ id: `t-${unique()}`, personId, topic: `utvecklingssamtal-${unique()}`, title: 'Planera utvecklingssamtal vecka 46', week: '2026-11-09',
   area: 'utvecklingssamtal', summary: 'Fyra förslag.', trigger: { reason: '4 samtal saknar tid', source: 'Nattlig genomgång 06:00', at: T0 }, createdAt: T0, updatedAt: T0, ...overrides });
 const proposal = (threadId: string, personId: string, name: string, overrides: Partial<ProposalRecord> = {}): ProposalRecord => ({ id: `p-${unique()}`, threadId, personId, status: 'proposed',
-  participant: { email: name.toLowerCase() + '@clew.test', name }, start: '2026-11-09T08:00:00.000Z', end: '2026-11-09T09:00:00.000Z', eventUid: null, eventRef: null, eventRevision: null, confirmedAt: null, undoUntil: null, ...overrides });
+  participant: { email: name.toLowerCase() + '@clew.test', name }, start: '2026-11-09T08:00:00.000Z', end: '2026-11-09T09:00:00.000Z', eventUid: null, eventRef: null, eventRevision: null, confirmedAt: null, undoUntil: null, reminders: 0, remindedAt: null, ...overrides });
 
 export function proposalStoreContract(name: string, make: () => Promise<ProposalStoreHarness>) {
   describe(`${name} proposal store`, () => {
@@ -26,7 +26,7 @@ export function proposalStoreContract(name: string, make: () => Promise<Proposal
       const read = (await store.readThread(a, t.id))!;
       expect(read.thread).toMatchObject({ id: t.id, kind: 'pushed', state: 'open', topic: t.topic, title: t.title, week: '2026-11-09', connector: 'calendar', area: 'utvecklingssamtal', createdAt: T0, trigger: t.trigger, messages: [] });
       expect(read.thread.items.map(i => i.ref)).toEqual(['proposal:' + anna.id]);
-      expect(read.thread.proposals).toEqual([{ id: anna.id, threadId: t.id, status: 'proposed', start: anna.start, end: anna.end, participant: anna.participant, eventRef: null, undoUntil: null }]);
+      expect(read.thread.proposals).toEqual([{ id: anna.id, threadId: t.id, status: 'proposed', start: anna.start, end: anna.end, participant: anna.participant, eventRef: null, undoUntil: null, reminders: 0, remindedAt: null }]);
       expect(read.proposals.map(p => p.id).sort()).toEqual([anna.id, erik.id].sort());
       expect(await store.readThread(b, t.id)).toBeUndefined();
       expect((await store.readThreadById(t.id))?.thread.id).toBe(t.id);

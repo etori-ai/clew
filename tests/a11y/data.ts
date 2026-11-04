@@ -1,4 +1,4 @@
-import type { Area, Attention, CalendarEvent, CheckReport, ConnectorDetail, ConnectorPreview, ConnectorSummary, ConversationResponse, Proposal, SessionUser, Thread, TodayView } from '@clew/contracts';
+import type { Area, Attention, CalendarEvent, SnoozePreset, CheckReport, ConnectorDetail, ConnectorPreview, ConnectorSummary, ConversationResponse, Proposal, SessionUser, Thread, TodayView } from '@clew/contracts';
 
 /** Synthetic data, typed against the contracts so the suite follows the API. The clock is frozen to this Wednesday. */
 export const NOW = '2026-11-04T08:00:00.000Z';
@@ -10,15 +10,15 @@ export const user: SessionUser = { id: 'testperson', name: 'Testa Testsson', uni
 const thread = (values: Partial<Thread> & Pick<Thread, 'id' | 'title'>): Thread => ({
   kind: 'pushed', topic: values.id, state: 'open', trigger: { reason: 'Fakturorna förfaller i veckan', source: 'Raindance', at: NOW },
   createdAt: NOW, updatedAt: NOW, handledAt: null, messages: [], proposals: [], week: null, connector: 'raindance', area: 'budget',
-  summary: 'Alla matchar sina beställningar och ryms i budgeten.', items: [], actions: [], waitingOn: null, deadline: null, receipt: null, remindedAt: null,
+  summary: 'Alla matchar sina beställningar och ryms i budgeten.', items: [], actions: [], waitingOn: null, deadline: null, receipt: null, remindedAt: null, snoozedUntil: null,
   ...values,
 });
 const proposal = (id: string, day: string, name: string): Proposal => ({
   id, threadId: 'samtal', status: 'proposed', start: `${day}T09:00:00.000Z`, end: `${day}T09:45:00.000Z`,
-  participant: { name, email: `${id}@clew.test` }, eventRef: null, undoUntil: null,
+  participant: { name, email: `${id}@clew.test` }, eventRef: null, undoUntil: null, reminders: 0, remindedAt: null,
 });
 export const threads = (): Thread[] => [
-  thread({ id: 'fakturor', title: 'Attestera 3 fakturor, 48 200 kr', deadline: '2026-11-05',
+  thread({ id: 'fakturor', title: 'Attestera 3 fakturor, 48 200 kr', deadline: '2026-11-04',
     items: [
       { ref: 'raindance:inv:1', label: 'Sundsvalls Energi AB · 21 400 kr', detail: 'Konto 4010 · förfaller 5 nov · beställning 88213', selectable: true, selected: true },
       { ref: 'raindance:inv:2', label: 'Skolmaterial Norrland AB · 18 300 kr', detail: 'Konto 4410 · förfaller 6 nov · beställning 88240', selectable: true, selected: true },
@@ -40,7 +40,12 @@ export const threads = (): Thread[] => [
   thread({ id: 'samtal', title: 'Planera utvecklingssamtal', topic: 'utvecklingssamtal', connector: 'calendar', area: 'kalender', deadline: '2026-11-27', week: NEXT_WEEK,
     trigger: { reason: 'Samtalen ska vara klara i november', source: 'Kalendern', at: NOW },
     messages: [{ id: 'm1', role: 'assistant', body: 'Jag har ritat in två samtal nästa vecka. Båda ligger utanför lektionstid.', createdAt: NOW }],
+    items: [{ ref: 'unplaced:sara@clew.test', label: 'Sara Holm', detail: 'upptagen hela veckan', selectable: false, selected: false }],
     proposals: [proposal('p1', '2026-11-10', 'Anna Lindqvist'), proposal('p2', '2026-11-12', 'Erik Sandström')] }),
+  thread({ id: 'samtal-svar', title: 'Planera utvecklingssamtal vecka 45', topic: 'utvecklingssamtal-v45', connector: 'calendar', area: 'kalender', week: WEEK, waitingOn: 'svar från 1 medarbetare',
+    trigger: { reason: 'Samtalen ska vara klara i november', source: 'Kalendern', at: NOW }, summary: '1 av 2 har svarat ja. 1 har inte svarat ännu.',
+    messages: [{ id: 'm2', role: 'assistant', body: '2 inbjudningar är skickade. Jag påminner den som inte svarat efter 2 arbetsdagar.', createdAt: NOW }],
+    proposals: [{ ...proposal('p3', '2026-11-05', 'Maria Källström'), threadId: 'samtal-svar', status: 'accepted', eventRef: 'memory:p3' }, { ...proposal('p4', '2026-11-06', 'Johan Byström'), threadId: 'samtal-svar', status: 'confirmed', eventRef: 'memory:p4', reminders: 1, remindedAt: NOW }] }),
   thread({ id: 'introduktion', title: 'Introduktion av ny medarbetare', topic: 'introduktion', connector: 'heroma', area: 'personal', deadline: '2026-12-20',
     trigger: { reason: 'Ny medarbetare börjar i januari', source: 'Heroma', at: NOW }, summary: 'Mentor och schema ska vara klara före jul.' }),
   thread({ id: 'rutin', title: 'Ny rutin för läkemedelshantering', topic: 'rutin', connector: 'kommunikation', area: 'viktigt-nu',
@@ -48,6 +53,8 @@ export const threads = (): Thread[] => [
     actions: [{ id: 'ack', label: 'Jag har läst', capability: 'kommunikation.acknowledge', kind: 'execute', role: 'primary' }] }),
   thread({ id: 'tillbud', title: 'Tillbud 2026-1182, halkolycka i duschen', topic: 'tillbud', connector: 'treserva', area: 'kvalitet', waitingOn: 'skyddsombudet', deadline: '2026-11-12',
     trigger: { reason: 'Väntar på skyddsombudet', source: 'Treserva', at: NOW }, summary: 'Skyddsombudet har fått ärendet.' }),
+  thread({ id: 'brandskydd', title: 'Brandskyddsrond i oktober saknar protokoll', topic: 'brandskydd', connector: 'kommunikation', area: 'kvalitet', deadline: '2026-11-30', snoozedUntil: '2026-11-05T05:00:00.000Z',
+    trigger: { reason: 'Protokollet ska vara inlämnat', source: 'Kommunikation', at: NOW }, summary: 'Lagd åt sidan till i morgon.' }),
   thread({ id: 'attest', title: 'Attesterade fakturor', topic: 'attest', state: 'handled', handledAt: NOW,
     receipt: { at: NOW, headline: '2 fakturor attesterade', undoUntil: '2026-11-04T08:10:00.000Z', undoCapability: 'raindance.unapprove',
       rows: [
@@ -69,8 +76,22 @@ export const areas: Area[] = [
   area('budget', 'Budget', { source: 'Raindance', figure: { label: 'Prognos +1,8 %', tone: 'ok' }, needsYou: 1, urgency: 'urgent', standing: [{ capability: 'raindance.budget', label: 'Budget mot prognos', kind: 'read' }] }),
   area('kvalitet', 'Kvalitet', { source: 'Treserva', waiting: 1 }),
 ];
+/** The picker's rows (D29), fixed to the frozen clock. */
+export const snoozePresets: SnoozePreset[] = [
+  { id: 'hour', label: 'Om en timme', at: '2026-11-04T09:00:00.000Z', detail: '10:00' },
+  { id: 'lunch', label: 'Efter lunch', at: '2026-11-04T12:00:00.000Z', detail: '13:00' },
+  { id: 'tomorrow', label: 'I morgon', at: '2026-11-05T05:00:00.000Z', detail: '06:00 · i genomgången' },
+  { id: 'week', label: 'Nästa vecka', at: '2026-11-09T05:00:00.000Z', detail: 'mån 9 nov 06:00' },
+  { id: 'meeting', label: 'När jag är tillbaka från Ledningsgrupp', at: '2026-11-04T10:30:00.000Z', detail: '11:30 · från kalendern' },
+];
 /** The budget is spent: the header's badge carries its longest sentence, which is the widest thing in the header. */
-export const attention: Attention = { used: 3, budget: 3, bundledUntil: 'i morgon 06:00' };
+export const attention: Attention = { used: 3, budget: 3, bundledUntil: 'i morgon 06:00', rhythm: [
+  { kind: 'review', at: '06:00', state: 'done' },
+  { kind: 'interruption', at: '07:12', state: 'done', title: 'Attestera 3 fakturor, 48 200 kr' },
+  { kind: 'interruption', at: '07:40', state: 'done', title: 'Omtankesamtal med Anna Lindqvist' },
+  { kind: 'interruption', at: '08:55', state: 'done', title: 'Ledighetsansökan från Johan Byström' },
+  { kind: 'bundle', at: '12:00', state: 'next' }, { kind: 'bundle', at: '16:00', state: 'later' }, { kind: 'quiet', at: '17:00', state: 'later' },
+] };
 export const today: TodayView = {
   date: '2026-11-04',
   events: [{ id: 'e1', title: 'Rektorsmöte', start: '2026-11-04T08:30:00.000Z', end: '2026-11-04T09:30:00.000Z', allDay: false, mine: true, room: 'A12', participants: [] }],

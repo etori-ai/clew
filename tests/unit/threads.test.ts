@@ -29,13 +29,14 @@ function world() {
   for (const m of [heromaConnector(state), raindanceConnector(state), treservaConnector(state)]) registry.register(m);
   const store = memoryThreadStore(), clock = fakeClock();
   let n = 0;
-  const calendar = { calls: [] as string[],
+  const calendar = { calls: [] as string[], today: [] as Array<{ title: string; end: string }>,
     async ensureProposalThread() { calendar.calls.push('ensure'); return undefined; },
     async replan(_p: AuthenticatedContext, threadId: string) { calendar.calls.push('replan'); return (await store.readThreadById(threadId))!; },
-    async dismiss(_p: AuthenticatedContext, threadId: string) { calendar.calls.push('dismiss'); return (await store.readThreadById(threadId))!; } };
-  const deps: ThreadDeps = { store, registry, run: (p, name, input) => registry.run(actorOf(p), name, input), calendar, clock, ids: () => `thread-${++n}` };
-  const threads = threadUsecases(deps);
+    async dismiss(_p: AuthenticatedContext, threadId: string) { calendar.calls.push('dismiss'); return (await store.readThreadById(threadId))!; },
+    async todayEvents() { return calendar.today; } };
   const timers = memoryTimers();
+  const deps: ThreadDeps = { store, registry, run: (p, name, input) => registry.run(actorOf(p), name, input), calendar, timers, clock, ids: () => `thread-${++n}` };
+  const threads = threadUsecases(deps);
   const reminders = reminderUsecases({ store, timers, clock });
   return { state, registry, store, clock, calendar, deps, threads, reminders, timers };
 }
@@ -160,12 +161,85 @@ describe('avfärda, inte nu and ångra', () => {
     expect(await w.threads.dismissAny(hillevi, card.id)).toMatchObject({ state: 'dismissed', handledAt: T0 });
     w.clock.advance(10 * MINUTE);
     expect(await w.threads.reopenThread(hillevi, card.id)).toMatchObject({ state: 'open', handledAt: null });
-    expect(await w.threads.snoozeThread(hillevi, card.id)).toMatchObject({ state: 'open', waitingOn: 'i morgon 06:00' });
+    expect(await w.threads.snoozeThread(hillevi, card.id)).toMatchObject({ state: 'open', waitingOn: null, snoozedUntil: '2026-11-05T05:00:00.000Z' });
     w.clock.advance(5 * 24 * 60 * MINUTE);
-    expect(await w.threads.reopenThread(hillevi, card.id)).toMatchObject({ state: 'open', waitingOn: null });
+    expect(await w.threads.reopenThread(hillevi, card.id)).toMatchObject({ state: 'open', snoozedUntil: null });
     expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'thread.dismissed', 'thread.reopened', 'thread.snoozed', 'thread.reopened']);
     expect(w.store.audit.filter(e => e.action === 'thread.reopened').map(e => e.details)).toEqual([{ from: 'dismissed' }, { from: 'snoozed' }]);
     expect(w.calendar.calls).toEqual(['ensure']);
+  });
+  test('a snoozed card wakes when its time passes, with an audit row saying so', async () => {
+    const w = world();
+    const card = await invoices(w);
+    const snoozed = await w.threads.snoozeThread(hillevi, card.id);
+    expect(snoozed.snoozedUntil).toBe('2026-11-05T05:00:00.000Z');
+    expect(snoozed.messages.at(-1)!.body).toBe('Inte nu · i morgon 06:00');
+    // A silent timer for the open page; the sweep is the guarantee.
+    expect(w.timers.started).toEqual([{ workflowId: `snooze:${card.id}:${Date.parse('2026-11-05T05:00:00.000Z')}`, personId: 'hillevi', threadId: card.id, title: card.title, area: 'budget', seconds: 22 * 3600, requestedAt: T0, silent: true }]);
+    w.clock.advance(60 * MINUTE);
+    expect((await w.threads.listThreadsFor(hillevi)).find(t => t.id === card.id)?.snoozedUntil).toBe('2026-11-05T05:00:00.000Z');
+    w.clock.set('2026-11-05T05:00:00.000Z');
+    expect((await w.threads.listThreadsFor(hillevi)).find(t => t.id === card.id)?.snoozedUntil).toBeNull();
+    expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'thread.snoozed', 'thread.woken']);
+    expect(w.store.audit.at(-1)?.details).toEqual({ reason: 'time', snoozedUntil: '2026-11-05T05:00:00.000Z' });
+  });
+  test('a snoozed card wakes early when its source changes (the snooze breaks on activity)', async () => {
+    const w = world();
+    const card = await invoices(w);
+    await w.threads.snoozeThread(hillevi, card.id);
+    await w.registry.run(hillevi, 'raindance.approve', { refs: [card.items[1]!.ref] });
+    await w.threads.ensureThreads(hillevi);
+    const after = (await w.threads.threadFor(hillevi, card.id))!;
+    expect(after.snoozedUntil).toBeNull();
+    expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'thread.snoozed', 'thread.refreshed', 'thread.woken']);
+    expect(w.store.audit.at(-1)?.details).toMatchObject({ reason: 'changed' });
+    expect(w.timers.cancelled).toEqual([`snooze:${card.id}:${Date.parse('2026-11-05T05:00:00.000Z')}`]);
+  });
+  test('the picker (D29): a preset, free text or an instant sets the time; the rows carry their resolved times', async () => {
+    const w = world();
+    w.calendar.today = [{ title: 'Ledningsgrupp', end: '2026-11-04T10:30:00.000Z' }, { title: 'Lunch', end: '2026-11-04T11:30:00.000Z' }];
+    const card = await invoices(w);
+    const presets = await w.threads.snoozeOptions(hillevi);
+    expect(presets.map(p => [p.id, p.at, p.detail])).toEqual([
+      ['hour', '2026-11-04T08:00:00.000Z', '09:00'],
+      ['lunch', '2026-11-04T12:00:00.000Z', '13:00'],
+      ['tomorrow', '2026-11-05T05:00:00.000Z', '06:00 · i genomgången'],
+      ['week', '2026-11-09T05:00:00.000Z', 'mån 9 nov 06:00'],
+      ['meeting', '2026-11-04T10:30:00.000Z', '11:30 · från kalendern'],
+    ]);
+    expect(presets[4]!.label).toBe('När jag är tillbaka från Ledningsgrupp');
+    expect((await w.threads.snoozeThread(hillevi, card.id, { preset: 'lunch' })).snoozedUntil).toBe('2026-11-04T12:00:00.000Z');
+    expect((await w.threads.snoozeThread(hillevi, card.id, { text: 'fredag kl 9' })).snoozedUntil).toBe('2026-11-06T08:00:00.000Z');
+    expect((await w.threads.snoozeThread(hillevi, card.id, { until: '2026-11-04T15:00:00.000Z' })).messages.at(-1)!.body).toBe('Inte nu · kl 16:00');
+    await expect(w.threads.snoozeThread(hillevi, card.id, { text: 'när grisarna flyger' })).rejects.toThrow('Jag förstod inte tiden.');
+    await expect(w.threads.snoozeThread(hillevi, card.id, { preset: 'aldrig' })).rejects.toThrow('Okänt förval.');
+    await expect(w.threads.snoozeThread(hillevi, card.id, { until: '2026-11-04T06:00:00.000Z' })).rejects.toThrow('Tiden har redan passerat.');
+    await expect(w.threads.snoozeThread(hillevi, card.id, { until: '2026-12-20T06:00:00.000Z' })).rejects.toThrow('Högst 30 dagar framåt.');
+    expect(w.store.audit.filter(e => e.action === 'thread.snoozed').map(e => e.details)).toEqual([
+      expect.objectContaining({ preset: 'lunch', timer: 'started' }), expect.objectContaining({ text: 'fredag kl 9' }), expect.objectContaining({ until: '2026-11-04T15:00:00.000Z' })]);
+  });
+  test('a silent timer wakes the card without a badge; one that was woken earlier or re-snoozed does nothing', async () => {
+    const w = world();
+    const card = await invoices(w);
+    await w.threads.snoozeThread(hillevi, card.id, { until: '2026-11-04T09:00:00.000Z' });
+    const fired = { personId: 'hillevi', threadId: card.id, title: card.title, area: card.area, seconds: 2 * 3600, requestedAt: T0, silent: true };
+    w.clock.set('2026-11-04T09:00:00.000Z');
+    expect(await w.reminders.surface(fired)).toBe('surfaced');
+    const back = (await w.threads.threadFor(hillevi, card.id))!;
+    expect(back).toMatchObject({ state: 'open', snoozedUntil: null, remindedAt: null });
+    expect(back.trigger.reason).toBe(card.trigger.reason);
+    expect(w.store.audit.at(-1)).toMatchObject({ actor: 'assistant:reminder', action: 'thread.woken', details: { reason: 'time' } });
+    expect(await w.reminders.surface(fired)).toBe('skipped');
+    await w.threads.snoozeThread(hillevi, card.id, { until: '2026-11-04T12:00:00.000Z' });
+    expect(await w.reminders.surface(fired)).toBe('skipped');
+    expect((await w.threads.threadFor(hillevi, card.id))!.snoozedUntil).toBe('2026-11-04T12:00:00.000Z');
+  });
+  test('a snooze still lands when the timer service is away', async () => {
+    const w = world();
+    const card = await invoices(w);
+    const threads = threadUsecases({ ...w.deps, timers: memoryTimers({ available: false }) });
+    expect((await threads.snoozeThread(hillevi, card.id)).snoozedUntil).toBe('2026-11-05T05:00:00.000Z');
+    expect(w.store.audit.at(-1)?.details).toMatchObject({ timer: 'unavailable' });
   });
   test('a card dismissed more than ten minutes ago stays dismissed, an open card cannot be reopened', async () => {
     const w = world();
@@ -202,7 +276,7 @@ describe('every mutation and its audit row', () => {
       ['thread.undone', () => w.threads.undoReceipt(hillevi, card.id)],
       ['thread.dismissed', () => w.threads.dismissThread(hillevi, card.id)],
       ['reminder.set', async () => { await w.threads.reopenThread(hillevi, card.id); return w.reminders.remind(hillevi, card.id, 600); }],
-      ['reminder.cancelled', () => w.reminders.cancelReminder(hillevi, card.id, w.timers.started[0]!.workflowId)],
+      ['reminder.cancelled', () => w.reminders.cancelReminder(hillevi, card.id, w.timers.started.at(-1)!.workflowId)],
     ];
     for (const [action, step] of steps) {
       const before = w.store.audit.length;
@@ -216,12 +290,21 @@ describe('every mutation and its audit row', () => {
 describe('attention and areas', () => {
   test('counts today\'s pushed cards against the budget', async () => {
     const w = world();
-    expect(await w.threads.attentionFor(hillevi)).toEqual({ used: 0, budget: ATTENTION_BUDGET, bundledUntil: null });
+    expect(await w.threads.attentionFor(hillevi)).toMatchObject({ used: 0, budget: ATTENTION_BUDGET, bundledUntil: null });
     await w.threads.ensureThreads(hillevi);
     const used = (await w.threads.listThreadsFor(hillevi)).length;
-    expect(await w.threads.attentionFor(hillevi)).toEqual({ used, budget: ATTENTION_BUDGET, bundledUntil: used >= ATTENTION_BUDGET ? 'i morgon 06:00' : null });
+    expect(await w.threads.attentionFor(hillevi)).toMatchObject({ used, budget: ATTENTION_BUDGET, bundledUntil: used >= ATTENTION_BUDGET ? 'i morgon 06:00' : null });
     w.clock.advance(24 * 60 * MINUTE);
     expect((await w.threads.attentionFor(hillevi)).used).toBe(0);
+  });
+  test('draws the day as one track with every card pushed today as an interruption', async () => {
+    const w = world();
+    await w.threads.ensureThreads(hillevi);
+    const pushed = (await w.threads.listThreadsFor(hillevi)).filter(t => t.kind === 'pushed');
+    const { rhythm } = await w.threads.attentionFor(hillevi);
+    expect(rhythm.filter(p => p.kind === 'interruption').map(p => p.title).sort()).toEqual(pushed.map(t => t.title).sort());
+    expect(rhythm.map(p => p.kind)).toEqual<string[]>(['review', ...pushed.map(() => 'interruption'), 'bundle', 'bundle', 'quiet']);
+    expect(rhythm.map(p => p.state)).toEqual<string[]>(['done', ...pushed.map(() => 'done'), 'next', 'later', 'later']);
   });
   test('carries live counts and the worst attention level per area', async () => {
     const w = world();
@@ -229,7 +312,7 @@ describe('attention and areas', () => {
     const budget = (await w.threads.listAreas(hillevi)).find(a => a.id === 'budget')!;
     expect(budget).toMatchObject({ needsYou: 1, waiting: 0, urgency: 'urgent' });
     await w.threads.snoozeThread(hillevi, card.id);
-    expect((await w.threads.listAreas(hillevi)).find(a => a.id === 'budget')).toMatchObject({ needsYou: 0, waiting: 1, urgency: null });
+    expect((await w.threads.listAreas(hillevi)).find(a => a.id === 'budget')).toMatchObject({ needsYou: 0, waiting: 0, urgency: null });
   });
 });
 
@@ -277,7 +360,7 @@ describe('påminn mig', () => {
     expect((await w.threads.threadFor(hillevi, card.id))!.waitingOn).toBeNull();
     expect(actions(w.store, card.id)).toEqual(['thread.pushed']);
     await expect(w.reminders.remind(hillevi, card.id, 0)).rejects.toThrow('Ogiltig tid för påminnelsen.');
-    await expect(w.reminders.remind(hillevi, card.id, 24 * 3600 + 1)).rejects.toThrow('Ogiltig tid för påminnelsen.');
+    await expect(w.reminders.remind(hillevi, card.id, 30 * 24 * 3600 + 1)).rejects.toThrow('Ogiltig tid för påminnelsen.');
     await expect(w.reminders.cancelReminder(hillevi, card.id, 'reminder:other:1')).rejects.toThrow('Okänd påminnelse.');
   });
 });

@@ -6,12 +6,30 @@ import { condition, defineSignal, proxyActivities, setHandler } from '@temporali
 import type * as activities from './activities';
 import type { ReminderInput } from '../threads/model';
 
-const { surfaceReminder } = proxyActivities<typeof activities>({ startToCloseTimeout: '1 minute', retry: { maximumAttempts: 5 } });
+const { surfaceReminder, checkObligation, remindInvitees, returnObligation } = proxyActivities<typeof activities>({ startToCloseTimeout: '1 minute', retry: { maximumAttempts: 5 } });
 
 export type { ReminderInput };
 /** "Glöm det": a reminder can be cancelled until it fires. */
 export const cancelReminder = defineSignal('cancel');
 
+/** Ångra on the confirmation ends the follow-ups. */
+export const cancelObligation = defineSignal('cancel');
+/**
+ * The follow-ups of an obligation (D30): look at the replies at every office hour, remind whoever is overdue, and
+ * return the thread to the manager on the Friday review or when every reply is in. The policy lives in the activities'
+ * use cases; the workflow only keeps time.
+ */
+export async function obligation(input: { threadId: string; personId: string }): Promise<'answered' | 'deadline' | 'cancelled'> {
+  let cancelled = false;
+  setHandler(cancelObligation, () => { cancelled = true; });
+  for (;;) {
+    const step = await checkObligation(input.threadId);
+    if (step.action === 'return') { await returnObligation(input.threadId, step.why === 'deadline' ? 'deadline' : 'answered'); return step.why === 'deadline' ? 'deadline' : 'answered'; }
+    if (step.action === 'remind') await remindInvitees(input.threadId, step.due);
+    await condition(() => cancelled, Math.max(60_000, Date.parse(step.next) - Date.now()));
+    if (cancelled) return 'cancelled';
+  }
+}
 /** A person's own timer (D17): wait, then bring the card back to the top of the stream. Cancel ends it quietly. */
 export async function reminder(input: ReminderInput): Promise<'fired' | 'cancelled'> {
   let cancelled = false;

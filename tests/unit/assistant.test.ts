@@ -24,15 +24,15 @@ const card: Thread = {
     { ref: 'raindance:inv:55140', label: 'Städbolaget · 18 650 kr', detail: '6452 · ingen beställning', selectable: true, selected: false },
   ],
   actions: [{ id: 'approve', label: 'Attestera valda', capability: 'raindance.approve', kind: 'execute', role: 'primary', usesItems: true }, { id: 'open', label: 'Öppna i Raindance', capability: 'raindance.open', kind: 'read', role: 'secondary', target: 'link' }],
-  waitingOn: null, deadline: '2026-11-05', receipt: null, remindedAt: null,
+  waitingOn: null, deadline: '2026-11-05', receipt: null, remindedAt: null, snoozedUntil: null,
 };
 const samtal: Thread = {
   ...card, id: 's1', topic: 'utvecklingssamtal', title: 'Planera utvecklingssamtal vecka 46', connector: 'calendar', area: 'utvecklingssamtal', week: '2026-11-09', deadline: null,
   trigger: { reason: '4 samtal saknar tid före 28 november', source: 'Kalendern', at: now },
   proposals: [
-    { id: 'p1', threadId: 's1', status: 'proposed', start: '2026-11-09T09:15:00.000Z', end: '2026-11-09T10:15:00.000Z', participant: { name: 'Anna Lindqvist', email: 'anna@example.test' }, eventRef: null, undoUntil: null },
-    { id: 'p2', threadId: 's1', status: 'proposed', start: '2026-11-10T12:00:00.000Z', end: '2026-11-10T13:00:00.000Z', participant: { name: 'Johan Svensson', email: 'johan@example.test' }, eventRef: null, undoUntil: null },
-    { id: 'p3', threadId: 's1', status: 'proposed', start: '2026-11-11T09:00:00.000Z', end: '2026-11-11T10:00:00.000Z', participant: { name: 'Fatima Rahimi', email: 'fatima@example.test' }, eventRef: null, undoUntil: null },
+    { id: 'p1', threadId: 's1', status: 'proposed', start: '2026-11-09T09:15:00.000Z', end: '2026-11-09T10:15:00.000Z', participant: { name: 'Anna Lindqvist', email: 'anna@example.test' }, eventRef: null, undoUntil: null, reminders: 0, remindedAt: null },
+    { id: 'p2', threadId: 's1', status: 'proposed', start: '2026-11-10T12:00:00.000Z', end: '2026-11-10T13:00:00.000Z', participant: { name: 'Johan Svensson', email: 'johan@example.test' }, eventRef: null, undoUntil: null, reminders: 0, remindedAt: null },
+    { id: 'p3', threadId: 's1', status: 'proposed', start: '2026-11-11T09:00:00.000Z', end: '2026-11-11T10:00:00.000Z', participant: { name: 'Fatima Rahimi', email: 'fatima@example.test' }, eventRef: null, undoUntil: null, reminders: 0, remindedAt: null },
   ],
   items: [
     { ref: 'proposal:p1', label: 'Anna Lindqvist', detail: 'mån 9 nov 10:15–11:15', selectable: true, selected: true },

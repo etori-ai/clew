@@ -1,4 +1,4 @@
-import { desktop, expect, hiddenFocusStops, narrow, open, reflowProblems, short, test } from './support';
+import { desktop, expect, hiddenFocusStops, narrow, open, reflowProblems, short, snoozeFirst, test } from './support';
 
 const routes = [['start', '/'], ['an area', '/omrade/personal'], ['the log', '/hanterat'], ['the calendar page', '/kalender']] as const;
 
@@ -65,7 +65,7 @@ test.describe('2.4.11 focus not obscured', () => {
   test('a toast covers no focus stop on a phone', async ({ page, api: _ }) => {
     await page.setViewportSize(narrow);
     await open(page, '/');
-    await page.getByRole('button', { name: 'Inte nu' }).first().click();
+    await snoozeFirst(page);
     await expect(page.getByRole('region', { name: 'Aviseringar' })).toBeVisible();
     const { hidden } = await hiddenFocusStops(page);
     expect(hidden).toEqual([]);
@@ -74,7 +74,7 @@ test.describe('2.4.11 focus not obscured', () => {
   test('the row keeps the stream readable on a short screen', async ({ page, api: _ }) => {
     await page.setViewportSize(short);
     await open(page, '/');
-    const title = page.getByRole('heading', { level: 2, name: /Behöver dig/ });
+    const title = page.getByRole('heading', { level: 2, name: /^Nu · / });
     await title.evaluate(el => el.scrollIntoView({ block: 'start' }));
     const below = await title.evaluate(el => {
       const dock = document.querySelector('.composer-dock')!.getBoundingClientRect();

@@ -8,12 +8,12 @@ export type ProposalRow = typeof proposals.$inferSelect;
 export type MessageRow = typeof threadMessages.$inferSelect;
 const iso = (d: Date | null) => d ? d.toISOString() : null;
 export const toProposal = (row: ProposalRow): Proposal => ({ id: row.id, threadId: row.threadId, status: row.status, start: row.start.toISOString(), end: row.end.toISOString(),
-  participant: { name: row.participantName, email: row.participantEmail }, eventRef: row.eventRef, undoUntil: iso(row.undoUntil) });
+  participant: { name: row.participantName, email: row.participantEmail }, eventRef: row.eventRef, undoUntil: iso(row.undoUntil), reminders: row.reminders, remindedAt: iso(row.remindedAt) });
 const toMessage = (row: MessageRow): ThreadMessage => ({ id: row.id, role: row.role, body: row.body, createdAt: row.createdAt.toISOString(), ...(row.meta ? { meta: row.meta } : {}) });
 export function toThread(row: ThreadRow, messages: MessageRow[], proposalRows: ProposalRow[]): Thread {
   return { id: row.id, kind: row.kind, topic: row.topic, title: row.title, state: row.state, trigger: row.trigger, week: row.week,
     connector: row.connector, area: row.area, summary: row.summary, items: row.items, actions: row.actions, waitingOn: row.waitingOn, deadline: row.deadline, receipt: row.receipt ?? null,
-    createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(), handledAt: iso(row.handledAt), remindedAt: iso(row.remindedAt),
+    createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(), handledAt: iso(row.handledAt), remindedAt: iso(row.remindedAt), snoozedUntil: iso(row.snoozedUntil),
     messages: messages.map(toMessage), proposals: proposalRows.filter(p => p.status !== 'superseded').map(toProposal) };
 }
 /** Open threads plus what was handled in the last seven days, newest first. */

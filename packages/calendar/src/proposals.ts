@@ -49,6 +49,35 @@ export function planWeek(input: PlanInput): PlannedSlot[] {
   return planned.sort((a, b) => a.start.localeCompare(b.start));
 }
 
+/** Why a candidate got no slot (D30), for the judgement calls on the card: nothing free for them, or nothing free for both. */
+export function unplacedReasons(input: PlanInput, planned: PlannedSlot[]): Array<{ participant: PlannedSlot['participant']; reason: string }> {
+  const duration = input.durationMinutes ?? 60;
+  const days = Array.from({ length: 5 }, (_, i) => addDays(input.week, i));
+  const dayFree = (busy: Interval[]) => days.filter(day => {
+    for (let minutes = 9 * 60; minutes + duration <= 16 * 60; minutes += 30) {
+      if (minutes < 13 * 60 && minutes + duration > 12 * 60) continue;
+      try { const start = localInstant(`${day}T${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`); const end = new Date(Date.parse(start) + duration * 60000).toISOString();
+        if (Date.parse(start) >= Date.parse(input.notBefore) && !collides({ start, end }, busy)) return true; } catch { /* skipped local time */ }
+    }
+    return false;
+  });
+  const placed = new Set(planned.map(p => p.participant.email));
+  return input.candidates.filter(c => !placed.has(c.participant.email)).map(c => {
+    const own = dayFree(c.busy), yours = dayFree(input.managerBusy);
+    const reason = !own.length ? 'upptagen hela veckan' : !yours.length ? 'dina lediga timmar räckte inte' : `ledig bara ${own.map(d => displayDate(d).slice(5)).join(', ')}, när du är upptagen`;
+    return { participant: c.participant, reason };
+  });
+}
+/** Busy minutes of the office day (08–17) on one Stockholm day, merged, as a share of the day (D30): the load bar in the day heading. */
+export function dayLoad(day: string, intervals: Interval[]): { busyMinutes: number; share: number } {
+  const open = dayStart(day), start = Date.parse(open) + 8 * 3600000, end = Date.parse(open) + 17 * 3600000;
+  const clipped = intervals.map(e => ({ start: Math.max(Date.parse(e.start), start), end: Math.min(Date.parse(e.end), end) })).filter(e => e.end > e.start).sort((a, b) => a.start - b.start);
+  let busy = 0, cursor = start;
+  for (const e of clipped) { if (e.end > cursor) { busy += e.end - Math.max(e.start, cursor); cursor = e.end; } }
+  const busyMinutes = Math.round(busy / 60000);
+  return { busyMinutes, share: Math.min(1, busyMinutes / 540) };
+}
+
 /** Free gaps of at least `minMinutes` between 08 and 17 on one Stockholm day. */
 export function freeGaps(day: string, events: Interval[], minMinutes = 30) {
   const open = dayStart(day), start = Date.parse(open) + 8 * 3600000, end = Date.parse(open) + 17 * 3600000;

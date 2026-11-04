@@ -1,0 +1,1 @@
+ALTER TABLE "thread" ADD COLUMN "snoozed_until" timestamp with time zone;

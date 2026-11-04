@@ -1,4 +1,4 @@
-import { answer, composer, desktop, expect, expectNoAxeViolations, open, phone, test } from './support';
+import { answer, composer, desktop, expect, expectNoAxeViolations, open, phone, snoozeFirst, test } from './support';
 
 /** axe over every route and over the states a route can reach, at both layouts. */
 const routes = [['start', '/'], ['an area', '/omrade/personal'], ['the calendar lens', '/omrade/kalender'], ['the log', '/hanterat'], ['the calendar page', '/kalender']] as const;
@@ -43,7 +43,7 @@ for (const [layout, viewport] of [['desktop', desktop], ['phone', phone]] as con
 
   test('a toast has no axe violations', async ({ page, api: _ }) => {
     await open(page, '/');
-    await page.getByRole('button', { name: 'Inte nu' }).first().click();
+    await snoozeFirst(page);
     await expect(page.getByRole('region', { name: 'Aviseringar' })).toBeVisible();
     await expectNoAxeViolations(page);
   });

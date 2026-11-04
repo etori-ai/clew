@@ -1,4 +1,4 @@
-import { answer, composer, desktop, expect, focused, hiddenFocusStops, open, test } from './support';
+import { answer, composer, desktop, expect, focused, hiddenFocusStops, open, snoozeFirst, test } from './support';
 
 test.use({ viewport: desktop });
 
@@ -12,6 +12,8 @@ test.describe('2.4.7 focus visible', () => {
   test('a card that receives focus from the page shows it', async ({ page, api: _ }) => {
     await open(page, '/');
     await page.getByRole('button', { name: 'Inte nu' }).first().focus();
+    await page.keyboard.press('Enter');
+    await page.getByRole('menuitem', { name: /^I morgon/ }).focus();
     await page.keyboard.press('Enter');
     const card = page.locator('#thread-omtanke');
     await expect(card).toBeFocused();
@@ -45,6 +47,8 @@ test.describe('2.4.3 focus order', () => {
     await open(page, '/');
     await page.getByRole('button', { name: 'Inte nu' }).first().focus();
     await page.keyboard.press('Enter');
+    await page.getByRole('menuitem', { name: /^I morgon/ }).focus();
+    await page.keyboard.press('Enter');
     await expect(page.getByRole('region', { name: 'Aviseringar' })).toBeVisible();
     await expect(page.locator('#thread-omtanke')).toBeFocused();
   });
@@ -52,7 +56,7 @@ test.describe('2.4.3 focus order', () => {
   test('Ångra in the toast stays available and reachable by keyboard', async ({ page, api: _ }) => {
     await page.clock.install({ time: new Date('2026-11-04T08:00:00.000Z') });
     await open(page, '/');
-    await page.getByRole('button', { name: 'Inte nu' }).first().click();
+    await snoozeFirst(page);
     const undo = page.getByRole('button', { name: 'Ångra' });
     await expect(undo).toBeVisible();
     await page.clock.fastForward('00:30');
@@ -85,5 +89,28 @@ test.describe('2.4.3 focus order', () => {
     await page.keyboard.press('Escape');
     await expect(answer(page)).toBeHidden();
     await expect(input).toBeFocused();
+  });
+});
+
+test.describe('D29 the Inte nu picker', () => {
+  test('every row says when the card comes back, and the free text has a label and a live answer', async ({ page, api: _ }) => {
+    await open(page, '/');
+    await page.getByRole('button', { name: 'Inte nu' }).first().click();
+    const menu = page.getByRole('menu');
+    await expect(menu).toBeVisible();
+    for (const row of ['Om en timme', 'Efter lunch', 'I morgon', 'Nästa vecka', 'När jag är tillbaka från Ledningsgrupp']) await expect(menu.getByRole('menuitem', { name: new RegExp('^' + row) })).toBeVisible();
+    await expect(menu.getByText('06:00 · i genomgången')).toBeVisible();
+    await menu.getByRole('menuitem', { name: /^Skriv själv/ }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    const field = dialog.getByRole('textbox', { name: 'När?' });
+    await field.fill('fredag kl 9');
+    await expect(dialog.getByRole('button', { name: /^Ta upp fre 09:00/ })).toBeEnabled();
+    await field.fill('när grisarna flyger');
+    await expect(field).toHaveAttribute('aria-invalid', 'true');
+    await expect(dialog.getByRole('button', { name: /^Ta upp/ })).toBeDisabled();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    expect((await focused(page)).text).toBe('Inte nu');
   });
 });

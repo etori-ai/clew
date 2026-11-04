@@ -60,6 +60,8 @@ export const threads = pgTable('thread', {
   handledAt: timestamp('handled_at', { withTimezone: true }),
   // A reminder the person set brought the card back at this time (D17). Only the day it happened counts.
   remindedAt: timestamp('reminded_at', { withTimezone: true }),
+  // "Inte nu" (D28): parked in the Inte nu pile until this time, or until something happens in the thread.
+  snoozedUntil: timestamp('snoozed_until', { withTimezone: true }),
 }, t => [index('thread_person_state').on(t.personId, t.state, t.createdAt), check('thread_kind', sql`${t.kind} IN ('pushed', 'question')`),
   // One open pushed thread per topic and person: the scan is idempotent even when two requests race.
   uniqueIndex('thread_open_topic').on(t.personId, t.topic).where(sql`${t.state} = 'open' AND ${t.kind} = 'pushed'`),
@@ -75,14 +77,16 @@ export const threadMessages = pgTable('thread_message', {
 export const proposals = pgTable('proposal', {
   id: text('id').primaryKey(), threadId: text('thread_id').notNull().references(() => threads.id, { onDelete: 'cascade' }),
   personId: text('person_id').notNull().references(() => people.id),
-  status: text('status').$type<'proposed' | 'confirmed' | 'final' | 'undone' | 'declined' | 'superseded'>().notNull().default('proposed'),
+  status: text('status').$type<'proposed' | 'confirmed' | 'final' | 'accepted' | 'declined-by-invitee' | 'counter' | 'undone' | 'declined' | 'superseded'>().notNull().default('proposed'),
   participantEmail: text('participant_email').notNull(), participantName: text('participant_name').notNull(),
   start: timestamp('start', { withTimezone: true }).notNull(), end: timestamp('end', { withTimezone: true }).notNull(),
   eventUid: text('event_uid'), eventRef: text('event_ref'), eventRevision: text('event_revision'),
   confirmedAt: timestamp('confirmed_at', { withTimezone: true }), undoUntil: timestamp('undo_until', { withTimezone: true }),
+  // Follow-ups to the invitee (D30): how many were sent and when the last one went.
+  reminders: integer('reminders').notNull().default(0), remindedAt: timestamp('reminded_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => [index('proposal_thread').on(t.threadId), index('proposal_person_status').on(t.personId, t.status),
-  check('proposal_status', sql`${t.status} IN ('proposed', 'confirmed', 'final', 'undone', 'declined', 'superseded')`),
+  check('proposal_status', sql`${t.status} IN ('proposed', 'confirmed', 'final', 'accepted', 'declined-by-invitee', 'counter', 'undone', 'declined', 'superseded')`),
   check('proposal_interval', sql`${t.end} > ${t.start}`)]);
 // Every mutation writes its audit row in the same transaction. Metadata only: no event titles or participant names.
 export const audit = pgTable('audit', {

@@ -33,7 +33,7 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       expect(await store.transaction(tx => tx.insertThread(t))).toBe(true);
       const read = await store.readThread(a, t.id);
       const { personId: _owner, ...expected } = t;
-      expect(read).toEqual({ ...expected, receipt: null, handledAt: null, remindedAt: null, messages: [], proposals: [] } satisfies Thread);
+      expect(read).toEqual({ ...expected, receipt: null, handledAt: null, remindedAt: null, snoozedUntil: null, messages: [], proposals: [] } satisfies Thread);
       expect(await store.readThread(b, t.id)).toBeUndefined();
       expect(await store.readThreadById(t.id)).toEqual(read);
     });
@@ -63,8 +63,10 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       await store.transaction(tx => tx.updateThread(t.id, { state: 'handled', handledAt: plus(T0, 3000), receipt }));
       const handled = (await store.readThread(a, t.id))!;
       expect(handled).toMatchObject({ state: 'handled', handledAt: plus(T0, 3000), receipt, title: t.title, updatedAt: plus(T0, 2000) });
-      await store.transaction(tx => tx.updateThread(t.id, { handledAt: null, receipt: null, waitingOn: 'i morgon 06:00' }));
-      expect(await store.readThread(a, t.id)).toMatchObject({ handledAt: null, receipt: null, waitingOn: 'i morgon 06:00', state: 'handled' });
+      await store.transaction(tx => tx.updateThread(t.id, { handledAt: null, receipt: null, waitingOn: 'skyddsombudet', snoozedUntil: plus(T0, 3600_000) }));
+      expect(await store.readThread(a, t.id)).toMatchObject({ handledAt: null, receipt: null, waitingOn: 'skyddsombudet', snoozedUntil: plus(T0, 3600_000), state: 'handled' });
+      await store.transaction(tx => tx.updateThread(t.id, { snoozedUntil: null }));
+      expect(await store.readThread(a, t.id)).toMatchObject({ waitingOn: 'skyddsombudet', snoozedUntil: null });
     });
     test('the stream lists open threads and what was handled within seven days, newest first', async () => {
       const { store, people: [a] } = await make();

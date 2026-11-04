@@ -5,7 +5,9 @@ import { Text } from '@astryxdesign/core/Text';
 import { Token } from '@astryxdesign/core/Token';
 import { List, ListItem } from '@astryxdesign/core/List';
 import { Badge } from '@astryxdesign/core/Badge';
+import { ProgressBar } from '@astryxdesign/core/ProgressBar';
 import { dates, displayDate, occursOn, shortDayLabel, timeLabel, timeRange, today } from '@clew/calendar/dates';
+import { dayLoad } from '@clew/calendar/proposals';
 
 /** One entry in a day column: an existing meeting, a drawn proposal or a booked samtal. */
 export interface AgendaItem { id: string; title: string; start: string; end: string; allDay: boolean; kind: 'event' | 'proposal' | 'booked'; subtitle?: string; }
@@ -25,6 +27,9 @@ export function WeekAgenda({ week, days = 5, items, detailed = false, label = 'V
     <Grid columns={{ minWidth: detailed ? 160 : 120, max: days }} gap={detailed ? 3 : 2}>
       {columns.map(({ day, entries }) => <VStack key={day} gap={detailed ? 2 : 1}>
         <Heading level={detailed ? 5 : 6} accessibilityLevel={dayHeadingLevel} weight="semibold" color={day === current ? 'accent' : undefined}>{shortDayLabel(day)}</Heading>
+        {/* The load of the day (D30): busy minutes of the office day, from what is already drawn, so a full day reads as full before anything is sent. */}
+        {(() => { const load = dayLoad(day, entries.filter(e => !e.allDay)); const hours = Math.round(load.busyMinutes / 6) / 10;
+          return <ProgressBar label={`Belastning ${shortDayLabel(day)}: ${hours} av 9 timmar upptagna`} isLabelHidden value={load.busyMinutes} max={540} variant={load.share > 0.8 ? 'warning' : 'neutral'} />; })()}
         {entries.length === 0 && <Text type="supporting">Ledigt</Text>}
         {detailed
           ? <List density="compact" hasDividers edge="flush">

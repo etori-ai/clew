@@ -38,8 +38,8 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
 
   test('cards and day groups are headings', async ({ page, api: _ }) => {
     await open(page, '/');
-    await expect(heading(page, 4, 'Attestera 3 fakturor, 48 200 kr')).toBeVisible();
-    await expect(heading(page, 4, 'Omtankesamtal med Anna Lindqvist')).toBeVisible();
+    await expect(heading(page, 3, 'Attestera 3 fakturor, 48 200 kr')).toBeVisible();
+    await expect(heading(page, 3, 'Omtankesamtal med Anna Lindqvist')).toBeVisible();
     await open(page, '/hanterat');
     await expect(heading(page, 1, 'Redan hanterat')).toBeVisible();
     await page.getByRole('radio', { name: 'Veckan' }).click();
@@ -88,5 +88,28 @@ test.describe('3.1.2 language of parts', () => {
     await expect(panel.getByText('Sara Nyström · sjuk', { exact: true })).toBeVisible();
     await expect(panel).not.toContainText('onDuty');
     await expect(panel).not.toContainText('{');
+  });
+});
+
+test.describe('D30 the obligation', () => {
+  test('the card carries its steps, its judgement calls and its day loads with names', async ({ page, api: _ }) => {
+    await open(page, '/');
+    const card = page.locator('#thread-samtal');
+    await expect(card.getByRole('list', { name: 'Steg' })).toBeVisible();
+    await expect(card.getByRole('list', { name: 'Steg' }).getByRole('listitem')).toHaveCount(4);
+    await expect(card.getByRole('group', { name: 'Oplacerade: 1' })).toContainText('Sara Holm · upptagen hela veckan');
+    await open(page, '/kalender');
+    await expect(page.getByRole('progressbar', { name: /^Belastning ons 4 nov/ })).toBeVisible();
+  });
+  test('the waiting obligation shows the sum and lets the manager remind from the keyboard', async ({ page, api: _ }) => {
+    await open(page, '/pagar');
+    const card = page.locator('#thread-samtal-svar');
+    await expect(card.getByRole('region', { name: 'Svar' })).toContainText('1 av 2 har svarat.');
+    await expect(card.getByRole('progressbar', { name: 'Svar: 1 av 2' })).toBeVisible();
+    await expect(card.getByRole('list', { name: 'Väntar: 1' })).toContainText('påmind en gång');
+    const remind = card.getByRole('button', { name: 'Påminn de 1 nu' });
+    await remind.focus();
+    await page.keyboard.press('Enter');
+    await expect(card.getByRole('list', { name: 'Väntar: 1' })).toContainText('påmind 2 gånger');
   });
 });

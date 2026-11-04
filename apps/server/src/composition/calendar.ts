@@ -1,6 +1,9 @@
 import type { AuthenticatedContext } from '@clew/contracts';
 import { bindCalendar, type CalendarBinding } from '@clew/calendar/accounts';
 import { postgresProposalStore } from '../modules/calendar/adapters/postgres';
+import { temporalObligations } from '../temporal/obligations';
+import type { Notifier } from '../modules/calendar/model';
+import { systemContext } from '../system-context';
 import { calendarUsecases } from '../modules/calendar/usecases/samtal';
 import type { CalendarBinder } from '../modules/calendar/model';
 import { clock, ids } from './ambient';
@@ -18,4 +21,6 @@ const bind: CalendarBinder = (persona: AuthenticatedContext) => {
   }
   return cached.binding;
 };
-export const calendar = calendarUsecases({ store: postgresProposalStore(), bind, clock, ids });
+/** The follow-up card goes into an invitee's stream through the threads module, which is built after this file: `index.ts` fills the slot. */
+export const notifier: { push: Notifier } = { push: async () => undefined };
+export const calendar = calendarUsecases({ store: postgresProposalStore(), bind, clock, ids, people: { personaFor: id => systemContext(id, 'system:obligation') }, notify: (personId, draft) => notifier.push(personId, draft), obligations: temporalObligations() });

@@ -25,7 +25,7 @@ export function memoryThreadStore(): MemoryThreadStore {
       const { personId, ...rest } = thread;
       const clash = [...threads.values()].some(r => r.personId === personId && r.thread.topic === rest.topic && r.thread.state === 'open' && r.thread.kind === 'pushed');
       if (rest.kind === 'pushed' && rest.state === 'open' && clash) return false;
-      threads.set(rest.id, { personId, thread: { ...copy(rest), receipt: null, handledAt: null, remindedAt: null, messages: [], proposals: [] } });
+      threads.set(rest.id, { personId, thread: { ...copy(rest), receipt: null, handledAt: null, remindedAt: null, snoozedUntil: null, messages: [], proposals: [] } });
       return true;
     },
     async updateThread(id, patch) {

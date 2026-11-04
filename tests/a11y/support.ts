@@ -1,7 +1,7 @@
 import { test as base, expect, type Page, type Route } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import type { Thread } from '@clew/contracts';
-import { NOW, areas, attention, checkReport, connectorDetail, connectorPreview, connectors, conversation, events, threads, today, units, user } from './data';
+import { NOW, areas, attention, checkReport, connectorDetail, connectorPreview, connectors, conversation, events, snoozePresets, threads, today, units, user } from './data';
 
 export const desktop = { width: 1280, height: 800 };
 export const phone = { width: 375, height: 667 };
@@ -77,9 +77,15 @@ export class MockApi {
       return json(response);
     }
     if (path.endsWith('/verbs')) return json({ verbs: [] });
-    if (path.endsWith('/snooze') && post) return json(this.update(id, { waitingOn: 'i morgon 06:00' }));
+    if (path === '/snooze/presets') return json({ presets: snoozePresets });
+    if (path.endsWith('/snooze') && post) {
+      const body = (request.postDataJSON() ?? {}) as { preset?: string; until?: string; text?: string };
+      const until = body.until ?? snoozePresets.find(p => p.id === body.preset)?.at ?? '2026-11-05T05:00:00.000Z';
+      return json(this.update(id, { snoozedUntil: until }));
+    }
     if (path.endsWith('/dismiss') && post) return json(this.update(id, { state: 'dismissed', handledAt: NOW }));
-    if (path.endsWith('/reopen') && post) return json(this.update(id, { state: 'open', handledAt: null, waitingOn: null }));
+    if (path.endsWith('/remind-invitees') && post) { const t = this.threads.find(t => t.id === id)!; return json(this.update(id, { proposals: t.proposals.map(p => p.status === 'confirmed' ? { ...p, reminders: p.reminders + 1, remindedAt: NOW } : p) })); }
+    if (path.endsWith('/reopen') && post) return json(this.update(id, { state: 'open', handledAt: null, snoozedUntil: null }));
     if (path.endsWith('/act') && post) return json({ kind: 'read', output: this.output });
     if (path.startsWith('/threads/') && !post) return json(this.threads.find(t => t.id === id));
     this.unmocked.push(`${request.method()} ${path}`);
@@ -117,6 +123,11 @@ export { expect };
 export const answer = (page: Page) => page.locator('.astryx-chat-message-bubble').filter({ hasText: 'Tio personer är på plats i dag.' });
 export const composer = (page: Page) => page.getByRole('combobox', { name: 'Fråga, be om något eller svara om ett kort' });
 /** A heading by the level assistive technology gets: `aria-level` when Astryx separates it from the visual level. */
+/** "Inte nu" on the first card, the way a person does it (D29): open the picker, choose "I morgon". */
+export async function snoozeFirst(page: Page) {
+  await page.getByRole('button', { name: 'Inte nu' }).first().click();
+  await page.getByRole('menuitem', { name: /^I morgon/ }).click();
+}
 export const heading = (page: Page, level: number, name: string) => page.locator(`h${level}:not([aria-level]), [aria-level="${level}"]`).filter({ hasText: name });
 export const announcements = (page: Page) => page.evaluate(() => (window as unknown as { announcements: string[] }).announcements);
 
@@ -130,8 +141,13 @@ export async function open(page: Page, path: string) {
 
 /** Every rule tagged for WCAG 2.0, 2.1 and 2.2 A and AA, plus axe's best practices: landmarks, headings and regions. */
 export async function expectNoAxeViolations(page: Page) {
-  const { violations } = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
-  expect(violations.map(v => `${v.id}: ${v.help}\n  ${v.nodes.slice(0, 4).map(n => n.target.join(' ')).join('\n  ')}`)).toEqual([]);
+  const tags = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'];
+  const { violations } = await new AxeBuilder({ page }).withTags(tags).disableRules(['target-size']).analyze();
+  // 2.5.8 is about the targets themselves: measured with the dock in the flow, so a row that has scrolled under the sticky dock is not read as too close to its buttons.
+  const style = await page.addStyleTag({ content: '.composer-dock { position: static !important; }' });
+  const { violations: sizes } = await new AxeBuilder({ page }).withTags(tags).withRules(['target-size']).analyze();
+  await style.evaluate(el => (el as HTMLElement).remove());
+  expect([...violations, ...sizes].map(v => `${v.id}: ${v.help}\n  ${v.nodes.slice(0, 4).map(n => n.target.join(' ')).join('\n  ')}`)).toEqual([]);
 }
 
 /** 1.4.10: nothing may need sideways scrolling, and no text may be clipped to fit. */
@@ -158,15 +174,18 @@ export async function reflowProblems(page: Page) {
 
 /** Tabs through the page and names every stop entirely hidden by sticky or fixed content (2.4.11) or without a focus ring (2.4.7). */
 export async function hiddenFocusStops(page: Page, limit = 150) {
-  await page.evaluate(() => { (document.activeElement as HTMLElement | null)?.blur(); window.scrollTo(0, 0); Object.assign(window, { unmarked: [] }); });
+  await page.evaluate(() => { (document.activeElement as HTMLElement | null)?.blur(); window.scrollTo(0, 0); Object.assign(window, { unmarked: [], visited: [] }); });
   const hidden: string[] = [];
   const seen = new Set<string>();
   for (let stop = 0; stop < limit; stop++) {
     await page.keyboard.press('Tab');
     const result = await page.evaluate(() => {
-      const unmarked = (window as unknown as { unmarked: string[] }).unmarked;
+      const { unmarked, visited } = window as unknown as { unmarked: string[]; visited: Element[] };
       const active = document.activeElement;
       if (!active || active === document.body) return null;
+      // The element itself decides whether the walk has come round, not its label and place: a row that scrolls into the previous row's spot is still a new stop.
+      const again = visited.includes(active);
+      visited.push(active);
       const r = active.getBoundingClientRect();
       const name = `${active.tagName.toLowerCase()} "${(active.getAttribute('aria-label') ?? active.textContent ?? '').trim().slice(0, 50)}" at ${Math.round(r.left)},${Math.round(r.top)}`;
       const ring = (el: Element | null, depth: number): boolean => {
@@ -176,19 +195,21 @@ export async function hiddenFocusStops(page: Page, limit = 150) {
       };
       if (!ring(active, 0)) unmarked.push(name);
       const box = { left: Math.max(r.left, 0), right: Math.min(r.right, innerWidth), top: Math.max(r.top, 0), bottom: Math.min(r.bottom, innerHeight) };
-      if (box.right <= box.left || box.bottom <= box.top) return { name, covered: 'outside the viewport' };
+      if (box.right <= box.left || box.bottom <= box.top) return { name, again, covered: 'outside the viewport' };
+      // The top layer (an open popover: the toast stack, a dialog) paints over everything else, so nothing below can obscure it.
+      if (active.closest(':popover-open, dialog[open]')) return { name, again, covered: null };
       for (const el of document.querySelectorAll('body *')) {
         const s = getComputedStyle(el);
         if (s.position !== 'sticky' && s.position !== 'fixed') continue;
         if (el.contains(active) || s.visibility === 'hidden') continue;
         const paints = s.backgroundImage !== 'none' || s.backgroundColor !== 'rgba(0, 0, 0, 0)';
         const o = el.getBoundingClientRect();
-        if (paints && box.top >= o.top && box.bottom <= o.bottom && box.left >= o.left && box.right <= o.right) return { name, covered: el.className.toString().slice(0, 40) || el.tagName };
+        if (paints && box.top >= o.top && box.bottom <= o.bottom && box.left >= o.left && box.right <= o.right) return { name, again, covered: el.className.toString().slice(0, 40) || el.tagName };
       }
-      return { name, covered: null };
+      return { name, again, covered: null };
     });
     if (!result) { if (seen.size) break; continue; }
-    if (seen.has(result.name)) break;
+    if (result.again) break;
     seen.add(result.name);
     if (result.covered) hidden.push(`${result.name} is under ${result.covered}`);
   }

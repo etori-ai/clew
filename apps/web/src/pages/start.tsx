@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
-import { attentionLevel, attentionLevels, type Area, type AssistantStatus, type Attention, type AttentionLevel, type CalendarEvent, type SessionUser, type Thread, type TodayView, type ViewRef } from '@clew/contracts';
-import { Avatar, Badge, Banner, Button, Collapsible, EmptyState, Heading, HStack, Icon, Layout, LayoutContent, LayoutHeader, LayoutPanel, Overlay, StatusDot, Text, VisuallyHidden, VStack, signOut, useMediaQuery, useToast } from '@clew/ui';
+import { isSnoozed, streamGroup, type Area, type AssistantStatus, type Attention, type CalendarEvent, type RhythmPoint, type SessionUser, type Thread, type TodayView, type ViewRef } from '@clew/contracts';
+import { Avatar, Badge, Banner, Button, Card, EmptyState, Heading, HStack, Icon, Layout, LayoutContent, LayoutHeader, LayoutPanel, Overlay, Step, Stepper, Text, ToggleButton, ToggleButtonGroup, VisuallyHidden, VStack, signOut, useMediaQuery, useToast } from '@clew/ui';
 import { dayLabel, timeLabel, today } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
 import { Composer, type ComposerHandle } from '../components/composer';
@@ -14,11 +14,21 @@ import { ThreadCard } from '../components/thread';
 import { Handled } from '../components/handled';
 import { usePageTitle } from '../page-title';
 
+type Pile = 'pagar' | 'inte-nu' | 'klart';
+const pileHref = (p: Pile) => p === 'klart' ? '/hanterat' : `/${p}`;
+const pileOf = (pathname: string): Pile | null => pathname === '/hanterat' ? 'klart' : pathname === '/pagar' ? 'pagar' : pathname === '/inte-nu' ? 'inte-nu' : null;
+const pileTitle: Record<Pile, string> = { pagar: 'Pågår utan dig', 'inte-nu': 'Inte nu', klart: 'Redan hanterat' };
+const greeting = (hour: number) => hour < 10 ? 'God morgon' : hour < 18 ? 'God dag' : 'God kväll';
+/** The day's rhythm as words (D28): the kind of each point on the track, and what it means for the person. */
+const pointName = (p: RhythmPoint, budget: number, nth: number) => p.kind === 'review' ? 'Genomgång' : p.kind === 'bundle' ? 'Samling' : p.kind === 'quiet' ? 'Tyst' : `Avbrott ${nth} av ${budget}`;
+const pointDetail = (p: RhythmPoint) => p.kind === 'review' ? (p.state === 'done' ? 'allt som behöver dig' : 'nästa genomgång') : p.kind === 'bundle' ? 'resten samlas här' : p.kind === 'quiet' ? 'till 06:00' : p.title ?? '';
+
 /**
- * Mission control: areas in the sidebar, "Behöver dig" first, "Pågår utan dig" as one collapsed line, the conversation
- * row docked at the bottom. The conversation unfolds from the row over the dimmed stream (D12); the side panel stays
- * live for views. Every card comes from a connector through the registry; the calendar's proposal card keeps its
- * specialised rendering, everything else is the generic card.
+ * Mission control (D28): the day as one track on the digest card, then Nu and Senare, notices as rows, and three piles
+ * above the conversation row for what waits on others, what the person set aside and what was handled today. Areas
+ * in the sidebar are lenses on the same stream. The conversation unfolds from the row over the dimmed stream (D12);
+ * the side panel stays live for views. Every card comes from a connector through the registry; the calendar's
+ * proposal card keeps its specialised rendering, everything else is the generic card.
  */
 export function StartPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
   const mobile = useMediaQuery('(max-width: 720px)');
@@ -31,14 +41,16 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const [assistant, setAssistant] = useState<AssistantStatus | null>(null);
   const [weeks, setWeeks] = useState<Record<string, CalendarEvent[]>>({});
   const [error, setError] = useState<string | null>(null);
-  // The route is the state: /omrade/:area and /hanterat filter the stream, /vy/… opens the panel, /samtal/:id the row.
+  // The route is the state: /omrade/:area filters the stream, /pagar, /inte-nu and /hanterat open a pile, /vy/… the panel, /samtal/:id the row.
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams<{ area?: string; capability?: string; threadId?: string; actionId?: string; conversationId?: string }>();
   const [search] = useSearchParams();
-  const area = location.pathname === '/hanterat' ? 'hanterat' : params.area ?? (search.get('omrade') || null);
+  const pile = pileOf(location.pathname);
+  const area = params.area ?? (search.get('omrade') || null);
   const conversationId = params.conversationId ?? null;
-  const pathFor = (a: string | null) => a === null ? '/' : a === 'hanterat' ? '/hanterat' : `/omrade/${a}`;
+  const pathFor = (a: string | null) => a === null ? '/' : `/omrade/${a}`;
+  const back = pile ? pileHref(pile) : pathFor(area);
   const withArea = (path: string) => area ? `${path}${path.includes('?') ? '&' : '?'}omrade=${encodeURIComponent(area)}` : path;
   const viewHref = (capability: string, title: string, input?: Record<string, unknown>) => withArea(`/vy/${capability}?titel=${encodeURIComponent(title)}` + (input && Object.keys(input).length ? `&input=${encodeURIComponent(JSON.stringify(input))}` : ''));
   const cardViewHref = (threadId: string, actionId: string) => withArea(`/vy/kort/${threadId}/${actionId}`);
@@ -46,7 +58,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const [view, setView] = useState<{ title: string; output: unknown } | null>(null);
   const [conversation, setConversation] = useState<{ open: boolean; chipped: string[] }>({ open: false, chipped: [] });
   const composer = useRef<ComposerHandle>(null);
-  // The row's real height, for the margin that keeps a focused control above it (2.4.11). A conversation or a chip changes it.
+  // The dock's real height, for the margin that keeps a focused control above it (2.4.11). A conversation, a chip or the piles change it.
   const dock = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const row = dock.current;
@@ -81,7 +93,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const loadWeek = useCallback((week: string) => {
     setWeeks(current => { if (current[week]) return current; void api.calendar(week).then(data => setWeeks(w => ({ ...w, [week]: data.events }))).catch(() => undefined); return current; });
   }, []);
-  // A card that leaves the stream takes the focused button with it. Focus goes on to the next card, or the heading when none is left (2.4.3).
+  // A card that leaves the stream takes the focused button with it. Focus goes on to the next card, or the first heading when none is left (2.4.3).
   const stream = useRef<HTMLDivElement>(null);
   const focusAfter = useRef<{ card: string; next: string } | null>(null);
   const replace = useCallback((thread: Thread) => {
@@ -89,15 +101,15 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     const at = cards.indexOf('thread-' + thread.id);
     if (at >= 0) focusAfter.current = { card: cards[at]!, next: cards[at + 1] ?? cards[at - 1] ?? 'behover-dig' };
     setThreads(list => list.some(t => t.id === thread.id) ? list.map(t => t.id === thread.id ? thread : t) : [thread, ...list]);
-    void api.areas().then(a => setAreas(a.areas)).catch(() => undefined);
+    void Promise.all([api.areas(), api.attention()]).then(([a, at]) => { setAreas(a.areas); setAttention(at); }).catch(() => undefined);
   }, []);
   useEffect(() => {
     const target = focusAfter.current;
     focusAfter.current = null;
     if (!target || document.activeElement !== document.body) return;
-    // A snoozed card is still in the document, inside the closed Pågår utan dig.
+    // A card that moved to a pile is no longer in the stream; a card that only changed state is still here.
     const card = document.getElementById(target.card);
-    (card?.checkVisibility() ? card : document.getElementById(target.next))?.focus();
+    (card?.checkVisibility() ? card : document.getElementById(target.next) ?? document.getElementById('behover-dig') ?? document.getElementById('senare'))?.focus();
   }, [threads]);
   // A view is addressable (integrations.md, "Answers and views"): the panel follows /vy/:capability or /vy/kort/:thread/:action.
   const viewInput = search.get('input'), viewTitle = search.get('titel');
@@ -122,63 +134,90 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const openStanding = (capability: string, label: string) => navigate(viewHref(capability, label));
   const openView = (v: ViewRef) => navigate(viewHref(v.capability, v.title, v.input));
   const areaTitle = (id: string) => areas.find(a => a.id === id)?.title ?? (id === 'fragor' ? 'Fråga' : id);
-  const inArea = (t: Thread) => area === null || area === 'hanterat' || t.area === area;
-  const open = threads.filter(t => t.state === 'open');
-  const needsYou = open.filter(t => t.kind === 'pushed' && !t.waitingOn && inArea(t)).sort((a, b) => (a.deadline ?? '9999').localeCompare(b.deadline ?? '9999') || a.createdAt.localeCompare(b.createdAt));
-  // Colour follows the deadline, never the category (canvas "Clew uppmärksamhet"): the stream is grouped by level, each group with a dot and a word.
+  const inArea = (t: Thread) => area === null || t.area === area;
+  const now = new Date().toISOString();
   const todayDate = today();
-  // A reminded card keeps its place by deadline (no group pushes the stream down); the badge and the toast do the noticing.
-  const levelOf = (t: Thread): AttentionLevel => { const level = attentionLevel(t, todayDate); return level === 'now' ? attentionLevel({ deadline: t.deadline }, todayDate) : level; };
-  const groups = attentionLevels.map(level => ({ level, threads: needsYou.filter(t => levelOf(t) === level) })).filter(g => g.threads.length);
-  const waiting = open.filter(t => t.kind === 'pushed' && !!t.waitingOn && inArea(t));
-  const handledToday = threads.filter(t => t.state !== 'open' && t.handledAt && t.handledAt.slice(0, 10) === new Date().toISOString().slice(0, 10)).length;
-  const older = [...open.filter(t => t.kind === 'question'), ...threads.filter(t => t.state !== 'open')];
+  const open = threads.filter(t => t.state === 'open' && t.kind === 'pushed');
+  // Two groups and three piles (D28): what needs the person is split by today's deadline, the rest waits at the edge.
+  const needsYou = open.filter(t => !t.waitingOn && !isSnoozed(t, now) && inArea(t)).sort((a, b) => (a.deadline ?? '9999').localeCompare(b.deadline ?? '9999') || a.createdAt.localeCompare(b.createdAt));
+  const nu = needsYou.filter(t => streamGroup(t, todayDate) === 'nu');
+  const senare = needsYou.filter(t => streamGroup(t, todayDate) === 'senare');
+  const notices = needsYou.filter(t => streamGroup(t, todayDate) === 'notice');
+  const waiting = open.filter(t => !!t.waitingOn && !isSnoozed(t, now));
+  const snoozed = open.filter(t => isSnoozed(t, now));
+  const handledToday = threads.filter(t => t.state !== 'open' && t.handledAt && t.handledAt.slice(0, 10) === now.slice(0, 10));
+  const older = [...threads.filter(t => t.state === 'open' && t.kind === 'question'), ...threads.filter(t => t.state !== 'open')];
   const remaining = attention ? Math.max(0, attention.budget - attention.used) : null;
   const current = useMemo(() => areas.find(a => a.id === area) ?? null, [areas, area]);
-  const pageTitle = view ? view.title : conversationId ? 'Samtal' : area === 'hanterat' ? 'Redan hanterat' : current?.title ?? (area ? null : 'Behöver dig');
+  const pageTitle = view ? view.title : conversationId ? 'Samtal' : pile ? pileTitle[pile] : current?.title ?? (area ? null : 'Behöver dig');
   usePageTitle(pageTitle, view || conversationId ? false : pageTitle ?? false);
   const conversationApi = useMemo(() => ({
     chipped: conversation.chipped, open: conversation.open,
     addChip: (chip: ChipRef) => composer.current?.addChip(chip),
     openConversation: (id: string) => composer.current?.openConversation(id),
   }), [conversation]);
-  const onConversation = useCallback((id: string | null) => { if (id) navigate(conversationHref(id)); else if (conversationId) navigate(pathFor(area)); }, [navigate, conversationId, area]);
+  const onConversation = useCallback((id: string | null) => { if (id) navigate(conversationHref(id)); else if (conversationId) navigate(back); }, [navigate, conversationId, back]);
   const onState = useCallback((s: { open: boolean; chipped: string[] }) => setConversation(c => c.open === s.open && c.chipped.join() === s.chipped.join() ? c : s), []);
   const row = <Composer ref={composer} mobile={mobile} conversationId={conversationId} onConversation={onConversation} onThreadChange={replace} onOpenView={openView} onState={onState} />;
-  const sidebar = <Areas areas={areas} current={area} hrefFor={pathFor} compact={mobile} handled={handledToday} chipped={conversation.chipped} />;
+  const sidebar = <Areas areas={areas} current={pile ? null : area} hrefFor={pathFor} compact={mobile} chipped={conversation.chipped} />;
 
   const openCardView = (threadId: string, actionId: string) => navigate(cardViewHref(threadId, actionId));
-  const card = (t: Thread) => t.proposals.length
-    ? <ThreadCard key={t.id} thread={t} events={t.week ? weeks[t.week] : undefined} compact onChange={replace} onLoadWeek={loadWeek} />
-    : <GenericCard key={t.id} thread={t} areaTitle={areaTitle(t.area)} position={`${needsYou.indexOf(t) + 1} av ${needsYou.length}`} compact={mobile} expanded={needsYou.indexOf(t) === 0} onChange={replace} onOpenCardView={openCardView} />;
-  // The group heading names the level in words beside the colour: a dot for deadlines, an info icon for notices.
-  const groupTitle = (level: AttentionLevel, list: Thread[]) => {
-    const overdueOrToday = list.every(t => t.deadline && t.deadline.slice(0, 10) <= todayDate);
-    return level === 'now' ? 'Du bad om en påminnelse' : level === 'urgent' ? (overdueOrToday ? 'Måste i dag' : 'Inom tre dagar') : level === 'soon' ? 'Snart' : level === 'later' ? 'Senare' : 'Till kännedom';
-  };
-  const groupHeading = (level: AttentionLevel, list: Thread[]) => {
-    const title = groupTitle(level, list);
-    return <HStack gap={1} vAlign="center">
-      {level === 'notice' ? <Icon icon="info" color="info" size="sm" /> : <StatusDot variant={level === 'now' || level === 'urgent' ? 'error' : level === 'soon' ? 'warning' : 'neutral'} label={title} />}
-      <Heading level={3} color="secondary">{title} · {list.length}</Heading>
-    </HStack>;
-  };
-  const group = ({ level, threads: list }: { level: AttentionLevel; threads: Thread[] }) => <VStack key={level} gap={1} as="section" aria-label={`${groupTitle(level, list)}: ${list.length}`}>
-    {groupHeading(level, list)}
-    {level === 'notice' && !mobile && list.every(t => !t.proposals.length)
-      ? <NoticeList threads={list} onChange={replace} onOpenCardView={openCardView} />
-      : <VStack gap={2}>{list.map(card)}</VStack>}
-  </VStack>;
+  // Cards sit under an h2 (Nu, Senare, Till kännedom) or under a pile's h1, so their headings are one level down (1.3.1).
+  const card = (t: Thread, expanded: boolean, position?: string, headingLevel: 2 | 3 = 3) => t.proposals.length
+    ? <ThreadCard key={t.id} thread={t} events={t.week ? weeks[t.week] : undefined} compact headingLevel={headingLevel} onChange={replace} onLoadWeek={loadWeek} />
+    : <GenericCard key={t.id} thread={t} areaTitle={areaTitle(t.area)} position={position} compact={mobile} expanded={expanded} headingLevel={headingLevel} onChange={replace} onOpenCardView={openCardView} />;
+  // The piles (D28): three toggles above the row, each a count; one opens its rows in place of the stream.
+  // Three toggles do not fit a phone in one row and ToggleButtonGroup never wraps; there the same choice is three buttons that wrap (1.4.10),
+  // placed at the end of the stream instead of on the dock, so the dock keeps its height and never covers a toast (2.4.11).
+  const pileLabels: Record<Pile, string> = { pagar: `Pågår utan dig · ${waiting.length}`, 'inte-nu': `Inte nu · ${snoozed.length}`, klart: `Klart i dag · ${handledToday.length}` };
+  const choosePile = (p: Pile | null) => navigate(p ? pileHref(p) : pathFor(area));
+  const piles = mobile
+    ? <HStack gap={1} wrap="wrap" role="group" aria-label="Högar">{(Object.keys(pileLabels) as Pile[]).map(p => <Button key={p} size="sm" variant={pile === p ? 'primary' : 'secondary'} label={pileLabels[p]} aria-pressed={pile === p} onClick={() => choosePile(pile === p ? null : p)} />)}</HStack>
+    : <ToggleButtonGroup label="Högar" type="single" size="sm" value={pile} onChange={(v: string | null) => choosePile(v as Pile | null)}>
+      {(Object.keys(pileLabels) as Pile[]).map(p => <ToggleButton key={p} value={p} label={pileLabels[p]} />)}
+    </ToggleButtonGroup>;
   // The assistant's own cap on interruptions, worded as its promise: it never counts anything the person does.
   const attentionLabel = attention && (remaining === 0
-    ? `Jag stör inte mer i dag · resten samlas till ${attention.bundledUntil ?? 'i morgon 06:00'}`
-    : `Jag stör högst ${attention.budget} gånger i dag`);
+    ? `Inga avbrott kvar i dag · resten samlas till ${attention.bundledUntil ?? 'i morgon 06:00'}`
+    : `${remaining} avbrott kvar i dag`);
+  // The digest (D28): the day as one track, and one sentence that sums the stream. Only on the whole stream, never under a lens.
+  const activeStep = attention ? Math.max(0, attention.rhythm.findIndex(p => p.state === 'next')) : 0;
+  const nextBundle = attention?.rhythm.find(p => p.kind === 'bundle' && p.state !== 'done');
+  let interruptions = 0;
+  const sentence = nu.length === 0 && waiting.length === 0 && handledToday.length === 0 ? 'Inget behöver dig just nu.'
+    : `${nu.length === 0 ? 'Inget behöver dig i dag' : nu.length === 1 ? 'En sak behöver dig i dag' : `${nu.length} saker behöver dig i dag`}, ${waiting.length} pågår utan dig och ${handledToday.length} blev klara i dag.`;
+  const digest = attention && <Card padding={3}>
+    <VStack gap={2} as="section" aria-label="Genomgången">
+      <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
+        <HStack gap={2} vAlign="center" wrap="wrap"><Badge variant="neutral" label="Genomgången" /><Text type="supporting">{attention.rhythm[0]?.at ?? '06:00'} · {open.length} trådar lästa</Text></HStack>
+        {nextBundle && <Text type="supporting">Nästa samling {nextBundle.at}</Text>}
+      </HStack>
+      <Heading level={2} accessibilityLevel={2}>{greeting(Number(timeLabel(now).slice(0, 2)))}. {sentence}</Heading>
+      <Stepper label="Dagens rytm" activeStep={activeStep} indicatorPosition="on-track" density="compact" horizontalOptions={{ minimumStepWidth: 104, collapsedVariant: 'withLabel' }}>
+        {/* A step label never wraps and seven of them share the width, so the time is the label and the words go in the description, which does. */}
+        {attention.rhythm.map((p, i) => <Step key={`${p.kind}-${p.at}-${i}`} step={i} label={p.at} description={`${pointName(p, attention.budget, p.kind === 'interruption' ? ++interruptions : 0)} · ${pointDetail(p)}`}
+          indicator={p.kind === 'interruption' ? <Icon icon="clock" size="sm" /> : 'auto'} status={p.kind === 'interruption' ? 'error' : undefined} />)}
+      </Stepper>
+      <Text type="supporting">Jag stör högst {attention.budget} gånger mellan samlingarna, bara för deadline samma dag eller något du själv bad om. Allt annat samlas.</Text>
+    </VStack>
+  </Card>;
+
+  const pileContent = pile === 'klart'
+    ? <Handled threads={older} compact={mobile} onChange={replace} conversationHref={conversationHref} />
+    : pile && <VStack gap={2} as="section" aria-label={pileTitle[pile]}>
+      <HStack justify="between" vAlign="end" gap={2} wrap="wrap">
+        <Heading level={2} accessibilityLevel={1}>{pileTitle[pile]} · {(pile === 'pagar' ? waiting : snoozed).length}</Heading>
+        <Text type="supporting">{pile === 'pagar' ? 'Kommer tillbaka av sig själva när någon svarar.' : 'Tillbaka 06:00, eller tidigare om något händer.'}</Text>
+      </HStack>
+      {(pile === 'pagar' ? waiting : snoozed).length === 0 && <EmptyState title="Tomt här" description={pile === 'pagar' ? 'Inget väntar på någon annan.' : 'Inget är lagt åt sidan.'} isCompact />}
+      <VStack gap={2}>{(pile === 'pagar' ? waiting : snoozed).map(t => card(t, true, undefined, 2))}</VStack>
+    </VStack>;
 
   const content = <VStack gap={4}>
     {mobile && sidebar}
-    {!current && area !== 'hanterat' && <VisuallyHidden as="div"><Heading level={1}>Startsidan</Heading></VisuallyHidden>}
+    {!current && !pile && <VisuallyHidden as="div"><Heading level={1}>Startsidan</Heading></VisuallyHidden>}
     {error && <Text as="p" role="alert" color="accent">{error}</Text>}
-    {area === 'hanterat' ? <Handled threads={older} compact={mobile} onChange={replace} conversationHref={conversationHref} /> : <>
+    {pile ? pileContent : <>
       {current && <VStack gap={2} as="section" aria-label={`Området ${current.title}`}>
         <HStack justify="between" vAlign="end" gap={2} wrap="wrap">
           <Heading level={2} accessibilityLevel={1}>{current.title}</Heading>
@@ -188,23 +227,35 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           {current.standing.map(s => <Button key={s.capability} size="sm" variant="secondary" label={s.label} clickAction={() => void openStanding(s.capability, s.label)} />)}
         </HStack>}
       </VStack>}
+      {!current && digest}
       {current?.id === 'kalender' && day && <Today view={day} compact={mobile} />}
-      <VStack gap={2} as="section" aria-label="Behöver dig">
+      <VStack gap={2} as="section" aria-label="Nu">
         <HStack justify="between" vAlign="end" gap={2} wrap="wrap">
-          <Heading id="behover-dig" tabIndex={-1} level={2}>{needsYou.length === 0 ? 'Inget behöver dig just nu' : `Behöver dig · ${needsYou.length}`}</Heading>
-          <Text type="supporting">{needsYou.length ? 'Resten väntar till i morgon 06:00.' : 'Nästa genomgång i morgon 06:00'}</Text>
+          <Heading id="behover-dig" tabIndex={-1} level={2}>{nu.length === 0 ? 'Inget behöver dig just nu' : `Nu · ${nu.length}`}</Heading>
+          <Text type="supporting">{nu.length ? 'Deadline i dag, eller något du bad om' : senare.length ? 'Resten har tid på sig' : 'Nästa genomgång i morgon 06:00'}</Text>
         </HStack>
-        {needsYou.length === 0 && waiting.length === 0 && <EmptyState title="Lugnt läge" description="Assistenten hör av sig när något behöver dig." isCompact />}
-        {groups.map(group)}
+        {needsYou.length === 0 && <EmptyState title="Lugnt läge" description="Assistenten hör av sig när något behöver dig." isCompact />}
+        {nu.length > 0 && <VStack gap={2}>{nu.map((t, i) => card(t, i === 0, `${i + 1} av ${nu.length}`))}</VStack>}
       </VStack>
-      {waiting.length > 0 && <Collapsible defaultIsOpen={false} chevronPosition="start" trigger={<HStack gap={1} vAlign="center" wrap="wrap"><StatusDot variant="neutral" label="Väntar på någon annan" /><Text type="supporting"><Text as="span" weight="semibold">Pågår utan dig · {waiting.length}</Text> · {waiting.map(t => t.title.split(',')[0]).join(' · ')}</Text></HStack>}>
-        <VStack gap={2}>{waiting.map(t => <GenericCard key={t.id} thread={t} areaTitle={areaTitle(t.area)} compact={mobile} headingLevel={3} onChange={replace} onOpenCardView={(threadId, actionId) => navigate(cardViewHref(threadId, actionId))} />)}</VStack>
-      </Collapsible>}
+      {senare.length > 0 && <VStack gap={2} as="section" aria-label="Senare">
+        <HStack justify="between" vAlign="end" gap={2} wrap="wrap">
+          <Heading id="senare" tabIndex={-1} level={2} color="secondary">Senare · {senare.length}</Heading>
+          <Text type="supporting">Dagen står i stället för färgen</Text>
+        </HStack>
+        <VStack gap={2}>{senare.map(t => card(t, false))}</VStack>
+      </VStack>}
+      {notices.length > 0 && <VStack gap={2} as="section" aria-label="Till kännedom">
+        <HStack gap={1} vAlign="center"><Icon icon="info" color="info" size="sm" /><Heading level={2} color="secondary">Till kännedom · {notices.length}</Heading></HStack>
+        {!mobile && notices.every(t => !t.proposals.length)
+          ? <NoticeList threads={notices} onChange={replace} onOpenCardView={openCardView} />
+          : <VStack gap={2}>{notices.map(t => card(t, true))}</VStack>}
+      </VStack>}
       {current && current.schedules.length > 0 && <VStack gap={1} as="section" aria-label="Så här bevakar jag området">
         <Heading level={3}>Så här bevakar jag området</Heading>
         {current.schedules.map((s, i) => <Text key={i} type="supporting"><Text as="span" weight="semibold">{s.when}</Text> · {s.label}</Text>)}
       </VStack>}
     </>}
+    {mobile && piles}
   </VStack>;
 
   return <ConversationContext.Provider value={conversationApi}>
@@ -215,7 +266,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
             {!mobile && <Avatar name={user.name} size="md" />}
             <VStack gap={0}>
               <Text weight="semibold">{mobile ? `Hej ${user.name.split(' ')[0]}` : user.name}</Text>
-              <Text type="supporting">{dayLabel(today())} · {timeLabel(new Date().toISOString())}{mobile ? '' : ` · ${user.unitLabel}`}</Text>
+              <Text type="supporting">{dayLabel(today())} · {timeLabel(now)}{mobile ? '' : ` · ${user.unitLabel}`}</Text>
             </VStack>
           </HStack>
           <HStack gap={2} vAlign="center" wrap="wrap">
@@ -242,9 +293,10 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           <Overlay className="stream-fill" isOpen={conversation.open} scrim="light" position="fill" align="end" content={<VisuallyHidden>Samtalet är öppet. Tryck Esc eller klicka här för att stänga.</VisuallyHidden>} onClick={() => { if (conversation.open) composer.current?.close(); }}>
             <div className="stream" ref={stream}>{content}</div>
           </Overlay>
-          <div className="composer-dock" ref={dock}>{row}</div>
+          {/* The piles sit on the dock with the row (D28): always in reach, never pushing the stream. */}
+          <div className="composer-dock" ref={dock}>{mobile ? row : <VStack gap={1}>{piles}{row}</VStack>}</div>
         </div>
       </LayoutContent>} />
-    <PanelView title={view?.title ?? null} output={view?.output} onClose={() => navigate(pathFor(area))} />
+    <PanelView title={view?.title ?? null} output={view?.output} onClose={() => navigate(back)} />
   </ConversationContext.Provider>;
 }

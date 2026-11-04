@@ -1,4 +1,4 @@
-import type { AddConnectorInput, Area, AssistantStatus, Attention, CalendarEvent, CheckReport, ClewObject, Completions, ConnectorDetail, ConnectorHealth, ConnectorPatchInput, ConnectorPreview, ConnectorSummary, ConversationInput, ConversationResponse, Figure, ManifestDiff, Proposal, Role, Thread, TodayView, Verb } from '@clew/contracts';
+import type { SnoozeInput, SnoozePreset, AddConnectorInput, Area, AssistantStatus, Attention, CalendarEvent, CheckReport, ClewObject, Completions, ConnectorDetail, ConnectorHealth, ConnectorPatchInput, ConnectorPreview, ConnectorSummary, ConversationInput, ConversationResponse, Figure, ManifestDiff, Proposal, Role, Thread, TodayView, Verb } from '@clew/contracts';
 import { sessionFetch } from '@clew/ui';
 
 /** Every call goes through the same-origin proxy with the session CSRF token. Errors carry the server's Swedish message. */
@@ -35,7 +35,9 @@ export const api = {
   connectors: () => call<{ connectors: unknown[]; tools: string[] }>('/api/connectors'),
   act: (id: string, actionId: string, refs?: string[]) => post<{ kind: 'execute'; thread: Thread } | { kind: 'read' | 'propose'; output: unknown }>(`/api/threads/${id}/act`, { actionId, refs }),
   undoReceipt: (id: string) => post<Thread>(`/api/threads/${id}/undo-receipt`),
-  snooze: (id: string) => post<Thread>(`/api/threads/${id}/snooze`),
+  snooze: (id: string, input: SnoozeInput = {}) => post<Thread>(`/api/threads/${id}/snooze`, input),
+  snoozePresets: () => call<{ presets: SnoozePreset[] }>('/api/snooze/presets'),
+  remindInvitees: (id: string) => post<Thread>(`/api/threads/${id}/remind-invitees`),
   remind: (id: string, seconds: number) => post<{ id: string; fireAt: string; thread: Thread }>(`/api/threads/${id}/remind`, { seconds }),
   cancelReminder: (id: string, workflowId: string) => post<Thread>(`/api/threads/${id}/remind/cancel`, { workflowId }),
   capability: (name: string, input?: unknown) => call<{ output: unknown }>(`/api/cap/${name}` + (input ? `?input=${encodeURIComponent(JSON.stringify(input))}` : '')),

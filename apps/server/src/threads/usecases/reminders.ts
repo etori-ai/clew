@@ -2,7 +2,7 @@ import type { AuthenticatedContext } from '@clew/contracts';
 import { InputError } from '../../context';
 import type { ReminderInput, ReminderTimers, ThreadStore } from '../model';
 
-export const MAX_REMINDER_SECONDS = 24 * 60 * 60;
+export const MAX_REMINDER_SECONDS = 30 * 24 * 60 * 60;
 const clock = (d: Date) => d.toLocaleTimeString('sv-SE', { timeZone: 'Europe/Stockholm', timeStyle: 'short' });
 /** The waiting label while a reminder is pending; the card sits under "Pågår utan dig" until the timer brings it back. */
 export const reminderWaiting = (fireAt: Date) => `påminnelsen ${clock(fireAt)}`;
@@ -58,10 +58,18 @@ export function reminderUsecases(deps: ReminderDeps) {
     return store.transaction(async tx => {
       const row = await tx.lockThread(input.personId, input.threadId);
       if (!row || row.receipt) return 'skipped';
+      // A snooze's timer (D29): the card is simply awake again, no badge, no toast. Woken earlier, or snoozed again to another time: nothing to do.
+      if (input.silent) {
+        const fireAt = Date.parse(input.requestedAt) + input.seconds * 1000;
+        if (!row.snoozedUntil || Math.abs(Date.parse(row.snoozedUntil) - fireAt) > 1000) return 'skipped';
+        await tx.updateThread(row.id, { snoozedUntil: null, updatedAt: at });
+        await tx.writeAudit({ actor: 'assistant:reminder', action: 'thread.woken', subject: 'thread:' + row.id, at, details: { reason: 'time', snoozedUntil: row.snoozedUntil, owner: input.personId } });
+        return 'surfaced';
+      }
       if (row.remindedAt && Date.parse(row.remindedAt) >= Date.parse(input.requestedAt) + input.seconds * 1000) return 'skipped';
       const asked = clock(new Date(input.requestedAt));
       await tx.updateThread(row.id, {
-        state: 'open', handledAt: null, waitingOn: row.waitingOn && !isReminderWaiting(row.waitingOn) && row.waitingOn !== 'i morgon 06:00' ? row.waitingOn : null, remindedAt: at, updatedAt: at,
+        state: 'open', handledAt: null, waitingOn: row.waitingOn && !isReminderWaiting(row.waitingOn) ? row.waitingOn : null, snoozedUntil: null, remindedAt: at, updatedAt: at,
         trigger: { reason: `Du bad ${asked} om en påminnelse · ${row.trigger.reason}`, source: row.trigger.source, at },
       });
       await tx.addMessage(row.id, { role: 'assistant', body: `Påminnelse: du bad ${asked} om att få det här kortet igen.`, at });

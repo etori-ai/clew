@@ -1,4 +1,4 @@
-import { announcements, composer, desktop, expect, open, test } from './support';
+import { announcements, composer, desktop, expect, open, snoozeFirst, test } from './support';
 
 test.use({ viewport: desktop });
 
@@ -27,7 +27,7 @@ test.describe('4.1.3 status messages', () => {
 
   test('a card leaving the stream is spoken with its way back', async ({ page, api: _ }) => {
     await open(page, '/');
-    await page.getByRole('button', { name: 'Inte nu' }).first().click();
+    await snoozeFirst(page);
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Tas upp i morgon 06:00 i stället.'));
   });
 });

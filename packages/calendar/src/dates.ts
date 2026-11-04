@@ -72,5 +72,13 @@ export function mondayOfWeek(year: number, week: number) {
   return jan4.subtract({ days: jan4.dayOfWeek - 1 }).add({ weeks: week - 1 }).toString();
 }
 export const nextWeekStart = (date: string) => addDays(weekStart(date), 7);
+/** Whole working days ahead (Saturday and Sunday skipped), as an ISO date. */
+export function addWorkdays(date: string, days: number) {
+  let d = Temporal.PlainDate.from(date), left = days;
+  while (left > 0) { d = d.add({ days: 1 }); if (d.dayOfWeek < 6) left--; }
+  return d.toString();
+}
+/** The next date with this ISO weekday (1 = Monday) on or after `date`. */
+export const onOrAfterWeekday = (date: string, weekday: number) => { const d = Temporal.PlainDate.from(date); return d.add({ days: (weekday - d.dayOfWeek + 7) % 7 }).toString(); };
 /** Local wall-clock string (YYYY-MM-DDTHH:MM) in Stockholm for an instant. */
 export const localClock = (instant: string) => Temporal.Instant.from(instant).toZonedDateTimeISO(timeZone).toPlainDateTime().toString({ smallestUnit: 'minute' });

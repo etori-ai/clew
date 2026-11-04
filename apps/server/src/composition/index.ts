@@ -19,7 +19,7 @@ import { temporalTimers } from '../threads/adapters/temporal';
 import { reminderUsecases } from '../threads/usecases/reminders';
 import { threadUsecases } from '../threads/usecases/cards';
 import { clock, ids } from './ambient';
-import { calendar } from './calendar';
+import { calendar, notifier } from './calendar';
 
 /**
  * The composition root (D25): the one place that pairs use cases with their live adapters. Routes, the scheduler and
@@ -29,8 +29,12 @@ import { calendar } from './calendar';
  */
 const store = postgresThreadStore();
 export { calendar };
-export const threads = threadUsecases({ store, registry, run: runCapability, calendar: { ensureProposalThread: calendar.ensureProposalThread, replan: calendar.replan, dismiss: calendar.dismiss }, clock, ids });
-export const reminders = reminderUsecases({ store, timers: temporalTimers(), clock });
+const timers = temporalTimers();
+export const threads = threadUsecases({ store, registry, run: runCapability, timers, clock, ids, calendar: { ensureProposalThread: calendar.ensureProposalThread, replan: calendar.replan, dismiss: calendar.dismiss,
+  todayEvents: persona => calendar.readToday(persona).then(v => v.events.filter(e => !e.allDay).map(e => ({ title: e.title, end: e.end }))).catch(() => []) } });
+export const reminders = reminderUsecases({ store, timers, clock });
+// The obligation's follow-up cards (D30) land in the invitee's stream like any pushed card.
+notifier.push = (personId, draft) => threads.pushDraft({ id: personId }, { ...draft, connector: 'calendar' }, 'assistant:obligation');
 export const mocks = mockUsecases({ store: postgresMockResetStore(), registry, clock, enabled: process.env.CLEW_POC === 'true' });
 const model = liveModelProvider();
 export const assistant = assistantUsecases({ store, registry, run: runCapability, calendar, model, clock, ids, log: console.error });

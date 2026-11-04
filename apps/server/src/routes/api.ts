@@ -2,7 +2,7 @@ import { actorOf } from '@clew/connectors';
 import { Hono } from 'hono';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
-import { ActInput, AskInput, ConfirmInput, ConversationInput, ReplanInput, ReplyInput } from '@clew/contracts';
+import { ActInput, AskInput, ConfirmInput, ConversationInput, ReplanInput, ReplyInput, SnoozeInput } from '@clew/contracts';
 import type { ConversationInput as ConversationInputType } from '@clew/contracts';
 import type { ActInput as ActInputType } from '@clew/contracts';
 import { InputError, protectedRoute, type Env } from '../context';
@@ -12,15 +12,15 @@ import { registry, runCapability } from '../connectors/registry';
 import { assistant, calendar, mocks, reminders, threads } from '../composition';
 import { Type } from '@sinclair/typebox';
 
-const { act, attentionFor, dismissAny, ensureThreads, listAreas, listThreadsFor, reopenThread, snoozeThread, threadFor, undoReceipt } = threads;
+const { act, attentionFor, dismissAny, ensureThreads, listAreas, listThreadsFor, reopenThread, snoozeOptions, snoozeThread, threadFor, undoReceipt } = threads;
 const { cancelReminder, remind } = reminders;
 const { confirm, readToday, replan, samtalStatus, undo, weekOverview } = calendar;
 const { resetMocks } = mocks;
 const { ask, completionsFor, converse, listObjects, reply } = assistant;
 const ajv = addFormats(new Ajv({ allErrors: false }));
-const RemindInput = Type.Object({ seconds: Type.Integer({ minimum: 1, maximum: 86400 }) }, { additionalProperties: false });
+const RemindInput = Type.Object({ seconds: Type.Integer({ minimum: 1, maximum: 30 * 86400 }) }, { additionalProperties: false });
 const CancelReminderInput = Type.Object({ workflowId: Type.String({ minLength: 1, maxLength: 200 }) }, { additionalProperties: false });
-const validators = { remind: ajv.compile(RemindInput), cancelReminder: ajv.compile(CancelReminderInput), ask: ajv.compile(AskInput), reply: ajv.compile(ReplyInput), confirm: ajv.compile(ConfirmInput), replan: ajv.compile(ReplanInput), act: ajv.compile(ActInput), conversation: ajv.compile(ConversationInput) };
+const validators = { remind: ajv.compile(RemindInput), snooze: ajv.compile(SnoozeInput), cancelReminder: ajv.compile(CancelReminderInput), ask: ajv.compile(AskInput), reply: ajv.compile(ReplyInput), confirm: ajv.compile(ConfirmInput), replan: ajv.compile(ReplanInput), act: ajv.compile(ActInput), conversation: ajv.compile(ConversationInput) };
 async function body<T>(request: Request, validate: (value: unknown) => value is T): Promise<T> {
   const text = await request.text();
   if (text.length > 4000) throw new InputError('För stor förfrågan.');
@@ -60,7 +60,9 @@ api.post('/cap/:name', async c => {
 api.post('/threads/:id/act', async c => { const input = await body(c.req.raw, validators.act as unknown as (value: unknown) => value is ActInputType); return c.json(await act(c.get('session').context, c.req.param('id'), input.actionId, input.refs)); });
 api.post('/mocks/reset', async c => { await resetMocks(c.get('session').context); return c.json({ ok: true }); });
 api.post('/threads/:id/undo-receipt', async c => c.json(await undoReceipt(c.get('session').context, c.req.param('id'))));
-api.post('/threads/:id/snooze', async c => c.json(await snoozeThread(c.get('session').context, c.req.param('id'))));
+/** Inte nu (D29): a preset, free text or an instant in the body; an empty body means the next review. */
+api.post('/threads/:id/snooze', async c => c.json(await snoozeThread(c.get('session').context, c.req.param('id'), await body(c.req.raw, validators.snooze as unknown as (value: unknown) => value is SnoozeInput))));
+api.get('/snooze/presets', async c => c.json({ presets: await snoozeOptions(c.get('session').context) }));
 /** A person's own timer (D17): a Temporal reminder workflow that pushes a card back at this thread. */
 api.post('/threads/:id/remind', async c => c.json(await remind(c.get('session').context, c.req.param('id'), (await body(c.req.raw, validators.remind as unknown as (value: unknown) => value is { seconds: number })).seconds)));
 api.post('/threads/:id/remind/cancel', async c => c.json(await cancelReminder(c.get('session').context, c.req.param('id'), (await body(c.req.raw, validators.cancelReminder as unknown as (value: unknown) => value is { workflowId: string })).workflowId)));
@@ -85,6 +87,8 @@ api.get('/threads/:id/verbs', async c => {
 });
 api.get('/assistant/status', c => c.json(assistant.status()));
 api.post('/threads/:id/reopen', async c => c.json(await reopenThread(c.get('session').context, c.req.param('id'))));
+/** The manager's own follow-up (D30): a card to everyone who has not answered, at any time. */
+api.post('/threads/:id/remind-invitees', async c => c.json(await calendar.remindInvitees(c.req.param('id'), c.get('session').context)));
 api.get('/today', async c => c.json(await readToday(c.get('session').context)));
 api.get('/figures', async c => { const persona = c.get('session').context; return c.json({ figures: readFigures(persona, await samtalStatus(persona), new Date().toISOString()) }); });
 api.get('/calendar', async c => c.json(await weekOverview(c.get('session').context, c.req.query('from'))));

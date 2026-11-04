@@ -1,7 +1,8 @@
-import { attentionLevel, worstLevel, type Attention, type AuthenticatedContext, type Area, type Receipt, type Thread } from '@clew/contracts';
+import { attentionLevel, dayRhythm, isSnoozed, MAX_SNOOZE_DAYS, nextStockholmTime, parseSwedishTime, snoozePresets, snoozeWhen, stockholmDate, stockholmInstant, worstLevel, type Attention, type AuthenticatedContext, type Area, type Receipt, type SnoozeInput, type SnoozePreset, type Thread } from '@clew/contracts';
+import { rhythmFor } from '../domain';
 import { actorOf, receipt, type Actor, type ExecuteResult, type Registry, type ThreadDraft } from '@clew/connectors';
 import { InputError } from '../../context';
-import type { ThreadStore } from '../model';
+import type { ReminderTimers, ThreadStore, ThreadTx } from '../model';
 
 /**
  * The stream's use cases (D20, D25): one function per user action, the actor first, built over ports. Nothing in here
@@ -18,19 +19,23 @@ export interface ThreadDeps {
     ensureProposalThread(persona: AuthenticatedContext, source: string): Promise<Thread | undefined>;
     replan(persona: AuthenticatedContext, threadId: string, week: string): Promise<Thread>;
     dismiss(persona: AuthenticatedContext, threadId: string): Promise<Thread>;
+    /** Today's timed meetings, for the preset "när jag är tillbaka från …" (D29). Empty when the calendar cannot be read. */
+    todayEvents(persona: AuthenticatedContext): Promise<Array<{ title: string; end: string }>>;
   };
+  /** The timers behind a snooze (D29): the same reminder workflow as D17, silent. */
+  timers: ReminderTimers;
   clock: () => Date;
   ids: () => string;
 }
+const snoozeWorkflowId = (threadId: string, until: string) => `snooze:${threadId}:${Date.parse(until)}`;
 const REOPEN_MS = 10 * 60_000;
 /** Attention budget: pushed threads today against a fixed daily budget. The rest is bundled to lunch or the next morning. */
 export const ATTENTION_BUDGET = 3;
-const stockholmDay = (at: Date) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm' }).format(at);
 const sameDraft = (t: Thread, d: ThreadDraft, items: Thread['items']) =>
   t.title === d.title && t.summary === d.summary && (t.deadline ?? null) === (d.deadline ?? null) && JSON.stringify(t.items) === JSON.stringify(items) && JSON.stringify(t.actions) === JSON.stringify(d.actions);
 
 export function threadUsecases(deps: ThreadDeps) {
-  const { store, registry, run, calendar, clock, ids } = deps;
+  const { store, registry, run, calendar, timers, clock, ids } = deps;
   const inFlight = new Map<string, Promise<void>>();
   const read = async (persona: Pick<AuthenticatedContext, 'id'>, threadId: string) => (await store.readThread(persona.id, threadId))!;
 
@@ -48,6 +53,7 @@ export function threadUsecases(deps: ThreadDeps) {
   }
   async function scanInto(persona: AuthenticatedContext, source: string) {
     await calendar.ensureProposalThread(persona, source);
+    await wakeDue(persona);
     const drafts = await registry.scan(actorOf(persona));
     const now = clock();
     for (const d of drafts) {
@@ -60,8 +66,22 @@ export function threadUsecases(deps: ThreadDeps) {
       await store.transaction(async tx => {
         await tx.updateThread(existing.id, { title: d.title, summary: d.summary, items, actions: d.actions, deadline: d.deadline ?? null });
         await tx.writeAudit({ actor: 'assistant:scan', action: 'thread.refreshed', subject: 'thread:' + existing.id, at: now.toISOString(), details: { connector: d.connector, topic: d.topic, owner: persona.id } });
+        // A snoozed card whose source moved comes back early (D28, D29): the snooze breaks on activity.
+        if (existing.snoozedUntil) await wake(tx, existing, 'changed', now.toISOString());
       });
     }
+  }
+  /** Clear a snooze and say why, in the same transaction as what woke it: the time passed, or the source changed. The timer, if any, is ended quietly. */
+  async function wake(tx: ThreadTx, thread: Thread, reason: 'time' | 'changed', at: string) {
+    await tx.updateThread(thread.id, { snoozedUntil: null, updatedAt: at });
+    await tx.writeAudit({ actor: 'assistant:scan', action: 'thread.woken', subject: 'thread:' + thread.id, at, details: { reason, snoozedUntil: thread.snoozedUntil } });
+    if (thread.snoozedUntil) await timers.cancel(snoozeWorkflowId(thread.id, thread.snoozedUntil));
+  }
+  /** The sweep (D28): every open card whose snooze has run out is awake again. Runs before every read of the stream and on the 06:00 scan. */
+  async function wakeDue(persona: Pick<AuthenticatedContext, 'id'>) {
+    const now = clock().toISOString();
+    const due = (await store.listThreads(persona.id, now)).filter(t => t.state === 'open' && t.snoozedUntil && !isSnoozed(t, now));
+    for (const t of due) await store.transaction(tx => wake(tx, t, 'time', now));
   }
   /** Push one card for a person. Idempotent by (person, topic): the store refuses a second open card on the topic, across processes. */
   async function pushDraft(persona: Pick<AuthenticatedContext, 'id'>, d: ThreadDraft & { connector: string }, actor: string, now = clock()) {
@@ -81,9 +101,9 @@ export function threadUsecases(deps: ThreadDeps) {
     const now = clock();
     const [areas, threads] = await Promise.all([registry.areas(actorOf(persona)), store.listThreads(persona.id, now.toISOString())]);
     const open = threads.filter(t => t.state === 'open' && t.kind === 'pushed');
-    const today = stockholmDay(now);
+    const today = stockholmDate(now.toISOString());
     return areas.map(a => {
-      const needsYou = open.filter(t => t.area === a.id && !t.waitingOn);
+      const needsYou = open.filter(t => t.area === a.id && !t.waitingOn && !isSnoozed(t, now.toISOString()));
       return { ...a, needsYou: needsYou.length, waiting: open.filter(t => t.area === a.id && !!t.waitingOn).length, urgency: worstLevel(needsYou.map(t => attentionLevel(t, today))) };
     });
   }
@@ -150,15 +170,41 @@ export function threadUsecases(deps: ThreadDeps) {
     });
     return read(persona, threadId);
   }
-  /** Snooze: keep the thread open but hide it until the next bundle (tomorrow 06:00). Stored as a deadline-free `waitingOn`. */
-  async function snoozeThread(persona: AuthenticatedContext, threadId: string) {
+  /** The picker's rows (D29): presets with their resolved times, from the clock and today's meetings. */
+  async function snoozeOptions(persona: AuthenticatedContext): Promise<SnoozePreset[]> {
+    return snoozePresets(clock().toISOString(), await calendar.todayEvents(persona));
+  }
+  /**
+   * Inte nu (D28, D29): the card keeps its state and moves to the Inte nu pile until a time the person chose, a preset,
+   * free text in Swedish, or an instant; nothing means the next 06:00 review. A silent reminder timer brings it back on
+   * time while the page is open; the sweep covers the rest. The snooze breaks early when something happens in the thread.
+   */
+  async function snoozeThread(persona: AuthenticatedContext, threadId: string, input: SnoozeInput = {}) {
     const thread = await threadFor(persona, threadId);
     if (!thread || thread.state !== 'open') throw new InputError('Tråden är redan hanterad.');
-    const at = clock().toISOString();
+    const now = clock(), at = now.toISOString();
+    let until: string;
+    if (input.until) until = input.until;
+    else if (input.text) {
+      const parsed = parseSwedishTime(input.text, at);
+      if (!parsed) throw new InputError('Jag förstod inte tiden. Skriv till exempel ”fredag kl 9” eller ”om 20 min”.');
+      until = parsed;
+    } else if (input.preset) {
+      const preset = (await snoozeOptions(persona)).find(p => p.id === input.preset);
+      if (!preset) throw new InputError('Okänt förval.');
+      until = preset.at;
+    } else until = nextStockholmTime(at, dayRhythm.review);
+    if (Date.parse(until) <= now.getTime()) throw new InputError('Tiden har redan passerat.');
+    if (Date.parse(until) > now.getTime() + MAX_SNOOZE_DAYS * 86_400_000) throw new InputError(`Högst ${MAX_SNOOZE_DAYS} dagar framåt.`);
+    const workflowId = snoozeWorkflowId(threadId, until);
+    // The timer is a convenience for an open page; the sweep is the guarantee, so a timer service that is away is not an error.
+    let timer: 'started' | 'unavailable' = 'started';
+    try { await timers.start({ workflowId, personId: persona.id, threadId, title: thread.title, area: thread.area, seconds: Math.ceil((Date.parse(until) - now.getTime()) / 1000), requestedAt: at, silent: true }); }
+    catch { timer = 'unavailable'; }
     await store.transaction(async tx => {
-      await tx.updateThread(threadId, { waitingOn: 'i morgon 06:00', updatedAt: at });
-      await tx.addMessage(threadId, { role: 'user', body: 'Inte nu', at });
-      await tx.writeAudit({ actor: persona.principal.id, action: 'thread.snoozed', subject: 'thread:' + threadId, at });
+      await tx.updateThread(threadId, { snoozedUntil: until, updatedAt: at });
+      await tx.addMessage(threadId, { role: 'user', body: `Inte nu · ${snoozeWhen(until, at)}`, at });
+      await tx.writeAudit({ actor: persona.principal.id, action: 'thread.snoozed', subject: 'thread:' + threadId, at, details: { until, workflowId, timer, ...(input.preset ? { preset: input.preset } : {}), ...(input.text ? { text: input.text } : {}) } });
     });
     return read(persona, threadId);
   }
@@ -170,21 +216,25 @@ export function threadUsecases(deps: ThreadDeps) {
     const t = await store.readThread(persona.id, threadId);
     if (!t) throw new InputError('Tråden finns inte.');
     const now = clock(), at = now.toISOString();
-    const snoozed = t.state === 'open' && t.waitingOn === 'i morgon 06:00';
+    const snoozed = t.state === 'open' && !!t.snoozedUntil;
     const dismissed = t.state === 'dismissed' && !!t.handledAt && now.getTime() - Date.parse(t.handledAt) <= REOPEN_MS;
     if (!snoozed && !dismissed) throw new InputError(t.state === 'dismissed' ? 'Ångerfönstret har gått ut.' : 'Tråden går inte att återöppna.');
     await store.transaction(async tx => {
-      await tx.updateThread(threadId, { state: 'open', handledAt: null, waitingOn: null, updatedAt: at });
+      await tx.updateThread(threadId, { state: 'open', handledAt: null, snoozedUntil: null, ...(dismissed ? { waitingOn: null } : {}), updatedAt: at });
       await tx.addMessage(threadId, { role: 'user', body: 'Ångra', at });
       await tx.writeAudit({ actor: persona.principal.id, action: 'thread.reopened', subject: 'thread:' + threadId, at, details: { from: snoozed ? 'snoozed' : 'dismissed' } });
     });
+    if (snoozed && t.snoozedUntil) await timers.cancel(snoozeWorkflowId(threadId, t.snoozedUntil));
     if (dismissed && t.week && t.proposals.length && !t.proposals.some(p => p.status === 'proposed')) return calendar.replan(persona, threadId, t.week);
     return read(persona, threadId);
   }
+  /** The budget and the day's rhythm (D28): what was pushed today against the cap, on one track with the review, the bundles and the quiet hours. */
   async function attentionFor(persona: AuthenticatedContext): Promise<Attention> {
-    const since = clock(); since.setHours(0, 0, 0, 0);
-    const used = await store.countPushedSince(persona.id, since.toISOString());
-    return { used, budget: ATTENTION_BUDGET, bundledUntil: used >= ATTENTION_BUDGET ? 'i morgon 06:00' : null };
+    const now = clock().toISOString();
+    const since = stockholmInstant(stockholmDate(now), '00:00');
+    const [used, threads] = await Promise.all([store.countPushedSince(persona.id, since), store.listThreads(persona.id, now)]);
+    const interruptions = threads.filter(t => t.kind === 'pushed' && Date.parse(t.createdAt) >= Date.parse(since)).map(t => ({ at: t.createdAt, title: t.title }));
+    return { used, budget: ATTENTION_BUDGET, bundledUntil: used >= ATTENTION_BUDGET ? 'i morgon 06:00' : null, rhythm: rhythmFor(now, interruptions) };
   }
   /**
    * An open card from a connector the person cannot see (switched off, or they are outside its audience, D23) is not
@@ -192,7 +242,7 @@ export function threadUsecases(deps: ThreadDeps) {
    */
   const hidden = (persona: Actor, t: Thread) => t.kind === 'pushed' && t.state === 'open' && !registry.visible(persona, t.connector);
   /** The person's own threads, newest first, as the stream shows them. */
-  const listThreadsFor = async (persona: Actor) => (await store.listThreads(persona.id, clock().toISOString())).filter(t => !hidden(persona, t));
+  const listThreadsFor = async (persona: Actor) => { await wakeDue(persona); return (await store.listThreads(persona.id, clock().toISOString())).filter(t => !hidden(persona, t)); };
   /** One of the person's threads, or undefined when it is not theirs. */
   const threadFor = async (persona: Actor, threadId: string) => { const t = await store.readThread(persona.id, threadId); return t && !hidden(persona, t) ? t : undefined; };
   /** Avfärda from the card: proposal threads decline their drawn times through the planner, every other card is dismissed as is. */
@@ -201,6 +251,6 @@ export function threadUsecases(deps: ThreadDeps) {
     if (!thread) throw new InputError('Tråden finns inte.');
     return thread.proposals.length ? calendar.dismiss(persona, threadId) : dismissThread(persona, threadId);
   }
-  return { ensureThreads, pushDraft, listAreas, act, undoReceipt, closeReceiptWindow, dismissThread, snoozeThread, reopenThread, attentionFor, listThreadsFor, threadFor, dismissAny };
+  return { ensureThreads, pushDraft, listAreas, act, undoReceipt, closeReceiptWindow, dismissThread, snoozeThread, snoozeOptions, reopenThread, attentionFor, listThreadsFor, threadFor, dismissAny };
 }
 export type ThreadUsecases = ReturnType<typeof threadUsecases>;

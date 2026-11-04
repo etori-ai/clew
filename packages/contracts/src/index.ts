@@ -36,14 +36,42 @@ export const CalendarEventSchema = object({
 });
 export type CalendarEvent = Static<typeof CalendarEventSchema>;
 
-export const ProposalStatus = Type.Union([Type.Literal('proposed'), Type.Literal('confirmed'), Type.Literal('final'), Type.Literal('undone'), Type.Literal('declined'), Type.Literal('superseded')]);
+/**
+ * A proposal's life (D13, D30): drawn, confirmed (invitation sent, undo open), final (undo closed), then what the invitee
+ * answered: `accepted`, or `declined-by-invitee` (a counter-proposal, `counter`, is reserved for a source that can carry one).
+ * `declined` is the manager's own no, `undone` a lost undo, `superseded` a redraw.
+ */
+export const ProposalStatus = Type.Union([Type.Literal('proposed'), Type.Literal('confirmed'), Type.Literal('final'), Type.Literal('accepted'), Type.Literal('declined-by-invitee'), Type.Literal('counter'),
+  Type.Literal('undone'), Type.Literal('declined'), Type.Literal('superseded')]);
 export type ProposalStatus = Static<typeof ProposalStatus>;
 export const ProposalSchema = object({
   id: id, threadId: id, status: ProposalStatus, start: instant, end: instant,
   participant: object({ name: Type.String(), email: Type.String() }),
   eventRef: Type.Union([Type.String(), Type.Null()]), undoUntil: Type.Union([instant, Type.Null()]),
+  /** Follow-ups sent to the invitee (D30): how many, and when the last one went. */
+  reminders: Type.Integer(), remindedAt: Type.Union([instant, Type.Null()]),
 });
 export type Proposal = Static<typeof ProposalSchema>;
+/** The four steps of an obligation (D30): drawn, sent, replies coming in, done. */
+export const ObligationStepSchema = Type.Union([Type.Literal('forslag'), Type.Literal('inbjudningar'), Type.Literal('svar'), Type.Literal('klart')]);
+export type ObligationStep = Static<typeof ObligationStepSchema>;
+export const obligationSteps: readonly ObligationStep[] = ['forslag', 'inbjudningar', 'svar', 'klart'];
+const sent = (s: ProposalStatus) => s === 'confirmed' || s === 'final';
+const replied = (s: ProposalStatus) => s === 'accepted' || s === 'declined-by-invitee' || s === 'counter';
+/** Where an obligation stands, from its proposals alone. */
+export function obligationStep(proposals: Array<{ status: ProposalStatus }>): ObligationStep {
+  if (proposals.some(p => p.status === 'proposed')) return 'forslag';
+  const waiting = proposals.filter(p => sent(p.status)).length, answered = proposals.filter(p => replied(p.status)).length;
+  if (waiting && !answered) return 'inbjudningar';
+  if (waiting) return 'svar';
+  return answered ? 'klart' : 'forslag';
+}
+/** The sum the Svar step shows: who said yes, who said no, who has not answered. */
+export function replySummary(proposals: Array<{ status: ProposalStatus }>) {
+  const accepted = proposals.filter(p => p.status === 'accepted').length, declined = proposals.filter(p => p.status === 'declined-by-invitee' || p.status === 'counter').length;
+  const waiting = proposals.filter(p => sent(p.status)).length;
+  return { accepted, declined, waiting, total: accepted + declined + waiting };
+}
 
 
 /** Something rendered on the page that the person can point at in the conversation (D12): a card, a row, an event, a proposal, a capability. */
@@ -139,6 +167,8 @@ export const ThreadSchema = object({
   receipt: Type.Union([ReceiptSchema, Type.Null()]),
   /** When a reminder the person set brought the card back (D17). Counts for that day: the card sorts first, marked "Påminnelse". */
   remindedAt: Type.Union([instant, Type.Null()]),
+  /** "Inte nu" (D28): the card sits in the Inte nu pile until this instant, or until something happens in the thread. */
+  snoozedUntil: Type.Union([instant, Type.Null()]),
 });
 export type Thread = Static<typeof ThreadSchema>;
 
@@ -165,6 +195,116 @@ export function attentionLevel(thread: { deadline: string | null; remindedAt?: s
 }
 /** The highest level in a list, or null when the list is empty. */
 export const worstLevel = (levels: AttentionLevel[]): AttentionLevel | null => levels.length ? attentionLevels[Math.min(...levels.map(l => attentionLevels.indexOf(l)))]! : null;
+
+/** The stream's groups (D28): `nu` is due today, overdue or reminded today; `senare` has a deadline ahead; `notice` has none. */
+export const StreamGroupSchema = Type.Union([Type.Literal('nu'), Type.Literal('senare'), Type.Literal('notice')]);
+export type StreamGroup = Static<typeof StreamGroupSchema>;
+export function streamGroup(thread: { deadline: string | null; remindedAt?: string | null }, today: string): StreamGroup {
+  if (thread.remindedAt && stockholmDate(thread.remindedAt) === today) return 'nu';
+  if (!thread.deadline) return 'notice';
+  return daysUntil(thread.deadline.slice(0, 10), today) <= 0 ? 'nu' : 'senare';
+}
+/** A snoozed card is one whose `snoozedUntil` is still ahead of `now`; a passed time counts as awake until the sweep clears it. */
+export const isSnoozed = (thread: { snoozedUntil: string | null }, now: string) => !!thread.snoozedUntil && Date.parse(thread.snoozedUntil) > Date.parse(now);
+const swedish = (options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'UTC', ...options });
+/** The day word a Senare row carries in place of a colour (D28): "i morgon", the weekday within six days, else the date. */
+export function dayWord(date: string, today: string): string {
+  const days = daysUntil(date, today);
+  if (days <= 0) return 'i dag';
+  if (days === 1) return 'i morgon';
+  const noon = new Date(date + 'T12:00:00Z');
+  return (days < 7 ? swedish({ weekday: 'short' }).format(noon) : swedish({ day: 'numeric', month: 'short' }).format(noon)).replace(/\.$/, '').replace('.', '');
+}
+/** Stockholm wall-clock time of an instant, HH:MM. */
+export const stockholmClock = (instant: string) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm', hour: '2-digit', minute: '2-digit' }).format(new Date(instant));
+/** The instant of a Stockholm wall-clock time (HH:MM) on an ISO date, from Intl alone so the contracts stay dependency-free. */
+export function stockholmInstant(date: string, time: string): string {
+  const [hour = 0, minute = 0] = time.split(':').map(Number);
+  const guess = Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)), hour, minute);
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Stockholm', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+    .formatToParts(new Date(guess)).map(p => [p.type, p.value]));
+  const asUtc = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute));
+  return new Date(guess - (asUtc - guess)).toISOString();
+}
+/** An ISO date moved by whole days. */
+export const shiftDate = (date: string, days: number) => new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)) + days)).toISOString().slice(0, 10);
+/** The next occurrence of a Stockholm wall-clock time strictly after `now`: today if still ahead, else tomorrow. */
+export function nextStockholmTime(now: string, time: string): string {
+  const today = stockholmDate(now);
+  const candidate = stockholmInstant(today, time);
+  return Date.parse(candidate) > Date.parse(now) ? candidate : stockholmInstant(shiftDate(today, 1), time);
+}
+/** "mån 10 nov 06:00" for an instant, in Stockholm. */
+export const stockholmDayClock = (instant: string) => `${new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm', weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(instant)).replace(/\./g, '')} ${stockholmClock(instant)}`;
+/** When a snoozed card comes back, in the person's words: "i morgon 06:00", "kl 13:00" today, "fre 09:00" this week, else the date. */
+export function snoozeWhen(until: string, now: string): string {
+  const today = stockholmDate(now), date = stockholmDate(until), word = dayWord(date, today);
+  return word === 'i dag' ? `kl ${stockholmClock(until)}` : `${word} ${stockholmClock(until)}`;
+}
+
+/** A snooze or reminder preset (D29): its name, the instant it lands on and the detail shown beside the name. */
+export const SnoozePresetSchema = object({ id: Type.String(), label: Type.String(), at: instant, detail: Type.String() });
+export type SnoozePreset = Static<typeof SnoozePresetSchema>;
+/** "Inte nu" and "Påminn mig" take a preset, free text in Swedish, or an instant; nothing means the next review. */
+export const SnoozeInput = Type.Partial(object({ preset: Type.String({ minLength: 1, maxLength: 40 }), text: Type.String({ minLength: 1, maxLength: 80 }), until: instant }));
+export type SnoozeInput = Static<typeof SnoozeInput>;
+export const MAX_SNOOZE_DAYS = 30;
+const stockholmWeekday = (date: string) => new Date(date + 'T12:00:00Z').getUTCDay();
+/** The next Monday after today, as an ISO date. */
+const nextMonday = (today: string) => shiftDate(today, ((8 - stockholmWeekday(today)) % 7) || 7);
+/**
+ * The presets with their resolved times (D29): an hour, after lunch, the next review, next week, and when the person is
+ * back from their next meeting today. Pure: the clock and today's meetings come in.
+ */
+export function snoozePresets(now: string, events: Array<{ title: string; end: string }> = []): SnoozePreset[] {
+  const today = stockholmDate(now);
+  const hour = new Date(Date.parse(now) + 3600_000).toISOString();
+  const lunch = nextStockholmTime(now, '13:00');
+  const tomorrow = stockholmInstant(shiftDate(today, 1), dayRhythm.review);
+  const monday = stockholmInstant(nextMonday(today), dayRhythm.review);
+  const meeting = events.filter(e => Date.parse(e.end) > Date.parse(now) && stockholmDate(e.end) === today).sort((a, b) => a.end.localeCompare(b.end))[0];
+  return [
+    { id: 'hour', label: 'Om en timme', at: hour, detail: stockholmClock(hour) },
+    { id: 'lunch', label: 'Efter lunch', at: lunch, detail: stockholmDate(lunch) === today ? stockholmClock(lunch) : `i morgon ${stockholmClock(lunch)}` },
+    { id: 'tomorrow', label: 'I morgon', at: tomorrow, detail: `${dayRhythm.review} · i genomgången` },
+    { id: 'week', label: 'Nästa vecka', at: monday, detail: stockholmDayClock(monday) },
+    ...(meeting ? [{ id: 'meeting', label: `När jag är tillbaka från ${meeting.title}`, at: meeting.end, detail: `${stockholmClock(meeting.end)} · från kalendern` }] : []),
+  ];
+}
+const numberWords: Record<string, number> = { en: 1, ett: 1, två: 2, tre: 3, fyra: 4, fem: 5, sex: 6, sju: 7, åtta: 8, nio: 9, tio: 10, femton: 15, tjugo: 20, trettio: 30 };
+const weekdayNames = ['söndag', 'måndag', 'tisdag', 'onsdag', 'torsdag', 'fredag', 'lördag'];
+const clockOf = (hour: string | undefined, minute: string | undefined, fallback: string) => hour ? `${hour.padStart(2, '0')}:${(minute ?? '00').padStart(2, '0')}` : fallback;
+/**
+ * A bounded Swedish time grammar (D29): "om 20 min", "om en timme", "efter lunch", "i morgon", "i morgon kl 9",
+ * "fredag kl 9", "på måndag", "nästa vecka", "kl 14", "14:30". Anything else is null; nothing is guessed.
+ */
+export function parseSwedishTime(text: string, now: string): string | null {
+  const q = text.trim().toLowerCase().replace(/\s+/g, ' ');
+  const today = stockholmDate(now);
+  const ahead = (date: string, time: string) => { const at = stockholmInstant(date, time); return Date.parse(at) > Date.parse(now) ? at : null; };
+  let m: RegExpMatchArray | null;
+  if ((m = q.match(/^om (\d+|[a-zåäö]+) ?(min|minut|minuter|tim|timme|timmar|h|dag|dagar|vecka|veckor)$/))) {
+    const n = /^\d+$/.test(m[1]!) ? Number(m[1]) : numberWords[m[1]!];
+    if (!n) return null;
+    const unit = m[2]!.startsWith('min') ? 60_000 : m[2]!.startsWith('tim') || m[2] === 'h' ? 3600_000 : m[2]!.startsWith('dag') ? 86_400_000 : 7 * 86_400_000;
+    return new Date(Date.parse(now) + n * unit).toISOString();
+  }
+  if (q === 'efter lunch') return nextStockholmTime(now, '13:00');
+  if (q === 'i kväll' || q === 'ikväll') return ahead(today, dayRhythm.quiet);
+  if (q === 'nästa vecka') return stockholmInstant(nextMonday(today), dayRhythm.review);
+  if ((m = q.match(/^(?:i ?morgon|imorgon)(?: kl\.? ?(\d{1,2})(?:[:.](\d{2}))?)?$/))) return stockholmInstant(shiftDate(today, 1), clockOf(m[1], m[2], dayRhythm.review));
+  if ((m = q.match(/^(?:på )?(måndag|tisdag|onsdag|torsdag|fredag|lördag|söndag)(?: kl\.? ?(\d{1,2})(?:[:.](\d{2}))?)?$/))) {
+    const target = weekdayNames.indexOf(m[1]!), days = (target - stockholmWeekday(today) + 7) % 7;
+    const time = clockOf(m[2], m[3], dayRhythm.review);
+    return days === 0 ? ahead(today, time) ?? stockholmInstant(shiftDate(today, 7), time) : stockholmInstant(shiftDate(today, days), time);
+  }
+  if ((m = q.match(/^(?:kl\.? ?)?(\d{1,2})(?:[:.](\d{2}))?$/))) {
+    const hour = Number(m[1]), minute = Number(m[2] ?? '0');
+    if (hour > 23 || minute > 59) return null;
+    return nextStockholmTime(now, clockOf(m[1], m[2], '00:00'));
+  }
+  return null;
+}
 
 /**
  * Who an administrator lets a connector reach (D23). `all` is every signed-in person; `selected` matches a person whose
@@ -245,7 +385,16 @@ export type Area = Static<typeof AreaSchema>;
 export const ActInput = object({ actionId: id, refs: Type.Optional(Type.Array(Type.String({ maxLength: 200 }), { maxItems: 50 })) });
 export type ActInput = Static<typeof ActInput>;
 
-export const AttentionSchema = object({ used: Type.Integer(), budget: Type.Integer(), bundledUntil: Type.Union([Type.String(), Type.Null()]) });
+/** The day's rhythm (D28): the review, the bundles and the quiet hours as Stockholm wall-clock times that the scheduler and the page both read. */
+export const dayRhythm = { review: '06:00', bundles: ['12:00', '16:00'], quiet: '17:00' } as const;
+/** One point on the day track: what it is, when (HH:MM Stockholm), whether it has passed, and for an interruption the card it pushed. */
+export const RhythmPointSchema = object({
+  kind: Type.Union([Type.Literal('review'), Type.Literal('interruption'), Type.Literal('bundle'), Type.Literal('quiet')]),
+  at: Type.String(), state: Type.Union([Type.Literal('done'), Type.Literal('next'), Type.Literal('later')]),
+  title: Type.Optional(Type.String()),
+});
+export type RhythmPoint = Static<typeof RhythmPointSchema>;
+export const AttentionSchema = object({ used: Type.Integer(), budget: Type.Integer(), bundledUntil: Type.Union([Type.String(), Type.Null()]), rhythm: Type.Array(RhythmPointSchema) });
 export type Attention = Static<typeof AttentionSchema>;
 
 /** The composer's input: text plus the chips the person attached (D12). `conversationId` continues an earlier conversation. */

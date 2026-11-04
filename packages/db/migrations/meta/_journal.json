@@ -57,6 +57,20 @@
       "when": 1793808074083,
       "tag": "0007_lame_dexter_bennett",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793810829562,
+      "tag": "0008_overconfident_captain_america",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793812610807,
+      "tag": "0009_lovely_wendigo",
+      "breakpoints": true
     }
   ]
 }

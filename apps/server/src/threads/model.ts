@@ -9,14 +9,14 @@ import type { MessageMeta, Thread } from '@clew/contracts';
  */
 
 /** A thread as a use case creates it. The store adds nothing: timestamps and ids come from the caller. */
-export interface NewThread extends Omit<Thread, 'messages' | 'proposals' | 'receipt' | 'handledAt' | 'remindedAt'> { personId: string }
-export type ThreadPatch = Partial<Pick<Thread, 'state' | 'title' | 'summary' | 'items' | 'actions' | 'deadline' | 'waitingOn' | 'receipt' | 'handledAt' | 'updatedAt' | 'trigger' | 'remindedAt'>>;
+export interface NewThread extends Omit<Thread, 'messages' | 'proposals' | 'receipt' | 'handledAt' | 'remindedAt' | 'snoozedUntil'> { personId: string }
+export type ThreadPatch = Partial<Pick<Thread, 'state' | 'title' | 'summary' | 'items' | 'actions' | 'deadline' | 'waitingOn' | 'receipt' | 'handledAt' | 'updatedAt' | 'trigger' | 'remindedAt' | 'snoozedUntil'>>;
 export interface NewMessage { role: 'assistant' | 'user'; body: string; at: string; meta?: MessageMeta }
 export interface AuditEntry { actor: string; action: string; subject: string; at: string; details?: Record<string, unknown> }
 export interface JobInput { id: string; kind: string; runAt: string; payload?: Record<string, unknown> }
 
 /** What a reminder timer carries back when it fires (D17). Declared here so the workflow, the activity and the use case share one shape. */
-export interface ReminderInput { personId: string; threadId: string; title: string; area: string; seconds: number; requestedAt: string }
+export interface ReminderInput { personId: string; threadId: string; title: string; area: string; seconds: number; requestedAt: string; /** A snooze's timer (D29): the card comes back without a badge or a toast. */ silent?: boolean }
 
 /** Writes inside one transaction. The audit row of a mutation is written through the same `tx`, so it commits or rolls back with the rest. */
 export interface ThreadTx {
@@ -46,7 +46,7 @@ export interface ThreadStore {
 /** The timers behind "Påminn mig" (D17). Temporal runs them; the memory adapter records them. */
 export interface ReminderTimers {
   /** Rejects when the timer service cannot be reached. */
-  start(input: { workflowId: string; personId: string; threadId: string; title: string; area: string; seconds: number; requestedAt: string }): Promise<void>;
+  start(input: { workflowId: string; personId: string; threadId: string; title: string; area: string; seconds: number; requestedAt: string; silent?: boolean }): Promise<void>;
   /** Best effort: a timer that already fired or is gone is not an error. */
   cancel(workflowId: string): Promise<void>;
 }

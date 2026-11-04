@@ -37,7 +37,7 @@ const RouterLink = forwardRef<HTMLAnchorElement, { href?: string; to?: string } 
   return <Link ref={ref} to={target} {...rest} />;
 });
 /**
- * Routes: the start page is one stream with lenses. `/omrade/:area` filters it, `/hanterat` is the person's log,
+ * Routes: the start page is one stream with lenses. `/omrade/:area` filters it, `/pagar`, `/inte-nu` and `/hanterat` open the three piles (D28),
  * `/vy/...` opens a view in the side panel and `/samtal/:id` reopens a conversation in the row, all addressable.
  */
 function App() {
@@ -53,6 +53,8 @@ function App() {
     <Route path="/" element={start} />
     <Route path="/omrade/:area" element={start} />
     <Route path="/hanterat" element={start} />
+    <Route path="/pagar" element={start} />
+    <Route path="/inte-nu" element={start} />
     <Route path="/vy/kort/:threadId/:actionId" element={start} />
     <Route path="/vy/:capability" element={start} />
     <Route path="/samtal/:conversationId" element={start} />
