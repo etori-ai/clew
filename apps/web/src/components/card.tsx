@@ -5,6 +5,13 @@ import { today } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
 import { useConversation } from './conversation-context';
 
+/**
+ * The area as a category tag (Astryx Badge/Token guidance: colour variants classify, status variants demand action): one
+ * colour per area, stable across the page, so a row is placed at a glance. Unknown areas get a colour from their id.
+ */
+const areaColors: Record<string, 'blue' | 'teal' | 'purple' | 'orange' | 'pink' | 'green' | 'cyan' | 'yellow'> = { kalender: 'blue', personal: 'teal', budget: 'purple', kvalitet: 'orange', 'viktigt-nu': 'pink', 'mitt-pass': 'green', fragor: 'cyan' };
+const palette = ['blue', 'teal', 'purple', 'orange', 'pink', 'green', 'cyan', 'yellow'] as const;
+export const areaColor = (id: string) => areaColors[id] ?? palette[[...id].reduce((n, ch) => n + ch.charCodeAt(0), 0) % palette.length]!;
 const outcomeDot = { done: { variant: 'success', label: 'Klart' }, unknown: { variant: 'warning', label: 'Okänt' }, failed: { variant: 'error', label: 'Misslyckades' }, skipped: { variant: 'neutral', label: 'Inte skickad' } } as const;
 const shortDate = (d: string) => new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'short' }).format(new Date(d.slice(0, 10) + 'T12:00:00'));
 const clock = (iso: string) => new Date(iso).toLocaleTimeString('sv-SE', { timeStyle: 'short' });
@@ -225,12 +232,14 @@ function State({ thread }: { thread: Thread }) {
   if (thread.waitingOn) return <Text type="supporting">Väntar på {thread.waitingOn}</Text>;
   return <Deadline thread={thread} />;
 }
-/** The metadata line: the area, the position in the group, the source and the time, then the reason as a token (D28) and the one or two badges that need a hand. */
-function Meta({ thread, areaTitle, position, compact, summary }: { thread: Thread; areaTitle: string; position?: string; compact: boolean; summary?: boolean }) {
+/** The metadata line: the area as a category token, the position in the group, the source and the time, then the reason as a token (D28), the conversation as a dot, and the one or two badges that need a hand. */
+function Meta({ thread, areaTitle, position, compact, summary, inConversation }: { thread: Thread; areaTitle: string; position?: string; compact: boolean; summary?: boolean; inConversation?: boolean }) {
   const open = thread.state === 'open';
   const draft = thread.messages.at(-1)?.meta?.draft;
   return <HStack gap={2} vAlign="center" wrap="wrap">
-    <Text type="supporting">{summary && thread.summary ? `${thread.summary} · ` : ''}{areaTitle}{position ? ` · ${position}` : ''} · {thread.trigger.source} · <Timestamp value={thread.trigger.at} format="time" hasTooltip={false} /></Text>
+    <Token size="sm" color={areaColor(thread.area)} label={areaTitle} />
+    <Text type="supporting">{summary && thread.summary ? `${thread.summary} · ` : ''}{position ? `${position} · ` : ''}{thread.trigger.source} · <Timestamp value={thread.trigger.at} format="time" hasTooltip={false} /></Text>
+    {inConversation && <StatusDot variant="accent" label="I samtalet" />}
     {/* Why the card is here, as a token that can be read and announced, never a tooltip (D28). A token never wraps, so a phone gets the same words as text (1.4.10). */}
     {compact ? <Text type="supporting">Varför: {thread.trigger.reason}</Text> : <Token size="sm" color="gray" label={`Varför: ${thread.trigger.reason}`} />}
     {draft && open && <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Att bekräfta" />}
@@ -264,7 +273,7 @@ export function GenericCard({ thread, areaTitle, position, compact, headingLevel
   return <Card padding={3} elevation={elevation} variant={variant}>
     <VStack gap={2} as="article" tabIndex={-1} aria-label={`Tråd: ${thread.title}`} id={`thread-${thread.id}`} aria-current={inConversation ? 'true' : undefined}>
       <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-        <Meta thread={thread} areaTitle={areaTitle} position={position} compact={compact} />
+        <Meta thread={thread} areaTitle={areaTitle} position={position} compact={compact} inConversation={inConversation} />
         <State thread={thread} />
       </HStack>
       <Heading ref={title} tabIndex={-1} level={4} accessibilityLevel={headingLevel}>{receipt ? receipt.headline : thread.title}</Heading>
@@ -299,11 +308,12 @@ export function ThreadRow({ thread, areaTitle, compact, notice = false, onChange
   const { error, why } = actions;
   const conversation = useConversation();
   const level = notice ? 'notice' : attentionLevel(thread, today());
-  return <ListItem id={`thread-${thread.id}`} tabIndex={-1} align="start" isSelected={conversation.chipped.includes('thread:' + thread.id)}
+  // The conversation is shown as a dot in the metadata, not as the row's selected state: a selected row paints its whole surface, which reads as a broken card when it stands alone.
+  return <ListItem id={`thread-${thread.id}`} tabIndex={-1} align="start"
     startContent={notice ? <Icon icon="info" color="info" /> : undefined}
     label={<Button variant="ghost" size="sm" label={thread.title} aria-expanded={false} onClick={() => onExpand(thread.id)} />}
     description={<VStack gap={1}>
-      <Meta thread={thread} areaTitle={areaTitle} compact={compact} summary />
+      <Meta thread={thread} areaTitle={areaTitle} compact={compact} summary inConversation={conversation.chipped.includes('thread:' + thread.id)} />
       {why && <WhyLine thread={thread} />}
       {error && <Text as="p" role="alert" color="accent">{error}</Text>}
       <ActionRow thread={thread} level={level} actions={actions} />

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { isSnoozed, streamGroup, type Area, type AssistantStatus, type Attention, type CalendarEvent, type RhythmPoint, type SessionUser, type Thread, type TodayView, type ViewRef } from '@clew/contracts';
-import { Banner, Button, ChatLayout, DropdownMenu, EmptyState, Heading, HStack, Icon, IconButton, Layout, LayoutContent, List, MoreMenu, Step, Stepper, Text, ToggleButton, ToggleButtonGroup, Toolbar, VisuallyHidden, VStack, useMediaQuery, useToast } from '@clew/ui';
+import { Banner, Button, ChatLayout, Divider, DropdownMenu, EmptyState, Heading, HStack, Icon, IconButton, Layout, LayoutContent, List, MoreMenu, Step, Stepper, Text, ToggleButton, ToggleButtonGroup, Toolbar, VisuallyHidden, VStack, useMediaQuery, useToast } from '@clew/ui';
 import { timeLabel, today } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
 import { Composer } from '../components/composer';
@@ -163,8 +163,9 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   /** A group's threads: runs of rows in one list, a card where a thread is open. */
   const records = (list: Thread[], options: { lead?: boolean; notice?: boolean; headingLevel?: 2 | 3 } = {}) => {
     const out: React.ReactNode[] = []; let rows: React.ReactNode[] = [];
-    // The list's text sits on the column's content line (edge flush): a Section with padding 0 would bleed into the gutters, which the scroll container clips.
-    const flush = () => { if (rows.length) { out.push(<List key={`rows-${out.length}`} hasDividers density="balanced" edge="flush">{rows}</List>); rows = []; } };
+    // A run of rows is one list fenced by dividers (the structure guide: rows with dividers, no card), its text on the column's content
+    // line (edge flush). A Section would bleed to the Layout's inset, which here overlaps the group heading and is clipped by the scroll container.
+    const flush = () => { if (rows.length) { out.push(<VStack key={`rows-${out.length}`} gap={0}><Divider /><List hasDividers density="balanced" edge="flush">{rows}</List><Divider /></VStack>); rows = []; } };
     list.forEach((t, i) => {
       const asCard = mobile || t.proposals.length > 0 || opened.has(t.id) || (options.lead && i === 0);
       if (asCard) { flush(); out.push(card(t, options.lead ? `${i + 1} av ${list.length}` : undefined, options.headingLevel)); }
