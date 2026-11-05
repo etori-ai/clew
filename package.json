@@ -12,7 +12,7 @@
     "dev:web": "bun run --cwd apps/web dev",
     "build": "bun run --cwd apps/web build",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "bun test tests/unit",
+    "test": "bun test tests/unit apps/web/tests",
     "test:db": "bun test tests/db",
     "purity": "bun scripts/purity-check.ts",
     "test:node": "bun run --cwd apps/server test:node",

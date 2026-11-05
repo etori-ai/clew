@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react';
-import { Theme } from '@astryxdesign/core/theme';
 import { LayerProvider } from '@astryxdesign/core/Layer';
 import { InternationalizationProvider } from '@astryxdesign/core/i18n';
-import { clewTheme } from './theme';
+import { AppearanceProvider } from './appearance';
+import type { Branding } from './branding';
 import sv from '@astryxdesign/core/locales/sv-SE.json';
 
-// Strictly Astryx: this package re-exports the components the app composes with and adds no components of its own.
+// Strictly Astryx: this package re-exports the components the app composes with and owns the shared providers.
 export { Button } from '@astryxdesign/core/Button';
 export { IconButton } from '@astryxdesign/core/IconButton';
 export { Card } from '@astryxdesign/core/Card';
@@ -68,7 +68,7 @@ export { TopNav, TopNavHeading, TopNavItem } from '@astryxdesign/core/TopNav';
 export { Section } from '@astryxdesign/core/Section';
 export { useAnnounce, useMediaQuery, useStreamingText } from '@astryxdesign/core/hooks';
 // Glyphs beyond Astryx's registry come from Heroicons (MIT), the set Astryx's own templates draw with; each is named here once.
-export { AtSymbolIcon } from '@heroicons/react/24/outline';
+export { AtSymbolIcon, BellIcon } from '@heroicons/react/24/outline';
 export { SessionBoundary, sessionFetch, signOut, type BrowserSession } from './session';
 export { WeekAgenda, type AgendaItem } from './week-agenda';
 export { EventCalendar, type CalendarView } from './calendar';
@@ -82,6 +82,7 @@ export { Calendar } from '@astryxdesign/core/Calendar';
 export { Selector } from '@astryxdesign/core/Selector';
 export { Field, FieldStatus } from '@astryxdesign/core/Field';
 export { Popover } from '@astryxdesign/core/Popover';
+export { useAppearance } from './appearance';
 
 // The shipped sv-SE catalog is incomplete. Keys reachable by this POC are covered here.
 export const swedish = { ...sv,
@@ -111,11 +112,11 @@ export const swedish = { ...sv,
   '@astryx.kbd.shortcut': { defaultMessage: '{shortcut} + {key}' },
 };
 /**
- * The plain Astryx look: Neutral with the one override in `theme.ts` (D31), Swedish strings. LayerProvider keeps the toast
+ * The installation's Astryx theme (D38) and Swedish strings. LayerProvider keeps the toast
  * stack inside these providers: without it Astryx mounts a fallback root that gets neither the Swedish catalog nor the theme.
  */
-export function Providers({ children }: { children: ReactNode }) {
+export function Providers({ branding, children }: { branding: Branding; children: ReactNode }) {
   return <InternationalizationProvider locale="sv-SE" messages={{ 'sv-SE': swedish }}>
-    <Theme theme={clewTheme} mode="light"><LayerProvider>{children}</LayerProvider></Theme>
+    <AppearanceProvider branding={branding}><LayerProvider>{children}</LayerProvider></AppearanceProvider>
   </InternationalizationProvider>;
 }

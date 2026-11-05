@@ -43,6 +43,9 @@ the reasoning. Longer designs live in `docs/architecture/`, and the reviews that
 | [D34](D34-the-box-is-the-page-and-the-push-is-its-brief.md) | The box is the page; the push is its brief; one rail orders everything by time and carries the product and the person (no TopNav); four kinds (requirement, proposal, event, figure); plain Neutral as drawn | 2026-11-04, amended 2026-11-05 | ui | accepted, implemented |
 | [D35](D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md) | Errands from several case systems: one connector per system, a shared profile for the reads, and a card's buttons reach only its own connector | 2026-11-05 | integrations | accepted, card-action rule built; errand profile not built |
 | [D36](D36-an-answer-is-drawn-as-it-is-written.md) | An answer is drawn as it is written (server-sent steps and text, the question at once, Stoppa, skeletons on first read); the landing's box never moves under the cursor; the model menu always shows; "Lägg till i samtalet" is an icon | 2026-11-05 | ui | accepted, built |
+| [D37](D37-header-logo-is-installation-branding.md) | One configurable header logo per installation, rendered by the shared shell through Astryx's navigation heading icon slot | 2026-11-05 | ui | accepted, extended by D38 |
+| [D38](D38-municipal-branding-uses-astryx-themes.md) | Municipal logo and colour profiles share one contract; Sundsvall, Neutral and custom colours extend Astryx themes | 2026-11-05 | ui | accepted, extended by D39 |
+| [D39](D39-compact-header-profile-and-reminders.md) | Compact shared header with profile, persisted appearance and existing reminder links | 2026-11-05 | ui | accepted |
 
 ## Adding a decision
 

@@ -2,9 +2,11 @@
   "name": "@clew/ui",
   "private": true,
   "version": "0.0.1",
+  "type": "module",
   "astryx": { "theme": "@astryxdesign/theme-neutral" },
   "exports": {
     ".": "./src/index.tsx",
+    "./branding": "./src/branding.ts",
     "./styles.css": "./src/styles.css"
   },
   "dependencies": {
