@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react';
 import type { SessionUser } from '@clew/contracts';
-import { BreadcrumbItem, Breadcrumbs, Button, EmptyState, HStack, Heading, Layout, LayoutContent, Section, SideNav, SideNavItem, SideNavSection, Text, VStack } from '@clew/ui';
+import { BreadcrumbItem, Breadcrumbs, Button, EmptyState, HStack, Heading, Layout, LayoutContent, SideNav, SideNavItem, SideNavSection, Text, VStack } from '@clew/ui';
 import { Shell, mobileQuery } from '../../components/shell';
 import { useMediaQuery } from '@clew/ui';
 
 /**
  * The administration surface (D23, D24) on the shared shell (D31): the SideNav holds the admin sections (Anslutna
- * system and Modeller; the drawer on a phone), and the page sits in a Section with a bounded width so a table does not
- * run to the edge of a wide screen. Only Astryx.
+ * system and Modeller; the drawer on a phone), and the page sits in a Layout whose contentWidth bounds and centres it, so
+ * a table does not run to the edge of a wide screen and the page lines up with the start page's column. Only Astryx.
  */
 export type Crumb = { label: string; href?: string };
 export type AdminSection = 'anslutningar' | 'modeller';
@@ -23,8 +23,9 @@ export function AdminShell({ user, crumbs, children, section = 'anslutningar' }:
         <Text type="supporting" as="p">Du styr vilka system Startsidan är ansluten till, vilka modeller som svarar i frågerutan och vem som ser dem. Vad var och en får göra i ett system avgör systemet självt.</Text>
       </SideNavSection>
     </SideNav>}>
-    {/* The page's gutters live on this Section: a Layout, or a Section with padding 0, is full-bleed and would cancel the shell's padding. */}
-    <Section variant="transparent" padding={mobile ? 3 : 6} maxWidth={1216}>
+    {/* Layout's contentWidth bounds the page and centres it in the content area, the same mechanism as the start page's
+        column; the Layout owns its gutters through `padding`, and grows with the page so the shell keeps the scroll. */}
+    <Layout height="auto" contentWidth={1216} padding={mobile ? 3 : 6} content={<LayoutContent isScrollable={false}>
       <VStack gap={5}>
         <Breadcrumbs label="Du är här" variant="supporting">
           <BreadcrumbItem href="/">Startsidan</BreadcrumbItem>
@@ -33,7 +34,7 @@ export function AdminShell({ user, crumbs, children, section = 'anslutningar' }:
         </Breadcrumbs>
         {children}
       </VStack>
-    </Section>
+    </LayoutContent>} />
   </Shell>;
 }
 /** A signed-in person without the grant capability who reaches /admin: no data, one way back. The server refuses every call anyway. */
