@@ -101,7 +101,7 @@ test.describe('administration', () => {
       await expect(dialog.getByRole('heading', { level: 3, name: 'Aktivera' })).toBeFocused();
       await expect(dialog.getByText('Chefer')).toBeVisible();
       await expectNoAxeViolations(page);
-      await dialog.getByRole('button', { name: 'Sätt på' }).click();
+      await dialog.getByRole('button', { name: 'Slå på' }).click();
       await expect(dialog).toHaveCount(0);
       await expect(page.getByRole('table').getByRole('link', { name: 'Nytt system' })).toBeVisible();
     });

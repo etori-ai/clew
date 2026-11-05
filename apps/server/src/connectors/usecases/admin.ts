@@ -118,7 +118,7 @@ export function connectorUsecases(deps: AdminDeps) {
     if (patch.state === 'enabled' && !row.bundled && !m) {
       // A draft that never answered: try once more now, so enabling fails loudly instead of registering nothing.
       try { const fetched = await transport.fetchManifest(row.url!, row.id); await store.recordHealth(id, { status: 'ok', at }, fetched, at); }
-      catch (error) { throw new InputError('Anslutningen svarar inte, så den kan inte sättas på: ' + (error as Error).message); }
+      catch (error) { throw new InputError('Anslutningen svarar inte, så den kan inte slås på: ' + (error as Error).message); }
     }
     const changes: Array<{ action: string; details: Record<string, unknown> }> = [];
     const next: Partial<ConnectorRecord> = {};

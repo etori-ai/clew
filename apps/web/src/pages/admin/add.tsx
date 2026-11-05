@@ -39,7 +39,7 @@ export function AddConnectorDialog({ isOpen, onClose, units }: Props) {
   const fetched = !!result?.connector.counts.capabilities;
   // Astryx's form-wizard-dialog: the title and the stepper pinned, the step scrolling, the buttons pinned in the footer.
   const header = <>
-    <DialogHeader title="Anslut system" subtitle={result ? 'Anslutningen är sparad som utkast tills du sätter på den.' : undefined} onOpenChange={open => { if (!open) close(!!result); }} hasDivider={false} />
+    <DialogHeader title="Anslut system" subtitle={result ? 'Anslutningen är sparad som utkast tills du slår på den.' : undefined} onOpenChange={open => { if (!open) close(!!result); }} hasDivider={false} />
     <LayoutHeader hasDivider={false}>
       <Stepper activeStep={step} label="Steg" density="compact" horizontalOptions={{ minimumStepWidth: 100, collapsedVariant: 'withLabel' }}>
         {steps.map((s, i) => <Step key={s} step={i} label={s} />)}
@@ -55,7 +55,7 @@ export function AddConnectorDialog({ isOpen, onClose, units }: Props) {
         {step === 2 && <Button variant="primary" label="Nästa" onClick={() => setStep(3)} />}
         {step === 3 && <>
           <Button variant="secondary" label="Spara som utkast" isDisabled={busy} clickAction={() => finish('draft')} />
-          <Button variant="primary" label="Sätt på" isDisabled={busy || !fetched} clickAction={() => finish('enabled')} />
+          <Button variant="primary" label="Slå på" isDisabled={busy || !fetched} clickAction={() => finish('enabled')} />
         </>}
       </>}>
     <VStack gap={4}>
@@ -69,7 +69,7 @@ export function AddConnectorDialog({ isOpen, onClose, units }: Props) {
         {busy && <Spinner label="Kontrollerar anslutningen …" />}
         {!busy && result && <>
           <CheckResult report={result.report} action={!result.report.ok && <Button size="sm" variant="secondary" label="Försök igen" clickAction={retry} />}
-            failure={fetched ? { description: 'Utkastet är sparat. Rätta tjänsten och kontrollera igen.' } : { status: 'warning', title: 'Tjänsten svarade inte.', description: 'Utkastet är sparat utan manifest. Starta tjänsten och kontrollera igen, eller sätt på senare.' }} />
+            failure={fetched ? { description: 'Utkastet är sparat. Rätta tjänsten och kontrollera igen.' } : { status: 'warning', title: 'Tjänsten svarade inte.', description: 'Utkastet är sparat utan manifest. Starta tjänsten och kontrollera igen, eller slå på senare.' }} />
         </>}
       </VStack>}
       {step === 2 && <VStack gap={3}>

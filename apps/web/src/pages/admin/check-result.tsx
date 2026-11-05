@@ -26,7 +26,7 @@ interface Failure { status?: 'warning' | 'error'; title?: string; description: s
 function verdict(report: CheckReport, failure?: Failure) {
   const fail = counted(report.items, 'fail'), warn = counted(report.items, 'warn');
   if (!report.ok) return { status: failure?.status ?? 'error', title: failure?.title ?? `Kontrollen hittade ${fail} fel.`, description: failure?.description ?? 'Rätta tjänsten och testa igen.' } as const;
-  if (warn) return { status: 'warning', title: `Anslutningen fungerar, med ${warnings(warn)}.`, description: 'Läs varningarna innan du sätter på den.' } as const;
+  if (warn) return { status: 'warning', title: `Anslutningen fungerar, med ${warnings(warn)}.`, description: 'Läs varningarna innan du slår på den.' } as const;
   return { status: 'success', title: 'Anslutningen fungerar.', description: `Alla ${report.items.length} kontroller gick bra.` } as const;
 }
 

@@ -125,7 +125,7 @@ focusable in it (the diff list) scrolls in a labelled `ScrollableArea` that take
 3. *Vem ser det.* The audience editor (below) plus two `Switch`es: "Skicka kort" (scan) and "Erbjud
    assistenten" (tools), both on by default. Which views are tools in the menu (D40) is chosen afterwards, on the connector's
    page.
-4. *Aktivera.* `MetadataList` summary and two buttons: "Spara som utkast" (secondary) and "Sätt på"
+4. *Aktivera.* `MetadataList` summary and two buttons: "Spara som utkast" (secondary) and "Slå på"
    (primary). The default is the draft, so a connector is never live by accident.
 
 Focus moves to the step heading on each step; Escape asks before discarding a draft (`AlertDialog`).
@@ -218,7 +218,7 @@ the dialog's `maxHeight`, and the actions in `LayoutFooter`, so an endpoint that
 buttons off screen. "Lägg till leverantör" has two steps (Adress och nyckel: name, an id suggested from the name, base
 URL, key that may be empty; then Modeller: the test's findings and the picker). "Lägg till modell" asks the endpoint for
 its list as it opens (the same call as "Testa", cached a minute) and shows the same picker: the listed models not added
-yet as a `CheckboxList`, a field for an id the endpoint does not list, and "Sätt på dem direkt". On the provider page,
+yet as a `CheckboxList`, a field for an id the endpoint does not list, and "Slå på dem direkt". On the provider page,
 "Testa" says how many listed models are not added and opens that dialog. `model.tsx`: Översikt (Testa, Gör till standard or Ta bort
 som standard, Ta bort; `MetadataList`; a form for the name, the description and the endpoint's id; the Verktyg
 switch), Vem kan välja den (the audience editor, worded for a model), Historik; a phone gets the sections as a

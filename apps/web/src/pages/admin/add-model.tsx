@@ -38,8 +38,8 @@ const pickedIds = (p: ModelPick, existing: string[]) => {
 };
 const addLabel = (n: number) => n === 0 ? 'Lägg till' : n === 1 ? 'Lägg till 1 modell' : `Lägg till ${n} modeller`;
 const addedMessage = (n: number, enable: boolean) => n === 1
-  ? `1 modell tillagd${enable ? ' och påslagen' : ', avstängd tills du sätter på den'}.`
-  : `${n} modeller tillagda${enable ? ' och påslagna' : ', avstängda tills du sätter på dem'}.`;
+  ? `1 modell tillagd${enable ? ' och påslagen' : ', avstängd tills du slår på den'}.`
+  : `${n} modeller tillagda${enable ? ' och påslagna' : ', avstängda tills du slår på dem'}.`;
 /** Add the picked models, each its own call and audit row, switched on afterwards when asked. Returns the toast. */
 async function addPicked(providerId: string, ids: string[], enable: boolean): Promise<string> {
   for (const model of ids) {
@@ -67,7 +67,7 @@ export function ModelPicker({ listed, existing, value, onChange }: { listed: str
       <TextInput label={fresh.length ? 'Eller en modell som inte finns i listan' : 'Modellens id hos leverantören'} value={value.typed} onChange={t => onChange({ ...value, typed: t })}
         description="Exakt som leverantören skriver det, till exempel gpt-oss:120b." autoComplete="off" hasAutoCorrect={false} autoCapitalize="none" status={typedError ? { type: 'error', message: typedError } : undefined} />
     </FormLayout>
-    <Switch label="Sätt på dem direkt" description="Annars läggs de till avstängda, och du sätter på dem i listan." value={value.enable} onChange={enable => onChange({ ...value, enable })} />
+    <Switch label="Slå på dem direkt" description="Annars läggs de till avstängda, och du slår på dem i listan." value={value.enable} onChange={enable => onChange({ ...value, enable })} />
   </VStack>;
 }
 
@@ -140,7 +140,7 @@ export function AddModelDialog({ provider, onClose }: { provider: Pick<ProviderS
   // The frame and its DialogHeader are always rendered: the Dialog takes its name from a title present when it mounts.
   return <Dialog isOpen={!!provider} onOpenChange={open => { if (!open) close(); }} width={620} purpose="form">
     <DialogFrame error={error}
-      header={<DialogHeader title="Lägg till modell" subtitle={provider ? `Hos ${provider.title}. Modellerna läggs till avstängda om du inte sätter på dem direkt.` : undefined} onOpenChange={open => { if (!open) close(); }} hasDivider={false} />}
+      header={<DialogHeader title="Lägg till modell" subtitle={provider ? `Hos ${provider.title}. Modellerna läggs till avstängda om du inte slår på dem direkt.` : undefined} onOpenChange={open => { if (!open) close(); }} hasDivider={false} />}
       secondary={<Button variant="ghost" label="Avbryt" onClick={close} />}
       primary={<Button variant="primary" label={addLabel(ids.length)} isDisabled={busy || !ids.length || !provider} clickAction={() => run(async () => { if (!provider) return; const message = await addPicked(provider.id, ids, pick.enable); close(); return message; })} />}>
       {provider && <VStack gap={4}>
