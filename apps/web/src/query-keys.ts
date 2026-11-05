@@ -29,5 +29,6 @@ export const keys = {
     models: ['admin', 'models'] as const,
     model: (id: string) => ['admin', 'model', id] as const,
     provider: (id: string) => ['admin', 'provider', id] as const,
+    listed: (id: string) => ['admin', 'listed', id] as const,
   },
 };

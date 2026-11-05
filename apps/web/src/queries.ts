@@ -44,4 +44,6 @@ export const adminQueries = {
   models: queryOptions({ queryKey: keys.admin.models, queryFn: () => api.admin.models() }),
   model: (id: string) => queryOptions({ queryKey: keys.admin.model(id), queryFn: () => api.admin.model(id) }),
   provider: (id: string) => queryOptions({ queryKey: keys.admin.provider(id), queryFn: () => api.admin.provider(id) }),
+  /** What a provider's endpoint lists, for "Lägg till modell": the same check as "Testa", asked once a minute at most and never retried. */
+  listed: (id: string) => queryOptions({ queryKey: keys.admin.listed(id), queryFn: () => api.admin.testProvider(id), staleTime: 60_000, retry: false }),
 };

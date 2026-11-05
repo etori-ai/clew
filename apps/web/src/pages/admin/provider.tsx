@@ -9,7 +9,7 @@ import { keys } from '../../query-keys';
 import { useAdminAction } from '../../mutations';
 import { errorMessage } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
-import { AddModelDialog, Findings, ListedModels } from './add-model';
+import { AddModelDialog, Findings } from './add-model';
 import { History } from './model';
 import { actorLabel, audienceLabel, modelStatusOf, providerHealthLabel, providerStatusOf } from './labels';
 import { AdminShell, PageLead } from './shell';
@@ -43,6 +43,8 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
   if (!p || !draft) return <AdminShell user={user} section="modeller" crumbs={crumbs(id)}>{error ? <Text as="p" role="alert" color="accent">{error}</Text> : <Text type="supporting" role="status">Läser leverantören …</Text>}</AdminShell>;
   const s = providerStatusOf(p);
   const models = (list.data?.models ?? []).filter(m => m.providerId === id);
+  // After "Testa": the ids the endpoint lists that are not added yet, offered through the same dialog as "Lägg till modell".
+  const notAdded = report ? report.models.filter(name => !models.some(m => m.model === name)) : [];
   const changed = draft.title !== p.title || draft.baseUrl !== p.baseUrl;
   const closeKey = () => { setKeyOpen(false); setKey(''); };
   return <AdminShell user={user} section="modeller" crumbs={crumbs(p.title)}>
@@ -61,7 +63,10 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
       </>} />
       {report && <VStack gap={3}>
         <Findings report={report} label="Testets resultat" />
-        {report.models.length > 0 && <ListedModels providerId={id} listed={report.models} existing={models.map(m => m.model)} />}
+        {notAdded.length > 0 && <HStack gap={2} vAlign="center" wrap="wrap">
+          <Text>{notAdded.length === 1 ? 'En modell som leverantören listar är inte tillagd.' : `${notAdded.length} modeller som leverantören listar är inte tillagda.`}</Text>
+          <Button size="sm" variant="secondary" label="Välj modeller att lägga till" onClick={() => setAdding(true)} />
+        </HStack>}
       </VStack>}
       <MetadataList columns={mobile ? 'single' : 'multi'}>
         <MetadataListItem label="Id">{p.id}</MetadataListItem>

@@ -1,4 +1,5 @@
 import { announcements, composer, desktop, expect, expectNoAxeViolations, focused, hiddenFocusStops, narrow, open, phone, reflowProblems, test } from './support';
+import { modelProviders, providerDetail, providerReport } from './data';
 
 /**
  * Modeller (D24): the providers and models an administrator governs, the add-provider dialog, one model's tabs and one
@@ -118,8 +119,51 @@ test.describe('model administration', () => {
       await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Nyckeln är bytt'));
       await page.getByRole('button', { name: 'Testa' }).click();
       await expect(page.getByRole('list', { name: 'Testets resultat' })).toContainText('listar 3 modeller');
-      await expect(page.getByRole('group', { name: 'Modeller att lägga till' }).getByRole('checkbox')).toHaveCount(3);
+      await expect(page.getByText('3 modeller som leverantören listar är inte tillagda.')).toBeVisible();
       await expectNoAxeViolations(page);
+      await page.getByRole('button', { name: 'Välj modeller att lägga till' }).click();
+      await expect(page.getByRole('dialog').getByRole('group', { name: 'Modeller att lägga till' }).getByRole('checkbox')).toHaveCount(3);
+    });
+    test('"Lägg till modell" asks the endpoint for its list and offers only what is not added yet, or an id by hand', async ({ page, api }) => {
+      api.admin = true;
+      await open(page, '/admin/modeller');
+      await page.getByRole('button', { name: 'Lägg till modell' }).first().click();
+      const dialog = page.getByRole('dialog');
+      const listed = dialog.getByRole('group', { name: 'Modeller att lägga till' });
+      await expect(listed.getByRole('checkbox')).toHaveCount(1);
+      await expect(listed.getByRole('checkbox', { name: 'llama3.3:70b' })).toBeVisible();
+      await expect(dialog.getByText('Leverantören listar 3, varav 2 redan är tillagda.', { exact: false })).toBeVisible();
+      await expect(dialog.getByRole('button', { name: 'Lägg till', exact: true })).toBeDisabled();
+      await dialog.getByRole('textbox', { name: /^Eller en modell som inte finns i listan/ }).fill('gpt-oss:20b');
+      await expect(dialog.getByText('Modellen är redan tillagd.')).toBeVisible();
+      await dialog.getByRole('textbox', { name: /^Eller en modell som inte finns i listan/ }).fill('');
+      await listed.getByRole('checkbox', { name: 'llama3.3:70b' }).check();
+      await expectNoAxeViolations(page);
+      await dialog.getByRole('button', { name: 'Lägg till 1 modell' }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('1 modell tillagd, avstängd tills du sätter på den'));
+      await expect(page.getByRole('link', { name: 'llama3.3:70b' })).toBeVisible();
+    });
+    test('with a long model list on a short screen the list scrolls inside the dialog and its actions stay on screen', async ({ page, api }) => {
+      api.admin = true;
+      await page.setViewportSize({ width: 1280, height: 600 });
+      const many = Array.from({ length: 14 }, (_, i) => `modell-${String(i + 1).padStart(2, '0')}`);
+      const manga = { ...modelProviders()[0]!, id: 'manga', title: 'Många', models: 0, enabledModels: 0 };
+      // The endpoint lists fourteen models: this route answers the save before the shared fake does, and the fake knows the provider for the add.
+      await page.route('**/api/admin/providers', route => { api.providers = [...api.providers, manga]; return route.fulfill({ status: 201, json: { provider: providerDetail(manga), report: { ...providerReport, models: many } } }); });
+      await open(page, '/admin/modeller');
+      await page.getByRole('button', { name: 'Lägg till leverantör' }).click();
+      const dialog = page.getByRole('dialog');
+      await dialog.getByRole('textbox', { name: /^Namn/ }).fill('Många');
+      await dialog.getByRole('textbox', { name: /^Adress/ }).fill('http://manga.test/v1');
+      await dialog.getByRole('button', { name: 'Testa och spara' }).click();
+      await expect(dialog.getByRole('group', { name: 'Modeller att lägga till' }).getByRole('checkbox')).toHaveCount(14);
+      await expect(dialog.getByRole('button', { name: 'Klar' })).toBeInViewport();
+      await dialog.getByRole('checkbox', { name: 'modell-14' }).check();
+      const add = dialog.getByRole('button', { name: 'Lägg till 1 modell' });
+      await expect(add).toBeInViewport();
+      await add.click();
+      await expect(dialog).toHaveCount(0);
     });
   });
 

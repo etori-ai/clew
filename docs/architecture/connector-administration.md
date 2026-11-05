@@ -201,10 +201,14 @@ picked one; four count tiles (På, Problem, Avstängda, Leverantörer); one `Car
 table) with a `Toolbar` holding the provider's name as a link, its health as a `StatusDot` with the word, and
 "Lägg till modell"; under it a `Table` of its models (title as a link with a Standard `Badge`, the endpoint's id as
 `Code`, the description; Vem kan välja den; Verktyg; Status; the on/off `Switch`), `List` rows on a phone.
-`add-model.tsx`: "Lägg till leverantör" is a `Dialog` with a two-step `Stepper` (Adress och nyckel: name, an id
-suggested from the name, base URL, key that may be empty; then Modeller: the test's findings and, when the endpoint
-lists models, a `CheckboxList` of them with "Sätt på dem direkt", else one model by id); "Lägg till modell" adds one
-by id with a name and a description and opens its page. `model.tsx`: Översikt (Testa, Gör till standard or Ta bort
+`add-model.tsx`: both dialogs are Astryx's `form-wizard-dialog` composition, a `Layout` with `height="fill"` inside the
+`Dialog`: the `DialogHeader` (and the `Stepper`) pinned in the header, the step in `LayoutContent`, which scrolls against
+the dialog's `maxHeight`, and the actions in `LayoutFooter`, so an endpoint that lists many models never pushes the
+buttons off screen. "Lägg till leverantör" has two steps (Adress och nyckel: name, an id suggested from the name, base
+URL, key that may be empty; then Modeller: the test's findings and the picker). "Lägg till modell" asks the endpoint for
+its list as it opens (the same call as "Testa", cached a minute) and shows the same picker: the listed models not added
+yet as a `CheckboxList`, a field for an id the endpoint does not list, and "Sätt på dem direkt". On the provider page,
+"Testa" says how many listed models are not added and opens that dialog. `model.tsx`: Översikt (Testa, Gör till standard or Ta bort
 som standard, Ta bort; `MetadataList`; a form for the name, the description and the endpoint's id; the Verktyg
 switch), Vem kan välja den (the audience editor, worded for a model), Historik; a phone gets the sections as a
 menu, as on a connector. `provider.tsx`: the health `Banner`, Testa (findings, then the listed models not yet added
