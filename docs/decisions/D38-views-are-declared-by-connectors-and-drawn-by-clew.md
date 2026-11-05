@@ -1,6 +1,6 @@
 # D38 · A view is declared by the connector and drawn by Clew
 
-**Status:** accepted, built 2026-11-05; the kinds beyond the first four and a pinned view are not built · **Date:** 2026-11-05 · **Area:** ui
+**Status:** accepted, built 2026-11-05; the kinds beyond the first four are not built; a view in the menu is D40 · **Date:** 2026-11-05 · **Area:** ui
 
 **Decision.** A connector never draws. A read capability may declare a **view**: how its output is to be shown, as
 data in the manifest, from a closed catalogue Clew owns. Clew draws it with Astryx components, in every placement, with
@@ -48,8 +48,8 @@ or without a model.
 tiles; the area figure and Läget exist), `series` (a trend that can always be shown as its table; the Astryx search
 surfaced no chart component, so it needs its own decision like D27), and `sections` (an ordered stack of views for a
 page such as a follow-up dialogue). A row action that proposes a card. A view lifted to a full page. A view pinned to
-the rail for a unit by its manager, which needs a decision of its own: it is a manager-level setting Clew has none of
-today, and it must say why it is not the page builder the vision rules out. A person chip kind of its own (a chipped
+the rail for a unit by its manager: D40 puts a view in the menu when an administrator switches it on for the connector's
+audience, and leaves the manager's and the person's own pin open. A person chip kind of its own (a chipped
 row travels as a `document` chip, read back through `<id>.fetch`).
 
 **Why.** The product owner's requirement, 2026-11-05: connectors must be able to attach views, the views must work

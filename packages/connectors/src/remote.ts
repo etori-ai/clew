@@ -1,6 +1,6 @@
 import { Value } from '@sinclair/typebox/value';
 import { CapabilityError, type Actor, type Capability, type Clew, type Connector } from './index';
-import { viewProblem } from './views';
+import { menuProblem, viewProblem } from './views';
 import { CallResponseSchema, FigureResponseSchema, ConnectorManifestSchema, ScanResponseSchema, type ConnectorManifest } from './protocol';
 
 /**
@@ -34,6 +34,8 @@ export function parseManifest(document: unknown, expectedId?: string): Connector
     if (problem) throw new ManifestError(`Capability ${problem} (D38).`);
   }
   for (const a of manifest.areas) for (const s of a.standing) if (!manifest.capabilities.some(c => c.name === s)) throw new ManifestError(`Area ${a.id} lists unknown standing capability ${s}.`);
+  const menu = menuProblem(manifest.id, manifest.menu, manifest.capabilities);
+  if (menu) throw new ManifestError(`Manifest ${menu} (D40).`);
   return manifest;
 }
 export async function fetchManifest(url: string, expectedId?: string, fetchImpl: FetchLike = fetch): Promise<ConnectorManifest> {
@@ -96,6 +98,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
       } } : {}),
     })),
     capabilities,
+    ...(manifest.menu ? { menu: manifest.menu } : {}),
     ...(manifest.scan ? { scan: async (actor: Actor) => {
       const { status, json } = await post(transport, source, '/clew/scan', actor, { actor });
       if (status >= 400 || !Value.Check(ScanResponseSchema, json)) throw unavailable(source);

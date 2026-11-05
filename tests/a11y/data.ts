@@ -166,7 +166,7 @@ export const conversation = (source: Thread[], text: string, conversationId = 'k
 
 /** Administration (D23): two bundled connectors, one remote that is down, one draft. Typed against the admin contracts. */
 const summary = (values: Partial<ConnectorSummary> & Pick<ConnectorSummary, 'id' | 'source'>): ConnectorSummary => ({
-  bundled: false, kind: 'passthrough', url: `http://${values.id}:4010`, state: 'enabled', health: { status: 'ok', at: NOW }, audience: { mode: 'all' }, scanEnabled: true, toolsEnabled: true, registered: true,
+  bundled: false, kind: 'passthrough', url: `http://${values.id}:4010`, state: 'enabled', health: { status: 'ok', at: NOW }, audience: { mode: 'all' }, scanEnabled: true, toolsEnabled: true, menuEnabled: false, registered: true,
   counts: { capabilities: 5, execute: 2, tools: 3 }, manifestAt: NOW, secretChangedAt: NOW, createdAt: '2026-11-03T06:00:00.000Z', updatedAt: NOW, ...values });
 export const connectors = (): ConnectorSummary[] => [
   summary({ id: 'heroma', source: 'Heroma', bundled: true, url: null, secretChangedAt: null, counts: { capabilities: 9, execute: 3, tools: 5 } }),
@@ -174,7 +174,9 @@ export const connectors = (): ConnectorSummary[] => [
   summary({ id: 'hello', source: 'Hello', health: { status: 'unreachable', at: NOW, detail: 'ECONNREFUSED' } }),
   summary({ id: 'errands', source: 'SupportManagement', state: 'draft', registered: false, health: { status: 'untested', at: NOW }, manifestAt: null, counts: { capabilities: 6, execute: 2, tools: 4 } }),
 ];
+/** Hello declares a row for the menu (D40), as a connector added with the id telefonbok does; the others none, so both states of the switch are on the page. */
 export const connectorDetail = (c: ConnectorSummary): ConnectorDetail => ({ ...c, protocol: 1, scan: true, createdBy: 'person:mikael', updatedBy: 'person:mikael',
+  menu: c.id === 'hello' || c.id === 'telefonbok' ? { capability: `${c.id}.overview`, label: c.id === 'hello' ? 'Hello' : 'Telefonbok', icon: c.id === 'hello' ? 'book' : 'phone' } : null,
   capabilities: [
     { name: `${c.id}.overview`, kind: 'read', title: 'Översikt', description: 'Läget just nu.', model: true, roles: null, enabled: true, tool: c.toolsEnabled },
     { name: `${c.id}.approve`, kind: 'execute', title: 'Godkänn valda', description: 'Godkänner raderna.', model: false, roles: ['manager'], enabled: true, tool: false },
@@ -183,7 +185,7 @@ export const connectorDetail = (c: ConnectorSummary): ConnectorDetail => ({ ...c
   areas: [{ id: c.id, title: c.source, roles: ['manager', 'employee'], standing: [`${c.id}.overview`], figure: true }],
   history: [{ at: '2026-11-03T06:00:00.000Z', actor: 'person:mikael', action: 'connector.added', details: { url: c.url } }, { at: NOW, actor: 'person:mikael', action: 'connector.enabled', details: {} }] });
 export const checkReport: CheckReport = { ok: false, findings: [{ level: 'ok', text: 'manifest valid: 5 capabilities, 1 areas, scan true' }, { level: 'warn', text: 'hello.dayWithMeetings as manager: Hello svarar inte just nu.' }, { level: 'fail', text: 'a call signed with another secret answered 200, expected 401' }] };
-export const connectorPreview = (role: 'manager' | 'employee'): ConnectorPreview => ({ role, unitId: null, visible: role === 'manager', areas: role === 'manager' ? [{ id: 'budget', title: 'Budget', standing: ['Budget mot prognos'] }] : [], tools: role === 'manager' ? ['raindance.budget'] : [] });
+export const connectorPreview = (role: 'manager' | 'employee'): ConnectorPreview => ({ role, unitId: null, visible: role === 'manager', areas: role === 'manager' ? [{ id: 'budget', title: 'Budget', standing: ['Budget mot prognos'] }] : [], tools: role === 'manager' ? ['raindance.budget'] : [], menu: null });
 /** Modeller (D24): one provider with a capable default and a small model for managers, one provider that is down with a model switched off. */
 const provider = (values: Partial<ProviderSummary> & Pick<ProviderSummary, 'id' | 'title'>): ProviderSummary => ({
   baseUrl: `http://${values.id}.test/v1`, hasKey: true, keyChangedAt: NOW, health: { status: 'ok', at: NOW }, models: 2, enabledModels: 2, createdAt: '2026-11-03T06:00:00.000Z', updatedAt: NOW, ...values });

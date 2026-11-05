@@ -22,7 +22,7 @@ export function AddConnectorDialog({ isOpen, onClose, units }: Props) {
   const { run, busy, error, reset: clearError } = useAdminAction();
   const [result, setResult] = useState<{ connector: ConnectorDetail; report: CheckReport } | null>(null);
   const [audience, setAudience] = useState<ConnectorAudience>({ mode: 'all' });
-  const [scan, setScan] = useState(true); const [tools, setTools] = useState(true);
+  const [scan, setScan] = useState(true); const [tools, setTools] = useState(true); const [menu, setMenu] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
   // The step heading takes focus on every step (2.4.3): a screen reader hears where the flow is.
   useEffect(() => { if (isOpen) heading.current?.focus(); }, [step, isOpen]);
@@ -30,11 +30,11 @@ export function AddConnectorDialog({ isOpen, onClose, units }: Props) {
   const urlError = touched && !/^https?:\/\/\S+$/.test(url) ? 'En adress som börjar med http:// eller https://.' : undefined;
   const secretError = touched && secret.length < 16 ? 'Minst 16 tecken.' : undefined;
   const valid = ID.test(id) && /^https?:\/\/\S+$/.test(url) && secret.length >= 16;
-  const reset = () => { setStep(0); setId(''); setUrl(''); setSecret(''); setTouched(false); clearError(); setResult(null); setAudience({ mode: 'all' }); setScan(true); setTools(true); };
+  const reset = () => { setStep(0); setId(''); setUrl(''); setSecret(''); setTouched(false); clearError(); setResult(null); setAudience({ mode: 'all' }); setScan(true); setTools(true); setMenu(false); };
   const close = (added: boolean) => { reset(); onClose(added); };
   const check = () => run(async () => { setResult(await api.admin.add({ id, url, secret })); setStep(1); });
   const retry = () => run(async () => { if (!result) return; const report = await api.admin.test(result.connector.id); const connector = await api.admin.connector(result.connector.id); setResult({ connector, report }); });
-  const finish = (state: 'draft' | 'enabled') => run(async () => { if (!result) return; await api.admin.update(result.connector.id, { audience, scanEnabled: scan, toolsEnabled: tools, ...(state === 'enabled' ? { state } : {}) }); close(true); });
+  const finish = (state: 'draft' | 'enabled') => run(async () => { if (!result) return; await api.admin.update(result.connector.id, { audience, scanEnabled: scan, toolsEnabled: tools, ...(result.connector.menu ? { menuEnabled: menu } : {}), ...(state === 'enabled' ? { state } : {}) }); close(true); });
   const fetched = !!result?.connector.counts.capabilities;
   // Astryx's form-wizard-dialog: the title and the stepper pinned, the step scrolling, the buttons pinned in the footer.
   const header = <>
@@ -79,6 +79,7 @@ export function AddConnectorDialog({ isOpen, onClose, units }: Props) {
         <AudienceEditor value={audience} onChange={setAudience} units={units} />
         <Switch label="Skicka kort" description="Anslutningen får föreslå kort i strömmen (den nattliga genomgången och första besöket)." value={scan} onChange={setScan} />
         <Switch label="Erbjud assistenten" description="Frågor och förslag som anslutningen märkt som verktyg får användas av assistenten." value={tools} onChange={setTools} />
+        {result?.connector.menu && <Switch label="Visa i menyn" description={`Raden ${result.connector.menu.label} läggs under Verktyg i menyn för alla som ser anslutningen.`} value={menu} onChange={setMenu} />}
       </VStack>}
       {step === 3 && result && <MetadataList>
         <MetadataListItem label="System">{result.connector.source}</MetadataListItem>
@@ -88,6 +89,7 @@ export function AddConnectorDialog({ isOpen, onClose, units }: Props) {
         <MetadataListItem label="Vem ser det">{audienceLabel(audience)}</MetadataListItem>
         <MetadataListItem label="Skickar kort">{scan ? 'Ja' : 'Nej'}</MetadataListItem>
         <MetadataListItem label="Erbjuder assistenten">{tools ? 'Ja' : 'Nej'}</MetadataListItem>
+        {result.connector.menu && <MetadataListItem label="Rad i menyn">{menu ? result.connector.menu.label : 'Nej'}</MetadataListItem>}
       </MetadataList>}
     </VStack>
     </DialogFrame>

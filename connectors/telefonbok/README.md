@@ -21,7 +21,8 @@ the connector says what its output holds and Clew draws it. The walkthrough is
 | `telefonbok.search`, `telefonbok.fetch` | The composite search's hits | A hit says who and where, not the number |
 
 The area `Kontakter` lists the team list and the search as standing actions, so both are chips under the box for
-everyone in the connector's audience. Everything works without a model. With a model, the views say
+everyone in the connector's audience. The manifest also offers the search as the row "Telefonbok" under Verktyg in
+Clew's menu (D40); an administrator switches it on with "Visa i menyn" on the connector's page, under Områden. Everything works without a model. With a model, the views say
 `modelReads: "summary"`: the model is told how many rows are shown to the person, never who or which number.
 
 ## Configuration
@@ -63,5 +64,15 @@ TELEFONBOK_SECRET=<16+ characters> docker compose -f connectors/telefonbok/compo
 docker exec -w /workspace clew-app-1 bun scripts/connector-check.ts http://host.docker.internal:4020 --id telefonbok --secret <the secret>
 docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts telefonbok http://host.docker.internal:4020 --secret <the secret> --enable
 ```
+
+Inside the devcontainer (a terminal in VS Code) there is no Compose step: the connector is plain Node, and Clew
+reaches it on the same host.
+
+```sh
+CLEW_CONNECTOR_SECRET=<16+ characters> node connectors/telefonbok/server.mjs
+bun scripts/connector-add.ts telefonbok http://127.0.0.1:4020 --secret <the secret> --enable
+```
+
+After a change to the manifest, restart the connector and press "Hämta manifest igen" on its page in Administration.
 
 Node's official image is MIT. The connector has no other dependency.

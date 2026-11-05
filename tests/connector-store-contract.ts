@@ -25,7 +25,7 @@ export function connectorStoreContract(name: string, make: () => Promise<Connect
       expect(await store.transaction(tx => tx.insert(remoteRow(id)))).toBe(true);
       expect(await store.transaction(tx => tx.insert(remoteRow(id)))).toBe(false);
       const row = (await store.read(id))!;
-      expect(row).toMatchObject({ id, bundled: false, url: 'http://hello:4010', secret: 'sealed:' + id, secretChangedAt: T0, state: 'draft', audience: { mode: 'all' }, scanEnabled: true, toolsEnabled: true, capabilities: {},
+      expect(row).toMatchObject({ id, bundled: false, url: 'http://hello:4010', secret: 'sealed:' + id, secretChangedAt: T0, state: 'draft', audience: { mode: 'all' }, scanEnabled: true, toolsEnabled: true, menuEnabled: false, capabilities: {},
         manifestAt: T0, health: { status: 'ok', at: T0 }, createdBy: 'person:mikael', updatedBy: 'person:mikael', createdAt: T0, updatedAt: T0, version: 1 });
       expect((row.manifest as { source: string }).source).toBe('Hello');
       expect((await store.list()).some(r => r.id === id)).toBe(true);
@@ -40,8 +40,8 @@ export function connectorStoreContract(name: string, make: () => Promise<Connect
       const { store, fresh } = await make();
       const id = fresh();
       await store.transaction(tx => tx.insert(remoteRow(id)));
-      expect(await store.transaction(tx => tx.update(id, { state: 'enabled', audience: { mode: 'selected', roles: ['manager'] }, capabilities: { 'hello.x': { enabled: false } } }, 'person:mikael', T1))).toBe(true);
-      expect(await store.read(id)).toMatchObject({ state: 'enabled', audience: { mode: 'selected', roles: ['manager'] }, capabilities: { 'hello.x': { enabled: false } }, updatedBy: 'person:mikael', updatedAt: T1, version: 2 });
+      expect(await store.transaction(tx => tx.update(id, { state: 'enabled', audience: { mode: 'selected', roles: ['manager'] }, menuEnabled: true, capabilities: { 'hello.x': { enabled: false } } }, 'person:mikael', T1))).toBe(true);
+      expect(await store.read(id)).toMatchObject({ state: 'enabled', audience: { mode: 'selected', roles: ['manager'] }, menuEnabled: true, capabilities: { 'hello.x': { enabled: false } }, updatedBy: 'person:mikael', updatedAt: T1, version: 2 });
       expect(await store.transaction(tx => tx.update('nope-' + id, { state: 'enabled' }, 'x', T1))).toBe(false);
     });
     test('recordHealth changes health and the manifest without a version bump', async () => {

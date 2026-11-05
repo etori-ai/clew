@@ -1,7 +1,7 @@
 import type { TSchema } from '@sinclair/typebox';
-import type { Area, CapabilityOverride, ConnectorAudience, ConnectorState, Receipt, ReceiptRow, SearchKind, SessionUser, PanelViewSpec, ThreadAction, ThreadItem, View, ViewOpen } from '@clew/contracts';
-import { viewProblem } from './views';
-export { openRef, readsSummary, rowsKey, viewProblem, viewRows, viewSummary } from './views';
+import type { Area, CapabilityOverride, ConnectorAudience, ConnectorState, MenuDeclaration, MenuEntry, Receipt, ReceiptRow, SearchKind, SessionUser, PanelViewSpec, ThreadAction, ThreadItem, View, ViewOpen } from '@clew/contracts';
+import { menuProblem, viewProblem } from './views';
+export { menuProblem, openRef, readsSummary, rowsKey, viewProblem, viewRows, viewSummary } from './views';
 
 /**
  * The capability layer (D1, D3). A connector owns a Clew contract: capabilities with a kind, a scope and an
@@ -92,6 +92,8 @@ export interface Connector {
   source: string;
   areas: AreaDefinition[];
   capabilities: Capability<any, any>[];
+  /** One of its views as a row in the menu (D40). Shown only where an administrator switched it on. */
+  menu?: MenuDeclaration;
   /** The connector's triggers: what it wants to push for this actor right now. Deterministic, no model. */
   scan?: (actor: Actor, clew: Clew) => Promise<ThreadDraft[]>;
 }
@@ -101,13 +103,16 @@ export class CapabilityError extends Error { constructor(message: string) { supe
 /**
  * What an administrator decided about a connector (D23): on or off, who sees it, whether it pushes cards and offers
  * tools, and per-capability switches. The default is "enabled for everyone", which is what a connector without a row
- * gets. Narrowing only: an override can switch a capability or its tool off, never on.
+ * gets. Narrowing only: an override can switch a capability or its tool off, never on. The menu row (D40) is the one
+ * switch that starts off: it is a place in the menu, not access, and a connector must not take that place by declaring it.
  */
 export interface Governance {
   state: ConnectorState;
   audience: ConnectorAudience;
   scanEnabled: boolean;
   toolsEnabled: boolean;
+  /** The connector's menu row is shown (D40). Absent means off. */
+  menuEnabled?: boolean;
   capabilities: Record<string, CapabilityOverride>;
 }
 export const openGovernance = (): Governance => ({ state: 'enabled', audience: { mode: 'all' }, scanEnabled: true, toolsEnabled: true, capabilities: {} });
@@ -129,6 +134,8 @@ export class Registry {
   constructor(private readonly options: RegistryOptions = {}) {}
   register(connector: Connector) {
     if (this.connectors.has(connector.id)) throw new Error(`Connector ${connector.id} is already registered.`);
+    const menu = menuProblem(connector.id, connector.menu, connector.capabilities);
+    if (menu) throw new Error(`Connector ${connector.id}: ${menu} (D40).`);
     for (const c of connector.capabilities) {
       if (!c.name.startsWith(connector.id + '.')) throw new Error(`Capability ${c.name} must be prefixed with ${connector.id}.`);
       if (c.kind === 'execute' && c.model) throw new Error(`Capability ${c.name}: execute capabilities are never tools (D8).`);
@@ -273,6 +280,19 @@ export class Registry {
     const { open: _open, ...rest } = view as View & { open?: ViewOpen };
     const open = this.opens(actor, found.capability);
     return { ...rest, ...(open ? { open } : {}), capability: name, connector: found.connector.id, source: found.connector.source, chip } as PanelViewSpec;
+  }
+  /**
+   * The menu rows a person gets (D40): from every visible connector that declares a row, whose administrator switched it
+   * on, and whose read the person may call. In Swedish alphabetical order, so no connector and no operator places a row.
+   */
+  menu(actor: Actor): MenuEntry[] {
+    const out: MenuEntry[] = [];
+    for (const m of this.connectors.values()) {
+      if (!m.menu || !this.visible(actor, m.id) || !this.governance(m.id).menuEnabled) continue;
+      const found = this.allowed(actor, m.menu.capability);
+      if (found?.capability.view) out.push({ connector: m.id, source: m.source, capability: found.capability.name, title: found.capability.title, label: m.menu.label, icon: m.menu.icon });
+    }
+    return out.sort((a, b) => a.label.localeCompare(b.label, 'sv'));
   }
   /**
    * Tool definitions for the model: `model: true` capabilities the person may call, from connectors whose tools are on (D8).

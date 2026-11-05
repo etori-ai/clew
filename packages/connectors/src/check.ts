@@ -71,6 +71,7 @@ export async function checkConnector(options: CheckOptions): Promise<CheckReport
       }
     }
   }
+  if (manifest.menu) ok(`menu: "${manifest.menu.label}" opens ${manifest.menu.capability} (shown when an administrator switches it on)`);
   // Wrong secret must be refused by the connector itself, not only by Clew.
   const first = manifest.capabilities[0];
   if (first) {

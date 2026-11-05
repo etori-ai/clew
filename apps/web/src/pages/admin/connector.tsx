@@ -52,7 +52,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
   useEffect(() => { if (c) setAudience(c.audience); }, [c?.id, c?.updatedAt]);
   usePageTitle(c ? c.source : null);
   // Every action re-reads the admin queries and then says what it did; removing re-reads the list alone and drops this page's own read before leaving.
-  const { run, busy, error: actionError } = useAdminAction({ toastId: 'connector:' + id });
+  const { run, busy, error: actionError } = useAdminAction({ invalidate: [keys.admin.all, keys.areas], toastId: 'connector:' + id });
   const removal = useAdminAction({ invalidate: [keys.admin.connectors], toastId: 'connector:' + id });
   const error = actionError ?? removal.error ?? readError;
   if (missing) return <AdminShell user={user} crumbs={[{ label: 'Anslutna system', href: '/admin/anslutningar' }, { label: id }]}><EmptyState headingLevel={1} title="Anslutningen finns inte" description="Den kan ha tagits bort." actions={<Button label="Till listan" href="/admin/anslutningar" />} /></AdminShell>;
@@ -107,6 +107,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
         <MetadataListItem label="Förmågor">{`${c.counts.capabilities} · ${c.counts.execute} åtgärder · ${c.counts.tools} till assistenten`}</MetadataListItem>
         <MetadataListItem label="Skickar kort">{c.scan ? (c.scanEnabled ? 'Ja' : 'Avstängt') : 'Anslutningen skickar inga kort'}</MetadataListItem>
         <MetadataListItem label="Vem ser det">{audienceLabel(c.audience)}</MetadataListItem>
+        <MetadataListItem label="Rad i menyn">{c.menu ? `${c.menu.label} · ${c.menuEnabled ? 'visas under Verktyg' : 'visas inte'}` : 'Anslutningen har ingen rad för menyn'}</MetadataListItem>
         {c.manifestAt && <MetadataListItem label="Manifest hämtat"><Timestamp value={c.manifestAt} format="date_time" /></MetadataListItem>}
         {c.secretChangedAt && <MetadataListItem label="Nyckel bytt"><Timestamp value={c.secretChangedAt} format="date_time" /></MetadataListItem>}
         <MetadataListItem label="Tillagd">{actorLabel(c.createdBy)} · <Timestamp value={c.createdAt} format="date_time" /></MetadataListItem>
@@ -124,6 +125,9 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
     </VStack></div>}
     {tab === 'omraden' && <div id={panel('omraden')} role={mobile ? "region" : "tabpanel"} aria-label="Områden"><VStack gap={3}>
       <Switch label="Skicka kort" description="Anslutningen får föreslå kort i strömmen." value={c.scanEnabled} isDisabled={busy || !c.scan} disabledMessage="Anslutningen har ingen genomgång." changeAction={on => run(async () => { await api.admin.update(id, { scanEnabled: on }); })} />
+      <Switch label="Visa i menyn" description={c.menu ? `Raden ${c.menu.label} under Verktyg öppnar ${c.capabilities.find(x => x.name === c.menu!.capability)?.title ?? c.menu.capability} för alla som ser anslutningen.` : undefined}
+        value={!!c.menu && c.menuEnabled} isDisabled={busy || !c.menu} disabledMessage="Anslutningen har ingen rad för menyn."
+        changeAction={on => run(async () => { await api.admin.update(id, { menuEnabled: on }); return on ? `${c.menu!.label} visas i menyn under Verktyg.` : `${c.menu!.label} visas inte längre i menyn.`; })} />
       {c.areas.length === 0 ? <Text type="supporting">Anslutningen har inga områden i sidopanelen.</Text> : <List aria-label="Områden">
         {c.areas.map(a => <ListItem key={a.id} label={<Text>{a.title}</Text>} description={<Text type="supporting">{a.roles.map(r => roleLabel[r]).join(', ')}{a.standing.length ? ` · Gör själv: ${a.standing.join(', ')}` : ''}{a.figure ? ' · med figur' : ''}</Text>} />)}
       </List>}
@@ -166,6 +170,9 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
           {diff.changed.map(n => <ListItem key={'c' + n} startContent={<StatusDot variant="warning" label="Ändrad" />} label={<Text>Ändrad förmåga: {n}</Text>} />)}
           {diff.areasAdded.map(n => <ListItem key={'aa' + n} startContent={<StatusDot variant="success" label="Nytt" />} label={<Text>Nytt område: {n}</Text>} />)}
           {diff.areasRemoved.map(n => <ListItem key={'ar' + n} startContent={<StatusDot variant="error" label="Borttaget" />} label={<Text>Borttaget område: {n}</Text>} />)}
+          {diff.menu === 'added' && <ListItem startContent={<StatusDot variant="success" label="Ny" />} label={<Text>Ny rad för menyn</Text>} description={<Text type="supporting">Den visas först när du sätter på Visa i menyn under Områden.</Text>} />}
+          {diff.menu === 'removed' && <ListItem startContent={<StatusDot variant="error" label="Borttagen" />} label={<Text>Raden för menyn är borttagen</Text>} />}
+          {diff.menu === 'changed' && <ListItem startContent={<StatusDot variant="warning" label="Ändrad" />} label={<Text>Raden för menyn är ändrad</Text>} />}
         </List>}
       </DialogFrame>
     </Dialog>

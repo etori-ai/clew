@@ -1,4 +1,4 @@
-import { openRef, rowsKey, viewRows, type View } from '@clew/contracts';
+import { openRef, rowsKey, viewRows, type MenuDeclaration, type View } from '@clew/contracts';
 
 export { openRef, rowsKey, viewRows };
 
@@ -45,6 +45,19 @@ export function viewProblem(subject: ViewSubject, siblings: ViewSubject[]): stri
     if (view.ref && record && !record[view.ref]) return `${subject.name}: view ref "${view.ref}" is not in the output schema`;
   }
   if (record) for (const key of view.kind === 'detail' ? [view.title, ...keys] : keys) if (!record[key]) return `${subject.name}: view field "${key}" is not in the output schema`;
+  return undefined;
+}
+
+/**
+ * Why a connector's menu row may not be used, or undefined when it may (D40). The row opens a view with one click and no
+ * question, so it names a read of the same connector that declares a view and whose input lists nothing as required.
+ */
+export function menuProblem(connectorId: string, menu: MenuDeclaration | undefined, capabilities: ViewSubject[]): string | undefined {
+  if (!menu) return undefined;
+  const target = capabilities.find(c => c.name === menu.capability);
+  if (!target || !menu.capability.startsWith(connectorId + '.') || target.kind !== 'read') return `menu opens ${menu.capability}, which is not a read of ${connectorId}`;
+  if (!target.view) return `menu opens ${menu.capability}, which declares no view`;
+  if (((target.input as { required?: unknown[] } | undefined)?.required ?? []).length) return `menu opens ${menu.capability}, which needs input; a menu row opens without a question`;
   return undefined;
 }
 

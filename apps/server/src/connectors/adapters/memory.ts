@@ -27,7 +27,7 @@ export function memoryConnectorStore(): MemoryConnectorStore {
       const tx: ConnectorTx = {
         async insert(r) {
           if (rows.has(r.id)) return false;
-          rows.set(r.id, { id: r.id, bundled: r.bundled, url: r.url, secret: r.secret, secretChangedAt: r.bundled ? null : r.at, state: r.state, audience: { mode: 'all' }, scanEnabled: true, toolsEnabled: true, capabilities: {},
+          rows.set(r.id, { id: r.id, bundled: r.bundled, url: r.url, secret: r.secret, secretChangedAt: r.bundled ? null : r.at, state: r.state, audience: { mode: 'all' }, scanEnabled: true, toolsEnabled: true, menuEnabled: false, capabilities: {},
             manifest: structuredClone(r.manifest), manifestAt: r.manifest ? r.at : null, health: structuredClone(r.health), createdBy: r.createdBy, updatedBy: r.createdBy, createdAt: r.at, updatedAt: r.at, version: 1 });
           return true;
         },

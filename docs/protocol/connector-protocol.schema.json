@@ -928,6 +928,66 @@
               "type": "string"
             }
           }
+        },
+        "menu": {
+          "additionalProperties": false,
+          "description": "One row in Clew's menu under Verktyg that opens one of the connector's views (D40). Shown only when an administrator switches it on.",
+          "type": "object",
+          "required": [
+            "capability",
+            "label",
+            "icon"
+          ],
+          "properties": {
+            "capability": {
+              "maxLength": 80,
+              "description": "A read of this connector that declares a view and opens without input.",
+              "type": "string"
+            },
+            "label": {
+              "minLength": 1,
+              "maxLength": 24,
+              "description": "Swedish. The row in the menu: \"Telefonbok\".",
+              "type": "string"
+            },
+            "icon": {
+              "description": "One of Clew's menu icons. The connector sends a name, never a drawing.",
+              "anyOf": [
+                {
+                  "const": "phone",
+                  "type": "string"
+                },
+                {
+                  "const": "people",
+                  "type": "string"
+                },
+                {
+                  "const": "book",
+                  "type": "string"
+                },
+                {
+                  "const": "document",
+                  "type": "string"
+                },
+                {
+                  "const": "chart",
+                  "type": "string"
+                },
+                {
+                  "const": "search",
+                  "type": "string"
+                },
+                {
+                  "const": "clock",
+                  "type": "string"
+                },
+                {
+                  "const": "link",
+                  "type": "string"
+                }
+              ]
+            }
+          }
         }
       }
     },
@@ -2568,6 +2628,66 @@
           }
         }
       ]
+    },
+    "Menu": {
+      "additionalProperties": false,
+      "description": "One row in Clew's menu under Verktyg that opens one of the connector's views (D40). Shown only when an administrator switches it on.",
+      "type": "object",
+      "required": [
+        "capability",
+        "label",
+        "icon"
+      ],
+      "properties": {
+        "capability": {
+          "maxLength": 80,
+          "description": "A read of this connector that declares a view and opens without input.",
+          "type": "string"
+        },
+        "label": {
+          "minLength": 1,
+          "maxLength": 24,
+          "description": "Swedish. The row in the menu: \"Telefonbok\".",
+          "type": "string"
+        },
+        "icon": {
+          "description": "One of Clew's menu icons. The connector sends a name, never a drawing.",
+          "anyOf": [
+            {
+              "const": "phone",
+              "type": "string"
+            },
+            {
+              "const": "people",
+              "type": "string"
+            },
+            {
+              "const": "book",
+              "type": "string"
+            },
+            {
+              "const": "document",
+              "type": "string"
+            },
+            {
+              "const": "chart",
+              "type": "string"
+            },
+            {
+              "const": "search",
+              "type": "string"
+            },
+            {
+              "const": "clock",
+              "type": "string"
+            },
+            {
+              "const": "link",
+              "type": "string"
+            }
+          ]
+        }
+      }
     }
   }
 }

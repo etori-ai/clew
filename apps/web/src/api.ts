@@ -1,5 +1,5 @@
 import type { AddModelInput, AddProviderInput, ModelDetail, ModelPatchInput, ModelSummary, ProviderDetail, ProviderPatchInput, ProviderSummary, ProviderTestReport } from '@clew/contracts';
-import type { PanelViewSpec, SnoozeInput, SnoozePreset, AddConnectorInput, Area, AssistantStatus, Attention, AvailabilityInput, AvailabilityResult, CalendarEvent, CalendarMember, CalendarRoom, CancelEventInput, CreateEventInput, DayView, MoveProposalInput, RescheduleEventInput, CheckReport, ClewObject, Completions, ConnectorDetail, ConnectorHealth, ConnectorPatchInput, ConnectorPreview, ConnectorSummary, ConversationEvent, ConversationInput, ConversationResponse, Figure, TurnEvent, ManifestDiff, Proposal, Role, Thread, TodayView, Verb } from '@clew/contracts';
+import type { MenuEntry, PanelViewSpec, SnoozeInput, SnoozePreset, AddConnectorInput, Area, AssistantStatus, Attention, AvailabilityInput, AvailabilityResult, CalendarEvent, CalendarMember, CalendarRoom, CancelEventInput, CreateEventInput, DayView, MoveProposalInput, RescheduleEventInput, CheckReport, ClewObject, Completions, ConnectorDetail, ConnectorHealth, ConnectorPatchInput, ConnectorPreview, ConnectorSummary, ConversationEvent, ConversationInput, ConversationResponse, Figure, TurnEvent, ManifestDiff, Proposal, Role, Thread, TodayView, Verb } from '@clew/contracts';
 import { sessionFetch } from '@clew/ui';
 
 import { ApiError } from './api-error';
@@ -68,7 +68,7 @@ export const api = {
   today: () => call<TodayView>('/api/today'),
   figures: () => call<{ figures: Figure[] }>('/api/figures'),
   attention: () => call<Attention>('/api/attention'),
-  areas: () => call<{ areas: Area[] }>('/api/areas'),
+  areas: () => call<{ areas: Area[]; menu?: MenuEntry[] }>('/api/areas'),
   connectors: () => call<{ connectors: unknown[]; tools: string[] }>('/api/connectors'),
   act: (id: string, actionId: string, refs?: string[]) => post<{ kind: 'execute'; thread: Thread } | { kind: 'read' | 'propose'; output: unknown; view?: PanelViewSpec }>(`/api/threads/${id}/act`, { actionId, refs }),
   undoReceipt: (id: string) => post<Thread>(`/api/threads/${id}/undo-receipt`),

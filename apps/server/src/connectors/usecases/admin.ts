@@ -15,15 +15,15 @@ import type { ConnectorRecord, ConnectorStore, ConnectorTx, LiveRegistration, Se
 export const ADMIN_CAPABILITY = 'admin.connectors';
 export interface AdminDeps {
   store: ConnectorStore;
-  registry: Pick<Registry, 'connector' | 'list' | 'govern' | 'governance' | 'visible' | 'areas' | 'tools'>;
+  registry: Pick<Registry, 'connector' | 'list' | 'govern' | 'governance' | 'visible' | 'areas' | 'tools' | 'menu'>;
   secrets: Secrets;
   transport: Transport;
   live: LiveRegistration;
   units: Units;
   clock: () => Date;
 }
-export const governanceOf = (r: Pick<ConnectorRecord, 'state' | 'audience' | 'scanEnabled' | 'toolsEnabled' | 'capabilities'>): Governance =>
-  ({ state: r.state, audience: r.audience, scanEnabled: r.scanEnabled, toolsEnabled: r.toolsEnabled, capabilities: r.capabilities });
+export const governanceOf = (r: Pick<ConnectorRecord, 'state' | 'audience' | 'scanEnabled' | 'toolsEnabled' | 'menuEnabled' | 'capabilities'>): Governance =>
+  ({ state: r.state, audience: r.audience, scanEnabled: r.scanEnabled, toolsEnabled: r.toolsEnabled, menuEnabled: r.menuEnabled, capabilities: r.capabilities });
 const isManifest = (value: unknown): value is ConnectorManifest => !!value && typeof value === 'object' && Array.isArray((value as ConnectorManifest).capabilities);
 /** A name that cannot be a person: the structural preview's actor. */
 const previewActor = (role: Role, unitId: string | null): Actor => ({ id: 'preview', name: 'Förhandsgranskning', unitId: unitId ?? 'preview', unitLabel: '', role });
@@ -60,13 +60,13 @@ export function connectorUsecases(deps: AdminDeps) {
     const caps = m?.capabilities ?? [];
     const tools = caps.filter(c => c.model && row.toolsEnabled && row.capabilities[c.name]?.model !== false && row.capabilities[c.name]?.enabled !== false).length;
     return { id: row.id, bundled: row.bundled, source: m?.source ?? live?.source ?? row.id, kind: live?.kind ?? m?.kind ?? null, url: row.url,
-      state: row.state, health: row.health, audience: row.audience, scanEnabled: row.scanEnabled, toolsEnabled: row.toolsEnabled, registered: !!live,
+      state: row.state, health: row.health, audience: row.audience, scanEnabled: row.scanEnabled, toolsEnabled: row.toolsEnabled, menuEnabled: row.menuEnabled, registered: !!live,
       counts: { capabilities: caps.length, execute: caps.filter(c => c.kind === 'execute').length, tools },
       manifestAt: row.manifestAt, secretChangedAt: row.bundled ? null : row.secretChangedAt, createdAt: row.createdAt, updatedAt: row.updatedAt };
   }
   async function detail(row: ConnectorRecord): Promise<ConnectorDetail> {
     const m = manifestOf(row);
-    return { ...summary(row), protocol: m?.protocol ?? null, scan: m?.scan ?? false, createdBy: row.createdBy, updatedBy: row.updatedBy,
+    return { ...summary(row), protocol: m?.protocol ?? null, scan: m?.scan ?? false, createdBy: row.createdBy, updatedBy: row.updatedBy, menu: m?.menu ?? null,
       capabilities: (m?.capabilities ?? []).map(c => ({ name: c.name, kind: c.kind, title: c.title, description: c.description, model: c.model, roles: c.scope.roles ? [...c.scope.roles] : null,
         enabled: row.capabilities[c.name]?.enabled !== false, tool: c.model && row.toolsEnabled && row.capabilities[c.name]?.model !== false && row.capabilities[c.name]?.enabled !== false })),
       areas: (m?.areas ?? []).map(a => ({ id: a.id, title: a.title, roles: [...a.roles], standing: [...a.standing], figure: !!a.figure })),
@@ -99,6 +99,7 @@ export function connectorUsecases(deps: AdminDeps) {
     const row = await must(id);
     const m = manifestOf(row);
     if (patch.url !== undefined && row.bundled) throw new InputError('En inbyggd anslutning har ingen adress.');
+    if (patch.menuEnabled && !m?.menu) throw new InputError('Anslutningen har ingen rad för menyn.');
     if (patch.capabilities) for (const name of Object.keys(patch.capabilities)) if (!m?.capabilities.some(c => c.name === name)) throw new InputError('Okänd förmåga: ' + name);
     if (patch.state === 'enabled' && !row.bundled && !m) {
       // A draft that never answered: try once more now, so enabling fails loudly instead of registering nothing.
@@ -111,6 +112,7 @@ export function connectorUsecases(deps: AdminDeps) {
     if (patch.audience !== undefined && JSON.stringify(patch.audience) !== JSON.stringify(row.audience)) { next.audience = patch.audience; changes.push({ action: 'connector.audience', details: { from: row.audience, to: patch.audience } }); }
     if (patch.scanEnabled !== undefined && patch.scanEnabled !== row.scanEnabled) { next.scanEnabled = patch.scanEnabled; changes.push({ action: 'connector.scan', details: { to: patch.scanEnabled } }); }
     if (patch.toolsEnabled !== undefined && patch.toolsEnabled !== row.toolsEnabled) { next.toolsEnabled = patch.toolsEnabled; changes.push({ action: 'connector.tools', details: { to: patch.toolsEnabled } }); }
+    if (patch.menuEnabled !== undefined && patch.menuEnabled !== row.menuEnabled) { next.menuEnabled = patch.menuEnabled; changes.push({ action: 'connector.menu', details: { to: patch.menuEnabled, ...(m?.menu ? { label: m.menu.label, capability: m.menu.capability } : {}) } }); }
     if (patch.capabilities !== undefined) {
       const merged = { ...row.capabilities };
       for (const [name, override] of Object.entries(patch.capabilities)) { const clean = { ...(override.enabled === false ? { enabled: false as const } : {}), ...(override.model === false ? { model: false as const } : {}) }; if (Object.keys(clean).length) merged[name] = clean; else delete merged[name]; }
@@ -158,13 +160,14 @@ export function connectorUsecases(deps: AdminDeps) {
     const areas = (m?: ConnectorManifest) => new Set((m?.areas ?? []).map(a => a.id));
     const before = names(stored), after = names(fetched), areasBefore = areas(stored), areasAfter = areas(fetched);
     const changed = [...after].filter(n => before.has(n) && JSON.stringify(stored!.capabilities.find(c => c.name === n)) !== JSON.stringify(fetched.capabilities.find(c => c.name === n)));
-    const diff: ManifestDiff = { added: [...after].filter(n => !before.has(n)), removed: [...before].filter(n => !after.has(n)), changed,
+    const menu = !stored?.menu && fetched.menu ? 'added' as const : stored?.menu && !fetched.menu ? 'removed' as const : JSON.stringify(stored?.menu) !== JSON.stringify(fetched.menu) ? 'changed' as const : undefined;
+    const diff: ManifestDiff = { added: [...after].filter(n => !before.has(n)), removed: [...before].filter(n => !after.has(n)), changed, ...(menu ? { menu } : {}),
       areasAdded: [...areasAfter].filter(a => !areasBefore.has(a)), areasRemoved: [...areasBefore].filter(a => !areasAfter.has(a)), same: JSON.stringify(stored) === JSON.stringify(fetched) };
     if (!input.apply) { requireAdmin(persona); return { diff, connector: await detail(row) }; }
     const { by, at } = await mutating(persona);
     await store.transaction(async tx => {
       await tx.update(id, { manifest: fetched, manifestAt: at, health: { status: 'ok', at } }, by, at);
-      await tx.writeAudit({ actor: by, action: 'connector.manifest', subject: 'connector:' + id, at, details: { added: diff.added, removed: diff.removed, changed: diff.changed } });
+      await tx.writeAudit({ actor: by, action: 'connector.manifest', subject: 'connector:' + id, at, details: { added: diff.added, removed: diff.removed, changed: diff.changed, ...(diff.menu ? { menu: diff.menu } : {}) } });
     });
     const updated = (await store.read(id))!;
     applyLive(updated, fetched);
@@ -192,7 +195,8 @@ export function connectorUsecases(deps: AdminDeps) {
     const visible = registry.visible(actor, id);
     const areas = visible ? await registry.areas(actor, { figures: false, connector: id }) : [];
     return { role: query.role, unitId: query.unitId ?? null, visible, areas: areas.map(a => ({ id: a.id, title: a.title, standing: a.standing.map(s => s.label) })),
-      tools: visible ? registry.tools(actor).filter(t => t.name.startsWith(id + '.')).map(t => t.name) : [] };
+      tools: visible ? registry.tools(actor).filter(t => t.name.startsWith(id + '.')).map(t => t.name) : [],
+      menu: registry.menu(actor).find(e => e.connector === id)?.label ?? null };
   }
   /** For the audience editor: the units a grant can name. */
   async function listUnits(persona: AuthenticatedContext) { requireAdmin(persona); return units.list(); }

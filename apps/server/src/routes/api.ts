@@ -42,7 +42,7 @@ api.get('/threads', async c => {
   await ensureThreads(persona, 'Första besöket i dag');
   return c.json({ threads: await listThreadsFor(persona) });
 });
-api.get('/areas', async c => c.json({ areas: await listAreas(c.get('session').context) }));
+api.get('/areas', async c => { const context = c.get('session').context; return c.json({ areas: await listAreas(context), menu: registry.menu(actorOf(context)) }); });
 /** The registry as data: what the architecture derives everything from. Read-only, and only what the caller can see (D23). */
 api.get('/connectors', c => {
   const actor = actorOf(c.get('session').context);

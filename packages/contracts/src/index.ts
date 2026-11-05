@@ -168,6 +168,24 @@ export function openRef(open: ViewOpen, row: Record<string, unknown>, source: st
 /** The declared view as the browser gets it beside the output: the declaration, whose it is, and whether a row can be added to the conversation. */
 export type PanelViewSpec = View & { capability: string; connector: string; source: string; chip: boolean };
 
+/**
+ * A connector's row in the menu (D40): one of its declared views as a tool that is one click away on every page. The
+ * connector says which view, what the row is called and which of Clew's icons it carries; an administrator switches the
+ * row on. Clew draws it, in its own section and order.
+ */
+export const MENU_ICONS = ['phone', 'people', 'book', 'document', 'chart', 'search', 'clock', 'link'] as const;
+export const MenuIconSchema = Type.Union(MENU_ICONS.map(name => Type.Literal(name)), { description: 'One of Clew\'s menu icons. The connector sends a name, never a drawing.' });
+export type MenuIcon = (typeof MENU_ICONS)[number];
+export const MenuDeclarationSchema = Type.Object({
+  capability: Type.String({ maxLength: 80, description: 'A read of this connector that declares a view and opens without input.' }),
+  label: Type.String({ minLength: 1, maxLength: 24, description: 'Swedish. The row in the menu: "Telefonbok".' }),
+  icon: MenuIconSchema,
+}, { additionalProperties: false, description: 'One row in Clew\'s menu under Verktyg that opens one of the connector\'s views (D40). Shown only when an administrator switches it on.' });
+export type MenuDeclaration = Static<typeof MenuDeclarationSchema>;
+/** A menu row as the browser gets it: only for a person who may call the read, from a connector whose row is switched on. */
+export const MenuEntrySchema = object({ connector: Type.String(), source: Type.String(), capability: Type.String(), title: Type.String(), label: Type.String(), icon: MenuIconSchema });
+export type MenuEntry = Static<typeof MenuEntrySchema>;
+
 /** What a search can find (D26): a document or a passage of one, a person, a case, a room. */
 export const SearchKind = Type.Union([Type.Literal('document'), Type.Literal('person'), Type.Literal('case'), Type.Literal('room')]);
 export type SearchKind = Static<typeof SearchKind>;
@@ -483,7 +501,7 @@ const connectorSecret = Type.String({ minLength: 16, maxLength: 500 });
 export const AddConnectorInput = object({ id: connectorId, url: connectorUrl, secret: connectorSecret });
 export type AddConnectorInput = Static<typeof AddConnectorInput>;
 export const ConnectorPatchInput = Type.Partial(object({
-  state: ConnectorStateSchema, audience: ConnectorAudienceSchema, scanEnabled: Type.Boolean(), toolsEnabled: Type.Boolean(),
+  state: ConnectorStateSchema, audience: ConnectorAudienceSchema, scanEnabled: Type.Boolean(), toolsEnabled: Type.Boolean(), menuEnabled: Type.Boolean(),
   capabilities: Type.Record(Type.String({ maxLength: 80 }), CapabilityOverrideSchema), url: connectorUrl,
 }));
 export type ConnectorPatchInput = Static<typeof ConnectorPatchInput>;
@@ -502,6 +520,8 @@ export interface ConnectorAreaView { id: string; title: string; roles: Role[]; s
 export interface ConnectorSummary {
   id: string; bundled: boolean; source: string; kind: 'core' | 'passthrough' | 'derived' | null; url: string | null;
   state: ConnectorState; health: ConnectorHealth; audience: ConnectorAudience; scanEnabled: boolean; toolsEnabled: boolean;
+  /** The connector's menu row is shown under Verktyg (D40). Off until an administrator switches it on. */
+  menuEnabled: boolean;
   /** Registered in the live registry right now (a remote draft with no manifest is not). */
   registered: boolean;
   counts: { capabilities: number; execute: number; tools: number };
@@ -510,11 +530,13 @@ export interface ConnectorSummary {
 export interface AuditEntryView { at: string; actor: string; action: string; details: Record<string, unknown> }
 export interface ConnectorDetail extends ConnectorSummary {
   protocol: number | null; scan: boolean; createdBy: string; updatedBy: string;
+  /** The menu row the manifest declares (D40), or null when it declares none. */
+  menu: MenuDeclaration | null;
   capabilities: ConnectorCapabilityView[]; areas: ConnectorAreaView[]; history: AuditEntryView[];
 }
 /** The structural preview: what a person with this role and unit would get from one connector. No data, no call to the service. */
-export interface ConnectorPreview { role: Role; unitId: string | null; visible: boolean; areas: Array<{ id: string; title: string; standing: string[] }>; tools: string[] }
-export interface ManifestDiff { added: string[]; removed: string[]; changed: string[]; areasAdded: string[]; areasRemoved: string[]; same: boolean }
+export interface ConnectorPreview { role: Role; unitId: string | null; visible: boolean; areas: Array<{ id: string; title: string; standing: string[] }>; tools: string[]; /** The label of the menu row this person gets (D40), or null. */ menu: string | null }
+export interface ManifestDiff { added: string[]; removed: string[]; changed: string[]; areasAdded: string[]; areasRemoved: string[]; /** What happened to the menu row (D40), when anything did. */ menu?: 'added' | 'removed' | 'changed'; same: boolean }
 
 /**
  * Model administration (D24): providers (an OpenAI-compatible endpoint with a sealed key) and the models under them,

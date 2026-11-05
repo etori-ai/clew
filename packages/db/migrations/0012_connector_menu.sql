@@ -1,0 +1,1 @@
+ALTER TABLE "connector" ADD COLUMN "menu_enabled" boolean DEFAULT false NOT NULL;

@@ -1,4 +1,5 @@
 import { composer, desktop, open, phone, test } from './support';
+import { menuRow } from './telefonbok';
 
 /**
  * Not a test: screenshots of the phone book's declared views (D38) in the side panel and under an answer, for the
@@ -19,6 +20,14 @@ test.describe('screens', () => {
     test(`${name} desktop`, async ({ page, api: _ }) => { await page.setViewportSize(desktop); await open(page, path); await page.getByRole('dialog').waitFor(); await page.screenshot({ path: out(`${name}-1280`) }); });
     test(`${name} phone`, async ({ page, api: _ }) => { await page.setViewportSize(phone); await open(page, path); await page.getByRole('dialog').waitFor(); await page.screenshot({ path: out(`${name}-375`) }); });
   }
+  test('verktyg in the menu', async ({ page, api }) => {
+    api.menu = [menuRow];
+    await page.setViewportSize(desktop); await open(page, '/');
+    await page.screenshot({ path: out('menu-verktyg-1280') });
+    await page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: 'Telefonbok' }).click();
+    await page.getByRole('dialog').getByRole('table').waitFor();
+    await page.screenshot({ path: out('menu-verktyg-open-1280') });
+  });
   test('view under an answer', async ({ page, api: _ }) => {
     await page.setViewportSize(desktop); await open(page, '/');
     await composer(page).fill('telefonboken lärare');

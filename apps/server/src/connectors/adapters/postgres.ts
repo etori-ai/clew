@@ -7,7 +7,7 @@ const { connectors, threads, audit, accessGrants } = schema;
 const iso = (d: Date | null) => d ? d.toISOString() : null;
 export const toRecord = (row: typeof connectors.$inferSelect): ConnectorRecord => ({
   id: row.id, bundled: row.bundled, url: row.url, secret: row.secret, secretChangedAt: row.bundled ? null : iso(row.secretChangedAt),
-  state: row.state, audience: row.audience, scanEnabled: row.scanEnabled, toolsEnabled: row.toolsEnabled, capabilities: row.capabilities,
+  state: row.state, audience: row.audience, scanEnabled: row.scanEnabled, toolsEnabled: row.toolsEnabled, menuEnabled: row.menuEnabled, capabilities: row.capabilities,
   manifest: row.manifest ?? null, manifestAt: iso(row.manifestAt), health: row.health,
   createdBy: row.createdBy, updatedBy: row.updatedBy, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(), version: row.version,
 });

@@ -34,6 +34,10 @@ One area, `Kontakter`, for both roles, with the team list and the search as its 
 as chips under the box and under Områden for everyone in the connector's audience: each person's own team list is one
 click away without anyone composing a page.
 
+The chips show only on the landing. A phone book is looked up in from anywhere, so the manifest also offers the search
+as a tool in the menu (D40): `menu: { capability: "telefonbok.directory", label: "Telefonbok", icon: "phone" }`. The
+row is under Verktyg, after Kalender, once an administrator switches "Visa i menyn" on for the connector.
+
 ## 3. The views (D38)
 
 The connector says what each read's output is; Clew draws it. Nothing in the connector is markup.
@@ -80,7 +84,7 @@ docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts telefonbok htt
 The check validates the manifest, including the rules for views, calls every read that needs no input as a manager and
 as an employee, verifies that each declared view finds its rows where it says, and proves that a call signed with
 another secret is refused. An administrator can do the same from Administration › Anslutna system and choose who sees
-the connector.
+the connector, and whether its row is in the menu.
 
 Against the real phone book: `TELEFONBOK_ADAPTER=http`, `TELEFONBOK_URL` and `TELEFONBOK_API_KEY` from the secrets
 store. The key lives in the connector's container; Clew holds only the shared secret.
@@ -89,6 +93,7 @@ store. The key lives in the connector's container; Clew holds only the shared se
 
 | The person | What happens | Model needed |
 |---|---|---|
+| Presses "Telefonbok" under Verktyg in the menu, on any page | The search opens in the side panel; closing it gives the focus back to the row | No |
 | Presses the chip "Mitt teams kontaktlista" | The list opens in the side panel, read as them | No |
 | Presses "Sök i telefonboken" and types | The table asks again after a pause; the count is spoken; the address carries the question | No |
 | Types "telefonboken anna lind" in the box | The router matches the capability by its title, hands "anna lind" to the view's search field, answers with a count and draws the rows under the answer | No |

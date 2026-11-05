@@ -12,6 +12,6 @@ export function describeBundled(connector: Connector): ConnectorManifest {
     areas: connector.areas.map(a => ({ id: a.id, title: a.title, roles: [...a.roles], standing: [...a.standing], schedules: a.schedules.map(s => ({ ...s })), ...(a.figure ? { figure: true } : {}) })),
     capabilities: connector.capabilities.map(c => ({ name: c.name, kind: c.kind, title: c.title, description: c.description, input: {}, output: {}, model: c.model,
       scope: typeof c.scope === 'function' ? {} : c.scope.roles ? { roles: [...c.scope.roles] } : {}, ...(c.view ? { view: c.view } : {}) })),
-    scan: !!connector.scan,
+    scan: !!connector.scan, ...(connector.menu ? { menu: connector.menu } : {}),
   };
 }

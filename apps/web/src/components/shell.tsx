@@ -18,9 +18,15 @@ export const shortQuery = '(max-height: 480px)';
 /** The overview rail folds under its groups below this breakpoint. */
 export const narrowQuery = '(max-width: 1023px)';
 
-export interface ShellNav { top?: ReactNode; sections: ReactNode; footer?: ReactNode }
-
 export type Surface = 'start' | 'kalender' | 'admin';
+/** What a surface puts in the rail: a create button on top, its own sections, the tools (D40) and the rows that stay at the foot. */
+export interface ShellNav {
+  top?: ReactNode;
+  sections: ReactNode;
+  /** Rows under the heading Verktyg: the calendar and the views that connectors offer as tools. */
+  tools?: ReactNode;
+  footer?: ReactNode;
+}
 type Props = {
   user: SessionUser;
   nav: ShellNav;
@@ -58,7 +64,10 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
               backgroundColor: mode === 'dark' && !headerLogo.darkSrc ? 'var(--color-on-dark)' : undefined }}
             onError={() => setFailedLogo(logoSrc ?? null)} /> : undefined} />}
         topContent={nav.top}
-        footer={<SideNavSection title="Alltid" isHeaderHidden>{nav.footer}</SideNavSection>}
+        footer={<>
+          {nav.tools && <SideNavSection title="Verktyg">{nav.tools}</SideNavSection>}
+          <SideNavSection title="Alltid" isHeaderHidden>{nav.footer}</SideNavSection>
+        </>}
         footerIcons={<HStack gap={1} vAlign="center">
           <IconButton label={threadsQ.isError ? 'Påminnelser – kunde inte uppdateras' : `Påminnelser (${reminders.length})`}
             icon={<Icon icon={BellIcon} size="sm" />} variant="ghost" size="sm" onClick={() => setRemindersOpen(true)} />

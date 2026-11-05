@@ -26,6 +26,8 @@ export const manifest = {
   // The area puts both reads under "Gör själv" and as chips under the box for everyone in the connector's audience:
   // each person's own team list is one click away without anyone composing a page.
   areas: [{ id: 'kontakter', title: 'Kontakter', roles: ['manager', 'employee'], standing: ['telefonbok.team', 'telefonbok.directory'], schedules: [] }],
+  // A row under Verktyg in Clew's menu (D40): the search, one click away on every page. An administrator switches it on.
+  menu: { capability: 'telefonbok.directory', label: 'Telefonbok', icon: 'phone' },
   capabilities: [
     { name: 'telefonbok.directory', kind: 'read', title: 'Sök i telefonboken', model: true, scope: {},
       description: 'Söker kollegor i hela organisationen eller på den egna enheten, på namn, titel eller enhet. Träffarna visas för personen som en tabell med telefon och e-post.',
