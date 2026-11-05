@@ -1,6 +1,6 @@
 # D38 · Municipal branding uses Astryx themes
 
-**Status:** accepted, extended by [D39](D39-compact-header-profile-and-reminders.md) · **Date:** 2026-11-05 · **Area:** ui
+**Status:** accepted, extended by [D39](D39-compact-header-profile-and-reminders.md), default profile changed by [D46](D46-astryx-neutral-is-the-default-theme.md) · **Date:** 2026-11-05 · **Area:** ui
 
 **Decision.** Keep Astryx as the component system. Extend the existing Neutral-based theme in
 `packages/ui/src/theme.ts`; the shared ChatLayout focus-clearance override from D31 remains in every

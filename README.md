@@ -40,8 +40,8 @@ remain Astryx; colours and the header logo come from one resolved profile, used 
 
 | `VITE_BRAND_PROFILE` | Colours | Default logo |
 |---|---|---|
-| `sundsvall` (default) | Published Sundsvall palette, Vattjom dark blue accent | Original black/white Sundsvall dragon |
-| `neutral` | Astryx Neutral | None |
+| `neutral` (default) | Astryx Neutral | None |
+| `sundsvall` | Published Sundsvall palette, Vattjom dark blue accent | Original black/white Sundsvall dragon |
 | `custom` | Own strong and pale accent colours over the shared Neutral base | None |
 
 For another municipality, place its original image in `apps/web/public/branding/` and configure:

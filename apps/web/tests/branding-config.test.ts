@@ -48,8 +48,8 @@ describe('browser-test branding isolation', () => {
     }
   });
 
-  test('the runner defaults to Sundsvall and rejects unknown fixture names', () => {
-    expect(a11yBrandProfile(undefined)).toBe('sundsvall');
+  test('the runner defaults to Neutral and rejects unknown fixture names', () => {
+    expect(a11yBrandProfile(undefined)).toBe('neutral');
     expect(() => a11yBrandProfile('unknown')).toThrow('CLEW_A11Y_BRAND_PROFILE');
   });
 });

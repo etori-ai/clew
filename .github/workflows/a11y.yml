@@ -29,7 +29,7 @@ jobs:
         run: sh scripts/a11y.sh
       - name: Check other municipal profiles sequentially
         run: |
-          for profile in neutral custom; do
+          for profile in sundsvall custom; do
             CLEW_A11Y_BRAND_PROFILE="$profile" sh scripts/a11y.sh branding.spec.ts
           done
       - name: Keep the report

@@ -1,4 +1,5 @@
-import { desktop, expect, narrow, openNav, reflowProblems, test } from './support';
+import type { Locator } from '@playwright/test';
+import { desktop, expect, narrow, open, openNav, reflowProblems, test } from './support';
 import { a11yBrandProfile, brandingFixtures } from './branding-fixtures';
 
 const surfaces = [['start', '/'], ['calendar', '/calendar'], ['administration', '/admin/connectors']] as const;
@@ -73,6 +74,34 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
     await expect(home).toHaveAccessibleName(/^Startsidan/);
     await home.click();
     await expect(page).toHaveURL('/');
+  });
+
+  test('the rail reads as its own area and its selected row stands out, in both appearances and in the phone drawer (D46)', async ({ page, api: _ }) => {
+    test.skip(profile === 'sundsvall', 'Sundsvall paints body white, so its rail has the page colour; D46 says what to change before switching back.');
+    const painted = (target: Locator) => target.evaluate(element => {
+      for (let node: Element | null = element; node; node = node.parentElement) {
+        const colour = getComputedStyle(node).backgroundColor;
+        if (colour !== 'rgba(0, 0, 0, 0)') return colour;
+      }
+      return 'none';
+    });
+    const selectedIn = (nav: Locator) => nav.locator('a[aria-current="page"]');
+    const standsOut = async (nav: Locator) => await painted(selectedIn(nav)) !== await painted(selectedIn(nav).locator('xpath=..'));
+    const rail = page.locator('.astryx-app-shell-sidenav');
+    const colours = async () => ({ page: await painted(page.getByRole('main')), rail: await painted(rail), selected: await painted(selectedIn(rail)) });
+    await page.setViewportSize(desktop);
+    await open(page, '/calendar');
+    for (const appearance of ['light', 'dark'] as const) {
+      if (appearance === 'dark') {
+        await page.getByRole('button', { name: 'Testa Testsson', exact: true }).click();
+        await page.getByRole('button', { name: 'Inställningar', exact: true }).click();
+        await page.getByRole('radio', { name: 'Mörkt', exact: true }).check();
+        await page.keyboard.press('Escape');
+      }
+      await expect.poll(async () => { const now = await colours(); return now.rail !== now.page && now.selected !== now.rail; }).toBe(true);
+    }
+    await page.setViewportSize(narrow);
+    await expect.poll(async () => standsOut(await openNav(page))).toBe(true);
   });
 
   test('appearance changes the theme and survives navigation and reload', async ({ page, api: _ }) => {
