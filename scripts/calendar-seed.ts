@@ -1,4 +1,4 @@
-/** Synthetic meetings for Hillevi and her unit so slot search has real collisions to avoid. Idempotent by UID. */
+/** Synthetic meetings for every persona and Hillevi's unit so each calendar has a week to show and slot search has real collisions to avoid. Idempotent by UID. */
 import { fixtureProvider } from '@clew/calendar/accounts';
 import { addDays, localInstant, today, weekStart } from '@clew/calendar/dates';
 if (process.env.CLEW_POC !== 'true') throw new Error('Synthetic POC mode required');
@@ -23,6 +23,17 @@ const fixtures: Fixture[] = [
   { user: 'maria', week: next, day: 3, time: '09:00', end: '12:00', title: 'Lektioner' },
   { user: 'johan', week: next, day: 4, time: '09:00', end: '11:00', title: 'Lektioner' },
   { user: 'johan', week: next, day: 0, time: '11:00', end: '12:00', title: 'Mentorstid' },
+  // Appended after the originals so earlier fixture UIDs keep their index. Hassan (undersköterska) and Mikael (systemförvaltare) each get a visible week.
+  { user: 'hassan', week: monday, day: 0, time: '07:00', end: '07:30', title: 'Rapport dagpass' },
+  { user: 'hassan', week: monday, day: 2, time: '13:00', end: '14:00', title: 'APT hemtjänst' },
+  { user: 'hassan', week: monday, day: 4, time: '09:00', end: '10:00', title: 'Handledning' },
+  { user: 'hassan', week: next, day: 1, time: '07:00', end: '07:30', title: 'Rapport dagpass' },
+  { user: 'hassan', week: next, day: 3, time: '14:00', end: '15:30', title: 'Utbildning läkemedel' },
+  { user: 'mikael', week: monday, day: 0, time: '09:00', end: '09:30', title: 'Driftmöte' },
+  { user: 'mikael', week: monday, day: 1, time: '13:00', end: '15:00', title: 'Leverantörsmöte Eneo' },
+  { user: 'mikael', week: monday, day: 3, time: '10:00', end: '11:00', title: 'Förvaltningsråd' },
+  { user: 'mikael', week: next, day: 0, time: '09:00', end: '09:30', title: 'Driftmöte' },
+  { user: 'mikael', week: next, day: 2, time: '13:00', end: '16:00', title: 'Servicefönster' },
 ];
 for (const [i, fixture] of fixtures.entries()) {
   const provider = fixtureProvider(fixture.user);

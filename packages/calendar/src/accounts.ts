@@ -13,6 +13,7 @@ const credential = (user: string): CalendarCredential => ({ kind: 'caldav', url:
 const accounts: Record<string, { name: string; credential: CalendarCredential }> = {
   hillevi: { name: 'Hillevi Berg', credential: credential('hillevi') },
   hassan: { name: 'Hassan Ali', credential: credential('hassan') },
+  mikael: { name: 'Mikael Lund', credential: credential('mikael') },
 };
 const units: Record<string, UnitMember[]> = {
   'unit-skola': [
