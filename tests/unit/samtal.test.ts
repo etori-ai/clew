@@ -93,7 +93,7 @@ describe('another week', () => {
     expect(w.store.audit.at(-1)).toEqual({ actor: 'person:hillevi', action: 'proposals.replanned', subject: 'thread:' + t.id, at: new Date(Date.parse(T0) + 60 * MINUTE).toISOString(), details: { week: '2026-11-16', proposals: 4 } });
     await expect(w.replan(hillevi, t.id, '2026-10-26')).rejects.toThrow('Välj en kommande vecka.');
     await expect(w.replan(hillevi, t.id, '2026-11-17')).rejects.toThrow('Välj en kommande vecka.');
-    await expect(w.replan(hassan, t.id, '2026-11-16')).rejects.toThrow('Tråden är redan hanterad.');
+    await expect(w.replan(hassan, t.id, '2026-11-16')).rejects.toThrow('Kortet är redan hanterat.');
   });
 });
 
@@ -181,7 +181,7 @@ describe('avfärda and the week', () => {
     const gone = await w.dismiss(hillevi, t.id);
     expect(gone).toMatchObject({ state: 'dismissed', handledAt: T0, proposals: t.proposals.map(() => expect.objectContaining({ status: 'declined' })) });
     expect(w.store.audit.at(-1)).toEqual({ actor: 'person:hillevi', action: 'thread.dismissed', subject: 'thread:' + t.id, at: T0 });
-    await expect(w.dismiss(hillevi, t.id)).rejects.toThrow('Tråden är redan hanterad.');
+    await expect(w.dismiss(hillevi, t.id)).rejects.toThrow('Kortet är redan hanterat.');
   });
   test('the week overview carries the events as names and the live proposals; today lists the day with its gaps', async () => {
     const w = world();
@@ -291,7 +291,7 @@ describe('the obligation (D30)', () => {
     // The manager may remind by hand too, as themselves; a stranger may not.
     await w.remindInvitees(t.id, hillevi);
     expect(w.store.audit.at(-1)).toMatchObject({ actor: 'person:hillevi', action: 'obligation.reminded' });
-    await expect(w.remindInvitees(t.id, hassan)).rejects.toThrow('Tråden finns inte.');
+    await expect(w.remindInvitees(t.id, hassan)).rejects.toThrow('Kortet finns inte.');
     // The Friday review: the thread is back under Nu with the sum and the names of the silent.
     await w.returnObligation(t.id, 'deadline');
     const returned = (await w.store.readThread('hillevi', t.id))!.thread;

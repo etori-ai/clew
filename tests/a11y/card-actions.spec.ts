@@ -23,7 +23,7 @@ test.describe('a row shows the next step and keeps the rest behind Fler val', ()
 
   test('the card keeps Inte nu in view, and Påminn mig opens from Fler val', async ({ page, api: _ }) => {
     await open(page, '/overview');
-    const card = page.getByRole('article', { name: 'Tråd: Attestera 3 fakturor, 48 200 kr' });
+    const card = page.getByRole('article', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' });
     await expect(card.getByRole('button', { name: 'Inte nu', exact: true })).toBeVisible();
     await expect(card.getByRole('button', { name: 'Påminn mig' })).toHaveCount(0);
     await card.getByRole('button', { name: 'Fler val' }).click();
@@ -88,7 +88,7 @@ test.describe('a phone', () => {
 
   test('Påminn mig opens from Fler val and shows its rows', async ({ page, api: _ }) => {
     await open(page, '/overview');
-    await page.getByRole('article', { name: 'Tråd: Attestera 3 fakturor, 48 200 kr' }).getByRole('button', { name: 'Fler val' }).click();
+    await page.getByRole('article', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' }).getByRole('button', { name: 'Fler val' }).click();
     await page.getByRole('menuitem', { name: 'Påminn mig' }).click();
     await expect(page.getByRole('menuitem', { name: 'Om 10 sekunder' })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: /^Skriv själv/ })).toBeVisible();

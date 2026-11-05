@@ -48,7 +48,7 @@ type Found = { href: string; detail: string };
 
 /**
  * The rail (D34, the canvas's H1, H3 and H4): one navigation ordered by time relative to the person, after the
- * `shell-side-nav` template. On top Ny fråga and the search; then Från mig, the push in its three groups; Vid sidan av,
+ * `shell-side-nav` template. On top Nytt samtal and the search; then Från mig, the push in its three groups; Vid sidan av,
  * the three piles; Samtal, the person's latest conversations; and at the foot what is always there:
  * Verktyg (Kalender and the views connectors offer as tools, D40, each a page of its own, D42), the areas as lenses, collapsed, and Administration with its two sections, collapsed until one of them is open (D45). Every row is a link to a route, so the back button and
  * a reload land in the same place. Returned as the shell's three slots so the shell keeps the heading and the way out.
@@ -84,7 +84,7 @@ export function useRail({ current, admin }: { current: RailCurrent; admin: boole
   const more = menu.slice(TOOLS_SHOWN);
   return {
     top: <VStack gap={2}>
-      <Button variant="secondary" label="Ny fråga" href="/" width="100%" />
+      <Button variant="secondary" label="Nytt samtal" href="/" width="100%" />
       <Typeahead<SearchableItem<Found>> label="Sök i samtal och kort" isLabelHidden placeholder="Sök i samtal och kort" startIcon="search" size="sm" width="100%"
         searchSource={source} value={null} debounceMs={0} hasClear={false} emptySearchText="Inget samtal eller kort heter så"
         renderItem={item => <TypeaheadItem item={item} description={item.auxiliaryData?.detail} />}

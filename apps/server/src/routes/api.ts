@@ -78,7 +78,7 @@ api.post('/threads/:id/remind', async c => c.json(await remind(c.get('session').
 api.post('/threads/:id/remind/cancel', async c => c.json(await cancelReminder(c.get('session').context, c.req.param('id'), (await body(c.req.raw, validators.cancelReminder as unknown as (value: unknown) => value is { workflowId: string })).workflowId)));
 api.get('/threads/:id', async c => {
   const thread = await threadFor(c.get('session').context, c.req.param('id'));
-  return thread ? c.json(thread) : c.json({ error: 'Tråden finns inte.' }, 404);
+  return thread ? c.json(thread) : c.json({ error: 'Kortet finns inte.' }, 404);
 });
 api.post('/threads/:id/reply', async c => c.json(await reply(c.get('session').context, c.req.param('id'), (await body(c.req.raw, validators.reply)).body)));
 api.post('/threads/:id/confirm', async c => c.json(await confirm(c.get('session').context, c.req.param('id'), (await body(c.req.raw, validators.confirm)).proposalIds)));
@@ -121,7 +121,7 @@ api.get('/objects', async c => {
 });
 api.get('/threads/:id/verbs', async c => {
   const thread = await threadFor(c.get('session').context, c.req.param('id'));
-  return thread ? c.json({ verbs: verbsFor(thread) }) : c.json({ error: 'Tråden finns inte.' }, 404);
+  return thread ? c.json({ verbs: verbsFor(thread) }) : c.json({ error: 'Kortet finns inte.' }, 404);
 });
 /** The person's models (D24): the ones they may pick, the one in use and whether it answers; choosing one is their own preference. */
 api.get('/assistant/status', async c => c.json(await models.statusFor(c.get('session').context)));

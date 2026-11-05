@@ -3,7 +3,7 @@ import { Theme } from '@astryxdesign/core/theme';
 import { createClewTheme } from './theme';
 import type { Branding } from './branding';
 
-type ColorMode = 'light' | 'dark';
+type ColorMode = 'system' | 'light' | 'dark';
 const preferenceKey = 'clew:color-mode';
 const AppearanceContext = createContext<{
   mode: ColorMode;
@@ -15,10 +15,12 @@ const AppearanceContext = createContext<{
 export function AppearanceProvider({ branding, children }: { branding: Branding; children: ReactNode }) {
   const theme = useMemo(() => createClewTheme(branding), [branding]);
   const [preference, setPreference] = useState<{ mode: ColorMode; isPersistent: boolean }>(() => {
+    // Follows the computer until the person chooses: Astryx's own default, and what a person who set dark mode for their eyes expects (D39).
     try {
-      return { mode: localStorage.getItem(preferenceKey) === 'dark' ? 'dark' : 'light', isPersistent: true };
+      const stored = localStorage.getItem(preferenceKey);
+      return { mode: stored === 'dark' || stored === 'light' ? stored : 'system', isPersistent: true };
     } catch {
-      return { mode: 'light', isPersistent: false };
+      return { mode: 'system', isPersistent: false };
     }
   });
   const setMode = (mode: ColorMode) => {

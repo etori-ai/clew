@@ -38,7 +38,7 @@ function Conversation({ messages }: { messages: Thread['messages'] }) {
       <ChatMessageBubble variant={m.role === 'assistant' ? 'ghost' : 'filled'} metadata={<ChatMessageMetadata timestamp={<Timestamp value={m.createdAt} format="time" hasTooltip={false} />} />}>{m.body}</ChatMessageBubble>
     </ChatMessage>)}
   </ChatMessageList>;
-  return <Collapsible defaultIsOpen={false} chevronPosition="start" trigger={<Text type="supporting">Tråden · {messages.length} meddelanden</Text>}>
+  return <Collapsible defaultIsOpen={false} chevronPosition="start" trigger={<Text type="supporting">Historik · {messages.length} meddelanden</Text>}>
     <VStack gap={2}>{older.length > 0 && list(older)}{list(recent)}</VStack>
   </Collapsible>;
 }
@@ -83,7 +83,7 @@ export function ThreadCard({ thread, compact, headingLevel = 3, onChange }: Prop
   const count = selected.length, plural = count === 1 ? 'inbjudan' : 'inbjudningar';
   const status = statusLine(thread);
   return <Card padding={3} variant={thread.state === 'open' && thread.waitingOn ? 'muted' : 'default'} elevation={inConversation || (open && !thread.waitingOn) ? 'low' : 'none'}>
-    <VStack gap={2} as="article" tabIndex={-1} aria-label={`Tråd: ${thread.title}`} id={`thread-${thread.id}`} aria-current={inConversation ? 'true' : undefined}>
+    <VStack gap={2} as="article" tabIndex={-1} aria-label={`Kort: ${thread.title}`} id={`thread-${thread.id}`} aria-current={inConversation ? 'true' : undefined}>
       <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
         <HStack gap={2} vAlign="center" wrap="wrap">
           {status.badge ? <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label={status.label} /> : <Text type="supporting" weight="semibold">{status.label}</Text>}

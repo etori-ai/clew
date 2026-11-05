@@ -34,7 +34,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
 
   test('the rail is one navigation landmark with the areas as lenses, in the drawer on a phone', async ({ page, api: _ }) => {
     await open(page, '/');
-    await expect(page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: 'Ny fråga' })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: 'Nytt samtal' })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Sidonavigering' })).toHaveCount(1);
     await openAreas(page.getByRole('navigation', { name: 'Sidonavigering' }));
     await expect(page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: /^Personal/ })).toBeVisible();
@@ -147,12 +147,10 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(page).toHaveURL(/\/overview\?card=fakturor$/);
   });
 
-  test('a brief row puts its card in the box as a token, and @ with nothing typed offers only what the page shows', async ({ page, api: _ }) => {
+  test('a brief row reaches the box by @, which with nothing typed offers only what the page shows', async ({ page, api: _ }) => {
     await open(page, '/');
     const brief = page.getByRole('list', { name: 'Det som behöver dig' });
-    await brief.getByRole('button', { name: 'Lägg till i samtalet' }).first().click();
-    await expect(brief.getByRole('button', { name: 'I samtalet', exact: true })).toBeDisabled();
-    await expect(page.getByRole('button', { name: /Ta bort|Remove/ }).first()).toBeVisible();
+    await expect(brief.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
     const titles = await brief.getByRole('listitem').getByRole('link').filter({ hasNotText: /^Granska/ }).allTextContents();
     await composer(page).pressSequentially('@');
     const menu = page.getByRole('listbox', { name: 'Objekt' });
@@ -166,7 +164,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await open(page, '/');
     await composer(page).fill('attestera en faktura');
     await composer(page).press('Enter');
-    const card = page.getByRole('article', { name: 'Tråd: Attestera 3 fakturor, 48 200 kr' });
+    const card = page.getByRole('article', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' });
     await expect(card).toBeVisible();
     // Under the conversation's h1 the card's title is a level-2 heading (Playwright's role level reads the tag, so the suite reads aria-level).
     await expect(heading(page, 2, 'Attestera 3 fakturor, 48 200 kr')).toBeVisible();

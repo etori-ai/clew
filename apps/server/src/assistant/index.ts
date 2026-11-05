@@ -227,7 +227,7 @@ export function assistantUsecases(deps: AssistantDeps) {
   /** A reply in a card keeps today's in-card router; a reply in a question thread is a conversation turn. */
   async function reply(persona: AuthenticatedContext, threadId: string, body: string): Promise<Thread> {
     const current = await store.readThread(persona.id, threadId);
-    if (!current) throw new InputError('Tråden finns inte.');
+    if (!current) throw new InputError('Kortet finns inte.');
     if (current.kind === 'question') return (await converse(persona, { text: body, conversationId: threadId })).thread;
     const chipped = await converse(persona, { text: body, chips: [{ ref: 'thread:' + threadId, kind: 'thread', label: current.title }] });
     const at = clock().toISOString();

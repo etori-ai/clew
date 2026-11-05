@@ -142,7 +142,7 @@ export function ConversationProvider({ conversationId, onConversation, onThreadC
   }, [conversationId]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // ⌘K is "Ny fråga" from anywhere (the canvas's H3 item 1): in a conversation it starts a new one, elsewhere it takes the focus to the box.
+      // ⌘K is "Nytt samtal" from anywhere (the canvas's H3 item 1): in a conversation it starts a new one, elsewhere it takes the focus to the box.
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); if (shownRef.current) newConversation(); else focus(); }
       // Esc inside a dialog, a menu or the `@` list is theirs (the D29 picker, the pile menu); only a bare Esc closes the conversation.
       else if (e.key === 'Escape' && !document.activeElement?.closest('[role="dialog"], [role="menu"], [role="listbox"], dialog')) close();

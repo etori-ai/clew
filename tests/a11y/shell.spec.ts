@@ -94,7 +94,7 @@ for (const source of ['/calendar', '/areas/budget']) test(`a reminder opens and 
   await drawer.getByRole('link', { name: /Ledighetsansökan/ }).click();
   await expect(page).toHaveURL('/overview?card=ledighet');
   await expect(drawer).not.toBeVisible();
-  const card = page.getByRole('article', { name: 'Tråd: Ledighetsansökan från Johan Byström', exact: true });
+  const card = page.getByRole('article', { name: 'Kort: Ledighetsansökan från Johan Byström', exact: true });
   await expect(card).toBeVisible();
   await expect.poll(() => card.evaluate(el => el.contains(document.activeElement))).toBe(true);
   // Waiting on others and handled cards never count as outstanding reminders.

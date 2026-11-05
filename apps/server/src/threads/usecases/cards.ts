@@ -113,7 +113,7 @@ export function threadUsecases(deps: ThreadDeps) {
    */
   async function act(persona: AuthenticatedContext, threadId: string, actionId: string, refs?: string[]) {
     const thread = await threadFor(persona, threadId);
-    if (!thread) throw new InputError('Tråden finns inte.');
+    if (!thread) throw new InputError('Kortet finns inte.');
     const action = thread.actions.find(a => a.id === actionId);
     if (!action) throw new InputError('Okänd handling.');
     const selected = refs ?? thread.items.filter(i => i.selected).map(i => i.ref);
@@ -130,7 +130,7 @@ export function threadUsecases(deps: ThreadDeps) {
       const view = registry.viewFor(actorOf(persona), action.capability);
       return { kind, output, ...(view ? { view } : {}) };
     }
-    if (thread.state !== 'open') throw new InputError('Tråden är redan hanterad.');
+    if (thread.state !== 'open') throw new InputError('Kortet är redan hanterat.');
     const result = await run<ExecuteResult>(persona, action.capability, input);
     // D35: Ångra runs an execute of the same connector or nothing. The action has happened, so a foreign undo is dropped, not thrown.
     const undo = result.undoCapability ? registry.find(result.undoCapability) : undefined;
@@ -175,7 +175,7 @@ export function threadUsecases(deps: ThreadDeps) {
   }
   async function dismissThread(persona: AuthenticatedContext, threadId: string, reason = 'inte aktuellt') {
     const thread = await threadFor(persona, threadId);
-    if (!thread || thread.state !== 'open') throw new InputError('Tråden är redan hanterad.');
+    if (!thread || thread.state !== 'open') throw new InputError('Kortet är redan hanterat.');
     const at = clock().toISOString();
     await store.transaction(async tx => {
       await tx.updateThread(threadId, { state: 'dismissed', handledAt: at, updatedAt: at });
@@ -195,7 +195,7 @@ export function threadUsecases(deps: ThreadDeps) {
    */
   async function snoozeThread(persona: AuthenticatedContext, threadId: string, input: SnoozeInput = {}) {
     const thread = await threadFor(persona, threadId);
-    if (!thread || thread.state !== 'open') throw new InputError('Tråden är redan hanterad.');
+    if (!thread || thread.state !== 'open') throw new InputError('Kortet är redan hanterat.');
     const now = clock(), at = now.toISOString();
     let until: string;
     if (input.until) until = input.until;
@@ -228,11 +228,11 @@ export function threadUsecases(deps: ThreadDeps) {
    */
   async function reopenThread(persona: AuthenticatedContext, threadId: string) {
     const t = await store.readThread(persona.id, threadId);
-    if (!t) throw new InputError('Tråden finns inte.');
+    if (!t) throw new InputError('Kortet finns inte.');
     const now = clock(), at = now.toISOString();
     const snoozed = t.state === 'open' && !!t.snoozedUntil;
     const dismissed = t.state === 'dismissed' && !!t.handledAt && now.getTime() - Date.parse(t.handledAt) <= REOPEN_MS;
-    if (!snoozed && !dismissed) throw new InputError(t.state === 'dismissed' ? 'Ångerfönstret har gått ut.' : 'Tråden går inte att återöppna.');
+    if (!snoozed && !dismissed) throw new InputError(t.state === 'dismissed' ? 'Ångerfönstret har gått ut.' : 'Kortet går inte att återöppna.');
     await store.transaction(async tx => {
       await tx.updateThread(threadId, { state: 'open', handledAt: null, snoozedUntil: null, ...(dismissed ? { waitingOn: null } : {}), updatedAt: at });
       await tx.addMessage(threadId, { role: 'user', body: 'Ångra', at });
@@ -268,7 +268,7 @@ export function threadUsecases(deps: ThreadDeps) {
   /** Avfärda from the card: proposal threads decline their drawn times through the planner, every other card is dismissed as is. */
   async function dismissAny(persona: AuthenticatedContext, threadId: string) {
     const thread = await threadFor(persona, threadId);
-    if (!thread) throw new InputError('Tråden finns inte.');
+    if (!thread) throw new InputError('Kortet finns inte.');
     return thread.proposals.length ? calendar.dismiss(persona, threadId) : dismissThread(persona, threadId);
   }
   /**

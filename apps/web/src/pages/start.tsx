@@ -233,11 +233,11 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
   const hello = greeting(Number(timeLabel(now).slice(0, 2)));
   const sentence = digestSentence(g);
   // The digest is the overview's lead, not a discrete item: a section with the greeting as the h1, never a card (D31). How often the assistant interrupts is help, not a thing to do, so it sits behind the tip.
-  const digest = attention && <VStack gap={1} as="section" aria-label="Genomgången">
+  const digest = attention && <VStack gap={1} as="section" aria-label="Sammanfattning">
       <Heading level={1}>{hello}. {sentence}</Heading>
       <HStack gap={1} vAlign="center">
-        <Text type="supporting">Genomgången {attention.rhythm[0]?.at ?? '06:00'} · {nextBundle ? `Nästa samling ${nextBundle.at}` : 'Nästa genomgång i morgon 06:00'}</Text>
-        <InfoTip label="Så här hör jag av mig" content={`Jag stör högst ${attention.budget} gånger mellan samlingarna, bara för deadline samma dag eller något du själv bad om. Allt annat samlas.`} />
+        <Text type="supporting">Jag gick igenom läget {attention.rhythm[0]?.at ?? '06:00'} · {nextBundle ? `nästa sammanfattning ${nextBundle.at}` : 'nästa genomgång i morgon 06:00'}</Text>
+        <InfoTip label="Så här hör jag av mig" content={`Jag stör högst ${attention.budget} gånger mellan sammanfattningarna, bara för deadline samma dag eller något du själv bad om. Allt annat samlas.`} />
       </HStack>
     </VStack>;
   const assistantDown = !!assistant && assistant.configured && !assistant.available;
@@ -413,13 +413,13 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
   /** The transcript's lead on a short screen, where there is no pinned toolbar: the title and the way out, in the flow. */
   const conversationHeader = (talk: { conversation: { title: string } | null; pending: { text: string } | null; newConversation: () => void; close: () => void }) => <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
     <Heading level={3} accessibilityLevel={1}>{titled(talk.conversation?.title ?? talk.pending?.text ?? '')}</Heading>
-    <HStack gap={1}><Button size="sm" variant="ghost" label="Ny fråga" onClick={talk.newConversation} /><Button size="sm" variant="ghost" label="Stäng samtalet" onClick={talk.close} /></HStack>
+    <HStack gap={1}><Button size="sm" variant="ghost" label="Nytt samtal" onClick={talk.newConversation} /><Button size="sm" variant="ghost" label="Stäng samtalet" onClick={talk.close} /></HStack>
   </HStack>;
   const conversationToolbar = (talk: ConversationState) => <Toolbar label="Samtalet" size="sm" startContent={<Heading level={3} accessibilityLevel={1}>{titled(talk.conversation?.title ?? talk.pending?.text.slice(0, 80) ?? '')}</Heading>}
     endContent={mobile
-      ? <HStack gap={1} vAlign="center"><IconButton size="sm" variant="ghost" label="Stäng samtalet" icon={<Icon icon="close" />} onClick={talk.close} /><MoreMenu label="Fler val" size="sm" variant="ghost" items={[{ id: 'new', label: 'Ny fråga', onClick: talk.newConversation }]} /></HStack>
+      ? <HStack gap={1} vAlign="center"><IconButton size="sm" variant="ghost" label="Stäng samtalet" icon={<Icon icon="close" />} onClick={talk.close} /><MoreMenu label="Fler val" size="sm" variant="ghost" items={[{ id: 'new', label: 'Nytt samtal', onClick: talk.newConversation }]} /></HStack>
       : <HStack gap={2} vAlign="center">{started(talk) && <Text type="supporting">Startat av dig {started(talk)}</Text>}<Button size="sm" variant="ghost" label="Stäng samtalet" icon={<Icon icon="close" size="sm" />} onClick={talk.close} /></HStack>} />;
-  /** When the person asked the conversation's first question: H1's line beside the title. "Ny fråga i stället" sits in the box's scope line. */
+  /** When the person asked the conversation's first question: H1's line beside the title. "Nytt samtal i stället" sits in the box's scope line. */
   const started = (talk: ConversationState) => { const first = talk.conversation?.messages.find(m => m.role === 'user'); if (!first) return null; const day = displayDate(first.createdAt); return day === todayDate ? timeLabel(first.createdAt) : `${day === addDays(todayDate, -1) ? 'i går' : shortDayLabel(day)} ${timeLabel(first.createdAt)}`; };
 
   /** What the column holds: the transcript when a conversation is open (D31), else the landing or the overview. */

@@ -39,7 +39,7 @@ for (const [layout, viewport] of [['desktop', desktop], ['phone', phone]] as con
     await open(page, '/');
     await composer(page).fill('attestera en faktura');
     await composer(page).press('Enter');
-    await expect(page.getByRole('article', { name: 'Tråd: Attestera 3 fakturor, 48 200 kr' })).toBeVisible();
+    await expect(page.getByRole('article', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' })).toBeVisible();
     await expectNoAxeViolations(page);
   });
 

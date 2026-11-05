@@ -177,7 +177,7 @@ function ActionRow({ thread, level, actions, quiet = false }: { thread: Thread; 
   const due = level !== 'notice' && streamGroup(thread, today()) === 'nu';
   /** ⋯: MoreMenu's button over DropdownMenu's compound rows, because MoreMenu's data rows cannot hold a sub-menu. */
   const more = ({ tucked = [], times = [] }: { tucked?: ThreadAction[]; times?: { label: string; rows: TimeRows }[] }) => <>
-    <DropdownMenu renderTrigger={trigger => <IconButton {...trigger} size="sm" variant="ghost" label="Fler val" tooltip="Fler val" icon={<Icon icon="moreHorizontal" />} />} alignment="end" menuWidth={240} menuMaxHeight={480}>
+    <DropdownMenu renderTrigger={trigger => <IconButton {...trigger} size="sm" variant="ghost" label="Fler val" tooltip="Fler val" icon={<Icon icon="moreHorizontal" />} />} alignment="end" menuWidth={300} menuMaxHeight={480}>
       {[...tucked, ...overflow].map(a => <DropdownMenuItem key={a.id} label={a.label} onClick={() => void perform(a)} />)}
       <DropdownMenuItem label={inConversation ? 'I samtalet' : 'Lägg till i samtalet'} isDisabled={inConversation} onClick={() => conversation.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id })} />
       {times.map(t => <TimeSubMenu key={t.label} label={t.label} rows={t.rows.rows} own={t.rows.own} />)}
@@ -199,7 +199,7 @@ function ActionRow({ thread, level, actions, quiet = false }: { thread: Thread; 
     {primary && <Button size="sm" variant={due ? 'primary' : 'secondary'} label={primaryLabel ?? ''} isDisabled={selectable && count === 0} clickAction={() => perform(primary)} />}
     {!quiet && secondary.map(a => <Button key={a.id} size="sm" variant={due ? 'secondary' : 'ghost'} label={a.label} clickAction={() => perform(a)} />)}
     {!quiet && <TimePicker label="Inte nu" rows={snoozeRows.rows} own={snoozeRows.own} />}
-    {more(quiet ? { tucked: secondary, times: [{ label: 'Inte nu', rows: snoozeRows }, { label: 'Påminn mig', rows: remindRows }] } : { times: [{ label: 'Påminn mig', rows: remindRows }] })}
+    {more(quiet ? { tucked: secondary, times: [{ label: 'Inte nu · lägg undan', rows: snoozeRows }, { label: 'Påminn mig · kortet ligger kvar', rows: remindRows }] } : { times: [{ label: 'Påminn mig · kortet ligger kvar', rows: remindRows }] })}
   </HStack>;
   if (undoOpen) return <HStack gap={2} vAlign="center" wrap="wrap">
     <Button size="sm" variant="destructive" label={`Ångra allt · ${countdown} kvar`} clickAction={() => run(() => api.undoReceipt(thread.id))} />
@@ -263,7 +263,7 @@ export function GenericCard({ thread, areaTitle, position, headingLevel = 3, aut
   const elevation = open && !thread.waitingOn && (streamGroup(thread, today()) === 'nu' || inConversation) ? 'low' : 'none';
   const variant = open && (thread.waitingOn || isSnoozed(thread, new Date().toISOString())) ? 'muted' : 'default';
   return <Card padding={3} elevation={elevation} variant={variant}>
-    <VStack gap={2} as="article" tabIndex={-1} aria-label={`Tråd: ${thread.title}`} id={`thread-${thread.id}`} aria-current={inConversation ? 'true' : undefined}>
+    <VStack gap={2} as="article" tabIndex={-1} aria-label={`Kort: ${thread.title}`} id={`thread-${thread.id}`} aria-current={inConversation ? 'true' : undefined}>
       <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
         <Meta thread={thread} areaTitle={areaTitle} position={position} inConversation={inConversation} />
         <State thread={thread} />
@@ -284,7 +284,7 @@ export function GenericCard({ thread, areaTitle, position, headingLevel = 3, aut
       {error && <Text as="p" role="alert" color="accent">{error}</Text>}
       <ActionRow thread={thread} level={level} actions={actions} />
       {why && <WhyLine thread={thread} />}
-      {thread.messages.length > 2 && <Collapsible defaultIsOpen={false} chevronPosition="start" trigger={<Text type="supporting">Tråden · {thread.messages.length} meddelanden</Text>}>
+      {thread.messages.length > 2 && <Collapsible defaultIsOpen={false} chevronPosition="start" trigger={<Text type="supporting">Historik · {thread.messages.length} meddelanden</Text>}>
         <List density="compact">{thread.messages.map(m => <ListItem key={m.id} label={<Text>{m.body}</Text>} description={m.role === 'user' ? 'Du' : thread.trigger.source} />)}</List>
       </Collapsible>}
     </VStack>

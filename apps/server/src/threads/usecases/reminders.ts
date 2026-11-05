@@ -19,8 +19,8 @@ export function reminderUsecases(deps: ReminderDeps) {
   async function remind(persona: AuthenticatedContext, threadId: string, seconds: number) {
     if (!Number.isInteger(seconds) || seconds < 1 || seconds > MAX_REMINDER_SECONDS) throw new InputError('Ogiltig tid för påminnelsen.');
     const thread = await store.readThread(persona.id, threadId);
-    if (!thread) throw new InputError('Tråden finns inte.');
-    if (thread.state !== 'open') throw new InputError('Tråden är redan hanterad.');
+    if (!thread) throw new InputError('Kortet finns inte.');
+    if (thread.state !== 'open') throw new InputError('Kortet är redan hanterat.');
     const now = deps.clock(), at = now.toISOString();
     const workflowId = `reminder:${threadId}:${now.getTime()}`;
     const fireAt = new Date(now.getTime() + seconds * 1000);
@@ -37,7 +37,7 @@ export function reminderUsecases(deps: ReminderDeps) {
   async function cancelReminder(persona: AuthenticatedContext, threadId: string, workflowId: string) {
     if (!workflowId.startsWith(`reminder:${threadId}:`)) throw new InputError('Okänd påminnelse.');
     const thread = await store.readThread(persona.id, threadId);
-    if (!thread) throw new InputError('Tråden finns inte.');
+    if (!thread) throw new InputError('Kortet finns inte.');
     await timers.cancel(workflowId);
     const at = deps.clock().toISOString();
     await store.transaction(async tx => {

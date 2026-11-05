@@ -76,7 +76,7 @@ export function Composer({ place, near = [], roomy = false }: { place: ComposerP
       onSelect: item => { const o = (item as SearchableItem<ClewObject>).auxiliaryData!; talk.rememberObject(o); return { value: tokenValue(o.ref), label: o.label, variant: 'neutral' }; },
     };
   }, [talk.rememberObject]);
-  const placeholder = place === 'conversation' ? 'Svara, eller @ för att peka på något …' : place === 'footer' ? 'Ny fråga: skriv eller säg vad du vill göra …' : 'Skriv eller säg vad du vill göra …';
+  const placeholder = place === 'conversation' ? 'Svara, eller @ för att peka på något …' : place === 'footer' ? 'Nytt samtal: skriv eller säg vad du vill göra …' : 'Skriv eller säg vad du vill göra …';
   const plain = talk.value.replace(/@\[[^\]]+\]/g, '').trim();
   const mobile = useMediaQuery(mobileQuery);
   const pointer = useMediaQuery('(pointer: fine)');
@@ -94,7 +94,7 @@ export function Composer({ place, near = [], roomy = false }: { place: ComposerP
     input={<ChatComposerInput handleRef={talk.input} label={place === 'conversation' ? 'Svara i samtalet' : 'Vad vill du göra'} maxRows={place === 'landing' ? 4 : 3} style={place === 'landing' && roomy ? landingField : undefined} hasHistory={false} triggers={[trigger]} placeholder={placeholder}
       onKeyDown={e => { if (talk.pending && e.key === 'Enter' && !e.shiftKey) e.preventDefault(); }} />}
     headerActions={scope}
-    headerContext={place === 'conversation' ? <HStack gap={2} vAlign="center"><Link href="/" onClick={e => { e.preventDefault(); talk.newConversation(); }}>Ny fråga i stället</Link>{shortcut}</HStack> : undefined}
+    headerContext={place === 'conversation' ? <HStack gap={2} vAlign="center"><Link href="/" onClick={e => { e.preventDefault(); talk.newConversation(); }}>Nytt samtal i stället</Link>{shortcut}</HStack> : undefined}
     footerActions={<HStack gap={1} wrap="wrap">
       {talk.chips.length === 1 && !plain && talk.verbs.length > 0 && <HStack gap={1} wrap="wrap" role="group" aria-label="Om kortet">{talk.verbs.map(v => <Button key={v.id} size="sm" variant="ghost" label={v.label} isDisabled={talk.busy} onClick={() => talk.ask(v.label)} />)}</HStack>}
       {place !== 'footer' && <ModelMenu isDisabled={talk.busy} />}

@@ -121,7 +121,7 @@ export function eventUsecases({ store, bind, clock, ids }: EventDeps) {
    */
   async function moveProposal(persona: AuthenticatedContext, threadId: string, proposalId: string, input: MoveProposalInput): Promise<Thread> {
     const current = await store.readThread(persona.id, threadId);
-    if (!current || current.thread.state !== 'open') throw new InputError('Tråden är redan hanterad.');
+    if (!current || current.thread.state !== 'open') throw new InputError('Kortet är redan hanterat.');
     const proposal = current.proposals.find(p => p.id === proposalId && p.status === 'proposed');
     if (!proposal) throw new InputError('Förslaget är inte längre aktuellt. Läs om sidan.');
     window(input.start, input.end);

@@ -123,9 +123,9 @@ describe('a card action', () => {
     const card = await invoices(w);
     await expect(w.threads.act(hillevi, card.id, 'nope')).rejects.toThrow('Okänd handling.');
     await expect(w.threads.act(hillevi, card.id, 'approve', ['raindance:inv:gone'])).rejects.toThrow('Något val är inte längre aktuellt. Läs om sidan.');
-    await expect(w.threads.act(hassan, card.id, 'approve')).rejects.toThrow('Tråden finns inte.');
+    await expect(w.threads.act(hassan, card.id, 'approve')).rejects.toThrow('Kortet finns inte.');
     await w.threads.act(hillevi, card.id, 'approve');
-    await expect(w.threads.act(hillevi, card.id, 'approve')).rejects.toThrow('Tråden är redan hanterad.');
+    await expect(w.threads.act(hillevi, card.id, 'approve')).rejects.toThrow('Kortet är redan hanterat.');
   });
   test('can be undone within the window and not after it', async () => {
     const w = world();
@@ -297,12 +297,12 @@ describe('avfärda, inte nu and ångra', () => {
   test('a card dismissed more than ten minutes ago stays dismissed, an open card cannot be reopened', async () => {
     const w = world();
     const card = await invoices(w);
-    await expect(w.threads.reopenThread(hillevi, card.id)).rejects.toThrow('Tråden går inte att återöppna.');
+    await expect(w.threads.reopenThread(hillevi, card.id)).rejects.toThrow('Kortet går inte att återöppna.');
     await w.threads.dismissThread(hillevi, card.id, 'fel kostnadsställe');
     expect((await w.threads.threadFor(hillevi, card.id))!.messages.at(-1)!.body).toBe('Avfärdad · fel kostnadsställe');
     w.clock.advance(10 * MINUTE + 1);
     await expect(w.threads.reopenThread(hillevi, card.id)).rejects.toThrow('Ångerfönstret har gått ut.');
-    await expect(w.threads.snoozeThread(hillevi, card.id)).rejects.toThrow('Tråden är redan hanterad.');
+    await expect(w.threads.snoozeThread(hillevi, card.id)).rejects.toThrow('Kortet är redan hanterat.');
   });
 });
 

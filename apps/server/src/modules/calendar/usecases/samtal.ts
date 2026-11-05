@@ -145,7 +145,7 @@ export function calendarUsecases(deps: CalendarDeps) {
   /** "Vecka 47 i stället": redraw every unconfirmed proposal of the thread in another week. */
   async function replan(persona: AuthenticatedContext, threadId: string, week: string) {
     const current = await store.readThread(persona.id, threadId);
-    if (!current || current.thread.state !== 'open') throw new InputError('Tråden är redan hanterad.');
+    if (!current || current.thread.state !== 'open') throw new InputError('Kortet är redan hanterat.');
     if (Date.parse(dayStart(week)) < Date.parse(dayStart(todayDate())) || weekStartMismatch(week)) throw new InputError('Välj en kommande vecka.');
     const { members, planned, unplaced } = await draw(persona, week, threadId);
     const at = clock().toISOString();
@@ -167,7 +167,7 @@ export function calendarUsecases(deps: CalendarDeps) {
   async function confirm(persona: AuthenticatedContext, threadId: string, proposalIds: string[]) {
     await persona.authorize();
     const current = await store.readThread(persona.id, threadId);
-    if (!current || current.thread.state !== 'open') throw new InputError('Tråden är redan hanterad.');
+    if (!current || current.thread.state !== 'open') throw new InputError('Kortet är redan hanterat.');
     if (!proposalIds.length) throw new InputError('Välj minst en tid.');
     const selected = current.proposals.filter(p => proposalIds.includes(p.id) && p.status === 'proposed');
     if (selected.length !== proposalIds.length) throw new InputError('Något förslag är inte längre aktuellt. Läs om sidan.');
@@ -220,7 +220,7 @@ export function calendarUsecases(deps: CalendarDeps) {
   async function undo(persona: AuthenticatedContext, threadId: string) {
     await persona.authorize();
     const current = await store.readThread(persona.id, threadId);
-    if (!current) throw new InputError('Tråden finns inte.');
+    if (!current) throw new InputError('Kortet finns inte.');
     const confirmed = current.proposals.filter(p => p.status === 'confirmed');
     if (!confirmed.length) throw new InputError('Det finns inget att ångra.');
     const now = clock(), at = now.toISOString();
@@ -320,9 +320,9 @@ export function calendarUsecases(deps: CalendarDeps) {
    */
   async function remindInvitees(threadId: string, actor: AuthenticatedContext | 'assistant:obligation', only?: string[]) {
     const found = await owned(threadId);
-    if (!found) throw new InputError('Tråden finns inte.');
+    if (!found) throw new InputError('Kortet finns inte.');
     const { current, persona, binding } = found;
-    if (actor !== 'assistant:obligation' && actor.id !== persona.id) throw new InputError('Tråden finns inte.');
+    if (actor !== 'assistant:obligation' && actor.id !== persona.id) throw new InputError('Kortet finns inte.');
     const waiting = current.proposals.filter(waitingOnInvitee).filter(p => !only || only.includes(p.id));
     const at = clock().toISOString();
     const back = returnAt(current.proposals, at);
@@ -384,7 +384,7 @@ export function calendarUsecases(deps: CalendarDeps) {
   /** Avfärda on a proposal thread: the drawn times are declined, nothing was ever sent. */
   async function dismiss(persona: AuthenticatedContext, threadId: string) {
     const current = await store.readThread(persona.id, threadId);
-    if (!current || current.thread.state !== 'open') throw new InputError('Tråden är redan hanterad.');
+    if (!current || current.thread.state !== 'open') throw new InputError('Kortet är redan hanterat.');
     const at = clock().toISOString();
     await store.transaction(async tx => {
       await tx.transition(threadId, 'proposed', { status: 'declined' });
