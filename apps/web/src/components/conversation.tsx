@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import type { CalendarEvent, MessageMeta, SourceCitation, Thread, TurnStep, ViewRef } from '@clew/contracts';
 import { Badge, Button, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, ChatSystemMessage, ChatToolCalls, EventList, HStack, Icon, List, ListItem, Markdown, MetadataList, MetadataListItem, Skeleton, Text, Timestamp, Token, VisuallyHidden, VStack, agendaItems, useStreamingText, type ChatToolCallItem } from '@clew/ui';
 import { weekNumber } from '@clew/calendar/dates';
-import { calendarWeekQuery, threadQuery } from '../queries';
+import { calendarWeekQuery, threadQuery, viewQuery } from '../queries';
+import { DeclaredView } from './view';
 import { useConversation } from './conversation-context';
 import { reviewLabel, staleLabel } from './panel-labels';
 
@@ -57,7 +58,18 @@ function TurnCard({ id, render }: { id: string; render: (thread: Thread) => Reac
  * The answer is the card (H1): a turn about an open card draws that card in the assistant's bubble, under its sentence,
  * with the card's own rows and buttons; it is drawn once per conversation and stays live.
  */
-export function Transcript({ onOpenView, renderCard }: { onOpenView: (view: ViewRef) => void; renderCard: (thread: Thread) => ReactNode }) {
+/**
+ * A declared view under the answer it belongs to (D38): the capability is read again as the person and drawn by the one
+ * view renderer, a few rows of it, without its controls. The rows come from the source, never from the model's text or
+ * the stored conversation; "Visa …" opens the whole view in the panel.
+ */
+const EMBED_ROWS = 5;
+function ViewEmbed({ view, hrefFor }: { view: ViewRef; hrefFor?: ((view: ViewRef) => string) | undefined }) {
+  const read = useQuery({ ...viewQuery(view.capability, Object.keys(view.input).length ? JSON.stringify(view.input) : null), retry: false });
+  if (!read.data?.view) return null;
+  return <DeclaredView view={read.data.view} output={read.data.output} limit={EMBED_ROWS} {...(hrefFor ? { hrefFor } : {})} />;
+}
+export function Transcript({ onOpenView, renderCard, viewHref }: { onOpenView: (view: ViewRef) => void; renderCard: (thread: Thread) => ReactNode; viewHref?: (view: ViewRef) => string }) {
   const talk = useConversation();
   const { conversation, latest, done, busy, pending } = talk;
   // A proposal answer names its thread; the draft carries it. Either way the week is drawn under the answer. The named thread comes from the cache the answer wrote it into.
@@ -78,6 +90,8 @@ export function Transcript({ onOpenView, renderCard }: { onOpenView: (view: View
           {m.role === 'assistant' ? <Markdown density="compact" headingLevelStart={2} {...(m.meta?.sources?.length ? { sources: citationSources(m.meta.sources), citationStyle: 'number' as const } : {})}>{m.body}</Markdown> : m.body}
           {m.meta?.sources && m.meta.sources.length > 0 && <Sources sources={m.meta.sources} />}
           {m.meta?.cards?.map(id => <TurnCard key={id} id={id} render={renderCard} />)}
+          {/* The latest answer's declared view is drawn under it; an older answer keeps its button, so opening a long conversation reads one view, not all of them. */}
+          {m.role === 'assistant' && i === n - 1 && !pending && m.meta?.view?.declared && <ViewEmbed view={m.meta.view} hrefFor={viewHref} />}
           {(m.meta?.view || m.meta?.sources?.length) && <HStack gap={2} wrap="wrap">
             {m.meta?.view && <Button size="sm" label={`Visa ${m.meta.view.title.toLowerCase()}`} onClick={() => onOpenView(m.meta!.view!)} />}
             {m.meta?.sources && m.meta.sources.length > 0 && <Button size="sm" variant="primary" label="Gör till ett kort" isDisabled={busy} clickAction={() => talk.makeCard(m.id)} />}

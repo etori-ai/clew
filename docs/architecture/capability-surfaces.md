@@ -44,8 +44,9 @@ allowed, validated and audited is the same code path.
 
 This is the surface D8 guarantees: every capability is reachable without a model.
 
-- `GET /api/cap/<name>?input=<json>` runs a `read` capability and returns `{ output }`. Panel views and
-  the "Gör själv" standing actions use it.
+- `GET /api/cap/<name>?input=<json>` runs a `read` capability and returns `{ output }`, and `{ output, view }` when
+  the capability declares how it is drawn (D38). Panel views and the "Gör själv" standing actions use it; a declared
+  view's search field and choice rewrite `input` and read again.
 - `POST /api/cap/<name>` with a JSON body runs any capability. `execute` re-authorizes the session first.
 - `POST /api/threads/<id>/act` runs one of the card's actions: Clew resolves the action, merges its fixed
   input with the selected refs, runs the capability, and for `execute` writes the receipt, the audit row and
@@ -74,6 +75,10 @@ A tool call runs `runCapability` as that person, with the same validation and sc
 model therefore cannot reach anything the person could not click, and cannot execute at all. What it can
 do is choose and phrase: pick a `read` to answer with, or a `propose` to draft a card. The card's button is
 REST. If the model is down, the intent router and typeahead take over, built on the same tool list.
+
+A capability whose view says `modelReads: 'summary'` (D38) is run like any other, but the model is handed only that
+the result is shown to the person and how many rows it has; the answer carries the view, and the person reads the
+rows from the source. The model chooses the capability and its input and nothing else.
 
 Tool names are derived from capability names; the model reads the Swedish `description`, so a connector
 author writes that sentence for the model and the `title` for the button, and nothing else.

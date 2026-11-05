@@ -1,13 +1,13 @@
 import type { AuthenticatedContext, Chip, ClewAction, ConversationInput, ConversationResponse, MessageMeta, ModelRef, SearchResult, SourceCitation, Thread, TurnEvent, TurnStep, Verb, ViewRef } from '@clew/contracts';
 import { citationsOf, parseAnswer, visibleSoFar } from './answer';
-import { actorOf, SEARCH_CONNECTOR } from '@clew/connectors';
+import { actorOf, readsSummary, SEARCH_CONNECTOR } from '@clew/connectors';
 import { displayDate, weekNumber } from '@clew/calendar/dates';
 import { InputError } from '../context';
 import { resolveChips, type ResolvedChips } from './chips';
 import { completionsFor } from './completions';
 import { serialiseContext } from './context';
 import { routeFixed } from './fixed';
-import { headingFollowUps, matchCapability, matchCards, nearest, searchAnswer, templatedAnswer } from './router';
+import { headingFollowUps, matchCapability, matchCards, nearest, searchAnswer, templatedAnswer, viewAnswer, viewInput } from './router';
 import { modelAnswer, systemPrompt, type ToolCallRecord } from './model';
 import { listObjects } from './objects';
 import type { AssistantDeps, ResolvedModel } from './ports';
@@ -95,9 +95,11 @@ export function assistantUsecases(deps: AssistantDeps) {
     const tools = registry.tools(actorOf(persona));
     const match = matchCapability(text, tools.filter(t => t.name !== SEARCH_TOOL));
     if (match) {
-      const output = await turn.run(match.name, {});
-      const answer = templatedAnswer(match, {}, output, clock().toISOString());
-      return { body: answer.body, source: match.source, shape: answer.view ? 'vy' : 'svar', assistant, clewActions: [], followUps: nearest(text, tools.filter(t => t.name !== match.name)).map(t => t.title), toolCalls: [{ capability: match.name, input: {}, output }], ...(answer.view ? { view: answer.view } : {}) };
+      // A view with a search field takes the rest of what was typed as its question (D38); every other read runs as it is.
+      const input = viewInput(text, match);
+      const output = await turn.run(match.name, input);
+      const answer = match.view && readsSummary(match.view) ? viewAnswer({ ...match, view: match.view }, input, output, clock().toISOString()) : templatedAnswer(match, input, output, clock().toISOString());
+      return { body: answer.body, source: match.source, shape: answer.view ? 'vy' : 'svar', assistant, clewActions: [], followUps: nearest(text, tools.filter(t => t.name !== match.name)).map(t => t.title), toolCalls: [{ capability: match.name, input, output }], ...(answer.view ? { view: answer.view } : {}) };
     }
     // The catch-all (D26): a question no capability answers goes to the composite search as typed, and the hits become a view the person reads.
     const searchTool = tools.find(t => t.name === SEARCH_TOOL);

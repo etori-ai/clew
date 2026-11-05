@@ -33,9 +33,13 @@ export function visibleSoFar(text: string): string {
   const last = body.slice(lineStart).trimStart().toLowerCase();
   return last && 'följdfrågor:'.startsWith(last.replace(/[ \t]+:/, ':')) ? body.slice(0, lineStart) : body;
 }
-/** The hits the model read, numbered as the model saw them, so `[n]` in the answer points at a source the person can open or chip. */
+/**
+ * The hits the model read, numbered as the model saw them, so `[n]` in the answer points at a source the person can open
+ * or chip. A person is not a citation: the citations are stored with the answer, and a name stays in its source (the
+ * numbers of the other hits are kept, so `[n]` still points right).
+ */
 export function citationsOf(result: Pick<SearchResult, 'rows'>): SourceCitation[] {
-  return result.rows.slice(0, 10).map((r, i) => ({
+  return result.rows.slice(0, 10).map((r, i) => ({ r, i })).filter(({ r }) => r.kind !== 'person').map(({ r, i }) => ({
     n: i + 1, ref: `document:${r.connector}:${r.ref}`, label: r.label, source: r.source, stale: r.stale,
     ...(r.link ? { link: r.link } : {}), ...(r.section ? { section: r.section } : {}), ...(r.owner ? { owner: r.owner } : {}), ...(r.reviewedAt ?? r.updatedAt ? { reviewedAt: (r.reviewedAt ?? r.updatedAt)! } : {}),
   }));

@@ -11,7 +11,7 @@ import type { ReminderTimers, ThreadStore, ThreadTx } from '../model';
  */
 export interface ThreadDeps {
   store: ThreadStore;
-  registry: Pick<Registry, 'scan' | 'areas' | 'connector' | 'visible' | 'find'>;
+  registry: Pick<Registry, 'scan' | 'areas' | 'connector' | 'visible' | 'find' | 'viewFor'>;
   /** Run a capability as the person, with input validation and scope: `runCapability` in the server. */
   run: <O = unknown>(persona: AuthenticatedContext, name: string, input: unknown) => Promise<O>;
   /** The calendar's proposal path, the one coupling the stream has to a module (recorded as debt in D20). */
@@ -124,7 +124,12 @@ export function threadUsecases(deps: ThreadDeps) {
     const found = registry.find(action.capability);
     if (found && found.connector.id !== thread.connector) throw new InputError('Knappen hör inte till kortets källa och kan inte användas.');
     const kind = found?.capability.kind ?? action.kind;
-    if (kind !== 'execute') return { kind, output: await run(persona, action.capability, input) };
+    if (kind !== 'execute') {
+      const output = await run(persona, action.capability, input);
+      // A read action opened as a view is drawn as the capability declares it (D38), like any other view.
+      const view = registry.viewFor(actorOf(persona), action.capability);
+      return { kind, output, ...(view ? { view } : {}) };
+    }
     if (thread.state !== 'open') throw new InputError('Tråden är redan hanterad.');
     const result = await run<ExecuteResult>(persona, action.capability, input);
     // D35: Ångra runs an execute of the same connector or nothing. The action has happened, so a foreign undo is dropped, not thrown.

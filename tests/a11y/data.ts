@@ -136,6 +136,14 @@ export const conversation = (source: Thread[], text: string, conversationId = 'k
       messages: [...previous, { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW }, { id: `a${previous.length}`, role: 'assistant', body, createdAt: NOW, meta: { source: 'Startsidan', shape: 'steg', view, sources: citations, followUps: ['Och om hen slagit i huvudet?'] } }] });
     return { conversationId, thread: reply, shape: 'steg', assistant: 'model', answer: { body, source: 'Startsidan', at: NOW }, view, clewActions: [], followUps: ['Och om hen slagit i huvudet?', 'Vem ringer jag på natten?'], sources: citations };
   }
+  // A question a declared view answers (D38): the sentence counts, the view is drawn under it from its source.
+  if (/telefonbok/i.test(text)) {
+    const body = '2 rader under sök i telefonboken. Se dem i vyn. Telefonboken 09:00.';
+    const view = { capability: 'telefonbok.directory', input: { query: 'lärare' }, title: 'Sök i telefonboken', source: 'Telefonboken', declared: true };
+    const reply = thread({ id: conversationId, title: text.slice(0, 80), kind: 'question', connector: 'clew', area: 'fragor',
+      messages: [...previous, { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW }, { id: `a${previous.length}`, role: 'assistant', body, createdAt: NOW, meta: { source: 'Telefonboken', shape: 'vy', view } }] });
+    return { conversationId, thread: reply, shape: 'vy', assistant: 'router', answer: { body, source: 'Telefonboken', at: NOW }, view, clewActions: [], followUps: [] };
+  }
   // A question the administered model answers (D24): the answer names the model under it.
   if (/semester/i.test(text)) {
     const body = 'Du har 18 semesterdagar kvar i år.', model = { id: 'gpt-oss-120b', title: 'Kapabel' };

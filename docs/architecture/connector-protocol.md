@@ -151,6 +151,52 @@ The model sees the composite only; the person sees the rows as citations and in 
 to the conversation, which calls `<id>.fetch`. A source with no search of its own brings its own index inside its
 container. Clew stores refs, never the text.
 
+## Declaring a view (D38)
+
+A connector never draws: no markup, no styles, no frame of its own. A `read` capability may instead say how its output
+is to be shown, and Clew draws it with its own components, the same in the side panel, under an answer in a
+conversation, with a model and without one. `view` is optional on a capability; without it Clew falls back to its
+generic rules (rows become a list, anything else label and value pairs).
+
+```json
+{ "name": "telefonbok.directory", "kind": "read", "title": "Sök i telefonboken", "model": true, "scope": {},
+  "input": { "type": "object", "properties": { "query": { "type": "string", "maxLength": 80 }, "scope": { "type": "string", "enum": ["all", "unit"] } }, "additionalProperties": false },
+  "output": { "type": "object", "properties": { "rows": { "type": "array", "items": { "type": "object", "properties": { "ref": {}, "name": {}, "title": {}, "phone": {}, "email": {} } } } } },
+  "view": {
+    "kind": "table", "title": "name", "ref": "ref", "modelReads": "summary", "empty": "Inga träffar i telefonboken.",
+    "fields": [{ "key": "name", "label": "Namn" }, { "key": "title", "label": "Titel" }, { "key": "phone", "label": "Telefon", "format": "phone" }, { "key": "email", "label": "E-post", "format": "email" }],
+    "input": { "query": { "key": "query", "label": "Sök i telefonboken", "placeholder": "Namn, titel eller enhet" },
+               "filter": { "key": "scope", "label": "Sök i", "options": [{ "value": "all", "label": "Hela organisationen" }, { "value": "unit", "label": "Min enhet" }] } },
+    "open": { "capability": "telefonbok.person", "title": "Kontaktkort", "params": { "ref": "ref" } }
+  } }
+```
+
+| Part | Meaning |
+|---|---|
+| `kind` | `table` or `list` over an array of records, `detail` over one record, `text` over one Markdown string (`body` names the property). A table is uniform records compared across columns; a list is things to pick from. Clew draws a table as a list on a narrow surface |
+| `rows` | The property holding the array, default `"rows"` |
+| `fields` | What is shown, in order: `key` (a property of a row or of the record), a Swedish `label`, and a `format`: `text` (default), `phone` (a link that calls), `email` (a link that writes), `link` (an http(s) link out, labelled by the field's label), `date`, `instant`, `number`, `status` (a badge; `tones` maps a value to `ok`, `warn`, `alert` or `none`). An empty value is a dash in a table and left out elsewhere |
+| `title` | The field that names a row (one of `fields`), or the record's heading in a `detail` |
+| `ref` | The field holding your ref for the row. With it, and when the connector is a search source with `<id>.fetch`, a row can be added to the conversation |
+| `input` | A search field (`query`) and one choice of two to six options (`filter`), each bound to a property of the capability's own `input` schema. A change calls the capability again with the new input. A capability that should open without a question must accept an empty input |
+| `open` | The read a row opens as a view: a `read` of the same connector, its `title` in Swedish, and `params` mapping that read's input properties to the row's |
+| `empty` | Swedish. What is said when there are no rows |
+| `modelReads` | `output` (default) or `summary`. With `summary` the capability is still run when the model calls it as a tool, so the person's view has its rows, but the model is handed only that the result is shown and how many rows it has. Use it where the content should reach the person and not a model or the stored conversation: names, numbers, anything about an identifiable person |
+
+The loader refuses a manifest whose view breaks a rule, the same way it refuses an `execute` that is a tool: a view on
+a capability that is not a `read`; a `title` that is not a field; a control bound to an input the capability does not
+declare; an `open` that names another connector's capability, a capability that is not a `read`, or input the row
+cannot fill; a field the output schema does not declare, when the schema says what a row holds. Declare the output
+schema's properties and the check is exact. `connector-check` then calls the capability and reports whether the answer
+holds the rows where the view says and whether any column is empty in every row.
+
+A search source (D26) may declare a view on `<id>.search` too. Its `open` is then what a hit of that source opens in
+Clew's panel, beside the link out: a person's contact card, a case. The hit itself should say who or what and where,
+not the content the card holds.
+
+What a view cannot do, by design: carry markup or style, compose layout, execute, reach another connector, or be an
+iframe. A screen the catalogue cannot express is a link out to the system. `connectors/telefonbok` is the reference.
+
 ## Acting as the person (D26)
 
 A connector that must call its system as the person, not as a service, declares in its manifest:
@@ -170,6 +216,7 @@ answer is the expected one. `connectors/eneo` is the reference.
 
 ## What stays in Clew
 
-The things a connector cannot do, by design: draw a card (connectors contribute data and actions, Clew draws),
+The things a connector cannot do, by design: draw a card or a view (connectors contribute data, actions and a declared
+view, D38; Clew draws),
 execute in another connector, be a tool with `execute`, see a token, see other people's threads, or be loaded
 as code into Clew's process.

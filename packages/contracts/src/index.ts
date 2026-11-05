@@ -102,8 +102,71 @@ export type AssistantMode = Static<typeof AssistantMode>;
 export const ModelRefSchema = object({ id: Type.String({ maxLength: 60 }), title: Type.String({ maxLength: 80 }) });
 export type ModelRef = Static<typeof ModelRefSchema>;
 /** A view the client can open in the side panel: a read capability and its input, rendered by Clew from the output. */
-export const ViewRefSchema = object({ capability: Type.String(), input: Type.Record(Type.String(), Type.Unknown()), title: Type.String(), source: Type.String() });
+/** `declared` says the capability declares how it is drawn (D38), so the transcript may draw it under the answer without asking first. */
+export const ViewRefSchema = object({ capability: Type.String(), input: Type.Record(Type.String(), Type.Unknown()), title: Type.String(), source: Type.String(), declared: Type.Optional(Type.Boolean()) });
 export type ViewRef = Static<typeof ViewRefSchema>;
+
+/**
+ * A declared view (D38): how a read capability's output is shown, said by the connector as data and drawn by Clew with
+ * Astryx. A closed catalogue of kinds, fields with a Swedish label and a format, and nothing else: no layout, no
+ * styling, no HTML. A capability without one is drawn by the generic panel rules, as before.
+ */
+const viewKey = Type.String({ pattern: '^[A-Za-z][A-Za-z0-9]*$', maxLength: 40, description: 'A property name in the capability\'s output (or input).' });
+const viewLabel = Type.String({ minLength: 1, maxLength: 60, description: 'Swedish. Shown to the person.' });
+/** How a value is drawn: `phone` and `email` become links that call and write, `link` an http(s) link out, `status` a badge with a tone. */
+export const ViewFormat = Type.Union([Type.Literal('text'), Type.Literal('phone'), Type.Literal('email'), Type.Literal('link'), Type.Literal('date'), Type.Literal('instant'), Type.Literal('number'), Type.Literal('status')]);
+export type ViewFormat = Static<typeof ViewFormat>;
+export const ViewTone = Type.Union([Type.Literal('ok'), Type.Literal('warn'), Type.Literal('alert'), Type.Literal('none')]);
+export const ViewFieldSchema = object({
+  key: viewKey, label: viewLabel, format: Type.Optional(ViewFormat),
+  tones: Type.Optional(Type.Record(Type.String({ maxLength: 40 }), ViewTone, { description: 'For `status`: the tone per value. A value without one is neutral.' })),
+});
+export type ViewField = Static<typeof ViewFieldSchema>;
+/** What the person may type or choose above the rows: each control is bound to one property of the capability's input, and a change reads the capability again. */
+export const ViewInputSchema = object({
+  query: Type.Optional(object({ key: viewKey, label: viewLabel, placeholder: Type.Optional(Type.String({ maxLength: 80 })) })),
+  filter: Type.Optional(object({ key: viewKey, label: viewLabel, options: Type.Array(object({ value: Type.String({ minLength: 1, maxLength: 40 }), label: viewLabel }), { minItems: 2, maxItems: 6 }) })),
+});
+export type ViewInput = Static<typeof ViewInputSchema>;
+/** A row opens another read of the same connector as a view: `params` maps that read's input properties to the row's. */
+export const ViewOpenSchema = object({ capability: Type.String({ maxLength: 80 }), title: viewLabel, params: Type.Record(Type.String({ maxLength: 40 }), viewKey) });
+export type ViewOpen = Static<typeof ViewOpenSchema>;
+/**
+ * What the model is handed when it calls the capability as a tool: the output, or only a summary (how many rows are
+ * shown, never their content), so names and numbers reach the person through the view and neither the model nor the
+ * stored conversation.
+ */
+const modelReads = Type.Optional(Type.Union([Type.Literal('output'), Type.Literal('summary')], { description: 'Default `output`.' }));
+const rowsView = <K extends 'table' | 'list'>(kind: K) => object({
+  kind: Type.Literal(kind),
+  rows: Type.Optional(viewKey), title: viewKey,
+  fields: Type.Array(ViewFieldSchema, { minItems: 1, maxItems: 12 }),
+  ref: Type.Optional(viewKey), open: Type.Optional(ViewOpenSchema), input: Type.Optional(ViewInputSchema),
+  empty: Type.Optional(Type.String({ minLength: 1, maxLength: 120, description: 'Swedish. Shown when there are no rows.' })),
+  modelReads,
+});
+export const ViewSchema = Type.Union([
+  rowsView('table'), rowsView('list'),
+  object({ kind: Type.Literal('detail'), title: viewKey, fields: Type.Array(ViewFieldSchema, { minItems: 1, maxItems: 24 }), modelReads }),
+  object({ kind: Type.Literal('text'), body: viewKey, modelReads }),
+], { description: 'How Clew draws the output: `table` and `list` over an array of records (`rows`, default "rows"; `title` names the field that names a row and is one of `fields`; `ref` the field holding the connector\'s ref), `detail` over one record, `text` over one Markdown string.' });
+export type View = Static<typeof ViewSchema>;
+const isViewRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+export const rowsKey = (view: View) => view.kind === 'table' || view.kind === 'list' ? view.rows ?? 'rows' : undefined;
+/** The records a table or list draws, or undefined when the output does not hold them where the view says. */
+export function viewRows(view: View, output: unknown): Record<string, unknown>[] | undefined {
+  const key = rowsKey(view);
+  if (!key || !isViewRecord(output) || !Array.isArray(output[key])) return undefined;
+  return (output[key] as unknown[]).filter(isViewRecord);
+}
+/** The view a row (or a search hit) opens: the declared read with its input taken from the row. Undefined when the row lacks a value the read needs. */
+export function openRef(open: ViewOpen, row: Record<string, unknown>, source: string): ViewRef | undefined {
+  const input: Record<string, unknown> = {};
+  for (const [param, from] of Object.entries(open.params)) { const value = row[from]; if (value === undefined || value === null || value === '') return undefined; input[param] = value; }
+  return { capability: open.capability, input, title: open.title, source };
+}
+/** The declared view as the browser gets it beside the output: the declaration, whose it is, and whether a row can be added to the conversation. */
+export type PanelViewSpec = View & { capability: string; connector: string; source: string; chip: boolean };
 
 /** What a search can find (D26): a document or a passage of one, a person, a case, a room. */
 export const SearchKind = Type.Union([Type.Literal('document'), Type.Literal('person'), Type.Literal('case'), Type.Literal('room')]);
@@ -143,7 +206,8 @@ export const SearchSourceSchema = object({ id: Type.String(), source: Type.Strin
 export type SearchSource = Static<typeof SearchSourceSchema>;
 /** What the composite `clew.search` returns: merged hits, each marked stale or not (null when the source gives no date), and every source's status. */
 export const SearchResultSchema = object({
-  rows: Type.Array(Type.Intersect([SearchHitSchema, object({ stale: Type.Union([Type.Boolean(), Type.Null()]), connector: Type.String() })])),
+  /** `view` is the read that shows this hit in the panel, when its source declares one (D38): a person's contact card, a case. */
+  rows: Type.Array(Type.Intersect([SearchHitSchema, object({ stale: Type.Union([Type.Boolean(), Type.Null()]), connector: Type.String(), view: Type.Optional(ViewRefSchema) })])),
   sources: Type.Array(SearchSourceSchema),
 });
 export type SearchResult = Static<typeof SearchResultSchema>;

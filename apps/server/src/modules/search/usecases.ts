@@ -1,5 +1,5 @@
 import { Value } from '@sinclair/typebox/value';
-import type { Actor } from '@clew/connectors';
+import { openRef, type Actor } from '@clew/connectors';
 import { SearchHitSchema, SearchOutputSchema, type SearchHit, type SearchResult } from '@clew/contracts';
 import { merge, sourceReport, type SourceOutcome } from './domain';
 import { DEFAULT_BUDGET, type SearchCall, type SearchDeps, type SearchSourceRef } from './model';
@@ -38,7 +38,14 @@ export function searchUsecases(deps: SearchDeps) {
       outcomes = await Promise.all(pending.map(p => withinBudget(p, 0).then(o => o === TIMEOUT ? undefined : o)))
         .then(partial => partial.map((o, i) => o ?? { id: sources[i]!.connectorId, source: sources[i]!.source, status: 'timeout' as const }));
     } else outcomes = settled;
-    return { rows: merge(outcomes, deps.clock().getTime()), sources: sourceReport(outcomes) };
+    // A hit whose source declares what a row opens carries that view (D38): a person's contact card, drawn by Clew, beside the link out.
+    const opens = new Map(sources.filter(s => s.open).map(s => [s.connectorId, s]));
+    const rows = merge(outcomes, deps.clock().getTime()).map(row => {
+      const source = opens.get(row.connector);
+      const view = source?.open && openRef(source.open, row, source.source);
+      return view ? { ...row, view } : row;
+    });
+    return { rows, sources: sourceReport(outcomes) };
   }
   /** One hit back by its ref, from the connector that found it: what a document chip resolves to and what a card's link opens. */
   async function fetch(actor: Actor, connectorId: string, input: FetchInput, call: SearchCall): Promise<SearchHit | undefined> {

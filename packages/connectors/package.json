@@ -6,6 +6,7 @@
     ".": "./src/index.ts",
     "./protocol": "./src/protocol.ts",
     "./remote": "./src/remote.ts",
+    "./views": "./src/views.ts",
     "./memory-state": "./src/memory-state.ts",
     "./mock/heroma": "./src/mock/heroma.ts",
     "./mock/raindance": "./src/mock/raindance.ts",

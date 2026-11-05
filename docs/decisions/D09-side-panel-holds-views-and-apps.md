@@ -1,6 +1,6 @@
 # D9 · The side panel holds conversation, Clew views and MCP App views
 
-**Status:** accepted · **Date:** 2026-11-03 · **Area:** ui
+**Status:** accepted, the app half replaced by D38 (2026-11-05): a connector declares its view as data and Clew draws it; nothing is rendered by a connector · **Date:** 2026-11-03 · **Area:** ui
 
 **Decision.** The surface to the right of the stream on desktop (bottom sheet on the phone) is a side
 panel with two kinds of content, as in Eneo's sidebar: a

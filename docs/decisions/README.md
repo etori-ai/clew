@@ -15,7 +15,7 @@ the reasoning. Longer designs live in `docs/architecture/`, and the reviews that
 | [D6](D06-dev-login-local-only.md) | Dev login with username and password, local only | 2026-11-03 | identity | accepted, not built yet |
 | [D7](D07-bun-is-the-server-runtime.md) | Bun is the server runtime | 2026-11-03 | platform | superseded by D16 |
 | [D8](D08-every-action-works-without-the-model.md) | Every action works without the model | 2026-11-03 | product | accepted |
-| [D9](D09-side-panel-holds-views-and-apps.md) | The side panel holds conversation, Clew views and MCP App views | 2026-11-03 | ui | accepted |
+| [D9](D09-side-panel-holds-views-and-apps.md) | The side panel holds conversation, Clew views and MCP App views | 2026-11-03 | ui | accepted, the MCP App views replaced by D38 |
 | [D10](D10-integrations-fulfil-clews-api-first.md) | Integrations fulfil Clew's API; adapters are the fallback | 2026-11-03 | integrations | accepted |
 | [D11](D11-one-calendar-contract-two-adapters.md) | One calendar contract, CalDAV and Microsoft 365 as adapters | 2026-11-03 | integrations | accepted, `microsoft365` adapter not built yet |
 | [D12](D12-objects-chips-proposals.md) | Objects, chips, proposals: the general interaction pattern | 2026-11-03 | ui | accepted |
@@ -46,6 +46,7 @@ the reasoning. Longer designs live in `docs/architecture/`, and the reviews that
 | [D37](D37-header-logo-is-installation-branding.md) | One configurable header logo per installation, rendered by the shared shell through Astryx's navigation heading icon slot | 2026-11-05 | ui | accepted, extended by D38 |
 | [D38](D38-municipal-branding-uses-astryx-themes.md) | Municipal logo and colour profiles share one contract; Sundsvall, Neutral and custom colours extend Astryx themes | 2026-11-05 | ui | accepted, extended by D39 |
 | [D39](D39-compact-header-profile-and-reminders.md) | Compact shared header with profile, persisted appearance and existing reminder links | 2026-11-05 | ui | accepted |
+| [D38](D38-views-are-declared-by-connectors-and-drawn-by-clew.md) | A view is declared by the connector as data (table, list, detail, text; fields with a Swedish label and a format; a search field and a choice bound to the capability's input; a row opens a read of the same connector) and drawn by Clew with Astryx, in the panel and under an answer, with or without a model; a view may keep its content from the model | 2026-11-05 | ui | accepted, built; figures, series, sections and a pinned view not built |
 
 ## Adding a decision
 

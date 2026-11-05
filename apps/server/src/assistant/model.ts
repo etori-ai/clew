@@ -1,5 +1,6 @@
 import { jsonSchema, stepCountIs, streamText, tool, type JSONSchema7, type ModelMessage, type ToolSet } from 'ai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import { readsSummary, viewSummary } from '@clew/connectors';
 import type { ViewRef } from '@clew/contracts';
 import type { ToolInfo } from './router';
 
@@ -15,12 +16,19 @@ const clip = (value: unknown) => { const text = JSON.stringify(value); return te
 
 export type ToolSchemaInfo = ToolInfo & { input: unknown };
 export type ToolCallRecord = { capability: string; input: Record<string, unknown>; output: unknown };
-/** The model's tool set: every in-scope read capability, run through the same validated path as REST and cards. */
+/**
+ * The model's tool set: every in-scope read capability, run through the same validated path as REST and cards. A tool whose
+ * view says the model reads a summary (D38) is still run, so the person's view has its rows, but the model is handed only
+ * that the result is shown and how much of it there is.
+ */
 export function buildTools(tools: ToolSchemaInfo[], run: (name: string, input: unknown) => Promise<unknown>): ToolSet {
   return Object.fromEntries(tools.map(t => [toToolName(t.name), tool({
     description: `${t.title}. ${t.description}`,
     inputSchema: jsonSchema<Record<string, unknown>>(t.input as JSONSchema7),
-    execute: async input => { try { return clip(await run(t.name, input)); } catch (e) { return { error: e instanceof Error ? e.message : 'fel' }; } },
+    execute: async input => {
+      try { const output = await run(t.name, input); return clip(t.view && readsSummary(t.view) ? viewSummary(t.view, t.title, output) : output); }
+      catch (e) { return { error: e instanceof Error ? e.message : 'fel' }; }
+    },
   })]));
 }
 export interface PromptContext { name: string; role: 'manager' | 'employee'; unitLabel: string; now: Date; week: number; objects: string[]; }
@@ -37,6 +45,7 @@ export function systemPrompt(ctx: PromptContext): string {
     '- Du utför aldrig något och påstår aldrig att något är gjort, utöver det ett korts kvitto visar. När personen vill göra något: säg vilken knapp på kortet som gör det, eller att det inte går här.',
     '- Nämn bara knappar som står under "Knappar på kortet nu". Är kortet redan hanterat, säg det först och vad som går nu, till exempel att Ångra allt måste tryckas innan kortets egna knappar kommer tillbaka.',
     '- Nämn inte enskilda medarbetares namn om personen inte själv använde dem.',
+    '- När ett verktyg svarar att resultatet visas i en vy: säg kort att uppgifterna finns i vyn och hur många rader den har. Återge eller gissa aldrig innehållet.',
     '- Svara i ren text utan rubriker, listor eller markdown.',
     'När svaret bygger på sökverktyget (rutiner och dokument):',
     '- Svara bara utifrån de avsnitt som kom tillbaka och hitta aldrig på mer. Om avsnitten inte räcker, säg det.',
@@ -77,7 +86,7 @@ export function createGenerator(endpoint: { baseUrl: string; apiKey?: string }, 
   };
 }
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
-/** Ask the model. The answer is its text; the first tool result with rows is offered as a view. Any failure becomes ModelUnavailable. */
+/** Ask the model. The answer is its text; the last tool call with a declared view (D38), else the first tool result with rows, is offered as a view. Any failure becomes ModelUnavailable. */
 export async function modelAnswer(args: { system: string; history: { role: 'user' | 'assistant'; body: string }[]; text: string; tools: ToolSchemaInfo[]; run: (name: string, input: unknown) => Promise<unknown>; generate: ModelGenerate; timeoutMs?: number; onText?: (text: string) => void; signal?: AbortSignal }): Promise<{ body: string; view?: ViewRef; toolCalls: ToolCallRecord[] }> {
   const messages: ModelMessage[] = [...args.history.map(m => ({ role: m.role, content: m.body }) as ModelMessage), { role: 'user', content: args.text }];
   let result: { text: string; toolCalls: ToolCallRecord[] };
@@ -85,7 +94,8 @@ export async function modelAnswer(args: { system: string; history: { role: 'user
   catch (e) { throw new ModelUnavailable(e instanceof Error ? e.message : 'model failed'); }
   const body = result.text.trim();
   if (!body) throw new ModelUnavailable('empty answer');
-  const withRows = result.toolCalls.find(c => isRecord(c.output) && Array.isArray(c.output.rows));
-  const info = withRows ? args.tools.find(t => t.name === withRows.capability) : undefined;
-  return { body, toolCalls: result.toolCalls, ...(withRows && info ? { view: { capability: info.name, input: withRows.input, title: info.title, source: info.source } } : {}) };
+  const declared = [...result.toolCalls].reverse().find(c => !(isRecord(c.output) && 'error' in c.output) && args.tools.find(t => t.name === c.capability)?.view);
+  const shown = declared ?? result.toolCalls.find(c => isRecord(c.output) && Array.isArray(c.output.rows));
+  const info = shown ? args.tools.find(t => t.name === shown.capability) : undefined;
+  return { body, toolCalls: result.toolCalls, ...(shown && info ? { view: { capability: info.name, input: shown.input, title: info.title, source: info.source, ...(info.view ? { declared: true } : {}) } } : {}) };
 }

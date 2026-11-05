@@ -54,7 +54,11 @@ api.get('/cap/:name', async c => {
   const name = c.req.param('name'); const found = registry.find(name);
   if (!found || found.capability.kind !== 'read') return c.json({ error: 'Okänd förmåga.' }, 404);
   let input: unknown = {}; const raw = c.req.query('input'); if (raw) { try { input = JSON.parse(raw); } catch { throw new InputError('Ogiltig förfrågan.'); } }
-  return c.json({ output: await runCapability(c.get('session').context, name, input) });
+  // The output and, when the capability declares one, how to draw it (D38): the browser never guesses a declared view.
+  const persona = c.get('session').context;
+  const output = await runCapability(persona, name, input);
+  const view = registry.viewFor(actorOf(persona), name);
+  return c.json({ output, ...(view ? { view } : {}) });
 });
 api.post('/cap/:name', async c => {
   const name = c.req.param('name'); const found = registry.find(name);

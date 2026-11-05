@@ -17,6 +17,9 @@ import { assistantUsecases, TurnStopped } from '../../apps/server/src/assistant'
 import { memoryModelHealth, memoryModelStore, memoryModelWire } from '../../apps/server/src/assistant/adapters/memory';
 import { modelUsecases } from '../../apps/server/src/assistant/usecases/models';
 import type { ModelGenerate } from '../../apps/server/src/assistant/model';
+import { parseManifest, remoteConnector } from '../../packages/connectors/src/remote';
+import { assertionFor } from '../../apps/server/src/connectors/remote';
+import { createConnector as createTelefonbok, manifest as telefonbokManifest } from '../../connectors/telefonbok/connector.mjs';
 
 /**
  * The conversation end to end (D8, D12, D25): the real router, verbs and prompt over the registry with mock
@@ -30,9 +33,9 @@ const hassan = persona('hassan', 'employee');
 const T0 = '2026-11-04T07:00:00.000Z';
 const account = { ref: 'memory:account:hillevi', email: 'hillevi@clew.test', name: 'Hillevi Berg' };
 const members = ['Anna Lindqvist', 'Erik Sandström'].map(name => { const first = name.split(' ')[0]!.toLowerCase(); return { personId: first, ref: 'memory:account:' + first, email: first + '@clew.test', name }; });
-function world(options: { generate?: ModelGenerate } = {}) {
+function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) {
   const state = memoryState(), registry = new Registry();
-  for (const m of [heromaConnector(state), raindanceConnector(state)]) registry.register(m);
+  for (const m of [heromaConnector(state), raindanceConnector(state), ...(options.extra ?? [])]) registry.register(m);
   const store = memoryThreadStore(), proposals = memoryProposalStore(), cal = memoryCalendar(account);
   cal.events.push(occurrence({ uid: 'apt', title: 'APT', start: localInstant('2026-11-04T10:00'), end: localInstant('2026-11-04T11:00') }, account));
   let time = Date.parse(T0), n = 0;
@@ -323,5 +326,44 @@ describe('a question answered from documents, with the model (D26)', () => {
     expect(second.conversationId).toBe(r.conversationId);
     expect(seen.at(-2)).toContain('Avsnitt "Rutin vid fall i ordinärt boende, Vid fall" ur Intranätet (MAS, granskad 2026-03-12)');
     await expect(w.assistant.converse(hassan, { text: 'x', chips: [{ ref: 'document:docs:nope', kind: 'document', label: 'x' }] })).rejects.toThrow('Något du pekade på finns inte längre.');
+  });
+});
+
+/** The phone book as the registry runs it: the real connector over the protocol, in process, on its made-up organisation. */
+function telefonbok(): Connector {
+  const secret = 'test-secret-test-secret', service = createTelefonbok({ secret });
+  return remoteConnector(parseManifest(telefonbokManifest, 'telefonbok'), { url: 'http://telefonbok', assert: assertionFor('telefonbok', secret), fetch: (input, init) => service.handle(new Request(input, init)) });
+}
+describe('a declared view is the answer, with and without the model (D38)', () => {
+  test('without the model: what was typed after the capability\'s name is the view\'s question; the turn stores a count, the view and its audit row, never a row', async () => {
+    const w = world({ extra: [telefonbok()] });
+    const r = await w.assistant.converse(hassan, { text: 'telefonboken lindqvist' });
+    expect(r).toMatchObject({ assistant: 'router', shape: 'vy', view: { capability: 'telefonbok.directory', input: { query: 'lindqvist' }, title: 'Sök i telefonboken', source: 'Telefonboken', declared: true } });
+    expect(r.answer.body).toBe('1 rad under sök i telefonboken. Se den i vyn. Telefonboken 08:00.');
+    expect(w.store.audit.at(-1)).toMatchObject({ actor: 'person:hassan', action: 'conversation.asked', subject: 'thread:' + r.conversationId, details: { assistant: 'router', tools: ['telefonbok.directory'], view: 'telefonbok.directory' } });
+    // What Clew keeps of the turn: the question, the sentence and where the view is. No name it did not get from the person, no number.
+    const kept = JSON.stringify([await w.store.readThread('hassan', r.conversationId), w.store.audit]);
+    expect(kept).not.toMatch(/Anna|0980|070-|kommun\.example/);
+    // The view itself is read from the source when it is opened, as the person.
+    expect(await w.deps.run<{ rows: unknown[] }>(hassan, r.view!.capability, r.view!.input)).toMatchObject({ rows: [{ name: 'Anna Lindqvist', phone: '0980-319 203' }] });
+    const team = await w.assistant.converse(hassan, { text: 'mitt team' });
+    expect(team).toMatchObject({ view: { capability: 'telefonbok.team', input: {}, declared: true }, answer: { body: '5 rader under mitt teams kontaktlista. Se dem i vyn. Telefonboken 08:00.' } });
+  });
+  test('with the model: the tool runs for the person\'s view, the model is handed a count, and its answer carries the view', async () => {
+    const handed: unknown[] = [];
+    const generate: ModelGenerate = async ({ system, tools }) => {
+      expect(system).toContain('resultatet visas i en vy');
+      expect(Object.keys(tools)).toEqual(expect.arrayContaining(['telefonbok__directory', 'telefonbok__team']));
+      const output = await (tools['telefonbok__directory'] as { execute: (input: unknown, options: unknown) => Promise<unknown> }).execute({ query: 'lärare', scope: 'unit' }, {});
+      handed.push(output);
+      return { text: 'Två träffar på din enhet finns i vyn. Telefonboken 08:00.', toolCalls: [{ capability: 'telefonbok.directory', input: { query: 'lärare', scope: 'unit' }, output }] };
+    };
+    const w = world({ generate, extra: [telefonbok()] });
+    const r = await w.assistant.converse(hassan, { text: 'vilka lärare finns på min enhet?' });
+    expect(handed).toEqual([{ shown: true, view: 'Sök i telefonboken', rows: 2, note: expect.stringContaining('Innehållet lämnas inte till dig') }]);
+    expect(r).toMatchObject({ assistant: 'model', shape: 'vy', view: { capability: 'telefonbok.directory', input: { query: 'lärare', scope: 'unit' }, declared: true } });
+    expect(r.thread.messages[1]!.meta).toMatchObject({ toolCalls: [{ capability: 'telefonbok.directory', input: { query: 'lärare', scope: 'unit' } }] });
+    expect(w.store.audit.at(-1)).toMatchObject({ action: 'conversation.asked', details: { assistant: 'model', tools: ['telefonbok.directory'], view: 'telefonbok.directory' } });
+    expect(JSON.stringify([await w.store.readThread('hassan', r.conversationId), w.store.audit])).not.toMatch(/Anna|Hassan Ali|0980|070-/);
   });
 });

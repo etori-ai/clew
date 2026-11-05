@@ -1,11 +1,14 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { SearchHitSchema, SearchKind, SearchOutputSchema, ThreadActionSchema, ThreadItemSchema } from '@clew/contracts';
+import { SearchHitSchema, SearchKind, SearchOutputSchema, ThreadActionSchema, ThreadItemSchema, ViewSchema } from '@clew/contracts';
 
 /**
  * The Clew connector protocol (D21): how a connector that is not part of this repository plugs into a running Clew.
  * A connector is an HTTP service. Clew reads its manifest once at start-up and then calls it per request, as the
  * acting person. The shapes here are the contract; `docs/protocol/connector-manifest.schema.json` is generated
  * from them (`bun run protocol:schema`) so a connector can be written in any language against plain JSON Schema.
+ *
+ * A read capability may declare a `view` (D38): how Clew draws its output (a table, a list, one record, a text), as data.
+ * The connector never sends markup; a capability without a view is drawn by Clew's generic rules.
  *
  * Routes a connector serves (all JSON, all under the base URL Clew is configured with):
  *   GET  /clew/manifest                 -> ConnectorManifest
@@ -39,6 +42,7 @@ export const ManifestCapabilitySchema = object({
   model: Type.Boolean({ description: 'Offer it to the model as a tool. Must be false for execute (D8).' }),
   scope: ScopeRuleSchema,
   kinds: Type.Optional(Type.Array(SearchKind, { uniqueItems: true, description: 'For `<id>.search` (D26): what it can find. Its output is a SearchOutput; `<id>.fetch` takes one of its refs back and returns one SearchHit.' })),
+  view: Type.Optional(ViewSchema),
 });
 export const ManifestAreaSchema = object({
   id: Type.String({ pattern: '^[a-z][a-z0-9-]*$', maxLength: 40 }), title: swedish('Swedish. The sidebar entry.'),
@@ -108,7 +112,7 @@ export function protocolSchema() {
       ConnectorManifest: ConnectorManifestSchema, Actor: ActorSchema, CallRequest: CallRequestSchema, CallResponse: CallResponseSchema,
       ProtocolError: ProtocolErrorSchema, ExecuteResult: ExecuteResultSchema, ScanRequest: ScanRequestSchema, ScanResponse: ScanResponseSchema,
       ThreadDraft: ThreadDraftSchema, FigureRequest: FigureRequestSchema, FigureResponse: FigureResponseSchema, CallbackRequest: CallbackRequestSchema,
-      SearchHit: SearchHitSchema, SearchOutput: SearchOutputSchema, Delegation: DelegationSchema,
+      SearchHit: SearchHitSchema, SearchOutput: SearchOutputSchema, Delegation: DelegationSchema, View: ViewSchema,
     },
   };
 }

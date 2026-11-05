@@ -1,5 +1,5 @@
 import type { AddModelInput, AddProviderInput, ModelDetail, ModelPatchInput, ModelSummary, ProviderDetail, ProviderPatchInput, ProviderSummary, ProviderTestReport } from '@clew/contracts';
-import type { SnoozeInput, SnoozePreset, AddConnectorInput, Area, AssistantStatus, Attention, AvailabilityInput, AvailabilityResult, CalendarEvent, CalendarMember, CalendarRoom, CancelEventInput, CreateEventInput, DayView, MoveProposalInput, RescheduleEventInput, CheckReport, ClewObject, Completions, ConnectorDetail, ConnectorHealth, ConnectorPatchInput, ConnectorPreview, ConnectorSummary, ConversationEvent, ConversationInput, ConversationResponse, Figure, TurnEvent, ManifestDiff, Proposal, Role, Thread, TodayView, Verb } from '@clew/contracts';
+import type { PanelViewSpec, SnoozeInput, SnoozePreset, AddConnectorInput, Area, AssistantStatus, Attention, AvailabilityInput, AvailabilityResult, CalendarEvent, CalendarMember, CalendarRoom, CancelEventInput, CreateEventInput, DayView, MoveProposalInput, RescheduleEventInput, CheckReport, ClewObject, Completions, ConnectorDetail, ConnectorHealth, ConnectorPatchInput, ConnectorPreview, ConnectorSummary, ConversationEvent, ConversationInput, ConversationResponse, Figure, TurnEvent, ManifestDiff, Proposal, Role, Thread, TodayView, Verb } from '@clew/contracts';
 import { sessionFetch } from '@clew/ui';
 
 import { ApiError } from './api-error';
@@ -70,14 +70,14 @@ export const api = {
   attention: () => call<Attention>('/api/attention'),
   areas: () => call<{ areas: Area[] }>('/api/areas'),
   connectors: () => call<{ connectors: unknown[]; tools: string[] }>('/api/connectors'),
-  act: (id: string, actionId: string, refs?: string[]) => post<{ kind: 'execute'; thread: Thread } | { kind: 'read' | 'propose'; output: unknown }>(`/api/threads/${id}/act`, { actionId, refs }),
+  act: (id: string, actionId: string, refs?: string[]) => post<{ kind: 'execute'; thread: Thread } | { kind: 'read' | 'propose'; output: unknown; view?: PanelViewSpec }>(`/api/threads/${id}/act`, { actionId, refs }),
   undoReceipt: (id: string) => post<Thread>(`/api/threads/${id}/undo-receipt`),
   snooze: (id: string, input: SnoozeInput = {}) => post<Thread>(`/api/threads/${id}/snooze`, input),
   snoozePresets: () => call<{ presets: SnoozePreset[] }>('/api/snooze/presets'),
   remindInvitees: (id: string) => post<Thread>(`/api/threads/${id}/remind-invitees`),
   remind: (id: string, seconds: number) => post<{ id: string; fireAt: string; thread: Thread }>(`/api/threads/${id}/remind`, { seconds }),
   cancelReminder: (id: string, workflowId: string) => post<Thread>(`/api/threads/${id}/remind/cancel`, { workflowId }),
-  capability: (name: string, input?: unknown) => call<{ output: unknown }>(`/api/cap/${name}` + (input ? `?input=${encodeURIComponent(JSON.stringify(input))}` : '')),
+  capability: (name: string, input?: unknown) => call<{ output: unknown; view?: PanelViewSpec }>(`/api/cap/${name}` + (input ? `?input=${encodeURIComponent(JSON.stringify(input))}` : '')),
   runCapability: (name: string, input?: unknown) => post<{ output: unknown }>(`/api/cap/${name}`, input ?? {}),
   // Administration (D23). Every call is checked again on the server; no secret ever comes back.
   admin: {

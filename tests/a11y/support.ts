@@ -4,6 +4,7 @@ import type { Thread } from '@clew/contracts';
 import { NEXT_WEEK, NOW, WEEK, areas, attention, checkReport, completions, connectorDetail, connectorPreview, connectors, conversation, events, figures, searchOutput, snoozePresets, threads, today, units, user } from './data';
 import { assistantStatus, modelDetail, modelProviders, models, providerDetail, providerReport } from './data';
 import type { ModelSummary, ProviderSummary } from '@clew/contracts';
+import { personSearch, telefonbok } from './telefonbok';
 
 export const desktop = { width: 1280, height: 800 };
 export const phone = { width: 375, height: 667 };
@@ -97,7 +98,10 @@ export class MockApi {
       const hits = q ? all.filter(o => o.label.toLowerCase().includes(q)) : all.filter(o => o.visible);
       return json({ objects: [...hits.filter(o => o.visible), ...hits.filter(o => !o.visible)].slice(0, 12) });
     }
-    if (path === '/cap/clew.search') return json({ output: searchOutput });
+    // A name finds a person (D38): the hit carries its contact card as a view. Anything else finds the routine.
+    if (path === '/cap/clew.search') return json({ output: /lindqvist/i.test(url.searchParams.get('input') ?? '') ? personSearch : searchOutput });
+    // The phone book's declared views, answered by the connector itself.
+    if (path.startsWith('/cap/telefonbok.')) { const answer = await telefonbok(path.slice('/cap/'.length), JSON.parse(url.searchParams.get('input') ?? '{}')); return route.fulfill({ status: answer.status, json: answer.body }); }
     if (path === '/cap/clew.cardFromAnswer' && post) return json({ output: { threadId: 'rutin' } });
     if (path.startsWith('/cap/')) return json({ output: this.output });
     // A turn as the server streams it (D36): a read as a step, the answer in two deltas, then the finished turn. Playwright

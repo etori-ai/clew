@@ -1,5 +1,6 @@
 import { Value } from '@sinclair/typebox/value';
 import { CapabilityError, type Actor, type Capability, type Clew, type Connector } from './index';
+import { viewProblem } from './views';
 import { CallResponseSchema, FigureResponseSchema, ConnectorManifestSchema, ScanResponseSchema, type ConnectorManifest } from './protocol';
 
 /**
@@ -29,6 +30,8 @@ export function parseManifest(document: unknown, expectedId?: string): Connector
   for (const c of manifest.capabilities) {
     if (!c.name.startsWith(manifest.id + '.')) throw new ManifestError(`Capability ${c.name} must be prefixed with ${manifest.id}.`);
     if (c.kind === 'execute' && c.model) throw new ManifestError(`Capability ${c.name}: execute capabilities are never tools (D8).`);
+    const problem = viewProblem(c, manifest.capabilities);
+    if (problem) throw new ManifestError(`Capability ${problem} (D38).`);
   }
   for (const a of manifest.areas) for (const s of a.standing) if (!manifest.capabilities.some(c => c.name === s)) throw new ManifestError(`Area ${a.id} lists unknown standing capability ${s}.`);
   return manifest;
@@ -72,7 +75,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
   const source = manifest.source;
   const capabilities: Capability<any, any>[] = manifest.capabilities.map(c => ({
     name: c.name, kind: c.kind, title: c.title, description: c.description, input: c.input as never, output: c.output as never, model: c.model, scope: c.scope,
-    ...(c.kinds ? { kinds: c.kinds } : {}),
+    ...(c.kinds ? { kinds: c.kinds } : {}), ...(c.view ? { view: c.view } : {}),
     run: async (actor, input, clew) => {
       const { status, json } = await post(transport, source, '/clew/capabilities/' + encodeURIComponent(c.name), actor, { actor, input }, await delegated(manifest, clew, source));
       if (status >= 500 || !Value.Check(CallResponseSchema, json)) throw unavailable(source);

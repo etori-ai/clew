@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Area, Figure, SessionUser, Thread, ViewRef } from '@clew/contracts';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { Area, Figure, SessionUser, Thread, ViewRef, PanelViewSpec } from '@clew/contracts';
 import { Banner, Button, ChatLayout, Divider, EmptyState, Grid, GridSpan, Heading, HStack, Icon, IconButton, Layout, LayoutContent, LayoutFooter, Link, List, ListItem, MoreMenu, ProgressBar, Skeleton, Text, Toolbar, VisuallyHidden, VStack, useMediaQuery, useToast } from '@clew/ui';
 import { addDays, displayDate, shortDayLabel, timeLabel, timeRange, today } from '@clew/calendar/dates';
 import { errorMessage } from '../query-policy';
@@ -79,7 +79,8 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
   const home = mode === 'fraga' ? '/' : pathFor(area);
   const back = pile ? pileHref(pile) : home;
   const withArea = (path: string) => area ? `${path}${path.includes('?') ? '&' : '?'}omrade=${encodeURIComponent(area)}` : path;
-  const viewHref = (capability: string, title: string, input?: Record<string, unknown>) => withArea(`/vy/${capability}?titel=${encodeURIComponent(title)}` + (input && Object.keys(input).length ? `&input=${encodeURIComponent(JSON.stringify(input))}` : ''));
+  // `via` marks a view opened from another view (a row's contact card): the panel then offers the way back to it.
+  const viewHref = (capability: string, title: string, input?: Record<string, unknown>, via = false) => withArea(`/vy/${capability}?titel=${encodeURIComponent(title)}` + (input && Object.keys(input).length ? `&input=${encodeURIComponent(JSON.stringify(input))}` : '') + (via ? '&via=1' : ''));
   const cardViewHref = (threadId: string, actionId: string) => withArea(`/vy/kort/${threadId}/${actionId}`);
   const conversationHref = (id: string) => `/samtal/${id}`;
   /** The overview with one card open: where a brief row's title leads. */
@@ -122,7 +123,12 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
   }, [threads]);
   // A view is addressable (integrations.md, "Answers and views"): the panel follows /vy/:capability or /vy/kort/:thread/:action.
   const viewInput = search.get('input'), viewTitle = search.get('titel');
-  const capabilityView = useQuery({ ...viewQuery(params.capability ?? '', viewInput), enabled: !!params.capability });
+  // A declared view with a search field (D38) asks again as the person types: the rows on screen stay until the next ones arrive, so the panel and the field's focus stay put.
+  const capabilityView = useQuery({ ...viewQuery(params.capability ?? '', viewInput), enabled: !!params.capability, placeholderData: keepPreviousData });
+  // The view on screen. Another capability's view takes its place when it has arrived, not before: the panel stays open
+  // between a row and its contact card, and focus can follow. Typing in a view's own field keeps that view's rows meanwhile.
+  const shownView = useRef<{ capability: string; title: string; output: unknown; spec: PanelViewSpec | undefined; input: Record<string, unknown>; via: boolean; address: string } | null>(null);
+  const viewInputValue = useMemo(() => { try { const v: unknown = viewInput ? JSON.parse(viewInput) : {}; return v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}; } catch { return {}; } }, [viewInput]);
   const cardView = useQuery({ ...cardViewQuery(params.threadId ?? '', params.actionId ?? ''), enabled: !!params.threadId && !!params.actionId });
   // What a card action answered is acted on once per answer (StrictMode replays effects): an executed thread goes into the cache, a link opens a tab.
   const acted = useRef<unknown>(null);
@@ -133,15 +139,19 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
     if (result.kind === 'execute') { replace(result.thread); void applyThread(client, result.thread); }
     else if (typeof (result.output as { url?: string }).url === 'string') window.open((result.output as { url: string }).url, '_blank', 'noopener');
   }, [cardView.data, client, replace]);
+  const arrived = capabilityView.data && (!capabilityView.isPlaceholderData || capabilityView.data.view?.capability === params.capability) ? capabilityView.data : undefined;
+  if (!params.capability || capabilityView.isError) shownView.current = null;
+  else if (arrived) shownView.current = { capability: params.capability, title: viewTitle ?? params.capability, output: arrived.output, spec: arrived.view, input: viewInputValue, via: search.get('via') === '1', address: location.pathname + location.search };
+  const capabilityShown = params.capability ? shownView.current : null;
   const view = useMemo(() => {
-    if (params.capability) return capabilityView.data ? { title: viewTitle ?? params.capability, output: capabilityView.data.output } : null;
+    if (params.capability) return capabilityShown ? { title: capabilityShown.title, output: capabilityShown.output, spec: capabilityShown.spec } : null;
     const result = params.threadId && params.actionId ? cardView.data : undefined;
     if (!result) return null;
     const label = threads.find(t => t.id === params.threadId)?.actions.find(a => a.id === params.actionId)?.label ?? 'Vy';
-    if (result.kind === 'execute') return { title: label, output: result.thread.receipt };
+    if (result.kind === 'execute') return { title: label, output: result.thread.receipt, spec: undefined };
     if (typeof (result.output as { url?: string }).url === 'string') return null;
-    return { title: label, output: result.output };
-  }, [params.capability, params.threadId, params.actionId, viewTitle, capabilityView.data, cardView.data, threads]);
+    return { title: label, output: result.output, spec: result.view };
+  }, [params.capability, params.threadId, params.actionId, capabilityShown, cardView.data, threads]);
   // The page's one alert: a read that failed before it had anything to show. A failed refetch keeps the old data and says nothing; the day, the figures and the model's status are extras.
   const failed = [threadsQ, areasQ, attentionQ].find(q => q.isError && q.data === undefined);
   const error = failed ? errorMessage(failed.error, 'Sidan kunde inte läsas.')
@@ -388,11 +398,11 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
   /** What the column holds: the transcript when a conversation is open (D31), else the landing or the overview. */
   const column = (talk: ConversationState) => {
     if (talk.open) return short
-      ? <VStack gap={4} padding={3}>{conversationHeader(talk)}<Transcript onOpenView={openView} renderCard={t => card(t, undefined, 2)} /><Composer place="conversation" /></VStack>
+      ? <VStack gap={4} padding={3}>{conversationHeader(talk)}<Transcript onOpenView={openView} renderCard={t => card(t, undefined, 2)} viewHref={v => viewHref(v.capability, v.title, v.input, true)} /><Composer place="conversation" /></VStack>
       : <Layout height="fill" contentWidth={800} padding={mobile ? 3 : 4} defaultHasDividers header={conversationToolbar(talk)}
         content={<LayoutContent isScrollable={false} padding={0}>
           {/* The ChatLayout spans the content area full bleed and owns the scroll, so its scrollbar sits at the window's edge like a page's; the spacious density centres its stream and dock to one 800 px column. */}
-          <VStack height="100%"><ChatLayout density="spacious" composer={<Composer place="conversation" />}><Transcript onOpenView={openView} renderCard={t => card(t, undefined, 2)} /></ChatLayout></VStack>
+          <VStack height="100%"><ChatLayout density="spacious" composer={<Composer place="conversation" />}><Transcript onOpenView={openView} renderCard={t => card(t, undefined, 2)} viewHref={v => viewHref(v.capability, v.title, v.input, true)} /></ChatLayout></VStack>
         </LayoutContent>} />;
     // The landing (G, the `ai-chat-landing` template): one 760 px column, the box in the page flow; on a phone the box is docked at the foot.
     if (mode === 'fraga') return short
@@ -414,7 +424,11 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
         endContent={<Button size="sm" variant="secondary" label="Försök igen" clickAction={() => client.invalidateQueries()} />} /> : undefined}>
       {column(talk)}
     </Shell>}</ConversationContext.Consumer>
-    <PanelView title={view?.title ?? null} output={view?.output} onClose={() => navigate(back)} onOpenItem={(item, dayItems) => setOpenItem({ item, dayItems })} />
+    <PanelView title={view?.title ?? null} output={view?.output} onClose={() => navigate(back)} onOpenItem={(item, dayItems) => setOpenItem({ item, dayItems })}
+      /* A declared view (D38): its controls rewrite the address, so the view stays addressable and the back button undoes a search; a row's own view is a link. A card's view has no controls: its input is the card's. */
+      view={view?.spec} input={capabilityShown?.input ?? {}} isLoading={capabilityView.isFetching && capabilityView.isPlaceholderData} address={capabilityShown?.address}
+      onInput={capabilityShown && capabilityShown.capability === params.capability ? next => navigate(viewHref(capabilityShown.capability, capabilityShown.title, next, capabilityShown.via), { replace: true }) : undefined}
+      hrefFor={v => viewHref(v.capability, v.title, v.input, true)} onBack={capabilityShown?.via ? () => navigate(-1) : undefined} />
     <EventDialog item={openItem?.item ?? null} dayItems={openItem?.dayItems ?? []} onClose={() => setOpenItem(null)}
       /* The day in the panel and every loaded week are read again; a moved proposal's thread goes into the cache like any other answer. */
       onChanged={t => { if (t) { replace(t); void applyThread(client, t); } void client.invalidateQueries({ queryKey: keys.viewAll }); void client.invalidateQueries({ queryKey: keys.calendarAll }); }} />

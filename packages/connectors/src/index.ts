@@ -1,5 +1,7 @@
 import type { TSchema } from '@sinclair/typebox';
-import type { Area, CapabilityOverride, ConnectorAudience, ConnectorState, Receipt, ReceiptRow, SearchKind, SessionUser, ThreadAction, ThreadItem } from '@clew/contracts';
+import type { Area, CapabilityOverride, ConnectorAudience, ConnectorState, Receipt, ReceiptRow, SearchKind, SessionUser, PanelViewSpec, ThreadAction, ThreadItem, View, ViewOpen } from '@clew/contracts';
+import { viewProblem } from './views';
+export { openRef, readsSummary, rowsKey, viewProblem, viewRows, viewSummary } from './views';
 
 /**
  * The capability layer (D1, D3). A connector owns a Clew contract: capabilities with a kind, a scope and an
@@ -55,6 +57,8 @@ export interface Capability<I = unknown, O = unknown> {
   scope: Scope;
   /** For a `<id>.search` capability (D26): what it can find, so the composite search skips sources that cannot hold the answer. */
   kinds?: SearchKind[];
+  /** How Clew draws the output (D38). Absent means the generic panel rules. */
+  view?: View;
   run: (actor: Actor, input: I, clew: Clew) => Promise<O>;
 }
 /** A capability is a search source when it is named `<id>.search` and is a read (D26); the composite `clew.search` is never one itself. */
@@ -129,6 +133,8 @@ export class Registry {
       if (!c.name.startsWith(connector.id + '.')) throw new Error(`Capability ${c.name} must be prefixed with ${connector.id}.`);
       if (c.kind === 'execute' && c.model) throw new Error(`Capability ${c.name}: execute capabilities are never tools (D8).`);
       if (this.capabilities.has(c.name)) throw new Error(`Capability ${c.name} is already registered.`);
+      const problem = viewProblem(c, connector.capabilities);
+      if (problem) throw new Error(`Capability ${problem} (D38).`);
       this.capabilities.set(c.name, { connector, capability: c });
     }
     this.connectors.set(connector.id, connector);
@@ -246,7 +252,27 @@ export class Registry {
   /** The search sources a person may use (D26): every `<id>.search` read in scope, except the composite itself. */
   searchSources(actor: Actor) {
     return this.capabilitiesFor(actor).filter(c => isSearchSource(c.capability, c.connector.id))
-      .map(c => ({ name: c.capability.name, connectorId: c.connector.id, source: c.connector.source, ...(c.capability.kinds ? { kinds: c.capability.kinds } : {}) }));
+      .map(c => ({ name: c.capability.name, connectorId: c.connector.id, source: c.connector.source, ...(c.capability.kinds ? { kinds: c.capability.kinds } : {}), ...(this.opens(actor, c.capability) ? { open: this.opens(actor, c.capability)! } : {}) }));
+  }
+  /** The read a row of this capability's view opens (D38), when the person may call it. */
+  private opens(actor: Actor, capability: Capability): ViewOpen | undefined {
+    const view = capability.view;
+    const open = view && (view.kind === 'table' || view.kind === 'list') ? view.open : undefined;
+    return open && this.allowed(actor, open.capability) ? open : undefined;
+  }
+  /**
+   * A capability's view as the browser draws it (D38): the declaration, whose it is, a row's `open` only when the person
+   * may call that read, and whether a row can be chipped (the connector is a search source, so `<id>.fetch` reads a ref back).
+   */
+  viewFor(actor: Actor, name: string): PanelViewSpec | undefined {
+    const found = this.allowed(actor, name);
+    const view = found?.capability.view;
+    if (!found || !view) return undefined;
+    const rows = view.kind === 'table' || view.kind === 'list';
+    const chip = rows && !!view.ref && !!this.allowed(actor, found.connector.id + '.fetch') && this.searchSources(actor).some(s => s.connectorId === found.connector.id);
+    const { open: _open, ...rest } = view as View & { open?: ViewOpen };
+    const open = this.opens(actor, found.capability);
+    return { ...rest, ...(open ? { open } : {}), capability: name, connector: found.connector.id, source: found.connector.source, chip } as PanelViewSpec;
   }
   /**
    * Tool definitions for the model: `model: true` capabilities the person may call, from connectors whose tools are on (D8).
@@ -256,7 +282,7 @@ export class Registry {
     const composite = this.capabilities.has(SEARCH_CONNECTOR + '.search');
     return this.capabilitiesFor(actor).filter(c => { const g = this.governance(c.connector.id); return c.capability.model && g.toolsEnabled && g.capabilities[c.capability.name]?.model !== false; })
       .filter(c => !(composite && isSearchSource(c.capability, c.connector.id)))
-      .map(c => ({ name: c.capability.name, title: c.capability.title, description: c.capability.description, input: c.capability.input, kind: c.capability.kind, source: c.connector.source }));
+      .map(c => ({ name: c.capability.name, title: c.capability.title, description: c.capability.description, input: c.capability.input, kind: c.capability.kind, source: c.connector.source, ...(c.capability.view ? { view: c.capability.view } : {}) }));
   }
 }
 export const receipt = (result: ExecuteResult, at = new Date()): Receipt => ({

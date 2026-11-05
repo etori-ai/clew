@@ -42,6 +42,11 @@ Then write the manifest first, before any code, and read it as a list of buttons
   (`errands:case:2026-1187`), stable across days.
 - Outputs are rows the UI renders: no markup, no links for the browser to follow, no names of individuals
   where a card would show them (names belong in a panel view or the source system).
+- Say how a read is shown instead of leaving it to Clew's generic rules: a `view` on the capability (D38) names the
+  kind (a table, a list, one record, a text), the fields with their Swedish labels and formats, the search field and
+  choice the person gets, and what a row opens. Clew draws it; you never send markup. Where the content is about
+  identifiable people, add `modelReads: "summary"` so it reaches the person and not the model. The parts are in
+  `docs/architecture/connector-protocol.md`, "Declaring a view"; `connectors/telefonbok` shows all of them.
 - Writes return an outcome per row and, when reversible, what reverses them.
 - If the capability list reads well as five to ten tool descriptions, it is right.
 

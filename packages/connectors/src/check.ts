@@ -2,6 +2,7 @@ import type { CheckFinding, CheckReport } from '@clew/contracts';
 import { Registry, type Actor } from './index';
 import { fetchManifest, remoteConnector, type FetchLike } from './remote';
 import type { ConnectorManifest } from './protocol';
+import { rowsKey, viewRows } from './views';
 
 /**
  * The conformance check of a connector service (D21, D23): what `scripts/connector-check.ts` prints and what the admin
@@ -36,6 +37,19 @@ export async function checkConnector(options: CheckOptions): Promise<CheckReport
   if (manifest.delegation) warn(`delegation: acts as the person for audience "${manifest.delegation.audience}"; not verified by this check (it has no session), so a "denied" answer below is the expected one`);
   const registry = new Registry({ onRefused: (_id, topic, problem) => fail(`draft ${topic} refused: ${problem}`) }).register(remoteConnector(manifest, { url, assert: options.assert, fetch: fetchImpl }));
   const accepts = options.acceptsEmptyInput ?? (() => true);
+  /** A declared view (D38) against a real answer: the rows are where the view says, and no field is missing from every row. */
+  const checkView = (c: ConnectorManifest['capabilities'][number], output: unknown) => {
+    const view = c.view;
+    if (!view) return;
+    if (view.kind === 'text') { if (typeof (output as Record<string, unknown> | null)?.[view.body] === 'string') ok(`${c.name}: view text drawn from "${view.body}"`); else fail(`${c.name}: view text expects a string at "${view.body}"`); return; }
+    if (view.kind === 'detail') { if (output && typeof output === 'object' && !Array.isArray(output)) ok(`${c.name}: view detail, ${view.fields.length} fields`); else fail(`${c.name}: view detail expects one record`); return; }
+    const rows = viewRows(view, output);
+    if (!rows) { fail(`${c.name}: view ${view.kind} expects an array of records at "${rowsKey(view)}"`); return; }
+    ok(`${c.name}: view ${view.kind} drawn from "${rowsKey(view)}", ${view.fields.length} fields`);
+    const unseen = rows.length ? view.fields.filter(f => rows.every(r => r[f.key] === undefined)).map(f => f.key) : [];
+    if (unseen.includes(view.title)) fail(`${c.name}: no row has the view's title field "${view.title}"`);
+    else if (unseen.length) warn(`${c.name}: no row has ${unseen.map(k => `"${k}"`).join(', ')}; the column is drawn empty`);
+  };
   for (const c of manifest.capabilities) {
     if (c.kind === 'execute') { ok(`${c.name}: execute, not a tool, not called by the check`); continue; }
     for (const actor of [CHECK_MANAGER, CHECK_EMPLOYEE]) {
@@ -45,8 +59,8 @@ export async function checkConnector(options: CheckOptions): Promise<CheckReport
         catch { ok(`${c.name}: ${actor.role} refused by scope`); }
         continue;
       }
-      if (!accepts(c.input as object)) { ok(`${c.name}: needs input (${JSON.stringify(c.input)}), not called by the check`); break; }
-      try { const output = await registry.run(actor, c.name, {}); ok(`${c.name} as ${actor.role}: ${JSON.stringify(output).slice(0, 100)}`); }
+      if (!accepts(c.input as object)) { ok(`${c.name}: needs input (${JSON.stringify(c.input)}), not called by the check${c.view ? `; view ${c.view.kind} declared, not exercised` : ''}`); break; }
+      try { const output = await registry.run(actor, c.name, {}); ok(`${c.name} as ${actor.role}: ${JSON.stringify(output).slice(0, 100)}`); if (actor === CHECK_MANAGER || c.scope.roles?.length === 1) checkView(c, output); }
       catch (error) {
         const m = (error as Error).message;
         if (manifest.delegation && /styrkas|behörighet/.test(m)) ok(`${c.name} as ${actor.role}: refused without the person's token, as a delegating connector should (${m})`);
