@@ -571,18 +571,18 @@
       "number": 50,
       "path": "docs/decisions/D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md",
       "title": "D50 · The conversation is the column, and the panel holds what it is about",
-      "status": "accepted, built 2026-11-05, amended the same day (a brief row opens its card beside the landing); the panel's tabs for what a conversation has opened, the box on the calendar page, a conversation's origin shown on a card and on a tool's page, a resizable panel, the day beside Att göra, and a manual screen-reader pass are not built",
+      "status": "accepted, built 2026-11-05; the panel's tabs for what a conversation has opened, the box on the calendar page, a conversation's origin shown on a card and on a tool's page, a resizable panel, the day beside Att göra, and a manual screen-reader pass are not built",
       "date": "2026-11-05",
       "area": "ui"
     },
     {
-      "key": "D52-the-mocks-are-generic-systems-without-vendor-names",
-      "number": 52,
-      "path": "docs/decisions/D52-the-mocks-are-generic-systems-without-vendor-names.md",
-      "title": "D52 · The mocks are generic systems; nothing in the repository names a vendor",
+      "key": "D51-the-wcag-suite-is-cis-gate",
+      "number": 51,
+      "path": "docs/decisions/D51-the-wcag-suite-is-cis-gate.md",
+      "title": "D51 · The WCAG suite is CI's gate; a change runs its own specs locally",
       "status": "accepted",
       "date": "2026-11-05",
-      "area": "integrations"
+      "area": "platform"
     }
   ],
   "documents": [
@@ -1169,8 +1169,8 @@
       "headings": []
     },
     {
-      "path": "docs/decisions/D52-the-mocks-are-generic-systems-without-vendor-names.md",
-      "title": "D52 · The mocks are generic systems; nothing in the repository names a vendor",
+      "path": "docs/decisions/D51-the-wcag-suite-is-cis-gate.md",
+      "title": "D51 · The WCAG suite is CI's gate; a change runs its own specs locally",
       "category": "decision-history",
       "headings": []
     },

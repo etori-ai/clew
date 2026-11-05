@@ -97,6 +97,21 @@ docker exec -w /workspace clew-app-1 bun run test:durability # real Node, Postgr
 sh scripts/a11y.sh                                           # the WCAG suite
 ```
 
+### Running the WCAG suite
+
+`sh scripts/a11y.sh` builds the web app once, then runs the suite in the pinned Playwright image; everything after the
+script name goes to `playwright test`. The full suite is 287 tests on one worker, about eight minutes when green and
+much longer when red, so it is CI's gate and not the per-edit check ([D51](../decisions/D51-the-wcag-suite-is-cis-gate.md)):
+
+- Per change, run the spec files the change touches: `sh scripts/a11y.sh menu.spec.ts shell.spec.ts`. Add
+  `--timeout 15000` so a red run fails in seconds instead of waiting out 30 s per test.
+- The whole suite runs in `.github/workflows/a11y.yml` on every code push and pull request. The GitHub plan cannot
+  block a merge on a red run, so read the WCAG check of the previous landing before landing on `main` again, and fix a
+  red check before new work lands; a red `main` costs every branch a baseline run to tell its own failures apart.
+- A test that passes alone and fails on a slower runner is holding a timer it should hold a promise for (see
+  `api.holdAnswer()` and HANDOVER session 41).
+- Two runs in the same checkout empty each other's `test-results`; give the second `--output=test-results/<name>`.
+
 ## What is ported
 
 Everything in the server that holds logic is over ports (D25), each with `adapters/postgres.ts` (plus `temporal.ts`
