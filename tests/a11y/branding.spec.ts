@@ -77,7 +77,7 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
 
   test('appearance changes the theme and survives navigation and reload', async ({ page, api: _ }) => {
     await page.goto('/');
-    const profileButton = page.getByRole('button', { name: 'Profil för Testa Testsson', exact: true });
+    const profileButton = page.getByRole('button', { name: 'Testa Testsson', exact: true });
     await expect(profileButton).toBeVisible();
     await expect(page.getByRole('main').getByRole('heading', { level: 1 }).first()).toBeVisible();
     const appearance = () => page.getByRole('main').getByRole('heading', { level: 1 }).first().evaluate(element => ({

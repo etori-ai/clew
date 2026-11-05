@@ -5,10 +5,23 @@ for (const viewport of [desktop, narrow]) test(`the compact header and profile w
   api.admin = true;
   await page.setViewportSize(viewport);
   await open(page, '/');
-  await openNav(page);
-  const header = page.locator('.astryx-side-nav-heading');
-  expect((await header.boundingBox())!.height).toBeLessThanOrEqual(56);
-  const profile = page.getByRole('button', { name: 'Profil för Testa Testsson', exact: true });
+  const nav = await openNav(page);
+  const header = nav.locator('.astryx-side-nav-heading');
+  const headerBounds = (await header.boundingBox())!;
+  expect(headerBounds.height).toBeLessThanOrEqual(56);
+  const bell = header.getByRole('button', { name: 'Påminnelser (0)', exact: true });
+  await expect(bell).toBeVisible();
+  const home = header.getByRole('link', { name: /Startsidan/ });
+  await expect(home.locator('button')).toHaveCount(0);
+  await bell.focus();
+  await page.keyboard.press('Enter');
+  const reminders = page.getByRole('dialog', { name: 'Påminnelser', exact: true });
+  await expect(reminders).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(bell).toBeFocused();
+  const profile = nav.getByRole('button', { name: 'Testa Testsson', exact: true });
+  await expect(profile).toHaveText('Testa Testsson');
+  expect((await profile.boundingBox())!.y).toBeGreaterThan(headerBounds.y + headerBounds.height);
   await profile.focus();
   await page.keyboard.press('Enter');
   await expect(page.getByText('Skönsmons skola', { exact: true })).toBeVisible();
@@ -47,8 +60,8 @@ for (const source of ['/calendar', '/areas/budget']) test(`a reminder opens and 
 test('an empty bell offers working shortcuts and restores focus on Escape', async ({ page, api: _ }) => {
   await page.setViewportSize(narrow);
   await open(page, '/areas/personal');
-  await openNav(page);
-  const bell = page.getByRole('button', { name: 'Påminnelser (0)', exact: true });
+  const nav = await openNav(page);
+  const bell = nav.getByRole('button', { name: 'Påminnelser (0)', exact: true });
   await bell.click();
   const drawer = page.getByRole('dialog', { name: 'Påminnelser', exact: true });
   await expect(drawer.getByText('Du har inga aktuella påminnelser.')).toBeVisible();
@@ -78,7 +91,7 @@ test('a blocked browser preference stays usable without claiming it was saved', 
     Object.defineProperty(window, 'localStorage', { get() { throw new DOMException('Blocked', 'SecurityError'); } });
   });
   await open(page, '/');
-  await page.getByRole('button', { name: 'Profil för Testa Testsson', exact: true }).click();
+  await page.getByRole('button', { name: 'Testa Testsson', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Inställningar', exact: true }).click();
   await page.getByRole('radio', { name: 'Mörkt', exact: true }).check();
   await expect(page.getByText(/Webbläsaren tillåter inte att valet sparas/)).toBeVisible();
@@ -88,7 +101,7 @@ test('a blocked browser preference stays usable without claiming it was saved', 
 test('logout reports failure, then ends the session after a successful retry', async ({ page, api }) => {
   await page.route('**/api/auth/logout', route => route.fulfill({ status: 503 }));
   await open(page, '/');
-  const profile = page.getByRole('button', { name: 'Profil för Testa Testsson', exact: true });
+  const profile = page.getByRole('button', { name: 'Testa Testsson', exact: true });
   await profile.click();
   await page.getByRole('menuitem', { name: 'Logga ut', exact: true }).click();
   await expect(page.getByText('Utloggningen kunde inte bekräftas. Försök igen.')).toBeVisible();

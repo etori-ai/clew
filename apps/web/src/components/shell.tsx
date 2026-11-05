@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { SessionUser } from '@clew/contracts';
-import { AppShell, Avatar, BellIcon, Banner, Button, Dialog, DialogHeader, Divider, Drawer, DrawerHeader, DropdownMenu, Heading, HStack, Icon, IconButton, Layout, LayoutContent, List, ListItem, RadioList, RadioListItem, SideNav, SideNavHeading, SideNavSection, Spinner, Text, VStack, signOut, useAppearance, useToast } from '@clew/ui';
+import { AppShell, BellIcon, Banner, Button, Dialog, DialogHeader, Divider, Drawer, DrawerHeader, DropdownMenu, Heading, HStack, Icon, IconButton, Layout, LayoutContent, List, ListItem, RadioList, RadioListItem, SideNav, SideNavHeading, SideNavSection, Spinner, Text, UserCircleIcon, VStack, signOut, useAppearance, useToast } from '@clew/ui';
 import { branding } from '../branding';
 import { threadsQuery } from '../queries';
 import { errorMessage } from '../query-policy';
@@ -59,6 +59,11 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
     <AppShell height={height} variant="elevated" contentPadding={0} mobileNav={{ breakpoint: 'md', isOpen: navigationOpen, onOpenChange: setNavigationOpen }} banner={banner}
       sideNav={<SideNav
         header={<SideNavHeading heading="Startsidan" headingHref="/"
+          headerEndContent={<HStack gap={1} vAlign="center">
+            <IconButton label={threadsQ.isError ? 'Påminnelser – kunde inte uppdateras' : `Påminnelser (${reminders.length})`}
+              icon={<Icon icon={BellIcon} size="sm" />} variant="ghost" size="sm" onClick={() => setRemindersOpen(true)} />
+            {reminders.length > 0 && <Text type="supporting" aria-hidden="true">{reminders.length}</Text>}
+          </HStack>}
           icon={headerLogo && logoSrc !== failedLogo ? <img src={logoSrc} alt={headerLogo.alt} width={20} height={20}
             style={{ objectFit: 'contain', padding: 'var(--spacing-3)', boxSizing: 'content-box',
               backgroundColor: mode === 'dark' && !headerLogo.darkSrc ? 'var(--color-on-dark)' : undefined }}
@@ -68,19 +73,14 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
           {nav.tools && <SideNavSection title="Verktyg">{nav.tools}</SideNavSection>}
           <SideNavSection title="Alltid" isHeaderHidden>{nav.footer}</SideNavSection>
         </>}
-        footerIcons={<HStack gap={1} vAlign="center">
-          <IconButton label={threadsQ.isError ? 'Påminnelser – kunde inte uppdateras' : `Påminnelser (${reminders.length})`}
-            icon={<Icon icon={BellIcon} size="sm" />} variant="ghost" size="sm" onClick={() => setRemindersOpen(true)} />
-          {reminders.length > 0 && <Text type="supporting" aria-hidden="true">{reminders.length}</Text>}
-          <DropdownMenu alignment="end" menuWidth={260} hasChevron={false}
-            button={{ label: `Profil för ${user.name}`, isIconOnly: true, variant: 'ghost', size: 'sm', icon: <Avatar name={user.name} size="sm" tooltip={false} /> }}
-            header={<VStack gap={1}><Text weight="semibold">{user.name}</Text><Text type="supporting">{user.unitLabel}</Text></VStack>}
-            items={[
-              { label: 'Inställningar', onClick: () => setSettingsOpen(true) },
-              { type: 'divider' },
-              { label: signingOut ? 'Loggar ut …' : 'Logga ut', isDisabled: signingOut, onClick: () => { void logout(); } },
-            ]} />
-        </HStack>}>
+        footerIcons={<DropdownMenu alignment="end" menuWidth={260}
+          button={{ label: user.name, variant: 'ghost', size: 'sm', width: '100%', icon: <Icon icon={UserCircleIcon} size="sm" /> }}
+          header={<VStack gap={1}><Text weight="semibold">{user.name}</Text><Text type="supporting">{user.unitLabel}</Text></VStack>}
+          items={[
+            { label: 'Inställningar', onClick: () => setSettingsOpen(true) },
+            { type: 'divider' },
+            { label: signingOut ? 'Loggar ut …' : 'Logga ut', isDisabled: signingOut, onClick: () => { void logout(); } },
+          ]} />}>
         {nav.sections}
       </SideNav>}>
       {children}
