@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CheckReport, ConnectorAudience, ConnectorDetail } from '@clew/contracts';
-import { Banner, Button, Dialog, DialogHeader, FormLayout, Heading, LayoutHeader, List, ListItem, MetadataList, MetadataListItem, Spinner, StatusDot, Step, Stepper, Switch, Text, TextInput, VStack } from '@clew/ui';
+import { Button, Dialog, DialogHeader, FormLayout, Heading, LayoutHeader, MetadataList, MetadataListItem, Spinner, Step, Stepper, Switch, TextInput, VStack } from '@clew/ui';
 import { api } from '../../api';
 import { useAdminAction } from '../../mutations';
 import { AudienceEditor } from './audience';
+import { CheckResult } from './check-result';
 import { DialogFrame } from './dialog-frame';
 import { audienceLabel } from './labels';
 
@@ -67,12 +68,8 @@ export function AddConnectorDialog({ isOpen, onClose, units }: Props) {
       {step === 1 && <VStack gap={3}>
         {busy && <Spinner label="Kontrollerar anslutningen …" />}
         {!busy && result && <>
-          {!result.report.ok && <Banner status={fetched ? 'error' : 'warning'} container="section" collapsible={false} title={fetched ? 'Kontrollen hittade fel.' : 'Tjänsten svarade inte.'}
-            description={fetched ? 'Utkastet är sparat. Rätta tjänsten och kontrollera igen.' : 'Utkastet är sparat utan manifest. Starta tjänsten och kontrollera igen, eller sätt på senare.'}
-            endContent={<Button size="sm" variant="secondary" label="Försök igen" clickAction={retry} />} />}
-          <List density="compact" aria-label="Kontrollens resultat">
-            {result.report.findings.map((f, i) => <ListItem key={i} startContent={<StatusDot variant={f.level === 'ok' ? 'success' : f.level === 'warn' ? 'warning' : 'error'} label={f.level === 'ok' ? 'Ok' : f.level === 'warn' ? 'Varning' : 'Fel'} />} label={<Text>{f.text}</Text>} />)}
-          </List>
+          <CheckResult report={result.report} action={!result.report.ok && <Button size="sm" variant="secondary" label="Försök igen" clickAction={retry} />}
+            failure={fetched ? { description: 'Utkastet är sparat. Rätta tjänsten och kontrollera igen.' } : { status: 'warning', title: 'Tjänsten svarade inte.', description: 'Utkastet är sparat utan manifest. Starta tjänsten och kontrollera igen, eller sätt på senare.' }} />
         </>}
       </VStack>}
       {step === 2 && <VStack gap={3}>

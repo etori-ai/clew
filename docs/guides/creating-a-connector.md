@@ -119,7 +119,8 @@ and as an employee: manifest valid, every read callable with its declared scope,
 a call signed with another secret refused by your service (not only by Clew), scan idempotent and naming
 known areas, figures present. It needs no database and no Clew. A capability that calls back into Clew is
 reported as a warning when no Clew is running. (The checker ships in this repository today and will ship as
-a small image with Clew's image; the admin page's "Testa anslutning" runs the same checks.)
+a small image with Clew's image; the admin page's "Testa anslutning" runs the same checks and shows them as
+Swedish rows under a verdict, without your service's answers: those are only in this command's output, D44.)
 
 ## 4. Connect it to a running Clew
 

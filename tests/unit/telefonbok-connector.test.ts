@@ -96,6 +96,21 @@ describe('the phone book connector', () => {
     // The admin page's check hands in no validator: the reads that need a reference or a question are left uncalled, not failed.
     expect(report.findings.filter(f => /needs input/.test(f.text)).map(f => f.text.split(':')[0])).toEqual(['telefonbok.person', 'telefonbok.search', 'telefonbok.fetch']);
   });
+  test('the administrator reads one Swedish row per fact, and no answer from the service (D23, D44)', async () => {
+    const { connectorFetch } = stack();
+    const sign = (key: string) => (actor: Actor) => new SignJWT({ actor }).setProtectedHeader({ alg: 'HS256' }).setIssuer('clew').setAudience('telefonbok').setSubject(actor.id).setIssuedAt().setExpirationTime('2m').sign(new TextEncoder().encode(key));
+    const report = await checkConnector({ url: 'http://telefonbok', id: 'telefonbok', assert: sign(secret), assertForeign: sign('another-secret-entirely'), fetch: connectorFetch });
+    // The log keeps the answers for the person who builds the connector; the rows the page gets do not carry them.
+    expect(report.findings.some(f => f.text.includes('Anna Lindqvist'))).toBe(true);
+    expect(JSON.stringify(report.items)).not.toContain('Anna Lindqvist');
+    expect(report.items.map(i => [i.group, i.label])).toContainEqual(['connection', 'Fel nyckel nekas']);
+    const row = (capability: string) => report.items.find(i => i.capability === capability);
+    expect(report.items.filter(i => i.group === 'capabilities')).toHaveLength(5);
+    expect(row('telefonbok.directory')).toMatchObject({ level: 'ok', description: 'Svarar för chef och medarbetare. Visas som tabell med 6 fält.' });
+    expect(row('telefonbok.fetch')?.description).toBe('Behöver indata, så kontrollen anropar den inte.');
+    expect(row('telefonbok.search')?.description).toBe('Behöver indata, så kontrollen anropar den inte. Vyn (lista) är inte prövad.');
+    expect(report.items.find(i => i.label.startsWith('Området'))?.description).toBe('Chef och medarbetare: 2 stående handlingar, inget nyckeltal.');
+  });
 });
 
 describe('the phone book API behind the port', () => {

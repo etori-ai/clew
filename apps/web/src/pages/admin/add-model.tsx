@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { ProviderSummary, ProviderTestReport } from '@clew/contracts';
-import { Banner, Button, CheckboxList, CheckboxListItem, Dialog, DialogHeader, FormLayout, Heading, LayoutHeader, List, ListItem, Spinner, StatusDot, Step, Stepper, Switch, Text, TextInput, VStack } from '@clew/ui';
+import { Banner, Button, CheckboxList, CheckboxListItem, Dialog, DialogHeader, FormLayout, Heading, LayoutHeader, List, ListItem, Spinner, Step, Stepper, Switch, Text, TextInput, VStack } from '@clew/ui';
 import { api } from '../../api';
 import { adminQueries } from '../../queries';
 import { useAdminAction } from '../../mutations';
+import { LevelDot } from './check-result';
 import { DialogFrame } from './dialog-frame';
 
 /**
@@ -23,7 +24,7 @@ const slug = (text: string) => text.toLowerCase().normalize('NFKD').replace(/[̀
 /** The findings of a test, as a list with a dot and a word each (colour never alone). */
 export function Findings({ report, label = 'Kontrollens resultat' }: { report: ProviderTestReport; label?: string }) {
   return <List density="compact" aria-label={label}>
-    {report.findings.map((f, i) => <ListItem key={i} startContent={<StatusDot variant={f.level === 'ok' ? 'success' : f.level === 'warn' ? 'warning' : 'error'} label={f.level === 'ok' ? 'Ok' : f.level === 'warn' ? 'Varning' : 'Fel'} />} label={<Text>{f.text}</Text>} />)}
+    {report.findings.map((f, i) => <ListItem key={i} startContent={<LevelDot level={f.level} />} label={<Text>{f.text}</Text>} />)}
   </List>;
 }
 

@@ -197,5 +197,6 @@ describe('connector-check holds a scan to the card-action rule (D35)', () => {
     const report = await check(tampered);
     expect(report.ok).toBe(false);
     expect(failures(report)).toContain('draft hello:open-items refused: action done names raindance.approve, which is not a capability of hello');
+    expect(report.items.filter(i => i.level === 'fail')).toContainEqual({ level: 'fail', group: 'surfaces', label: 'Kort', description: 'Kortet hello:open-items avvisades: action done names raindance.approve, which is not a capability of hello' });
   });
 });

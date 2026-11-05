@@ -10,6 +10,7 @@ import { useAdminAction } from '../../mutations';
 import { errorMessage } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
 import { AudienceEditor, AudiencePreview } from './audience';
+import { CheckResult } from './check-result';
 import { actionLabel, actorLabel, audienceLabel, capabilityKindLabel, healthLabel, kindLabel, roleLabel, statusOf } from './labels';
 import { AdminShell, PageLead } from './shell';
 import { DialogFrame } from './dialog-frame';
@@ -74,6 +75,13 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
     { key: 'tool', header: 'Assistent', renderCell: (r: CapRow) => <ToolSwitch row={r.c} toolsEnabled={c.toolsEnabled} onChange={on => setCap(r.name, capPatch(on, 'model'))} /> },
   ];
   const removeLabel = `Ta bort ${c.source}`;
+  // A Toolbar keeps one row, which four buttons cannot at 320 px: on a phone they wrap (1.4.10).
+  const actions = <>
+    <Button variant="secondary" label="Testa anslutning" isDisabled={busy} clickAction={() => run(async () => { const r = await api.admin.test(id); setReport(r); return r.ok ? 'Kontrollen gick bra.' : 'Kontrollen hittade fel, se listan.'; })} />
+    <Button variant="secondary" label="Hämta manifest igen" isDisabled={busy} clickAction={() => run(async () => { const r = await api.admin.refresh(id, false); if (r.diff.same) return 'Manifestet är oförändrat.'; setDiff(r.diff); })} />
+    <Button variant="secondary" label="Byt nyckel" isDisabled={busy} onClick={() => setSecretOpen(true)} />
+    <Button variant="destructive" label="Ta bort" isDisabled={busy} onClick={() => setRemoveOpen(true)} />
+  </>;
   return <AdminShell user={user} crumbs={[{ label: 'Anslutna system', href: '/admin/connectors' }, { label: c.source }]}>
     <PageLead title={<HStack gap={2} vAlign="end" wrap="wrap"><Heading level={1}>{c.source}</Heading><Text type="supporting">{[c.kind ? kindLabel[c.kind] : null, c.bundled ? 'inbyggd' : null].filter(Boolean).join(' · ')}</Text></HStack>}
       actions={<Switch label={c.state === 'enabled' ? 'På' : 'Av'} labelPosition="start" value={c.state === 'enabled'} isDisabled={busy || (c.state === 'draft' && !c.counts.capabilities)} disabledMessage="Utkastet saknar manifest: kontrollera anslutningen först." changeAction={on => run(async () => { await api.admin.update(id, { state: on ? 'enabled' : 'disabled' }); return `${c.source} ${on ? 'är på' : 'är avstängd'}.`; })} />}>
@@ -93,12 +101,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
     </Section>
     <Section variant="transparent" padding={4}>
     {tab === 'oversikt' && <div id={panel('oversikt')} role={mobile ? "region" : "tabpanel"} aria-label="Översikt"><VStack gap={4}>
-      {!c.bundled && <Toolbar label="Åtgärder" size="sm" variant="muted" startContent={<>
-        <Button variant="secondary" label="Testa anslutning" isDisabled={busy} clickAction={() => run(async () => { const r = await api.admin.test(id); setReport(r); return r.ok ? 'Kontrollen gick bra.' : 'Kontrollen hittade fel, se listan.'; })} />
-        <Button variant="secondary" label="Hämta manifest igen" isDisabled={busy} clickAction={() => run(async () => { const r = await api.admin.refresh(id, false); if (r.diff.same) return 'Manifestet är oförändrat.'; setDiff(r.diff); })} />
-        <Button variant="secondary" label="Byt nyckel" isDisabled={busy} onClick={() => setSecretOpen(true)} />
-        <Button variant="destructive" label="Ta bort" isDisabled={busy} onClick={() => setRemoveOpen(true)} />
-      </>} />}
+      {!c.bundled && (mobile ? <HStack gap={2} wrap="wrap">{actions}</HStack> : <Toolbar label="Åtgärder" size="sm" variant="muted" startContent={actions} />)}
       <MetadataList columns={mobile ? 'single' : 'multi'}>
         <MetadataListItem label="Id">{c.id}</MetadataListItem>
         <MetadataListItem label="Källa">{c.source}</MetadataListItem>
@@ -114,9 +117,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
         {c.secretChangedAt && <MetadataListItem label="Nyckel bytt"><Timestamp value={c.secretChangedAt} format="date_time" /></MetadataListItem>}
         <MetadataListItem label="Tillagd">{actorLabel(c.createdBy)} · <Timestamp value={c.createdAt} format="date_time" /></MetadataListItem>
       </MetadataList>
-      {report && <List density="compact" aria-label="Kontrollens resultat" header={<Text type="supporting" weight="semibold">Senaste kontroll</Text>}>
-        {report.findings.map((f, i) => <ListItem key={i} startContent={<StatusDot variant={f.level === 'ok' ? 'success' : f.level === 'warn' ? 'warning' : 'error'} label={f.level === 'ok' ? 'Ok' : f.level === 'warn' ? 'Varning' : 'Fel'} />} label={<Text>{f.text}</Text>} />)}
-      </List>}
+      {report && <VStack gap={2}><Heading level={2}>Senaste kontroll</Heading><CheckResult report={report} /></VStack>}
     </VStack></div>}
     {tab === 'formagor' && <div id={panel('formagor')} role={mobile ? "region" : "tabpanel"} aria-label="Förmågor"><VStack gap={3}>
       <Toolbar label="Förmågor" size="sm" startContent={<Switch size="sm" label="Erbjud assistenten" value={c.toolsEnabled} isDisabled={busy} changeAction={on => run(async () => { await api.admin.update(id, { toolsEnabled: on }); })} />}

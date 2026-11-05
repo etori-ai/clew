@@ -19,7 +19,7 @@ export { Token } from '@astryxdesign/core/Token';
 export { ToggleButton, ToggleButtonGroup } from '@astryxdesign/core/ToggleButton';
 export { List, ListItem } from '@astryxdesign/core/List';
 export { CheckboxList, CheckboxListItem } from '@astryxdesign/core/CheckboxList';
-export { Collapsible } from '@astryxdesign/core/Collapsible';
+export { Collapsible, CollapsibleGroup } from '@astryxdesign/core/Collapsible';
 export { Grid, GridSpan } from '@astryxdesign/core/Grid';
 export { Divider } from '@astryxdesign/core/Divider';
 export { Avatar } from '@astryxdesign/core/Avatar';
@@ -68,7 +68,7 @@ export { TopNav, TopNavHeading, TopNavItem } from '@astryxdesign/core/TopNav';
 export { Section } from '@astryxdesign/core/Section';
 export { useAnnounce, useMediaQuery, useStreamingText } from '@astryxdesign/core/hooks';
 // Glyphs beyond Astryx's registry come from Heroicons (MIT), the set Astryx's own templates draw with; each is named here once.
-export { AtSymbolIcon, BellIcon, BookOpenIcon, ChartBarIcon, DocumentTextIcon, LinkIcon, PhoneIcon, SparklesIcon, UserCircleIcon, UsersIcon } from '@heroicons/react/24/outline';
+export { AtSymbolIcon, BellIcon, BookOpenIcon, ChartBarIcon, DocumentTextIcon, LinkIcon, PhoneIcon, SparklesIcon, Squares2X2Icon, UserCircleIcon, UsersIcon } from '@heroicons/react/24/outline';
 export { SessionBoundary, sessionFetch, signOut, type BrowserSession } from './session';
 export { WeekAgenda, type AgendaItem } from './week-agenda';
 export { EventCalendar, type CalendarView } from './calendar';

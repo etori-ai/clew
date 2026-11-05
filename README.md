@@ -105,11 +105,11 @@ the app that owns the Vite dependency, and run with the existing `bun run test` 
 only the small branding entry and verify that conflicting environment variables and a local env file
 cannot change the fixture's browser output.
 
-The shared navigation places the reminder bell beside the logo and product name. The account menu
-stays in the footer icon row, with an account icon and the person’s full session name as visible text. Reminders reuse active thread
+The shared navigation places the reminder bell beside the logo and product name. The account is the
+rail's last row, built like the rows above it, with an account icon and the person’s full session name. Reminders reuse active thread
 reminders and link to their cards; start/calendar shortcuts are always available. Read/unread rules
-and additional notification kinds remain open. Profile settings currently control appearance; the
-profile menu also shows identity/unit and signs out through the existing session flow.
+and additional notification kinds remain open. The row expands to Inställningar, which shows
+identity/unit and controls appearance, and Logga ut, which uses the existing session flow.
 
 ## Connectors
 

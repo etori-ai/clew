@@ -85,7 +85,12 @@ test.describe('administration', () => {
       await dialog.getByLabel(/Delad nyckel/).fill('en-tillräckligt-lång-nyckel');
       await dialog.getByRole('button', { name: 'Kontrollera' }).click();
       await expect(dialog.getByRole('heading', { level: 3, name: 'Kontroll' })).toBeFocused();
-      await expect(dialog.getByRole('list', { name: 'Kontrollens resultat' })).toBeVisible();
+      await expect(dialog.getByText('Anslutningen fungerar.', { exact: true })).toBeVisible();
+      // A group that passed stays shut and says so; opening it shows its rows.
+      const group = dialog.getByRole('button', { name: /Anslutning.*1 godkänd/ });
+      await expect(dialog.getByRole('list', { name: 'Anslutning' })).toHaveCount(0);
+      await group.click();
+      await expect(dialog.getByRole('list', { name: 'Anslutning' })).toBeVisible();
       await expectNoAxeViolations(page);
       await dialog.getByRole('button', { name: 'Nästa' }).click();
       await expect(dialog.getByRole('heading', { level: 3, name: 'Vem ser det' })).toBeFocused();
@@ -163,6 +168,21 @@ test.describe('administration', () => {
       await expect(page.getByRole('tabpanel', { name: 'Förmågor' })).toBeVisible();
       await expect(page.getByRole('switch', { name: 'Godkänn valda till assistenten' })).toBeDisabled();
     });
+    test('a check that found problems opens their groups, shuts the rest and says the verdict in words', async ({ page, api }) => {
+      api.admin = true;
+      await open(page, '/admin/connectors/hello');
+      await page.getByRole('button', { name: 'Testa anslutning' }).click();
+      await expect(page.getByRole('heading', { level: 2, name: 'Senaste kontroll' })).toBeVisible();
+      await expect(page.getByText('Kontrollen hittade 1 fel.', { exact: true })).toBeVisible();
+      await expect(page.getByRole('list', { name: 'Anslutning' }).getByRole('listitem').first()).toContainText('Fel nyckel släpps igenom');
+      await expect(page.getByRole('list', { name: 'Förmågor' })).toContainText('hello.dayWithMeetings');
+      const passed = page.getByRole('button', { name: /I Startsidan.*1 godkänd/ });
+      await expect(passed).toHaveAttribute('aria-expanded', 'false');
+      await passed.focus();
+      await page.keyboard.press('Enter');
+      await expect(page.getByRole('list', { name: 'I Startsidan' })).toBeVisible();
+      await expectNoAxeViolations(page);
+    });
     test('removing asks first, then returns to the list with focus on its heading and a spoken result', async ({ page, api }) => {
       api.admin = true;
       await open(page, '/admin/connectors/hello');
@@ -199,6 +219,14 @@ test.describe('administration', () => {
       await open(page, '/admin/connectors/raindance');
       expect(await reflowProblems(page)).toEqual([]);
       await expect(await pickSection(page, 'Förmågor')).toBeVisible();
+      expect(await reflowProblems(page)).toEqual([]);
+    });
+    test('a check result reflows at 320 px', async ({ page, api }) => {
+      api.admin = true;
+      await page.setViewportSize(narrow);
+      await open(page, '/admin/connectors/hello');
+      await page.getByRole('button', { name: 'Testa anslutning' }).click();
+      await expect(page.getByRole('list', { name: 'Förmågor' })).toBeVisible();
       expect(await reflowProblems(page)).toEqual([]);
     });
     test('the add dialog reflows at 320 px', async ({ page, api }) => {

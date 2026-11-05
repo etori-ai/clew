@@ -47,7 +47,7 @@ The rules that follow:
   change multi-instance needs and it is noted, not built.
 - **The checker is shared.** The manifest validation and the conformance probes in `scripts/connector-check.ts`
   move into `packages/connectors/check.ts` so the CLI and the admin page's "Testa anslutning" run the same
-  code and report the same findings.
+  code and report the same findings. (D44: same checks and verdict; the page reads its own Swedish rows.)
 
 **Why.** D21 wired connectors through environment variables because it was the smallest thing that proved
 the protocol. It is the wrong operating model for the product: most municipalities will run Clew as a

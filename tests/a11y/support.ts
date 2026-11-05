@@ -62,7 +62,7 @@ export class MockApi {
         const input = request.postDataJSON() as { id: string; url: string };
         const c: ConnectorSummary = { ...connectorDetail({ ...this.connectors[2]!, id: input.id, source: 'Nytt system', url: input.url, state: 'draft', registered: false, health: { status: 'ok', at: NOW } }) };
         this.connectors = [...this.connectors, c];
-        return route.fulfill({ status: 201, json: { connector: connectorDetail(c), report: { ok: true, findings: checkReport.findings.filter(f => f.level === 'ok') } } });
+        return route.fulfill({ status: 201, json: { connector: connectorDetail(c), report: { ok: true, items: checkReport.items.filter(i => i.level === 'ok') } } });
       }
       if (path === `/admin/connectors/${cid}/test`) return json({ ...checkReport, health: { status: 'secret-rejected', at: NOW } });
       if (path === `/admin/connectors/${cid}/refresh`) { const c = found(); return c ? json({ diff: { added: ['hello.remind'], removed: ['hello.openItems'], changed: [], areasAdded: [], areasRemoved: [], same: false }, connector: connectorDetail(c) }) : route.fulfill({ status: 400, json: { error: 'Anslutningen finns inte.' } }); }
@@ -273,15 +273,21 @@ export async function expectNoAxeViolations(page: Page) {
   expect([...violations, ...sizes].map(v => `${v.id}: ${v.help}\n  ${v.nodes.slice(0, 4).map(n => n.target.join(' ')).join('\n  ')}`)).toEqual([]);
 }
 
-/** 1.4.10: nothing may need sideways scrolling, and no text may be clipped to fit. */
-export async function reflowProblems(page: Page) {
-  return page.evaluate(() => {
+/**
+ * 1.4.10: nothing may need sideways scrolling, and no text may be clipped to fit. A drawer still sliding in is not a
+ * reflow fault, so finite animations settle first. `scope` limits the text to one surface, for a check made with the
+ * rail open: the rail ends a long row with an ellipsis on purpose, and the page's width is still checked.
+ */
+export async function reflowProblems(page: Page, scope?: Locator) {
+  const root = scope ? await scope.elementHandle() : null;
+  return page.evaluate(async root => {
+    await Promise.all(document.getAnimations().filter(a => a.effect?.getComputedTiming().iterations !== Infinity).map(a => a.finished.catch(() => undefined)));
     const width = document.documentElement.clientWidth;
     const visible = (el: Element) => { const r = el.getBoundingClientRect(), s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
     const label = (el: Element) => `${el.tagName.toLowerCase()} "${(el.textContent ?? '').trim().slice(0, 50)}"`;
     const problems: string[] = [];
     if (document.documentElement.scrollWidth > width) problems.push(`page is ${document.documentElement.scrollWidth} px wide at ${width} px`);
-    for (const el of document.querySelectorAll('body *')) {
+    for (const el of (root ?? document.body).querySelectorAll('*')) {
       if (!visible(el)) continue;
       const position = getComputedStyle(el).position;
       if (position === 'absolute' && el.getBoundingClientRect().width <= 1) continue;
@@ -292,7 +298,7 @@ export async function reflowProblems(page: Page) {
       if (clips && hasText && el.scrollWidth > el.clientWidth + 1) problems.push(`clipped: ${label(el)}`);
     }
     return [...new Set(problems)];
-  });
+  }, root);
 }
 
 /** Tabs through the page and names every stop entirely hidden by sticky or fixed content (2.4.11) or without a focus ring (2.4.7). */
