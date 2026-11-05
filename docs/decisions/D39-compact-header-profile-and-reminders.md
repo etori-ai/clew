@@ -72,12 +72,23 @@ configuration/profile ownership and original-asset rules remain in force.
 
 **Amended 2026-11-05: account and reminder placement.** At the product owner's request, the bell and
 its count move to `SideNavHeading.headerEndContent`, beside the logo and Startsidan. The home link
-and bell are separate controls. The account stays in `SideNav.footerIcons` and its trigger shows
+and bell are separate controls. The account stays in the navigation footer and its trigger shows
 `SessionUser.name` as visible text beside a decorative Heroicons account glyph, with the menu chevron.
 No name is parsed, shortened or copied into another owner. This also removes the initials-only
 trigger's label/content mismatch recorded in session 36. Settings, appearance, reminder selection
 and logout retain their existing lifecycle. The desktop/320 px shell cases protect placement, the
 visible full name, keyboard activation and focus restoration; browser/axe execution remains pending.
+
+**Amended 2026-11-05: align the account row.** The screenshot showed a centred account control under
+left-aligned navigation rows. Keep the existing DropdownMenu and its complete trigger semantics.
+Remove the button's full width and keep it in footerIcons inside an HStack with start justification,
+so its icon and label start with the other rows. No custom CSS or
+global button override. The standard SideNavItem is not used as DropdownMenu.renderTrigger because
+its public contract does not preserve the dropdown's expanded/controls attributes and its mouse
+event type differs; the supported Button trigger keeps keyboard, pointer, naming and focus behaviour.
+The desktop/320 px shell case compares the account's icon and label positions with Kalender.
+
+**Replaced later the same day:** the row below takes the account out of `footerIcons`.
 
 **Amended 2026-11-05: the account is a row in the rail.** The product owner found the account out of
 place under the rail's rows: a `Button` with its own type and indent, a wider gap above it and the chevron
