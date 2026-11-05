@@ -4,6 +4,7 @@ import { menuRow, menuRows } from './telefonbok';
 
 /**
  * Verktyg in the menu (D40): the calendar and the views an administrator chose as tools, one click away on every page.
+ * A row leads to the tool's own page (D42), as Kalender does; the page itself is tested in `tools.spec.ts`.
  * The phone book's rows are named by its real manifest; they are in the menu only where a test puts them, as they are in
  * the product only where an administrator chose them.
  */
@@ -18,8 +19,8 @@ test.describe('Verktyg in the menu', () => {
     await open(page, '/');
     const section = rail(page).getByRole('group', { name: 'Verktyg' });
     await expect(section.getByRole('link')).toHaveText(['Kalender', 'Mitt team', 'Telefonbok']);
-    await expect(section.getByRole('link', { name: 'Mitt team' })).toHaveAttribute('href', /^\/vy\/telefonbok\.team\?titel=/);
-    await expect(section.getByRole('link', { name: 'Telefonbok' })).toHaveAttribute('href', /^\/vy\/telefonbok\.directory\?titel=/);
+    await expect(section.getByRole('link', { name: 'Mitt team' })).toHaveAttribute('href', '/tools/telefonbok.team');
+    await expect(section.getByRole('link', { name: 'Telefonbok' })).toHaveAttribute('href', '/tools/telefonbok.directory');
     // The areas, the administration and the way out stay below it.
     const order = await rail(page).getByRole('link').allTextContents();
     expect(order.indexOf('Telefonbok')).toBeGreaterThan(order.indexOf('Kalender'));
@@ -31,39 +32,40 @@ test.describe('Verktyg in the menu', () => {
     await expect(rail(page).getByRole('group', { name: 'Verktyg' }).getByRole('link')).toHaveText(['Kalender']);
   });
 
-  test('the row opens the view in the side panel by keyboard, is marked as current, and closing gives the focus back', async ({ page, api }) => {
+  test('the row opens the tool as a page by keyboard, not in the side panel, and is marked as current', async ({ page, api }) => {
     api.menu = [menuRow];
     await open(page, '/');
     const row = rail(page).getByRole('link', { name: 'Telefonbok' });
     await row.focus();
     await page.keyboard.press('Enter');
-    const panel = page.getByRole('dialog', { name: 'Sök i telefonboken' });
-    await expect(panel.getByRole('table')).toBeVisible();
-    await expect(page).toHaveURL(/\/vy\/telefonbok\.directory/);
-    // The panel is a named dialog and takes the focus, which is how a screen reader hears where the row led.
-    await expect(panel.locator(':focus')).toHaveCount(1);
+    await expect(page).toHaveURL(/\/tools\/telefonbok\.directory$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Telefonbok' })).toBeVisible();
+    await expect(page.getByRole('searchbox', { name: 'Sök i telefonboken' })).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page).toHaveTitle('Telefonbok · Startsidan');
     await expect(page.locator('nav a[aria-current="page"]')).toHaveText('Telefonbok');
     await expectNoAxeViolations(page);
-    await page.keyboard.press('Escape');
-    await expect(panel).toHaveCount(0);
-    await expect(row).toBeFocused();
-    await expect(page.locator('nav a[aria-current="page"]')).toHaveCount(0);
+    // Kalender is the same kind of row: one tool is current at a time.
+    await rail(page).getByRole('link', { name: 'Kalender' }).click();
+    await expect(page.locator('nav a[aria-current="page"]')).toHaveText('Kalender');
   });
 
-  test('from the calendar the row leads to the view too', async ({ page, api }) => {
+  test('from the calendar the row leads to the tool\'s page too', async ({ page, api }) => {
     api.menu = [menuRow];
     await open(page, '/kalender');
     await rail(page).getByRole('link', { name: 'Telefonbok' }).click();
-    await expect(page.getByRole('dialog', { name: 'Sök i telefonboken' }).getByRole('table')).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Telefonbok' })).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 
-  test('the menu\'s search finds a tool by its name', async ({ page, api }) => {
+  test('the menu\'s search finds a tool by its name and opens its page', async ({ page, api }) => {
     api.menu = [menuRow];
     await open(page, '/');
     const search = rail(page).getByRole('combobox', { name: 'Sök i samtal och kort' });
     await search.fill('telefon');
     await page.getByRole('option', { name: /Telefonbok/ }).click();
-    await expect(page.getByRole('dialog', { name: 'Sök i telefonboken' })).toBeVisible();
+    await expect(page).toHaveURL(/\/tools\/telefonbok\.directory$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Telefonbok' })).toBeVisible();
   });
 
   test('more than four tools: four show and the rest wait under Fler verktyg, a disclosure that says whether it is open', async ({ page, api }) => {
@@ -84,7 +86,7 @@ test.describe('Verktyg in the menu', () => {
 });
 
 test.describe('Verktyg on a phone', () => {
-  test('the row is in the drawer and opens the view as a list', async ({ page, api }) => {
+  test('the row is in the drawer and opens the tool\'s page, its rows as a list', async ({ page, api }) => {
     await page.setViewportSize(phone);
     api.menu = [menuRow];
     await open(page, '/');
@@ -92,7 +94,9 @@ test.describe('Verktyg on a phone', () => {
     await expect(drawer.getByRole('group', { name: 'Verktyg' }).getByRole('link')).toHaveText(['Kalender', 'Telefonbok']);
     await expectNoAxeViolations(page);
     await drawer.getByRole('link', { name: 'Telefonbok' }).click();
-    await expect(page.getByRole('dialog', { name: 'Sök i telefonboken' }).getByRole('list').first()).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Telefonbok' })).toBeVisible();
+    await expect(page.getByRole('list', { name: 'Telefonboken' })).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
   });
   test('at 320 px the tool shows its whole name in the drawer and the page does not scroll sideways', async ({ page, api }) => {
     await page.setViewportSize(narrow);

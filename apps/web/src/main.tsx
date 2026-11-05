@@ -8,6 +8,7 @@ import { LinkProvider, Providers, SessionBoundary, type BrowserSession } from '@
 import type { SessionUser } from '@clew/contracts';
 import { StartPage } from './pages/start';
 import { CalendarPage } from './pages/calendar';
+import { ToolPage } from './pages/tool';
 import { LoginPage } from './pages/login';
 import { AdminConnectorsPage } from './pages/admin/connectors';
 import { AdminConnectorPage } from './pages/admin/connector';
@@ -57,6 +58,7 @@ const RouterLink = forwardRef<HTMLAnchorElement, { href?: string; to?: string } 
  * Routes (D34): `/` is the box with the brief, `/samtal/:id` a conversation in the same column; `/oversikt` is the whole
  * picture, `/omrade/:area` filters it, `/pagar`, `/inte-nu` and `/hanterat` open the three piles (D28), `/vy/kort/…` a card's
  * view over the overview, `/vy/:capability` a view over the box (or over the overview when an area is named), all addressable.
+ * `/kalender` and `/tools/:capability` are the tools, each a page of its own in the same shell (D42).
  */
 function App() {
   // One element for every start route: a route change between the box, the overview, a pile, a view and a conversation
@@ -67,6 +69,7 @@ function App() {
   return <Routes>
     <Route path="/login" element={<LoginPage returnTo="/" />} />
     <Route path="/kalender" element={<Protected>{shell => <CalendarPage user={shell.user} admin={shell.admin} />}</Protected>} />
+    <Route path="/tools/:capability" element={<Protected>{shell => <ToolPage user={shell.user} admin={shell.admin} />}</Protected>} />
     <Route path="/admin" element={admin(shell => <AdminConnectorsPage user={shell.user} />)} />
     <Route path="/admin/anslutningar" element={admin(shell => <AdminConnectorsPage user={shell.user} />)} />
     <Route path="/admin/anslutningar/:id" element={admin(shell => <AdminConnectorPage user={shell.user} />)} />

@@ -95,7 +95,7 @@ store. The key lives in the connector's container; Clew holds only the shared se
 
 | The person | What happens | Model needed |
 |---|---|---|
-| Presses "Telefonbok" or "Mitt team" under Verktyg in the menu, on any page | The view opens in the side panel; closing it gives the focus back to the row | No |
+| Presses "Telefonbok" or "Mitt team" under Verktyg in the menu, on any page | The tool opens as a page of its own (D42), with the search field and the rows; a name opens the contact card in the side panel over it | No |
 | Presses the chip "Mitt teams kontaktlista" | The list opens in the side panel, read as them | No |
 | Presses "Sök i telefonboken" and types | The table asks again after a pause; the count is spoken; the address carries the question | No |
 | Types "telefonboken anna lind" in the box | The router matches the capability by its title, hands "anna lind" to the view's search field, answers with a count and draws the rows under the answer | No |

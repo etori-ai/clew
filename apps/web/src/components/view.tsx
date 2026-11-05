@@ -24,6 +24,10 @@ export interface DeclaredViewProps {
   isLoading?: boolean;
   /** Draw at most this many rows and say how many there are (the embed under an answer). */
   limit?: number;
+  /** The level of a heading inside the view: 3 in the panel and under an answer, 2 on a tool's page, under its h1. */
+  headingLevel?: 2 | 3;
+  /** From which window width a table is drawn as a table: a page beside the rail needs more than the panel does. */
+  tableQuery?: string;
 }
 
 const dateOnly = new Intl.DateTimeFormat('sv-SE', { dateStyle: 'long' });
@@ -123,8 +127,8 @@ function Rows({ view, rows, hrefFor, wide }: { view: RowsView; rows: Row[]; href
   })}</List>;
 }
 
-export function DeclaredView({ view, output, input = {}, onInput, hrefFor, isLoading = false, limit }: DeclaredViewProps) {
-  const wide = useMediaQuery('(min-width: 900px)');
+export function DeclaredView({ view, output, input = {}, onInput, hrefFor, isLoading = false, limit, headingLevel = 3, tableQuery = '(min-width: 900px)' }: DeclaredViewProps) {
+  const wide = useMediaQuery(tableQuery);
   // A count that changes while someone types is spoken as one message, the latest (4.1.3); the visible line says the same.
   const announce = useAnnounce({ hasReplace: true });
   const all = view.kind === 'table' || view.kind === 'list' ? viewRows(view, output) ?? [] : null;
@@ -138,7 +142,7 @@ export function DeclaredView({ view, output, input = {}, onInput, hrefFor, isLoa
   }, [count, isLoading, controls, announce, view]);
   if (view.kind === 'text') {
     const body = (output as Row | null)?.[view.body];
-    return typeof body === 'string' && body.trim() ? <Markdown density="compact" headingLevelStart={3}>{body}</Markdown> : <Text type="supporting">Inget att visa.</Text>;
+    return typeof body === 'string' && body.trim() ? <Markdown density="compact" headingLevelStart={headingLevel}>{body}</Markdown> : <Text type="supporting">Inget att visa.</Text>;
   }
   if (view.kind === 'detail') {
     const record = output && typeof output === 'object' && !Array.isArray(output) ? output as Row : {};
@@ -156,7 +160,7 @@ export function DeclaredView({ view, output, input = {}, onInput, hrefFor, isLoa
   return <VStack gap={3}>
     {controls && <Controls controls={controls} input={input} onInput={onInput!} isLoading={isLoading} />}
     {rows.length === 0
-      ? <EmptyState isCompact headingLevel={3} title={view.empty ?? 'Inget att visa'} />
+      ? <EmptyState isCompact headingLevel={headingLevel} title={view.empty ?? 'Inget att visa'} />
       : <Rows view={view} rows={rows} hrefFor={hrefFor} wide={wide && !limit} />}
     {rows.length > 0 && <Text type="supporting">{limit && all!.length > rows.length ? `${rows.length} av ${all!.length} rader` : `${rows.length} ${rows.length === 1 ? 'rad' : 'rader'}`} · {view.source}. Inget av det sparas på Startsidan.</Text>}
   </VStack>;

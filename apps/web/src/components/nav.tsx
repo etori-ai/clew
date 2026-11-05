@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import type { Area, MenuEntry, Thread } from '@clew/contracts';
+import type { Area, MenuEntry, Thread, ViewRef } from '@clew/contracts';
 import { Badge, Button, SideNavItem, SideNavSection, StatusDot, Text, Typeahead, TypeaheadItem, VStack, createStaticSource, type SearchableItem } from '@clew/ui';
 import { addDays, displayDate, timeLabel, today } from '@clew/calendar/dates';
 import { areasQuery, threadsQuery } from '../queries';
@@ -11,12 +11,12 @@ import type { ShellNav } from './shell';
 
 /** What the rail marks as current: the surface, and within the start page the group, the pile, the area or the conversation. */
 export interface RailCurrent {
-  surface: 'start' | 'oversikt' | 'kalender' | 'admin';
+  surface: 'start' | 'oversikt' | 'kalender' | 'verktyg' | 'admin';
   group?: 'behover-dig' | 'foreslar' | 'kannedom' | null;
   pile?: 'pagar' | 'inte-nu' | 'klart' | null;
   area?: string | null;
   conversationId?: string | null;
-  /** The capability whose view is open in the panel, so its row under Verktyg is marked. */
+  /** The capability whose tool page is open (D42), so its row under Verktyg is marked. */
   view?: string | null;
 }
 const EMPTY_THREADS: Thread[] = [];
@@ -24,8 +24,21 @@ const EMPTY_AREAS: Area[] = [];
 const EMPTY_MENU: MenuEntry[] = [];
 /** How many tools show at once; the rest sit under "Fler verktyg", so the foot of the menu keeps its height however many connectors offer a row. */
 const TOOLS_SHOWN = 4;
-/** The address of a tool: its view in the panel over the start page, the same address the chip under the box opens. */
-export const menuHref = (e: Pick<MenuEntry, 'capability' | 'title'>) => `/vy/${e.capability}?titel=${encodeURIComponent(e.title)}`;
+const json = (value: Record<string, unknown> | undefined) => value && Object.keys(value).length ? encodeURIComponent(JSON.stringify(value)) : null;
+/**
+ * The address of a tool (D42): its own page, `/tools/:capability`. `input` is what the view's own controls ask for;
+ * `open` is a row's own view shown in the panel over the page (`open`, with `open-title` and `open-input`), and `via` marks one
+ * opened from another opened view, which then offers the way back.
+ */
+export const toolHref = (capability: string, input?: Record<string, unknown>, open?: Pick<ViewRef, 'capability' | 'title' | 'input'>, via = false) => {
+  const query = [
+    json(input) && `input=${json(input)}`,
+    open && `open=${encodeURIComponent(open.capability)}&open-title=${encodeURIComponent(open.title)}`,
+    open && json(open.input) && `open-input=${json(open.input)}`,
+    open && via && 'via=1',
+  ].filter(Boolean).join('&');
+  return `/tools/${capability}${query ? `?${query}` : ''}`;
+};
 const tone = { ok: null, warn: 'warning', alert: 'error', none: null } as const;
 type Found = { href: string; detail: string };
 
@@ -33,7 +46,7 @@ type Found = { href: string; detail: string };
  * The rail (D34, the canvas's H1, H3 and H4): one navigation ordered by time relative to the person, after the
  * `shell-side-nav` template. On top Ny fråga and the search; then Från mig, the push in its three groups; Pågår, what
  * moves without the person; Samtal, the person's own conversations by day; and at the foot what is always there:
- * Verktyg (Kalender and the views connectors offer as tools, D40), the areas as lenses, collapsed, and Administration. Every row is a link to a route, so the back button and
+ * Verktyg (Kalender and the views connectors offer as tools, D40, each a page of its own, D42), the areas as lenses, collapsed, and Administration. Every row is a link to a route, so the back button and
  * a reload land in the same place. Returned as the shell's three slots so the shell keeps the heading and the way out.
  */
 export function useRail({ current, admin }: { current: RailCurrent; admin: boolean }): ShellNav {
@@ -68,11 +81,11 @@ export function useRail({ current, admin }: { current: RailCurrent; admin: boole
       ...g.questions.map(t => ({ id: 'samtal:' + t.id, label: t.title, auxiliaryData: { href: `/samtal/${t.id}`, detail: 'Samtal' } })),
       ...[...g.nu, ...g.senare, ...g.foreslar, ...g.kannedom, ...g.waiting, ...g.snoozed].map(t => ({ id: 'kort:' + t.id, label: t.title, auxiliaryData: { href: `/oversikt?kort=${encodeURIComponent(t.id)}`, detail: `Kort · ${t.trigger.source}` } })),
       ...areas.map(a => ({ id: 'omrade:' + a.id, label: a.title, auxiliaryData: { href: `/omrade/${a.id}`, detail: 'Område' } })),
-      ...menu.map(e => ({ id: 'verktyg:' + e.capability, label: e.label, auxiliaryData: { href: menuHref(e), detail: `Verktyg · ${e.source}` } })),
+      ...menu.map(e => ({ id: 'verktyg:' + e.capability, label: e.label, auxiliaryData: { href: toolHref(e.capability), detail: `Verktyg · ${e.source}` } })),
     ];
     return createStaticSource(items);
   }, [threads, areas, menu]);
-  const tool = (e: MenuEntry) => <SideNavItem key={e.capability} label={e.label} icon={clewIcon[e.icon]} href={menuHref(e)} isSelected={onStart && current.view === e.capability} />;
+  const tool = (e: MenuEntry) => <SideNavItem key={e.capability} label={e.label} icon={clewIcon[e.icon]} href={toolHref(e.capability)} isSelected={current.surface === 'verktyg' && current.view === e.capability} />;
   const more = menu.slice(TOOLS_SHOWN);
   return {
     top: <VStack gap={2}>

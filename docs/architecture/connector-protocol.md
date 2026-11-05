@@ -155,7 +155,7 @@ container. Clew stores refs, never the text.
 
 A connector never draws: no markup, no styles, no frame of its own. A `read` capability may instead say how its output
 is to be shown, and Clew draws it with its own components, the same in the side panel, under an answer in a
-conversation, with a model and without one. `view` is optional on a capability; without it Clew falls back to its
+conversation and on a tool's own page (D42), with a model and without one. `view` is optional on a capability; without it Clew falls back to its
 generic rules (rows become a list, anything else label and value pairs).
 
 ```json

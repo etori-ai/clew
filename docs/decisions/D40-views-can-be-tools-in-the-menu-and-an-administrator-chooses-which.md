@@ -1,6 +1,6 @@
 # D40 · A connector's views can be tools in the menu, and an administrator chooses which
 
-**Status:** accepted, built 2026-11-05 (first as one row per connector, changed the same day to a choice per view); a full-page view and a row pinned by a person or a manager are not built; the icon list extended and opened to areas by D41 · **Date:** 2026-11-05 · **Area:** ui
+**Status:** accepted, built 2026-11-05 (first as one row per connector, changed the same day to a choice per view); a tool opens as a page of its own since D42 (item 5 and "Why the panel and not a page" below are replaced by it); a row pinned by a person or a manager is not built; the icon list extended and opened to areas by D41 · **Date:** 2026-11-05 · **Area:** ui
 
 **Decision.** The menu has a section **Verktyg** at its foot. It holds Kalender and, after it, the views (D38) an
 administrator has chosen as tools. Any view that opens without a question can be one. The administrator chooses view

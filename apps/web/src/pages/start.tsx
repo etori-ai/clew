@@ -170,7 +170,7 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
   const remaining = attention ? Math.max(0, attention.budget - attention.used) : null;
   const current = useMemo(() => areas.find(a => a.id === area) ?? null, [areas, area]);
   const hashGroup = location.hash === '#foreslar' ? 'foreslar' : location.hash === '#kannedom' ? 'kannedom' : 'behover-dig';
-  const railCurrent: RailCurrent = { surface: mode === 'fraga' ? 'start' : 'oversikt', group: mode === 'oversikt' && !pile && !area ? hashGroup : null, pile, area, conversationId, view: params.capability ?? null };
+  const railCurrent: RailCurrent = { surface: mode === 'fraga' ? 'start' : 'oversikt', group: mode === 'oversikt' && !pile && !area ? hashGroup : null, pile, area, conversationId };
   const pageTitle = view ? view.title : conversationId ? 'Samtal' : pile ? pileTitle[pile] : current?.title ?? (area ? null : mode === 'fraga' ? 'Vad vill du göra' : 'Hela bilden');
   usePageTitle(pageTitle, view || conversationId ? false : pageTitle ?? false);
   const onConversation = useCallback((id: string | null) => { if (id) navigate(conversationHref(id)); else if (conversationId) navigate(back); }, [navigate, conversationId, back]);
