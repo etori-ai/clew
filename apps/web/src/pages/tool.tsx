@@ -11,8 +11,8 @@ import { toolHref, useRail } from '../components/nav';
 import { DeclaredView } from '../components/view';
 import { PanelView } from '../components/panel';
 
-/** The table needs about 960 px beside the rail, so a 1280 px laptop gets it; a narrower window draws the same rows as a list. */
-const tableQuery = '(min-width: 1260px)';
+/** The table needs 970 px beside the rail, so a 1280 px laptop gets it, with a scrollbar too; a narrower window draws the same rows as a list. */
+const tableQuery = '(min-width: 1280px)';
 const parse = (json: string | null): Record<string, unknown> => { try { const v: unknown = json ? JSON.parse(json) : {}; return v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}; } catch { return {}; } };
 type Shown = { capability: string; title: string; output: unknown; spec: PanelViewSpec | undefined; input: Record<string, unknown>; via: boolean; address: string };
 

@@ -99,6 +99,8 @@
 .clew-cal-column-event { margin-bottom: 1px; box-shadow: 0 0 0 1px var(--color-background-surface); }
 .clew-cal-column-event-start { margin-top: 1px; }
 .clew-cal-column-event-inner { display: flex; flex-direction: column; padding: var(--spacing-1) var(--spacing-2); font-size: var(--font-size-sm); line-height: 1.3; }
+/* A word too long for the column ends in an ellipsis; it never breaks in the middle. */
+.clew-cal-column-event-inner > * { min-width: 0; overflow: hidden; overflow-wrap: normal; word-break: normal; text-overflow: ellipsis; }
 .clew-cal-column-event-inner.clew-cal-short { flex-direction: row; align-items: center; gap: var(--spacing-1); padding-block: 0; }
 @media (min-width: 768px) {
   .clew-cal-column-event-inner.clew-cal-short > * { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

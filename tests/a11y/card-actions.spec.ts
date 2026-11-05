@@ -1,4 +1,11 @@
+import type { Locator } from '@playwright/test';
+import { NEXT_WEEK } from './data';
 import { composer, desktop, expect, open, phone, test } from './support';
+
+/** What a person cannot read because it is cut off with an ellipsis. */
+const cutOff = (root: Locator) => root.evaluate(element => [...element.querySelectorAll('*')]
+  .filter(e => getComputedStyle(e).textOverflow === 'ellipsis' && e.clientWidth > 0 && e.scrollWidth > e.clientWidth + 1)
+  .map(e => (e as HTMLElement).innerText));
 
 test.describe('a row shows the next step and keeps the rest behind Fler val', () => {
   test.use({ viewport: desktop });
@@ -142,5 +149,48 @@ test.describe('the calendar on a phone', () => {
     await open(page, '/calendar');
     const list = await page.getByRole('group', { name: /^Vecka 45/ }).boundingBox();
     expect(list!.y).toBeLessThan(200);
+  });
+});
+
+test.describe('nothing is cut off', () => {
+  for (const width of [1024, 768]) test(`a row and a card keep their words beside the rail at ${width} px`, async ({ page, api: _ }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await open(page, '/overview');
+    await expect(page.locator('#thread-omtanke').getByRole('button', { name: 'Omtankesamtal med Anna Lindqvist' })).toBeVisible();
+    expect(await cutOff(page.getByRole('main'))).toEqual([]);
+  });
+
+  test('the action on an administration page keeps its whole label beside a long lead', async ({ page, api }) => {
+    await page.setViewportSize(desktop);
+    api.admin = true;
+    await open(page, '/admin/connectors');
+    expect(await cutOff(page.getByRole('main'))).toEqual([]);
+    await page.getByRole('button', { name: 'Anslut system' }).click();
+    expect(await cutOff(page.getByRole('dialog'))).toEqual([]);
+  });
+
+  test('what the box suggests on a phone keeps its whole title', async ({ page, api: _ }) => {
+    await page.setViewportSize(phone);
+    await open(page, '/');
+    await composer(page).fill('attestera');
+    await expect(page.getByText('Menar du')).toBeVisible();
+    expect(await cutOff(page.getByRole('main'))).toEqual([]);
+  });
+
+  test('a proposal in a week says who it is on a line of its own', async ({ page, api: _ }) => {
+    await page.setViewportSize(desktop);
+    await open(page, `/calendar?date=${NEXT_WEEK}`);
+    const block = page.locator('.clew-cal-event-proposal').first();
+    await expect(block).toContainText('Anna');
+    const words = await block.evaluate(element => {
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT), found: string[] = [];
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) for (const word of node.textContent!.matchAll(/\S+/g)) {
+        const range = document.createRange();
+        range.setStart(node, word.index); range.setEnd(node, word.index + word[0].length);
+        if (new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size > 1) found.push(word[0]);
+      }
+      return found;
+    });
+    expect(words).toEqual([]);
   });
 });

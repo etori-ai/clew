@@ -99,12 +99,15 @@ export function EventCalendar({ view, date, items, label, dayHeadingLevel = 2, a
       eventContent={info => {
         const item = byId.get(info.event.id);
         const kind = item?.kind ?? 'event';
-        const title = item?.subtitle && kind !== 'event' ? `${info.event.title} · ${item.subtitle}` : info.event.title;
+        const subtitle = kind !== 'event' ? item?.subtitle : undefined;
         // A week's five columns leave a short meeting room for its name or its time: the grid's own axis says when, the name is what only the block can say.
         const time = info.timeText && <Text type="inherit" weight="semibold" hasTabularNumbers>{info.timeText}</Text>;
         return <>
           {time && (view === 'timeGridWeek' ? <VisuallyHidden>{time}</VisuallyHidden> : time)}
-          <Text type="inherit">{title}</Text>
+          {/* In a week's narrow column who it is gets its own line, so "Utvecklingssamtal · Anna" neither breaks a word nor loses the name. */}
+          {subtitle && view === 'timeGridWeek'
+            ? <><Text type="inherit">{info.event.title}</Text><Text type="inherit">{subtitle}</Text></>
+            : <Text type="inherit">{subtitle ? `${info.event.title} · ${subtitle}` : info.event.title}</Text>}
           <VisuallyHidden>, {kindLabel[kind]}{item?.id === selectedId ? ', öppet' : ''}</VisuallyHidden>
         </>;
       }}

@@ -136,6 +136,17 @@ test.describe('a tool\'s page on a smaller screen', () => {
     expect((await rows.nth(1).boundingBox())!.height).toBeLessThan(60);
     expect(await page.getByRole('table').evaluate(table => table.scrollWidth <= table.clientWidth + 1)).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(desktop.width);
+    // A Swedish title is one long word, and a table's cells break a word they cannot hold: Löneadministratör must not.
+    const brokenWords = await page.getByRole('table').evaluate(table => {
+      const walker = document.createTreeWalker(table, NodeFilter.SHOW_TEXT), found: string[] = [];
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) for (const word of node.textContent!.matchAll(/\S+/g)) {
+        const range = document.createRange();
+        range.setStart(node, word.index); range.setEnd(node, word.index + word[0].length);
+        if (new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size > 1) found.push(word[0]);
+      }
+      return found;
+    });
+    expect(brokenWords).toEqual([]);
     await expectNoAxeViolations(page);
   });
 

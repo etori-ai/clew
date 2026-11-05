@@ -130,6 +130,6 @@ export function Suggestions({ viewHref, cardHref }: { viewHref: (capability: str
   ].slice(0, 4);
   if (rows.length === 0) return null;
   return <List density="compact" hasDividers header={<Text type="supporting" weight="semibold">Menar du</Text>}>
-    {rows.map(r => <ListItem key={r.key} label={r.label} endContent={<Text type="supporting">{r.detail}</Text>} onClick={r.go} />)}
+    {rows.map(r => <ListItem key={r.key} label={<Text>{r.label}</Text>} endContent={<Text type="supporting">{r.detail}</Text>} onClick={r.go} />)}
   </List>;
 }

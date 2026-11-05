@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { SessionUser } from '@clew/contracts';
-import { BreadcrumbItem, Breadcrumbs, Button, EmptyState, HStack, Heading, Layout, LayoutContent, Text, VStack } from '@clew/ui';
+import { BreadcrumbItem, Breadcrumbs, Button, EmptyState, HStack, Heading, Layout, LayoutContent, StackItem, Text, VStack } from '@clew/ui';
 import { useRail, type AdminSection } from '../../components/nav';
 import { Shell, mobileQuery } from '../../components/shell';
 import { useMediaQuery } from '@clew/ui';
@@ -40,11 +40,12 @@ export function NotAdmin() {
 export function PageLead({ title, lead, children, actions }: { title: ReactNode; lead?: string; children?: ReactNode; actions?: ReactNode }) {
   const phone = useMediaQuery('(max-width: 720px)');
   return <HStack justify="between" vAlign="start" gap={3} wrap={phone ? 'wrap' : undefined}>
-    <VStack gap={1}>
+    {/* The words take what is left, so a long lead wraps and the action keeps its whole label. */}
+    <StackItem size="fill"><VStack gap={1}>
       {typeof title === 'string' ? <Heading level={1}>{title}</Heading> : title}
       {lead && <Text as="p" color="secondary">{lead}</Text>}
       {children}
-    </VStack>
-    {actions}
+    </VStack></StackItem>
+    {actions && <StackItem>{actions}</StackItem>}
   </HStack>;
 }

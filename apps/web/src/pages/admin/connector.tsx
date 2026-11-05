@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import type { CheckReport, ConnectorAudience, ConnectorDetail, ManifestDiff, SessionUser } from '@clew/contracts';
-import { AlertDialog, Banner, Button, Card, Code, Collapsible, Dialog, DialogHeader, DropdownMenu, EmptyState, FormLayout, HStack, Heading, InfoTip, List, ListItem, MetadataList, MetadataListItem, Section, StatusDot, Switch, Tab, TabList, Table, Text, TextInput, Timestamp, Toolbar, VStack, useMediaQuery, useToast } from '@clew/ui';
+import { AlertDialog, Banner, Button, Card, Code, Collapsible, Dialog, DialogHeader, DropdownMenu, EmptyState, FormLayout, HStack, Heading, InfoTip, List, ListItem, MetadataList, MetadataListItem, Section, StatusDot, Switch, Tab, TabList, Table, Text, TextInput, Timestamp, Toolbar, VStack, useMediaQuery, useToast, proportional } from '@clew/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api';
 import { adminQueries } from '../../queries';
@@ -68,9 +68,10 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
   // Off is the only value an override can hold (narrowing only, D23); on clears it.
   const capPatch = (on: boolean, key: 'enabled' | 'model'): { enabled?: false; model?: false } => on ? {} : key === 'enabled' ? { enabled: false } : { model: false };
   const capColumns = [
-    { key: 'title', header: 'Funktion', renderCell: (r: CapRow) => <VStack gap={0}><Text>{r.c.title}</Text><Code>{r.c.name}</Code></VStack> },
+    // An id is one word in a typewriter face: its column holds it, so it does not break in the middle.
+    { key: 'title', header: 'Funktion', width: proportional(1.5, { minWidth: 240 }), renderCell: (r: CapRow) => <VStack gap={0}><Text>{r.c.title}</Text><Code>{r.c.name}</Code></VStack> },
     { key: 'kind', header: 'Typ', renderCell: (r: CapRow) => <Text weight={r.c.kind === 'execute' ? 'semibold' : undefined}>{capabilityKindLabel[r.c.kind]}</Text> },
-    { key: 'roles', header: 'Roller enligt systemet', renderCell: (r: CapRow) => <Text type="supporting">{r.c.roles ? r.c.roles.map(x => roleLabel[x]).join(', ') : 'Alla (regeln ligger i koden)'}</Text> },
+    { key: 'roles', header: 'Roller enligt systemet', width: proportional(1.5, { minWidth: 190 }), renderCell: (r: CapRow) => <Text type="supporting">{r.c.roles ? r.c.roles.map(x => roleLabel[x]).join(', ') : 'Alla (regeln ligger i koden)'}</Text> },
     { key: 'on', header: 'På', renderCell: (r: CapRow) => <Switch size="sm" label={`${r.c.title} på`} isLabelHidden value={r.c.enabled} changeAction={on => setCap(r.name, capPatch(on, 'enabled'))} /> },
     { key: 'tool', header: 'Assistent', renderCell: (r: CapRow) => <ToolSwitch row={r.c} toolsEnabled={c.toolsEnabled} onChange={on => setCap(r.name, capPatch(on, 'model'))} /> },
   ];

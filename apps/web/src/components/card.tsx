@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { attentionLevel, dayWord, daysUntil, isSnoozed, parseSwedishTime, snoozeWhen, streamGroup, type AttentionLevel, type SnoozeInput, type SnoozePreset, type Thread, type ThreadAction } from '@clew/contracts';
-import { Badge, Button, Card, CheckboxList, CheckboxListItem, Collapsible, Dialog, DialogHeader, DropdownMenu, DropdownMenuDivider, DropdownMenuItem, DropdownMenuSubMenu, Heading, HStack, Icon, IconButton, List, ListItem, StatusDot, Text, TextInput, Timestamp, VStack, useToast } from '@clew/ui';
+import { Badge, Button, Card, CheckboxList, CheckboxListItem, Collapsible, Dialog, DialogHeader, DropdownMenu, DropdownMenuDivider, DropdownMenuItem, DropdownMenuSubMenu, Heading, HStack, Icon, IconButton, List, ListItem, StatusDot, Text, TextInput, Timestamp, VStack, useToast, useMediaQuery } from '@clew/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { today } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
@@ -298,12 +298,17 @@ type RowProps = ActionProps & { areaTitle: string; notice?: boolean; onExpand: (
  * and the state and the one next step sit at the end. A notice carries the info icon in place of a deadline. The row
  * keeps the card's id so focus and the toasts find it.
  */
+const rowNarrowQuery = '(max-width: 1200px)';
+
 export function ThreadRow({ thread, areaTitle, notice = false, onChange, onOpenCardView, onExpand }: RowProps) {
   const actions = useThreadActions({ thread, onChange, onOpenCardView });
   const { error, why } = actions;
   const conversation = useConversation();
   const level = notice ? 'notice' : attentionLevel(thread, today());
   const inConversation = conversation.chipped.includes('thread:' + thread.id);
+  // A button's label does not wrap, so where the column beside the day is narrow the step goes under the line and the title keeps its words, as in the brief.
+  const narrow = useMediaQuery(rowNarrowQuery);
+  const end = <HStack gap={3} vAlign="center" wrap={narrow ? 'wrap' : undefined}><State thread={thread} /><ActionRow thread={thread} level={level} actions={actions} quiet /></HStack>;
   return <ListItem id={`thread-${thread.id}`} tabIndex={-1} align="start"
     startContent={notice ? <Icon icon="info" color="info" /> : undefined}
     label={<Button variant="ghost" size="sm" label={thread.title} aria-expanded={false} onClick={() => onExpand(thread.id)} />}
@@ -312,10 +317,11 @@ export function ThreadRow({ thread, areaTitle, notice = false, onChange, onOpenC
         <Text type="supporting">{areaTitle} · {thread.trigger.reason.replace(/\.$/, '')}{inConversation ? ' · I samtalet' : ''}</Text>
         <Flags thread={thread} />
       </HStack>
+      {narrow && end}
       {why && <WhyLine thread={thread} />}
       {error && <Text as="p" role="alert" color="accent">{error}</Text>}
     </VStack>}
-    endContent={<HStack gap={3} vAlign="center"><State thread={thread} /><ActionRow thread={thread} level={level} actions={actions} quiet /></HStack>} />;
+    endContent={narrow ? undefined : end} />;
 }
 
 /**

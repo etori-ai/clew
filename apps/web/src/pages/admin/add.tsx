@@ -14,6 +14,8 @@ import { audienceLabel } from './labels';
  */
 const ID = /^[a-z][a-z0-9-]*$/;
 const steps = ['Adress och nyckel', 'Kontroll', 'Vem ser det', 'Aktivera'];
+/** Four steps share a 620 px dialog, so the first says its one word there; the heading under them has the whole name. */
+const stepLabels = ['Adress', 'Kontroll', 'Vem ser det', 'Aktivera'];
 type Props = { isOpen: boolean; onClose: (added: boolean) => void; units: Array<{ id: string; label: string }> };
 export function AddConnectorDialog({ isOpen, onClose, units }: Props) {
   const [step, setStep] = useState(0);
@@ -42,7 +44,7 @@ export function AddConnectorDialog({ isOpen, onClose, units }: Props) {
     <DialogHeader title="Anslut system" subtitle={result ? 'Anslutningen är sparad som utkast tills du slår på den.' : undefined} onOpenChange={open => { if (!open) close(!!result); }} hasDivider={false} />
     <LayoutHeader hasDivider={false}>
       <Stepper activeStep={step} label="Steg" density="compact" horizontalOptions={{ minimumStepWidth: 100, collapsedVariant: 'withLabel' }}>
-        {steps.map((s, i) => <Step key={s} step={i} label={s} />)}
+        {stepLabels.map((s, i) => <Step key={s} step={i} label={s} />)}
       </Stepper>
     </LayoutHeader>
   </>;

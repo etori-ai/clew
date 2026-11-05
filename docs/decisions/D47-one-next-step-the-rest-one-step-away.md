@@ -45,8 +45,8 @@ before and after a prototype.
     a declared view's is `Visa allt`.
 12. **The side panel.** `--color-overlay` is half of Astryx's, since the page behind it is still its context. A plain read
     says where it comes from (`GET /api/cap/:name` returns the connector's `source`) and writes a date as a date.
-13. **A table when there is room.** A declared table starts at 1260 px beside the rail, so a 1280 px laptop has one row per
-    person. Under that the list puts the numbers and the address on one wrapping line.
+13. **A table when there is room.** A declared table starts at 1280 px beside the rail, so a 1280 px laptop has one row per
+    person, and its floors hold a Swedish title and the longest address without breaking a word. Under that the list puts the numbers and the address on one wrapping line.
 14. **Administration.** The filter carries the counts (`Problem 1`) and the tiles are gone, on both Anslutna system and
     Modeller. Ta bort stands at the far end of the row of actions. On a connector, what an administrator acts on stands open
     and the rest folds under Tekniska uppgifter. A form is at most 560 px, and a switch that applies at once stands apart

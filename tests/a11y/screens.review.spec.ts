@@ -17,7 +17,7 @@ const tablet = { width: 768, height: 1024 };
 const sizes = { '1280': desktop, '1600': wide, '375': phone, tall, '1024': laptop, '768': tablet } as const;
 type Size = keyof typeof sizes;
 
-/** What can be counted: tab stops in the whole page and in main, tab stops before the box, words, type sizes and colours in view. */
+/** What can be counted: tab stops in the whole page and in main, tab stops before the box, words, type sizes and colours in view, text cut off, words broken in two. */
 const measure = (page: Page) => page.evaluate(() => {
   const visible = (e: Element) => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
   const focusables = [...document.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]):not([type=hidden]),select,textarea,[tabindex]:not([tabindex="-1"])')].filter(visible);
@@ -26,14 +26,21 @@ const measure = (page: Page) => page.evaluate(() => {
   const words = (e: Element | null) => (e as HTMLElement | null)?.innerText?.split(/\s+/).filter(Boolean).length ?? 0;
   const box = focusables.findIndex(e => e.getAttribute('role') === 'combobox' && /Vad vill du|Svara/.test(e.getAttribute('aria-label') ?? ''));
   const inView = (r: DOMRect) => r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth;
-  const sizesSeen = new Map<string, number>(), weights = new Set<string>(), colors = new Set<string>();
+  const sizesSeen = new Map<string, number>(), weights = new Set<string>(), colors = new Set<string>(), brokenWords: string[] = [];
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
     if (!n.textContent?.trim()) continue;
-    const p = n.parentElement!; if (!visible(p) || !inView(p.getBoundingClientRect())) continue;
+    const p = n.parentElement!; if (!visible(p)) continue;
+    for (const word of n.textContent.matchAll(/[^\s-]+/g)) {
+      const range = document.createRange();
+      range.setStart(n, word.index); range.setEnd(n, word.index + word[0].length);
+      if (new Set([...range.getClientRects()].map(r => Math.round(r.top))).size > 1) brokenWords.push(word[0]);
+    }
+    if (!inView(p.getBoundingClientRect())) continue;
     const s = getComputedStyle(p);
     sizesSeen.set(s.fontSize, (sizesSeen.get(s.fontSize) ?? 0) + 1); weights.add(s.fontWeight); colors.add(s.color);
   }
+  const truncated = [...document.querySelectorAll('body *')].filter(e => getComputedStyle(e).textOverflow === 'ellipsis' && e.scrollWidth > e.clientWidth + 1 && visible(e)).map(e => (e as HTMLElement).innerText.slice(0, 50));
   return {
     tabStops: focusables.length,
     tabStopsInMain: focusables.filter(e => main?.contains(e)).length,
@@ -46,6 +53,8 @@ const measure = (page: Page) => page.evaluate(() => {
     typeWeights: [...weights],
     textColours: colors.size,
     scrollWidthOverflow: document.documentElement.scrollWidth - innerWidth,
+    truncated,
+    brokenWords,
     bodyFont: getComputedStyle(document.body).fontFamily.slice(0, 60),
   };
 });

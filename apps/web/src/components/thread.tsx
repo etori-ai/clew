@@ -95,7 +95,7 @@ export function ThreadCard({ thread, compact, headingLevel = 3, onChange }: Prop
         <Heading level={3} accessibilityLevel={headingLevel} weight="medium">{lead}</Heading>
         {rest && <Text as="p" color="secondary">{rest}</Text>}
       </>}
-      {thread.kind === 'pushed' && thread.proposals.length > 0 && <Stepper label="Steg" activeStep={obligationSteps.indexOf(step)} density="compact" horizontalOptions={{ minimumStepWidth: 96, collapsedVariant: 'withLabel' }}>
+      {thread.kind === 'pushed' && thread.proposals.length > 0 && <Stepper label="Steg" activeStep={obligationSteps.indexOf(step)} density="compact" horizontalOptions={{ minimumStepWidth: 124, collapsedVariant: 'withLabel' }}>
         {obligationSteps.map((s, i) => <Step key={s} step={i} label={stepLabel[s]} description={s === 'forslag' ? `${thread.proposals.length} ritade` : s === 'svar' ? (sum.total ? `${sum.accepted + sum.declined} av ${sum.total} svarat` : '') : s === 'klart' ? (step === 'klart' ? 'alla har svarat' : '') : (sum.total ? `${sum.total} skickade` : '')} />)}
       </Stepper>}
       {/* The judgement calls (D30): whoever got no slot is a row with a reason, next to the week that could not hold them. */}

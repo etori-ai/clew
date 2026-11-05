@@ -102,13 +102,14 @@ function Rows({ view, rows, hrefFor, wide }: { view: RowsView; rows: Row[]; href
   const key = (row: Row, i: number) => view.ref && typeof row[view.ref] === 'string' ? row[view.ref] as string : String(i);
   if (view.kind === 'table' && wide) {
     type TableRow = { id: string; row: Row } & Record<string, unknown>;
-    // A column is as wide as what it holds: a number never wraps, an address gets room, and the rest share what is left in
-    // proportion to their floors (equal weights would give every column the widest floor, and a table wider than its panel).
+    // A column is as wide as what it holds: a number never wraps, an address gets room, a Swedish title is one long word
+    // that a narrower column would break in the middle, and the rest share what is left in proportion to their floors
+    // (equal weights would give every column the widest floor, and a table wider than its panel).
     const share = (floor: number) => proportional(floor / 100, { minWidth: floor });
     const columns = [
-      { key: view.title, header: titleField.label, width: share(150), renderCell: (r: TableRow) => name(r.row) },
-      ...others.map(f => ({ key: f.key, header: f.label, width: f.format === 'phone' ? pixel(120) : share(f.format === 'email' ? 235 : 130), renderCell: (r: TableRow) => <Value field={f} value={r.row[f.key]} /> })),
-      ...(view.chip && view.ref ? [{ key: 'clew-chip', header: 'Samtal', width: pixel(72), renderCell: (r: TableRow) => chip(r.row) }] : []),
+      { key: view.title, header: titleField.label, width: share(130), renderCell: (r: TableRow) => name(r.row) },
+      ...others.map(f => ({ key: f.key, header: f.label, width: f.format === 'phone' ? pixel(118) : share(f.format === 'email' ? 248 : 145), renderCell: (r: TableRow) => <Value field={f} value={r.row[f.key]} /> })),
+      ...(view.chip && view.ref ? [{ key: 'clew-chip', header: 'Samtal', width: pixel(66), renderCell: (r: TableRow) => chip(r.row) }] : []),
     ];
     return <Table<TableRow> data={rows.map((row, i) => ({ id: key(row, i), row }))} idKey="id" columns={columns} density="compact" hasHover />;
   }
