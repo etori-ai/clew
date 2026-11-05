@@ -22,7 +22,7 @@ export async function routeFixed(deps: AssistantDeps, persona: AuthenticatedCont
     return { title: 'Utvecklingssamtal', body: `${status.held} hållna, ${status.booked} bokade, ${Math.max(0, 4 - status.held - status.booked)} saknar tid före ${status.deadline}.${open ? ` ${open} förslag väntar i kortet för vecka ${weekNumber(nextWeekStart(displayDate(now)))} under Behöver dig.` : ''}`,
       reason: 'Du frågade om utvecklingssamtalen', source: 'Kalendern', ...(open && thread ? { forslagThreadId: thread.id } : {}) };
   }
-  if (/frånvaro|\bsjuk|budget|hme|läget|siffr/.test(q) && ['calendar', 'heroma', 'raindance'].every(id => deps.registry.visible(persona, id))) {
+  if (/frånvaro|\bsjuk|budget|hme|läget|siffr/.test(q) && ['calendar', 'hr', 'finance'].every(id => deps.registry.visible(persona, id))) {
     const figures = readFigures(persona, await deps.calendar.samtalStatus(persona), now);
     const pick = figures.filter(f => (/frånvaro|sjuk/.test(q) && f.id === 'korttidsfranvaro') || (/budget/.test(q) && f.id === 'budgetavvikelse') || (/hme/.test(q) && f.id === 'hme'));
     const chosen = pick.length ? pick : figures;

@@ -9,7 +9,7 @@ test.describe('2.4.2 page titled', () => {
     ['/todo?area=personal', 'Att göra · Startsidan'],
     ['/todo?tab=done', 'Att göra · Startsidan'],
     ['/calendar', 'Vecka 45 · Kalender · Startsidan'],
-    ['/?open=heroma.whoIsOn&open-title=Bemanning', 'Bemanning · Startsidan'],
+    ['/?open=hr.whoIsOn&open-title=Bemanning', 'Bemanning · Startsidan'],
   ] as const;
   for (const [path, title] of titles) test(`${path} has its own title`, async ({ page, api: _ }) => {
     await open(page, path);
@@ -101,8 +101,8 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(areas.getByRole('button', { name: 'Budget' })).toHaveAttribute('aria-pressed', 'true');
     const cards = page.getByRole('group', { name: 'Budget', exact: true });
     // A read is a link to its view; the line under the title says which system and what happens.
-    await expect(cards.getByRole('link', { name: 'Budget mot prognos' })).toHaveAttribute('href', /^\/\?open=raindance\.budget&open-title=/);
-    await expect(cards.getByText('Raindance · öppnar vyn')).toBeVisible();
+    await expect(cards.getByRole('link', { name: 'Budget mot prognos' })).toHaveAttribute('href', /^\/\?open=finance\.budget&open-title=/);
+    await expect(cards.getByText('Ekonomisystemet · öppnar vyn')).toBeVisible();
     await expect(cards.getByRole('button', { name: 'Attestera fakturor' })).toBeVisible();
     // The cards come under the box: choosing an area never moves the field (D36).
     expect((await composer(page).boundingBox())!.y).toBe(top);
@@ -125,7 +125,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     const cards = page.getByRole('group', { name: 'Budget', exact: true });
     // The whole card is the target: a click on its text follows the link.
     await cards.getByText('Budget mot prognos', { exact: true }).click();
-    await expect(page).toHaveURL(/\/\?open=raindance\.budget&open-title=/);
+    await expect(page).toHaveURL(/\/\?open=finance\.budget&open-title=/);
     await expect(page.getByRole('dialog', { name: 'Budget mot prognos' })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page).toHaveURL(/\/$/);
@@ -195,7 +195,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
   });
 
   test('the side panel has a heading', async ({ page, api: _ }) => {
-    await open(page, '/?open=heroma.whoIsOn&open-title=Bemanning');
+    await open(page, '/?open=hr.whoIsOn&open-title=Bemanning');
     await expect(page.getByRole('dialog').getByRole('heading', { name: 'Bemanning' })).toBeVisible();
   });
 });
@@ -220,7 +220,7 @@ test.describe('3.1.2 language of parts', () => {
   });
 
   test('the side panel shows Swedish labels and readable values', async ({ page, api: _ }) => {
-    await open(page, '/?open=heroma.whoIsOn&open-title=Bemanning');
+    await open(page, '/?open=hr.whoIsOn&open-title=Bemanning');
     const panel = page.getByRole('dialog');
     await expect(panel).toBeVisible();
     await expect(panel.getByText('I tjänst', { exact: true })).toBeVisible();

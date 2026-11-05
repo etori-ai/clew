@@ -7,7 +7,7 @@ import type { ToolInfo } from './router';
 /** The configured model failed, timed out or answered nothing usable; the caller falls back to the router (D8). */
 export class ModelUnavailable extends Error { constructor(message: string) { super(message); this.name = 'ModelUnavailable'; } }
 
-/** Capability names carry one dot (`heroma.whoIsOn`); OpenAI-style function names do not allow it. */
+/** Capability names carry one dot (`hr.whoIsOn`); OpenAI-style function names do not allow it. */
 export const toToolName = (name: string) => name.replace('.', '__');
 export const fromToolName = (name: string) => name.replace('__', '.');
 /** Ten search hits with 600-character snippets and their fields fit under this; a longer result is cut, not failed. */
@@ -40,7 +40,7 @@ export function systemPrompt(ctx: PromptContext): string {
     `Du är assistenten på Startsidan, Sundsvalls kommuns startsida för medarbetare. Du hjälper ${ctx.name}, ${ctx.role === 'manager' ? 'chef' : 'medarbetare'} på ${ctx.unitLabel}.`,
     `I dag är det ${date}, klockan ${time}, vecka ${ctx.week}.`,
     'Regler:',
-    '- Svara på svenska med en eller två meningar. Nämn källan och tidpunkten, till exempel "Heroma 14:52".',
+    '- Svara på svenska med en eller två meningar. Nämn källan och tidpunkten, till exempel "Personalsystemet 14:52".',
     '- Du kan bara läsa. Använd verktygen för att hämta aktuella uppgifter innan du svarar; gissa aldrig siffror.',
     '- Du utför aldrig något och påstår aldrig att något är gjort, utöver det ett korts kvitto visar. När personen vill göra något: säg vilken knapp på kortet som gör det, eller att det inte går här.',
     '- Nämn bara knappar som står under "Knappar på kortet nu". Är kortet redan hanterat, säg det först och vad som går nu, till exempel att Ångra allt måste tryckas innan kortets egna knappar kommer tillbaka.',

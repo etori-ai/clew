@@ -47,7 +47,7 @@ async function standIn(): Promise<string> {
       const toolTurn = body.tools?.length && !body.messages.some(m => m.role === 'tool');
       const message = toolTurn
         ? { role: 'assistant', content: null, tool_calls: [{ id: 'call_1', type: 'function', function: { name: body.tools![0]!.function.name, arguments: '{}' } }] }
-        : { role: 'assistant', content: 'Tre på plats. Heroma 08:00.' };
+        : { role: 'assistant', content: 'Tre på plats. Personalsystemet 08:00.' };
       return reply(200, { id: 'x', object: 'chat.completion', created: 1, model: body.model, choices: [{ index: 0, message, finish_reason: toolTurn ? 'tool_calls' : 'stop' }], usage });
     }
     reply(404, { error: { message: 'not found' } });
@@ -89,7 +89,7 @@ try {
   ok(`picked for a person; ${status.choices.length} model(s) in their choices`);
   const resolved = (await models.resolve(person))!;
   const ran: string[] = [];
-  const tools = [{ name: 'heroma.whoIsOn', title: 'Vem är på plats', description: 'Vilka som arbetar i dag.', source: 'Heroma', kind: 'read' as const, input: { type: 'object', properties: {}, additionalProperties: false } }];
+  const tools = [{ name: 'hr.whoIsOn', title: 'Vem är på plats', description: 'Vilka som arbetar i dag.', source: 'Personalsystemet', kind: 'read' as const, input: { type: 'object', properties: {}, additionalProperties: false } }];
   const answer = await modelAnswer({ system: 'Svara på svenska med en mening.', history: [], text: 'Vem är på plats i dag?', tools: tools as never, run: async name => { ran.push(name); return { rows: [{ name: 'Anna' }, { name: 'Erik' }, { name: 'Sara' }] }; }, generate: resolved.generate, timeoutMs: 60_000 });
   ok(`one turn through the AI SDK: ${ran.length ? `tool ${ran.join(', ')} called, ` : 'no tool called, '}answer "${answer.body.slice(0, 80)}"`);
   const history = await store.history('model:' + modelId);

@@ -13,7 +13,7 @@ async function pickSection(page: import('@playwright/test').Page, name: string) 
   await page.getByRole('menuitem', { name }).click();
   return page.getByRole('region', { name });
 }
-const routes = [['the connectors list', '/admin/connectors'], ['a bundled connector', '/admin/connectors/raindance'], ['a remote connector that is down', '/admin/connectors/hello']] as const;
+const routes = [['the connectors list', '/admin/connectors'], ['a bundled connector', '/admin/connectors/finance'], ['a remote connector that is down', '/admin/connectors/hello']] as const;
 
 test.describe('administration', () => {
   for (const [layout, viewport] of [['desktop', desktop], ['phone', phone]] as const) test.describe(layout, () => {
@@ -25,7 +25,7 @@ test.describe('administration', () => {
     });
     test('every tab of a connector has no axe violations', async ({ page, api }) => {
       api.admin = true;
-      await open(page, '/admin/connectors/raindance');
+      await open(page, '/admin/connectors/finance');
       for (const tab of ['Funktioner', 'Områden', 'Vem ser det', 'Historik']) {
         await expect(await pickSection(page, tab)).toBeVisible();
         await expectNoAxeViolations(page);
@@ -81,7 +81,7 @@ test.describe('administration', () => {
       await open(page, '/admin/connectors');
       await expect(page).toHaveTitle('Anslutna system · Startsidan');
       const table = page.getByRole('table');
-      await expect(table.getByRole('link', { name: 'Raindance' })).toBeVisible();
+      await expect(table.getByRole('link', { name: 'Ekonomisystemet' })).toBeVisible();
       await expect(table.getByText('Svarar inte')).toBeVisible();
       await expect(table.getByText('Utkast')).toBeVisible();
       await expect(table.getByText('Chefer · 1 enhet')).toBeVisible();
@@ -92,11 +92,11 @@ test.describe('administration', () => {
     test('the switch turns a connector off, keeps focus and says so', async ({ page, api }) => {
       api.admin = true;
       await open(page, '/admin/connectors');
-      const toggle = page.getByRole('switch', { name: 'Heroma på' });
+      const toggle = page.getByRole('switch', { name: 'Personalsystemet på' });
       await toggle.focus();
       await page.keyboard.press('Space');
       await expect(toggle).not.toBeChecked();
-      await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Heroma är avstängd'));
+      await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Personalsystemet är avstängd'));
       expect((await focused(page)).tag).toBe('input');
       await expect(page.getByRole('table').getByText('Avstängd')).toBeVisible();
     });
@@ -227,7 +227,7 @@ test.describe('administration', () => {
     });
     test('the audience editor saves and the preview says what each role sees', async ({ page, api }) => {
       api.admin = true;
-      await open(page, '/admin/connectors/raindance');
+      await open(page, '/admin/connectors/finance');
       await page.getByRole('tab', { name: 'Vem ser det' }).click();
       await expect(page.getByRole('radio', { name: 'Endast valda' })).toBeChecked();
       await expect(page.getByText(/Så här ser det ut för medarbetare/)).toBeVisible();
@@ -244,7 +244,7 @@ test.describe('administration', () => {
       await open(page, '/admin/connectors');
       expect(await reflowProblems(page)).toEqual([]);
       await expect(page.getByRole('list', { name: 'Anslutningar' })).toBeVisible();
-      await open(page, '/admin/connectors/raindance');
+      await open(page, '/admin/connectors/finance');
       expect(await reflowProblems(page)).toEqual([]);
       await expect(await pickSection(page, 'Funktioner')).toBeVisible();
       expect(await reflowProblems(page)).toEqual([]);

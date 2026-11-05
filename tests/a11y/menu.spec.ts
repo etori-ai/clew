@@ -161,7 +161,7 @@ test.describe('the administrator chooses which views are in the menu', () => {
   });
   test('a connector with no view that can be a tool says so, and adding a connector does not ask about the menu', async ({ page, api }) => {
     api.admin = true;
-    await open(page, '/admin/connectors/raindance');
+    await open(page, '/admin/connectors/finance');
     await expect(page.getByText('Ingen vy kan ligga i menyn')).toBeVisible();
     await page.getByRole('tab', { name: 'Områden' }).click();
     await expect(page.getByText('Ingen av anslutningens vyer kan ligga i menyn.')).toBeVisible();

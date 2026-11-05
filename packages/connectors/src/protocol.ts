@@ -72,7 +72,7 @@ export const ConnectorManifestSchema = Type.Object({
   protocol: Type.Literal(PROTOCOL_VERSION),
   id: Type.String({ pattern: '^[a-z][a-z0-9-]*$', maxLength: 40, description: 'Must match the id Clew was configured with.' }),
   kind: Type.Union([Type.Literal('passthrough'), Type.Literal('derived')], { description: 'Core connectors live in Clew itself (D3).' }),
-  source: swedish('Swedish. The system as shown on cards: "Heroma".'),
+  source: swedish('Swedish. The system as shown on cards: "Personalsystemet".'),
   areas: Type.Array(ManifestAreaSchema),
   capabilities: Type.Array(ManifestCapabilitySchema),
   uses: Type.Optional(Type.Array(Type.String({ pattern: '^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$' }), { uniqueItems: true, maxItems: 100 })),

@@ -7,7 +7,7 @@ import { applyThread, invalidateStream, pickProposalThread, upsertThread } from 
 const NOW = '2026-11-04T08:00:00.000Z';
 const thread = (values: Partial<Thread> & Pick<Thread, 'id'>): Thread => ({
   title: values.id, kind: 'pushed', topic: values.id, state: 'open', trigger: { reason: 'Test', source: 'Test', at: NOW },
-  createdAt: NOW, updatedAt: NOW, handledAt: null, messages: [], proposals: [], week: null, connector: 'raindance', area: 'budget',
+  createdAt: NOW, updatedAt: NOW, handledAt: null, messages: [], proposals: [], week: null, connector: 'finance', area: 'budget',
   summary: '', items: [], actions: [], waitingOn: null, deadline: null, receipt: null, remindedAt: null, snoozedUntil: null,
   ...values,
 });

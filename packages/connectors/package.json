@@ -8,9 +8,9 @@
     "./remote": "./src/remote.ts",
     "./views": "./src/views.ts",
     "./memory-state": "./src/memory-state.ts",
-    "./mock/heroma": "./src/mock/heroma.ts",
-    "./mock/raindance": "./src/mock/raindance.ts",
-    "./mock/treserva": "./src/mock/treserva.ts",
+    "./mock/hr": "./src/mock/hr.ts",
+    "./mock/finance": "./src/mock/finance.ts",
+    "./mock/incidents": "./src/mock/incidents.ts",
     "./mock/kommunikation": "./src/mock/kommunikation.ts",
     "./check": "./src/check.ts"
   },

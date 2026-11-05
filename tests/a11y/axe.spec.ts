@@ -44,7 +44,7 @@ for (const [layout, viewport] of [['desktop', desktop], ['phone', phone]] as con
   });
 
   test('the side panel has no axe violations', async ({ page, api: _ }) => {
-    await open(page, '/?open=heroma.whoIsOn&open-title=Vem%20%C3%A4r%20p%C3%A5%20plats%3F');
+    await open(page, '/?open=hr.whoIsOn&open-title=Vem%20%C3%A4r%20p%C3%A5%20plats%3F');
     await expect(page.getByRole('dialog')).toBeVisible();
     await expectNoAxeViolations(page);
   });

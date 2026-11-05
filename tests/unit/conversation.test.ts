@@ -5,8 +5,8 @@ import { actorOf, type Connector } from '../../packages/connectors/src/index';
 import { searchConnector } from '../../apps/server/src/modules/search/connector';
 import { searchUsecases } from '../../apps/server/src/modules/search/usecases';
 import { memoryState } from '../../packages/connectors/src/memory-state';
-import { heromaConnector } from '../../packages/connectors/src/mock/heroma';
-import { raindanceConnector } from '../../packages/connectors/src/mock/raindance';
+import { hrConnector } from '../../packages/connectors/src/mock/hr';
+import { financeConnector } from '../../packages/connectors/src/mock/finance';
 import { memoryCalendar, occurrence } from '../../packages/calendar/src/memory';
 import { localInstant } from '../../packages/calendar/src/dates';
 import { memoryThreadStore, memoryTimers } from '../../apps/server/src/threads/adapters/memory';
@@ -37,7 +37,7 @@ const members = ['Anna Lindqvist', 'Erik Sandström'].map(name => { const first 
 function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) {
   const state = memoryState(), registry = new Registry();
   registry.register({ id: 'calendar', kind: 'core', source: 'Kalendern', areas: [], capabilities: [] });
-  for (const m of [heromaConnector(state), raindanceConnector(state), ...(options.extra ?? [])]) registry.register(m);
+  for (const m of [hrConnector(state), financeConnector(state), ...(options.extra ?? [])]) registry.register(m);
   const store = memoryThreadStore(), proposals = memoryProposalStore(), cal = memoryCalendar(account);
   cal.events.push(occurrence({ uid: 'apt', title: 'APT', start: localInstant('2026-11-04T10:00'), end: localInstant('2026-11-04T11:00') }, account));
   let time = Date.parse(T0), n = 0;
@@ -68,10 +68,10 @@ describe('a question without the model', () => {
   test('is answered by the router, kept as a question thread and audited; a reply continues the same thread', async () => {
     const w = world();
     const first = await w.assistant.converse(hillevi, { text: 'visa fakturor' });
-    expect(first).toMatchObject({ assistant: 'router', shape: 'vy', answer: { at: T0, source: 'Raindance' }, view: { capability: 'raindance.invoices' }, thread: { kind: 'question', topic: 'question', connector: 'clew', area: 'fragor', title: 'visa fakturor', state: 'open' } });
+    expect(first).toMatchObject({ assistant: 'router', shape: 'vy', answer: { at: T0, source: 'Ekonomisystemet' }, view: { capability: 'finance.invoices' }, thread: { kind: 'question', topic: 'question', connector: 'clew', area: 'fragor', title: 'visa fakturor', state: 'open' } });
     expect(first.thread.messages.map(m => [m.role, m.body])).toEqual([['user', 'visa fakturor'], ['assistant', first.answer.body]]);
-    expect(first.thread.messages[1]!.meta).toMatchObject({ shape: 'vy', assistant: 'router', source: 'Raindance', toolCalls: [{ capability: 'raindance.invoices' }] });
-    expect(w.store.audit.at(-1)).toMatchObject({ actor: 'person:hillevi', action: 'conversation.asked', subject: 'thread:' + first.conversationId, at: T0, details: { assistant: 'router', tools: ['raindance.invoices'], view: 'raindance.invoices' } });
+    expect(first.thread.messages[1]!.meta).toMatchObject({ shape: 'vy', assistant: 'router', source: 'Ekonomisystemet', toolCalls: [{ capability: 'finance.invoices' }] });
+    expect(w.store.audit.at(-1)).toMatchObject({ actor: 'person:hillevi', action: 'conversation.asked', subject: 'thread:' + first.conversationId, at: T0, details: { assistant: 'router', tools: ['finance.invoices'], view: 'finance.invoices' } });
     w.advance(60_000);
     const second = await w.assistant.converse(hillevi, { text: 'xyzzy plugh', conversationId: first.conversationId });
     expect(second.conversationId).toBe(first.conversationId);
@@ -110,13 +110,13 @@ describe('a question without the model', () => {
     const w = world();
     await w.threads.ensureThreads(hillevi);
     const completions = await w.assistant.completionsFor(hillevi);
-    expect(completions.ask.map(a => a.capability)).toContain('heroma.whoIsOn');
+    expect(completions.ask.map(a => a.capability)).toContain('hr.whoIsOn');
     expect(completions.completions.slice(0, 2)).toEqual(['Vad har jag i dag?', 'Hur ligger vi till med utvecklingssamtalen?']);
     expect(completions.do).toEqual([]); // the mock areas list only reads under Gör själv
     expect(completions.recent).toEqual([]);
     await w.assistant.ask(hillevi, 'Vad har jag i dag?');
     expect((await w.assistant.completionsFor(hillevi)).recent.map(r => r.title)).toEqual(['Vad har jag i dag?']);
-    const invoices = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'raindance:invoices')!;
+    const invoices = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'finance:invoices')!;
     // With nothing typed, `@` offers the context alone, never everything open.
     expect(await w.assistant.listObjects(hillevi, '')).toEqual([]);
     const near = await w.assistant.listObjects(hillevi, '', ['thread:' + invoices.id]);
@@ -126,7 +126,7 @@ describe('a question without the model', () => {
     expect((await w.assistant.listObjects(hillevi, '', [invoices.items[0]!.ref])).map(o => o.ref)).toContain('thread:' + invoices.id);
     // Typing searches everything in scope, the context first: meetings and capabilities too.
     expect((await w.assistant.listObjects(hillevi, 'APT')).some(o => o.kind === 'event' && o.label === 'APT')).toBe(true);
-    expect((await w.assistant.listObjects(hillevi, 'lekolar')).every(o => /lekolar/i.test(o.label + o.detail))).toBe(true);
+    expect((await w.assistant.listObjects(hillevi, 'skolgrossisten')).every(o => /skolgrossisten/i.test(o.label + o.detail))).toBe(true);
     const ranked = await w.assistant.listObjects(hillevi, 'a', ['thread:' + invoices.id]);
     expect(ranked.map(o => o.visible)).toEqual([...ranked.map(o => o.visible)].sort((a, b) => Number(b) - Number(a)));
     expect(ranked[0]!.visible).toBe(true);
@@ -139,9 +139,9 @@ describe('the answer is the card (D34, H1)', () => {
   test('a question that names an open card is answered with that card without the model, audited, and the card is drawn once', async () => {
     const w = world();
     await w.threads.ensureThreads(hillevi);
-    const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'raindance:invoices')!;
+    const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'finance:invoices')!;
     const first = await w.assistant.converse(hillevi, { text: 'attestera en faktura' });
-    expect(first).toMatchObject({ assistant: 'router', shape: 'svar', answer: { source: 'Raindance' } });
+    expect(first).toMatchObject({ assistant: 'router', shape: 'svar', answer: { source: 'Ekonomisystemet' } });
     expect(first.answer.body).toContain(card.summary.replace(/\.$/, ''));
     expect(first.thread.messages[1]!.meta).toMatchObject({ cards: [card.id] });
     expect(w.store.audit.at(-1)).toMatchObject({ action: 'conversation.asked', subject: 'thread:' + first.conversationId, details: { assistant: 'router', cards: [card.id] } });
@@ -157,7 +157,7 @@ describe('the answer is the card (D34, H1)', () => {
   test('a chipped card is drawn in the turn that asks about it', async () => {
     const w = world();
     await w.threads.ensureThreads(hillevi);
-    const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'raindance:invoices')!;
+    const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'finance:invoices')!;
     const why = await w.assistant.converse(hillevi, { text: 'varför ser jag detta?', chips: [{ ref: 'thread:' + card.id, kind: 'thread', label: card.title }] });
     expect(why.thread.messages[1]!.meta).toMatchObject({ cards: [card.id] });
     expect(w.store.audit.at(-1)).toMatchObject({ details: { cards: [card.id] } });
@@ -167,7 +167,7 @@ describe('the answer is the card (D34, H1)', () => {
 describe('a chipped card', () => {
   async function invoices(w: ReturnType<typeof world>) {
     await w.threads.ensureThreads(hillevi);
-    return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'raindance:invoices')!;
+    return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'finance:invoices')!;
   }
   const chip = (t: Thread) => [{ ref: 'thread:' + t.id, kind: 'thread' as const, label: t.title }];
   test('proposes Clew actions instead of acting, and answers why', async () => {
@@ -178,18 +178,18 @@ describe('a chipped card', () => {
     expect(dismiss.verbs?.map(v => v.kind)).toContain('snooze');
     expect((await w.threads.threadFor(hillevi, card.id))!.state).toBe('open');
     const why = await w.assistant.converse(hillevi, { text: 'varför ser jag detta?', chips: chip(card) });
-    expect(why.answer).toMatchObject({ source: 'Raindance', body: expect.stringContaining('Varför nu? ' + card.trigger.reason) });
+    expect(why.answer).toMatchObject({ source: 'Ekonomisystemet', body: expect.stringContaining('Varför nu? ' + card.trigger.reason) });
     expect(why.thread.messages[0]!.meta).toEqual({ chips: chip(card), refs: ['thread:' + card.id] });
     await expect(w.assistant.converse(hillevi, { text: 'x', chips: [{ ref: 'thread:gone', kind: 'thread', label: 'x' }] })).rejects.toThrow('Något du pekade på finns inte längre.');
   });
   test('"bara …" drafts the selection on the card with its own audit row; the button on the card still sends', async () => {
     const w = world();
     const card = await invoices(w);
-    const draft = await w.assistant.converse(hillevi, { text: 'attestera bara Lekolar', chips: chip(card) });
+    const draft = await w.assistant.converse(hillevi, { text: 'attestera bara Skolgrossisten', chips: chip(card) });
     expect(draft.shape).toBe('forslag');
     expect(draft.draft).toMatchObject({ kind: 'select', threadId: card.id });
     const after = (await w.threads.threadFor(hillevi, card.id))!;
-    expect(after.items.map(i => [i.label.split(' · ')[0], i.selected])).toEqual(card.items.map(i => [i.label.split(' · ')[0], i.label.startsWith('Lekolar')]));
+    expect(after.items.map(i => [i.label.split(' · ')[0], i.selected])).toEqual(card.items.map(i => [i.label.split(' · ')[0], i.label.startsWith('Skolgrossisten')]));
     expect(after.messages.at(-1)).toMatchObject({ role: 'assistant', body: expect.stringMatching(/^Utkast: 2 av 3 valda/), meta: { draft: { kind: 'select', threadId: card.id } } });
     expect(audit(w.store, card.id)).toEqual(['thread.pushed', 'thread.drafted']);
     expect(after.state).toBe('open');
@@ -220,19 +220,19 @@ describe('with a model', () => {
     const generate: ModelGenerate = async ({ system, messages, tools }) => {
       if (fail) throw new Error('timeout');
       generated.push(system, String(messages.at(-1)!.content), ...Object.keys(tools));
-      const output = await (tools['heroma__whoIsOn'] as { execute: (input: unknown, options: unknown) => Promise<unknown> }).execute({}, {});
-      return { text: 'Tre på plats. Heroma 08:00.', toolCalls: [{ capability: 'heroma.whoIsOn', input: {}, output }] };
+      const output = await (tools['hr__whoIsOn'] as { execute: (input: unknown, options: unknown) => Promise<unknown> }).execute({}, {});
+      return { text: 'Tre på plats. Personalsystemet 08:00.', toolCalls: [{ capability: 'hr.whoIsOn', input: {}, output }] };
     };
     const w = world({ generate });
     const turn = await w.assistant.converse(hillevi, { text: 'vem är här?' });
-    expect(turn).toMatchObject({ assistant: 'model', answer: { body: 'Tre på plats. Heroma 08:00.', source: 'Heroma' } });
+    expect(turn).toMatchObject({ assistant: 'model', answer: { body: 'Tre på plats. Personalsystemet 08:00.', source: 'Personalsystemet' } });
     expect(generated[0]).toContain('onsdag 4 november 2026, klockan 08:00, vecka 45');
-    expect(generated).toContain('heroma__whoIsOn');
+    expect(generated).toContain('hr__whoIsOn');
     expect(generated.some(g => g.includes('approve'))).toBe(false);
     // The answer says which administered model wrote it (D24): in the response, in the message and in the audit row.
     expect(turn.model).toEqual({ id: 'open-model', title: 'Öppen modell' });
     expect(turn.thread.messages.at(-1)!.meta?.model).toEqual({ id: 'open-model', title: 'Öppen modell' });
-    expect(w.store.audit.at(-1)).toMatchObject({ action: 'conversation.asked', details: { assistant: 'model', tools: ['heroma.whoIsOn'], model: 'open-model' } });
+    expect(w.store.audit.at(-1)).toMatchObject({ action: 'conversation.asked', details: { assistant: 'model', tools: ['hr.whoIsOn'], model: 'open-model' } });
     fail = true;
     const fallback = await w.assistant.converse(hillevi, { text: 'vem är på plats i dag?' });
     expect(fallback.assistant).toBe('unavailable');
@@ -249,16 +249,16 @@ describe('a turn heard while it runs (D36)', () => {
   const textOf = (events: TurnEvent[]) => events.reduce((text, e) => e.type === 'text' ? (e.reset ? e.delta : text + e.delta) : text, '');
   test('the listener hears each read as a step and the model\'s text as it is written, without the trailer; the turn and its audit row are written once, at the end', async () => {
     const generate: ModelGenerate = async ({ tools, onText }) => {
-      const output = await (tools['heroma__whoIsOn'] as { execute: (input: unknown, options: unknown) => Promise<unknown> }).execute({}, {});
+      const output = await (tools['hr__whoIsOn'] as { execute: (input: unknown, options: unknown) => Promise<unknown> }).execute({}, {});
       for (const text of ['Tre', 'Tre på plats.', 'Tre på plats.\nF', 'Tre på plats.\nFöljdfrågor: Vem saknas?']) onText?.(text);
-      return { text: 'Tre på plats.\nFöljdfrågor: Vem saknas?', toolCalls: [{ capability: 'heroma.whoIsOn', input: {}, output }] };
+      return { text: 'Tre på plats.\nFöljdfrågor: Vem saknas?', toolCalls: [{ capability: 'hr.whoIsOn', input: {}, output }] };
     };
     const w = world({ generate });
     const events: TurnEvent[] = [];
     const turn = await w.assistant.converse(hillevi, { text: 'vem är här?' }, { emit: e => { events.push(e); expect(w.store.audit).toHaveLength(0); } });
     expect(events.filter(e => e.type === 'step')).toEqual([
-      { type: 'step', step: { id: 'steg-1', capability: 'heroma.whoIsOn', title: expect.any(String), source: 'Heroma', status: 'running' } },
-      { type: 'step', step: { id: 'steg-1', capability: 'heroma.whoIsOn', title: expect.any(String), source: 'Heroma', status: 'complete', ms: 0 } },
+      { type: 'step', step: { id: 'steg-1', capability: 'hr.whoIsOn', title: expect.any(String), source: 'Personalsystemet', status: 'running' } },
+      { type: 'step', step: { id: 'steg-1', capability: 'hr.whoIsOn', title: expect.any(String), source: 'Personalsystemet', status: 'complete', ms: 0 } },
     ]);
     expect(events.filter(e => e.type === 'text').map(e => e.type === 'text' && e.delta)).toEqual(['Tre', ' på plats.', '\n']);
     expect(textOf(events).trim()).toBe(turn.answer.body);
@@ -287,8 +287,8 @@ describe('a turn heard while it runs (D36)', () => {
     const events: TurnEvent[] = [];
     const turn = await w.assistant.converse(hillevi, { text: 'visa fakturor' }, { emit: e => events.push(e) });
     expect(turn.assistant).toBe('unavailable');
-    expect(events.map(e => e.type === 'text' ? `text:${e.reset ? 'reset:' : ''}${e.delta}` : `step:${e.step.capability}:${e.step.status}`)).toEqual(['text:Fakturorna', 'text:reset:', 'step:raindance.invoices:running', 'step:raindance.invoices:complete']);
-    expect(w.store.audit.at(-1)).toMatchObject({ action: 'conversation.asked', details: { assistant: 'unavailable', tools: ['raindance.invoices'] } });
+    expect(events.map(e => e.type === 'text' ? `text:${e.reset ? 'reset:' : ''}${e.delta}` : `step:${e.step.capability}:${e.step.status}`)).toEqual(['text:Fakturorna', 'text:reset:', 'step:finance.invoices:running', 'step:finance.invoices:complete']);
+    expect(w.store.audit.at(-1)).toMatchObject({ action: 'conversation.asked', details: { assistant: 'unavailable', tools: ['finance.invoices'] } });
   });
 });
 
@@ -309,14 +309,14 @@ describe('a question answered from documents, with the model (D26)', () => {
       expect(Object.keys(tools)).toContain('clew__search');
       expect(Object.keys(tools)).not.toContain('docs__search');
       const output = await (tools['clew__search'] as { execute: (input: unknown, options: unknown) => Promise<unknown> }).execute({ query: 'brukaren har ramlat' }, {});
-      return { text: '1. Lyft inte själv [1].\n2. Ring sjuksköterskan [1].\n3. Skriv avvikelse i Treserva [2].\nFöljdfrågor: Och om hen slagit i huvudet? | Vem ringer jag på natten?', toolCalls: [{ capability: 'clew.search', input: { query: 'brukaren har ramlat' }, output }] };
+      return { text: '1. Lyft inte själv [1].\n2. Ring sjuksköterskan [1].\n3. Skriv avvikelse i avvikelsesystemet [2].\nFöljdfrågor: Och om hen slagit i huvudet? | Vem ringer jag på natten?', toolCalls: [{ capability: 'clew.search', input: { query: 'brukaren har ramlat' }, output }] };
     };
     const w = world({ generate });
     w.registry.register(docs);
     w.registry.register(searchConnector(searchUsecases({ sources: a => w.registry.searchSources(a), clock: w.deps.clock })));
     const r = await w.assistant.converse(hassan, { text: 'Brukaren har ramlat men verkar oskadd, vad gör jag?' });
     expect(r).toMatchObject({ assistant: 'model', shape: 'steg', answer: { source: 'Startsidan' }, followUps: ['Och om hen slagit i huvudet?', 'Vem ringer jag på natten?'], view: { capability: 'clew.search', title: 'Källor' } });
-    expect(r.answer.body).toBe('1. Lyft inte själv [1].\n2. Ring sjuksköterskan [1].\n3. Skriv avvikelse i Treserva [2].');
+    expect(r.answer.body).toBe('1. Lyft inte själv [1].\n2. Ring sjuksköterskan [1].\n3. Skriv avvikelse i avvikelsesystemet [2].');
     expect(r.sources).toEqual([
       { n: 1, ref: 'document:docs:fall-2', label: 'Rutin vid fall i ordinärt boende', source: 'Intranätet', stale: false, link: 'https://intra/fall', section: 'Vid fall', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00Z' },
       { n: 2, ref: 'document:docs:fall-4', label: 'Rutin vid fall i ordinärt boende', source: 'Intranätet', stale: false, section: 'Avvikelse', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00Z' },

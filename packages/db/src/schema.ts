@@ -105,7 +105,7 @@ export const jobs = pgTable('job', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => [index('job_due').on(t.status, t.runAt), check('job_status', sql`${t.status} IN ('due', 'running', 'done', 'failed', 'temporal', 'dispatched', 'executing', 'legacy-running')`)]);
 
-// State of the mock connectors (Heroma, Raindance, Treserva, Kommunikation). This table *is* the synthetic source
+// State of the mock connectors (hr, finance, incidents, kommunikation). This table *is* the synthetic source
 // system, so that approvals and bookings survive a restart; `module` is the mock's id. Real adapters never write here.
 export const moduleState = pgTable('module_state', {
   module: text('module').notNull(), key: text('key').notNull(),

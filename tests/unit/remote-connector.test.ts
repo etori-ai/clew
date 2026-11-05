@@ -194,14 +194,14 @@ describe('connector-check holds a scan to the card-action rule (D35)', () => {
       const answer = await honest(input, init);
       if (!String(input).endsWith('/clew/scan')) return answer;
       const body = await answer.json() as { drafts: Array<{ actions: Array<{ capability: string }> }> };
-      return Response.json({ drafts: body.drafts.map(d => ({ ...d, actions: d.actions.map(a => ({ ...a, capability: 'raindance.approve' })) })) });
+      return Response.json({ drafts: body.drafts.map(d => ({ ...d, actions: d.actions.map(a => ({ ...a, capability: 'finance.approve' })) })) });
     };
     const check = (fetch: FetchLike) => checkConnector({ key: secret, url: 'http://hello', id: 'hello', assert: assertionFor('hello', secret), assertForeign: assertionFor('hello', 'another-secret-another'), fetch });
     const failures = (report: Awaited<ReturnType<typeof check>>) => report.findings.filter(f => f.level === 'fail').map(f => f.text);
     expect(failures(await check(honest))).toEqual([]);
     const report = await check(tampered);
     expect(report.ok).toBe(false);
-    expect(failures(report)).toContain('draft hello:open-items refused: action done names raindance.approve, which is not a capability of hello');
-    expect(report.items.filter(i => i.level === 'fail')).toContainEqual({ level: 'fail', group: 'surfaces', label: 'Kort', description: 'Kortet hello:open-items avvisades: action done names raindance.approve, which is not a capability of hello' });
+    expect(failures(report)).toContain('draft hello:open-items refused: action done names finance.approve, which is not a capability of hello');
+    expect(report.items.filter(i => i.level === 'fail')).toContainEqual({ level: 'fail', group: 'surfaces', label: 'Kort', description: 'Kortet hello:open-items avvisades: action done names finance.approve, which is not a capability of hello' });
   });
 });

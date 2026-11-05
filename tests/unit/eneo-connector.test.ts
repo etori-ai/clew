@@ -21,7 +21,7 @@ const eneoFixtures: Record<string, unknown> = {
   'GET /api/v1/spaces/sp-2/knowledge/': { groups: { items: [{ id: 'col-mina', name: 'Mina dokument', space_id: 'sp-2' }], count: 1 }, websites: { items: [], count: 0 }, integration_knowledge_list: { items: [], count: 0 } },
   'POST /api/v1/groups/col-rutiner/searches/': { items: [
     { id: 'ch-1', info_blob_id: 'blob-fall', text: 'Innan den enskilde hjälps upp ska personalen bedöma smärta, yrsel och tecken på huvudskada.', score: 0.91, created_at: '2026-03-12T10:00:00Z', updated_at: '2026-03-12T10:00:00Z' },
-    { id: 'ch-2', info_blob_id: 'blob-fall', text: 'Varje fall registreras som avvikelse i Treserva innan arbetspasset avslutas.', score: 0.82, created_at: '2026-03-12T10:00:00Z', updated_at: '2026-03-12T10:00:00Z' },
+    { id: 'ch-2', info_blob_id: 'blob-fall', text: 'Varje fall registreras som avvikelse i avvikelsesystemet innan arbetspasset avslutas.', score: 0.82, created_at: '2026-03-12T10:00:00Z', updated_at: '2026-03-12T10:00:00Z' },
   ], count: 2 },
   'POST /api/v1/groups/col-mina/searches/': { items: [{ id: 'ch-9', info_blob_id: 'blob-gone', text: 'borttaget', score: 0.95, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' }], count: 1 },
   'GET /api/v1/info-blobs/blob-fall/': { id: 'blob-fall', created_at: '2026-03-12T10:00:00Z', updated_at: '2026-03-12T10:00:00Z', metadata: { url: 'https://intra.example/rutin-fall', title: 'Rutin vid fall i ordinärt boende', embedding_model_id: 'em', size: 12000 }, group_id: 'col-rutiner', text: 'Rutin vid fall i ordinärt boende. '.repeat(100), original_available: true, source_metadata: [] },
@@ -52,7 +52,7 @@ describe('the Eneo connector', () => {
     const result = await registry.run<{ rows: Record<string, unknown>[] }>(hassan, 'eneo.search', { query: 'brukaren har ramlat' }, context);
     expect(result.rows).toEqual([
       { ref: 'blob-fall', kind: 'document', label: 'Rutin vid fall i ordinärt boende', snippet: 'Innan den enskilde hjälps upp ska personalen bedöma smärta, yrsel och tecken på huvudskada.', source: 'Eneo', link: 'https://intra.example/rutin-fall', updatedAt: '2026-03-12T10:00:00Z', section: 'Rutiner hemtjänst', score: 0.91 },
-      { ref: 'blob-fall', kind: 'document', label: 'Rutin vid fall i ordinärt boende', snippet: 'Varje fall registreras som avvikelse i Treserva innan arbetspasset avslutas.', source: 'Eneo', link: 'https://intra.example/rutin-fall', updatedAt: '2026-03-12T10:00:00Z', section: 'Rutiner hemtjänst', score: 0.82 },
+      { ref: 'blob-fall', kind: 'document', label: 'Rutin vid fall i ordinärt boende', snippet: 'Varje fall registreras som avvikelse i avvikelsesystemet innan arbetspasset avslutas.', source: 'Eneo', link: 'https://intra.example/rutin-fall', updatedAt: '2026-03-12T10:00:00Z', section: 'Rutiner hemtjänst', score: 0.82 },
     ]);
     const keys = calls.map(c => c.key);
     expect(keys.slice(0, 3)).toEqual(['GET /api/v1/spaces/?include_personal=true', 'GET /api/v1/spaces/sp-1/knowledge/', 'GET /api/v1/spaces/sp-2/knowledge/']);

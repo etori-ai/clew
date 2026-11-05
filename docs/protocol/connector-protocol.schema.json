@@ -45,7 +45,7 @@
         "source": {
           "minLength": 1,
           "maxLength": 200,
-          "description": "Swedish. The system as shown on cards: \"Heroma\".",
+          "description": "Swedish. The system as shown on cards: \"Personalsystemet\".",
           "type": "string"
         },
         "areas": {

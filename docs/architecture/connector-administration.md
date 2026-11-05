@@ -20,7 +20,7 @@ the Hassan demo works with today's mocks.
 
 ```
 connector
-  id                  text pk        'heroma', what the manifest must declare
+  id                  text pk        'hr', what the manifest must declare
   bundled             boolean        true for a connector in Clew's own process (no url, no secret)
   url                 text, null     base URL of the service as seen from Clew
   secret              text, null     sealed envelope (auth-crypto), purpose 'connector:secret:<id>'
@@ -49,7 +49,7 @@ denied, so existence is not revealed.
 
 Core connectors that live in Clew's process (people, calendar, the four mocks for now) appear in the same
 list with their kind, cannot be removed or re-addressed, but can be limited to an audience the same way;
-the calendar for everyone, Raindance for chefer and ekonomer.
+the calendar for everyone, the finance connector for chefer and ekonomer.
 
 ## Server
 
@@ -132,8 +132,8 @@ focusable in it (the diff list) scrolls in a labelled `ScrollableArea` that take
 
 Focus moves to the step heading on each step; Escape asks before discarding a draft (`AlertDialog`).
 
-**3. One connector (detail).** `Breadcrumbs` (Administration › Anslutna system › Heroma), a `Heading` with
-the `StatusDot` and the on/off `Switch`, a `Banner` when health is not ok ("Heroma svarar inte sedan 09:12.
+**3. One connector (detail).** `Breadcrumbs` (Administration › Anslutna system › Personalsystemet), a `Heading` with
+the `StatusDot` and the on/off `Switch`, a `Banner` when health is not ok ("Personalsystemet svarar inte sedan 09:12.
 Kort och figurer visas från senast kända läge."). Then `TabList`:
 
 - *Översikt.* `MetadataList`: id, adress, protokollversion, typ, källa, manifest hämtat, nyckel bytt,
@@ -262,8 +262,8 @@ and `bun scripts/models-check.ts` in the devcontainer for the live adapters agai
 ## What the person sees
 
 Nothing new. The audience makes a connector absent from the sidebar, the composer's tool list, the search
-objects and the stream. A manager loses nothing they have today; an employee outside Raindance's audience
-never sees the word. "Varför ser jag detta?" and "Källa: Heroma" are unchanged.
+objects and the stream. A manager loses nothing they have today; an employee outside the finance connector's audience
+never sees the word. "Varför ser jag detta?" and "Källa: Personalsystemet" are unchanged.
 
 ## Accessibility
 

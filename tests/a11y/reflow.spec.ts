@@ -26,7 +26,7 @@ test.describe('1.4.10 reflow', () => {
 
   test('the side panel reflows at 320×640', async ({ page, api: _ }) => {
     await page.setViewportSize(narrow);
-    await open(page, '/?open=heroma.whoIsOn&open-title=Bemanning');
+    await open(page, '/?open=hr.whoIsOn&open-title=Bemanning');
     await expect(page.getByRole('dialog')).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
   });

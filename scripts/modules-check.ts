@@ -44,15 +44,15 @@ const ok = (cond: unknown, msg: string) => { if (!cond) throw new Error('FAIL: '
   let { threads } = await api('/api/threads');
   const open = threads.filter((t: any) => t.state === 'open');
   console.log('  open threads:', open.map((t: any) => `${t.connector}:${t.area} "${t.title}"${t.waitingOn ? ' [väntar]' : ''}`).join('\n    '));
-  ok(open.some((t: any) => t.connector === 'heroma' && t.title.includes('omtankesamtal')), 'Heroma pushed the rehab card');
-  ok(open.some((t: any) => t.connector === 'treserva' && t.waitingOn), 'Treserva card waits on someone else (Pågår utan dig)');
-  let inv = open.find((t: any) => t.connector === 'raindance');
-  ok(inv && inv.items.length === 3 && inv.actions.filter((a: any) => a.role === 'primary').length === 1, 'Raindance card has 3 invoice rows and exactly one primary action');
+  ok(open.some((t: any) => t.connector === 'hr' && t.title.includes('omtankesamtal')), 'the HR mock pushed the rehab card');
+  ok(open.some((t: any) => t.connector === 'incidents' && t.waitingOn), 'the incidents card waits on someone else (Pågår utan dig)');
+  let inv = open.find((t: any) => t.connector === 'finance');
+  ok(inv && inv.items.length === 3 && inv.actions.filter((a: any) => a.role === 'primary').length === 1, 'the finance card has 3 invoice rows and exactly one primary action');
   const me = await api('/api/cap/people.me');
   ok(me.output.role === 'manager' && me.output.capabilities.length > 0, 'people.me reads Clew-native permissions');
-  const who = await api('/api/cap/heroma.whoIsOn');
-  ok(Array.isArray(who.output.onDuty), 'standing action heroma.whoIsOn runs through the registry');
-  const denied = await fetch(base + '/api/cap/raindance.approve').then(r => r.status);
+  const who = await api('/api/cap/hr.whoIsOn');
+  ok(Array.isArray(who.output.onDuty), 'standing action hr.whoIsOn runs through the registry');
+  const denied = await fetch(base + '/api/cap/finance.approve').then(r => r.status);
   ok(denied === 401, 'capability routes need a session');
   // Act: approve the two invoices with an order, leave the third.
   const refs = inv.items.filter((i: any) => i.selected).map((i: any) => i.ref);
@@ -60,7 +60,7 @@ const ok = (cond: unknown, msg: string) => { if (!cond) throw new Error('FAIL: '
   const t1 = acted.thread;
   console.log('  receipt:', t1.receipt.headline, '|', t1.receipt.rows.map((r: any) => `${r.outcome}`).join(','));
   ok(t1.state === 'handled' && t1.receipt.rows.map((r: any) => r.outcome).join() === 'done,done', 'receipt read back row by row, thread handled');
-  ok(t1.receipt.undoUntil && t1.receipt.undoCapability === 'raindance.unapprove', 'receipt is undoable within a window');
+  ok(t1.receipt.undoUntil && t1.receipt.undoCapability === 'finance.unapprove', 'receipt is undoable within a window');
   const undone = await api(`/api/threads/${inv.id}/undo-receipt`, {});
   ok(undone.state === 'open' && undone.receipt === null, 'undo reopens the thread and clears the receipt');
   // Unknown outcome: approve the invoice that never answers.
@@ -69,7 +69,7 @@ const ok = (cond: unknown, msg: string) => { if (!cond) throw new Error('FAIL: '
   ok(acted2.thread.receipt.rows[0].outcome === 'unknown', 'a lost reply is recorded as unknown, never as done');
   await api(`/api/threads/${inv.id}/undo-receipt`, {});
   // Snooze and dismiss on a generic card.
-  const rehab = open.find((t: any) => t.connector === 'heroma' && t.title.includes('omtankesamtal'));
+  const rehab = open.find((t: any) => t.connector === 'hr' && t.title.includes('omtankesamtal'));
   const snoozed = await api(`/api/threads/${rehab.id}/snooze`, {});
   ok(snoozed.waitingOn === 'i morgon 06:00', 'snooze moves the card to Pågår utan dig until the next bundle');
   const notice = open.find((t: any) => t.connector === 'kommunikation');
@@ -87,27 +87,27 @@ const ok = (cond: unknown, msg: string) => { if (!cond) throw new Error('FAIL: '
   console.log('  svar:', c1.assistant, c1.shape, '|', c1.answer.body);
   ok(c1.thread.kind === 'question' && c1.answer.body.length > 0, 'a question becomes a conversation thread with an answer');
   ok(status.configured ? ['model', 'router', 'unavailable'].includes(c1.assistant) : c1.assistant === 'router', 'the answer says how it was produced');
-  if (c1.assistant !== 'model') ok(c1.view?.capability === 'raindance.invoices', 'the router found the capability and offers a view');
+  if (c1.assistant !== 'model') ok(c1.view?.capability === 'finance.invoices', 'the router found the capability and offers a view');
   const c2 = await api('/api/conversation', { text: 'Hur ligger budgeten?', conversationId: c1.conversationId });
   ok(c2.conversationId === c1.conversationId && c2.thread.messages.length === 4, 'a follow-up stays in the same conversation with memory');
-  const invCard = (await api('/api/threads')).threads.find((t: any) => t.state === 'open' && t.connector === 'raindance');
+  const invCard = (await api('/api/threads')).threads.find((t: any) => t.state === 'open' && t.connector === 'finance');
   const chip = { ref: 'thread:' + invCard.id, kind: 'thread', label: invCard.title };
   const c3 = await api('/api/conversation', { text: 'avfärda det', chips: [chip] });
   ok(c3.clewActions.length === 1 && c3.clewActions[0].kind === 'dismiss' && c3.verbs?.length > 0, 'with a chip, "avfärda" is proposed as a Clew action with verbs, nothing executed');
   ok((await api(`/api/threads/${invCard.id}`)).state === 'open', 'the card is still open until the person confirms');
-  const c4 = await api('/api/conversation', { text: 'attestera bara Lekolar', chips: [chip] });
+  const c4 = await api('/api/conversation', { text: 'attestera bara Skolgrossisten', chips: [chip] });
   ok(c4.draft?.kind === 'select' && c4.draft.thread.items.filter((i: any) => i.selected).length === 2, 'the conversation drafts the selection on the card');
   ok((await api(`/api/threads/${invCard.id}`)).messages.some((m: any) => m.meta?.draft?.kind === 'select'), 'the draft is remembered on the card');
   const c5 = await api('/api/conversation', { text: 'varför ser jag detta?', chips: [chip] });
-  ok(/Varför nu\?/.test(c5.answer.body) && c5.answer.source === 'Raindance', 'why answers from the trigger');
-  const { objects } = await api('/api/objects?q=lekolar');
+  ok(/Varför nu\?/.test(c5.answer.body) && c5.answer.source === 'Ekonomisystemet', 'why answers from the trigger');
+  const { objects } = await api('/api/objects?q=skolgrossisten');
   ok(objects.some((o: any) => o.kind === 'item' && o.threadId === invCard.id), '@ lists the visible rows first');
   ok((await api('/api/objects?q=attest')).objects.some((o: any) => o.kind === 'capability'), '@ lists capabilities after the page');
   const { verbs } = await api(`/api/threads/${invCard.id}/verbs`);
   ok(verbs.map((v: any) => v.label).includes('Avfärda det') && verbs.map((v: any) => v.label).includes('Varför ser jag detta?'), 'verbs for a card');
   const comp = await api('/api/completions');
-  ok(comp.ask.some((a: any) => a.capability === 'heroma.whoIsOn' && a.source === 'Heroma'), 'completions list questions with their source');
-  ok(comp.do.some((d: any) => d.capability === 'treserva.report'), 'completions list things to do');
+  ok(comp.ask.some((a: any) => a.capability === 'hr.whoIsOn' && a.source === 'Personalsystemet'), 'completions list questions with their source');
+  ok(comp.do.some((d: any) => d.capability === 'incidents.report'), 'completions list things to do');
   ok(comp.recent.some((r: any) => r.conversationId === c1.conversationId), 'completions list the recent conversation');
   const samtal = (await api('/api/threads')).threads.find((t: any) => t.state === 'open' && t.topic === 'utvecklingssamtal');
   if (samtal) {
@@ -146,49 +146,49 @@ const ok = (cond: unknown, msg: string) => { if (!cond) throw new Error('FAIL: '
   const { threads } = await api('/api/threads');
   const open = threads.filter((t: any) => t.state === 'open');
   console.log('  open threads:', open.map((t: any) => `${t.connector}:${t.area} "${t.title}"${t.waitingOn ? ' [väntar på ' + t.waitingOn + ']' : ''}`).join('\n    '));
-  ok(!open.some((t: any) => t.area === 'medarbetare' || t.connector === 'raindance'), 'no manager cards leak to the employee');
-  const forbidden = await api('/api/cap/raindance.invoices').catch((e: Error) => e.message);
+  ok(!open.some((t: any) => t.area === 'medarbetare' || t.connector === 'finance'), 'no manager cards leak to the employee');
+  const forbidden = await api('/api/cap/finance.invoices').catch((e: Error) => e.message);
   ok(typeof forbidden === 'string' && /400|behörighet/.test(forbidden), 'scope is enforced on the capability route');
-  const shift = await api('/api/cap/heroma.myShift');
+  const shift = await api('/api/cap/hr.myShift');
   console.log('  shift:', JSON.stringify(shift.output));
   const comp = await api('/api/completions');
-  ok(!comp.ask.some((a: any) => a.capability === 'heroma.absenceOverview'), 'an employee is not offered manager questions');
+  ok(!comp.ask.some((a: any) => a.capability === 'hr.absenceOverview'), 'an employee is not offered manager questions');
   const c = await api('/api/conversation', { text: 'Mitt pass' });
   console.log('  svar:', c.assistant, '|', c.answer.body);
   ok(c.answer.body.length > 0, 'the employee gets an answer');
 }
-// Administration (D23): Mikael limits Raindance to managers, Hassan loses every trace of it, Mikael restores it. No restart anywhere.
+// Administration (D23): Mikael limits the finance mock to managers, Hassan loses every trace of it, Mikael restores it. No restart anywhere.
 if (!env.TEST_MIKAEL_PASSWORD) console.log('\n== (mikael is not provisioned: run `bun run auth:setup` once to get the administration checks)');
 else {
   const admin = await login('mikael');
-  const denied = await admin('/api/cap/raindance.budget').catch((e: Error) => e.message);
+  const denied = await admin('/api/cap/finance.budget').catch((e: Error) => e.message);
   ok(typeof denied === 'string', 'an administrator is still an ordinary employee on the page');
   const { connectors } = await admin('/api/admin/connectors');
   console.log('  governed:', connectors.map((c: any) => `${c.id}${c.bundled ? '*' : ''}:${c.state}/${c.health.status}`).join(' '));
-  ok(connectors.some((c: any) => c.id === 'raindance' && c.bundled && c.state === 'enabled'), 'bundled connectors have rows and are enabled');
-  const detail = await admin('/api/admin/connectors/raindance');
+  ok(connectors.some((c: any) => c.id === 'finance' && c.bundled && c.state === 'enabled'), 'bundled connectors have rows and are enabled');
+  const detail = await admin('/api/admin/connectors/finance');
   ok(detail.capabilities.length > 0 && detail.areas.length > 0 && detail.history.length >= 0, 'the detail view describes a bundled connector like a manifest');
-  const narrowed = await admin('/api/admin/connectors/raindance', { audience: { mode: 'selected', roles: ['manager'] } }, 'PATCH');
+  const narrowed = await admin('/api/admin/connectors/finance', { audience: { mode: 'selected', roles: ['manager'] } }, 'PATCH');
   ok(narrowed.audience.mode === 'selected', 'the audience is narrowed to managers');
-  const preview = await admin('/api/admin/connectors/raindance/preview?role=employee');
+  const preview = await admin('/api/admin/connectors/finance/preview?role=employee');
   ok(preview.visible === false, 'the structural preview says an employee sees nothing');
   try {
     const hassan = await login('hassan');
     const seen = await hassan('/api/connectors');
-    ok(!seen.connectors.some((c: any) => c.id === 'raindance'), 'Hassan: Raindance is not in the connector listing');
+    ok(!seen.connectors.some((c: any) => c.id === 'finance'), 'Hassan: finance is not in the connector listing');
     const { areas } = await hassan('/api/areas');
-    ok(!areas.some((a: any) => a.connector === 'raindance'), 'Hassan: no Raindance area');
+    ok(!areas.some((a: any) => a.connector === 'finance'), 'Hassan: no finance area');
     const { objects } = await hassan('/api/objects?q=budget');
-    ok(!objects.some((o: any) => o.ref.startsWith('capability:raindance.')), 'Hassan: no Raindance capability in search');
-    const probe = await hassan('/api/cap/raindance.budget').catch((e: Error) => e.message);
-    ok(typeof probe === 'string' && /Okänd förmåga|404/.test(probe) && !/behörighet/.test(probe), 'Hassan: a Raindance capability answers like an unknown one, never "denied"');
+    ok(!objects.some((o: any) => o.ref.startsWith('capability:finance.')), 'Hassan: no finance capability in search');
+    const probe = await hassan('/api/cap/finance.budget').catch((e: Error) => e.message);
+    ok(typeof probe === 'string' && /Okänd förmåga|404/.test(probe) && !/behörighet/.test(probe), 'Hassan: a finance capability answers like an unknown one, never "denied"');
     const comp = await hassan('/api/completions');
-    ok(!comp.ask.some((a: any) => a.capability.startsWith('raindance.')), 'Hassan: no Raindance question in the typeahead');
+    ok(!comp.ask.some((a: any) => a.capability.startsWith('finance.')), 'Hassan: no finance question in the typeahead');
   } finally {
-    const restored = await admin('/api/admin/connectors/raindance', { audience: { mode: 'all' } }, 'PATCH');
+    const restored = await admin('/api/admin/connectors/finance', { audience: { mode: 'all' } }, 'PATCH');
     ok(restored.audience.mode === 'all', 'the audience is restored to everyone');
   }
-  const history = (await admin('/api/admin/connectors/raindance')).history;
+  const history = (await admin('/api/admin/connectors/finance')).history;
   ok(history.filter((h: any) => h.action === 'connector.audience').length >= 2, 'both audience changes are in the audit log');
   const forbidden = await (await login('hassan'))('/api/admin/connectors').catch((e: Error) => e.message);
   ok(typeof forbidden === 'string' && /403|behörighet/.test(forbidden), 'administration needs the grant capability');

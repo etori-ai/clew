@@ -20,7 +20,7 @@ export function peopleConnector(): Connector {
           const [row] = await database().select({ capabilities: schema.accessGrants.capabilities }).from(schema.accessGrants).where(eq(schema.accessGrants.personId, actor.id));
           return { id: actor.id, name: actor.name, role: actor.role, unitId: actor.unitId, unitLabel: actor.unitLabel, capabilities: row?.capabilities ?? [] };
         } },
-      { name: 'people.directory', kind: 'read', title: 'Vilka finns i Startsidan?', model: true, description: 'Provisionerade personer i den inloggades enhet, med roll. Inte HR-data; det finns i Heroma.',
+      { name: 'people.directory', kind: 'read', title: 'Vilka finns i Startsidan?', model: true, description: 'Provisionerade personer i den inloggades enhet, med roll. Inte HR-data; det finns i personalsystemet.',
         input: Type.Object({}, { additionalProperties: false }), output: Type.Object({ rows: Type.Array(Type.Object({ id: Type.String(), name: Type.String(), role: Type.String() })) }),
         scope: () => true,
         run: async actor => {

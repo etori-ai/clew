@@ -129,10 +129,10 @@ test.describe('the side panel', () => {
 
   test('a plain read says where it comes from and writes a date as a date', async ({ page, api }) => {
     api.output = { date: '2026-11-04', onDuty: 'Anna Lindqvist' };
-    await open(page, '/?open=heroma.staffing&open-title=Bemanning');
+    await open(page, '/?open=hr.staffing&open-title=Bemanning');
     const panel = page.getByRole('dialog', { name: 'Bemanning' });
     await expect(panel).toContainText('4 november 2026');
-    await expect(panel).toContainText('Hämtat ur Heroma. Inget av det sparas på Startsidan.');
+    await expect(panel).toContainText('Hämtat ur Personalsystemet. Inget av det sparas på Startsidan.');
   });
 });
 

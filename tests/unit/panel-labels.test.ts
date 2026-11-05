@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { fieldLabels, fieldValue, hiddenFields } from '../../apps/web/src/components/panel-labels';
 import { memoryState } from '../../packages/connectors/src/memory-state';
-import { heromaConnector } from '../../packages/connectors/src/mock/heroma';
+import { hrConnector } from '../../packages/connectors/src/mock/hr';
 import { kommunikationConnector } from '../../packages/connectors/src/mock/kommunikation';
-import { raindanceConnector } from '../../packages/connectors/src/mock/raindance';
-import { treservaConnector } from '../../packages/connectors/src/mock/treserva';
+import { financeConnector } from '../../packages/connectors/src/mock/finance';
+import { incidentsConnector } from '../../packages/connectors/src/mock/incidents';
 
 type Schema = { properties?: Record<string, Schema>; items?: Schema; anyOf?: Schema[] };
 const keys = (schema: Schema): string[] => [
@@ -16,7 +16,7 @@ const keys = (schema: Schema): string[] => [
 describe('side panel labels (3.1.2)', () => {
   test('every field a connector returns has a Swedish name', () => {
     const state = memoryState();
-    const connectors = [heromaConnector(state), raindanceConnector(state), treservaConnector(state), kommunikationConnector(state)];
+    const connectors = [hrConnector(state), financeConnector(state), incidentsConnector(state), kommunikationConnector(state)];
     const fields = new Set(connectors.flatMap(m => m.capabilities.flatMap(c => keys(c.output as Schema))));
     expect(fields.size).toBeGreaterThan(20);
     expect([...fields].filter(key => !fieldLabels[key] && !hiddenFields.has(key))).toEqual([]);

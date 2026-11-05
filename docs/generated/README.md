@@ -18,7 +18,7 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 | `protocol` | yes | 2 |  |
 | `id` | yes | string | Must match the id Clew was configured with. |
 | `kind` | yes | "passthrough" / "derived" | Core connectors live in Clew itself (D3). |
-| `source` | yes | string | Swedish. The system as shown on cards: "Heroma". |
+| `source` | yes | string | Swedish. The system as shown on cards: "Personalsystemet". |
 | `areas` | yes | array of object |  |
 | `capabilities` | yes | array of object |  |
 | `uses` | no | array of string |  |

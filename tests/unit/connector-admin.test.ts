@@ -5,7 +5,7 @@ import { assertionFor, testJwks } from '../connector-authority';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
 import { actorOf, type Actor } from '../../packages/connectors/src/index';
 import { memoryState } from '../../packages/connectors/src/memory-state';
-import { raindanceConnector } from '../../packages/connectors/src/mock/raindance';
+import { financeConnector } from '../../packages/connectors/src/mock/finance';
 import { checkConnector } from '../../packages/connectors/src/check';
 import { fetchManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import type { ConnectorManifest } from '../../packages/connectors/src/protocol';
@@ -30,7 +30,7 @@ const sign = (secret: string, aud: string) => assertionFor(aud, secret);
 function world(options: { helloUp?: boolean } = {}) {
   const registry = new Registry();
   const state = memoryState();
-  registry.register(raindanceConnector(state));
+  registry.register(financeConnector(state));
   const store = memoryConnectorStore();
   let now = Date.parse(T0);
   const clock = () => new Date(now);
@@ -45,7 +45,7 @@ function world(options: { helloUp?: boolean } = {}) {
     transport: { fetchManifest: (url, id) => fetchManifest(url, id, helloFetch), check: ({ url, id, secret }) => checkConnector({ url, id, key: secret, assert: sign(SECRET, id), assertForeign: sign('another-secret-another', id), fetch: helloFetch }) },
   };
   const admin = connectorUsecases(deps);
-  const reconcile: ReconcileDeps = { registry, store, secrets: deps.secrets, live, bundled: ['raindance'], clock, log: () => undefined };
+  const reconcile: ReconcileDeps = { registry, store, secrets: deps.secrets, live, bundled: ['finance'], clock, log: () => undefined };
   return { registry, store, admin, clock, live, reconcile, advance: (ms: number) => { now += ms; } };
 }
 const actions = (store: ReturnType<typeof memoryConnectorStore>, id: string) => store.audit.filter(a => a.subject === 'connector:' + id).map(a => a.action);
@@ -69,7 +69,7 @@ describe('adding and governing a remote connector', () => {
     expect(actions(store, 'hello')).toEqual(['connector.added']);
     expect(registry.connector('hello')).toBeUndefined();
     await expect(admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET })).rejects.toThrow('finns redan');
-    await expect(admin.add(mikael, { id: 'raindance', url: 'http://hello', secret: SECRET })).rejects.toThrow('inbyggd');
+    await expect(admin.add(mikael, { id: 'finance', url: 'http://hello', secret: SECRET })).rejects.toThrow('inbyggd');
   });
   test('a service that is down still gets its draft, with health unreachable and no manifest', async () => {
     const { admin } = world({ helloUp: false });
@@ -156,31 +156,31 @@ describe('bundled connectors are governed by the same rows', () => {
     await syncBundledRows(reconcile);
     await syncBundledRows(reconcile);
     const rows = await store.list();
-    expect(rows.map(r => r.id)).toEqual(['raindance']);
+    expect(rows.map(r => r.id)).toEqual(['finance']);
     expect(rows[0]).toMatchObject({ bundled: true, url: null, secret: null, state: 'enabled', createdBy: 'system:boot' });
-    expect((rows[0]!.manifest as ConnectorManifest).capabilities.map(c => c.name)).toEqual(describeBundled(registry.connector('raindance')!).capabilities.map(c => c.name));
+    expect((rows[0]!.manifest as ConnectorManifest).capabilities.map(c => c.name)).toEqual(describeBundled(registry.connector('finance')!).capabilities.map(c => c.name));
     const list = await admin.list(mikael);
-    expect(list[0]).toMatchObject({ id: 'raindance', bundled: true, kind: 'passthrough', source: 'Raindance', registered: true, secretChangedAt: null });
-    await expect(admin.update(mikael, 'raindance', { url: 'http://x' })).rejects.toThrow('inbyggd');
-    await expect(admin.rotateSecret(mikael, 'raindance', { secret: SECRET })).rejects.toThrow('inbyggd');
-    expect((await admin.test(mikael, 'raindance')).ok).toBe(true);
+    expect(list[0]).toMatchObject({ id: 'finance', bundled: true, kind: 'passthrough', source: 'Ekonomisystemet', registered: true, secretChangedAt: null });
+    await expect(admin.update(mikael, 'finance', { url: 'http://x' })).rejects.toThrow('inbyggd');
+    await expect(admin.rotateSecret(mikael, 'finance', { secret: SECRET })).rejects.toThrow('inbyggd');
+    expect((await admin.test(mikael, 'finance')).ok).toBe(true);
   });
-  test('Hassan loses Raindance when the administrator limits it to managers, and gets it back; a row changed elsewhere is applied by the watcher', async () => {
+  test('Hassan loses the finance connector when the administrator limits it to managers, and gets it back; a row changed elsewhere is applied by the watcher', async () => {
     const { store, registry, reconcile, admin } = world();
     await syncBundledRows(reconcile);
-    expect(registry.visible(actorOf(hassan), 'raindance')).toBe(true);
-    await admin.update(mikael, 'raindance', { audience: { mode: 'selected', roles: ['manager'] } });
-    expect(registry.visible(actorOf(hassan), 'raindance')).toBe(false);
-    expect(registry.visible(actorOf(hillevi), 'raindance')).toBe(true);
-    expect((await admin.preview(mikael, 'raindance', { role: 'employee' })).visible).toBe(false);
-    const preview = await admin.preview(mikael, 'raindance', { role: 'manager' });
+    expect(registry.visible(actorOf(hassan), 'finance')).toBe(true);
+    await admin.update(mikael, 'finance', { audience: { mode: 'selected', roles: ['manager'] } });
+    expect(registry.visible(actorOf(hassan), 'finance')).toBe(false);
+    expect(registry.visible(actorOf(hillevi), 'finance')).toBe(true);
+    expect((await admin.preview(mikael, 'finance', { role: 'employee' })).visible).toBe(false);
+    const preview = await admin.preview(mikael, 'finance', { role: 'manager' });
     expect(preview.visible).toBe(true);
     expect(preview.areas.map(a => a.id)).toEqual(['budget']);
     // The mocks narrow by identity in code (a function scope), which a structural preview cannot satisfy: tools stay empty here, see the remote case above.
     expect(preview.tools).toEqual([]);
     // Another instance (or the CLI) changed the row: applying it brings Hassan back.
-    await store.transaction(tx => tx.update('raindance', { audience: { mode: 'all' } }, 'bootstrap:connector', T0));
-    applyRow(reconcile, (await store.read('raindance'))!);
-    expect(registry.visible(actorOf(hassan), 'raindance')).toBe(true);
+    await store.transaction(tx => tx.update('finance', { audience: { mode: 'all' } }, 'bootstrap:connector', T0));
+    applyRow(reconcile, (await store.read('finance'))!);
+    expect(registry.visible(actorOf(hassan), 'finance')).toBe(true);
   });
 });

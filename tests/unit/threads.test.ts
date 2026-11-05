@@ -3,9 +3,9 @@ import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext, Thread } from '../../packages/contracts/src/index';
 import { actorOf, type Connector } from '../../packages/connectors/src/index';
 import { memoryState } from '../../packages/connectors/src/memory-state';
-import { heromaConnector } from '../../packages/connectors/src/mock/heroma';
-import { raindanceConnector } from '../../packages/connectors/src/mock/raindance';
-import { treservaConnector } from '../../packages/connectors/src/mock/treserva';
+import { hrConnector } from '../../packages/connectors/src/mock/hr';
+import { financeConnector } from '../../packages/connectors/src/mock/finance';
+import { incidentsConnector } from '../../packages/connectors/src/mock/incidents';
 import { memoryThreadStore, memoryTimers } from '../../apps/server/src/threads/adapters/memory';
 import { ATTENTION_BUDGET, threadUsecases, type ThreadDeps } from '../../apps/server/src/threads/usecases/cards';
 import { reminderUsecases } from '../../apps/server/src/threads/usecases/reminders';
@@ -31,7 +31,7 @@ function world() {
   const state = memoryState(), registry = new Registry();
   registry.register({ id: 'calendar', kind: 'core', source: 'Kalendern', areas: [], capabilities: [] });
   const store = memoryThreadStore(), clock = fakeClock();
-  for (const m of [heromaConnector(state), raindanceConnector(state), treservaConnector(state), searchConnector(searchUsecases({ sources: a => registry.searchSources(a), clock }))]) registry.register(m);
+  for (const m of [hrConnector(state), financeConnector(state), incidentsConnector(state), searchConnector(searchUsecases({ sources: a => registry.searchSources(a), clock }))]) registry.register(m);
   let n = 0;
   const calendar = { calls: [] as string[], today: [] as Array<{ title: string; end: string }>,
     async ensureProposalThread() { calendar.calls.push('ensure'); return undefined; },
@@ -47,7 +47,7 @@ function world() {
 const actions = (store: ReturnType<typeof memoryThreadStore>, id: string) => store.audit.filter(e => e.subject === 'thread:' + id).map(e => e.action);
 async function invoices(w: ReturnType<typeof world>) {
   await w.threads.ensureThreads(hillevi);
-  return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'raindance:invoices')!;
+  return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'finance:invoices')!;
 }
 
 describe('the scan', () => {
@@ -62,13 +62,13 @@ describe('the scan', () => {
     await w.threads.ensureThreads(hillevi, 'Första besöket i dag');
     const mine = await w.threads.listThreadsFor(hillevi);
     expect(mine.length).toBeGreaterThan(1);
-    const card = mine.find(t => t.topic === 'raindance:invoices')!;
-    expect(card).toMatchObject({ kind: 'pushed', state: 'open', connector: 'raindance', area: 'budget', createdAt: T0, trigger: { source: 'Raindance', at: T0 } });
+    const card = mine.find(t => t.topic === 'finance:invoices')!;
+    expect(card).toMatchObject({ kind: 'pushed', state: 'open', connector: 'finance', area: 'budget', createdAt: T0, trigger: { source: 'Ekonomisystemet', at: T0 } });
     expect(card.messages.map(m => m.body)).toEqual([card.summary]);
-    expect(w.store.audit.filter(e => e.action === 'thread.pushed').map(e => e.details)).toContainEqual({ connector: 'raindance', topic: 'raindance:invoices', owner: 'hillevi' });
+    expect(w.store.audit.filter(e => e.action === 'thread.pushed').map(e => e.details)).toContainEqual({ connector: 'finance', topic: 'finance:invoices', owner: 'hillevi' });
     expect(w.calendar.calls).toEqual(['ensure']);
     await w.threads.ensureThreads(hassan);
-    expect((await w.threads.listThreadsFor(hassan)).some(t => t.connector === 'raindance')).toBe(false);
+    expect((await w.threads.listThreadsFor(hassan)).some(t => t.connector === 'finance')).toBe(false);
   });
   test('is idempotent: a second scan writes nothing when the source is unchanged', async () => {
     const w = world();
@@ -85,7 +85,7 @@ describe('the scan', () => {
     expect(first!.selected).toBe(true);
     await w.store.transaction(tx => tx.updateThread(card.id, { items: card.items.map(i => i.ref === first!.ref ? { ...i, selected: false } : i) }));
     // One invoice is approved outside Clew: the next scan drops it from the card.
-    await w.registry.run(hillevi, 'raindance.approve', { refs: [second!.ref] });
+    await w.registry.run(hillevi, 'finance.approve', { refs: [second!.ref] });
     await w.threads.ensureThreads(hillevi);
     const after = (await w.threads.threadFor(hillevi, card.id))!;
     expect(after.items.map(i => i.ref)).not.toContain(second!.ref);
@@ -135,7 +135,7 @@ describe('avfärda, inte nu and ångra', () => {
     const w = world();
     const card = await invoices(w);
     await w.threads.snoozeThread(hillevi, card.id);
-    await w.registry.run(hillevi, 'raindance.approve', { refs: [card.items[1]!.ref] });
+    await w.registry.run(hillevi, 'finance.approve', { refs: [card.items[1]!.ref] });
     await w.threads.ensureThreads(hillevi);
     const after = (await w.threads.threadFor(hillevi, card.id))!;
     expect(after.snoozedUntil).toBeNull();

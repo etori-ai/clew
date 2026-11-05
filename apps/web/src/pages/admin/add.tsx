@@ -63,8 +63,8 @@ export function AddConnectorDialog({ isOpen, onClose, units }: Props) {
     <VStack gap={4}>
       <Heading level={3} ref={heading} tabIndex={-1}>{steps[step]}</Heading>
       {step === 0 && <FormLayout>
-        <TextInput label="Id" value={id} onChange={setId} description="Samma id som systemet själv anger, till exempel heroma." isRequired autoComplete="off" hasAutoCorrect={false} autoCapitalize="none" status={idError ? { type: 'error', message: idError } : undefined} />
-        <TextInput label="Adress" type="url" value={url} onChange={setUrl} description="Adressen Clew når tjänsten på, utan /clew." placeholder="https://heroma-anslutning.kommunen.se" isRequired autoComplete="off" status={urlError ? { type: 'error', message: urlError } : undefined} />
+        <TextInput label="Id" value={id} onChange={setId} description="Samma id som systemet själv anger, till exempel hr." isRequired autoComplete="off" hasAutoCorrect={false} autoCapitalize="none" status={idError ? { type: 'error', message: idError } : undefined} />
+        <TextInput label="Adress" type="url" value={url} onChange={setUrl} description="Adressen Clew når tjänsten på, utan /clew." placeholder="https://hr-anslutning.kommunen.se" isRequired autoComplete="off" status={urlError ? { type: 'error', message: urlError } : undefined} />
         <TextInput label="Delad nyckel" type="password" value={secret} onChange={setSecret} description="Minst 16 tecken. Samma nyckel som tjänsten startas med. Den sparas förseglad och visas aldrig igen." isRequired autoComplete="new-password" status={secretError ? { type: 'error', message: secretError } : undefined} />
       </FormLayout>}
       {step === 1 && <VStack gap={3}>

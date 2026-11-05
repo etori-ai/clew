@@ -9,8 +9,8 @@ export const NEXT_WEEK = '2026-11-09';
 export const user: SessionUser = { id: 'testperson', name: 'Testa Testsson', unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'manager' };
 
 const thread = (values: Partial<Thread> & Pick<Thread, 'id' | 'title'>): Thread => ({
-  kind: 'pushed', topic: values.id, state: 'open', trigger: { reason: 'Fakturorna förfaller i veckan', source: 'Raindance', at: NOW },
-  createdAt: NOW, updatedAt: NOW, handledAt: null, messages: [], proposals: [], week: null, connector: 'raindance', area: 'budget',
+  kind: 'pushed', topic: values.id, state: 'open', trigger: { reason: 'Fakturorna förfaller i veckan', source: 'Ekonomisystemet', at: NOW },
+  createdAt: NOW, updatedAt: NOW, handledAt: null, messages: [], proposals: [], week: null, connector: 'finance', area: 'budget',
   summary: 'Alla matchar sina beställningar och ryms i budgeten.', items: [], actions: [], waitingOn: null, deadline: null, receipt: null, remindedAt: null, snoozedUntil: null,
   ...values,
 });
@@ -21,23 +21,23 @@ const proposal = (id: string, day: string, name: string): Proposal => ({
 export const threads = (): Thread[] => [
   thread({ id: 'fakturor', title: 'Attestera 3 fakturor, 48 200 kr', deadline: '2026-11-04',
     items: [
-      { ref: 'raindance:inv:1', label: 'Sundsvalls Energi AB · 21 400 kr', detail: 'Konto 4010 · förfaller 5 nov · beställning 88213', selectable: true, selected: true },
-      { ref: 'raindance:inv:2', label: 'Skolmaterial Norrland AB · 18 300 kr', detail: 'Konto 4410 · förfaller 6 nov · beställning 88240', selectable: true, selected: true },
-      { ref: 'raindance:inv:3', label: 'Städservice Mitt AB · 8 500 kr', detail: 'Konto 4630 · förfaller 6 nov · saknar beställning', selectable: true, selected: false },
+      { ref: 'finance:inv:1', label: 'Energibolaget AB · 21 400 kr', detail: 'Konto 4010 · förfaller 5 nov · beställning 88213', selectable: true, selected: true },
+      { ref: 'finance:inv:2', label: 'Skolmaterial Norrland AB · 18 300 kr', detail: 'Konto 4410 · förfaller 6 nov · beställning 88240', selectable: true, selected: true },
+      { ref: 'finance:inv:3', label: 'Städservice Mitt AB · 8 500 kr', detail: 'Konto 4630 · förfaller 6 nov · saknar beställning', selectable: true, selected: false },
     ],
     actions: [
-      { id: 'approve', label: 'Attestera', capability: 'raindance.approve', kind: 'execute', role: 'primary', usesItems: true },
-      { id: 'open', label: 'Öppna i Raindance', capability: 'raindance.open', kind: 'read', role: 'secondary', target: 'link' },
+      { id: 'approve', label: 'Attestera', capability: 'finance.approve', kind: 'execute', role: 'primary', usesItems: true },
+      { id: 'open', label: 'Öppna i ekonomisystemet', capability: 'finance.open', kind: 'read', role: 'secondary', target: 'link' },
     ] }),
-  thread({ id: 'omtanke', title: 'Omtankesamtal med Anna Lindqvist', topic: 'omtanke', connector: 'heroma', area: 'personal', deadline: '2026-11-13',
-    trigger: { reason: 'Tre sjukperioder på sex månader', source: 'Heroma', at: NOW }, summary: 'Tre korta sjukperioder sedan juni. Samtalet bör bokas före den 13 november.',
+  thread({ id: 'omtanke', title: 'Omtankesamtal med Anna Lindqvist', topic: 'omtanke', connector: 'hr', area: 'personal', deadline: '2026-11-13',
+    trigger: { reason: 'Tre sjukperioder på sex månader', source: 'Personalsystemet', at: NOW }, summary: 'Tre korta sjukperioder sedan juni. Samtalet bör bokas före den 13 november.',
     actions: [
-      { id: 'book', label: 'Boka samtalet', capability: 'heroma.bookTalk', kind: 'execute', role: 'primary' },
-      { id: 'pattern', label: 'Se mönstret', capability: 'heroma.absencePattern', kind: 'read', role: 'secondary', target: 'panel' },
+      { id: 'book', label: 'Boka samtalet', capability: 'hr.bookTalk', kind: 'execute', role: 'primary' },
+      { id: 'pattern', label: 'Se mönstret', capability: 'hr.absencePattern', kind: 'read', role: 'secondary', target: 'panel' },
     ] }),
-  thread({ id: 'ledighet', title: 'Ledighetsansökan från Johan Byström', topic: 'ledighet', connector: 'heroma', area: 'personal', deadline: '2026-11-20',
-    trigger: { reason: 'Ansökan väntar på beslut', source: 'Heroma', at: NOW }, summary: 'Två dagar före jul. Ingen krock i schemat.',
-    actions: [{ id: 'decide', label: 'Godkänn', capability: 'heroma.decideLeave', kind: 'execute', role: 'primary' }] }),
+  thread({ id: 'ledighet', title: 'Ledighetsansökan från Johan Byström', topic: 'ledighet', connector: 'hr', area: 'personal', deadline: '2026-11-20',
+    trigger: { reason: 'Ansökan väntar på beslut', source: 'Personalsystemet', at: NOW }, summary: 'Två dagar före jul. Ingen krock i schemat.',
+    actions: [{ id: 'decide', label: 'Godkänn', capability: 'hr.decideLeave', kind: 'execute', role: 'primary' }] }),
   thread({ id: 'samtal', title: 'Planera utvecklingssamtal', topic: 'utvecklingssamtal', connector: 'calendar', area: 'kalender', deadline: '2026-11-27', week: NEXT_WEEK,
     trigger: { reason: 'Samtalen ska vara klara i november', source: 'Kalendern', at: NOW },
     messages: [{ id: 'm1', role: 'assistant', body: 'Jag har ritat in två samtal nästa vecka. Båda ligger utanför lektionstid.', createdAt: NOW }],
@@ -47,36 +47,36 @@ export const threads = (): Thread[] => [
     trigger: { reason: 'Samtalen ska vara klara i november', source: 'Kalendern', at: NOW }, summary: '1 av 2 har svarat ja. 1 har inte svarat ännu.',
     messages: [{ id: 'm2', role: 'assistant', body: '2 inbjudningar är skickade. Jag påminner den som inte svarat efter 2 arbetsdagar.', createdAt: NOW }],
     proposals: [{ ...proposal('p3', '2026-11-05', 'Maria Källström'), threadId: 'samtal-svar', status: 'accepted', eventRef: 'memory:p3' }, { ...proposal('p4', '2026-11-06', 'Johan Byström'), threadId: 'samtal-svar', status: 'confirmed', eventRef: 'memory:p4', reminders: 1, remindedAt: NOW }] }),
-  thread({ id: 'introduktion', title: 'Introduktion av ny medarbetare', topic: 'introduktion', connector: 'heroma', area: 'personal', deadline: '2026-12-20',
-    trigger: { reason: 'Ny medarbetare börjar i januari', source: 'Heroma', at: NOW }, summary: 'Mentor och schema ska vara klara före jul.' }),
+  thread({ id: 'introduktion', title: 'Introduktion av ny medarbetare', topic: 'introduktion', connector: 'hr', area: 'personal', deadline: '2026-12-20',
+    trigger: { reason: 'Ny medarbetare börjar i januari', source: 'Personalsystemet', at: NOW }, summary: 'Mentor och schema ska vara klara före jul.' }),
   thread({ id: 'rutin', title: 'Ny rutin för läkemedelshantering', topic: 'rutin', connector: 'kommunikation', area: 'viktigt-nu',
     trigger: { reason: 'Nytt meddelande från förvaltningen', source: 'Kommunikation', at: NOW }, summary: 'Gäller från den 1 december.',
     actions: [{ id: 'ack', label: 'Jag har läst', capability: 'kommunikation.acknowledge', kind: 'execute', role: 'primary' }] }),
-  thread({ id: 'tillbud', title: 'Tillbud 2026-1182, halkolycka i duschen', topic: 'tillbud', connector: 'treserva', area: 'kvalitet', waitingOn: 'skyddsombudet', deadline: '2026-11-12',
-    trigger: { reason: 'Väntar på skyddsombudet', source: 'Treserva', at: NOW }, summary: 'Skyddsombudet har fått ärendet.' }),
+  thread({ id: 'tillbud', title: 'Tillbud 2026-1182, halkolycka i duschen', topic: 'tillbud', connector: 'incidents', area: 'kvalitet', waitingOn: 'skyddsombudet', deadline: '2026-11-12',
+    trigger: { reason: 'Väntar på skyddsombudet', source: 'Avvikelsesystemet', at: NOW }, summary: 'Skyddsombudet har fått ärendet.' }),
   thread({ id: 'brandskydd', title: 'Brandskyddsrond i oktober saknar protokoll', topic: 'brandskydd', connector: 'kommunikation', area: 'kvalitet', deadline: '2026-11-30', snoozedUntil: '2026-11-05T05:00:00.000Z',
     trigger: { reason: 'Protokollet ska vara inlämnat', source: 'Kommunikation', at: NOW }, summary: 'Lagd åt sidan till i morgon.' }),
   thread({ id: 'attest', title: 'Attesterade fakturor', topic: 'attest', state: 'handled', handledAt: NOW,
-    receipt: { at: NOW, headline: '2 fakturor attesterade', undoUntil: '2026-11-04T08:10:00.000Z', undoCapability: 'raindance.unapprove',
+    receipt: { at: NOW, headline: '2 fakturor attesterade', undoUntil: '2026-11-04T08:10:00.000Z', undoCapability: 'finance.unapprove',
       rows: [
-        { ref: 'raindance:inv:7', label: 'Kontorsvaror AB', outcome: 'done', detail: 'Läst tillbaka från Raindance' },
-        { ref: 'raindance:inv:8', label: 'IT-partner AB', outcome: 'unknown', detail: 'Väntar på svar från Raindance' },
+        { ref: 'finance:inv:7', label: 'Kontorsvaror AB', outcome: 'done', detail: 'Läst tillbaka från ekonomisystemet' },
+        { ref: 'finance:inv:8', label: 'IT-partner AB', outcome: 'unknown', detail: 'Väntar på svar från ekonomisystemet' },
       ] } }),
   thread({ id: 'avfardad', title: 'Påminnelse om brandskyddsrond', topic: 'brand', state: 'dismissed', handledAt: NOW, connector: 'kommunikation', area: 'viktigt-nu' }),
   thread({ id: 'fraga', title: 'Vem är på plats i dag?', topic: 'fraga', kind: 'question', state: 'handled', handledAt: NOW, connector: 'clew', area: 'fragor',
     messages: [{ id: 'q1', role: 'user', body: 'Vem är på plats i dag?', createdAt: NOW }, { id: 'q2', role: 'assistant', body: 'Tio personer är på plats.', createdAt: NOW }] }),
 ];
 
-const area = (id: string, title: string, values: Partial<Area> = {}): Area => ({ id, title, connector: id, source: 'Heroma', figure: null, needsYou: 0, waiting: 0, urgency: null, standing: [], schedules: [], ...values });
+const area = (id: string, title: string, values: Partial<Area> = {}): Area => ({ id, title, connector: id, source: 'Personalsystemet', figure: null, needsYou: 0, waiting: 0, urgency: null, standing: [], schedules: [], ...values });
 export const areas: Area[] = [
   area('viktigt-nu', 'Viktigt nu', { source: 'Kommunikation', needsYou: 1, urgency: 'notice', standing: [{ capability: 'kommunikation.notices', label: 'Viktigt nu', kind: 'read' }] }),
   area('kalender', 'Kalender', { source: 'Kalendern', icon: 'calendar', needsYou: 1, urgency: 'soon', standing: [{ capability: 'calendar.today', label: 'Dagens möten', kind: 'read' }], schedules: [{ label: 'Bevakar utvecklingssamtalen', when: 'Måndagar 06:00' }] }),
   area('personal', 'Personal', { icon: 'people', figure: { label: 'Korttidsfrånvaro 4,2 %', tone: 'warn' }, needsYou: 2, urgency: 'soon',
-    standing: [{ capability: 'heroma.whoIsOn', label: 'Vem är på plats?', kind: 'read' }, { capability: 'heroma.absenceOverview', label: 'Frånvaro per person', kind: 'read' }],
+    standing: [{ capability: 'hr.whoIsOn', label: 'Vem är på plats?', kind: 'read' }, { capability: 'hr.absenceOverview', label: 'Frånvaro per person', kind: 'read' }],
     schedules: [{ label: 'Läser frånvaron', when: 'Varje morgon 06:00' }] }),
-  area('budget', 'Budget', { source: 'Raindance', icon: 'chart', figure: { label: 'Prognos +1,8 %', tone: 'ok' }, needsYou: 1, urgency: 'urgent',
-    standing: [{ capability: 'raindance.budget', label: 'Budget mot prognos', kind: 'read' }, { capability: 'raindance.approve', label: 'Attestera fakturor', kind: 'execute' }] }),
-  area('kvalitet', 'Kvalitet', { source: 'Treserva', waiting: 1 }),
+  area('budget', 'Budget', { source: 'Ekonomisystemet', icon: 'chart', figure: { label: 'Prognos +1,8 %', tone: 'ok' }, needsYou: 1, urgency: 'urgent',
+    standing: [{ capability: 'finance.budget', label: 'Budget mot prognos', kind: 'read' }, { capability: 'finance.approve', label: 'Attestera fakturor', kind: 'execute' }] }),
+  area('kvalitet', 'Kvalitet', { source: 'Avvikelsesystemet', waiting: 1 }),
 ];
 /** The picker's rows (D29), fixed to the frozen clock. */
 export const snoozePresets: SnoozePreset[] = [
@@ -96,15 +96,15 @@ export const attention: Attention = { used: 3, budget: 3, bundledUntil: 'i morgo
 ] };
 /** Läget on the overview: the four figures, always the same four. */
 export const figures: Figure[] = [
-  { id: 'korttidsfranvaro', label: 'Korttidsfrånvaro', value: '4,1 %', comparison: '3,2 % samma vecka i fjol', tone: 'warn', source: 'Heroma', observedAt: NOW },
-  { id: 'budgetavvikelse', label: 'Budgetavvikelse', value: '−1,8 %', comparison: 'prognos −0,9 % i september', tone: 'alert', source: 'Raindance', observedAt: NOW },
+  { id: 'korttidsfranvaro', label: 'Korttidsfrånvaro', value: '4,1 %', comparison: '3,2 % samma vecka i fjol', tone: 'warn', source: 'Personalsystemet', observedAt: NOW },
+  { id: 'budgetavvikelse', label: 'Budgetavvikelse', value: '−1,8 %', comparison: 'prognos −0,9 % i september', tone: 'alert', source: 'Ekonomisystemet', observedAt: NOW },
   { id: 'hme', label: 'HME', value: '79', comparison: '76 i fjol, kommunen 77', tone: 'ok', source: 'Medarbetarenkät', observedAt: NOW },
   { id: 'utvecklingssamtal', label: 'Utvecklingssamtal', value: '4 av 12 kvar', comparison: '8 bokade, senast 28 nov', tone: 'warn', source: 'Kalendern', observedAt: NOW, progress: { value: 8, max: 12 } },
 ];
 /** What the box offers while the person types (D34): the standing actions for the role. The areas under the box (D41) come from `areas`. */
 export const completions: Completions = {
   completions: ['Vad har jag i dag?'], ask: [], recent: [],
-  do: [{ text: 'Attestera fakturor', capability: 'raindance.approve', source: 'Raindance', kind: 'execute' }, { text: 'Rapportera avvikelse', capability: 'treserva.report', source: 'Treserva', kind: 'execute' }],
+  do: [{ text: 'Attestera fakturor', capability: 'finance.approve', source: 'Ekonomisystemet', kind: 'execute' }, { text: 'Rapportera avvikelse', capability: 'incidents.report', source: 'Avvikelsesystemet', kind: 'execute' }],
 };
 export const today: TodayView = {
   date: '2026-11-04',
@@ -121,8 +121,8 @@ export const events = (from: string): CalendarEvent[] => [0, 1, 2, 3, 4].map(off
 export const searchOutput: SearchResult = {
   rows: [
     { ref: 'fall-2', connector: 'intranat', kind: 'document', label: 'Rutin vid fall i ordinärt boende', section: 'Vid fall', snippet: 'Innan den enskilde hjälps upp ska personalen bedöma smärta, yrsel och tecken på huvudskada.', source: 'Intranätet', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00.000Z', link: 'https://intra.example/rutin-fall', stale: false },
-    { ref: 'fall-4', connector: 'intranat', kind: 'document', label: 'Rutin vid fall i ordinärt boende', section: 'Avvikelse', snippet: 'Varje fall registreras som avvikelse i Treserva innan arbetspasset avslutas.', source: 'Intranätet', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00.000Z', link: 'https://intra.example/rutin-fall#avvikelse', stale: false },
-    { ref: 'lathund-7', connector: 'eneo', kind: 'document', label: 'Lathund: avvikelser i Treserva', snippet: 'Öppna Avvikelser, välj Ny och ange brukare.', source: 'Eneo', updatedAt: '2024-11-02T00:00:00.000Z', stale: true },
+    { ref: 'fall-4', connector: 'intranat', kind: 'document', label: 'Rutin vid fall i ordinärt boende', section: 'Avvikelse', snippet: 'Varje fall registreras som avvikelse i avvikelsesystemet innan arbetspasset avslutas.', source: 'Intranätet', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00.000Z', link: 'https://intra.example/rutin-fall#avvikelse', stale: false },
+    { ref: 'lathund-7', connector: 'eneo', kind: 'document', label: 'Lathund: avvikelser i avvikelsesystemet', snippet: 'Öppna Avvikelser, välj Ny och ange brukare.', source: 'Eneo', updatedAt: '2024-11-02T00:00:00.000Z', stale: true },
   ],
   sources: [{ id: 'intranat', source: 'Intranätet', status: 'ok' }, { id: 'eneo', source: 'Eneo', status: 'ok' }, { id: 'sharepoint', source: 'SharePoint', status: 'timeout' }],
 };
@@ -131,7 +131,7 @@ export const conversation = (source: Thread[], text: string, conversationId = 'k
   const previous = source.find(t => t.id === conversationId)?.messages ?? [];
   // A question about a routine is answered from documents (D26): numbered steps, citations, the sources as a view.
   if (/ramlat/i.test(text)) {
-    const body = '1. Lyft inte själv [1].\n2. Ring sjuksköterskan på jourtelefonen [1].\n3. Skriv avvikelse i Treserva innan passet slutar [2].';
+    const body = '1. Lyft inte själv [1].\n2. Ring sjuksköterskan på jourtelefonen [1].\n3. Skriv avvikelse i avvikelsesystemet innan passet slutar [2].';
     const view = { capability: 'clew.search', input: { query: text }, title: 'Källor', source: 'Startsidan' };
     const reply = thread({ id: conversationId, title: text.slice(0, 80), kind: 'question', connector: 'clew', area: 'fragor',
       messages: [...previous, { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW }, { id: `a${previous.length}`, role: 'assistant', body, createdAt: NOW, meta: { source: 'Startsidan', shape: 'steg', view, sources: citations, followUps: ['Och om hen slagit i huvudet?'] } }] });
@@ -149,20 +149,20 @@ export const conversation = (source: Thread[], text: string, conversationId = 'k
   if (/semester/i.test(text)) {
     const body = 'Du har 18 semesterdagar kvar i år.', model = { id: 'gpt-oss-120b', title: 'Kapabel' };
     const reply = thread({ id: conversationId, title: text.slice(0, 80), kind: 'question', connector: 'clew', area: 'fragor',
-      messages: [...previous, { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW }, { id: `a${previous.length}`, role: 'assistant', body, createdAt: NOW, meta: { source: 'Heroma', assistant: 'model', model } }] });
-    return { conversationId, thread: reply, shape: 'svar', assistant: 'model', answer: { body, source: 'Heroma', at: NOW }, clewActions: [], followUps: [], model };
+      messages: [...previous, { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW }, { id: `a${previous.length}`, role: 'assistant', body, createdAt: NOW, meta: { source: 'Personalsystemet', assistant: 'model', model } }] });
+    return { conversationId, thread: reply, shape: 'svar', assistant: 'model', answer: { body, source: 'Personalsystemet', at: NOW }, clewActions: [], followUps: [], model };
   }
   // A question that names an open card is answered with that card (D34, H1): the sentence is the card's, the card is drawn in the turn.
   if (/attestera/i.test(text)) {
     const body = 'Två matchar sina beställningar, en saknar beställning. Den första förfaller i dag.';
     const reply = thread({ id: conversationId, title: text.slice(0, 80), kind: 'question', connector: 'clew', area: 'fragor',
-      messages: [...previous, { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW }, { id: `a${previous.length}`, role: 'assistant', body, createdAt: NOW, meta: { source: 'Raindance', shape: 'svar', cards: ['fakturor'] } }] });
-    return { conversationId, thread: reply, shape: 'svar', assistant: 'router', answer: { body, source: 'Raindance', at: NOW }, clewActions: [], followUps: [] };
+      messages: [...previous, { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW }, { id: `a${previous.length}`, role: 'assistant', body, createdAt: NOW, meta: { source: 'Ekonomisystemet', shape: 'svar', cards: ['fakturor'] } }] });
+    return { conversationId, thread: reply, shape: 'svar', assistant: 'router', answer: { body, source: 'Ekonomisystemet', at: NOW }, clewActions: [], followUps: [] };
   }
   const body = 'Tio personer är på plats i dag. Sara Nyström är sjuk.';
   const reply = thread({ id: conversationId, title: 'Vem är på plats i dag?', kind: 'question', connector: 'clew', area: 'fragor',
-    messages: [...previous, { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW }, { id: `a${previous.length}`, role: 'assistant', body, createdAt: NOW, meta: { source: 'Heroma' } }] });
-  return { conversationId, thread: reply, shape: 'svar', assistant: 'router', answer: { body, source: 'Heroma', at: NOW }, clewActions: [], followUps: ['Vem är sjuk i morgon?'] };
+    messages: [...previous, { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW }, { id: `a${previous.length}`, role: 'assistant', body, createdAt: NOW, meta: { source: 'Personalsystemet' } }] });
+  return { conversationId, thread: reply, shape: 'svar', assistant: 'router', answer: { body, source: 'Personalsystemet', at: NOW }, clewActions: [], followUps: ['Vem är sjuk i morgon?'] };
 };
 
 /** Administration (D23): two bundled connectors, one remote that is down, one draft. Typed against the admin contracts. */
@@ -170,8 +170,8 @@ const summary = (values: Partial<ConnectorSummary> & Pick<ConnectorSummary, 'id'
   bundled: false, kind: 'passthrough', url: `http://${values.id}:4010`, state: 'enabled', health: { status: 'ok', at: NOW }, audience: { mode: 'all' }, scanEnabled: true, toolsEnabled: true, registered: true,
   counts: { capabilities: 5, execute: 2, tools: 3 }, manifestAt: NOW, secretChangedAt: NOW, createdAt: '2026-11-03T06:00:00.000Z', updatedAt: NOW, ...values });
 export const connectors = (): ConnectorSummary[] => [
-  summary({ id: 'heroma', source: 'Heroma', bundled: true, url: null, secretChangedAt: null, counts: { capabilities: 9, execute: 3, tools: 5 } }),
-  summary({ id: 'raindance', source: 'Raindance', bundled: true, url: null, secretChangedAt: null, audience: { mode: 'selected', roles: ['manager'], units: ['unit-skola'] }, counts: { capabilities: 4, execute: 1, tools: 2 } }),
+  summary({ id: 'hr', source: 'Personalsystemet', bundled: true, url: null, secretChangedAt: null, counts: { capabilities: 9, execute: 3, tools: 5 } }),
+  summary({ id: 'finance', source: 'Ekonomisystemet', bundled: true, url: null, secretChangedAt: null, audience: { mode: 'selected', roles: ['manager'], units: ['unit-skola'] }, counts: { capabilities: 4, execute: 1, tools: 2 } }),
   summary({ id: 'hello', source: 'Hello', health: { status: 'unreachable', at: NOW, detail: 'ECONNREFUSED' } }),
   summary({ id: 'errands', source: 'SupportManagement', state: 'draft', registered: false, health: { status: 'untested', at: NOW }, manifestAt: null, counts: { capabilities: 6, execute: 2, tools: 4 } }),
 ];
@@ -194,7 +194,7 @@ export const checkReport: CheckReport = { ok: false, items: [
   { level: 'warn', group: 'capabilities', label: 'Dagens möten', description: 'Svarar inte för chef. En förmåga som anropar Clew behöver att Clew är igång.', capability: 'hello.dayWithMeetings' },
   { level: 'ok', group: 'surfaces', label: 'Området Hej', description: 'Chef och medarbetare: 1 stående handling, inget nyckeltal.' },
 ] };
-export const connectorPreview = (role: 'manager' | 'employee'): ConnectorPreview => ({ role, unitId: null, visible: role === 'manager', areas: role === 'manager' ? [{ id: 'budget', title: 'Budget', standing: ['Budget mot prognos'] }] : [], tools: role === 'manager' ? ['raindance.budget'] : [], menu: [] });
+export const connectorPreview = (role: 'manager' | 'employee'): ConnectorPreview => ({ role, unitId: null, visible: role === 'manager', areas: role === 'manager' ? [{ id: 'budget', title: 'Budget', standing: ['Budget mot prognos'] }] : [], tools: role === 'manager' ? ['finance.budget'] : [], menu: [] });
 /** Modeller (D24): one provider with a capable default and a small model for managers, one provider that is down with a model switched off. */
 const provider = (values: Partial<ProviderSummary> & Pick<ProviderSummary, 'id' | 'title'>): ProviderSummary => ({
   baseUrl: `http://${values.id}.test/v1`, hasKey: true, keyChangedAt: NOW, health: { status: 'ok', at: NOW }, models: 2, enabledModels: 2, createdAt: '2026-11-03T06:00:00.000Z', updatedAt: NOW, ...values });

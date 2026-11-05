@@ -54,7 +54,7 @@ ever sees a per-server consent popup. References:
   `WWW-Authenticate` header pointing at its Protected Resource Metadata (RFC 9728), which names Keycloak
   as the authorization server. Keycloak publishes Authorization Server Metadata (RFC 8414).
 - Clients must use PKCE and resource indicators (RFC 8707), so every access token is audience-bound to one
-  server. A token for the calendar server is useless against the Heroma server.
+  server. A token for the calendar server is useless against the HR system's server.
 - Access tokens are JWTs. The server validates signature (realm JWKS via `jose`), issuer, audience, expiry
   and the scopes the capability requires. It never accepts a token it was not issued for, and never
   forwards a token it received to another system (no token passthrough).

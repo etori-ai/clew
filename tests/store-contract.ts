@@ -19,10 +19,10 @@ const plus = (iso: string, ms: number) => new Date(Date.parse(iso) + ms).toISOSt
 const unique = () => Math.random().toString(36).slice(2, 10);
 export const draft = (personId: string, overrides: Partial<NewThread> = {}): NewThread => {
   const id = overrides.id ?? `t-${unique()}`;
-  return { id, personId, kind: 'pushed', topic: `topic-${unique()}`, title: 'Attestera 3 fakturor', state: 'open', week: null, connector: 'raindance', area: 'budget',
-    summary: 'Tre fakturor väntar.', items: [{ ref: 'raindance:inv:1', label: 'Lekolar', detail: '6451', selectable: true, selected: true }],
-    actions: [{ id: 'approve', label: 'Attestera valda', capability: 'raindance.approve', kind: 'execute', role: 'primary', usesItems: true }],
-    waitingOn: null, deadline: '2026-11-05', trigger: { reason: 'Den första förfaller 5 nov', source: 'Raindance', at: T0 }, createdAt: T0, updatedAt: T0, ...overrides };
+  return { id, personId, kind: 'pushed', topic: `topic-${unique()}`, title: 'Attestera 3 fakturor', state: 'open', week: null, connector: 'finance', area: 'budget',
+    summary: 'Tre fakturor väntar.', items: [{ ref: 'finance:inv:1', label: 'Skolgrossisten', detail: '6451', selectable: true, selected: true }],
+    actions: [{ id: 'approve', label: 'Attestera valda', capability: 'finance.approve', kind: 'execute', role: 'primary', usesItems: true }],
+    waitingOn: null, deadline: '2026-11-05', trigger: { reason: 'Den första förfaller 5 nov', source: 'Ekonomisystemet', at: T0 }, createdAt: T0, updatedAt: T0, ...overrides };
 };
 
 export function storeContract(name: string, make: () => Promise<StoreHarness>) {
@@ -76,12 +76,12 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       await store.transaction(async tx => {
         await tx.insertThread(t);
         await tx.addMessage(t.id, { role: 'assistant', body: 'Tre fakturor väntar.', at: plus(T0, 1000) });
-        await tx.addMessage(t.id, { role: 'user', body: 'Attestera valda', at: plus(T0, 2000), meta: { refs: ['raindance:inv:1'] } });
+        await tx.addMessage(t.id, { role: 'user', body: 'Attestera valda', at: plus(T0, 2000), meta: { refs: ['finance:inv:1'] } });
       });
       const read = (await store.readThread(a, t.id))!;
-      expect(read.messages.map(m => [m.role, m.body, m.createdAt, m.meta])).toEqual([['assistant', 'Tre fakturor väntar.', plus(T0, 1000), undefined], ['user', 'Attestera valda', plus(T0, 2000), { refs: ['raindance:inv:1'] }]]);
+      expect(read.messages.map(m => [m.role, m.body, m.createdAt, m.meta])).toEqual([['assistant', 'Tre fakturor väntar.', plus(T0, 1000), undefined], ['user', 'Attestera valda', plus(T0, 2000), { refs: ['finance:inv:1'] }]]);
       expect(read.updatedAt).toBe(plus(T0, 2000));
-      const receipt = { at: plus(T0, 3000), headline: 'Klart.', rows: [], undoUntil: plus(T0, 600_000), undoCapability: 'raindance.unapprove' };
+      const receipt = { at: plus(T0, 3000), headline: 'Klart.', rows: [], undoUntil: plus(T0, 600_000), undoCapability: 'finance.unapprove' };
       await store.transaction(tx => tx.updateThread(t.id, { state: 'handled', handledAt: plus(T0, 3000), receipt }));
       const handled = (await store.readThread(a, t.id))!;
       expect(handled).toMatchObject({ state: 'handled', handledAt: plus(T0, 3000), receipt, title: t.title, updatedAt: plus(T0, 2000) });
@@ -126,7 +126,7 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       const { store, people: [a] } = await make(), now = plus(T0, 30 * 86400_000);
       const t = draft(a), receipt = { at: T0, headline: 'Bekräftat i källan.', rows: [{ ref: 'source:1', label: 'Original', outcome: 'done' as const, detail: 'Kontrollerat.' }], undoUntil: null, undoCapability: null };
       await store.transaction(async tx => {
-        await tx.insertThread({ ...t, execution: { id: 'undo', decisionId: 'undo', operation: 'raindance.unapprove', state: 'unknown', reason: 'source-unavailable', compensates: 'original' } });
+        await tx.insertThread({ ...t, execution: { id: 'undo', decisionId: 'undo', operation: 'finance.unapprove', state: 'unknown', reason: 'source-unavailable', compensates: 'original' } });
         await tx.updateThread(t.id, { state: 'handled', handledAt: T0, receipt });
         for (let i = 0; i < 60; i++) await tx.insertThread(draft(a, { kind: 'question', createdAt: plus(now, -i), updatedAt: plus(now, -i) }));
       });
@@ -137,7 +137,7 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
     test('an audit row and a job commit with the writes they belong to, and roll back with them', async () => {
       const { store, people: [a], auditFor, hasJob } = await make();
       const t = draft(a);
-      const entry = { actor: 'person:' + a, action: 'thread.acted', subject: 'thread:' + t.id, at: plus(T0, 1000), details: { refs: ['raindance:inv:1'] } };
+      const entry = { actor: 'person:' + a, action: 'thread.acted', subject: 'thread:' + t.id, at: plus(T0, 1000), details: { refs: ['finance:inv:1'] } };
       await store.transaction(async tx => { await tx.insertThread(t); await tx.writeAudit(entry); await tx.scheduleJob({ id: 'job:' + t.id, kind: 'receipt-final', runAt: plus(T0, 600_000), payload: { threadId: t.id } }); });
       expect((await auditFor('thread:' + t.id)).map(({ actor, action, subject, at, details }) => ({ actor, action, subject, at, details }))).toEqual([entry]);
       expect(await hasJob('job:' + t.id)).toBe(true);

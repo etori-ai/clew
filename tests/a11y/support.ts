@@ -130,7 +130,7 @@ export class MockApi {
     // The phone book's declared views, answered by the connector itself.
     if (path.startsWith('/cap/telefonbok.')) { const answer = await telefonbok(path.slice('/cap/'.length), JSON.parse(url.searchParams.get('input') ?? '{}')); return route.fulfill({ status: answer.status, json: answer.body }); }
     if (path === '/cap/clew.cardFromAnswer' && post) return json({ output: { threadId: 'rutin' } });
-    if (path.startsWith('/cap/')) return json({ output: this.output, source: 'Heroma' });
+    if (path.startsWith('/cap/')) return json({ output: this.output, source: 'Personalsystemet' });
     // A turn as the server streams it (D36): a read as a step, the answer in two deltas, then the finished turn. Playwright
     // answers in one piece, so the pending turn is what `answerDelay` and `holdAnswer` hold open.
     if (path === '/conversation/stream') {

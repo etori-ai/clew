@@ -190,7 +190,7 @@ api.post('/threads/:id/remind-invitees', async c => c.json(await calendar.remind
 api.get('/today', async c => c.json(await readToday(c.get('session').context)));
 api.get('/figures', async c => {
   const persona = c.get('session').context;
-  const owners: Record<string, string> = { korttidsfranvaro: 'heroma', budgetavvikelse: 'raindance', hme: 'heroma', utvecklingssamtal: 'calendar' };
+  const owners: Record<string, string> = { korttidsfranvaro: 'hr', budgetavvikelse: 'finance', hme: 'hr', utvecklingssamtal: 'calendar' };
   const samtal = registry.visible(persona, 'calendar') ? await samtalStatus(persona) : { held: 0, booked: 0, deadline: '' };
   return c.json({ figures: readFigures(persona, samtal, new Date().toISOString()).filter(figure => !!owners[figure.id] && registry.visible(persona, owners[figure.id]!)) });
 });

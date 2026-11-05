@@ -136,7 +136,7 @@ test.describe('review', () => {
   }, ['1280']);
 
   // The side panel.
-  shot('30-panel-view', async page => { await open(page, '/?open=heroma.whoIsOn&open-title=Bemanning'); });
+  shot('30-panel-view', async page => { await open(page, '/?open=hr.whoIsOn&open-title=Bemanning'); });
   shot('31-panel-sources', async page => { await open(page, '/?open=clew.search&open-title=K%C3%A4llor&open-input=%7B%22query%22%3A%22fall%22%7D'); });
   shot('32-panel-card', async page => { await open(page, '/todo?open-card=omtanke&open-action=pattern'); }, ['1280']);
 
@@ -171,13 +171,13 @@ test.describe('review', () => {
     await page.getByRole('dialog').first().waitFor();
   }, ['1280']);
   shot('62-admin-connector', admin('/admin/connectors/hello'));
-  shot('63-admin-connector-bundled', admin('/admin/connectors/raindance'), ['1280']);
+  shot('63-admin-connector-bundled', admin('/admin/connectors/finance'), ['1280']);
   shot('64-admin-connector-capabilities', async (page, api) => {
-    api.admin = true; await open(page, '/admin/connectors/raindance');
+    api.admin = true; await open(page, '/admin/connectors/finance');
     await page.getByRole('tab').nth(1).click();
   }, ['1280']);
   shot('65-admin-connector-audience', async (page, api) => {
-    api.admin = true; await open(page, '/admin/connectors/raindance');
+    api.admin = true; await open(page, '/admin/connectors/finance');
     await page.getByRole('tab', { name: 'Vem ser det' }).click();
   }, ['1280']);
   shot('66-admin-models', admin('/admin/models'));

@@ -3,7 +3,7 @@
 > **Reading status:** Early integration design. The in-process/MCP hosting and connector-rendered app examples below predate D21/D22 and declared views. New integrations are independent connector services; source writes go through human decision paths. See [implementation status](../reference/status.md) and the [current protocol](../reference/connector-protocol.md).
 
 
-How Clew connects to systems outside its own database: the calendar today, Heroma, Raindance and other
+How Clew connects to systems outside its own database: the calendar today, the HR system, the finance system and other
 municipal systems later. Decided 2026-11-03. The decision log is in `docs/decisions/`. This file holds the
 principles; the catalogue of concrete paths, their auth modes and their status is `integration-paths.md`, and
 `capability-surfaces.md` explains how one capability is reached over REST, as a model tool and over MCP.
@@ -29,8 +29,8 @@ document generated from the TypeBox schemas in `packages/contracts`.
 Clew's API for that domain: the capability descriptors and the connector's provider interface. A vendor, a
 dept44 service or another municipality's team that does so needs no adapter. Only when that is not
 possible does Clew write the adapter, in this repository, from the system's protocol to Clew's contract.
-The contract never bends to the adapter. In Sundsvall today that means adapters for Heroma (RPA, no API),
-Raindance and aggregates (dept44 services behind the WSO2 gateway, `service` mode with a `scope` rule) and
+The contract never bends to the adapter. In Sundsvall today that means adapters for the HR system (RPA, no API),
+the finance system and aggregates (dept44 services behind the WSO2 gateway, `service` mode with a `scope` rule) and
 Microsoft 365 (Microsoft Graph, `user-delegated`). The calendar is the pattern: one `CalendarProvider`
 contract, a `caldav` and a `microsoft365` adapter selected per account (D11,
 `packages/calendar/src/adapters.ts`).
@@ -73,7 +73,7 @@ Sorted by who owns the data.
 | Kind | Data lives | Examples | Runs |
 |---|---|---|---|
 | **Core** | Clew's Postgres | users, groups, permissions, threads, audit, jobs | in-process only; no provider interface, they are the system |
-| **Pass-through** | the external system; Clew stores refs, revisions and audit rows only | calendar, Heroma, Raindance | behind a Clew provider interface, in-process first, lifted to an MCP server when needed |
+| **Pass-through** | the external system; Clew stores refs, revisions and audit rows only | calendar, HR, finance | behind a Clew provider interface, in-process first, lifted to an MCP server when needed |
 | **Derived** | a snapshot in Clew's Postgres | "Läget" figures, attention counter | in-process, reads pass-through connectors on a schedule |
 
 Users and permissions are core. SCIM 2.0 provisioning is an **inbound** interface on them: Clew is the SCIM
@@ -86,7 +86,7 @@ not touch the capability layer. See `docs/architecture/identity.md`.
 Lift an adapter out of the BFF process when at least one holds:
 
 - it needs its own release cadence or its own network zone (for example a server that must sit next to
-  Heroma inside a restricted segment);
+  the HR system inside a restricted segment);
 - another team owns it;
 - a second consumer besides Clew wants the same tools.
 
@@ -119,7 +119,7 @@ server's audience. It never acts as "Clew" without a user. Details in `docs/arch
 
 A connector never draws its own card. It contributes **actions** through capability descriptors, and the
 thread card has fixed slots for them, so the page looks the same whether the thread comes from the
-calendar, Heroma or Raindance:
+calendar, HR or finance:
 
 | Slot | Who fills it | Count | Rule |
 |---|---|---|---|

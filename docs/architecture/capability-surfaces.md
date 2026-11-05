@@ -125,15 +125,15 @@ surface produced the data.
 
 ## A worked example
 
-`treserva.deviations` is a `read` with `model: true`, scoped to the unit's manager and to each employee's
-own reports. `treserva.report` is an `execute` with `model: false`, and `treserva.withdraw` is its undo.
+`incidents.deviations` is a `read` with `model: true`, scoped to the unit's manager and to each employee's
+own reports. `incidents.report` is an `execute` with `model: false`, and `incidents.withdraw` is its undo.
 
 | Surface | What happens |
 |---|---|
-| REST | `GET /api/cap/treserva.deviations` returns the rows for the panel. Clicking "Rapportera avvikelse" posts `treserva.report` through the card action; the receipt shows the Treserva reference and a ten-minute undo. |
-| Model tool | "Vilka avvikelser väntar på mig?" lets the model call `treserva.deviations` and answer with a Svar or a Vy. "Rapportera att en lyft gick fel" lets the model draft a card; the report is sent only when the person presses the button. |
-| Clew as MCP server | An Eneo assistant registered with a release policy could call `treserva.deviations` as the user and get the same rows; it could not call `treserva.report`. Not built. |
-| Connector | If Treserva's adapter had to live inside the care network, a `treserva` connector would serve the same three capabilities behind the connector protocol (D21); this table would not change. |
+| REST | `GET /api/cap/incidents.deviations` returns the rows for the panel. Clicking "Rapportera avvikelse" posts `incidents.report` through the card action; the receipt shows the incident system's reference and a ten-minute undo. |
+| Model tool | "Vilka avvikelser väntar på mig?" lets the model call `incidents.deviations` and answer with a Svar or a Vy. "Rapportera att en lyft gick fel" lets the model draft a card; the report is sent only when the person presses the button. |
+| Clew as MCP server | An Eneo assistant registered with a release policy could call `incidents.deviations` as the user and get the same rows; it could not call `incidents.report`. Not built. |
+| Connector | If the incident system's adapter had to live inside the care network, an `incidents` connector would serve the same three capabilities behind the connector protocol (D21); this table would not change. |
 
 ## Questions colleagues ask
 

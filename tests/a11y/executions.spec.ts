@@ -4,7 +4,7 @@ for (const [layout, viewport] of [['desktop', desktop], ['narrow', narrow]] as c
   test.use({ viewport });
   for (const state of ['pending', 'running', 'unknown'] as const) test(state + ' is truthful, operable and has no axe violations', async ({ page, api }) => {
     const card = api.threads.find(t => t.id === 'fakturor')!;
-    card.execution = { id: 'execution-fixture', decisionId: 'decision-fixture', operation: 'raindance.approve', state, reason: null, compensates: null };
+    card.execution = { id: 'execution-fixture', decisionId: 'decision-fixture', operation: 'finance.approve', state, reason: null, compensates: null };
     api.threads = [card];
     await open(page, '/todo');
     const check = page.getByRole('button', { name: 'Kontrollera status' });

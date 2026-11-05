@@ -3,9 +3,9 @@ import addFormats from 'ajv-formats';
 import type { AuthenticatedContext } from '@clew/contracts';
 import { postgresState } from '@clew/db/state';
 import { actorOf, CapabilityError, Registry } from '@clew/connectors';
-import { heromaConnector } from '@clew/connectors/mock/heroma';
-import { raindanceConnector } from '@clew/connectors/mock/raindance';
-import { treservaConnector } from '@clew/connectors/mock/treserva';
+import { hrConnector } from '@clew/connectors/mock/hr';
+import { financeConnector } from '@clew/connectors/mock/finance';
+import { incidentsConnector } from '@clew/connectors/mock/incidents';
 import { kommunikationConnector } from '@clew/connectors/mock/kommunikation';
 import { InputError } from '../context';
 import { calendarConnector } from '../modules/calendar/connector';
@@ -26,7 +26,7 @@ export const registry = new Registry({ onRefused: (id, topic, problem) => consol
 const search = searchUsecases({ sources: actor => registry.searchSources(actor), clock });
 /** The card an answer becomes is the stream's use case; the composition root fills this slot once the stream is built over the registry. */
 export const answerCards: AnswerCards = {};
-const bundled = [heromaConnector(postgresState), raindanceConnector(postgresState), treservaConnector(postgresState), kommunikationConnector(postgresState), calendarConnector(calendar, events), peopleConnector(), searchConnector(search, answerCards)];
+const bundled = [hrConnector(postgresState), financeConnector(postgresState), incidentsConnector(postgresState), kommunikationConnector(postgresState), calendarConnector(calendar, events), peopleConnector(), searchConnector(search, answerCards)];
 for (const m of bundled) registry.register({ ...m, uses: ['*'] });
 /** The connectors that live in this process: they get a `connector` row at boot so an administrator can govern them too (D23). */
 export const bundledIds = bundled.map(m => m.id);

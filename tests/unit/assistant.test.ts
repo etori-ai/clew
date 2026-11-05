@@ -3,9 +3,9 @@ import { describe, expect, test } from 'bun:test';
 import type { Thread } from '../../packages/contracts/src/index';
 import { type Actor } from '../../packages/connectors/src/index';
 import { memoryState } from '../../packages/connectors/src/memory-state';
-import { heromaConnector } from '../../packages/connectors/src/mock/heroma';
-import { raindanceConnector } from '../../packages/connectors/src/mock/raindance';
-import { treservaConnector } from '../../packages/connectors/src/mock/treserva';
+import { hrConnector } from '../../packages/connectors/src/mock/hr';
+import { financeConnector } from '../../packages/connectors/src/mock/finance';
+import { incidentsConnector } from '../../packages/connectors/src/mock/incidents';
 import { draftSelection, parseVerb, verbsFor } from '../../apps/server/src/assistant/verbs';
 import { matchCapability, nearest, templatedAnswer } from '../../apps/server/src/assistant/router';
 import { buildTools, createGenerator, fromToolName, modelAnswer, ModelUnavailable, systemPrompt, toToolName } from '../../apps/server/src/assistant/model';
@@ -16,18 +16,18 @@ import { citationsOf, parseAnswer, visibleSoFar } from '../../apps/server/src/as
 
 const hillevi: Actor = { id: 'hillevi', name: 'Hillevi Berg', unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'manager' };
 const hassan: Actor = { id: 'hassan', name: 'Hassan Ali', unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'employee' };
-const registry = () => { const state = memoryState(); const r = new Registry(); for (const m of [heromaConnector(state), raindanceConnector(state), treservaConnector(state)]) r.register(m); return r; };
+const registry = () => { const state = memoryState(); const r = new Registry(); for (const m of [hrConnector(state), financeConnector(state), incidentsConnector(state)]) r.register(m); return r; };
 const now = '2026-11-03T07:40:00.000Z';
 const today = '2026-11-03';
 const card: Thread = {
-  id: 'c1', kind: 'pushed', topic: 'raindance:invoices', title: 'Attestera 3 fakturor, 37 050 kr', state: 'open', trigger: { reason: 'Den första förfaller 5 nov', source: 'Raindance', at: now },
-  createdAt: now, updatedAt: now, handledAt: null, messages: [], proposals: [], week: null, connector: 'raindance', area: 'budget', summary: 'Tre fakturor väntar.',
+  id: 'c1', kind: 'pushed', topic: 'finance:invoices', title: 'Attestera 3 fakturor, 37 050 kr', state: 'open', trigger: { reason: 'Den första förfaller 5 nov', source: 'Ekonomisystemet', at: now },
+  createdAt: now, updatedAt: now, handledAt: null, messages: [], proposals: [], week: null, connector: 'finance', area: 'budget', summary: 'Tre fakturor väntar.',
   items: [
-    { ref: 'raindance:inv:55120', label: 'Lekolar · 11 200 kr', detail: '6451 · förfaller 5 nov', selectable: true, selected: true },
-    { ref: 'raindance:inv:55121', label: 'Lekolar · 7 200 kr', detail: '6451 · förfaller 6 nov', selectable: true, selected: true },
-    { ref: 'raindance:inv:55140', label: 'Städbolaget · 18 650 kr', detail: '6452 · ingen beställning', selectable: true, selected: false },
+    { ref: 'finance:inv:55120', label: 'Skolgrossisten · 11 200 kr', detail: '6451 · förfaller 5 nov', selectable: true, selected: true },
+    { ref: 'finance:inv:55121', label: 'Skolgrossisten · 7 200 kr', detail: '6451 · förfaller 6 nov', selectable: true, selected: true },
+    { ref: 'finance:inv:55140', label: 'Städbolaget · 18 650 kr', detail: '6452 · ingen beställning', selectable: true, selected: false },
   ],
-  actions: [{ id: 'approve', label: 'Attestera valda', capability: 'raindance.approve', kind: 'execute', role: 'primary', usesItems: true }, { id: 'open', label: 'Öppna i Raindance', capability: 'raindance.open', kind: 'read', role: 'secondary', target: 'link' }],
+  actions: [{ id: 'approve', label: 'Attestera valda', capability: 'finance.approve', kind: 'execute', role: 'primary', usesItems: true }, { id: 'open', label: 'Öppna i ekonomisystemet', capability: 'finance.open', kind: 'read', role: 'secondary', target: 'link' }],
   waitingOn: null, deadline: '2026-11-05', receipt: null, remindedAt: null, snoozedUntil: null,
 };
 const samtal: Thread = {
@@ -52,7 +52,7 @@ describe('verbs about a chipped card come from its actions, never the model', ()
     expect(labels).toContain('Avfärda det');
     expect(labels).toContain('Inte nu, i morgon 06:00');
     expect(labels).toContain('Varför ser jag detta?');
-    expect(labels).toContain('Bara Lekolar');
+    expect(labels).toContain('Bara Skolgrossisten');
     expect(verbsFor(samtal).map(v => v.label)).toContain('Vecka 47 i stället');
     expect(verbsFor({ ...card, state: 'handled' })).toEqual([]);
   });
@@ -60,7 +60,7 @@ describe('verbs about a chipped card come from its actions, never the model', ()
     expect(parseVerb('avfärda det', card, today)?.kind).toBe('dismiss');
     expect(parseVerb('Inte nu, ta det i morgon', card, today)?.kind).toBe('snooze');
     expect(parseVerb('varför ser jag detta?', card, today)?.kind).toBe('why');
-    expect(parseVerb('attestera bara Lekolar', card, today)?.refs).toEqual(['raindance:inv:55120', 'raindance:inv:55121']);
+    expect(parseVerb('attestera bara Skolgrossisten', card, today)?.refs).toEqual(['finance:inv:55120', 'finance:inv:55121']);
     expect(parseVerb('skicka bara Anna och Johan', samtal, today)?.refs).toEqual(['proposal:p1', 'proposal:p2']);
     const replan = parseVerb('vecka 47 i stället', samtal, today);
     expect(replan?.kind).toBe('replan');
@@ -69,7 +69,7 @@ describe('verbs about a chipped card come from its actions, never the model', ()
     expect(parseVerb('hur många fakturor är det?', card, today)).toBeUndefined();
   });
   test('a draft selects the named rows and leaves non-selectable rows alone', () => {
-    const items = draftSelection([...card.items, { ref: 'x', label: 'Fast rad', detail: '', selectable: false, selected: true }], ['raindance:inv:55140']);
+    const items = draftSelection([...card.items, { ref: 'x', label: 'Fast rad', detail: '', selectable: false, selected: true }], ['finance:inv:55140']);
     expect(items.map(i => i.selected)).toEqual([false, false, true, true]);
     expect(() => draftSelection(card.items, ['nope'])).toThrow();
   });
@@ -77,20 +77,20 @@ describe('verbs about a chipped card come from its actions, never the model', ()
 describe('the deterministic router matches capabilities by title and description (D8)', () => {
   test('finds the capability, respects scope, gives up honestly', () => {
     const r = registry();
-    expect(matchCapability('Vem är på plats i dag?', r.tools(hillevi))?.name).toBe('heroma.whoIsOn');
-    expect(matchCapability('visa fakturor', r.tools(hillevi))?.name).toBe('raindance.invoices');
-    expect(matchCapability('frånvaro per person', r.tools(hassan))?.name).not.toBe('heroma.absenceOverview');
+    expect(matchCapability('Vem är på plats i dag?', r.tools(hillevi))?.name).toBe('hr.whoIsOn');
+    expect(matchCapability('visa fakturor', r.tools(hillevi))?.name).toBe('finance.invoices');
+    expect(matchCapability('frånvaro per person', r.tools(hassan))?.name).not.toBe('hr.absenceOverview');
     expect(matchCapability('xyzzy plugh', r.tools(hillevi))).toBeUndefined();
-    expect(nearest('fakturor och budget', r.tools(hillevi)).map(t => t.name)).toContain('raindance.budget');
+    expect(nearest('fakturor och budget', r.tools(hillevi)).map(t => t.name)).toContain('finance.budget');
   });
   test('templated answers name the source and offer a view for rows', () => {
-    const tool = { name: 'raindance.invoices', title: 'Fakturor att attestera', description: '', kind: 'read', source: 'Raindance' };
-    const a = templatedAnswer(tool, {}, { rows: [{ supplier: 'Lekolar' }, { supplier: 'Städbolaget' }] }, now);
-    expect(a.body).toMatch(/2 poster under fakturor att attestera: Lekolar, Städbolaget\. Raindance \d\d:\d\d\./);
-    expect(a.view?.capability).toBe('raindance.invoices');
-    const b = templatedAnswer({ ...tool, name: 'heroma.whoIsOn', title: 'Vem är på plats i dag?', source: 'Heroma' }, {}, { onDuty: ['Anna', 'Johan'], absent: 2 }, now);
+    const tool = { name: 'finance.invoices', title: 'Fakturor att attestera', description: '', kind: 'read', source: 'Ekonomisystemet' };
+    const a = templatedAnswer(tool, {}, { rows: [{ supplier: 'Skolgrossisten' }, { supplier: 'Städbolaget' }] }, now);
+    expect(a.body).toMatch(/2 poster under fakturor att attestera: Skolgrossisten, Städbolaget\. Ekonomisystemet \d\d:\d\d\./);
+    expect(a.view?.capability).toBe('finance.invoices');
+    const b = templatedAnswer({ ...tool, name: 'hr.whoIsOn', title: 'Vem är på plats i dag?', source: 'Personalsystemet' }, {}, { onDuty: ['Anna', 'Johan'], absent: 2 }, now);
     expect(b.body).toContain('onDuty: Anna, Johan');
-    expect(b.body).toContain('Heroma');
+    expect(b.body).toContain('Personalsystemet');
   });
 });
 describe('a document answer is read in code (D26): the trailer, the steps, the citations', () => {
@@ -100,7 +100,7 @@ describe('a document answer is read in code (D26): the trailer, the steps, the c
     const steps = parseAnswer('1. Lyft inte själv [1].\n2. Ring sjuksköterskan [1].\n3. Skriv avvikelse [2].\n\nFöljdfrågor: Anhöriga?');
     expect(steps.shape).toBe('steg');
     expect(steps.body.split('\n')).toHaveLength(3);
-    expect(parseAnswer('Tre på plats. Heroma 08:00.')).toEqual({ body: 'Tre på plats. Heroma 08:00.', followUps: [] });
+    expect(parseAnswer('Tre på plats. Personalsystemet 08:00.')).toEqual({ body: 'Tre på plats. Personalsystemet 08:00.', followUps: [] });
     expect(parseAnswer('1. Ett steg bara.\nFöljdfrågor: ').shape).toBeUndefined();
   });
   test('while it streams, the trailer is never shown and what is shown only grows (D36)', () => {
@@ -131,11 +131,11 @@ describe('a document answer is read in code (D26): the trailer, the steps, the c
 
 describe('the model path only reads, and falls back when the provider fails', () => {
   test('tool names round-trip without dots and never include an execute capability', () => {
-    expect(fromToolName(toToolName('heroma.whoIsOn'))).toBe('heroma.whoIsOn');
+    expect(fromToolName(toToolName('hr.whoIsOn'))).toBe('hr.whoIsOn');
     const r = registry();
     const calls: string[] = [];
     const tools = buildTools(r.tools(hillevi), async name => { calls.push(name); return { ok: true }; });
-    expect(Object.keys(tools)).toContain('heroma__whoIsOn');
+    expect(Object.keys(tools)).toContain('hr__whoIsOn');
     expect(Object.keys(tools).some(n => /approve|decide|book|report/.test(n))).toBe(false);
   });
   test('the system prompt carries role, unit, week and the chipped objects', () => {
@@ -143,22 +143,22 @@ describe('the model path only reads, and falls back when the provider fails', ()
     expect(prompt).toContain('chef på Skönsmons skola');
     expect(prompt).toContain('vecka 45');
     expect(prompt).toContain('Du tittar på');
-    expect(prompt).toContain('Kort "Attestera 3 fakturor, 37 050 kr" (Raindance');
-    expect(prompt).toContain('Lekolar · 11 200 kr · 6451 · förfaller 5 nov [vald]');
-    expect(prompt).toContain('Knappar på kortet nu: Attestera valda, Öppna i Raindance, Inte nu, Fler val (Lägg till i samtalet, Avfärda, Varför ser jag detta?).');
+    expect(prompt).toContain('Kort "Attestera 3 fakturor, 37 050 kr" (Ekonomisystemet');
+    expect(prompt).toContain('Skolgrossisten · 11 200 kr · 6451 · förfaller 5 nov [vald]');
+    expect(prompt).toContain('Knappar på kortet nu: Attestera valda, Öppna i ekonomisystemet, Inte nu, Fler val (Lägg till i samtalet, Avfärda, Varför ser jag detta?).');
     expect(systemPrompt({ name: 'x', role: 'employee', unitLabel: 'y', now: new Date(now), week: 45, objects: [] })).not.toContain('Du tittar på');
   });
   test('a card already acted on offers Ångra allt, never its own buttons, and nothing once the window has closed', () => {
     const handledAt = '2026-11-03T09:47:00.000Z', undoUntil = '2026-11-03T09:57:00.000Z';
-    const acted: Thread = { ...card, state: 'handled', handledAt, receipt: { at: handledAt, headline: 'Två fakturor är attesterade.', undoUntil, undoCapability: 'raindance.unapprove',
-      rows: [{ ref: 'raindance:inv:55120', label: 'Lekolar · 11 200 kr', outcome: 'done', detail: 'attesterad i Raindance' }, { ref: 'raindance:inv:55121', label: 'Lekolar · 7 200 kr', outcome: 'unknown', detail: 'inget svar' }] } };
+    const acted: Thread = { ...card, state: 'handled', handledAt, receipt: { at: handledAt, headline: 'Två fakturor är attesterade.', undoUntil, undoCapability: 'finance.unapprove',
+      rows: [{ ref: 'finance:inv:55120', label: 'Skolgrossisten · 11 200 kr', outcome: 'done', detail: 'attesterad i ekonomisystemet' }, { ref: 'finance:inv:55121', label: 'Skolgrossisten · 7 200 kr', outcome: 'unknown', detail: 'inget svar' }] } };
     const [within] = serialiseContext([{ kind: 'thread', ref: 'thread:c1', thread: acted }], '2026-11-03T09:50:00.000Z');
-    expect(within).toContain('Kortet är redan hanterat 10:47: Två fakturor är attesterade. Kvitto: Lekolar · 11 200 kr · attesterad i Raindance (klart); Lekolar · 7 200 kr · inget svar (okänt).');
-    expect(within).toContain('Knappar på kortet nu: Ångra allt (fram till 10:57), Öppna i Raindance.');
+    expect(within).toContain('Kortet är redan hanterat 10:47: Två fakturor är attesterade. Kvitto: Skolgrossisten · 11 200 kr · attesterad i ekonomisystemet (klart); Skolgrossisten · 7 200 kr · inget svar (okänt).');
+    expect(within).toContain('Knappar på kortet nu: Ångra allt (fram till 10:57), Öppna i ekonomisystemet.');
     expect(within).toContain('först därefter visar kortet Attestera valda igen');
     expect(within).not.toContain('Knappar på kortet nu: Attestera valda');
     const [after] = serialiseContext([{ kind: 'thread', ref: 'thread:c1', thread: acted }], '2026-11-03T09:58:00.000Z');
-    expect(after).toContain('Det går inte längre att ångra i Startsidan; en ändring görs i Raindance. Kortet har inga knappar nu.');
+    expect(after).toContain('Det går inte längre att ångra i Startsidan; en ändring görs i Ekonomisystemet. Kortet har inga knappar nu.');
     expect(after).not.toContain('Ångra allt');
     const prompt = systemPrompt({ name: 'Hillevi Berg', role: 'manager', unitLabel: 'Skönsmons skola', now: new Date(now), week: 45, objects: [within!] });
     expect(prompt).toContain('Nämn bara knappar som står under "Knappar på kortet nu"');
@@ -166,17 +166,17 @@ describe('the model path only reads, and falls back when the provider fails', ()
   test('a snoozed, a waiting and a dismissed card name only what they show', () => {
     const [snoozed] = serialiseContext([{ kind: 'thread', ref: 'thread:c1', thread: { ...card, snoozedUntil: '2026-11-04T05:00:00.000Z' } }], now);
     expect(snoozed).toContain('Kortet ligger under Inte nu. Knappar på kortet nu: Ta upp nu, Fler val (Lägg till i samtalet, Avfärda, Varför ser jag detta?).');
-    const [waiting] = serialiseContext([{ kind: 'thread', ref: 'thread:c1', thread: { ...card, waitingOn: 'Raindance' } }], now);
-    expect(waiting).toContain('Kortet väntar på Raindance. Knappar på kortet nu: Påminn mig, Fler val');
+    const [waiting] = serialiseContext([{ kind: 'thread', ref: 'thread:c1', thread: { ...card, waitingOn: 'Ekonomisystemet' } }], now);
+    expect(waiting).toContain('Kortet väntar på Ekonomisystemet. Knappar på kortet nu: Påminn mig, Fler val');
     const [dismissed] = serialiseContext([{ kind: 'thread', ref: 'thread:c1', thread: { ...card, state: 'dismissed' } }], now);
     expect(dismissed).toContain('Kortet är avfärdat. Kortet har inga knappar nu.');
   });
   test('an injected generate yields the answer and a view from the first rows result', async () => {
     const r = registry();
     const tools = r.tools(hillevi);
-    const answer = await modelAnswer({ system: 's', history: [], text: 'fakturor?', tools, run: async () => ({}), generate: async () => ({ text: 'Tre fakturor väntar. Raindance 08:00.', toolCalls: [{ capability: 'raindance.invoices', input: {}, output: { rows: [{}, {}, {}] } }] }) });
-    expect(answer.view?.capability).toBe('raindance.invoices');
-    expect(answer.view?.source).toBe('Raindance');
+    const answer = await modelAnswer({ system: 's', history: [], text: 'fakturor?', tools, run: async () => ({}), generate: async () => ({ text: 'Tre fakturor väntar. Ekonomisystemet 08:00.', toolCalls: [{ capability: 'finance.invoices', input: {}, output: { rows: [{}, {}, {}] } }] }) });
+    expect(answer.view?.capability).toBe('finance.invoices');
+    expect(answer.view?.source).toBe('Ekonomisystemet');
     await expect(modelAnswer({ system: 's', history: [], text: 'x', tools, run: async () => ({}), generate: async () => { throw new Error('boom'); } })).rejects.toBeInstanceOf(ModelUnavailable);
     await expect(modelAnswer({ system: 's', history: [], text: 'x', tools, run: async () => ({}), generate: async () => ({ text: '  ', toolCalls: [] }) })).rejects.toBeInstanceOf(ModelUnavailable);
   });
@@ -192,18 +192,18 @@ describe('the model path only reads, and falls back when the provider fails', ()
       expect(body.stream).toBe(true);
       seen.push(...(body.tools ?? []).map((t: { function: { name: string } }) => t.function.name));
       call += 1;
-      if (call === 1) return stream(chunk({ role: 'assistant', content: null, tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: 'heroma__whoIsOn', arguments: '{}' } }] }, null), chunk({}, 'tool_calls'));
-      return stream(chunk({ role: 'assistant', content: 'Tre på plats.' }, null), chunk({ content: ' Heroma 08:00.' }, null), chunk({}, 'stop'));
+      if (call === 1) return stream(chunk({ role: 'assistant', content: null, tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: 'hr__whoIsOn', arguments: '{}' } }] }, null), chunk({}, 'tool_calls'));
+      return stream(chunk({ role: 'assistant', content: 'Tre på plats.' }, null), chunk({ content: ' Personalsystemet 08:00.' }, null), chunk({}, 'stop'));
     };
     const generate = createGenerator({ baseUrl: 'http://fake.test/v1' }, 'open-model', fakeFetch);
     const ran: string[] = [];
     const heard: string[] = [];
     const answer = await modelAnswer({ system: 's', history: [], text: 'vem är på plats?', tools: r.tools(hillevi), run: async name => { ran.push(name); return r.run(hillevi, name, {}); }, generate, onText: text => heard.push(text) });
-    expect(ran).toEqual(['heroma.whoIsOn']);
-    expect(answer.body).toBe('Tre på plats. Heroma 08:00.');
-    expect(answer.toolCalls[0]?.capability).toBe('heroma.whoIsOn');
-    expect(heard).toEqual(['Tre på plats.', 'Tre på plats. Heroma 08:00.']);
-    expect(seen).toContain('raindance__invoices');
+    expect(ran).toEqual(['hr.whoIsOn']);
+    expect(answer.body).toBe('Tre på plats. Personalsystemet 08:00.');
+    expect(answer.toolCalls[0]?.capability).toBe('hr.whoIsOn');
+    expect(heard).toEqual(['Tre på plats.', 'Tre på plats. Personalsystemet 08:00.']);
+    expect(seen).toContain('finance__invoices');
     expect(seen.some(n => n.includes('approve'))).toBe(false);
   });
   test('a stopped turn ends the streamed call like a timeout: the generator rejects and nothing is answered (D36)', async () => {

@@ -50,7 +50,7 @@ export type WriteSafety = { strategy: 'manual' } | { strategy: 'deduplicated'; r
 
 export interface Capability<I = unknown, O = unknown> {
   execution?: WriteSafety;
-  /** `connector.verb`, stable, e.g. `raindance.approveInvoices`. */
+  /** `connector.verb`, stable, e.g. `finance.approveInvoices`. */
   name: string;
   kind: CapabilityKind;
   /** Swedish, shown as a button label. */
@@ -103,7 +103,7 @@ export interface AreaDefinition {
 export interface Connector {
   delegation?: { audience: string };
   id: string; kind: ConnectorKind;
-  /** Swedish label of the source, shown on cards: "Heroma", "Raindance". */
+  /** Swedish label of the source, shown on cards: "Personalsystemet", "Ekonomisystemet". */
   source: string;
   areas: AreaDefinition[];
   capabilities: Capability<any, any>[];
