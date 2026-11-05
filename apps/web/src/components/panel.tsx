@@ -1,7 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import type { DayView, PanelViewSpec, SearchResult, ViewRef } from '@clew/contracts';
-import { Badge, Button, DayStrip, Drawer, DrawerHeader, Heading, HStack, Icon, IconButton, Layout, LayoutContent, LayoutHeader, LayoutPanel, List, ListItem, Text, VStack, agendaItems, useAnnounce, useMediaQuery, type AgendaItem } from '@clew/ui';
-import { dayLabel } from '@clew/calendar/dates';
+import type { DayView, PanelViewSpec, SearchResult, TodayView, ViewRef, WeekView } from '@clew/contracts';
+import { Badge, Button, DayStrip, Drawer, EventList, DrawerHeader, Heading, HStack, Icon, IconButton, Layout, LayoutContent, LayoutHeader, LayoutPanel, List, ListItem, Text, VStack, agendaItems, useAnnounce, useMediaQuery, type AgendaItem } from '@clew/ui';
+import { dayLabel, timeRange } from '@clew/calendar/dates';
 import { fieldLabel, fieldValue, hiddenFields, reviewLabel, staleLabel } from './panel-labels';
 import { useConversation } from './conversation-context';
 import { AddToConversation } from './add-to-conversation';
@@ -18,8 +18,13 @@ type BodyProps = {
   inline?: boolean;
 };
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+const isoDate = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
 /** A day view (D32): the `calendar.day` capability's output, drawn as the day strip instead of rows. */
-const isDayView = (v: unknown): v is DayView => isRecord(v) && typeof v.from === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v.from) && Array.isArray(v.events) && Array.isArray(v.proposals);
+const isDayView = (v: unknown): v is DayView => isRecord(v) && isoDate(v.from) && Array.isArray(v.events) && Array.isArray(v.proposals);
+/** Today (`calendar.today`): the day's events and its free gaps, drawn as the day strip with the gaps named under it. */
+const isTodayView = (v: unknown): v is TodayView => isRecord(v) && isoDate(v.date) && Array.isArray(v.events) && Array.isArray(v.gaps);
+/** A week (`calendar.week`): the events from a Monday, without proposals (those come with a day or the page's own week), drawn as the list with a heading per day. */
+const isWeekView = (v: unknown): v is Omit<WeekView, 'proposals'> => isRecord(v) && isoDate(v.from) && Array.isArray(v.events) && !Array.isArray(v.proposals);
 /** The composite search's output (D26): hits with a connector and a staleness, plus every source's status. */
 const isSearchResult = (v: unknown): v is SearchResult => isRecord(v) && Array.isArray(v.rows) && Array.isArray(v.sources) && v.rows.every(r => isRecord(r) && typeof r.ref === 'string' && typeof r.label === 'string' && typeof r.connector === 'string');
 const scalar = (v: unknown) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
@@ -69,10 +74,13 @@ function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((vie
 export function PanelBody({ output, onOpenItem, view, source, input, onInput, hrefFor, onBack, isLoading, inline = false }: BodyProps) {
   const declared = view ?? null;
   const day = !declared && isDayView(output) ? output : null;
-  const search = !declared && !day && isSearchResult(output) ? output : null;
-  const dayItems = day ? agendaItems(day.events, day.proposals) : [];
-  const rows = !declared && !day && !search && isRecord(output) && Array.isArray(output.rows) ? output.rows as Record<string, unknown>[] : null;
-  const pairs = !declared && !day && !search && isRecord(output) ? Object.entries(output).filter(([k]) => k !== 'rows' && !hiddenFields.has(k)) : [];
+  const todayView = !declared && !day && isTodayView(output) ? output : null;
+  const week = !declared && !day && !todayView && isWeekView(output) ? output : null;
+  const calendar = day || todayView || week;
+  const search = !declared && !calendar && isSearchResult(output) ? output : null;
+  const dayItems = day ? agendaItems(day.events, day.proposals) : todayView ? agendaItems(todayView.events, []) : week ? agendaItems(week.events, []) : [];
+  const rows = !declared && !calendar && !search && isRecord(output) && Array.isArray(output.rows) ? output.rows as Record<string, unknown>[] : null;
+  const pairs = !declared && !calendar && !search && isRecord(output) ? Object.entries(output).filter(([k]) => k !== 'rows' && !hiddenFields.has(k)) : [];
   return <VStack gap={3}>
     {onBack && <HStack><Button size="sm" variant="ghost" label="Tillbaka" onClick={onBack} /></HStack>}
     {declared && <DeclaredView view={declared} output={output} {...(input ? { input } : {})} {...(onInput ? { onInput } : {})} {...(hrefFor ? { hrefFor } : {})} isLoading={!!isLoading} {...(inline ? { tableQuery: NEVER } : {})} />}
@@ -80,6 +88,12 @@ export function PanelBody({ output, onOpenItem, view, source, input, onInput, hr
       <Text type="supporting">Du tittar på {dayLabel(day.from)} i din kalender.</Text>
       <DayStrip date={day.from} items={dayItems} dayHeadingLevel={3} accessiblePath="Retur på en post öppnar den." onItemClick={onOpenItem ? item => onOpenItem(item, dayItems) : undefined} />
     </>}
+    {todayView && <>
+      <Text type="supporting">Du tittar på {dayLabel(todayView.date)} i din kalender.</Text>
+      <DayStrip date={todayView.date} items={dayItems} dayHeadingLevel={3} accessiblePath="Retur på en post öppnar den." onItemClick={onOpenItem ? item => onOpenItem(item, dayItems) : undefined} />
+      <Text type="supporting">{todayView.gaps.length ? `Lediga luckor: ${todayView.gaps.map(g => timeRange(g.start, g.end)).join(', ')}.` : 'Inga lediga luckor i dag.'}</Text>
+    </>}
+    {week && <EventList from={week.from} days={5} items={dayItems} dayHeadingLevel={3} accessiblePath="Retur på en post öppnar den." onItemClick={onOpenItem ? item => onOpenItem(item, dayItems) : undefined} />}
     {search && <SearchRows result={search} hrefFor={hrefFor} />}
     {rows && <List hasDividers density="compact">{rows.map((r, i) => {
       const key = rowTitle.find(k => r[k] !== undefined);
@@ -87,7 +101,7 @@ export function PanelBody({ output, onOpenItem, view, source, input, onInput, hr
       return <ListItem key={i} label={<Text>{key ? fieldValue(r[key]) : `Rad ${i + 1}`}</Text>} description={<Text type="supporting">{detail}</Text>} />;
     })}</List>}
     {pairs.length > 0 && <List density="compact">{pairs.map(([k, v]) => <ListItem key={k} label={<Text>{fieldLabel(k)}</Text>} description={<Text type="supporting">{fieldValue(v)}</Text>} />)}</List>}
-    {!declared && !day && !search && !rows && !pairs.length && <Text type="supporting">Inget att visa.</Text>}
+    {!declared && !calendar && !search && !rows && !pairs.length && <Text type="supporting">Inget att visa.</Text>}
     {/* A declared view and the search name where they read from themselves; a plain read says it here. */}
     {source && (rows || pairs.length > 0) && <Text type="supporting">Hämtat ur {source}. Inget av det sparas på Startsidan.</Text>}
   </VStack>;

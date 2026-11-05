@@ -80,9 +80,9 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(page.getByRole('region', { name: 'Vad vill du göra' }).getByText('Hej, Testa', { exact: true })).toBeVisible();
     const brief = page.getByRole('list', { name: 'Det som behöver dig' });
     await expect(brief.getByRole('listitem')).toHaveCount(3);
-    // A card that needs a choice first gets "Granska", which opens it; never a button that starts disabled.
-    await expect(brief.getByRole('link', { name: 'Granska 3' })).toHaveAttribute('href', '/todo?card=fakturor');
-    await expect(brief.getByRole('link', { name: 'Attestera 3 fakturor, 48 200 kr' })).toHaveAttribute('href', '/todo?card=fakturor');
+    // A card that needs a choice first gets "Granska", which opens it beside the landing; never a button that starts disabled.
+    await expect(brief.getByRole('link', { name: 'Granska 3' })).toHaveAttribute('href', '/?card=fakturor');
+    await expect(brief.getByRole('link', { name: 'Attestera 3 fakturor, 48 200 kr' })).toHaveAttribute('href', '/?card=fakturor');
     await page.getByRole('link', { name: 'Allt i Att göra' }).click();
     await expect(heading(page, 2, 'Nu · 1')).toBeVisible();
   });
@@ -152,7 +152,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(offers.getByRole('listitem').first()).toContainText('Attestera 3 fakturor, 48 200 kr');
     await expect(offers.getByRole('button', { name: /Attestera fakturor/ })).toBeVisible();
     await offers.getByRole('button', { name: /Attestera 3 fakturor/ }).click();
-    await expect(page).toHaveURL(/\/todo\?card=fakturor$/);
+    await expect(page).toHaveURL(/^[^?]*\/\?card=fakturor$/);
   });
 
   test('a brief row reaches the box by @, which with nothing typed offers only what the page shows', async ({ page, api: _ }) => {

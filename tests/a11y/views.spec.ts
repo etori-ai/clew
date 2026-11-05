@@ -105,6 +105,32 @@ test.describe('a declared view in the side panel', () => {
   });
 });
 
+test.describe('the calendar\'s own reads in the side panel', () => {
+  test.use({ viewport: desktop });
+
+  // D32: a calendar read is drawn by the calendar family, never as label/value pairs. Today is the day strip with its gaps named; the week is the list with a heading per day.
+  test('Dagens möten is the day strip with the free gaps under it', async ({ page, api: _ }) => {
+    await open(page, `/?open=calendar.today&open-title=${title('Dagens möten')}`);
+    const panel = page.getByRole('dialog', { name: 'Dagens möten' });
+    await expect(panel.getByText('Du tittar på onsdag 4 november i din kalender.')).toBeVisible();
+    await expect(panel.getByRole('group', { name: 'onsdag 4 november' })).toBeVisible();
+    await expect(panel.getByText('Rektorsmöte', { exact: true })).toBeVisible();
+    await expect(panel.getByText('Lediga luckor: 10:30–12:00.')).toBeVisible();
+    await expect(panel.getByText('events', { exact: true })).toHaveCount(0);
+    await expect(panel.getByText('gaps', { exact: true })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+  });
+
+  test('Hela veckan is the list with a heading per day', async ({ page, api: _ }) => {
+    await open(page, `/?open=calendar.week&open-title=${title('Hela veckan')}`);
+    const panel = page.getByRole('dialog', { name: 'Hela veckan' });
+    await expect(panel.getByRole('group', { name: 'Vecka 45, 2–6 november' })).toBeVisible();
+    await expect(panel.getByText('Morgonmöte ledningsgrupp')).toHaveCount(5);
+    await expect(panel.getByText('events', { exact: true })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+  });
+});
+
 test.describe('a declared view under an answer', () => {
   test.use({ viewport: desktop });
   test('the latest answer draws its view from the source, a few rows of it, and the whole view is one button away', async ({ page, api: _ }) => {

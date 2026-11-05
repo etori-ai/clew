@@ -63,7 +63,7 @@ Historical numbering collisions: **D37, D38, D39, D44, D45, D46** each identify 
 | [D47 · Occurrences, timers and attention have durable identities](D47-occurrences-timers-and-attention-have-durable-identities.md) | platform | 2026-11-05 | accepted, implemented |
 | [D48 · One next step on a surface, the rest one step away](D48-one-next-step-the-rest-one-step-away.md) | ui | 2026-11-05 | accepted, implemented |
 | [D49 · A card has one time action, and it always says when it is back](D49-a-card-has-one-time-action-and-always-says-when-it-is-back.md) | product | 2026-11-05 | accepted |
-| [D50 · The conversation is the column, and the panel holds what it is about](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md) | ui | 2026-11-05 | accepted, built 2026-11-05; the panel's tabs for what a conversation has opened, the box on the calendar page, a conversation's origin shown on a card and on a tool's page, a resizable panel, the day beside Att göra, and a manual screen-reader pass are not built |
+| [D50 · The conversation is the column, and the panel holds what it is about](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md) | ui | 2026-11-05 | accepted, built 2026-11-05, amended the same day (a brief row opens its card beside the landing); the panel's tabs for what a conversation has opened, the box on the calendar page, a conversation's origin shown on a card and on a tool's page, a resizable panel, the day beside Att göra, and a manual screen-reader pass are not built |
 | [D52 · The mocks are generic systems; nothing in the repository names a vendor](D52-the-mocks-are-generic-systems-without-vendor-names.md) | integrations | 2026-11-05 | accepted |
 
 ## Add a decision

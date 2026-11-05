@@ -1,6 +1,6 @@
 # D50 · The conversation is the column, and the panel holds what it is about
 
-**Status:** accepted, built 2026-11-05; the panel's tabs for what a conversation has opened, the box on the calendar page, a conversation's origin shown on a card and on a tool's page, a resizable panel, the day beside Att göra, and a manual screen-reader pass are not built · **Date:** 2026-11-05 · **Area:** ui
+**Status:** accepted, built 2026-11-05, amended the same day (a brief row opens its card beside the landing); the panel's tabs for what a conversation has opened, the box on the calendar page, a conversation's origin shown on a card and on a tool's page, a resizable panel, the day beside Att göra, and a manual screen-reader pass are not built · **Date:** 2026-11-05 · **Area:** ui
 
 **Decision.** Every surface has one job. The rail holds places and earlier conversations. The column shows where the
 person is: a page, or a conversation. The panel holds the one thing they keep beside the column: a view, a source or a
@@ -43,6 +43,16 @@ drawn beside it, a conversation that lives in the panel on every page ("A").
    sida" (the item D42 listed as not built).
 8. **A card beside its row** takes the id `card-<thread>`; the row keeps `thread-<thread>`. The card beside a
    transcript is not drawn again in the turn that is about it.
+
+**Amended 2026-11-05: a brief row opens its card beside the landing.** The canvas draws "Granska" on Hem leading to
+Att göra with the card in its panel, and that is how it was built: the brief's title, "Granska" and "Visa förslaget" and
+a matching "Menar du" row led to `/todo?card=`. The product owner found the change of page confusing: the person asked
+for one card and got another page with the Att göra row lit in the rail. Item 4 already names the card in the address
+the same way on the landing, so the brief now leads to `/?card=` (`withCard` in `start.tsx`), and the card opens in the
+landing's own panel, a `LayoutPanel` beside the column where it fits and the drawer where it does not; Esc closes it and
+gives the focus back to the row. "Allt i Att göra" is still the way to the list, and the bell, the reminder toast and
+the rail's search still lead to `/todo?card=`, because they are asked from outside the landing. The canvas's Hem artboard
+is out of date on this one arrow.
 
 **Why.** The review [one flow between conversations, views and the panel](../reviews/2026-11-05-ux-flow-exploration.md) and the canvas **Clew · ett sammanhängande
 flöde** (https://claude.ai/artifact/1dDLtj7R5AMmUa4qZNk6Da). The rail mixed five kinds of thing, a view opened three

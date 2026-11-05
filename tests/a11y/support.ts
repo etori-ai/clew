@@ -116,6 +116,8 @@ export class MockApi {
       this.threads.push(card); return route.fulfill({ status: 202, json: card });
     }
     if (/^\/threads\/[^/]+\/proposals\/[^/]+\/move$/.test(path) && post) { const b = request.postDataJSON() as { start: string; end: string }; const pid = path.split('/')[4]; const t = this.threads.find(t => t.id === id)!; return json(this.update(id, { proposals: t.proposals.map(p => p.id === pid ? { ...p, start: b.start, end: b.end } : p) })); }
+    if (path === '/cap/calendar.today') return json({ output: today });
+    if (path === '/cap/calendar.week') { const from = (JSON.parse(url.searchParams.get('input') ?? '{}') as { from?: string }).from ?? '2026-11-02'; return json({ output: { from, events: events(from) } }); }
     if (path === '/cap/calendar.day') { const date = (JSON.parse(url.searchParams.get('input') ?? '{}') as { date?: string }).date ?? '2026-11-04'; return json({ output: { from: date, events: events(date).filter(e => e.start.startsWith(date)), proposals: [] } }); }
     // `@` as the server answers it: with nothing typed only the context the box sends (`near`), with text everything open, the context first.
     if (path === '/objects') {

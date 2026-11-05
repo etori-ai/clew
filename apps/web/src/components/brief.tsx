@@ -6,7 +6,7 @@ import { PrimaryAction } from './card';
 type Props = {
   threads: Thread[];
   areaTitle: (id: string) => string;
-  /** Where a row's title leads: the card itself, open. */
+  /** Where a row's title leads: the card itself, open in the panel beside the landing. */
   cardHref: (threadId: string) => string;
   onChange: (thread: Thread) => void;
   onOpenCardView: (threadId: string, actionId: string) => void;

@@ -88,6 +88,26 @@ test.describe('the panel beside the page', () => {
     await expect(page).toHaveURL(/\/todo$/);
   });
 
+  test('a brief row on the landing opens its card beside the landing, not on Att göra; Esc closes it and gives the focus back to the row', async ({ page, api: _ }) => {
+    await open(page, '/');
+    const review = page.getByRole('list', { name: 'Det som behöver dig' }).getByRole('link', { name: 'Granska 3' });
+    await review.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/\?card=fakturor$/);
+    const panel = page.getByRole('complementary', { name: 'Kort' });
+    await expect(panel.locator('#card-fakturor').getByRole('button', { name: 'Attestera · 2' })).toBeVisible();
+    await expect(panel.getByRole('heading', { level: 2, name: 'Kort' })).toBeFocused();
+    // The landing is still the column: its question and its box, with the card beside them.
+    await expect(heading(page, 1, 'Vad vill du göra?')).toBeVisible();
+    await expect(composer(page)).toBeVisible();
+    await expect(page.getByRole('tab')).toHaveCount(0);
+    await expectNoAxeViolations(page);
+    await page.keyboard.press('Escape');
+    await expect(panel).toHaveCount(0);
+    await expect(page).toHaveURL(/\/$/);
+    await expect(review).toBeFocused();
+  });
+
   test('a card\'s own read lies over the card: closing the view leaves the card', async ({ page, api: _ }) => {
     await open(page, '/todo?card=omtanke');
     const card = page.getByRole('complementary', { name: 'Kort' });

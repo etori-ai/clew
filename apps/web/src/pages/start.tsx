@@ -93,8 +93,8 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
   const openId = search.get('card');
   // `via` marks a view opened from another view (a row's contact card): the panel then offers the way back to it.
   const viewHref = (capability: string, title: string, input?: Record<string, unknown>, via = false) => withView(here, search, { capability, title, input }, via);
-  /** Att göra with one card open: where a brief row's title leads. */
-  const cardHref = (threadId: string) => `/todo?card=${encodeURIComponent(threadId)}`;
+  /** Where a brief row's title, its "Granska" and a matching "Menar du" row lead: the card in the panel beside the landing (D50, amended 2026-11-05). */
+  const cardHref = (threadId: string) => withCard(here, search, threadId);
   const todoHref = (next: { tab?: TodoTab; area?: string | null }) => {
     const q = new URLSearchParams(search);
     if (next.tab) { if (next.tab === 'needs-you') q.delete('tab'); else q.set('tab', next.tab); }
