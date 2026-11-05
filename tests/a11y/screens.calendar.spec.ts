@@ -10,12 +10,12 @@ import { NEXT_WEEK } from './data';
 const out = (name: string) => `test-results/screens/${name}.png`;
 test.describe('screens', () => {
   test.skip(!process.env.CLEW_SCREENS, 'screenshots are taken on demand: CLEW_SCREENS=1');
-  for (const [name, path] of [['week', '/kalender'], ['day', '/kalender?vy=dag'], ['month', '/kalender?vy=manad'], ['week-proposals', `/kalender?datum=${NEXT_WEEK}`]] as const) {
+  for (const [name, path] of [['week', '/calendar'], ['day', '/calendar?view=day'], ['month', '/calendar?view=month'], ['week-proposals', `/calendar?date=${NEXT_WEEK}`]] as const) {
     test(`${name} desktop`, async ({ page, api: _ }) => { await page.setViewportSize(desktop); await open(page, path); await page.screenshot({ path: out(`${name}-1280`), fullPage: true }); });
     test(`${name} phone`, async ({ page, api: _ }) => { await page.setViewportSize(phone); await open(page, path); await page.screenshot({ path: out(`${name}-375`), fullPage: true }); });
   }
   test('booking dialog', async ({ page, api: _ }) => {
-    await page.setViewportSize(desktop); await open(page, '/kalender');
+    await page.setViewportSize(desktop); await open(page, '/calendar');
     await page.getByRole('button', { name: 'Ny bokning' }).click();
     const dialog = page.getByRole('dialog', { name: 'Ny bokning' });
     await dialog.getByRole('textbox', { name: /Rubrik/ }).fill('Ledningsgrupp');
@@ -23,14 +23,14 @@ test.describe('screens', () => {
     await page.screenshot({ path: out('booking-1280') });
   });
   test('event dialog', async ({ page, api: _ }) => {
-    await page.setViewportSize(desktop); await open(page, '/kalender');
+    await page.setViewportSize(desktop); await open(page, '/calendar');
     await page.locator('.clew-cal-event').first().click();
     await page.getByRole('dialog').waitFor();
     await page.waitForTimeout(500);
     await page.screenshot({ path: out('event-1280') });
   });
   test('proposal dialog moving', async ({ page, api: _ }) => {
-    await page.setViewportSize(desktop); await open(page, `/kalender?datum=${NEXT_WEEK}`);
+    await page.setViewportSize(desktop); await open(page, `/calendar?date=${NEXT_WEEK}`);
     await page.locator('.clew-cal-event-proposal').first().click();
     await page.getByRole('button', { name: 'Flytta förslaget' }).click();
     await page.waitForTimeout(500);

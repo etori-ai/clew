@@ -26,11 +26,12 @@ import { ThreadCard } from '../components/thread';
 import { Handled } from '../components/handled';
 import { usePageTitle } from '../page-title';
 
-type Pile = 'pagar' | 'inte-nu' | 'klart';
+/** The three piles (D28), named as their addresses are (D43). */
+type Pile = 'waiting' | 'snoozed' | 'handled';
 type Mode = 'fraga' | 'oversikt';
-const pileHref = (p: Pile) => p === 'klart' ? '/hanterat' : `/${p}`;
-const pileOf = (pathname: string): Pile | null => pathname === '/hanterat' ? 'klart' : pathname === '/pagar' ? 'pagar' : pathname === '/inte-nu' ? 'inte-nu' : null;
-const pileTitle: Record<Pile, string> = { pagar: 'Pågår utan dig', 'inte-nu': 'Inte nu', klart: 'Redan hanterat' };
+const pileHref = (p: Pile) => `/${p}`;
+const pileOf = (pathname: string): Pile | null => pathname === '/handled' ? 'handled' : pathname === '/waiting' ? 'waiting' : pathname === '/snoozed' ? 'snoozed' : null;
+const pileTitle: Record<Pile, string> = { waiting: 'Pågår utan dig', snoozed: 'Inte nu', handled: 'Redan hanterat' };
 const greeting = (hour: number) => hour < 10 ? 'God morgon' : hour < 18 ? 'God dag' : 'God kväll';
 /** A figure's tile asks the question the router answers without the model (D8): the figures are read, never a thread. */
 const figureQuestion: Record<Figure['id'], string> = { korttidsfranvaro: 'Hur ser korttidsfrånvaron ut?', budgetavvikelse: 'Hur ligger budgeten?', hme: 'Vad säger HME?', utvecklingssamtal: 'Hur ligger vi till med utvecklingssamtalen?' };
@@ -42,9 +43,9 @@ const EMPTY_FIGURES: Figure[] = [];
  * The start page (D34): "Vad vill du göra?" first. At `/` the box is the page, drawn as Astryx's `ai-chat-landing`
  * template (D41): the greeting and the question over the box, the person's areas as a row of toggles under it, and the
  * chosen area's standing actions as cards; the push is a brief of at most three rows above. A pull and a push produce the same card. The
- * whole picture is `/oversikt`: the greeting, Läget, the groups (Nu, Senare, Jag föreslår, Till kännedom) beside the day
- * and the piles. A conversation takes the column at `/samtal/:id` (D31). The route is the state throughout: `/omrade/:area`
- * filters the overview, `/pagar`, `/inte-nu` and `/hanterat` open a pile, `/vy/…` the side panel. Every card comes from a
+ * whole picture is `/overview`: the greeting, Läget, the groups (Nu, Senare, Jag föreslår, Till kännedom) beside the day
+ * and the piles. A conversation takes the column at `/conversations/:id` (D31). The route is the state throughout: `/areas/:area`
+ * filters the overview, `/waiting`, `/snoozed` and `/handled` open a pile, `/views/…` the side panel. Every card comes from a
  * connector through the registry; the calendar's proposal card keeps its specialised rendering, everything else is the generic card.
  */
 export function StartPage({ user, admin = false, mode }: { user: SessionUser; admin?: boolean; mode: Mode }) {
@@ -74,18 +75,18 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
   const params = useParams<{ area?: string; capability?: string; threadId?: string; actionId?: string; conversationId?: string }>();
   const [search] = useSearchParams();
   const pile = mode === 'oversikt' ? pileOf(location.pathname) : null;
-  const area = mode === 'oversikt' ? params.area ?? (search.get('omrade') || null) : null;
+  const area = mode === 'oversikt' ? params.area ?? (search.get('area') || null) : null;
   const conversationId = params.conversationId ?? null;
-  const pathFor = (a: string | null) => a === null ? '/oversikt' : `/omrade/${a}`;
+  const pathFor = (a: string | null) => a === null ? '/overview' : `/areas/${a}`;
   const home = mode === 'fraga' ? '/' : pathFor(area);
   const back = pile ? pileHref(pile) : home;
-  const withArea = (path: string) => area ? `${path}${path.includes('?') ? '&' : '?'}omrade=${encodeURIComponent(area)}` : path;
+  const withArea = (path: string) => area ? `${path}${path.includes('?') ? '&' : '?'}area=${encodeURIComponent(area)}` : path;
   // `via` marks a view opened from another view (a row's contact card): the panel then offers the way back to it.
-  const viewHref = (capability: string, title: string, input?: Record<string, unknown>, via = false) => withArea(`/vy/${capability}?titel=${encodeURIComponent(title)}` + (input && Object.keys(input).length ? `&input=${encodeURIComponent(JSON.stringify(input))}` : '') + (via ? '&via=1' : ''));
-  const cardViewHref = (threadId: string, actionId: string) => withArea(`/vy/kort/${threadId}/${actionId}`);
-  const conversationHref = (id: string) => `/samtal/${id}`;
+  const viewHref = (capability: string, title: string, input?: Record<string, unknown>, via = false) => withArea(`/views/${capability}?title=${encodeURIComponent(title)}` + (input && Object.keys(input).length ? `&input=${encodeURIComponent(JSON.stringify(input))}` : '') + (via ? '&via=1' : ''));
+  const cardViewHref = (threadId: string, actionId: string) => withArea(`/views/card/${threadId}/${actionId}`);
+  const conversationHref = (id: string) => `/conversations/${id}`;
   /** The overview with one card open: where a brief row's title leads. */
-  const cardHref = (threadId: string) => `/oversikt?kort=${encodeURIComponent(threadId)}`;
+  const cardHref = (threadId: string) => `/overview?card=${encodeURIComponent(threadId)}`;
   // An entry opened from the panel's day view (D32): the same dialog as on the calendar page, over the panel.
   const [openItem, setOpenItem] = useState<{ item: AgendaItem; dayItems: AgendaItem[] } | null>(null);
   const toast = useToast();
@@ -122,8 +123,8 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
     // A row's focus goes to its title button, the control with the ring; a card is focused as a whole, as before.
     (next?.matches('li') ? next.querySelector<HTMLElement>('button, a') ?? next : next)?.focus();
   }, [threads]);
-  // A view is addressable (integrations.md, "Answers and views"): the panel follows /vy/:capability or /vy/kort/:thread/:action.
-  const viewInput = search.get('input'), viewTitle = search.get('titel');
+  // A view is addressable (integrations.md, "Answers and views"): the panel follows /views/:capability or /views/card/:thread/:action.
+  const viewInput = search.get('input'), viewTitle = search.get('title');
   // A declared view with a search field (D38) asks again as the person types: the rows on screen stay until the next ones arrive, so the panel and the field's focus stay put.
   const capabilityView = useQuery({ ...viewQuery(params.capability ?? '', viewInput), enabled: !!params.capability, placeholderData: keepPreviousData });
   // The view on screen. Another capability's view takes its place when it has arrived, not before: the panel stays open
@@ -169,7 +170,7 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
   const older = [...threads.filter(t => t.state === 'open' && t.kind === 'question'), ...threads.filter(t => t.state !== 'open')];
   const remaining = attention ? Math.max(0, attention.budget - attention.used) : null;
   const current = useMemo(() => areas.find(a => a.id === area) ?? null, [areas, area]);
-  const hashGroup = location.hash === '#foreslar' ? 'foreslar' : location.hash === '#kannedom' ? 'kannedom' : 'behover-dig';
+  const hashGroup = location.hash === '#proposals' ? 'foreslar' : location.hash === '#notices' ? 'kannedom' : 'behover-dig';
   const railCurrent: RailCurrent = { surface: mode === 'fraga' ? 'start' : 'oversikt', group: mode === 'oversikt' && !pile && !area ? hashGroup : null, pile, area, conversationId };
   const pageTitle = view ? view.title : conversationId ? 'Samtal' : pile ? pileTitle[pile] : current?.title ?? (area ? null : mode === 'fraga' ? 'Vad vill du göra' : 'Hela bilden');
   usePageTitle(pageTitle, view || conversationId ? false : pageTitle ?? false);
@@ -178,14 +179,14 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
 
   const openCardView = (threadId: string, actionId: string) => navigate(cardViewHref(threadId, actionId));
   // Records are rows and a card is the exception (D31, Astryx structure guide): the first thread in Nu, a proposal thread, a
-  // thread in a pile, the card a brief row pointed at (`?kort=`) and every thread on a phone is a card; the rest are rows the person opens.
-  const kort = search.get('kort');
+  // thread in a pile, the card a brief row pointed at (`?card=`) and every thread on a phone is a card; the rest are rows the person opens.
+  const kort = search.get('card');
   const [opened, setOpened] = useState<Set<string>>(() => new Set(kort ? [kort] : []));
   const focusedReminder = useRef<string | null>(null);
   // A reminder navigates to the unfiltered stream. Focus after the drawer closes, including its exit
   // animation: an open modal rejects focus outside it. A later cache refresh never takes focus again.
   useEffect(() => {
-    if (!kort || !threadsQ.data || location.pathname !== '/oversikt' || focusedReminder.current === location.key) return;
+    if (!kort || !threadsQ.data || location.pathname !== '/overview' || focusedReminder.current === location.key) return;
     const focus = () => {
       if (focusedReminder.current === location.key || document.querySelector('dialog[open]')) return;
       const target = document.getElementById('thread-' + kort);
@@ -240,15 +241,15 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
     </VStack>;
   const assistantDown = !!assistant && assistant.configured && !assistant.available;
 
-  const pileContent = pile === 'klart'
+  const pileContent = pile === 'handled'
     ? <Handled threads={older} compact={mobile} onChange={replace} conversationHref={conversationHref} />
     : pile && <VStack gap={2} as="section" aria-label={pileTitle[pile]}>
       <HStack justify="between" vAlign="end" gap={2} wrap="wrap">
-        <Heading level={2} accessibilityLevel={1}>{pileTitle[pile]} · {(pile === 'pagar' ? g.waiting : g.snoozed).length}</Heading>
-        <Text type="supporting">{pile === 'pagar' ? 'Kommer tillbaka av sig själva när någon svarar.' : 'Tillbaka 06:00, eller tidigare om något händer.'}</Text>
+        <Heading level={2} accessibilityLevel={1}>{pileTitle[pile]} · {(pile === 'waiting' ? g.waiting : g.snoozed).length}</Heading>
+        <Text type="supporting">{pile === 'waiting' ? 'Kommer tillbaka av sig själva när någon svarar.' : 'Tillbaka 06:00, eller tidigare om något händer.'}</Text>
       </HStack>
-      {(pile === 'pagar' ? g.waiting : g.snoozed).length === 0 && <EmptyState title="Tomt här" description={pile === 'pagar' ? 'Inget väntar på någon annan.' : 'Inget är lagt åt sidan.'} isCompact headingLevel={2} />}
-      <VStack gap={2}>{(pile === 'pagar' ? g.waiting : g.snoozed).map(t => card(t, undefined, 2))}</VStack>
+      {(pile === 'waiting' ? g.waiting : g.snoozed).length === 0 && <EmptyState title="Tomt här" description={pile === 'waiting' ? 'Inget väntar på någon annan.' : 'Inget är lagt åt sidan.'} isCompact headingLevel={2} />}
+      <VStack gap={2}>{(pile === 'waiting' ? g.waiting : g.snoozed).map(t => card(t, undefined, 2))}</VStack>
     </VStack>;
 
   /** The groups (D34): one lead per region (the h1 above), then the groups ranked by weight at one size: Heading level 3 on the page, level 2 in the outline. */
@@ -271,14 +272,14 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
     </VStack>}
     {g.foreslar.length > 0 && <VStack gap={2} as="section" aria-label="Jag föreslår">
       <HStack justify="between" vAlign="end" gap={2} wrap="wrap">
-        <Heading id="foreslar" tabIndex={-1} level={3} accessibilityLevel={2}>Jag föreslår · {g.foreslar.length}</Heading>
+        <Heading id="proposals" tabIndex={-1} level={3} accessibilityLevel={2}>Jag föreslår · {g.foreslar.length}</Heading>
         <Text type="supporting">Ingen deadline, nej tack är ett svar</Text>
       </HStack>
       <VStack gap={2}>{records(g.foreslar)}</VStack>
     </VStack>}
     {g.kannedom.length > 0 && <VStack gap={2} as="section" aria-label="Till kännedom">
       <HStack justify="between" vAlign="end" gap={2} wrap="wrap">
-        <Heading id="kannedom" tabIndex={-1} level={3} accessibilityLevel={2}>Till kännedom · {g.kannedom.length}</Heading>
+        <Heading id="notices" tabIndex={-1} level={3} accessibilityLevel={2}>Till kännedom · {g.kannedom.length}</Heading>
         <Text type="supporting">Ingen knapp, försvinner när du läst</Text>
       </HStack>
       <VStack gap={2}>{records(g.kannedom, { notice: true })}</VStack>
@@ -296,11 +297,11 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
     <VStack gap={2} as="section" aria-label="Vid sidan av">
       <Heading level={3} accessibilityLevel={2}>Vid sidan av</Heading>
       <List hasDividers density="compact" edge="flush">
-        <ListItem href="/pagar" align="start" label={<Text weight="semibold">Pågår utan dig</Text>} endContent={<Text type="supporting">{g.waiting.length}</Text>}
+        <ListItem href="/waiting" align="start" label={<Text weight="semibold">Pågår utan dig</Text>} endContent={<Text type="supporting">{g.waiting.length}</Text>}
           description={<Text type="supporting">{g.waiting[0] ? `${g.waiting[0].title} · väntar på ${g.waiting[0].waitingOn}` : 'Inget väntar på någon annan'}</Text>} />
-        <ListItem href="/inte-nu" align="start" label={<Text weight="semibold">Inte nu</Text>} endContent={<Text type="supporting">{g.snoozed.length}</Text>}
+        <ListItem href="/snoozed" align="start" label={<Text weight="semibold">Inte nu</Text>} endContent={<Text type="supporting">{g.snoozed.length}</Text>}
           description={<Text type="supporting">Tillbaka 06:00, eller tidigare om något händer</Text>} />
-        <ListItem href="/hanterat" align="start" label={<Text weight="semibold">Klart i dag</Text>} endContent={<Text type="supporting">{done}</Text>}
+        <ListItem href="/handled" align="start" label={<Text weight="semibold">Klart i dag</Text>} endContent={<Text type="supporting">{done}</Text>}
           description={<VStack gap={1}><ProgressBar label={`Klart i dag: ${done} av ${total}`} isLabelHidden value={done} max={Math.max(total, 1)} variant="success" /><Text type="supporting">{done} av {total} sedan 06:00</Text></VStack>} />
       </List>
     </VStack>
@@ -311,7 +312,7 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
   </VStack>;
   const overview = <VStack gap={5}>
     {error && <Text as="p" role="alert" color="accent">{error}</Text>}
-    {kort && location.pathname === '/oversikt' && threadsQ.isSuccess && ![...g.nu, ...g.senare, ...g.foreslar, ...g.kannedom].some(t => t.id === kort) &&
+    {kort && location.pathname === '/overview' && threadsQ.isSuccess && ![...g.nu, ...g.senare, ...g.foreslar, ...g.kannedom].some(t => t.id === kort) &&
       <Banner status="info" title="Kortet är inte längre aktuellt på startsidan." description="Det kan ha hanterats eller lagts åt sidan." />}
     {pile ? pileContent : <>
       {current && <VStack gap={2} as="section" aria-label={`Området ${current.title}`}>
@@ -343,7 +344,7 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
   useEffect(() => { if (chosen) document.getElementById('omradets-kort')?.scrollIntoView({ block: 'nearest' }); }, [chosen]);
   const brief = [...g.nu, ...g.foreslar, ...g.senare].slice(0, 3);
   // The overview's context for `@`: the cards in view, in the area or the pile the address names.
-  const overviewNear = (pile === 'pagar' ? g.waiting : pile === 'inte-nu' ? g.snoozed : [...g.nu, ...g.senare, ...g.foreslar, ...g.kannedom]).map(t => 'thread:' + t.id);
+  const overviewNear = (pile === 'waiting' ? g.waiting : pile === 'snoozed' ? g.snoozed : [...g.nu, ...g.senare, ...g.foreslar, ...g.kannedom]).map(t => 'thread:' + t.id);
   // What the brief leaves out, in one line under it (G): the rest with their weight, what moves without the person, what is done.
   const rest = [...g.nu, ...g.senare, ...g.foreslar, ...g.kannedom].filter(t => !brief.includes(t));
   const restNu = rest.filter(t => g.nu.includes(t)).length;
@@ -359,7 +360,7 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
       <Divider />
       <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
         <Text type="supporting" hasTabularNumbers><Text as="span" weight="semibold" color="primary">I dag</Text> · {dayLine || 'inga möten'}</Text>
-        <Link href="/kalender">Hela veckan</Link>
+        <Link href="/calendar">Hela veckan</Link>
       </HStack>
     </VStack> : null;
   // The box sits on the column's centre line whenever what is above it fits in the upper half (D39): the brief and the box
@@ -372,7 +373,7 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
       {error && <Text as="p" role="alert" color="accent">{error}</Text>}
       <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
         {loadingThreads ? <Skeleton height={16} width={260} /> : <Text type="supporting">{sentence}</Text>}
-        <Link href="/oversikt">Visa hela bilden</Link>
+        <Link href="/overview">Visa hela bilden</Link>
       </HStack>
       {loadingThreads ? <BriefSkeleton compact={mobile} /> : <Brief threads={brief} areaTitle={areaTitle} cardHref={cardHref} onChange={replace} onOpenCardView={openCardView} compact={mobile} />}
       {!loadingThreads && restLine && <Text type="supporting">{restLine}</Text>}

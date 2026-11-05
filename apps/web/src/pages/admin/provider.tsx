@@ -38,8 +38,8 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
   const { run, busy, error: actionError } = useAdminAction({ toastId: 'provider:' + id });
   const removal = useAdminAction({ invalidate: [keys.admin.models], toastId: 'provider:' + id });
   const error = actionError ?? removal.error ?? readError;
-  const crumbs = (label: string) => [{ label: 'Modeller', href: '/admin/modeller' }, { label }];
-  if (missing) return <AdminShell user={user} section="modeller" crumbs={crumbs(id)}><EmptyState headingLevel={1} title="Leverantören finns inte" description="Den kan ha tagits bort." actions={<Button label="Till listan" href="/admin/modeller" />} /></AdminShell>;
+  const crumbs = (label: string) => [{ label: 'Modeller', href: '/admin/models' }, { label }];
+  if (missing) return <AdminShell user={user} section="modeller" crumbs={crumbs(id)}><EmptyState headingLevel={1} title="Leverantören finns inte" description="Den kan ha tagits bort." actions={<Button label="Till listan" href="/admin/models" />} /></AdminShell>;
   if (!p || !draft) return <AdminShell user={user} section="modeller" crumbs={crumbs(id)}>{error ? <Text as="p" role="alert" color="accent">{error}</Text> : <Text type="supporting" role="status">Läser leverantören …</Text>}</AdminShell>;
   const s = providerStatusOf(p);
   const models = (list.data?.models ?? []).filter(m => m.providerId === id);
@@ -81,7 +81,7 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
       <Heading level={2} id="provider-models">Modeller</Heading>
       {models.length === 0 ? <Text type="supporting">Inga modeller ännu. Testa leverantören för att se vilka den listar, eller lägg till en med namn.</Text>
         : <List aria-label={`Modeller hos ${p.title}`} hasDividers>
-          {models.map(m => { const ms = modelStatusOf(m); return <ListItem key={m.id} href={`/admin/modeller/${m.id}`} label={<HStack gap={2} vAlign="center"><Text weight="semibold">{m.title}</Text>{m.isDefault && <Badge variant="info" label="Standard" />}</HStack>}
+          {models.map(m => { const ms = modelStatusOf(m); return <ListItem key={m.id} href={`/admin/models/${m.id}`} label={<HStack gap={2} vAlign="center"><Text weight="semibold">{m.title}</Text>{m.isDefault && <Badge variant="info" label="Standard" />}</HStack>}
             description={<VStack gap={0} hAlign="start"><Code color="secondary">{m.model}</Code><HStack gap={1} vAlign="center"><StatusDot variant={ms.tone} label={ms.label} /><Text type="supporting">{ms.label} · {audienceLabel(m.audience)}</Text></HStack></VStack>} />; })}
         </List>}
     </VStack></Card>
@@ -111,7 +111,7 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
       </VStack>
     </Dialog>
     <AlertDialog isOpen={removeOpen} onOpenChange={setRemoveOpen} title={`Ta bort ${p.title}`} description="Leverantören och dess nyckel raderas." actionLabel="Ta bort" cancelLabel="Avbryt" isActionLoading={removal.busy}
-      onAction={() => removal.run(async () => { await api.admin.removeProvider(id); setRemoveOpen(false); client.removeQueries({ queryKey: keys.admin.provider(id) }); navigate('/admin/modeller'); return `${p.title} är borttagen.`; })} />
+      onAction={() => removal.run(async () => { await api.admin.removeProvider(id); setRemoveOpen(false); client.removeQueries({ queryKey: keys.admin.provider(id) }); navigate('/admin/models'); return `${p.title} är borttagen.`; })} />
     <AddModelDialog provider={adding ? p : null} onClose={() => setAdding(false)} />
   </AdminShell>;
 }

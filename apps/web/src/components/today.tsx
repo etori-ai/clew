@@ -12,7 +12,7 @@ export function Today({ view, compact = false }: { view: TodayView; compact?: bo
   return <VStack gap={2} as="section" aria-label="I dag">
     <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
       <Heading level={2}>I dag{compact ? '' : ` · ${dayLabel(view.date)}`}</Heading>
-      <Button variant="ghost" size="sm" label="Hela veckan" href="/kalender" />
+      <Button variant="ghost" size="sm" label="Hela veckan" href="/calendar" />
     </HStack>
     <List hasDividers density={compact ? 'compact' : 'balanced'} listStyle="none">
       {rows.length === 0 && <ListItem label="Inga inbokade möten i dag" />}

@@ -41,8 +41,8 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
   const { run, busy, error: actionError } = useAdminAction({ toastId: 'model:' + id });
   const removal = useAdminAction({ invalidate: [keys.admin.models], toastId: 'model:' + id });
   const error = actionError ?? removal.error ?? readError;
-  const crumbs = (label: string) => [{ label: 'Modeller', href: '/admin/modeller' }, { label }];
-  if (missing) return <AdminShell user={user} section="modeller" crumbs={crumbs(id)}><EmptyState headingLevel={1} title="Modellen finns inte" description="Den kan ha tagits bort." actions={<Button label="Till listan" href="/admin/modeller" />} /></AdminShell>;
+  const crumbs = (label: string) => [{ label: 'Modeller', href: '/admin/models' }, { label }];
+  if (missing) return <AdminShell user={user} section="modeller" crumbs={crumbs(id)}><EmptyState headingLevel={1} title="Modellen finns inte" description="Den kan ha tagits bort." actions={<Button label="Till listan" href="/admin/models" />} /></AdminShell>;
   if (!m || !draft) return <AdminShell user={user} section="modeller" crumbs={crumbs(id)}>{error ? <Text as="p" role="alert" color="accent">{error}</Text> : <Text type="supporting" role="status">Läser modellen …</Text>}</AdminShell>;
   const s = modelStatusOf(m);
   const down = m.state === 'enabled' && (m.health.status === 'unreachable' || m.health.status === 'key-rejected');
@@ -76,7 +76,7 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
           {report && <Findings report={report} label="Testets resultat" />}
           <MetadataList columns={mobile ? 'single' : 'multi'}>
             <MetadataListItem label="Id">{m.id}</MetadataListItem>
-            <MetadataListItem label="Leverantör"><Link href={`/admin/modeller/leverantorer/${m.providerId}`}>{m.providerTitle}</Link></MetadataListItem>
+            <MetadataListItem label="Leverantör"><Link href={`/admin/models/providers/${m.providerId}`}>{m.providerTitle}</Link></MetadataListItem>
             <MetadataListItem label="Vem kan välja den">{audienceLabel(m.audience)}</MetadataListItem>
             <MetadataListItem label="Standard">{m.isDefault ? 'Ja' : 'Nej'}</MetadataListItem>
             <MetadataListItem label="Leverantörens hälsa">{providerHealthLabel[m.health.status]} · <Timestamp value={m.health.at} format="auto" /></MetadataListItem>
@@ -111,7 +111,7 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
       </Section>
     </Card>
     <AlertDialog isOpen={removeOpen} onOpenChange={setRemoveOpen} title={`Ta bort ${m.title}`} description={`Modellen försvinner ur frågerutan. Den som valt den får standardmodellen i stället. Svar som den redan skrivit finns kvar.`} actionLabel="Ta bort" cancelLabel="Avbryt" isActionLoading={removal.busy}
-      onAction={() => removal.run(async () => { await api.admin.removeModel(id); setRemoveOpen(false); client.removeQueries({ queryKey: keys.admin.model(id) }); navigate('/admin/modeller'); return `${m.title} är borttagen.`; })} />
+      onAction={() => removal.run(async () => { await api.admin.removeModel(id); setRemoveOpen(false); client.removeQueries({ queryKey: keys.admin.model(id) }); navigate('/admin/models'); return `${m.title} är borttagen.`; })} />
   </AdminShell>;
 }
 /** The audit rows about one model or provider, newest first. Read-only. */

@@ -1,9 +1,9 @@
 import { announcements, composer, desktop, expect, expectNoAxeViolations, narrow, open, reflowProblems, test } from './support';
 
 const title = (text: string) => encodeURIComponent(text);
-const directory = `/vy/telefonbok.directory?titel=${title('Sök i telefonboken')}`;
-const team = `/vy/telefonbok.team?titel=${title('Mitt teams kontaktlista')}`;
-const card = `/vy/telefonbok.person?titel=Kontaktkort&input=${encodeURIComponent(JSON.stringify({ ref: 'person:p1003' }))}`;
+const directory = `/views/telefonbok.directory?title=${title('Sök i telefonboken')}`;
+const team = `/views/telefonbok.team?title=${title('Mitt teams kontaktlista')}`;
+const card = `/views/telefonbok.person?title=Kontaktkort&input=${encodeURIComponent(JSON.stringify({ ref: 'person:p1003' }))}`;
 
 /**
  * Declared views (D38): a connector says what its output holds and Startsidan draws it. The phone book is the example:
@@ -94,7 +94,7 @@ test.describe('a declared view in the side panel', () => {
   });
 
   test('a name typed in the box finds the person: the hit opens the contact card here, and has no review date to miss', async ({ page, api: _ }) => {
-    await open(page, `/vy/clew.search?titel=${title('Källor')}&input=${encodeURIComponent(JSON.stringify({ query: 'Anna Lindqvist' }))}`);
+    await open(page, `/views/clew.search?title=${title('Källor')}&input=${encodeURIComponent(JSON.stringify({ query: 'Anna Lindqvist' }))}`);
     const hits = page.getByRole('dialog', { name: 'Källor' });
     await expect(hits.getByText('Lärare · Bergsåkers skola')).toBeVisible();
     await expect(hits.getByText('Granskningsdatum saknas')).toHaveCount(0);

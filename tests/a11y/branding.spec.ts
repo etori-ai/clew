@@ -1,7 +1,7 @@
 import { desktop, expect, narrow, openNav, reflowProblems, test } from './support';
 import { a11yBrandProfile, brandingFixtures } from './branding-fixtures';
 
-const surfaces = [['start', '/'], ['calendar', '/kalender'], ['administration', '/admin/anslutningar']] as const;
+const surfaces = [['start', '/'], ['calendar', '/calendar'], ['administration', '/admin/connectors']] as const;
 const profile = a11yBrandProfile(process.env.CLEW_A11Y_BRAND_PROFILE);
 const fixture = brandingFixtures[profile];
 const expectedLogo = fixture.expected.logo;
@@ -63,7 +63,7 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
   if (expectedLogo) test('a failed image request leaves a named, working home link', async ({ page, api: _ }) => {
     let failedRequests = 0;
     await page.route(`**${expectedLogo.src}`, route => { failedRequests++; return route.abort(); });
-    await page.goto('/kalender');
+    await page.goto('/calendar');
     const nav = await openNav(page);
     const heading = nav.locator('.astryx-side-nav-heading');
     const home = nav.getByRole('link', { name: /Startsidan/ });

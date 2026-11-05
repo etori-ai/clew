@@ -130,7 +130,7 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
         });
         return;
       }
-      // A panel view has an address: /vy/kort/:thread/:action, so it survives reload and the back button closes it.
+      // A panel view has an address: /views/card/:thread/:action, so it survives reload and the back button closes it.
       onOpenCardView(thread.id, action.id);
       return;
     }

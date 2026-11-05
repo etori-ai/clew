@@ -124,7 +124,7 @@ export function Suggestions({ viewHref, cardHref }: { viewHref: (capability: str
     ...cards.map(t => ({ key: 'card:' + t.id, label: t.title, detail: `${t.trigger.source} · öppnar kortet`, go: () => navigate(cardHref(t.id)) })),
     ...completions.do.filter(d => hits(d.text)).map(d => ({ key: 'do:' + d.capability, label: d.text, detail: `${d.source} · ${d.kind === 'read' ? 'öppnar vyn' : 'öppnar kortet'}`, go: () => d.kind === 'read' ? navigate(viewHref(d.capability, d.text)) : talk.ask(d.text) })),
     ...completions.ask.filter(a => hits(a.text)).map(a => ({ key: 'ask:' + a.capability, label: a.text, detail: `${a.source} · svarar utan modellen`, go: () => talk.ask(a.text) })),
-    ...completions.recent.filter(r => hits(r.title)).map(r => ({ key: 'recent:' + r.conversationId, label: `Fortsätt samtalet · ${r.title}`, detail: when(r.at), go: () => navigate(`/samtal/${r.conversationId}`) })),
+    ...completions.recent.filter(r => hits(r.title)).map(r => ({ key: 'recent:' + r.conversationId, label: `Fortsätt samtalet · ${r.title}`, detail: when(r.at), go: () => navigate(`/conversations/${r.conversationId}`) })),
   ].slice(0, 4);
   if (rows.length === 0) return null;
   return <List density="compact" hasDividers header={<Text type="supporting" weight="semibold">Menar du</Text>}>

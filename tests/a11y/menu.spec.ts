@@ -52,7 +52,7 @@ test.describe('Verktyg in the menu', () => {
 
   test('from the calendar the row leads to the tool\'s page too', async ({ page, api }) => {
     api.menu = [menuRow];
-    await open(page, '/kalender');
+    await open(page, '/calendar');
     await rail(page).getByRole('link', { name: 'Telefonbok' }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Telefonbok' })).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -123,7 +123,7 @@ test.describe('the administrator chooses which views are in the menu', () => {
   test.use({ viewport: desktop });
   test('every view that can be a tool has its own switch under Områden; choosing one is said aloud and shown on the overview', async ({ page, api }) => {
     api.admin = true;
-    await open(page, '/admin/anslutningar/hello');
+    await open(page, '/admin/connectors/hello');
     await expect(page.getByText('Ingen vy vald')).toBeVisible();
     await page.getByRole('tab', { name: 'Områden' }).click();
     const tools = page.getByRole('list', { name: 'Verktyg i menyn' });
@@ -146,7 +146,7 @@ test.describe('the administrator chooses which views are in the menu', () => {
   test('the list of views is the same on a phone, with no sideways scrolling', async ({ page, api }) => {
     api.admin = true;
     await page.setViewportSize(narrow);
-    await open(page, '/admin/anslutningar/hello');
+    await open(page, '/admin/connectors/hello');
     await page.getByRole('button', { name: /^Visa:/ }).click();
     await page.getByRole('menuitem', { name: 'Områden' }).click();
     const tools = page.getByRole('list', { name: 'Verktyg i menyn' });
@@ -158,7 +158,7 @@ test.describe('the administrator chooses which views are in the menu', () => {
   });
   test('a connector with no view that can be a tool says so, and adding a connector does not ask about the menu', async ({ page, api }) => {
     api.admin = true;
-    await open(page, '/admin/anslutningar/raindance');
+    await open(page, '/admin/connectors/raindance');
     await expect(page.getByText('Ingen vy kan ligga i menyn')).toBeVisible();
     await page.getByRole('tab', { name: 'Områden' }).click();
     await expect(page.getByText('Ingen av anslutningens vyer kan ligga i menyn.')).toBeVisible();

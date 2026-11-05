@@ -3,14 +3,14 @@ import { answer, composer, desktop, expect, focused, hiddenFocusStops, open, sno
 test.use({ viewport: desktop });
 
 test.describe('2.4.7 focus visible', () => {
-  for (const path of ['/', '/oversikt', '/hanterat', '/kalender']) test(`every stop on ${path} shows a focus ring`, async ({ page, api: _ }) => {
+  for (const path of ['/', '/overview', '/handled', '/calendar']) test(`every stop on ${path} shows a focus ring`, async ({ page, api: _ }) => {
     await open(page, path);
     const { unmarked } = await hiddenFocusStops(page);
     expect(unmarked).toEqual([]);
   });
 
   test('a card that receives focus from the page shows it', async ({ page, api: _ }) => {
-    await open(page, '/oversikt');
+    await open(page, '/overview');
     await page.getByRole('button', { name: 'Inte nu', exact: true }).first().focus();
     await page.keyboard.press('Enter');
     await page.getByRole('menuitem', { name: /^I morgon/ }).focus();
@@ -24,7 +24,7 @@ test.describe('2.4.7 focus visible', () => {
 
 test.describe('2.4.3 focus order', () => {
   test('regaining the window keeps focus where it was', async ({ page, api }) => {
-    await open(page, '/oversikt');
+    await open(page, '/overview');
     const button = page.getByRole('button', { name: 'Inte nu', exact: true }).first();
     await button.focus();
     api.sessionDelay = 200;
@@ -34,7 +34,7 @@ test.describe('2.4.3 focus order', () => {
   });
 
   test('a collapsed card says it is collapsed and takes focus to its content', async ({ page, api: _ }) => {
-    await open(page, '/oversikt');
+    await open(page, '/overview');
     const title = 'Omtankesamtal med Anna Lindqvist';
     const expand = page.getByRole('button', { name: title, exact: true });
     await expect(expand).toHaveAttribute('aria-expanded', 'false');
@@ -45,7 +45,7 @@ test.describe('2.4.3 focus order', () => {
   });
 
   test('Inte nu moves focus to the next card instead of losing it', async ({ page, api: _ }) => {
-    await open(page, '/oversikt');
+    await open(page, '/overview');
     await page.getByRole('button', { name: 'Inte nu', exact: true }).first().focus();
     await page.keyboard.press('Enter');
     await page.getByRole('menuitem', { name: /^I morgon/ }).focus();
@@ -56,7 +56,7 @@ test.describe('2.4.3 focus order', () => {
 
   test('Ångra in the toast stays available and reachable by keyboard', async ({ page, api: _ }) => {
     await page.clock.install({ time: new Date('2026-11-04T08:00:00.000Z') });
-    await open(page, '/oversikt');
+    await open(page, '/overview');
     await snoozeFirst(page);
     const undo = page.getByRole('button', { name: 'Ångra' });
     await expect(undo).toBeVisible();
@@ -70,7 +70,7 @@ test.describe('2.4.3 focus order', () => {
   });
 
   test('the side panel can be closed with a button and hands focus back', async ({ page, api: _ }) => {
-    await open(page, '/omrade/personal');
+    await open(page, '/areas/personal');
     const trigger = page.getByRole('button', { name: 'Vem är på plats?' });
     await trigger.focus();
     await page.keyboard.press('Enter');
@@ -95,7 +95,7 @@ test.describe('2.4.3 focus order', () => {
 
 test.describe('D26 a source becomes a chip', () => {
   test('Lägg till i samtalet in the sources view puts the passage in the row\'s drawer and says so on the row', async ({ page, api: _ }) => {
-    await open(page, '/vy/clew.search?titel=K%C3%A4llor&input=%7B%22query%22%3A%22fall%22%7D');
+    await open(page, '/views/clew.search?title=K%C3%A4llor&input=%7B%22query%22%3A%22fall%22%7D');
     const panel = page.getByRole('dialog');
     const add = panel.getByRole('list', { name: 'Källor' }).getByRole('listitem').nth(0).getByRole('button', { name: 'Lägg till i samtalet' });
     await add.focus();
@@ -108,7 +108,7 @@ test.describe('D26 a source becomes a chip', () => {
 
 test.describe('D29 the Inte nu picker', () => {
   test('every row says when the card comes back, and the free text has a label and a live answer', async ({ page, api: _ }) => {
-    await open(page, '/oversikt');
+    await open(page, '/overview');
     await page.getByRole('button', { name: 'Inte nu', exact: true }).first().click();
     const menu = page.getByRole('menu');
     await expect(menu).toBeVisible();

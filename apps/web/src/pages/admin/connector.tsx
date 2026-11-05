@@ -55,8 +55,8 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
   const { run, busy, error: actionError } = useAdminAction({ invalidate: [keys.admin.all, keys.areas], toastId: 'connector:' + id });
   const removal = useAdminAction({ invalidate: [keys.admin.connectors], toastId: 'connector:' + id });
   const error = actionError ?? removal.error ?? readError;
-  if (missing) return <AdminShell user={user} crumbs={[{ label: 'Anslutna system', href: '/admin/anslutningar' }, { label: id }]}><EmptyState headingLevel={1} title="Anslutningen finns inte" description="Den kan ha tagits bort." actions={<Button label="Till listan" href="/admin/anslutningar" />} /></AdminShell>;
-  if (!c) return <AdminShell user={user} crumbs={[{ label: 'Anslutna system', href: '/admin/anslutningar' }, { label: id }]}>{error ? <Text as="p" role="alert" color="accent">{error}</Text> : <Text type="supporting" role="status">Läser anslutningen …</Text>}</AdminShell>;
+  if (missing) return <AdminShell user={user} crumbs={[{ label: 'Anslutna system', href: '/admin/connectors' }, { label: id }]}><EmptyState headingLevel={1} title="Anslutningen finns inte" description="Den kan ha tagits bort." actions={<Button label="Till listan" href="/admin/connectors" />} /></AdminShell>;
+  if (!c) return <AdminShell user={user} crumbs={[{ label: 'Anslutna system', href: '/admin/connectors' }, { label: id }]}>{error ? <Text as="p" role="alert" color="accent">{error}</Text> : <Text type="supporting" role="status">Läser anslutningen …</Text>}</AdminShell>;
   const s = statusOf(c);
   const unhealthy = c.state === 'enabled' && !c.bundled && c.health.status !== 'ok';
   const panel = (t: TabId) => `panel-${t}`;
@@ -74,7 +74,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
     { key: 'tool', header: 'Assistent', renderCell: (r: CapRow) => <ToolSwitch row={r.c} toolsEnabled={c.toolsEnabled} onChange={on => setCap(r.name, capPatch(on, 'model'))} /> },
   ];
   const removeLabel = `Ta bort ${c.source}`;
-  return <AdminShell user={user} crumbs={[{ label: 'Anslutna system', href: '/admin/anslutningar' }, { label: c.source }]}>
+  return <AdminShell user={user} crumbs={[{ label: 'Anslutna system', href: '/admin/connectors' }, { label: c.source }]}>
     <PageLead title={<HStack gap={2} vAlign="end" wrap="wrap"><Heading level={1}>{c.source}</Heading><Text type="supporting">{[c.kind ? kindLabel[c.kind] : null, c.bundled ? 'inbyggd' : null].filter(Boolean).join(' · ')}</Text></HStack>}
       actions={<Switch label={c.state === 'enabled' ? 'På' : 'Av'} labelPosition="start" value={c.state === 'enabled'} isDisabled={busy || (c.state === 'draft' && !c.counts.capabilities)} disabledMessage="Utkastet saknar manifest: kontrollera anslutningen först." changeAction={on => run(async () => { await api.admin.update(id, { state: on ? 'enabled' : 'disabled' }); return `${c.source} ${on ? 'är på' : 'är avstängd'}.`; })} />}>
       <HStack gap={1} vAlign="center" wrap="wrap"><StatusDot variant={s.tone} label={s.label} /><Text color="secondary">{s.label}{c.bundled ? ' · körs i Clews egen process' : c.url ? ` · ${c.url}` : ''}</Text></HStack>
@@ -180,6 +180,6 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
       </DialogFrame>
     </Dialog>
     <AlertDialog isOpen={removeOpen} onOpenChange={setRemoveOpen} title={removeLabel} description={`Anslutningen försvinner från alla sidor och dess öppna kort stängs. Kvitton i Redan hanterat finns kvar. Nyckeln raderas.`} actionLabel="Ta bort" cancelLabel="Avbryt" isActionLoading={removal.busy}
-      onAction={() => removal.run(async () => { const r = await api.admin.remove(id); setRemoveOpen(false); client.removeQueries({ queryKey: keys.admin.connector(id) }); navigate('/admin/anslutningar'); return `${c.source} är borttagen${r.closedCards ? `, ${r.closedCards} kort stängdes` : ''}.`; })} />
+      onAction={() => removal.run(async () => { const r = await api.admin.remove(id); setRemoveOpen(false); client.removeQueries({ queryKey: keys.admin.connector(id) }); navigate('/admin/connectors'); return `${c.source} är borttagen${r.closedCards ? `, ${r.closedCards} kort stängdes` : ''}.`; })} />
   </AdminShell>;
 }

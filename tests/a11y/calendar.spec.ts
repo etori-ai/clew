@@ -6,7 +6,7 @@ import { NEXT_WEEK } from './data';
  * from the grid, and a proposal moved without a mouse. The grid itself is a picture (FullCalendar's time grid is not a
  * WAI-ARIA grid); every action here goes through a dialog, which is the path these tests take.
  */
-const views = [['the day', '/kalender?vy=dag'], ['the week', '/kalender?vy=vecka'], ['the month', '/kalender?vy=manad']] as const;
+const views = [['the day', '/calendar?view=day'], ['the week', '/calendar?view=week'], ['the month', '/calendar?view=month']] as const;
 
 test.describe('the three views', () => {
   for (const viewport of [desktop, phone]) for (const [name, path] of views) test(`${name} at ${viewport.width} px has no axe violations`, async ({ page, api: _ }) => {
@@ -21,12 +21,12 @@ test.describe('the three views', () => {
   });
   test('the view switch is one choice of three; the title, the address and the spoken page follow it', async ({ page, api: _ }) => {
     await page.setViewportSize(desktop);
-    await open(page, '/kalender');
+    await open(page, '/calendar');
     const group = page.getByRole('radiogroup', { name: 'Vy' });
     await expect(group.getByRole('radio', { name: 'Vecka' })).toBeChecked();
     await group.getByRole('radio', { name: 'Dag' }).click();
     await expect(page).toHaveTitle('Onsdag 4 november · Kalender · Startsidan');
-    await expect(page).toHaveURL(/vy=dag/);
+    await expect(page).toHaveURL(/view=day/);
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Dagvy'));
     await group.getByRole('radio', { name: 'Månad' }).click();
     await expect(page).toHaveTitle('November 2026 · Kalender · Startsidan');
@@ -34,7 +34,7 @@ test.describe('the three views', () => {
   });
   test('the phone week is a list with a heading per day, and the day view fits one column', async ({ page, api: _ }) => {
     await page.setViewportSize(phone);
-    await open(page, '/kalender');
+    await open(page, '/calendar');
     for (const day of ['mån 2 nov', 'tis 3 nov', 'ons 4 nov', 'tors 5 nov', 'fre 6 nov']) await expect(heading(page, 2, day)).toBeVisible();
     // The view switch is an adaptive menu on a phone (D31 §5).
     await page.getByRole('button', { name: 'Vy: Vecka' }).click();
@@ -47,7 +47,7 @@ test.describe('the three views', () => {
 test.describe('a booking of one\'s own', () => {
   test('Ny bokning is a form dialog with labelled fields; Escape closes it and focus returns to the button', async ({ page, api: _ }) => {
     await page.setViewportSize(desktop);
-    await open(page, '/kalender');
+    await open(page, '/calendar');
     await page.getByRole('button', { name: 'Ny bokning' }).focus();
     await page.keyboard.press('Enter');
     const dialog = page.getByRole('dialog', { name: 'Ny bokning' });
@@ -68,7 +68,7 @@ test.describe('a booking of one\'s own', () => {
   });
   test('a booking is told in a toast and the week is read again', async ({ page, api: _ }) => {
     await page.setViewportSize(desktop);
-    await open(page, '/kalender');
+    await open(page, '/calendar');
     await page.getByRole('button', { name: 'Ny bokning' }).click();
     const dialog = page.getByRole('dialog', { name: 'Ny bokning' });
     await dialog.getByRole('textbox', { name: /Rubrik/ }).fill('Ledningsgrupp');
@@ -81,7 +81,7 @@ test.describe('a booking of one\'s own', () => {
 test.describe('an entry opened from the grid', () => {
   test('Enter on a meeting opens its details with the day around it; Escape returns focus to the meeting', async ({ page, api: _ }) => {
     await page.setViewportSize(desktop);
-    await open(page, '/kalender');
+    await open(page, '/calendar');
     const block = page.locator('.clew-cal-event').first();
     await block.focus();
     await page.keyboard.press('Enter');
@@ -97,7 +97,7 @@ test.describe('an entry opened from the grid', () => {
   });
   test('cancelling asks once, inline, and is spoken when done', async ({ page, api: _ }) => {
     await page.setViewportSize(desktop);
-    await open(page, '/kalender');
+    await open(page, '/calendar');
     await page.locator('.clew-cal-event').first().click();
     const dialog = page.getByRole('dialog', { name: 'Morgonmöte ledningsgrupp' });
     await dialog.getByRole('button', { name: 'Ställ in' }).click();
@@ -109,7 +109,7 @@ test.describe('an entry opened from the grid', () => {
   });
   test('a proposal is moved from the keyboard, never only by drag', async ({ page, api: _ }) => {
     await page.setViewportSize(desktop);
-    await open(page, `/kalender?datum=${NEXT_WEEK}`);
+    await open(page, `/calendar?date=${NEXT_WEEK}`);
     const block = page.locator('.clew-cal-event-proposal').first();
     await block.focus();
     await page.keyboard.press('Enter');

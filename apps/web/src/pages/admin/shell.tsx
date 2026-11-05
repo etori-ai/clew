@@ -16,8 +16,8 @@ export function AdminShell({ user, crumbs, children, section = 'anslutningar' }:
   return <Shell user={user}
     nav={{ sections: <>
       <SideNavSection title="Anslutningar">
-        <SideNavItem label="Anslutna system" isSelected={section === 'anslutningar'} href="/admin/anslutningar" />
-        <SideNavItem label="Modeller" isSelected={section === 'modeller'} href="/admin/modeller" />
+        <SideNavItem label="Anslutna system" isSelected={section === 'anslutningar'} href="/admin/connectors" />
+        <SideNavItem label="Modeller" isSelected={section === 'modeller'} href="/admin/models" />
       </SideNavSection>
       <SideNavSection title="Om administrationen" isHeaderHidden>
         <Text type="supporting" as="p">Du styr vilka system Startsidan är ansluten till, vilka modeller som svarar i frågerutan och vem som ser dem. Vad var och en får göra i ett system avgör systemet självt.</Text>
@@ -29,7 +29,7 @@ export function AdminShell({ user, crumbs, children, section = 'anslutningar' }:
       <VStack gap={5}>
         <Breadcrumbs label="Du är här" variant="supporting">
           <BreadcrumbItem href="/">Startsidan</BreadcrumbItem>
-          <BreadcrumbItem href="/admin/anslutningar">Administration</BreadcrumbItem>
+          <BreadcrumbItem href="/admin/connectors">Administration</BreadcrumbItem>
           {crumbs.map((c, i) => <BreadcrumbItem key={i} href={c.href} isCurrent={i === crumbs.length - 1}>{c.label}</BreadcrumbItem>)}
         </Breadcrumbs>
         {children}

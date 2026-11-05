@@ -8,12 +8,12 @@ import { composer, desktop, open, phone, test } from './support';
 const out = (name: string) => `test-results/screens/${name}.png`;
 test.describe('screens', () => {
   test.skip(!process.env.CLEW_SCREENS, 'screenshots are taken on demand: CLEW_SCREENS=1');
-  for (const [name, path] of [['models', '/admin/modeller'], ['model', '/admin/modeller/gpt-oss-20b'], ['provider', '/admin/modeller/leverantorer/pilot']] as const) {
+  for (const [name, path] of [['models', '/admin/models'], ['model', '/admin/models/gpt-oss-20b'], ['provider', '/admin/models/providers/pilot']] as const) {
     test(`${name} desktop`, async ({ page, api }) => { api.admin = true; await page.setViewportSize(desktop); await open(page, path); await page.screenshot({ path: out(`${name}-1280`), fullPage: true }); });
     test(`${name} phone`, async ({ page, api }) => { api.admin = true; await page.setViewportSize(phone); await open(page, path); await page.screenshot({ path: out(`${name}-375`), fullPage: true }); });
   }
   test('add provider dialog', async ({ page, api }) => {
-    api.admin = true; await page.setViewportSize(desktop); await open(page, '/admin/modeller');
+    api.admin = true; await page.setViewportSize(desktop); await open(page, '/admin/models');
     await page.getByRole('button', { name: 'Lägg till leverantör' }).click();
     const dialog = page.getByRole('dialog');
     await dialog.getByRole('textbox', { name: /^Namn/ }).fill('Egen server');

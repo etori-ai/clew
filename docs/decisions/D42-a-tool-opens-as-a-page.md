@@ -26,7 +26,7 @@ panel over the start page.
 6. **The row is current on its page** (`RailCurrent.surface: 'verktyg'`), as Kalender is on its own. A view opened in
    the panel no longer marks a row.
 7. **Where the panel stays.** A view opened from inside something else, a chip under the box, an area's card, an
-   answer, a search hit or a card's button, still opens in the side panel at `/vy/:capability`, over where the
+   answer, a search hit or a card's button, still opens in the side panel at `/views/:capability`, over where the
    person is. That is the same split the calendar has: Kalender is a page, and a day asked for in a conversation is the
    day strip in the panel (D32).
 8. **Table or list.** A table is drawn as a table when the window is at least 1360 px wide; narrower, the same rows are
@@ -43,7 +43,7 @@ current, and it should hold the whole width for a table of seven columns. The pa
 what one is doing. A drawer opened from the menu covered the page behind it for no reason, and from the calendar it
 first had to load the start page to have something to lie over.
 
-*Why a new address instead of D40's "the row's address would stay the same".* `/vy/:capability` is
+*Why a new address instead of D40's "the row's address would stay the same".* `/views/:capability` (`/vy/…` then) is
 what a chip, an answer and a search hit open, in the panel, and that must keep working (item 7). One address cannot be
 both a page and a panel over another page.
 

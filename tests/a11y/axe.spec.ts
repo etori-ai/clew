@@ -1,7 +1,7 @@
 import { answer, composer, desktop, expect, expectNoAxeViolations, open, phone, snoozeFirst, test } from './support';
 
 /** axe over every route and over the states a route can reach, at both layouts. */
-const routes = [['start', '/'], ['the overview', '/oversikt'], ['an area', '/omrade/personal'], ['the calendar lens', '/omrade/kalender'], ['the log', '/hanterat'], ['the calendar page', '/kalender']] as const;
+const routes = [['start', '/'], ['the overview', '/overview'], ['an area', '/areas/personal'], ['the calendar lens', '/areas/kalender'], ['the log', '/handled'], ['the calendar page', '/calendar']] as const;
 
 for (const [layout, viewport] of [['desktop', desktop], ['phone', phone]] as const) test.describe(layout, () => {
   test.use({ viewport });
@@ -44,13 +44,13 @@ for (const [layout, viewport] of [['desktop', desktop], ['phone', phone]] as con
   });
 
   test('the side panel has no axe violations', async ({ page, api: _ }) => {
-    await open(page, '/vy/heroma.whoIsOn?titel=Vem%20%C3%A4r%20p%C3%A5%20plats%3F');
+    await open(page, '/views/heroma.whoIsOn?title=Vem%20%C3%A4r%20p%C3%A5%20plats%3F');
     await expect(page.getByRole('dialog')).toBeVisible();
     await expectNoAxeViolations(page);
   });
 
   test('the sources view has no axe violations', async ({ page, api: _ }) => {
-    await open(page, '/vy/clew.search?titel=K%C3%A4llor&input=%7B%22query%22%3A%22fall%22%7D');
+    await open(page, '/views/clew.search?title=K%C3%A4llor&input=%7B%22query%22%3A%22fall%22%7D');
     await expect(page.getByRole('dialog').getByRole('list', { name: 'Källor' })).toBeVisible();
     await expectNoAxeViolations(page);
   });
@@ -65,7 +65,7 @@ for (const [layout, viewport] of [['desktop', desktop], ['phone', phone]] as con
   });
 
   test('a toast has no axe violations', async ({ page, api: _ }) => {
-    await open(page, '/oversikt');
+    await open(page, '/overview');
     await snoozeFirst(page);
     await expect(page.getByRole('region', { name: 'Aviseringar' })).toBeVisible();
     await expectNoAxeViolations(page);
@@ -73,10 +73,10 @@ for (const [layout, viewport] of [['desktop', desktop], ['phone', phone]] as con
 
   test('every card opened has no axe violations', async ({ page, api: _ }) => {
     // The piles are rows in the rail (D34): Pågår lists what waits, each row a link to the pile.
-    await open(page, '/pagar');
+    await open(page, '/waiting');
     await expect(page.getByText('Skyddsombudet har fått ärendet.')).toBeVisible();
     await expectNoAxeViolations(page);
-    await open(page, '/oversikt');
+    await open(page, '/overview');
     for (const title of ['Omtankesamtal med Anna Lindqvist', 'Ledighetsansökan från Johan Byström']) {
       const expand = page.getByRole('button', { name: title, exact: true });
       if (await expand.isVisible()) await expand.click();

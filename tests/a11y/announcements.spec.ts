@@ -4,7 +4,7 @@ test.use({ viewport: desktop });
 
 test.describe('4.1.3 status messages', () => {
   test('a week change is spoken', async ({ page, api: _ }) => {
-    await open(page, '/kalender');
+    await open(page, '/calendar');
     await page.getByRole('button', { name: 'Nästa vecka' }).click();
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Vecka 46'));
   });
@@ -27,7 +27,7 @@ test.describe('4.1.3 status messages', () => {
   });
 
   test('a card leaving the stream is spoken with its way back', async ({ page, api: _ }) => {
-    await open(page, '/oversikt');
+    await open(page, '/overview');
     await snoozeFirst(page);
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Tas upp i morgon 06:00 i stället.'));
   });

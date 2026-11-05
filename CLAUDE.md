@@ -14,7 +14,7 @@ Clew is an open source system that will be shared with other municipalities and 
 
 ## Working rules carried over from startsidan
 
-- Swedish only where a person reads it in the product: UI text and API error messages shown in the UI. Everything else is English: identifiers, contracts, comments, console output, script and CLI output, infrastructure messages, thrown configuration errors, documentation. Swedish commit subjects.
+- Swedish only where a person reads it in the product: UI text and API error messages shown in the UI. Everything else is English: identifiers, addresses in the browser (paths, query parameters and their values, anchors; D43), contracts, comments, console output, script and CLI output, infrastructure messages, thrown configuration errors, documentation. Swedish commit subjects.
 - Bun with exact versions and a frozen lockfile as package manager, script runner and test runner. The server runtime is Node via `tsx` (D16, 2026-11-04; the Temporal worker needs Node). Temporal runs the durable timers (D17).
 - Commands run inside the devcontainer: `docker exec -w /workspace clew-app-1 …` (see `README.md`).
 - Server-side enforcement of identity and scope. No credentials, tokens or trusted identity context in the browser bundle.

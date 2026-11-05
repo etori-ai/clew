@@ -44,7 +44,7 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
   const toggle = (c: ConnectorSummary) => <Switch size="sm" label={`${c.source} på`} isLabelHidden value={c.state === 'enabled'} changeAction={on => flip(c, on)} />;
   const name = (c: ConnectorSummary) => <VStack gap={0}><Text weight="semibold">{c.source}</Text><Text type="supporting">{c.id}{c.bundled ? ' · inbyggd' : ''}{c.kind ? ` · ${kindLabel[c.kind].toLowerCase()}` : ''}</Text></VStack>;
   const columns = [
-    { key: 'system', header: 'System', width: proportional(1, { minWidth: 200 }), renderCell: (r: Row) => <VStack gap={0}><Link href={`/admin/anslutningar/${r.c.id}`} weight="semibold">{r.c.source}</Link><Text type="supporting">{r.c.id}{r.c.bundled ? ' · inbyggd' : ''}</Text></VStack> },
+    { key: 'system', header: 'System', width: proportional(1, { minWidth: 200 }), renderCell: (r: Row) => <VStack gap={0}><Link href={`/admin/connectors/${r.c.id}`} weight="semibold">{r.c.source}</Link><Text type="supporting">{r.c.id}{r.c.bundled ? ' · inbyggd' : ''}</Text></VStack> },
     { key: 'status', header: 'Status', width: pixel(150), renderCell: (r: Row) => statusText(r.c) },
     { key: 'audience', header: 'Vem ser det', width: proportional(1, { minWidth: 120 }), renderCell: (r: Row) => <Text>{audienceLabel(r.c.audience)}</Text> },
     { key: 'caps', header: 'Förmågor', width: proportional(1, { minWidth: 240 }), renderCell: (r: Row) => <Text type="supporting">{counts(r.c)}</Text> },
@@ -79,7 +79,7 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
       {shown.length === 0 && <Section variant="transparent" padding={6}><EmptyState isCompact title={filter === 'alla' ? 'Inga anslutningar ännu' : 'Inget att visa'} description={filter === 'alla' ? 'Anslut det första systemet så får det en rad här.' : 'Inga anslutningar matchar filtret.'} actions={filter === 'alla' ? <Button label="Anslut system" onClick={() => setAdding(true)} /> : undefined} /></Section>}
       {shown.length > 0 && (mobile
         ? <List aria-label="Anslutningar" hasDividers>
-          {shown.map(c => <ListItem key={c.id} href={`/admin/anslutningar/${c.id}`} label={name(c)} description={<VStack gap={0}><HStack gap={1} vAlign="center">{status(c)}<Text type="supporting">{statusOf(c).label} · {audienceLabel(c.audience)}</Text></HStack><Text type="supporting">{counts(c)}</Text></VStack>} endContent={toggle(c)} />)}
+          {shown.map(c => <ListItem key={c.id} href={`/admin/connectors/${c.id}`} label={name(c)} description={<VStack gap={0}><HStack gap={1} vAlign="center">{status(c)}<Text type="supporting">{statusOf(c).label} · {audienceLabel(c.audience)}</Text></HStack><Text type="supporting">{counts(c)}</Text></VStack>} endContent={toggle(c)} />)}
         </List>
         : <Table<Row> data={shown.map(c => ({ id: c.id, c }))} idKey="id" columns={columns} density="balanced" hasHover />)}
     </Card>}

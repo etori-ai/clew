@@ -13,7 +13,7 @@ async function pickSection(page: import('@playwright/test').Page, name: string) 
   await page.getByRole('menuitem', { name }).click();
   return page.getByRole('region', { name });
 }
-const routes = [['the connectors list', '/admin/anslutningar'], ['a bundled connector', '/admin/anslutningar/raindance'], ['a remote connector that is down', '/admin/anslutningar/hello']] as const;
+const routes = [['the connectors list', '/admin/connectors'], ['a bundled connector', '/admin/connectors/raindance'], ['a remote connector that is down', '/admin/connectors/hello']] as const;
 
 test.describe('administration', () => {
   for (const [layout, viewport] of [['desktop', desktop], ['phone', phone]] as const) test.describe(layout, () => {
@@ -25,7 +25,7 @@ test.describe('administration', () => {
     });
     test('every tab of a connector has no axe violations', async ({ page, api }) => {
       api.admin = true;
-      await open(page, '/admin/anslutningar/raindance');
+      await open(page, '/admin/connectors/raindance');
       for (const tab of ['Förmågor', 'Områden', 'Vem ser det', 'Historik']) {
         await expect(await pickSection(page, tab)).toBeVisible();
         await expectNoAxeViolations(page);
@@ -36,7 +36,7 @@ test.describe('administration', () => {
   test.describe('desktop', () => {
     test.use({ viewport: desktop });
     test('a person without the grant sees no data and one way back', async ({ page, api: _ }) => {
-      await page.goto('/admin/anslutningar');
+      await page.goto('/admin/connectors');
       await expect(page.getByRole('heading', { level: 1, name: 'Du saknar behörighet till administrationen' })).toBeVisible();
       await expect(page.getByRole('link', { name: 'Till startsidan' })).toBeVisible();
       await expectNoAxeViolations(page);
@@ -50,7 +50,7 @@ test.describe('administration', () => {
     });
     test('the list names each connector, its status in words and its audience', async ({ page, api }) => {
       api.admin = true;
-      await open(page, '/admin/anslutningar');
+      await open(page, '/admin/connectors');
       await expect(page).toHaveTitle('Anslutna system · Startsidan');
       const table = page.getByRole('table');
       await expect(table.getByRole('link', { name: 'Raindance' })).toBeVisible();
@@ -63,7 +63,7 @@ test.describe('administration', () => {
     });
     test('the switch turns a connector off, keeps focus and says so', async ({ page, api }) => {
       api.admin = true;
-      await open(page, '/admin/anslutningar');
+      await open(page, '/admin/connectors');
       const toggle = page.getByRole('switch', { name: 'Heroma på' });
       await toggle.focus();
       await page.keyboard.press('Space');
@@ -74,7 +74,7 @@ test.describe('administration', () => {
     });
     test('the add dialog runs through its four steps by keyboard and announces each step', async ({ page, api }) => {
       api.admin = true;
-      await open(page, '/admin/anslutningar');
+      await open(page, '/admin/connectors');
       await page.getByRole('button', { name: 'Anslut system' }).click();
       const dialog = page.getByRole('dialog', { name: 'Anslut system' });
       await expect(dialog.getByRole('heading', { level: 3, name: 'Adress och nyckel' })).toBeVisible();
@@ -103,7 +103,7 @@ test.describe('administration', () => {
     test('on a short screen the add dialog scrolls its step and keeps its buttons on screen', async ({ page, api }) => {
       api.admin = true;
       await page.setViewportSize({ width: 1280, height: 560 });
-      await open(page, '/admin/anslutningar');
+      await open(page, '/admin/connectors');
       await page.getByRole('button', { name: 'Anslut system' }).click();
       const dialog = page.getByRole('dialog', { name: 'Anslut system' });
       await dialog.getByRole('textbox', { name: /^Id/ }).fill('nytt');
@@ -130,7 +130,7 @@ test.describe('administration', () => {
       await page.route('**/api/admin/connectors/hello/refresh', route => route.fulfill({ json: {
         diff: { added: names('ny', 12), removed: names('gammal', 8), changed: names('andrad', 4), areasAdded: [], areasRemoved: [], same: false },
         connector: connectorDetail(api.connectors.find(c => c.id === 'hello')!) } }));
-      await open(page, '/admin/anslutningar/hello');
+      await open(page, '/admin/connectors/hello');
       await page.getByRole('button', { name: 'Hämta manifest igen' }).click();
       // Named by its title (4.1.2): the Dialog takes its name from a DialogHeader present when it mounts.
       const dialog = page.getByRole('dialog', { name: 'Manifestet har ändrats' });
@@ -152,7 +152,7 @@ test.describe('administration', () => {
     });
     test('a connector page is titled, the health is a sentence, and the tabs follow the tabs pattern', async ({ page, api }) => {
       api.admin = true;
-      await open(page, '/admin/anslutningar/hello');
+      await open(page, '/admin/connectors/hello');
       await expect(page).toHaveTitle('Hello · Startsidan');
       await expect(page.getByText(/Hello: svarar inte/)).toBeVisible();
       const tablist = page.getByRole('tablist');
@@ -165,7 +165,7 @@ test.describe('administration', () => {
     });
     test('removing asks first, then returns to the list with focus on its heading and a spoken result', async ({ page, api }) => {
       api.admin = true;
-      await open(page, '/admin/anslutningar/hello');
+      await open(page, '/admin/connectors/hello');
       await page.getByRole('button', { name: 'Ta bort' }).click();
       const alert = page.getByRole('alertdialog');
       await expect(alert.getByText(/öppna kort stängs/)).toBeVisible();
@@ -173,13 +173,13 @@ test.describe('administration', () => {
       await expect(alert).toHaveCount(0);
       await page.getByRole('button', { name: 'Ta bort' }).click();
       await page.getByRole('alertdialog').getByRole('button', { name: 'Ta bort' }).click();
-      await expect(page).toHaveURL(/\/admin\/anslutningar$/);
+      await expect(page).toHaveURL(/\/admin\/connectors$/);
       await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Hello är borttagen'));
       await expect(page.getByRole('table').getByRole('link', { name: 'Hello' })).toHaveCount(0);
     });
     test('the audience editor saves and the preview says what each role sees', async ({ page, api }) => {
       api.admin = true;
-      await open(page, '/admin/anslutningar/raindance');
+      await open(page, '/admin/connectors/raindance');
       await page.getByRole('tab', { name: 'Vem ser det' }).click();
       await expect(page.getByRole('radio', { name: 'Endast valda' })).toBeChecked();
       await expect(page.getByText(/Så här ser det ut för medarbetare/)).toBeVisible();
@@ -193,10 +193,10 @@ test.describe('administration', () => {
     test('the list and a connector reflow at 320 px', async ({ page, api }) => {
       api.admin = true;
       await page.setViewportSize(narrow);
-      await open(page, '/admin/anslutningar');
+      await open(page, '/admin/connectors');
       expect(await reflowProblems(page)).toEqual([]);
       await expect(page.getByRole('list', { name: 'Anslutningar' })).toBeVisible();
-      await open(page, '/admin/anslutningar/raindance');
+      await open(page, '/admin/connectors/raindance');
       expect(await reflowProblems(page)).toEqual([]);
       await expect(await pickSection(page, 'Förmågor')).toBeVisible();
       expect(await reflowProblems(page)).toEqual([]);
@@ -204,7 +204,7 @@ test.describe('administration', () => {
     test('the add dialog reflows at 320 px', async ({ page, api }) => {
       api.admin = true;
       await page.setViewportSize(narrow);
-      await open(page, '/admin/anslutningar');
+      await open(page, '/admin/connectors');
       await page.getByRole('button', { name: 'Anslut system' }).click();
       await expect(page.getByRole('dialog', { name: 'Anslut system' })).toBeVisible();
       expect(await reflowProblems(page)).toEqual([]);

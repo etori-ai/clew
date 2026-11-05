@@ -23,7 +23,7 @@ for (const viewport of [desktop, narrow]) test(`the compact header and profile w
   await expect(profile).toBeFocused();
 });
 
-for (const source of ['/kalender', '/omrade/budget']) test(`a reminder opens and focuses its card from ${source}`, async ({ page, api }) => {
+for (const source of ['/calendar', '/areas/budget']) test(`a reminder opens and focuses its card from ${source}`, async ({ page, api }) => {
   api.threads = api.threads.map(t => t.id === 'ledighet' ? { ...t, remindedAt: NOW } : t);
   await open(page, source);
   const bell = page.getByRole('button', { name: 'Påminnelser (1)', exact: true });
@@ -32,7 +32,7 @@ for (const source of ['/kalender', '/omrade/budget']) test(`a reminder opens and
   await expect(drawer).toBeVisible();
   await expectNoAxeViolations(page);
   await drawer.getByRole('link', { name: /Ledighetsansökan/ }).click();
-  await expect(page).toHaveURL('/oversikt?kort=ledighet');
+  await expect(page).toHaveURL('/overview?card=ledighet');
   await expect(drawer).not.toBeVisible();
   const card = page.getByRole('article', { name: 'Tråd: Ledighetsansökan från Johan Byström', exact: true });
   await expect(card).toBeVisible();
@@ -46,7 +46,7 @@ for (const source of ['/kalender', '/omrade/budget']) test(`a reminder opens and
 
 test('an empty bell offers working shortcuts and restores focus on Escape', async ({ page, api: _ }) => {
   await page.setViewportSize(narrow);
-  await open(page, '/omrade/personal');
+  await open(page, '/areas/personal');
   await openNav(page);
   const bell = page.getByRole('button', { name: 'Påminnelser (0)', exact: true });
   await bell.click();
@@ -57,13 +57,13 @@ test('an empty bell offers working shortcuts and restores focus on Escape', asyn
   await expect(bell).toBeFocused();
   await bell.click();
   await drawer.getByRole('link', { name: 'Kalender', exact: true }).click();
-  await expect(page).toHaveURL('/kalender');
+  await expect(page).toHaveURL('/calendar');
   await expect(drawer).not.toBeVisible();
 });
 
 test('a failed reminder read is explicit and can be retried', async ({ page, api: _ }) => {
   await page.route('**/api/threads', route => route.fulfill({ status: 503, json: { error: 'Tillfälligt fel' } }));
-  await page.goto('/kalender');
+  await page.goto('/calendar');
   const bell = page.getByRole('button', { name: 'Påminnelser – kunde inte uppdateras', exact: true });
   await bell.click();
   const drawer = page.getByRole('dialog', { name: 'Påminnelser', exact: true });

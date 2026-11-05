@@ -55,10 +55,10 @@ const RouterLink = forwardRef<HTMLAnchorElement, { href?: string; to?: string } 
   return <Link ref={ref} to={target} {...rest} />;
 });
 /**
- * Routes (D34): `/` is the box with the brief, `/samtal/:id` a conversation in the same column; `/oversikt` is the whole
- * picture, `/omrade/:area` filters it, `/pagar`, `/inte-nu` and `/hanterat` open the three piles (D28), `/vy/kort/…` a card's
- * view over the overview, `/vy/:capability` a view over the box (or over the overview when an area is named), all addressable.
- * `/kalender` and `/tools/:capability` are the tools, each a page of its own in the same shell (D42).
+ * Routes (D34): `/` is the box with the brief, `/conversations/:id` a conversation in the same column; `/overview` is the whole
+ * picture, `/areas/:area` filters it, `/waiting`, `/snoozed` and `/handled` open the three piles (D28), `/views/card/…` a card's
+ * view over the overview, `/views/:capability` a view over the box (or over the overview when an area is named), all addressable.
+ * `/calendar` and `/tools/:capability` are the tools, each a page of its own in the same shell (D42).
  */
 function App() {
   // One element for every start route: a route change between the box, the overview, a pile, a view and a conversation
@@ -68,31 +68,31 @@ function App() {
   const admin = (page: (shell: Shell) => React.ReactNode) => <Protected>{shell => shell.admin ? page(shell) : <NotAdmin />}</Protected>;
   return <Routes>
     <Route path="/login" element={<LoginPage returnTo="/" />} />
-    <Route path="/kalender" element={<Protected>{shell => <CalendarPage user={shell.user} admin={shell.admin} />}</Protected>} />
+    <Route path="/calendar" element={<Protected>{shell => <CalendarPage user={shell.user} admin={shell.admin} />}</Protected>} />
     <Route path="/tools/:capability" element={<Protected>{shell => <ToolPage user={shell.user} admin={shell.admin} />}</Protected>} />
     <Route path="/admin" element={admin(shell => <AdminConnectorsPage user={shell.user} />)} />
-    <Route path="/admin/anslutningar" element={admin(shell => <AdminConnectorsPage user={shell.user} />)} />
-    <Route path="/admin/anslutningar/:id" element={admin(shell => <AdminConnectorPage user={shell.user} />)} />
-    <Route path="/admin/modeller" element={admin(shell => <AdminModelsPage user={shell.user} />)} />
-    <Route path="/admin/modeller/leverantorer/:id" element={admin(shell => <AdminProviderPage user={shell.user} />)} />
-    <Route path="/admin/modeller/:id" element={admin(shell => <AdminModelPage user={shell.user} />)} />
+    <Route path="/admin/connectors" element={admin(shell => <AdminConnectorsPage user={shell.user} />)} />
+    <Route path="/admin/connectors/:id" element={admin(shell => <AdminConnectorPage user={shell.user} />)} />
+    <Route path="/admin/models" element={admin(shell => <AdminModelsPage user={shell.user} />)} />
+    <Route path="/admin/models/providers/:id" element={admin(shell => <AdminProviderPage user={shell.user} />)} />
+    <Route path="/admin/models/:id" element={admin(shell => <AdminModelPage user={shell.user} />)} />
     <Route path="/" element={start} />
-    <Route path="/samtal/:conversationId" element={start} />
-    <Route path="/vy/:capability" element={start} />
-    <Route path="/oversikt" element={start} />
-    <Route path="/omrade/:area" element={start} />
-    <Route path="/hanterat" element={start} />
-    <Route path="/pagar" element={start} />
-    <Route path="/inte-nu" element={start} />
-    <Route path="/vy/kort/:threadId/:actionId" element={start} />
+    <Route path="/conversations/:conversationId" element={start} />
+    <Route path="/views/:capability" element={start} />
+    <Route path="/overview" element={start} />
+    <Route path="/areas/:area" element={start} />
+    <Route path="/handled" element={start} />
+    <Route path="/waiting" element={start} />
+    <Route path="/snoozed" element={start} />
+    <Route path="/views/card/:threadId/:actionId" element={start} />
     <Route path="*" element={start} />
   </Routes>;
 }
 /** Which face of the start page an address shows: the box, or the whole picture. A capability view opens over the page it was asked from: the overview when an area is named, else the box. */
 export function modeOf(pathname: string, search: URLSearchParams): 'fraga' | 'oversikt' {
-  if (pathname.startsWith('/vy/kort/')) return 'oversikt';
-  if (pathname.startsWith('/vy/')) return search.has('omrade') ? 'oversikt' : 'fraga';
-  if (pathname === '/oversikt' || pathname === '/hanterat' || pathname === '/pagar' || pathname === '/inte-nu' || pathname.startsWith('/omrade/')) return 'oversikt';
+  if (pathname.startsWith('/views/card/')) return 'oversikt';
+  if (pathname.startsWith('/views/')) return search.has('area') ? 'oversikt' : 'fraga';
+  if (pathname === '/overview' || pathname === '/handled' || pathname === '/waiting' || pathname === '/snoozed' || pathname.startsWith('/areas/')) return 'oversikt';
   return 'fraga';
 }
 function StartRoute({ user, admin }: { user: SessionUser; admin: boolean }) {

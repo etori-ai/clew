@@ -39,7 +39,7 @@ export function AdminModelsPage({ user }: { user: SessionUser }) {
   const toggle = (m: ModelSummary) => <Switch size="sm" label={`${m.title} på`} isLabelHidden value={m.state === 'enabled'} changeAction={on => flip(m, on)} />;
   const columns = [
     { key: 'model', header: 'Modell', width: proportional(2, { minWidth: 220 }), renderCell: (r: Row) => <VStack gap={0} hAlign="start">
-      <HStack gap={2} vAlign="center" wrap="wrap"><Link href={`/admin/modeller/${r.m.id}`} weight="semibold">{r.m.title}</Link>{r.m.isDefault && <Badge variant="info" label="Standard" />}</HStack>
+      <HStack gap={2} vAlign="center" wrap="wrap"><Link href={`/admin/models/${r.m.id}`} weight="semibold">{r.m.title}</Link>{r.m.isDefault && <Badge variant="info" label="Standard" />}</HStack>
       <Code color="secondary">{r.m.model}</Code>
       {r.m.description && <Text type="supporting">{r.m.description}</Text>}
     </VStack> },
@@ -78,12 +78,12 @@ export function AdminModelsPage({ user }: { user: SessionUser }) {
       const s = providerStatusOf(p);
       return <Card key={p.id} padding={0}>
         <Toolbar label={p.title} size="sm" dividers={mine.length ? ['bottom'] : []}
-          startContent={<VStack gap={0}><Link href={`/admin/modeller/leverantorer/${p.id}`} weight="semibold">{p.title}</Link><HStack gap={1} vAlign="center"><StatusDot variant={s.tone} label={s.label} /><Text type="supporting">{s.label} · {p.baseUrl}</Text></HStack></VStack>}
+          startContent={<VStack gap={0}><Link href={`/admin/models/providers/${p.id}`} weight="semibold">{p.title}</Link><HStack gap={1} vAlign="center"><StatusDot variant={s.tone} label={s.label} /><Text type="supporting">{s.label} · {p.baseUrl}</Text></HStack></VStack>}
           endContent={<Button size="sm" variant="secondary" label="Lägg till modell" onClick={() => setAddingModelTo(p)} />} />
         {mine.length === 0 && <Section variant="transparent" padding={4}><Text type="supporting">Inga modeller under {p.title} ännu.</Text></Section>}
         {mine.length > 0 && (mobile
           ? <List aria-label={`Modeller hos ${p.title}`} hasDividers>
-            {mine.map(m => <ListItem key={m.id} href={`/admin/modeller/${m.id}`} label={<HStack gap={2} vAlign="center"><Text weight="semibold">{m.title}</Text>{m.isDefault && <Badge variant="info" label="Standard" />}</HStack>}
+            {mine.map(m => <ListItem key={m.id} href={`/admin/models/${m.id}`} label={<HStack gap={2} vAlign="center"><Text weight="semibold">{m.title}</Text>{m.isDefault && <Badge variant="info" label="Standard" />}</HStack>}
               description={<VStack gap={0} hAlign="start"><Code color="secondary">{m.model}</Code><Text type="supporting">{modelStatusOf(m).label} · {audienceLabel(m.audience)}</Text></VStack>} endContent={toggle(m)} />)}
           </List>
           : <Table<Row> data={mine.map(m => ({ id: m.id, m }))} idKey="id" columns={columns} density="balanced" hasHover />)}

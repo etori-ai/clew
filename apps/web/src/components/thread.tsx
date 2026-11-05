@@ -132,8 +132,8 @@ export function ThreadCard({ thread, compact, headingLevel = 3, onChange }: Prop
       </HStack>}
       {(open || undoOpen) && <HStack gap={2} wrap="wrap">
         {open && <Button variant="primary" label={`Skicka ${count} ${plural}`} isDisabled={!count} clickAction={() => run(() => api.confirm(thread.id, selected))} />}
-        {open && !compact && <Button label="Justera i kalendern" href={`/kalender?datum=${thread.week}&vy=vecka`} />}
-        {open && compact && <Button label="Visa i veckan" href={`/kalender?datum=${thread.week}&vy=vecka`} />}
+        {open && !compact && <Button label="Justera i kalendern" href={`/calendar?date=${thread.week}&view=week`} />}
+        {open && compact && <Button label="Visa i veckan" href={`/calendar?date=${thread.week}&view=week`} />}
         {open && nextWeek && <Button label={`Vecka ${weekNumber(nextWeek)} i stället`} clickAction={() => run(() => api.replan(thread.id, nextWeek))} />}
         {open && <AddToConversation size="md" added={inConversation} onAdd={() => talk.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id })} />}
         {open && <Button variant="ghost" label="Inte nu" clickAction={() => run(async () => { const t = await api.snooze(thread.id); leave(t, 'Tas upp i morgon 06:00 i stället.'); return t; })} />}

@@ -85,8 +85,8 @@ the server still checks on every admin call.
 
 ## Screens
 
-Route `/admin` with `/admin/anslutningar`, `/admin/anslutningar/:id`, `/admin/modeller`, `/admin/modeller/:id` and
-`/admin/modeller/leverantorer/:id`. Same `Layout`, `LayoutHeader` and `LayoutPanel` as the start and calendar pages; the
+Route `/admin` with `/admin/connectors`, `/admin/connectors/:id`, `/admin/models`, `/admin/models/:id` and
+`/admin/models/providers/:id`. Same `Layout`, `LayoutHeader` and `LayoutPanel` as the start and calendar pages; the
 panel is an Astryx `List` of admin sections (Anslutna system and Modeller; Bundlingstider and Behörigheter
 are later rows of the same list). The entry point is
 an item "Administration" in the avatar menu, rendered only when the session says `admin`. On a phone the
@@ -280,7 +280,7 @@ after a removal (the pattern the stream uses when a card leaves).
 - The structural preview cannot satisfy a scope written as code (the mocks narrow by identity), so it lists areas
   and only the tools a declarative scope allows; the page says so.
 - Screens: `apps/web/src/pages/admin/` (`shell.tsx`, `connectors.tsx`, `add.tsx`, `connector.tsx`, `audience.tsx`,
-  `labels.ts`), routes `/admin`, `/admin/anslutningar`, `/admin/anslutningar/:id`, the entry "Administration" in
+  `labels.ts`), routes `/admin`, `/admin/connectors`, `/admin/connectors/:id`, the entry "Administration" in
   the start page header for an administrator, `NotAdmin` for anyone else. Tests: `tests/a11y/admin.spec.ts`,
   `tests/unit/connector-admin.test.ts`, `tests/unit/connectors.test.ts` (governance), the connector store contract
   on both adapters, and the administration flow in `scripts/modules-check.ts`.

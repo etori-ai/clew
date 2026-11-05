@@ -96,13 +96,13 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
             <Text type="supporting">{reminders.length ? 'Aktuella påminnelser om sådant som behöver dig.' : 'Du har inga aktuella påminnelser.'}</Text>
             {reminders.length > 0 && <List hasDividers aria-label="Aktuella påminnelser">{reminders.map(thread => <ListItem key={thread.id}
               label={<Text weight="semibold">{thread.title}</Text>} description="Visa kortet på startsidan"
-              href={`/oversikt?kort=${encodeURIComponent(thread.id)}`} />)}</List>}
+              href={`/overview?card=${encodeURIComponent(thread.id)}`} />)}</List>}
           </>}
           <Divider />
           <Heading level={3}>Genvägar</Heading>
           <List aria-label="Genvägar">
             <ListItem label="Startsidan" href="/" startContent={<Icon icon="menu" size="sm" />} />
-            <ListItem label="Kalender" href="/kalender" startContent={<Icon icon="calendar" size="sm" />} />
+            <ListItem label="Kalender" href="/calendar" startContent={<Icon icon="calendar" size="sm" />} />
           </List>
         </VStack>
       </LayoutContent>} />

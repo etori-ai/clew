@@ -67,7 +67,7 @@ export const refsIn = (value: string) => [...value.matchAll(TOKEN)].map(m => m[1
 export const tokenValue = (ref: string) => `@[${ref}]`;
 
 type Props = {
-  /** The conversation named by the route (`/samtal/:id`), or null. */
+  /** The conversation named by the route (`/conversations/:id`), or null. */
   conversationId: string | null;
   /** The page keeps the route in step: a new or reopened conversation gets its address, closing it returns to the stream. */
   onConversation: (id: string | null) => void;
@@ -129,12 +129,12 @@ export function ConversationProvider({ conversationId, onConversation, onThreadC
     try { const t = await client.query(threadQuery(threadId)); setConversation({ id: t.id, title: t.title, messages: t.messages }); setLatest(null); setDone(null); setShown(true); input.current?.focus(); }
     catch (e) { setError(errorMessage(e, 'Samtalet kunde inte öppnas.')); }
   }, [client, abortTurn]);
-  // The route names the conversation: arriving at /samtal/:id (a link, the back button, a reload) puts the transcript on the page.
+  // The route names the conversation: arriving at /conversations/:id (a link, the back button, a reload) puts the transcript on the page.
   const routeConversation = useRef<string | null>(null);
   useEffect(() => {
     if (conversationId && conversationId !== conversation?.id) void openConversation(conversationId);
     else if (conversationId && !shown) setShown(true);
-    // Leaving /samtal/:id by the back button brings the stream back; the conversation stays under Redan hanterat.
+    // Leaving /conversations/:id by the back button brings the stream back; the conversation stays under Redan hanterat.
     if (!conversationId && routeConversation.current && shown) setShown(false);
     routeConversation.current = conversationId;
   }, [conversationId]);

@@ -16,9 +16,9 @@ import { EventDialog } from '../components/calendar/event-dialog';
 import { BookingDialog } from '../components/calendar/booking-dialog';
 
 /** The three views as the URL names them, so a view is addressable and the back button works. */
-type View = 'dag' | 'vecka' | 'manad';
-const views: View[] = ['dag', 'vecka', 'manad'];
-const viewLabels: Record<View, string> = { dag: 'Dag', vecka: 'Vecka', manad: 'Månad' };
+type View = 'day' | 'week' | 'month';
+const views: View[] = ['day', 'week', 'month'];
+const viewLabels: Record<View, string> = { day: 'Dag', week: 'Vecka', month: 'Månad' };
 const isoDate = /^\d{4}-\d{2}-\d{2}$/;
 /** The panel leaves the side below 1024 px (the responsive guide's three-two-one contract) and opens as a drawer from the toolbar. */
 const panelQuery = '(max-width: 1023px)';
@@ -51,11 +51,11 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const mobile = useMediaQuery(mobileQuery);
   const narrow = useMediaQuery(panelQuery);
   const [params, setParams] = useSearchParams();
-  const requested = params.get('datum') ?? params.get('vecka');
+  const requested = params.get('date') ?? params.get('week');
   const date = requested && isoDate.test(requested) ? requested : today();
-  const view: View = views.includes(params.get('vy') as View) ? params.get('vy') as View : 'vecka';
-  const anchor = view === 'vecka' ? weekStart(date) : view === 'manad' ? monthStart(date) : date;
-  const go = (next: { date?: string; view?: View }) => setParams(p => { const q = new URLSearchParams(p); q.delete('vecka'); q.set('datum', next.date ?? date); q.set('vy', next.view ?? view); return q; });
+  const view: View = views.includes(params.get('view') as View) ? params.get('view') as View : 'week';
+  const anchor = view === 'week' ? weekStart(date) : view === 'month' ? monthStart(date) : date;
+  const go = (next: { date?: string; view?: View }) => setParams(p => { const q = new URLSearchParams(p); q.delete('week'); q.set('date', next.date ?? date); q.set('view', next.view ?? view); return q; });
   // The same frame as the start page (D31, D34), from the same cache (D33): the rail with the person's time axis.
   const client = useQueryClient();
   const areas = useQuery(areasQuery).data?.areas ?? EMPTY_AREAS;
@@ -71,11 +71,11 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const [openItem, setOpenItem] = useState<AgendaItem | null>(null);
   const [booking, setBooking] = useState<{ start: string; end: string } | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
-  const title = view === 'dag' ? dayLabel(anchor) : view === 'manad' ? monthLabel(anchor) : `Vecka ${weekNumber(anchor)} · ${rangeLabel(anchor, 5)}`;
-  const short = view === 'vecka' ? `Vecka ${weekNumber(anchor)}` : title.charAt(0).toUpperCase() + title.slice(1);
-  usePageTitle(`${short} · Kalender`, view === 'vecka' ? `Vecka ${weekNumber(anchor)}, ${rangeLabel(anchor, 5)}` : `${view === 'dag' ? 'Dagvy' : 'Månadsvy'}, ${title}`);
+  const title = view === 'day' ? dayLabel(anchor) : view === 'month' ? monthLabel(anchor) : `Vecka ${weekNumber(anchor)} · ${rangeLabel(anchor, 5)}`;
+  const short = view === 'week' ? `Vecka ${weekNumber(anchor)}` : title.charAt(0).toUpperCase() + title.slice(1);
+  usePageTitle(`${short} · Kalender`, view === 'week' ? `Vecka ${weekNumber(anchor)}, ${rangeLabel(anchor, 5)}` : `${view === 'day' ? 'Dagvy' : 'Månadsvy'}, ${title}`);
   /** The weeks the view needs: one for a day or a week, every week the month grid shows. */
-  const weeks = useMemo(() => view === 'manad' ? weeksOfMonth(anchor) : [weekStart(anchor)], [view, anchor]);
+  const weeks = useMemo(() => view === 'month' ? weeksOfMonth(anchor) : [weekStart(anchor)], [view, anchor]);
   // Each week is one query, shared with the cards on the start page; the previous answer stays on the grid while the next week loads, and answers can no longer land out of order.
   const { events, proposals, failed } = useQueries({ queries: weeks.map(w => ({ ...calendarWeekQuery(w), placeholderData: keepPreviousData })), combine: combineWeeks });
   const readError = failed ? errorMessage(failed, 'Kalendern kunde inte läsas.') : threadsQ.isError && threadsQ.data === undefined ? errorMessage(threadsQ.error, 'Kalendern kunde inte läsas.') : null;
@@ -84,9 +84,9 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const dayItems = useMemo(() => openItem ? items.filter(i => occursOn(i, displayDate(openItem.start))) : [], [items, openItem]);
   // A drop on the grid: the promise has to reject for the calendar to put the block back, so this one does not go through `run`.
   const moveProposal = (item: AgendaItem, start: string, end: string) => { const p = item.proposal!; setMoveError(null); return api.moveProposal(p.threadId, p.id, { start, end }).then(apply).catch(e => { setMoveError(errorMessage(e, 'Något gick fel.')); throw e; }); };
-  const step = (direction: 1 | -1) => go({ date: view === 'dag' ? addDays(anchor, direction) : view === 'manad' ? addMonths(anchor, direction) : addDays(anchor, 7 * direction) });
-  const calendarView: CalendarView = view === 'dag' ? 'timeGridDay' : view === 'manad' ? 'dayGridMonth' : mobile ? 'listWeek' : 'timeGridWeek';
-  const stepLabel = view === 'dag' ? 'dag' : view === 'manad' ? 'månad' : 'vecka';
+  const step = (direction: 1 | -1) => go({ date: view === 'day' ? addDays(anchor, direction) : view === 'month' ? addMonths(anchor, direction) : addDays(anchor, 7 * direction) });
+  const calendarView: CalendarView = view === 'day' ? 'timeGridDay' : view === 'month' ? 'dayGridMonth' : mobile ? 'listWeek' : 'timeGridWeek';
+  const stepLabel = view === 'day' ? 'dag' : view === 'month' ? 'månad' : 'vecka';
   const open = thread?.state === 'open' && thread.proposals.some(p => p.status === 'proposed');
   const proposed = thread?.proposals.filter(p => p.status === 'proposed') ?? [];
   const undoUntil = thread?.proposals.map(p => p.undoUntil).filter((v): v is string => !!v).sort().at(-1);
@@ -111,7 +111,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
       {open && <Button variant="primary" label={`Skicka ${selected.length} ${plural}`} isDisabled={!selected.length} clickAction={() => run(() => api.confirm(thread.id, selected))} />}
       {open && thread.week && <Button label="Föreslå andra tider" clickAction={() => run(() => api.replan(thread.id, addDays(thread.week!, 7)))} />}
       {undoOpen && <Button variant="destructive" label="Ångra" clickAction={() => run(() => api.undo(thread.id))} />}
-      {thread.week && (view !== 'vecka' || thread.week !== anchor) && <Button variant="ghost" label={`Visa vecka ${weekNumber(thread.week)}`} onClick={() => { setPanelOpen(false); go({ date: thread.week!, view: 'vecka' }); }} />}
+      {thread.week && (view !== 'week' || thread.week !== anchor) && <Button variant="ghost" label={`Visa vecka ${weekNumber(thread.week)}`} onClick={() => { setPanelOpen(false); go({ date: thread.week!, view: 'week' }); }} />}
     </HStack>
   </VStack>;
   const reply = thread && <ChatComposer density="compact" elevation="none" isDisabled={busy} placeholder="Svara här" onSubmit={text => { const body = text.trim(); if (body) void run(() => api.reply(thread.id, body)); }} />;
@@ -131,9 +131,9 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
       {mobile
         ? <DropdownMenu presentation="adaptive" button={{ label: `Vy: ${viewLabels[view]}`, size: 'sm', variant: 'secondary' }} items={views.map(v => ({ id: v, label: viewLabels[v], onClick: () => go({ view: v }) }))} />
         : <SegmentedControl label="Vy" size="sm" value={view} onChange={v => go({ view: v as View })}>
-          <SegmentedControlItem value="dag" label="Dag" />
-          <SegmentedControlItem value="vecka" label="Vecka" />
-          <SegmentedControlItem value="manad" label="Månad" />
+          <SegmentedControlItem value="day" label="Dag" />
+          <SegmentedControlItem value="week" label="Vecka" />
+          <SegmentedControlItem value="month" label="Månad" />
         </SegmentedControl>}
       {narrow && thread && <Button variant="secondary" size="sm" label={open ? `Förslag · ${proposed.length}` : 'Förslag'} onClick={() => setPanelOpen(true)} />}
       <Button variant="primary" size="sm" label="Ny bokning" onClick={() => setBooking(nextWholeHour(new Date()))} />
@@ -155,7 +155,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
       <Layout height="fill" padding={0} header={<DrawerHeader title="Förslag" onOpenChange={setPanelOpen} />} content={<LayoutContent>{panelBody}</LayoutContent>} footer={<LayoutFooter hasDivider>{reply}</LayoutFooter>} />
     </Drawer>}
     {/* Both dialogs write the cache themselves (D33): a moved proposal's thread, or the loaded weeks read again. */}
-    <EventDialog item={openItem} dayItems={dayItems} onClose={() => setOpenItem(null)} onOpenDay={d => go({ date: d, view: 'dag' })} />
+    <EventDialog item={openItem} dayItems={dayItems} onClose={() => setOpenItem(null)} onOpenDay={d => go({ date: d, view: 'day' })} />
     <BookingDialog isOpen={!!booking} initial={booking ?? nextWholeHour(new Date())} onClose={() => setBooking(null)} />
   </Shell>;
 }
