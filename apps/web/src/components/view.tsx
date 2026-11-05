@@ -162,6 +162,7 @@ export function DeclaredView({ view, output, input = {}, onInput, hrefFor, isLoa
     {rows.length === 0
       ? <EmptyState isCompact headingLevel={headingLevel} title={view.empty ?? 'Inget att visa'} />
       : <Rows view={view} rows={rows} hrefFor={hrefFor} wide={wide && !limit} />}
-    {rows.length > 0 && <Text type="supporting">{limit && all!.length > rows.length ? `${rows.length} av ${all!.length} rader` : `${rows.length} ${rows.length === 1 ? 'rad' : 'rader'}`} · {view.source}. Inget av det sparas på Startsidan.</Text>}
+    {/* Under an answer the count and the source are already in the answer's sentence and line; a cut list and the promise are what is left to say. */}
+    {rows.length > 0 && <Text type="supporting">{limit ? `${all!.length > rows.length ? `${rows.length} av ${all!.length} rader. ` : ''}Inget av det sparas på Startsidan.` : `${rows.length} ${rows.length === 1 ? 'rad' : 'rader'} · ${view.source}. Inget av det sparas på Startsidan.`}</Text>}
   </VStack>;
 }

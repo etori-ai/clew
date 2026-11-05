@@ -13,7 +13,7 @@ const sameAddress = (href: string | null, address: string) => !!href && plain(hr
 type Props = {
   title: string | null; output: unknown; onClose: () => void; onOpenItem?: (item: AgendaItem, dayItems: AgendaItem[]) => void;
   /** The capability's declared view (D38) and what it needs to be used: its input and how to change it, where a row's own view lives, and the way back from one. */
-  view?: PanelViewSpec | undefined; input?: Record<string, unknown>; onInput?: ((next: Record<string, unknown>) => void) | undefined;
+  view?: PanelViewSpec | undefined; source?: string | undefined; input?: Record<string, unknown>; onInput?: ((next: Record<string, unknown>) => void) | undefined;
   hrefFor?: (view: ViewRef) => string; onBack?: (() => void) | undefined; isLoading?: boolean;
   /** The address of the view on screen: when another view takes its place in the open panel, focus follows it. */
   address?: string | undefined;
@@ -66,7 +66,7 @@ function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((vie
  * drawn as it says; without a declaration rows become a list and anything else label/value pairs. A table gets a wider
  * panel than a list or a record.
  */
-export function PanelView({ title, output, onClose, onOpenItem, view, input, onInput, hrefFor, onBack, isLoading, address }: Props) {
+export function PanelView({ title, output, onClose, onOpenItem, view, source, input, onInput, hrefFor, onBack, isLoading, address }: Props) {
   const declared = view ?? null;
   // One view replacing another inside the open panel (a row's contact card, and back) is a change of context nobody
   // hears and that would leave focus on a link that is gone (2.4.3, 4.1.3): the new view is named aloud, and focus goes
@@ -105,6 +105,8 @@ export function PanelView({ title, output, onClose, onOpenItem, view, input, onI
         })}</List>}
         {pairs.length > 0 && <List density="compact">{pairs.map(([k, v]) => <ListItem key={k} label={<Text>{fieldLabel(k)}</Text>} description={<Text type="supporting">{fieldValue(v)}</Text>} />)}</List>}
         {!declared && !day && !search && !rows && !pairs.length && <Text type="supporting">Inget att visa.</Text>}
+        {/* A declared view and the search name where they read from themselves; a plain read says it here. */}
+        {source && (rows || pairs.length > 0) && <Text type="supporting">Hämtat ur {source}. Inget av det sparas på Startsidan.</Text>}
       </VStack>
     </LayoutContent>} />
   </Drawer>;

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Area, Figure, SessionUser, Thread, ViewRef, PanelViewSpec } from '@clew/contracts';
-import { Banner, Button, ChatLayout, ClickableCard, Divider, EmptyState, Grid, GridSpan, Heading, HStack, Icon, IconButton, InfoTip, Layout, LayoutContent, LayoutFooter, Link, List, ListItem, MoreMenu, ProgressBar, Skeleton, SparklesIcon, Text, ToggleButton, Toolbar, VisuallyHidden, VStack, useMediaQuery, useToast } from '@clew/ui';
+import { Banner, Button, ChatLayout, ClickableCard, Divider, EmptyState, Grid, GridSpan, Heading, HStack, Icon, IconButton, InfoTip, Layout, LayoutContent, LayoutFooter, LayoutHeader, Link, List, ListItem, MoreMenu, ProgressBar, Skeleton, SparklesIcon, Text, ToggleButton, Toolbar, VisuallyHidden, VStack, useMediaQuery, useToast } from '@clew/ui';
 import { addDays, displayDate, shortDayLabel, timeLabel, timeRange, today } from '@clew/calendar/dates';
 import { errorMessage } from '../query-policy';
 import { areasQuery, assistantQuery, attentionQuery, cardViewQuery, figuresQuery, threadsQuery, todayQuery, viewQuery } from '../queries';
@@ -11,7 +11,7 @@ import { keys } from '../query-keys';
 import { digestSentence, groupThreads } from '../stream';
 import { clewIcon } from '../icons';
 import { Composer, Suggestions } from '../components/composer';
-import { ConversationContext, ConversationProvider, type ConversationState } from '../components/conversation-context';
+import { ConversationContext, ConversationProvider, titled, type ConversationState } from '../components/conversation-context';
 import { Transcript } from '../components/conversation';
 import { useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, narrowQuery, shortQuery } from '../components/shell';
@@ -129,7 +129,7 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
   const capabilityView = useQuery({ ...viewQuery(params.capability ?? '', viewInput), enabled: !!params.capability, placeholderData: keepPreviousData });
   // The view on screen. Another capability's view takes its place when it has arrived, not before: the panel stays open
   // between a row and its contact card, and focus can follow. Typing in a view's own field keeps that view's rows meanwhile.
-  const shownView = useRef<{ capability: string; title: string; output: unknown; spec: PanelViewSpec | undefined; input: Record<string, unknown>; via: boolean; address: string } | null>(null);
+  const shownView = useRef<{ capability: string; title: string; output: unknown; spec: PanelViewSpec | undefined; source: string | undefined; input: Record<string, unknown>; via: boolean; address: string } | null>(null);
   const viewInputValue = useMemo(() => { try { const v: unknown = viewInput ? JSON.parse(viewInput) : {}; return v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}; } catch { return {}; } }, [viewInput]);
   const cardView = useQuery({ ...cardViewQuery(params.threadId ?? '', params.actionId ?? ''), enabled: !!params.threadId && !!params.actionId });
   // What a card action answered is acted on once per answer (StrictMode replays effects): an executed thread goes into the cache, a link opens a tab.
@@ -143,16 +143,16 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
   }, [cardView.data, client, replace]);
   const arrived = capabilityView.data && (!capabilityView.isPlaceholderData || capabilityView.data.view?.capability === params.capability) ? capabilityView.data : undefined;
   if (!params.capability || capabilityView.isError) shownView.current = null;
-  else if (arrived) shownView.current = { capability: params.capability, title: viewTitle ?? params.capability, output: arrived.output, spec: arrived.view, input: viewInputValue, via: search.get('via') === '1', address: location.pathname + location.search };
+  else if (arrived) shownView.current = { capability: params.capability, title: viewTitle ?? params.capability, output: arrived.output, spec: arrived.view, source: arrived.source, input: viewInputValue, via: search.get('via') === '1', address: location.pathname + location.search };
   const capabilityShown = params.capability ? shownView.current : null;
   const view = useMemo(() => {
-    if (params.capability) return capabilityShown ? { title: capabilityShown.title, output: capabilityShown.output, spec: capabilityShown.spec } : null;
+    if (params.capability) return capabilityShown ? { title: capabilityShown.title, output: capabilityShown.output, spec: capabilityShown.spec, source: capabilityShown.source } : null;
     const result = params.threadId && params.actionId ? cardView.data : undefined;
     if (!result) return null;
     const label = threads.find(t => t.id === params.threadId)?.actions.find(a => a.id === params.actionId)?.label ?? 'Vy';
-    if (result.kind === 'execute') return { title: label, output: result.thread.receipt, spec: undefined };
+    if (result.kind === 'execute') return { title: label, output: result.thread.receipt, spec: undefined, source: undefined };
     if (typeof (result.output as { url?: string }).url === 'string') return null;
-    return { title: label, output: result.output, spec: result.view };
+    return { title: label, output: result.output, spec: result.view, source: undefined };
   }, [params.capability, params.threadId, params.actionId, capabilityShown, cardView.data, threads]);
   // The page's one alert: a read that failed before it had anything to show. A failed refetch keeps the old data and says nothing; the day, the figures and the model's status are extras.
   const failed = [threadsQ, areasQ, attentionQ].find(q => q.isError && q.data === undefined);
@@ -412,10 +412,10 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
 
   /** The transcript's lead on a short screen, where there is no pinned toolbar: the title and the way out, in the flow. */
   const conversationHeader = (talk: { conversation: { title: string } | null; pending: { text: string } | null; newConversation: () => void; close: () => void }) => <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-    <Heading level={1}>{talk.conversation?.title ?? talk.pending?.text}</Heading>
+    <Heading level={3} accessibilityLevel={1}>{titled(talk.conversation?.title ?? talk.pending?.text ?? '')}</Heading>
     <HStack gap={1}><Button size="sm" variant="ghost" label="Ny fråga" onClick={talk.newConversation} /><Button size="sm" variant="ghost" label="Stäng samtalet" onClick={talk.close} /></HStack>
   </HStack>;
-  const conversationToolbar = (talk: ConversationState) => <Toolbar label="Samtalet" size="sm" startContent={<Heading level={mobile ? 3 : 1} accessibilityLevel={1}>{talk.conversation?.title ?? talk.pending?.text.slice(0, 80)}</Heading>}
+  const conversationToolbar = (talk: ConversationState) => <Toolbar label="Samtalet" size="sm" startContent={<Heading level={3} accessibilityLevel={1}>{titled(talk.conversation?.title ?? talk.pending?.text.slice(0, 80) ?? '')}</Heading>}
     endContent={mobile
       ? <HStack gap={1} vAlign="center"><IconButton size="sm" variant="ghost" label="Stäng samtalet" icon={<Icon icon="close" />} onClick={talk.close} /><MoreMenu label="Fler val" size="sm" variant="ghost" items={[{ id: 'new', label: 'Ny fråga', onClick: talk.newConversation }]} /></HStack>
       : <HStack gap={2} vAlign="center">{started(talk) && <Text type="supporting">Startat av dig {started(talk)}</Text>}<Button size="sm" variant="ghost" label="Stäng samtalet" icon={<Icon icon="close" size="sm" />} onClick={talk.close} /></HStack>} />;
@@ -426,7 +426,7 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
   const column = (talk: ConversationState) => {
     if (talk.open) return short
       ? <VStack gap={4} padding={3}>{conversationHeader(talk)}<Transcript onOpenView={openView} renderCard={t => card(t, undefined, 2)} viewHref={v => viewHref(v.capability, v.title, v.input, true)} /><Composer place="conversation" /></VStack>
-      : <Layout height="fill" contentWidth={800} padding={mobile ? 3 : 4} defaultHasDividers header={conversationToolbar(talk)}
+      : <Layout height="fill" contentWidth={800} padding={mobile ? 3 : 4} defaultHasDividers header={<LayoutHeader>{conversationToolbar(talk)}</LayoutHeader>}
         content={<LayoutContent isScrollable={false} padding={0}>
           {/* The ChatLayout spans the content area full bleed and owns the scroll, so its scrollbar sits at the window's edge like a page's; the spacious density centres its stream and dock to one 800 px column. */}
           <VStack height="100%"><ChatLayout density="spacious" composer={<Composer place="conversation" />}><Transcript onOpenView={openView} renderCard={t => card(t, undefined, 2)} viewHref={v => viewHref(v.capability, v.title, v.input, true)} /></ChatLayout></VStack>
@@ -455,7 +455,7 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
     </Shell>}</ConversationContext.Consumer>
     <PanelView title={view?.title ?? null} output={view?.output} onClose={() => navigate(back)} onOpenItem={(item, dayItems) => setOpenItem({ item, dayItems })}
       /* A declared view (D38): its controls rewrite the address, so the view stays addressable and the back button undoes a search; a row's own view is a link. A card's view has no controls: its input is the card's. */
-      view={view?.spec} input={capabilityShown?.input ?? {}} isLoading={capabilityView.isFetching && capabilityView.isPlaceholderData} address={capabilityShown?.address}
+      view={view?.spec} source={view?.source} input={capabilityShown?.input ?? {}} isLoading={capabilityView.isFetching && capabilityView.isPlaceholderData} address={capabilityShown?.address}
       onInput={capabilityShown && capabilityShown.capability === params.capability ? next => navigate(viewHref(capabilityShown.capability, capabilityShown.title, next, capabilityShown.via), { replace: true }) : undefined}
       hrefFor={v => viewHref(v.capability, v.title, v.input, true)} onBack={capabilityShown?.via ? () => navigate(-1) : undefined} />
     <EventDialog item={openItem?.item ?? null} dayItems={openItem?.dayItems ?? []} onClose={() => setOpenItem(null)}

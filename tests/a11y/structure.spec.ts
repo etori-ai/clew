@@ -239,8 +239,8 @@ test.describe('D26 questions answered from documents', () => {
     await expect(bubble.getByText('12 mars 2026', { exact: true })).toBeVisible();
     await expect(bubble.getByRole('button', { name: 'Visa källor' })).toBeVisible();
     await expect(page.getByRole('group', { name: 'Följdfrågor' }).getByRole('button', { name: 'Och om hen slagit i huvudet?' })).toBeVisible();
-    // "Gör till ett kort" proposes; the answer executes nothing. What happened is said in the transcript.
-    await bubble.getByRole('button', { name: 'Gör till ett kort' }).click();
+    // "Lägg under Behöver dig" proposes; the answer executes nothing. What happened is said in the transcript.
+    await bubble.getByRole('button', { name: 'Lägg under Behöver dig' }).click();
     await expect(page.getByText(/^Klart\. Kortet "Ny rutin för läkemedelshantering" ligger under Behöver dig/)).toBeVisible();
   });
   test('the sources view numbers its rows, names owner and review date, warns about a stale one and says which source did not answer', async ({ page, api: _ }) => {

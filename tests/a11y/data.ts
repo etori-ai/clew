@@ -139,7 +139,7 @@ export const conversation = (source: Thread[], text: string, conversationId = 'k
   }
   // A question a declared view answers (D38): the sentence counts, the view is drawn under it from its source.
   if (/telefonbok/i.test(text)) {
-    const body = '2 rader under sök i telefonboken. Se dem i vyn. Telefonboken 09:00.';
+    const body = 'Sök i telefonboken: 2 rader.';
     const view = { capability: 'telefonbok.directory', input: { query: 'lärare' }, title: 'Sök i telefonboken', source: 'Telefonboken', declared: true };
     const reply = thread({ id: conversationId, title: text.slice(0, 80), kind: 'question', connector: 'clew', area: 'fragor',
       messages: [...previous, { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW }, { id: `a${previous.length}`, role: 'assistant', body, createdAt: NOW, meta: { source: 'Telefonboken', shape: 'vy', view } }] });

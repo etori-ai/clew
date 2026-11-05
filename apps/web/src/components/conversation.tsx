@@ -20,8 +20,8 @@ function Sources({ sources }: { sources: SourceCitation[] }) {
     {stale && <MetadataListItem label="Obs">{staleLabel(true, stale.reviewedAt)}</MetadataListItem>}
   </MetadataList>;
 }
-/** Under an answer: where it came from and, when a model wrote it, which one (D24), so a changed model is visible. */
-const answerFooter = (meta: MessageMeta | undefined) => [meta?.source, meta?.model ? `Svar från ${meta.model.title}` : undefined].filter(Boolean).join(' · ') || undefined;
+/** Under an answer: where it came from and, when a model wrote it, which one (D24), so a changed model is visible. A cited answer names its source in `Sources`, once. */
+const answerFooter = (meta: MessageMeta | undefined) => [meta?.sources?.length ? undefined : meta?.source, meta?.model ? `Svar från ${meta.model.title}` : undefined].filter(Boolean).join(' · ') || undefined;
 const citationSources = (sources: SourceCitation[]) => Object.fromEntries(sources.map(s => [String(s.n), { title: s.label, ...(s.link ? { url: s.link } : {}) }]));
 
 const EMPTY_EVENTS: CalendarEvent[] = [];
@@ -89,15 +89,17 @@ export function Transcript({ onOpenView, renderCard, viewHref }: { onOpenView: (
         {m.role === 'user' && (m.meta?.chips?.length ?? 0) > 0 && <HStack gap={1} wrap="wrap">{m.meta!.chips!.map(c => <Token key={c.ref} size="sm" label={c.label} />)}</HStack>}
         <ChatMessageBubble variant={m.role === 'assistant' ? 'ghost' : 'filled'} width={m.role === 'assistant' ? '100%' : undefined}
           metadata={<ChatMessageMetadata timestamp={<Timestamp value={m.createdAt} format="time" hasTooltip={false} />} footer={m.role === 'assistant' ? answerFooter(m.meta) : undefined} />}>
-          {m.role === 'assistant' ? <Markdown density="compact" headingLevelStart={2} {...(m.meta?.sources?.length ? { sources: citationSources(m.meta.sources), citationStyle: 'number' as const } : {})}>{m.body}</Markdown> : m.body}
-          {m.meta?.sources && m.meta.sources.length > 0 && <Sources sources={m.meta.sources} />}
-          {m.meta?.cards?.map(id => <TurnCard key={id} id={id} render={renderCard} />)}
-          {/* The latest answer's declared view is drawn under it; an older answer keeps its button, so opening a long conversation reads one view, not all of them. */}
-          {m.role === 'assistant' && i === n - 1 && !pending && m.meta?.view?.declared && <ViewEmbed view={m.meta.view} hrefFor={viewHref} />}
-          {(m.meta?.view || m.meta?.sources?.length) && <HStack gap={2} wrap="wrap">
-            {m.meta?.view && <Button size="sm" label={`Visa ${m.meta.view.title.toLowerCase()}`} onClick={() => onOpenView(m.meta!.view!)} />}
-            {m.meta?.sources && m.meta.sources.length > 0 && <Button size="sm" variant="primary" label="Gör till ett kort" isDisabled={busy} clickAction={() => talk.makeCard(m.id)} />}
-          </HStack>}
+          {m.role === 'assistant' ? <VStack gap={3}>
+            <Markdown density="compact" headingLevelStart={2} {...(m.meta?.sources?.length ? { sources: citationSources(m.meta.sources), citationStyle: 'number' as const } : {})}>{m.body}</Markdown>
+            {m.meta?.sources && m.meta.sources.length > 0 && <Sources sources={m.meta.sources} />}
+            {m.meta?.cards?.map(id => <TurnCard key={id} id={id} render={renderCard} />)}
+            {/* The latest answer's declared view is drawn under it; an older answer keeps its button, so opening a long conversation reads one view, not all of them. */}
+            {i === n - 1 && !pending && m.meta?.view?.declared && <ViewEmbed view={m.meta.view} hrefFor={viewHref} />}
+            {(m.meta?.view || m.meta?.sources?.length) && <HStack gap={2} wrap="wrap">
+              {m.meta?.view && <Button size="sm" label={m.meta.view.declared ? 'Visa allt' : `Visa ${m.meta.view.title.toLowerCase()}`} onClick={() => onOpenView(m.meta!.view!)} />}
+              {m.meta?.sources && m.meta.sources.length > 0 && <Button size="sm" label="Lägg under Behöver dig" isDisabled={busy} clickAction={() => talk.makeCard(m.id)} />}
+            </HStack>}
+          </VStack> : m.body}
         </ChatMessageBubble>
         {m.meta?.draft && <ChatSystemMessage icon={<Icon icon="warning" color="warning" size="sm" />}>Utkast i kortet. Inget är skickat förrän du trycker på knappen i kortet.</ChatSystemMessage>}
       </ChatMessage>),

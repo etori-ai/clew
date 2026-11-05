@@ -27,6 +27,7 @@ const values: Record<string, string> = {
   vab: 'vab', 'waiting-safety-rep': 'väntar på skyddsombud',
 };
 const instant = /^\d{4}-\d{2}-\d{2}T/;
+const day = /^\d{4}-\d{2}-\d{2}$/;
 const time = new Intl.DateTimeFormat('sv-SE', { dateStyle: 'short', timeStyle: 'short' });
 
 export const fieldLabel = (key: string) => fieldLabels[key] ?? key;
@@ -35,7 +36,7 @@ export function fieldValue(value: unknown): string {
   if (value === null || value === undefined) return '–';
   if (typeof value === 'boolean') return value ? 'Ja' : 'Nej';
   if (typeof value === 'number') return value.toLocaleString('sv-SE');
-  if (typeof value === 'string') return instant.test(value) ? time.format(new Date(value)) : values[value] ?? value;
+  if (typeof value === 'string') return instant.test(value) ? time.format(new Date(value)) : day.test(value) ? dateOnly.format(new Date(`${value}T12:00:00`)) : values[value] ?? value;
   if (Array.isArray(value)) return value.map(fieldValue).join(', ');
   return Object.entries(value).filter(([key]) => !hiddenFields.has(key)).map(([, v]) => fieldValue(v)).join(' · ');
 }

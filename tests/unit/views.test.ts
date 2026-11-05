@@ -86,10 +86,10 @@ describe('the model and a view it may not read', () => {
     expect(viewInput('Sök i telefonboken', tool)).toEqual({});
     expect(viewInput('sök efter rektor på bergsåkers skola i telefonboken', tool)).toEqual({ query: 'efter rektor bergsåkers skola' });
     expect(viewInput('telefonboken anna', open)).toEqual({});
-    const answer = viewAnswer({ ...tool, view: tool.view! }, { query: 'anna' }, output, now);
-    expect(answer.body).toMatch(/^2 rader under sök i telefonboken\. Se dem i vyn\. Telefonboken \d\d:\d\d\.$/);
+    const answer = viewAnswer({ ...tool, view: tool.view! }, { query: 'anna' }, output);
+    expect(answer.body).toBe('Sök i telefonboken: 2 rader.');
     expect(answer.view).toEqual({ capability: 'telefonbok.directory', input: { query: 'anna' }, title: 'Sök i telefonboken', source: 'Telefonboken', declared: true });
-    expect(viewAnswer({ ...tool, view: tool.view! }, {}, { rows: [] }, now).body).toMatch(/^Inga träffar i telefonboken\. Telefonboken/);
+    expect(viewAnswer({ ...tool, view: tool.view! }, {}, { rows: [] }).body).toBe('Inga träffar i telefonboken.');
   });
 });
 

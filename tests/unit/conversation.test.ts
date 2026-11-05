@@ -339,7 +339,7 @@ describe('a declared view is the answer, with and without the model (D38)', () =
     const w = world({ extra: [telefonbok()] });
     const r = await w.assistant.converse(hassan, { text: 'telefonboken lindqvist' });
     expect(r).toMatchObject({ assistant: 'router', shape: 'vy', view: { capability: 'telefonbok.directory', input: { query: 'lindqvist' }, title: 'Sök i telefonboken', source: 'Telefonboken', declared: true } });
-    expect(r.answer.body).toBe('1 rad under sök i telefonboken. Se den i vyn. Telefonboken 08:00.');
+    expect(r.answer.body).toBe('Sök i telefonboken: 1 rad.');
     expect(w.store.audit.at(-1)).toMatchObject({ actor: 'person:hassan', action: 'conversation.asked', subject: 'thread:' + r.conversationId, details: { assistant: 'router', tools: ['telefonbok.directory'], view: 'telefonbok.directory' } });
     // What Clew keeps of the turn: the question, the sentence and where the view is. No name it did not get from the person, no number.
     const kept = JSON.stringify([await w.store.readThread('hassan', r.conversationId), w.store.audit]);
@@ -347,7 +347,7 @@ describe('a declared view is the answer, with and without the model (D38)', () =
     // The view itself is read from the source when it is opened, as the person.
     expect(await w.deps.run<{ rows: unknown[] }>(hassan, r.view!.capability, r.view!.input)).toMatchObject({ rows: [{ name: 'Anna Lindqvist', phone: '0980-319 203' }] });
     const team = await w.assistant.converse(hassan, { text: 'mitt team' });
-    expect(team).toMatchObject({ view: { capability: 'telefonbok.team', input: {}, declared: true }, answer: { body: '5 rader under mitt teams kontaktlista. Se dem i vyn. Telefonboken 08:00.' } });
+    expect(team).toMatchObject({ view: { capability: 'telefonbok.team', input: {}, declared: true }, answer: { body: 'Mitt teams kontaktlista: 5 rader.' } });
   });
   test('with the model: the tool runs for the person\'s view, the model is handed a count, and its answer carries the view', async () => {
     const handed: unknown[] = [];

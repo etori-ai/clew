@@ -112,11 +112,11 @@ test.describe('a declared view under an answer', () => {
     await composer(page).fill('telefonboken lärare');
     await composer(page).press('Enter');
     const log = page.getByRole('log');
-    await expect(log).toContainText('2 rader under sök i telefonboken.');
+    await expect(log).toContainText('Sök i telefonboken: 2 rader.');
     await expect(log.getByRole('listitem').filter({ hasText: 'Anna Lindqvist' }).getByRole('link', { name: '0980-319 203' })).toHaveAttribute('href', 'tel:0980319203');
     await expect(log.getByRole('searchbox')).toHaveCount(0);
     await expectNoAxeViolations(page);
-    await log.getByRole('button', { name: 'Visa sök i telefonboken' }).click();
+    await log.getByRole('button', { name: 'Visa allt' }).click();
     await expect(page.getByRole('dialog', { name: 'Sök i telefonboken' }).getByRole('searchbox')).toHaveValue('lärare');
   });
 });

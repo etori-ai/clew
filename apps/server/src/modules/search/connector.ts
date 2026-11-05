@@ -48,7 +48,7 @@ export function searchConnector(search: SearchUsecases, cards: AnswerCards = {})
           if (!hit) throw new CapabilityError('Avsnittet finns inte längre.');
           return hit;
         } },
-      { name: SEARCH_CONNECTOR + '.cardFromAnswer', kind: 'propose', title: 'Gör till ett kort', model: false,
+      { name: SEARCH_CONNECTOR + '.cardFromAnswer', kind: 'propose', title: 'Lägg under Behöver dig', model: false,
         description: 'Ett kort under Behöver dig av ett svar som bygger på dokument: källorna som rader, länken som knapp.',
         input: CardFromAnswerInputSchema, output: Type.Object({ threadId: Type.String() }), scope: () => true,
         run: async (actor, input: CardFromAnswerInput) => {

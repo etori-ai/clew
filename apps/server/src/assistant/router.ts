@@ -49,12 +49,14 @@ export function viewInput(text: string, tool: ToolInfo): Record<string, unknown>
   const rest = text.replace(/[^\p{L}\p{N}\s@.+-]/gu, ' ').split(/\s+/).filter(w => w && !STOP.has(w.toLowerCase()) && !named.some(n => same(n, w.toLowerCase()))).join(' ').trim();
   return rest.length >= 2 ? { [query.key]: rest.slice(0, 80) } : {};
 }
-/** The sentence for a view the model may not read (D38): how much is shown and where, never what it holds. The view is the answer. */
-export function viewAnswer(tool: ToolInfo & { view: View }, input: Record<string, unknown>, output: unknown, at: string): { body: string; view: ViewRef } {
-  const when = `${tool.source} ${clockOf(at)}`;
+/**
+ * The sentence for a view the model may not read (D38): how much is shown, never what it holds. The view is the answer and
+ * is drawn right under it, and the source and time stand on the message's own line, so the sentence repeats neither (D47).
+ */
+export function viewAnswer(tool: ToolInfo & { view: View }, input: Record<string, unknown>, output: unknown): { body: string; view: ViewRef } {
   const rows = viewRows(tool.view, output);
   const empty = 'empty' in tool.view && tool.view.empty ? tool.view.empty.replace(/\.$/, '') : `Inget under ${tool.title.toLowerCase()}`;
-  const body = !rows ? `${tool.title} visas i vyn. ${when}.` : rows.length ? `${rows.length} ${rows.length === 1 ? 'rad' : 'rader'} under ${tool.title.toLowerCase()}. Se ${rows.length === 1 ? 'den' : 'dem'} i vyn. ${when}.` : `${empty}. ${when}.`;
+  const body = !rows ? `${tool.title} visas här under.` : rows.length ? `${tool.title}: ${rows.length} ${rows.length === 1 ? 'rad' : 'rader'}.` : `${empty}.`;
   return { body, view: { capability: tool.name, input, title: tool.title, source: tool.source, declared: true } };
 }
 /** The three nearest capability titles, for the "Det där kan jag inte svara på" sentence and as follow-ups. */

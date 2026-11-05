@@ -58,7 +58,7 @@ api.get('/cap/:name', async c => {
   const persona = c.get('session').context;
   const output = await runCapability(persona, name, input);
   const view = registry.viewFor(actorOf(persona), name);
-  return c.json({ output, ...(view ? { view } : {}) });
+  return c.json({ output, source: found.connector.source, ...(view ? { view } : {}) });
 });
 api.post('/cap/:name', async c => {
   const name = c.req.param('name'); const found = registry.find(name);

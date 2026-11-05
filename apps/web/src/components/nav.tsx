@@ -7,6 +7,7 @@ import { addDays, displayDate, shortDayLabel, timeLabel, today } from '@clew/cal
 import { areasQuery, threadsQuery } from '../queries';
 import { groupThreads } from '../stream';
 import { clewIcon } from '../icons';
+import { titled } from './conversation-context';
 import type { ShellNav } from './shell';
 
 /** The administration's two sections, rows under Administration (D45). */
@@ -102,7 +103,7 @@ export function useRail({ current, admin }: { current: RailCurrent; admin: boole
         <SideNavItem label="Redan hanterat" icon={CheckCircleIcon} href="/handled" isSelected={onStart && current.pile === 'handled'} endContent={count(g.handledToday.length)} />
       </SideNavSection>
       {recent.length > 0 && <SideNavSection title="Samtal">
-        {recent.map(t => <SideNavItem key={t.id} label={t.title} href={`/conversations/${t.id}`} isSelected={current.conversationId === t.id}
+        {recent.map(t => <SideNavItem key={t.id} label={titled(t.title)} href={`/conversations/${t.id}`} isSelected={current.conversationId === t.id}
           endContent={<Text type="supporting" hasTabularNumbers>{said(t)}</Text>} />)}
       </SideNavSection>}
     </>,

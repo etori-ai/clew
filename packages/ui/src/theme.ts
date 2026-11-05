@@ -13,6 +13,8 @@ const clewBaseTheme = defineTheme({
   name: 'clew-neutral',
   extends: neutralTheme,
   typography: { scale: { base: 15, ratio: 1.2 } },
+  // The side panel opens over a page that is still its context: half of Astryx's scrim, which keeps a dialog set apart without blacking the page out.
+  tokens: { '--color-overlay': ['#01122833', '#1111124D'] },
   // Astryx's own control sizes are drawn for a mouse. Under a finger every size reaches HANDOVER §6's 44 px (WCAG 2.5.5).
   // By the pointer, not the width: a narrow window on a computer keeps its compact controls, a tablet does not.
   adaptations: { rules: [{ when: { pointer: 'coarse' }, value: { tokens: { '--size-element-sm': '44px', '--size-element-md': '44px', '--size-element-lg': '48px' }, components: { 'segmented-control-item': { base: { minHeight: '44px' } }, item: { base: { minHeight: '44px' } } } } }] },

@@ -46,7 +46,7 @@ export interface ConversationState {
   stop(): void;
   performActions(actions: ClewAction[]): Promise<void>;
   cancelActions(): void;
-  /** "Gör till ett kort" under a cited answer (D26): the sources become a card under Behöver dig; nothing is executed. */
+  /** "Lägg under Behöver dig" under a cited answer (D26): the sources become a card under Behöver dig; nothing is executed. */
   makeCard(messageId: string): Promise<void>;
   openConversation(threadId: string): Promise<void>;
   newConversation(): void;
@@ -61,6 +61,8 @@ export const ConversationContext = createContext<ConversationState>({
   setValue: noop, addChip: noop, removeChip: noop, rememberObject: noop, submit: never, ask: noop, stop: noop, performActions: never, cancelActions: noop, makeCard: never, openConversation: never, newConversation: noop, close: noop, focus: noop,
 });
 export const useConversation = () => useContext(ConversationContext);
+/** A conversation's title is the question as it was typed; as a title it starts with a capital. */
+export const titled = (question: string) => question.charAt(0).toLocaleUpperCase('sv-SE') + question.slice(1);
 
 const TOKEN = /@\[([a-z]+:[^\]]+)\]/g;
 export const refsIn = (value: string) => [...value.matchAll(TOKEN)].map(m => m[1]!);

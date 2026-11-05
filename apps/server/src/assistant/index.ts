@@ -98,7 +98,7 @@ export function assistantUsecases(deps: AssistantDeps) {
       // A view with a search field takes the rest of what was typed as its question (D38); every other read runs as it is.
       const input = viewInput(text, match);
       const output = await turn.run(match.name, input);
-      const answer = match.view && readsSummary(match.view) ? viewAnswer({ ...match, view: match.view }, input, output, clock().toISOString()) : templatedAnswer(match, input, output, clock().toISOString());
+      const answer = match.view && readsSummary(match.view) ? viewAnswer({ ...match, view: match.view }, input, output) : templatedAnswer(match, input, output, clock().toISOString());
       return { body: answer.body, source: match.source, shape: answer.view ? 'vy' : 'svar', assistant, clewActions: [], followUps: nearest(text, tools.filter(t => t.name !== match.name)).map(t => t.title), toolCalls: [{ capability: match.name, input, output }], ...(answer.view ? { view: answer.view } : {}) };
     }
     // The catch-all (D26): a question no capability answers goes to the composite search as typed, and the hits become a view the person reads.

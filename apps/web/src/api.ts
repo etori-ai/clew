@@ -77,7 +77,7 @@ export const api = {
   remindInvitees: (id: string) => post<Thread>(`/api/threads/${id}/remind-invitees`),
   remind: (id: string, seconds: number) => post<{ id: string; fireAt: string; thread: Thread }>(`/api/threads/${id}/remind`, { seconds }),
   cancelReminder: (id: string, workflowId: string) => post<Thread>(`/api/threads/${id}/remind/cancel`, { workflowId }),
-  capability: (name: string, input?: unknown) => call<{ output: unknown; view?: PanelViewSpec }>(`/api/cap/${name}` + (input ? `?input=${encodeURIComponent(JSON.stringify(input))}` : '')),
+  capability: (name: string, input?: unknown) => call<{ output: unknown; source?: string; view?: PanelViewSpec }>(`/api/cap/${name}` + (input ? `?input=${encodeURIComponent(JSON.stringify(input))}` : '')),
   runCapability: (name: string, input?: unknown) => post<{ output: unknown }>(`/api/cap/${name}`, input ?? {}),
   // Administration (D23). Every call is checked again on the server; no secret ever comes back.
   admin: {

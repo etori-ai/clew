@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { announcements, composer, desktop, expect, expectNoAxeViolations, open, test } from './support';
+import { announcements, composer, desktop, expect, expectNoAxeViolations, heading, open, test } from './support';
 
 test.use({ viewport: desktop });
 
@@ -19,7 +19,7 @@ test.describe('the answer on its way', () => {
     await expect(log).toHaveAttribute('aria-busy', 'true');
     await expect(log).toContainText('Vem är på plats?');
     await expect(page.getByRole('button', { name: 'Stoppa' })).toBeEnabled();
-    await expect(page.getByRole('heading', { level: 1, name: 'Vem är på plats?' })).toBeVisible();
+    await expect(heading(page, 1, 'Vem är på plats?')).toBeVisible();
     await expectNoAxeViolations(page);
     // The box keeps the focus and takes the next question while the answer is written; Enter waits for the answer.
     await expect(composer(page)).toBeFocused();
