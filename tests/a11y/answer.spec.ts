@@ -10,7 +10,8 @@ test.use({ viewport: desktop });
 test.describe('the answer on its way', () => {
   test('the question is drawn at once, the log is busy while the answer is written, the box keeps the focus with Stoppa, and the answer takes its place', async ({ page, api }) => {
     await open(page, '/');
-    api.answerDelay = 1_500;
+    // Held, not timed: the axe scan below takes over a second here and longer in CI, and an answer that comes first would let Enter send the next question.
+    const release = api.holdAnswer();
     const input = composer(page);
     await input.fill('Vem är på plats?');
     await input.press('Enter');
@@ -25,6 +26,7 @@ test.describe('the answer on its way', () => {
     await page.keyboard.type('Och i morgon?');
     await page.keyboard.press('Enter');
     await expect(composer(page)).toHaveText('Och i morgon?');
+    release();
     await expect(log).toContainText('Tio personer är på plats i dag.');
     await expect(log).not.toHaveAttribute('aria-busy', 'true');
     // The question is drawn once: the pending one became the written one in place.

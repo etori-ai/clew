@@ -19,6 +19,7 @@ import type { ConnectorSummary } from '@clew/contracts';
 export class MockApi {
   threads = threads();
   answerDelay = 0;
+  private answerHeld?: Promise<void>;
   /** How long the first read of the cards takes, so a test can see the page while they load (D36). */
   threadsDelay = 0;
   sessionDelay = 0;
@@ -37,6 +38,12 @@ export class MockApi {
   currentModel = 'gpt-oss-120b';
   output: unknown = { date: '2026-11-04', onDuty: ['Anna Lindqvist 07:00–16:00'], absent: [{ name: 'Sara Nyström', kind: 'short' }] };
   unmocked: string[] = [];
+  /** Keeps every turn pending until the returned function is called, for a test that works while the answer is on its way: `answerDelay` can run out first on a slow machine. */
+  holdAnswer() {
+    let release = () => {};
+    this.answerHeld = new Promise<void>(resolve => { release = resolve; });
+    return release;
+  }
   private update(id: string, change: Partial<Thread>) {
     this.threads = this.threads.map(t => t.id === id ? { ...t, ...change, updatedAt: NOW } : t);
     return this.threads.find(t => t.id === id)!;
@@ -109,9 +116,10 @@ export class MockApi {
     if (path === '/cap/clew.cardFromAnswer' && post) return json({ output: { threadId: 'rutin' } });
     if (path.startsWith('/cap/')) return json({ output: this.output });
     // A turn as the server streams it (D36): a read as a step, the answer in two deltas, then the finished turn. Playwright
-    // answers in one piece, so the pending turn is what `answerDelay` holds open.
+    // answers in one piece, so the pending turn is what `answerDelay` and `holdAnswer` hold open.
     if (path === '/conversation/stream') {
       const body = request.postDataJSON() as { text: string; conversationId?: string };
+      await this.answerHeld;
       if (this.answerDelay) await new Promise(resolve => setTimeout(resolve, this.answerDelay));
       const response = conversation(this.threads, body.text, body.conversationId);
       const step = { id: 'steg-1', capability: 'mock.read', title: 'Läser', source: response.answer.source };
@@ -125,6 +133,7 @@ export class MockApi {
     }
     if (path === '/conversation') {
       const body = request.postDataJSON() as { text: string; conversationId?: string };
+      await this.answerHeld;
       if (this.answerDelay) await new Promise(resolve => setTimeout(resolve, this.answerDelay));
       const response = conversation(this.threads, body.text, body.conversationId);
       this.threads = [...this.threads.filter(t => t.id !== response.conversationId), response.thread];

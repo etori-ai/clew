@@ -100,8 +100,11 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
       }
       await expect.poll(async () => { const now = await colours(); return now.rail !== now.page && now.selected !== now.rail; }).toBe(true);
     }
+    // The toggle comes a moment after the resize, and `openNav` must run once: a second click lands on the open drawer's backdrop.
     await page.setViewportSize(narrow);
-    await expect.poll(async () => standsOut(await openNav(page))).toBe(true);
+    await expect(page.getByRole('button', { name: 'Öppna navigering' })).toBeVisible();
+    const drawer = await openNav(page);
+    await expect.poll(() => standsOut(drawer)).toBe(true);
   });
 
   test('appearance changes the theme and survives navigation and reload', async ({ page, api: _ }) => {
