@@ -3,8 +3,12 @@ import { contrastRatio, resolveBranding, sundsvallPalette } from '../../packages
 import { createClewTheme } from '../../packages/ui/src/theme';
 
 describe('installation branding (D37, D38)', () => {
-  test('the Sundsvall installation uses its local dragon by default', () => {
-    expect(resolveBranding()).toEqual({
+  test('an installation that chooses nothing gets Astryx Neutral without a logo (D46)', () => {
+    expect(resolveBranding()).toEqual({ profile: 'neutral', colors: null, logo: null });
+  });
+
+  test('the Sundsvall installation uses its local dragon', () => {
+    expect(resolveBranding({ profile: 'sundsvall' })).toEqual({
       profile: 'sundsvall', colors: { accent: '#005595', accentMuted: '#daeff1' },
       logo: { src: '/branding/sundsvall-dragon.png', darkSrc: '/branding/sundsvall-dragon-white.png', alt: 'Sundsvalls kommun' },
     });
@@ -88,7 +92,7 @@ describe('Sundsvall colour contracts', () => {
   });
 
   test('the resolved Astryx tokens carry the published colours and black text on pale surfaces', () => {
-    const theme = createClewTheme(resolveBranding());
+    const theme = createClewTheme(resolveBranding({ profile: 'sundsvall' }));
     expect(theme.tokens['--color-accent']).toContain('#005595');
     expect(theme.tokens['--color-accent-muted']).toContain('#daeff1');
     expect(theme.tokens['--color-on-accent']).toContain('#ffffff');
@@ -107,7 +111,7 @@ describe('Sundsvall colour contracts', () => {
   test('choosing another brand changes its accent while retaining shared accessibility and status semantics', () => {
     const neutral = createClewTheme(resolveBranding({ profile: 'neutral' }));
     const custom = createClewTheme(resolveBranding({ profile: 'custom', accent: '#5b1f78', accentMuted: '#d7dbf2' }));
-    const sundsvall = createClewTheme(resolveBranding());
+    const sundsvall = createClewTheme(resolveBranding({ profile: 'sundsvall' }));
     expect(custom.tokens['--color-accent']).toContain('#5b1f78');
     expect(custom.tokens['--color-background-body']).toBe(neutral.tokens['--color-background-body']);
     expect(neutral.tokens['--color-accent']).not.toBe(sundsvall.tokens['--color-accent']);
@@ -120,7 +124,7 @@ describe('Sundsvall colour contracts', () => {
   });
 
   test('dark mode swaps brand fills and foregrounds with readable published pairs', () => {
-    for (const profile of [resolveBranding(), resolveBranding({ profile: 'custom', accent: '#5b1f78', accentMuted: '#d7dbf2' })]) {
+    for (const profile of [resolveBranding({ profile: 'sundsvall' }), resolveBranding({ profile: 'custom', accent: '#5b1f78', accentMuted: '#d7dbf2' })]) {
       const tokens = createClewTheme(profile).tokens;
       if (!profile.colors) throw new Error('The test requires a branded profile');
       expect(tokens['--color-accent']).toBe(`light-dark(${profile.colors.accent}, ${profile.colors.accentMuted})`);
@@ -129,7 +133,7 @@ describe('Sundsvall colour contracts', () => {
       expect(tokens['--color-text-secondary']).toBe('light-dark(#4b4b4b, #ececec)');
       expect(contrastRatio(profile.colors.accentMuted, sundsvallPalette.darkGray)).toBeGreaterThanOrEqual(4.5);
     }
-    const dark = createClewTheme(resolveBranding()).tokens;
+    const dark = createClewTheme(resolveBranding({ profile: 'sundsvall' })).tokens;
     expect(dark['--color-background-body']).toBe('light-dark(#ffffff, #000000)');
     expect(dark['--color-background-card']).toBe('light-dark(#ffffff, #4b4b4b)');
     expect(contrastRatio('#ececec', '#4b4b4b')).toBeGreaterThanOrEqual(4.5);
