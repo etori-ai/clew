@@ -29,11 +29,18 @@ artboards A and D of the canvas "Clew designutforskning · schemaläggning och u
    The times are constants in `@clew/contracts` (`dayRhythm`) that the scheduler and the attention endpoint both
    read, so the page never hardcodes a time. `GET /api/attention` returns the rhythm with the state of each point
    and the time of each interruption pushed today. The budget keeps its D7-era wording: the assistant's cap,
-   never a measure of the person.
+   never a measure of the person. A point on the track is a moment, never a card (amended 2026-11-04, after the
+   track drew one clock per card pushed by a 36-card scan): a scan pushes its cards in one go, so the cards it
+   brought fold into one point with a count, a card pushed within `dayRhythm.graceMinutes` of the review or a
+   bundle belongs to that point, and only the moments outside them are interruptions and count against the
+   budget. Withdrawn the same evening: the track itself. The product owner found it read-only and of little value,
+   and "Avbrott 5 av 3" told the person nothing. The digest is now one supporting line (the review's time, the threads
+   read, the next bundle or the next review), the greeting sentence and the budget's promise; `GET /api/attention`
+   keeps returning the rhythm, which the line reads for its times.
 5. **Why is a token.** Every card and row shows its trigger reason as an Astryx `Token` ("Varför: du är chef"),
    not a tooltip, so it can be read, filtered and announced.
 
-Astryx only: `Stepper` with `indicatorPosition="on-track"` for the day track, `ToggleButtonGroup` for the piles,
+Astryx only: `ToggleButtonGroup` for the piles,
 `Token` for the reason, `Badge` for today's deadline, `List` rows for Senare and Till kännedom. The dashed
 border drawn on the "Inte nu" pile has no Astryx counterpart and is reported as a gap; until then the pile is a
 plain toggle.

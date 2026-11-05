@@ -8,6 +8,7 @@ import { snoozePresetsQuery } from '../queries';
 import { useThreadAction } from '../mutations';
 import { invalidateStream } from '../thread-cache';
 import { useConversation } from './conversation-context';
+import { AddToConversation } from './add-to-conversation';
 
 /**
  * The area as a category tag (Astryx Badge/Token guidance: colour variants classify, status variants demand action): one
@@ -177,7 +178,7 @@ function ActionRow({ thread, level, actions }: { thread: Thread; level: Attentio
     { id: 'dismiss', label: 'Avfärda · inte aktuellt', onClick: () => void dismiss() },
     { id: 'why', label: 'Varför ser jag detta?', onClick: () => setWhy(v => !v) },
   ];
-  const addToConversation = <Button size="sm" variant="ghost" label={inConversation ? 'I samtalet ✓' : 'Lägg till i samtalet'} isDisabled={inConversation} onClick={() => conversation.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id })} />;
+  const addToConversation = <AddToConversation added={inConversation} onAdd={() => conversation.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id })} />;
   /** Inte nu and Påminn mig (D17, D29): the same picker, the first silent, the second with the badge and the toast. Ten seconds is the demo entry. */
   const snoozeMenu = <TimePicker label="Inte nu" presets={presets} onPick={pickSnooze} />;
   const remindMenu = <TimePicker label="Påminn mig" presets={presets} demo={{ label: 'Om 10 sekunder', seconds: 10 }} onPick={pickRemind} />;
@@ -209,7 +210,7 @@ function ActionRow({ thread, level, actions }: { thread: Thread; level: Attentio
   </HStack>;
   return null;
 }
-const WhyLine = ({ thread }: { thread: Thread }) => <Text type="supporting" as="p">Varför nu? {thread.trigger.reason}. Källa: {thread.trigger.source}, {clock(thread.trigger.at)}.</Text>;
+const WhyLine = ({ thread }: { thread: Thread }) => <Text type="supporting" as="p">Varför nu? {thread.trigger.reason.replace(/\.$/, '')}. Källa: {thread.trigger.source}, {clock(thread.trigger.at)}.</Text>;
 
 /** The right-hand state of a card or row: the receipt, the snooze, who it waits on, or the deadline. Never more than one. */
 function State({ thread }: { thread: Thread }) {
@@ -306,4 +307,19 @@ export function ThreadRow({ thread, areaTitle, compact, notice = false, onChange
       <ActionRow thread={thread} level={level} actions={actions} />
     </VStack>}
     endContent={<State thread={thread} />} />;
+}
+
+/**
+ * The next step alone (D34): the thread's primary action as one button, for the brief on the landing. Black where a day
+ * is set, soft where none is; the count follows the selection the connector wrote. The full action row is on the card.
+ */
+export function PrimaryAction({ thread, onChange, onOpenCardView }: ActionProps) {
+  const actions = useThreadActions({ thread, onChange, onOpenCardView });
+  const primary = thread.actions.find(a => a.role === 'primary');
+  if (!primary || thread.state !== 'open') return null;
+  const label = actions.selectable ? `${primary.label} · ${actions.selected.length}` : primary.label;
+  return <VStack gap={1}>
+    <Button size="sm" variant={thread.deadline ? 'primary' : 'secondary'} label={label} isDisabled={actions.selectable && actions.selected.length === 0} clickAction={() => actions.perform(primary)} />
+    {actions.error && <Text as="p" role="alert" color="accent">{actions.error}</Text>}
+  </VStack>;
 }

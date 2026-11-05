@@ -169,6 +169,8 @@ export const MessageMetaSchema = object({
   /** The sources a document answer cites (D26), numbered as `[n]` in the body; refs only. */
   sources: Type.Optional(Type.Array(SourceCitationSchema, { maxItems: 10 })),
   followUps: Type.Optional(Type.Array(Type.String(), { maxItems: 3 })),
+  /** The open cards an answer is about (D34, the canvas's H1): the transcript draws them in the turn, live, from the same cache as the page. */
+  cards: Type.Optional(Type.Array(id, { maxItems: 3 })),
   /** The model that wrote this answer (D24); absent when the router answered. */
   model: Type.Optional(ModelRefSchema),
 });
@@ -268,6 +270,21 @@ export function streamGroup(thread: { deadline: string | null; remindedAt?: stri
   if (thread.remindedAt && stockholmDate(thread.remindedAt) === today) return 'nu';
   if (!thread.deadline) return 'notice';
   return daysUntil(thread.deadline.slice(0, 10), today) <= 0 ? 'nu' : 'senare';
+}
+/**
+ * The kinds the page feeds (D34): a requirement (a ladder, a day where one exists, the next step as the primary button),
+ * a proposal from the assistant (a soft button, "nej tack" is an answer) and an event (one sentence, no button, gone when
+ * read). A figure is Läget and never a thread. Derived from the thread, never stored: proposals or a proposing primary
+ * action make a proposal, a deadline or a primary action makes a requirement, the rest is for information.
+ */
+export const CardKindSchema = Type.Union([Type.Literal('krav'), Type.Literal('forslag'), Type.Literal('handelse')]);
+export type CardKind = Static<typeof CardKindSchema>;
+export function cardKind(thread: { deadline: string | null; proposals: readonly unknown[]; actions: readonly { kind: 'read' | 'propose' | 'execute'; role: 'primary' | 'secondary' | 'overflow' }[] }): CardKind {
+  if (thread.proposals.length > 0) return 'forslag';
+  const primary = thread.actions.find(a => a.role === 'primary');
+  if (primary?.kind === 'propose' && !thread.deadline) return 'forslag';
+  if (thread.deadline || primary) return 'krav';
+  return 'handelse';
 }
 /** A snoozed card is one whose `snoozedUntil` is still ahead of `now`; a passed time counts as awake until the sweep clears it. */
 export const isSnoozed = (thread: { snoozedUntil: string | null }, now: string) => !!thread.snoozedUntil && Date.parse(thread.snoozedUntil) > Date.parse(now);
@@ -502,12 +519,16 @@ export const ActInput = object({ actionId: id, refs: Type.Optional(Type.Array(Ty
 export type ActInput = Static<typeof ActInput>;
 
 /** The day's rhythm (D28): the review, the bundles and the quiet hours as Stockholm wall-clock times that the scheduler and the page both read. */
-export const dayRhythm = { review: '06:00', bundles: ['12:00', '16:00'], quiet: '17:00' } as const;
-/** One point on the day track: what it is, when (HH:MM Stockholm), whether it has passed, and for an interruption the card it pushed. */
+export const dayRhythm = { review: '06:00', bundles: ['12:00', '16:00'], quiet: '17:00', graceMinutes: 15 } as const;
+/**
+ * One point on the day track: what it is, when (HH:MM Stockholm), whether it has passed, and the cards it pushed. A scan
+ * pushes its cards in one go, so a point is a moment, never a card: `count` says how many cards the moment brought and,
+ * for an interruption, `title` names the first. Pushes within `dayRhythm.graceMinutes` of the review or a bundle belong to it.
+ */
 export const RhythmPointSchema = object({
   kind: Type.Union([Type.Literal('review'), Type.Literal('interruption'), Type.Literal('bundle'), Type.Literal('quiet')]),
   at: Type.String(), state: Type.Union([Type.Literal('done'), Type.Literal('next'), Type.Literal('later')]),
-  title: Type.Optional(Type.String()),
+  title: Type.Optional(Type.String()), count: Type.Optional(Type.Integer()),
 });
 export type RhythmPoint = Static<typeof RhythmPointSchema>;
 export const AttentionSchema = object({ used: Type.Integer(), budget: Type.Integer(), bundledUntil: Type.Union([Type.String(), Type.Null()]), rhythm: Type.Array(RhythmPointSchema) });
@@ -534,6 +555,29 @@ export const ConversationResponseSchema = object({
   model: Type.Optional(ModelRefSchema),
 });
 export type ConversationResponse = Static<typeof ConversationResponseSchema>;
+/**
+ * A capability the turn reads while the person waits (D36): which system, what it asks, and how long it took. Shown
+ * live under the question; the turn's audit row still names the tools once the answer is written.
+ */
+export const TurnStepSchema = object({
+  id: Type.String(), capability: Type.String(), title: Type.String(), source: Type.String(),
+  status: Type.Union([Type.Literal('running'), Type.Literal('complete'), Type.Literal('error')]),
+  ms: Type.Optional(Type.Integer({ minimum: 0 })),
+});
+export type TurnStep = Static<typeof TurnStepSchema>;
+/** What a turn tells while it runs (D36): a step, or the model's text so far as a delta; `reset` starts the text over (a new model step, the router taking over). */
+export const TurnEventSchema = Type.Union([
+  object({ type: Type.Literal('step'), step: TurnStepSchema }),
+  object({ type: Type.Literal('text'), delta: Type.String(), reset: Type.Optional(Type.Boolean()) }),
+]);
+export type TurnEvent = Static<typeof TurnEventSchema>;
+/** One server-sent event of `POST /api/conversation/stream` (D36): the turn's events, then the finished turn or the Swedish error. */
+export const ConversationEventSchema = Type.Union([
+  TurnEventSchema,
+  object({ type: Type.Literal('done'), response: ConversationResponseSchema }),
+  object({ type: Type.Literal('error'), message: Type.String() }),
+]);
+export type ConversationEvent = Static<typeof ConversationEventSchema>;
 /** An object the `@` menu can offer: what is visible on the page first, then everything in scope. */
 export const ObjectSchema = object({ ref: Type.String(), kind: ChipKind, label: Type.String(), detail: Type.String(), threadId: Type.Optional(id), visible: Type.Boolean() });
 export type ClewObject = Static<typeof ObjectSchema>;

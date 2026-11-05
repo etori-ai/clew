@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { SessionUser } from '@clew/contracts';
-import { BreadcrumbItem, Breadcrumbs, Button, EmptyState, HStack, Heading, Layout, LayoutContent, SideNav, SideNavItem, SideNavSection, Text, VStack } from '@clew/ui';
+import { BreadcrumbItem, Breadcrumbs, Button, EmptyState, HStack, Heading, Layout, LayoutContent, SideNavItem, SideNavSection, Text, VStack } from '@clew/ui';
 import { Shell, mobileQuery } from '../../components/shell';
 import { useMediaQuery } from '@clew/ui';
 
@@ -13,8 +13,8 @@ export type Crumb = { label: string; href?: string };
 export type AdminSection = 'anslutningar' | 'modeller';
 export function AdminShell({ user, crumbs, children, section = 'anslutningar' }: { user: SessionUser; crumbs: Crumb[]; children: ReactNode; section?: AdminSection }) {
   const mobile = useMediaQuery(mobileQuery);
-  return <Shell user={user} admin current="admin"
-    sideNav={<SideNav>
+  return <Shell user={user}
+    nav={{ sections: <>
       <SideNavSection title="Anslutningar">
         <SideNavItem label="Anslutna system" isSelected={section === 'anslutningar'} href="/admin/anslutningar" />
         <SideNavItem label="Modeller" isSelected={section === 'modeller'} href="/admin/modeller" />
@@ -22,7 +22,7 @@ export function AdminShell({ user, crumbs, children, section = 'anslutningar' }:
       <SideNavSection title="Om administrationen" isHeaderHidden>
         <Text type="supporting" as="p">Du styr vilka system Startsidan är ansluten till, vilka modeller som svarar i frågerutan och vem som ser dem. Vad var och en får göra i ett system avgör systemet självt.</Text>
       </SideNavSection>
-    </SideNav>}>
+    </>, footer: <SideNavItem label="Till startsidan" href="/" /> }}>
     {/* Layout's contentWidth bounds the page and centres it in the content area, the same mechanism as the start page's
         column; the Layout owns its gutters through `padding`, and grows with the page so the shell keeps the scroll. */}
     <Layout height="auto" contentWidth={1216} padding={mobile ? 3 : 6} content={<LayoutContent isScrollable={false}>

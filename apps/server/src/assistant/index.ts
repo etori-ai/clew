@@ -1,5 +1,5 @@
-import type { AuthenticatedContext, Chip, ClewAction, ConversationInput, ConversationResponse, MessageMeta, ModelRef, SearchResult, SourceCitation, Thread, Verb, ViewRef } from '@clew/contracts';
-import { citationsOf, parseAnswer } from './answer';
+import type { AuthenticatedContext, Chip, ClewAction, ConversationInput, ConversationResponse, MessageMeta, ModelRef, SearchResult, SourceCitation, Thread, TurnEvent, TurnStep, Verb, ViewRef } from '@clew/contracts';
+import { citationsOf, parseAnswer, visibleSoFar } from './answer';
 import { actorOf, SEARCH_CONNECTOR } from '@clew/connectors';
 import { displayDate, weekNumber } from '@clew/calendar/dates';
 import { InputError } from '../context';
@@ -7,7 +7,7 @@ import { resolveChips, type ResolvedChips } from './chips';
 import { completionsFor } from './completions';
 import { serialiseContext } from './context';
 import { routeFixed } from './fixed';
-import { headingFollowUps, matchCapability, nearest, searchAnswer, templatedAnswer } from './router';
+import { headingFollowUps, matchCapability, matchCards, nearest, searchAnswer, templatedAnswer } from './router';
 import { modelAnswer, systemPrompt, type ToolCallRecord } from './model';
 import { listObjects } from './objects';
 import type { AssistantDeps, ResolvedModel } from './ports';
@@ -23,8 +23,14 @@ type Produced = {
   model?: ModelRef;
 };
 const SEARCH_TOOL = SEARCH_CONNECTOR + '.search';
+/** What a caller hears while a turn runs (D36): the capabilities it reads and the model's text so far; `signal` is the person pressing Stoppa. */
+export interface TurnObserver { emit?: (event: TurnEvent) => void; signal?: AbortSignal; }
+/** The person stopped the turn before its answer was written; nothing was saved and the model is not marked down. */
+export class TurnStopped extends Error { constructor() { super('Frågan avbröts.'); this.name = 'TurnStopped'; } }
+/** One turn's way out: its events, its stop signal, and the capability runner that reports each read as a step. */
+interface Turn { emit: (event: TurnEvent) => void; signal: AbortSignal | undefined; run: <O = unknown>(name: string, input: unknown) => Promise<O>; }
 const isSearchResult = (v: unknown): v is SearchResult => !!v && typeof v === 'object' && Array.isArray((v as SearchResult).rows) && Array.isArray((v as SearchResult).sources);
-const whyLine = (t: Thread) => `Varför nu? ${t.trigger.reason}. Källa: ${t.trigger.source}, ${new Date(t.trigger.at).toLocaleTimeString('sv-SE', { timeStyle: 'short', timeZone: 'Europe/Stockholm' })}.`;
+const whyLine = (t: Thread) => `Varför nu? ${t.trigger.reason.replace(/\.$/, '')}. Källa: ${t.trigger.source}, ${new Date(t.trigger.at).toLocaleTimeString('sv-SE', { timeStyle: 'short', timeZone: 'Europe/Stockholm' })}.`;
 
 /**
  * The assistant (D8, D12, D25): one conversation turn at a time, over ports. Chips are the explicit context; a
@@ -32,9 +38,26 @@ const whyLine = (t: Thread) => `Varför nu? ${t.trigger.reason}. Källa: ${t.tri
  * capabilities and the decision endpoint are never reached from here.
  */
 export function assistantUsecases(deps: AssistantDeps) {
-  const { store, registry, run, calendar, models, clock, ids } = deps;
+  const { store, registry, calendar, models, clock, ids } = deps;
   const todayDate = () => displayDate(clock().toISOString());
   const thread = async (persona: Pick<AuthenticatedContext, 'id'>, id: string) => (await store.readThread(persona.id, id))!;
+  /** The turn's runner (D36): every capability it reads is a step, running and then complete with its time, named by the registry's title and source. */
+  function turnFor(persona: AuthenticatedContext, observer: TurnObserver): Turn {
+    const emit = (event: TurnEvent) => { try { observer.emit?.(event); } catch { /* a listener never breaks the turn */ } };
+    let n = 0;
+    let known: ReturnType<typeof registry.tools> | undefined;
+    const run = async <O = unknown>(name: string, input: unknown): Promise<O> => {
+      known ??= registry.tools(actorOf(persona));
+      const info = known.find(t => t.name === name);
+      const step: Omit<TurnStep, 'status'> = { id: `steg-${++n}`, capability: name, title: info?.title ?? name, source: info?.source ?? 'Startsidan' };
+      const started = clock().getTime();
+      const took = () => Math.max(0, clock().getTime() - started);
+      emit({ type: 'step', step: { ...step, status: 'running' } });
+      try { const output = await deps.run<O>(persona, name, input); emit({ type: 'step', step: { ...step, status: 'complete', ms: took() } }); return output; }
+      catch (e) { emit({ type: 'step', step: { ...step, status: 'error', ms: took() } }); throw e; }
+    };
+    return { emit, signal: observer.signal, run };
+  }
 
   /** The chip path (D12): with one chipped card the assistant does not guess. Clew-side actions are only proposed; drafts change the card, never a source. */
   async function chipPath(persona: AuthenticatedContext, text: string, chipped: Thread): Promise<Produced | undefined> {
@@ -66,13 +89,13 @@ export function assistantUsecases(deps: AssistantDeps) {
     }
   }
   /** The deterministic path (D8): the fixed questions, then the best matching read capability, then an honest "not yet". */
-  async function routerPath(persona: AuthenticatedContext, text: string, assistant: 'router' | 'unavailable'): Promise<Produced> {
+  async function routerPath(persona: AuthenticatedContext, text: string, assistant: 'router' | 'unavailable', turn: Turn): Promise<Produced> {
     const fixed = await routeFixed(deps, persona, text);
     if (fixed) return { body: fixed.body, source: fixed.source, shape: fixed.forslagThreadId ? 'forslag' : 'svar', assistant, clewActions: [], followUps: [], ...(fixed.forslagThreadId ? { forslag: { threadId: fixed.forslagThreadId } } : {}) };
     const tools = registry.tools(actorOf(persona));
     const match = matchCapability(text, tools.filter(t => t.name !== SEARCH_TOOL));
     if (match) {
-      const output = await run(persona, match.name, {});
+      const output = await turn.run(match.name, {});
       const answer = templatedAnswer(match, {}, output, clock().toISOString());
       return { body: answer.body, source: match.source, shape: answer.view ? 'vy' : 'svar', assistant, clewActions: [], followUps: nearest(text, tools.filter(t => t.name !== match.name)).map(t => t.title), toolCalls: [{ capability: match.name, input: {}, output }], ...(answer.view ? { view: answer.view } : {}) };
     }
@@ -80,7 +103,7 @@ export function assistantUsecases(deps: AssistantDeps) {
     const searchTool = tools.find(t => t.name === SEARCH_TOOL);
     if (searchTool) {
       const input = { query: text };
-      const output = await run<SearchResult>(persona, SEARCH_TOOL, input);
+      const output = await turn.run<SearchResult>(SEARCH_TOOL, input);
       const answer = searchAnswer(output, clock().toISOString());
       return { body: answer.body, source: searchTool.source, shape: 'vy', assistant, clewActions: [], followUps: headingFollowUps(output.rows), toolCalls: [{ capability: SEARCH_TOOL, input, output }],
         sources: citationsOf(output), view: { capability: SEARCH_TOOL, input, title: 'Källor', source: searchTool.source } };
@@ -89,19 +112,38 @@ export function assistantUsecases(deps: AssistantDeps) {
     return { body: `Det där kan jag inte svara på ännu. Jag kan svara om ${near.length ? near.map(t => t.toLowerCase()).join(', ') : 'dagen, utvecklingssamtalen, frånvaron, budgeten och HME'}.`, source: 'Startsidan', shape: 'svar', assistant, clewActions: [], followUps: near };
   }
   /**
+   * The card path (D34, H1): a question that names an open card is answered with that card, without the model. The
+   * sentence is the connector's own (the card's summary and why now); the card itself follows in the turn.
+   */
+  function cardPath(named: Thread[], assistant: 'router' | 'unavailable'): Produced {
+    const first = named[0]!;
+    const body = named.length === 1
+      ? [first.summary, first.trigger.reason].filter(Boolean).map(s => s.replace(/\.$/, '')).join('. ') + '.'
+      : `${named.length} kort väntar på dig: ${named.map(t => t.title).join('; ')}.`;
+    return { body, source: [...new Set(named.map(t => t.trigger.source))].join(', '), shape: 'svar', assistant, clewActions: [], followUps: [] };
+  }
+  /**
    * The model path: the person's model (D24), read tools only (none when the model is set not to use them), chips as
    * explicit context, the deterministic router as the fallback when it fails. A failure marks the provider down until
-   * the probe or a test brings it back (D8).
+   * the probe or a test brings it back (D8). The text streams to the turn's listener as it is written, the trailer held
+   * back (D36); when the router takes over, the listener is told to start the text over. A stop is not a failure.
    */
-  async function modelPath(persona: AuthenticatedContext, text: string, history: Thread['messages'], chips: ResolvedChips, model: ResolvedModel): Promise<Produced | undefined> {
+  async function modelPath(persona: AuthenticatedContext, text: string, history: Thread['messages'], chips: ResolvedChips, model: ResolvedModel, turn: Turn): Promise<Produced | undefined> {
     if (!models.health.available(model.providerId)) return undefined;
     const tools = model.tools ? registry.tools(actorOf(persona)) : [];
     const now = clock();
     const system = systemPrompt({ name: persona.name, role: persona.role, unitLabel: persona.unitLabel, now, week: weekNumber(displayDate(now.toISOString())), objects: serialiseContext(chips.objects) });
+    let sent = '';
+    const onText = (step: string) => {
+      const visible = visibleSoFar(step);
+      if (visible.startsWith(sent)) { if (visible.length > sent.length) turn.emit({ type: 'text', delta: visible.slice(sent.length) }); }
+      else turn.emit({ type: 'text', delta: visible, reset: true });
+      sent = visible;
+    };
     try {
       // The search fan-out (D26) takes up to four seconds of its own, so a turn that may search gets a longer budget than a plain read.
       const timeoutMs = tools.some(t => t.name === SEARCH_TOOL) ? 12_000 : 8_000;
-      const answer = await modelAnswer({ system, history: history.slice(-20).map(m => ({ role: m.role, body: m.body })), text, tools, run: (name, input) => run(persona, name, input), generate: model.generate, timeoutMs });
+      const answer = await modelAnswer({ system, history: history.slice(-20).map(m => ({ role: m.role, body: m.body })), text, tools, run: (name, input) => turn.run(name, input), generate: model.generate, timeoutMs, onText, ...(turn.signal ? { signal: turn.signal } : {}) });
       models.health.mark(model.providerId, true, clock().toISOString());
       const source = answer.toolCalls.length ? [...new Set(answer.toolCalls.map(c => tools.find(t => t.name === c.capability)?.source ?? 'Startsidan'))].join(', ') : 'Assistenten';
       const searched = answer.toolCalls.find(c => c.capability === SEARCH_TOOL && isSearchResult(c.output));
@@ -113,31 +155,50 @@ export function assistantUsecases(deps: AssistantDeps) {
       const shape: Produced['shape'] = parsed.shape ?? (view ? 'vy' : 'svar');
       return { body: parsed.body, source, shape, assistant: 'model', clewActions: [], toolCalls: answer.toolCalls, followUps, ...(view ? { view } : {}), ...(sources?.length ? { sources } : {}), model: { id: model.id, title: model.title } };
     } catch (e) {
+      if (turn.signal?.aborted) throw new TurnStopped();
       models.health.mark(model.providerId, false, clock().toISOString());
       deps.log('assistant: model unavailable, falling back to the router:', e instanceof Error ? e.message : e);
+      if (sent) turn.emit({ type: 'text', delta: '', reset: true });
       return undefined;
     }
   }
-  /** One turn of the conversation. */
-  async function converse(persona: AuthenticatedContext, input: ConversationInput): Promise<ConversationResponse> {
+  /**
+   * One turn of the conversation. A listener hears its steps and the model's text while it runs (D36); the turn, its two
+   * messages and its audit row are still written together once the answer is known, and a turn stopped before that
+   * writes nothing.
+   */
+  async function converse(persona: AuthenticatedContext, input: ConversationInput, observer: TurnObserver = {}): Promise<ConversationResponse> {
+    const turn = turnFor(persona, observer);
     const chips: Chip[] = input.chips ?? [];
     const resolved = await resolveChips(deps, persona, chips);
     const existing = input.conversationId ? await store.readThread(persona.id, input.conversationId) : undefined;
     if (input.conversationId && (!existing || existing.kind !== 'question')) throw new InputError('Samtalet finns inte.');
     const history = existing?.messages ?? [];
+    // The cards this turn is about (H1): the chipped cards, else the open cards the question names. Asking for a card and
+    // being told about it land on the same card. A card the conversation already shows is not drawn again: that one is live.
+    const chippedCards = [...resolved.threads.values()].filter(t => t.kind === 'pushed');
+    const named = chippedCards.length ? [] : matchCards(input.text, (await store.listThreads(persona.id, clock().toISOString())).filter(t => t.state === 'open' && t.kind === 'pushed'));
+    const shown = new Set(history.flatMap(m => m.meta?.cards ?? []));
+    const cards = [...chippedCards, ...named].map(t => t.id).filter(id => !shown.has(id)).slice(0, 3);
+    // The model reads a named card as if the person had pointed at it.
+    const context: ResolvedChips = named.length ? { ...resolved, objects: [...resolved.objects, ...named.map(t => ({ kind: 'thread' as const, ref: 'thread:' + t.id, thread: t }))] } : resolved;
     let produced: Produced | undefined;
     if (resolved.primaryThread) produced = await chipPath(persona, input.text, resolved.primaryThread);
     // The person's model is resolved on the server for every turn (D24): their pick, else the default; none means the router (D8).
     const model = produced ? undefined : await models.resolve(persona);
-    if (!produced && model) produced = await modelPath(persona, input.text, history, resolved, model);
-    if (!produced) produced = await routerPath(persona, input.text, model ? 'unavailable' : 'router');
+    const fallback = model ? 'unavailable' : 'router';
+    if (!produced && model) produced = await modelPath(persona, input.text, history, context, model, turn);
+    if (!produced && named.length) produced = cardPath(named, fallback);
+    if (!produced) produced = await routerPath(persona, input.text, fallback, turn);
+    if (observer.signal?.aborted) throw new TurnStopped();
     const at = clock().toISOString();
     const conversationId = existing?.id ?? ids();
     const refs = chips.map(c => c.ref);
     const assistantMeta: MessageMeta = { shape: produced.shape, assistant: produced.assistant, source: produced.source,
       ...(produced.view ? { view: produced.view } : {}), ...(produced.draft ? { draft: { kind: produced.draft.kind, threadId: produced.draft.threadId, ...(produced.draft.refs ? { refs: produced.draft.refs } : {}), ...(produced.draft.week ? { week: produced.draft.week } : {}) } } : {}),
       ...(produced.toolCalls?.length ? { toolCalls: produced.toolCalls.map(c => ({ capability: c.capability, input: c.input })) } : {}),
-      ...(produced.sources?.length ? { sources: produced.sources } : {}), ...(produced.followUps.length ? { followUps: produced.followUps.slice(0, 3) } : {}), ...(produced.model ? { model: produced.model } : {}) };
+      ...(produced.sources?.length ? { sources: produced.sources } : {}), ...(produced.followUps.length ? { followUps: produced.followUps.slice(0, 3) } : {}),
+      ...(cards.length ? { cards } : {}), ...(produced.model ? { model: produced.model } : {}) };
     await store.transaction(async tx => {
       if (!existing) {
         await tx.insertThread({ id: conversationId, personId: persona.id, kind: 'question', topic: 'question', title: input.text.slice(0, 80), state: 'open', week: null, connector: 'clew', area: 'fragor', summary: produced!.body,
@@ -149,7 +210,7 @@ export function assistantUsecases(deps: AssistantDeps) {
       await tx.addMessage(conversationId, { role: 'assistant', body: produced!.body, at, meta: assistantMeta });
       await tx.writeAudit({ actor: persona.principal.id, action: existing ? 'conversation.replied' : 'conversation.asked', subject: 'thread:' + conversationId, at,
         details: { assistant: produced!.assistant, shape: produced!.shape, chips: refs, tools: (produced!.toolCalls ?? []).map(c => c.capability), ...(produced!.view ? { view: produced!.view.capability } : {}),
-          ...(produced!.sources?.length ? { sources: produced!.sources.map(s => s.ref) } : {}), ...(produced!.model ? { model: produced!.model.id } : {}) } });
+          ...(produced!.sources?.length ? { sources: produced!.sources.map(s => s.ref) } : {}), ...(cards.length ? { cards } : {}), ...(produced!.model ? { model: produced!.model.id } : {}) } });
     });
     const conversation = await thread(persona, conversationId);
     const verbs: Verb[] | undefined = resolved.primaryThread ? verbsFor(produced.draft?.thread ?? resolved.primaryThread) : undefined;
@@ -178,7 +239,7 @@ export function assistantUsecases(deps: AssistantDeps) {
   return {
     converse, ask, reply,
     completionsFor: (persona: AuthenticatedContext) => completionsFor(deps, persona),
-    listObjects: (persona: AuthenticatedContext, q: string) => listObjects(deps, persona, q),
+    listObjects: (persona: AuthenticatedContext, q: string, near: string[] = []) => listObjects(deps, persona, q, near),
   };
 }
 export type AssistantUsecases = ReturnType<typeof assistantUsecases>;

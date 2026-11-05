@@ -11,7 +11,7 @@ import { buildTools, createGenerator, fromToolName, modelAnswer, ModelUnavailabl
 import { openAICompatibleWire } from '../../apps/server/src/assistant/adapters/openai-compatible';
 import type { WireError } from '../../apps/server/src/assistant/ports';
 import { serialiseContext } from '../../apps/server/src/assistant/context';
-import { citationsOf, parseAnswer } from '../../apps/server/src/assistant/answer';
+import { citationsOf, parseAnswer, visibleSoFar } from '../../apps/server/src/assistant/answer';
 
 const hillevi: Actor = { id: 'hillevi', name: 'Hillevi Berg', unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'manager' };
 const hassan: Actor = { id: 'hassan', name: 'Hassan Ali', unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role: 'employee' };
@@ -102,6 +102,16 @@ describe('a document answer is read in code (D26): the trailer, the steps, the c
     expect(parseAnswer('Tre på plats. Heroma 08:00.')).toEqual({ body: 'Tre på plats. Heroma 08:00.', followUps: [] });
     expect(parseAnswer('1. Ett steg bara.\nFöljdfrågor: ').shape).toBeUndefined();
   });
+  test('while it streams, the trailer is never shown and what is shown only grows (D36)', () => {
+    const full = '1. Lyft inte själv [1].\n2. Först: ring sjuksköterskan.\nFöljdfrågor: Anhöriga? | Natten?';
+    const shown = Array.from({ length: full.length }, (_, i) => visibleSoFar(full.slice(0, i + 1)));
+    shown.forEach((text, i) => { if (i > 0) expect(text.startsWith(shown[i - 1]!)).toBe(true); expect(text.toLowerCase()).not.toContain('följd'); });
+    expect(shown.at(-1)).toBe('1. Lyft inte själv [1].\n2. Först: ring sjuksköterskan.\n');
+    // A line that could still become the trailer waits; one that cannot is shown.
+    expect(visibleSoFar('Tre.\nFö')).toBe('Tre.\n');
+    expect(visibleSoFar('Tre.\nFör')).toBe('Tre.\nFör');
+    expect(visibleSoFar('Tre på plats.')).toBe('Tre på plats.');
+  });
   test('citations carry refs, owner and date, never the text', () => {
     const cited = citationsOf({ rows: [{ ref: 'r1', connector: 'docs', kind: 'document', label: 'Rutin vid fall', snippet: 'hemligt', source: 'Intranätet', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00Z', stale: false, link: 'https://x' }, { ref: 'r2', connector: 'eneo', kind: 'document', label: 'Lathund', snippet: 's', source: 'Eneo', updatedAt: '2024-11-02T00:00:00Z', stale: true }] });
     expect(cited).toEqual([
@@ -145,26 +155,43 @@ describe('the model path only reads, and falls back when the provider fails', ()
     await expect(modelAnswer({ system: 's', history: [], text: 'x', tools, run: async () => ({}), generate: async () => { throw new Error('boom'); } })).rejects.toBeInstanceOf(ModelUnavailable);
     await expect(modelAnswer({ system: 's', history: [], text: 'x', tools, run: async () => ({}), generate: async () => ({ text: '  ', toolCalls: [] }) })).rejects.toBeInstanceOf(ModelUnavailable);
   });
-  test('the real SDK wiring: a tool_calls turn runs the capability through the registry, then the text comes back', async () => {
+  test('the real SDK wiring: a streamed tool_calls turn runs the capability through the registry, then the text streams back (D36)', async () => {
     const r = registry();
     const seen: string[] = [];
     let call = 0;
-    const completion = (message: Record<string, unknown>, finish: string) => new Response(JSON.stringify({ id: 'x', object: 'chat.completion', created: 1, model: 'm', choices: [{ index: 0, message, finish_reason: finish }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } }), { status: 200, headers: { 'content-type': 'application/json' } });
+    // The provider asks for a stream; the endpoint answers in OpenAI's chunk format, as an open-weight server does.
+    const chunk = (delta: Record<string, unknown>, finish: string | null) => `data: ${JSON.stringify({ id: 'x', object: 'chat.completion.chunk', created: 1, model: 'm', choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
+    const stream = (...events: string[]) => new Response(events.join('') + 'data: [DONE]\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } });
     const fakeFetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body));
+      expect(body.stream).toBe(true);
       seen.push(...(body.tools ?? []).map((t: { function: { name: string } }) => t.function.name));
       call += 1;
-      if (call === 1) return completion({ role: 'assistant', content: null, tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'heroma__whoIsOn', arguments: '{}' } }] }, 'tool_calls');
-      return completion({ role: 'assistant', content: 'Tre på plats. Heroma 08:00.' }, 'stop');
+      if (call === 1) return stream(chunk({ role: 'assistant', content: null, tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: 'heroma__whoIsOn', arguments: '{}' } }] }, null), chunk({}, 'tool_calls'));
+      return stream(chunk({ role: 'assistant', content: 'Tre på plats.' }, null), chunk({ content: ' Heroma 08:00.' }, null), chunk({}, 'stop'));
     };
     const generate = createGenerator({ baseUrl: 'http://fake.test/v1' }, 'open-model', fakeFetch);
     const ran: string[] = [];
-    const answer = await modelAnswer({ system: 's', history: [], text: 'vem är på plats?', tools: r.tools(hillevi), run: async name => { ran.push(name); return r.run(hillevi, name, {}); }, generate });
+    const heard: string[] = [];
+    const answer = await modelAnswer({ system: 's', history: [], text: 'vem är på plats?', tools: r.tools(hillevi), run: async name => { ran.push(name); return r.run(hillevi, name, {}); }, generate, onText: text => heard.push(text) });
     expect(ran).toEqual(['heroma.whoIsOn']);
     expect(answer.body).toBe('Tre på plats. Heroma 08:00.');
     expect(answer.toolCalls[0]?.capability).toBe('heroma.whoIsOn');
+    expect(heard).toEqual(['Tre på plats.', 'Tre på plats. Heroma 08:00.']);
     expect(seen).toContain('raindance__invoices');
     expect(seen.some(n => n.includes('approve'))).toBe(false);
+  });
+  test('a stopped turn ends the streamed call like a timeout: the generator rejects and nothing is answered (D36)', async () => {
+    const stop = new AbortController();
+    const fakeFetch = async (_input: RequestInfo | URL, init?: RequestInit) => new Response(new ReadableStream({ start(controller) {
+      controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ id: 'x', object: 'chat.completion.chunk', created: 1, model: 'm', choices: [{ index: 0, delta: { role: 'assistant', content: 'Tre' }, finish_reason: null }] })}\n\n`));
+      init?.signal?.addEventListener('abort', () => controller.error(init.signal!.reason));
+    } }), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    const generate = createGenerator({ baseUrl: 'http://fake.test/v1' }, 'open-model', fakeFetch);
+    const heard: string[] = [];
+    const pending = generate({ system: 's', messages: [{ role: 'user', content: 'x' }], tools: {}, timeoutMs: 5_000, signal: stop.signal, onText: t => { heard.push(t); stop.abort(); } });
+    await expect(pending).rejects.toBeDefined();
+    expect(heard).toEqual(['Tre']);
   });
   test('the OpenAI-compatible wire (D24) lists models with the key as a bearer and names every failure: no answer, a refused key, an answer that is not a list', async () => {
     const seen: Array<{ url: string; auth: string | null }> = [];

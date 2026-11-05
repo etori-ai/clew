@@ -1,7 +1,7 @@
 import { answer, composer, desktop, expect, expectNoAxeViolations, open, phone, snoozeFirst, test } from './support';
 
 /** axe over every route and over the states a route can reach, at both layouts. */
-const routes = [['start', '/'], ['an area', '/omrade/personal'], ['the calendar lens', '/omrade/kalender'], ['the log', '/hanterat'], ['the calendar page', '/kalender']] as const;
+const routes = [['start', '/'], ['the overview', '/oversikt'], ['an area', '/omrade/personal'], ['the calendar lens', '/omrade/kalender'], ['the log', '/hanterat'], ['the calendar page', '/kalender']] as const;
 
 for (const [layout, viewport] of [['desktop', desktop], ['phone', phone]] as const) test.describe(layout, () => {
   test.use({ viewport });
@@ -35,6 +35,14 @@ for (const [layout, viewport] of [['desktop', desktop], ['phone', phone]] as con
     await expectNoAxeViolations(page);
   });
 
+  test('a conversation whose answer is a card has no axe violations', async ({ page, api: _ }) => {
+    await open(page, '/');
+    await composer(page).fill('attestera en faktura');
+    await composer(page).press('Enter');
+    await expect(page.getByRole('article', { name: 'Tråd: Attestera 3 fakturor, 48 200 kr' })).toBeVisible();
+    await expectNoAxeViolations(page);
+  });
+
   test('the side panel has no axe violations', async ({ page, api: _ }) => {
     await open(page, '/vy/heroma.whoIsOn?titel=Vem%20%C3%A4r%20p%C3%A5%20plats%3F');
     await expect(page.getByRole('dialog')).toBeVisible();
@@ -57,19 +65,18 @@ for (const [layout, viewport] of [['desktop', desktop], ['phone', phone]] as con
   });
 
   test('a toast has no axe violations', async ({ page, api: _ }) => {
-    await open(page, '/');
+    await open(page, '/oversikt');
     await snoozeFirst(page);
     await expect(page.getByRole('region', { name: 'Aviseringar' })).toBeVisible();
     await expectNoAxeViolations(page);
   });
 
   test('every card opened has no axe violations', async ({ page, api: _ }) => {
-    await open(page, '/');
-    // The piles are a toggle group on a desktop and a menu on a phone (D31 item 5).
-    const toggle = page.getByRole('button', { name: /Pågår utan dig/ });
-    if (await toggle.isVisible()) await toggle.click();
-    else { await page.getByRole('button', { name: /^Visa:/ }).click(); await page.getByRole('menuitem', { name: /Pågår utan dig/ }).click(); }
+    // The piles are rows in the rail (D34): Pågår lists what waits, each row a link to the pile.
+    await open(page, '/pagar');
     await expect(page.getByText('Skyddsombudet har fått ärendet.')).toBeVisible();
+    await expectNoAxeViolations(page);
+    await open(page, '/oversikt');
     for (const title of ['Omtankesamtal med Anna Lindqvist', 'Ledighetsansökan från Johan Byström']) {
       const expand = page.getByRole('button', { name: title, exact: true });
       if (await expand.isVisible()) await expand.click();

@@ -187,10 +187,13 @@ test.describe('model administration', () => {
 
 test.describe('the person\'s model in the box', () => {
   test.use({ viewport: desktop });
-  test('with one model there is no menu', async ({ page, api: _ }) => {
+  test('with one model the menu is there and names it, so the box always says which model answers (D36)', async ({ page, api: _ }) => {
     await open(page, '/');
     await expect(composer(page)).toBeVisible();
-    await expect(page.getByRole('button', { name: /^Modell:/ })).toHaveCount(0);
+    const trigger = page.getByRole('button', { name: 'Modell: Kapabel' });
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+    await expect(page.getByRole('group', { name: 'Modell' }).getByRole('menuitemradio')).toHaveCount(1);
   });
   test('with two the menu names the current one, lists each with what it is good for, and a choice is spoken and kept', async ({ page, api }) => {
     api.modelChoices = 2;

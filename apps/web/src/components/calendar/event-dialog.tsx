@@ -7,6 +7,7 @@ import { api } from '../../api';
 import { useThreadAction } from '../../mutations';
 import { keys } from '../../query-keys';
 import { mobileQuery } from '../shell';
+import { AddToConversation } from '../add-to-conversation';
 
 type Mode = 'view' | 'move' | 'cancel';
 type Props = {
@@ -82,7 +83,7 @@ export function EventDialog({ item, dayItems, onClose, onChanged, onOpenDay, onA
       <HStack gap={2} justify="end" wrap="wrap">
         {mode === 'view' && <>
           {onOpenDay && <Button size="sm" variant="ghost" label="Visa dagen" onClick={() => { onClose(); onOpenDay(day); }} />}
-          {onAddChip && <Button size="sm" variant="ghost" label="Lägg till i samtalet" onClick={() => { onAddChip(item); onClose(); }} />}
+          {onAddChip && <AddToConversation onAdd={() => { onAddChip(item); onClose(); }} />}
           {own && <Button size="sm" variant="secondary" label="Ställ in" onClick={() => setMode('cancel')} />}
           {movable && <Button size="sm" variant="primary" label={proposal ? 'Flytta förslaget' : 'Flytta'} onClick={() => setMode('move')} />}
         </>}

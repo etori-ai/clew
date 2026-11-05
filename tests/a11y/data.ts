@@ -1,5 +1,5 @@
 import type { AssistantStatus, ModelDetail, ModelSummary, ProviderDetail, ProviderSummary, ProviderTestReport } from '@clew/contracts';
-import type { Area, Attention, CalendarEvent, SnoozePreset, CheckReport, ConnectorDetail, ConnectorPreview, ConnectorSummary, ConversationResponse, Proposal, SearchResult, SessionUser, SourceCitation, Thread, TodayView } from '@clew/contracts';
+import type { Area, Attention, CalendarEvent, Completions, Figure, SnoozePreset, CheckReport, ConnectorDetail, ConnectorPreview, ConnectorSummary, ConversationResponse, Proposal, SearchResult, SessionUser, SourceCitation, Thread, TodayView } from '@clew/contracts';
 
 /** Synthetic data, typed against the contracts so the suite follows the API. The clock is frozen to this Wednesday. */
 export const NOW = '2026-11-04T08:00:00.000Z';
@@ -88,11 +88,23 @@ export const snoozePresets: SnoozePreset[] = [
 /** The budget is spent: the header's badge carries its longest sentence, which is the widest thing in the header. */
 export const attention: Attention = { used: 3, budget: 3, bundledUntil: 'i morgon 06:00', rhythm: [
   { kind: 'review', at: '06:00', state: 'done' },
-  { kind: 'interruption', at: '07:12', state: 'done', title: 'Attestera 3 fakturor, 48 200 kr' },
-  { kind: 'interruption', at: '07:40', state: 'done', title: 'Omtankesamtal med Anna Lindqvist' },
-  { kind: 'interruption', at: '08:55', state: 'done', title: 'Ledighetsansökan från Johan Byström' },
+  { kind: 'interruption', at: '07:12', state: 'done', title: 'Attestera 3 fakturor, 48 200 kr', count: 1 },
+  { kind: 'interruption', at: '07:40', state: 'done', title: 'Omtankesamtal med Anna Lindqvist', count: 2 },
+  { kind: 'interruption', at: '08:55', state: 'done', title: 'Ledighetsansökan från Johan Byström', count: 1 },
   { kind: 'bundle', at: '12:00', state: 'next' }, { kind: 'bundle', at: '16:00', state: 'later' }, { kind: 'quiet', at: '17:00', state: 'later' },
 ] };
+/** Läget on the overview: the four figures, always the same four. */
+export const figures: Figure[] = [
+  { id: 'korttidsfranvaro', label: 'Korttidsfrånvaro', value: '4,1 %', comparison: '3,2 % samma vecka i fjol', tone: 'warn', source: 'Heroma', observedAt: NOW },
+  { id: 'budgetavvikelse', label: 'Budgetavvikelse', value: '−1,8 %', comparison: 'prognos −0,9 % i september', tone: 'alert', source: 'Raindance', observedAt: NOW },
+  { id: 'hme', label: 'HME', value: '79', comparison: '76 i fjol, kommunen 77', tone: 'ok', source: 'Medarbetarenkät', observedAt: NOW },
+  { id: 'utvecklingssamtal', label: 'Utvecklingssamtal', value: '4 av 12 kvar', comparison: '8 bokade, senast 28 nov', tone: 'warn', source: 'Kalendern', observedAt: NOW, progress: { value: 8, max: 12 } },
+];
+/** What the box offers (D34): the standing actions for the role; the chips under the box are drawn from `do` and the areas. */
+export const completions: Completions = {
+  completions: ['Vad har jag i dag?'], ask: [], recent: [],
+  do: [{ text: 'Attestera fakturor', capability: 'raindance.approve', source: 'Raindance', kind: 'execute' }, { text: 'Rapportera avvikelse', capability: 'treserva.report', source: 'Treserva', kind: 'execute' }],
+};
 export const today: TodayView = {
   date: '2026-11-04',
   events: [{ id: 'e1', title: 'Rektorsmöte', start: '2026-11-04T08:30:00.000Z', end: '2026-11-04T09:30:00.000Z', allDay: false, mine: true, room: 'A12', participants: [], ref: 'memory:e1', revision: 'r1', canCancel: true, recurring: false, organizer: 'Testa Testsson' }],
@@ -130,6 +142,13 @@ export const conversation = (source: Thread[], text: string, conversationId = 'k
     const reply = thread({ id: conversationId, title: text.slice(0, 80), kind: 'question', connector: 'clew', area: 'fragor',
       messages: [...previous, { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW }, { id: `a${previous.length}`, role: 'assistant', body, createdAt: NOW, meta: { source: 'Heroma', assistant: 'model', model } }] });
     return { conversationId, thread: reply, shape: 'svar', assistant: 'model', answer: { body, source: 'Heroma', at: NOW }, clewActions: [], followUps: [], model };
+  }
+  // A question that names an open card is answered with that card (D34, H1): the sentence is the card's, the card is drawn in the turn.
+  if (/attestera/i.test(text)) {
+    const body = 'Två matchar sina beställningar, en saknar beställning. Den första förfaller i dag.';
+    const reply = thread({ id: conversationId, title: text.slice(0, 80), kind: 'question', connector: 'clew', area: 'fragor',
+      messages: [...previous, { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW }, { id: `a${previous.length}`, role: 'assistant', body, createdAt: NOW, meta: { source: 'Raindance', shape: 'svar', cards: ['fakturor'] } }] });
+    return { conversationId, thread: reply, shape: 'svar', assistant: 'router', answer: { body, source: 'Raindance', at: NOW }, clewActions: [], followUps: [] };
   }
   const body = 'Tio personer är på plats i dag. Sara Nyström är sjuk.';
   const reply = thread({ id: conversationId, title: 'Vem är på plats i dag?', kind: 'question', connector: 'clew', area: 'fragor',

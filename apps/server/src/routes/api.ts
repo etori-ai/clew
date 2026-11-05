@@ -1,11 +1,14 @@
 import { actorOf } from '@clew/connectors';
 import { Hono } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import { ActInput, AskInput, AvailabilityInput, CancelEventInput, ConfirmInput, ConversationInput, CreateEventInput, ModelChoiceInput, MoveProposalInput, ReplanInput, ReplyInput, RescheduleEventInput, SnoozeInput } from '@clew/contracts';
 import type { ModelChoiceInput as ModelChoiceInputType } from '@clew/contracts';
 import type { AvailabilityInput as AvailabilityInputType, CancelEventInput as CancelEventInputType, CreateEventInput as CreateEventInputType, MoveProposalInput as MoveProposalInputType, RescheduleEventInput as RescheduleEventInputType } from '@clew/contracts';
-import type { ConversationInput as ConversationInputType } from '@clew/contracts';
+import type { ConversationEvent, ConversationInput as ConversationInputType } from '@clew/contracts';
+import { CalendarError } from '@clew/calendar/model';
+import { TurnStopped } from '../assistant';
 import type { ActInput as ActInputType } from '@clew/contracts';
 import { InputError, protectedRoute, type Env } from '../context';
 import { readFigures } from '../modules/figures/domain';
@@ -82,8 +85,36 @@ api.post('/ask', async c => c.json(await ask(c.get('session').context, (await bo
 api.get('/completions', async c => c.json(await completionsFor(c.get('session').context)));
 /** One conversation turn (D12): text plus chips; answers in one of three shapes; nothing is executed here. */
 api.post('/conversation', async c => c.json(await converse(c.get('session').context, await body(c.req.raw, validators.conversation as unknown as (value: unknown) => value is ConversationInputType))));
-/** What `@` can point at: the objects on the page first, then every capability in scope. */
-api.get('/objects', async c => { const q = c.req.query('q') ?? ''; if (q.length > 80) throw new InputError('För lång sökning.'); return c.json({ objects: await listObjects(c.get('session').context, q) }); });
+/**
+ * The same turn as server-sent events (D36): its steps and the model's text while it runs, then the finished turn, or
+ * the Swedish error the JSON route would give. The body is validated before the stream opens, so a bad request is a
+ * plain 400. A closed connection is the person pressing Stoppa: the turn stops and nothing is written.
+ */
+api.post('/conversation/stream', async c => {
+  const persona = c.get('session').context;
+  const input = await body(c.req.raw, validators.conversation as unknown as (value: unknown) => value is ConversationInputType);
+  return streamSSE(c, async stream => {
+    const stop = new AbortController();
+    stream.onAbort(() => stop.abort());
+    const send = (event: ConversationEvent) => stream.writeSSE({ data: JSON.stringify(event) }).catch(() => undefined);
+    try {
+      const response = await converse(persona, input, { emit: event => void send(event), signal: stop.signal });
+      await send({ type: 'done', response });
+    } catch (error) {
+      if (error instanceof TurnStopped || stop.signal.aborted) return;
+      if (!(error instanceof InputError || error instanceof CalendarError)) console.error(error);
+      await send({ type: 'error', message: error instanceof InputError || error instanceof CalendarError ? error.message : 'Frågan kunde inte ställas. Försök igen.' });
+    }
+  });
+});
+/** What `@` can point at, in the box's context: `near` is a comma-separated list of the refs the person is looking at. */
+api.get('/objects', async c => {
+  const q = c.req.query('q') ?? '';
+  const near = (c.req.query('near') ?? '').split(',').filter(Boolean);
+  if (q.length > 80) throw new InputError('För lång sökning.');
+  if (near.length > 40 || near.some(r => r.length > 200 || !/^[a-z]+:[A-Za-z0-9:_.@-]+$/.test(r))) throw new InputError('Ogiltigt sammanhang.');
+  return c.json({ objects: await listObjects(c.get('session').context, q, near) });
+});
 api.get('/threads/:id/verbs', async c => {
   const thread = await threadFor(c.get('session').context, c.req.param('id'));
   return thread ? c.json({ verbs: verbsFor(thread) }) : c.json({ error: 'Tråden finns inte.' }, 404);

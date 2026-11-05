@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { AuthenticatedContext, Thread } from '../../packages/contracts/src/index';
+import type { AuthenticatedContext, Thread, TurnEvent } from '../../packages/contracts/src/index';
 import { actorOf, Registry, type Connector } from '../../packages/connectors/src/index';
 import { searchConnector } from '../../apps/server/src/modules/search/connector';
 import { searchUsecases } from '../../apps/server/src/modules/search/usecases';
@@ -13,7 +13,7 @@ import { threadUsecases } from '../../apps/server/src/threads/usecases/cards';
 import { reminderUsecases } from '../../apps/server/src/threads/usecases/reminders';
 import { memoryObligations, memoryProposalStore } from '../../apps/server/src/modules/calendar/adapters/memory';
 import { calendarUsecases } from '../../apps/server/src/modules/calendar/usecases/samtal';
-import { assistantUsecases } from '../../apps/server/src/assistant';
+import { assistantUsecases, TurnStopped } from '../../apps/server/src/assistant';
 import { memoryModelHealth, memoryModelStore, memoryModelWire } from '../../apps/server/src/assistant/adapters/memory';
 import { modelUsecases } from '../../apps/server/src/assistant/usecases/models';
 import type { ModelGenerate } from '../../apps/server/src/assistant/model';
@@ -111,11 +111,51 @@ describe('a question without the model', () => {
     expect(completions.recent).toEqual([]);
     await w.assistant.ask(hillevi, 'Vad har jag i dag?');
     expect((await w.assistant.completionsFor(hillevi)).recent.map(r => r.title)).toEqual(['Vad har jag i dag?']);
-    const objects = await w.assistant.listObjects(hillevi, '');
-    expect(objects.filter(o => o.kind === 'thread').map(o => o.label)).toContain((await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'raindance:invoices')!.title);
-    expect(objects.some(o => o.kind === 'event' && o.label === 'APT')).toBe(true);
+    const invoices = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'raindance:invoices')!;
+    // With nothing typed, `@` offers the context alone, never everything open.
+    expect(await w.assistant.listObjects(hillevi, '')).toEqual([]);
+    const near = await w.assistant.listObjects(hillevi, '', ['thread:' + invoices.id]);
+    expect(near.map(o => o.ref)).toEqual(['thread:' + invoices.id, ...invoices.items.map(i => i.ref)]);
+    expect(near.every(o => o.visible && o.threadId === invoices.id)).toBe(true);
+    // A row in the context brings its whole card along.
+    expect((await w.assistant.listObjects(hillevi, '', [invoices.items[0]!.ref])).map(o => o.ref)).toContain('thread:' + invoices.id);
+    // Typing searches everything in scope, the context first: meetings and capabilities too.
+    expect((await w.assistant.listObjects(hillevi, 'APT')).some(o => o.kind === 'event' && o.label === 'APT')).toBe(true);
     expect((await w.assistant.listObjects(hillevi, 'lekolar')).every(o => /lekolar/i.test(o.label + o.detail))).toBe(true);
+    const ranked = await w.assistant.listObjects(hillevi, 'a', ['thread:' + invoices.id]);
+    expect(ranked.map(o => o.visible)).toEqual([...ranked.map(o => o.visible)].sort((a, b) => Number(b) - Number(a)));
+    expect(ranked[0]!.visible).toBe(true);
+    expect(ranked.length).toBeLessThanOrEqual(12);
     expect(await w.status(hillevi)).toEqual({ configured: false, available: false, model: null, checkedAt: null, current: null, choices: [] });
+  });
+});
+
+describe('the answer is the card (D34, H1)', () => {
+  test('a question that names an open card is answered with that card without the model, audited, and the card is drawn once', async () => {
+    const w = world();
+    await w.threads.ensureThreads(hillevi);
+    const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'raindance:invoices')!;
+    const first = await w.assistant.converse(hillevi, { text: 'attestera en faktura' });
+    expect(first).toMatchObject({ assistant: 'router', shape: 'svar', answer: { source: 'Raindance' } });
+    expect(first.answer.body).toContain(card.summary.replace(/\.$/, ''));
+    expect(first.thread.messages[1]!.meta).toMatchObject({ cards: [card.id] });
+    expect(w.store.audit.at(-1)).toMatchObject({ action: 'conversation.asked', subject: 'thread:' + first.conversationId, details: { assistant: 'router', cards: [card.id] } });
+    // Nothing is attested by asking: the card is only drawn.
+    expect((await w.threads.threadFor(hillevi, card.id))!.state).toBe('open');
+    // The same card again in the same conversation is not drawn twice; the one above is live.
+    const again = await w.assistant.converse(hillevi, { text: 'attestera fakturan', conversationId: first.conversationId });
+    expect(again.thread.messages[3]!.meta?.cards).toBeUndefined();
+    // A question about something else names no card.
+    const other = await w.assistant.converse(hillevi, { text: 'vem är på plats i dag?' });
+    expect(other.thread.messages[1]!.meta?.cards).toBeUndefined();
+  });
+  test('a chipped card is drawn in the turn that asks about it', async () => {
+    const w = world();
+    await w.threads.ensureThreads(hillevi);
+    const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'raindance:invoices')!;
+    const why = await w.assistant.converse(hillevi, { text: 'varför ser jag detta?', chips: [{ ref: 'thread:' + card.id, kind: 'thread', label: card.title }] });
+    expect(why.thread.messages[1]!.meta).toMatchObject({ cards: [card.id] });
+    expect(w.store.audit.at(-1)).toMatchObject({ details: { cards: [card.id] } });
   });
 });
 
@@ -197,6 +237,53 @@ describe('with a model', () => {
     w.health.mark('llm', true, T0);
     fail = false;
     expect((await w.assistant.converse(hillevi, { text: 'vem är här?' })).assistant).toBe('model');
+  });
+});
+
+describe('a turn heard while it runs (D36)', () => {
+  const textOf = (events: TurnEvent[]) => events.reduce((text, e) => e.type === 'text' ? (e.reset ? e.delta : text + e.delta) : text, '');
+  test('the listener hears each read as a step and the model\'s text as it is written, without the trailer; the turn and its audit row are written once, at the end', async () => {
+    const generate: ModelGenerate = async ({ tools, onText }) => {
+      const output = await (tools['heroma__whoIsOn'] as { execute: (input: unknown, options: unknown) => Promise<unknown> }).execute({}, {});
+      for (const text of ['Tre', 'Tre på plats.', 'Tre på plats.\nF', 'Tre på plats.\nFöljdfrågor: Vem saknas?']) onText?.(text);
+      return { text: 'Tre på plats.\nFöljdfrågor: Vem saknas?', toolCalls: [{ capability: 'heroma.whoIsOn', input: {}, output }] };
+    };
+    const w = world({ generate });
+    const events: TurnEvent[] = [];
+    const turn = await w.assistant.converse(hillevi, { text: 'vem är här?' }, { emit: e => { events.push(e); expect(w.store.audit).toHaveLength(0); } });
+    expect(events.filter(e => e.type === 'step')).toEqual([
+      { type: 'step', step: { id: 'steg-1', capability: 'heroma.whoIsOn', title: expect.any(String), source: 'Heroma', status: 'running' } },
+      { type: 'step', step: { id: 'steg-1', capability: 'heroma.whoIsOn', title: expect.any(String), source: 'Heroma', status: 'complete', ms: 0 } },
+    ]);
+    expect(events.filter(e => e.type === 'text').map(e => e.type === 'text' && e.delta)).toEqual(['Tre', ' på plats.', '\n']);
+    expect(textOf(events).trim()).toBe(turn.answer.body);
+    expect(turn.followUps).toEqual(['Vem saknas?']);
+    expect(audit(w.store, turn.conversationId)).toEqual(['conversation.asked']);
+  });
+  test('a stopped turn writes nothing and does not mark the model down', async () => {
+    const stop = new AbortController();
+    const generate: ModelGenerate = async ({ onText, signal }) => { onText?.('Tre'); stop.abort(); if (signal?.aborted) throw new Error('aborted'); return { text: 'Tre på plats.', toolCalls: [] }; };
+    const w = world({ generate });
+    await expect(w.assistant.converse(hillevi, { text: 'vem är här?' }, { signal: stop.signal })).rejects.toBeInstanceOf(TurnStopped);
+    expect(w.store.audit).toHaveLength(0);
+    expect((await w.store.listThreads('hillevi', T0)).filter(t => t.kind === 'question')).toHaveLength(0);
+    expect(await w.status(hillevi)).toMatchObject({ configured: true, available: true });
+    expect(w.logged).toHaveLength(0);
+  });
+  test('a stop after the answer is known still writes nothing', async () => {
+    const stop = new AbortController();
+    const w = world();
+    await expect(w.assistant.converse(hillevi, { text: 'visa fakturor' }, { signal: stop.signal, emit: e => { if (e.type === 'step' && e.step.status === 'complete') stop.abort(); } })).rejects.toBeInstanceOf(TurnStopped);
+    expect(w.store.audit).toHaveLength(0);
+  });
+  test('when the model fails halfway the listener is told to start over, and the router\'s read is a step', async () => {
+    const generate: ModelGenerate = async ({ onText }) => { onText?.('Fakturorna'); throw new Error('timeout'); };
+    const w = world({ generate });
+    const events: TurnEvent[] = [];
+    const turn = await w.assistant.converse(hillevi, { text: 'visa fakturor' }, { emit: e => events.push(e) });
+    expect(turn.assistant).toBe('unavailable');
+    expect(events.map(e => e.type === 'text' ? `text:${e.reset ? 'reset:' : ''}${e.delta}` : `step:${e.step.capability}:${e.step.status}`)).toEqual(['text:Fakturorna', 'text:reset:', 'step:raindance.invoices:running', 'step:raindance.invoices:complete']);
+    expect(w.store.audit.at(-1)).toMatchObject({ action: 'conversation.asked', details: { assistant: 'unavailable', tools: ['raindance.invoices'] } });
   });
 });
 

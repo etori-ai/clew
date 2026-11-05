@@ -3,6 +3,7 @@ import { Badge, Button, DayStrip, Drawer, DrawerHeader, HStack, Layout, LayoutCo
 import { dayLabel } from '@clew/calendar/dates';
 import { fieldLabel, fieldValue, hiddenFields, reviewLabel, staleLabel } from './panel-labels';
 import { useConversation } from './conversation-context';
+import { AddToConversation } from './add-to-conversation';
 
 type Props = { title: string | null; output: unknown; onClose: () => void; onOpenItem?: (item: AgendaItem, dayItems: AgendaItem[]) => void };
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -37,7 +38,7 @@ function SearchRows({ result }: { result: SearchResult }) {
           </HStack>
           <HStack gap={1} wrap="wrap">
             {r.link && <Button size="sm" variant="secondary" label="Öppna" href={r.link} target="_blank" />}
-            <Button size="sm" variant="ghost" label={inConversation ? 'I samtalet ✓' : 'Lägg till i samtalet'} isDisabled={inConversation} onClick={() => talk.addChip({ ref, kind: 'document', label: r.label })} />
+            <AddToConversation added={inConversation} onAdd={() => talk.addChip({ ref, kind: 'document', label: r.label })} />
           </HStack>
         </VStack>} />;
     })}</List>}

@@ -341,23 +341,24 @@ describe('every mutation and its audit row', () => {
 });
 
 describe('attention and areas', () => {
-  test('counts today\'s pushed cards against the budget', async () => {
+  test('a scan outside the review counts as one interruption against the budget, however many cards it brings', async () => {
     const w = world();
     expect(await w.threads.attentionFor(hillevi)).toMatchObject({ used: 0, budget: ATTENTION_BUDGET, bundledUntil: null });
     await w.threads.ensureThreads(hillevi);
-    const used = (await w.threads.listThreadsFor(hillevi)).length;
-    expect(await w.threads.attentionFor(hillevi)).toMatchObject({ used, budget: ATTENTION_BUDGET, bundledUntil: used >= ATTENTION_BUDGET ? 'i morgon 06:00' : null });
+    expect((await w.threads.listThreadsFor(hillevi)).filter(t => t.kind === 'pushed').length).toBeGreaterThan(1);
+    expect(await w.threads.attentionFor(hillevi)).toMatchObject({ used: 1, budget: ATTENTION_BUDGET, bundledUntil: null });
     w.clock.advance(24 * 60 * MINUTE);
     expect((await w.threads.attentionFor(hillevi)).used).toBe(0);
   });
-  test('draws the day as one track with every card pushed today as an interruption', async () => {
+  test('draws the day as one track with the cards a scan pushed folded into one moment', async () => {
     const w = world();
     await w.threads.ensureThreads(hillevi);
     const pushed = (await w.threads.listThreadsFor(hillevi)).filter(t => t.kind === 'pushed');
     const { rhythm } = await w.threads.attentionFor(hillevi);
-    expect(rhythm.filter(p => p.kind === 'interruption').map(p => p.title).sort()).toEqual(pushed.map(t => t.title).sort());
-    expect(rhythm.map(p => p.kind)).toEqual<string[]>(['review', ...pushed.map(() => 'interruption'), 'bundle', 'bundle', 'quiet']);
-    expect(rhythm.map(p => p.state)).toEqual<string[]>(['done', ...pushed.map(() => 'done'), 'next', 'later', 'later']);
+    expect(rhythm.map(p => p.kind)).toEqual<string[]>(['review', 'interruption', 'bundle', 'bundle', 'quiet']);
+    expect(rhythm.map(p => p.state)).toEqual<string[]>(['done', 'done', 'next', 'later', 'later']);
+    expect(rhythm[1]).toMatchObject({ at: '08:00', count: pushed.length });
+    expect(pushed.map(t => t.title)).toContain(rhythm[1]!.title ?? '');
   });
   test('carries live counts and the worst attention level per area', async () => {
     const w = world();

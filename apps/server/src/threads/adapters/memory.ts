@@ -57,9 +57,6 @@ export function memoryThreadStore(): MemoryThreadStore {
       const row = [...threads.values()].find(r => r.personId === personId && r.thread.topic === topic && r.thread.state === 'open');
       return row ? copy(row.thread) : undefined;
     },
-    async countPushedSince(personId, since) {
-      return [...threads.values()].filter(r => r.personId === personId && r.thread.kind === 'pushed' && Date.parse(r.thread.createdAt) >= Date.parse(since)).length;
-    },
     async transaction(fn) {
       const snapshot = { threads: copy(threads), audit: copy(audit), jobs: copy(jobs) };
       try { return await fn(tx); }

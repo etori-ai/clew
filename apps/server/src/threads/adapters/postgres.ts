@@ -62,10 +62,6 @@ export function postgresThreadStore(): ThreadStore {
     readThread: (personId, id) => read(database(), and(eq(threads.id, id), eq(threads.personId, personId))),
     readThreadById: id => read(database(), eq(threads.id, id)),
     async openThread(personId, topic) { return read(database(), and(eq(threads.personId, personId), eq(threads.topic, topic), eq(threads.state, 'open'))); },
-    async countPushedSince(personId, since) {
-      const rows = await database().select({ id: threads.id }).from(threads).where(and(eq(threads.personId, personId), eq(threads.kind, 'pushed'), gte(threads.createdAt, new Date(since))));
-      return rows.length;
-    },
     transaction: fn => database().transaction(tx => fn(txOf(tx))),
   };
 }

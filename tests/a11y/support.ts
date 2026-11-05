@@ -1,7 +1,7 @@
-import { test as base, expect, type Page, type Route } from '@playwright/test';
+import { test as base, expect, type Locator, type Page, type Route } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import type { Thread } from '@clew/contracts';
-import { NEXT_WEEK, NOW, WEEK, areas, attention, checkReport, connectorDetail, connectorPreview, connectors, conversation, events, searchOutput, snoozePresets, threads, today, units, user } from './data';
+import { NEXT_WEEK, NOW, WEEK, areas, attention, checkReport, completions, connectorDetail, connectorPreview, connectors, conversation, events, figures, searchOutput, snoozePresets, threads, today, units, user } from './data';
 import { assistantStatus, modelDetail, modelProviders, models, providerDetail, providerReport } from './data';
 import type { ModelSummary, ProviderSummary } from '@clew/contracts';
 
@@ -18,6 +18,8 @@ import type { ConnectorSummary } from '@clew/contracts';
 export class MockApi {
   threads = threads();
   answerDelay = 0;
+  /** How long the first read of the cards takes, so a test can see the page while they load (D36). */
+  threadsDelay = 0;
   sessionDelay = 0;
   signedIn = true;
   /** The session says the person may administer connectors (D23). Off by default so the other suites see the ordinary page. */
@@ -69,10 +71,12 @@ export class MockApi {
         return json(connectorDetail(c));
       }
     }
-    if (path === '/threads') return json({ threads: this.threads });
+    if (path === '/threads') { if (this.threadsDelay) await new Promise(resolve => setTimeout(resolve, this.threadsDelay)); return json({ threads: this.threads }); }
     if (path === '/areas') return json({ areas });
     if (path === '/today') return json(today);
     if (path === '/attention') return json(attention);
+    if (path === '/figures') return json({ figures });
+    if (path === '/completions') return json(completions);
     if (path === '/assistant/status') return json(assistantStatus(this.modelChoices, this.currentModel));
     if (path === '/assistant/model' && request.method() === 'PATCH') { this.currentModel = (request.postDataJSON() as { modelId: string }).modelId; return json(assistantStatus(this.modelChoices, this.currentModel)); }
     if (path === '/calendar') { const from = url.searchParams.get('from') ?? '2026-11-02'; return json({ from, events: events(from), proposals: from === NEXT_WEEK ? this.threads.find(t => t.id === 'samtal')?.proposals ?? [] : [] }); }
@@ -85,10 +89,32 @@ export class MockApi {
     if (path === '/calendar/events/cancel' && post) return json({ cancelled: true });
     if (/^\/threads\/[^/]+\/proposals\/[^/]+\/move$/.test(path) && post) { const b = request.postDataJSON() as { start: string; end: string }; const pid = path.split('/')[4]; const t = this.threads.find(t => t.id === id)!; return json(this.update(id, { proposals: t.proposals.map(p => p.id === pid ? { ...p, start: b.start, end: b.end } : p) })); }
     if (path === '/cap/calendar.day') { const date = (JSON.parse(url.searchParams.get('input') ?? '{}') as { date?: string }).date ?? '2026-11-04'; return json({ output: { from: date, events: events(date).filter(e => e.start.startsWith(date)), proposals: [] } }); }
-    if (path === '/objects') return json({ objects: [] });
+    // `@` as the server answers it: with nothing typed only the context the box sends (`near`), with text everything open, the context first.
+    if (path === '/objects') {
+      const q = (url.searchParams.get('q') ?? '').toLowerCase(), near = (url.searchParams.get('near') ?? '').split(',');
+      const all = this.threads.filter(t => t.state === 'open' && t.kind === 'pushed').flatMap(t => [{ ref: 'thread:' + t.id, kind: 'thread', label: t.title, detail: 'kort', threadId: t.id, visible: near.includes('thread:' + t.id) },
+        ...t.items.map(i => ({ ref: i.ref, kind: 'item', label: i.label, detail: 'rad', threadId: t.id, visible: near.includes('thread:' + t.id) }))]);
+      const hits = q ? all.filter(o => o.label.toLowerCase().includes(q)) : all.filter(o => o.visible);
+      return json({ objects: [...hits.filter(o => o.visible), ...hits.filter(o => !o.visible)].slice(0, 12) });
+    }
     if (path === '/cap/clew.search') return json({ output: searchOutput });
     if (path === '/cap/clew.cardFromAnswer' && post) return json({ output: { threadId: 'rutin' } });
     if (path.startsWith('/cap/')) return json({ output: this.output });
+    // A turn as the server streams it (D36): a read as a step, the answer in two deltas, then the finished turn. Playwright
+    // answers in one piece, so the pending turn is what `answerDelay` holds open.
+    if (path === '/conversation/stream') {
+      const body = request.postDataJSON() as { text: string; conversationId?: string };
+      if (this.answerDelay) await new Promise(resolve => setTimeout(resolve, this.answerDelay));
+      const response = conversation(this.threads, body.text, body.conversationId);
+      const step = { id: 'steg-1', capability: 'mock.read', title: 'Läser', source: response.answer.source };
+      const half = Math.ceil(response.answer.body.length / 2);
+      const events = [{ type: 'step', step: { ...step, status: 'running' } }, { type: 'step', step: { ...step, status: 'complete', ms: 800 } },
+        { type: 'text', delta: response.answer.body.slice(0, half) }, { type: 'text', delta: response.answer.body.slice(half) }, { type: 'done', response }];
+      try { await route.fulfill({ status: 200, contentType: 'text/event-stream', body: events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('') }); }
+      catch { return; }
+      this.threads = [...this.threads.filter(t => t.id !== response.conversationId), response.thread];
+      return;
+    }
     if (path === '/conversation') {
       const body = request.postDataJSON() as { text: string; conversationId?: string };
       if (this.answerDelay) await new Promise(resolve => setTimeout(resolve, this.answerDelay));
@@ -184,7 +210,8 @@ export const test = base.extend<{ api: MockApi }>({
 export { expect };
 
 export const answer = (page: Page) => page.locator('.astryx-chat-message-bubble').filter({ hasText: 'Tio personer är på plats i dag.' });
-export const composer = (page: Page) => page.getByRole('combobox', { name: 'Fråga, be om något eller svara om ett kort' });
+/** The box: named after the landing's heading, "Svara i samtalet" once a conversation is open (the scope line, H3.3). */
+export const composer = (page: Page) => page.getByRole('combobox', { name: /^(Vad vill du göra|Svara i samtalet)$/ });
 /** A heading by the level assistive technology gets: `aria-level` when Astryx separates it from the visual level. */
 /** "Inte nu" on the first card, the way a person does it (D29): open the picker, choose "I morgon". */
 export async function snoozeFirst(page: Page) {
@@ -199,6 +226,11 @@ export async function openNav(page: Page) {
   if (!await toggle.isVisible()) return page.getByRole('navigation', { name: 'Sidonavigering' });
   await toggle.click();
   return page.getByRole('dialog', { name: 'Navigering' });
+}
+/** The areas are lenses at the rail's foot, collapsed until asked for (the canvas's H3 item 7): open the disclosure in the given rail. */
+export async function openAreas(nav: Locator) {
+  const toggle = nav.getByRole('button', { name: 'Områden' });
+  if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click();
 }
 /** The surface that docks the composer: ChatLayout's sticky wrapper (D31), or null when the row is in the page flow. */
 const dockOf = (page: Page) => page.evaluate(() => {
@@ -262,7 +294,9 @@ export async function hiddenFocusStops(page: Page, limit = 150) {
   const seen = new Set<string>();
   for (let stop = 0; stop < limit; stop++) {
     await page.keyboard.press('Tab');
-    const result = await page.evaluate(() => {
+    const result = await page.evaluate(async () => {
+      // A ring that animates in (an Astryx field's border and inset shadow, 125 ms) is measured once it has settled, not in the instant of the Tab.
+      await Promise.all(document.getAnimations().filter(a => a instanceof CSSTransition && a.playState === 'running').map(a => a.finished.catch(() => undefined)));
       const { unmarked, visited } = window as unknown as { unmarked: string[]; visited: Element[] };
       const active = document.activeElement;
       if (!active || active === document.body) return null;
@@ -274,7 +308,9 @@ export async function hiddenFocusStops(page: Page, limit = 150) {
       const ring = (el: Element | null, depth: number): boolean => {
         if (!el || depth > 3) return false;
         const s = getComputedStyle(el);
-        return (s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0) || (el === active && s.boxShadow !== 'none') || ring(el.parentElement, depth + 1);
+        // An Astryx field (TextInput, Typeahead) draws its ring as an inset shadow on the wrapper around the input; an elevation shadow is never inset.
+        const fieldRing = el !== active && /inset/.test(s.boxShadow) && !/^rgba\(0, 0, 0, 0\)/.test(s.boxShadow) && !/ 0px 0px 0px 0px inset/.test(s.boxShadow);
+        return (s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0) || (el === active && s.boxShadow !== 'none') || fieldRing || ring(el.parentElement, depth + 1);
       };
       if (!ring(active, 0)) unmarked.push(name);
       const box = { left: Math.max(r.left, 0), right: Math.min(r.right, innerWidth), top: Math.max(r.top, 0), bottom: Math.min(r.bottom, innerHeight) };

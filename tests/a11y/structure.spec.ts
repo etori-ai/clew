@@ -1,10 +1,11 @@
-import { answer, composer, desktop, expect, heading, open, openNav, phone, test } from './support';
+import { answer, composer, desktop, expect, heading, open, openAreas, openNav, phone, test } from './support';
 
 test.use({ viewport: desktop });
 
 test.describe('2.4.2 page titled', () => {
   const titles = [
-    ['/', 'Behöver dig · Startsidan'],
+    ['/', 'Vad vill du göra · Startsidan'],
+    ['/oversikt', 'Hela bilden · Startsidan'],
     ['/omrade/personal', 'Personal · Startsidan'],
     ['/hanterat', 'Redan hanterat · Startsidan'],
     ['/kalender', 'Vecka 45 · Kalender · Startsidan'],
@@ -22,26 +23,31 @@ test.describe('2.4.2 page titled', () => {
 });
 
 test.describe('1.3.1 and 2.4.6 structure', () => {
-  for (const path of ['/', '/omrade/personal', '/hanterat', '/kalender']) test(`${path} has one h1, one main and a top navigation`, async ({ page, api: _ }) => {
+  // No TopNav (the canvas's H1 and H4, the `shell-side-nav` template): the rail is the page's one navigation and carries the product and the person.
+  for (const path of ['/', '/oversikt', '/omrade/personal', '/hanterat', '/kalender']) test(`${path} has one h1, one main and one rail`, async ({ page, api: _ }) => {
     await open(page, path);
     await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveCount(1);
     await expect(page.getByRole('main')).toHaveCount(1);
-    await expect(page.getByRole('navigation', { name: 'Övre navigering' })).toHaveCount(1);
+    await expect(page.getByRole('navigation')).toHaveCount(1);
+    await expect(page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: /^Startsidan/ })).toBeVisible();
   });
 
-  test('the areas are one navigation landmark, in the drawer on a phone', async ({ page, api: _ }) => {
+  test('the rail is one navigation landmark with the areas as lenses, in the drawer on a phone', async ({ page, api: _ }) => {
     await open(page, '/');
+    await expect(page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: 'Ny fråga' })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Sidonavigering' })).toHaveCount(1);
+    await openAreas(page.getByRole('navigation', { name: 'Sidonavigering' }));
     await expect(page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: /^Personal/ })).toBeVisible();
     await page.setViewportSize(phone);
     await expect(page.getByRole('navigation', { name: 'Sidonavigering' })).toHaveCount(0);
     const nav = await openNav(page);
     await expect(nav).toHaveCount(1);
+    await openAreas(nav);
     await expect(nav.getByRole('link', { name: /^Personal/ })).toBeVisible();
   });
 
   test('the open card is a heading, a row is a button that says it is collapsed, the log groups its days', async ({ page, api: _ }) => {
-    await open(page, '/');
+    await open(page, '/oversikt');
     await expect(heading(page, 1, 'God morgon')).toBeVisible();
     await expect(heading(page, 2, 'Nu · 1')).toBeVisible();
     await expect(heading(page, 3, 'Attestera 3 fakturor, 48 200 kr')).toBeVisible();
@@ -53,10 +59,69 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(page.getByRole('list', { name: /november/ }).first()).toBeVisible();
   });
 
-  test('sections have distinct names', async ({ page, api: _ }) => {
-    await open(page, '/');
+  for (const path of ['/', '/oversikt']) test(`sections on ${path} have distinct names`, async ({ page, api: _ }) => {
+    await open(page, path);
     const names = await page.locator('section[aria-label]').evaluateAll(list => list.map(el => el.getAttribute('aria-label')));
     expect(new Set(names).size).toBe(names.length);
+  });
+
+  test('the box is the page: the brief above it has at most three rows, each with its next step, and the chips are a group', async ({ page, api: _ }) => {
+    await open(page, '/');
+    await expect(heading(page, 1, 'Vad vill du göra?')).toBeVisible();
+    const brief = page.getByRole('list', { name: 'Det som behöver dig' });
+    await expect(brief.getByRole('listitem')).toHaveCount(3);
+    // A card that needs a choice first gets "Granska", which opens it; never a button that starts disabled.
+    await expect(brief.getByRole('link', { name: 'Granska 3' })).toHaveAttribute('href', '/oversikt?kort=fakturor');
+    await expect(brief.getByRole('link', { name: 'Attestera 3 fakturor, 48 200 kr' })).toHaveAttribute('href', '/oversikt?kort=fakturor');
+    await expect(page.getByRole('group', { name: 'Det du brukar göra' }).getByRole('button', { name: 'Budget mot prognos' })).toBeVisible();
+    await page.getByRole('link', { name: 'Visa hela bilden' }).click();
+    await expect(heading(page, 2, 'Nu · 1')).toBeVisible();
+  });
+
+  test('typing in the box offers what the router finds without the model, the open card first, and each row is a button', async ({ page, api: _ }) => {
+    await open(page, '/');
+    await composer(page).fill('attestera');
+    const offers = page.getByRole('list', { name: 'Menar du' });
+    await expect(offers.getByRole('listitem').first()).toContainText('Attestera 3 fakturor, 48 200 kr');
+    await expect(offers.getByRole('button', { name: /Attestera fakturor/ })).toBeVisible();
+    await offers.getByRole('button', { name: /Attestera 3 fakturor/ }).click();
+    await expect(page).toHaveURL(/\/oversikt\?kort=fakturor$/);
+  });
+
+  test('a brief row puts its card in the box as a token, and @ with nothing typed offers only what the page shows', async ({ page, api: _ }) => {
+    await open(page, '/');
+    const brief = page.getByRole('list', { name: 'Det som behöver dig' });
+    await brief.getByRole('button', { name: 'Lägg till i samtalet' }).first().click();
+    await expect(brief.getByRole('button', { name: 'I samtalet', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /Ta bort|Remove/ }).first()).toBeVisible();
+    const titles = await brief.getByRole('listitem').getByRole('link').filter({ hasNotText: /^Granska/ }).allTextContents();
+    await composer(page).pressSequentially('@');
+    const menu = page.getByRole('listbox', { name: 'Objekt' });
+    await expect(menu.getByRole('option').first()).toBeVisible();
+    const offered = await menu.getByRole('option').allTextContents();
+    expect(offered.some(o => o.includes(titles[0]!))).toBe(true);
+    expect(offered.some(o => o.includes('Brandskyddsrond i oktober saknar protokoll'))).toBe(false);
+  });
+
+  test('the answer is the card: a question that names a card draws it in the turn, a heading under the conversation, with its rows and buttons', async ({ page, api: _ }) => {
+    await open(page, '/');
+    await composer(page).fill('attestera en faktura');
+    await composer(page).press('Enter');
+    const card = page.getByRole('article', { name: 'Tråd: Attestera 3 fakturor, 48 200 kr' });
+    await expect(card).toBeVisible();
+    // Under the conversation's h1 the card's title is a level-2 heading (Playwright's role level reads the tag, so the suite reads aria-level).
+    await expect(heading(page, 2, 'Attestera 3 fakturor, 48 200 kr')).toBeVisible();
+    await expect(card.getByRole('checkbox')).toHaveCount(3);
+    await expect(card.getByRole('button', { name: 'Attestera · 2' })).toBeVisible();
+    await expect(page.getByRole('article', { name: 'Assistenten', exact: true })).toContainText('saknar beställning');
+  });
+
+  test('the rail searches conversations and cards and opens what is picked', async ({ page, api: _ }) => {
+    await open(page, '/');
+    const search = page.getByRole('combobox', { name: 'Sök i samtal och kort' });
+    await search.fill('fakturor');
+    await page.getByRole('option', { name: /Attestera 3 fakturor/ }).click();
+    await expect(page).toHaveURL(/\/oversikt\?kort=fakturor$/);
   });
 
   test('the calendar names its days as headings', async ({ page, api: _ }) => {
@@ -81,8 +146,9 @@ test.describe('3.1.2 language of parts', () => {
     await expect(page.getByRole('article', { name: 'Assistenten', exact: true })).toBeVisible();
   });
 
+  // On the landing the box has no header and already holds the focus (G); where the box has a scope line, the shortcut sits in it.
   test('the keyboard shortcut is spoken in Swedish', async ({ page, api: _ }) => {
-    await open(page, '/');
+    await open(page, '/oversikt');
     await expect(page.getByRole('img', { name: 'Kontroll + K' })).toBeVisible();
   });
 
@@ -135,7 +201,7 @@ test.describe('D26 questions answered from documents', () => {
 
 test.describe('D30 the obligation', () => {
   test('the card carries its steps, its judgement calls and its day loads with names', async ({ page, api: _ }) => {
-    await open(page, '/');
+    await open(page, '/oversikt');
     const card = page.locator('#thread-samtal');
     await expect(card.getByRole('list', { name: 'Steg' })).toBeVisible();
     await expect(card.getByRole('list', { name: 'Steg' }).getByRole('listitem')).toHaveCount(4);

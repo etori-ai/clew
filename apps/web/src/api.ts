@@ -1,5 +1,5 @@
 import type { AddModelInput, AddProviderInput, ModelDetail, ModelPatchInput, ModelSummary, ProviderDetail, ProviderPatchInput, ProviderSummary, ProviderTestReport } from '@clew/contracts';
-import type { SnoozeInput, SnoozePreset, AddConnectorInput, Area, AssistantStatus, Attention, AvailabilityInput, AvailabilityResult, CalendarEvent, CalendarMember, CalendarRoom, CancelEventInput, CreateEventInput, DayView, MoveProposalInput, RescheduleEventInput, CheckReport, ClewObject, Completions, ConnectorDetail, ConnectorHealth, ConnectorPatchInput, ConnectorPreview, ConnectorSummary, ConversationInput, ConversationResponse, Figure, ManifestDiff, Proposal, Role, Thread, TodayView, Verb } from '@clew/contracts';
+import type { SnoozeInput, SnoozePreset, AddConnectorInput, Area, AssistantStatus, Attention, AvailabilityInput, AvailabilityResult, CalendarEvent, CalendarMember, CalendarRoom, CancelEventInput, CreateEventInput, DayView, MoveProposalInput, RescheduleEventInput, CheckReport, ClewObject, Completions, ConnectorDetail, ConnectorHealth, ConnectorPatchInput, ConnectorPreview, ConnectorSummary, ConversationEvent, ConversationInput, ConversationResponse, Figure, TurnEvent, ManifestDiff, Proposal, Role, Thread, TodayView, Verb } from '@clew/contracts';
 import { sessionFetch } from '@clew/ui';
 
 import { ApiError } from './api-error';
@@ -12,6 +12,37 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   let data: unknown; try { data = text ? JSON.parse(text) : {}; } catch { throw new ApiError(response.status, 'Tjänsten svarade oväntat.'); }
   if (!response.ok) throw new ApiError(response.status, (data as { error?: string }).error ?? 'Något gick fel.');
   return data as T;
+}
+/**
+ * A conversation turn as it runs (D36): `POST /api/conversation/stream` answers with server-sent events, read here from
+ * the response body. Each step and text delta goes to `onEvent`; the finished turn resolves, the server's Swedish error
+ * rejects as an ApiError, and `signal` is Stoppa (the fetch aborts, the server stops the turn and writes nothing).
+ */
+async function converseStream(input: ConversationInput, onEvent: (event: TurnEvent) => void, signal?: AbortSignal): Promise<ConversationResponse> {
+  const response = await sessionFetch('/api/conversation/stream', { method: 'POST', body: JSON.stringify(input), headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' }, ...(signal ? { signal } : {}) });
+  if (!response.ok || !response.body) {
+    let message = 'Något gick fel.';
+    try { message = ((await response.json()) as { error?: string }).error ?? message; } catch { /* not JSON */ }
+    throw new ApiError(response.status, message);
+  }
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += value.replace(/\r\n/g, '\n');
+    for (let end = buffer.indexOf('\n\n'); end >= 0; end = buffer.indexOf('\n\n')) {
+      const data = buffer.slice(0, end).split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).replace(/^ /, '')).join('\n');
+      buffer = buffer.slice(end + 2);
+      if (!data) continue;
+      let event: ConversationEvent;
+      try { event = JSON.parse(data) as ConversationEvent; } catch { throw new ApiError(502, 'Tjänsten svarade oväntat.'); }
+      if (event.type === 'done') { void reader.cancel(); return event.response; }
+      if (event.type === 'error') { void reader.cancel(); throw new ApiError(400, event.message); }
+      onEvent(event);
+    }
+  }
+  throw new ApiError(502, 'Svaret bröts innan det var klart. Försök igen.');
 }
 const post = <T,>(path: string, body?: unknown) => call<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}) });
 const patch = <T,>(path: string, body: unknown) => call<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
@@ -27,7 +58,8 @@ export const api = {
   completions: () => call<Completions>('/api/completions'),
   thread: (id: string) => call<Thread>(`/api/threads/${id}`),
   converse: (input: ConversationInput) => post<ConversationResponse>('/api/conversation', input),
-  objects: (q: string) => call<{ objects: ClewObject[] }>('/api/objects?q=' + encodeURIComponent(q)),
+  converseStream,
+  objects: (q: string, near: string[] = []) => call<{ objects: ClewObject[] }>('/api/objects?q=' + encodeURIComponent(q) + (near.length ? '&near=' + encodeURIComponent(near.join(',')) : '')),
   verbs: (id: string) => call<{ verbs: Verb[] }>(`/api/threads/${id}/verbs`),
   reopen: (id: string) => post<Thread>(`/api/threads/${id}/reopen`),
   assistantStatus: () => call<AssistantStatus>('/api/assistant/status'),

@@ -237,13 +237,19 @@ export function threadUsecases(deps: ThreadDeps) {
     if (dismissed && t.week && t.proposals.length && !t.proposals.some(p => p.status === 'proposed')) return calendar.replan(persona, threadId, t.week);
     return read(persona, threadId);
   }
-  /** The budget and the day's rhythm (D28): what was pushed today against the cap, on one track with the review, the bundles and the quiet hours. */
+  /**
+   * The budget and the day's rhythm (D28): what was pushed today, on one track with the review, the bundles and the quiet
+   * hours. The budget counts interruptions, which are moments on the track, never cards: a scan that brings ten cards at
+   * once interrupted once, and the cards the review or a bundle brought interrupted nobody.
+   */
   async function attentionFor(persona: AuthenticatedContext): Promise<Attention> {
     const now = clock().toISOString();
     const since = stockholmInstant(stockholmDate(now), '00:00');
-    const [used, threads] = await Promise.all([store.countPushedSince(persona.id, since), store.listThreads(persona.id, now)]);
-    const interruptions = threads.filter(t => t.kind === 'pushed' && Date.parse(t.createdAt) >= Date.parse(since)).map(t => ({ at: t.createdAt, title: t.title }));
-    return { used, budget: ATTENTION_BUDGET, bundledUntil: used >= ATTENTION_BUDGET ? 'i morgon 06:00' : null, rhythm: rhythmFor(now, interruptions) };
+    const threads = await store.listThreads(persona.id, now);
+    const pushed = threads.filter(t => t.kind === 'pushed' && Date.parse(t.createdAt) >= Date.parse(since)).map(t => ({ at: t.createdAt, title: t.title }));
+    const rhythm = rhythmFor(now, pushed);
+    const used = rhythm.filter(p => p.kind === 'interruption').length;
+    return { used, budget: ATTENTION_BUDGET, bundledUntil: used >= ATTENTION_BUDGET ? 'i morgon 06:00' : null, rhythm };
   }
   /**
    * An open card from a connector the person cannot see (switched off, or they are outside its audience, D23) is not

@@ -1,4 +1,4 @@
-import type { SearchResult, ViewRef } from '@clew/contracts';
+import type { SearchResult, Thread, ViewRef } from '@clew/contracts';
 export { headingFollowUps } from '../modules/search/domain';
 
 /** What the deterministic router knows about a capability: the same list the model gets as tools, plus the Swedish title. */
@@ -21,6 +21,19 @@ export function matchCapability(text: string, tools: ToolInfo[]): ToolInfo | und
     if (score > 0 && (!best || score > best.score)) best = { tool, score };
   }
   return best?.tool;
+}
+/**
+ * The open cards a question names (D34, H1): a pull and a push land on the same card. Each card is scored by the
+ * question's words against its title; a card wins when it shares at least half of the question's words, so
+ * "attestera en faktura" finds "Attestera en faktura, 18 650 kr" and "vem är på plats" finds none. The best three, ties kept.
+ */
+export function matchCards(text: string, threads: Thread[], count = 3): Thread[] {
+  const qt = tokens(text);
+  if (!qt.length) return [];
+  const scored = threads.map(t => { const tt = tokens(t.title); return { t, score: qt.filter(x => tt.some(y => same(x, y))).length }; })
+    .filter(s => s.score > 0 && s.score * 2 >= qt.length);
+  const best = Math.max(0, ...scored.map(s => s.score));
+  return scored.filter(s => s.score === best).slice(0, count).map(s => s.t);
 }
 /** The three nearest capability titles, for the "Det där kan jag inte svara på" sentence and as follow-ups. */
 export function nearest(text: string, tools: ToolInfo[], count = 3): ToolInfo[] {

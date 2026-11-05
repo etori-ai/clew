@@ -8,6 +8,7 @@ import { addDays, shortDayLabel, timeRange, weekNumber } from '@clew/calendar/da
 import { api } from '../api';
 import { calendarWeekQuery } from '../queries';
 import { useThreadAction } from '../mutations';
+import { AddToConversation } from './add-to-conversation';
 
 type Props = { thread: Thread; compact: boolean; headingLevel?: 2 | 3 | 4; onChange: (thread: Thread) => void };
 const EMPTY_EVENTS: CalendarEvent[] = [];
@@ -125,7 +126,7 @@ export function ThreadCard({ thread, compact, headingLevel = 3, onChange }: Prop
       {error && <Text as="p" role="alert" color="accent">{error}</Text>}
       {roster && !open && thread.state === 'open' && !undoOpen && <HStack gap={2} wrap="wrap">
         {waiting.length > 0 && <Button variant="secondary" label={`Påminn de ${waiting.length} nu`} clickAction={() => run(() => api.remindInvitees(thread.id))} />}
-        <Button variant="ghost" label={inConversation ? 'I samtalet ✓' : 'Lägg till i samtalet'} isDisabled={inConversation} onClick={() => talk.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id })} />
+        <AddToConversation size="md" added={inConversation} onAdd={() => talk.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id })} />
         {!thread.waitingOn && <Button variant="ghost" label="Inte nu" clickAction={() => run(async () => { const t = await api.snooze(thread.id); leave(t, 'Tas upp i morgon 06:00 i stället.'); return t; })} />}
         <MoreMenu label="Fler val" size="sm" variant="ghost" items={[{ id: 'why', label: 'Varför ser jag detta?', onClick: () => setWhy(v => !v) }]} />
       </HStack>}
@@ -134,7 +135,7 @@ export function ThreadCard({ thread, compact, headingLevel = 3, onChange }: Prop
         {open && !compact && <Button label="Justera i kalendern" href={`/kalender?datum=${thread.week}&vy=vecka`} />}
         {open && compact && <Button label="Visa i veckan" href={`/kalender?datum=${thread.week}&vy=vecka`} />}
         {open && nextWeek && <Button label={`Vecka ${weekNumber(nextWeek)} i stället`} clickAction={() => run(() => api.replan(thread.id, nextWeek))} />}
-        {open && <Button variant="ghost" label={inConversation ? 'I samtalet ✓' : 'Lägg till i samtalet'} isDisabled={inConversation} onClick={() => talk.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id })} />}
+        {open && <AddToConversation size="md" added={inConversation} onAdd={() => talk.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id })} />}
         {open && <Button variant="ghost" label="Inte nu" clickAction={() => run(async () => { const t = await api.snooze(thread.id); leave(t, 'Tas upp i morgon 06:00 i stället.'); return t; })} />}
         {open && <MoreMenu label="Fler val" size="sm" variant="ghost" items={[
           { id: 'dismiss', label: 'Avfärda · inte aktuellt', onClick: () => void run(async () => { const t = await api.dismiss(thread.id); leave(t, 'Avfärdad som inte aktuellt. Förslagen ligger kvar under Redan hanterat i tio minuter.'); return t; }) },

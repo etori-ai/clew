@@ -1,19 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { isSnoozed, streamGroup, type Area, type RhythmPoint, type SessionUser, type Thread, type ViewRef } from '@clew/contracts';
-import { Banner, Button, ChatLayout, Divider, DropdownMenu, EmptyState, Heading, HStack, Icon, IconButton, Layout, LayoutContent, List, MoreMenu, Step, Stepper, Text, ToggleButton, ToggleButtonGroup, Toolbar, VisuallyHidden, VStack, useMediaQuery, useToast } from '@clew/ui';
-import { timeLabel, today } from '@clew/calendar/dates';
+import type { Area, Figure, SessionUser, Thread, ViewRef } from '@clew/contracts';
+import { Banner, Button, ChatLayout, Divider, EmptyState, Grid, GridSpan, Heading, HStack, Icon, IconButton, Layout, LayoutContent, LayoutFooter, Link, List, ListItem, MoreMenu, ProgressBar, Skeleton, Text, Toolbar, VisuallyHidden, VStack, useMediaQuery, useToast } from '@clew/ui';
+import { addDays, displayDate, shortDayLabel, timeLabel, timeRange, today } from '@clew/calendar/dates';
 import { errorMessage } from '../query-policy';
-import { areasQuery, assistantQuery, attentionQuery, cardViewQuery, threadsQuery, todayQuery, viewQuery } from '../queries';
+import { areasQuery, assistantQuery, attentionQuery, cardViewQuery, completionsQuery, figuresQuery, threadsQuery, todayQuery, viewQuery } from '../queries';
 import { applyThread } from '../thread-cache';
 import { keys } from '../query-keys';
-import { Composer } from '../components/composer';
-import { ConversationContext, ConversationProvider } from '../components/conversation-context';
+import { digestSentence, groupThreads } from '../stream';
+import { Composer, Suggestions } from '../components/composer';
+import { ConversationContext, ConversationProvider, type ConversationState } from '../components/conversation-context';
 import { Transcript } from '../components/conversation';
-import { AreasNav } from '../components/areas';
-import { Shell, mobileQuery, shortQuery } from '../components/shell';
+import { useRail, type RailCurrent } from '../components/nav';
+import { Shell, mobileQuery, narrowQuery, shortQuery } from '../components/shell';
 import { GenericCard, ThreadRow } from '../components/card';
+import { Brief, BriefSkeleton } from '../components/brief';
+import { Lage } from '../components/lage';
 import { PanelView } from '../components/panel';
 import { EventDialog } from '../components/calendar/event-dialog';
 import type { AgendaItem } from '@clew/ui';
@@ -23,53 +26,64 @@ import { Handled } from '../components/handled';
 import { usePageTitle } from '../page-title';
 
 type Pile = 'pagar' | 'inte-nu' | 'klart';
+type Mode = 'fraga' | 'oversikt';
 const pileHref = (p: Pile) => p === 'klart' ? '/hanterat' : `/${p}`;
 const pileOf = (pathname: string): Pile | null => pathname === '/hanterat' ? 'klart' : pathname === '/pagar' ? 'pagar' : pathname === '/inte-nu' ? 'inte-nu' : null;
 const pileTitle: Record<Pile, string> = { pagar: 'Pågår utan dig', 'inte-nu': 'Inte nu', klart: 'Redan hanterat' };
 const greeting = (hour: number) => hour < 10 ? 'God morgon' : hour < 18 ? 'God dag' : 'God kväll';
-/** The day's rhythm as words (D28): the kind of each point on the track, and what it means for the person. */
-const pointName = (p: RhythmPoint, budget: number, nth: number) => p.kind === 'review' ? 'Genomgång' : p.kind === 'bundle' ? 'Samling' : p.kind === 'quiet' ? 'Tyst' : `Avbrott ${nth} av ${budget}`;
-const pointDetail = (p: RhythmPoint) => p.kind === 'review' ? (p.state === 'done' ? 'allt som behöver dig' : 'nästa genomgång') : p.kind === 'bundle' ? 'resten samlas här' : p.kind === 'quiet' ? 'till 06:00' : p.title ?? '';
+/** A figure's tile asks the question the router answers without the model (D8): the figures are read, never a thread. */
+const figureQuestion: Record<Figure['id'], string> = { korttidsfranvaro: 'Hur ser korttidsfrånvaron ut?', budgetavvikelse: 'Hur ligger budgeten?', hme: 'Vad säger HME?', utvecklingssamtal: 'Hur ligger vi till med utvecklingssamtalen?' };
 const EMPTY_THREADS: Thread[] = [];
 const EMPTY_AREAS: Area[] = [];
+const EMPTY_FIGURES: Figure[] = [];
 
 /**
- * Mission control (D28): the day as one track on the digest card, then Nu and Senare, notices as rows, and three piles
- * above the conversation row for what waits on others, what the person set aside and what was handled today. Areas
- * in the sidebar are lenses on the same stream. The frame is Astryx's (D31): the shell, a Layout with a bounded content
- * width and a ChatLayout that docks the row; the side panel stays live for views. Every card comes from a connector
- * through the registry; the calendar's proposal card keeps its specialised rendering, everything else is the generic card.
+ * The start page (D34): "Vad vill du göra?" first. At `/` the box is the page, with the push as a brief of at most three
+ * rows above it and the connectors' standing actions as chips under it; a pull and a push produce the same card. The
+ * whole picture is `/oversikt`: the greeting, Läget, the groups (Nu, Senare, Jag föreslår, Till kännedom) beside the day
+ * and the piles. A conversation takes the column at `/samtal/:id` (D31). The route is the state throughout: `/omrade/:area`
+ * filters the overview, `/pagar`, `/inte-nu` and `/hanterat` open a pile, `/vy/…` the side panel. Every card comes from a
+ * connector through the registry; the calendar's proposal card keeps its specialised rendering, everything else is the generic card.
  */
-export function StartPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
+export function StartPage({ user, admin = false, mode }: { user: SessionUser; admin?: boolean; mode: Mode }) {
   const mobile = useMediaQuery(mobileQuery);
   // 1.4.10: with 480 px or less in height nothing is docked; the row joins the page and the whole page scrolls (D31 item 7).
   const short = useMediaQuery(shortQuery);
-  // Every read is a query (D33): one cache shared by the page, the cards and the conversation. A mutation writes the thread it returns into it (thread-cache.ts).
+  // The overview's rail folds under the groups below 1024 px, as the alert-rail template folds its rail.
+  const narrow = useMediaQuery(narrowQuery);
+  // Every read is a query (D33): one cache shared by the page, the cards, the rail and the conversation. A mutation writes the thread it returns into it (thread-cache.ts).
   const client = useQueryClient();
   const threadsQ = useQuery(threadsQuery);
   const areasQ = useQuery(areasQuery);
   const dayQ = useQuery(todayQuery);
   const attentionQ = useQuery(attentionQuery);
   const assistantQ = useQuery(assistantQuery);
+  const figuresQ = useQuery({ ...figuresQuery, enabled: mode === 'oversikt' });
+  const completionsQ = useQuery({ ...completionsQuery, enabled: mode === 'fraga' });
   const threads = threadsQ.data?.threads ?? EMPTY_THREADS;
+  // The first read of the cards (D36): until it is here the page draws their shape, never "nothing needs you".
+  const loadingThreads = threadsQ.isPending;
   const areas = areasQ.data?.areas ?? EMPTY_AREAS;
+  const figures = figuresQ.data?.figures ?? EMPTY_FIGURES;
   const day = dayQ.data ?? null;
   const attention = attentionQ.data ?? null;
   const assistant = assistantQ.data ?? null;
-  // The route is the state: /omrade/:area filters the stream, /pagar, /inte-nu and /hanterat open a pile, /vy/… the panel, /samtal/:id the row.
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams<{ area?: string; capability?: string; threadId?: string; actionId?: string; conversationId?: string }>();
   const [search] = useSearchParams();
-  const pile = pileOf(location.pathname);
-  const area = params.area ?? (search.get('omrade') || null);
+  const pile = mode === 'oversikt' ? pileOf(location.pathname) : null;
+  const area = mode === 'oversikt' ? params.area ?? (search.get('omrade') || null) : null;
   const conversationId = params.conversationId ?? null;
-  const pathFor = (a: string | null) => a === null ? '/' : `/omrade/${a}`;
-  const back = pile ? pileHref(pile) : pathFor(area);
+  const pathFor = (a: string | null) => a === null ? '/oversikt' : `/omrade/${a}`;
+  const home = mode === 'fraga' ? '/' : pathFor(area);
+  const back = pile ? pileHref(pile) : home;
   const withArea = (path: string) => area ? `${path}${path.includes('?') ? '&' : '?'}omrade=${encodeURIComponent(area)}` : path;
   const viewHref = (capability: string, title: string, input?: Record<string, unknown>) => withArea(`/vy/${capability}?titel=${encodeURIComponent(title)}` + (input && Object.keys(input).length ? `&input=${encodeURIComponent(JSON.stringify(input))}` : ''));
   const cardViewHref = (threadId: string, actionId: string) => withArea(`/vy/kort/${threadId}/${actionId}`);
-  const conversationHref = (id: string) => withArea(`/samtal/${id}`);
+  const conversationHref = (id: string) => `/samtal/${id}`;
+  /** The overview with one card open: where a brief row's title leads. */
+  const cardHref = (threadId: string) => `/oversikt?kort=${encodeURIComponent(threadId)}`;
   // An entry opened from the panel's day view (D32): the same dialog as on the calendar page, over the panel.
   const [openItem, setOpenItem] = useState<{ item: AgendaItem; dayItems: AgendaItem[] } | null>(null);
   const toast = useToast();
@@ -102,9 +116,9 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     if (!target || Date.now() - target.at > 2_000 || document.activeElement !== document.body) return;
     // A card that moved to a pile is no longer in the stream; a card that only changed state is still here.
     const card = document.getElementById(target.card);
-    const next = card?.checkVisibility() ? card : document.getElementById(target.next) ?? document.getElementById('behover-dig') ?? document.getElementById('senare');
+    const next = card?.checkVisibility() ? card : document.getElementById(target.next) ?? document.getElementById('behover-dig') ?? document.getElementById('senare') ?? document.getElementById('vad-vill-du-gora');
     // A row's focus goes to its title button, the control with the ring; a card is focused as a whole, as before.
-    (next?.matches('li') ? next.querySelector<HTMLElement>('button') ?? next : next)?.focus();
+    (next?.matches('li') ? next.querySelector<HTMLElement>('button, a') ?? next : next)?.focus();
   }, [threads]);
   // A view is addressable (integrations.md, "Answers and views"): the panel follows /vy/:capability or /vy/kort/:thread/:action.
   const viewInput = search.get('input'), viewTitle = search.get('titel');
@@ -128,7 +142,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     if (typeof (result.output as { url?: string }).url === 'string') return null;
     return { title: label, output: result.output };
   }, [params.capability, params.threadId, params.actionId, viewTitle, capabilityView.data, cardView.data, threads]);
-  // The page's one alert: a read that failed before it had anything to show. A failed refetch keeps the old data and says nothing; the day and the model's status are extras.
+  // The page's one alert: a read that failed before it had anything to show. A failed refetch keeps the old data and says nothing; the day, the figures and the model's status are extras.
   const failed = [threadsQ, areasQ, attentionQ].find(q => q.isError && q.data === undefined);
   const error = failed ? errorMessage(failed.error, 'Sidan kunde inte läsas.')
     : capabilityView.isError ? errorMessage(capabilityView.error, 'Kunde inte hämta.')
@@ -139,30 +153,33 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const inArea = (t: Thread) => area === null || t.area === area;
   const now = new Date().toISOString();
   const todayDate = today();
-  const open = threads.filter(t => t.state === 'open' && t.kind === 'pushed');
-  // Two groups and three piles (D28): what needs the person is split by today's deadline, the rest waits at the edge.
-  const needsYou = open.filter(t => !t.waitingOn && !isSnoozed(t, now) && inArea(t)).sort((a, b) => (a.deadline ?? '9999').localeCompare(b.deadline ?? '9999') || a.createdAt.localeCompare(b.createdAt));
-  const nu = needsYou.filter(t => streamGroup(t, todayDate) === 'nu');
-  const senare = needsYou.filter(t => streamGroup(t, todayDate) === 'senare');
-  const notices = needsYou.filter(t => streamGroup(t, todayDate) === 'notice');
-  const waiting = open.filter(t => !!t.waitingOn && !isSnoozed(t, now));
-  const snoozed = open.filter(t => isSnoozed(t, now));
-  const handledToday = threads.filter(t => t.state !== 'open' && t.handledAt && t.handledAt.slice(0, 10) === now.slice(0, 10));
+  // The groups (D34): requirements by their day, proposals, events; the piles at the edge.
+  const g = useMemo(() => groupThreads(threads, now, todayDate, inArea), [threads, now.slice(0, 16), todayDate, area]);
   const older = [...threads.filter(t => t.state === 'open' && t.kind === 'question'), ...threads.filter(t => t.state !== 'open')];
   const remaining = attention ? Math.max(0, attention.budget - attention.used) : null;
   const current = useMemo(() => areas.find(a => a.id === area) ?? null, [areas, area]);
-  const pageTitle = view ? view.title : conversationId ? 'Samtal' : pile ? pileTitle[pile] : current?.title ?? (area ? null : 'Behöver dig');
+  const hashGroup = location.hash === '#foreslar' ? 'foreslar' : location.hash === '#kannedom' ? 'kannedom' : 'behover-dig';
+  const railCurrent: RailCurrent = { surface: mode === 'fraga' ? 'start' : 'oversikt', group: mode === 'oversikt' && !pile && !area ? hashGroup : null, pile, area, conversationId };
+  const pageTitle = view ? view.title : conversationId ? 'Samtal' : pile ? pileTitle[pile] : current?.title ?? (area ? null : mode === 'fraga' ? 'Vad vill du göra' : 'Hela bilden');
   usePageTitle(pageTitle, view || conversationId ? false : pageTitle ?? false);
   const onConversation = useCallback((id: string | null) => { if (id) navigate(conversationHref(id)); else if (conversationId) navigate(back); }, [navigate, conversationId, back]);
-  const row = <Composer />;
+  const nav = useRail({ current: railCurrent, admin });
 
   const openCardView = (threadId: string, actionId: string) => navigate(cardViewHref(threadId, actionId));
   // Records are rows and a card is the exception (D31, Astryx structure guide): the first thread in Nu, a proposal thread, a
-  // thread in a pile and every thread on a phone is a card; the rest are rows the person opens, and the opened card takes the focus.
-  const [opened, setOpened] = useState<Set<string>>(() => new Set());
-  const expandFocus = useRef<string | null>(null);
+  // thread in a pile, the card a brief row pointed at (`?kort=`) and every thread on a phone is a card; the rest are rows the person opens.
+  const kort = search.get('kort');
+  const [opened, setOpened] = useState<Set<string>>(() => new Set(kort ? [kort] : []));
+  const expandFocus = useRef<string | null>(kort);
   const expand = (id: string) => { expandFocus.current = id; setOpened(s => new Set(s).add(id)); };
-  // Cards sit under an h2 (Nu, Senare, Till kännedom) or under a pile's h1, so their headings are one level down (1.3.1).
+  // A group named in the hash (the rail's Jag föreslår, Till kännedom) takes the focus to its heading once the threads are here.
+  useEffect(() => {
+    if (!location.hash || !threads.length) return;
+    const el = document.getElementById(location.hash.slice(1));
+    el?.scrollIntoView({ block: 'start' });
+    el?.focus();
+  }, [location.hash, threads.length > 0]);
+  // Cards sit under an h2 (Nu, Senare, Jag föreslår, Till kännedom) or under a pile's h1, so their headings are one level down (1.3.1).
   const card = (t: Thread, position?: string, headingLevel: 2 | 3 = 3) => {
     const focusTitle = expandFocus.current === t.id;
     if (focusTitle) expandFocus.current = null;
@@ -173,8 +190,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   /** A group's threads: runs of rows in one list, a card where a thread is open. */
   const records = (list: Thread[], options: { lead?: boolean; notice?: boolean; headingLevel?: 2 | 3 } = {}) => {
     const out: React.ReactNode[] = []; let rows: React.ReactNode[] = [];
-    // A run of rows is one list fenced by dividers (the structure guide: rows with dividers, no card), its text on the column's content
-    // line (edge flush). A Section would bleed to the Layout's inset, which here overlaps the group heading and is clipped by the scroll container.
+    // A run of rows is one list fenced by dividers (the structure guide: rows with dividers, no card), its text on the column's content line (edge flush).
     const flush = () => { if (rows.length) { out.push(<VStack key={`rows-${out.length}`} gap={0}><Divider /><List hasDividers density="balanced" edge="flush">{rows}</List><Divider /></VStack>); rows = []; } };
     list.forEach((t, i) => {
       const asCard = mobile || t.proposals.length > 0 || opened.has(t.id) || (options.lead && i === 0);
@@ -184,59 +200,88 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     flush();
     return out;
   };
-  // The piles (D28): three toggles, each a count; one opens its rows in place of the stream. They sit in the column's pinned
-  // toolbar (D31 item 5): ChatLayout's frosted band is sized for one composer, so a second row on the dock would float over the cards.
-  // Three toggles do not fit a phone in one row and ToggleButtonGroup never wraps; there the same choice is one menu whose rows navigate.
-  const pileLabels: Record<Pile, string> = { pagar: `Pågår utan dig · ${waiting.length}`, 'inte-nu': `Inte nu · ${snoozed.length}`, klart: `Klart i dag · ${handledToday.length}` };
-  const choosePile = (p: Pile | null) => navigate(p ? pileHref(p) : pathFor(area));
-  const piles = mobile
-    ? <HStack justify="end"><DropdownMenu presentation="adaptive" button={{ label: `Visa: ${pile ? pileLabels[pile] : 'Strömmen'}`, size: 'sm', variant: 'secondary' }} items={[
-      { id: 'stream', label: 'Strömmen', onClick: () => choosePile(null) },
-      ...(Object.keys(pileLabels) as Pile[]).map(p => ({ id: p, label: pileLabels[p], onClick: () => choosePile(p) })),
-    ]} /></HStack>
-    : <ToggleButtonGroup label="Högar" type="single" size="sm" value={pile} onChange={(v: string | null) => choosePile(v as Pile | null)}>
-      {(Object.keys(pileLabels) as Pile[]).map(p => <ToggleButton key={p} value={p} label={pileLabels[p]} />)}
-    </ToggleButtonGroup>;
-  // The assistant's own cap on interruptions, worded as its promise: it never counts anything the person does.
-  const attentionLabel = attention && (remaining === 0
-    ? `Inga avbrott kvar i dag · resten samlas till ${attention.bundledUntil ?? 'i morgon 06:00'}`
-    : `${remaining} avbrott kvar i dag`);
-  // The digest (D28): the day as one track, and one sentence that sums the stream. Only on the whole stream, never under a lens.
-  const activeStep = attention ? Math.max(0, attention.rhythm.findIndex(p => p.state === 'next')) : 0;
   const nextBundle = attention?.rhythm.find(p => p.kind === 'bundle' && p.state !== 'done');
-  let interruptions = 0;
-  const sentence = nu.length === 0 && waiting.length === 0 && handledToday.length === 0 ? 'Inget behöver dig just nu.'
-    : `${nu.length === 0 ? 'Inget behöver dig i dag' : nu.length === 1 ? 'En sak behöver dig i dag' : `${nu.length} saker behöver dig i dag`}, ${waiting.length} pågår utan dig och ${handledToday.length} blev klara i dag.`;
-  // The digest is the page's lead, not a discrete item: a section with the greeting as the h1, never a card (D31).
+  const hello = greeting(Number(timeLabel(now).slice(0, 2)));
+  const sentence = digestSentence(g);
+  const reviewLine = attention && `Genomgången ${attention.rhythm[0]?.at ?? '06:00'} · ${g.nu.length + g.senare.length + g.foreslar.length + g.kannedom.length + g.waiting.length} trådar lästa · ${nextBundle ? `Nästa samling ${nextBundle.at}` : 'Nästa genomgång i morgon 06:00'}`;
+  // The digest is the overview's lead, not a discrete item: a section with the greeting as the h1, never a card (D31).
   const digest = attention && <VStack gap={2} as="section" aria-label="Genomgången">
-      <Text type="supporting">Genomgången {attention.rhythm[0]?.at ?? '06:00'} · {open.length} trådar lästa{nextBundle ? ` · Nästa samling ${nextBundle.at}` : ''}</Text>
-      <Heading level={1}>{greeting(Number(timeLabel(now).slice(0, 2)))}. {sentence}</Heading>
-      <Stepper label="Dagens rytm" activeStep={activeStep} indicatorPosition="on-track" density="compact" horizontalOptions={{ minimumStepWidth: 104, collapsedVariant: 'withLabel' }}>
-        {/* A step label never wraps and seven of them share the width, so the time is the label and the words go in the description, which does. */}
-        {attention.rhythm.map((p, i) => <Step key={`${p.kind}-${p.at}-${i}`} step={i} label={p.at} description={`${pointName(p, attention.budget, p.kind === 'interruption' ? ++interruptions : 0)} · ${pointDetail(p)}`}
-          indicator={p.kind === 'interruption' ? <Icon icon="clock" size="sm" /> : 'auto'} status={p.kind === 'interruption' ? 'error' : undefined} />)}
-      </Stepper>
+      <Text type="supporting">{reviewLine}</Text>
+      <Heading level={1}>{hello}. {sentence}</Heading>
       <Text type="supporting">Jag stör högst {attention.budget} gånger mellan samlingarna, bara för deadline samma dag eller något du själv bad om. Allt annat samlas.</Text>
     </VStack>;
+  const assistantDown = !!assistant && assistant.configured && !assistant.available;
 
   const pileContent = pile === 'klart'
     ? <Handled threads={older} compact={mobile} onChange={replace} conversationHref={conversationHref} />
     : pile && <VStack gap={2} as="section" aria-label={pileTitle[pile]}>
       <HStack justify="between" vAlign="end" gap={2} wrap="wrap">
-        <Heading level={2} accessibilityLevel={1}>{pileTitle[pile]} · {(pile === 'pagar' ? waiting : snoozed).length}</Heading>
+        <Heading level={2} accessibilityLevel={1}>{pileTitle[pile]} · {(pile === 'pagar' ? g.waiting : g.snoozed).length}</Heading>
         <Text type="supporting">{pile === 'pagar' ? 'Kommer tillbaka av sig själva när någon svarar.' : 'Tillbaka 06:00, eller tidigare om något händer.'}</Text>
       </HStack>
-      {(pile === 'pagar' ? waiting : snoozed).length === 0 && <EmptyState title="Tomt här" description={pile === 'pagar' ? 'Inget väntar på någon annan.' : 'Inget är lagt åt sidan.'} isCompact headingLevel={2} />}
-      <VStack gap={2}>{(pile === 'pagar' ? waiting : snoozed).map(t => card(t, undefined, 2))}</VStack>
+      {(pile === 'pagar' ? g.waiting : g.snoozed).length === 0 && <EmptyState title="Tomt här" description={pile === 'pagar' ? 'Inget väntar på någon annan.' : 'Inget är lagt åt sidan.'} isCompact headingLevel={2} />}
+      <VStack gap={2}>{(pile === 'pagar' ? g.waiting : g.snoozed).map(t => card(t, undefined, 2))}</VStack>
     </VStack>;
 
-  /** The transcript's lead on a short screen, where there is no pinned toolbar: the title and the way out, in the flow. */
-  const conversationHeader = (talk: { conversation: { title: string } | null; newConversation: () => void; close: () => void }) => <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-    <Heading level={1}>{talk.conversation?.title}</Heading>
-    <HStack gap={1}><Button size="sm" variant="ghost" label="Nytt samtal" onClick={talk.newConversation} /><Button size="sm" variant="ghost" label="Stäng samtalet" onClick={talk.close} /></HStack>
-  </HStack>;
-  const content = <VStack gap={4}>
-    {!current && !pile && !digest && <VisuallyHidden as="div"><Heading level={1}>Startsidan</Heading></VisuallyHidden>}
+  /** The groups (D34): one lead per region (the h1 above), then the groups ranked by weight at one size: Heading level 3 on the page, level 2 in the outline. */
+  const groups = <VStack gap={5}>
+    <VStack gap={2} as="section" aria-label="Nu">
+      <HStack justify="between" vAlign="end" gap={2} wrap="wrap">
+        <Heading id="behover-dig" tabIndex={-1} level={3} accessibilityLevel={2}>{loadingThreads ? 'Nu' : g.nu.length === 0 ? 'Inget behöver dig just nu' : `Nu · ${g.nu.length}`}</Heading>
+        <Text type="supporting">{g.nu.length ? 'Deadline i dag, eller något du bad om' : g.senare.length ? 'Resten har tid på sig' : 'Nästa genomgång i morgon 06:00'}</Text>
+      </HStack>
+      {loadingThreads && <BriefSkeleton compact={mobile} />}
+      {!loadingThreads && g.nu.length + g.senare.length + g.foreslar.length + g.kannedom.length === 0 && <EmptyState title="Lugnt läge" description="Assistenten hör av sig när något behöver dig." isCompact headingLevel={3} />}
+      {g.nu.length > 0 && <VStack gap={2}>{records(g.nu, { lead: true })}</VStack>}
+    </VStack>
+    {g.senare.length > 0 && <VStack gap={2} as="section" aria-label="Senare">
+      <HStack justify="between" vAlign="end" gap={2} wrap="wrap">
+        <Heading id="senare" tabIndex={-1} level={3} accessibilityLevel={2}>Senare · {g.senare.length}</Heading>
+        <Text type="supporting">Bara det som har en dag får en dag</Text>
+      </HStack>
+      <VStack gap={2}>{records(g.senare)}</VStack>
+    </VStack>}
+    {g.foreslar.length > 0 && <VStack gap={2} as="section" aria-label="Jag föreslår">
+      <HStack justify="between" vAlign="end" gap={2} wrap="wrap">
+        <Heading id="foreslar" tabIndex={-1} level={3} accessibilityLevel={2}>Jag föreslår · {g.foreslar.length}</Heading>
+        <Text type="supporting">Ingen deadline, nej tack är ett svar</Text>
+      </HStack>
+      <VStack gap={2}>{records(g.foreslar)}</VStack>
+    </VStack>}
+    {g.kannedom.length > 0 && <VStack gap={2} as="section" aria-label="Till kännedom">
+      <HStack justify="between" vAlign="end" gap={2} wrap="wrap">
+        <Heading id="kannedom" tabIndex={-1} level={3} accessibilityLevel={2}>Till kännedom · {g.kannedom.length}</Heading>
+        <Text type="supporting">Ingen knapp, försvinner när du läst</Text>
+      </HStack>
+      <VStack gap={2}>{records(g.kannedom, { notice: true })}</VStack>
+    </VStack>}
+    {current && current.schedules.length > 0 && <VStack gap={1} as="section" aria-label="Så här bevakar jag området">
+      <Heading level={3} accessibilityLevel={2}>Så här bevakar jag området</Heading>
+      {current.schedules.map((s, i) => <Text key={i} type="supporting"><Text as="span" weight="semibold">{s.when}</Text> · {s.label}</Text>)}
+    </VStack>}
+  </VStack>;
+  /** The overview's rail: the day, the piles with their counts, and the assistant's own schedule. Folds under the groups when narrow. */
+  const done = g.handledToday.length, total = done + g.nu.length + g.senare.length + g.foreslar.length + g.kannedom.length + g.waiting.length + g.snoozed.length;
+  const schedules = areas.flatMap(a => a.schedules.map(s => ({ ...s, area: a.title }))).slice(0, 5);
+  const aside = <VStack gap={5} as="aside" aria-label="Dagen och vid sidan av">
+    {day && <Today view={day} compact />}
+    <VStack gap={2} as="section" aria-label="Vid sidan av">
+      <Heading level={3} accessibilityLevel={2}>Vid sidan av</Heading>
+      <List hasDividers density="compact" edge="flush">
+        <ListItem href="/pagar" align="start" label={<Text weight="semibold">Pågår utan dig</Text>} endContent={<Text type="supporting">{g.waiting.length}</Text>}
+          description={<Text type="supporting">{g.waiting[0] ? `${g.waiting[0].title} · väntar på ${g.waiting[0].waitingOn}` : 'Inget väntar på någon annan'}</Text>} />
+        <ListItem href="/inte-nu" align="start" label={<Text weight="semibold">Inte nu</Text>} endContent={<Text type="supporting">{g.snoozed.length}</Text>}
+          description={<Text type="supporting">Tillbaka 06:00, eller tidigare om något händer</Text>} />
+        <ListItem href="/hanterat" align="start" label={<Text weight="semibold">Klart i dag</Text>} endContent={<Text type="supporting">{done}</Text>}
+          description={<VStack gap={1}><ProgressBar label={`Klart i dag: ${done} av ${total}`} isLabelHidden value={done} max={Math.max(total, 1)} variant="success" /><Text type="supporting">{done} av {total} sedan 06:00</Text></VStack>} />
+      </List>
+    </VStack>
+    {!current && schedules.length > 0 && <VStack gap={1} as="section" aria-label="Så här bevakar jag">
+      <Heading level={3} accessibilityLevel={2}>Så här bevakar jag</Heading>
+      {schedules.map((s, i) => <Text key={i} type="supporting"><Text as="span" weight="semibold">{s.when}</Text> · {s.label} · {s.area}</Text>)}
+    </VStack>}
+  </VStack>;
+  const overview = <VStack gap={5}>
     {error && <Text as="p" role="alert" color="accent">{error}</Text>}
     {pile ? pileContent : <>
       {current && <VStack gap={2} as="section" aria-label={`Området ${current.title}`}>
@@ -249,61 +294,125 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         </HStack>}
       </VStack>}
       {!current && digest}
+      {!current && !digest && <VisuallyHidden as="div"><Heading level={1}>Hela bilden</Heading></VisuallyHidden>}
       {current?.id === 'kalender' && day && <Today view={day} compact={mobile} />}
-      {/* One lead per region (the h1 above), then the groups ranked by weight at one size: Heading level 3 on the page, level 2 in the outline. */}
-      <VStack gap={2} as="section" aria-label="Nu">
-        <HStack justify="between" vAlign="end" gap={2} wrap="wrap">
-          <Heading id="behover-dig" tabIndex={-1} level={3} accessibilityLevel={2}>{nu.length === 0 ? 'Inget behöver dig just nu' : `Nu · ${nu.length}`}</Heading>
-          <Text type="supporting">{nu.length ? 'Deadline i dag, eller något du bad om' : senare.length ? 'Resten har tid på sig' : 'Nästa genomgång i morgon 06:00'}</Text>
-        </HStack>
-        {needsYou.length === 0 && <EmptyState title="Lugnt läge" description="Assistenten hör av sig när något behöver dig." isCompact headingLevel={3} />}
-        {nu.length > 0 && <VStack gap={2}>{records(nu, { lead: true })}</VStack>}
-      </VStack>
-      {senare.length > 0 && <VStack gap={2} as="section" aria-label="Senare">
-        <HStack justify="between" vAlign="end" gap={2} wrap="wrap">
-          <Heading id="senare" tabIndex={-1} level={3} accessibilityLevel={2}>Senare · {senare.length}</Heading>
-          <Text type="supporting">Dagen står i stället för färgen</Text>
-        </HStack>
-        <VStack gap={2}>{records(senare)}</VStack>
-      </VStack>}
-      {notices.length > 0 && <VStack gap={2} as="section" aria-label="Till kännedom">
-        <Heading level={3} accessibilityLevel={2}>Till kännedom · {notices.length}</Heading>
-        <VStack gap={2}>{records(notices, { notice: true })}</VStack>
-      </VStack>}
-      {current && current.schedules.length > 0 && <VStack gap={1} as="section" aria-label="Så här bevakar jag området">
-        <Heading level={3} accessibilityLevel={2}>Så här bevakar jag området</Heading>
-        {current.schedules.map((s, i) => <Text key={i} type="supporting"><Text as="span" weight="semibold">{s.when}</Text> · {s.label}</Text>)}
-      </VStack>}
+      {!current && figures.length > 0 && <FigureTiles figures={figures} unitLabel={user.unitLabel} compact={mobile} />}
+      {narrow ? <VStack gap={5}>{groups}{!current && aside}</VStack> : <Grid columns={3} gap={6}><GridSpan columns={current ? 3 : 2}>{groups}</GridSpan>{!current && aside}</Grid>}
     </>}
   </VStack>;
 
+  /** The chips under the box (D34): the connectors' standing actions for the role, the doing ones first, eight at most; a read opens its view, the rest is asked. */
+  const chips = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { capability: string; text: string; kind: string }[] = [];
+    for (const d of completionsQ.data?.do ?? []) if (!seen.has(d.capability)) { seen.add(d.capability); out.push({ capability: d.capability, text: d.text, kind: d.kind }); }
+    for (const a of areas) for (const s of a.standing) if (!seen.has(s.capability)) { seen.add(s.capability); out.push({ capability: s.capability, text: s.label, kind: s.kind }); }
+    return out.slice(0, 8);
+  }, [completionsQ.data, areas]);
+  const brief = [...g.nu, ...g.foreslar, ...g.senare].slice(0, 3);
+  // The overview's context for `@`: the cards in view, in the area or the pile the address names.
+  const overviewNear = (pile === 'pagar' ? g.waiting : pile === 'inte-nu' ? g.snoozed : [...g.nu, ...g.senare, ...g.foreslar, ...g.kannedom]).map(t => 'thread:' + t.id);
+  // What the brief leaves out, in one line under it (G): the rest with their weight, what moves without the person, what is done.
+  const rest = [...g.nu, ...g.senare, ...g.foreslar, ...g.kannedom].filter(t => !brief.includes(t));
+  const restNu = rest.filter(t => g.nu.includes(t)).length;
+  const restLine = [rest.length > 0 && (restNu > 0 ? `${rest.length} till, ${restNu} av dem i dag` : `${rest.length} till har tid på sig`),
+    g.waiting.length > 0 && `${g.waiting.length} pågår utan dig`, `${g.handledToday.length} klara i dag`].filter(Boolean).join(' · ');
+  // The day as one line at the foot of the landing (G): the meetings in order and the longest gap; the week is one link away.
+  const longest = day ? [...day.gaps].sort((a, b) => (Date.parse(b.end) - Date.parse(b.start)) - (Date.parse(a.end) - Date.parse(a.start)))[0] : undefined;
+  const dayLine = day && [...day.events.filter(e => !e.allDay).map(e => `${timeLabel(e.start)} ${e.title}`), longest && `längsta luckan ${timeRange(longest.start, longest.end)}`].filter(Boolean).join(' · ');
+  // On a phone the box is docked at the foot (G on the phone): the heading and the chips sit right above it.
+  const docked = mobile && !short;
+  // The brief and the box are one block from the top, and only the day line is pushed to the foot: what grows under the
+  // box while the person types ("Menar du", then the chips) never moves the field they are typing in (D36). Centring the
+  // box between the brief and the foot made it jump by half of every change in the suggestions.
+  const landing = (talk: ConversationState) => <VStack gap={8} vAlign="between" minHeight="100%">
+    <VStack gap={10}>
+    <VStack gap={2} as="section" aria-label="Det som behöver dig">
+      {error && <Text as="p" role="alert" color="accent">{error}</Text>}
+      <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
+        {loadingThreads ? <Skeleton height={16} width={260} /> : <Text type="supporting">{hello}. {sentence}</Text>}
+        <Link href="/oversikt">Visa hela bilden</Link>
+      </HStack>
+      {loadingThreads ? <BriefSkeleton compact={mobile} /> : <Brief threads={brief} areaTitle={areaTitle} cardHref={cardHref} onChange={replace} onOpenCardView={openCardView} compact={mobile} />}
+      {!loadingThreads && restLine && <Text type="supporting">{restLine}</Text>}
+    </VStack>
+    <VStack gap={4} as="section" aria-label="Vad vill du göra">
+      <Heading id="vad-vill-du-gora" tabIndex={-1} level={1} type={mobile ? undefined : 'display-3'} weight="semibold" justify={mobile ? 'start' : 'center'}>Vad vill du göra?</Heading>
+      {!docked && <VStack gap={2}><Composer place="landing" near={brief.map(t => 'thread:' + t.id)} /><Suggestions viewHref={viewHref} cardHref={cardHref} /></VStack>}
+      {chips.length > 0 && <HStack gap={2} wrap="wrap" justify={mobile ? 'start' : 'center'} role="group" aria-label="Det du brukar göra">
+        {chips.map(c => <Button key={c.capability} variant="secondary" label={c.text} onClick={() => c.kind === 'read' ? navigate(viewHref(c.capability, c.text)) : talk.ask(c.text)} />)}
+      </HStack>}
+      <Text type="supporting" justify={mobile ? 'start' : 'center'}>{assistantDown ? 'Knapparna är vägen just nu: varje knapp är en rutt bakom en anslutning och behöver ingen modell.' : 'Knapparna är anslutningarnas stående handlingar för din roll. Samma kort oavsett om du frågar eller jag föreslår.'}</Text>
+    </VStack>
+    </VStack>
+    {!docked && dayLine !== null && dayLine !== undefined ? <VStack gap={3} as="section" aria-label="I dag">
+      <Divider />
+      <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
+        <Text type="supporting" hasTabularNumbers><Text as="span" weight="semibold" color="primary">I dag</Text> · {dayLine || 'inga möten'}</Text>
+        <Link href="/kalender">Hela veckan</Link>
+      </HStack>
+    </VStack> : <span />}
+  </VStack>;
+
+  /** The transcript's lead on a short screen, where there is no pinned toolbar: the title and the way out, in the flow. */
+  const conversationHeader = (talk: { conversation: { title: string } | null; pending: { text: string } | null; newConversation: () => void; close: () => void }) => <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
+    <Heading level={1}>{talk.conversation?.title ?? talk.pending?.text}</Heading>
+    <HStack gap={1}><Button size="sm" variant="ghost" label="Ny fråga" onClick={talk.newConversation} /><Button size="sm" variant="ghost" label="Stäng samtalet" onClick={talk.close} /></HStack>
+  </HStack>;
+  const conversationToolbar = (talk: ConversationState) => <Toolbar label="Samtalet" size="sm" startContent={<Heading level={mobile ? 3 : 1} accessibilityLevel={1}>{talk.conversation?.title ?? talk.pending?.text.slice(0, 80)}</Heading>}
+    endContent={mobile
+      ? <HStack gap={1} vAlign="center"><IconButton size="sm" variant="ghost" label="Stäng samtalet" icon={<Icon icon="close" />} onClick={talk.close} /><MoreMenu label="Fler val" size="sm" variant="ghost" items={[{ id: 'new', label: 'Ny fråga', onClick: talk.newConversation }]} /></HStack>
+      : <HStack gap={2} vAlign="center">{started(talk) && <Text type="supporting">Startat av dig {started(talk)}</Text>}<Button size="sm" variant="ghost" label="Stäng samtalet" icon={<Icon icon="close" size="sm" />} onClick={talk.close} /></HStack>} />;
+  /** When the person asked the conversation's first question: H1's line beside the title. "Ny fråga i stället" sits in the box's scope line. */
+  const started = (talk: ConversationState) => { const first = talk.conversation?.messages.find(m => m.role === 'user'); if (!first) return null; const day = displayDate(first.createdAt); return day === todayDate ? timeLabel(first.createdAt) : `${day === addDays(todayDate, -1) ? 'i går' : shortDayLabel(day)} ${timeLabel(first.createdAt)}`; };
+
+  /** What the column holds: the transcript when a conversation is open (D31), else the landing or the overview. */
+  const column = (talk: ConversationState) => {
+    if (talk.open) return short
+      ? <VStack gap={4} padding={3}>{conversationHeader(talk)}<Transcript onOpenView={openView} renderCard={t => card(t, undefined, 2)} /><Composer place="conversation" /></VStack>
+      : <Layout height="fill" contentWidth={800} padding={mobile ? 3 : 4} defaultHasDividers header={conversationToolbar(talk)}
+        content={<LayoutContent isScrollable={false} padding={0}>
+          {/* The ChatLayout spans the content area full bleed and owns the scroll, so its scrollbar sits at the window's edge like a page's; the spacious density centres its stream and dock to one 800 px column. */}
+          <VStack height="100%"><ChatLayout density="spacious" composer={<Composer place="conversation" />}><Transcript onOpenView={openView} renderCard={t => card(t, undefined, 2)} /></ChatLayout></VStack>
+        </LayoutContent>} />;
+    // The landing (G, the `ai-chat-landing` template): one 760 px column, the box in the page flow; on a phone the box is docked at the foot.
+    if (mode === 'fraga') return short
+      ? <VStack gap={4} padding={3}>{landing(talk)}</VStack>
+      : <Layout height="fill" contentWidth={760} padding={mobile ? 3 : 6} content={<LayoutContent isScrollable>{landing(talk)}</LayoutContent>}
+        footer={docked ? <LayoutFooter><VStack gap={2}><Suggestions viewHref={viewHref} cardHref={cardHref} /><Composer place="landing" near={brief.map(t => 'thread:' + t.id)} /></VStack></LayoutFooter> : undefined} />;
+    // The overview keeps the box at the foot of its column; the whole picture is wider than the chat's one column.
+    return short
+      ? <VStack gap={4} padding={3}>{overview}<Composer place="footer" near={overviewNear} /></VStack>
+      : <Layout height="fill" contentWidth={1180} padding={mobile ? 3 : 4} content={<LayoutContent isScrollable>{overview}</LayoutContent>} footer={<LayoutFooter><Composer place="footer" near={overviewNear} /></LayoutFooter>} />;
+  };
+
   return <ConversationProvider conversationId={conversationId} onConversation={onConversation} onThreadChange={replace}>
-    <ConversationContext.Consumer>{talk => <Shell user={user} admin={admin} current="start" attention={attentionLabel ?? undefined} height={short ? 'auto' : 'fill'}
-      sideNav={<AreasNav areas={areas} current={pile || talk.open ? undefined : area} hrefFor={pathFor} chipped={talk.chipped} />}
-      /* Page level (D8): one Banner in the shell's banner slot when the model is configured but not answering. The router answers meanwhile. */
-      banner={assistant && assistant.configured && !assistant.available ? <Banner status="warning" container="section" collapsible={false} title="Modellen svarar inte just nu."
-        description={`Frågor besvaras av den inbyggda routern tills ${assistant.model ?? 'modellen'} svarar igen. Korten påverkas inte.`}
+    <ConversationContext.Consumer>{talk => <KeepFocus open={talk.open} focus={talk.focus} />}</ConversationContext.Consumer>
+    <ConversationContext.Consumer>{talk => <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}
+      /* Page level (D8): one Banner in the shell's banner slot when the model is configured but not answering. Everything that is not prose keeps working. */
+      banner={assistantDown ? <Banner status="warning" container="section" collapsible={false} title="Modellen svarar inte just nu."
+        description="Knapparna, korten, pushen och kalendern fungerar som vanligt. Rutan hittar bara exakta saker, och frågor i fri text väntar tills modellen är tillbaka."
         endContent={<Button size="sm" variant="secondary" label="Försök igen" clickAction={() => client.invalidateQueries()} />} /> : undefined}>
-      {/* The stream is one bounded column (Layout contentWidth) with the piles pinned in its toolbar; ChatLayout docks the row at the bottom of it (D31).
-          A conversation takes the column: the transcript in place of the stream, its title and its way out in the toolbar. */}
-      {short
-        ? <VStack gap={4} padding={3}>{talk.open ? conversationHeader(talk) : piles}{talk.open ? <Transcript onOpenView={openView} /> : content}{row}</VStack>
-        : <Layout height="fill" contentWidth={960} padding={mobile ? 3 : 4} defaultHasDividers
-          header={talk.open
-            ? <Toolbar label="Samtalet" size="sm" startContent={<Heading level={mobile ? 3 : 1} accessibilityLevel={1}>{talk.conversation?.title}</Heading>}
-              endContent={mobile
-                ? <HStack gap={1} vAlign="center"><IconButton size="sm" variant="ghost" label="Stäng samtalet" icon={<Icon icon="close" />} onClick={talk.close} /><MoreMenu label="Fler val" size="sm" variant="ghost" items={[{ id: 'new', label: 'Nytt samtal', onClick: talk.newConversation }]} /></HStack>
-                : <HStack gap={1} vAlign="center"><Button size="sm" variant="ghost" label="Nytt samtal" onClick={talk.newConversation} /><Button size="sm" variant="ghost" label="Stäng samtalet" icon={<Icon icon="close" size="sm" />} onClick={talk.close} /></HStack>} />
-            : <Toolbar label="Högar" size="sm" startContent={piles} />}
-          content={<LayoutContent isScrollable={false}>
-            <VStack height="100%">
-              <ChatLayout density="balanced" composer={row}>{talk.open ? <Transcript onOpenView={openView} /> : content}</ChatLayout>
-            </VStack>
-          </LayoutContent>} />}
+      {column(talk)}
     </Shell>}</ConversationContext.Consumer>
     <PanelView title={view?.title ?? null} output={view?.output} onClose={() => navigate(back)} onOpenItem={(item, dayItems) => setOpenItem({ item, dayItems })} />
     <EventDialog item={openItem?.item ?? null} dayItems={openItem?.dayItems ?? []} onClose={() => setOpenItem(null)}
       /* The day in the panel and every loaded week are read again; a moved proposal's thread goes into the cache like any other answer. */
       onChanged={t => { if (t) { replace(t); void applyThread(client, t); } void client.invalidateQueries({ queryKey: keys.viewAll }); void client.invalidateQueries({ queryKey: keys.calendarAll }); }} />
   </ConversationProvider>;
+}
+
+/**
+ * The row keeps focus across the transcript opening and closing (D31). The composer moves between the page flow on the
+ * landing and the dock of a conversation, so it remounts on each change of `open`; the focus the old instance held is
+ * given to the new one after the commit.
+ */
+function KeepFocus({ open, focus }: { open: boolean; focus: () => void }) {
+  const first = useRef(true);
+  useEffect(() => { if (first.current) { first.current = false; return; } focus(); }, [open, focus]);
+  return null;
+}
+/** Läget on the overview: the four figures as tiles; a tile asks the figure's question in the box, which the router answers without the model. */
+function FigureTiles({ figures, unitLabel, compact }: { figures: Figure[]; unitLabel: string; compact: boolean }) {
+  return <ConversationContext.Consumer>{talk => <Lage figures={figures} unitLabel={unitLabel} compact={compact} onOpen={f => talk.ask(figureQuestion[f.id])} />}</ConversationContext.Consumer>;
 }

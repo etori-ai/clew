@@ -54,7 +54,7 @@ with these settled while building:
 - *The composer's menu* sits in `ChatComposer`'s `footerActions`, the slot Astryx documents for a model selector
   (template `ChatComposerFooterActions`), not in `headerActions`. It is a compound `DropdownMenu` with a
   `DropdownMenuRadioGroup`, which Astryx supports in the popover presentation only, so a phone gets the anchored
-  menu, not a sheet. The menu shows when the person has two models or more; a pick is `PATCH /api/assistant/model`,
+  menu, not a sheet. The menu shows when the person has two models or more (amended by D36: whenever a model answers, also with one); a pick is `PATCH /api/assistant/model`,
   audited as `model.chosen` on `person:<id>`.
 - *Not built:* the context and cost notes, a structural preview per role (a model is either in the audience or not),
   reordering (the order is the order added), and classification-gated inference (still the open question in

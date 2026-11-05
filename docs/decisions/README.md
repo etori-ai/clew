@@ -40,7 +40,9 @@ the reasoning. Longer designs live in `docs/architecture/`, and the reviews that
 | [D31](D31-the-conversation-swaps-the-stream-inside-one-chatlayout.md) | The conversation swaps the stream inside one ChatLayout; chips live in the composer drawer; the shell is AppShell | 2026-11-04 | ui | accepted |
 | [D32](D32-one-calendar-family-and-the-persons-own-bookings.md) | One calendar family (page grid, embedded day and list, month picker, one item mapping); a person's own bookings and proposal moves are use cases with audit rows, never tools | 2026-11-04 | ui | accepted |
 | [D33](D33-browser-reads-go-through-one-query-cache.md) | Browser reads go through one query cache (TanStack Query) per session; a mutation's thread is written into it; no page-level reloads | 2026-11-04 | ui | accepted, live pass against Keycloak pending |
+| [D34](D34-the-box-is-the-page-and-the-push-is-its-brief.md) | The box is the page; the push is its brief; one rail orders everything by time and carries the product and the person (no TopNav); four kinds (requirement, proposal, event, figure); plain Neutral as drawn | 2026-11-04, amended 2026-11-05 | ui | accepted, implemented |
 | [D35](D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md) | Errands from several case systems: one connector per system, a shared profile for the reads, and a card's buttons reach only its own connector | 2026-11-05 | integrations | accepted, card-action rule built; errand profile not built |
+| [D36](D36-an-answer-is-drawn-as-it-is-written.md) | An answer is drawn as it is written (server-sent steps and text, the question at once, Stoppa, skeletons on first read); the landing's box never moves under the cursor; the model menu always shows; "Lägg till i samtalet" is an icon | 2026-11-05 | ui | accepted, built |
 
 ## Adding a decision
 

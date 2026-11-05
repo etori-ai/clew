@@ -1,6 +1,6 @@
 import { StrictMode, Suspense, forwardRef, lazy, useEffect, useState, type AnchorHTMLAttributes } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Link, Routes, Route, useLocation } from 'react-router';
+import { BrowserRouter, Link, Routes, Route, useLocation, useSearchParams } from 'react-router';
 import { QueryClientProvider } from '@tanstack/react-query';
 import '@clew/ui/styles.css';
 import { createQueryClient } from './query-client';
@@ -53,11 +53,14 @@ const RouterLink = forwardRef<HTMLAnchorElement, { href?: string; to?: string } 
   return <Link ref={ref} to={target} {...rest} />;
 });
 /**
- * Routes: the start page is one stream with lenses. `/omrade/:area` filters it, `/pagar`, `/inte-nu` and `/hanterat` open the three piles (D28),
- * `/vy/...` opens a view in the side panel and `/samtal/:id` reopens a conversation in the row, all addressable.
+ * Routes (D34): `/` is the box with the brief, `/samtal/:id` a conversation in the same column; `/oversikt` is the whole
+ * picture, `/omrade/:area` filters it, `/pagar`, `/inte-nu` and `/hanterat` open the three piles (D28), `/vy/kort/…` a card's
+ * view over the overview, `/vy/:capability` a view over the box (or over the overview when an area is named), all addressable.
  */
 function App() {
-  const start = <Protected>{shell => <StartPage user={shell.user} admin={shell.admin} />}</Protected>;
+  // One element for every start route: a route change between the box, the overview, a pile, a view and a conversation
+  // re-renders the page and never remounts it, so focus, the cache's observers and the composer's draft survive the change.
+  const start = <Protected>{shell => <StartRoute user={shell.user} admin={shell.admin} />}</Protected>;
   // Administration (D23): the entry point shows only to an administrator, and every call is checked again on the server.
   const admin = (page: (shell: Shell) => React.ReactNode) => <Protected>{shell => shell.admin ? page(shell) : <NotAdmin />}</Protected>;
   return <Routes>
@@ -70,15 +73,28 @@ function App() {
     <Route path="/admin/modeller/leverantorer/:id" element={admin(shell => <AdminProviderPage user={shell.user} />)} />
     <Route path="/admin/modeller/:id" element={admin(shell => <AdminModelPage user={shell.user} />)} />
     <Route path="/" element={start} />
+    <Route path="/samtal/:conversationId" element={start} />
+    <Route path="/vy/:capability" element={start} />
+    <Route path="/oversikt" element={start} />
     <Route path="/omrade/:area" element={start} />
     <Route path="/hanterat" element={start} />
     <Route path="/pagar" element={start} />
     <Route path="/inte-nu" element={start} />
     <Route path="/vy/kort/:threadId/:actionId" element={start} />
-    <Route path="/vy/:capability" element={start} />
-    <Route path="/samtal/:conversationId" element={start} />
     <Route path="*" element={start} />
   </Routes>;
+}
+/** Which face of the start page an address shows: the box, or the whole picture. A capability view opens over the page it was asked from: the overview when an area is named, else the box. */
+export function modeOf(pathname: string, search: URLSearchParams): 'fraga' | 'oversikt' {
+  if (pathname.startsWith('/vy/kort/')) return 'oversikt';
+  if (pathname.startsWith('/vy/')) return search.has('omrade') ? 'oversikt' : 'fraga';
+  if (pathname === '/oversikt' || pathname === '/hanterat' || pathname === '/pagar' || pathname === '/inte-nu' || pathname.startsWith('/omrade/')) return 'oversikt';
+  return 'fraga';
+}
+function StartRoute({ user, admin }: { user: SessionUser; admin: boolean }) {
+  const location = useLocation();
+  const [search] = useSearchParams();
+  return <StartPage user={user} admin={admin} mode={modeOf(location.pathname, search)} />;
 }
 createRoot(document.getElementById('root')!).render(<StrictMode>
   <Providers>

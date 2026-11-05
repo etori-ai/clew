@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { attentionLevel, attentionLevels, dayWord, isSnoozed, nextStockholmTime, parseSwedishTime, snoozeWhen, stockholmInstant, streamGroup, worstLevel } from '../../packages/contracts/src/index';
+import { attentionLevel, attentionLevels, cardKind, dayWord, isSnoozed, nextStockholmTime, parseSwedishTime, snoozeWhen, stockholmInstant, streamGroup, worstLevel } from '../../packages/contracts/src/index';
 import { rhythmFor } from '../../apps/server/src/threads/domain';
 
 describe('attention level', () => {
@@ -57,9 +57,32 @@ describe('the day as one track (D28)', () => {
     const rhythm = rhythmFor('2026-11-04T08:12:00.000Z', [{ at: '2026-11-04T06:55:00.000Z', title: 'Tillbudet' }]);
     expect(rhythm).toEqual([
       { kind: 'review', at: '06:00', state: 'done' },
-      { kind: 'interruption', at: '07:55', state: 'done', title: 'Tillbudet' },
+      { kind: 'interruption', at: '07:55', state: 'done', title: 'Tillbudet', count: 1 },
       { kind: 'bundle', at: '12:00', state: 'next' },
       { kind: 'bundle', at: '16:00', state: 'later' },
+      { kind: 'quiet', at: '17:00', state: 'later' },
+    ]);
+  });
+  test('a scan pushes its cards in one go: one moment on the track, never one point per card', () => {
+    const at = (m: number) => new Date(Date.parse('2026-11-04T20:30:00.000Z') + m * 60_000).toISOString();
+    const cards = Array.from({ length: 36 }, (_, i) => ({ at: at(i < 20 ? 0 : 1), title: `Kort ${i + 1}` }));
+    const rhythm = rhythmFor('2026-11-04T20:31:00.000Z', cards);
+    expect(rhythm.map(p => p.kind)).toEqual(['review', 'bundle', 'bundle', 'quiet', 'interruption']);
+    expect(rhythm.at(-1)).toEqual({ kind: 'interruption', at: '21:30', state: 'done', title: 'Kort 1', count: 36 });
+    expect(rhythm.filter(p => p.kind === 'interruption')).toHaveLength(1);
+  });
+  test('cards pushed within the grace of the review or a bundle belong to it, and runs apart are separate interruptions', () => {
+    const rhythm = rhythmFor('2026-11-04T14:00:00.000Z', [
+      { at: '2026-11-04T05:00:20.000Z', title: 'Genomgångens första' }, { at: '2026-11-04T05:09:00.000Z', title: 'Genomgångens andra' },
+      { at: '2026-11-04T08:00:00.000Z', title: 'Tillbudet' }, { at: '2026-11-04T08:20:00.000Z', title: 'Fakturan' },
+      { at: '2026-11-04T11:03:00.000Z', title: 'Samlingens' },
+    ]);
+    expect(rhythm).toEqual([
+      { kind: 'review', at: '06:00', state: 'done', count: 2 },
+      { kind: 'interruption', at: '09:00', state: 'done', title: 'Tillbudet', count: 1 },
+      { kind: 'interruption', at: '09:20', state: 'done', title: 'Fakturan', count: 1 },
+      { kind: 'bundle', at: '12:00', state: 'done', count: 1 },
+      { kind: 'bundle', at: '16:00', state: 'next' },
       { kind: 'quiet', at: '17:00', state: 'later' },
     ]);
   });
@@ -84,5 +107,23 @@ describe('the Swedish time grammar (D29)', () => {
     expect(snoozeWhen('2026-11-05T05:00:00.000Z', now)).toBe('i morgon 06:00');
     expect(snoozeWhen('2026-11-06T08:00:00.000Z', now)).toBe('fre 09:00');
     expect(snoozeWhen('2026-11-20T08:00:00.000Z', now)).toBe('20 nov 09:00');
+  });
+});
+
+describe('the kinds the page feeds (D34)', () => {
+  const action = (kind: 'read' | 'propose' | 'execute', role: 'primary' | 'secondary' = 'primary') => ({ kind, role });
+  test('proposals make a proposal, so does a proposing primary action without a deadline', () => {
+    expect(cardKind({ deadline: '2026-11-27', proposals: [{}], actions: [] })).toBe('forslag');
+    expect(cardKind({ deadline: null, proposals: [], actions: [action('propose')] })).toBe('forslag');
+  });
+  test('a deadline or a primary action makes a requirement', () => {
+    expect(cardKind({ deadline: '2026-11-13', proposals: [], actions: [action('execute')] })).toBe('krav');
+    expect(cardKind({ deadline: '2026-12-20', proposals: [], actions: [] })).toBe('krav');
+    expect(cardKind({ deadline: null, proposals: [], actions: [action('execute')] })).toBe('krav');
+    expect(cardKind({ deadline: '2026-11-13', proposals: [], actions: [action('propose')] })).toBe('krav');
+  });
+  test('nothing to do and no day is an event', () => {
+    expect(cardKind({ deadline: null, proposals: [], actions: [] })).toBe('handelse');
+    expect(cardKind({ deadline: null, proposals: [], actions: [action('read', 'secondary')] })).toBe('handelse');
   });
 });

@@ -6,9 +6,14 @@
 composer's placement is written by the project:
 
 1. The page is `AppShell` (one shell shared with Administration and the calendar: `TopNav` for identity and
-   the way out, `SideNav` for the areas and Kommande) → `Layout contentWidth={960}` → `ChatLayout`. The
+   the way out, `SideNav` for the areas and Kommande) → `Layout contentWidth={800}` → `ChatLayout`. The
    composer is the `ChatLayout` `composer` slot, docked by Astryx with its frosted layer and scroll-to-bottom
-   button, never by a class, an inline style, a `ResizeObserver` or a media query in project code.
+   button, never by a class, an inline style, a `ResizeObserver` or a media query in project code. Amended
+   2026-11-04: the `ChatLayout` sits full bleed in the `LayoutContent` (`padding={0}`) and owns the scroll, so
+   its scrollbar is at the window's edge like a page's, and its `spacious` density is what centres the stream
+   and the dock to one 800 px column; the product owner asked for the scrollbar at the edge. Delegating the
+   scroll to `LayoutContent` through `scrollRef` was tried and rejected: in that mode Astryx fixes the dock to
+   the viewport, across the sidebar.
 2. Opening a conversation (`/samtal/:id`, or the first send) replaces the stream with a `ChatMessageList` as
    the `ChatLayout` children; Esc, "Stäng samtalet" or the back button restores the stream. The conversation
    title and its actions sit in the content `Layout`'s `header` slot. There is no `Overlay` scrim, no card above
@@ -33,7 +38,9 @@ composer's placement is written by the project:
    recorded here with its value; nothing else.
 
 Known Astryx gaps this decision lives with (recorded here, not filed; the product owner decided 2026-11-04
-that Clew sends no gap reports): no scroll padding under the dock (item 8); no undocked mode (item 7); no
+that Clew sends no gap reports): no scroll padding under the dock (item 8); `ChatLayout`'s external-scroll
+mode fixes the dock to the viewport, not to its own column, and its only centred width is the `spacious`
+800 px (item 1); no undocked mode (item 7); no
 header slot in `ChatLayout` (the content `Layout` header is used); the dock's blur layer is sized for one
 composer (verified; the piles went to the toolbar); `ScrollableArea` has no max-height; `SelectableCard` is a
 checkbox, so a single choice between two cards is a `RadioList` or two `ClickableCard`s; no dashed or ghost
@@ -53,3 +60,7 @@ Narrows D12: "chips sit above the input, removable" is now literally the compose
 object is highlighted where it is" is the Astryx selected state, not a ring. Amends HANDOVER §6: the sentence
 "the conversation is an overlay that unfolds from the composer row over the dimmed stream" is withdrawn; "the
 row keeps focus throughout; sending never moves it" stays.
+
+**Amended 2026-11-05 by D36.** The transcript takes the column the moment a question is sent: the question is drawn at
+once and its answer streams in under it. The box keeps the focus and stays open while the answer is written (Stoppa
+in place of send, Enter held back) instead of resting greyed.

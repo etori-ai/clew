@@ -13,6 +13,7 @@
     "@clew/calendar": "workspace:*",
     "@clew/contracts": "workspace:*",
     "@fullcalendar/react": "7.1.4",
+    "@heroicons/react": "2.2.0",
     "@stylexjs/stylex": "0.19.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",

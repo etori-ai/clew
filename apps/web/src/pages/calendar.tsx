@@ -5,13 +5,13 @@ import type { Area, CalendarEvent, Proposal, SessionUser, Thread } from '@clew/c
 import { Badge, Button, ChatComposer, CheckboxList, CheckboxListItem, DatePicker, Drawer, DrawerHeader, DropdownMenu, EventCalendar, Heading, HStack, Icon, IconButton, Layout, LayoutContent, LayoutFooter, LayoutHeader, LayoutPanel, SegmentedControl, SegmentedControlItem, StatusDot, Text, Toolbar, VStack, agendaItems, useMediaQuery, type AgendaItem, type CalendarView } from '@clew/ui';
 import { addDays, dayLabel, displayDate, monthLabel, occursOn, rangeLabel, shortDayLabel, timeRange, today, weekNumber, weekStart } from '@clew/calendar/dates';
 import { api } from '../api';
-import { areasQuery, attentionQuery, calendarWeekQuery, threadsQuery } from '../queries';
+import { areasQuery, calendarWeekQuery, threadsQuery } from '../queries';
 import { pickProposalThread } from '../thread-cache';
 import { useThreadAction } from '../mutations';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { Shell, mobileQuery } from '../components/shell';
-import { AreasNav } from '../components/areas';
+import { useRail } from '../components/nav';
 import { EventDialog } from '../components/calendar/event-dialog';
 import { BookingDialog } from '../components/calendar/booking-dialog';
 
@@ -56,12 +56,10 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const view: View = views.includes(params.get('vy') as View) ? params.get('vy') as View : 'vecka';
   const anchor = view === 'vecka' ? weekStart(date) : view === 'manad' ? monthStart(date) : date;
   const go = (next: { date?: string; view?: View }) => setParams(p => { const q = new URLSearchParams(p); q.delete('vecka'); q.set('datum', next.date ?? date); q.set('vy', next.view ?? view); return q; });
-  // The same frame as the start page (D31), from the same cache (D33): the areas in the shell's SideNav and the attention sentence in its TopNav.
+  // The same frame as the start page (D31, D34), from the same cache (D33): the rail with the person's time axis.
   const client = useQueryClient();
   const areas = useQuery(areasQuery).data?.areas ?? EMPTY_AREAS;
-  const attention = useQuery(attentionQuery).data ?? null;
-  const remaining = attention ? Math.max(0, attention.budget - attention.used) : null;
-  const attentionLabel = attention ? (remaining === 0 ? `Inga avbrott kvar i dag · resten samlas till ${attention.bundledUntil ?? 'i morgon 06:00'}` : `${remaining} avbrott kvar i dag`) : undefined;
+  const nav = useRail({ current: { surface: 'kalender' }, admin });
   // The proposal thread beside the grid is picked from the stream's own list, so a confirm here and the card on the start page agree.
   const threadsQ = useQuery({ ...threadsQuery, select: selectProposalThread });
   const thread = threadsQ.data ?? null;
@@ -140,7 +138,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
       {narrow && thread && <Button variant="secondary" size="sm" label={open ? `Förslag · ${proposed.length}` : 'Förslag'} onClick={() => setPanelOpen(true)} />}
       <Button variant="primary" size="sm" label="Ny bokning" onClick={() => setBooking(nextWholeHour(new Date()))} />
     </HStack>} />;
-  return <Shell user={user} admin={admin} current="kalender" attention={attentionLabel} sideNav={<AreasNav areas={areas} current={undefined} hrefFor={a => a === null ? '/' : `/omrade/${a}`} />}><Layout height="fill" padding={mobile ? 3 : 4}
+  return <Shell user={user} nav={nav}><Layout height="fill" padding={mobile ? 3 : 4}
     header={<LayoutHeader hasDivider>{toolbar}</LayoutHeader>}
     end={!narrow && thread ? <LayoutPanel width={380} hasDivider role="complementary" label="Förslag" padding={0} isScrollable={false}>{panel}</LayoutPanel> : undefined}
     content={<LayoutContent>

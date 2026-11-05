@@ -8,6 +8,8 @@ export const keys = {
   areas: ['areas'] as const,
   today: ['today'] as const,
   attention: ['attention'] as const,
+  figures: ['figures'] as const,
+  completions: ['completions'] as const,
   assistant: ['assistant'] as const,
   /** The prefix of every loaded week; invalidated when a thread with proposals changes. */
   calendarAll: ['calendar'] as const,

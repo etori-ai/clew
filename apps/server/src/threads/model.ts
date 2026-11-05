@@ -39,7 +39,6 @@ export interface ThreadStore {
   readThreadById(id: string): Promise<Thread | undefined>;
   /** The person's open pushed thread on a topic. */
   openThread(personId: string, topic: string): Promise<Thread | undefined>;
-  countPushedSince(personId: string, since: string): Promise<number>;
   transaction<T>(fn: (tx: ThreadTx) => Promise<T>): Promise<T>;
 }
 

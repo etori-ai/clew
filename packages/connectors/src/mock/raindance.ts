@@ -60,8 +60,8 @@ export function raindanceConnector(state: StateStore): Connector {
     if (!rows.length) return [];
     const due = rows.map(r => r.due).sort()[0]!;
     const total = rows.reduce((n, r) => n + r.amount, 0);
-    return [{ topic: 'raindance:invoices', area: 'budget', title: `Attestera ${rows.length} fakturor, ${money(total)}`,
-      summary: rows.every(r => r.order) ? `Alla matchar sina beställningar och ryms i budgeten.` : `${rows.filter(r => r.order).length} matchar en beställning, ${rows.filter(r => !r.order).length} saknar beställning.`,
+    return [{ topic: 'raindance:invoices', area: 'budget', title: rows.length === 1 ? `Attestera en faktura, ${money(total)}` : `Attestera ${rows.length} fakturor, ${money(total)}`,
+      summary: rows.every(r => r.order) ? (rows.length === 1 ? `Matchar sin beställning och ryms i budgeten.` : `Alla matchar sina beställningar och ryms i budgeten.`) : rows.length === 1 ? `Saknar beställning.` : `${rows.filter(r => r.order).length} matchar en beställning, ${rows.filter(r => !r.order).length} saknar beställning.`,
       reason: `Den första förfaller ${shortDate(due)}`, deadline: due,
       items: rows.map(r => ({ ref: r.ref, label: `${r.supplier} · ${money(r.amount)}`, detail: `${r.account} · förfaller ${shortDate(r.due)}${r.order ? ' · beställning ' + r.order : ' · ingen beställning'}`, selectable: true, selected: !!r.order })),
       actions: [

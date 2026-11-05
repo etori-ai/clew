@@ -1,6 +1,6 @@
 import { desktop, dockOf, expect, heading, hiddenFocusStops, narrow, open, openNav, reflowProblems, short, snoozeFirst, test } from './support';
 
-const routes = [['start', '/'], ['an area', '/omrade/personal'], ['the log', '/hanterat'], ['the calendar page', '/kalender']] as const;
+const routes = [['start', '/'], ['the overview', '/oversikt'], ['an area', '/omrade/personal'], ['the log', '/hanterat'], ['the calendar page', '/kalender']] as const;
 
 test.describe('1.4.10 reflow', () => {
   for (const viewport of [narrow, short]) for (const [name, path] of routes) test(`${name} reflows at ${viewport.width}×${viewport.height}`, async ({ page, api: _ }) => {
@@ -26,8 +26,8 @@ test.describe('1.4.10 reflow', () => {
   test('every area filter on a phone shows its whole name', async ({ page, api: _ }) => {
     await page.setViewportSize(narrow);
     await open(page, '/');
-    const filters = (await openNav(page)).getByRole('group', { name: 'Områden' }).getByRole('link');
-    expect(await filters.count()).toBeGreaterThan(5);
+    const filters = (await openNav(page)).locator('a[href^="/omrade/"]');
+    expect(await filters.count()).toBeGreaterThanOrEqual(5);
     for (const filter of await filters.all()) {
       const text = (await filter.textContent())?.trim() ?? '';
       const { width, needed } = await filter.evaluate(el => {
@@ -62,16 +62,16 @@ test.describe('1.4.12 text spacing', () => {
 });
 
 test.describe('2.4.11 focus not obscured', () => {
-  for (const viewport of [desktop, narrow, short]) test(`every stop on the start page is visible at ${viewport.width}×${viewport.height}`, async ({ page, api: _ }) => {
+  for (const viewport of [desktop, narrow, short]) for (const path of ['/', '/oversikt']) test(`every stop on ${path} is visible at ${viewport.width}×${viewport.height}`, async ({ page, api: _ }) => {
     await page.setViewportSize(viewport);
-    await open(page, '/');
+    await open(page, path);
     const { hidden } = await hiddenFocusStops(page);
     expect(hidden).toEqual([]);
   });
 
   test('a toast covers no focus stop on a phone', async ({ page, api: _ }) => {
     await page.setViewportSize(narrow);
-    await open(page, '/');
+    await open(page, '/oversikt');
     await snoozeFirst(page);
     await expect(page.getByRole('region', { name: 'Aviseringar' })).toBeVisible();
     const { hidden } = await hiddenFocusStops(page);
@@ -80,7 +80,7 @@ test.describe('2.4.11 focus not obscured', () => {
 
   test('the row keeps the stream readable on a short screen', async ({ page, api: _ }) => {
     await page.setViewportSize(short);
-    await open(page, '/');
+    await open(page, '/oversikt');
     const title = heading(page, 2, 'Nu · ');
     await title.evaluate(el => el.scrollIntoView({ block: 'start' }));
     // With 256 px of height nothing is docked (D31 item 7): the row is in the page flow and the stream has the screen.

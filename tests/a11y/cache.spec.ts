@@ -10,7 +10,7 @@ test.describe('D33 the browser cache', () => {
     const calls: string[] = [];
     page.on('request', r => { const u = new URL(r.url()); if (u.pathname.startsWith('/api/')) calls.push(`${r.method()} ${u.pathname}`); });
     const count = (path: string) => calls.filter(c => c === `GET ${path}`).length;
-    await open(page, '/');
+    await open(page, '/oversikt');
     expect(count('/api/threads')).toBe(1);
     expect(count('/api/areas')).toBe(1);
     // Every card's picker shows the same times from one read (D29).

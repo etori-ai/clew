@@ -3,14 +3,14 @@ import { answer, composer, desktop, expect, focused, hiddenFocusStops, open, sno
 test.use({ viewport: desktop });
 
 test.describe('2.4.7 focus visible', () => {
-  for (const path of ['/', '/hanterat', '/kalender']) test(`every stop on ${path} shows a focus ring`, async ({ page, api: _ }) => {
+  for (const path of ['/', '/oversikt', '/hanterat', '/kalender']) test(`every stop on ${path} shows a focus ring`, async ({ page, api: _ }) => {
     await open(page, path);
     const { unmarked } = await hiddenFocusStops(page);
     expect(unmarked).toEqual([]);
   });
 
   test('a card that receives focus from the page shows it', async ({ page, api: _ }) => {
-    await open(page, '/');
+    await open(page, '/oversikt');
     await page.getByRole('button', { name: 'Inte nu', exact: true }).first().focus();
     await page.keyboard.press('Enter');
     await page.getByRole('menuitem', { name: /^I morgon/ }).focus();
@@ -24,7 +24,7 @@ test.describe('2.4.7 focus visible', () => {
 
 test.describe('2.4.3 focus order', () => {
   test('regaining the window keeps focus where it was', async ({ page, api }) => {
-    await open(page, '/');
+    await open(page, '/oversikt');
     const button = page.getByRole('button', { name: 'Inte nu', exact: true }).first();
     await button.focus();
     api.sessionDelay = 200;
@@ -34,7 +34,7 @@ test.describe('2.4.3 focus order', () => {
   });
 
   test('a collapsed card says it is collapsed and takes focus to its content', async ({ page, api: _ }) => {
-    await open(page, '/');
+    await open(page, '/oversikt');
     const title = 'Omtankesamtal med Anna Lindqvist';
     const expand = page.getByRole('button', { name: title, exact: true });
     await expect(expand).toHaveAttribute('aria-expanded', 'false');
@@ -45,7 +45,7 @@ test.describe('2.4.3 focus order', () => {
   });
 
   test('Inte nu moves focus to the next card instead of losing it', async ({ page, api: _ }) => {
-    await open(page, '/');
+    await open(page, '/oversikt');
     await page.getByRole('button', { name: 'Inte nu', exact: true }).first().focus();
     await page.keyboard.press('Enter');
     await page.getByRole('menuitem', { name: /^I morgon/ }).focus();
@@ -56,7 +56,7 @@ test.describe('2.4.3 focus order', () => {
 
   test('Ångra in the toast stays available and reachable by keyboard', async ({ page, api: _ }) => {
     await page.clock.install({ time: new Date('2026-11-04T08:00:00.000Z') });
-    await open(page, '/');
+    await open(page, '/oversikt');
     await snoozeFirst(page);
     const undo = page.getByRole('button', { name: 'Ångra' });
     await expect(undo).toBeVisible();
@@ -100,7 +100,7 @@ test.describe('D26 a source becomes a chip', () => {
     const add = panel.getByRole('list', { name: 'Källor' }).getByRole('listitem').nth(0).getByRole('button', { name: 'Lägg till i samtalet' });
     await add.focus();
     await page.keyboard.press('Enter');
-    await expect(panel.getByRole('button', { name: 'I samtalet ✓' })).toHaveCount(1);
+    await expect(panel.getByRole('button', { name: 'I samtalet', exact: true })).toHaveCount(1);
     await panel.getByRole('button', { name: 'Stäng' }).click();
     await expect(page.getByRole('group', { name: 'Objekt i samtalet' }).or(page.getByText('Rutin vid fall i ordinärt boende').first())).toBeVisible();
   });
@@ -108,7 +108,7 @@ test.describe('D26 a source becomes a chip', () => {
 
 test.describe('D29 the Inte nu picker', () => {
   test('every row says when the card comes back, and the free text has a label and a live answer', async ({ page, api: _ }) => {
-    await open(page, '/');
+    await open(page, '/oversikt');
     await page.getByRole('button', { name: 'Inte nu', exact: true }).first().click();
     const menu = page.getByRole('menu');
     await expect(menu).toBeVisible();

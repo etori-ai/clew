@@ -78,16 +78,6 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       await store.transaction(async tx => { for (const t of [recent, stale]) await tx.updateThread(t.id, { state: 'handled', handledAt: t.updatedAt }); });
       expect((await store.listThreads(a, now)).map(t => t.id)).toEqual([recent.id, open.id]);
     });
-    test('counts pushed threads from an instant, inclusive', async () => {
-      const { store, people: [a] } = await make();
-      await store.transaction(async tx => {
-        await tx.insertThread(draft(a, { createdAt: plus(T0, -1) }));
-        await tx.insertThread(draft(a, { createdAt: T0 }));
-        await tx.insertThread(draft(a, { createdAt: plus(T0, 1) }));
-        await tx.insertThread(draft(a, { kind: 'question', createdAt: plus(T0, 2) }));
-      });
-      expect(await store.countPushedSince(a, T0)).toBe(2);
-    });
     test('a thread can be locked inside a transaction by its owner only, and reads the same as outside', async () => {
       const { store, people: [a, b] } = await make();
       const t = draft(a);

@@ -20,6 +20,19 @@ export function parseAnswer(text: string): ParsedAnswer {
   const steps = body.split('\n').map(l => l.trim()).filter(Boolean).filter(l => STEP.test(l)).length;
   return { body, followUps, ...(steps >= 2 ? { shape: 'steg' } : {}) };
 }
+const TRAILER_START = /(^|\n)[ \t]*följdfrågor[ \t]*:/i;
+/**
+ * The part of a model answer the person may see while it streams (D36): everything before the "Följdfrågor:" line,
+ * and a last line that could still become that line is held back until it cannot. Each result is a prefix of the
+ * next as the text grows, so the stream can send deltas; `parseAnswer` still reads the finished text.
+ */
+export function visibleSoFar(text: string): string {
+  const trailer = TRAILER_START.exec(text);
+  const body = trailer ? text.slice(0, trailer.index + trailer[1]!.length) : text;
+  const lineStart = body.lastIndexOf('\n') + 1;
+  const last = body.slice(lineStart).trimStart().toLowerCase();
+  return last && 'följdfrågor:'.startsWith(last.replace(/[ \t]+:/, ':')) ? body.slice(0, lineStart) : body;
+}
 /** The hits the model read, numbered as the model saw them, so `[n]` in the answer points at a source the person can open or chip. */
 export function citationsOf(result: Pick<SearchResult, 'rows'>): SourceCitation[] {
   return result.rows.slice(0, 10).map((r, i) => ({
