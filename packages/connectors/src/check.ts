@@ -16,9 +16,11 @@ export interface CheckOptions {
   assert: (actor: Actor) => Promise<string>;
   assertForeign: (actor: Actor) => Promise<string>;
   fetch?: FetchLike;
-  /** Validates `{}` against a capability's input schema; absent means "call every read with an empty input". */
+  /** Validates `{}` against a capability's input schema with a real validator. Absent, a schema that lists `required` properties is taken to need input. */
   acceptsEmptyInput?: (schema: object) => boolean;
 }
+/** A read that needs input is not called by the check: its refusal of `{}` is the right answer, not a fault. This is the rule without a validator library. */
+const listsNothingRequired = (schema: object) => !((schema as { required?: unknown }).required as unknown[] | undefined)?.length;
 export const CHECK_MANAGER: Actor = { id: 'check-manager', name: 'Kontroll Chef', unitId: 'unit-check', unitLabel: 'Kontrollenheten', role: 'manager' };
 export const CHECK_EMPLOYEE: Actor = { id: 'check-employee', name: 'Kontroll Medarbetare', unitId: 'unit-check', unitLabel: 'Kontrollenheten', role: 'employee' };
 const UNAVAILABLE = /svarar inte just nu/;
@@ -36,7 +38,7 @@ export async function checkConnector(options: CheckOptions): Promise<CheckReport
   ok(`manifest valid: ${manifest.capabilities.length} capabilities, ${manifest.areas.length} areas, scan ${manifest.scan}`);
   if (manifest.delegation) warn(`delegation: acts as the person for audience "${manifest.delegation.audience}"; not verified by this check (it has no session), so a "denied" answer below is the expected one`);
   const registry = new Registry({ onRefused: (_id, topic, problem) => fail(`draft ${topic} refused: ${problem}`) }).register(remoteConnector(manifest, { url, assert: options.assert, fetch: fetchImpl }));
-  const accepts = options.acceptsEmptyInput ?? (() => true);
+  const accepts = options.acceptsEmptyInput ?? listsNothingRequired;
   /** A declared view (D38) against a real answer: the rows are where the view says, and no field is missing from every row. */
   const checkView = (c: ConnectorManifest['capabilities'][number], output: unknown) => {
     const view = c.view;

@@ -38,6 +38,8 @@ function validateInput(name: string, schemaObject: object, input: unknown) {
   let v = validators.get(name); if (!v) { v = ajv.compile(schemaObject); validators.set(name, v); }
   if (!v(input)) throw new InputError('Ogiltig förfrågan till ' + name + '.');
 }
+/** Whether a capability's input schema accepts `{}`: the conformance check calls only the reads that do (the same rule as `scripts/connector-check.ts`). */
+export const acceptsEmptyInput = (schema: object) => { try { return !!ajv.compile(schema)({}); } catch { return true; } };
 /** Run a capability through the registry with input validation. The single path for REST, cards, tools and connector callbacks. */
 export async function runCapability<O = unknown>(persona: AuthenticatedContext, name: string, input: unknown): Promise<O> {
   const found = registry.find(name);

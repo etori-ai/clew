@@ -1,4 +1,4 @@
-import { answerCards, bundledIds, registry, runCapability } from '../connectors/registry';
+import { acceptsEmptyInput, answerCards, bundledIds, registry, runCapability } from '../connectors/registry';
 import { assertionFor, registerConnector, secretPurpose, unregisterConnector } from '../connectors/remote';
 import { postgresConnectorStore, postgresUnits } from '../connectors/adapters/postgres';
 import { connectorUsecases } from '../connectors/usecases/admin';
@@ -63,6 +63,6 @@ const connectorLive: LiveRegistration = { register: (source, manifest) => regist
 const sign = (secret: string, audience: string) => (actor: { id: string }) => new SignJWT({ actor }).setProtectedHeader({ alg: 'HS256', typ: 'JWT' }).setIssuer('clew').setAudience(audience).setSubject(actor.id).setIssuedAt().setExpirationTime('2m').sign(new TextEncoder().encode(secret));
 const connectorStore = postgresConnectorStore();
 export const connectorAdmin = connectorUsecases({ store: connectorStore, registry, secrets: connectorSecrets, live: connectorLive, units: postgresUnits(), clock,
-  transport: { fetchManifest: (url, id) => fetchManifest(url, id), check: ({ url, id, secret }) => checkConnector({ url, id, assert: assertionFor(id, secret), assertForeign: sign('wrong-secret-wrong-secret-' + id, id) }) } });
+  transport: { fetchManifest: (url, id) => fetchManifest(url, id), check: ({ url, id, secret }) => checkConnector({ url, id, assert: assertionFor(id, secret), assertForeign: sign('wrong-secret-wrong-secret-' + id, id), acceptsEmptyInput }) } });
 export const connectorReconcile: ConnectorReconcileDeps = { registry, store: connectorStore, secrets: connectorSecrets, live: connectorLive, bundled: bundledIds, clock, log: console.log };
 export const scheduler = createScheduler({ jobs: postgresJobQueue(), people: postgresPeople(), threads, calendar, clock, log: console.error });

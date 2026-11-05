@@ -89,11 +89,12 @@ describe('the phone book connector', () => {
   test('passes the conformance check and refuses another secret', async () => {
     const { connectorFetch } = stack();
     const sign = (key: string) => (actor: Actor) => new SignJWT({ actor }).setProtectedHeader({ alg: 'HS256' }).setIssuer('clew').setAudience('telefonbok').setSubject(actor.id).setIssuedAt().setExpirationTime('2m').sign(new TextEncoder().encode(key));
-    const report = await checkConnector({ url: 'http://telefonbok', id: 'telefonbok', assert: sign(secret), assertForeign: sign('another-secret-entirely'), fetch: connectorFetch,
-      acceptsEmptyInput: schema => !((schema as { required?: string[] }).required ?? []).length });
+    const report = await checkConnector({ url: 'http://telefonbok', id: 'telefonbok', assert: sign(secret), assertForeign: sign('another-secret-entirely'), fetch: connectorFetch });
     expect(report.findings.filter(f => f.level !== 'ok')).toEqual([]);
     expect(report.ok).toBe(true);
     expect(report.findings.map(f => f.text)).toContain('telefonbok.directory: view table drawn from "rows", 6 fields');
+    // The admin page's check hands in no validator: the reads that need a reference or a question are left uncalled, not failed.
+    expect(report.findings.filter(f => /needs input/.test(f.text)).map(f => f.text.split(':')[0])).toEqual(['telefonbok.person', 'telefonbok.search', 'telefonbok.fetch']);
   });
 });
 
