@@ -349,7 +349,7 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
   const rest = [...g.nu, ...g.senare, ...g.foreslar, ...g.kannedom].filter(t => !brief.includes(t));
   const restNu = rest.filter(t => g.nu.includes(t)).length;
   const restLine = [rest.length > 0 && (restNu > 0 ? `${rest.length} till, ${restNu} av dem i dag` : `${rest.length} till har tid på sig`),
-    g.waiting.length > 0 && `${g.waiting.length} pågår utan dig`, `${g.handledToday.length} klara i dag`].filter(Boolean).join(' · ');
+    g.waiting.length > 0 && `${g.waiting.length} pågår utan dig`, g.handledToday.length > 0 && `${g.handledToday.length} klara i dag`].filter(Boolean).join(' · ');
   // The day as one line at the foot of the landing (G): the meetings in order and the longest gap; the week is one link away.
   const longest = day ? [...day.gaps].sort((a, b) => (Date.parse(b.end) - Date.parse(b.start)) - (Date.parse(a.end) - Date.parse(a.start)))[0] : undefined;
   const dayLine = day && [...day.events.filter(e => !e.allDay).map(e => `${timeLabel(e.start)} ${e.title}`), longest && `längsta luckan ${timeRange(longest.start, longest.end)}`].filter(Boolean).join(' · ');

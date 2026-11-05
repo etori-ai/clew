@@ -113,7 +113,7 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
     </Drawer>
     <Dialog isOpen={settingsOpen} onOpenChange={setSettingsOpen}>
       <DialogHeader title="Inställningar" onOpenChange={setSettingsOpen} />
-      <VStack gap={4}>
+      <VStack gap={4} padding={3}>
         <VStack gap={1}><Text weight="semibold">{user.name}</Text><Text type="supporting">{user.unitLabel}</Text></VStack>
         <RadioList label="Utseende" value={mode} onChange={value => { if (value === 'light' || value === 'dark') setMode(value); }}
           description={isPersistent ? 'Valet sparas i den här webbläsaren.' : 'Webbläsaren tillåter inte att valet sparas. Det gäller tills du laddar om sidan.'}>

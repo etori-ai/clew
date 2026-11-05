@@ -106,19 +106,19 @@ export function useRail({ current, admin }: { current: RailCurrent; admin: boole
         <SideNavItem label="Jag föreslår" href="/overview#proposals" isSelected={onStart && current.group === 'foreslar'} endContent={count(g.foreslar.length)} />
         <SideNavItem label="Till kännedom" href="/overview#notices" isSelected={onStart && current.group === 'kannedom'} endContent={count(g.kannedom.length)} />
       </SideNavSection>
-      <SideNavSection title={`Pågår · ${g.waiting.length}`}>
+      <SideNavSection title={g.waiting.length ? `Pågår · ${g.waiting.length}` : 'Pågår'}>
         {g.waiting.slice(0, 4).map(t => <SideNavItem key={t.id} label={t.title} href="/waiting" isSelected={false}
           endContent={<StatusDot variant="warning" label={`Väntar på ${t.waitingOn}`} tooltip={`Väntar på ${t.waitingOn}`} />} />)}
         {g.waiting.length > 4 && <SideNavItem label={`Alla ${g.waiting.length} som pågår`} href="/waiting" isSelected={onStart && current.pile === 'waiting'} />}
         <SideNavItem label="Inte nu" href="/snoozed" isSelected={onStart && current.pile === 'snoozed'} endContent={count(g.snoozed.length)} />
       </SideNavSection>
       {days.length === 0 && <SideNavSection title="Samtal">
-        <SideNavItem label="Alla samtal och klart i dag" href="/handled" isSelected={onStart && current.pile === 'handled'} endContent={count(g.handledToday.length)} />
+        <SideNavItem label="Redan hanterat" href="/handled" isSelected={onStart && current.pile === 'handled'} endContent={count(g.handledToday.length)} />
       </SideNavSection>}
       {days.map((d, i) => <SideNavSection key={d.title} title={i === 0 ? `Samtal · ${d.title.toLowerCase()}` : d.title}>
         {d.list.map(t => <SideNavItem key={t.id} label={t.title} href={`/conversations/${t.id}`} isSelected={current.conversationId === t.id}
           endContent={d.title === 'I dag' ? <Text type="supporting" hasTabularNumbers>{timeLabel(t.updatedAt)}</Text> : undefined} />)}
-        {i === days.length - 1 && <SideNavItem label="Alla samtal och klart i dag" href="/handled" isSelected={onStart && current.pile === 'handled'} endContent={count(g.handledToday.length)} />}
+        {i === days.length - 1 && <SideNavItem label="Redan hanterat" href="/handled" isSelected={onStart && current.pile === 'handled'} endContent={count(g.handledToday.length)} />}
       </SideNavSection>)}
     </>,
     tools: <>

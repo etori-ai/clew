@@ -121,7 +121,7 @@ export function EventCalendar({ view, date, items, label, dayHeadingLevel = 2, a
 function DayHeading({ date, level, narrow, today, inline }: { date: Date; level: HeadingLevel; narrow: boolean; today: boolean; inline: boolean }) {
   const day = displayDate(date.toISOString());
   const [weekday = '', number = ''] = shortDayLabel(day).split(' ');
-  if (inline) return <Heading level={6} accessibilityLevel={level} weight="semibold" color={today ? 'accent' : undefined}>{shortDayLabel(day)}</Heading>;
+  if (inline) return <Heading level={5} accessibilityLevel={level} weight="semibold" color={today ? 'accent' : undefined}>{shortDayLabel(day)}</Heading>;
   return <Heading level={6} accessibilityLevel={level} weight="semibold">
     <span className="clew-cal-day-header-number" aria-hidden="true">{number}</span>
     <span className="clew-cal-day-header-weekday" aria-hidden="true">{narrow ? weekday.slice(0, 3) : weekday}</span>

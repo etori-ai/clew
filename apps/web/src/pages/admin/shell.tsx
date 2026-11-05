@@ -38,7 +38,8 @@ export function NotAdmin() {
 }
 /** The page's lead: the h1, one sentence that says what the page is for, and the primary action beside them. */
 export function PageLead({ title, lead, children, actions }: { title: ReactNode; lead?: string; children?: ReactNode; actions?: ReactNode }) {
-  return <HStack justify="between" vAlign="start" gap={3} wrap="wrap">
+  const phone = useMediaQuery('(max-width: 720px)');
+  return <HStack justify="between" vAlign="start" gap={3} wrap={phone ? 'wrap' : undefined}>
     <VStack gap={1}>
       {typeof title === 'string' ? <Heading level={1}>{title}</Heading> : title}
       {lead && <Text as="p" color="secondary">{lead}</Text>}

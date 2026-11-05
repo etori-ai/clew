@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { CalendarEvent, MessageMeta, SourceCitation, Thread, TurnStep, ViewRef } from '@clew/contracts';
-import { Badge, Button, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, ChatSystemMessage, ChatToolCalls, EventList, HStack, Icon, List, ListItem, Markdown, MetadataList, MetadataListItem, Skeleton, Text, Timestamp, Token, VisuallyHidden, VStack, agendaItems, useStreamingText, type ChatToolCallItem } from '@clew/ui';
+import { Badge, Button, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, ChatSystemMessage, ChatToolCalls, EventList, HStack, Icon, List, ListItem, Markdown, MetadataList, MetadataListItem, Skeleton, Text, Timestamp, Token, VisuallyHidden, VStack, agendaItems, useStreamingText, type ChatToolCallItem , useMediaQuery } from '@clew/ui';
+import { mobileQuery } from './shell';
 import { weekNumber } from '@clew/calendar/dates';
 import { calendarWeekQuery, threadQuery, viewQuery } from '../queries';
 import { DeclaredView } from './view';
@@ -71,6 +72,7 @@ function ViewEmbed({ view, hrefFor }: { view: ViewRef; hrefFor?: ((view: ViewRef
 }
 export function Transcript({ onOpenView, renderCard, viewHref }: { onOpenView: (view: ViewRef) => void; renderCard: (thread: Thread) => ReactNode; viewHref?: (view: ViewRef) => string }) {
   const talk = useConversation();
+  const mobile = useMediaQuery(mobileQuery);
   const { conversation, latest, done, busy, pending } = talk;
   // A proposal answer names its thread; the draft carries it. Either way the week is drawn under the answer. The named thread comes from the cache the answer wrote it into.
   const forslagId = latest?.forslag?.threadId ?? null;
@@ -136,6 +138,6 @@ export function Transcript({ onOpenView, renderCard, viewHref }: { onOpenView: (
       {done && <ChatSystemMessage icon={<Icon icon="check" size="sm" color="success" />}>{done.text}{done.undo && <> <Button size="sm" variant="ghost" label="Ångra" clickAction={done.undo} /></>}</ChatSystemMessage>}
     </ChatMessageList>
     {!pending && latest && latest.followUps.length > 0 && <HStack gap={1} wrap="wrap" role="group" aria-label="Följdfrågor">{latest.followUps.map(f => <Button key={f} size="sm" variant="secondary" label={f} isDisabled={busy} onClick={() => talk.ask(f)} />)}</HStack>}
-    <Text type="supporting" justify="end">{latest?.draft || messages.some(m => m.meta?.draft) ? 'Esc stänger · kortet behåller utkastet' : 'Esc stänger · samtalet sparas under Redan hanterat'}</Text>
+    <Text type="supporting" justify="end">{`${mobile ? '' : 'Esc stänger · '}${latest?.draft || messages.some(m => m.meta?.draft) ? 'kortet behåller utkastet' : 'samtalet sparas under Redan hanterat'}`}</Text>
   </VStack>;
 }

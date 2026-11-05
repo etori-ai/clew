@@ -21,7 +21,7 @@ const views: View[] = ['day', 'week', 'month'];
 const viewLabels: Record<View, string> = { day: 'Dag', week: 'Vecka', month: 'Månad' };
 const isoDate = /^\d{4}-\d{2}-\d{2}$/;
 /** The panel leaves the side below 1024 px (the responsive guide's three-two-one contract) and opens as a drawer from the toolbar. */
-const panelQuery = '(max-width: 1023px)';
+const panelQuery = '(max-width: 1279px)';
 const monthStart = (date: string) => date.slice(0, 8) + '01';
 const addMonths = (date: string, months: number) => { const d = new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1 + months, 1)); return d.toISOString().slice(0, 10); };
 /** The Mondays whose weeks the month grid shows, so the whole grid is read with the week endpoint the API already has. */
@@ -115,7 +115,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
     </HStack>
   </VStack>;
   const reply = thread && <ChatComposer density="compact" elevation="none" isDisabled={busy} placeholder="Svara här" onSubmit={text => { const body = text.trim(); if (body) void run(() => api.reply(thread.id, body)); }} />;
-  const panel = thread && <Layout height="fill" padding={0} content={<LayoutContent>{panelBody}</LayoutContent>} footer={<LayoutFooter hasDivider>{reply}</LayoutFooter>} />;
+  const panel = thread && <Layout height="fill" padding={3} content={<LayoutContent>{panelBody}</LayoutContent>} footer={<LayoutFooter hasDivider>{reply}</LayoutFooter>} />;
   const toolbar = <Toolbar label="Kalender" size="sm"
     startContent={<HStack gap={3} vAlign="center" wrap="wrap">
       <Heading level={1}>{title.charAt(0).toUpperCase() + title.slice(1)}</Heading>
@@ -140,7 +140,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
     </HStack>} />;
   return <Shell user={user} nav={nav}><Layout height="fill" padding={mobile ? 3 : 4}
     header={<LayoutHeader hasDivider>{toolbar}</LayoutHeader>}
-    end={!narrow && thread ? <LayoutPanel width={380} hasDivider role="complementary" label="Förslag" padding={0} isScrollable={false}>{panel}</LayoutPanel> : undefined}
+    end={!narrow && thread ? <LayoutPanel width={340} hasDivider role="complementary" label="Förslag" padding={0} isScrollable={false}>{panel}</LayoutPanel> : undefined}
     content={<LayoutContent>
       <VStack gap={4}>
         {!thread && error && <Text as="p" role="alert" color="accent">{error}</Text>}
@@ -152,7 +152,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
       </VStack>
     </LayoutContent>} />
     {narrow && thread && <Drawer isOpen={panelOpen} onOpenChange={setPanelOpen} side="end" width={420} label="Förslag">
-      <Layout height="fill" padding={0} header={<DrawerHeader title="Förslag" onOpenChange={setPanelOpen} />} content={<LayoutContent>{panelBody}</LayoutContent>} footer={<LayoutFooter hasDivider>{reply}</LayoutFooter>} />
+      <Layout height="fill" padding={3} header={<DrawerHeader title="Förslag" onOpenChange={setPanelOpen} />} content={<LayoutContent>{panelBody}</LayoutContent>} footer={<LayoutFooter hasDivider>{reply}</LayoutFooter>} />
     </Drawer>}
     {/* Both dialogs write the cache themselves (D33): a moved proposal's thread, or the loaded weeks read again. */}
     <EventDialog item={openItem} dayItems={dayItems} onClose={() => setOpenItem(null)} onOpenDay={d => go({ date: d, view: 'day' })} />

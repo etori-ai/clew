@@ -40,15 +40,15 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
   };
   const shown = (connectors ?? []).filter(c => matches(c, filter));
   const status = (c: ConnectorSummary) => { const s = statusOf(c); return <StatusDot variant={s.tone} label={s.label} />; };
-  const statusText = (c: ConnectorSummary) => { const s = statusOf(c); return <HStack gap={1} vAlign="center">{status(c)}<Text>{s.label}</Text></HStack>; };
+  const statusText = (c: ConnectorSummary) => { const s = statusOf(c); return <VStack gap={0}><HStack gap={1} vAlign="center">{status(c)}<Text>{s.label}</Text></HStack>
+    <Text type="supporting">{c.bundled ? 'I processen' : <Timestamp value={c.health.at} format="auto" />}</Text></VStack>; };
   const toggle = (c: ConnectorSummary) => <Switch size="sm" label={`${c.source} på`} isLabelHidden value={c.state === 'enabled'} changeAction={on => flip(c, on)} />;
   const name = (c: ConnectorSummary) => <VStack gap={0}><Text weight="semibold">{c.source}</Text><Text type="supporting">{c.id}{c.bundled ? ' · inbyggd' : ''}{c.kind ? ` · ${kindLabel[c.kind].toLowerCase()}` : ''}</Text></VStack>;
   const columns = [
     { key: 'system', header: 'System', width: proportional(1, { minWidth: 200 }), renderCell: (r: Row) => <VStack gap={0}><Link href={`/admin/connectors/${r.c.id}`} weight="semibold">{r.c.source}</Link><Text type="supporting">{r.c.id}{r.c.bundled ? ' · inbyggd' : ''}</Text></VStack> },
     { key: 'status', header: 'Status', width: pixel(150), renderCell: (r: Row) => statusText(r.c) },
     { key: 'audience', header: 'Vem ser det', width: proportional(1, { minWidth: 120 }), renderCell: (r: Row) => <Text>{audienceLabel(r.c.audience)}</Text> },
-    { key: 'caps', header: 'Förmågor', width: proportional(1, { minWidth: 240 }), renderCell: (r: Row) => <Text type="supporting">{counts(r.c)}</Text> },
-    { key: 'seen', header: 'Senast kontakt', width: pixel(160), renderCell: (r: Row) => r.c.bundled ? <Text type="supporting">I processen</Text> : <Timestamp value={r.c.health.at} format="auto" /> },
+    { key: 'caps', header: 'Förmågor', width: proportional(1, { minWidth: 160 }), renderCell: (r: Row) => <Text type="supporting">{counts(r.c)}</Text> },
     { key: 'on', header: 'På', width: pixel(72), renderCell: (r: Row) => toggle(r.c) },
   ];
   // The lead counts: what is on, what is off, what needs a hand. Tiles are KPI widgets, so Cards in a reflowing Grid (structure guide); a problem is a dot with its word, never a coloured card.

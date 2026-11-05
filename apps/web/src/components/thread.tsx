@@ -125,7 +125,7 @@ export function ThreadCard({ thread, compact, headingLevel = 3, onChange }: Prop
       {conversation.length > 0 && <Conversation messages={conversation} />}
       {error && <Text as="p" role="alert" color="accent">{error}</Text>}
       {roster && !open && thread.state === 'open' && !undoOpen && <HStack gap={2} wrap="wrap">
-        {waiting.length > 0 && <Button variant="secondary" label={`Påminn de ${waiting.length} nu`} clickAction={() => run(() => api.remindInvitees(thread.id))} />}
+        {waiting.length > 0 && <Button variant="secondary" label={waiting.length === 1 ? 'Påminn den som inte svarat' : `Påminn de ${waiting.length} som inte svarat`} clickAction={() => run(() => api.remindInvitees(thread.id))} />}
         <AddToConversation size="md" added={inConversation} onAdd={() => talk.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id })} />
         {!thread.waitingOn && <Button variant="ghost" label="Inte nu" clickAction={() => run(async () => { const t = await api.snooze(thread.id); leave(t, 'Tas upp i morgon 06:00 i stället.'); return t; })} />}
         <MoreMenu label="Fler val" size="sm" variant="ghost" items={[{ id: 'why', label: 'Varför ser jag detta?', onClick: () => setWhy(v => !v) }]} />

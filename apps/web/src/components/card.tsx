@@ -90,7 +90,7 @@ function TimePicker({ label, presets, demo, onPick }: { label: string; presets: 
   ];
   const pick = () => { if (parsed) { onPick({ text, until: parsed }); setOpen(false); } };
   return <>
-    <DropdownMenu button={{ label, size: 'sm', variant: 'ghost' }} presentation="adaptive" items={items} />
+    <DropdownMenu button={{ label, size: 'sm', variant: 'ghost' }} presentation="adaptive" menuMaxHeight={480} items={items} />
     <Dialog isOpen={open} onOpenChange={setOpen} purpose="form">
       <DialogHeader title="När ska jag ta upp det igen?" />
       <VStack gap={3} padding={3}>
@@ -300,7 +300,7 @@ export function ThreadRow({ thread, areaTitle, compact, notice = false, onChange
   return <ListItem id={`thread-${thread.id}`} tabIndex={-1} align="start"
     startContent={notice ? <Icon icon="info" color="info" /> : undefined}
     label={<Button variant="ghost" size="sm" label={thread.title} aria-expanded={false} onClick={() => onExpand(thread.id)} />}
-    description={<VStack gap={1}>
+    description={<VStack gap={1} paddingInlineStart={3}>
       <Meta thread={thread} areaTitle={areaTitle} compact={compact} summary inConversation={conversation.chipped.includes('thread:' + thread.id)} />
       {why && <WhyLine thread={thread} />}
       {error && <Text as="p" role="alert" color="accent">{error}</Text>}

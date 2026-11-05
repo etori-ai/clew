@@ -8,7 +8,7 @@ export function LoginPage({ returnTo }: { returnTo: string }) {
       <Heading level={1}>Startsidan</Heading>
       <Text as="p">Logga in med ditt kommunkonto för att se vad som behöver dig i dag.</Text>
       {reason && reasons[reason] && <Text as="p" color="secondary" role="status">{reasons[reason]}</Text>}
-      <Button label="Logga in" href={'/api/auth/login?returnTo=' + encodeURIComponent(target)} />
+      <Button variant="primary" label="Logga in" href={'/api/auth/login?returnTo=' + encodeURIComponent(target)} />
     </VStack></Card></VStack>
   </LayoutContent>} />;
 }

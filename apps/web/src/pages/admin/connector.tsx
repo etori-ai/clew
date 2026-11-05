@@ -88,7 +88,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
       <HStack gap={1} vAlign="center" wrap="wrap"><StatusDot variant={s.tone} label={s.label} /><Text color="secondary">{s.label}{c.bundled ? ' · körs i Clews egen process' : c.url ? ` · ${c.url}` : ''}</Text></HStack>
     </PageLead>
     {unhealthy && <Banner status={c.health.status === 'unreachable' ? 'warning' : 'error'} container="section" collapsible={false} title={`${c.source}: ${healthLabel[c.health.status].toLowerCase()}${c.health.at ? ' sedan ' : ''}`}
-      description={`${c.health.detail ?? ''} Kort och figurer visas från senast kända läge.`.trim()} endContent={<Timestamp value={c.health.at} format="date_time" />} />}
+      description={`Kort och figurer visas från senast kända läge.${c.health.detail ? ` Teknisk orsak: ${c.health.detail}.` : ''}`} endContent={<Timestamp value={c.health.at} format="date_time" />} />}
     {error && <Text as="p" role="alert" color="accent">{error}</Text>}
     <Card padding={0}>
     {/* Five tabs do not fit 320 px without scrolling (1.4.10), so a phone gets the sections as a menu with the same panels. */}

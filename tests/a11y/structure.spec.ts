@@ -276,7 +276,7 @@ test.describe('D30 the obligation', () => {
     await expect(card.getByRole('region', { name: 'Svar' })).toContainText('1 av 2 har svarat.');
     await expect(card.getByRole('progressbar', { name: 'Svar: 1 av 2' })).toBeVisible();
     await expect(card.getByRole('list', { name: 'Väntar: 1' })).toContainText('påmind en gång');
-    const remind = card.getByRole('button', { name: 'Påminn de 1 nu' });
+    const remind = card.getByRole('button', { name: 'Påminn den som inte svarat' });
     await remind.focus();
     await page.keyboard.press('Enter');
     await expect(card.getByRole('list', { name: 'Väntar: 1' })).toContainText('påmind 2 gånger');
