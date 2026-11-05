@@ -13,6 +13,9 @@ const clewBaseTheme = defineTheme({
   name: 'clew-neutral',
   extends: neutralTheme,
   typography: { scale: { base: 15, ratio: 1.2 } },
+  // Astryx's own control sizes are drawn for a mouse. Under a finger every size reaches HANDOVER §6's 44 px (WCAG 2.5.5).
+  // By the pointer, not the width: a narrow window on a computer keeps its compact controls, a tablet does not.
+  adaptations: { rules: [{ when: { pointer: 'coarse' }, value: { tokens: { '--size-element-sm': '44px', '--size-element-md': '44px', '--size-element-lg': '48px' }, components: { 'segmented-control-item': { base: { minHeight: '44px' } }, item: { base: { minHeight: '44px' } } } } }] },
   components: {
     'chat-layout': { base: { scrollPaddingBottom: '240px' } },
     'side-nav-heading': { base: { paddingBlock: 'var(--spacing-1)' } },
