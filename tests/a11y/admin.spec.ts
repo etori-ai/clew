@@ -1,4 +1,5 @@
 import { announcements, desktop, expect, expectNoAxeViolations, focused, hiddenFocusStops, narrow, open, phone, reflowProblems, test } from './support';
+import { connectorDetail } from './data';
 
 /**
  * Administration (D23): the connectors list, the add dialog, one connector's tabs and the remove confirmation, as an
@@ -75,7 +76,7 @@ test.describe('administration', () => {
       api.admin = true;
       await open(page, '/admin/anslutningar');
       await page.getByRole('button', { name: 'Anslut system' }).click();
-      const dialog = page.getByRole('dialog');
+      const dialog = page.getByRole('dialog', { name: 'Anslut system' });
       await expect(dialog.getByRole('heading', { level: 3, name: 'Adress och nyckel' })).toBeVisible();
       await dialog.getByRole('button', { name: 'Kontrollera' }).click();
       await expect(dialog.getByText('Små bokstäver, siffror och bindestreck; börjar med en bokstav.', { exact: true })).toBeVisible();
@@ -104,7 +105,7 @@ test.describe('administration', () => {
       await page.setViewportSize({ width: 1280, height: 560 });
       await open(page, '/admin/anslutningar');
       await page.getByRole('button', { name: 'Anslut system' }).click();
-      const dialog = page.getByRole('dialog');
+      const dialog = page.getByRole('dialog', { name: 'Anslut system' });
       await dialog.getByRole('textbox', { name: /^Id/ }).fill('nytt');
       await dialog.getByRole('textbox', { name: /^Adress/ }).fill('http://nytt:4010');
       await dialog.getByLabel(/Delad nyckel/).fill('en-tillräckligt-lång-nyckel');
@@ -121,6 +122,33 @@ test.describe('administration', () => {
       await dialog.getByRole('switch', { name: 'Erbjud assistenten' }).scrollIntoViewIfNeeded();
       await expect(dialog.getByRole('switch', { name: 'Erbjud assistenten' })).toBeInViewport();
       await expect(dialog.getByRole('button', { name: 'Nästa' })).toBeInViewport();
+    });
+    test('a manifest with many changes scrolls in its dialog, the two choices stay on screen, and using it is spoken', async ({ page, api }) => {
+      api.admin = true;
+      await page.setViewportSize({ width: 1280, height: 560 });
+      const names = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => `hello.${prefix}${i + 1}`);
+      await page.route('**/api/admin/connectors/hello/refresh', route => route.fulfill({ json: {
+        diff: { added: names('ny', 12), removed: names('gammal', 8), changed: names('andrad', 4), areasAdded: [], areasRemoved: [], same: false },
+        connector: connectorDetail(api.connectors.find(c => c.id === 'hello')!) } }));
+      await open(page, '/admin/anslutningar/hello');
+      await page.getByRole('button', { name: 'Hämta manifest igen' }).click();
+      // Named by its title (4.1.2): the Dialog takes its name from a DialogHeader present when it mounts.
+      const dialog = page.getByRole('dialog', { name: 'Manifestet har ändrats' });
+      await expect(dialog.getByRole('list', { name: 'Ändringar' }).getByRole('listitem')).toHaveCount(24);
+      await expect(dialog.getByRole('button', { name: 'Behåll det gamla' })).toBeInViewport();
+      await expect(dialog.getByRole('button', { name: 'Använd det nya' })).toBeInViewport();
+      await expectNoAxeViolations(page);
+      // A list to read has nothing focusable, so the scrolling area itself takes focus and the keyboard scrolls it (2.1.1).
+      const changes = dialog.getByRole('group', { name: 'Ändringarna i manifestet' });
+      await changes.focus();
+      await expect(changes).toBeFocused();
+      await expect(dialog.getByText('Ändrad förmåga: hello.andrad4')).not.toBeInViewport();
+      await page.keyboard.press('End');
+      await expect(dialog.getByText('Ändrad förmåga: hello.andrad4')).toBeInViewport();
+      await expect(dialog.getByRole('button', { name: 'Använd det nya' })).toBeInViewport();
+      await dialog.getByRole('button', { name: 'Använd det nya' }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Manifestet är uppdaterat'));
     });
     test('a connector page is titled, the health is a sentence, and the tabs follow the tabs pattern', async ({ page, api }) => {
       api.admin = true;
@@ -178,7 +206,7 @@ test.describe('administration', () => {
       await page.setViewportSize(narrow);
       await open(page, '/admin/anslutningar');
       await page.getByRole('button', { name: 'Anslut system' }).click();
-      await expect(page.getByRole('dialog')).toBeVisible();
+      await expect(page.getByRole('dialog', { name: 'Anslut system' })).toBeVisible();
       expect(await reflowProblems(page)).toEqual([]);
     });
   });

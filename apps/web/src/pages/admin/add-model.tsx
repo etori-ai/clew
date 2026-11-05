@@ -136,17 +136,18 @@ export function AddModelDialog({ provider, onClose }: { provider: Pick<ProviderS
   const close = () => { setPick(NO_PICK); reset(); onClose(); };
   const report = listing.data;
   const ids = pickedIds(pick, existing);
+  // The frame and its DialogHeader are always rendered: the Dialog takes its name from a title present when it mounts.
   return <Dialog isOpen={!!provider} onOpenChange={open => { if (!open) close(); }} width={620} purpose="form">
-    {provider && <DialogFrame error={error}
-      header={<DialogHeader title="Lägg till modell" subtitle={`Hos ${provider.title}. Modellerna läggs till avstängda om du inte sätter på dem direkt.`} onOpenChange={open => { if (!open) close(); }} hasDivider={false} />}
+    <DialogFrame error={error}
+      header={<DialogHeader title="Lägg till modell" subtitle={provider ? `Hos ${provider.title}. Modellerna läggs till avstängda om du inte sätter på dem direkt.` : undefined} onOpenChange={open => { if (!open) close(); }} hasDivider={false} />}
       secondary={<Button variant="ghost" label="Avbryt" onClick={close} />}
-      primary={<Button variant="primary" label={addLabel(ids.length)} isDisabled={busy || !ids.length} clickAction={() => run(async () => { const message = await addPicked(provider.id, ids, pick.enable); close(); return message; })} />}>
-      <VStack gap={4}>
+      primary={<Button variant="primary" label={addLabel(ids.length)} isDisabled={busy || !ids.length || !provider} clickAction={() => run(async () => { if (!provider) return; const message = await addPicked(provider.id, ids, pick.enable); close(); return message; })} />}>
+      {provider && <VStack gap={4}>
         {listing.isPending && <Spinner label="Frågar leverantören vilka modeller den har …" />}
         {report && !report.ok && <Findings report={report} label="Leverantörens svar" />}
         {listing.isError && <Text type="supporting">Leverantören svarade inte på vilka modeller den har. Lägg till en med dess id.</Text>}
         {!listing.isPending && <ModelPicker listed={report?.models ?? []} existing={existing} value={pick} onChange={setPick} />}
-      </VStack>
-    </DialogFrame>}
+      </VStack>}
+    </DialogFrame>
   </Dialog>;
 }

@@ -65,7 +65,7 @@ test.describe('model administration', () => {
       api.admin = true;
       await open(page, '/admin/modeller');
       await page.getByRole('button', { name: 'Lägg till leverantör' }).click();
-      const dialog = page.getByRole('dialog');
+      const dialog = page.getByRole('dialog', { name: 'Lägg till leverantör' });
       await expect(dialog.getByRole('heading', { level: 3, name: 'Adress och nyckel' })).toBeFocused();
       await dialog.getByRole('button', { name: 'Testa och spara' }).click();
       await expect(dialog.getByText('Ge leverantören ett namn.', { exact: true })).toBeVisible();
@@ -112,7 +112,7 @@ test.describe('model administration', () => {
       await expect(page.getByText('Pilotleverantör svarar inte.')).toBeVisible();
       await expect(page.getByRole('button', { name: 'Ta bort', exact: true })).toBeDisabled();
       await page.getByRole('button', { name: 'Byt nyckel' }).click();
-      const dialog = page.getByRole('dialog');
+      const dialog = page.getByRole('dialog', { name: 'Byt nyckel' });
       await expect(dialog.getByRole('button', { name: 'Ta bort nyckeln' })).toBeVisible();
       await dialog.getByLabel(/^Ny nyckel/).fill('ny-nyckel');
       await dialog.getByRole('button', { name: 'Byt nyckel' }).click();
@@ -122,20 +122,21 @@ test.describe('model administration', () => {
       await expect(page.getByText('3 modeller som leverantören listar är inte tillagda.')).toBeVisible();
       await expectNoAxeViolations(page);
       await page.getByRole('button', { name: 'Välj modeller att lägga till' }).click();
-      await expect(page.getByRole('dialog').getByRole('group', { name: 'Modeller att lägga till' }).getByRole('checkbox')).toHaveCount(3);
+      await expect(page.getByRole('dialog', { name: 'Lägg till modell' }).getByRole('group', { name: 'Modeller att lägga till' }).getByRole('checkbox')).toHaveCount(3);
     });
     test('"Lägg till modell" asks the endpoint for its list and offers only what is not added yet, or an id by hand', async ({ page, api }) => {
       api.admin = true;
       await open(page, '/admin/modeller');
       await page.getByRole('button', { name: 'Lägg till modell' }).first().click();
-      const dialog = page.getByRole('dialog');
+      const dialog = page.getByRole('dialog', { name: 'Lägg till modell' });
       const listed = dialog.getByRole('group', { name: 'Modeller att lägga till' });
       await expect(listed.getByRole('checkbox')).toHaveCount(1);
       await expect(listed.getByRole('checkbox', { name: 'llama3.3:70b' })).toBeVisible();
       await expect(dialog.getByText('Leverantören listar 3, varav 2 redan är tillagda.', { exact: false })).toBeVisible();
       await expect(dialog.getByRole('button', { name: 'Lägg till', exact: true })).toBeDisabled();
       await dialog.getByRole('textbox', { name: /^Eller en modell som inte finns i listan/ }).fill('gpt-oss:20b');
-      await expect(dialog.getByText('Modellen är redan tillagd.')).toBeVisible();
+      // The field's own status; the dialog's live region repeats the same sentence for a screen reader.
+      await expect(dialog.getByText('Modellen är redan tillagd.').first()).toBeVisible();
       await dialog.getByRole('textbox', { name: /^Eller en modell som inte finns i listan/ }).fill('');
       await listed.getByRole('checkbox', { name: 'llama3.3:70b' }).check();
       await expectNoAxeViolations(page);
@@ -153,7 +154,7 @@ test.describe('model administration', () => {
       await page.route('**/api/admin/providers', route => { api.providers = [...api.providers, manga]; return route.fulfill({ status: 201, json: { provider: providerDetail(manga), report: { ...providerReport, models: many } } }); });
       await open(page, '/admin/modeller');
       await page.getByRole('button', { name: 'Lägg till leverantör' }).click();
-      const dialog = page.getByRole('dialog');
+      const dialog = page.getByRole('dialog', { name: 'Lägg till leverantör' });
       await dialog.getByRole('textbox', { name: /^Namn/ }).fill('Många');
       await dialog.getByRole('textbox', { name: /^Adress/ }).fill('http://manga.test/v1');
       await dialog.getByRole('button', { name: 'Testa och spara' }).click();
@@ -178,7 +179,7 @@ test.describe('model administration', () => {
       await open(page, '/admin/modeller');
       await expect(page.getByRole('list', { name: 'Modeller hos Kommunens modeller' })).toBeVisible();
       await page.getByRole('button', { name: 'Lägg till leverantör' }).click();
-      await expect(page.getByRole('dialog')).toBeVisible();
+      await expect(page.getByRole('dialog', { name: 'Lägg till leverantör' })).toBeVisible();
       expect(await reflowProblems(page)).toEqual([]);
     });
   });

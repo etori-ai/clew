@@ -12,6 +12,7 @@ import { usePageTitle } from '../../page-title';
 import { AudienceEditor, AudiencePreview } from './audience';
 import { actionLabel, actorLabel, audienceLabel, capabilityKindLabel, healthLabel, kindLabel, roleLabel, statusOf } from './labels';
 import { AdminShell, PageLead } from './shell';
+import { DialogFrame } from './dialog-frame';
 
 /** One connector (D23): overview and actions, capabilities with their switches, areas, who sees it, and its history. */
 type TabId = 'oversikt' | 'formagor' | 'omraden' | 'publik' | 'historik';
@@ -152,21 +153,21 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
         </HStack>
       </VStack>
     </Dialog>
-    <Dialog isOpen={!!diff} onOpenChange={open => { if (!open) setDiff(null); }} width={520} padding={4}>
-      {diff && <VStack gap={4}>
-        <DialogHeader title="Manifestet har ändrats" subtitle="Så här skiljer sig tjänstens manifest från det Clew använder." onOpenChange={() => setDiff(null)} />
-        <List density="compact" aria-label="Ändringar">
+    {/* Astryx's form-wizard-dialog frame: a manifest with many changes scrolls its list, the two choices stay pinned in the
+        footer. The frame and its DialogHeader are always rendered: the Dialog takes its name from a title present when it mounts. */}
+    <Dialog isOpen={!!diff} onOpenChange={open => { if (!open) setDiff(null); }} width={520}>
+      <DialogFrame error={actionError} scrollLabel="Ändringarna i manifestet"
+        header={<DialogHeader title="Manifestet har ändrats" subtitle="Så här skiljer sig tjänstens manifest från det Clew använder." onOpenChange={() => setDiff(null)} hasDivider={false} />}
+        secondary={<Button variant="ghost" label="Behåll det gamla" onClick={() => setDiff(null)} />}
+        primary={<Button variant="primary" label="Använd det nya" isDisabled={busy || !diff} clickAction={() => run(async () => { await api.admin.refresh(id, true); setDiff(null); return 'Manifestet är uppdaterat.'; })} />}>
+        {diff && <List density="compact" aria-label="Ändringar">
           {diff.added.map(n => <ListItem key={'a' + n} startContent={<StatusDot variant="success" label="Ny" />} label={<Text>Ny förmåga: {n}</Text>} />)}
           {diff.removed.map(n => <ListItem key={'r' + n} startContent={<StatusDot variant="error" label="Borttagen" />} label={<Text>Borttagen förmåga: {n}</Text>} description={<Text type="supporting">Kort som pekar på den slutar fungera.</Text>} />)}
           {diff.changed.map(n => <ListItem key={'c' + n} startContent={<StatusDot variant="warning" label="Ändrad" />} label={<Text>Ändrad förmåga: {n}</Text>} />)}
           {diff.areasAdded.map(n => <ListItem key={'aa' + n} startContent={<StatusDot variant="success" label="Nytt" />} label={<Text>Nytt område: {n}</Text>} />)}
           {diff.areasRemoved.map(n => <ListItem key={'ar' + n} startContent={<StatusDot variant="error" label="Borttaget" />} label={<Text>Borttaget område: {n}</Text>} />)}
-        </List>
-        <HStack justify="end" gap={2}>
-          <Button variant="ghost" label="Behåll det gamla" onClick={() => setDiff(null)} />
-          <Button variant="primary" label="Använd det nya" isDisabled={busy} clickAction={() => run(async () => { await api.admin.refresh(id, true); setDiff(null); return 'Manifestet är uppdaterat.'; })} />
-        </HStack>
-      </VStack>}
+        </List>}
+      </DialogFrame>
     </Dialog>
     <AlertDialog isOpen={removeOpen} onOpenChange={setRemoveOpen} title={removeLabel} description={`Anslutningen försvinner från alla sidor och dess öppna kort stängs. Kvitton i Redan hanterat finns kvar. Nyckeln raderas.`} actionLabel="Ta bort" cancelLabel="Avbryt" isActionLoading={removal.busy}
       onAction={() => removal.run(async () => { const r = await api.admin.remove(id); setRemoveOpen(false); client.removeQueries({ queryKey: keys.admin.connector(id) }); navigate('/admin/anslutningar'); return `${c.source} är borttagen${r.closedCards ? `, ${r.closedCards} kort stängdes` : ''}.`; })} />

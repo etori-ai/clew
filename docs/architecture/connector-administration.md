@@ -110,7 +110,11 @@ word carries the state, colour never alone).
 **2. Anslut system (add).** A `Dialog` holding an Astryx `Stepper` with four steps, `FormLayout` and `Field`
 inside each. Since 2026-11-05 it is Astryx's `form-wizard-dialog` composition (`pages/admin/dialog-frame.tsx`, shared
 with the model dialogs): the title and the stepper pinned, the step scrolling in `LayoutContent`, Tillbaka and the
-step's buttons pinned in `LayoutFooter`, so the longest step (the audience editor) never pushes them off a short screen:
+step's buttons pinned in `LayoutFooter`, so the longest step (the audience editor) never pushes them off a short screen.
+The manifest diff dialog uses the same frame. Two rules hold for every admin dialog: the frame and its `DialogHeader`
+stay rendered while the dialog is closed, because the Dialog names itself from a title present when it mounts (4.1.2;
+the diff and "Lägg till modell" dialogs had no name while their content waited for data); and a body with nothing
+focusable in it (the diff list) scrolls in a labelled `ScrollableArea` that takes focus while it overflows (2.1.1):
 
 1. *Adress och nyckel.* `TextInput` id (pattern shown as `FieldStatus`), `TextInput` URL, `TextInput`
    type password for the secret with the rule "minst 16 tecken". Nothing is sent until Nästa.
