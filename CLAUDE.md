@@ -16,7 +16,7 @@ Clew is an open source system that will be shared with other municipalities and 
 
 ## Working rules carried over from startsidan
 
-- Swedish only where a person reads it in the product: UI text and API error messages shown in the UI. Everything else is English: identifiers, addresses in the browser (paths, query parameters and their values, anchors; D43), contracts, comments, console output, script and CLI output, infrastructure messages, thrown configuration errors, documentation. Swedish commit subjects.
+- Swedish only where a person reads it in the product: UI text and API error messages shown in the UI. Everything else is English: identifiers, addresses in the browser (paths, query parameters and their values, anchors; D43), contracts, comments, console output, script and CLI output, infrastructure messages, thrown configuration errors, documentation, and commit messages.
 - Bun with exact versions and a frozen lockfile as package manager, script runner and test runner. The server runtime is Node via `tsx` (D16, 2026-11-04; the Temporal worker needs Node). Temporal runs the durable timers (D17).
 - Commands run inside the devcontainer: `docker exec -w /workspace clew-app-1 …` (see `README.md`).
 - Server-side enforcement of identity and scope. No credentials, tokens or trusted identity context in the browser bundle.
@@ -26,6 +26,7 @@ Clew is an open source system that will be shared with other municipalities and 
 - The design canvas (link in HANDOVER.md) is the reference for every screen. Compare against it before calling a screen done.
 - Municipal branding is D38: `packages/ui/src/branding.ts` owns profile/colour/logo configuration, `theme.ts` maps it to Astryx tokens, and the web passes one resolved profile to the providers and shell. Astryx Neutral is the default and Sundsvall a profile to opt into (D46); Neutral/custom must not inherit its symbol. Use the published palette and original logo assets, preserve aspect ratio and clearance, and keep brand colours out of page components. D39 owns the compact profile/reminder header and appearance preference. D37/D38/D39 document the native image exception inside `SideNavHeading.icon`.
 - WCAG 2.2 AA is a hard requirement, not a goal: Clew is built for the public sector. A UI change is not done until keyboard use, focus handling, status announcements and reflow at 320 px hold and the WCAG suite passes. A new route, view or state gets a test in `tests/a11y`. The full suite is CI's gate (D51): run only the specs a change touches locally (`sh scripts/a11y.sh menu.spec.ts --timeout 15000`), never the whole suite per edit; `.github/workflows/a11y.yml` runs it all on every code push and pull request, and because the current GitHub plan cannot block a merge on a red run, read the previous landing's WCAG check before landing on `main` again and fix a red one before new work lands. Passing the suite does not prove conformance; new flows also need a manual pass with a screen reader.
+- Commit messages are English, subject and body (product owner, 2026-11-05; earlier commits have Swedish subjects and stay as they are).
 - Never add Claude as a co-author on commits.
 
 ## Backend structure (D20) and connectors (D21, D22)
