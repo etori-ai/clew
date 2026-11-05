@@ -24,6 +24,8 @@ export class MockApi {
 
   answerDelay = 0;
   private answerHeld?: Promise<void>;
+  /** Every question the box sent, as it was sent: the text, the conversation it continues, and what went along as chips. */
+  asked: { text: string; conversationId?: string; chips?: { ref: string }[] }[] = [];
   /** How long the first read of the cards takes, so a test can see the page while they load (D36). */
   threadsDelay = 0;
   sessionDelay = 0;
@@ -132,7 +134,8 @@ export class MockApi {
     // A turn as the server streams it (D36): a read as a step, the answer in two deltas, then the finished turn. Playwright
     // answers in one piece, so the pending turn is what `answerDelay` and `holdAnswer` hold open.
     if (path === '/conversation/stream') {
-      const body = request.postDataJSON() as { text: string; conversationId?: string };
+      const body = request.postDataJSON() as { text: string; conversationId?: string; chips?: { ref: string }[] };
+      this.asked.push(body);
       await this.answerHeld;
       if (this.answerDelay) await new Promise(resolve => setTimeout(resolve, this.answerDelay));
       const response = conversation(this.threads, body.text, body.conversationId);
@@ -246,7 +249,13 @@ export const composer = (page: Page) => page.getByRole('combobox', { name: /^(Va
 /** A heading by the level assistive technology gets: `aria-level` when Astryx separates it from the visual level. */
 /** "Inte nu" on the first card, the way a person does it (D29): open the picker, choose "I morgon". */
 export async function snoozeFirst(page: Page) {
-  await page.getByRole('button', { name: 'Inte nu', exact: true }).first().click();
+  // A card keeps Inte nu in view (a phone draws cards); a row keeps it behind Fler val (D48), and Att göra's list is rows (D50).
+  const button = page.getByRole('main').getByRole('button', { name: 'Inte nu', exact: true }).first();
+  if (await button.isVisible()) await button.click();
+  else {
+    await page.getByRole('main').getByRole('button', { name: 'Fler val' }).first().click();
+    await page.getByRole('menuitem', { name: 'Inte nu' }).click();
+  }
   await page.getByRole('menuitem', { name: /^I morgon/ }).click();
 }
 export const heading = (page: Page, level: number, name: string) => page.locator(`h${level}:not([aria-level]), [aria-level="${level}"]`).filter({ hasText: name });
@@ -257,11 +266,6 @@ export async function openNav(page: Page) {
   if (!await toggle.isVisible()) return page.getByRole('navigation', { name: 'Sidonavigering' });
   await toggle.click();
   return page.getByRole('dialog', { name: 'Navigering' });
-}
-/** The areas are lenses at the rail's foot, collapsed until asked for (the canvas's H3 item 7): open the disclosure in the given rail. */
-export async function openAreas(nav: Locator) {
-  const toggle = nav.getByRole('button', { name: 'Områden' });
-  if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click();
 }
 /** The surface that docks the composer: ChatLayout's sticky wrapper (D31), or null when the row is in the page flow. */
 const dockOf = (page: Page) => page.evaluate(() => {

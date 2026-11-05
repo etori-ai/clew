@@ -10,7 +10,9 @@ import { calendarWeekQuery } from '../queries';
 import { useThreadAction } from '../mutations';
 import { executionStatus } from '../execution-status';
 
-type Props = { thread: Thread; compact: boolean; headingLevel?: 2 | 3 | 4; onChange: (thread: Thread) => void };
+type Props = { thread: Thread; compact: boolean; headingLevel?: 2 | 3 | 4; onChange: (thread: Thread) => void;
+  /** The card in the panel beside its own row (D50): the row keeps the thread's id, so the card takes another. */
+  beside?: boolean };
 const EMPTY_EVENTS: CalendarEvent[] = [];
 
 const stepLabel = { forslag: 'Förslag', inbjudningar: 'Inbjudningar', svar: 'Svar', klart: 'Klart' } as const;
@@ -50,7 +52,7 @@ function Conversation({ messages }: { messages: Thread['messages'] }) {
  * A thread, not a card: status and source on top, one sentence, the assessment, the proposals drawn in the week,
  * the actions, "varför nu?", and a composer at the bottom so the thread keeps its memory.
  */
-export function ThreadCard({ thread, compact, headingLevel = 3, onChange }: Props) {
+export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, onChange }: Props) {
   // The selection is the card's draft (D12): the rows' `selected` flags when the server wrote them, else every proposed time.
   const seed = () => { const rows = thread.items.filter(i => i.ref.startsWith('proposal:')); return rows.length ? rows.filter(i => i.selected).map(i => i.ref.slice('proposal:'.length)).filter(id => thread.proposals.some(p => p.id === id && p.status === 'proposed')) : thread.proposals.filter(p => p.status === 'proposed').map(p => p.id); };
   const [selected, setSelected] = useState<string[]>(seed);
@@ -88,7 +90,7 @@ export function ThreadCard({ thread, compact, headingLevel = 3, onChange }: Prop
   const count = selected.length, plural = count === 1 ? 'inbjudan' : 'inbjudningar';
   const status = statusLine(thread);
   return <Card padding={3} variant={thread.state === 'open' && thread.waitingOn ? 'muted' : 'default'} elevation={inConversation || (open && !thread.waitingOn) ? 'low' : 'none'}>
-    <VStack gap={2} as="article" tabIndex={-1} aria-label={`Kort: ${thread.title}`} id={`thread-${thread.id}`} aria-current={inConversation ? 'true' : undefined}>
+    <VStack gap={2} as="article" tabIndex={-1} aria-label={`Kort: ${thread.title}`} id={`${beside ? 'card' : 'thread'}-${thread.id}`} aria-current={inConversation ? 'true' : undefined}>
       <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
         <HStack gap={2} vAlign="center" wrap="wrap">
           {status.badge ? <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label={status.label} /> : <Text type="supporting" weight="semibold">{status.label}</Text>}

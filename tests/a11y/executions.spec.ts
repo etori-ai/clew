@@ -6,7 +6,7 @@ for (const [layout, viewport] of [['desktop', desktop], ['narrow', narrow]] as c
     const card = api.threads.find(t => t.id === 'fakturor')!;
     card.execution = { id: 'execution-fixture', decisionId: 'decision-fixture', operation: 'raindance.approve', state, reason: null, compensates: null };
     api.threads = [card];
-    await open(page, '/overview');
+    await open(page, '/todo');
     const check = page.getByRole('button', { name: 'Kontrollera status' });
     await expect(check).toBeVisible();
     await expect(page.getByRole('button', { name: /^Attestera ·/ })).toHaveCount(0);
@@ -27,7 +27,7 @@ test('a policy update removes retained source content without a page reload', as
     window.EventSource = TestEventSource as unknown as typeof EventSource;
   });
   const title = api.threads[0]!.title;
-  await open(page, '/overview');
+  await open(page, '/todo');
   await expect(page.getByText(title, { exact: true }).first()).toBeVisible();
   await page.evaluate(() => (window as unknown as { emitChange(data: object): void }).emitChange({ revision: '1', policy: '1:1' }));
   api.threads = [];

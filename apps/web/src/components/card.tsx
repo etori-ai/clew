@@ -143,7 +143,7 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
         });
         return;
       }
-      // A panel view has an address: /views/card/:thread/:action, so it survives reload and the back button closes it.
+      // A panel view has an address (`open-card` and `open-action`), so it survives reload and the back button closes it.
       onOpenCardView(thread.id, action.id);
       return;
     }
@@ -262,7 +262,9 @@ function Meta({ thread, areaTitle, position, inConversation }: { thread: Thread;
   </HStack>;
 }
 
-type Props = ActionProps & { areaTitle: string; position?: string; headingLevel?: 2 | 3 | 4; autoFocusTitle?: boolean };
+type Props = ActionProps & { areaTitle: string; position?: string; headingLevel?: 2 | 3 | 4; autoFocusTitle?: boolean;
+  /** The card in the panel beside its own row (D50): the row keeps the thread's id, so the card takes another. */
+  beside?: boolean };
 /**
  * A thread open on the page (thread action contract): one lead sentence, rows with refs, the shared action row, and the
  * receipt read back from the source after an execute. Connectors contribute actions, never layout. Cards hold state and
@@ -270,7 +272,7 @@ type Props = ActionProps & { areaTitle: string; position?: string; headingLevel?
  * the collapsed threads in a group are rows (`ThreadRow`). A card due today is lifted, a card in the conversation too;
  * a card waiting on someone else or set aside is muted.
  */
-export function GenericCard({ thread, areaTitle, position, headingLevel = 3, autoFocusTitle = false, onChange, onOpenCardView }: Props) {
+export function GenericCard({ thread, areaTitle, position, headingLevel = 3, autoFocusTitle = false, beside = false, onChange, onOpenCardView }: Props) {
   // Opened from its row, the title takes the focus the row's button had (2.4.3).
   const title = useRef<HTMLHeadingElement>(null);
   useEffect(() => { if (autoFocusTitle) title.current?.focus(); }, []);
@@ -286,7 +288,7 @@ export function GenericCard({ thread, areaTitle, position, headingLevel = 3, aut
   const elevation = open && !thread.waitingOn && (streamGroup(thread, today()) === 'nu' || inConversation) ? 'low' : 'none';
   const variant = open && (thread.waitingOn || isSnoozed(thread, new Date().toISOString())) ? 'muted' : 'default';
   return <Card padding={3} elevation={elevation} variant={variant}>
-    <VStack gap={2} as="article" tabIndex={-1} aria-label={`Kort: ${thread.title}`} id={`thread-${thread.id}`} aria-current={inConversation ? 'true' : undefined}>
+    <VStack gap={2} as="article" tabIndex={-1} aria-label={`Kort: ${thread.title}`} id={`${beside ? 'card' : 'thread'}-${thread.id}`} aria-current={inConversation ? 'true' : undefined}>
       <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
         <Meta thread={thread} areaTitle={areaTitle} position={position} inConversation={inConversation} />
         <State thread={thread} />
@@ -314,7 +316,9 @@ export function GenericCard({ thread, areaTitle, position, headingLevel = 3, aut
   </Card>;
 }
 
-type RowProps = ActionProps & { areaTitle: string; notice?: boolean; onExpand: (threadId: string) => void };
+type RowProps = ActionProps & { areaTitle: string; notice?: boolean; onExpand: (threadId: string) => void;
+  /** The row whose card is in the panel (D50): marked as the current one, and its title says the card is open. */
+  isOpen?: boolean };
 /**
  * A thread as a row in its group's list (Astryx: records are rows, a Card is the exception): the title is the control
  * that opens it as a card, one line under it says where it belongs and why it is here, the same line as the brief's,
@@ -323,18 +327,19 @@ type RowProps = ActionProps & { areaTitle: string; notice?: boolean; onExpand: (
  */
 const rowNarrowQuery = '(max-width: 1200px)';
 
-export function ThreadRow({ thread, areaTitle, notice = false, onChange, onOpenCardView, onExpand }: RowProps) {
+export function ThreadRow({ thread, areaTitle, notice = false, isOpen = false, onChange, onOpenCardView, onExpand }: RowProps) {
   const actions = useThreadActions({ thread, onChange, onOpenCardView });
   const { error, why } = actions;
   const conversation = useConversation();
   const level = notice ? 'notice' : attentionLevel(thread, today());
   const inConversation = conversation.chipped.includes('thread:' + thread.id);
   // A button's label does not wrap, so where the column beside the day is narrow the step goes under the line and the title keeps its words, as in the brief.
-  const narrow = useMediaQuery(rowNarrowQuery);
+  // A decision on its way says so in a sentence, which takes the room the title needs: then too the step goes under the line.
+  const narrow = useMediaQuery(rowNarrowQuery) || !!executionStatus(thread.execution);
   const end = <HStack gap={3} vAlign="center" wrap={narrow ? 'wrap' : undefined}><State thread={thread} /><ActionRow thread={thread} level={level} actions={actions} quiet /></HStack>;
-  return <ListItem id={`thread-${thread.id}`} tabIndex={-1} align="start"
+  return <ListItem id={`thread-${thread.id}`} tabIndex={-1} align="start" isSelected={isOpen}
     startContent={notice ? <Icon icon="info" color="info" /> : undefined}
-    label={<Button variant="ghost" size="sm" label={thread.title} aria-expanded={false} onClick={() => onExpand(thread.id)} />}
+    label={<Button variant="ghost" size="sm" label={thread.title} aria-expanded={isOpen} onClick={() => onExpand(thread.id)} />}
     description={<VStack gap={1} paddingInlineStart={3}>
       <HStack gap={2} vAlign="center" wrap="wrap">
         <Text type="supporting">{areaTitle} · {thread.trigger.reason.replace(/\.$/, '')}{inConversation ? ' · I samtalet' : ''}</Text>

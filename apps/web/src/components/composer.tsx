@@ -9,7 +9,7 @@ import { assistantQuery, completionsQuery, threadsQuery } from '../queries';
 import { keys } from '../query-keys';
 import { errorMessage } from '../query-policy';
 import { addDays, displayDate, shortDayLabel, timeLabel, today } from '@clew/calendar/dates';
-import { tokenValue, useConversation } from './conversation-context';
+import { tokenValue, useConversation, type AskFrom } from './conversation-context';
 
 /**
  * The model choice (D24), in the composer's footer slot that Astryx keeps for a model selector: the person's models
@@ -44,10 +44,13 @@ function Dictation({ onResult }: { onResult: (text: string) => void }) {
 /**
  * Where the box sits decides what it says about itself (the canvas's rule H3.3: the scope line always says what the box
  * talks to). On the landing (G) it is the page and says nothing above the field; in a conversation (H1) it says "Det här
- * samtalet" with the way to a new question; at the foot of the overview the placeholder says it, and the box keeps to one line.
+ * samtalet" with the way to a new question; at the foot of a page (D50: Att göra, a tool) the placeholder says what the
+ * box asks about, or that it starts a new conversation, and the box keeps to one line.
  */
 const STOP = new Set(['att', 'och', 'som', 'för', 'med', 'den', 'det', 'ett', 'jag', 'vad', 'hur', 'när', 'var', 'min', 'mitt', 'mina', 'har', 'kan', 'vill', 'ska', 'till', 'från', 'över', 'om']);
-export type ComposerPlace = 'landing' | 'conversation' | 'footer';
+export type ComposerPlace = 'landing' | 'conversation' | 'page';
+/** What a page's box asks about (D50): its name in the scope line, and what the conversation takes with it. */
+export type ComposerAbout = AskFrom & { label: string };
 /** The landing's field is three lines tall from the start, as the `ai-chat-landing` template sets it on its `ChatComposerInput` (D41). */
 const landingField = { minHeight: 84 };
 /**
@@ -57,8 +60,10 @@ const landingField = { minHeight: 84 };
  * row keeps focus throughout; sending never moves it. `roomy` is the landing's box in the page flow (D41); docked on a
  * phone it keeps the field's own height.
  */
-export function Composer({ place, near = [], roomy = false }: { place: ComposerPlace; near?: string[]; roomy?: boolean }) {
+export function Composer({ place, near = [], roomy = false, about }: { place: ComposerPlace; near?: string[]; roomy?: boolean; about?: ComposerAbout | undefined }) {
   const talk = useConversation();
+  // A page's box hands the conversation what the page shows; the landing's and a conversation's own box have nothing to hand over.
+  const from: AskFrom | undefined = place === 'page' ? { chips: about?.chips ?? [], search: about?.search ?? '' } : undefined;
   // What `@` treats as the context: what the page shows (`near`), what is in the drawer and the field, and in a
   // conversation every card and row it has touched (the chips of its turns, a draft's card, a proposal's card).
   const context = useRef<string[]>([]);
@@ -76,7 +81,7 @@ export function Composer({ place, near = [], roomy = false }: { place: ComposerP
       onSelect: item => { const o = (item as SearchableItem<ClewObject>).auxiliaryData!; talk.rememberObject(o); return { value: tokenValue(o.ref), label: o.label, variant: 'neutral' }; },
     };
   }, [talk.rememberObject]);
-  const placeholder = place === 'conversation' ? 'Svara, eller @ för att peka på något …' : place === 'footer' ? 'Nytt samtal: skriv eller säg vad du vill göra …' : 'Skriv eller säg vad du vill göra …';
+  const placeholder = place === 'conversation' ? 'Svara, eller @ för att peka på något …' : place === 'page' ? (about ? `Fråga om ${about.label} …` : 'Nytt samtal: skriv eller säg vad du vill göra …') : 'Skriv eller säg vad du vill göra …';
   const plain = talk.value.replace(/@\[[^\]]+\]/g, '').trim();
   const mobile = useMediaQuery(mobileQuery);
   const pointer = useMediaQuery('(pointer: fine)');
@@ -86,7 +91,7 @@ export function Composer({ place, near = [], roomy = false }: { place: ComposerP
   // While an answer is on its way the send button is Stoppa and the field stays open, so the person can write the next
   // question meanwhile (D36); Enter waits until the answer is written (the input empties itself on a submit, so it is
   // held back through the input's own key seam). Acting on a card's verbs still rests the whole box.
-  return <ChatComposer value={talk.value} onChange={talk.setValue} onSubmit={text => void talk.submit(text)} isDisabled={talk.busy && !talk.pending} isStopShown={!!talk.pending} onStop={talk.stop}
+  return <ChatComposer value={talk.value} onChange={talk.setValue} onSubmit={text => void talk.submit(text, from)} isDisabled={talk.busy && !talk.pending} isStopShown={!!talk.pending} onStop={talk.stop}
     density={place === 'landing' ? 'balanced' : 'compact'} placeholder={placeholder}
     drawer={talk.chips.length > 0 ? <ChatComposerDrawer count={talk.chips.length} label="Objekt i samtalet">
       {talk.chips.map(c => <Token key={c.ref} label={c.label} onRemove={() => talk.removeChip(c.ref)} data-chip-remove="" />)}
@@ -96,8 +101,8 @@ export function Composer({ place, near = [], roomy = false }: { place: ComposerP
     headerActions={scope}
     headerContext={place === 'conversation' ? <HStack gap={2} vAlign="center"><Link href="/" onClick={e => { e.preventDefault(); talk.newConversation(); }}>Nytt samtal i stället</Link>{shortcut}</HStack> : undefined}
     footerActions={<HStack gap={1} wrap="wrap">
-      {talk.chips.length === 1 && !plain && talk.verbs.length > 0 && <HStack gap={1} wrap="wrap" role="group" aria-label="Om kortet">{talk.verbs.map(v => <Button key={v.id} size="sm" variant="ghost" label={v.label} isDisabled={talk.busy} onClick={() => talk.ask(v.label)} />)}</HStack>}
-      {place !== 'footer' && <ModelMenu isDisabled={talk.busy} />}
+      {talk.chips.length === 1 && !plain && talk.verbs.length > 0 && <HStack gap={1} wrap="wrap" role="group" aria-label="Om kortet">{talk.verbs.map(v => <Button key={v.id} size="sm" variant="ghost" label={v.label} isDisabled={talk.busy} onClick={() => talk.ask(v.label, from)} />)}</HStack>}
+      {place !== 'page' && <ModelMenu isDisabled={talk.busy} />}
     </HStack>}
     sendActions={<Dictation onResult={text => talk.setValue((talk.value + ' ' + text).trim())} />}
     status={talk.error ? { type: 'error', message: talk.error } : undefined} />;

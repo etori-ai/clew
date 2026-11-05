@@ -319,7 +319,7 @@
       "number": 28,
       "path": "docs/decisions/D28-the-stream-has-two-groups-and-three-piles.md",
       "title": "D28 · The stream has two groups and three piles, and the day is drawn as one track",
-      "status": "accepted, implementation in progress",
+      "status": "accepted, implementation in progress; the three piles are tabs on Att göra and their routes are gone since [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md)",
       "date": "2026-11-04",
       "area": "ui"
     },
@@ -346,7 +346,7 @@
       "number": 31,
       "path": "docs/decisions/D31-the-conversation-swaps-the-stream-inside-one-chatlayout.md",
       "title": "D31 · The conversation swaps the stream inside one ChatLayout; chips live in the composer drawer",
-      "status": "accepted",
+      "status": "accepted; the panel beside the column and a conversation asked on any page are [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md)",
       "date": "2026-11-04",
       "area": "ui"
     },
@@ -373,7 +373,7 @@
       "number": 34,
       "path": "docs/decisions/D34-the-box-is-the-page-and-the-push-is-its-brief.md",
       "title": "D34 · The box is the page; the push is its brief; one rail orders everything by time",
-      "status": "accepted, implemented 2026-11-04, amended 2026-11-05; the chips under the box and the centred heading replaced by D41",
+      "status": "accepted, implemented 2026-11-04, amended 2026-11-05; the chips under the box and the centred heading replaced by D41; `/overview` and the rail replaced by [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md)",
       "date": "2026-11-04",
       "area": "ui"
     },
@@ -472,7 +472,7 @@
       "number": 42,
       "path": "docs/decisions/D42-a-tool-opens-as-a-page.md",
       "title": "D42 · A tool opens as a page",
-      "status": "accepted, built 2026-11-05; a link from a view in the panel to the tool's page, sorting and column filters on the page, and a canvas artboard for it are not built",
+      "status": "accepted, built 2026-11-05; sorting and column filters on the page are not built; the link from a view in the panel to the tool's page, the box on the page and the row's view beside the table are [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md)",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -481,7 +481,7 @@
       "number": 43,
       "path": "docs/decisions/D43-addresses-are-english.md",
       "title": "D43 · Addresses are English",
-      "status": "accepted, built 2026-11-05; an area's id, which is data and shows in `/areas/:area`, is still Swedish",
+      "status": "accepted, built 2026-11-05; an area's id, which is data and shows in `/areas/:area`, is still Swedish; the start page's addresses changed by [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md)",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -565,6 +565,15 @@
       "status": "accepted",
       "date": "2026-11-05",
       "area": "product"
+    },
+    {
+      "key": "D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about",
+      "number": 50,
+      "path": "docs/decisions/D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md",
+      "title": "D50 · The conversation is the column, and the panel holds what it is about",
+      "status": "accepted, built 2026-11-05; the panel's tabs for what a conversation has opened, the box on the calendar page, a conversation's origin shown on a card and on a tool's page, a resizable panel, the day beside Att göra, and a manual screen-reader pass are not built",
+      "date": "2026-11-05",
+      "area": "ui"
     }
   ],
   "documents": [
@@ -1145,6 +1154,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md",
+      "title": "D50 · The conversation is the column, and the panel holds what it is about",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -1520,6 +1535,22 @@
         "Passing checks",
         "Browser-suite limits",
         "Work not established by this checkpoint"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-05-ux-flow-exploration.md",
+      "title": "Design exploration: one flow between conversations, views and the panel · 2026-11-05",
+      "category": "review-history",
+      "headings": [
+        "What is wrong today",
+        "The proposal: three places, one conversation, one panel",
+        "The screens on the canvas",
+        "Amended the same day: on a page the conversation always lives in the panel",
+        "The choice the product owner named: A or B",
+        "What it would change",
+        "Astryx",
+        "Open questions for the product owner",
+        "Outcome"
       ]
     },
     {

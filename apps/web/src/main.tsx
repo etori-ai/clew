@@ -1,12 +1,13 @@
 import { StrictMode, Suspense, forwardRef, lazy, useEffect, useRef, useState, type AnchorHTMLAttributes } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Link, Routes, Route, useLocation, useSearchParams } from 'react-router';
+import { BrowserRouter, Link, Routes, Route, useLocation } from 'react-router';
 import { QueryClientProvider } from '@tanstack/react-query';
 import '@clew/ui/styles.css';
 import { createQueryClient } from './query-client';
 import { LinkProvider, Providers, SessionBoundary, type BrowserSession } from '@clew/ui';
 import type { SessionUser } from '@clew/contracts';
-import { StartPage } from './pages/start';
+import { StartPage, type Mode } from './pages/start';
+import { ConversationProvider } from './components/conversation-context';
 import { CalendarPage } from './pages/calendar';
 import { ToolPage } from './pages/tool';
 import { LoginPage } from './pages/login';
@@ -73,7 +74,8 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
   if (shell === 'anonymous') return <LoginPage returnTo={location.pathname} />;
   return <SessionBoundary session={shell.session} onEnded={() => client.clear()}>
     <QueryClientProvider client={client}>
-      {children(shell)}
+      {/* One conversation for the whole session's pages (D50): asked on a tool's page, it is still there when the transcript takes the column. */}
+      <ConversationProvider>{children(shell)}</ConversationProvider>
       {Devtools && <Suspense fallback={null}><Devtools initialIsOpen={false} buttonPosition="bottom-right" /></Suspense>}
     </QueryClientProvider>
   </SessionBoundary>;
@@ -85,14 +87,14 @@ const RouterLink = forwardRef<HTMLAnchorElement, { href?: string; to?: string } 
   return <Link ref={ref} to={target} {...rest} />;
 });
 /**
- * Routes (D34): `/` is the box with the brief, `/conversations/:id` a conversation in the same column; `/overview` is the whole
- * picture, `/areas/:area` filters it, `/waiting`, `/snoozed` and `/handled` open the three piles (D28), `/views/card/…` a card's
- * view over the overview, `/views/:capability` a view over the box (or over the overview when an area is named), all addressable.
- * `/calendar` and `/tools/:capability` are the tools, each a page of its own in the same shell (D42).
+ * Routes (D34, D50): `/` is the box with the brief, `/conversations/:id` a conversation in the same column
+ * (`/conversations/new` while a question asked on another page is being answered), `/todo` is Att göra with a card's
+ * state as `tab` and the areas as `area`. What the panel holds is in the query of whichever page it is beside
+ * (`panel-address.ts`). `/calendar` and `/tools/:capability` are the tools, each a page of its own in the same shell (D42).
  */
 function App() {
-  // One element for every start route: a route change between the box, the overview, a pile, a view and a conversation
-  // re-renders the page and never remounts it, so focus, the cache's observers and the composer's draft survive the change.
+  // One element for every start route: a route change between the box, a conversation and Att göra re-renders the page
+  // and never remounts it, so focus, the cache's observers and the composer's draft survive the change.
   const start = <Protected>{shell => <StartRoute user={shell.user} admin={shell.admin} />}</Protected>;
   // Administration (D23): the entry point shows only to an administrator, and every call is checked again on the server.
   const admin = (page: (shell: Shell) => React.ReactNode) => <Protected>{shell => shell.admin ? page(shell) : <NotAdmin />}</Protected>;
@@ -108,27 +110,17 @@ function App() {
     <Route path="/admin/models/:id" element={admin(shell => <AdminModelPage user={shell.user} />)} />
     <Route path="/" element={start} />
     <Route path="/conversations/:conversationId" element={start} />
-    <Route path="/views/:capability" element={start} />
-    <Route path="/overview" element={start} />
-    <Route path="/areas/:area" element={start} />
-    <Route path="/handled" element={start} />
-    <Route path="/waiting" element={start} />
-    <Route path="/snoozed" element={start} />
-    <Route path="/views/card/:threadId/:actionId" element={start} />
+    <Route path="/todo" element={start} />
     <Route path="*" element={start} />
   </Routes>;
 }
-/** Which face of the start page an address shows: the box, or the whole picture. A capability view opens over the page it was asked from: the overview when an area is named, else the box. */
-export function modeOf(pathname: string, search: URLSearchParams): 'fraga' | 'oversikt' {
-  if (pathname.startsWith('/views/card/')) return 'oversikt';
-  if (pathname.startsWith('/views/')) return search.has('area') ? 'oversikt' : 'fraga';
-  if (pathname === '/overview' || pathname === '/handled' || pathname === '/waiting' || pathname === '/snoozed' || pathname.startsWith('/areas/')) return 'oversikt';
-  return 'fraga';
+/** Which face of the start page an address shows: Att göra, or the box. */
+export function modeOf(pathname: string): Mode {
+  return pathname === '/todo' ? 'todo' : 'fraga';
 }
 function StartRoute({ user, admin }: { user: SessionUser; admin: boolean }) {
   const location = useLocation();
-  const [search] = useSearchParams();
-  return <StartPage user={user} admin={admin} mode={modeOf(location.pathname, search)} />;
+  return <StartPage user={user} admin={admin} mode={modeOf(location.pathname)} />;
 }
 createRoot(document.getElementById('root')!).render(<StrictMode>
   <Providers branding={branding}>

@@ -2,22 +2,19 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { Area, MenuEntry, Thread, ViewRef } from '@clew/contracts';
-import { ArrowPathIcon, Badge, Button, CheckCircleIcon, InboxIcon, LightBulbIcon, MegaphoneIcon, PauseCircleIcon, SideNavItem, SideNavSection, Squares2X2Icon, Text, Typeahead, TypeaheadItem, VStack, createStaticSource, type SearchableItem } from '@clew/ui';
+import { Badge, Button, InboxIcon, SideNavItem, SideNavSection, Text, Typeahead, TypeaheadItem, VStack, createStaticSource, type SearchableItem } from '@clew/ui';
 import { addDays, displayDate, shortDayLabel, timeLabel, today } from '@clew/calendar/dates';
+import { titled } from './conversation-context';
 import { areasQuery, threadsQuery } from '../queries';
 import { groupThreads } from '../stream';
 import { clewIcon } from '../icons';
-import { titled } from './conversation-context';
 import type { ShellNav } from './shell';
 
-/** The administration's two sections, rows under Administration (D45). */
+/** The administration's two sections, rows under Administration (D45, administration keeps the rail). */
 export type AdminSection = 'anslutningar' | 'modeller';
-/** What the rail marks as current: the surface, and within the start page the group, the pile, the area or the conversation. */
+/** What the rail marks as current: the place, and within the start page the conversation. */
 export interface RailCurrent {
-  surface: 'start' | 'oversikt' | 'kalender' | 'verktyg' | 'admin';
-  group?: 'behover-dig' | 'foreslar' | 'kannedom' | null;
-  pile?: 'waiting' | 'snoozed' | 'handled' | null;
-  area?: string | null;
+  surface: 'start' | 'todo' | 'kalender' | 'verktyg' | 'admin';
   conversationId?: string | null;
   /** The capability whose tool page is open (D42), so its row under Verktyg is marked. */
   view?: string | null;
@@ -47,11 +44,12 @@ export const toolHref = (capability: string, input?: Record<string, unknown>, op
 type Found = { href: string; detail: string };
 
 /**
- * The rail (D34, the canvas's H1, H3 and H4): one navigation ordered by time relative to the person, after the
- * `shell-side-nav` template. On top Nytt samtal and the search; then Från mig, the push in its three groups; Vid sidan av,
- * the three piles; Samtal, the person's latest conversations; and at the foot what is always there:
- * Verktyg (Kalender and the views connectors offer as tools, D40, each a page of its own, D42), the areas as lenses, collapsed, and Administration with its two sections, collapsed until one of them is open (D45). Every row is a link to a route, so the back button and
- * a reload land in the same place. Returned as the shell's three slots so the shell keeps the heading and the way out.
+ * The rail (D50, after the `shell-side-nav` template): places first, then where the person has been. On top Nytt samtal and
+ * the search; then Att göra, the one page for everything the assistant has pushed, with how much of it needs the person;
+ * Verktyg (Kalender and the views connectors offer as tools, D40, each a page of its own, D42); then Samtal, the
+ * person's latest conversations, each saying when. A card's state (pågår, inte nu, klart) and the areas are not places: they are the
+ * tabs and the filter on Att göra. At the foot Administration with its two sections, collapsed until one of them is
+ * open. Every row is a link to a route, so the back button and a reload land in the same place. Returned as the shell's slots so the shell keeps the heading and the way out.
  */
 export function useRail({ current, admin }: { current: RailCurrent; admin: boolean }): ShellNav {
   const navigate = useNavigate();
@@ -61,27 +59,25 @@ export function useRail({ current, admin }: { current: RailCurrent; admin: boole
   const menu = areasData?.menu ?? EMPTY_MENU;
   const todayDate = today();
   const g = groupThreads(threads, new Date().toISOString(), todayDate);
-  const onStart = current.surface === 'start' || current.surface === 'oversikt';
   const count = (n: number) => n ? <Text type="supporting" hasTabularNumbers>{n}</Text> : undefined;
-  /** An area's count, red like Behöver dig's where something in it is due today: a number that can be read, never a dot alone (1.4.1). */
-  const areaCount = (a: Area) => a.urgency === 'now' || a.urgency === 'urgent' ? <Badge variant="error" label={String(a.needsYou)} /> : count(a.needsYou);
-  // The latest conversations, in one list; each says when: today's with the time, then I går and the day.
+  // The latest conversations, in one list; each says when: today's with the time, then I går and the day. The rest are under Alla samtal.
   const yesterday = addDays(todayDate, -1);
   const recent = g.questions.slice(0, 5);
   const said = (t: Thread) => { const day = displayDate(t.updatedAt); return day === todayDate ? timeLabel(t.updatedAt) : day === yesterday ? 'i går' : shortDayLabel(day); };
-  const needsYou = g.nu.length + g.senare.length;
-  // The search finds conversations, open cards and the areas from what the page already has: the same things the box's router finds without the model.
+  const needsYou = g.nu.length + g.senare.length + g.foreslar.length + g.kannedom.length;
+  // The search finds conversations, open cards, the areas and the tools from what the page already has: the same things the box's router finds without the model.
   const source = useMemo(() => {
     const items: SearchableItem<Found>[] = [
       ...g.questions.map(t => ({ id: 'samtal:' + t.id, label: t.title, auxiliaryData: { href: `/conversations/${t.id}`, detail: 'Samtal' } })),
-      ...[...g.nu, ...g.senare, ...g.foreslar, ...g.kannedom, ...g.waiting, ...g.snoozed].map(t => ({ id: 'kort:' + t.id, label: t.title, auxiliaryData: { href: `/overview?card=${encodeURIComponent(t.id)}`, detail: `Kort · ${t.trigger.source}` } })),
-      ...areas.map(a => ({ id: 'omrade:' + a.id, label: a.title, auxiliaryData: { href: `/areas/${a.id}`, detail: 'Område' } })),
+      ...[...g.nu, ...g.senare, ...g.foreslar, ...g.kannedom, ...g.waiting, ...g.snoozed].map(t => ({ id: 'kort:' + t.id, label: t.title, auxiliaryData: { href: `/todo?card=${encodeURIComponent(t.id)}`, detail: `Kort · ${t.trigger.source}` } })),
+      ...areas.map(a => ({ id: 'omrade:' + a.id, label: a.title, auxiliaryData: { href: `/todo?area=${encodeURIComponent(a.id)}`, detail: 'Område' } })),
       ...menu.map(e => ({ id: 'verktyg:' + e.capability, label: e.label, auxiliaryData: { href: toolHref(e.capability), detail: `Verktyg · ${e.source}` } })),
     ];
     return createStaticSource(items);
   }, [threads, areas, menu]);
   const tool = (e: MenuEntry) => <SideNavItem key={e.capability} label={e.label} icon={clewIcon[e.icon]} href={toolHref(e.capability)} isSelected={current.surface === 'verktyg' && current.view === e.capability} />;
   const more = menu.slice(TOOLS_SHOWN);
+  const allConversations = <SideNavItem label="Alla samtal" href="/todo?tab=done" isSelected={false} />;
   return {
     top: <VStack gap={2}>
       <Button variant="secondary" label="Nytt samtal" href="/" width="100%" />
@@ -91,36 +87,24 @@ export function useRail({ current, admin }: { current: RailCurrent; admin: boole
         onChange={item => { const href = item?.auxiliaryData?.href; if (href) navigate(href); }} />
     </VStack>,
     sections: <>
-      <SideNavSection title="Från mig">
-        <SideNavItem label="Behöver dig" icon={InboxIcon} href="/overview" isSelected={onStart && current.group === 'behover-dig'}
+      <SideNavSection title="Från mig" isHeaderHidden>
+        <SideNavItem label="Att göra" icon={InboxIcon} href="/todo" isSelected={current.surface === 'todo'}
           endContent={g.nu.length ? <Badge variant="error" label={String(needsYou)} /> : count(needsYou)} />
-        <SideNavItem label="Jag föreslår" icon={LightBulbIcon} href="/overview#proposals" isSelected={onStart && current.group === 'foreslar'} endContent={count(g.foreslar.length)} />
-        <SideNavItem label="Till kännedom" icon={MegaphoneIcon} href="/overview#notices" isSelected={onStart && current.group === 'kannedom'} endContent={count(g.kannedom.length)} />
       </SideNavSection>
-      <SideNavSection title="Vid sidan av">
-        <SideNavItem label="Pågår utan dig" icon={ArrowPathIcon} href="/waiting" isSelected={onStart && current.pile === 'waiting'} endContent={count(g.waiting.length)} />
-        <SideNavItem label="Inte nu" icon={PauseCircleIcon} href="/snoozed" isSelected={onStart && current.pile === 'snoozed'} endContent={count(g.snoozed.length)} />
-        <SideNavItem label="Redan hanterat" icon={CheckCircleIcon} href="/handled" isSelected={onStart && current.pile === 'handled'} endContent={count(g.handledToday.length)} />
+      <SideNavSection title="Verktyg">
+        <SideNavItem label="Kalender" icon="calendar" href="/calendar" isSelected={current.surface === 'kalender'} />
+        {menu.slice(0, TOOLS_SHOWN).map(tool)}
+        {more.length > 0 && <SideNavItem label="Fler verktyg" icon="moreHorizontal" collapsible={{ defaultIsCollapsed: !more.some(e => e.capability === current.view) }}>{more.map(tool)}</SideNavItem>}
       </SideNavSection>
-      {recent.length > 0 && <SideNavSection title="Samtal">
+      <SideNavSection title="Samtal">
         {recent.map(t => <SideNavItem key={t.id} label={titled(t.title)} href={`/conversations/${t.id}`} isSelected={current.conversationId === t.id}
           endContent={<Text type="supporting" hasTabularNumbers>{said(t)}</Text>} />)}
-      </SideNavSection>}
+        {allConversations}
+      </SideNavSection>
     </>,
-    tools: <>
-      <SideNavItem label="Kalender" icon="calendar" href="/calendar" isSelected={current.surface === 'kalender'} />
-      {menu.slice(0, TOOLS_SHOWN).map(tool)}
-      {more.length > 0 && <SideNavItem label="Fler verktyg" icon="moreHorizontal" collapsible={{ defaultIsCollapsed: !more.some(e => e.capability === current.view) }}>{more.map(tool)}</SideNavItem>}
-    </>,
-    footer: <>
-      <SideNavItem label="Områden" icon={Squares2X2Icon} collapsible={{ defaultIsCollapsed: !current.area }}>
-        {areas.map(a => <SideNavItem key={a.id} label={a.title} href={`/areas/${a.id}`} isSelected={onStart && current.area === a.id}
-          endContent={a.needsYou ? areaCount(a) : a.waiting ? <Text type="supporting">{a.waiting} pågår</Text> : undefined} />)}
-      </SideNavItem>
-      {admin && <SideNavItem label="Administration" icon="wrench" collapsible={{ defaultIsCollapsed: current.surface !== 'admin' }}>
-        <SideNavItem label="Anslutna system" href="/admin/connectors" isSelected={current.section === 'anslutningar'} />
-        <SideNavItem label="Modeller" href="/admin/models" isSelected={current.section === 'modeller'} />
-      </SideNavItem>}
-    </>,
+    footer: admin ? <SideNavItem label="Administration" icon="wrench" collapsible={{ defaultIsCollapsed: current.surface !== 'admin' }}>
+      <SideNavItem label="Anslutna system" href="/admin/connectors" isSelected={current.section === 'anslutningar'} />
+      <SideNavItem label="Modeller" href="/admin/models" isSelected={current.section === 'modeller'} />
+    </SideNavItem> : undefined,
   };
 }

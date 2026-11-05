@@ -19,4 +19,5 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Review: municipal branding and the shared header (2026-11-05)](2026-11-05-municipal-branding-review.md)
 - [Phone book as a test case, and how a connector attaches a view](2026-11-05-phone-book-and-declared-views.md)
 - [Reliability implementation checkpoint: verification](2026-11-05-reliability-implementation-verification.md)
+- [Design exploration: one flow between conversations, views and the panel · 2026-11-05](2026-11-05-ux-flow-exploration.md)
 - [UX review of the whole interface](2026-11-05-ux-review.md)

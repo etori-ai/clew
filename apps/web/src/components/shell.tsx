@@ -15,16 +15,11 @@ export const mobileQuery = '(max-width: 767px)';
 /** 1.4.10: with 480 px or less in height nothing is pinned; the page scrolls as one. */
 export const shortQuery = '(max-height: 480px)';
 
-/** The overview rail folds under its groups below this breakpoint. */
-export const narrowQuery = '(max-width: 1023px)';
-
 export type Surface = 'start' | 'kalender' | 'admin';
-/** What a surface puts in the rail: a create button on top, its own sections, the tools (D40) and the rows that stay at the foot. */
+/** What a surface puts in the rail: a create button on top, its sections (the places, then the conversations, D50) and the rows that stay at the foot. */
 export interface ShellNav {
   top?: ReactNode;
   sections: ReactNode;
-  /** Rows under the heading Verktyg: the calendar and the views that connectors offer as tools. */
-  tools?: ReactNode;
   footer?: ReactNode;
 }
 type Props = {
@@ -65,7 +60,7 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
       void api.claimDelivery(delivery.id).then(({ claimed }) => {
         if (!claimed || !deliveryMounted.current || !deliveryContext.current?.threads.some(t => t.id === thread.id)) return;
         const dismiss = toast({ body: delivery.kind === 'reminder' ? 'Påminnelse: ' + thread.title : 'Nya uppgifter finns i översikten.', isAutoHide: false, uniqueID: delivery.id,
-          endContent: <Button size="sm" variant="ghost" label="Visa" onClick={() => { navigate('/overview?card=' + encodeURIComponent(thread.id)); dismiss(); }} /> });
+          endContent: <Button size="sm" variant="ghost" label="Visa" onClick={() => { navigate('/todo?card=' + encodeURIComponent(thread.id)); dismiss(); }} /> });
       }).catch(() => { deliveryAttempts.current.delete(delivery.id); });
     }
   }, [threadsQ.data, toast, navigate]);
@@ -86,17 +81,14 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
               backgroundColor: mode === 'dark' && !headerLogo.darkSrc ? 'var(--color-on-dark)' : undefined }}
             onError={() => setFailedLogo(logoSrc ?? null)} /> : undefined} />}
         topContent={nav.top}
-        footer={<>
-          {nav.tools && <SideNavSection title="Verktyg">{nav.tools}</SideNavSection>}
-          <SideNavSection title="Alltid" isHeaderHidden>
-            {nav.footer}
-            {/* The last row of the rail, built like Områden above it. Not in `footerIcons`: Astryx draws those in the phone top bar too (D39). */}
-            <SideNavItem label={user.name} icon={UserCircleIcon} collapsible={{ defaultIsCollapsed: true }}>
-              <SideNavItem label="Inställningar" onClick={() => { keepNavigation.current = true; setSettingsOpen(true); }} />
-              <SideNavItem label={signingOut ? 'Loggar ut …' : 'Logga ut'} isDisabled={signingOut} onClick={() => { void logout(); }} />
-            </SideNavItem>
-          </SideNavSection>
-        </>}>
+        footer={<SideNavSection title="Alltid" isHeaderHidden>
+          {nav.footer}
+          {/* The last row of the rail, a disclosure like Administration above it. Not in `footerIcons`: Astryx draws those in the phone top bar too (D39). */}
+          <SideNavItem label={user.name} icon={UserCircleIcon} collapsible={{ defaultIsCollapsed: true }}>
+            <SideNavItem label="Inställningar" onClick={() => { keepNavigation.current = true; setSettingsOpen(true); }} />
+            <SideNavItem label={signingOut ? 'Loggar ut …' : 'Logga ut'} isDisabled={signingOut} onClick={() => { void logout(); }} />
+          </SideNavItem>
+        </SideNavSection>}>
         {nav.sections}
       </SideNav>}>
       {children}

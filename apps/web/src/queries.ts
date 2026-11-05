@@ -27,10 +27,10 @@ export const snoozePresetsQuery = queryOptions({ queryKey: keys.snoozePresets, q
 export const verbsQuery = (threadId: string) => queryOptions({ queryKey: keys.verbs(threadId), queryFn: () => api.verbs(threadId) });
 
 const parseInput = (json: string | null): unknown => { if (!json) return undefined; try { return JSON.parse(json); } catch { return undefined; } };
-/** A view in the side panel, addressed by `/views/:capability?input=…`. */
+/** A view in the panel, addressed by `open` and `open-input` in the address of the page it is beside (D50). */
 export const viewQuery = (capability: string, inputJson: string | null) => queryOptions({ queryKey: keys.view(capability, inputJson), queryFn: () => api.capability(capability, parseInput(inputJson)) });
 /**
- * A card action opened as a view (`/views/card/:thread/:action`). The call is a POST, so it is de-duplicated, never retried
+ * A card action opened as a view (`open-card` and `open-action` in the address). The call is a POST, so it is de-duplicated, never retried
  * and never refetched on its own: within the session a revisit replays the answer, which is right for a read action.
  */
 export const cardViewQuery = (threadId: string, actionId: string) => queryOptions({

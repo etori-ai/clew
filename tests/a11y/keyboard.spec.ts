@@ -1,18 +1,31 @@
+import type { Page } from '@playwright/test';
 import { answer, composer, desktop, expect, focused, hiddenFocusStops, open, snoozeFirst, test } from './support';
 
 test.use({ viewport: desktop });
 
+/**
+ * Inte nu on the first row, from the keyboard (D48): Fler val, then the arrow into the row's sub-menu. The menu opens
+ * with a transition, so the arrow is pressed until the sub-menu's rows are there.
+ */
+async function openSnoozeRows(page: Page) {
+  await page.getByRole('main').getByRole('button', { name: 'Fler val' }).first().focus();
+  await page.keyboard.press('Enter');
+  await expect(async () => {
+    await page.getByRole('menuitem', { name: 'Inte nu' }).press('ArrowRight');
+    await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toBeVisible({ timeout: 1_000 });
+  }).toPass();
+}
+
 test.describe('2.4.7 focus visible', () => {
-  for (const path of ['/', '/overview', '/handled', '/calendar']) test(`every stop on ${path} shows a focus ring`, async ({ page, api: _ }) => {
+  for (const path of ['/', '/todo', '/todo?tab=done', '/calendar']) test(`every stop on ${path} shows a focus ring`, async ({ page, api: _ }) => {
     await open(page, path);
     const { unmarked } = await hiddenFocusStops(page);
     expect(unmarked).toEqual([]);
   });
 
   test('a card that receives focus from the page shows it', async ({ page, api: _ }) => {
-    await open(page, '/overview');
-    await page.getByRole('button', { name: 'Inte nu', exact: true }).first().focus();
-    await page.keyboard.press('Enter');
+    await open(page, '/todo');
+    await openSnoozeRows(page);
     await page.getByRole('menuitem', { name: /^I morgon/ }).focus();
     await page.keyboard.press('Enter');
     // The next thread is a row (D31): its title button takes the focus, and the ring is on the button.
@@ -24,30 +37,36 @@ test.describe('2.4.7 focus visible', () => {
 
 test.describe('2.4.3 focus order', () => {
   test('regaining the window keeps focus where it was', async ({ page, api }) => {
-    await open(page, '/overview');
-    const button = page.getByRole('button', { name: 'Inte nu', exact: true }).first();
+    await open(page, '/todo');
+    const button = page.getByRole('main').getByRole('button', { name: 'Fler val' }).first();
     await button.focus();
     api.sessionDelay = 200;
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
     await page.waitForTimeout(350);
-    expect((await focused(page)).text).toBe('Inte nu');
+    expect((await focused(page)).text).toBe('Fler val');
   });
 
-  test('a collapsed card says it is collapsed and takes focus to its content', async ({ page, api: _ }) => {
-    await open(page, '/overview');
+  test('a row says its card is closed, opens it in the panel, and gets the focus back when the panel closes', async ({ page, api: _ }) => {
+    await open(page, '/todo');
     const title = 'Omtankesamtal med Anna Lindqvist';
     const expand = page.getByRole('button', { name: title, exact: true });
     await expect(expand).toHaveAttribute('aria-expanded', 'false');
     await expand.focus();
     await page.keyboard.press('Enter');
-    const heading = page.getByRole('heading', { name: title });
-    await expect(heading).toBeFocused();
+    // At this width the panel is over the page: a dialog named for what it holds, with the focus in it.
+    const panel = page.getByRole('dialog', { name: 'Kort', exact: true });
+    await expect(panel.getByRole('heading', { name: title })).toBeVisible();
+    await expect.poll(() => panel.evaluate(el => el.contains(document.activeElement))).toBe(true);
+    await expect(page).toHaveURL(/\/todo\?card=omtanke$/);
+    await page.keyboard.press('Escape');
+    await expect(panel).toBeHidden();
+    await expect(expand).toBeFocused();
+    await expect(expand).toHaveAttribute('aria-expanded', 'false');
   });
 
   test('Inte nu moves focus to the next card instead of losing it', async ({ page, api: _ }) => {
-    await open(page, '/overview');
-    await page.getByRole('button', { name: 'Inte nu', exact: true }).first().focus();
-    await page.keyboard.press('Enter');
+    await open(page, '/todo');
+    await openSnoozeRows(page);
     await page.getByRole('menuitem', { name: /^I morgon/ }).focus();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('region', { name: 'Aviseringar' })).toBeVisible();
@@ -56,7 +75,7 @@ test.describe('2.4.3 focus order', () => {
 
   test('Ångra in the toast stays available and reachable by keyboard', async ({ page, api: _ }) => {
     await page.clock.install({ time: new Date('2026-11-04T08:00:00.000Z') });
-    await open(page, '/overview');
+    await open(page, '/todo');
     await snoozeFirst(page);
     const undo = page.getByRole('button', { name: 'Ångra' });
     await expect(undo).toBeVisible();
@@ -70,8 +89,9 @@ test.describe('2.4.3 focus order', () => {
   });
 
   test('the side panel can be closed with a button and hands focus back', async ({ page, api: _ }) => {
-    await open(page, '/areas/personal');
-    const trigger = page.getByRole('button', { name: 'Vem är på plats?' });
+    await open(page, '/');
+    await page.getByRole('group', { name: 'Områden' }).getByRole('button', { name: 'Personal' }).click();
+    const trigger = page.getByRole('group', { name: 'Personal', exact: true }).getByRole('link', { name: 'Vem är på plats?' });
     await trigger.focus();
     await page.keyboard.press('Enter');
     const panel = page.getByRole('dialog');
@@ -95,7 +115,7 @@ test.describe('2.4.3 focus order', () => {
 
 test.describe('D26 a source becomes a chip', () => {
   test('Lägg till i samtalet in the sources view puts the passage in the row\'s drawer and says so on the row', async ({ page, api: _ }) => {
-    await open(page, '/views/clew.search?title=K%C3%A4llor&input=%7B%22query%22%3A%22fall%22%7D');
+    await open(page, '/?open=clew.search&open-title=K%C3%A4llor&open-input=%7B%22query%22%3A%22fall%22%7D');
     const panel = page.getByRole('dialog');
     const add = panel.getByRole('list', { name: 'Källor' }).getByRole('listitem').nth(0).getByRole('button', { name: 'Lägg till i samtalet' });
     await add.focus();
@@ -108,14 +128,16 @@ test.describe('D26 a source becomes a chip', () => {
 
 test.describe('D29 the Inte nu picker', () => {
   test('every row says when the card comes back, and the free text has a label and a live answer', async ({ page, api: _ }) => {
-    await open(page, '/overview');
-    await page.getByRole('button', { name: 'Inte nu', exact: true }).first().click();
+    // The open card keeps Inte nu in view; in a row it is behind Fler val.
+    await open(page, '/todo?card=fakturor');
+    await page.getByRole('article', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' }).getByRole('button', { name: 'Inte nu', exact: true }).click();
     const menu = page.getByRole('menu');
     await expect(menu).toBeVisible();
     for (const row of ['Om en timme', 'Efter lunch', 'I morgon', 'Nästa vecka', 'När jag är tillbaka från Ledningsgrupp']) await expect(menu.getByRole('menuitem', { name: new RegExp('^' + row) })).toBeVisible();
     await expect(menu.getByText('06:00 · i genomgången')).toBeVisible();
     await menu.getByRole('menuitem', { name: /^Skriv själv/ }).click();
-    const dialog = page.getByRole('dialog');
+    // The card is open in the panel, a dialog too at this width: the picker's own dialog is the one meant.
+    const dialog = page.getByRole('dialog', { name: 'När ska jag ta upp det igen?' });
     await expect(dialog).toBeVisible();
     const field = dialog.getByRole('textbox', { name: 'När?' });
     await field.fill('fredag kl 9');

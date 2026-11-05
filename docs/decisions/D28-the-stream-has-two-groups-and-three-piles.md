@@ -1,6 +1,6 @@
 # D28 · The stream has two groups and three piles, and the day is drawn as one track
 
-**Status:** accepted, implementation in progress · **Date:** 2026-11-04 · **Area:** ui
+**Status:** accepted, implementation in progress; the three piles are tabs on Att göra and their routes are gone since [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md) · **Date:** 2026-11-04 · **Area:** ui
 
 **Decision.** The start page groups open cards in two headings and parks the rest in three piles, as drawn on
 artboards A and D of the canvas "Clew designutforskning · schemaläggning och uppmärksamhet"

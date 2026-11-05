@@ -2,14 +2,16 @@ import { useMemo, useRef } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import type { PanelViewSpec, SessionUser } from '@clew/contracts';
-import { Banner, Button, EmptyState, Heading, Layout, LayoutContent, Skeleton, VisuallyHidden, VStack, useMediaQuery } from '@clew/ui';
+import { Banner, Button, EmptyState, Heading, Layout, LayoutContent, LayoutFooter, Skeleton, VisuallyHidden, VStack, useMediaQuery } from '@clew/ui';
 import { areasQuery, viewQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
-import { Shell, mobileQuery } from '../components/shell';
+import { withView } from '../panel-address';
+import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { toolHref, useRail } from '../components/nav';
 import { DeclaredView } from '../components/view';
-import { PanelView } from '../components/panel';
+import { CONVERSATION_MIN, PanelBody, panelBesideQuery, usePanel, type PanelFrame } from '../components/panel';
+import { Composer, type ComposerAbout } from '../components/composer';
 
 /** The table needs 970 px beside the rail, so a 1280 px laptop gets it, with a scrollbar too; a narrower window draws the same rows as a list. */
 const tableQuery = '(min-width: 1280px)';
@@ -34,11 +36,15 @@ function useView(capability: string | null, inputJson: string | null, at: { titl
  * A tool as a page (D42): a view an administrator has chosen for the menu (D40) is opened at `/tools/:capability`,
  * inside the one shell, as Kalender is. The page follows Astryx's `table-page` template: the name as the heading, the
  * view's own search field and choice, then the rows, all in one scrolling column. The view is drawn by the one renderer
- * (D38). A row's own view, a contact card, opens in the side panel over the page, as an entry does on the calendar; the
- * address names both, so a reload, a link and the back button land where the person was.
+ * (D38). A row's own view, a contact card, opens in the panel: beside the page where there is room for both, over it
+ * where there is not (D50); the address names both, so a reload, a link and the back button land where the person was.
+ * The box at the foot asks about the page: the answer opens as a conversation with this view beside it.
  */
 export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
+  // 1.4.10: with 480 px or less in height nothing is pinned; the box joins the page's flow.
+  const short = useMediaQuery(shortQuery);
+  const besideTranscript = useMediaQuery(panelBesideQuery(CONVERSATION_MIN));
   const { capability = '' } = useParams<{ capability: string }>();
   const [search] = useSearchParams();
   const navigate = useNavigate();
@@ -61,9 +67,25 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   const failed = areasQ.isError && areasQ.data === undefined ? { message: errorMessage(areasQ.error, 'Sidan kunde inte läsas.'), retry: () => { void areasQ.refetch(); } }
     : main.failed ? { message: errorMessage(main.failed, 'Kunde inte hämta.'), retry: main.retry }
     : side.failed ? { message: errorMessage(side.failed, 'Kunde inte hämta.'), retry: side.retry } : null;
-  return <Shell user={user} nav={nav}>
+  const frame: PanelFrame | null = detail ? {
+    id: `view:${detail.capability}`, title: detail.title, address: detail.address, wide: detail.spec?.kind === 'table',
+    onClose: () => navigate(toolHref(capability, input)),
+    body: inline => <PanelBody output={detail.output} view={detail.spec} input={detail.input} isLoading={side.isLoading} inline={inline}
+      onInput={detail.capability === opened ? next => navigate(toolHref(capability, input, { capability: detail.capability, title: detail.title, input: next }, detail.via), { replace: true }) : undefined}
+      hrefFor={v => toolHref(capability, input, v, true)} onBack={detail.via ? () => navigate(-1) : undefined} />,
+  } : null;
+  // A table keeps the width it needs: the panel is beside it only on a screen wide enough for both, else over it as before.
+  const slot = usePanel(frame, { minMain: tool?.spec?.kind === 'table' ? 1060 : 600, overlayOnly: short });
+  // What the box asks about (D50): this view with its search as it stands, which the conversation keeps beside the
+  // transcript where both fit. On a narrower screen the conversation opens alone, and the view goes with it as a chip.
+  const about: ComposerAbout | undefined = entry ? {
+    label: entry.label, search: besideTranscript ? withView('', '', { capability, title: entry.label, input }) : '',
+    chips: [{ ref: `capability:${capability}`, kind: 'capability', label: entry.label }],
+  } : undefined;
+  const box = !missing && <Composer place="page" about={about} />;
+  return <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
     {/* `padding={0}` on the content and the padding on the stack is the template's way to keep a table on the heading's line. */}
-    <Layout height="fill" contentWidth={tool?.spec?.kind === 'table' ? 1180 : 720} content={<LayoutContent padding={0}>
+    <Layout height={short ? 'auto' : 'fill'} {...(slot.end ? {} : { contentWidth: tool?.spec?.kind === 'table' ? 1180 : 720 })} end={slot.end} footer={box && !short ? <LayoutFooter>{box}</LayoutFooter> : undefined} content={<LayoutContent padding={0}>
       <VStack padding={mobile ? 3 : 4} gap={6}>
         {missing
           ? <EmptyState headingLevel={1} title="Verktyget finns inte" description="Det är inte påslaget för dig, eller så har adressen ändrats." actions={<Button label="Till startsidan" href="/" />} />
@@ -81,12 +103,10 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
                 <VisuallyHidden>Hämtar …</VisuallyHidden>
                 {Array.from({ length: 6 }, (_, i) => <Skeleton key={i} height={20} width={i % 2 ? '70%' : '100%'} index={i} />)}
               </VStack>}
+            {short && box}
           </>}
       </VStack>
     </LayoutContent>} />
-    <PanelView title={detail?.title ?? null} output={detail?.output} view={detail?.spec} input={detail?.input ?? {}} isLoading={side.isLoading} address={detail?.address}
-      onClose={() => navigate(toolHref(capability, input))}
-      onInput={detail && detail.capability === opened ? next => navigate(toolHref(capability, input, { capability: detail.capability, title: detail.title, input: next }, detail.via), { replace: true }) : undefined}
-      hrefFor={v => toolHref(capability, input, v, true)} onBack={detail?.via ? () => navigate(-1) : undefined} />
+    {slot.overlay}
   </Shell>;
 }

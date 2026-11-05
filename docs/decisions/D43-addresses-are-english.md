@@ -1,6 +1,6 @@
 # D43 · Addresses are English
 
-**Status:** accepted, built 2026-11-05; an area's id, which is data and shows in `/areas/:area`, is still Swedish · **Date:** 2026-11-05 · **Area:** ui
+**Status:** accepted, built 2026-11-05; an area's id, which is data and shows in `/areas/:area`, is still Swedish; the start page's addresses changed by [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md) · **Date:** 2026-11-05 · **Area:** ui
 
 **Decision.** The address bar is not interface text. Every path, query parameter, parameter value and anchor the
 browser shows is English, like the identifiers in the code. Swedish stays where a person reads the product: labels,

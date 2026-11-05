@@ -10,10 +10,10 @@ import { menuRows } from './telefonbok';
 const out = (name: string) => `test-results/screens/${name}.png`;
 const title = (text: string) => encodeURIComponent(text);
 const views = [
-  ['view-table', `/views/telefonbok.directory?title=${title('Sök i telefonboken')}`],
-  ['view-list', `/views/telefonbok.team?title=${title('Mitt teams kontaktlista')}`],
-  ['view-detail', `/views/telefonbok.person?title=Kontaktkort&via=1&input=${encodeURIComponent(JSON.stringify({ ref: 'person:p1002' }))}`],
-  ['view-person-hit', `/views/clew.search?title=${title('Källor')}&input=${encodeURIComponent(JSON.stringify({ query: 'Anna Lindqvist' }))}`],
+  ['view-table', `/?open=telefonbok.directory&open-title=${title('Sök i telefonboken')}`],
+  ['view-list', `/?open=telefonbok.team&open-title=${title('Mitt teams kontaktlista')}`],
+  ['view-detail', `/?open=telefonbok.person&open-title=Kontaktkort&via=1&open-input=${encodeURIComponent(JSON.stringify({ ref: 'person:p1002' }))}`],
+  ['view-person-hit', `/?open=clew.search&open-title=${title('Källor')}&open-input=${encodeURIComponent(JSON.stringify({ query: 'Anna Lindqvist' }))}`],
 ] as const;
 test.describe('screens', () => {
   test.skip(!process.env.CLEW_SCREENS, 'screenshots are taken on demand: CLEW_SCREENS=1');
