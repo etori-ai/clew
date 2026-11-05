@@ -2,12 +2,11 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { SessionUser } from '@clew/contracts';
-import { AppShell, BellIcon, Banner, Button, Dialog, DialogHeader, Divider, Drawer, DrawerHeader, Heading, HStack, Icon, IconButton, Layout, LayoutContent, List, ListItem, RadioList, RadioListItem, SideNav, SideNavHeading, SideNavItem, SideNavSection, Spinner, Text, UserCircleIcon, VStack, signOut, useAppearance, useToast } from '@clew/ui';
+import { AppShell, Button, Dialog, DialogHeader, RadioList, RadioListItem, SideNav, SideNavHeading, SideNavItem, SideNavSection, Text, UserCircleIcon, VStack, signOut, useAppearance, useToast } from '@clew/ui';
 import { branding } from '../branding';
 import { threadsQuery } from '../queries';
-import { errorMessage } from '../query-policy';
 import { api } from '../api';
-import { activeReminders } from '../stream';
+import { ReminderBell } from './reminders';
 
 const headerLogo = branding.logo;
 
@@ -47,7 +46,6 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
     if (open || !keepNavigation.current) setNavigationOpen(open);
     keepNavigation.current = false;
   };
-  const [remindersOpen, setRemindersOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const toast = useToast();
@@ -58,7 +56,6 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   const deliveryContext = useRef(threadsQ.data), deliveryMounted = useRef(false);
   deliveryContext.current = threadsQ.data;
   useEffect(() => { deliveryMounted.current = true; return () => { deliveryMounted.current = false; }; }, []);
-  const reminders = activeReminders(threadsQ.data?.threads ?? [], new Date().toISOString());
   useEffect(() => {
     for (const delivery of threadsQ.data?.deliveries ?? []) {
       if (deliveryAttempts.current.has(delivery.id)) continue;
@@ -72,7 +69,7 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
       }).catch(() => { deliveryAttempts.current.delete(delivery.id); });
     }
   }, [threadsQ.data, toast, navigate]);
-  useEffect(() => { setRemindersOpen(false); setNavigationOpen(false); }, [location.key]);
+  useEffect(() => { setNavigationOpen(false); }, [location.key]);
   const logout = async () => {
     setSigningOut(true);
     try { await signOut(); }
@@ -83,11 +80,7 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
     <AppShell height={height} variant="elevated" contentPadding={0} mobileNav={{ breakpoint: 'md', isOpen: navigationOpen, onOpenChange: changeNavigation }} banner={banner}
       sideNav={<SideNav
         header={<SideNavHeading heading="Startsidan" headingHref="/"
-          headerEndContent={<HStack gap={1} vAlign="center">
-            <IconButton label={threadsQ.isError ? 'Påminnelser – kunde inte uppdateras' : `Påminnelser (${reminders.length})`}
-              icon={<Icon icon={BellIcon} size="sm" />} variant="ghost" size="sm" onClick={() => setRemindersOpen(true)} />
-            {reminders.length > 0 && <Text type="supporting" aria-hidden="true">{reminders.length}</Text>}
-          </HStack>}
+          headerEndContent={<ReminderBell />}
           icon={headerLogo && logoSrc !== failedLogo ? <img src={logoSrc} alt={headerLogo.alt} width={20} height={20}
             style={{ width: 20, height: 20, objectFit: 'contain', padding: 'var(--spacing-3)', boxSizing: 'content-box',
               backgroundColor: mode === 'dark' && !headerLogo.darkSrc ? 'var(--color-on-dark)' : undefined }}
@@ -108,27 +101,6 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
       </SideNav>}>
       {children}
     </AppShell>
-    <Drawer isOpen={remindersOpen} onOpenChange={setRemindersOpen} label="Påminnelser">
-      <Layout header={<DrawerHeader title="Påminnelser" onOpenChange={setRemindersOpen} />} content={<LayoutContent>
-        <VStack gap={4}>
-          {threadsQ.isPending && <HStack gap={2}><Spinner /><Text role="status">Hämtar påminnelser …</Text></HStack>}
-          {threadsQ.isError && <Banner collapsible={false} status="error" title={errorMessage(threadsQ.error, 'Påminnelserna kunde inte uppdateras.')}
-            endContent={<Button label="Försök igen" size="sm" variant="secondary" onClick={() => { void threadsQ.refetch(); }} />} />}
-          {threadsQ.data && <>
-            <Text type="supporting">{reminders.length ? 'Aktuella påminnelser om sådant som behöver dig.' : 'Du har inga aktuella påminnelser.'}</Text>
-            {reminders.length > 0 && <List hasDividers aria-label="Aktuella påminnelser">{reminders.map(thread => <ListItem key={thread.id}
-              label={<Text weight="semibold">{thread.title}</Text>} description="Visa kortet på startsidan"
-              href={`/overview?card=${encodeURIComponent(thread.id)}`} />)}</List>}
-          </>}
-          <Divider />
-          <Heading level={3}>Genvägar</Heading>
-          <List aria-label="Genvägar">
-            <ListItem label="Startsidan" href="/" startContent={<Icon icon="menu" size="sm" />} />
-            <ListItem label="Kalender" href="/calendar" startContent={<Icon icon="calendar" size="sm" />} />
-          </List>
-        </VStack>
-      </LayoutContent>} />
-    </Drawer>
     <Dialog isOpen={settingsOpen} onOpenChange={setSettingsOpen}>
       <DialogHeader title="Inställningar" onOpenChange={setSettingsOpen} />
       <VStack gap={4} padding={3}>

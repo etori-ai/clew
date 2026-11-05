@@ -125,3 +125,30 @@ reset, so the dragon rendered 20 × 36.7 and the heading 68.7 px. The inline `wi
 D37's exception, give the 20 × 20 contain box, the 52 px heading and the clearance this decision asks for.
 
 **Amended 2026-11-05 by D48.** Utseende has three choices, and the first is the default: Samma som datorn (Astryx's `system`), Ljust and Mörkt. Until a person chooses, the page follows the computer.
+
+**Amended 2026-11-05: the reminders hang from the bell.** The product owner found a full-height drawer too heavy for
+a short list. A `Drawer` is for inspectors and detail views; this is a glance. The list is now an Astryx `Popover`
+anchored under the bell, with `presentation="adaptive"`, so a touch phone gets Astryx's `BottomSheet` with the same content
+and no code of ours. `components/reminders.tsx` owns the bell, its state and its query; `Shell` only places it in
+`headerEndContent` and keeps the toast for what arrives. Selection (`activeReminders()`), the session-scoped `threadsQuery`,
+the links to `/overview?card=<id>` and the loading and failure states keep their rules above.
+
+A row reads as a card's own line does: the title, then `trigger.source · <Timestamp>`. The source and time replace the
+"Visa kortet på startsidan" that stood on every row, and `trigger.at` is the moment the reminder fired. `trigger.reason`
+stays on the card: it opens with the same "Du bad …" on every reminder. `relative` and not `relative_short`, whose Swedish
+pattern reads "−12 min".
+
+The count moves inside the button, as plain figures like the rail's counts, so the whole control is the target and no
+number stands beside it unpressable. The name is `Påminnelser: <n>`; axe's label-in-name rule did not accept the figure
+inside `Påminnelser (<n>)`, because the brackets stop it being a word of its own. No overlay badge: that would need CSS
+of ours, and Astryx's `Badge` advises against counts.
+
+Genvägar (Startsidan and Kalender) goes. The rail already has both and it turned a list into a menu; one link, Öppna
+översikten, stays under the list and also leads on from the empty `EmptyState`. This replaces the "links to the start page
+and calendar" above. A popover's close and `?card=` still agree: the card keeps focus after the close, and a sheet is a
+`dialog`, which the start page already waits for.
+
+Read/unread and other notification kinds stay the open product question above. Since D49 the list also holds what comes
+back from Inte nu, so the empty state speaks of a chosen time and not of asking for a reminder. The shell cases cover the
+anchored surface and its position, the sheet on a touch phone, the empty state, a failed read and the path to the card,
+with axe and reflow at 320 px. Manual screen-reader validation remains necessary.

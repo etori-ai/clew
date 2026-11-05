@@ -170,7 +170,7 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
   const kort = search.get('card');
   const [opened, setOpened] = useState<Set<string>>(() => new Set(kort ? [kort] : []));
   const focusedReminder = useRef<string | null>(null);
-  // A reminder navigates to the unfiltered stream. Focus after the drawer closes, including its exit
+  // A reminder navigates to the unfiltered stream. Focus after the list or sheet closes, including its exit
   // animation: an open modal rejects focus outside it. A later cache refresh never takes focus again.
   useEffect(() => {
     if (!kort || !threadsQ.data || location.pathname !== '/overview' || focusedReminder.current === location.key) return;

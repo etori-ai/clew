@@ -15,7 +15,7 @@ for (const viewport of [desktop, narrow]) test(`the compact header works by keyb
   const header = nav.locator('.astryx-side-nav-heading');
   const headerBounds = (await header.boundingBox())!;
   expect(headerBounds.height).toBeLessThanOrEqual(56);
-  const bell = header.getByRole('button', { name: 'Påminnelser (0)', exact: true });
+  const bell = header.getByRole('button', { name: 'Påminnelser: 0', exact: true });
   await expect(bell).toBeVisible();
   const home = header.getByRole('link', { name: /Startsidan/ });
   await expect(home.locator('button')).toHaveCount(0);
@@ -86,14 +86,14 @@ test('the account stays out of the phone top bar', async ({ page, api: _ }) => {
 for (const source of ['/calendar', '/areas/budget']) test(`a reminder opens and focuses its card from ${source}`, async ({ page, api }) => {
   api.threads = api.threads.map(t => t.id === 'ledighet' ? { ...t, remindedAt: NOW } : t);
   await open(page, source);
-  const bell = page.getByRole('button', { name: 'Påminnelser (1)', exact: true });
+  const bell = page.getByRole('button', { name: 'Påminnelser: 1', exact: true });
   await bell.click();
-  const drawer = page.getByRole('dialog', { name: 'Påminnelser', exact: true });
-  await expect(drawer).toBeVisible();
+  const list = page.getByRole('dialog', { name: 'Påminnelser', exact: true });
+  await expect(list).toBeVisible();
   await expectNoAxeViolations(page);
-  await drawer.getByRole('link', { name: /Ledighetsansökan/ }).click();
+  await list.getByRole('link', { name: /Ledighetsansökan/ }).click();
   await expect(page).toHaveURL('/overview?card=ledighet');
-  await expect(drawer).not.toBeVisible();
+  await expect(list).not.toBeVisible();
   const card = page.getByRole('article', { name: 'Kort: Ledighetsansökan från Johan Byström', exact: true });
   await expect(card).toBeVisible();
   await expect.poll(() => card.evaluate(el => el.contains(document.activeElement))).toBe(true);
@@ -101,24 +101,63 @@ for (const source of ['/calendar', '/areas/budget']) test(`a reminder opens and 
   api.threads = api.threads.map(t => t.id === 'ledighet' ? { ...t, state: 'handled' } : t);
   await page.reload();
   await expect(page.getByText('Kortet är inte längre aktuellt på startsidan.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Påminnelser (0)', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Påminnelser: 0', exact: true })).toBeVisible();
 });
 
-test('an empty bell offers working shortcuts and restores focus on Escape', async ({ page, api: _ }) => {
+test('an empty bell says what will appear, leads to the overview and restores focus on Escape', async ({ page, api: _ }) => {
   await page.setViewportSize(narrow);
   await open(page, '/areas/personal');
   const nav = await openNav(page);
-  const bell = nav.getByRole('button', { name: 'Påminnelser (0)', exact: true });
+  const bell = nav.getByRole('button', { name: 'Påminnelser: 0', exact: true });
   await bell.click();
-  const drawer = page.getByRole('dialog', { name: 'Påminnelser', exact: true });
-  await expect(drawer.getByText('Du har inga aktuella påminnelser.')).toBeVisible();
-  expect(await reflowProblems(page, drawer)).toEqual([]);
+  const list = page.getByRole('dialog', { name: 'Påminnelser', exact: true });
+  await expect(list.getByText('Inga aktuella påminnelser')).toBeVisible();
+  expect(await reflowProblems(page, list)).toEqual([]);
   await page.keyboard.press('Escape');
   await expect(bell).toBeFocused();
   await bell.click();
-  await drawer.getByRole('link', { name: 'Kalender', exact: true }).click();
-  await expect(page).toHaveURL('/calendar');
-  await expect(drawer).not.toBeVisible();
+  await list.getByRole('link', { name: 'Öppna översikten', exact: true }).click();
+  await expect(page).toHaveURL('/overview');
+  await expect(list).not.toBeVisible();
+});
+
+test('the reminders hang from the bell at the desktop and the count is part of the button', async ({ page, api }) => {
+  api.threads = api.threads.map(t => t.id === 'ledighet' ? { ...t, remindedAt: NOW } : t);
+  await page.setViewportSize(desktop);
+  await open(page, '/calendar');
+  const bell = page.getByRole('button', { name: 'Påminnelser: 1', exact: true });
+  await expect(bell).toContainText('1');
+  await bell.click();
+  const list = page.getByRole('dialog', { name: 'Påminnelser', exact: true });
+  await expect(list.and(page.locator('.astryx-popover'))).toBeVisible();
+  const trigger = (await bell.boundingBox())!;
+  const surface = (await list.boundingBox())!;
+  expect(surface.y).toBeGreaterThanOrEqual(trigger.y + trigger.height);
+  expect(surface.height).toBeLessThan(desktop.height / 2);
+  expect(surface.width).toBeLessThanOrEqual(380);
+  await expect(list.getByRole('link', { name: /Ledighetsansökan/ })).toBeVisible();
+  await page.mouse.click(desktop.width - 40, desktop.height - 40);
+  await expect(list).not.toBeVisible();
+});
+
+test.describe('on a touch phone', () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: narrow });
+  test('the reminders rise as a sheet with the same content', async ({ page, api }) => {
+    api.threads = api.threads.map(t => t.id === 'ledighet' ? { ...t, remindedAt: NOW } : t);
+    await open(page, '/calendar');
+    const bell = page.getByRole('button', { name: 'Påminnelser: 1', exact: true });
+    await bell.click();
+    const sheet = page.getByRole('dialog', { name: 'Påminnelser', exact: true });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.and(page.locator('dialog'))).toBeVisible();
+    await expectNoAxeViolations(page);
+    expect(await reflowProblems(page, sheet)).toEqual([]);
+    await sheet.getByRole('link', { name: /Ledighetsansökan/ }).click();
+    await expect(page).toHaveURL('/overview?card=ledighet');
+    await expect(sheet).not.toBeVisible();
+    const card = page.getByRole('article', { name: 'Kort: Ledighetsansökan från Johan Byström', exact: true });
+    await expect.poll(() => card.evaluate(el => el.contains(document.activeElement))).toBe(true);
+  });
 });
 
 test('a failed reminder read is explicit and can be retried', async ({ page, api: _ }) => {
@@ -126,11 +165,11 @@ test('a failed reminder read is explicit and can be retried', async ({ page, api
   await page.goto('/calendar');
   const bell = page.getByRole('button', { name: 'Påminnelser – kunde inte uppdateras', exact: true });
   await bell.click();
-  const drawer = page.getByRole('dialog', { name: 'Påminnelser', exact: true });
-  await expect(drawer.getByText('Tillfälligt fel', { exact: true })).toBeVisible();
+  const list = page.getByRole('dialog', { name: 'Påminnelser', exact: true });
+  await expect(list.getByText('Tillfälligt fel', { exact: true })).toBeVisible();
   await page.unroute('**/api/threads');
-  await drawer.getByRole('button', { name: 'Försök igen', exact: true }).click();
-  await expect(drawer.getByText('Du har inga aktuella påminnelser.')).toBeVisible();
+  await list.getByRole('button', { name: 'Försök igen', exact: true }).click();
+  await expect(list.getByText('Inga aktuella påminnelser')).toBeVisible();
 });
 
 test('a blocked browser preference stays usable without claiming it was saved', async ({ page, api: _ }) => {
