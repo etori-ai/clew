@@ -1,6 +1,6 @@
 # Reliability: vision, implementation and evidence
 
-Checkpoint: 2026-11-05. The [roadmap](../architecture/reliability-and-authorization-plan.md) remains the acceptance plan. D44–D47 record the mechanisms now implemented. This ledger separates tested reference behavior from an operational or real-source guarantee.
+Checkpoint: 2026-11-05. The [roadmap](../architecture/reliability-and-authorization-plan.md) remains the acceptance plan. The decisions on [connector authority](../decisions/D44-authorized-reads-and-clew-signed-connector-authority.md), [approved intent](../decisions/D45-approved-intent-precedes-source-dispatch.md), [browser revisions](../decisions/D46-browser-updates-use-committed-revisions.md) and [durable occurrences, timers and attention](../decisions/D47-occurrences-timers-and-attention-have-durable-identities.md) record the mechanisms now implemented. This ledger separates tested reference behavior from an operational or real-source guarantee.
 
 | Vision promise | Implemented mechanism | Evidence run locally | Still required |
 |---|---|---|---|
@@ -10,14 +10,14 @@ Checkpoint: 2026-11-05. The [roadmap](../architecture/reliability-and-authorizat
 | One failing source does not block the page | Persisted view and per-source coalesced refresh with leases, bounded worker count and deadlines | Refresh unit/database cases and unavailable-source browser state | Production load/latency and source-specific cancellation behavior |
 | A reminder survives interruption | Absolute due time, generation/cancellation, durable delivery intent, current authority; Temporal job ownership | Real Node/Temporal timer tests: delayed start, cancel, replace, duplicate fire and old-history replay; job-owner PostgreSQL contract | Full service outage/process-kill rollout exercise and operator resolution of legacy running owners |
 | Follow-up is bounded by consent | Policy, maximum two reminders, two working days between checks, 30-day expiry; current invitees/assignment; legacy policies paused | Shared memory/PostgreSQL contract for concurrent firing, audit rollback, revocation/cancellation and bounds/expiry | Real invitation/source behavior and policy review with the selected operator |
-| Attention is durable without repeated interruptions | Stockholm-day budget, bundle schedule, stable delivery/batch IDs and transactional claims; SSE invalidation on every page | PostgreSQL attention concurrency; mocked-browser untouched tab within 30 seconds, two tabs/reload, canonical Visa action and queued/blocked timers | Live due-to-browser 30-second measurement, manual screen reader and baseline reflow repairs. Claim-before-render can lose a toast; cards remain |
+| Attention is durable without repeated interruptions | Stockholm-day budget, bundle schedule, stable delivery/batch IDs and transactional claims; SSE invalidation on every page | PostgreSQL attention concurrency; mocked-browser untouched tab within 30 seconds, two tabs/reload, canonical Visa action and queued/blocked timers; merged default-theme browser suite passes | Live due-to-browser 30-second measurement and manual screen reader. Claim-before-render can lose a toast; cards remain |
 | Operations can diagnose and recover | Aggregate admin endpoint/CLI, conservative migration and isolated rehearsal | Upgrade from 0019 through 0026, repeated migration, pg_dump/pg_restore and matching evidence digest | Production thresholds, backup ownership/retention, coordinated Temporal/source restore and actual GitHub CI result |
 
 ## Verification record
 
 Fast checks, database/runtime counts and browser results are recorded in the latest [handover](../../HANDOVER.md#9-session-log). The dedicated [Reliability workflow](../../.github/workflows/reliability.yml) runs database contracts, real Node/Temporal tests and the upgrade/restore rehearsal separately from the fast check. Existing fixture tests are not replaced by a UI assertion that says “done.”
 
-The browser suite uses mocked APIs and therefore cannot prove server latency or source effects. Its new reminder scenarios exercise no-click invalidation, claim ownership, reload and navigation. Known baseline failures concern narrow sidebar label clipping/reflow; a manual screen-reader pass has not been performed. WCAG conformance is not established by the automated subset.
+The browser suite uses mocked APIs and therefore cannot prove server latency or source effects. Its new reminder scenarios exercise no-click invalidation, claim ownership, reload and navigation. After [upstream reconciliation](../reviews/2026-11-05-documentation-upstream-reconciliation.md), the full suite on the Neutral default passes (237 tests; 34 optional screenshot cases skipped), superseding the earlier sidebar/reflow failures for this merged tree. A manual screen-reader pass has not been performed. WCAG conformance is not established by the automated suite.
 
 ## Pilot gate remains deliberately open
 

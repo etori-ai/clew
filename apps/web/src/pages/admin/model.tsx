@@ -70,7 +70,7 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
             <Button variant="secondary" label="Testa" isDisabled={busy} clickAction={() => run(async () => { const r = await api.admin.testModel(id); setReport(r); return r.ok ? `${m.title} svarar.` : 'Testet hittade fel, se listan.'; })} />
             {m.isDefault
               ? <Button variant="secondary" label="Ta bort som standard" isDisabled={busy} clickAction={() => run(async () => { await api.admin.updateModel(id, { isDefault: false }); return 'Ingen modell är standard nu.'; })} />
-              : <Button variant="secondary" label="Gör till standard" isDisabled={busy || m.state !== 'enabled'} tooltip={m.state !== 'enabled' ? 'Sätt på modellen först.' : undefined} clickAction={() => run(async () => { await api.admin.updateModel(id, { isDefault: true }); return `${m.title} är standard.`; })} />}
+              : <Button variant="secondary" label="Gör till standard" isDisabled={busy || m.state !== 'enabled'} tooltip={m.state !== 'enabled' ? 'Slå på modellen först.' : undefined} clickAction={() => run(async () => { await api.admin.updateModel(id, { isDefault: true }); return `${m.title} är standard.`; })} />}
             <Button variant="destructive" label="Ta bort" isDisabled={busy} onClick={() => setRemoveOpen(true)} />
           </>} />
           {report && <Findings report={report} label="Testets resultat" />}

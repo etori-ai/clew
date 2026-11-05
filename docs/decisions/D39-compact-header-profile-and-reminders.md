@@ -7,8 +7,8 @@ light/dark mode and logout. `components/shell.tsx` remains the owner on every pr
 `packages/ui/src/appearance.tsx` owns the display preference and applies `theme.ts` through Astryx
 `Theme`. Providers compose that lifecycle once above routing and the session boundary.
 
-**Decision.** Use Astryx `DropdownMenu` with a passive `Avatar` for profile, user name/unit in its
-header, and actions for Inställningar and the existing `signOut`. Settings is a `Dialog` with an
+**Decision.** Profile opens Inställningar and the existing `signOut`; the shape is the rail row in the
+amendment at the end, which replaced the first `DropdownMenu` with a passive `Avatar`. Settings is a `Dialog` with an
 actual `RadioList` preference, not a placeholder route. Only `clew:color-mode` (`light` or `dark`) is
 persisted in localStorage. Invalid/missing values select light. Storage failures leave the choice
 usable in memory and explicitly tell the person it cannot survive reload. Session/identity/work
@@ -17,8 +17,8 @@ invalidation/provider redirect remains canonical.
 
 Preserve current D34's shell-side-nav frame: no desktop TopNav, rail on desktop and Astryx's compact
 header/drawer on mobile. Reduce `side-nav-heading` padding through its public theme target and remove
-the identity subheading. Put the bell beside the profile in `SideNav.footerIcons`, the appropriate
-shared account area in this layout. Keep the rail's existing top/sections/footer and elevated shell.
+the identity subheading. The bell belongs in `SideNavHeading.headerEndContent`, beside the logo and
+product name; the account is the rail's last row (amendments below). Keep the rail's existing top/sections/footer and elevated shell.
 Close the controlled mobile navigation when a link changes the route.
 The logo's contain box becomes 20 × 20 with `spacing-3` (12 px) clearance. The official dragon's
 rendered width is about 10.9 px, so this still exceeds its own width on every side. No new header CSS.
@@ -68,3 +68,58 @@ small-screen layout, covered by the new browser scenarios but not claimed verifi
 
 **Replaces.** Extends D31/D34's navigation composition and D37/D38's light-only logo/theme sizing. Their
 configuration/profile ownership and original-asset rules remain in force.
+
+
+**Amended 2026-11-05: account and reminder placement.** At the product owner's request, the bell and
+its count move to `SideNavHeading.headerEndContent`, beside the logo and Startsidan. The home link
+and bell are separate controls. The account stays in the navigation footer and its trigger shows
+`SessionUser.name` as visible text beside a decorative Heroicons account glyph, with the menu chevron.
+No name is parsed, shortened or copied into another owner. This also removes the initials-only
+trigger's label/content mismatch recorded in session 36. Settings, appearance, reminder selection
+and logout retain their existing lifecycle. The desktop/320 px shell cases protect placement, the
+visible full name, keyboard activation and focus restoration; browser/axe execution remains pending.
+
+**Amended 2026-11-05: align the account row.** The screenshot showed a centred account control under
+left-aligned navigation rows. Keep the existing DropdownMenu and its complete trigger semantics.
+Remove the button's full width and keep it in footerIcons inside an HStack with start justification,
+so its icon and label start with the other rows. No custom CSS or
+global button override. The standard SideNavItem is not used as DropdownMenu.renderTrigger because
+its public contract does not preserve the dropdown's expanded/controls attributes and its mouse
+event type differs; the supported Button trigger keeps keyboard, pointer, naming and focus behaviour.
+The desktop/320 px shell case compares the account's icon and label positions with Kalender.
+
+**Replaced later the same day:** the row below takes the account out of `footerIcons`.
+
+**Amended 2026-11-05: the account is a row in the rail.** The product owner found the account out of
+place under the rail's rows: a `Button` with its own type and indent, a wider gap above it and the chevron
+beside the name. It is now a collapsible `SideNavItem`, the last row of the `footer` section and built like
+Områden: the Heroicons account glyph, `SessionUser.name`, the chevron at the row's end. Inställningar and
+Logga ut are nested rows. This disclosure replaces the `DropdownMenu`, so the unit no longer shows in a menu
+header; the Inställningar dialog already shows name and unit.
+
+`DropdownMenu.renderTrigger` can hang a menu off a row, but `SideNavItem` closes the phone drawer on every
+click, and the menu it opened would close with it. A row that expands has no such problem.
+
+The placement also settles the phone. Astryx's SideNav draws `footerIcons` in the mobile top bar as well as
+in the drawer, and there the full name took the room from Startsidan and clipped both at 320 px. `footer` is
+drawn in the drawer alone, so the account stays out of the top bar with no code of ours; the bell stays in it.
+
+Because a drawer row asks to close the drawer, `Shell` turns that request down for Inställningar
+(`keepNavigation`, through the controlled `mobileNav.onOpenChange`). The dialog opens over the drawer, so
+Escape has a row to return focus to (2.4.3); with the drawer gone, focus fell to the body. Logga ut closes the
+drawer like any other row.
+
+A name is one line, like every rail row. CSS ends a name too long for the row with an ellipsis; nothing is
+parsed or changed, and the full name stays in the row's accessible name and in Inställningar.
+
+Områden (Heroicons `Squares2X2Icon`) and Fler verktyg (Astryx `moreHorizontal`) took an icon at the same request, so
+every top-level row at the rail's foot starts its label in the same place.
+
+The shell case `the account is a rail row like the others` asserts the same start, width, height and type as
+Kalender, the icon and label lined up with it, the chevron where Områden has it and the gap between the rows,
+then the keyboard path with axe, reflow and focus return at desktop and 320 px. Manual screen-reader
+validation remains necessary.
+
+**Amended 2026-11-05: the logo's box holds.** The `width` and `height` attributes alone lost to a stylesheet's height
+reset, so the dragon rendered 20 × 36.7 and the heading 68.7 px. The inline `width` and `height` on the image, inside
+D37's exception, give the 20 × 20 contain box, the 52 px heading and the clearance this decision asks for.

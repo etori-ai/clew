@@ -30,9 +30,11 @@ The [generated field table and complete examples](../generated/README.md) cover 
 
 JSON Schema validation alone does not prove these relationships or source authorization. Use the conformance checker and targeted behavioral tests.
 
-## Errors
+## Scan observations
 
 Scan drafts can include `occurrences: [{ key, revision, period }]`. The optional observation declares scope, observation time/version, completeness and pagination exhaustion; a delta can include tombstones. Only authoritative evidence may resolve missing work. Legacy topic-only drafts remain conservative. See [occurrence semantics](../guides/actions-and-receipts.md#scan-an-occurrence-into-a-card) and the generated `ScanResponse` definition; an empty response without a complete exhausted observation does not mean that the source has no outstanding work.
+
+## Errors
 
 Return `{ "error": { "code": "denied", "message": "Du saknar behörighet." } }` for a denied operation, with an appropriate non-success HTTP status. Supported codes are `invalid`, `denied`, `not-found`, `unavailable` and `unknown`. Messages are safe Swedish text for the person, without upstream stack traces or credentials. Invalid credentials must return HTTP 401; the checker probes this boundary. Use HTTP 503 for an unavailable source.
 

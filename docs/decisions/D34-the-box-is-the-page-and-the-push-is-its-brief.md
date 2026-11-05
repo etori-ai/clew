@@ -36,7 +36,7 @@
    "Alla samtal och klart i dag" which is `/hanterat`); and what is always there: Kalender, Områden as a collapsible
    item holding the areas as lenses, Administration for an administrator. The `TopNav` keeps identity, the attention
    line and Logga ut, and nothing else: the surfaces are rows in the rail, never tabs. The rail replaces `areas.tsx`
-   and serves the calendar page too; the administration keeps its own sections.
+   and serves the calendar page too; the administration keeps its own sections (replaced by D45: it has the same rail).
 5. **A notification is never its own inbox.** It has three homes: a toast beside the box now, a dot on its row in the
    rail until opened, and a row in the brief next time the page opens. A job the person asked for never counts against
    the attention budget; a push does. (The rail's "something happened since you were here" dot on a conversation and
@@ -79,7 +79,7 @@ rows four to six of the canvas:
   gives the grey rail beside a white page. Below `md` AppShell's own top bar carries the heading and the menu button,
   which is the G phone header. The attention line leaves the chrome; the overview's digest still states the promise.
   `Shell` takes `nav: { top, sections, footer }`; `useRail()` returns it for the start page and the calendar, and
-  administration passes its own sections.
+  administration passes its own sections (replaced by D45).
 - **The rail's search is built (item 4).** A `Typeahead` over what the cache already holds: conversations, open cards
   and areas; picking one opens it. No endpoint; a server search can replace the source later.
 - **Conversations by day.** Samtal groups by Stockholm date (I dag with the time, I går, Tidigare), not by `dayWord`,

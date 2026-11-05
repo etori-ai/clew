@@ -26,7 +26,7 @@ export const brandingFixtures: Readonly<Record<A11yBrandProfile, BrandingFixture
 };
 
 export function a11yBrandProfile(value: string | undefined): A11yBrandProfile {
-  if (value === undefined) return 'sundsvall';
+  if (value === undefined) return 'neutral';
   if (value === 'sundsvall' || value === 'neutral' || value === 'custom') return value;
   throw new Error('CLEW_A11Y_BRAND_PROFILE must be sundsvall, neutral or custom.');
 }

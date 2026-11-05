@@ -25,6 +25,6 @@ Reviewed against the working tree on 2026-11-05, including the reliability roadm
 
 ## How to read the decision history
 
-There are two records each numbered D37, D38 and D39. Use full filenames: D37 dependencies differs from D37 header logo; D38 declared views differs from D38 municipal branding; D39 landing alignment differs from D39 compact header. The [generated index](../decisions/README.md) and [context map](../context.json) retain all records and their original statuses, including D44.
+There are two records each numbered D37–D39 and D44–D46. Use full filenames: D37 dependencies differs from D37 header logo; D38 declared views differs from D38 municipal branding; D39 landing alignment differs from D39 compact header. D44 covers both connector authority and the administration check result; D45 covers approved execution intent and administration navigation; D46 covers committed browser revisions and the default theme. The [generated index](../decisions/README.md) and [context map](../context.json) retain every record and its original status without renumbering.
 
 The practical integration changes are D21/D22 (independent connector services and terminology), D23 (database governance), D38 declared views (Clew renders the UI), and D44 (protocol 2 authority). Earlier MCP-hosting, shared-secret identity-signing and environment-registration examples are historical. Use the [current protocol](connector-protocol.md) to implement a connector.

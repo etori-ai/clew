@@ -81,7 +81,7 @@ test.describe('model administration', () => {
       const listed = dialog.getByRole('group', { name: 'Modeller att lägga till' });
       await expect(listed.getByRole('checkbox')).toHaveCount(3);
       await listed.getByRole('checkbox', { name: 'llama3.3:70b' }).check();
-      await dialog.getByRole('switch', { name: 'Sätt på dem direkt' }).check();
+      await dialog.getByRole('switch', { name: 'Slå på dem direkt' }).check();
       await expectNoAxeViolations(page);
       await dialog.getByRole('button', { name: 'Lägg till 1 modell' }).click();
       await expect(dialog).toHaveCount(0);
@@ -142,7 +142,7 @@ test.describe('model administration', () => {
       await expectNoAxeViolations(page);
       await dialog.getByRole('button', { name: 'Lägg till 1 modell' }).click();
       await expect(dialog).toHaveCount(0);
-      await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('1 modell tillagd, avstängd tills du sätter på den'));
+      await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('1 modell tillagd, avstängd tills du slår på den'));
       await expect(page.getByRole('link', { name: 'llama3.3:70b' })).toBeVisible();
     });
     test('with a long model list on a short screen the list scrolls inside the dialog and its actions stay on screen', async ({ page, api }) => {

@@ -23,6 +23,7 @@ export class MockApi {
   sources: Array<{ connector: string; state: string; lastSuccess: string | null; error: string | null }> = [];
 
   answerDelay = 0;
+  private answerHeld?: Promise<void>;
   /** How long the first read of the cards takes, so a test can see the page while they load (D36). */
   threadsDelay = 0;
   sessionDelay = 0;
@@ -41,6 +42,12 @@ export class MockApi {
   currentModel = 'gpt-oss-120b';
   output: unknown = { date: '2026-11-04', onDuty: ['Anna Lindqvist 07:00–16:00'], absent: [{ name: 'Sara Nyström', kind: 'short' }] };
   unmocked: string[] = [];
+  /** Keeps every turn pending until the returned function is called, for a test that works while the answer is on its way: `answerDelay` can run out first on a slow machine. */
+  holdAnswer() {
+    let release = () => {};
+    this.answerHeld = new Promise<void>(resolve => { release = resolve; });
+    return release;
+  }
   private update(id: string, change: Partial<Thread>) {
     this.threads = this.threads.map(t => t.id === id ? { ...t, ...change, updatedAt: NOW } : t);
     return this.threads.find(t => t.id === id)!;
@@ -68,7 +75,7 @@ export class MockApi {
         const input = request.postDataJSON() as { id: string; url: string };
         const c: ConnectorSummary = { ...connectorDetail({ ...this.connectors[2]!, id: input.id, source: 'Nytt system', url: input.url, state: 'draft', registered: false, health: { status: 'ok', at: NOW } }) };
         this.connectors = [...this.connectors, c];
-        return route.fulfill({ status: 201, json: { connector: connectorDetail(c), report: { ok: true, findings: checkReport.findings.filter(f => f.level === 'ok') } } });
+        return route.fulfill({ status: 201, json: { connector: connectorDetail(c), report: { ok: true, items: checkReport.items.filter(i => i.level === 'ok') } } });
       }
       if (path === `/admin/connectors/${cid}/test`) return json({ ...checkReport, health: { status: 'secret-rejected', at: NOW } });
       if (path === `/admin/connectors/${cid}/refresh`) { const c = found(); return c ? json({ diff: { added: ['hello.remind'], removed: ['hello.openItems'], changed: [], areasAdded: [], areasRemoved: [], same: false }, connector: connectorDetail(c) }) : route.fulfill({ status: 400, json: { error: 'Anslutningen finns inte.' } }); }
@@ -123,9 +130,10 @@ export class MockApi {
     if (path === '/cap/clew.cardFromAnswer' && post) return json({ output: { threadId: 'rutin' } });
     if (path.startsWith('/cap/')) return json({ output: this.output });
     // A turn as the server streams it (D36): a read as a step, the answer in two deltas, then the finished turn. Playwright
-    // answers in one piece, so the pending turn is what `answerDelay` holds open.
+    // answers in one piece, so the pending turn is what `answerDelay` and `holdAnswer` hold open.
     if (path === '/conversation/stream') {
       const body = request.postDataJSON() as { text: string; conversationId?: string };
+      await this.answerHeld;
       if (this.answerDelay) await new Promise(resolve => setTimeout(resolve, this.answerDelay));
       const response = conversation(this.threads, body.text, body.conversationId);
       const step = { id: 'steg-1', capability: 'mock.read', title: 'Läser', source: response.answer.source };
@@ -139,6 +147,7 @@ export class MockApi {
     }
     if (path === '/conversation') {
       const body = request.postDataJSON() as { text: string; conversationId?: string };
+      await this.answerHeld;
       if (this.answerDelay) await new Promise(resolve => setTimeout(resolve, this.answerDelay));
       const response = conversation(this.threads, body.text, body.conversationId);
       this.threads = [...this.threads.filter(t => t.id !== response.conversationId), response.thread];
@@ -287,11 +296,15 @@ export async function expectNoAxeViolations(page: Page) {
   expect([...violations, ...sizes].map(v => `${v.id}: ${v.help}\n  ${v.nodes.slice(0, 4).map(n => n.target.join(' ') + '\n  ' + n.html).join('\n  ')}`)).toEqual([]);
 }
 
-/** 1.4.10: nothing may need sideways scrolling, and no text may be clipped to fit. */
-export async function reflowProblems(page: Page) {
-  return page.evaluate(async () => {
-    // Measure the settled drawer/dialog, not an intermediate entrance transform.
-    await Promise.all(document.getAnimations().filter(a => a.playState === 'running' && Number.isFinite(a.effect?.getComputedTiming().endTime)).map(a => a.finished.catch(() => undefined)));
+/**
+ * 1.4.10: nothing may need sideways scrolling, and no text may be clipped to fit. A drawer still sliding in is not a
+ * reflow fault, so finite animations settle first. `scope` limits the text to one surface, for a check made with the
+ * rail open: the rail ends a long row with an ellipsis on purpose, and the page's width is still checked.
+ */
+export async function reflowProblems(page: Page, scope?: Locator) {
+  const root = scope ? await scope.elementHandle() : null;
+  return page.evaluate(async root => {
+    await Promise.all(document.getAnimations().filter(a => a.effect?.getComputedTiming().iterations !== Infinity).map(a => a.finished.catch(() => undefined)));
     const width = document.documentElement.clientWidth;
     const visible = (el: Element) => {
       const r = el.getBoundingClientRect(), s = getComputedStyle(el);
@@ -308,7 +321,7 @@ export async function reflowProblems(page: Page) {
     const label = (el: Element) => `${el.tagName.toLowerCase()} "${(el.textContent ?? '').trim().slice(0, 50)}"`;
     const problems: string[] = [];
     if (document.documentElement.scrollWidth > width) problems.push(`page is ${document.documentElement.scrollWidth} px wide at ${width} px`);
-    for (const el of document.querySelectorAll('body *')) {
+    for (const el of (root ?? document.body).querySelectorAll('*')) {
       if (!visible(el)) continue;
       const position = getComputedStyle(el).position;
       if (position === 'absolute' && el.getBoundingClientRect().width <= 1) continue;
@@ -319,7 +332,7 @@ export async function reflowProblems(page: Page) {
       if (clips && hasText && el.scrollWidth > el.clientWidth + 1) problems.push(`clipped: ${label(el)}`);
     }
     return [...new Set(problems)];
-  });
+  }, root);
 }
 
 /** Tabs through the page and names every stop entirely hidden by sticky or fixed content (2.4.11) or without a focus ring (2.4.7). */

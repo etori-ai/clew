@@ -76,6 +76,9 @@ test.describe('Verktyg in the menu', () => {
     await expect(section.getByRole('link', { name: 'Telefonbok' })).toBeHidden();
     const more = section.getByRole('button', { name: 'Fler verktyg' });
     await expect(more).toHaveAttribute('aria-expanded', 'false');
+    const moreLabel = (await more.getByText('Fler verktyg', { exact: true }).boundingBox())!;
+    const toolLabel = (await section.getByRole('link', { name: 'Fordon' }).getByText('Fordon', { exact: true }).boundingBox())!;
+    expect(moreLabel.x).toBe(toolLabel.x);
     await more.focus();
     await page.keyboard.press('Enter');
     await expect(more).toHaveAttribute('aria-expanded', 'true');

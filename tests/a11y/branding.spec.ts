@@ -1,4 +1,5 @@
-import { desktop, expect, narrow, openNav, reflowProblems, test } from './support';
+import type { Locator } from '@playwright/test';
+import { desktop, expect, narrow, open, openNav, reflowProblems, test } from './support';
 import { a11yBrandProfile, brandingFixtures } from './branding-fixtures';
 
 const surfaces = [['start', '/'], ['calendar', '/calendar'], ['administration', '/admin/connectors']] as const;
@@ -52,7 +53,7 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
         await expect(heading.getByRole('img')).toHaveCount(0);
       }
       await expect(home).toHaveAttribute('href', '/');
-      expect(await reflowProblems(page)).toEqual([]);
+      expect(await reflowProblems(page, heading)).toEqual([]);
       await home.focus();
       await expect(home).toBeFocused();
       await page.keyboard.press('Enter');
@@ -75,9 +76,40 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
     await expect(page).toHaveURL('/');
   });
 
+  test('the rail reads as its own area and its selected row stands out, in both appearances and in the phone drawer (D46)', async ({ page, api: _ }) => {
+    test.skip(profile === 'sundsvall', 'Sundsvall paints body white, so its rail has the page colour; D46 says what to change before switching back.');
+    const painted = (target: Locator) => target.evaluate(element => {
+      for (let node: Element | null = element; node; node = node.parentElement) {
+        const colour = getComputedStyle(node).backgroundColor;
+        if (colour !== 'rgba(0, 0, 0, 0)') return colour;
+      }
+      return 'none';
+    });
+    const selectedIn = (nav: Locator) => nav.locator('a[aria-current="page"]');
+    const standsOut = async (nav: Locator) => await painted(selectedIn(nav)) !== await painted(selectedIn(nav).locator('xpath=..'));
+    const rail = page.locator('.astryx-app-shell-sidenav');
+    const colours = async () => ({ page: await painted(page.getByRole('main')), rail: await painted(rail), selected: await painted(selectedIn(rail)) });
+    await page.setViewportSize(desktop);
+    await open(page, '/calendar');
+    for (const appearance of ['light', 'dark'] as const) {
+      if (appearance === 'dark') {
+        await page.getByRole('button', { name: 'Testa Testsson', exact: true }).click();
+        await page.getByRole('button', { name: 'Inställningar', exact: true }).click();
+        await page.getByRole('radio', { name: 'Mörkt', exact: true }).check();
+        await page.keyboard.press('Escape');
+      }
+      await expect.poll(async () => { const now = await colours(); return now.rail !== now.page && now.selected !== now.rail; }).toBe(true);
+    }
+    // The toggle comes a moment after the resize, and `openNav` must run once: a second click lands on the open drawer's backdrop.
+    await page.setViewportSize(narrow);
+    await expect(page.getByRole('button', { name: 'Öppna navigering' })).toBeVisible();
+    const drawer = await openNav(page);
+    await expect.poll(() => standsOut(drawer)).toBe(true);
+  });
+
   test('appearance changes the theme and survives navigation and reload', async ({ page, api: _ }) => {
     await page.goto('/');
-    const profileButton = page.getByRole('button', { name: 'Profil för Testa Testsson', exact: true });
+    const profileButton = page.getByRole('button', { name: 'Testa Testsson', exact: true });
     await expect(profileButton).toBeVisible();
     await expect(page.getByRole('main').getByRole('heading', { level: 1 }).first()).toBeVisible();
     const appearance = () => page.getByRole('main').getByRole('heading', { level: 1 }).first().evaluate(element => ({
@@ -85,7 +117,7 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
     }));
     const light = await appearance();
     await profileButton.click();
-    await page.getByRole('menuitem', { name: 'Inställningar', exact: true }).click();
+    await page.getByRole('button', { name: 'Inställningar', exact: true }).click();
     await page.getByRole('radio', { name: 'Mörkt', exact: true }).check();
     const dark = await appearance();
     expect(dark.mode).toBe('dark');
@@ -96,12 +128,14 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
     }
     await page.keyboard.press('Escape');
     await page.getByRole('link', { name: 'Kalender', exact: true }).click();
-    expect((await appearance()).mode).toBe(dark.mode);
+    await expect(page).toHaveURL('/calendar');
+    // Navigation can detach the previous heading between lookup and style measurement.
+    await expect.poll(async () => (await appearance()).mode).toBe(dark.mode);
     await page.reload();
     await expect(profileButton).toBeVisible();
-    expect((await appearance()).mode).toBe(dark.mode);
+    await expect.poll(async () => (await appearance()).mode).toBe(dark.mode);
     await profileButton.click();
-    await page.getByRole('menuitem', { name: 'Inställningar', exact: true }).click();
+    await page.getByRole('button', { name: 'Inställningar', exact: true }).click();
     await page.getByRole('radio', { name: 'Ljust', exact: true }).check();
     expect(await appearance()).toEqual(light);
   });

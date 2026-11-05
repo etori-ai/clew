@@ -65,7 +65,10 @@
   "duplicateDecisionNumbers": [
     "D37",
     "D38",
-    "D39"
+    "D39",
+    "D44",
+    "D45",
+    "D46"
   ],
   "decisions": [
     {
@@ -415,7 +418,7 @@
       "number": 38,
       "path": "docs/decisions/D38-municipal-branding-uses-astryx-themes.md",
       "title": "D38 · Municipal branding uses Astryx themes",
-      "status": "accepted, extended by [D39](D39-compact-header-profile-and-reminders.md)",
+      "status": "accepted, extended by [D39](D39-compact-header-profile-and-reminders.md), default profile changed by [D46](D46-astryx-neutral-is-the-default-theme.md)",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -492,6 +495,24 @@
       "area": "identity"
     },
     {
+      "key": "D44-the-connector-check-reads-as-a-result-not-a-log",
+      "number": 44,
+      "path": "docs/decisions/D44-the-connector-check-reads-as-a-result-not-a-log.md",
+      "title": "D44 · The connector check reads as a result, not a log",
+      "status": "accepted, built 2026-11-05; a manual pass with a screen reader is not done",
+      "date": "2026-11-05",
+      "area": "ui"
+    },
+    {
+      "key": "D45-administration-keeps-the-rail",
+      "number": 45,
+      "path": "docs/decisions/D45-administration-keeps-the-rail.md",
+      "title": "D45 · Administration keeps the rail",
+      "status": "accepted",
+      "date": "2026-11-05",
+      "area": "ui"
+    },
+    {
       "key": "D45-approved-intent-precedes-source-dispatch",
       "number": 45,
       "path": "docs/decisions/D45-approved-intent-precedes-source-dispatch.md",
@@ -499,6 +520,15 @@
       "status": "accepted, generic card path implemented; calendar migration pending",
       "date": "2026-11-05",
       "area": "platform"
+    },
+    {
+      "key": "D46-astryx-neutral-is-the-default-theme",
+      "number": 46,
+      "path": "docs/decisions/D46-astryx-neutral-is-the-default-theme.md",
+      "title": "D46 · Astryx Neutral is the default theme; Sundsvall is a profile to opt into",
+      "status": "accepted",
+      "date": "2026-11-05",
+      "area": "ui"
     },
     {
       "key": "D46-browser-updates-use-committed-revisions",
@@ -1049,8 +1079,26 @@
       ]
     },
     {
+      "path": "docs/decisions/D44-the-connector-check-reads-as-a-result-not-a-log.md",
+      "title": "D44 · The connector check reads as a result, not a log",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D45-administration-keeps-the-rail.md",
+      "title": "D45 · Administration keeps the rail",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/D45-approved-intent-precedes-source-dispatch.md",
       "title": "D45 · Approved intent precedes source dispatch",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D46-astryx-neutral-is-the-default-theme.md",
+      "title": "D46 · Astryx Neutral is the default theme; Sundsvall is a profile to opt into",
       "category": "decision-history",
       "headings": []
     },
@@ -1237,6 +1285,7 @@
       "headings": [
         "HTTP routes",
         "Manifest semantics",
+        "Scan observations",
         "Errors",
         "Related profiles",
         "Contract changes",
@@ -1387,6 +1436,15 @@
         "Recommended next milestone",
         "Product and design judgement",
         "Outcome"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-05-documentation-upstream-reconciliation.md",
+      "title": "Integrator documentation after upstream reconciliation",
+      "category": "review-history",
+      "headings": [
+        "Reconciled behavior",
+        "Verification"
       ]
     },
     {

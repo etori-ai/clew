@@ -4,7 +4,7 @@
 
 These records preserve why choices were made. The status below is copied from each original record, not inferred from code. An accepted decision may be partly implemented, and an older status may lag delivery. Use [implementation status](../reference/status.md) and the [current protocol](../reference/connector-protocol.md) when building a connector.
 
-Historical numbering collisions: **D37, D38, D39** each identify more than one file. The full filename is the unique key. Keep existing filenames and links; never interpret a bare collided number without its title. No decisions were renumbered or accepted by this index.
+Historical numbering collisions: **D37, D38, D39, D44, D45, D46** each identify more than one file. The full filename is the unique key. Keep existing filenames and links; never interpret a bare collided number without its title. No decisions were renumbered or accepted by this index.
 
 | Record | Area | Date | Recorded status |
 |---|---|---|---|
@@ -46,7 +46,7 @@ Historical numbering collisions: **D37, D38, D39** each identify more than one f
 | [D36 · An answer is drawn as it is written; the box never moves under the cursor](D36-an-answer-is-drawn-as-it-is-written.md) | ui | 2026-11-05 | accepted, built 2026-11-05 |
 | [D37 · Connectors declare the capabilities they use; a capability's name is its contract](D37-connectors-declare-what-they-use-and-a-capability-name-is-its-contract.md) | integrations | 2026-11-05 | proposed |
 | [D37 · The shared navigation logo is installation branding](D37-header-logo-is-installation-branding.md) | ui | 2026-11-05 | accepted, extended by [D38](D38-municipal-branding-uses-astryx-themes.md) |
-| [D38 · Municipal branding uses Astryx themes](D38-municipal-branding-uses-astryx-themes.md) | ui | 2026-11-05 | accepted, extended by [D39](D39-compact-header-profile-and-reminders.md) |
+| [D38 · Municipal branding uses Astryx themes](D38-municipal-branding-uses-astryx-themes.md) | ui | 2026-11-05 | accepted, extended by [D39](D39-compact-header-profile-and-reminders.md), default profile changed by [D46](D46-astryx-neutral-is-the-default-theme.md) |
 | [D38 · A view is declared by the connector and drawn by Clew](D38-views-are-declared-by-connectors-and-drawn-by-clew.md) | ui | 2026-11-05 | accepted, built 2026-11-05; the kinds beyond the first four are not built; a view in the menu is D40, and such a view is a page of its own (D42) |
 | [D39 · A compact header owns profile, appearance and the reminder entry point](D39-compact-header-profile-and-reminders.md) | ui | 2026-11-05 | accepted |
 | [D39 · The landing's box rests on the column's centre line when what is above it fits](D39-the-landings-box-rests-on-the-columns-centre-line.md) | ui | 2026-11-05 | accepted, built 2026-11-05; what stands under the box is D41's areas and cards, on a 720 px column |
@@ -55,7 +55,10 @@ Historical numbering collisions: **D37, D38, D39** each identify more than one f
 | [D42 · A tool opens as a page](D42-a-tool-opens-as-a-page.md) | ui | 2026-11-05 | accepted, built 2026-11-05; a link from a view in the panel to the tool's page, sorting and column filters on the page, and a canvas artboard for it are not built |
 | [D43 · Addresses are English](D43-addresses-are-english.md) | ui | 2026-11-05 | accepted, built 2026-11-05; an area's id, which is data and shows in `/areas/:area`, is still Swedish |
 | [D44 · Authorized reads and Clew-signed connector authority](D44-authorized-reads-and-clew-signed-connector-authority.md) | identity | 2026-11-05 | accepted; phase 1 of the approved reliability and authorization plan |
+| [D44 · The connector check reads as a result, not a log](D44-the-connector-check-reads-as-a-result-not-a-log.md) | ui | 2026-11-05 | accepted, built 2026-11-05; a manual pass with a screen reader is not done |
+| [D45 · Administration keeps the rail](D45-administration-keeps-the-rail.md) | ui | 2026-11-05 | accepted |
 | [D45 · Approved intent precedes source dispatch](D45-approved-intent-precedes-source-dispatch.md) | platform | 2026-11-05 | accepted, generic card path implemented; calendar migration pending |
+| [D46 · Astryx Neutral is the default theme; Sundsvall is a profile to opt into](D46-astryx-neutral-is-the-default-theme.md) | ui | 2026-11-05 | accepted |
 | [D46 · Browser updates use committed revisions](D46-browser-updates-use-committed-revisions.md) | platform | 2026-11-05 | accepted, browser invalidation implemented; durable attention pending |
 | [D47 · Occurrences, timers and attention have durable identities](D47-occurrences-timers-and-attention-have-durable-identities.md) | platform | 2026-11-05 | accepted, implemented |
 

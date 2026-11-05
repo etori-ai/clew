@@ -64,7 +64,7 @@ function customColors(accent: string | undefined, accentMuted: string | undefine
 
 /** One resolved installation profile for both the Astryx provider and the shared header (D38). */
 export function resolveBranding(input: BrandingInput = {}): Branding {
-  const profile = input.profile?.trim() ?? 'sundsvall';
+  const profile = input.profile?.trim() ?? 'neutral';
   if (profile !== 'sundsvall' && profile !== 'neutral' && profile !== 'custom') {
     throw new Error('VITE_BRAND_PROFILE must be sundsvall, neutral or custom.');
   }

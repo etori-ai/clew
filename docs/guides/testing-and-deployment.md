@@ -25,6 +25,8 @@ This concrete example uses the [phone book fixture service](example-custom-direc
 
 The [shared checker](../../packages/connectors/src/check.ts), also used by Administration → Anslutna system → Testa anslutning, validates the manifest and probes with synthetic `check-manager` and `check-employee` actors. It checks callable empty-input reads/proposals, registry role filtering, rejection of a foreign signature, scans and declared views. It does not execute writes, prove source-level row access, test every JWT claim, or fully exercise reads that require input. Callback success requires real local grants for those synthetic actors. Delegation requires a user session, which this checker has no way to supply; a denied delegated call is expected. Read warnings as well as failures.
 
+The CLI prints English diagnostic `findings`, including truncated source answers; use synthetic data and handle its output accordingly. Administration receives Swedish structured `items` grouped by connection, capabilities and surfaces, without successful source-answer payloads. Both use the same probes and verdict. See [the check-result decision](../decisions/D44-the-connector-check-reads-as-a-result-not-a-log.md).
+
 ## Register a draft, then enable it
 
 An administrator with `admin.connectors` can add the URL, id and transport secret in Administration → Anslutna system, review the check, set an audience and enable the connector. The API and screens exist. Eligible views can be chosen as menu tools there.

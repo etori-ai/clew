@@ -527,9 +527,14 @@ export const RefreshManifestInput = object({ apply: Type.Optional(Type.Boolean()
 export type RefreshManifestInput = Static<typeof RefreshManifestInput>;
 export const PreviewQuery = object({ role: RoleSchema, unitId: Type.Optional(Type.String({ maxLength: 80 })) });
 export type PreviewQuery = Static<typeof PreviewQuery>;
-/** One line of the conformance check (the CLI prints them, the admin page lists them). */
-export interface CheckFinding { level: 'ok' | 'warn' | 'fail'; text: string }
-export interface CheckReport { ok: boolean; findings: CheckFinding[] }
+export type CheckLevel = 'ok' | 'warn' | 'fail';
+/** One line of a check's log: the conformance check's English lines for the CLI, a provider test's Swedish ones for the page. */
+export interface CheckFinding { level: CheckLevel; text: string }
+/** Where a row of the conformance check belongs on the page (D44). */
+export type CheckGroup = 'connection' | 'capabilities' | 'surfaces';
+/** One row of the conformance check as an administrator reads it (D44): Swedish, and never an answer from the service. */
+export interface CheckItem { level: CheckLevel; group: CheckGroup; label: string; description?: string; capability?: string }
+export interface CheckReport { ok: boolean; items: CheckItem[] }
 /** What the administrator sees of a capability: the manifest's facts plus the effective switches. */
 export interface ConnectorCapabilityView { name: string; kind: 'read' | 'propose' | 'execute'; title: string; description: string; model: boolean; roles: Role[] | null; enabled: boolean; tool: boolean;
   /** The row this capability's view would be in the menu (D40) and whether it is there; null when it cannot be a tool (not a read with a view that opens without input). */

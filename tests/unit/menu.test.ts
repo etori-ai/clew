@@ -149,7 +149,7 @@ describe('the administrator chooses, view by view', () => {
   test('a new connector lists the views that can be tools, all off; choosing one is one audit row and the row is there for the audience at once', async () => {
     const { admin, store, registry } = world();
     const { connector, report } = await admin.add(mikael, { id: 'telefonbok', url: 'http://telefonbok', secret: SECRET });
-    expect(report.findings.map(f => f.text)).toContain('menu: 2 views can be a tool in the menu when an administrator chooses it: "Telefonbok" (telefonbok.directory), "Mitt team" (telefonbok.team)');
+    expect(report.items.find(i => i.label === 'Verktyg i menyn')?.description).toBe('Telefonbok, Mitt team kan väljas till menyn av en administratör.');
     expect(connector.capabilities.map(c => [c.name, c.menu])).toEqual([
       ['telefonbok.directory', { label: 'Telefonbok', icon: 'phone', on: false }], ['telefonbok.team', { label: 'Mitt team', icon: 'people', on: false }],
       ['telefonbok.person', null], ['telefonbok.search', null], ['telefonbok.fetch', null]]);

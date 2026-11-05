@@ -14,6 +14,7 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Design exploration: the start page as an overview, not a list · 2026-11-04](2026-11-04-start-page-overview-exploration.md)
 - [SupportManagement integration review · 2026-11-04](2026-11-04-support-management-integration-review.md)
 - [Architecture review against the Clew vision](2026-11-05-architecture-against-vision.md)
+- [Integrator documentation after upstream reconciliation](2026-11-05-documentation-upstream-reconciliation.md)
 - [Documentation review: an integrator and coding-agent entry point](2026-11-05-integrator-documentation-review.md)
 - [Review: municipal branding and the shared header (2026-11-05)](2026-11-05-municipal-branding-review.md)
 - [Phone book as a test case, and how a connector attaches a view](2026-11-05-phone-book-and-declared-views.md)

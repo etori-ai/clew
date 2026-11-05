@@ -9,8 +9,8 @@ remain Astryx; colours and the header logo come from one resolved profile, used 
 
 | `VITE_BRAND_PROFILE` | Colours | Default logo |
 |---|---|---|
-| `sundsvall` (default) | Published Sundsvall palette, Vattjom dark blue accent | Original black/white Sundsvall dragon |
-| `neutral` | Astryx Neutral | None |
+| `neutral` (default) | Astryx Neutral | None |
+| `sundsvall` | Published Sundsvall palette, Vattjom dark blue accent | Original black/white Sundsvall dragon |
 | `custom` | Own strong and pale accent colours over the shared Neutral base | None |
 
 For another municipality, place its original image in `apps/web/public/branding/` and configure:
@@ -47,25 +47,25 @@ The Sundsvall theme follows the published [colours](https://sundsvall.se/kommun/
 and [logo guidance](https://sundsvall.se/kommun/kommun-och-politik/press--och-informationsmaterial/grafisk-profil/logotyp):
 white text on strong fills, black text on pale fills, and the original black/white dragon with
 clearance on a light/dark header. Astryx keeps typography, component behaviour, warning/error semantics
-and the shared keyboard focus clearance. Profile › Inställningar offers light and dark mode, saved
+and the shared keyboard focus clearance. The account row › Inställningar offers light and dark mode, saved
 as a local display preference. A logo without a dark variant keeps a white clearance area in dark mode. The palette and validation
 are owned by `packages/ui/src/branding.ts`; token mappings by `packages/ui/src/theme.ts`.
 Asset provenance is in [`apps/web/public/branding/README.md`](../../apps/web/public/branding/README.md);
 the decisions are [D37](../decisions/D37-header-logo-is-installation-branding.md) and
 [D38](../decisions/D38-municipal-branding-uses-astryx-themes.md), extended by
-[D39](../decisions/D39-compact-header-profile-and-reminders.md).
+[D39](../decisions/D39-compact-header-profile-and-reminders.md). The [Neutral default decision](../decisions/D46-astryx-neutral-is-the-default-theme.md) records the current default and the remaining contrast work if an installation switches back to Sundsvall.
 
 The browser suite uses its own Vite configuration (`tests/a11y/vite.config.ts`): no installation
 environment files, explicit replacements for all six branding inputs, and separate test output per
-profile. The ordinary suite selects the Sundsvall fixture. To check another fixture on this Mac:
+profile. The ordinary suite selects the Neutral fixture. To check another fixture on this Mac:
 
 ```sh
 CLEW_A11Y_BRAND_PROFILE=custom sh scripts/a11y.sh branding.spec.ts
 ```
 
 The supported fixture names are `sundsvall`, `neutral` and `custom`. The custom fixture uses a test
-image fulfilled by Playwright; it adds no production asset. CI runs the full suite on Sundsvall,
-then the Neutral and custom branding scenarios sequentially, with one worker. Reports are kept in
+image fulfilled by Playwright; it adds no production asset. CI runs the full suite on Neutral,
+then the Sundsvall and custom branding scenarios sequentially, with one worker. Reports are kept in
 `playwright-report/<profile>` and artifacts in `test-results/<profile>`; test bundles use
 `test-results/apps/<profile>` and never replace the installation's `dist`.
 
@@ -74,7 +74,8 @@ the app that owns the Vite dependency, and run with the existing `bun run test` 
 only the small branding entry and verify that conflicting environment variables and a local env file
 cannot change the fixture's browser output.
 
-The shared navigation places the reminder bell beside the profile menu in its footer icon row. Reminders reuse active thread
+The shared navigation places the reminder bell beside the logo and product name. The account is the
+rail's last row, with an account icon and the person's full session name. Reminders reuse active thread
 reminders and link to their cards; start/calendar shortcuts are always available. Read/unread rules
-and additional notification kinds remain open. Profile settings currently control appearance; the
-profile menu also shows identity/unit and signs out through the existing session flow.
+and additional notification kinds remain open. The account row expands to Inställningar, which shows
+identity/unit and controls appearance, and Logga ut, which uses the existing session flow. Administration expands in the same rail; see [the navigation decision](../decisions/D45-administration-keeps-the-rail.md).
