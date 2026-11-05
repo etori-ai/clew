@@ -18,6 +18,13 @@ const shortTargets = (page: Page) => page.evaluate(() => [...document.querySelec
 test.describe('a finger reaches every control at 44 px (HANDOVER §6)', () => {
   test.use({ viewport: phone, hasTouch: true, isMobile: true });
 
+  test('the calendar\'s head stays two rows at that size', async ({ page, api: _ }) => {
+    await open(page, '/calendar');
+    await expect(page.getByRole('button', { name: /^Förslag/ })).toBeVisible();
+    const list = await page.getByRole('group', { name: /^Vecka 45/ }).boundingBox();
+    expect(list!.y).toBeLessThan(190);
+  });
+
   for (const path of ['/overview', '/areas/personal', '/waiting', '/snoozed', '/handled', '/calendar']) test(`on ${path}`, async ({ page, api: _ }) => {
     await open(page, path);
     expect(await shortTargets(page)).toEqual([]);

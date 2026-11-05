@@ -145,10 +145,12 @@ test.describe('a booking', () => {
 test.describe('the calendar on a phone', () => {
   test.use({ viewport: phone });
 
-  test('leaves the screen to the calendar: the grid starts in the top third', async ({ page, api: _ }) => {
+  test('leaves the screen to the calendar: a head of two rows, with proposals waiting too', async ({ page, api: _ }) => {
     await open(page, '/calendar');
+    await expect(page.getByRole('button', { name: /^Förslag/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Förra veckan' })).toBeVisible();
     const list = await page.getByRole('group', { name: /^Vecka 45/ }).boundingBox();
-    expect(list!.y).toBeLessThan(200);
+    expect(list!.y).toBeLessThan(165);
   });
 });
 

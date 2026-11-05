@@ -121,24 +121,24 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const reply = thread && <ChatComposer density="compact" elevation="none" isDisabled={busy} placeholder="Svara här" onSubmit={text => { const body = text.trim(); if (body) void run(() => api.reply(thread.id, body)); }} />;
   const panel = thread && <Layout height="fill" padding={3} content={<LayoutContent>{panelBody}</LayoutContent>} footer={<LayoutFooter hasDivider>{reply}</LayoutFooter>} />;
   const steps = <HStack gap={1} vAlign="center" role="group" aria-label={`Byt ${stepLabel}`}>
-    <IconButton label={`Förra ${stepLabel}en`} icon={<Icon icon="chevronLeft" />} variant="ghost" size="sm" onClick={() => step(-1)} />
+    <IconButton label={view === 'day' ? 'Förra dagen' : view === 'month' ? 'Förra månaden' : 'Förra veckan'} icon={<Icon icon="chevronLeft" />} variant="ghost" size="sm" onClick={() => step(-1)} />
     <Button variant="ghost" size="sm" label="I dag" onClick={() => go({ date: today() })} />
     <IconButton label={`Nästa ${stepLabel}`} icon={<Icon icon="chevronRight" />} variant="ghost" size="sm" onClick={() => step(1)} />
     <DatePicker value={anchor} onChange={d => go({ date: d })} />
   </HStack>;
   const proposalsButton = narrow && thread && <Button variant="secondary" size="sm" label={open ? `Förslag · ${proposed.length}` : 'Förslag'} onClick={() => setPanelOpen(true)} />;
   const bookButton = <Button variant="primary" size="sm" label="Ny bokning" onClick={() => setBooking(nextWholeHour(new Date()))} />;
-  // A phone has the title and the booking on one row and the rest on the next: a Toolbar's two clusters stack to a third of the screen there.
+  // A phone has two rows: the title with what can be done, and where in time with how it is shown. A Toolbar's two clusters stack to a third of the screen there, and these two rows hold 44 px controls under a finger too.
   const toolbar = mobile
     ? <VStack gap={2} as="section" aria-label="Kalender">
-      <HStack justify="between" vAlign="center" gap={2} wrap="wrap"><Heading level={3} accessibilityLevel={1}>{short}</Heading>{bookButton}</HStack>
+      <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
+        <Heading level={3} accessibilityLevel={1}>{short}</Heading>
+        <HStack gap={2} vAlign="center">{proposalsButton}{bookButton}</HStack>
+      </HStack>
       <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
         {steps}
-        <HStack gap={2} vAlign="center" wrap="wrap">
-          {/* Three labels do not fit 320 px with text spacing (1.4.12), so a phone gets an adaptive menu, as the piles do (D31 §5). */}
-          <DropdownMenu presentation="adaptive" button={{ label: `Vy: ${viewLabels[view]}`, size: 'sm', variant: 'secondary' }} items={views.map(v => ({ id: v, label: viewLabels[v], onClick: () => go({ view: v }) }))} />
-          {proposalsButton}
-        </HStack>
+        {/* Three labels do not fit 320 px with text spacing (1.4.12), so a phone gets an adaptive menu, as the piles do (D31 §5). */}
+        <DropdownMenu presentation="adaptive" button={{ label: `Vy: ${viewLabels[view]}`, size: 'sm', variant: 'secondary' }} items={views.map(v => ({ id: v, label: viewLabels[v], onClick: () => go({ view: v }) }))} />
       </HStack>
     </VStack>
     : <Toolbar label="Kalender" size="sm"
