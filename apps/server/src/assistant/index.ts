@@ -132,7 +132,7 @@ export function assistantUsecases(deps: AssistantDeps) {
     if (!models.health.available(model.providerId)) return undefined;
     const tools = model.tools ? registry.tools(actorOf(persona)) : [];
     const now = clock();
-    const system = systemPrompt({ name: persona.name, role: persona.role, unitLabel: persona.unitLabel, now, week: weekNumber(displayDate(now.toISOString())), objects: serialiseContext(chips.objects) });
+    const system = systemPrompt({ name: persona.name, role: persona.role, unitLabel: persona.unitLabel, now, week: weekNumber(displayDate(now.toISOString())), objects: serialiseContext(chips.objects, now.toISOString()) });
     let sent = '';
     const onText = (step: string) => {
       const visible = visibleSoFar(step);

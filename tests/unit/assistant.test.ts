@@ -121,7 +121,7 @@ describe('a document answer is read in code (D26): the trailer, the steps, the c
     expect(JSON.stringify(cited)).not.toContain('hemligt');
   });
   test('the prompt carries the document rules and a chipped passage', () => {
-    const prompt = systemPrompt({ name: 'x', role: 'employee', unitLabel: 'y', now: new Date(now), week: 45, objects: serialiseContext([{ kind: 'document', ref: 'document:docs:r1', hit: { ref: 'r1', kind: 'document', label: 'Rutin vid fall', section: 'Vid fall', snippet: 'Lyft inte själv.', source: 'Intranätet', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00Z' } }]) });
+    const prompt = systemPrompt({ name: 'x', role: 'employee', unitLabel: 'y', now: new Date(now), week: 45, objects: serialiseContext([{ kind: 'document', ref: 'document:docs:r1', hit: { ref: 'r1', kind: 'document', label: 'Rutin vid fall', section: 'Vid fall', snippet: 'Lyft inte själv.', source: 'Intranätet', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00Z' } }], now) });
     expect(prompt).toContain('Följdfrågor:');
     expect(prompt).toContain('[1]');
     expect(prompt).toContain('Avsnitt "Rutin vid fall, Vid fall" ur Intranätet (MAS, granskad 2026-03-12): "Lyft inte själv."');
@@ -138,13 +138,37 @@ describe('the model path only reads, and falls back when the provider fails', ()
     expect(Object.keys(tools).some(n => /approve|decide|book|report/.test(n))).toBe(false);
   });
   test('the system prompt carries role, unit, week and the chipped objects', () => {
-    const prompt = systemPrompt({ name: 'Hillevi Berg', role: 'manager', unitLabel: 'Skönsmons skola', now: new Date(now), week: 45, objects: serialiseContext([{ kind: 'thread', ref: 'thread:c1', thread: card }]) });
+    const prompt = systemPrompt({ name: 'Hillevi Berg', role: 'manager', unitLabel: 'Skönsmons skola', now: new Date(now), week: 45, objects: serialiseContext([{ kind: 'thread', ref: 'thread:c1', thread: card }], now) });
     expect(prompt).toContain('chef på Skönsmons skola');
     expect(prompt).toContain('vecka 45');
     expect(prompt).toContain('Du tittar på');
     expect(prompt).toContain('Kort "Attestera 3 fakturor, 37 050 kr" (Raindance');
     expect(prompt).toContain('Lekolar · 11 200 kr · 6451 · förfaller 5 nov [vald]');
+    expect(prompt).toContain('Knappar på kortet nu: Attestera valda, Öppna i Raindance, Inte nu, Påminn mig, Fler val (Avfärda, Varför ser jag detta?).');
     expect(systemPrompt({ name: 'x', role: 'employee', unitLabel: 'y', now: new Date(now), week: 45, objects: [] })).not.toContain('Du tittar på');
+  });
+  test('a card already acted on offers Ångra allt, never its own buttons, and nothing once the window has closed', () => {
+    const handledAt = '2026-11-03T09:47:00.000Z', undoUntil = '2026-11-03T09:57:00.000Z';
+    const acted: Thread = { ...card, state: 'handled', handledAt, receipt: { at: handledAt, headline: 'Två fakturor är attesterade.', undoUntil, undoCapability: 'raindance.unapprove',
+      rows: [{ ref: 'raindance:inv:55120', label: 'Lekolar · 11 200 kr', outcome: 'done', detail: 'attesterad i Raindance' }, { ref: 'raindance:inv:55121', label: 'Lekolar · 7 200 kr', outcome: 'unknown', detail: 'inget svar' }] } };
+    const [within] = serialiseContext([{ kind: 'thread', ref: 'thread:c1', thread: acted }], '2026-11-03T09:50:00.000Z');
+    expect(within).toContain('Kortet är redan hanterat 10:47: Två fakturor är attesterade. Kvitto: Lekolar · 11 200 kr · attesterad i Raindance (klart); Lekolar · 7 200 kr · inget svar (okänt).');
+    expect(within).toContain('Knappar på kortet nu: Ångra allt (fram till 10:57), Öppna i Raindance.');
+    expect(within).toContain('först därefter visar kortet Attestera valda igen');
+    expect(within).not.toContain('Knappar på kortet nu: Attestera valda');
+    const [after] = serialiseContext([{ kind: 'thread', ref: 'thread:c1', thread: acted }], '2026-11-03T09:58:00.000Z');
+    expect(after).toContain('Det går inte längre att ångra i Startsidan; en ändring görs i Raindance. Kortet har inga knappar nu.');
+    expect(after).not.toContain('Ångra allt');
+    const prompt = systemPrompt({ name: 'Hillevi Berg', role: 'manager', unitLabel: 'Skönsmons skola', now: new Date(now), week: 45, objects: [within!] });
+    expect(prompt).toContain('Nämn bara knappar som står under "Knappar på kortet nu"');
+  });
+  test('a snoozed, a waiting and a dismissed card name only what they show', () => {
+    const [snoozed] = serialiseContext([{ kind: 'thread', ref: 'thread:c1', thread: { ...card, snoozedUntil: '2026-11-04T05:00:00.000Z' } }], now);
+    expect(snoozed).toContain('Kortet ligger under Inte nu. Knappar på kortet nu: Ta upp nu, Fler val (Avfärda, Varför ser jag detta?).');
+    const [waiting] = serialiseContext([{ kind: 'thread', ref: 'thread:c1', thread: { ...card, waitingOn: 'Raindance' } }], now);
+    expect(waiting).toContain('Kortet väntar på Raindance. Knappar på kortet nu: Påminn mig, Fler val');
+    const [dismissed] = serialiseContext([{ kind: 'thread', ref: 'thread:c1', thread: { ...card, state: 'dismissed' } }], now);
+    expect(dismissed).toContain('Kortet är avfärdat. Kortet har inga knappar nu.');
   });
   test('an injected generate yields the answer and a view from the first rows result', async () => {
     const r = registry();
