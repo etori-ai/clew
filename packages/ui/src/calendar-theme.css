@@ -92,7 +92,7 @@
 .clew-cal-event.clew-cal-mirror { opacity: 0.75; }
 .clew-cal-event.clew-cal-selected { box-shadow: var(--shadow-med); }
 
-.clew-cal-block-event { position: relative; border-radius: var(--radius-element); background-color: var(--clew-cal-event-bg); color: var(--clew-cal-event-fg); border: 2px var(--clew-cal-border-style) var(--clew-cal-event-border); overflow: hidden; }
+.clew-cal-block-event { position: relative; border-radius: var(--radius-inner); background-color: var(--clew-cal-event-bg); color: var(--clew-cal-event-fg); border: 2px var(--clew-cal-border-style) var(--clew-cal-event-border); overflow: hidden; }
 .clew-cal-block-event-inner { color: inherit; }
 .clew-cal-block-event-time, .clew-cal-block-event-title { white-space: nowrap; overflow: hidden; }
 
@@ -102,7 +102,6 @@
 .clew-cal-column-event-inner.clew-cal-short { flex-direction: row; align-items: center; gap: var(--spacing-1); padding-block: 0; }
 @media (min-width: 768px) {
   .clew-cal-column-event-inner.clew-cal-short > * { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .clew-cal-column-event-inner.clew-cal-short > :first-child { flex-shrink: 0; overflow: visible; }
 }
 .clew-cal-column-event-inner.clew-cal-narrow { padding-inline: var(--spacing-1); }
 .clew-cal-column-event-time { font-weight: var(--font-weight-semibold); font-variant-numeric: tabular-nums; flex-shrink: 0; white-space: nowrap; }

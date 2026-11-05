@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { obligationStep, obligationSteps, replySummary, type CalendarEvent, type Thread } from '@clew/contracts';
-import { Avatar, AvatarGroup, AvatarGroupOverflow, Badge, Button, Card, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, CheckboxList, CheckboxListItem, Collapsible, Heading, HStack, Icon, List, ListItem, MoreMenu, ProgressBar, Step, Stepper, Text, Timestamp, Token, VStack, VisuallyHidden, WeekAgenda, agendaItems } from '@clew/ui';
+import { Avatar, AvatarGroup, AvatarGroupOverflow, Badge, Button, Card, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, CheckboxList, CheckboxListItem, Collapsible, Heading, HStack, Icon, List, ListItem, MoreMenu, Step, Stepper, Text, Timestamp, Token, VStack, VisuallyHidden, WeekAgenda, agendaItems } from '@clew/ui';
 import { useConversation } from './conversation-context';
 import { useLeaveWithUndo } from './card';
 import { addDays, shortDayLabel, timeRange, weekNumber } from '@clew/calendar/dates';
@@ -96,17 +96,16 @@ export function ThreadCard({ thread, compact, headingLevel = 3, onChange }: Prop
         {rest && <Text as="p" color="secondary">{rest}</Text>}
       </>}
       {thread.kind === 'pushed' && thread.proposals.length > 0 && <Stepper label="Steg" activeStep={obligationSteps.indexOf(step)} density="compact" horizontalOptions={{ minimumStepWidth: 96, collapsedVariant: 'withLabel' }}>
-        {obligationSteps.map((s, i) => <Step key={s} step={i} label={stepLabel[s]} description={s === 'forslag' ? `${thread.proposals.filter(p => p.status === 'proposed').length} ritade` : s === 'svar' ? (sum.total ? `${sum.accepted + sum.declined} av ${sum.total} svarat` : '') : s === 'klart' ? (step === 'klart' ? 'alla har svarat' : '') : (sum.total ? `${sum.total} skickade` : '')} />)}
+        {obligationSteps.map((s, i) => <Step key={s} step={i} label={stepLabel[s]} description={s === 'forslag' ? `${thread.proposals.length} ritade` : s === 'svar' ? (sum.total ? `${sum.accepted + sum.declined} av ${sum.total} svarat` : '') : s === 'klart' ? (step === 'klart' ? 'alla har svarat' : '') : (sum.total ? `${sum.total} skickade` : '')} />)}
       </Stepper>}
       {/* The judgement calls (D30): whoever got no slot is a row with a reason, next to the week that could not hold them. */}
       {open && unplaced.length > 0 && <HStack gap={1} vAlign="center" wrap="wrap" role="group" aria-label={`Oplacerade: ${unplaced.length}`}>
         <Text type="supporting" weight="semibold">Oplacerade · {unplaced.length}</Text>
         {unplaced.map(u => <Text key={u.ref} type="supporting">{u.label} · {u.detail}</Text>)}
       </HStack>}
-      {/* The replies (D30): the sum first, the people only where they are needed. */}
+      {/* The replies (D30): the Stepper above holds the sum; here are the people, where they are needed. */}
       {roster && <VStack gap={2} as="section" aria-label="Svar">
-        <Text type="large" weight="semibold">{sum.total ? `${sum.accepted + sum.declined} av ${sum.total} har svarat.` : ''}{sum.declined ? ` ${sum.declined === 1 ? 'En' : sum.declined} vill ha en annan tid.` : ''}</Text>
-        <ProgressBar label={`Svar: ${sum.accepted + sum.declined} av ${sum.total}`} isLabelHidden value={sum.accepted + sum.declined} max={Math.max(1, sum.total)} variant="success" />
+        {sum.declined > 0 && <Text weight="semibold">{sum.declined === 1 ? 'En' : sum.declined} vill ha en annan tid.</Text>}
         {accepted.length > 0 && <HStack gap={2} vAlign="center" wrap="wrap">
           <Text type="supporting" weight="semibold">Accepterat · {accepted.length}</Text>
           <AvatarGroup size="sm">{accepted.slice(0, 5).map(p => <Avatar key={p.id} name={p.participant.name} />)}{accepted.length > 5 && <AvatarGroupOverflow count={accepted.length - 5} />}</AvatarGroup>

@@ -4,8 +4,11 @@ import { Button, DropdownMenu, Heading, HStack, Icon, List, ListItem, SegmentedC
 import { api } from '../api';
 import { useThreadAction } from '../mutations';
 
-type Filter = 'idag' | 'veckan' | 'hanterade' | 'avfardade' | 'fragor';
-const filters: { value: Filter; label: string }[] = [{ value: 'idag', label: 'I dag' }, { value: 'veckan', label: 'Veckan' }, { value: 'hanterade', label: 'Hanterade' }, { value: 'avfardade', label: 'Avfärdade' }, { value: 'fragor', label: 'Frågor' }];
+type Period = 'idag' | 'veckan' | 'allt';
+type Kind = 'alla' | 'hanterade' | 'avfardade' | 'fragor';
+/** When and what are two questions, so they are two choices: one row of five mixed the two and could not ask for this week's questions. */
+const periods: { value: Period; label: string }[] = [{ value: 'idag', label: 'I dag' }, { value: 'veckan', label: 'Veckan' }, { value: 'allt', label: 'Allt' }];
+const kinds: { value: Kind; label: string }[] = [{ value: 'alla', label: 'Alla' }, { value: 'hanterade', label: 'Hanterade' }, { value: 'avfardade', label: 'Avfärdade' }, { value: 'fragor', label: 'Frågor' }];
 const dayKey = (iso: string) => iso.slice(0, 10);
 const dayHeading = (key: string) => new Intl.DateTimeFormat('sv-SE', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(key + 'T12:00:00'));
 const when = (t: Thread) => t.handledAt ?? t.updatedAt;
@@ -25,9 +28,11 @@ function HandledRow({ thread: t, now, onChange, conversationHref }: RowProps) {
     : receiptUndo ? <Button size="sm" label="Ångra" clickAction={() => run(() => api.undoReceipt(t.id))} />
     : reopenable ? <Button size="sm" label="Återöppna" clickAction={() => run(() => api.reopen(t.id))} />
     : <Text type="supporting">{t.state === 'dismissed' ? 'Avfärdad' : question ? 'Fråga' : 'Klart'}</Text>;
+  const at = new Date(when(t)).toLocaleTimeString('sv-SE', { timeStyle: 'short' });
+  // The time leads the line, so the times stand under each other whatever the button at the end of the row is called.
   return <ListItem startContent={icon} align="start" label={<Text>{question ? `Fråga: ${t.title}` : t.title}</Text>}
-    description={<VStack gap={0}><Text type="supporting">{last?.body ?? t.trigger.reason}</Text>{error && <Text as="p" role="alert" color="accent">{error}</Text>}</VStack>}
-    href={question ? conversationHref(t.id) : undefined} endContent={<HStack gap={2} vAlign="center"><Text type="supporting">{new Date(when(t)).toLocaleTimeString('sv-SE', { timeStyle: 'short' })}</Text>{end}</HStack>} />;
+    description={<VStack gap={0}><Text type="supporting">{at} · {last?.body ?? t.trigger.reason}</Text>{error && <Text as="p" role="alert" color="accent">{error}</Text>}</VStack>}
+    href={question ? conversationHref(t.id) : undefined} endContent={end} />;
 }
 
 /**
@@ -35,29 +40,29 @@ function HandledRow({ thread: t, now, onChange, conversationHref }: RowProps) {
  * Ångra while the window is open, Återöppna on dismissed cards and the conversation reopening from a Fråga row.
  */
 export function Handled({ threads, compact, onChange, conversationHref }: { threads: Thread[]; compact: boolean; onChange: (thread: Thread) => void; conversationHref: (threadId: string) => string }) {
-  const [filter, setFilter] = useState<Filter>('idag');
+  const [period, setPeriod] = useState<Period>('idag');
+  const [kind, setKind] = useState<Kind>('alla');
   const now = Date.now();
-  const keep = (t: Thread) => {
-    const age = now - Date.parse(when(t));
-    switch (filter) {
-      case 'idag': return dayKey(when(t)) === dayKey(new Date().toISOString());
-      case 'veckan': return age < 7 * 86400_000;
-      case 'hanterade': return t.state === 'handled';
-      case 'avfardade': return t.state === 'dismissed';
-      case 'fragor': return t.kind === 'question';
-    }
-  };
+  const inPeriod = (t: Thread) => period === 'allt' || (period === 'idag' ? dayKey(when(t)) === dayKey(new Date().toISOString()) : now - Date.parse(when(t)) < 7 * 86400_000);
+  const ofKind = (t: Thread) => kind === 'alla' || (kind === 'hanterade' ? t.state === 'handled' : kind === 'avfardade' ? t.state === 'dismissed' : t.kind === 'question');
+  const keep = (t: Thread) => inPeriod(t) && ofKind(t);
   const shown = threads.filter(keep).sort((a, b) => when(b).localeCompare(when(a)));
   const days = [...new Set(shown.map(t => dayKey(when(t))))];
   return <VStack gap={3} as="section" aria-label="Redan hanterat">
     <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
       <Heading level={2} accessibilityLevel={1}>Redan hanterat</Heading>
-      {/* Five segments do not fit a phone and SegmentedControl truncates them; there the same choice is one menu (1.4.10). */}
+      {/* The two choices do not fit a phone side by side and SegmentedControl truncates them; there each is one menu (1.4.10). */}
       {compact
-        ? <DropdownMenu presentation="adaptive" button={{ label: `Visa: ${filters.find(f => f.value === filter)!.label}`, size: 'sm', variant: 'secondary' }} items={filters.map(f => ({ id: f.value, label: f.label, onClick: () => setFilter(f.value) }))} />
-        : <SegmentedControl label="Filter" size="sm" value={filter} onChange={v => setFilter(v as Filter)}>{filters.map(f => <SegmentedControlItem key={f.value} value={f.value} label={f.label} />)}</SegmentedControl>}
+        ? <HStack gap={2} wrap="wrap">
+          <DropdownMenu presentation="adaptive" button={{ label: `Tid: ${periods.find(p => p.value === period)!.label}`, size: 'sm', variant: 'secondary' }} items={periods.map(p => ({ id: p.value, label: p.label, onClick: () => setPeriod(p.value) }))} />
+          <DropdownMenu presentation="adaptive" button={{ label: `Visa: ${kinds.find(k => k.value === kind)!.label}`, size: 'sm', variant: 'secondary' }} items={kinds.map(k => ({ id: k.value, label: k.label, onClick: () => setKind(k.value) }))} />
+        </HStack>
+        : <HStack gap={2} wrap="wrap">
+          <SegmentedControl label="Tid" size="sm" value={period} onChange={v => setPeriod(v as Period)}>{periods.map(p => <SegmentedControlItem key={p.value} value={p.value} label={p.label} />)}</SegmentedControl>
+          <SegmentedControl label="Typ" size="sm" value={kind} onChange={v => setKind(v as Kind)}>{kinds.map(k => <SegmentedControlItem key={k.value} value={k.value} label={k.label} />)}</SegmentedControl>
+        </HStack>}
     </HStack>
-    {!shown.length && <Text type="supporting">Inget här ännu.</Text>}
+    {!shown.length && <Text type="supporting">{period === 'idag' && kind === 'alla' ? 'Inget hanterat i dag ännu.' : 'Inget som stämmer med valet.'}</Text>}
     {days.map(day => <List key={day} hasDividers density="compact" header={<Text weight="semibold" type="supporting">{dayHeading(day)}</Text>}>
       {shown.filter(t => dayKey(when(t)) === day).map(t => <HandledRow key={t.id} thread={t} now={now} onChange={onChange} conversationHref={conversationHref} />)}
     </List>)}

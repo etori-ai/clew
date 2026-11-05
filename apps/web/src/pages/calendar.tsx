@@ -100,6 +100,11 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
       {open && <Text type="supporting">{selected.length} av {proposed.length} valda</Text>}
     </HStack>
     {lead && <Text type="large" weight="medium" as="p">{lead}</Text>}
+    {/* The grid can show another week than the proposals are in: said first, with the way there, before anything is decided. */}
+    {thread.week && (view !== 'week' || thread.week !== anchor) && <HStack gap={2} vAlign="center" justify="between" wrap="wrap">
+      <Text type="supporting">Kalendern visar en annan vecka.</Text>
+      <Button size="sm" variant="secondary" label={`Visa vecka ${weekNumber(thread.week)}`} onClick={() => { setPanelOpen(false); go({ date: thread.week!, view: 'week' }); }} />
+    </HStack>}
     <CheckboxList label="Förslag" isLabelHidden value={selected} onChange={setSelected} isReadOnly={!open} hasDividers>
       {thread.proposals.filter(p => p.status !== 'declined').map(p => <CheckboxListItem key={p.id} value={p.id} label={p.participant.name}
         description={`${shortDayLabel(p.start.slice(0, 10))} · ${timeRange(p.start, p.end)}`} isChecked={p.status !== 'proposed' || selected.includes(p.id)} isDisabled={p.status !== 'proposed'}
@@ -111,33 +116,42 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
       {open && <Button variant="primary" label={`Skicka ${selected.length} ${plural}`} isDisabled={!selected.length} clickAction={() => run(() => api.confirm(thread.id, selected))} />}
       {open && thread.week && <Button label="Föreslå andra tider" clickAction={() => run(() => api.replan(thread.id, addDays(thread.week!, 7)))} />}
       {undoOpen && <Button variant="destructive" label="Ångra" clickAction={() => run(() => api.undo(thread.id))} />}
-      {thread.week && (view !== 'week' || thread.week !== anchor) && <Button variant="ghost" label={`Visa vecka ${weekNumber(thread.week)}`} onClick={() => { setPanelOpen(false); go({ date: thread.week!, view: 'week' }); }} />}
     </HStack>
   </VStack>;
   const reply = thread && <ChatComposer density="compact" elevation="none" isDisabled={busy} placeholder="Svara här" onSubmit={text => { const body = text.trim(); if (body) void run(() => api.reply(thread.id, body)); }} />;
   const panel = thread && <Layout height="fill" padding={3} content={<LayoutContent>{panelBody}</LayoutContent>} footer={<LayoutFooter hasDivider>{reply}</LayoutFooter>} />;
-  const toolbar = <Toolbar label="Kalender" size="sm"
-    startContent={<HStack gap={3} vAlign="center" wrap="wrap">
-      <Heading level={1}>{title.charAt(0).toUpperCase() + title.slice(1)}</Heading>
-      <HStack gap={1} vAlign="center" role="group" aria-label={`Byt ${stepLabel}`}>
-        <IconButton label={`Förra ${stepLabel}en`} icon={<Icon icon="chevronLeft" />} variant="ghost" size="sm" onClick={() => step(-1)} />
-        <Button variant="ghost" size="sm" label="I dag" onClick={() => go({ date: today() })} />
-        <IconButton label={`Nästa ${stepLabel}`} icon={<Icon icon="chevronRight" />} variant="ghost" size="sm" onClick={() => step(1)} />
-        <DatePicker value={anchor} onChange={d => go({ date: d })} />
+  const steps = <HStack gap={1} vAlign="center" role="group" aria-label={`Byt ${stepLabel}`}>
+    <IconButton label={`Förra ${stepLabel}en`} icon={<Icon icon="chevronLeft" />} variant="ghost" size="sm" onClick={() => step(-1)} />
+    <Button variant="ghost" size="sm" label="I dag" onClick={() => go({ date: today() })} />
+    <IconButton label={`Nästa ${stepLabel}`} icon={<Icon icon="chevronRight" />} variant="ghost" size="sm" onClick={() => step(1)} />
+    <DatePicker value={anchor} onChange={d => go({ date: d })} />
+  </HStack>;
+  const proposalsButton = narrow && thread && <Button variant="secondary" size="sm" label={open ? `Förslag · ${proposed.length}` : 'Förslag'} onClick={() => setPanelOpen(true)} />;
+  const bookButton = <Button variant="primary" size="sm" label="Ny bokning" onClick={() => setBooking(nextWholeHour(new Date()))} />;
+  // A phone has the title and the booking on one row and the rest on the next: a Toolbar's two clusters stack to a third of the screen there.
+  const toolbar = mobile
+    ? <VStack gap={2} as="section" aria-label="Kalender">
+      <HStack justify="between" vAlign="center" gap={2} wrap="wrap"><Heading level={3} accessibilityLevel={1}>{short}</Heading>{bookButton}</HStack>
+      <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
+        {steps}
+        <HStack gap={2} vAlign="center" wrap="wrap">
+          {/* Three labels do not fit 320 px with text spacing (1.4.12), so a phone gets an adaptive menu, as the piles do (D31 §5). */}
+          <DropdownMenu presentation="adaptive" button={{ label: `Vy: ${viewLabels[view]}`, size: 'sm', variant: 'secondary' }} items={views.map(v => ({ id: v, label: viewLabels[v], onClick: () => go({ view: v }) }))} />
+          {proposalsButton}
+        </HStack>
       </HStack>
-    </HStack>}
-    endContent={<HStack gap={2} vAlign="center" wrap="wrap">
-      {/* Three labels do not fit 320 px with text spacing (1.4.12), so a phone gets an adaptive menu, as the piles do (D31 §5). */}
-      {mobile
-        ? <DropdownMenu presentation="adaptive" button={{ label: `Vy: ${viewLabels[view]}`, size: 'sm', variant: 'secondary' }} items={views.map(v => ({ id: v, label: viewLabels[v], onClick: () => go({ view: v }) }))} />
-        : <SegmentedControl label="Vy" size="sm" value={view} onChange={v => go({ view: v as View })}>
+    </VStack>
+    : <Toolbar label="Kalender" size="sm"
+      startContent={<HStack gap={3} vAlign="center" wrap="wrap"><Heading level={1}>{title.charAt(0).toUpperCase() + title.slice(1)}</Heading>{steps}</HStack>}
+      endContent={<HStack gap={2} vAlign="center" wrap="wrap">
+        <SegmentedControl label="Vy" size="sm" value={view} onChange={v => go({ view: v as View })}>
           <SegmentedControlItem value="day" label="Dag" />
           <SegmentedControlItem value="week" label="Vecka" />
           <SegmentedControlItem value="month" label="Månad" />
-        </SegmentedControl>}
-      {narrow && thread && <Button variant="secondary" size="sm" label={open ? `Förslag · ${proposed.length}` : 'Förslag'} onClick={() => setPanelOpen(true)} />}
-      <Button variant="primary" size="sm" label="Ny bokning" onClick={() => setBooking(nextWholeHour(new Date()))} />
-    </HStack>} />;
+        </SegmentedControl>
+        {proposalsButton}
+        {bookButton}
+      </HStack>} />;
   return <Shell user={user} nav={nav}><Layout height="fill" padding={mobile ? 3 : 4}
     header={<LayoutHeader hasDivider>{toolbar}</LayoutHeader>}
     end={!narrow && thread ? <LayoutPanel width={340} hasDivider role="complementary" label="Förslag" padding={0} isScrollable={false}>{panel}</LayoutPanel> : undefined}

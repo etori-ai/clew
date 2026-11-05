@@ -275,8 +275,8 @@ test.describe('D30 the obligation', () => {
   test('the waiting obligation shows the sum and lets the manager remind from the keyboard', async ({ page, api: _ }) => {
     await open(page, '/waiting');
     const card = page.locator('#thread-samtal-svar');
-    await expect(card.getByRole('region', { name: 'Svar' })).toContainText('1 av 2 har svarat.');
-    await expect(card.getByRole('progressbar', { name: 'Svar: 1 av 2' })).toBeVisible();
+    await expect(card).toContainText('1 av 2 svarat');
+    await expect(card.getByRole('progressbar')).toHaveCount(0);
     await expect(card.getByRole('list', { name: 'Väntar: 1' })).toContainText('påmind en gång');
     const remind = card.getByRole('button', { name: 'Påminn den som inte svarat' });
     await remind.focus();

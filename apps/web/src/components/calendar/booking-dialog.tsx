@@ -93,6 +93,8 @@ export function BookingDialog({ isOpen, initial, onClose }: Props) {
       {error && (error.uncertain
         ? <Banner status="warning" title="Bokningsresultatet är osäkert" description={error.text} collapsible={false} />
         : <Text as="p" role="alert" color="accent">{error.text}</Text>)}
+      {/* A greyed button with no word about why is a dead end: what is missing is said beside it. */}
+      {!title.trim() && <Text type="supporting">Skriv en rubrik så går det att boka.</Text>}
       <HStack gap={2} justify="between" vAlign="center" wrap="wrap">
         <Button size="sm" variant="ghost" label="Kontrollera tillgänglighet" isDisabled={!startAt || !endAt || endFirst} clickAction={check} />
         <HStack gap={2}>

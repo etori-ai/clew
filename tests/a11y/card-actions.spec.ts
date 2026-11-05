@@ -106,3 +106,41 @@ test.describe('the side panel', () => {
     await expect(panel).toContainText('Hämtat ur Heroma. Inget av det sparas på Startsidan.');
   });
 });
+
+test.describe('Redan hanterat', () => {
+  test.use({ viewport: desktop });
+
+  test('when and what are two choices, and the times stand under each other', async ({ page, api: _ }) => {
+    await open(page, '/handled');
+    await expect(page.getByRole('radiogroup', { name: 'Tid' }).getByRole('radio', { name: 'I dag' })).toBeChecked();
+    await page.getByRole('radiogroup', { name: 'Typ' }).getByRole('radio', { name: 'Frågor' }).click();
+    const region = page.getByRole('region', { name: 'Redan hanterat' });
+    await expect(region).toContainText('Fråga: Vem är på plats i dag?');
+    await expect(region).not.toContainText('Attesterade fakturor');
+  });
+});
+
+test.describe('a booking', () => {
+  test.use({ viewport: desktop });
+
+  test('says what is missing while Boka is greyed', async ({ page, api: _ }) => {
+    await open(page, '/calendar');
+    await page.getByRole('button', { name: 'Ny bokning' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText('Skriv en rubrik så går det att boka.');
+    await expect(dialog.getByRole('button', { name: 'Boka' })).toBeDisabled();
+    await dialog.getByRole('textbox').first().fill('Möte');
+    await expect(dialog).not.toContainText('Skriv en rubrik så går det att boka.');
+    await expect(dialog.getByRole('button', { name: 'Boka' })).toBeEnabled();
+  });
+});
+
+test.describe('the calendar on a phone', () => {
+  test.use({ viewport: phone });
+
+  test('leaves the screen to the calendar: the grid starts in the top third', async ({ page, api: _ }) => {
+    await open(page, '/calendar');
+    const list = await page.getByRole('group', { name: /^Vecka 45/ }).boundingBox();
+    expect(list!.y).toBeLessThan(200);
+  });
+});
