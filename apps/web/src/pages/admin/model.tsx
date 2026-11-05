@@ -49,6 +49,14 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
   const changed = draft.title !== m.title || draft.description !== m.description || draft.model !== m.model;
   const panel = (t: TabId) => `panel-${t}`;
   const role = mobile ? 'region' : 'tabpanel';
+  // A Toolbar keeps one row, which these buttons cannot at 320 px: on a phone they wrap (1.4.10).
+  const actions = <>
+            <Button variant="secondary" label="Testa" isDisabled={busy} clickAction={() => run(async () => { const r = await api.admin.testModel(id); setReport(r); return r.ok ? `${m.title} svarar.` : 'Testet hittade fel, se listan.'; })} />
+            {m.isDefault
+              ? <Button variant="secondary" label="Ta bort som standard" isDisabled={busy} clickAction={() => run(async () => { await api.admin.updateModel(id, { isDefault: false }); return 'Ingen modell är standard nu.'; })} />
+              : <Button variant="secondary" label="Gör till standard" isDisabled={busy || m.state !== 'enabled'} tooltip={m.state !== 'enabled' ? 'Slå på modellen först.' : undefined} clickAction={() => run(async () => { await api.admin.updateModel(id, { isDefault: true }); return `${m.title} är standard.`; })} />}
+            <Button variant="destructive" label="Ta bort" isDisabled={busy} onClick={() => setRemoveOpen(true)} />
+  </>;
   return <AdminShell user={user} section="modeller" crumbs={crumbs(m.title)}>
     <PageLead title={<HStack gap={2} vAlign="end" wrap="wrap"><Heading level={1}>{m.title}</Heading>{m.isDefault && <Badge variant="info" label="Standard" />}</HStack>}
       actions={<Switch label={m.state === 'enabled' ? 'På' : 'Av'} labelPosition="start" value={m.state === 'enabled'} isDisabled={busy} changeAction={on => run(async () => { await api.admin.updateModel(id, { state: on ? 'enabled' : 'disabled' }); return `${m.title} ${on ? 'är på' : 'är avstängd'}.`; })} />}>
@@ -66,13 +74,7 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
       </Section>
       <Section variant="transparent" padding={4}>
         {tab === 'oversikt' && <div id={panel('oversikt')} role={role} aria-label="Översikt"><VStack gap={4}>
-          <Toolbar label="Åtgärder" size="sm" variant="muted" startContent={<>
-            <Button variant="secondary" label="Testa" isDisabled={busy} clickAction={() => run(async () => { const r = await api.admin.testModel(id); setReport(r); return r.ok ? `${m.title} svarar.` : 'Testet hittade fel, se listan.'; })} />
-            {m.isDefault
-              ? <Button variant="secondary" label="Ta bort som standard" isDisabled={busy} clickAction={() => run(async () => { await api.admin.updateModel(id, { isDefault: false }); return 'Ingen modell är standard nu.'; })} />
-              : <Button variant="secondary" label="Gör till standard" isDisabled={busy || m.state !== 'enabled'} tooltip={m.state !== 'enabled' ? 'Slå på modellen först.' : undefined} clickAction={() => run(async () => { await api.admin.updateModel(id, { isDefault: true }); return `${m.title} är standard.`; })} />}
-            <Button variant="destructive" label="Ta bort" isDisabled={busy} onClick={() => setRemoveOpen(true)} />
-          </>} />
+          {mobile ? <HStack gap={2} wrap="wrap" role="group" aria-label="Åtgärder">{actions}</HStack> : <Toolbar label="Åtgärder" size="sm" variant="muted" startContent={actions} />}
           {report && <Findings report={report} label="Testets resultat" />}
           <MetadataList columns={mobile ? 'single' : 'multi'}>
             <MetadataListItem label="Id">{m.id}</MetadataListItem>

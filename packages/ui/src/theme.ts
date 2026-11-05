@@ -12,6 +12,7 @@ import { sundsvallPalette as palette, type Branding } from './branding';
 const clewBaseTheme = defineTheme({
   name: 'clew-neutral',
   extends: neutralTheme,
+  typography: { scale: { base: 15, ratio: 1.2 } },
   components: {
     'chat-layout': { base: { scrollPaddingBottom: '240px' } },
     'side-nav-heading': { base: { paddingBlock: 'var(--spacing-1)' } },

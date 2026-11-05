@@ -88,3 +88,5 @@ the cards; the landing's box centred between the brief and the foot).
 **Amended 2026-11-05 by D39.** The box is centred again, in a way that keeps it still: the brief and the box are one
 block at least half the column high with the box at its lower edge, what changes under the box comes after that
 block, and the day line is the `Layout`'s footer. The box still never moves under the cursor.
+
+**Amended 2026-11-05 by D47.** The model menu is drawn in the box on the landing and in a conversation, not in the footer box on the other pages.

@@ -318,6 +318,8 @@ export async function hiddenFocusStops(page: Page, limit = 150) {
   for (let stop = 0; stop < limit; stop++) {
     await page.keyboard.press('Tab');
     const result = await page.evaluate(async () => {
+      // A tooltip closes about 100 ms after the focus leaves its button: what is measured is what stays, not the last frames of what is leaving.
+      if ([...document.querySelectorAll('.astryx-tooltip')].some(tip => tip.getBoundingClientRect().width > 0)) await new Promise(resolve => setTimeout(resolve, 150));
       // A ring that animates in (an Astryx field's border and inset shadow, 125 ms) is measured once it has settled, not in the instant of the Tab.
       await Promise.all(document.getAnimations().filter(a => a instanceof CSSTransition && a.playState === 'running').map(a => a.finished.catch(() => undefined)));
       const { unmarked, visited } = window as unknown as { unmarked: string[]; visited: Element[] };

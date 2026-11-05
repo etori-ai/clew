@@ -126,3 +126,5 @@ button (the box's `@`) on the brief rows and the cards, and the brief's rows cen
 
 **Amended 2026-11-05 by D39.** The box rests on the column's centre line whenever the brief fits in the upper half,
 and follows the brief when it does not; the day line is the `Layout`'s footer. "Menar du" still never moves the field.
+
+**Amended 2026-11-05 by D47.** The filled button is for what is due today only. The overview's header is an `h1`, one line and an `InfoTip`; its group captions are gone. The box in the footer has no scope line, no shortcut and no model menu.

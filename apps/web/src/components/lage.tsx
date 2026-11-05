@@ -7,7 +7,7 @@ type Props = { figures: Figure[]; unitLabel: string; compact?: boolean; onOpen: 
 /** "Läget": always the same four figures, every tile a button that opens the thread behind it. Status is a dot with its word beside it, as StatusDot asks: never a colour alone (1.4.1). */
 export function Lage({ figures, unitLabel, compact = false, onOpen }: Props) {
   return <VStack gap={2} as="section" aria-label="Läget i din verksamhet">
-    <Heading level={2}>Läget · {unitLabel}{compact ? '' : ' · alltid samma fyra'}</Heading>
+    <Heading level={2}>Läget · {unitLabel}</Heading>
     <Grid columns={compact ? { minWidth: 120, max: 2 } : { minWidth: 160, max: 4 }} gap={2}>
       {figures.map(f => <ClickableCard key={f.id} label={`${f.label}: ${f.value}, ${f.comparison}. ${dot[f.tone].label}`} onClick={() => onOpen(f)} padding={3}>
         <VStack gap={1}>

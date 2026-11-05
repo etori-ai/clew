@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { attentionLevel, dayWord, daysUntil, isSnoozed, parseSwedishTime, snoozeWhen, streamGroup, type AttentionLevel, type SnoozeInput, type SnoozePreset, type Thread, type ThreadAction } from '@clew/contracts';
-import { Badge, Button, Card, CheckboxList, CheckboxListItem, Collapsible, Dialog, DialogHeader, DropdownMenu, Heading, HStack, Icon, List, ListItem, MoreMenu, StatusDot, Text, TextInput, Timestamp, Token, VStack, useToast } from '@clew/ui';
+import { Badge, Button, Card, CheckboxList, CheckboxListItem, Collapsible, Dialog, DialogHeader, DropdownMenu, DropdownMenuDivider, DropdownMenuItem, DropdownMenuSubMenu, Heading, HStack, Icon, IconButton, List, ListItem, StatusDot, Text, TextInput, Timestamp, VStack, useToast } from '@clew/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { today } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
@@ -8,15 +8,7 @@ import { snoozePresetsQuery } from '../queries';
 import { useThreadAction } from '../mutations';
 import { invalidateStream } from '../thread-cache';
 import { useConversation } from './conversation-context';
-import { AddToConversation } from './add-to-conversation';
 
-/**
- * The area as a category tag (Astryx Badge/Token guidance: colour variants classify, status variants demand action): one
- * colour per area, stable across the page, so a row is placed at a glance. Unknown areas get a colour from their id.
- */
-const areaColors: Record<string, 'blue' | 'teal' | 'purple' | 'orange' | 'pink' | 'green' | 'cyan' | 'yellow'> = { kalender: 'blue', personal: 'teal', budget: 'purple', kvalitet: 'orange', 'viktigt-nu': 'pink', 'mitt-pass': 'green', fragor: 'cyan' };
-const palette = ['blue', 'teal', 'purple', 'orange', 'pink', 'green', 'cyan', 'yellow'] as const;
-export const areaColor = (id: string) => areaColors[id] ?? palette[[...id].reduce((n, ch) => n + ch.charCodeAt(0), 0) % palette.length]!;
 const outcomeDot = { done: { variant: 'success', label: 'Klart' }, unknown: { variant: 'warning', label: 'Okänt' }, failed: { variant: 'error', label: 'Misslyckades' }, skipped: { variant: 'neutral', label: 'Inte skickad' } } as const;
 const shortDate = (d: string) => new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'short' }).format(new Date(d.slice(0, 10) + 'T12:00:00'));
 const clock = (iso: string) => new Date(iso).toLocaleTimeString('sv-SE', { timeStyle: 'short' });
@@ -72,41 +64,49 @@ export function ReceiptStatus({ thread }: { thread: Thread }) {
 /** The picker's rows (D29): one query for the whole page, kept a minute (snoozePresetsQuery), so every card shows the same times. */
 const EMPTY_PRESETS: SnoozePreset[] = [];
 const usePresets = () => useQuery(snoozePresetsQuery).data?.presets ?? EMPTY_PRESETS;
+type TimeChoice = SnoozeInput & { seconds?: number };
 /**
  * "Inte nu" and "Påminn mig" are the same picker (D29): the presets with the time each lands on, then "Skriv själv …"
- * for free text in the composer's grammar, parsed as the person types so the time is shown before it is set. An
- * Astryx DropdownMenu (a bottom sheet on a phone) and a form Dialog; the rows are the menu's items with the time as description.
+ * for free text in the composer's grammar, parsed as the person types so the time is shown before it is set. The rows
+ * go in a menu of their own or under ⋯; the form Dialog stays mounted outside the menu, which closes when it opens.
  */
-function TimePicker({ label, presets, demo, onPick }: { label: string; presets: SnoozePreset[]; demo?: { label: string; seconds: number }; onPick: (choice: SnoozeInput & { seconds?: number }) => void }) {
+function useTimeRows({ presets, demo, onPick }: { presets: SnoozePreset[]; demo?: { label: string; seconds: number }; onPick: (choice: TimeChoice) => void }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
   const parsed = text.trim() ? parseSwedishTime(text, new Date().toISOString()) : null;
   const when = parsed ? snoozeWhen(parsed, new Date().toISOString()) : null;
-  const items = [
+  const rows = [
     ...(demo ? [{ id: 'demo', label: demo.label, description: 'demo', onClick: () => onPick({ seconds: demo.seconds }) }] : []),
     ...presets.map(p => ({ id: p.id, label: p.label, description: p.detail, onClick: () => onPick({ preset: p.id, until: p.at }) })),
-    { type: 'divider' as const },
-    { id: 'text', label: 'Skriv själv …', description: '”fredag kl 9”, ”om 20 min”', onClick: () => { setText(''); setOpen(true); } },
   ];
+  const own = { id: 'text', label: 'Skriv själv …', description: '”fredag kl 9”, ”om 20 min”', onClick: () => { setText(''); setOpen(true); } };
   const pick = () => { if (parsed) { onPick({ text, until: parsed }); setOpen(false); } };
-  return <>
-    <DropdownMenu button={{ label, size: 'sm', variant: 'ghost' }} presentation="adaptive" menuMaxHeight={480} items={items} />
-    <Dialog isOpen={open} onOpenChange={setOpen} purpose="form">
-      <DialogHeader title="När ska jag ta upp det igen?" />
-      <VStack gap={3} padding={3}>
-        <TextInput label="När?" value={text} onChange={setText} placeholder="fredag kl 9" description="Till exempel ”om 20 min”, ”efter lunch”, ”i morgon kl 9”, ”fredag kl 9”, ”nästa vecka”"
-          status={text.trim() && !parsed ? { type: 'error', message: 'Jag förstod inte tiden.' } : undefined} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); pick(); } }} />
-        <HStack gap={2} justify="between" vAlign="center" wrap="wrap">
-          <Text type="supporting" role="status">{when ? `Tas upp ${when}` : ' '}</Text>
-          <HStack gap={2}>
-            <Button size="sm" variant="ghost" label="Avbryt" onClick={() => setOpen(false)} />
-            <Button size="sm" variant="primary" label={when ? `Ta upp ${when}` : 'Ta upp'} isDisabled={!parsed} onClick={pick} />
-          </HStack>
+  const dialog = <Dialog isOpen={open} onOpenChange={setOpen} purpose="form">
+    <DialogHeader title="När ska jag ta upp det igen?" />
+    <VStack gap={3} padding={3}>
+      <TextInput label="När?" value={text} onChange={setText} placeholder="fredag kl 9" description="Till exempel ”om 20 min”, ”efter lunch”, ”i morgon kl 9”, ”fredag kl 9”, ”nästa vecka”"
+        status={text.trim() && !parsed ? { type: 'error', message: 'Jag förstod inte tiden.' } : undefined} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); pick(); } }} />
+      <HStack gap={2} justify="between" vAlign="center" wrap="wrap">
+        <Text type="supporting" role="status">{when ? `Tas upp ${when}` : ' '}</Text>
+        <HStack gap={2}>
+          <Button size="sm" variant="ghost" label="Avbryt" onClick={() => setOpen(false)} />
+          <Button size="sm" variant="primary" label={when ? `Ta upp ${when}` : 'Ta upp'} isDisabled={!parsed} onClick={pick} />
         </HStack>
-      </VStack>
-    </Dialog>
-  </>;
+      </HStack>
+    </VStack>
+  </Dialog>;
+  return { rows, own, dialog };
 }
+type TimeRows = ReturnType<typeof useTimeRows>;
+/** The picker as its own button: an Astryx DropdownMenu, a bottom sheet on a phone, the rows with the time as description. */
+const TimePicker = ({ label, rows, own }: { label: string; rows: TimeRows['rows']; own: TimeRows['own'] }) =>
+  <DropdownMenu button={{ label, size: 'sm', variant: 'ghost' }} presentation="adaptive" menuMaxHeight={480} items={[...rows, { type: 'divider' as const }, own]} />;
+/** The picker as a row under ⋯: Astryx's flyout beside the row, a drilled-in view with a Back row on a phone. */
+const TimeSubMenu = ({ label, rows, own }: { label: string; rows: TimeRows['rows']; own: TimeRows['own'] }) => <DropdownMenuSubMenu label={label} menuWidth={260}>
+  {rows.map(r => <DropdownMenuItem key={r.id} label={r.label} description={r.description} onClick={r.onClick} />)}
+  <DropdownMenuDivider />
+  <DropdownMenuItem label={own.label} description={own.description} onClick={own.onClick} />
+</DropdownMenuSubMenu>;
 type ActionProps = { thread: Thread; onChange: (thread: Thread) => void; onOpenCardView: (threadId: string, actionId: string) => void };
 /** Everything a card can do, shared by the card and the row: run an action, snooze, dismiss, explain, and keep the selection. */
 function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
@@ -147,19 +147,19 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
     return r.thread;
   });
   /** The same picker for both (D29): a preset or free text parsed to an instant, or the demo's seconds. */
-  const pickSnooze = (choice: SnoozeInput & { seconds?: number }) => { const { seconds: _s, ...input } = choice; void snooze(input); };
-  const pickRemind = (choice: SnoozeInput & { seconds?: number }) => { const seconds = choice.seconds ?? (choice.until ? Math.max(1, Math.ceil((Date.parse(choice.until) - Date.now()) / 1000)) : 0); if (seconds) void remind(seconds); };
+  const pickSnooze = (choice: TimeChoice) => { const { seconds: _s, ...input } = choice; void snooze(input); };
+  const pickRemind = (choice: TimeChoice) => { const seconds = choice.seconds ?? (choice.until ? Math.max(1, Math.ceil((Date.parse(choice.until) - Date.now()) / 1000)) : 0); if (seconds) void remind(seconds); };
   return { selected, setSelected, selectable, busy, error, why, setWhy, run, perform, snooze, dismiss, remind, pickSnooze, pickRemind };
 }
 type Actions = ReturnType<typeof useThreadActions>;
 
 /**
- * The action row shared by every card and row: one primary and up to two secondary actions from the connector, then
- * Clew's standard actions (Lägg till i samtalet, Inte nu, Påminn mig, and Avfärda and Varför ser jag detta? behind ⋯).
- * One control size for the whole row. The primary button is black only where something is due; a notice gets a secondary
- * button so it never competes with a deadline.
+ * The action row shared by every card and row: one primary and up to two secondary actions from the connector, Inte nu,
+ * and the rest behind ⋯ (Lägg till i samtalet, Påminn mig, Avfärda, Varför ser jag detta?). One control size for the
+ * whole row. Black is kept for what is due today, so the eye finds the day's work; everything else is a secondary
+ * button. A row (`quiet`) shows the primary alone and keeps the rest behind ⋯; opening the row as a card shows them.
  */
-function ActionRow({ thread, level, actions }: { thread: Thread; level: AttentionLevel; actions: Actions }) {
+function ActionRow({ thread, level, actions, quiet = false }: { thread: Thread; level: AttentionLevel; actions: Actions; quiet?: boolean }) {
   const conversation = useConversation();
   const countdown = useCountdown(thread.receipt?.undoUntil ?? null);
   const chipRef = 'thread:' + thread.id;
@@ -167,36 +167,39 @@ function ActionRow({ thread, level, actions }: { thread: Thread; level: Attentio
   const open = thread.state === 'open';
   const { selected, selectable, perform, dismiss, setWhy, run, pickSnooze, pickRemind } = actions;
   const presets = usePresets();
+  const snoozeRows = useTimeRows({ presets, onPick: pickSnooze });
+  const remindRows = useTimeRows({ presets, demo: { label: 'Om 10 sekunder', seconds: 10 }, onPick: pickRemind });
   const primary = thread.actions.find(a => a.role === 'primary');
   const secondary = thread.actions.filter(a => a.role === 'secondary').slice(0, 2);
   const overflow = thread.actions.filter(a => a.role === 'overflow' || (a.role === 'secondary' && !secondary.includes(a)));
   const count = selected.length;
   const primaryLabel = primary && selectable ? `${primary.label} · ${count}` : primary?.label;
-  const menu = [
-    ...overflow.map(a => ({ id: a.id, label: a.label, onClick: () => void perform(a) })),
-    ...(overflow.length ? [{ type: 'divider' as const }] : []),
-    { id: 'dismiss', label: 'Avfärda · inte aktuellt', onClick: () => void dismiss() },
-    { id: 'why', label: 'Varför ser jag detta?', onClick: () => setWhy(v => !v) },
-  ];
-  const addToConversation = <AddToConversation added={inConversation} onAdd={() => conversation.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id })} />;
-  /** Inte nu and Påminn mig (D17, D29): the same picker, the first silent, the second with the badge and the toast. Ten seconds is the demo entry. */
-  const snoozeMenu = <TimePicker label="Inte nu" presets={presets} onPick={pickSnooze} />;
-  const remindMenu = <TimePicker label="Påminn mig" presets={presets} demo={{ label: 'Om 10 sekunder', seconds: 10 }} onPick={pickRemind} />;
+  const due = level !== 'notice' && streamGroup(thread, today()) === 'nu';
+  /** ⋯: MoreMenu's button over DropdownMenu's compound rows, because MoreMenu's data rows cannot hold a sub-menu. */
+  const more = ({ tucked = [], times = [] }: { tucked?: ThreadAction[]; times?: { label: string; rows: TimeRows }[] }) => <>
+    <DropdownMenu renderTrigger={trigger => <IconButton {...trigger} size="sm" variant="ghost" label="Fler val" tooltip="Fler val" icon={<Icon icon="moreHorizontal" />} />} alignment="end" menuWidth={240} menuMaxHeight={480}>
+      {[...tucked, ...overflow].map(a => <DropdownMenuItem key={a.id} label={a.label} onClick={() => void perform(a)} />)}
+      <DropdownMenuItem label={inConversation ? 'I samtalet' : 'Lägg till i samtalet'} isDisabled={inConversation} onClick={() => conversation.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id })} />
+      {times.map(t => <TimeSubMenu key={t.label} label={t.label} rows={t.rows.rows} own={t.rows.own} />)}
+      <DropdownMenuDivider />
+      <DropdownMenuItem label="Avfärda · inte aktuellt" onClick={() => void dismiss()} />
+      <DropdownMenuItem label="Varför ser jag detta?" onClick={() => setWhy(v => !v)} />
+    </DropdownMenu>
+    {snoozeRows.dialog}
+    {remindRows.dialog}
+  </>;
   const receipt = thread.receipt;
   const undoOpen = !!receipt && thread.state === 'handled' && !!receipt.undoCapability && !!countdown;
   // In the Inte nu pile (D28): the way back is the first button; nothing else is due until the card is back.
   if (open && isSnoozed(thread, new Date().toISOString())) return <HStack gap={2} vAlign="center" wrap="wrap">
     <Button size="sm" variant="secondary" label="Ta upp nu" clickAction={() => run(() => api.reopen(thread.id))} />
-    {addToConversation}
-    <MoreMenu label="Fler val" size="sm" variant="ghost" items={menu} />
+    {more({})}
   </HStack>;
-  if (open && !thread.waitingOn) return <HStack gap={2} vAlign="center" wrap="wrap">
-    {primary && <Button size="sm" variant={level === 'notice' ? 'secondary' : 'primary'} label={primaryLabel ?? ''} isDisabled={selectable && count === 0} clickAction={() => perform(primary)} />}
-    {secondary.map(a => <Button key={a.id} size="sm" variant={level === 'notice' ? 'ghost' : 'secondary'} label={a.label} clickAction={() => perform(a)} />)}
-    {addToConversation}
-    {snoozeMenu}
-    {remindMenu}
-    <MoreMenu label="Fler val" size="sm" variant="ghost" items={menu} />
+  if (open && !thread.waitingOn) return <HStack gap={2} vAlign="center" wrap={quiet ? undefined : 'wrap'}>
+    {primary && <Button size="sm" variant={due ? 'primary' : 'secondary'} label={primaryLabel ?? ''} isDisabled={selectable && count === 0} clickAction={() => perform(primary)} />}
+    {!quiet && secondary.map(a => <Button key={a.id} size="sm" variant={due ? 'secondary' : 'ghost'} label={a.label} clickAction={() => perform(a)} />)}
+    {!quiet && <TimePicker label="Inte nu" rows={snoozeRows.rows} own={snoozeRows.own} />}
+    {more(quiet ? { tucked: secondary, times: [{ label: 'Inte nu', rows: snoozeRows }, { label: 'Påminn mig', rows: remindRows }] } : { times: [{ label: 'Påminn mig', rows: remindRows }] })}
   </HStack>;
   if (undoOpen) return <HStack gap={2} vAlign="center" wrap="wrap">
     <Button size="sm" variant="destructive" label={`Ångra allt · ${countdown} kvar`} clickAction={() => run(() => api.undoReceipt(thread.id))} />
@@ -204,9 +207,8 @@ function ActionRow({ thread, level, actions }: { thread: Thread; level: Attentio
     <Text type="supporting">Varje rad visar källsystemets svar. Grönt bara när det lästs tillbaka.</Text>
   </HStack>;
   if (open && thread.waitingOn) return <HStack gap={2} vAlign="center" wrap="wrap">
-    {addToConversation}
-    {remindMenu}
-    <MoreMenu label="Fler val" size="sm" variant="ghost" items={menu} />
+    <TimePicker label="Påminn mig" rows={remindRows.rows} own={remindRows.own} />
+    {more({})}
   </HStack>;
   return null;
 }
@@ -220,22 +222,24 @@ function State({ thread }: { thread: Thread }) {
   if (thread.waitingOn) return <Text type="supporting">Väntar på {thread.waitingOn}</Text>;
   return <Deadline thread={thread} />;
 }
-/** The metadata line: the area as a category token, the position in the group, the source and the time, then the reason as a token (D28), the conversation as a dot, and the one or two badges that need a hand. */
-function Meta({ thread, areaTitle, position, compact, summary, inConversation }: { thread: Thread; areaTitle: string; position?: string; compact: boolean; summary?: boolean; inConversation?: boolean }) {
+/** The badges that need a hand: a draft to confirm, a reminder that has fired. */
+function Flags({ thread }: { thread: Thread }) {
   const open = thread.state === 'open';
   const draft = thread.messages.at(-1)?.meta?.draft;
-  return <HStack gap={2} vAlign="center" wrap="wrap">
-    <Token size="sm" color={areaColor(thread.area)} label={areaTitle} />
-    <Text type="supporting">{summary && thread.summary ? `${thread.summary} · ` : ''}{position ? `${position} · ` : ''}{thread.trigger.source} · <Timestamp value={thread.trigger.at} format="time" hasTooltip={false} /></Text>
-    {inConversation && <StatusDot variant="accent" label="I samtalet" />}
-    {/* Why the card is here, as a token that can be read and announced, never a tooltip (D28). A token never wraps, so a phone gets the same words as text (1.4.10). */}
-    {compact ? <Text type="supporting">Varför: {thread.trigger.reason}</Text> : <Token size="sm" color="gray" label={`Varför: ${thread.trigger.reason}`} />}
+  return <>
     {draft && open && <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Att bekräfta" />}
     {open && thread.remindedAt && attentionLevel(thread, today()) === 'now' && <Badge variant="error" icon={<Icon icon="clock" size="sm" />} label="Påminnelse" />}
+  </>;
+}
+/** A card's metadata line, in words and one colour: the area, the position in the group, the source and the time, whether it is in the conversation. On the page, colour means something is due. */
+function Meta({ thread, areaTitle, position, inConversation }: { thread: Thread; areaTitle: string; position?: string; inConversation?: boolean }) {
+  return <HStack gap={2} vAlign="center" wrap="wrap">
+    <Text type="supporting">{areaTitle} · {position ? `${position} · ` : ''}{thread.trigger.source} · <Timestamp value={thread.trigger.at} format="time" hasTooltip={false} />{inConversation ? ' · I samtalet' : ''}</Text>
+    <Flags thread={thread} />
   </HStack>;
 }
 
-type Props = ActionProps & { areaTitle: string; position?: string; compact: boolean; headingLevel?: 2 | 3 | 4; autoFocusTitle?: boolean };
+type Props = ActionProps & { areaTitle: string; position?: string; headingLevel?: 2 | 3 | 4; autoFocusTitle?: boolean };
 /**
  * A thread open on the page (thread action contract): one lead sentence, rows with refs, the shared action row, and the
  * receipt read back from the source after an execute. Connectors contribute actions, never layout. Cards hold state and
@@ -243,7 +247,7 @@ type Props = ActionProps & { areaTitle: string; position?: string; compact: bool
  * the collapsed threads in a group are rows (`ThreadRow`). A card due today is lifted, a card in the conversation too;
  * a card waiting on someone else or set aside is muted.
  */
-export function GenericCard({ thread, areaTitle, position, compact, headingLevel = 3, autoFocusTitle = false, onChange, onOpenCardView }: Props) {
+export function GenericCard({ thread, areaTitle, position, headingLevel = 3, autoFocusTitle = false, onChange, onOpenCardView }: Props) {
   // Opened from its row, the title takes the focus the row's button had (2.4.3).
   const title = useRef<HTMLHeadingElement>(null);
   useEffect(() => { if (autoFocusTitle) title.current?.focus(); }, []);
@@ -261,11 +265,13 @@ export function GenericCard({ thread, areaTitle, position, compact, headingLevel
   return <Card padding={3} elevation={elevation} variant={variant}>
     <VStack gap={2} as="article" tabIndex={-1} aria-label={`Tråd: ${thread.title}`} id={`thread-${thread.id}`} aria-current={inConversation ? 'true' : undefined}>
       <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-        <Meta thread={thread} areaTitle={areaTitle} position={position} compact={compact} inConversation={inConversation} />
+        <Meta thread={thread} areaTitle={areaTitle} position={position} inConversation={inConversation} />
         <State thread={thread} />
       </HStack>
-      <Heading ref={title} tabIndex={-1} level={4} accessibilityLevel={headingLevel}>{receipt ? receipt.headline : thread.title}</Heading>
+      <Heading ref={title} tabIndex={-1} level={3} accessibilityLevel={headingLevel}>{receipt ? receipt.headline : thread.title}</Heading>
       {!receipt && thread.summary && <Text as="p" color="secondary">{thread.summary}</Text>}
+      {/* Why the card is here, as words that can be read and announced, never a tooltip (D28). */}
+      {!receipt && <Text as="p" type="supporting">Varför: {thread.trigger.reason}</Text>}
       {thread.items.length > 0 && !receipt && (selectable
         ? <CheckboxList label="Rader" isLabelHidden value={selected} onChange={setSelected} isReadOnly={!open} density="compact">
           {thread.items.map(i => <CheckboxListItem key={i.ref} value={i.ref} label={<Text>{`${i.label} · ${i.detail}`}</Text>} />)}
@@ -285,33 +291,36 @@ export function GenericCard({ thread, areaTitle, position, compact, headingLevel
   </Card>;
 }
 
-type RowProps = ActionProps & { areaTitle: string; compact: boolean; notice?: boolean; onExpand: (threadId: string) => void };
+type RowProps = ActionProps & { areaTitle: string; notice?: boolean; onExpand: (threadId: string) => void };
 /**
  * A thread as a row in its group's list (Astryx: records are rows, a Card is the exception): the title is the control
- * that opens it as a card, the metadata and the reason sit under it, the state and the action row at the end. A notice
- * carries the info icon in place of a deadline. The row keeps the card's id so focus and the toasts find it.
+ * that opens it as a card, one line under it says where it belongs and why it is here, the same line as the brief's,
+ * and the state and the one next step sit at the end. A notice carries the info icon in place of a deadline. The row
+ * keeps the card's id so focus and the toasts find it.
  */
-export function ThreadRow({ thread, areaTitle, compact, notice = false, onChange, onOpenCardView, onExpand }: RowProps) {
+export function ThreadRow({ thread, areaTitle, notice = false, onChange, onOpenCardView, onExpand }: RowProps) {
   const actions = useThreadActions({ thread, onChange, onOpenCardView });
   const { error, why } = actions;
   const conversation = useConversation();
   const level = notice ? 'notice' : attentionLevel(thread, today());
-  // The conversation is shown as a dot in the metadata, not as the row's selected state: a selected row paints its whole surface, which reads as a broken card when it stands alone.
+  const inConversation = conversation.chipped.includes('thread:' + thread.id);
   return <ListItem id={`thread-${thread.id}`} tabIndex={-1} align="start"
     startContent={notice ? <Icon icon="info" color="info" /> : undefined}
     label={<Button variant="ghost" size="sm" label={thread.title} aria-expanded={false} onClick={() => onExpand(thread.id)} />}
     description={<VStack gap={1} paddingInlineStart={3}>
-      <Meta thread={thread} areaTitle={areaTitle} compact={compact} summary inConversation={conversation.chipped.includes('thread:' + thread.id)} />
+      <HStack gap={2} vAlign="center" wrap="wrap">
+        <Text type="supporting">{areaTitle} · {thread.trigger.reason.replace(/\.$/, '')}{inConversation ? ' · I samtalet' : ''}</Text>
+        <Flags thread={thread} />
+      </HStack>
       {why && <WhyLine thread={thread} />}
       {error && <Text as="p" role="alert" color="accent">{error}</Text>}
-      <ActionRow thread={thread} level={level} actions={actions} />
     </VStack>}
-    endContent={<State thread={thread} />} />;
+    endContent={<HStack gap={3} vAlign="center"><State thread={thread} /><ActionRow thread={thread} level={level} actions={actions} quiet /></HStack>} />;
 }
 
 /**
- * The next step alone (D34): the thread's primary action as one button, for the brief on the landing. Black where a day
- * is set, soft where none is; the count follows the selection the connector wrote. The full action row is on the card.
+ * The next step alone (D34): the thread's primary action as one button, for the brief on the landing. Black where the day
+ * is today, soft otherwise; the count follows the selection the connector wrote. The full action row is on the card.
  */
 export function PrimaryAction({ thread, onChange, onOpenCardView }: ActionProps) {
   const actions = useThreadActions({ thread, onChange, onOpenCardView });
@@ -319,7 +328,7 @@ export function PrimaryAction({ thread, onChange, onOpenCardView }: ActionProps)
   if (!primary || thread.state !== 'open') return null;
   const label = actions.selectable ? `${primary.label} · ${actions.selected.length}` : primary.label;
   return <VStack gap={1}>
-    <Button size="sm" variant={thread.deadline ? 'primary' : 'secondary'} label={label} isDisabled={actions.selectable && actions.selected.length === 0} clickAction={() => actions.perform(primary)} />
+    <Button size="sm" variant={thread.deadline && streamGroup(thread, today()) === 'nu' ? 'primary' : 'secondary'} label={label} isDisabled={actions.selectable && actions.selected.length === 0} clickAction={() => actions.perform(primary)} />
     {actions.error && <Text as="p" role="alert" color="accent">{actions.error}</Text>}
   </VStack>;
 }

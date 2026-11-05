@@ -44,7 +44,7 @@ function Dictation({ onResult }: { onResult: (text: string) => void }) {
 /**
  * Where the box sits decides what it says about itself (the canvas's rule H3.3: the scope line always says what the box
  * talks to). On the landing (G) it is the page and says nothing above the field; in a conversation (H1) it says "Det här
- * samtalet" with the way to a new question; at the foot of the overview it says that a question opens a conversation.
+ * samtalet" with the way to a new question; at the foot of the overview the placeholder says it, and the box keeps to one line.
  */
 const STOP = new Set(['att', 'och', 'som', 'för', 'med', 'den', 'det', 'ett', 'jag', 'vad', 'hur', 'när', 'var', 'min', 'mitt', 'mina', 'har', 'kan', 'vill', 'ska', 'till', 'från', 'över', 'om']);
 export type ComposerPlace = 'landing' | 'conversation' | 'footer';
@@ -76,14 +76,13 @@ export function Composer({ place, near = [], roomy = false }: { place: ComposerP
       onSelect: item => { const o = (item as SearchableItem<ClewObject>).auxiliaryData!; talk.rememberObject(o); return { value: tokenValue(o.ref), label: o.label, variant: 'neutral' }; },
     };
   }, [talk.rememberObject]);
-  const placeholder = place === 'conversation' ? 'Svara, eller @ för att peka på något …' : 'Skriv eller säg vad du vill göra …';
+  const placeholder = place === 'conversation' ? 'Svara, eller @ för att peka på något …' : place === 'footer' ? 'Ny fråga: skriv eller säg vad du vill göra …' : 'Skriv eller säg vad du vill göra …';
   const plain = talk.value.replace(/@\[[^\]]+\]/g, '').trim();
   const mobile = useMediaQuery(mobileQuery);
   const pointer = useMediaQuery('(pointer: fine)');
   const shortcut = !mobile && pointer ? <Kbd keys="mod+k" /> : null;
   const scope = place === 'conversation'
-    ? <Text type="supporting"><Text as="span" weight="semibold" color="primary">Det här samtalet</Text>{mobile ? '' : ' · svaret kommer under frågan'}</Text>
-    : place === 'footer' ? <Text type="supporting"><Text as="span" weight="semibold" color="primary">Ny fråga</Text>{mobile ? '' : ' · svaret öppnas som ett samtal'}</Text> : undefined;
+    ? <Text type="supporting"><Text as="span" weight="semibold" color="primary">Det här samtalet</Text>{mobile ? '' : ' · svaret kommer under frågan'}</Text> : undefined;
   // While an answer is on its way the send button is Stoppa and the field stays open, so the person can write the next
   // question meanwhile (D36); Enter waits until the answer is written (the input empties itself on a submit, so it is
   // held back through the input's own key seam). Acting on a card's verbs still rests the whole box.
@@ -95,11 +94,10 @@ export function Composer({ place, near = [], roomy = false }: { place: ComposerP
     input={<ChatComposerInput handleRef={talk.input} label={place === 'conversation' ? 'Svara i samtalet' : 'Vad vill du göra'} maxRows={place === 'landing' ? 4 : 3} style={place === 'landing' && roomy ? landingField : undefined} hasHistory={false} triggers={[trigger]} placeholder={placeholder}
       onKeyDown={e => { if (talk.pending && e.key === 'Enter' && !e.shiftKey) e.preventDefault(); }} />}
     headerActions={scope}
-    headerContext={place === 'conversation' ? <HStack gap={2} vAlign="center"><Link href="/" onClick={e => { e.preventDefault(); talk.newConversation(); }}>Ny fråga i stället</Link>{shortcut}</HStack>
-      : place === 'footer' ? shortcut ?? undefined : undefined}
+    headerContext={place === 'conversation' ? <HStack gap={2} vAlign="center"><Link href="/" onClick={e => { e.preventDefault(); talk.newConversation(); }}>Ny fråga i stället</Link>{shortcut}</HStack> : undefined}
     footerActions={<HStack gap={1} wrap="wrap">
       {talk.chips.length === 1 && !plain && talk.verbs.length > 0 && <HStack gap={1} wrap="wrap" role="group" aria-label="Om kortet">{talk.verbs.map(v => <Button key={v.id} size="sm" variant="ghost" label={v.label} isDisabled={talk.busy} onClick={() => talk.ask(v.label)} />)}</HStack>}
-      <ModelMenu isDisabled={talk.busy} />
+      {place !== 'footer' && <ModelMenu isDisabled={talk.busy} />}
     </HStack>}
     sendActions={<Dictation onResult={text => talk.setValue((talk.value + ' ' + text).trim())} />}
     status={talk.error ? { type: 'error', message: talk.error } : undefined} />;

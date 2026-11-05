@@ -21,7 +21,7 @@ function cardState(t: Thread, now: string): string {
   const primary = t.actions.find(a => a.role === 'primary');
   const secondary = t.actions.filter(a => a.role === 'secondary').slice(0, 2);
   const overflow = t.actions.filter(a => a.role === 'overflow' || (a.role === 'secondary' && !secondary.includes(a)));
-  const more = `Fler val (${[...overflow.map(a => a.label), 'Avfärda', 'Varför ser jag detta?'].join(', ')})`;
+  const more = (...own: string[]) => `Fler val (${[...overflow.map(a => a.label), ...own, 'Lägg till i samtalet', 'Avfärda', 'Varför ser jag detta?'].join(', ')})`;
   const buttons = (labels: string[]) => labels.length ? ` Knappar på kortet nu: ${labels.join(', ')}.` : ' Kortet har inga knappar nu.';
   if (t.state === 'dismissed') return ' Kortet är avfärdat.' + buttons([]);
   if (t.state === 'handled') {
@@ -38,9 +38,9 @@ function cardState(t: Thread, now: string): string {
     return done + buttons([`Ångra allt (fram till ${timeLabel(r.undoUntil!)})`, ...secondary.filter(a => a.kind === 'read').map(a => a.label)]) +
       ` Ångra allt tar tillbaka det som gjordes i ${t.trigger.source}${own.length ? ` och först därefter visar kortet ${own.join(' och ')} igen` : ''}.`;
   }
-  if (isSnoozed(t, now)) return ' Kortet ligger under Inte nu.' + buttons(['Ta upp nu', more]);
-  if (t.waitingOn) return ` Kortet väntar på ${t.waitingOn}.` + buttons(['Påminn mig', more]);
-  return buttons([...(primary ? [primary.label] : []), ...secondary.map(a => a.label), 'Inte nu', 'Påminn mig', more]);
+  if (isSnoozed(t, now)) return ' Kortet ligger under Inte nu.' + buttons(['Ta upp nu', more()]);
+  if (t.waitingOn) return ` Kortet väntar på ${t.waitingOn}.` + buttons(['Påminn mig', more()]);
+  return buttons([...(primary ? [primary.label] : []), ...secondary.map(a => a.label), 'Inte nu', more('Påminn mig')]);
 }
 /**
  * Swedish lines for the system prompt's "Du tittar på" block. Names appear here only because the person pointed at the

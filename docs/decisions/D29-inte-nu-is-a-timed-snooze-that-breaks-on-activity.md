@@ -33,3 +33,5 @@ conditions later on 2026-11-04 because a condition watch has no real source to p
 
 **Replaces.** The fixed snooze to 06:00 from session 4 (now the default preset) and the fixed reminder menu from
 D17 (10 seconds, 10 minutes, an hour, three hours), which becomes the same picker.
+
+**Amended 2026-11-05 by D47.** Påminn mig and, on a row, Inte nu sit under Fler val as sub-menus; a card keeps Inte nu in view.

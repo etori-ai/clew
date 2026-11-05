@@ -32,7 +32,7 @@ export { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/Segme
 export { EmptyState } from '@astryxdesign/core/EmptyState';
 export { Layout, LayoutHeader, LayoutContent, LayoutFooter, LayoutPanel, VStack, HStack, StackItem } from '@astryxdesign/core/Layout';
 export { SideNav, SideNavItem, SideNavSection, SideNavHeading } from '@astryxdesign/core/SideNav';
-export { DropdownMenu, DropdownMenuRadioGroup, DropdownMenuRadioItem } from '@astryxdesign/core/DropdownMenu';
+export { DropdownMenu, DropdownMenuDivider, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSubMenu } from '@astryxdesign/core/DropdownMenu';
 export { MoreMenu } from '@astryxdesign/core/MoreMenu';
 export { Banner } from '@astryxdesign/core/Banner';
 export { Drawer, DrawerHeader } from '@astryxdesign/core/Drawer';
@@ -68,7 +68,7 @@ export { TopNav, TopNavHeading, TopNavItem } from '@astryxdesign/core/TopNav';
 export { Section } from '@astryxdesign/core/Section';
 export { useAnnounce, useMediaQuery, useStreamingText } from '@astryxdesign/core/hooks';
 // Glyphs beyond Astryx's registry come from Heroicons (MIT), the set Astryx's own templates draw with; each is named here once.
-export { AtSymbolIcon, BellIcon, BookOpenIcon, ChartBarIcon, DocumentTextIcon, LinkIcon, PhoneIcon, SparklesIcon, Squares2X2Icon, UserCircleIcon, UsersIcon } from '@heroicons/react/24/outline';
+export { ArrowPathIcon, AtSymbolIcon, BellIcon, BookOpenIcon, ChartBarIcon, CheckCircleIcon, DocumentTextIcon, InboxIcon, LightBulbIcon, LinkIcon, MegaphoneIcon, PauseCircleIcon, PhoneIcon, SparklesIcon, Squares2X2Icon, UserCircleIcon, UsersIcon } from '@heroicons/react/24/outline';
 export { SessionBoundary, sessionFetch, signOut, type BrowserSession } from './session';
 export { WeekAgenda, type AgendaItem } from './week-agenda';
 export { EventCalendar, type CalendarView } from './calendar';

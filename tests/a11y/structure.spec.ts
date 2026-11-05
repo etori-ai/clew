@@ -205,9 +205,11 @@ test.describe('3.1.2 language of parts', () => {
     await expect(page.getByRole('article', { name: 'Assistenten', exact: true })).toBeVisible();
   });
 
-  // On the landing the box has no header and already holds the focus (G); where the box has a scope line, the shortcut sits in it.
+  // On the landing the box has no header and already holds the focus (G); the conversation's scope line carries the shortcut.
   test('the keyboard shortcut is spoken in Swedish', async ({ page, api: _ }) => {
-    await open(page, '/overview');
+    await open(page, '/');
+    await composer(page).fill('Vem är på plats i dag?');
+    await page.keyboard.press('Enter');
     await expect(page.getByRole('img', { name: 'Kontroll + K' })).toBeVisible();
   });
 

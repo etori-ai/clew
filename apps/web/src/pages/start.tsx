@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Area, Figure, SessionUser, Thread, ViewRef, PanelViewSpec } from '@clew/contracts';
-import { Banner, Button, ChatLayout, ClickableCard, Divider, EmptyState, Grid, GridSpan, Heading, HStack, Icon, IconButton, Layout, LayoutContent, LayoutFooter, Link, List, ListItem, MoreMenu, ProgressBar, Skeleton, SparklesIcon, Text, ToggleButton, Toolbar, VisuallyHidden, VStack, useMediaQuery, useToast } from '@clew/ui';
+import { Banner, Button, ChatLayout, ClickableCard, Divider, EmptyState, Grid, GridSpan, Heading, HStack, Icon, IconButton, InfoTip, Layout, LayoutContent, LayoutFooter, Link, List, ListItem, MoreMenu, ProgressBar, Skeleton, SparklesIcon, Text, ToggleButton, Toolbar, VisuallyHidden, VStack, useMediaQuery, useToast } from '@clew/ui';
 import { addDays, displayDate, shortDayLabel, timeLabel, timeRange, today } from '@clew/calendar/dates';
 import { errorMessage } from '../query-policy';
 import { areasQuery, assistantQuery, attentionQuery, cardViewQuery, figuresQuery, threadsQuery, todayQuery, viewQuery } from '../queries';
@@ -214,7 +214,7 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
     if (focusTitle) expandFocus.current = null;
     return t.proposals.length
       ? <ThreadCard key={t.id} thread={t} compact={mobile} headingLevel={headingLevel} onChange={replace} />
-      : <GenericCard key={t.id} thread={t} areaTitle={areaTitle(t.area)} position={position} compact={mobile} headingLevel={headingLevel} autoFocusTitle={focusTitle} onChange={replace} onOpenCardView={openCardView} />;
+      : <GenericCard key={t.id} thread={t} areaTitle={areaTitle(t.area)} position={position} headingLevel={headingLevel} autoFocusTitle={focusTitle} onChange={replace} onOpenCardView={openCardView} />;
   };
   /** A group's threads: runs of rows in one list, a card where a thread is open. */
   const records = (list: Thread[], options: { lead?: boolean; notice?: boolean; headingLevel?: 2 | 3 } = {}) => {
@@ -223,8 +223,8 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
     const flush = () => { if (rows.length) { out.push(<VStack key={`rows-${out.length}`} gap={0}><Divider /><List hasDividers density="balanced" edge="flush">{rows}</List><Divider /></VStack>); rows = []; } };
     list.forEach((t, i) => {
       const asCard = mobile || t.proposals.length > 0 || opened.has(t.id) || kort === t.id || (options.lead && i === 0);
-      if (asCard) { flush(); out.push(card(t, options.lead ? `${i + 1} av ${list.length}` : undefined, options.headingLevel)); }
-      else rows.push(<ThreadRow key={t.id} thread={t} areaTitle={areaTitle(t.area)} compact={mobile} notice={options.notice} onChange={replace} onOpenCardView={openCardView} onExpand={expand} />);
+      if (asCard) { flush(); out.push(card(t, options.lead && list.length > 1 ? `${i + 1} av ${list.length}` : undefined, options.headingLevel)); }
+      else rows.push(<ThreadRow key={t.id} thread={t} areaTitle={areaTitle(t.area)} notice={options.notice} onChange={replace} onOpenCardView={openCardView} onExpand={expand} />);
     });
     flush();
     return out;
@@ -232,12 +232,13 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
   const nextBundle = attention?.rhythm.find(p => p.kind === 'bundle' && p.state !== 'done');
   const hello = greeting(Number(timeLabel(now).slice(0, 2)));
   const sentence = digestSentence(g);
-  const reviewLine = attention && `Genomgången ${attention.rhythm[0]?.at ?? '06:00'} · ${g.nu.length + g.senare.length + g.foreslar.length + g.kannedom.length + g.waiting.length} trådar lästa · ${nextBundle ? `Nästa samling ${nextBundle.at}` : 'Nästa genomgång i morgon 06:00'}`;
-  // The digest is the overview's lead, not a discrete item: a section with the greeting as the h1, never a card (D31).
-  const digest = attention && <VStack gap={2} as="section" aria-label="Genomgången">
-      <Text type="supporting">{reviewLine}</Text>
+  // The digest is the overview's lead, not a discrete item: a section with the greeting as the h1, never a card (D31). How often the assistant interrupts is help, not a thing to do, so it sits behind the tip.
+  const digest = attention && <VStack gap={1} as="section" aria-label="Genomgången">
       <Heading level={1}>{hello}. {sentence}</Heading>
-      <Text type="supporting">Jag stör högst {attention.budget} gånger mellan samlingarna, bara för deadline samma dag eller något du själv bad om. Allt annat samlas.</Text>
+      <HStack gap={1} vAlign="center">
+        <Text type="supporting">Genomgången {attention.rhythm[0]?.at ?? '06:00'} · {nextBundle ? `Nästa samling ${nextBundle.at}` : 'Nästa genomgång i morgon 06:00'}</Text>
+        <InfoTip label="Så här hör jag av mig" content={`Jag stör högst ${attention.budget} gånger mellan samlingarna, bara för deadline samma dag eller något du själv bad om. Allt annat samlas.`} />
+      </HStack>
     </VStack>;
   const assistantDown = !!assistant && assistant.configured && !assistant.available;
 
@@ -252,36 +253,24 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
       <VStack gap={2}>{(pile === 'waiting' ? g.waiting : g.snoozed).map(t => card(t, undefined, 2))}</VStack>
     </VStack>;
 
-  /** The groups (D34): one lead per region (the h1 above), then the groups ranked by weight at one size: Heading level 3 on the page, level 2 in the outline. */
+  /** The groups (D34): one lead per region (the h1 above), then the groups ranked by weight at one size, in the page's outline as level 2. The heading says what the group is; why it exists is ours to know, not the reader's. */
   const groups = <VStack gap={5}>
     <VStack gap={2} as="section" aria-label="Nu">
-      <HStack justify="between" vAlign="end" gap={2} wrap="wrap">
-        <Heading id="behover-dig" tabIndex={-1} level={3} accessibilityLevel={2}>{loadingThreads ? 'Nu' : g.nu.length === 0 ? 'Inget behöver dig just nu' : `Nu · ${g.nu.length}`}</Heading>
-        <Text type="supporting">{g.nu.length ? 'Deadline i dag, eller något du bad om' : g.senare.length ? 'Resten har tid på sig' : 'Nästa genomgång i morgon 06:00'}</Text>
-      </HStack>
+      <Heading id="behover-dig" tabIndex={-1} level={2}>{loadingThreads ? 'Nu' : g.nu.length === 0 ? 'Inget brådskar just nu' : `Nu · ${g.nu.length}`}</Heading>
       {loadingThreads && <BriefSkeleton compact={mobile} />}
       {!loadingThreads && g.nu.length + g.senare.length + g.foreslar.length + g.kannedom.length === 0 && <EmptyState title="Lugnt läge" description="Assistenten hör av sig när något behöver dig." isCompact headingLevel={3} />}
       {g.nu.length > 0 && <VStack gap={2}>{records(g.nu, { lead: true })}</VStack>}
     </VStack>
     {g.senare.length > 0 && <VStack gap={2} as="section" aria-label="Senare">
-      <HStack justify="between" vAlign="end" gap={2} wrap="wrap">
-        <Heading id="senare" tabIndex={-1} level={3} accessibilityLevel={2}>Senare · {g.senare.length}</Heading>
-        <Text type="supporting">Bara det som har en dag får en dag</Text>
-      </HStack>
+      <Heading id="senare" tabIndex={-1} level={2}>Senare · {g.senare.length}</Heading>
       <VStack gap={2}>{records(g.senare)}</VStack>
     </VStack>}
     {g.foreslar.length > 0 && <VStack gap={2} as="section" aria-label="Jag föreslår">
-      <HStack justify="between" vAlign="end" gap={2} wrap="wrap">
-        <Heading id="proposals" tabIndex={-1} level={3} accessibilityLevel={2}>Jag föreslår · {g.foreslar.length}</Heading>
-        <Text type="supporting">Ingen deadline, nej tack är ett svar</Text>
-      </HStack>
+      <Heading id="proposals" tabIndex={-1} level={2}>Jag föreslår · {g.foreslar.length}</Heading>
       <VStack gap={2}>{records(g.foreslar)}</VStack>
     </VStack>}
     {g.kannedom.length > 0 && <VStack gap={2} as="section" aria-label="Till kännedom">
-      <HStack justify="between" vAlign="end" gap={2} wrap="wrap">
-        <Heading id="notices" tabIndex={-1} level={3} accessibilityLevel={2}>Till kännedom · {g.kannedom.length}</Heading>
-        <Text type="supporting">Ingen knapp, försvinner när du läst</Text>
-      </HStack>
+      <Heading id="notices" tabIndex={-1} level={2}>Till kännedom · {g.kannedom.length}</Heading>
       <VStack gap={2}>{records(g.kannedom, { notice: true })}</VStack>
     </VStack>}
     {current && current.schedules.length > 0 && <VStack gap={1} as="section" aria-label="Så här bevakar jag området">
@@ -289,27 +278,17 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
       {current.schedules.map((s, i) => <Text key={i} type="supporting"><Text as="span" weight="semibold">{s.when}</Text> · {s.label}</Text>)}
     </VStack>}
   </VStack>;
-  /** The overview's rail: the day, the piles with their counts, and the assistant's own schedule. Folds under the groups when narrow. */
+  /** The overview's side column: the day and how far it has come. The piles are in the menu, once. Folds under the groups when narrow. */
   const done = g.handledToday.length, total = done + g.nu.length + g.senare.length + g.foreslar.length + g.kannedom.length + g.waiting.length + g.snoozed.length;
-  const schedules = areas.flatMap(a => a.schedules.map(s => ({ ...s, area: a.title }))).slice(0, 5);
-  const aside = <VStack gap={5} as="aside" aria-label="Dagen och vid sidan av">
+  const aside = <VStack gap={5} as="aside" aria-label="Dagen">
     {day && <Today view={day} compact />}
-    <VStack gap={2} as="section" aria-label="Vid sidan av">
-      <Heading level={3} accessibilityLevel={2}>Vid sidan av</Heading>
-      <List hasDividers density="compact" edge="flush">
-        <ListItem href="/waiting" align="start" label={<Text weight="semibold">Pågår utan dig</Text>} endContent={<Text type="supporting">{g.waiting.length}</Text>}
-          description={<Text type="supporting">{g.waiting[0] ? `${g.waiting[0].title} · väntar på ${g.waiting[0].waitingOn}` : 'Inget väntar på någon annan'}</Text>} />
-        <ListItem href="/snoozed" align="start" label={<Text weight="semibold">Inte nu</Text>} endContent={<Text type="supporting">{g.snoozed.length}</Text>}
-          description={<Text type="supporting">Tillbaka 06:00, eller tidigare om något händer</Text>} />
-        <ListItem href="/handled" align="start" label={<Text weight="semibold">Klart i dag</Text>} endContent={<Text type="supporting">{done}</Text>}
-          description={<VStack gap={1}><ProgressBar label={`Klart i dag: ${done} av ${total}`} isLabelHidden value={done} max={Math.max(total, 1)} variant="success" /><Text type="supporting">{done} av {total} sedan 06:00</Text></VStack>} />
-      </List>
-    </VStack>
-    {!current && schedules.length > 0 && <VStack gap={1} as="section" aria-label="Så här bevakar jag">
-      <Heading level={3} accessibilityLevel={2}>Så här bevakar jag</Heading>
-      {schedules.map((s, i) => <Text key={i} type="supporting"><Text as="span" weight="semibold">{s.when}</Text> · {s.label} · {s.area}</Text>)}
-    </VStack>}
+    <List density="compact" edge="flush" aria-label="Klart i dag">
+      <ListItem href="/handled" align="start" label={<HStack justify="between" gap={2}><Text weight="semibold">Klart i dag</Text><Text type="supporting" hasTabularNumbers>{done} av {total}</Text></HStack>}
+        description={<ProgressBar label={`Klart i dag: ${done} av ${total}`} isLabelHidden value={done} max={Math.max(total, 1)} variant="success" />} />
+    </List>
   </VStack>;
+  // On a phone the day's work comes first: the figures would fill the first screen, so they follow the groups.
+  const tiles = !current && figures.length > 0 && <FigureTiles figures={figures} unitLabel={user.unitLabel} compact={mobile} />;
   const overview = <VStack gap={5}>
     {error && <Text as="p" role="alert" color="accent">{error}</Text>}
     {kort && location.pathname === '/overview' && threadsQ.isSuccess && ![...g.nu, ...g.senare, ...g.foreslar, ...g.kannedom].some(t => t.id === kort) &&
@@ -327,8 +306,8 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
       {!current && digest}
       {!current && !digest && <VisuallyHidden as="div"><Heading level={1}>Hela bilden</Heading></VisuallyHidden>}
       {current?.id === 'kalender' && day && <Today view={day} compact={mobile} />}
-      {!current && figures.length > 0 && <FigureTiles figures={figures} unitLabel={user.unitLabel} compact={mobile} />}
-      {narrow ? <VStack gap={5}>{groups}{!current && aside}</VStack> : <Grid columns={3} gap={6}><GridSpan columns={current ? 3 : 2}>{groups}</GridSpan>{!current && aside}</Grid>}
+      {!mobile && tiles}
+      {narrow ? <VStack gap={5}>{groups}{mobile && tiles}{!current && aside}</VStack> : <Grid columns={3} gap={6}><GridSpan columns={current ? 3 : 2}>{groups}</GridSpan>{!current && aside}</Grid>}
     </>}
   </VStack>;
 

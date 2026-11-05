@@ -47,6 +47,12 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
   const notAdded = report ? report.models.filter(name => !models.some(m => m.model === name)) : [];
   const changed = draft.title !== p.title || draft.baseUrl !== p.baseUrl;
   const closeKey = () => { setKeyOpen(false); setKey(''); };
+  // A Toolbar keeps one row, which these buttons cannot at 320 px: on a phone they wrap (1.4.10).
+  const actions = <>
+        <Button variant="secondary" label="Testa" isDisabled={busy} clickAction={() => run(async () => { const r = await api.admin.testProvider(id); setReport(r); return r.ok ? 'Leverantören svarar.' : 'Testet hittade fel, se listan.'; })} />
+        <Button variant="secondary" label="Byt nyckel" isDisabled={busy} onClick={() => setKeyOpen(true)} />
+        <Button variant="destructive" label="Ta bort" isDisabled={busy || models.length > 0} tooltip={models.length > 0 ? 'Ta bort leverantörens modeller först.' : undefined} onClick={() => setRemoveOpen(true)} />
+  </>;
   return <AdminShell user={user} section="modeller" crumbs={crumbs(p.title)}>
     <PageLead title={p.title} actions={<Button variant="primary" label="Lägg till modell" onClick={() => setAdding(true)} />}>
       <HStack gap={1} vAlign="center" wrap="wrap"><StatusDot variant={s.tone} label={s.label} /><Text color="secondary">{s.label} · {p.baseUrl}</Text></HStack>
@@ -56,11 +62,7 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
       description={`${p.health.detail ?? ''} ${p.health.status === 'key-rejected' ? 'Byt nyckel här, eller kontrollera den hos leverantören.' : 'Frågor till dess modeller besvaras av den inbyggda routern tills den svarar igen.'}`.trim()} endContent={<Timestamp value={p.health.at} format="date_time" />} />}
     {error && <Text as="p" role="alert" color="accent">{error}</Text>}
     <Card padding={4}><VStack gap={4}>
-      <Toolbar label="Åtgärder" size="sm" variant="muted" startContent={<>
-        <Button variant="secondary" label="Testa" isDisabled={busy} clickAction={() => run(async () => { const r = await api.admin.testProvider(id); setReport(r); return r.ok ? 'Leverantören svarar.' : 'Testet hittade fel, se listan.'; })} />
-        <Button variant="secondary" label="Byt nyckel" isDisabled={busy} onClick={() => setKeyOpen(true)} />
-        <Button variant="destructive" label="Ta bort" isDisabled={busy || models.length > 0} tooltip={models.length > 0 ? 'Ta bort leverantörens modeller först.' : undefined} onClick={() => setRemoveOpen(true)} />
-      </>} />
+      {mobile ? <HStack gap={2} wrap="wrap" role="group" aria-label="Åtgärder">{actions}</HStack> : <Toolbar label="Åtgärder" size="sm" variant="muted" startContent={actions} />}
       {report && <VStack gap={3}>
         <Findings report={report} label="Testets resultat" />
         {notAdded.length > 0 && <HStack gap={2} vAlign="center" wrap="wrap">

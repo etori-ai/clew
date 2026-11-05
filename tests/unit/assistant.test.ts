@@ -144,7 +144,7 @@ describe('the model path only reads, and falls back when the provider fails', ()
     expect(prompt).toContain('Du tittar på');
     expect(prompt).toContain('Kort "Attestera 3 fakturor, 37 050 kr" (Raindance');
     expect(prompt).toContain('Lekolar · 11 200 kr · 6451 · förfaller 5 nov [vald]');
-    expect(prompt).toContain('Knappar på kortet nu: Attestera valda, Öppna i Raindance, Inte nu, Påminn mig, Fler val (Avfärda, Varför ser jag detta?).');
+    expect(prompt).toContain('Knappar på kortet nu: Attestera valda, Öppna i Raindance, Inte nu, Fler val (Påminn mig, Lägg till i samtalet, Avfärda, Varför ser jag detta?).');
     expect(systemPrompt({ name: 'x', role: 'employee', unitLabel: 'y', now: new Date(now), week: 45, objects: [] })).not.toContain('Du tittar på');
   });
   test('a card already acted on offers Ångra allt, never its own buttons, and nothing once the window has closed', () => {
@@ -164,7 +164,7 @@ describe('the model path only reads, and falls back when the provider fails', ()
   });
   test('a snoozed, a waiting and a dismissed card name only what they show', () => {
     const [snoozed] = serialiseContext([{ kind: 'thread', ref: 'thread:c1', thread: { ...card, snoozedUntil: '2026-11-04T05:00:00.000Z' } }], now);
-    expect(snoozed).toContain('Kortet ligger under Inte nu. Knappar på kortet nu: Ta upp nu, Fler val (Avfärda, Varför ser jag detta?).');
+    expect(snoozed).toContain('Kortet ligger under Inte nu. Knappar på kortet nu: Ta upp nu, Fler val (Lägg till i samtalet, Avfärda, Varför ser jag detta?).');
     const [waiting] = serialiseContext([{ kind: 'thread', ref: 'thread:c1', thread: { ...card, waitingOn: 'Raindance' } }], now);
     expect(waiting).toContain('Kortet väntar på Raindance. Knappar på kortet nu: Påminn mig, Fler val');
     const [dismissed] = serialiseContext([{ kind: 'thread', ref: 'thread:c1', thread: { ...card, state: 'dismissed' } }], now);

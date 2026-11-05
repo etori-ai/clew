@@ -37,7 +37,7 @@ export function Brief({ threads, areaTitle, cardHref, onChange, onOpenCardView, 
           : t.deadline ? <Text type="supporting" weight="semibold" hasTabularNumbers>{dayWord(t.deadline.slice(0, 10), now)}</Text> : undefined;
         const choose = t.items.some(i => i.selectable);
         const next = kind === 'forslag' || choose
-          ? <Button size="sm" variant={t.deadline && kind !== 'forslag' ? 'primary' : 'secondary'} label={kind === 'forslag' ? 'Visa förslaget' : t.items.length > 1 ? `Granska ${t.items.length}` : 'Granska'} href={cardHref(t.id)} />
+          ? <Button size="sm" variant={due && kind !== 'forslag' ? 'primary' : 'secondary'} label={kind === 'forslag' ? 'Visa förslaget' : t.items.length > 1 ? `Granska ${t.items.length}` : 'Granska'} href={cardHref(t.id)} />
           : <PrimaryAction thread={t} onChange={onChange} onOpenCardView={onOpenCardView} />;
         // The day has its own column, empty where there is no day, so every title starts on one line (G).
         // The card can go into the box from here, as from the card itself: a token in the box's drawer, "I samtalet" once there.

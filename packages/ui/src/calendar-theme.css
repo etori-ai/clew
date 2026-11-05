@@ -165,6 +165,14 @@
 .clew-cal-list-event-inner { display: flex; flex-direction: row; align-items: center; gap: var(--spacing-2); min-width: 0; }
 .clew-cal-list-event-time { flex-shrink: 0; width: 50%; max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .clew-cal-list-event-title { flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 767px) {
+  .clew-cal-list-day { flex-direction: column; }
+  .clew-cal-list-day-header { width: auto; max-width: none; min-height: 0; padding-block: var(--spacing-1) 0; }
+  .clew-cal-list-day-body { width: 100%; padding-block: var(--spacing-1); }
+  .clew-cal-list-event-inner { flex-wrap: wrap; row-gap: 0; }
+  .clew-cal-list-event-time { width: auto; max-width: none; }
+  .clew-cal-list-event-title { white-space: normal; }
+}
 .clew-cal-no-events { flex-grow: 1; display: flex; align-items: center; justify-content: center; }
 .clew-cal-no-events-inner { padding-block: var(--spacing-12); color: var(--color-text-secondary); }
 
