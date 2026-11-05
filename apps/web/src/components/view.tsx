@@ -106,8 +106,8 @@ function Rows({ view, rows, hrefFor, wide }: { view: RowsView; rows: Row[]; href
     // proportion to their floors (equal weights would give every column the widest floor, and a table wider than its panel).
     const share = (floor: number) => proportional(floor / 100, { minWidth: floor });
     const columns = [
-      { key: view.title, header: titleField.label, width: share(170), renderCell: (r: TableRow) => name(r.row) },
-      ...others.map(f => ({ key: f.key, header: f.label, width: f.format === 'phone' ? pixel(140) : share(f.format === 'email' ? 235 : 150), renderCell: (r: TableRow) => <Value field={f} value={r.row[f.key]} /> })),
+      { key: view.title, header: titleField.label, width: share(150), renderCell: (r: TableRow) => name(r.row) },
+      ...others.map(f => ({ key: f.key, header: f.label, width: f.format === 'phone' ? pixel(120) : share(f.format === 'email' ? 235 : 130), renderCell: (r: TableRow) => <Value field={f} value={r.row[f.key]} /> })),
       ...(view.chip && view.ref ? [{ key: 'clew-chip', header: 'Samtal', width: pixel(72), renderCell: (r: TableRow) => chip(r.row) }] : []),
     ];
     return <Table<TableRow> data={rows.map((row, i) => ({ id: key(row, i), row }))} idKey="id" columns={columns} density="compact" hasHover />;
@@ -117,17 +117,17 @@ function Rows({ view, rows, hrefFor, wide }: { view: RowsView; rows: Row[]; href
     const shown = others.filter(f => !empty(row[f.key]));
     const words = shown.filter(f => !linked(f) && f.format !== 'status'), marks = shown.filter(f => f.format === 'status'), links = shown.filter(linked);
     const word = (f: ViewField) => `${f.format && f.format !== 'text' ? `${f.label}: ` : ''}${f.format === 'date' && !Number.isNaN(Date.parse(String(row[f.key]))) ? dateOnly.format(Date.parse(String(row[f.key]))) : fieldValue(row[f.key])}`;
-    // Each number and address is a line of ordinary text with its link in it, so a long address wraps instead of pushing the row sideways (1.4.10).
+    // The numbers and the address share a line and wrap where they must, so a long address never pushes the row sideways (1.4.10) and a person takes three lines, not five.
     return <ListItem key={key(row, i)} align="start" label={name(row)} endContent={chip(row)}
       description={<VStack gap={1}>
         {words.length > 0 && <Text type="supporting">{words.map(word).join(' · ')}</Text>}
         {marks.length > 0 && <HStack gap={1} wrap="wrap">{marks.map(f => <Value key={f.key} field={f} value={row[f.key]} />)}</HStack>}
-        {links.map(f => <Text key={f.key} type="supporting">{f.format !== 'link' && `${f.label} `}<Value field={f} value={row[f.key]} /></Text>)}
+        {links.length > 0 && <HStack gap={3} wrap="wrap">{links.map(f => <Text key={f.key} type="supporting">{f.format !== 'link' && `${f.label} `}<Value field={f} value={row[f.key]} /></Text>)}</HStack>}
       </VStack>} />;
   })}</List>;
 }
 
-export function DeclaredView({ view, output, input = {}, onInput, hrefFor, isLoading = false, limit, headingLevel = 3, tableQuery = '(min-width: 900px)' }: DeclaredViewProps) {
+export function DeclaredView({ view, output, input = {}, onInput, hrefFor, isLoading = false, limit, headingLevel = 3, tableQuery = '(min-width: 1010px)' }: DeclaredViewProps) {
   const wide = useMediaQuery(tableQuery);
   // A count that changes while someone types is spoken as one message, the latest (4.1.3); the visible line says the same.
   const announce = useAnnounce({ hasReplace: true });

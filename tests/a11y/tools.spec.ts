@@ -126,15 +126,26 @@ test.describe('a tool as a page', () => {
 });
 
 test.describe('a tool\'s page on a smaller screen', () => {
-  test('beside the rail on a laptop the rows are a list, and nothing scrolls sideways', async ({ page, api }) => {
+  test('beside the rail on a laptop the rows are a table, one line a person, and nothing scrolls sideways', async ({ page, api }) => {
     await page.setViewportSize(desktop);
     api.menu = menuRows;
     await open(page, directory);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Telefonbok');
-    await expect(page.getByRole('list', { name: 'Telefonboken' }).getByRole('listitem')).toHaveCount(14);
-    await expect(page.getByRole('table')).toHaveCount(0);
+    const rows = page.getByRole('table').getByRole('row');
+    await expect(rows).toHaveCount(15);
+    expect((await rows.nth(1).boundingBox())!.height).toBeLessThan(60);
+    expect(await page.getByRole('table').evaluate(table => table.scrollWidth <= table.clientWidth + 1)).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(desktop.width);
     await expectNoAxeViolations(page);
+  });
+
+  test('in a narrower window the same rows are a list, and nothing scrolls sideways', async ({ page, api }) => {
+    await page.setViewportSize({ width: 1024, height: 768 });
+    api.menu = menuRows;
+    await open(page, directory);
+    await expect(page.getByRole('list', { name: 'Telefonboken' }).getByRole('listitem')).toHaveCount(14);
+    await expect(page.getByRole('table')).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
   });
 
   test('on a phone the page and the card both fit, and the card closes back to the rows', async ({ page, api }) => {
