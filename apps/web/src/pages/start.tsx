@@ -170,6 +170,23 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
   // thread in a pile, the card a brief row pointed at (`?kort=`) and every thread on a phone is a card; the rest are rows the person opens.
   const kort = search.get('kort');
   const [opened, setOpened] = useState<Set<string>>(() => new Set(kort ? [kort] : []));
+  const focusedReminder = useRef<string | null>(null);
+  // A reminder navigates to the unfiltered stream. Focus after the drawer closes, including its exit
+  // animation: an open modal rejects focus outside it. A later cache refresh never takes focus again.
+  useEffect(() => {
+    if (!kort || !threadsQ.data || location.pathname !== '/oversikt' || focusedReminder.current === location.key) return;
+    const focus = () => {
+      if (focusedReminder.current === location.key || document.querySelector('dialog[open]')) return;
+      const target = document.getElementById('thread-' + kort);
+      if (!target) return;
+      focusedReminder.current = location.key;
+      target.scrollIntoView({ block: 'center' });
+      target.focus({ preventScroll: true });
+    };
+    const frame = requestAnimationFrame(focus);
+    document.addEventListener('close', focus, true);
+    return () => { cancelAnimationFrame(frame); document.removeEventListener('close', focus, true); };
+  }, [kort, location.key, location.pathname, threadsQ.data]);
   const expandFocus = useRef<string | null>(kort);
   const expand = (id: string) => { expandFocus.current = id; setOpened(s => new Set(s).add(id)); };
   // A group named in the hash (the rail's Jag föreslår, Till kännedom) takes the focus to its heading once the threads are here.
@@ -193,7 +210,7 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
     // A run of rows is one list fenced by dividers (the structure guide: rows with dividers, no card), its text on the column's content line (edge flush).
     const flush = () => { if (rows.length) { out.push(<VStack key={`rows-${out.length}`} gap={0}><Divider /><List hasDividers density="balanced" edge="flush">{rows}</List><Divider /></VStack>); rows = []; } };
     list.forEach((t, i) => {
-      const asCard = mobile || t.proposals.length > 0 || opened.has(t.id) || (options.lead && i === 0);
+      const asCard = mobile || t.proposals.length > 0 || opened.has(t.id) || kort === t.id || (options.lead && i === 0);
       if (asCard) { flush(); out.push(card(t, options.lead ? `${i + 1} av ${list.length}` : undefined, options.headingLevel)); }
       else rows.push(<ThreadRow key={t.id} thread={t} areaTitle={areaTitle(t.area)} compact={mobile} notice={options.notice} onChange={replace} onOpenCardView={openCardView} onExpand={expand} />);
     });
@@ -283,6 +300,8 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
   </VStack>;
   const overview = <VStack gap={5}>
     {error && <Text as="p" role="alert" color="accent">{error}</Text>}
+    {kort && location.pathname === '/oversikt' && threadsQ.isSuccess && ![...g.nu, ...g.senare, ...g.foreslar, ...g.kannedom].some(t => t.id === kort) &&
+      <Banner status="info" title="Kortet är inte längre aktuellt på startsidan." description="Det kan ha hanterats eller lagts åt sidan." />}
     {pile ? pileContent : <>
       {current && <VStack gap={2} as="section" aria-label={`Området ${current.title}`}>
         <HStack justify="between" vAlign="end" gap={2} wrap="wrap">

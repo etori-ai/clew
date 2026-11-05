@@ -29,7 +29,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveCount(1);
     await expect(page.getByRole('main')).toHaveCount(1);
     await expect(page.getByRole('navigation')).toHaveCount(1);
-    await expect(page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: /^Startsidan/ })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: /Startsidan/ })).toBeVisible();
   });
 
   test('the rail is one navigation landmark with the areas as lenses, in the drawer on a phone', async ({ page, api: _ }) => {

@@ -1,4 +1,8 @@
 import { defineConfig } from '@playwright/test';
+import { resolve } from 'node:path';
+import { a11yBrandProfile } from './branding-fixtures';
+
+const profile = a11yBrandProfile(process.env.CLEW_A11Y_BRAND_PROFILE);
 
 /**
  * The WCAG 2.2 AA suite. A production build runs in the pinned Playwright image with `/api` mocked in the browser, so
@@ -7,13 +11,14 @@ import { defineConfig } from '@playwright/test';
  */
 export default defineConfig({
   testDir: '.',
-  outputDir: '../../test-results',
-  fullyParallel: true,
+  outputDir: resolve(import.meta.dirname, '../../test-results', profile),
+  fullyParallel: false,
+  workers: 1,
   forbidOnly: true,
-  reporter: [['list'], ['html', { open: 'never', outputFolder: '../../playwright-report' }]],
+  reporter: [['list'], ['html', { open: 'never', outputFolder: resolve(import.meta.dirname, '../../playwright-report', profile) }]],
   use: { baseURL: 'http://localhost:4173', locale: 'sv-SE', timezoneId: 'Europe/Stockholm', trace: 'retain-on-failure' },
   webServer: {
-    command: 'node_modules/.bin/vite build --logLevel warn && node_modules/.bin/vite preview --port 4173 --strictPort',
+    command: 'node_modules/.bin/vite build --config ../../tests/a11y/vite.config.ts --logLevel warn && node_modules/.bin/vite preview --config ../../tests/a11y/vite.config.ts --port 4173 --strictPort',
     cwd: '../../apps/web',
     url: 'http://localhost:4173',
     reuseExistingServer: false,

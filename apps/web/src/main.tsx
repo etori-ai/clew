@@ -15,6 +15,7 @@ import { AdminModelsPage } from './pages/admin/models';
 import { AdminModelPage } from './pages/admin/model';
 import { AdminProviderPage } from './pages/admin/provider';
 import { NotAdmin } from './pages/admin/shell';
+import { branding } from './branding';
 
 type Shell = { session: BrowserSession; user: SessionUser; admin: boolean };
 /** The cache inspector, development only: the production bundle, the a11y suite and a deployment never carry it. */
@@ -97,7 +98,7 @@ function StartRoute({ user, admin }: { user: SessionUser; admin: boolean }) {
   return <StartPage user={user} admin={admin} mode={modeOf(location.pathname, search)} />;
 }
 createRoot(document.getElementById('root')!).render(<StrictMode>
-  <Providers>
+  <Providers branding={branding}>
     <BrowserRouter>
       <LinkProvider component={RouterLink}>
         <App />

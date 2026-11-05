@@ -1,4 +1,4 @@
-import { cardKind, isSnoozed, streamGroup, type Thread } from '@clew/contracts';
+import { cardKind, isSnoozed, stockholmDate, streamGroup, type Thread } from '@clew/contracts';
 
 /** The page's groups (D34), computed once and read by the landing, the overview and the rail. */
 export interface Groups {
@@ -39,4 +39,12 @@ export function digestSentence(g: Groups): string {
   if (g.senare.length) parts.push(g.senare.length === 1 ? 'en har tid på sig' : `${g.senare.length} har tid på sig`);
   if (g.foreslar.length) parts.push(g.foreslar.length === 1 ? 'jag har ett förslag' : `jag har ${g.foreslar.length} förslag`);
   return parts.length === 1 ? `${parts[0]}.` : `${parts.slice(0, -1).join(', ')} och ${parts.at(-1)}.`;
+}
+
+/** A view of existing reminders, with the stream's scope/lifecycle selection (D39). */
+export function activeReminders(threads: Thread[], now: string): Thread[] {
+  const groups = groupThreads(threads, now, stockholmDate(now));
+  return [...groups.nu, ...groups.senare, ...groups.foreslar, ...groups.kannedom]
+    .filter(thread => thread.remindedAt !== null)
+    .sort((a, b) => (b.remindedAt ?? '').localeCompare(a.remindedAt ?? '') || a.id.localeCompare(b.id));
 }

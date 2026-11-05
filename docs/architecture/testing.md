@@ -24,6 +24,7 @@ or the network, and CI (`.github/workflows/check.yml`) runs it without the stack
 | A connector built here (`connectors/<name>`) | Its own tests inside its folder; the conformance checker `bun scripts/connector-check.ts` against it running | `connectors/<name>/` | the connector's own CI |
 | A view, route or state in the web app | An accessibility test (axe, keyboard, reflow, announcements) | `tests/a11y/` | `sh scripts/a11y.sh`, CI `a11y.yml` |
 | A browser cache helper (`apps/web/src/thread-cache.ts`, `query-policy.ts`, D33) | Example tests against a real `QueryClient` from `@tanstack/query-core`: what is written, what is invalidated, what is retried. No DOM, no React | `tests/unit/web-*.test.ts` | `bun run check` |
+| The web build's configuration boundary (D38 branding isolation) | A focused Vite contract that packages only the small browser configuration entry and asserts its exported value under conflicting environment inputs | `apps/web/tests/branding-config.test.ts`, beside the app that owns Vite | `bun run check` |
 | A flow that crosses the stack (login, nightly scan, a reminder firing) | The smoke script against the running dev stack; a manual pass | `scripts/modules-check.ts` | by hand, before a release |
 
 ## The kinds of test
@@ -63,6 +64,13 @@ script or a manual pass.
 **Accessibility.** `tests/a11y` is the only browser suite and the only one allowed to be slow in CI. A new route,
 view or state gets a test there (`CLAUDE.md`).
 
+The browser suite has an explicit ESM boundary and an isolated Vite configuration. Typed municipal
+fixtures replace all branding inputs and disable installation environment files. CI runs Sundsvall
+first, then Neutral/custom branding cases sequentially, with one worker. Reports and bundles have
+separate profile directories. `apps/web/tests` proves the configuration boundary with small in-memory
+Vite bundles; it never builds the whole application or starts a server/browser. Temporary env files
+and generated modules are removed, and mutated environment variables are restored.
+
 ## Rules the tools enforce
 
 - `dependency-cruiser` (`bun run deps`): `usecases-reach-stores-through-ports` (a use case never imports `@clew/db`,
@@ -73,7 +81,7 @@ view or state gets a test there (`CLAUDE.md`).
 - `scripts/purity-check.ts` (`bun run purity`): no `Date.now()`, `new Date()`, `process.env`, `randomUUID()` or
   `Math.random()` in domain files and use cases. The clock and the id source are `deps.clock` and
   `deps.ids`; the composition root reads configuration.
-- `bun run check` = typecheck, deps, purity, `bun test tests/unit`, the Node runtime tests. It must never start to
+- `bun run check` = typecheck, deps, purity, `bun test tests/unit apps/web/tests`, the Node runtime tests. It must never start to
   need the stack; `.github/workflows/check.yml` runs it with `--no-deps`.
 - `bun test` does not use `mock.module`. A mocked import hides the dependency the rules are meant to expose; a fake
   behind a port is the same dependency made visible.

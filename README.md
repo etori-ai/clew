@@ -33,6 +33,83 @@ Temporal (server and UI) starts with the base compose stack and creates its two 
 
 The calendar image refreshes its pinned Calendar and RoomVox code in an existing data volume before Apache starts, then runs Nextcloud's app migrations. Unchanged versions do nothing; a failed upgrade stays pending and is retried on restart. App downgrades are refused. Back up the calendar volume before applying upgrades; restoring older image pins alone does not undo database migrations.
 
+## Municipal branding
+
+Copy `apps/web/.env.example` to `apps/web/.env.local` to choose an installation profile. Components
+remain Astryx; colours and the header logo come from one resolved profile, used on every screen.
+
+| `VITE_BRAND_PROFILE` | Colours | Default logo |
+|---|---|---|
+| `sundsvall` (default) | Published Sundsvall palette, Vattjom dark blue accent | Original black/white Sundsvall dragon |
+| `neutral` | Astryx Neutral | None |
+| `custom` | Own strong and pale accent colours over the shared Neutral base | None |
+
+For another municipality, place its original image in `apps/web/public/branding/` and configure:
+
+```dotenv
+VITE_BRAND_PROFILE=custom
+VITE_BRAND_ACCENT="#5b1f78"
+VITE_BRAND_ACCENT_MUTED="#d7dbf2"
+VITE_HEADER_LOGO_SRC=/branding/my-municipality.svg
+VITE_HEADER_LOGO_ALT=Kommunens namn
+# Optional original variant for dark mode:
+# VITE_HEADER_LOGO_DARK_SRC=/branding/my-municipality-white.svg
+```
+
+Quote hex values: an unquoted `#` starts a dotenv comment. Custom colours must be six-digit hex.
+Vite rejects colours below 4.5:1 for white on the strong accent or dark-grey text on the pale accent,
+and below 3:1 between the two accents. This validates the configured pairs; browser and screen-reader
+checks are still needed for the actual components and states. `neutral` and `custom` never inherit
+Sundsvall's logo. An explicit logo override works with any profile.
+
+SVG, PNG and other browser-supported images keep their proportions inside a 20 × 20 contain box
+with token-based clearance in the rail and mobile heading. The path must be on the installation's own origin, starting with a single
+`/`; `public` is not part of the URL. Set both logo values empty to omit the image:
+
+```dotenv
+VITE_HEADER_LOGO_SRC=
+VITE_HEADER_LOGO_ALT=
+```
+
+All values are public and embedded at build time. Restart Vite after local changes, or rebuild a
+deployed frontend with the new configuration. A missing image leaves the text and home link available.
+
+The Sundsvall theme follows the published [colours](https://sundsvall.se/kommun/kommun-och-politik/press--och-informationsmaterial/grafisk-profil/farger)
+and [logo guidance](https://sundsvall.se/kommun/kommun-och-politik/press--och-informationsmaterial/grafisk-profil/logotyp):
+white text on strong fills, black text on pale fills, and the original black/white dragon with
+clearance on a light/dark header. Astryx keeps typography, component behaviour, warning/error semantics
+and the shared keyboard focus clearance. Profile › Inställningar offers light and dark mode, saved
+as a local display preference. A logo without a dark variant keeps a white clearance area in dark mode. The palette and validation
+are owned by `packages/ui/src/branding.ts`; token mappings by `packages/ui/src/theme.ts`.
+Asset provenance is in [`apps/web/public/branding/README.md`](apps/web/public/branding/README.md);
+the decisions are [D37](docs/decisions/D37-header-logo-is-installation-branding.md) and
+[D38](docs/decisions/D38-municipal-branding-uses-astryx-themes.md), extended by
+[D39](docs/decisions/D39-compact-header-profile-and-reminders.md).
+
+The browser suite uses its own Vite configuration (`tests/a11y/vite.config.ts`): no installation
+environment files, explicit replacements for all six branding inputs, and separate test output per
+profile. The ordinary suite selects the Sundsvall fixture. To check another fixture on this Mac:
+
+```sh
+python3 /Users/maxeriksson/.codex/scripts/run-guarded.py --seconds 600 -- env CLEW_A11Y_BRAND_PROFILE=custom sh scripts/a11y.sh branding.spec.ts
+```
+
+The supported fixture names are `sundsvall`, `neutral` and `custom`. The custom fixture uses a test
+image fulfilled by Playwright; it adds no production asset. CI runs the full suite on Sundsvall,
+then the Neutral and custom branding scenarios sequentially, with one worker. Reports are kept in
+`playwright-report/<profile>` and artifacts in `test-results/<profile>`; test bundles use
+`test-results/apps/<profile>` and never replace the installation's `dist`.
+
+The focused Vite configuration contracts live in `apps/web/tests/branding-config.test.ts`, next to
+the app that owns the Vite dependency, and run with the existing `bun run test` command. They package
+only the small branding entry and verify that conflicting environment variables and a local env file
+cannot change the fixture's browser output.
+
+The shared navigation places the reminder bell beside the profile menu in its footer icon row. Reminders reuse active thread
+reminders and link to their cards; start/calendar shortcuts are always available. Read/unread rules
+and additional notification kinds remain open. Profile settings currently control appearance; the
+profile menu also shows identity/unit and signs out through the existing session flow.
+
 ## Connectors
 
 An integration is a connector: its own container behind the connector protocol (D21, D22); the guide is

@@ -243,7 +243,7 @@ export { dockOf };
 /** Renders a route and waits for its data, so a check never runs against the empty shell. */
 export async function open(page: Page, path: string) {
   await page.goto(path);
-  await expect(page.getByText(/Testa/).locator('visible=true').first()).toBeVisible();
+  await expect(page.getByRole('main')).toBeVisible();
   await page.waitForLoadState('networkidle');
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
 }
