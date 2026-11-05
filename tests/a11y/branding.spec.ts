@@ -20,7 +20,8 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
       api.admin = true;
       await page.setViewportSize(viewport);
       await page.goto(path);
-      await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toBeVisible();
+      // By level, not by tag: the calendar's month on a phone is an h3 that says level 1.
+      await expect(page.getByRole('main').locator('h1:not([aria-level]), [aria-level="1"]')).toBeVisible();
       await page.evaluate(() => document.fonts.ready.then(() => undefined));
       const nav = await openNav(page);
       const heading = nav.locator('.astryx-side-nav-heading');
@@ -135,6 +136,8 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
     await profileButton.click();
     await page.getByRole('button', { name: 'Inställningar', exact: true }).click();
     await page.getByRole('radio', { name: 'Ljust', exact: true }).check();
-    expect(await appearance()).toEqual(light);
+    // The default follows the computer, so it has both schemes open; Ljust fixes one, with the same colour.
+    expect(light.mode).toBe('light dark');
+    expect(await appearance()).toEqual({ ...light, mode: 'light' });
   });
 });
