@@ -98,11 +98,12 @@ export const audit = pgTable('audit', {
 // Postgres-backed scheduler for v1: a nightly scan and a timer per undo window. Temporal comes with the second use case.
 export const jobs = pgTable('job', {
   id: text('id').primaryKey(), kind: text('kind').notNull(), payload: jsonb('payload').$type<Record<string, unknown>>().notNull().default({}),
-  runAt: timestamp('run_at', { withTimezone: true }).notNull(), status: text('status').$type<'due' | 'running' | 'done' | 'failed'>().notNull().default('due'),
+  runAt: timestamp('run_at', { withTimezone: true }).notNull(), status: text('status').$type<'due' | 'running' | 'done' | 'failed' | 'temporal' | 'dispatched' | 'executing' | 'legacy-running'>().notNull().default('temporal'),
+  dispatchAttempt: integer('dispatch_attempt').notNull().default(0), nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(), leaseUntil: timestamp('lease_until', { withTimezone: true }),
   attempts: integer('attempts').notNull().default(0), lastError: text('last_error'),
   startedAt: timestamp('started_at', { withTimezone: true }), finishedAt: timestamp('finished_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, t => [index('job_due').on(t.status, t.runAt), check('job_status', sql`${t.status} IN ('due', 'running', 'done', 'failed')`)]);
+}, t => [index('job_due').on(t.status, t.runAt), check('job_status', sql`${t.status} IN ('due', 'running', 'done', 'failed', 'temporal', 'dispatched', 'executing', 'legacy-running')`)]);
 
 // State of the mock connectors (Heroma, Raindance, Treserva, Kommunikation). This table *is* the synthetic source
 // system, so that approvals and bookings survive a restart; `module` is the mock's id. Real adapters never write here.
@@ -175,7 +176,7 @@ export const connectorSigningKey = pgTable('connector_signing_key', {
 
 // Approved intent is durable before dispatch. Payload/result contain source data and are sealed by the adapter.
 export const executions = pgTable('execution', {
-  presentation: jsonb('presentation').$type<{ threadId: string; version: string; actionId: string } | null>(),
+  presentation: jsonb('presentation').$type<{ threadId: string; version: string; actionId: string; newTitle?: string } | null>(),
   id: text('id').primaryKey(), decisionId: text('decision_id').notNull(), personId: text('person_id').notNull().references(() => people.id),
   principal: text('principal').notNull(), unitId: text('unit_id').notNull(), authorizationVersion: text('authorization_version').notNull(),
   connector: text('connector').notNull(), operation: text('operation').notNull(), digest: text('digest').notNull(),
@@ -198,3 +199,44 @@ export const personChanges = pgTable('person_change', {
 export const policyChanges = pgTable('policy_change', {
   id: text('id').primaryKey(), revision: bigint('revision', { mode: 'number' }).notNull().default(0),
 });
+
+// Desired timer state is also its coalesced outbox: acknowledgement is fenced by
+// generation, state and delivery attempt. No source payload enters a workflow.
+export const timerIntents = pgTable('timer_intent', {
+  id: text('id').primaryKey(), personId: text('person_id').notNull().references(() => people.id, { onDelete: 'cascade' }),
+  threadId: text('thread_id').notNull().references(() => threads.id, { onDelete: 'cascade' }), kind: text('kind').notNull(),
+  generation: integer('generation').notNull(), unitId: text('unit_id').notNull(), authorizationVersion: text('authorization_version').notNull(),
+  dueAt: timestamp('due_at', { withTimezone: true }).notNull(), requestedAt: timestamp('requested_at', { withTimezone: true }).notNull(),
+  state: text('state').notNull(), reason: text('reason'), deliveredGeneration: integer('delivered_generation'), deliveredState: text('delivered_state'),
+  attempt: integer('attempt').notNull().default(0), nextAt: timestamp('next_at', { withTimezone: true }).notNull(), leaseUntil: timestamp('lease_until', { withTimezone: true }),
+}, t => [index('timer_intent_due').on(t.nextAt), check('timer_intent_state', sql`${t.state} IN ('active', 'cancelled', 'fired', 'blocked')`),
+  uniqueIndex('timer_intent_slot').on(t.threadId, t.kind)]);
+
+export const followupPolicies = pgTable('followup_policy', {
+  threadId: text('thread_id').primaryKey().references(() => threads.id, { onDelete: 'cascade' }), personId: text('person_id').notNull().references(() => people.id, { onDelete: 'cascade' }),
+  unitId: text('unit_id').notNull(), authorizationVersion: text('authorization_version').notNull(), executionId: text('execution_id').notNull(),
+  proposalIds: jsonb('proposal_ids').$type<string[]>().notNull(), maxReminders: integer('max_reminders').notNull(), afterWorkdays: integer('after_workdays').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(), state: text('state').$type<'active' | 'blocked' | 'cancelled' | 'finished'>().notNull(),
+  reason: text('reason'),
+}, t => [check('followup_bounds', sql`${t.maxReminders} BETWEEN 1 AND 2 AND ${t.afterWorkdays} >= 2`)]);
+
+export const refreshRequests = pgTable('refresh_request', {
+  id: text('id').primaryKey(), personId: text('person_id').notNull().references(() => people.id, { onDelete: 'cascade' }), connector: text('connector').notNull(),
+  assignment: text('assignment').notNull(), authorizationVersion: text('authorization_version').notNull(), state: text('state').notNull(), attempt: integer('attempt').notNull().default(0),
+  requestedAt: timestamp('requested_at', { withTimezone: true }).notNull(), nextAt: timestamp('next_at', { withTimezone: true }).notNull(), leaseUntil: timestamp('lease_until', { withTimezone: true }),
+  lastSuccess: timestamp('last_success', { withTimezone: true }), observedAt: timestamp('observed_at', { withTimezone: true }), error: text('error'),
+}, t => [index('refresh_due').on(t.nextAt)]);
+export const workOccurrences = pgTable('work_occurrence', {
+  id: text('id').primaryKey(), personId: text('person_id').notNull().references(() => people.id, { onDelete: 'cascade' }), connector: text('connector').notNull(), assignment: text('assignment').notNull(),
+  sourceKey: text('source_key').notNull(), period: text('period').notNull(), revision: text('revision').notNull(), observedAt: timestamp('observed_at', { withTimezone: true }).notNull(),
+  sourceState: text('source_state').notNull(), disposition: text('disposition').notNull(), threadId: text('thread_id').references(() => threads.id, { onDelete: 'set null' }), legacy: boolean('legacy').notNull(),
+}, t => [index('occurrence_scope').on(t.personId, t.connector, t.assignment), index('occurrence_thread').on(t.threadId)]);
+
+export const attentionDays = pgTable('attention_day', {
+  id: text('id').primaryKey(), personId: text('person_id').notNull().references(() => people.id, { onDelete: 'cascade' }), used: integer('used').notNull(), bucket: text('bucket').notNull(), dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
+});
+export const deliveries = pgTable('attention_delivery', {
+  id: text('id').primaryKey(), personId: text('person_id').notNull().references(() => people.id, { onDelete: 'cascade' }), threadId: text('thread_id').notNull().references(() => threads.id, { onDelete: 'cascade' }),
+  kind: text('kind').$type<'automatic' | 'reminder'>().notNull(), batch: text('batch').notNull(), dueAt: timestamp('due_at', { withTimezone: true }).notNull(), state: text('state').$type<'waiting' | 'ready' | 'claimed'>().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), claimedAt: timestamp('claimed_at', { withTimezone: true }),
+}, t => [index('delivery_person_due').on(t.personId, t.dueAt)]);

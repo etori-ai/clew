@@ -8,6 +8,7 @@ import { membersQuery, roomsQuery } from '../../queries';
 import { errorMessage } from '../../query-policy';
 import { keys } from '../../query-keys';
 import { mobileQuery } from '../shell';
+import { applyThread } from '../../thread-cache';
 
 const EMPTY_MEMBERS: CalendarMember[] = [];
 const EMPTY_ROOMS: CalendarRoom[] = [];
@@ -32,6 +33,7 @@ export function BookingDialog({ isOpen, initial, onClose }: Props) {
   const announce = useAnnounce();
   const toast = useToast();
   const [title, setTitle] = useState('');
+  const [decisionId, setDecisionId] = useState(() => crypto.randomUUID());
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [participants, setParticipants] = useState<string[]>([]);
@@ -45,7 +47,7 @@ export function BookingDialog({ isOpen, initial, onClose }: Props) {
   const [error, setError] = useState<{ text: string; uncertain: boolean } | null>(null);
   useEffect(() => {
     if (!isOpen) return;
-    setTitle(''); setStart(localClock(initial.start)); setEnd(hhmm(initial.end)); setParticipants([]); setRoom(''); setAvailability(null); setError(null);
+    setDecisionId(crypto.randomUUID()); setTitle(''); setStart(localClock(initial.start)); setEnd(hhmm(initial.end)); setParticipants([]); setRoom(''); setAvailability(null); setError(null);
   }, [isOpen, initial.start, initial.end]);
   useEffect(() => { setAvailability(null); }, [start, end, participants, room]);
   const startAt = start ? localInstant(start) : null;
@@ -63,10 +65,10 @@ export function BookingDialog({ isOpen, initial, onClose }: Props) {
     if (!ready || busy) return;
     setBusy(true); setError(null);
     try {
-      const event = await api.createEvent({ title: title.trim(), ...input() });
-      // The booking is in the calendar: every loaded week is read again (D33).
+      const thread = await api.createEvent({ decisionId, title: title.trim(), ...input() });
+      await applyThread(client, thread);
       void client.invalidateQueries({ queryKey: keys.calendarAll });
-      toast({ body: `Bokat: ${event.title} ${shortDayLabel(event.start.slice(0, 10))} ${timeRange(event.start, event.end)}`, uniqueID: 'booked:' + event.id });
+      toast({ body: 'Bokningsbeslutet är sparat. Kortet visar när kalendern har bekräftat bokningen.', uniqueID: 'booking:' + thread.id });
       onClose(true);
     } catch (e) {
       const text = errorMessage(e, 'Något gick fel.');

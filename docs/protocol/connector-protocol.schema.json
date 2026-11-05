@@ -1439,6 +1439,36 @@
               "actions"
             ],
             "properties": {
+              "occurrences": {
+                "minItems": 1,
+                "maxItems": 100,
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "key",
+                    "revision",
+                    "period"
+                  ],
+                  "properties": {
+                    "key": {
+                      "minLength": 1,
+                      "maxLength": 400,
+                      "type": "string"
+                    },
+                    "revision": {
+                      "maxLength": 400,
+                      "type": "string"
+                    },
+                    "period": {
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "type": "string"
+                    }
+                  }
+                }
+              },
               "topic": {
                 "minLength": 1,
                 "maxLength": 120,
@@ -1596,6 +1626,75 @@
               }
             }
           }
+        },
+        "observation": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "scope",
+            "observedAt",
+            "version",
+            "exhausted",
+            "completeness"
+          ],
+          "properties": {
+            "scope": {
+              "type": "string"
+            },
+            "observedAt": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            },
+            "exhausted": {
+              "type": "boolean"
+            },
+            "completeness": {
+              "anyOf": [
+                {
+                  "const": "complete",
+                  "type": "string"
+                },
+                {
+                  "const": "delta",
+                  "type": "string"
+                },
+                {
+                  "const": "partial",
+                  "type": "string"
+                },
+                {
+                  "const": "unavailable",
+                  "type": "string"
+                },
+                {
+                  "const": "authorization-required",
+                  "type": "string"
+                }
+              ]
+            },
+            "tombstones": {
+              "type": "array",
+              "items": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "key",
+                  "period"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "period": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -1611,6 +1710,36 @@
         "actions"
       ],
       "properties": {
+        "occurrences": {
+          "minItems": 1,
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "key",
+              "revision",
+              "period"
+            ],
+            "properties": {
+              "key": {
+                "minLength": 1,
+                "maxLength": 400,
+                "type": "string"
+              },
+              "revision": {
+                "maxLength": 400,
+                "type": "string"
+              },
+              "period": {
+                "minLength": 1,
+                "maxLength": 100,
+                "type": "string"
+              }
+            }
+          }
+        },
         "topic": {
           "minLength": 1,
           "maxLength": 120,

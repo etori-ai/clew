@@ -57,7 +57,8 @@ Historical numbering collisions: **D37, D38, D39** each identify more than one f
 | [D44 · Authorized reads and Clew-signed connector authority](D44-authorized-reads-and-clew-signed-connector-authority.md) | identity | 2026-11-05 | accepted; phase 1 of the approved reliability and authorization plan |
 | [D45 · Approved intent precedes source dispatch](D45-approved-intent-precedes-source-dispatch.md) | platform | 2026-11-05 | accepted, generic card path implemented; calendar migration pending |
 | [D46 · Browser updates use committed revisions](D46-browser-updates-use-committed-revisions.md) | platform | 2026-11-05 | accepted, browser invalidation implemented; durable attention pending |
+| [D47 · Occurrences, timers and attention have durable identities](D47-occurrences-timers-and-attention-have-durable-identities.md) | platform | 2026-11-05 | accepted, implemented |
 
 ## Add a decision
 
-Use [TEMPLATE.md](TEMPLATE.md) and a new unused number (currently D47). Include status, date, area, decision, rationale and what it replaces. Preserve earlier decision bodies; record supersession explicitly. Refer to the full filename when a number is ambiguous. Update the implementation-status guide when delivery changes, add a session note to [HANDOVER.md](../../HANDOVER.md), and run `bun run docs:generate` followed by `bun run docs:check`. The generated context map includes every record.
+Use [TEMPLATE.md](TEMPLATE.md) and a new unused number (currently D48). Include status, date, area, decision, rationale and what it replaces. Preserve earlier decision bodies; record supersession explicitly. Refer to the full filename when a number is ambiguous. Update the implementation-status guide when delivery changes, add a session note to [HANDOVER.md](../../HANDOVER.md), and run `bun run docs:generate` followed by `bun run docs:check`. The generated context map includes every record.

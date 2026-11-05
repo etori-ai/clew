@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
 import { readThread, type ProposalRow } from '@clew/db/threads';
 import { scheduleJob } from '@clew/db/jobs';
@@ -22,6 +22,12 @@ async function read(personId: string | undefined, id: string): Promise<ProposalT
   return found ? { thread: found.thread, proposals: found.proposalRows.map(toRecord) } : undefined;
 }
 const txOf = (tx: Transaction): ProposalTx => ({
+  async lockThread(personId, id) {
+    const [r] = await tx.select().from(threads).where(and(eq(threads.id, id), eq(threads.personId, personId))).for('update');
+    if (!r) return undefined;
+    const found = (await readThread(personId, id, tx))!;
+    return { thread: found.thread, proposals: found.proposalRows.map(toRecord) };
+  },
   async insertThread(t) {
     const inserted = await tx.insert(threads).values({ id: t.id, personId: t.personId, kind: 'pushed', topic: t.topic, title: t.title, state: 'open', week: t.week, connector: 'calendar', area: t.area,
       summary: t.summary, trigger: t.trigger, createdAt: new Date(t.createdAt), updatedAt: new Date(t.updatedAt) }).onConflictDoNothing().returning({ id: threads.id });
@@ -52,6 +58,10 @@ export function postgresProposalStore(): ProposalStore {
   return {
     readThread: (personId, id) => read(personId, id),
     readThreadById: id => read(undefined, id),
+    async latestThread(personId, topic) {
+      const [r] = await database().select({ id: threads.id }).from(threads).where(and(eq(threads.personId, personId), eq(threads.topic, topic))).orderBy(desc(threads.createdAt)).limit(1);
+      return r ? read(personId, r.id) : undefined;
+    },
     async openThread(personId, topic) {
       const [row] = await database().select({ id: threads.id }).from(threads).where(and(eq(threads.personId, personId), eq(threads.topic, topic), eq(threads.state, 'open')));
       return row ? read(personId, row.id) : undefined;

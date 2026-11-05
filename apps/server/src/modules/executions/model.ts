@@ -5,7 +5,7 @@ export type ExecutionState = 'pending' | 'running' | 'succeeded' | 'partial' | '
 export type { WriteSafety };
 /** Payloads contain approved inputs only. Adapters encrypt them; tokens and sessions are never persisted. */
 export interface Execution {
-  presentation?: { threadId: string; version: string; actionId: string } | null;
+  presentation?: { threadId: string; version: string; actionId: string; newTitle?: string } | null;
   id: string; decisionId: string; personId: string; principal: string; unitId: string; authorizationVersion: string;
   connector: string; operation: string; digest: string; payload: unknown; safety: WriteSafety;
   state: ExecutionState; reason: string | null; result: ExecuteResult | null; compensates: string | null;
@@ -23,6 +23,7 @@ export interface ExecutionTx {
   audit(entry: ExecutionAudit): Promise<void>;
 }
 export interface ExecutionStore {
+  readDecision(personId: string, decisionId: string): Promise<Execution | undefined>;
   read(id: string): Promise<Execution | undefined>;
   transaction<T>(fn: (tx: ExecutionTx) => Promise<T>): Promise<T>;
   /** Bounded durable delivery lease; failure or crash makes it eligible again. */

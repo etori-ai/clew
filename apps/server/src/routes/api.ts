@@ -14,7 +14,7 @@ import { InputError, protectedRoute, type Env } from '../context';
 import { readFigures } from '../modules/figures/domain';
 import { verbsFor } from '../assistant/verbs';
 import { registry, runCapability } from '../connectors/registry';
-import { assistant, calendar, events, mocks, models, reminders, threads, refreshConnectors } from '../composition';
+import { assistant, calendar, events, mocks, models, reminders, threads, refreshConnectors, refresh, attention } from '../composition';
 import { Type } from '@sinclair/typebox';
 import { executions } from '../composition/executions';
 import { changesFor } from '../composition/changes';
@@ -66,7 +66,11 @@ api.get('/changes', c => streamSSE(c, async stream => {
   }
 }));
 /** Human approval is deliberately separate from capabilities and model tools. */
-api.post('/executions', async c => c.json(await executions.approve(c.get('session').context, await body(c.req.raw, approval)), 202));
+api.post('/executions', async c => {
+  const input = await body(c.req.raw, approval), persona = c.get('session').context;
+  if (registry.allowed(persona, input.operation)?.capability.kind !== 'execute') throw new InputError('Okänd förmåga.');
+  return c.json(await executions.approve(persona, input), 202);
+});
 api.get('/executions/:id', async c => {
   const execution = await executions.read(c.get('session').context, c.req.param('id'));
   return execution ? c.json(execution) : c.json({ error: 'Åtgärden finns inte.' }, 404);
@@ -84,9 +88,11 @@ api.use('/threads/:id/*', async (c, next) => {
 });
 api.get('/threads', async c => {
   const persona = c.get('session').context;
-  await ensureThreads(persona, 'Första besöket i dag');
-  return c.json({ threads: await listThreadsFor(persona) });
+  await ensureThreads(persona);
+  const [threads, sources, deliveries] = await Promise.all([listThreadsFor(persona), refresh.statuses(persona), attention.pending(persona)]);
+  return c.json({ threads, sources, deliveries });
 });
+api.post('/deliveries/:id/claim', async c => c.json({ claimed: await attention.claim(c.get('session').context, c.req.param('id')) }));
 api.get('/areas', async c => { const context = c.get('session').context; return c.json({ areas: await listAreas(context), menu: registry.menu(actorOf(context)) }); });
 /** The registry as data: what the architecture derives everything from. Read-only, and only what the caller can see (D23). */
 api.get('/connectors', c => {
@@ -193,8 +199,8 @@ api.get('/calendar', async c => c.json(await weekOverview(c.get('session').conte
 api.get('/calendar/members', async c => c.json({ members: await events.listMembers(c.get('session').context) }));
 api.get('/calendar/rooms', async c => c.json({ rooms: await events.listRooms(c.get('session').context) }));
 api.post('/calendar/availability', async c => c.json(await events.checkAvailability(c.get('session').context, await body(c.req.raw, validators.availability as unknown as (value: unknown) => value is AvailabilityInputType))));
-api.post('/calendar/events', async c => c.json({ event: await events.createEvent(c.get('session').context, await body(c.req.raw, validators.createEvent as unknown as (value: unknown) => value is CreateEventInputType)) }, 201));
-api.post('/calendar/events/reschedule', async c => c.json({ event: await events.rescheduleEvent(c.get('session').context, await body(c.req.raw, validators.rescheduleEvent as unknown as (value: unknown) => value is RescheduleEventInputType)) }));
+api.post('/calendar/events', async c => c.json(await events.createEvent(c.get('session').context, await body(c.req.raw, validators.createEvent as unknown as (value: unknown) => value is CreateEventInputType)), 202));
+api.post('/calendar/events/reschedule', async c => c.json(await events.rescheduleEvent(c.get('session').context, await body(c.req.raw, validators.rescheduleEvent as unknown as (value: unknown) => value is RescheduleEventInputType)), 202));
 api.post('/calendar/events/cancel', async c => c.json(await events.cancelEvent(c.get('session').context, await body(c.req.raw, validators.cancelEvent as unknown as (value: unknown) => value is CancelEventInputType))));
 api.post('/threads/:id/proposals/:proposalId/move', async c => c.json(await events.moveProposal(c.get('session').context, c.req.param('id'), c.req.param('proposalId'), await body(c.req.raw, validators.moveProposal as unknown as (value: unknown) => value is MoveProposalInputType))));
 api.get('/attention', async c => c.json(await attentionFor(c.get('session').context)));

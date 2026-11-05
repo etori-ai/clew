@@ -9,12 +9,14 @@ import { applyAllRows, syncBundledRows, watchConnectors } from './connectors/rec
 import { connectorRoutes } from './routes/connectors';
 import { registry } from './connectors/registry';
 import { loadConnectors } from './connectors/remote';
-import { scheduler, startAssistantProbe } from './composition';
+import { startAssistantProbe, startTimerDispatch } from './composition';
 import { startWorker } from './temporal/worker';
 import { failure } from './context';
 import { signingAuthority } from './connectors/signing';
 import { startupReadiness } from './startup';
 import { startExecutionDispatch } from './composition/executions';
+import { startRefresh } from './composition/refresh';
+import { startJobs } from './composition/jobs';
 
 // Local secrets written by `bun run auth:setup`. Never committed, never read by the browser bundle.
 for (const file of ['.env.local']) { try { process.loadEnvFile(resolve(import.meta.dirname, '..', file)); } catch { /* absent in CI */ } }
@@ -24,7 +26,7 @@ const startup = startupReadiness({
   initialize: async () => { await signingAuthority(); await syncBundledRows(connectorReconcile); await applyAllRows(connectorReconcile); },
   onReady: () => {
     watchConnectors(connectorReconcile);
-    scheduler.start(); startAssistantProbe(); startExecutionDispatch(); void startWorker();
+    startJobs(); startAssistantProbe(); startExecutionDispatch(); startTimerDispatch(); startRefresh(); void startWorker();
     void loadConnectors(registry).then(() => applyAllRows(connectorReconcile)).catch(error => console.error('connectors', error));
   },
   onError: error => console.error('startup initialization failed; retrying in five seconds', error instanceof Error ? error.message : 'Unknown failure'),

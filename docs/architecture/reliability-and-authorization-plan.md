@@ -2,7 +2,7 @@
 
 Date: 2026-11-05
 
-Status: approved for implementation; in progress. Accepted mechanisms are recorded separately in D44–D46.
+Status: shared mechanisms implemented; reference-stack verification recorded, release evidence and selected-source pilot still open. Accepted mechanisms are recorded separately in D44–D47.
 
 Baseline: revision `4696f6d` and the [architecture review](../reviews/2026-11-05-architecture-against-vision.md)
 
@@ -11,12 +11,13 @@ Pilot source: deliberately undecided, at the product owner's request
 ## Implementation checkpoint — 2026-11-05
 
 - Phase 1: default-deny governance, shared authorized reads, protocol 2 signing/callback grants, key rotation, shared schema validation and generic execute rejection are implemented (D44). Startup initialization retries, while login remains available independently.
-- Phase 2 and generic card decisions in 3A: execution ledger, encrypted input/result, transactional approval/audit/outbox/card projection, Temporal dispatch, stable keys, read-back, explicit uncertainty and linked compensation are implemented (D45). The real PostgreSQL/Temporal/independent-source test proves concurrent approval, lost reply recovery, source restart and outbox redelivery. It does not yet prove every process-death boundary in the phase exit criteria.
-- Part of 4B: all unresolved cards are returned independently of the 50-entry history limit. Durable occurrence identity, isolated refresh and source-completion semantics remain pending.
-- Part of 5B: authenticated browser invalidation and authorization cache clearing are implemented (D46). Durable timer intent/cancellation, legacy job migration and persisted attention admission remain pending.
-- Calendar create/change/cancel, confirmations, follow-ups and legacy dispatch cleanup remain pending in phase 3. Operational recovery coverage and the selected-source acceptance gate remain pending in phase 6.
+- Phases 2–3: encrypted execution intent, transactional approval/audit/outbox/card projection, Temporal dispatch, stable keys, read-back, explicit uncertainty and linked compensation cover generic card decisions and calendar create/move/cancel/confirm/undo. Bounded follow-up policies replace legacy unbounded callbacks. Known source evidence survives partial or uncertain compensation. Real PostgreSQL calendar tests exercise source success followed by a failed receipt commit; the independent reference source adds lost replies, restart and outbox redelivery.
+- Phase 4: durable occurrence identity separates source completion from dismissal and recurrence. Coalesced refresh leases and per-source deadlines isolate failures; version fences protect intervening actions. Complete/exhausted observations and delta tombstones establish completion, while partial/unavailable/legacy scans cannot infer it. Unresolved cards remain independent of the history cap.
+- Phase 5: absolute timer intents, generations, transactional cancellation, delivery retry, current-authority checks and blocked status are implemented. Temporal owns new/queued legacy jobs; old running owners require operator drain evidence. Persisted attention admission/bundles and delivery claims extend D46's SSE invalidation. Browser fixtures cover an untouched tab, two tabs, reconnect and navigation to the canonical card. Real workflow tests cover delayed start, cancellation, replacement, duplicate firing and replay of an old workflow history.
+- Phase 6A: aggregate diagnostics, an isolated real-stack CI lane, conservative upgrade fixtures and a PostgreSQL backup/restore rehearsal are implemented. The rehearsal passed locally. Full process-death/DB-outage coverage across every write family, a live CalDAV regression of the converged path, coordinated Temporal/source recovery and a live due-to-browser latency measurement remain unproven. CI configuration is present; this checkpoint does not claim a GitHub run.
+- Accessibility: affected new states have browser coverage; remaining baseline reflow issues and the manual screen-reader gate are tracked in the acceptance matrix. They are not waived by this checkpoint.
 
-This checkpoint is not completion of phases 1–5 or a production-readiness claim. The pilot source remains open.
+The [vision-to-acceptance matrix](../reference/reliability-acceptance.md) is the current evidence ledger; the phase descriptions below retain the approved exit criteria. Implementation of a mechanism does not close an unrun acceptance test. The pilot source remains open, and this is not production-ready.
 
 ## Objective and scope
 
@@ -238,7 +239,7 @@ This plan recommends mechanisms; it does not accept or renumber ADRs. Before the
 | Timer generations, delivery channel and attention treatment | Phase 5 | Transactional intent, absolute due times, SSE; no browser polling initially |
 | Installation, actual source identity and data policy | Before real-data pilot | Decide with selected source and operator; no implied production readiness |
 
-The execution decision must clarify the older [scheduled-work design](scheduled-work.md), which currently says timers cannot execute source actions: the proposed worker executes an already approved, bounded intent and never creates approval. Keep model/tool execution prohibited.
+The [scheduled-work implementation](scheduled-work.md) now records D45/D47's distinction: a worker executes an already approved, bounded intent and never creates approval. Model/tool execution remains prohibited.
 
 The proposed [connector dependency decision](../decisions/D37-connectors-declare-what-they-use-and-a-capability-name-is-its-contract.md) remains proposed. Its allowlist is needed here; its entire compatibility roadmap is not a prerequisite. Preserve [D33's cache architecture](../decisions/D33-browser-reads-go-through-one-query-cache.md).
 

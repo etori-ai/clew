@@ -14,6 +14,7 @@ export function postgresExecutionStore(sealer: ExecutionSealer, project?: (tx: T
   const toRow = (e: Execution): typeof table.$inferInsert => ({ ...e, payload: sealer.seal(JSON.stringify(e.payload), 'execution:input:' + e.id), result: e.result ? sealer.seal(JSON.stringify(e.result), 'execution:result:' + e.id) : null,
     createdAt: new Date(e.createdAt), updatedAt: new Date(e.updatedAt), expiresAt: new Date(e.expiresAt), dispatchedAt: date(e.dispatchedAt), leaseUntil: date(e.leaseUntil) });
   return {
+    async readDecision(personId, decisionId) { const [r] = await database().select().from(table).where(and(eq(table.personId, personId), eq(table.decisionId, decisionId))); return r ? fromRow(r) : undefined; },
     async read(id) { const [r] = await database().select().from(table).where(eq(table.id, id)); return r ? fromRow(r) : undefined; },
     transaction: fn => database().transaction(tx => fn({
       async insert(e) {

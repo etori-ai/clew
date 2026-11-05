@@ -4,6 +4,7 @@ import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-quer
 import type { Area, Figure, SessionUser, Thread, ViewRef, PanelViewSpec } from '@clew/contracts';
 import { Banner, Button, ChatLayout, ClickableCard, Divider, EmptyState, Grid, GridSpan, Heading, HStack, Icon, IconButton, Layout, LayoutContent, LayoutFooter, Link, List, ListItem, MoreMenu, ProgressBar, Skeleton, SparklesIcon, Text, ToggleButton, Toolbar, VisuallyHidden, VStack, useMediaQuery, useToast } from '@clew/ui';
 import { addDays, displayDate, shortDayLabel, timeLabel, timeRange, today } from '@clew/calendar/dates';
+import { api } from '../api';
 import { errorMessage } from '../query-policy';
 import { areasQuery, assistantQuery, attentionQuery, cardViewQuery, figuresQuery, threadsQuery, todayQuery, viewQuery } from '../queries';
 import { applyThread } from '../thread-cache';
@@ -90,20 +91,6 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
   // An entry opened from the panel's day view (D32): the same dialog as on the calendar page, over the panel.
   const [openItem, setOpenItem] = useState<{ item: AgendaItem; dayItems: AgendaItem[] } | null>(null);
   const toast = useToast();
-  // A reminder that fired while the page was open (D17): the card is back in its place with a badge, and a toast says so.
-  // The toast is the announcement: it animates in beside the composer and stays until dismissed; the stream never shifts.
-  const remindedSeen = useRef<Map<string, string | null> | null>(null);
-  const announceReminded = useCallback((list: Thread[]) => {
-    const seen = remindedSeen.current;
-    if (seen) for (const t of list) {
-      if (t.state !== 'open' || !t.remindedAt || seen.get(t.id) === t.remindedAt) continue;
-      const dismiss = toast({ body: `Påminnelse: ${t.title}`, isAutoHide: false, uniqueID: 'reminded:' + t.id,
-        endContent: <Button size="sm" variant="ghost" label="Visa" onClick={() => { const shown = document.getElementById('thread-' + t.id); shown?.scrollIntoView({ behavior: 'smooth', block: 'center' }); shown?.focus({ preventScroll: true }); dismiss(); }} /> });
-    }
-    remindedSeen.current = new Map(list.map(t => [t.id, t.remindedAt]));
-  }, [toast]);
-  // Every list the cache hands over is looked at once: a reminder that fired shows up as a changed `remindedAt`, whether a refetch or a mutation brought it.
-  useEffect(() => { if (threadsQ.data) announceReminded(threadsQ.data.threads); }, [threadsQ.data, announceReminded]);
   // A card that leaves the stream takes the focused button with it. Focus goes on to the next card, or the first heading when none is left (2.4.3).
   // `replace` is what every card gets as `onChange`: it runs before the cache is written (mutations.ts), so the DOM read here is still the old one.
   const focusAfter = useRef<{ card: string; next: string; at: number } | null>(null);
@@ -260,7 +247,8 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
         <Text type="supporting">{g.nu.length ? 'Deadline i dag, eller något du bad om' : g.senare.length ? 'Resten har tid på sig' : 'Nästa genomgång i morgon 06:00'}</Text>
       </HStack>
       {loadingThreads && <BriefSkeleton compact={mobile} />}
-      {!loadingThreads && g.nu.length + g.senare.length + g.foreslar.length + g.kannedom.length === 0 && <EmptyState title="Lugnt läge" description="Assistenten hör av sig när något behöver dig." isCompact headingLevel={3} />}
+      {threadsQ.data?.sources?.some(s => !s.lastSuccess || s.error) && <Text as="p" role="status">{threadsQ.data.sources.some(s => s.error) ? 'Någon källa kunde inte kontrolleras. Sparade uppgifter visas och kontrolleras igen.' : 'Källorna kontrolleras. Sparade uppgifter visas under tiden.'}</Text>}
+      {!loadingThreads && g.nu.length + g.senare.length + g.foreslar.length + g.kannedom.length === 0 && <EmptyState title={threadsQ.data?.sources?.some(s => !s.lastSuccess || s.error) ? 'Inväntar källornas besked' : 'Lugnt läge'} description="Assistenten hör av sig när något behöver dig." isCompact headingLevel={3} />}
       {g.nu.length > 0 && <VStack gap={2}>{records(g.nu, { lead: true })}</VStack>}
     </VStack>
     {g.senare.length > 0 && <VStack gap={2} as="section" aria-label="Senare">

@@ -2,6 +2,8 @@
 
 **Status:** accepted, browser invalidation implemented; durable attention pending · **Date:** 2026-11-05 · **Area:** platform
 
+**Implementation follow-up, 2026-11-05:** [D47](D47-occurrences-timers-and-attention-have-durable-identities.md) adds timer generations and persisted attention admission/delivery. The pending wording below retains the original checkpoint. A production delivery deadline is still unproven; see the [acceptance matrix](../reference/reliability-acceptance.md).
+
 **Decision.** An authenticated server-sent event stream carries only per-person content and authorization revisions. PostgreSQL updates those revisions with business mutations; deferred triggers acquire revision locks at commit to avoid reversing business row lock order. Every server reads the same counters. No source names or payloads travel in the channel.
 
 TanStack Query remains the read cache. Events and reconnects invalidate reads. Authorization changes also clear retained query and component state, then recheck the session. Hidden tabs suspend the stream and reconnect on visibility/network recovery. Explicit session denial ends the session; transient connection or database failure allows reconnection. The browser does not poll.

@@ -1,11 +1,12 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { useLocation } from 'react-router';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { SessionUser } from '@clew/contracts';
 import { AppShell, Avatar, BellIcon, Banner, Button, Dialog, DialogHeader, Divider, Drawer, DrawerHeader, DropdownMenu, Heading, HStack, Icon, IconButton, Layout, LayoutContent, List, ListItem, RadioList, RadioListItem, SideNav, SideNavHeading, SideNavSection, Spinner, Text, VStack, signOut, useAppearance, useToast } from '@clew/ui';
 import { branding } from '../branding';
 import { threadsQuery } from '../queries';
 import { errorMessage } from '../query-policy';
+import { api } from '../api';
 import { activeReminders } from '../stream';
 
 const headerLogo = branding.logo;
@@ -44,10 +45,27 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const toast = useToast();
-  const location = useLocation();
+  const location = useLocation(), navigate = useNavigate();
+  const deliveryAttempts = useRef(new Set<string>());
   // The same session-scoped cache as the start page; no notification endpoint or read/unread state.
   const threadsQ = useQuery(threadsQuery);
+  const deliveryContext = useRef(threadsQ.data), deliveryMounted = useRef(false);
+  deliveryContext.current = threadsQ.data;
+  useEffect(() => { deliveryMounted.current = true; return () => { deliveryMounted.current = false; }; }, []);
   const reminders = activeReminders(threadsQ.data?.threads ?? [], new Date().toISOString());
+  useEffect(() => {
+    for (const delivery of threadsQ.data?.deliveries ?? []) {
+      if (deliveryAttempts.current.has(delivery.id)) continue;
+      const thread = threadsQ.data?.threads.find(t => t.id === delivery.threadId);
+      if (!thread) continue;
+      deliveryAttempts.current.add(delivery.id);
+      void api.claimDelivery(delivery.id).then(({ claimed }) => {
+        if (!claimed || !deliveryMounted.current || !deliveryContext.current?.threads.some(t => t.id === thread.id)) return;
+        const dismiss = toast({ body: delivery.kind === 'reminder' ? 'Påminnelse: ' + thread.title : 'Nya uppgifter finns i översikten.', isAutoHide: false, uniqueID: delivery.id,
+          endContent: <Button size="sm" variant="ghost" label="Visa" onClick={() => { navigate('/overview?card=' + encodeURIComponent(thread.id)); dismiss(); }} /> });
+      }).catch(() => { deliveryAttempts.current.delete(delivery.id); });
+    }
+  }, [threadsQ.data, toast, navigate]);
   useEffect(() => { setRemindersOpen(false); setNavigationOpen(false); }, [location.key]);
   const logout = async () => {
     setSigningOut(true);
@@ -60,7 +78,7 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
       sideNav={<SideNav
         header={<SideNavHeading heading="Startsidan" headingHref="/"
           icon={headerLogo && logoSrc !== failedLogo ? <img src={logoSrc} alt={headerLogo.alt} width={20} height={20}
-            style={{ objectFit: 'contain', padding: 'var(--spacing-3)', boxSizing: 'content-box',
+            style={{ width: 20, height: 20, objectFit: 'contain', padding: 'var(--spacing-3)', boxSizing: 'content-box',
               backgroundColor: mode === 'dark' && !headerLogo.darkSrc ? 'var(--color-on-dark)' : undefined }}
             onError={() => setFailedLogo(logoSrc ?? null)} /> : undefined} />}
         topContent={nav.top}
@@ -89,7 +107,7 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
       <Layout header={<DrawerHeader title="Påminnelser" onOpenChange={setRemindersOpen} />} content={<LayoutContent>
         <VStack gap={4}>
           {threadsQ.isPending && <HStack gap={2}><Spinner /><Text role="status">Hämtar påminnelser …</Text></HStack>}
-          {threadsQ.isError && <Banner status="error" title={errorMessage(threadsQ.error, 'Påminnelserna kunde inte uppdateras.')}>
+          {threadsQ.isError && <Banner collapsible={false} status="error" title={errorMessage(threadsQ.error, 'Påminnelserna kunde inte uppdateras.')}>
             <Button label="Försök igen" size="sm" variant="secondary" onClick={() => { void threadsQ.refetch(); }} />
           </Banner>}
           {threadsQ.data && <>

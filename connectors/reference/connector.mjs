@@ -34,7 +34,7 @@ export function createConnector({ path, secret, clewUrl, jwks, fault = '' }) {
     let body; try { body = await request.json(); } catch { return fail('Ogiltig förfrågan.'); }
     if (path === '/clew/scan') {
       const current = item(actor);
-      return json({ drafts: current.done ? [] : [{ topic: 'reference:item:1', area: 'reference', title: 'Hantera testposten', summary: 'En syntetisk post för kontroll av återstart.', reason: 'Testkällan har en öppen post.', actions: [{ id: 'complete', label: 'Markera klar', capability: 'reference.complete', kind: 'execute', role: 'primary', input: { ref: 'reference:item:1', revision: current.revision } }] }] });
+      return json({ observation: { scope: actor.unitId + ':' + actor.role, observedAt: new Date().toISOString(), version: String(current.revision), completeness: 'complete', exhausted: true }, drafts: current.done ? [] : [{ topic: 'reference:item:1', occurrences: [{ key: 'reference:item:1', period: 'once', revision: String(current.revision) }], area: 'reference', title: 'Hantera testposten', summary: 'En syntetisk post för kontroll av återstart.', reason: 'Testkällan har en öppen post.', actions: [{ id: 'complete', label: 'Markera klar', capability: 'reference.complete', kind: 'execute', role: 'primary', input: { ref: 'reference:item:1', revision: current.revision } }] }] });
     }
     const name = decodeURIComponent(path.slice('/clew/capabilities/'.length));
     if (name === 'reference.items') return json({ output: { rows: [{ ref: 'reference:item:1', ...item(actor) }] } });

@@ -36,11 +36,13 @@ export function createScheduler(deps: SchedulerDeps) {
     } else if (job.kind === 'receipt-final') {
       const threadId = threadIdOf(job);
       if (threadId) await threads.closeReceiptWindow(threadId);
-    }
+    } else throw new Error('Unsupported scheduled job kind: ' + job.kind);
   }
   /** The next 06:00 Stockholm after now. Idempotent by date, so every process may schedule it. */
   async function scheduleNightly() {
-    const next = Temporal.Instant.fromEpochMilliseconds(clock().getTime()).toZonedDateTimeISO(timeZone).add({ days: 1 }).with({ hour: 6, minute: 0, second: 0, millisecond: 0 });
+    const now = Temporal.Instant.fromEpochMilliseconds(clock().getTime()).toZonedDateTimeISO(timeZone);
+    const today = now.with({ hour: 6, minute: 0, second: 0, millisecond: 0 });
+    const next = today.epochMilliseconds > now.epochMilliseconds ? today : today.add({ days: 1 });
     await jobs.schedule({ id: `scan:${next.toPlainDate().toString()}`, kind: NIGHTLY, runAt: new Date(next.epochMilliseconds).toISOString() });
   }
   /** Run up to ten due jobs; a failing job is finished with its error and never blocks the next. */

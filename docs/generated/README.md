@@ -75,6 +75,7 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 
 | Field | Required | Shape | Description |
 |---|---|---|---|
+| `occurrences` | no | array of object |  |
 | `topic` | yes | string | Idempotency key per person: the same occurrence gives the same topic. |
 | `area` | yes | string |  |
 | `title` | yes | string |  |

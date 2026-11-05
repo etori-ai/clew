@@ -25,13 +25,16 @@ Checks:
 ```sh
 docker exec -w /workspace clew-app-1 bun run check      # tsc + dependency rules (D20) + Bun unit tests + Node runtime tests; also runs in CI
 docker exec -w /workspace clew-app-1 bun run test:node  # current server runtime, without external services
+docker exec -w /workspace clew-app-1 bun run test:db    # PostgreSQL contracts
+docker exec -w /workspace clew-app-1 bun run test:durability # PostgreSQL/Temporal/Node synthetic reliability scenarios
 sh scripts/a11y.sh                                      # on the host: WCAG 2.2 AA suite in the pinned Playwright image, API mocked; also runs in CI
-docker exec -w /workspace clew-app-1 bun scripts/auth-dev-check.ts hillevi # real Keycloak login, proposals, confirm, undo
 ```
 
 Ports on loopback: 3020 web, 3021 Nextcloud (`calendar-admin`), 3022 Mailpit, 3023 Temporal UI.
 
-Temporal (server and UI) starts with the base compose stack and creates its two databases in the shared Postgres on first start; nothing to set up. The BFF runs the Temporal worker in-process and logs `Temporal worker on temporal:7233` when connected. The first workflow is a reminder: `Påminn mig › Om 10 sekunder` on any card brings that card back to the top of the stream ten seconds later, marked Påminnelse. Watch it in the UI at http://localhost:3023.
+Temporal (server and UI) starts with the base compose stack and creates its two databases in the shared Postgres on first start. The BFF runs the worker in-process. Approved executions, reminder/snooze timers, bounded calendar follow-up and scheduled jobs use durable PostgreSQL intent before Temporal dispatch. A reminder keeps its absolute due time through an outage; queued/blocked states remain visible. Follow workflows in the UI at http://localhost:3023 and inspect aggregates with `docker exec -w /workspace clew-app-1 bun scripts/reliability-status.ts`. See [scheduled work](../architecture/scheduled-work.md) and the [operations runbook](reliability-operations.md).
+
+The older login/connector smoke scripts assume synchronous source decisions; they are not acceptance evidence for the new asynchronous paths. See [testing](../architecture/testing.md) for the maintained suites and remaining live-source checks.
 
 The calendar image refreshes its pinned Calendar and RoomVox code in an existing data volume before Apache starts, then runs Nextcloud's app migrations. Unchanged versions do nothing; a failed upgrade stays pending and is retried on restart. App downgrades are refused. Back up the calendar volume before applying upgrades; restoring older image pins alone does not undo database migrations.
 

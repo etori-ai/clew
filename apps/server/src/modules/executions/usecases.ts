@@ -11,8 +11,10 @@ export function executionUsecases({ store, source, clock, ids, digest }: Executi
     const access = await source.authorize(persona, input.operation, input.payload);
     if (input.compensates) {
       const original = await store.read(input.compensates);
-      if (!original || original.personId !== persona.id || original.connector !== access.connector || !['succeeded', 'partial'].includes(original.state) || original.result?.undoCapability !== input.operation || clock().getTime() > Date.parse(original.updatedAt) + (original.result.undoMinutes ?? 10) * 60_000)
+      if (!original || original.personId !== persona.id || original.connector !== access.connector || !['succeeded', 'partial'].includes(original.state) || original.result?.undoCapability !== input.operation || clock().getTime() > Date.parse(original.dispatchedAt ?? original.createdAt) + (original.result.undoMinutes ?? 10) * 60_000)
         throw new ExecutionError('Åtgärden kan inte ångras.');
+      const approvedUndo = original.result.undoInput ?? { refs: original.result.rows.filter(r => r.outcome === 'done').map(r => r.ref).sort() };
+      if (digest(input.payload) !== digest(approvedUndo)) throw new ExecutionError('Ångra måste gälla exakt den bekräftade åtgärden.');
     }
     const at = clock().toISOString();
     const execution: Execution = { id: ids(), decisionId: input.decisionId, personId: persona.id, principal: persona.principal.id, unitId: persona.unitId, authorizationVersion: persona.authorizationVersion,
@@ -36,14 +38,15 @@ export function executionUsecases({ store, source, clock, ids, digest }: Executi
     await source.authorize(persona, e.operation, e.payload);
     return executionView(e);
   }
-  async function settle(e: Execution, state: Execution['state'], reason: string | null, result: ExecuteResult | null = null) {
+  async function settle(e: Execution, state: Execution['state'], reason: string | null, result?: ExecuteResult | null) {
     const at = clock().toISOString();
     return store.transaction(async tx => {
       const current = await tx.lock(e.id);
       // An expired worker may not overwrite a newer reconciliation's evidence.
       if (!current || current.attempt !== e.attempt || current.state !== 'running') return;
-      await tx.update({ ...current, state, reason, result, leaseUntil: null, updatedAt: at });
-      await tx.audit({ actor: 'system:execution', action: 'execution.' + state, subject: 'execution:' + e.id, at, details: { attempt: e.attempt, reason, outcomes: result?.rows.map(row => row.outcome) ?? [] } });
+      const evidence = result ?? current.result;
+      await tx.update({ ...current, state, reason, result: evidence, leaseUntil: null, updatedAt: at });
+      await tx.audit({ actor: 'system:execution', action: 'execution.' + state, subject: 'execution:' + e.id, at, details: { attempt: e.attempt, reason, outcomes: evidence?.rows.map(row => row.outcome) ?? [] } });
     });
   }
   /** One bounded activity. Recovery investigates dispatched state; it never blindly replays a write. */

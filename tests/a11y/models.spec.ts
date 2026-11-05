@@ -117,7 +117,7 @@ test.describe('model administration', () => {
       await dialog.getByLabel(/^Ny nyckel/).fill('ny-nyckel');
       await dialog.getByRole('button', { name: 'Byt nyckel' }).click();
       await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Nyckeln är bytt'));
-      await page.getByRole('button', { name: 'Testa' }).click();
+      await page.getByRole('button', { name: 'Testa', exact: true }).click();
       await expect(page.getByRole('list', { name: 'Testets resultat' })).toContainText('listar 3 modeller');
       await expect(page.getByText('3 modeller som leverantören listar är inte tillagda.')).toBeVisible();
       await expectNoAxeViolations(page);

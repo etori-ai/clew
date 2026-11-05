@@ -10,7 +10,7 @@ Paths are relative to the registered connector base URL. Bodies and responses ar
 |---|---|---|---|
 | `GET /clew/manifest` | No body | `ConnectorManifest` | Always; no user assertion required. Keep credentials and source data out of the manifest. |
 | `POST /clew/capabilities/{name}` | `CallRequest` (`actor`, `input`) | `CallResponse` (`output` or `error`) | For declared capabilities; `{name}` is the full capability name. |
-| `POST /clew/scan` | `ScanRequest` | `ScanResponse` (`drafts`) | When `scan: true`. |
+| `POST /clew/scan` | `ScanRequest` | `ScanResponse` (`drafts`, optional `observation`) | When `scan: true`. |
 | `POST /clew/figure` | `FigureRequest` (`actor`, `area`) | `FigureResponse` (`figure` or null) | For an area declaring `figure: true`. |
 
 Every POST requires both `Authorization: Bearer <Clew assertion>` and `X-Clew-Connector-Key: <transport key>`. Trust the actor from the verified assertion, not the body. See [authorization](../guides/authorization.md) for exact claims, callbacks and optional delegated tokens.
@@ -31,6 +31,8 @@ The [generated field table and complete examples](../generated/README.md) cover 
 JSON Schema validation alone does not prove these relationships or source authorization. Use the conformance checker and targeted behavioral tests.
 
 ## Errors
+
+Scan drafts can include `occurrences: [{ key, revision, period }]`. The optional observation declares scope, observation time/version, completeness and pagination exhaustion; a delta can include tombstones. Only authoritative evidence may resolve missing work. Legacy topic-only drafts remain conservative. See [occurrence semantics](../guides/actions-and-receipts.md#scan-an-occurrence-into-a-card) and the generated `ScanResponse` definition; an empty response without a complete exhausted observation does not mean that the source has no outstanding work.
 
 Return `{ "error": { "code": "denied", "message": "Du saknar behörighet." } }` for a denied operation, with an appropriate non-success HTTP status. Supported codes are `invalid`, `denied`, `not-found`, `unavailable` and `unknown`. Messages are safe Swedish text for the person, without upstream stack traces or credentials. Invalid credentials must return HTTP 401; the checker probes this boundary. Use HTTP 503 for an unavailable source.
 

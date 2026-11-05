@@ -105,7 +105,7 @@ export function calendarUsecases(deps: CalendarDeps) {
     const head = `${members} utvecklingssamtal återstår före 28 november, om ${daysLeft} dagar.`;
     if (!planned) return `${head} Vecka ${weekNumber(week)} har inga lediga timmar som passar både dig och medarbetarna. Prova en annan vecka.`;
     const tail = planned < members ? ` ${members - planned} fick ingen tid vecka ${weekNumber(week)}; jag föreslår dem i nästa vecka om du vill.` : '';
-    return `${head} Jag har ritat in ${planned} förslag vecka ${weekNumber(week)} som inte krockar med något i din eller medarbetarnas kalendrar. Bekräfta så skickar jag inbjudningarna; du kan ångra i tio minuter.${tail}`;
+    return `${head} Jag har ritat in ${planned} förslag vecka ${weekNumber(week)} som inte krockar med något i din eller medarbetarnas kalendrar. Bekräfta så skickar jag inbjudningarna. Kortet visar resultatet och vad som går att ångra.${tail}`;
   }
   const records = (persona: AuthenticatedContext, threadId: string, planned: ReturnType<typeof planWeek>): ProposalRecord[] =>
     planned.map(p => ({ id: ids(), threadId, personId: persona.id, status: 'proposed', participant: { email: p.participant.email, name: p.participant.name }, start: p.start, end: p.end,
@@ -116,12 +116,18 @@ export function calendarUsecases(deps: CalendarDeps) {
    */
   async function ensureProposalThread(persona: AuthenticatedContext, source = 'Nattlig genomgång 06:00'): Promise<Thread | undefined> {
     if (persona.role !== 'manager') return undefined;
-    const existing = await store.openThread(persona.id, TOPIC);
+    await persona.authorize();
+    const existing = await store.latestThread(persona.id, TOPIC);
     if (existing) {
       // A thread drawn before rows existed gets them now, so the card and the conversation see one draft mechanism.
       const proposed = existing.proposals.filter(p => p.status === 'proposed');
       if (!existing.thread.items.length && proposed.length) {
-        await store.transaction(tx => tx.updateThread(existing.thread.id, { items: proposalItems(proposed) }));
+        await store.transaction(async tx => {
+          const locked = await tx.lockThread(persona.id, existing.thread.id);
+          if (!locked || locked.thread.items.length || locked.thread.state !== 'open') return;
+          await tx.updateThread(existing.thread.id, { items: proposalItems(proposed), updatedAt: clock().toISOString() });
+          await tx.writeAudit({ actor: 'system:migration', action: 'proposals.presentation_repaired', subject: 'thread:' + existing.thread.id, at: clock().toISOString() });
+        });
         return thread(persona, existing.thread.id);
       }
       return existing.thread;
@@ -130,17 +136,20 @@ export function calendarUsecases(deps: CalendarDeps) {
     const { members, planned, unplaced } = await draw(persona, week);
     if (!members.length) return undefined;
     const at = clock().toISOString(), id = ids();
-    await store.transaction(async tx => {
+    await persona.authorize();
+    const inserted = await store.transaction(async tx => {
       const summary = explain(week, planned.length, members.length);
-      await tx.insertThread({ id, personId: persona.id, topic: TOPIC, title: `Planera utvecklingssamtal vecka ${weekNumber(week)}`, week, area: 'utvecklingssamtal', summary,
+      const created = await tx.insertThread({ id, personId: persona.id, topic: TOPIC, title: `Planera utvecklingssamtal vecka ${weekNumber(week)}`, week, area: 'utvecklingssamtal', summary,
         trigger: { reason: `${members.length} samtal saknar tid före 28 november`, source, at }, createdAt: at, updatedAt: at });
+      if (!created) return false;
       await tx.addMessage(id, { role: 'assistant', body: summary, at });
       const rows = records(persona, id, planned);
       await tx.insertProposals(rows);
       await tx.updateThread(id, { items: [...proposalItems(rows), ...unplacedItems(unplaced)] });
       await tx.writeAudit({ actor: 'assistant:scan', action: 'thread.pushed', subject: 'thread:' + id, at, details: { topic: TOPIC, week, proposals: planned.length, owner: persona.id } });
+      return true;
     });
-    return thread(persona, id);
+    return inserted ? thread(persona, id) : (await store.latestThread(persona.id, TOPIC))?.thread;
   }
   /** "Vecka 47 i stället": redraw every unconfirmed proposal of the thread in another week. */
   async function replan(persona: AuthenticatedContext, threadId: string, week: string) {
@@ -150,6 +159,8 @@ export function calendarUsecases(deps: CalendarDeps) {
     const { members, planned, unplaced } = await draw(persona, week, threadId);
     const at = clock().toISOString();
     await store.transaction(async tx => {
+      const locked = await tx.lockThread(persona.id, threadId);
+      if (!locked || locked.thread.updatedAt !== current.thread.updatedAt || locked.thread.execution && ['pending', 'running', 'unknown'].includes(locked.thread.execution.state)) throw new InputError('Förslaget har ändrats. Läs om sidan.');
       await tx.transition(threadId, 'proposed', { status: 'superseded' });
       const rows = records(persona, threadId, planned);
       await tx.insertProposals(rows);
@@ -158,93 +169,6 @@ export function calendarUsecases(deps: CalendarDeps) {
       await tx.addMessage(threadId, { role: 'assistant', body: explain(week, planned.length, members.length), at });
       await tx.writeAudit({ actor: principal(persona), action: 'proposals.replanned', subject: 'thread:' + threadId, at, details: { week, proposals: planned.length } });
     });
-    return thread(persona, threadId);
-  }
-  /**
-   * The human decision endpoint. Re-validates every selected proposal against the live calendars, then writes the
-   * calendar events; the status change and the audit row commit together. A lost provider reply is recorded as such.
-   */
-  async function confirm(persona: AuthenticatedContext, threadId: string, proposalIds: string[]) {
-    await persona.authorize();
-    const current = await store.readThread(persona.id, threadId);
-    if (!current || current.thread.state !== 'open') throw new InputError('Tråden är redan hanterad.');
-    if (!proposalIds.length) throw new InputError('Välj minst en tid.');
-    const selected = current.proposals.filter(p => proposalIds.includes(p.id) && p.status === 'proposed');
-    if (selected.length !== proposalIds.length) throw new InputError('Något förslag är inte längre aktuellt. Läs om sidan.');
-    const binding = bind(persona);
-    const first = selected.reduce((a, b) => a.start < b.start ? a : b).start, last = selected.reduce((a, b) => a.end > b.end ? a : b).end;
-    const events = await binding.provider.list(new Date(Date.parse(first) - 86400000).toISOString(), new Date(Date.parse(last) + 86400000).toISOString());
-    const taken = events.filter(e => !e.allDay).map(interval);
-    for (const p of selected) if (collides(interval(p), taken)) throw new InputError(`Tiden ${shortDayLabel(displayDate(p.start))} ${timeRange(p.start, p.end)} krockar numera med din kalender. Flytta den först.`);
-    await persona.authorize();
-    const now = clock(), at = now.toISOString(), undoUntil = new Date(now.getTime() + UNDO_MS).toISOString();
-    const created: { id: string; uid: string; ref: string | null; revision: string | null; outcome: 'created' | 'unknown' }[] = [];
-    for (const p of selected) {
-      const uid = `clew-samtal-${p.id}`;
-      try {
-        const event = await binding.provider.create(uid, { title: `${SAMTAL_TITLE} · ${p.participant.name}`, start: p.start, end: p.end, participants: [p.participant.email] });
-        created.push({ id: p.id, uid, ref: event.ref, revision: event.revision, outcome: 'created' });
-      } catch { created.push({ id: p.id, uid, ref: await binding.provider.eventRef(uid).catch(() => null), revision: null, outcome: 'unknown' }); }
-    }
-    // A new time for someone who said no (D30): their old invitation leaves the calendar only after the new one was read back.
-    const replaced: string[] = [];
-    for (const c of created.filter(c => c.outcome === 'created')) {
-      const chosen = selected.find(p => p.id === c.id)!;
-      for (const old of current.proposals.filter(p => p.status === 'declined-by-invitee' && p.participant.email.toLowerCase() === chosen.participant.email.toLowerCase())) {
-        try { const ref = old.eventRef ?? await binding.provider.eventRef(old.eventUid!); const event = await binding.provider.lookup(ref); if (event) await binding.provider.cancel(ref, event.revision); } catch { /* the old event is read-only noise at worst */ }
-        replaced.push(old.id);
-      }
-    }
-    await store.transaction(async tx => {
-      for (const c of created) await tx.updateProposals([c.id], { status: 'confirmed', eventUid: c.uid, eventRef: c.ref, eventRevision: c.revision, confirmedAt: at, undoUntil });
-      const declined = current.proposals.filter(p => p.status === 'proposed' && !proposalIds.includes(p.id)).map(p => p.id);
-      await tx.updateProposals(declined, { status: 'declined' });
-      await tx.updateProposals(replaced, { status: 'superseded' });
-      // The obligation stays one open thread, in the Pågår utan dig pile, until the invitees have answered or the Friday review returns it (D28, D30).
-      const waiting = current.proposals.filter(p => waitingOnInvitee(p.status === 'proposed' && proposalIds.includes(p.id) ? { status: 'confirmed' } : p)).length;
-      await tx.updateThread(threadId, { state: 'open', handledAt: null, updatedAt: at, deadline: null, waitingOn: `svar från ${waiting} ${waiting === 1 ? 'medarbetare' : 'medarbetare'}`,
-        items: [...proposalItems(current.proposals.filter(p => p.status === 'proposed'), id => proposalIds.includes(id)), ...keepUnplaced(current.thread.items)] });
-      const unknown = created.filter(c => c.outcome === 'unknown').length;
-      await tx.addMessage(threadId, { role: 'user', body: `Bekräftade ${created.length} tider`, at });
-      await tx.addMessage(threadId, { role: 'assistant', at, body: unknown ? `${created.length - unknown} inbjudningar är skickade. ${unknown} fick inget svar från kalendern; kontrollera dem i kalendern innan du försöker igen.`
-        : `${created.length} inbjudningar är skickade. Du kan ångra till ${localClock(undoUntil).slice(11)}. Jag påminner den som inte svarat efter ${FOLLOW_UP.afterWorkdays} arbetsdagar, högst ${FOLLOW_UP.maxReminders} gånger, och lägger resten hos dig ${shortDayLabel(displayDate(returnAt(current.proposals.map(p => ({ ...p, status: 'confirmed' as const, confirmedAt: at })), at)))} ${FOLLOW_UP.at}.` });
-      await tx.writeAudit({ actor: principal(persona), action: 'proposals.confirmed', subject: 'thread:' + threadId, at, details: { proposals: created.map(c => c.id), unknown, undoUntil, replaced } });
-      await tx.scheduleJob({ id: `undo-expiry:${threadId}:${now.getTime()}`, kind: 'undo-expiry', runAt: undoUntil, payload: { threadId, personId: persona.id } });
-    });
-    // The follow-up workflow (D30) is a convenience for the invitees; a timer service that is away is noted, not an error.
-    try { await obligations.start({ threadId, personId: persona.id }); }
-    catch { await store.transaction(tx => tx.writeAudit({ actor: 'assistant:obligation', action: 'obligation.unavailable', subject: 'thread:' + threadId, at, details: { owner: persona.id } })); }
-    return thread(persona, threadId);
-  }
-  /** Undo within the window: cancel every event the confirmation created and record a second audit row. */
-  async function undo(persona: AuthenticatedContext, threadId: string) {
-    await persona.authorize();
-    const current = await store.readThread(persona.id, threadId);
-    if (!current) throw new InputError('Tråden finns inte.');
-    const confirmed = current.proposals.filter(p => p.status === 'confirmed');
-    if (!confirmed.length) throw new InputError('Det finns inget att ångra.');
-    const now = clock(), at = now.toISOString();
-    if (confirmed.some(p => !p.undoUntil || Date.parse(p.undoUntil) < now.getTime())) throw new InputError('Ångerfönstret på tio minuter har gått ut.');
-    const binding = bind(persona);
-    const results: { id: string; outcome: 'cancelled' | 'unknown' }[] = [];
-    for (const p of confirmed) {
-      try {
-        const ref = p.eventRef ?? await binding.provider.eventRef(p.eventUid!);
-        const event = await binding.provider.lookup(ref);
-        if (event) await binding.provider.cancel(ref, event.revision);
-        results.push({ id: p.id, outcome: 'cancelled' });
-      } catch { results.push({ id: p.id, outcome: 'unknown' }); }
-    }
-    await store.transaction(async tx => {
-      const unknown = results.filter(r => r.outcome === 'unknown').length;
-      await tx.updateThread(threadId, { state: unknown ? 'handled' : 'open', handledAt: unknown ? at : null, waitingOn: null, updatedAt: at });
-      await tx.addMessage(threadId, { role: 'user', body: 'Ångra', at });
-      await tx.addMessage(threadId, { role: 'assistant', at, body: unknown ? `${unknown} inbjudningar kunde inte tas tillbaka säkert. Kontrollera dem i kalendern.` : 'Inbjudningarna är återkallade. Förslagen ligger kvar här om du vill bekräfta igen eller välja en annan vecka.' });
-      if (unknown) await tx.updateProposals(results.filter(r => r.outcome === 'cancelled').map(r => r.id), { status: 'undone' });
-      else await tx.updateProposals(results.map(r => r.id), { status: 'proposed', eventUid: null, eventRef: null, eventRevision: null, confirmedAt: null, undoUntil: null });
-      await tx.writeAudit({ actor: principal(persona), action: 'proposals.undone', subject: 'thread:' + threadId, at, details: { proposals: results.map(r => r.id), unknown } });
-    });
-    await obligations.cancel(threadId);
     return thread(persona, threadId);
   }
   /** The thread and the identity of its owner, for the timers that know only the thread. */
@@ -285,6 +209,7 @@ export function calendarUsecases(deps: CalendarDeps) {
       const start = dayStart(week), end = dayStart(addDays(week, 5));
       const [events, busy, existing] = await Promise.all([binding.provider.list(start, end), member ? binding.provider.freeBusy(start, end, [{ ref: member.ref, email: member.email }]) : Promise.resolve([]), store.activeProposals(persona.id)]);
       const periods = busy[0];
+      if (!periods || periods.state === 'unknown') continue;
       // The declined time stays busy: the old invitation is in the calendar until the new one is read back, and the person said no to it.
       const managerBusy: Interval[] = [...events.filter(e => !e.allDay).map(interval), ...existing.filter(x => x.id !== p.id).map(interval)];
       const candidate = { participant: { ...p.participant }, busy: periods && periods.state === 'known' ? periods.busy : [] };
@@ -293,7 +218,11 @@ export function calendarUsecases(deps: CalendarDeps) {
       const second = first ? planWeek({ week, managerBusy: [...managerBusy, interval(first)], candidates: [candidate], notBefore, durationMinutes: SAMTAL_MINUTES })[0] : undefined;
       for (const slot of [first, second]) if (slot) alternatives.push(...records(persona, threadId, [slot]));
     }
+    await persona.authorize();
     await store.transaction(async tx => {
+      const locked = await tx.lockThread(persona.id, threadId);
+      if (!locked || locked.thread.updatedAt !== current.thread.updatedAt ||
+        locked.thread.execution && ['pending', 'running', 'unknown'].includes(locked.thread.execution.state)) return;
       if (accepted.length) await tx.updateProposals(accepted.map(p => p.id), { status: 'accepted' });
       if (declined.length) await tx.updateProposals(declined.map(p => p.id), { status: 'declined-by-invitee' });
       if (alternatives.length) await tx.insertProposals(alternatives);
@@ -314,69 +243,16 @@ export function calendarUsecases(deps: CalendarDeps) {
     });
     return { accepted: accepted.map(p => p.id), declined: declined.map(p => p.id) };
   }
-  /**
-   * A follow-up to whoever has not answered (D30): a card in the invitee's own stream, never an e-mail. The workflow sends
-   * it two workdays after the invitation and once more after two further workdays; the manager can send one at any time.
-   */
-  async function remindInvitees(threadId: string, actor: AuthenticatedContext | 'assistant:obligation', only?: string[]) {
-    const found = await owned(threadId);
-    if (!found) throw new InputError('Tråden finns inte.');
-    const { current, persona, binding } = found;
-    if (actor !== 'assistant:obligation' && actor.id !== persona.id) throw new InputError('Tråden finns inte.');
-    const waiting = current.proposals.filter(waitingOnInvitee).filter(p => !only || only.includes(p.id));
-    const at = clock().toISOString();
-    const back = returnAt(current.proposals, at);
-    const pushed: string[] = [], skipped: string[] = [];
-    for (const p of waiting) {
-      const member = binding.members.find(m => m.email.toLowerCase() === p.participant.email.toLowerCase());
-      if (!member) { skipped.push(p.id); continue; }
-      const id = await notify(member.personId, { topic: `samtal-svar:${p.id}`, area: 'kalender', title: 'Svara på inbjudan till utvecklingssamtal', deadline: displayDate(back),
-        summary: `${persona.name} väntar på ditt svar om utvecklingssamtalet ${shortDayLabel(displayDate(p.start))} ${timeRange(p.start, p.end)}. Svara i din kalender.`,
-        reason: `Inbjudan skickad ${shortDayLabel(displayDate(p.confirmedAt ?? at))}, inget svar ännu`, actions: [] });
-      (id ? pushed : skipped).push(p.id);
-    }
-    await store.transaction(async tx => {
-      for (const p of waiting) await tx.updateProposals([p.id], { reminders: p.reminders + 1, remindedAt: at });
-      await tx.updateThread(threadId, { updatedAt: at });
-      if (waiting.length) await tx.addMessage(threadId, { role: actor === 'assistant:obligation' ? 'assistant' : 'user', body: actor === 'assistant:obligation' ? `Påminde ${waiting.length} som inte svarat.` : `Påminn de ${waiting.length} som inte svarat`, at });
-      await tx.writeAudit({ actor: actor === 'assistant:obligation' ? actor : principal(actor), action: 'obligation.reminded', subject: 'thread:' + threadId, at, details: { proposals: waiting.map(p => p.id), pushed, skipped, owner: persona.id } });
-    });
-    return thread(persona, threadId);
-  }
-  /** The workflow's one question (D30): read the replies, then say what to do now and when to look again. */
-  async function obligationCheck(threadId: string): Promise<Pick<ObligationPlan, 'action' | 'why' | 'next'> & { due: string[] }> {
-    await readReplies(threadId);
-    const current = await store.readThreadById(threadId);
-    const now = clock().toISOString();
-    if (!current) return { action: 'return', why: 'answered', next: now, due: [] };
-    const plan = obligationPlan(now, current.proposals);
-    return { action: plan.action, why: plan.why, next: plan.next, due: plan.due.map(p => p.id) };
-  }
-  /**
-   * The end of the follow-ups (D30): on the Friday review the thread goes back to the manager's Nu group with the sum
-   * and whoever stayed silent; when every reply is in, the sum is written and the thread stays where it is.
-   */
-  async function returnObligation(threadId: string, why: 'answered' | 'deadline') {
-    const current = await store.readThreadById(threadId);
-    if (!current) return;
-    const at = clock().toISOString();
-    const rows = current.proposals.filter(p => p.status !== 'superseded');
-    const sum = replySummary(rows), silent = rows.filter(waitingOnInvitee);
-    const summary = why === 'deadline'
-      ? `${sum.accepted} av ${sum.total} har svarat ja. ${silent.length} har inte svarat${silent.some(p => p.reminders >= FOLLOW_UP.maxReminders) ? ` efter ${FOLLOW_UP.maxReminders} påminnelser` : ''}: ${silent.map(p => p.participant.name).join(', ')}.`
-      : `Alla ${sum.total} har svarat: ${sum.accepted} ja${sum.declined ? `, ${sum.declined} nej` : ''}.`;
-    await store.transaction(async tx => {
-      await tx.updateThread(threadId, { ...(why === 'deadline' ? { state: 'open', handledAt: null, waitingOn: null, deadline: todayDate() } : { state: 'handled', handledAt: at, waitingOn: null, deadline: null }), summary, updatedAt: at });
-      await tx.addMessage(threadId, { role: 'assistant', body: summary, at });
-      await tx.writeAudit({ actor: 'assistant:obligation', action: 'obligation.returned', subject: 'thread:' + threadId, at, details: { why, silent: silent.map(p => p.id), step: stepOf(current.proposals, obligationStep) } });
-    });
-  }
   /** Timer: after ten minutes a confirmation becomes final and the thread shows it under "Redan hanterat". */
   async function closeUndoWindow(threadId: string) {
-    const at = clock().toISOString();
+    const at = clock().toISOString(), existing = await store.readThreadById(threadId);
+    const owner = existing?.proposals[0]?.personId;
+    if (!owner) return;
     await store.transaction(async tx => {
-      const ids = await tx.transition(threadId, 'confirmed', { status: 'final' });
+      const locked = await tx.lockThread(owner, threadId);
+      const ids = locked?.proposals.filter(p => p.status === 'confirmed' && p.undoUntil && p.undoUntil <= at).map(p => p.id) ?? [];
       if (!ids.length) return;
+      await tx.updateProposals(ids, { status: 'final' });
       await tx.updateThread(threadId, { updatedAt: at });
       await tx.writeAudit({ actor: 'assistant:timer', action: 'proposals.final', subject: 'thread:' + threadId, at, details: { proposals: ids } });
     });
@@ -386,13 +262,17 @@ export function calendarUsecases(deps: CalendarDeps) {
     const current = await store.readThread(persona.id, threadId);
     if (!current || current.thread.state !== 'open') throw new InputError('Tråden är redan hanterad.');
     const at = clock().toISOString();
+    await persona.authorize();
     await store.transaction(async tx => {
+      const locked = await tx.lockThread(persona.id, threadId);
+      if (!locked || locked.thread.state !== 'open' || locked.thread.updatedAt !== current.thread.updatedAt ||
+        locked.thread.execution && ['pending', 'running', 'unknown'].includes(locked.thread.execution.state)) throw new InputError('Kortet har ändrats. Läs om sidan.');
       await tx.transition(threadId, 'proposed', { status: 'declined' });
       await tx.updateThread(threadId, { state: 'dismissed', handledAt: at, updatedAt: at });
       await tx.writeAudit({ actor: principal(persona), action: 'thread.dismissed', subject: 'thread:' + threadId, at });
     });
     return thread(persona, threadId);
   }
-  return { listWeek, readToday, weekView, weekOverview, samtalStatus, ensureProposalThread, replan, confirm, undo, closeUndoWindow, dismiss, readReplies, remindInvitees, obligationCheck, returnObligation };
+  return { listWeek, readToday, weekView, weekOverview, samtalStatus, ensureProposalThread, replan, closeUndoWindow, dismiss, readReplies };
 }
 export type CalendarUsecases = ReturnType<typeof calendarUsecases>;

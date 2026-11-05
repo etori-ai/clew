@@ -8,6 +8,21 @@ import type { ReminderInput } from '../threads/model';
 
 const { surfaceReminder, checkObligation, remindInvitees, returnObligation } = proxyActivities<typeof activities>({ startToCloseTimeout: '1 minute', retry: { maximumAttempts: 5 } });
 const { progressExecution } = proxyActivities<typeof activities>({ startToCloseTimeout: '1 minute', retry: { maximumAttempts: 5 } });
+const { fireTimer } = proxyActivities<typeof activities>({ startToCloseTimeout: '1 minute' });
+const { runScheduledJob } = proxyActivities<typeof activities>({ startToCloseTimeout: '1 minute' });
+export async function scheduledJob(input: { id: string; dueAt: string }): Promise<void> {
+  const wait = Date.parse(input.dueAt) - Date.now();
+  if (wait > 0) await sleep(wait);
+  while (await runScheduledJob(input.id) === 'busy') await sleep('30 seconds');
+}
+
+/** Absolute time: delayed dispatch cannot restart the original duration. Old reminder histories stay unchanged. */
+export async function durableReminder(input: { id: string; generation: number; dueAt: string }): Promise<void> {
+  let cancelled = false;
+  setHandler(defineSignal('cancel'), () => { cancelled = true; });
+  await condition(() => cancelled, Math.max(0, Date.parse(input.dueAt) - Date.now()));
+  if (!cancelled) await fireTimer(input.id, input.generation);
+}
 
 /** Retries re-enter the persisted ledger; a dispatched operation is always investigated before any replay. */
 export async function approvedExecution(id: string): Promise<void> {

@@ -64,7 +64,10 @@ The ordinary Node suite checks runtime compatibility. The separate durability su
 
 ```sh
 docker exec -w /workspace clew-app-1 bun run test:node
+docker exec -w /workspace clew-app-1 bun run test:db
 docker exec -w /workspace clew-app-1 bun run test:durability
 ```
 
 See [server package scripts](../../apps/server/package.json), [maintainer testing](../architecture/testing.md) and the [reliability plan](../architecture/reliability-and-authorization-plan.md). Report fixture, runtime and live-source evidence separately; a green fixture is not proof of a live pilot.
+
+The durability lane includes timer generation/cancellation and replay of previous workflow histories. Database contracts cover calendar projection, bounded follow-up, refresh and attention ownership. For upgrade, legacy-owner drain, aggregate diagnostics and the isolated backup/restore rehearsal, use the [operations runbook](../maintainers/reliability-operations.md). Never point restored state at live dispatchers before reconciling source effects.

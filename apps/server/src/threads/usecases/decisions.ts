@@ -25,6 +25,7 @@ export function cardDecisions({ read, registry, run, approve, clock }: CardDecis
       return { kind: found.capability.kind, output, ...(view ? { view } : {}) };
     }
     const previous = t.execution && !t.execution.compensates ? t.execution : undefined;
+    if (!previous && t.state !== 'open') throw new InputError('Tråden är redan hanterad.');
     if (previous && previous.operation !== action.capability) throw new InputError('Ett tidigare beslut väntar redan på besked.');
     await approve(persona, { decisionId: previous?.decisionId ?? `card:${id}:${actionId}:${Date.parse(t.updatedAt)}`, operation: action.capability, payload, presentation: { threadId: id, version: t.updatedAt, actionId } });
     return { kind: 'execute' as const, thread: await required(persona, id) };

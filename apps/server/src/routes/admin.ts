@@ -5,6 +5,7 @@ import { AddConnectorInput, AddModelInput, AddProviderInput, ConnectorPatchInput
 import type { AddConnectorInput as Add, ConnectorPatchInput as Patch, PreviewQuery as Preview, RefreshManifestInput as Refresh, RotateSecretInput as Rotate } from '@clew/contracts';
 import { InputError, protectedRoute, type Env } from '../context';
 import { connectorAdmin, models } from '../composition';
+import { operations } from '../composition/operations';
 
 /**
  * Administration (D23, D24): thin routes over `connectorAdmin` and `models`. The use cases check the grant capability
@@ -22,6 +23,7 @@ async function body<T>(request: Request, validate: (value: unknown) => boolean):
 }
 export const adminRoutes = new Hono<Env>();
 adminRoutes.use('*', protectedRoute());
+adminRoutes.get('/reliability', async c => c.json(await operations.reliability(c.get('session').context)));
 adminRoutes.get('/units', async c => c.json({ units: await connectorAdmin.listUnits(c.get('session').context) }));
 adminRoutes.get('/connectors', async c => c.json({ connectors: await connectorAdmin.list(c.get('session').context) }));
 adminRoutes.post('/connectors', async c => c.json(await connectorAdmin.add(c.get('session').context, await body<Add>(c.req.raw, validators.add)), 201));

@@ -10,6 +10,7 @@ export function memoryExecutionStore() {
     try { return await fn(); } finally { release(); }
   };
   const store: ExecutionStore = {
+    async readDecision(personId, decisionId) { return structuredClone([...records.values()].find(e => e.personId === personId && e.decisionId === decisionId)); },
     async read(id) { return structuredClone(records.get(id)); },
     transaction: fn => serialized(async () => {
       const r = structuredClone(records), o = structuredClone(outbox), a = structuredClone(audit);

@@ -15,12 +15,28 @@ export interface NewMessage { role: 'assistant' | 'user'; body: string; at: stri
 export interface AuditEntry { actor: string; action: string; subject: string; at: string; details?: Record<string, unknown> }
 export interface JobInput { id: string; kind: string; runAt: string; payload?: Record<string, unknown> }
 
+/** One current desired timer per purpose and thread. Generation fences every old workflow. */
+export interface TimerIntent {
+  id: string; personId: string; threadId: string; kind: 'reminder' | 'snooze' | 'obligation'; generation: number;
+  unitId: string; authorizationVersion: string; dueAt: string; requestedAt: string;
+  state: 'active' | 'cancelled' | 'fired' | 'blocked'; reason: string | null;
+  deliveredGeneration: number | null; deliveredState: string | null;
+  attempt: number; nextAt: string; leaseUntil: string | null;
+}
+export type NewTimerIntent = Pick<TimerIntent, 'id' | 'personId' | 'threadId' | 'kind' | 'unitId' | 'authorizationVersion' | 'dueAt' | 'requestedAt'>;
+export interface TimerDelivery {
+  claimTimer(now: string, until: string): Promise<TimerIntent | undefined>;
+  finishTimer(timer: TimerIntent, retryAt: string, error?: string): Promise<void>;
+}
+
 /** What a reminder timer carries back when it fires (D17). Declared here so the workflow, the activity and the use case share one shape. */
 export interface ReminderInput { personId: string; threadId: string; title: string; area: string; seconds: number; requestedAt: string; /** A snooze's timer (D29): the card comes back without a badge or a toast. */ silent?: boolean }
 
 /** Writes inside one transaction. The audit row of a mutation is written through the same `tx`, so it commits or rolls back with the rest. */
 export interface ThreadTx {
+  admitDelivery(input: { id: string; personId: string; threadId: string; kind: 'automatic' | 'reminder'; at: string }): Promise<void>;
   /** The person's thread, held against concurrent writers until the transaction ends (a row lock in Postgres). */
+  lockThreadById(id: string): Promise<Thread | undefined>;
   lockThread(personId: string, id: string): Promise<Thread | undefined>;
   /** False when an open pushed thread with the same topic already exists for the person: the scan is idempotent. */
   insertThread(thread: NewThread): Promise<boolean>;
@@ -29,6 +45,12 @@ export interface ThreadTx {
   writeAudit(entry: AuditEntry): Promise<void>;
   /** Idempotent by job id. */
   scheduleJob(job: JobInput): Promise<void>;
+  readTimer(id: string): Promise<TimerIntent | undefined>;
+  /** The caller holds the thread lock. Replacing increments generation and resets delivery acknowledgement. */
+  scheduleTimer(input: NewTimerIntent): Promise<TimerIntent>;
+  /** Optional generation makes an old toast harmless after replacement. */
+  cancelTimer(id: string, at: string, generation?: number): Promise<boolean>;
+  updateTimer(timer: TimerIntent): Promise<void>;
 }
 export interface ThreadStore {
   /** Every unresolved pushed thread, plus at most 50 conversations/recently handled threads, newest first. */
@@ -37,6 +59,7 @@ export interface ThreadStore {
   readThread(personId: string, id: string): Promise<Thread | undefined>;
   /** For timers that know only the thread. */
   readThreadById(id: string): Promise<Thread | undefined>;
+  readTimer(id: string): Promise<TimerIntent | undefined>;
   /** The person's open pushed thread on a topic. */
   openThread(personId: string, topic: string): Promise<Thread | undefined>;
   transaction<T>(fn: (tx: ThreadTx) => Promise<T>): Promise<T>;

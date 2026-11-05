@@ -1,6 +1,7 @@
 // A small protocol demonstration with no dependencies beyond Node. Keep the companion verification.mjs when copying.
 // See docs/reference/connector-protocol.md. Its in-memory writes are not a durability or source-access reference.
 import { createVerifier, callbackFor, b64 } from './verification.mjs';
+import { createHash } from 'node:crypto';
 
 const CONNECTOR = 'hello';
 const Empty = { type: 'object', properties: {}, additionalProperties: false };
@@ -62,6 +63,7 @@ export function createConnector({ jwks, secret, clewUrl = process.env.CLEW_URL ?
     if (actor.role !== 'manager' || !open().length) return [];
     return [{ topic: 'hello:open-items', area: 'hello', title: 'Saker att göra i hello-anslutningen', summary: `${open().length} saker väntar på dig.`, reason: 'Hello-anslutningen har öppna saker för din enhet.',
       items: open().map(i => ({ ...i, selectable: true, selected: true })),
+      occurrences: open().map(i => ({ key: i.ref, period: 'once', revision: createHash('sha256').update(JSON.stringify(i)).digest('hex') })),
       actions: [{ id: 'done', label: 'Markera klar', capability: 'hello.markDone', kind: 'execute', role: 'primary', usesItems: true }, { id: 'list', label: 'Visa listan', capability: 'hello.openItems', kind: 'read', role: 'secondary', target: 'panel' }],
       deadline: null }];
   }
@@ -74,7 +76,7 @@ export function createConnector({ jwks, secret, clewUrl = process.env.CLEW_URL ?
     const actor = await verify(token, request.headers.get('x-clew-connector-key'));
     if (!actor) return fail('denied', 'Ogiltigt behörighetsbevis.', 401);
     let body; try { body = await request.json(); } catch { return fail('invalid', 'Ogiltig förfrågan.', 400); }
-    if (url.pathname === '/clew/scan') return json({ drafts: scan(actor) });
+    if (url.pathname === '/clew/scan') return json({ drafts: scan(actor), observation: { scope: actor.unitId + ':' + actor.role, observedAt: new Date().toISOString(), version: createHash('sha256').update(JSON.stringify(open())).digest('hex'), completeness: 'complete', exhausted: true } });
     if (url.pathname === '/clew/figure') return json({ figure: body.area === 'hello' ? { label: `${open().length} saker väntar`, tone: open().length ? 'warn' : 'ok' } : null });
     const name = decodeURIComponent(url.pathname.slice('/clew/capabilities/'.length));
     const capability = capabilities[name], declared = manifest.capabilities.find(c => c.name === name);

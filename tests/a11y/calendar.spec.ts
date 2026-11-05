@@ -74,7 +74,7 @@ test.describe('a booking of one\'s own', () => {
     await dialog.getByRole('textbox', { name: /Rubrik/ }).fill('Ledningsgrupp');
     await dialog.getByRole('button', { name: 'Boka' }).click();
     await expect(dialog).toBeHidden();
-    await expect(page.getByRole('region', { name: 'Aviseringar' }).getByText(/^Bokat: Ledningsgrupp/)).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Aviseringar' }).getByText(/^Bokningsbeslutet är sparat/)).toBeVisible();
   });
 });
 
@@ -105,7 +105,7 @@ test.describe('an entry opened from the grid', () => {
     await expect(page.getByRole('dialog')).toHaveCount(1);
     await dialog.getByRole('button', { name: 'Ja, ställ in' }).click();
     await expect(dialog).toBeHidden();
-    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Mötet är inställt.'));
+    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Beslutet att ställa in mötet är sparat.'));
   });
   test('a proposal is moved from the keyboard, never only by drag', async ({ page, api: _ }) => {
     await page.setViewportSize(desktop);

@@ -508,6 +508,15 @@
       "status": "accepted, browser invalidation implemented; durable attention pending",
       "date": "2026-11-05",
       "area": "platform"
+    },
+    {
+      "key": "D47-occurrences-timers-and-attention-have-durable-identities",
+      "number": 47,
+      "path": "docs/decisions/D47-occurrences-timers-and-attention-have-durable-identities.md",
+      "title": "D47 · Occurrences, timers and attention have durable identities",
+      "status": "accepted, implemented",
+      "date": "2026-11-05",
+      "area": "platform"
     }
   ],
   "documents": [
@@ -718,16 +727,13 @@
     },
     {
       "path": "docs/architecture/scheduled-work.md",
-      "title": "Scheduled work: the Postgres scheduler now, Temporal later",
+      "title": "Scheduled work",
       "category": "maintainer-design",
       "headings": [
-        "What runs on a schedule today",
-        "How the scheduler works",
-        "What it deliberately does not do",
-        "When Temporal comes in",
-        "What does not change when it does",
-        "Is Temporal a good fit? (assessed 2026-11-04)",
-        "Startsidan background"
+        "Ownership and flow",
+        "Follow-up and old work",
+        "Discovery and attention",
+        "Evidence"
       ]
     },
     {
@@ -1055,6 +1061,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D47-occurrences-timers-and-attention-have-durable-identities.md",
+      "title": "D47 · Occurrences, timers and attention have durable identities",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -1179,6 +1191,17 @@
       ]
     },
     {
+      "path": "docs/maintainers/reliability-operations.md",
+      "title": "Reliability operations and recovery",
+      "category": "maintainer-guide",
+      "headings": [
+        "Inspect without exposing source data",
+        "Upgrade from the previous scheduler",
+        "Restore safely",
+        "Reproduce the synthetic upgrade and restore rehearsal"
+      ]
+    },
+    {
       "path": "docs/overview.md",
       "title": "What Clew does",
       "category": "integrator-guide",
@@ -1218,6 +1241,15 @@
         "Related profiles",
         "Contract changes",
         "Source map"
+      ]
+    },
+    {
+      "path": "docs/reference/reliability-acceptance.md",
+      "title": "Reliability: vision, implementation and evidence",
+      "category": "integrator-guide",
+      "headings": [
+        "Verification record",
+        "Pilot gate remains deliberately open"
       ]
     },
     {

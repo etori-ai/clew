@@ -5,13 +5,13 @@ for (const viewport of [desktop, narrow]) test(`the compact header and profile w
   api.admin = true;
   await page.setViewportSize(viewport);
   await open(page, '/');
-  await openNav(page);
-  const header = page.locator('.astryx-side-nav-heading');
+  const nav = await openNav(page);
+  const header = nav.locator('.astryx-side-nav-heading');
   expect((await header.boundingBox())!.height).toBeLessThanOrEqual(56);
-  const profile = page.getByRole('button', { name: 'Profil för Testa Testsson', exact: true });
+  const profile = nav.getByRole('button', { name: 'Profil för Testa Testsson', exact: true });
   await profile.focus();
   await page.keyboard.press('Enter');
-  await expect(page.getByText('Skönsmons skola', { exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Profil för Testa Testsson', exact: true }).getByText('Skönsmons skola', { exact: true })).toBeVisible();
   await page.getByRole('menuitem', { name: 'Inställningar', exact: true }).click();
   const settings = page.getByRole('dialog', { name: 'Inställningar', exact: true });
   await expect(settings).toBeVisible();
@@ -47,8 +47,8 @@ for (const source of ['/calendar', '/areas/budget']) test(`a reminder opens and 
 test('an empty bell offers working shortcuts and restores focus on Escape', async ({ page, api: _ }) => {
   await page.setViewportSize(narrow);
   await open(page, '/areas/personal');
-  await openNav(page);
-  const bell = page.getByRole('button', { name: 'Påminnelser (0)', exact: true });
+  const nav = await openNav(page);
+  const bell = nav.getByRole('button', { name: 'Påminnelser (0)', exact: true });
   await bell.click();
   const drawer = page.getByRole('dialog', { name: 'Påminnelser', exact: true });
   await expect(drawer.getByText('Du har inga aktuella påminnelser.')).toBeVisible();
@@ -91,7 +91,7 @@ test('logout reports failure, then ends the session after a successful retry', a
   const profile = page.getByRole('button', { name: 'Profil för Testa Testsson', exact: true });
   await profile.click();
   await page.getByRole('menuitem', { name: 'Logga ut', exact: true }).click();
-  await expect(page.getByText('Utloggningen kunde inte bekräftas. Försök igen.')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Aviseringar' }).getByText('Utloggningen kunde inte bekräftas. Försök igen.')).toBeVisible();
   await page.unroute('**/api/auth/logout');
   await page.route('**/api/auth/logout', route => {
     expect(route.request().headers()['x-csrf-token']).toBe('test');

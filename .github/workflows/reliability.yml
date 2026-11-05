@@ -1,0 +1,31 @@
+name: Reliability
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  reliability:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Start isolated PostgreSQL and Temporal
+        run: sh scripts/compose.sh up -d --wait postgres temporal
+      - name: Verify database contracts, real workflows and upgrade
+        run: >-
+          sh scripts/compose.sh run --rm --no-deps --build app sh -c
+          "bun install --frozen-lockfile && bun run db:init && bun run test:db && bun run test:durability && bun scripts/recovery-rehearsal.ts prepare"
+      - name: Restore into a separate database
+        run: >-
+          sh scripts/compose.sh exec -T postgres sh -c
+          "pg_dump -U clew -Fc clew_reliability_rehearsal -f /tmp/clew-rehearsal.dump && pg_restore -U clew -d clew_reliability_restored --exit-on-error /tmp/clew-rehearsal.dump"
+      - name: Verify restored evidence and repeated migrations
+        run: sh scripts/compose.sh run --rm --no-deps app bun scripts/recovery-rehearsal.ts verify
+      - name: Stop the isolated test stack
+        if: always()
+        run: sh scripts/compose.sh down -v

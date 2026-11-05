@@ -86,6 +86,7 @@ export interface ExecuteResult {
 }
 /** A thread a connector wants to push. `topic` is the idempotency key per person. */
 export interface ThreadDraft {
+  occurrences?: Array<{ key: string; revision: string; period: string }>;
   topic: string; area: string; title: string; summary: string;
   reason: string; items?: ThreadItem[]; actions: ThreadAction[];
   waitingOn?: string | null; deadline?: string | null;
@@ -109,7 +110,7 @@ export interface Connector {
   /** Explicit dependencies for cross-connector calls. Core composition may use '*'; remote manifests cannot. */
   uses?: string[];
   /** The connector's triggers: what it wants to push for this actor right now. Deterministic, no model. */
-  scan?: (actor: Actor, clew: Clew) => Promise<ThreadDraft[]>;
+  scan?: (actor: Actor, clew: Clew) => Promise<ThreadDraft[] | ScanObservation>;
 }
 
 export class CapabilityError extends Error { constructor(message: string) { super(message); this.name = 'CapabilityError'; } }
@@ -130,6 +131,11 @@ export interface Governance {
 }
 export const openGovernance = (): Governance => ({ state: 'enabled', audience: { mode: 'all' }, scanEnabled: true, toolsEnabled: true, capabilities: {} });
 export const deniedGovernance = (): Governance => ({ state: 'disabled', audience: { mode: 'all' }, scanEnabled: false, toolsEnabled: false, capabilities: {} });
+
+export interface ScanObservation {
+  drafts: ThreadDraft[];
+  observation?: { scope: string; observedAt: string; version: string; completeness: 'complete' | 'delta' | 'partial' | 'unavailable' | 'authorization-required'; exhausted: boolean; tombstones?: Array<{ key: string; period: string }> };
+}
 /** A person is in the audience by role, by unit or by group (any of). Groups match nothing until SCIM provides them. */
 export const inAudience = (audience: ConnectorAudience, actor: Actor) =>
   audience.mode === 'all' || !!audience.roles?.includes(actor.role) || !!audience.units?.includes(actor.unitId);
@@ -191,6 +197,7 @@ export class Registry {
   governance(id: string): Governance { return this.governed.get(id) ?? deniedGovernance(); }
   /** Installed by composition; a failed refresh aborts the invocation before any source access. */
   setRefresh(refresh: () => Promise<void>) { this.refresh = refresh; }
+  async refreshGovernance() { await this.refresh(); }
   /** Validate an approval without performing its source effect. */
   async validate(actor: Actor, name: string, input: unknown) {
     await this.refresh();
@@ -298,13 +305,24 @@ export class Registry {
     for (const m of this.connectors.values()) {
       const clew = this.clewFor(actor, {}, m.id);
       if (!m.scan || !this.visible(actor, m.id) || !this.governance(m.id).scanEnabled) continue;
-      for (const d of await m.scan(actor, clew)) {
+      const result = await m.scan(actor, clew);
+      for (const d of Array.isArray(result) ? result : result.drafts) {
         const problem = this.draftProblem(m.id, d);
         if (problem) { this.options.onRefused?.(m.id, d.topic, problem); continue; }
         drafts.push({ ...d, connector: m.id });
       }
     }
     return drafts;
+  }
+  async scanOne(actor: Actor, connectorId: string): Promise<ScanObservation> {
+    await this.refresh();
+    const m = this.connectors.get(connectorId);
+    if (!m?.scan || !this.visible(actor, connectorId) || !this.governance(connectorId).scanEnabled) throw new CapabilityError(UNKNOWN);
+    if (m.delegation) return { drafts: [], observation: { scope: actor.unitId + ':' + actor.role, observedAt: new Date().toISOString(), version: '', completeness: 'authorization-required', exhausted: false } };
+    const value = await m.scan(actor, this.clewFor(actor, {}, m.id));
+    const result = Array.isArray(value) ? { drafts: value } : value;
+    const drafts = result.drafts.filter(d => !this.draftProblem(m.id, d));
+    return { ...result, drafts, ...(drafts.length !== result.drafts.length && result.observation ? { observation: { ...result.observation, completeness: 'partial' } } : {}) };
   }
   /** The search sources a person may use (D26): every `<id>.search` read in scope, except the composite itself. */
   searchSources(actor: Actor) {

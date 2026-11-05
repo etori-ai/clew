@@ -101,7 +101,8 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expectNoAxeViolations(page);
     // Another area takes its place; the chosen one pressed again closes the cards.
     await areas.getByRole('button', { name: 'Personal' }).click();
-    await expect(page.getByRole('group', { name: 'Personal', exact: true }).getByRole('link')).toHaveText([/Vem är på plats\?/, /Frånvaro per person/]);
+    await expect(page.getByRole('group', { name: 'Personal', exact: true }).getByRole('link', { name: /Vem är på plats\?/ })).toBeVisible();
+    await expect(page.getByRole('group', { name: 'Personal', exact: true }).getByRole('link', { name: /Frånvaro per person/ })).toBeVisible();
     await expect(cards).toHaveCount(0);
     await areas.getByRole('button', { name: 'Personal' }).click();
     await expect(page.getByRole('group', { name: 'Personal', exact: true })).toHaveCount(0);

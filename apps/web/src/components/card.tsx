@@ -225,6 +225,8 @@ const WhyLine = ({ thread }: { thread: Thread }) => <Text type="supporting" as="
 /** The right-hand state of a card or row: the receipt, the snooze, who it waits on, or the deadline. Never more than one. */
 function State({ thread }: { thread: Thread }) {
   const open = thread.state === 'open';
+  if (thread.timers?.some(t => t.state === 'blocked')) return <Text type="supporting" role="status">Påminnelsen stoppades eftersom behörigheten har ändrats. Välj en ny påminnelse om den fortfarande behövs.</Text>;
+  if (thread.timers?.some(t => t.state === 'queued')) return <Text type="supporting" role="status">Påminnelsen är sparad och väntar på schemaläggning.</Text>;
   if (thread.receipt) return <ReceiptStatus thread={thread} />;
   if (open && thread.snoozedUntil && isSnoozed(thread, new Date().toISOString())) return <Text type="supporting">{snoozedLabel(thread.snoozedUntil)}</Text>;
   if (thread.waitingOn) return <Text type="supporting">Väntar på {thread.waitingOn}</Text>;

@@ -7,9 +7,8 @@ import type { CalendarBinder, ProposalRecord, ProposalStore } from '../model';
 import { toEvent } from './reads';
 
 /**
- * A person's own bookings and the moves of a drawn proposal (D28). Every write goes to the calendar through the
- * provider port (D11) and leaves an audit row; nothing here is a tool (D8). A booking is the person's own execute, so it
- * needs no decision endpoint; a proposal move only edits the draft, and confirm stays the one place an invitation goes out.
+ * Calendar reads and local proposal edits (D28). Source writes are approved decisions in decisions.ts (D45/D47).
+ * Moving a proposal edits only the draft, with a transaction and audit; no invitation is sent here.
  */
 export interface EventDeps { store: ProposalStore; bind: CalendarBinder; clock: () => Date; ids: () => string }
 const DAY_MS = 86_400_000;
@@ -60,62 +59,6 @@ export function eventUsecases({ store, bind, clock, ids }: EventDeps) {
     };
   }
   /**
-   * "Ny bokning": one event in the person's own calendar with members of the unit as guests. A lost reply is read back by
-   * uid before it is called unknown, and an unknown outcome is recorded as such (HANDOVER §7).
-   */
-  async function createEvent(persona: AuthenticatedContext, input: CreateEventInput): Promise<CalendarEvent> {
-    await persona.authorize();
-    const title = input.title.trim();
-    if (!title) throw new InputError('Ge mötet en rubrik.');
-    window(input.start, input.end);
-    const binding = bind(persona);
-    if (!binding.provider.capabilities.create) throw new CalendarError('Din kalender tar inte emot bokningar härifrån.');
-    const known = new Map(binding.members.map(m => [m.email.toLowerCase(), m.email]));
-    const participants = [...new Set(input.participants.map(e => e.toLowerCase()))].map(e => { const email = known.get(e); if (!email) throw new InputError('Deltagarna måste tillhöra din enhet.'); return email; });
-    // The room is checked here, before the write, so that a refusal from the adapter can only mean a lost reply.
-    if (input.room && !(await binding.provider.resources()).some(r => r.ref === input.room)) throw new CalendarError('Du får inte boka det valda rummet.');
-    const uid = `clew-event-${ids()}`, at = clock().toISOString();
-    let event: EventOccurrence | undefined, readBack = false;
-    try { event = await binding.provider.create(uid, { title, start: input.start, end: input.end, participants, room: input.room }); }
-    catch (error) {
-      try { const found = await binding.provider.lookup(await binding.provider.eventRef(uid)); if (found?.uid === uid) { event = found; readBack = true; } } catch { /* the read-back is a second chance, not a second error */ }
-      if (!event) {
-        await audit(persona, 'event.create_unknown', 'event:' + uid, at, { start: input.start, end: input.end, participants: participants.length, room: input.room ?? null, reason: error instanceof Error ? error.message : String(error) });
-        throw error instanceof CalendarError || error instanceof InputError ? error : new CalendarError('Bokningsresultatet är osäkert. Kontrollera kalendern innan du försöker igen.');
-      }
-    }
-    await audit(persona, 'event.created', 'event:' + event.ref, at, { uid, start: event.start, end: event.end, participants: participants.length, room: event.room || null, readBack });
-    return toEvent(event, binding, persona.name);
-  }
-  /** "Flytta": a new time for a single meeting the person organises. The revision guards against a meeting that changed since the page was read. */
-  async function rescheduleEvent(persona: AuthenticatedContext, input: RescheduleEventInput): Promise<CalendarEvent> {
-    await persona.authorize();
-    window(input.start, input.end);
-    const binding = bind(persona);
-    const current = await binding.provider.lookup(input.ref);
-    if (!current) throw new InputError('Mötet finns inte längre.');
-    if (!current.canCancel) throw new CalendarError('Du kan bara flytta möten du själv har bokat.');
-    if (current.recurring || current.allDay) throw new CalendarError('Bara enstaka möten med klockslag kan flyttas.');
-    if (current.revision !== input.revision) throw new CalendarError('Mötet har ändrats sedan sidan lästes. Läs om och försök igen.');
-    const at = clock().toISOString();
-    const updated = await binding.provider.reschedule(input.ref, input.revision, input.start, input.end);
-    await audit(persona, 'event.rescheduled', 'event:' + input.ref, at, { from: { start: current.start, end: current.end }, to: { start: updated.start, end: updated.end }, revision: input.revision });
-    return toEvent(updated, binding, persona.name);
-  }
-  /** "Ställ in": the meeting leaves the person's calendar and every guest's. Organiser only, and only at the revision the person saw. */
-  async function cancelEvent(persona: AuthenticatedContext, input: CancelEventInput): Promise<{ cancelled: true }> {
-    await persona.authorize();
-    const binding = bind(persona);
-    const current = await binding.provider.lookup(input.ref);
-    if (!current) throw new InputError('Mötet finns inte längre.');
-    if (!current.canCancel) throw new CalendarError('Bara den som bokat mötet kan ställa in det.');
-    if (current.revision !== input.revision) throw new CalendarError('Mötet har ändrats sedan sidan lästes. Läs om och försök igen.');
-    const at = clock().toISOString();
-    await binding.provider.cancel(input.ref, input.revision);
-    await audit(persona, 'event.cancelled', 'event:' + input.ref, at, { start: current.start, end: current.end, participants: current.participants.filter(p => !p.resource).length, revision: input.revision });
-    return { cancelled: true };
-  }
-  /**
    * A drawn proposal moved by the person, by drag or from the dialog: the same collision rules as the draw, against the
    * manager's calendar, the invitee's free-busy and the other proposals. The draft changes; nothing is sent until confirm.
    */
@@ -141,6 +84,8 @@ export function eventUsecases({ store, bind, clock, ids }: EventDeps) {
     }
     const at = now.toISOString();
     await store.transaction(async tx => {
+      const locked = await tx.lockThread(persona.id, threadId);
+      if (!locked || locked.thread.updatedAt !== current.thread.updatedAt || locked.thread.execution && ['pending', 'running', 'unknown'].includes(locked.thread.execution.state) || !locked.proposals.some(p => p.id === proposalId && p.status === 'proposed')) throw new InputError('Förslaget har ändrats. Läs om sidan.');
       await tx.updateProposals([proposal.id], { start: input.start, end: input.end });
       await tx.updateThread(threadId, { updatedAt: at, items: current.thread.items.map(i => i.ref === 'proposal:' + proposal.id ? { ...i, detail: when } : i) });
       await tx.addMessage(threadId, { role: 'user', body: `Flytta ${proposal.participant.name} till ${when}`, at });
@@ -149,6 +94,6 @@ export function eventUsecases({ store, bind, clock, ids }: EventDeps) {
     });
     return (await store.readThread(persona.id, threadId))!.thread;
   }
-  return { listMembers, listRooms, dayView, checkAvailability, createEvent, rescheduleEvent, cancelEvent, moveProposal };
+  return { listMembers, listRooms, dayView, checkAvailability, moveProposal };
 }
 export type EventUsecases = ReturnType<typeof eventUsecases>;

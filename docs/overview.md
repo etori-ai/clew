@@ -29,7 +29,7 @@ Your connector runs as its own service, in any language and deployment environme
 | Area | A grouping of standing capabilities that Clew shows to eligible people. |
 | View | Semantic presentation data: table, list, detail or text. Clew owns rendering, layout and accessibility. |
 | Ref | A stable source-object identifier that can be passed back to its owner. It is not authorization. |
-| Scan and topic | A deterministic read that returns card drafts; `topic` identifies the occurrence for the person. |
+| Scan and occurrence | A deterministic read returning card drafts and optional observation metadata. Source key, assignment and recurring period identify work; `topic` groups its presentation. |
 | Receipt | Per-item source outcomes, including unresolved outcomes and an optional compensating action. |
 | Actor | The person and assignment from a verified Clew assertion. Source access must still be narrowed for that actor. |
 

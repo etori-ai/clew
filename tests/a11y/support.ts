@@ -18,6 +18,10 @@ import type { ConnectorSummary } from '@clew/contracts';
 /** The API as the browser sees it, held in memory per test. `/api/**` never leaves the page. */
 export class MockApi {
   threads = threads();
+  deliveries: Array<{ id: string; threadId: string; kind: 'automatic' | 'reminder' }> = [];
+  deliveryClaims: string[] = [];
+  sources: Array<{ connector: string; state: string; lastSuccess: string | null; error: string | null }> = [];
+
   answerDelay = 0;
   /** How long the first read of the cards takes, so a test can see the page while they load (D36). */
   threadsDelay = 0;
@@ -78,7 +82,13 @@ export class MockApi {
         return json(connectorDetail(c, this.menuOn));
       }
     }
-    if (path === '/threads') { if (this.threadsDelay) await new Promise(resolve => setTimeout(resolve, this.threadsDelay)); return json({ threads: this.threads }); }
+    if (path === '/threads') { if (this.threadsDelay) await new Promise(resolve => setTimeout(resolve, this.threadsDelay)); return json({ threads: this.threads, deliveries: this.deliveries, sources: this.sources }); }
+    if (path.startsWith('/deliveries/') && path.endsWith('/claim') && post) {
+      const deliveryId = decodeURIComponent(path.split('/')[2]!);
+      const claimed = !this.deliveryClaims.includes(deliveryId);
+      if (claimed) this.deliveryClaims.push(deliveryId);
+      return json({ claimed });
+    }
     if (path === '/areas') return json({ areas, menu: this.menu });
     if (path === '/today') return json(today);
     if (path === '/attention') return json(attention);
@@ -91,9 +101,11 @@ export class MockApi {
     if (path === '/calendar/members') return json({ members: [{ name: 'Anna Lindqvist', email: 'anna@clew.test' }, { name: 'Erik Sandström', email: 'erik@clew.test' }] });
     if (path === '/calendar/rooms') return json({ rooms: [{ ref: 'room:a12', name: 'A12', capacity: 8, equipment: ['skärm'] }] });
     if (path === '/calendar/availability' && post) return json({ mine: 'free', participants: [{ email: 'anna@clew.test', name: 'Anna Lindqvist', state: 'busy' }], room: { ref: 'room:a12', name: 'A12', state: 'free' } });
-    if (path === '/calendar/events' && post) { const b = request.postDataJSON() as { title: string; start: string; end: string }; return route.fulfill({ status: 201, json: { event: { ...events(WEEK)[0]!, id: 'new', ref: 'memory:new', title: b.title, start: b.start, end: b.end } } }); }
-    if (path === '/calendar/events/reschedule' && post) { const b = request.postDataJSON() as { ref: string; start: string; end: string }; return json({ event: { ...events(WEEK)[0]!, ref: b.ref, start: b.start, end: b.end, revision: 'r2' } }); }
-    if (path === '/calendar/events/cancel' && post) return json({ cancelled: true });
+    if (['/calendar/events', '/calendar/events/reschedule', '/calendar/events/cancel'].includes(path) && post) {
+      const b = request.postDataJSON() as { decisionId: string; title?: string };
+      const card: Thread = { ...this.threads[0]!, id: 'calendar:' + b.decisionId, topic: 'calendar:' + b.decisionId, connector: 'calendar', area: 'kalender', title: b.title ?? 'Kalenderändring', summary: 'Beslutet är sparat.', state: 'open', items: [], actions: [], proposals: [], receipt: null, waitingOn: 'Väntar på kalenderns besked', execution: { id: b.decisionId, decisionId: b.decisionId, operation: 'calendar.createEvent', state: 'pending', reason: null, compensates: null } };
+      this.threads.push(card); return route.fulfill({ status: 202, json: card });
+    }
     if (/^\/threads\/[^/]+\/proposals\/[^/]+\/move$/.test(path) && post) { const b = request.postDataJSON() as { start: string; end: string }; const pid = path.split('/')[4]; const t = this.threads.find(t => t.id === id)!; return json(this.update(id, { proposals: t.proposals.map(p => p.id === pid ? { ...p, start: b.start, end: b.end } : p) })); }
     if (path === '/cap/calendar.day') { const date = (JSON.parse(url.searchParams.get('input') ?? '{}') as { date?: string }).date ?? '2026-11-04'; return json({ output: { from: date, events: events(date).filter(e => e.start.startsWith(date)), proposals: [] } }); }
     // `@` as the server answers it: with nothing typed only the context the box sends (`near`), with text everything open, the context first.
@@ -277,7 +289,9 @@ export async function expectNoAxeViolations(page: Page) {
 
 /** 1.4.10: nothing may need sideways scrolling, and no text may be clipped to fit. */
 export async function reflowProblems(page: Page) {
-  return page.evaluate(() => {
+  return page.evaluate(async () => {
+    // Measure the settled drawer/dialog, not an intermediate entrance transform.
+    await Promise.all(document.getAnimations().filter(a => a.playState === 'running' && Number.isFinite(a.effect?.getComputedTiming().endTime)).map(a => a.finished.catch(() => undefined)));
     const width = document.documentElement.clientWidth;
     const visible = (el: Element) => {
       const r = el.getBoundingClientRect(), s = getComputedStyle(el);

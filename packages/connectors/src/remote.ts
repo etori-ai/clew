@@ -103,7 +103,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
     ...(manifest.scan ? { scan: async (actor: Actor) => {
       const { status, json } = await post(transport, source, '/clew/scan', actor, { actor });
       if (status >= 400 || !Value.Check(ScanResponseSchema, json)) throw unavailable(source);
-      return json.drafts;
+      return json;
     } } : {}),
   };
 }

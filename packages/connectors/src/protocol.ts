@@ -90,6 +90,7 @@ export const ProtocolErrorSchema = object({
 export const CallResponseSchema = Type.Union([object({ output: Type.Unknown() }), object({ error: ProtocolErrorSchema })]);
 export type CallResponse = Static<typeof CallResponseSchema>;
 export const ThreadDraftSchema = object({
+  occurrences: Type.Optional(Type.Array(object({ key: Type.String({ minLength: 1, maxLength: 400 }), revision: Type.String({ maxLength: 400 }), period: Type.String({ minLength: 1, maxLength: 100 }) }), { minItems: 1, maxItems: 100 })),
   topic: Type.String({ minLength: 1, maxLength: 120, description: 'Idempotency key per person: the same occurrence gives the same topic.' }),
   area: Type.String(), title: Type.String(), summary: Type.String(),
   reason: Type.String({ description: 'Swedish. Shown under "Varför ser jag detta?".' }),
@@ -97,7 +98,11 @@ export const ThreadDraftSchema = object({
   waitingOn: Type.Optional(Type.Union([Type.String(), Type.Null()])), deadline: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 export const ScanRequestSchema = object({ actor: ActorSchema });
-export const ScanResponseSchema = object({ drafts: Type.Array(ThreadDraftSchema) });
+export const ScanResponseSchema = object({ drafts: Type.Array(ThreadDraftSchema), observation: Type.Optional(object({
+  scope: Type.String(), observedAt: Type.String({ format: 'date-time' }), version: Type.String(), exhausted: Type.Boolean(),
+  completeness: Type.Union((['complete', 'delta', 'partial', 'unavailable', 'authorization-required'] as const).map(v => Type.Literal(v))),
+  tombstones: Type.Optional(Type.Array(object({ key: Type.String(), period: Type.String() }))),
+})) });
 export type ScanResponse = Static<typeof ScanResponseSchema>;
 export const FigureRequestSchema = object({ actor: ActorSchema, area: Type.String() });
 export const FigureResponseSchema = object({ figure: Type.Union([object({ label: Type.String(), tone: Type.Union([Type.Literal('ok'), Type.Literal('warn'), Type.Literal('alert'), Type.Literal('none')]) }), Type.Null()]) });

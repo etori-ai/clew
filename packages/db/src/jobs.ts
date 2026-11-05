@@ -1,11 +1,15 @@
 import { and, eq, lte, sql } from 'drizzle-orm';
 import { database, type Transaction } from './index';
-import { jobs } from './schema';
+import { audit, jobs } from './schema';
 
 export type JobRow = typeof jobs.$inferSelect;
 /** Idempotent: a job id is a natural key such as `scan:hillevi:2026-11-04`, so repeated scheduling is harmless. */
 export async function scheduleJob(input: { id: string; kind: string; runAt: Date; payload?: Record<string, unknown> }, tx?: Transaction) {
-  await (tx ?? database()).insert(jobs).values({ id: input.id, kind: input.kind, runAt: input.runAt, payload: input.payload ?? {} }).onConflictDoNothing();
+  const write = async (transaction: Transaction) => {
+    const inserted = await transaction.insert(jobs).values({ id: input.id, kind: input.kind, runAt: input.runAt, payload: input.payload ?? {} }).onConflictDoNothing().returning({ id: jobs.id });
+    if (inserted.length) await transaction.insert(audit).values({ actor: 'system:scheduler', action: 'job.scheduled', subject: `job:${input.id}`, details: { kind: input.kind, runAt: input.runAt.toISOString() } });
+  };
+  if (tx) await write(tx); else await database().transaction(write);
 }
 /** Claim one due job with a row lock so several server processes never run the same job twice. */
 export async function claimJob(now = new Date()): Promise<JobRow | undefined> {

@@ -25,7 +25,8 @@ or the network, and CI (`.github/workflows/check.yml`) runs it without the stack
 | A view, route or state in the web app | An accessibility test (axe, keyboard, reflow, announcements) | `tests/a11y/` | `sh scripts/a11y.sh`, CI `a11y.yml` |
 | A browser cache helper (`apps/web/src/thread-cache.ts`, `query-policy.ts`, D33) | Example tests against a real `QueryClient` from `@tanstack/query-core`: what is written, what is invalidated, what is retried. No DOM, no React | `tests/unit/web-*.test.ts` | `bun run check` |
 | The web build's configuration boundary (D38 branding isolation) | A focused Vite contract that packages only the small browser configuration entry and asserts its exported value under conflicting environment inputs | `apps/web/tests/branding-config.test.ts`, beside the app that owns Vite | `bun run check` |
-| A flow that crosses the stack (login, nightly scan, a reminder firing) | The smoke script against the running dev stack; a manual pass | `scripts/modules-check.ts` | by hand, before a release |
+| Durable state across the database and worker/source boundary | Real PostgreSQL contracts and Node/Temporal workflows against an independent synthetic fault source; timer cancellation/replay | `tests/db/`, `apps/server/tests/execution-runtime.test.ts`, `apps/server/tests/timer-runtime.test.ts` | `bun run test:db`, `bun run test:durability`, CI `reliability.yml` |
+| Upgrade and restore | Isolated databases starting at migration 0019, conservative upgrade, repeated migration and evidence comparison after pg_dump/pg_restore | `scripts/recovery-rehearsal.ts` | [operations runbook](../maintainers/reliability-operations.md), CI `reliability.yml` |
 
 ## The kinds of test
 
@@ -61,7 +62,7 @@ argument for trusting the fast suite.
 record the real answer once, test the translation to the port. Live runs against the system stay in the smoke
 script or a manual pass.
 
-**Accessibility.** `tests/a11y` is the only browser suite and the only one allowed to be slow in CI. A new route,
+**Accessibility.** `tests/a11y` is the browser suite. A new route,
 view or state gets a test there (`CLAUDE.md`).
 
 The browser suite has an explicit ESM boundary and an isolated Vite configuration. Typed municipal
@@ -81,7 +82,7 @@ and generated modules are removed, and mutated environment variables are restore
 - `scripts/purity-check.ts` (`bun run purity`): no `Date.now()`, `new Date()`, `process.env`, `randomUUID()` or
   `Math.random()` in domain files and use cases. The clock and the id source are `deps.clock` and
   `deps.ids`; the composition root reads configuration.
-- `bun run check` = typecheck, deps, purity, `bun test tests/unit apps/web/tests`, the Node runtime tests. It must never start to
+- `bun run check` = typecheck, deps, purity, `bun test tests/unit apps/web/tests`, the Node runtime tests and documentation checks. It must never start to
   need the stack; `.github/workflows/check.yml` runs it with `--no-deps`.
 - `bun test` does not use `mock.module`. A mocked import hides the dependency the rules are meant to expose; a fake
   behind a port is the same dependency made visible.
@@ -92,8 +93,8 @@ and generated modules are removed, and mutated environment variables are restore
 docker exec -w /workspace clew-app-1 bun run check          # everything CI runs, no stack needed
 docker exec -w /workspace clew-app-1 bun test tests/unit     # the fast suite alone
 docker exec -w /workspace clew-app-1 bun run test:db         # the store contract against Postgres
+docker exec -w /workspace clew-app-1 bun run test:durability # real Node, PostgreSQL, Temporal and synthetic fault source
 sh scripts/a11y.sh                                           # the WCAG suite
-bun scripts/modules-check.ts                                 # the smoke script on the host, against the dev stack
 ```
 
 ## What is ported
@@ -109,14 +110,13 @@ or `provider.ts` where a service is involved) beside `adapters/memory.ts`, wired
 | `scheduler/` | `createScheduler` | `JobQueue`, `People` | `tests/unit/scheduler.test.ts` |
 | `assistant/` | `assistantUsecases` | `ThreadStore`, `ModelProvider` | `tests/unit/conversation.test.ts` |
 
-`temporal/activities.ts` and `temporal/workflows.ts` are thin: the activity calls `reminders.surface` from the
-composition root, the workflow proxies it. `today()` and `isPast()` in `@clew/calendar/dates` are for the browser;
+`temporal/activities.ts` and `temporal/workflows.ts` call use cases through the composition root. Durable timer generations, execution progress, bounded follow-up and scheduled job ownership are tested separately from workflow history compatibility. The fixture `apps/server/tests/fixtures/workflows-v46.ts` preserves the previous workflow functions for replay. `today()` and `isPast()` in `@clew/calendar/dates` are for the browser;
 the server derives the date from `clock()` and the purity guard refuses them.
 
 Still outside the pattern, on purpose: `auth.ts`, `system-context.ts` and `connectors/remote.ts` (identity and
 connector loading, platform code over `@clew/db` directly) and the connector descriptors `modules/*/connector.ts`
 (`people` reads the grant tables; it is Clew's own core record and has no port yet).
 
-When integration tests are the right answer: proving a query against the real database (the contract), a protocol
-against a recorded response (fixtures), and the stack end to end before a release (the smoke script, by hand).
-Nothing else.
+The shared follow-up contract (`tests/followup-contract.ts`) runs on memory and PostgreSQL. Calendar execution projection, refresh/attention and ownership have PostgreSQL scenarios in addition to pure/use-case tests. Runtime tests are required for boundaries memory cannot prove: real transactions, process/protocol response loss and Temporal history replay. Keep these in the separate reliability lane, not the fast suite.
+
+The older `scripts/modules-check.ts` and `scripts/auth-dev-check.ts` assume synchronous decisions and refresh. They are historical development smoke scripts, not current acceptance gates for the asynchronous lifecycle; do not use their results to claim this roadmap is verified. Use the maintained suites above and the [acceptance matrix](../reference/reliability-acceptance.md). A live login/calendar run still needs an updated scenario, authorized synthetic records and explicit source assertions.

@@ -8,6 +8,7 @@ Connector authors should start at the [integrator home](../README.md). These pag
 | Configure installation colors and logo | [Branding](branding.md) |
 | Change backend structure | [Backend architecture](../architecture/backend-structure.md) and [repository instructions](../../CLAUDE.md) |
 | Place and run tests | [Testing](../architecture/testing.md) |
+| Upgrade, inspect reliability or rehearse recovery | [Reliability operations](reliability-operations.md), [acceptance evidence](../reference/reliability-acceptance.md) |
 | Understand designs and unfinished work | [Architecture map](../architecture/README.md), [status](../reference/status.md) and [reliability plan](../architecture/reliability-and-authorization-plan.md) |
 | Understand product intent | [Vision](../vision.md), [personas](../personas.md) |
 | Recover rationale or session context | [Decision index](../decisions/README.md), [reviews](../reviews/README.md), [handover](../../HANDOVER.md) |
