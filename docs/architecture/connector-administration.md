@@ -92,14 +92,14 @@ Områden, with Anslutna system and Modeller as links under it; Bundlingstider an
 a phone the rail is the drawer, as everywhere. Everything is Astryx: no custom components, no CSS.
 
 **1. Anslutna system (list).** `Toolbar` with the primary `Button` "Anslut system" and a `SegmentedControl`
-Alla · På · Av · Problem. An Astryx `Table` on desktop, `List` rows on the phone (same switch as the areas):
+Alla · På · Problem · Av, each with its count (D47). An Astryx `Table` on desktop, `List` rows on the phone (same switch as the areas):
 
 | Column | Rendered as |
 |---|---|
-| System | `Text` weight semibold (manifest `source`), supporting `Text` with the id and kind `Badge` (Kärna · Genomgång · Härledd) |
+| System | `Text` weight semibold (manifest `source`), supporting `Text` with the id and kind `Badge` (Startsidans egen · Direkt från källan · Räknas fram) |
 | Status | `StatusDot` + word: Ansluten (success), Avstängd (neutral), Svarar inte (warning), Fel (error), Utkast (neutral) |
 | Vem ser det | one line: "Alla", "Chefer", "Chefer · 3 enheter", "Ingen" |
-| Förmågor | "12 · 3 åtgärder · 7 till assistenten" |
+| Funktioner | "12 funktioner" with "3 utför · 7 för assistenten" under it |
 | Senast kontakt | `Timestamp` |
 | På | `Switch` with a visible label; flipping it calls PATCH and announces the result through the existing toast |
 
@@ -137,7 +137,7 @@ Kort och figurer visas från senast kända läge."). Then `TabList`:
   senaste skanning, tillagd av och när. `ButtonGroup`: Testa anslutning, Läs in igen från systemet, Byt nyckel
   (a `Dialog` with one password field), Ta bort (an `AlertDialog` that names the number of open cards that
   will close).
-- *Förmågor.* `Table`: titel, namn (`Code`), typ `Badge` (Läs · Föreslå · Utför), manifestets roller, two
+- *Funktioner.* `Table`: titel, namn (`Code`), typ `Badge` (Läs · Föreslå · Utför), manifestets roller, two
   `Switch`es per row: På and Assistent. The Assistent switch is disabled with an `InfoTip` when the
   manifest says `model: false` or the kind is `execute` (D8). A `Toolbar` button "Stäng av alla åtgärder"
   sets every `execute` row off: the read-only pilot in one click.

@@ -64,17 +64,25 @@ before and after a prototype.
     samtalet. Sammanfattning, never samling. A brief row has no `@`: on the landing it was one more thing to explain, and the
     box reaches what the page shows by `@` anyway.
 
+20. **What a person reads is whole.** The 15 px base made text wider, so nothing that fitted may be assumed to fit. A row's
+    title is a button whose label cannot wrap, so under 1200 px the step goes under the line and the title keeps its words. A
+    label in a `ListItem` is a `Text` where it may be long, since a plain string is cut off. A table column holds its longest
+    word: Swedish titles are one long word, and a table's cells break what they cannot hold. A Stepper step that cannot
+    hold its label collapses, and a dialog's four steps say one word each. In a week a proposal's person has a line of
+    their own, and a word too long for a block ends in an ellipsis. A week's meeting name is the one cut that stays: the
+    block is what it is, and its dialog has the name.
+
 **Not changed.** Inte nu and Påminn mig stay two sub-menus, each now saying what it does (`lägg undan`, `kortet ligger kvar`).
 They are two behaviours, D28's pile and D17's timer, and merging them is a product decision, not a layout one. The answer's
 text stands 36 px inside the box's edge: that is `ChatLayout`'s own spacious column, with no prop to change it. The 9.6 px
 numeral in a Stepper's pending step is Astryx's.
 
 **Why.** The review counted 78 tab stops, 42 buttons and 585 words on the overview at 1280 px, five filled buttons on it
-and three on the landing, and most text at 12 px. With the rules above the same page has 59 stops, 26 buttons, 420 words,
+and three on the landing, and most text at 12 px. With the rules above the same page has 59 stops, 26 buttons, 423 words,
 one filled button, and most text at 13 to 15 px. Nothing is removed from the keyboard: `tests/a11y/card-actions.spec.ts`
 walks every tucked action from the keyboard, sub-menus included. The alternatives weighed were a density setting
 (a setting does not fix a default, and the default is what a rektor meets on a Monday) and shortening copy only (the
 buttons, not the words, were what made every row shout at once).
 
-**Replaces.** Amends D27 §6, D28, D29, D34, D36 and D39, each noted there. HANDOVER §6's slots for thread actions now read as
+**Replaces.** Amends D27 §6, D28, D29, D34, D36, D39 and D42 §8, each noted there. HANDOVER §6's slots for thread actions now read as
 "one visible next step, the rest behind Fler val".
