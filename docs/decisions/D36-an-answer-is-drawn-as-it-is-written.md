@@ -84,3 +84,7 @@ landing for as long as the model took. Weighed and left:
 **Replaces.** Amends D24 (the composer's menu showed only with two models or more), D31 (the box no longer rests
 greyed while an answer comes; focus stays in it) and D34 ("Lägg till i samtalet" as a text button on the brief and
 the cards; the landing's box centred between the brief and the foot).
+
+**Amended 2026-11-05 by D39.** The box is centred again, in a way that keeps it still: the brief and the box are one
+block at least half the column high with the box at its lower edge, what changes under the box comes after that
+block, and the day line is the `Layout`'s footer. The box still never moves under the cursor.

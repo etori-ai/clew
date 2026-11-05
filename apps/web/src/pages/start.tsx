@@ -351,12 +351,21 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
   const dayLine = day && [...day.events.filter(e => !e.allDay).map(e => `${timeLabel(e.start)} ${e.title}`), longest && `längsta luckan ${timeRange(longest.start, longest.end)}`].filter(Boolean).join(' · ');
   // On a phone the box is docked at the foot (G on the phone): the heading and the chips sit right above it.
   const docked = mobile && !short;
-  // The brief and the box are one block from the top, and only the day line is pushed to the foot: what grows under the
-  // box while the person types ("Menar du", then the chips) never moves the field they are typing in (D36). Centring the
-  // box between the brief and the foot made it jump by half of every change in the suggestions.
-  const landing = (talk: ConversationState) => <VStack gap={8} vAlign="between" minHeight="100%">
-    <VStack gap={10}>
-    <VStack gap={2} as="section" aria-label="Det som behöver dig">
+  // The day line (G): the foot of the landing. With the box in the page it is the Layout's footer; on a short screen it ends the flow.
+  const dayFoot = !docked && dayLine !== null && dayLine !== undefined ? <VStack gap={3} as="section" aria-label="I dag">
+      <Divider />
+      <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
+        <Text type="supporting" hasTabularNumbers><Text as="span" weight="semibold" color="primary">I dag</Text> · {dayLine || 'inga möten'}</Text>
+        <Link href="/kalender">Hela veckan</Link>
+      </HStack>
+    </VStack> : null;
+  // The box sits on the column's centre line whenever what is above it fits in the upper half (D39): the brief and the box
+  // are one block that is at least half the column high, with the box at its lower edge. What grows under the box while
+  // the person types ("Menar du", then the chips) comes after that block, so it never moves the field they are typing in
+  // (D36), and a brief too long for the half pushes the box down as before. Centring the box between the brief and the
+  // foot made it jump by half of every change in the suggestions.
+  const landing = (talk: ConversationState) => {
+    const need = <VStack gap={2} as="section" aria-label="Det som behöver dig">
       {error && <Text as="p" role="alert" color="accent">{error}</Text>}
       <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
         {loadingThreads ? <Skeleton height={16} width={260} /> : <Text type="supporting">{hello}. {sentence}</Text>}
@@ -364,24 +373,39 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
       </HStack>
       {loadingThreads ? <BriefSkeleton compact={mobile} /> : <Brief threads={brief} areaTitle={areaTitle} cardHref={cardHref} onChange={replace} onOpenCardView={openCardView} compact={mobile} />}
       {!loadingThreads && restLine && <Text type="supporting">{restLine}</Text>}
-    </VStack>
-    <VStack gap={4} as="section" aria-label="Vad vill du göra">
-      <Heading id="vad-vill-du-gora" tabIndex={-1} level={1} type={mobile ? undefined : 'display-3'} weight="semibold" justify={mobile ? 'start' : 'center'}>Vad vill du göra?</Heading>
-      {!docked && <VStack gap={2}><Composer place="landing" near={brief.map(t => 'thread:' + t.id)} /><Suggestions viewHref={viewHref} cardHref={cardHref} /></VStack>}
-      {chips.length > 0 && <HStack gap={2} wrap="wrap" justify={mobile ? 'start' : 'center'} role="group" aria-label="Det du brukar göra">
-        {chips.map(c => <Button key={c.capability} variant="secondary" label={c.text} onClick={() => c.kind === 'read' ? navigate(viewHref(c.capability, c.text)) : talk.ask(c.text)} />)}
-      </HStack>}
-      <Text type="supporting" justify={mobile ? 'start' : 'center'}>{assistantDown ? 'Knapparna är vägen just nu: varje knapp är en rutt bakom en anslutning och behöver ingen modell.' : 'Knapparna är anslutningarnas stående handlingar för din roll. Samma kort oavsett om du frågar eller jag föreslår.'}</Text>
-    </VStack>
-    </VStack>
-    {!docked && dayLine !== null && dayLine !== undefined ? <VStack gap={3} as="section" aria-label="I dag">
-      <Divider />
-      <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-        <Text type="supporting" hasTabularNumbers><Text as="span" weight="semibold" color="primary">I dag</Text> · {dayLine || 'inga möten'}</Text>
-        <Link href="/kalender">Hela veckan</Link>
-      </HStack>
-    </VStack> : <span />}
-  </VStack>;
+    </VStack>;
+    const heading = <Heading id="vad-vill-du-gora" tabIndex={-1} level={1} type={mobile ? undefined : 'display-3'} weight="semibold" justify={mobile ? 'start' : 'center'}>Vad vill du göra?</Heading>;
+    const box = <Composer place="landing" near={brief.map(t => 'thread:' + t.id)} />;
+    const menarDu = <Suggestions viewHref={viewHref} cardHref={cardHref} />;
+    const chipRow = chips.length > 0 && <HStack gap={2} wrap="wrap" justify={mobile ? 'start' : 'center'} role="group" aria-label="Det du brukar göra">
+      {chips.map(c => <Button key={c.capability} variant="secondary" label={c.text} onClick={() => c.kind === 'read' ? navigate(viewHref(c.capability, c.text)) : talk.ask(c.text)} />)}
+    </HStack>;
+    const chipNote = <Text type="supporting" justify={mobile ? 'start' : 'center'}>{assistantDown ? 'Knapparna är vägen just nu: varje knapp är en rutt bakom en anslutning och behöver ingen modell.' : 'Knapparna är anslutningarnas stående handlingar för din roll. Samma kort oavsett om du frågar eller jag föreslår.'}</Text>;
+    // A short screen and a phone are one flow from the top: nothing is docked on the first, the box is docked on the second.
+    if (short || docked) return <VStack gap={8}>
+      <VStack gap={10}>
+        {need}
+        <VStack gap={4} as="section" aria-label="Vad vill du göra">
+          {heading}
+          {!docked && <VStack gap={2}>{box}{menarDu}</VStack>}
+          {chipRow}
+          {chipNote}
+        </VStack>
+      </VStack>
+      {dayFoot}
+    </VStack>;
+    return <>
+      <VStack gap={10} vAlign="between" minHeight="50%">
+        {need}
+        <VStack gap={4} as="section" aria-label="Vad vill du göra">{heading}{box}</VStack>
+      </VStack>
+      {/* The same distances as in the flow: "Menar du" a step under the box, the chips two steps under whichever ends above them. */}
+      <VStack gap={2} paddingBlockStart={2}>
+        {menarDu}
+        <VStack gap={4} paddingBlockStart={2}>{chipRow}{chipNote}</VStack>
+      </VStack>
+    </>;
+  };
 
   /** The transcript's lead on a short screen, where there is no pinned toolbar: the title and the way out, in the flow. */
   const conversationHeader = (talk: { conversation: { title: string } | null; pending: { text: string } | null; newConversation: () => void; close: () => void }) => <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
@@ -404,11 +428,13 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
           {/* The ChatLayout spans the content area full bleed and owns the scroll, so its scrollbar sits at the window's edge like a page's; the spacious density centres its stream and dock to one 800 px column. */}
           <VStack height="100%"><ChatLayout density="spacious" composer={<Composer place="conversation" />}><Transcript onOpenView={openView} renderCard={t => card(t, undefined, 2)} viewHref={v => viewHref(v.capability, v.title, v.input, true)} /></ChatLayout></VStack>
         </LayoutContent>} />;
-    // The landing (G, the `ai-chat-landing` template): one 760 px column, the box in the page flow; on a phone the box is docked at the foot.
+    // The landing (G, the `ai-chat-landing` template): one 760 px column, the box in the page flow and the day line in the
+    // footer (D39); on a phone the box is docked at the foot.
     if (mode === 'fraga') return short
       ? <VStack gap={4} padding={3}>{landing(talk)}</VStack>
       : <Layout height="fill" contentWidth={760} padding={mobile ? 3 : 6} content={<LayoutContent isScrollable>{landing(talk)}</LayoutContent>}
-        footer={docked ? <LayoutFooter><VStack gap={2}><Suggestions viewHref={viewHref} cardHref={cardHref} /><Composer place="landing" near={brief.map(t => 'thread:' + t.id)} /></VStack></LayoutFooter> : undefined} />;
+        footer={docked ? <LayoutFooter><VStack gap={2}><Suggestions viewHref={viewHref} cardHref={cardHref} /><Composer place="landing" near={brief.map(t => 'thread:' + t.id)} /></VStack></LayoutFooter>
+          : dayFoot ? <LayoutFooter>{dayFoot}</LayoutFooter> : undefined} />;
     // The overview keeps the box at the foot of its column; the whole picture is wider than the chat's one column.
     return short
       ? <VStack gap={4} padding={3}>{overview}<Composer place="footer" near={overviewNear} /></VStack>

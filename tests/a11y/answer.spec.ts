@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test';
 import { announcements, composer, desktop, expect, expectNoAxeViolations, open, test } from './support';
 
 test.use({ viewport: desktop });
@@ -64,6 +65,45 @@ test.describe('the answer on its way', () => {
     await input.fill('');
     await expect(page.getByRole('list', { name: 'Menar du' })).toHaveCount(0);
     expect(await top()).toBe(before);
+  });
+
+  /** Where the box's block ends against the middle of the scrolling column, and whether that column scrolls (D39). */
+  const boxInColumn = (page: Page) => page.evaluate(() => {
+    const block = document.querySelector('section[aria-label="Vad vill du göra"]')!;
+    const column = block.parentElement!.parentElement!;
+    const style = getComputedStyle(column);
+    const top = parseFloat(style.paddingTop), bottom = parseFloat(style.paddingBottom);
+    const middle = column.getBoundingClientRect().top + top + (column.clientHeight - top - bottom) / 2;
+    return { offset: block.getBoundingClientRect().bottom - middle, scrolls: column.scrollHeight > column.clientHeight };
+  });
+
+  test('with nothing above it the box rests on the middle of the column, and "Menar du" under it does not move it', async ({ page, api }) => {
+    api.threads = [];
+    await open(page, '/');
+    const input = composer(page);
+    const resting = await boxInColumn(page);
+    expect(Math.abs(resting.offset)).toBeLessThanOrEqual(1);
+    expect(resting.scrolls).toBe(false);
+    // The day line is the column's foot, under the chips, not part of what scrolls.
+    await expect(page.getByRole('region', { name: 'I dag' })).toBeVisible();
+    const top = (await input.boundingBox())!.y;
+    await input.fill('attestera');
+    await expect(page.getByRole('list', { name: 'Menar du' })).toBeVisible();
+    expect((await input.boundingBox())!.y).toBe(top);
+    await expectNoAxeViolations(page);
+  });
+
+  test('a brief that fills the upper half pushes the box down instead, and the page gets no scrollbar it does not need', async ({ page, api: _ }) => {
+    await open(page, '/');
+    const full = await boxInColumn(page);
+    expect(full.scrolls).toBe(false);
+    // On a lower window the brief no longer fits above the middle: the box follows it, below the line, and nothing overlaps.
+    await page.setViewportSize({ width: 1280, height: 600 });
+    const low = await boxInColumn(page);
+    expect(low.offset).toBeGreaterThan(1);
+    const brief = (await page.getByRole('list', { name: 'Det som behöver dig' }).boundingBox())!;
+    const heading = (await page.getByRole('heading', { level: 1, name: 'Vad vill du göra?' }).boundingBox())!;
+    expect(heading.y).toBeGreaterThanOrEqual(brief.y + brief.height);
   });
 
   test('while the cards load the brief is drawn as its shape and the page never says that nothing needs you', async ({ page, api }) => {

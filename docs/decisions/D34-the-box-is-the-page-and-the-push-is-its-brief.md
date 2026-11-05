@@ -123,3 +123,6 @@ the G header (H4 drops them once the rail is there), the "something happened" do
 **Amended 2026-11-05 by D36.** The landing's box is anchored from the top with the brief, and only the day line is
 pushed to the foot, so "Menar du" never moves the field while the person types. "Lägg till i samtalet" is an icon
 button (the box's `@`) on the brief rows and the cards, and the brief's rows centre their day and actions on desktop.
+
+**Amended 2026-11-05 by D39.** The box rests on the column's centre line whenever the brief fits in the upper half,
+and follows the brief when it does not; the day line is the `Layout`'s footer. "Menar du" still never moves the field.

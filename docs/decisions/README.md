@@ -47,6 +47,7 @@ the reasoning. Longer designs live in `docs/architecture/`, and the reviews that
 | [D38](D38-municipal-branding-uses-astryx-themes.md) | Municipal logo and colour profiles share one contract; Sundsvall, Neutral and custom colours extend Astryx themes | 2026-11-05 | ui | accepted, extended by D39 |
 | [D39](D39-compact-header-profile-and-reminders.md) | Compact shared header with profile, persisted appearance and existing reminder links | 2026-11-05 | ui | accepted |
 | [D38](D38-views-are-declared-by-connectors-and-drawn-by-clew.md) | A view is declared by the connector as data (table, list, detail, text; fields with a Swedish label and a format; a search field and a choice bound to the capability's input; a row opens a read of the same connector) and drawn by Clew with Astryx, in the panel and under an answer, with or without a model; a view may keep its content from the model | 2026-11-05 | ui | accepted, built; figures, series, sections and a pinned view not built |
+| [D39](D39-the-landings-box-rests-on-the-columns-centre-line.md) | The landing's box rests on the column's centre line when what is above it fits in the upper half, and still never moves while the person types; the day line is the Layout's footer | 2026-11-05 | ui | accepted, built |
 
 ## Adding a decision
 
