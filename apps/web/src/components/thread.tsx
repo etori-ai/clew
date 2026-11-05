@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { obligationStep, obligationSteps, replySummary, type CalendarEvent, type Thread } from '@clew/contracts';
 import { Avatar, AvatarGroup, AvatarGroupOverflow, Badge, Button, Card, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, CheckboxList, CheckboxListItem, Collapsible, Heading, HStack, Icon, List, ListItem, MoreMenu, Step, Stepper, Text, Timestamp, Token, VStack, VisuallyHidden, WeekAgenda, agendaItems } from '@clew/ui';
 import { useConversation } from './conversation-context';
-import { useLeaveWithUndo } from './card';
+import { TimePicker, useLeaveWithUndo, useSnoozeRows } from './card';
 import { addDays, shortDayLabel, timeRange, weekNumber } from '@clew/calendar/dates';
 import { api } from '../api';
 import { calendarWeekQuery } from '../queries';
@@ -60,6 +60,7 @@ export function ThreadCard({ thread, compact, headingLevel = 3, onChange }: Prop
   // Busy never disables the buttons: a disabled button drops the focus it holds (2.4.3). Action-buttons wait on their own promise.
   const { run, apply, error } = useThreadAction({ onChange });
   const leave = useLeaveWithUndo(apply);
+  const snoozeRows = useSnoozeRows({ thread, run, leave });
   // The week the proposals are drawn in, from the same cache as the calendar page; read again whenever a proposal thread changes.
   const week = useQuery({ ...calendarWeekQuery(thread.week ?? ''), enabled: !!thread.week });
   const events = week.data?.events ?? EMPTY_EVENTS;
@@ -130,7 +131,7 @@ export function ThreadCard({ thread, compact, headingLevel = 3, onChange }: Prop
       {pending && <HStack gap={2} wrap="wrap"><Text role="status">{pending}</Text><Button label="Kontrollera status" clickAction={() => run(() => api.checkExecution(thread.id))} /></HStack>}
       {roster && !pending && !open && thread.state === 'open' && !undoOpen && <HStack gap={2} wrap="wrap">
         {waiting.length > 0 && <Button variant="secondary" label={waiting.length === 1 ? 'Påminn den som inte svarat' : `Påminn de ${waiting.length} som inte svarat`} clickAction={() => run(() => api.remindInvitees(thread.id))} />}
-        {!thread.waitingOn && <Button variant="ghost" label="Inte nu" clickAction={() => run(async () => { const t = await api.snooze(thread.id); leave(t, 'Tas upp i morgon 06:00 i stället.'); return t; })} />}
+        {!thread.waitingOn && <TimePicker label="Inte nu" size="md" rows={snoozeRows.rows} own={snoozeRows.own} />}
         <MoreMenu label="Fler val" size="sm" variant="ghost" items={[addItem, { id: 'why', label: 'Varför ser jag detta?', onClick: () => setWhy(v => !v) }]} />
       </HStack>}
       {(open || undoOpen) && <HStack gap={2} wrap="wrap">
@@ -138,7 +139,7 @@ export function ThreadCard({ thread, compact, headingLevel = 3, onChange }: Prop
         {open && !compact && <Button label="Justera i kalendern" href={`/calendar?date=${thread.week}&view=week`} />}
         {open && compact && <Button label="Visa i veckan" href={`/calendar?date=${thread.week}&view=week`} />}
         {open && nextWeek && <Button label={`Vecka ${weekNumber(nextWeek)} i stället`} clickAction={() => run(() => api.replan(thread.id, nextWeek))} />}
-        {open && <Button variant="ghost" label="Inte nu" clickAction={() => run(async () => { const t = await api.snooze(thread.id); leave(t, 'Tas upp i morgon 06:00 i stället.'); return t; })} />}
+        {open && <TimePicker label="Inte nu" size="md" rows={snoozeRows.rows} own={snoozeRows.own} />}
         {open && <MoreMenu label="Fler val" size="sm" variant="ghost" items={[
           addItem,
           { id: 'dismiss', label: 'Avfärda · inte aktuellt', onClick: () => void run(async () => { const t = await api.dismiss(thread.id); leave(t, 'Avfärdad som inte aktuellt. Förslagen ligger kvar under Redan hanterat i tio minuter.'); return t; }) },
@@ -146,6 +147,7 @@ export function ThreadCard({ thread, compact, headingLevel = 3, onChange }: Prop
         ]} />}
         {undoOpen && undoUntil && <Button variant="destructive" label={`Ångra allt · ${Math.max(0, Math.ceil((Date.parse(undoUntil) - now) / 60000))} min kvar`} clickAction={() => run(() => api.undo(thread.id))} />}
       </HStack>}
+      {snoozeRows.dialog}
       {draft && open && <Text type="supporting" as="p">Utkast från samtalet. Inget är skickat förrän du trycker på knappen här.</Text>}
       {thread.kind === 'pushed' && (why || !open) && <Text type="supporting" as="p">Varför nu? {thread.trigger.reason}. {open ? 'Skickas via kalendern med möjlighet att ångra i 10 minuter.' : ''}</Text>}
     </VStack>

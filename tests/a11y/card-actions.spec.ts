@@ -10,7 +10,7 @@ const cutOff = (root: Locator) => root.evaluate(element => [...element.querySele
 test.describe('a row shows the next step and keeps the rest behind Fler val', () => {
   test.use({ viewport: desktop });
 
-  test('the keyboard reaches every action a row tucks away, the two time pickers included', async ({ page, api: _ }) => {
+  test('the keyboard reaches every action a row tucks away, its time picker included', async ({ page, api: _ }) => {
     await open(page, '/overview');
     const row = page.locator('#thread-omtanke');
     await expect(row.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
@@ -19,23 +19,45 @@ test.describe('a row shows the next step and keeps the rest behind Fler val', ()
     await row.getByRole('button', { name: 'Fler val' }).focus();
     await page.keyboard.press('Enter');
     for (const name of ['Se mönstret', 'Lägg till i samtalet', 'Avfärda · inte aktuellt', 'Varför ser jag detta?']) await expect(page.getByRole('menuitem', { name })).toBeVisible();
-    await page.getByRole('menuitem', { name: 'Påminn mig' }).focus();
+    await page.getByRole('menuitem', { name: 'Inte nu' }).focus();
     await page.keyboard.press('ArrowRight');
     await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toBeVisible();
     await page.keyboard.press('Escape');
     await page.keyboard.press('Escape');
-    await expect(page.getByRole('menuitem', { name: 'Påminn mig' })).toHaveCount(0);
+    await expect(page.getByRole('menuitem', { name: 'Inte nu' })).toHaveCount(0);
     await expect(row.getByRole('button', { name: 'Fler val' })).toBeFocused();
   });
 
-  test('the card keeps Inte nu in view, and Påminn mig opens from Fler val', async ({ page, api: _ }) => {
+  test('an open card has one time action: Inte nu in view, and no second list under Fler val', async ({ page, api: _ }) => {
     await open(page, '/overview');
     const card = page.getByRole('article', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' });
     await expect(card.getByRole('button', { name: 'Inte nu', exact: true })).toBeVisible();
     await expect(card.getByRole('button', { name: 'Påminn mig' })).toHaveCount(0);
     await card.getByRole('button', { name: 'Fler val' }).click();
-    await page.getByRole('menuitem', { name: 'Påminn mig' }).click();
-    await expect(page.getByRole('menuitem', { name: 'Om 10 sekunder' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Avfärda · inte aktuellt' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: /Påminn mig|Inte nu/ })).toHaveCount(0);
+  });
+
+  test('a card that waits on someone has one time action too, and says when it will remind', async ({ page, api }) => {
+    api.threads.find(t => t.id === 'tillbud')!.timers = [{ kind: 'reminder', dueAt: '2026-11-05T10:00:00.000Z', state: 'scheduled' }];
+    await open(page, '/waiting');
+    const card = page.locator('#thread-tillbud');
+    await expect(card).toContainText('Väntar på skyddsombudet · påminner dig');
+    await expect(card.getByRole('button', { name: 'Inte nu', exact: true })).toHaveCount(0);
+    await card.getByRole('button', { name: 'Påminn mig' }).click();
+    await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await card.getByRole('button', { name: 'Fler val' }).click();
+    await expect(page.getByRole('menuitem', { name: /Påminn mig|Inte nu/ })).toHaveCount(0);
+  });
+
+  test('the open proposal has the same picker as every other card', async ({ page, api: _ }) => {
+    await open(page, '/overview');
+    await page.getByRole('button', { name: 'Skicka', exact: false }).first().waitFor();
+    const proposal = page.getByRole('article').filter({ has: page.getByRole('button', { name: /^Skicka/ }) }).first();
+    await proposal.getByRole('button', { name: 'Inte nu', exact: true }).click();
+    await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: /^Skriv själv/ })).toBeVisible();
   });
 
   test('Skriv själv opens its dialog from the sub-menu and the focus lands in the field', async ({ page, api: _ }) => {
@@ -93,11 +115,10 @@ test.describe('a phone', () => {
     expect(work!.y).toBeLessThan(figures!.y);
   });
 
-  test('Påminn mig opens from Fler val and shows its rows', async ({ page, api: _ }) => {
+  test('Inte nu opens from the card and shows its rows', async ({ page, api: _ }) => {
     await open(page, '/overview');
-    await page.getByRole('article', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' }).getByRole('button', { name: 'Fler val' }).click();
-    await page.getByRole('menuitem', { name: 'Påminn mig' }).click();
-    await expect(page.getByRole('menuitem', { name: 'Om 10 sekunder' })).toBeVisible();
+    await page.getByRole('article', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' }).getByRole('button', { name: 'Inte nu', exact: true }).click();
+    await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: /^Skriv själv/ })).toBeVisible();
   });
 });

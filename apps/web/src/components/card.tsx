@@ -67,9 +67,10 @@ const EMPTY_PRESETS: SnoozePreset[] = [];
 const usePresets = () => useQuery(snoozePresetsQuery).data?.presets ?? EMPTY_PRESETS;
 type TimeChoice = SnoozeInput & { seconds?: number };
 /**
- * "Inte nu" and "Påminn mig" are the same picker (D29): the presets with the time each lands on, then "Skriv själv …"
- * for free text in the composer's grammar, parsed as the person types so the time is shown before it is set. The rows
- * go in a menu of their own or under ⋯; the form Dialog stays mounted outside the menu, which closes when it opens.
+ * A card has one time action (D49): Inte nu while it is the person's, Påminn mig while it waits on someone else. Both are
+ * this picker: the presets with the time each lands on, then "Skriv själv …" for free text in the composer's grammar,
+ * parsed as the person types so the time is shown before it is set. The rows go in a menu of their own or under ⋯; the
+ * form Dialog stays mounted outside the menu, which closes when it opens.
  */
 function useTimeRows({ presets, demo, onPick }: { presets: SnoozePreset[]; demo?: { label: string; seconds: number }; onPick: (choice: TimeChoice) => void }) {
   const [open, setOpen] = useState(false);
@@ -99,9 +100,17 @@ function useTimeRows({ presets, demo, onPick }: { presets: SnoozePreset[]; demo?
   return { rows, own, dialog };
 }
 type TimeRows = ReturnType<typeof useTimeRows>;
+/** Inte nu: the card leaves for the time chosen and comes back saying so (D49). Shared by the card, the row and the open thread. */
+export function useSnoozeRows({ thread, run, leave }: { thread: Thread; run: (fn: () => Promise<Thread>) => Promise<void>; leave: ReturnType<typeof useLeaveWithUndo> }) {
+  return useTimeRows({ presets: usePresets(), onPick: ({ seconds: _s, ...input }) => void run(async () => {
+    const t = await api.snooze(thread.id, input);
+    leave(t, `Jag påminner dig ${t.snoozedUntil ? snoozeWhen(t.snoozedUntil, new Date().toISOString()) : 'i morgon 06:00'}. Kortet ligger under Inte nu tills dess.`);
+    return t;
+  }) });
+}
 /** The picker as its own button: an Astryx DropdownMenu, a bottom sheet on a phone, the rows with the time as description. */
-const TimePicker = ({ label, rows, own }: { label: string; rows: TimeRows['rows']; own: TimeRows['own'] }) =>
-  <DropdownMenu button={{ label, size: 'sm', variant: 'ghost' }} presentation="adaptive" menuMaxHeight={480} items={[...rows, { type: 'divider' as const }, own]} />;
+export const TimePicker = ({ label, rows, own, size = 'sm' }: { label: string; rows: TimeRows['rows']; own: TimeRows['own']; size?: 'sm' | 'md' }) =>
+  <DropdownMenu button={{ label, size, variant: 'ghost' }} presentation="adaptive" menuMaxHeight={480} items={[...rows, { type: 'divider' as const }, own]} />;
 /** The picker as a row under ⋯: Astryx's flyout beside the row, a drilled-in view with a Back row on a phone. */
 const TimeSubMenu = ({ label, rows, own }: { label: string; rows: TimeRows['rows']; own: TimeRows['own'] }) => <DropdownMenuSubMenu label={label} menuWidth={260}>
   {rows.map(r => <DropdownMenuItem key={r.id} label={r.label} description={r.description} onClick={r.onClick} />)}
@@ -140,26 +149,24 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
     }
     await run(async () => { const result = await api.act(thread.id, action.id, selectable ? selected : undefined); if (result.kind !== 'execute') throw new ApiError(500, 'Oväntat svar.'); return result.thread; });
   };
-  const snooze = (choice: SnoozeInput = {}) => run(async () => { const t = await api.snooze(thread.id, choice); leave(t, `Tas upp ${t.snoozedUntil ? snoozeWhen(t.snoozedUntil, new Date().toISOString()) : 'i morgon 06:00'} i stället.`); return t; });
   const dismiss = () => run(async () => { const t = await api.dismiss(thread.id); leave(t, `Avfärdad som inte aktuellt. ${thread.trigger.source} skapar inte kortet igen.`); return t; });
-  /** A person's own timer (D17): the card waits under Pågår utan dig until the timer brings it back; Ångra cancels the timer. When it fires, the stream is read again. */
+  /** A person's own timer on a card that waits on someone else (D17, D49): the card stays where it is until the timer brings it back; Ångra cancels the timer. When it fires, the stream is read again. */
   const remind = (seconds: number) => run(async () => {
     const r = await api.remind(thread.id, seconds);
-    const when = seconds < 60 ? `om ${seconds} sekunder` : clock(r.fireAt);
-    leave(r.thread, `Påminner dig ${when}. Kortet väntar under Pågår utan dig tills dess.`, () => api.cancelReminder(thread.id, r.id));
+    const when = seconds < 60 ? `om ${seconds} sekunder` : snoozeWhen(r.fireAt, new Date().toISOString());
+    leave(r.thread, `Jag påminner dig ${when}.`, () => api.cancelReminder(thread.id, r.id));
     window.setTimeout(() => invalidateStream(client), seconds * 1000 + 1_500);
     return r.thread;
   });
-  /** The same picker for both (D29): a preset or free text parsed to an instant, or the demo's seconds. */
-  const pickSnooze = (choice: TimeChoice) => { const { seconds: _s, ...input } = choice; void snooze(input); };
+  /** A preset or free text parsed to an instant, or the demo's seconds. */
   const pickRemind = (choice: TimeChoice) => { const seconds = choice.seconds ?? (choice.until ? Math.max(1, Math.ceil((Date.parse(choice.until) - Date.now()) / 1000)) : 0); if (seconds) void remind(seconds); };
-  return { selected, setSelected, selectable, busy, error, why, setWhy, run, perform, snooze, dismiss, remind, pickSnooze, pickRemind };
+  return { selected, setSelected, selectable, busy, error, why, setWhy, run, leave, perform, dismiss, pickRemind };
 }
 type Actions = ReturnType<typeof useThreadActions>;
 
 /**
- * The action row shared by every card and row: one primary and up to two secondary actions from the connector, Inte nu,
- * and the rest behind ⋯ (Lägg till i samtalet, Påminn mig, Avfärda, Varför ser jag detta?). One control size for the
+ * The action row shared by every card and row: one primary and up to two secondary actions from the connector, the
+ * card's one time action (D49), and the rest behind ⋯ (Lägg till i samtalet, Avfärda, Varför ser jag detta?). One control size for the
  * whole row. Black is kept for what is due today, so the eye finds the day's work; everything else is a secondary
  * button. A row (`quiet`) shows the primary alone and keeps the rest behind ⋯; opening the row as a card shows them.
  */
@@ -169,10 +176,9 @@ function ActionRow({ thread, level, actions, quiet = false }: { thread: Thread; 
   const chipRef = 'thread:' + thread.id;
   const inConversation = conversation.chipped.includes(chipRef);
   const open = thread.state === 'open';
-  const { selected, selectable, perform, dismiss, setWhy, run, pickSnooze, pickRemind } = actions;
-  const presets = usePresets();
-  const snoozeRows = useTimeRows({ presets, onPick: pickSnooze });
-  const remindRows = useTimeRows({ presets, demo: { label: 'Om 10 sekunder', seconds: 10 }, onPick: pickRemind });
+  const { selected, selectable, perform, dismiss, setWhy, run, leave, pickRemind } = actions;
+  const snoozeRows = useSnoozeRows({ thread, run, leave });
+  const remindRows = useTimeRows({ presets: usePresets(), demo: { label: 'Om 10 sekunder', seconds: 10 }, onPick: pickRemind });
   const primary = thread.actions.find(a => a.role === 'primary');
   const secondary = thread.actions.filter(a => a.role === 'secondary').slice(0, 2);
   const overflow = thread.actions.filter(a => a.role === 'overflow' || (a.role === 'secondary' && !secondary.includes(a)));
@@ -180,11 +186,11 @@ function ActionRow({ thread, level, actions, quiet = false }: { thread: Thread; 
   const primaryLabel = primary && selectable ? `${primary.label} · ${count}` : primary?.label;
   const due = level !== 'notice' && streamGroup(thread, today()) === 'nu';
   /** ⋯: MoreMenu's button over DropdownMenu's compound rows, because MoreMenu's data rows cannot hold a sub-menu. */
-  const more = ({ tucked = [], times = [] }: { tucked?: ThreadAction[]; times?: { label: string; rows: TimeRows }[] }) => <>
+  const more = ({ tucked = [], time }: { tucked?: ThreadAction[]; time?: TimeRows }) => <>
     <DropdownMenu renderTrigger={trigger => <IconButton {...trigger} size="sm" variant="ghost" label="Fler val" tooltip="Fler val" icon={<Icon icon="moreHorizontal" />} />} alignment="end" menuWidth={300} menuMaxHeight={480}>
       {[...tucked, ...overflow].map(a => <DropdownMenuItem key={a.id} label={a.label} onClick={() => void perform(a)} />)}
       <DropdownMenuItem label={inConversation ? 'I samtalet' : 'Lägg till i samtalet'} isDisabled={inConversation} onClick={() => conversation.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id })} />
-      {times.map(t => <TimeSubMenu key={t.label} label={t.label} rows={t.rows.rows} own={t.rows.own} />)}
+      {time && <TimeSubMenu label="Inte nu" rows={time.rows} own={time.own} />}
       <DropdownMenuDivider />
       <DropdownMenuItem label="Avfärda · inte aktuellt" onClick={() => void dismiss()} />
       <DropdownMenuItem label="Varför ser jag detta?" onClick={() => setWhy(v => !v)} />
@@ -211,7 +217,7 @@ function ActionRow({ thread, level, actions, quiet = false }: { thread: Thread; 
     {primary && <Button size="sm" variant={due ? 'primary' : 'secondary'} label={primaryLabel ?? ''} isDisabled={selectable && count === 0} clickAction={() => perform(primary)} />}
     {!quiet && secondary.map(a => <Button key={a.id} size="sm" variant={due ? 'secondary' : 'ghost'} label={a.label} clickAction={() => perform(a)} />)}
     {!quiet && <TimePicker label="Inte nu" rows={snoozeRows.rows} own={snoozeRows.own} />}
-    {more(quiet ? { tucked: secondary, times: [{ label: 'Inte nu · lägg undan', rows: snoozeRows }, { label: 'Påminn mig · kortet ligger kvar', rows: remindRows }] } : { times: [{ label: 'Påminn mig · kortet ligger kvar', rows: remindRows }] })}
+    {more(quiet ? { tucked: secondary, time: snoozeRows } : {})}
   </HStack>;
   if (undoOpen) return <HStack gap={2} vAlign="center" wrap="wrap">
     <Button size="sm" variant="destructive" label={`Ångra allt · ${countdown} kvar`} clickAction={() => run(() => api.undoReceipt(thread.id))} />
@@ -233,7 +239,10 @@ function State({ thread }: { thread: Thread }) {
   if (thread.timers?.some(t => t.state === 'queued')) return <Text type="supporting" role="status">Påminnelsen är sparad och väntar på schemaläggning.</Text>;
   if (thread.receipt) return <ReceiptStatus thread={thread} />;
   if (open && thread.snoozedUntil && isSnoozed(thread, new Date().toISOString())) return <Text type="supporting">{snoozedLabel(thread.snoozedUntil)}</Text>;
-  if (thread.waitingOn) return <Text type="supporting">Väntar på {thread.waitingOn}</Text>;
+  if (thread.waitingOn) {
+    const reminder = thread.waitingOn.startsWith('påminnelsen ') ? undefined : thread.timers?.find(t => t.kind === 'reminder' && t.state === 'scheduled');
+    return <Text type="supporting">Väntar på {thread.waitingOn}{reminder ? ` · påminner dig ${snoozeWhen(reminder.dueAt, new Date().toISOString())}` : ''}</Text>;
+  }
   return <Deadline thread={thread} />;
 }
 /** The badges that need a hand: a draft to confirm, a reminder that has fired. */
