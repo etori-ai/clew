@@ -48,7 +48,7 @@ or without a model.
 tiles; the area figure and Läget exist), `series` (a trend that can always be shown as its table; the Astryx search
 surfaced no chart component, so it needs its own decision like D27), and `sections` (an ordered stack of views for a
 page such as a follow-up dialogue). A row action that proposes a card. A view lifted to a full page. A view pinned to
-the rail for a unit by its manager: D40 puts a view in the menu when an administrator switches it on for the connector's
+the rail for a unit by its manager: D40 puts a view in the menu when an administrator chooses it, for the connector's
 audience, and leaves the manager's and the person's own pin open. A person chip kind of its own (a chipped
 row travels as a `document` chip, read back through `<id>.fetch`).
 

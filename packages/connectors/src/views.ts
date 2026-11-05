@@ -1,4 +1,4 @@
-import { openRef, rowsKey, viewRows, type MenuDeclaration, type View } from '@clew/contracts';
+import { openRef, rowsKey, viewRows, type MenuHint, type MenuIcon, type View } from '@clew/contracts';
 
 export { openRef, rowsKey, viewRows };
 
@@ -9,7 +9,7 @@ export { openRef, rowsKey, viewRows };
  */
 type Schema = { properties?: Record<string, Schema>; items?: Schema };
 /** What the rules need to know about a capability: its name, kind, schemas and view. */
-export interface ViewSubject { name: string; kind: string; input: unknown; output: unknown; view?: View }
+export interface ViewSubject { name: string; kind: string; input: unknown; output: unknown; view?: View; menu?: MenuHint }
 const props = (schema: unknown): Record<string, Schema> | undefined => (schema as Schema | undefined)?.properties;
 
 /**
@@ -48,18 +48,24 @@ export function viewProblem(subject: ViewSubject, siblings: ViewSubject[]): stri
   return undefined;
 }
 
+/** The icon of a menu row whose capability names none. */
+export const MENU_DEFAULT_ICON: MenuIcon = 'document';
+const needsInput = (subject: Pick<ViewSubject, 'input'>) => ((subject.input as { required?: unknown[] } | undefined)?.required ?? []).length > 0;
 /**
- * Why a connector's menu row may not be used, or undefined when it may (D40). The row opens a view with one click and no
- * question, so it names a read of the same connector that declares a view and whose input lists nothing as required.
+ * Whether a capability's view can be a tool in the menu (D40): a row is one click and no question, so it is a read
+ * that declares a view and whose input lists nothing as required.
  */
-export function menuProblem(connectorId: string, menu: MenuDeclaration | undefined, capabilities: ViewSubject[]): string | undefined {
-  if (!menu) return undefined;
-  const target = capabilities.find(c => c.name === menu.capability);
-  if (!target || !menu.capability.startsWith(connectorId + '.') || target.kind !== 'read') return `menu opens ${menu.capability}, which is not a read of ${connectorId}`;
-  if (!target.view) return `menu opens ${menu.capability}, which declares no view`;
-  if (((target.input as { required?: unknown[] } | undefined)?.required ?? []).length) return `menu opens ${menu.capability}, which needs input; a menu row opens without a question`;
-  return undefined;
+export const menuEligible = (subject: Pick<ViewSubject, 'kind' | 'input' | 'view'>) => subject.kind === 'read' && !!subject.view && !needsInput(subject);
+/** Why a capability may not say how its menu row looks, or undefined when it may: only a view that can be a tool has a row. */
+export function menuProblem(subject: ViewSubject): string | undefined {
+  if (!subject.menu || menuEligible(subject)) return undefined;
+  if (subject.kind !== 'read') return `${subject.name}: only a read capability can be a tool in the menu`;
+  if (!subject.view) return `${subject.name}: a menu row opens a view, and the capability declares none`;
+  return `${subject.name}: a menu row opens without a question, and the capability needs input`;
 }
+/** The row a capability's view is in the menu: what the connector says, else the capability's title and a plain icon. Undefined when it cannot be a tool. */
+export const menuRowOf = (subject: Pick<ViewSubject, 'kind' | 'input' | 'view' | 'menu'> & { title: string }): MenuHint | undefined =>
+  menuEligible(subject) ? { label: subject.menu?.label ?? subject.title, icon: subject.menu?.icon ?? MENU_DEFAULT_ICON } : undefined;
 
 /**
  * What the model reads in place of the output when the view says `modelReads: 'summary'`: that the result is on the

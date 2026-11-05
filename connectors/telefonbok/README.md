@@ -21,8 +21,9 @@ the connector says what its output holds and Clew draws it. The walkthrough is
 | `telefonbok.search`, `telefonbok.fetch` | The composite search's hits | A hit says who and where, not the number |
 
 The area `Kontakter` lists the team list and the search as standing actions, so both are chips under the box for
-everyone in the connector's audience. The manifest also offers the search as the row "Telefonbok" under Verktyg in
-Clew's menu (D40); an administrator switches it on with "Visa i menyn" on the connector's page, under Områden. Everything works without a model. With a model, the views say
+everyone in the connector's audience. Both views open without input, so an administrator can put either or both in Clew's menu under Verktyg (D40; the
+connector's page, Områden, "Verktyg i menyn"). The manifest names their rows: "Telefonbok" for the search and "Mitt
+team" for the team list. Everything works without a model. With a model, the views say
 `modelReads: "summary"`: the model is told how many rows are shown to the person, never who or which number.
 
 ## Configuration

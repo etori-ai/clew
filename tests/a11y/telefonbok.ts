@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import type { MenuDeclaration, MenuEntry, PanelViewSpec, SearchResult, View } from '@clew/contracts';
+import type { MenuEntry, MenuHint, PanelViewSpec, SearchResult, View } from '@clew/contracts';
 import { createConnector, manifest } from '../../connectors/telefonbok/connector.mjs';
 import { user } from './data';
 
@@ -25,9 +25,10 @@ export async function telefonbok(name: string, input: unknown): Promise<{ status
   const spec = view ? { ...view, capability: name, connector: 'telefonbok', source: 'Telefonboken', chip: (view.kind === 'table' || view.kind === 'list') && !!view.ref } as PanelViewSpec : undefined;
   return { status: 200, body: { output: answer.output, ...(spec ? { view: spec } : {}) } };
 }
-/** The connector's row in the menu (D40) as the server hands it over once an administrator has switched it on: from the real manifest. */
-const declared = (manifest as { menu: MenuDeclaration; capabilities: Array<{ name: string; title: string }> });
-export const menuRow: MenuEntry = { connector: 'telefonbok', source: 'Telefonboken', capability: declared.menu.capability, title: declared.capabilities.find(c => c.name === declared.menu.capability)!.title, label: declared.menu.label, icon: declared.menu.icon };
+/** The phone book's views as rows in the menu (D40), as the server hands them over once an administrator has chosen them: named by the real manifest, in alphabetical order. */
+export const menuRows: MenuEntry[] = (manifest as { capabilities: Array<{ name: string; title: string; menu?: MenuHint }> }).capabilities.filter(c => c.menu)
+  .map(c => ({ connector: 'telefonbok', source: 'Telefonboken', capability: c.name, title: c.title, label: c.menu!.label, icon: c.menu!.icon })).sort((a, b) => a.label.localeCompare(b.label, 'sv'));
+export const menuRow = menuRows.find(r => r.capability === 'telefonbok.directory')!;
 /** The composite search when a name is typed: one person, with the contact card as the hit's view and no review date to miss. */
 export const personSearch: SearchResult = {
   rows: [{ ref: 'person:p1003', connector: 'telefonbok', kind: 'person', label: 'Anna Lindqvist', snippet: 'Lärare · Bergsåkers skola', source: 'Telefonboken', link: 'https://telefonbok.kommun.example/personer/p1003', stale: null,

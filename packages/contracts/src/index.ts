@@ -169,20 +169,19 @@ export function openRef(open: ViewOpen, row: Record<string, unknown>, source: st
 export type PanelViewSpec = View & { capability: string; connector: string; source: string; chip: boolean };
 
 /**
- * A connector's row in the menu (D40): one of its declared views as a tool that is one click away on every page. The
- * connector says which view, what the row is called and which of Clew's icons it carries; an administrator switches the
- * row on. Clew draws it, in its own section and order.
+ * A view as a tool in the menu (D40): one click away on every page, under Verktyg. Any read that declares a view and
+ * opens without input can be one; an administrator chooses which, view by view. A connector may say what a view's row
+ * is called and which of Clew's icons it carries; without that the row takes the capability's title and a plain icon.
  */
 export const MENU_ICONS = ['phone', 'people', 'book', 'document', 'chart', 'search', 'clock', 'link'] as const;
 export const MenuIconSchema = Type.Union(MENU_ICONS.map(name => Type.Literal(name)), { description: 'One of Clew\'s menu icons. The connector sends a name, never a drawing.' });
 export type MenuIcon = (typeof MENU_ICONS)[number];
-export const MenuDeclarationSchema = Type.Object({
-  capability: Type.String({ maxLength: 80, description: 'A read of this connector that declares a view and opens without input.' }),
-  label: Type.String({ minLength: 1, maxLength: 24, description: 'Swedish. The row in the menu: "Telefonbok".' }),
+export const MenuHintSchema = Type.Object({
+  label: Type.String({ minLength: 1, maxLength: 24, description: 'Swedish. The row in the menu, the name of the tool: "Telefonbok".' }),
   icon: MenuIconSchema,
-}, { additionalProperties: false, description: 'One row in Clew\'s menu under Verktyg that opens one of the connector\'s views (D40). Shown only when an administrator switches it on.' });
-export type MenuDeclaration = Static<typeof MenuDeclarationSchema>;
-/** A menu row as the browser gets it: only for a person who may call the read, from a connector whose row is switched on. */
+}, { additionalProperties: false, description: 'How this capability\'s view is named and marked when an administrator puts it in Clew\'s menu under Verktyg (D40). Only on a read that declares a view and needs no input.' });
+export type MenuHint = Static<typeof MenuHintSchema>;
+/** A menu row as the browser gets it: a view an administrator put in the menu, only for a person who may call its read. */
 export const MenuEntrySchema = object({ connector: Type.String(), source: Type.String(), capability: Type.String(), title: Type.String(), label: Type.String(), icon: MenuIconSchema });
 export type MenuEntry = Static<typeof MenuEntrySchema>;
 
@@ -492,7 +491,13 @@ export const ConnectorHealthSchema = object({
 });
 export type ConnectorHealth = Static<typeof ConnectorHealthSchema>;
 /** An administrator's per-capability switch. Narrowing only: `false` is the only value, so nothing can be switched on past the manifest. */
-export const CapabilityOverrideSchema = object({ enabled: Type.Optional(Type.Literal(false)), model: Type.Optional(Type.Literal(false)) });
+export const CapabilitySwitchSchema = object({ enabled: Type.Optional(Type.Literal(false)), model: Type.Optional(Type.Literal(false)) });
+/**
+ * What is stored per capability: the two narrowing switches, and `menu: true` when the administrator put the capability's
+ * view in the menu (D40). The menu is a place, not access, so it is the one value that is switched on, and only for a
+ * view that can be a tool.
+ */
+export const CapabilityOverrideSchema = object({ enabled: Type.Optional(Type.Literal(false)), model: Type.Optional(Type.Literal(false)), menu: Type.Optional(Type.Literal(true)) });
 export type CapabilityOverride = Static<typeof CapabilityOverrideSchema>;
 const connectorId = Type.String({ pattern: '^[a-z][a-z0-9-]*$', minLength: 1, maxLength: 40 });
 const connectorUrl = Type.String({ pattern: '^https?://[^\\s]+$', minLength: 8, maxLength: 500 });
@@ -501,8 +506,10 @@ const connectorSecret = Type.String({ minLength: 16, maxLength: 500 });
 export const AddConnectorInput = object({ id: connectorId, url: connectorUrl, secret: connectorSecret });
 export type AddConnectorInput = Static<typeof AddConnectorInput>;
 export const ConnectorPatchInput = Type.Partial(object({
-  state: ConnectorStateSchema, audience: ConnectorAudienceSchema, scanEnabled: Type.Boolean(), toolsEnabled: Type.Boolean(), menuEnabled: Type.Boolean(),
-  capabilities: Type.Record(Type.String({ maxLength: 80 }), CapabilityOverrideSchema), url: connectorUrl,
+  state: ConnectorStateSchema, audience: ConnectorAudienceSchema, scanEnabled: Type.Boolean(), toolsEnabled: Type.Boolean(),
+  capabilities: Type.Record(Type.String({ maxLength: 80 }), CapabilitySwitchSchema), url: connectorUrl,
+  /** Views in the menu (D40), by capability name: true puts the view under Verktyg, false takes it out. */
+  menu: Type.Record(Type.String({ maxLength: 80 }), Type.Boolean()),
 }));
 export type ConnectorPatchInput = Static<typeof ConnectorPatchInput>;
 export const RotateSecretInput = object({ secret: connectorSecret });
@@ -515,13 +522,13 @@ export type PreviewQuery = Static<typeof PreviewQuery>;
 export interface CheckFinding { level: 'ok' | 'warn' | 'fail'; text: string }
 export interface CheckReport { ok: boolean; findings: CheckFinding[] }
 /** What the administrator sees of a capability: the manifest's facts plus the effective switches. */
-export interface ConnectorCapabilityView { name: string; kind: 'read' | 'propose' | 'execute'; title: string; description: string; model: boolean; roles: Role[] | null; enabled: boolean; tool: boolean }
+export interface ConnectorCapabilityView { name: string; kind: 'read' | 'propose' | 'execute'; title: string; description: string; model: boolean; roles: Role[] | null; enabled: boolean; tool: boolean;
+  /** The row this capability's view would be in the menu (D40) and whether it is there; null when it cannot be a tool (not a read with a view that opens without input). */
+  menu: { label: string; icon: MenuIcon; on: boolean } | null }
 export interface ConnectorAreaView { id: string; title: string; roles: Role[]; standing: string[]; figure: boolean }
 export interface ConnectorSummary {
   id: string; bundled: boolean; source: string; kind: 'core' | 'passthrough' | 'derived' | null; url: string | null;
   state: ConnectorState; health: ConnectorHealth; audience: ConnectorAudience; scanEnabled: boolean; toolsEnabled: boolean;
-  /** The connector's menu row is shown under Verktyg (D40). Off until an administrator switches it on. */
-  menuEnabled: boolean;
   /** Registered in the live registry right now (a remote draft with no manifest is not). */
   registered: boolean;
   counts: { capabilities: number; execute: number; tools: number };
@@ -530,13 +537,11 @@ export interface ConnectorSummary {
 export interface AuditEntryView { at: string; actor: string; action: string; details: Record<string, unknown> }
 export interface ConnectorDetail extends ConnectorSummary {
   protocol: number | null; scan: boolean; createdBy: string; updatedBy: string;
-  /** The menu row the manifest declares (D40), or null when it declares none. */
-  menu: MenuDeclaration | null;
   capabilities: ConnectorCapabilityView[]; areas: ConnectorAreaView[]; history: AuditEntryView[];
 }
 /** The structural preview: what a person with this role and unit would get from one connector. No data, no call to the service. */
-export interface ConnectorPreview { role: Role; unitId: string | null; visible: boolean; areas: Array<{ id: string; title: string; standing: string[] }>; tools: string[]; /** The label of the menu row this person gets (D40), or null. */ menu: string | null }
-export interface ManifestDiff { added: string[]; removed: string[]; changed: string[]; areasAdded: string[]; areasRemoved: string[]; /** What happened to the menu row (D40), when anything did. */ menu?: 'added' | 'removed' | 'changed'; same: boolean }
+export interface ConnectorPreview { role: Role; unitId: string | null; visible: boolean; areas: Array<{ id: string; title: string; standing: string[] }>; tools: string[]; /** The labels of the menu rows this person gets (D40). */ menu: string[] }
+export interface ManifestDiff { added: string[]; removed: string[]; changed: string[]; areasAdded: string[]; areasRemoved: string[]; same: boolean }
 
 /**
  * Model administration (D24): providers (an OpenAI-compatible endpoint with a sealed key) and the models under them,

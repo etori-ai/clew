@@ -92,6 +92,13 @@
       "when": 1793880705100,
       "tag": "0012_connector_menu",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793881999495,
+      "tag": "0013_menu_per_view",
+      "breakpoints": true
     }
   ]
 }

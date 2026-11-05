@@ -1,19 +1,21 @@
 import { describe, expect, test } from 'bun:test';
 import { SignJWT } from 'jose';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
-import { Registry, actorOf, menuProblem, type Actor, type Connector } from '../../packages/connectors/src/index';
+import { Registry, actorOf, menuEligible, menuProblem, menuRowOf, type Actor, type Capability, type Connector } from '../../packages/connectors/src/index';
 import { checkConnector } from '../../packages/connectors/src/check';
 import { ManifestError, fetchManifest, parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import type { ConnectorManifest } from '../../packages/connectors/src/protocol';
 import { createConnector as createHello } from '../../connectors/hello/connector.mjs';
 import { createConnector as createTelefonbok, manifest as telefonbokManifest } from '../../connectors/telefonbok/connector.mjs';
 import { memoryConnectorStore } from '../../apps/server/src/connectors/adapters/memory';
-import { connectorUsecases, governanceOf, type AdminDeps } from '../../apps/server/src/connectors/usecases/admin';
+import { connectorUsecases, type AdminDeps } from '../../apps/server/src/connectors/usecases/admin';
+import { applyRow, type ReconcileDeps } from '../../apps/server/src/connectors/reconcile';
 import { describeBundled } from '../../apps/server/src/connectors/describe';
 
 /**
- * A connector's row in the menu (D40): the rules a declaration keeps, who gets the row, and the administrator's switch
- * with its audit row. The phone book runs in process behind a fetch, on the memory store.
+ * Views as tools in the menu (D40): which views can be one, what a connector may say about its row, who gets a row, and
+ * the administrator's choice, view by view, with its audit row. The phone book runs in process behind a fetch, on the
+ * memory store.
  */
 const persona = (id: string, role: 'manager' | 'employee', unitId: string, capabilities: string[] = []): AuthenticatedContext => ({ id, name: id, unitId, unitLabel: 'Enheten', role,
   organisationId: 'sundsvall', principal: { id: 'person:' + id, kind: 'person' }, capabilities, authorizationVersion: 'v1', sessionBinding: 'test', expiresAt: '2099-01-01T00:00:00.000Z', async authorize() { return { version: 'v1' }; } });
@@ -21,21 +23,23 @@ const mikael = persona('mikael', 'employee', 'unit-it', ['admin.connectors']), h
 const SECRET = 'test-secret-test-secret';
 const T0 = '2026-11-05T12:00:00.000Z';
 const sign = (secret: string, aud: string) => (actor: Actor) => new SignJWT({ actor }).setProtectedHeader({ alg: 'HS256', typ: 'JWT' }).setIssuer('clew').setAudience(aud).setSubject(actor.id).setIssuedAt().setExpirationTime('2m').sign(new TextEncoder().encode(secret));
-const declared = { capability: 'telefonbok.directory', label: 'Telefonbok', icon: 'phone' };
-const row = { connector: 'telefonbok', source: 'Telefonboken', capability: 'telefonbok.directory', title: 'Sök i telefonboken', label: 'Telefonbok', icon: 'phone' };
+const search = { connector: 'telefonbok', source: 'Telefonboken', capability: 'telefonbok.directory', title: 'Sök i telefonboken', label: 'Telefonbok', icon: 'phone' };
+const team = { connector: 'telefonbok', source: 'Telefonboken', capability: 'telefonbok.team', title: 'Mitt teams kontaktlista', label: 'Mitt team', icon: 'people' };
 const base = telefonbokManifest as unknown as ConnectorManifest;
-const withMenu = (menu: unknown) => ({ ...base, menu });
+/** The phone book's manifest with one capability changed. */
+const withCapability = (name: string, change: (c: ConnectorManifest['capabilities'][number]) => unknown) => ({ ...base, capabilities: base.capabilities.map(c => c.name === name ? change(c) : c) });
+const withoutHints = { ...base, capabilities: base.capabilities.map(({ menu: _menu, ...c }) => c) };
 
 function world() {
   const registry = new Registry();
   const store = memoryConnectorStore();
   const telefonbok = createTelefonbok({ secret: SECRET });
   const hello = createHello({ secret: SECRET, clewUrl: 'http://clew', fetch: async () => Response.json({ output: { events: [] } }) });
-  // What the phone book serves as its manifest, so a test can take the menu row away and put it back.
-  const served: { menu: unknown } = { menu: declared };
+  // What the phone book serves as its manifest, so a test can change it between two fetches.
+  const served: { manifest: unknown } = { manifest: base };
   const fetchLike: FetchLike = async (input, init) => {
     if (input.startsWith('http://hello')) return hello.handle(new Request(input, init));
-    if (input.endsWith('/clew/manifest')) { const { menu: _menu, ...rest } = base; return Response.json(served.menu ? { ...rest, menu: served.menu } : rest); }
+    if (input.endsWith('/clew/manifest')) return Response.json(served.manifest);
     return telefonbok.handle(new Request(input, init));
   };
   const live = {
@@ -46,135 +50,184 @@ function world() {
     secrets: { seal: (v, id) => `sealed(${id}):${v}`, open: (s, id) => s.replace(`sealed(${id}):`, '') },
     transport: { fetchManifest: (url, id) => fetchManifest(url, id, fetchLike), check: ({ url, id, secret }) => checkConnector({ url, id, assert: sign(secret, id), assertForeign: sign('another-secret-another', id), fetch: fetchLike }) },
   };
-  return { registry, store, admin: connectorUsecases(deps), served };
+  const reconcile = (target: Registry): ReconcileDeps => ({ registry: target, store, secrets: deps.secrets, bundled: [], clock: deps.clock, log: () => undefined,
+    live: { register(source, manifest) { target.replace(remoteConnector(manifest, { url: source.url, assert: sign(source.secret, source.id), fetch: fetchLike })); }, unregister(id) { target.unregister(id); } } });
+  return { registry, store, admin: connectorUsecases(deps), served, reconcile };
 }
 const menuAudit = (store: ReturnType<typeof memoryConnectorStore>) => store.audit.filter(a => a.action === 'connector.menu');
+const labels = (registry: Registry, who: AuthenticatedContext) => registry.menu(actorOf(who)).map(e => e.label);
 
-describe('the rules of a menu row', () => {
-  const view = { kind: 'text', body: 'text' };
-  const caps = [
-    { name: 'x.list', kind: 'read', input: { type: 'object', properties: { query: {} } }, output: {}, view },
-    { name: 'x.card', kind: 'read', input: { type: 'object', properties: { ref: {} }, required: ['ref'] }, output: {}, view },
-    { name: 'x.plain', kind: 'read', input: {}, output: {} },
-    { name: 'x.do', kind: 'execute', input: {}, output: {} },
-  ] as never[];
-  const menu = (capability: string) => ({ capability, label: 'Lista', icon: 'book' as const });
-  test('it opens a read of the same connector that declares a view and needs no input', () => {
-    expect(menuProblem('x', undefined, caps)).toBeUndefined();
-    expect(menuProblem('x', menu('x.list'), caps)).toBeUndefined();
-    expect(menuProblem('x', menu('x.do'), caps)).toMatch(/not a read of x/);
-    expect(menuProblem('x', menu('x.missing'), caps)).toMatch(/not a read of x/);
-    expect(menuProblem('y', menu('x.list'), caps)).toMatch(/not a read of y/);
-    expect(menuProblem('x', menu('x.plain'), caps)).toMatch(/declares no view/);
-    expect(menuProblem('x', menu('x.card'), caps)).toMatch(/needs input/);
+describe('which views can be tools, and what a connector may say about its row', () => {
+  const view = { kind: 'text' as const, body: 'text' };
+  const list = { name: 'x.list', kind: 'read', title: 'Visa listan', input: { type: 'object', properties: { query: {} } }, output: {}, view };
+  const card = { name: 'x.card', kind: 'read', title: 'Kort', input: { type: 'object', properties: { ref: {} }, required: ['ref'] }, output: {}, view };
+  const plain = { name: 'x.plain', kind: 'read', title: 'Utan vy', input: {}, output: {} };
+  const act = { name: 'x.do', kind: 'execute', title: 'Gör', input: {}, output: {}, view };
+  const hint = { label: 'Lista', icon: 'book' as const };
+  test('a tool is a read with a declared view that opens without input; a row is one click and no question', () => {
+    expect([list, card, plain, act].map(c => menuEligible(c))).toEqual([true, false, false, false]);
   });
-  test('the manifest loader refuses a row that breaks a rule, a label that does not fit and an icon that is not one of Clew\'s', () => {
-    expect(parseManifest(telefonbokManifest, 'telefonbok').menu).toEqual(declared as never);
-    expect(() => parseManifest(withMenu({ ...declared, capability: 'telefonbok.person' }))).toThrow(ManifestError);
-    expect(() => parseManifest(withMenu({ ...declared, capability: 'telefonbok.person' }))).toThrow(/needs input.*D40/);
-    expect(() => parseManifest(withMenu({ ...declared, capability: 'telefonbok.fetch' }))).toThrow(/needs input|declares no view/);
-    expect(() => parseManifest(withMenu({ ...declared, label: 'Organisationens hela telefonbok' }))).toThrow(/Invalid connector manifest/);
-    expect(() => parseManifest(withMenu({ ...declared, icon: '<svg/>' }))).toThrow(/Invalid connector manifest/);
-    expect(() => parseManifest(withMenu({ ...declared, href: 'https://example.com' }))).toThrow(/Invalid connector manifest/);
+  test('the row takes the connector\'s name and icon for it, and without them the capability\'s title and a plain icon', () => {
+    expect(menuRowOf({ ...list, menu: hint })).toEqual({ label: 'Lista', icon: 'book' });
+    expect(menuRowOf(list)).toEqual({ label: 'Visa listan', icon: 'document' });
+    expect(menuRowOf(card)).toBeUndefined();
   });
-  test('a bundled connector is held to the same rule when it registers, and its description carries the row', () => {
+  test('a connector may name a row only on a view that can be a tool', () => {
+    expect(menuProblem({ ...list, menu: hint })).toBeUndefined();
+    expect(menuProblem(list)).toBeUndefined();
+    expect(menuProblem({ ...card, menu: hint })).toMatch(/needs input/);
+    expect(menuProblem({ ...plain, menu: hint })).toMatch(/declares none/);
+    expect(menuProblem({ ...act, menu: hint })).toMatch(/only a read/);
+  });
+  test('the manifest loader holds a remote connector to it: several views may be named, a label must fit, an icon is one of Clew\'s, and nothing else rides along', () => {
+    const manifest = parseManifest(telefonbokManifest, 'telefonbok');
+    expect(manifest.capabilities.filter(c => c.menu).map(c => [c.name, c.menu])).toEqual([['telefonbok.directory', { label: 'Telefonbok', icon: 'phone' }], ['telefonbok.team', { label: 'Mitt team', icon: 'people' }]]);
+    expect(() => parseManifest(withCapability('telefonbok.person', c => ({ ...c, menu: { label: 'Kort', icon: 'people' } })))).toThrow(ManifestError);
+    expect(() => parseManifest(withCapability('telefonbok.person', c => ({ ...c, menu: { label: 'Kort', icon: 'people' } })))).toThrow(/needs input.*D40/);
+    expect(() => parseManifest(withCapability('telefonbok.fetch', c => ({ ...c, menu: { label: 'Hämta', icon: 'link' } })))).toThrow(/D40/);
+    expect(() => parseManifest(withCapability('telefonbok.team', c => ({ ...c, menu: { label: 'Hela mitt teams kontaktlista', icon: 'people' } })))).toThrow(/Invalid connector manifest/);
+    expect(() => parseManifest(withCapability('telefonbok.team', c => ({ ...c, menu: { label: 'Mitt team', icon: '<svg/>' } })))).toThrow(/Invalid connector manifest/);
+    expect(() => parseManifest(withCapability('telefonbok.team', c => ({ ...c, menu: { label: 'Mitt team', icon: 'people', href: 'https://example.com' } })))).toThrow(/Invalid connector manifest/);
+    // The connector-wide row of the first build is not a thing a manifest can carry.
+    expect(() => parseManifest({ ...base, menu: { capability: 'telefonbok.directory', label: 'Telefonbok', icon: 'phone' } })).toThrow(/Invalid connector manifest/);
+  });
+  test('a bundled connector is held to the same rule when it registers, and its description carries the name', () => {
     const run = async () => ({ text: '' });
-    const connector = (menu: Connector['menu']): Connector => ({ id: 'x', kind: 'derived', source: 'X', areas: [], menu,
-      capabilities: [{ name: 'x.list', kind: 'read', title: 'Lista', description: 'En lista.', input: {} as never, output: {} as never, model: false, scope: {}, view: { kind: 'text', body: 'text' }, run }] });
-    expect(() => new Registry().register(connector({ capability: 'x.gone', label: 'Lista', icon: 'book' }))).toThrow(/D40/);
-    const ok = connector({ capability: 'x.list', label: 'Lista', icon: 'book' });
-    expect(new Registry().register(ok).connector('x')!.menu).toEqual({ capability: 'x.list', label: 'Lista', icon: 'book' });
-    expect(describeBundled(ok).menu).toEqual({ capability: 'x.list', label: 'Lista', icon: 'book' });
+    const capability = (over: Partial<Capability>): Capability => ({ name: 'x.list', kind: 'read', title: 'Visa listan', description: 'En lista.', input: {} as never, output: {} as never, model: false, scope: {}, view, run, ...over });
+    const connector = (c: Capability): Connector => ({ id: 'x', kind: 'derived', source: 'X', areas: [], capabilities: [c] });
+    expect(() => new Registry().register(connector(capability({ view: undefined, menu: hint })))).toThrow(/D40/);
+    const ok = connector(capability({ menu: hint }));
+    expect(new Registry().register(ok).find('x.list')!.capability.menu).toEqual(hint);
+    expect(describeBundled(ok).capabilities[0]!.menu).toEqual(hint);
   });
 });
 
-describe('who gets the row', () => {
+describe('who gets a row', () => {
   const registry = () => new Registry().register(remoteConnector(parseManifest(telefonbokManifest, 'telefonbok'), { url: 'http://telefonbok', assert: sign(SECRET, 'telefonbok'), fetch: async () => Response.json({}) }));
-  const on = { state: 'enabled' as const, audience: { mode: 'all' as const }, scanEnabled: true, toolsEnabled: true, menuEnabled: true, capabilities: {} };
-  test('nobody until an administrator switches it on: declaring a row does not take a place in the menu', () => {
+  const governed = (capabilities: Record<string, { enabled?: false; model?: false; menu?: true }>, over: object = {}) => ({ state: 'enabled' as const, audience: { mode: 'all' as const }, scanEnabled: true, toolsEnabled: true, capabilities, ...over });
+  test('nobody until an administrator chooses the view: naming a row does not take a place in the menu', () => {
     const r = registry();
     expect(r.menu(actorOf(hassan))).toEqual([]);
-    r.govern('telefonbok', { ...on, menuEnabled: false });
+    r.govern('telefonbok', governed({}));
     expect(r.menu(actorOf(hassan))).toEqual([]);
-    r.govern('telefonbok', on);
-    expect(r.menu(actorOf(hassan))).toEqual([row as never]);
+    r.govern('telefonbok', governed({ 'telefonbok.directory': { menu: true } }));
+    expect(r.menu(actorOf(hassan))).toEqual([search as never]);
   });
-  test('only a person in the audience, only while the connector is on and the read it opens is on', () => {
+  test('each view is chosen by itself, and several of one connector come in alphabetical order', () => {
     const r = registry();
-    r.govern('telefonbok', { ...on, audience: { mode: 'selected', units: ['unit-it'] } });
-    expect(r.menu(actorOf(hassan))).toEqual([]);
-    expect(r.menu(actorOf(mikael))).toHaveLength(1);
-    r.govern('telefonbok', { ...on, state: 'disabled' });
-    expect(r.menu(actorOf(mikael))).toEqual([]);
-    r.govern('telefonbok', { ...on, capabilities: { 'telefonbok.directory': { enabled: false } } });
-    expect(r.menu(actorOf(mikael))).toEqual([]);
+    r.govern('telefonbok', governed({ 'telefonbok.team': { menu: true } }));
+    expect(r.menu(actorOf(hassan))).toEqual([team as never]);
+    r.govern('telefonbok', governed({ 'telefonbok.directory': { menu: true }, 'telefonbok.team': { menu: true } }));
+    expect(r.menu(actorOf(hassan))).toEqual([team, search] as never[]);
   });
-  test('the rows come in alphabetical order, whatever order the connectors were registered in', () => {
+  test('only a person in the audience, only while the connector and the read are on, and never a view that cannot be a tool', () => {
+    const r = registry();
+    const both = { 'telefonbok.directory': { menu: true as const }, 'telefonbok.team': { menu: true as const } };
+    r.govern('telefonbok', governed(both, { audience: { mode: 'selected', units: ['unit-it'] } }));
+    expect(labels(r, hassan)).toEqual([]);
+    expect(labels(r, mikael)).toEqual(['Mitt team', 'Telefonbok']);
+    r.govern('telefonbok', governed(both, { state: 'disabled' }));
+    expect(labels(r, mikael)).toEqual([]);
+    r.govern('telefonbok', governed({ ...both, 'telefonbok.directory': { enabled: false, menu: true } }));
+    expect(labels(r, mikael)).toEqual(['Mitt team']);
+    // The contact card needs a reference: a stored choice for it is never a row.
+    r.govern('telefonbok', governed({ 'telefonbok.person': { menu: true } }));
+    expect(labels(r, mikael)).toEqual([]);
+  });
+  test('tools of several connectors come in one alphabetical order, whatever order they were registered in', () => {
     const run = async () => ({ text: '' });
-    const tool = (id: string, label: string): Connector => ({ id, kind: 'derived', source: id, areas: [], menu: { capability: id + '.open', label, icon: 'book' },
+    const tool = (id: string, label: string): Connector => ({ id, kind: 'derived', source: id, areas: [],
       capabilities: [{ name: id + '.open', kind: 'read', title: label, description: label, input: {} as never, output: {} as never, model: false, scope: {}, view: { kind: 'text', body: 'text' }, run }] });
     const r = new Registry();
-    for (const [id, label] of [['c', 'Ärenden'], ['a', 'Östra arkivet'], ['b', 'Avtal']] as const) { r.register(tool(id, label)); r.govern(id, on); }
-    expect(r.menu(actorOf(hassan)).map(e => e.label)).toEqual(['Avtal', 'Ärenden', 'Östra arkivet']);
+    for (const [id, label] of [['c', 'Ärenden'], ['a', 'Östra arkivet'], ['b', 'Avtal']] as const) { r.register(tool(id, label)); r.govern(id, governed({ [id + '.open']: { menu: true } })); }
+    expect(labels(r, hassan)).toEqual(['Avtal', 'Ärenden', 'Östra arkivet']);
   });
 });
 
-describe('the administrator\'s switch', () => {
-  test('a new connector shows what it declares and is off; switching it on is one audit row and the row is there for the audience at once', async () => {
+describe('the administrator chooses, view by view', () => {
+  test('a new connector lists the views that can be tools, all off; choosing one is one audit row and the row is there for the audience at once', async () => {
     const { admin, store, registry } = world();
     const { connector, report } = await admin.add(mikael, { id: 'telefonbok', url: 'http://telefonbok', secret: SECRET });
-    expect(report.findings.map(f => f.text)).toContain('menu: "Telefonbok" opens telefonbok.directory (shown when an administrator switches it on)');
-    expect(connector).toMatchObject({ menu: declared, menuEnabled: false });
+    expect(report.findings.map(f => f.text)).toContain('menu: 2 views can be a tool in the menu when an administrator chooses it: "Telefonbok" (telefonbok.directory), "Mitt team" (telefonbok.team)');
+    expect(connector.capabilities.map(c => [c.name, c.menu])).toEqual([
+      ['telefonbok.directory', { label: 'Telefonbok', icon: 'phone', on: false }], ['telefonbok.team', { label: 'Mitt team', icon: 'people', on: false }],
+      ['telefonbok.person', null], ['telefonbok.search', null], ['telefonbok.fetch', null]]);
     await admin.update(mikael, 'telefonbok', { state: 'enabled' });
     expect(registry.menu(actorOf(hassan))).toEqual([]);
-    expect((await admin.preview(mikael, 'telefonbok', { role: 'employee' })).menu).toBeNull();
+    expect((await admin.preview(mikael, 'telefonbok', { role: 'employee' })).menu).toEqual([]);
 
-    const updated = await admin.update(mikael, 'telefonbok', { menuEnabled: true });
-    expect(updated.menuEnabled).toBe(true);
-    expect((await store.read('telefonbok'))!.menuEnabled).toBe(true);
-    expect(menuAudit(store)).toEqual([{ actor: 'person:mikael', action: 'connector.menu', subject: 'connector:telefonbok', at: T0, details: { to: true, label: 'Telefonbok', capability: 'telefonbok.directory' } }]);
-    expect(registry.menu(actorOf(hassan))).toEqual([row as never]);
-    expect((await admin.preview(mikael, 'telefonbok', { role: 'employee' })).menu).toBe('Telefonbok');
-    // The same value again changes nothing and writes nothing.
-    await admin.update(mikael, 'telefonbok', { menuEnabled: true });
+    const updated = await admin.update(mikael, 'telefonbok', { menu: { 'telefonbok.directory': true } });
+    expect(updated.capabilities.filter(c => c.menu?.on).map(c => c.name)).toEqual(['telefonbok.directory']);
+    expect((await store.read('telefonbok'))!.capabilities).toEqual({ 'telefonbok.directory': { menu: true } });
+    expect(menuAudit(store)).toEqual([{ actor: 'person:mikael', action: 'connector.menu', subject: 'connector:telefonbok', at: T0, details: { capability: 'telefonbok.directory', to: true, label: 'Telefonbok' } }]);
+    expect(registry.menu(actorOf(hassan))).toEqual([search as never]);
+    // The same choice again changes nothing and writes nothing.
+    await admin.update(mikael, 'telefonbok', { menu: { 'telefonbok.directory': true } });
     expect(menuAudit(store)).toHaveLength(1);
 
-    await admin.update(mikael, 'telefonbok', { menuEnabled: false });
-    expect(registry.menu(actorOf(hassan))).toEqual([]);
-    expect(menuAudit(store).map(a => a.details)).toEqual([{ to: true, label: 'Telefonbok', capability: 'telefonbok.directory' }, { to: false, label: 'Telefonbok', capability: 'telefonbok.directory' }]);
+    // A second view of the same connector, and the first one out, in one go: one audit row each.
+    await admin.update(mikael, 'telefonbok', { menu: { 'telefonbok.team': true, 'telefonbok.directory': false } });
+    expect(registry.menu(actorOf(hassan))).toEqual([team as never]);
+    expect((await store.read('telefonbok'))!.capabilities).toEqual({ 'telefonbok.team': { menu: true } });
+    expect(menuAudit(store).map(a => a.details)).toEqual([
+      { capability: 'telefonbok.directory', to: true, label: 'Telefonbok' }, { capability: 'telefonbok.team', to: true, label: 'Mitt team' }, { capability: 'telefonbok.directory', to: false, label: 'Telefonbok' }]);
+    expect((await admin.preview(mikael, 'telefonbok', { role: 'employee' })).menu).toEqual(['Mitt team']);
   });
-  test('only an administrator may, and a connector that declares no row has nothing to switch on', async () => {
+  test('the choice and the capability\'s own switches do not disturb each other', async () => {
+    const { admin, store, registry } = world();
+    await admin.add(mikael, { id: 'telefonbok', url: 'http://telefonbok', secret: SECRET });
+    await admin.update(mikael, 'telefonbok', { state: 'enabled', menu: { 'telefonbok.directory': true }, capabilities: { 'telefonbok.directory': { model: false } } });
+    expect((await store.read('telefonbok'))!.capabilities).toEqual({ 'telefonbok.directory': { model: false, menu: true } });
+    // Switched off, the view is out of the menu; switched on again, it is back without being chosen again.
+    await admin.update(mikael, 'telefonbok', { capabilities: { 'telefonbok.directory': { enabled: false } } });
+    expect((await store.read('telefonbok'))!.capabilities).toEqual({ 'telefonbok.directory': { enabled: false, menu: true } });
+    expect(registry.menu(actorOf(hassan))).toEqual([]);
+    await admin.update(mikael, 'telefonbok', { capabilities: { 'telefonbok.directory': {} } });
+    expect(registry.menu(actorOf(hassan))).toEqual([search as never]);
+    await admin.update(mikael, 'telefonbok', { menu: { 'telefonbok.directory': false } });
+    expect((await store.read('telefonbok'))!.capabilities).toEqual({});
+  });
+  test('only an administrator may, and a view that cannot be a tool, or does not exist, is refused in Swedish with nothing written', async () => {
     const { admin, store } = world();
     await admin.add(mikael, { id: 'telefonbok', url: 'http://telefonbok', secret: SECRET });
-    await expect(admin.update(hassan, 'telefonbok', { menuEnabled: true })).rejects.toThrow(/behörighet/);
+    await expect(admin.update(hassan, 'telefonbok', { menu: { 'telefonbok.directory': true } })).rejects.toThrow(/behörighet/);
+    await expect(admin.update(mikael, 'telefonbok', { menu: { 'telefonbok.person': true } })).rejects.toThrow('Förmågan kan inte ligga i menyn');
+    await expect(admin.update(mikael, 'telefonbok', { menu: { 'telefonbok.nothing': true } })).rejects.toThrow('Okänd förmåga');
     await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
-    await expect(admin.update(mikael, 'hello', { menuEnabled: true })).rejects.toThrow('Anslutningen har ingen rad för menyn.');
+    const hello = await admin.read(mikael, 'hello');
+    expect(hello.capabilities.every(c => c.menu === null)).toBe(true);
+    await expect(admin.update(mikael, 'hello', { menu: { 'hello.greeting': true } })).rejects.toThrow('Förmågan kan inte ligga i menyn');
     expect(menuAudit(store)).toEqual([]);
-    expect((await store.read('hello'))!.menuEnabled).toBe(false);
+    expect((await store.read('telefonbok'))!.capabilities).toEqual({});
   });
-  test('a refetched manifest says what happened to the row, and a row the service no longer declares is gone though the switch is on', async () => {
-    const { admin, store, registry, served } = world();
-    served.menu = null;
+  test('a connector that names no row still has its views to choose from, under the capability\'s title', async () => {
+    const { admin, registry, served } = world();
+    served.manifest = withoutHints;
     const { connector } = await admin.add(mikael, { id: 'telefonbok', url: 'http://telefonbok', secret: SECRET });
-    expect(connector.menu).toBeNull();
-    await admin.update(mikael, 'telefonbok', { state: 'enabled' });
-    served.menu = declared;
-    expect((await admin.refreshManifest(mikael, 'telefonbok', {})).diff).toMatchObject({ menu: 'added', same: false, added: [], changed: [] });
-    const applied = await admin.refreshManifest(mikael, 'telefonbok', { apply: true });
-    expect(applied.connector.menu).toEqual(declared as never);
-    expect(store.audit.find(a => a.action === 'connector.manifest')!.details).toMatchObject({ menu: 'added' });
-    // Added by the service, still off: the administrator decides.
-    expect(registry.menu(actorOf(hassan))).toEqual([]);
-    await admin.update(mikael, 'telefonbok', { menuEnabled: true });
-    expect(registry.menu(actorOf(hassan))).toHaveLength(1);
-
-    served.menu = { ...declared, label: 'Kontakter' };
-    expect((await admin.refreshManifest(mikael, 'telefonbok', {})).diff.menu).toBe('changed');
-    served.menu = null;
-    expect((await admin.refreshManifest(mikael, 'telefonbok', { apply: true })).diff.menu).toBe('removed');
-    expect(registry.menu(actorOf(hassan))).toEqual([]);
+    expect(connector.capabilities.find(c => c.name === 'telefonbok.team')!.menu).toEqual({ label: 'Mitt teams kontaktlista', icon: 'document', on: false });
+    await admin.update(mikael, 'telefonbok', { state: 'enabled', menu: { 'telefonbok.team': true } });
+    expect(registry.menu(actorOf(hassan))).toEqual([{ ...team, label: 'Mitt teams kontaktlista', icon: 'document' } as never]);
+    // The service starts naming its rows: the refetched manifest lists the capabilities as changed, and the chosen view takes the name.
+    served.manifest = base;
+    expect((await admin.refreshManifest(mikael, 'telefonbok', {})).diff).toMatchObject({ same: false, changed: ['telefonbok.directory', 'telefonbok.team'] });
+    await admin.refreshManifest(mikael, 'telefonbok', { apply: true });
+    expect(registry.menu(actorOf(hassan))).toEqual([team as never]);
   });
-  test('the switch is part of what is applied to the registry from a row, so it survives a restart', () => {
-    expect(governanceOf({ state: 'enabled', audience: { mode: 'all' }, scanEnabled: true, toolsEnabled: true, menuEnabled: true, capabilities: {} }).menuEnabled).toBe(true);
+  test('a view that stops being a tool in a new manifest drops out of the menu, though it was chosen', async () => {
+    const { admin, registry, served } = world();
+    await admin.add(mikael, { id: 'telefonbok', url: 'http://telefonbok', secret: SECRET });
+    await admin.update(mikael, 'telefonbok', { state: 'enabled', menu: { 'telefonbok.team': true, 'telefonbok.directory': true } });
+    served.manifest = withCapability('telefonbok.team', ({ view: _view, menu: _menu, ...c }) => c);
+    const applied = await admin.refreshManifest(mikael, 'telefonbok', { apply: true });
+    expect(applied.connector.capabilities.find(c => c.name === 'telefonbok.team')!.menu).toBeNull();
+    expect(labels(registry, hassan)).toEqual(['Telefonbok']);
+  });
+  test('the choice is in the row, so a server that starts again draws the same menu', async () => {
+    const { admin, store, reconcile } = world();
+    await admin.add(mikael, { id: 'telefonbok', url: 'http://telefonbok', secret: SECRET });
+    await admin.update(mikael, 'telefonbok', { state: 'enabled', menu: { 'telefonbok.team': true } });
+    const restarted = new Registry();
+    await applyRow(reconcile(restarted), (await store.read('telefonbok'))!);
+    expect(restarted.menu(actorOf(hassan))).toEqual([team as never]);
   });
 });

@@ -15,7 +15,7 @@ export async function insertConnector(tx: Transaction, row: { id: string; url: s
   await tx.insert(connectors).values({ id: row.id, bundled: false, url: row.url, secret: row.secret, createdBy: row.createdBy, updatedBy: row.createdBy, state: row.state ?? 'draft',
     manifest: row.manifest ?? null, manifestAt: row.manifest ? new Date() : null, ...(row.health ? { health: row.health } : {}) });
 }
-export async function updateConnector(tx: Transaction, id: string, by: string, patch: Partial<Pick<ConnectorRow, 'url' | 'secret' | 'secretChangedAt' | 'state' | 'audience' | 'scanEnabled' | 'toolsEnabled' | 'menuEnabled' | 'capabilities' | 'manifest' | 'manifestAt' | 'health'>>) {
+export async function updateConnector(tx: Transaction, id: string, by: string, patch: Partial<Pick<ConnectorRow, 'url' | 'secret' | 'secretChangedAt' | 'state' | 'audience' | 'scanEnabled' | 'toolsEnabled' | 'capabilities' | 'manifest' | 'manifestAt' | 'health'>>) {
   const [row] = await tx.select({ version: connectors.version }).from(connectors).where(eq(connectors.id, id));
   if (!row) return false;
   await tx.update(connectors).set({ ...patch, updatedBy: by, updatedAt: new Date(), version: row.version + 1 }).where(eq(connectors.id, id));

@@ -2,7 +2,7 @@ import type { CheckFinding, CheckReport } from '@clew/contracts';
 import { Registry, type Actor } from './index';
 import { fetchManifest, remoteConnector, type FetchLike } from './remote';
 import type { ConnectorManifest } from './protocol';
-import { rowsKey, viewRows } from './views';
+import { menuRowOf, rowsKey, viewRows } from './views';
 
 /**
  * The conformance check of a connector service (D21, D23): what `scripts/connector-check.ts` prints and what the admin
@@ -71,7 +71,8 @@ export async function checkConnector(options: CheckOptions): Promise<CheckReport
       }
     }
   }
-  if (manifest.menu) ok(`menu: "${manifest.menu.label}" opens ${manifest.menu.capability} (shown when an administrator switches it on)`);
+  const tools = manifest.capabilities.map(c => ({ name: c.name, row: menuRowOf(c) })).filter(t => t.row);
+  if (tools.length) ok(`menu: ${tools.length} ${tools.length === 1 ? 'view' : 'views'} can be a tool in the menu when an administrator chooses it: ${tools.map(t => `"${t.row!.label}" (${t.name})`).join(', ')}`);
   // Wrong secret must be refused by the connector itself, not only by Clew.
   const first = manifest.capabilities[0];
   if (first) {

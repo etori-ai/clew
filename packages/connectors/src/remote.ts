@@ -32,10 +32,10 @@ export function parseManifest(document: unknown, expectedId?: string): Connector
     if (c.kind === 'execute' && c.model) throw new ManifestError(`Capability ${c.name}: execute capabilities are never tools (D8).`);
     const problem = viewProblem(c, manifest.capabilities);
     if (problem) throw new ManifestError(`Capability ${problem} (D38).`);
+    const menu = menuProblem(c);
+    if (menu) throw new ManifestError(`Capability ${menu} (D40).`);
   }
   for (const a of manifest.areas) for (const s of a.standing) if (!manifest.capabilities.some(c => c.name === s)) throw new ManifestError(`Area ${a.id} lists unknown standing capability ${s}.`);
-  const menu = menuProblem(manifest.id, manifest.menu, manifest.capabilities);
-  if (menu) throw new ManifestError(`Manifest ${menu} (D40).`);
   return manifest;
 }
 export async function fetchManifest(url: string, expectedId?: string, fetchImpl: FetchLike = fetch): Promise<ConnectorManifest> {
@@ -77,7 +77,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
   const source = manifest.source;
   const capabilities: Capability<any, any>[] = manifest.capabilities.map(c => ({
     name: c.name, kind: c.kind, title: c.title, description: c.description, input: c.input as never, output: c.output as never, model: c.model, scope: c.scope,
-    ...(c.kinds ? { kinds: c.kinds } : {}), ...(c.view ? { view: c.view } : {}),
+    ...(c.kinds ? { kinds: c.kinds } : {}), ...(c.view ? { view: c.view } : {}), ...(c.menu ? { menu: c.menu } : {}),
     run: async (actor, input, clew) => {
       const { status, json } = await post(transport, source, '/clew/capabilities/' + encodeURIComponent(c.name), actor, { actor, input }, await delegated(manifest, clew, source));
       if (status >= 500 || !Value.Check(CallResponseSchema, json)) throw unavailable(source);
@@ -98,7 +98,6 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
       } } : {}),
     })),
     capabilities,
-    ...(manifest.menu ? { menu: manifest.menu } : {}),
     ...(manifest.scan ? { scan: async (actor: Actor) => {
       const { status, json } = await post(transport, source, '/clew/scan', actor, { actor });
       if (status >= 400 || !Value.Check(ScanResponseSchema, json)) throw unavailable(source);

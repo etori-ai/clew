@@ -67,7 +67,7 @@ area's figure turns into a warning. One connector being down never takes the pag
 
 Rules the loader enforces, the same as the registry's for bundled connectors: `id` equals the configured id;
 every capability name is `<id>.<verb>`; an `execute` is never `model: true` (D8); every standing capability
-exists; a `menu` row (D40, below) opens one of the connector's own views; `kind` is `passthrough` or `derived` (core connectors live in Clew, D3). `scope` is declarative so Clew
+exists; `menu` (D40, below) sits only on a capability whose view can be a tool; `kind` is `passthrough` or `derived` (core connectors live in Clew, D3). `scope` is declarative so Clew
 can evaluate it when listing tools and areas without a round trip: no `roles` means every signed-in
 person. An `execute` returns an `ExecuteResult` (`headline`, one `ReceiptRow` per ref with `outcome`
 `done`, `unknown`, `failed` or `skipped`, optional `undoCapability` and `undoMinutes`); green in the UI
@@ -197,26 +197,29 @@ not the content the card holds.
 What a view cannot do, by design: carry markup or style, compose layout, execute, reach another connector, or be an
 iframe. A screen the catalogue cannot express is a link out to the system. `connectors/telefonbok` is the reference.
 
-## Offering a view as a tool in the menu (D40)
+## A view as a tool in the menu (D40)
 
-Clew's menu has a section Verktyg: the calendar, and the views that connectors offer as tools. A connector offers one
-with `menu` at the top of its manifest:
+Clew's menu has a section Verktyg: the calendar, and the views an administrator has chosen as tools. A view can be a
+tool when its capability is a `read`, declares a `view`, and its input lists nothing as `required`: the row opens it
+with one click and no question. A connector does nothing to make a view eligible; every such view is on the
+administrator's list. What a connector may add is what the row is called, with `menu` on the capability:
 
 ```json
-"menu": { "capability": "telefonbok.directory", "label": "Telefonbok", "icon": "phone" }
+{ "name": "telefonbok.directory", "kind": "read", "title": "Sök i telefonboken", "view": { "…": "…" },
+  "menu": { "label": "Telefonbok", "icon": "phone" } }
 ```
 
 | Field | Meaning |
 |---|---|
-| `capability` | A `read` of this connector that declares a `view` and whose input lists nothing as `required`: the row opens it with one click and no question |
 | `label` | Swedish, at most 24 characters. The row in the menu, so the name of the tool, not of the action: "Telefonbok", not "Sök i telefonboken" |
 | `icon` | One of `phone`, `people`, `book`, `document`, `chart`, `search`, `clock`, `link`. Clew draws it; a connector sends a name |
 
-The declaration is an offer. The row is shown only when an administrator switches "Visa i menyn" on for the connector
-(Administration › Anslutna system › the connector › Områden, or the "Vem ser det" step when it is added), and then to
-everyone in the connector's audience who may call the read. A connector cannot place, order or style the row: Clew
-puts the tools in alphabetical order after the calendar, shows four and keeps the rest under "Fler verktyg". One row
-per connector. The loader refuses a manifest whose row breaks the rule, and `connector-check` prints the row.
+Without `menu` the row takes the capability's `title` and the `document` icon. The loader refuses `menu` on a
+capability that cannot be a tool. Nothing is in the menu until an administrator chooses it (Administration › Anslutna
+system › the connector › Områden, "Verktyg i menyn", one switch per view), and then for everyone in the connector's
+audience who may call the read. A connector cannot place, order or style a row: Clew puts the tools in alphabetical
+order after the calendar, shows four and keeps the rest under "Fler verktyg". `connector-check` lists the views that
+can be tools.
 
 ## Acting as the person (D26)
 

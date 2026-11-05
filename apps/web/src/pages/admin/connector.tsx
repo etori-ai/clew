@@ -61,6 +61,8 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
   const unhealthy = c.state === 'enabled' && !c.bundled && c.health.status !== 'ok';
   const panel = (t: TabId) => `panel-${t}`;
   const capRows: CapRow[] = c.capabilities.map(x => ({ name: x.name, c: x }));
+  // The views that can be tools in the menu (D40), each with the row it would be.
+  const tools = c.capabilities.flatMap(x => x.menu ? [{ ...x, menu: x.menu }] : []);
   const setCap = (name: string, patch: { enabled?: false; model?: false }) => run(async () => { await api.admin.update(id, { capabilities: { [name]: patch } }); });
   // Off is the only value an override can hold (narrowing only, D23); on clears it.
   const capPatch = (on: boolean, key: 'enabled' | 'model'): { enabled?: false; model?: false } => on ? {} : key === 'enabled' ? { enabled: false } : { model: false };
@@ -107,7 +109,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
         <MetadataListItem label="Förmågor">{`${c.counts.capabilities} · ${c.counts.execute} åtgärder · ${c.counts.tools} till assistenten`}</MetadataListItem>
         <MetadataListItem label="Skickar kort">{c.scan ? (c.scanEnabled ? 'Ja' : 'Avstängt') : 'Anslutningen skickar inga kort'}</MetadataListItem>
         <MetadataListItem label="Vem ser det">{audienceLabel(c.audience)}</MetadataListItem>
-        <MetadataListItem label="Rad i menyn">{c.menu ? `${c.menu.label} · ${c.menuEnabled ? 'visas under Verktyg' : 'visas inte'}` : 'Anslutningen har ingen rad för menyn'}</MetadataListItem>
+        <MetadataListItem label="I menyn">{tools.some(t => t.menu.on) ? tools.filter(t => t.menu.on).map(t => t.menu.label).join(', ') : tools.length ? 'Ingen vy vald' : 'Ingen vy kan ligga i menyn'}</MetadataListItem>
         {c.manifestAt && <MetadataListItem label="Manifest hämtat"><Timestamp value={c.manifestAt} format="date_time" /></MetadataListItem>}
         {c.secretChangedAt && <MetadataListItem label="Nyckel bytt"><Timestamp value={c.secretChangedAt} format="date_time" /></MetadataListItem>}
         <MetadataListItem label="Tillagd">{actorLabel(c.createdBy)} · <Timestamp value={c.createdAt} format="date_time" /></MetadataListItem>
@@ -125,9 +127,13 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
     </VStack></div>}
     {tab === 'omraden' && <div id={panel('omraden')} role={mobile ? "region" : "tabpanel"} aria-label="Områden"><VStack gap={3}>
       <Switch label="Skicka kort" description="Anslutningen får föreslå kort i strömmen." value={c.scanEnabled} isDisabled={busy || !c.scan} disabledMessage="Anslutningen har ingen genomgång." changeAction={on => run(async () => { await api.admin.update(id, { scanEnabled: on }); })} />
-      <Switch label="Visa i menyn" description={c.menu ? `Raden ${c.menu.label} under Verktyg öppnar ${c.capabilities.find(x => x.name === c.menu!.capability)?.title ?? c.menu.capability} för alla som ser anslutningen.` : undefined}
-        value={!!c.menu && c.menuEnabled} isDisabled={busy || !c.menu} disabledMessage="Anslutningen har ingen rad för menyn."
-        changeAction={on => run(async () => { await api.admin.update(id, { menuEnabled: on }); return on ? `${c.menu!.label} visas i menyn under Verktyg.` : `${c.menu!.label} visas inte längre i menyn.`; })} />
+      {/* Verktyg i menyn (D40): every view that can be a tool, with its own switch. The same list on a phone. */}
+      {tools.length === 0 ? <Text type="supporting">Ingen av anslutningens vyer kan ligga i menyn. Det kan en läsning med en vy som öppnas utan indata.</Text>
+        : <List aria-label="Verktyg i menyn" header={<VStack gap={0}><Text weight="semibold">Verktyg i menyn</Text><Text type="supporting">Välj vilka av anslutningens vyer som ligger under Verktyg i menyn, för alla som ser anslutningen.</Text></VStack>}>
+          {tools.map(t => <ListItem key={t.name} label={<Text>{t.menu.label}</Text>} description={<Text type="supporting">Öppnar {t.title}{t.enabled ? '' : ' · förmågan är avstängd'}</Text>}
+            endContent={<Switch size="sm" label={`Visa ${t.menu.label} i menyn`} isLabelHidden value={t.menu.on} isDisabled={busy || !t.enabled} disabledMessage="Förmågan är avstängd under Förmågor."
+              changeAction={on => run(async () => { await api.admin.update(id, { menu: { [t.name]: on } }); return on ? `${t.menu.label} visas i menyn under Verktyg.` : `${t.menu.label} visas inte längre i menyn.`; })} />} />)}
+        </List>}
       {c.areas.length === 0 ? <Text type="supporting">Anslutningen har inga områden i sidopanelen.</Text> : <List aria-label="Områden">
         {c.areas.map(a => <ListItem key={a.id} label={<Text>{a.title}</Text>} description={<Text type="supporting">{a.roles.map(r => roleLabel[r]).join(', ')}{a.standing.length ? ` · Gör själv: ${a.standing.join(', ')}` : ''}{a.figure ? ' · med figur' : ''}</Text>} />)}
       </List>}
@@ -170,9 +176,6 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
           {diff.changed.map(n => <ListItem key={'c' + n} startContent={<StatusDot variant="warning" label="Ändrad" />} label={<Text>Ändrad förmåga: {n}</Text>} />)}
           {diff.areasAdded.map(n => <ListItem key={'aa' + n} startContent={<StatusDot variant="success" label="Nytt" />} label={<Text>Nytt område: {n}</Text>} />)}
           {diff.areasRemoved.map(n => <ListItem key={'ar' + n} startContent={<StatusDot variant="error" label="Borttaget" />} label={<Text>Borttaget område: {n}</Text>} />)}
-          {diff.menu === 'added' && <ListItem startContent={<StatusDot variant="success" label="Ny" />} label={<Text>Ny rad för menyn</Text>} description={<Text type="supporting">Den visas först när du sätter på Visa i menyn under Områden.</Text>} />}
-          {diff.menu === 'removed' && <ListItem startContent={<StatusDot variant="error" label="Borttagen" />} label={<Text>Raden för menyn är borttagen</Text>} />}
-          {diff.menu === 'changed' && <ListItem startContent={<StatusDot variant="warning" label="Ändrad" />} label={<Text>Raden för menyn är ändrad</Text>} />}
         </List>}
       </DialogFrame>
     </Dialog>

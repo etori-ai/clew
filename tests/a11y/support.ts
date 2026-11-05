@@ -28,6 +28,8 @@ export class MockApi {
   connectors: ConnectorSummary[] = connectors();
   /** The rows under Verktyg in the menu (D40): none until a test puts one there, as none is shown until an administrator switches one on. */
   menu: MenuEntry[] = [];
+  /** The views an administrator has put in the menu on the admin pages, by capability name. */
+  menuOn: string[] = [];
   /** Modeller (D24): the providers and models the admin pages show, and how many models the person may pick in the box (two shows the menu). */
   providers: ProviderSummary[] = modelProviders();
   models: ModelSummary[] = models();
@@ -70,8 +72,8 @@ export class MockApi {
         const c = found();
         if (!c) return route.fulfill({ status: 400, json: { error: 'Anslutningen finns inte.' } });
         if (method === 'DELETE') { this.connectors = this.connectors.filter(x => x.id !== cid); return json({ closedCards: 1 }); }
-        if (method === 'PATCH') { const patch = request.postDataJSON() as Partial<ConnectorSummary>; const next = { ...c, ...('state' in patch ? { state: patch.state! } : {}), ...('audience' in patch ? { audience: patch.audience! } : {}), ...('scanEnabled' in patch ? { scanEnabled: patch.scanEnabled! } : {}), ...('toolsEnabled' in patch ? { toolsEnabled: patch.toolsEnabled! } : {}), ...('menuEnabled' in patch ? { menuEnabled: patch.menuEnabled! } : {}), updatedAt: NOW }; this.connectors = this.connectors.map(x => x.id === cid ? next : x); return json(connectorDetail(next)); }
-        return json(connectorDetail(c));
+        if (method === 'PATCH') { const patch = request.postDataJSON() as Partial<ConnectorSummary>; const next = { ...c, ...('state' in patch ? { state: patch.state! } : {}), ...('audience' in patch ? { audience: patch.audience! } : {}), ...('scanEnabled' in patch ? { scanEnabled: patch.scanEnabled! } : {}), ...('toolsEnabled' in patch ? { toolsEnabled: patch.toolsEnabled! } : {}), updatedAt: NOW }; if ('menu' in patch) for (const [name, on] of Object.entries((patch as { menu: Record<string, boolean> }).menu)) this.menuOn = on ? [...new Set([...this.menuOn, name])] : this.menuOn.filter(n => n !== name); this.connectors = this.connectors.map(x => x.id === cid ? next : x); return json(connectorDetail(next, this.menuOn)); }
+        return json(connectorDetail(c, this.menuOn));
       }
     }
     if (path === '/threads') { if (this.threadsDelay) await new Promise(resolve => setTimeout(resolve, this.threadsDelay)); return json({ threads: this.threads }); }

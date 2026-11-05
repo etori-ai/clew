@@ -1,11 +1,11 @@
 import type { MenuEntry } from '@clew/contracts';
 import { desktop, expect, expectNoAxeViolations, narrow, open, openNav, phone, test } from './support';
-import { menuRow } from './telefonbok';
+import { menuRow, menuRows } from './telefonbok';
 
 /**
- * Verktyg in the menu (D40): the calendar and the views that connectors offer as tools, one click away on every page.
- * The phone book's row is the one its real manifest declares; it is in the menu only where a test puts it, as it is in
- * the product only where an administrator switched it on.
+ * Verktyg in the menu (D40): the calendar and the views an administrator chose as tools, one click away on every page.
+ * The phone book's rows are named by its real manifest; they are in the menu only where a test puts them, as they are in
+ * the product only where an administrator chose them.
  */
 const rail = (page: import('@playwright/test').Page) => page.getByRole('navigation', { name: 'Sidonavigering' });
 const tool = (label: string, n: number): MenuEntry => ({ connector: 'verktyg-' + n, source: 'System ' + n, capability: `verktyg-${n}.open`, title: label, label, icon: (['book', 'document', 'chart', 'people', 'clock', 'link', 'search'] as const)[n % 7]! });
@@ -13,11 +13,12 @@ const tool = (label: string, n: number): MenuEntry => ({ connector: 'verktyg-' +
 test.describe('Verktyg in the menu', () => {
   test.use({ viewport: desktop });
 
-  test('the section is named, holds the calendar and the tool in that order, and has no axe violations', async ({ page, api }) => {
-    api.menu = [menuRow];
+  test('the section is named, holds the calendar and then the chosen views of a connector in alphabetical order, and has no axe violations', async ({ page, api }) => {
+    api.menu = menuRows;
     await open(page, '/');
     const section = rail(page).getByRole('group', { name: 'Verktyg' });
-    await expect(section.getByRole('link')).toHaveText(['Kalender', 'Telefonbok']);
+    await expect(section.getByRole('link')).toHaveText(['Kalender', 'Mitt team', 'Telefonbok']);
+    await expect(section.getByRole('link', { name: 'Mitt team' })).toHaveAttribute('href', /^\/vy\/telefonbok\.team\?titel=/);
     await expect(section.getByRole('link', { name: 'Telefonbok' })).toHaveAttribute('href', /^\/vy\/telefonbok\.directory\?titel=/);
     // The areas, the administration and the way out stay below it.
     const order = await rail(page).getByRole('link').allTextContents();
@@ -114,65 +115,50 @@ test.describe('Verktyg on a phone', () => {
   });
 });
 
-test.describe('the administrator switches the row on', () => {
+test.describe('the administrator chooses which views are in the menu', () => {
   test.use({ viewport: desktop });
-  test('a connector that declares a row has the switch under Områden; using it is said aloud and shown on the overview', async ({ page, api }) => {
+  test('every view that can be a tool has its own switch under Områden; choosing one is said aloud and shown on the overview', async ({ page, api }) => {
     api.admin = true;
     await open(page, '/admin/anslutningar/hello');
-    await expect(page.getByText('Hello · visas inte')).toBeVisible();
+    await expect(page.getByText('Ingen vy vald')).toBeVisible();
     await page.getByRole('tab', { name: 'Områden' }).click();
-    const toggle = page.getByRole('switch', { name: 'Visa i menyn' });
-    await expect(toggle).not.toBeChecked();
+    const tools = page.getByRole('list', { name: 'Verktyg i menyn' });
+    await expect(tools.getByRole('listitem')).toHaveCount(2);
+    await expect(tools.getByRole('switch')).toHaveCount(2);
+    const second = tools.getByRole('switch', { name: 'Visa Saker att göra i menyn' });
+    await expect(second).not.toBeChecked();
     await expectNoAxeViolations(page);
-    await toggle.focus();
+    await second.focus();
     await page.keyboard.press('Space');
-    await expect(toggle).toBeChecked();
-    await expect(page.getByRole('region', { name: 'Aviseringar' }).getByText('Hello visas i menyn under Verktyg.')).toBeVisible();
-    expect(api.connectors.find(c => c.id === 'hello')!.menuEnabled).toBe(true);
+    await expect(second).toBeChecked();
+    await expect(tools.getByRole('switch', { name: 'Visa Hello i menyn' })).not.toBeChecked();
+    await expect(page.getByRole('region', { name: 'Aviseringar' }).getByText('Saker att göra visas i menyn under Verktyg.')).toBeVisible();
+    expect(api.menuOn).toEqual(['hello.openItems']);
+    await tools.getByRole('switch', { name: 'Visa Hello i menyn' }).click();
+    await expect.poll(() => api.menuOn).toEqual(['hello.openItems', 'hello.overview']);
     await page.getByRole('tab', { name: 'Översikt' }).click();
-    await expect(page.getByText('Hello · visas under Verktyg')).toBeVisible();
+    await expect(page.getByText('Hello, Saker att göra')).toBeVisible();
   });
-  test('adding a connector that offers a row asks about the menu in the audience step, off by default, and saves the answer', async ({ page, api }) => {
+  test('the list of views is the same on a phone, with no sideways scrolling', async ({ page, api }) => {
     api.admin = true;
-    await open(page, '/admin/anslutningar');
-    await page.getByRole('button', { name: 'Anslut system' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Anslut system' });
-    await dialog.getByRole('textbox', { name: /^Id/ }).fill('telefonbok');
-    await dialog.getByRole('textbox', { name: /^Adress/ }).fill('http://telefonbok:4020');
-    await dialog.getByLabel(/Delad nyckel/).fill('en-tillräckligt-lång-nyckel');
-    await dialog.getByRole('button', { name: 'Kontrollera' }).click();
-    await dialog.getByRole('button', { name: 'Nästa' }).click();
-    const toggle = dialog.getByRole('switch', { name: 'Visa i menyn' });
-    await expect(toggle).not.toBeChecked();
-    await toggle.focus();
-    await page.keyboard.press('Space');
-    await expect(toggle).toBeChecked();
+    await page.setViewportSize(narrow);
+    await open(page, '/admin/anslutningar/hello');
+    await page.getByRole('button', { name: /^Visa:/ }).click();
+    await page.getByRole('menuitem', { name: 'Områden' }).click();
+    const tools = page.getByRole('list', { name: 'Verktyg i menyn' });
+    await expect(tools.getByRole('switch')).toHaveCount(2);
+    await tools.getByRole('switch', { name: 'Visa Hello i menyn' }).click();
+    await expect.poll(() => api.menuOn).toEqual(['hello.overview']);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
     await expectNoAxeViolations(page);
-    await dialog.getByRole('button', { name: 'Nästa' }).click();
-    await expect(dialog.getByText('Rad i menyn')).toBeVisible();
-    await dialog.getByRole('button', { name: 'Sätt på' }).click();
-    await expect(dialog).toHaveCount(0);
-    expect(api.connectors.find(c => c.id === 'telefonbok')).toMatchObject({ menuEnabled: true, state: 'enabled' });
   });
-  test('adding a connector that offers no row does not ask', async ({ page, api }) => {
-    api.admin = true;
-    await open(page, '/admin/anslutningar');
-    await page.getByRole('button', { name: 'Anslut system' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Anslut system' });
-    await dialog.getByRole('textbox', { name: /^Id/ }).fill('nytt');
-    await dialog.getByRole('textbox', { name: /^Adress/ }).fill('http://nytt:4010');
-    await dialog.getByLabel(/Delad nyckel/).fill('en-tillräckligt-lång-nyckel');
-    await dialog.getByRole('button', { name: 'Kontrollera' }).click();
-    await dialog.getByRole('button', { name: 'Nästa' }).click();
-    await expect(dialog.getByRole('switch', { name: 'Erbjud assistenten' })).toBeVisible();
-    await expect(dialog.getByRole('switch', { name: 'Visa i menyn' })).toHaveCount(0);
-  });
-  test('a connector that declares none has the switch disabled with the reason', async ({ page, api }) => {
+  test('a connector with no view that can be a tool says so, and adding a connector does not ask about the menu', async ({ page, api }) => {
     api.admin = true;
     await open(page, '/admin/anslutningar/raindance');
-    await expect(page.getByText('Anslutningen har ingen rad för menyn')).toBeVisible();
+    await expect(page.getByText('Ingen vy kan ligga i menyn')).toBeVisible();
     await page.getByRole('tab', { name: 'Områden' }).click();
-    await expect(page.getByRole('switch', { name: 'Visa i menyn' })).toBeDisabled();
+    await expect(page.getByText('Ingen av anslutningens vyer kan ligga i menyn.')).toBeVisible();
+    await expect(page.getByRole('list', { name: 'Verktyg i menyn' })).toHaveCount(0);
     await expectNoAxeViolations(page);
   });
 });

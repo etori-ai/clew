@@ -123,8 +123,8 @@ focusable in it (the diff list) scrolls in a labelled `ScrollableArea` that take
    anrop godkänt, fel nyckel avvisad. A `Banner` error on failure with the connector's own message and a
    "Försök igen" button; the draft is kept.
 3. *Vem ser det.* The audience editor (below) plus two `Switch`es: "Skicka kort" (scan) and "Erbjud
-   assistenten" (tools), both on by default. When the manifest offers a row for the menu (D40) there is a third,
-   "Visa i menyn", off by default.
+   assistenten" (tools), both on by default. Which views are tools in the menu (D40) is chosen afterwards, on the connector's
+   page.
 4. *Aktivera.* `MetadataList` summary and two buttons: "Spara som utkast" (secondary) and "Sätt på"
    (primary). The default is the draft, so a connector is never live by accident.
 
@@ -143,10 +143,11 @@ Kort och figurer visas från senast kända läge."). Then `TabList`:
   manifest says `model: false` or the kind is `execute` (D8). A `Toolbar` button "Stäng av alla åtgärder"
   sets every `execute` row off: the read-only pilot in one click.
 - *Områden.* `List`: title, roles from the manifest, standing capabilities, figure yes/no. Read-only; the
-  manifest owns areas. Above it the `Switch`es for what the connector puts in the menu and the stream: "Skicka kort"
-  and "Visa i menyn" (D40). The second is disabled with its reason when the manifest offers no row; switched on, the
-  row is under Verktyg for everyone in the audience, and the change is the audit row `connector.menu`. Översikt says
-  whether the row is shown, and the manifest diff says when a row was added, removed or changed.
+  manifest owns areas. Above it the `Switch` "Skicka kort" and the list **Verktyg i menyn**
+  (D40): every view of the connector that can be a tool (a read with a declared view that opens without input), with
+  the row it would be (the connector's name for it, else the capability's title), what it opens, and a `Switch` each.
+  The same `List` on a phone. A chosen view is under Verktyg for everyone in the audience; each change is one audit row
+  `connector.menu`. A connector with no such view says so instead of the list. Översikt names the chosen views.
 - *Vem ser det.* The audience editor: `RadioList` "Alla som är inloggade" / "Endast valda", then a
   `CheckboxList` of roles (Chefer, Medarbetare), a `MultiSelector` of units from the people connector, and
   a `MultiSelector` of groups that is shown disabled with the note "Grupper kommer med SCIM" until they

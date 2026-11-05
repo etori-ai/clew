@@ -47,9 +47,9 @@ Then write the manifest first, before any code, and read it as a list of buttons
   choice the person gets, and what a row opens. Clew draws it; you never send markup. Where the content is about
   identifiable people, add `modelReads: "summary"` so it reaches the person and not the model. The parts are in
   `docs/architecture/connector-protocol.md`, "Declaring a view"; `connectors/telefonbok` shows all of them.
-- If one of those views is a tool people reach for from anywhere (a phone book, a room list), offer it as a row in
-  Clew's menu with `menu: { capability, label, icon }` in the manifest (D40). It is only an offer: an administrator
-  switches the row on, and Clew decides where it sits. One row per connector, on a read that opens without input.
+- A view that opens without input can be put in Clew's menu as a tool by an administrator (D40). Nothing is needed for
+  that, but say what the tool is called: `menu: { label, icon }` on the capability ("Telefonbok", not "Sök i
+  telefonboken"). Without it the row takes the capability's title. Clew decides where a row sits.
 - Writes return an outcome per row and, when reversible, what reverses them.
 - If the capability list reads well as five to ten tool descriptions, it is right.
 

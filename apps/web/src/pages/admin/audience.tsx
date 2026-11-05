@@ -44,7 +44,7 @@ export function AudiencePreview({ connectorId }: { connectorId: string }) {
       <VStack gap={1}>
         {!p.visible && <Text type="supporting">Anslutningen finns inte för den här rollen.</Text>}
         {p.areas.map(a => <Text key={a.id} type="supporting"><Text as="span" weight="semibold">{a.title}</Text>{a.standing.length ? ` · Gör själv: ${a.standing.join(', ')}` : ''}</Text>)}
-        {p.menu && <Text type="supporting">Rad i menyn under Verktyg: {p.menu}</Text>}
+        {p.menu.length > 0 && <Text type="supporting">I menyn under Verktyg: {p.menu.join(', ')}</Text>}
         {p.visible && p.tools.length > 0 && <Text type="supporting">Assistenten kan använda: {p.tools.join(', ')}</Text>}
         {p.visible && p.tools.length === 0 && <Text type="supporting">Inga frågor till assistenten för den här rollen (förmågornas egna regler kan kräva en viss person).</Text>}
       </VStack>

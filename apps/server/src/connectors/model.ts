@@ -12,14 +12,12 @@ export interface ConnectorRecord {
   /** The sealed envelope, opaque to the use case. Never leaves the server. */
   secret: string | null; secretChangedAt: string | null;
   state: ConnectorState; audience: ConnectorAudience; scanEnabled: boolean; toolsEnabled: boolean;
-  /** The connector's menu row is shown (D40). False for a new row. */
-  menuEnabled: boolean;
   capabilities: Record<string, CapabilityOverride>;
   manifest: unknown | null; manifestAt: string | null; health: ConnectorHealth;
   createdBy: string; updatedBy: string; createdAt: string; updatedAt: string; version: number;
 }
 export interface NewConnector { id: string; bundled: boolean; url: string | null; secret: string | null; state: ConnectorState; manifest: unknown | null; health: ConnectorHealth; createdBy: string; at: string }
-export type ConnectorPatch = Partial<Pick<ConnectorRecord, 'url' | 'secret' | 'secretChangedAt' | 'state' | 'audience' | 'scanEnabled' | 'toolsEnabled' | 'menuEnabled' | 'capabilities' | 'manifest' | 'manifestAt' | 'health'>>;
+export type ConnectorPatch = Partial<Pick<ConnectorRecord, 'url' | 'secret' | 'secretChangedAt' | 'state' | 'audience' | 'scanEnabled' | 'toolsEnabled' | 'capabilities' | 'manifest' | 'manifestAt' | 'health'>>;
 export interface AuditEntry { actor: string; action: string; subject: string; at: string; details?: Record<string, unknown> }
 /** Writes inside one transaction: the audit row commits or rolls back with the rest. */
 export interface ConnectorTx {

@@ -122,9 +122,8 @@ export const connectors = pgTable('connector', {
   state: text('state').$type<'draft' | 'enabled' | 'disabled'>().notNull().default('draft'),
   audience: jsonb('audience').$type<ConnectorAudience>().notNull().default({ mode: 'all' }),
   scanEnabled: boolean('scan_enabled').notNull().default(true), toolsEnabled: boolean('tools_enabled').notNull().default(true),
-  // The connector's menu row is shown under Verktyg (D40): off until an administrator switches it on.
-  menuEnabled: boolean('menu_enabled').notNull().default(false),
-  capabilities: jsonb('capabilities').$type<Record<string, { enabled?: false; model?: false }>>().notNull().default({}),
+  // Per capability: the narrowing switches, and `menu: true` when its view is in the menu (D40).
+  capabilities: jsonb('capabilities').$type<Record<string, { enabled?: false; model?: false; menu?: true }>>().notNull().default({}),
   manifest: jsonb('manifest').$type<unknown>(), manifestAt: timestamp('manifest_at', { withTimezone: true }),
   health: jsonb('health').$type<ConnectorHealth>().notNull().default({ status: 'untested', at: '1970-01-01T00:00:00.000Z' }),
   createdBy: text('created_by').notNull(), updatedBy: text('updated_by').notNull(),

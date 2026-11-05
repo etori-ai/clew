@@ -26,10 +26,10 @@ export const manifest = {
   // The area puts both reads under "Gör själv" and as chips under the box for everyone in the connector's audience:
   // each person's own team list is one click away without anyone composing a page.
   areas: [{ id: 'kontakter', title: 'Kontakter', roles: ['manager', 'employee'], standing: ['telefonbok.team', 'telefonbok.directory'], schedules: [] }],
-  // A row under Verktyg in Clew's menu (D40): the search, one click away on every page. An administrator switches it on.
-  menu: { capability: 'telefonbok.directory', label: 'Telefonbok', icon: 'phone' },
   capabilities: [
     { name: 'telefonbok.directory', kind: 'read', title: 'Sök i telefonboken', model: true, scope: {},
+      // What the view is called when an administrator puts it under Verktyg in Clew's menu (D40): the tool, not the action.
+      menu: { label: 'Telefonbok', icon: 'phone' },
       description: 'Söker kollegor i hela organisationen eller på den egna enheten, på namn, titel eller enhet. Träffarna visas för personen som en tabell med telefon och e-post.',
       input: { type: 'object', properties: { query: { type: 'string', maxLength: 80 }, scope: { type: 'string', enum: ['all', 'unit'] } }, additionalProperties: false },
       output: { type: 'object', properties: { rows: { type: 'array', items: Person } }, required: ['rows'] },
@@ -38,6 +38,7 @@ export const manifest = {
         input: { query: { key: 'query', label: 'Sök i telefonboken', placeholder: 'Namn, titel eller enhet' },
           filter: { key: 'scope', label: 'Sök i', options: [{ value: 'all', label: 'Hela organisationen' }, { value: 'unit', label: 'Min enhet' }] } } } },
     { name: 'telefonbok.team', kind: 'read', title: 'Mitt teams kontaktlista', model: true, scope: {},
+      menu: { label: 'Mitt team', icon: 'people' },
       description: 'Kontaktuppgifter till alla på den inloggades enhet. Listan visas för personen i en vy.',
       input: { type: 'object', properties: {}, additionalProperties: false },
       output: { type: 'object', properties: { unit: str, rows: { type: 'array', items: Person } }, required: ['unit', 'rows'] },
