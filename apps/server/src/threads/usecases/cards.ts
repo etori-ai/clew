@@ -11,7 +11,7 @@ import type { ReminderTimers, ThreadStore, ThreadTx } from '../model';
  */
 export interface ThreadDeps {
   store: ThreadStore;
-  registry: Pick<Registry, 'scan' | 'areas' | 'connector' | 'visible'>;
+  registry: Pick<Registry, 'scan' | 'areas' | 'connector' | 'visible' | 'find'>;
   /** Run a capability as the person, with input validation and scope: `runCapability` in the server. */
   run: <O = unknown>(persona: AuthenticatedContext, name: string, input: unknown) => Promise<O>;
   /** The calendar's proposal path, the one coupling the stream has to a module (recorded as debt in D20). */
@@ -119,16 +119,25 @@ export function threadUsecases(deps: ThreadDeps) {
     const selected = refs ?? thread.items.filter(i => i.selected).map(i => i.ref);
     if (action.usesItems && thread.items.length && selected.some(r => !thread.items.some(i => i.ref === r))) throw new InputError('Något val är inte längre aktuellt. Läs om sidan.');
     const input = { ...(action.input ?? {}), ...(action.usesItems ? { refs: selected } : {}) };
-    if (action.kind !== 'execute') return { kind: action.kind, output: await run(persona, action.capability, input) };
+    // D35: a card's button reaches the card's own connector, and whether it executes is the capability's kind, never the
+    // card's word for it. The scan already refuses such drafts; this holds for cards stored before the rule and any other path.
+    const found = registry.find(action.capability);
+    if (found && found.connector.id !== thread.connector) throw new InputError('Knappen hör inte till kortets källa och kan inte användas.');
+    const kind = found?.capability.kind ?? action.kind;
+    if (kind !== 'execute') return { kind, output: await run(persona, action.capability, input) };
     if (thread.state !== 'open') throw new InputError('Tråden är redan hanterad.');
     const result = await run<ExecuteResult>(persona, action.capability, input);
-    const now = clock(), at = now.toISOString(), r: Receipt = receipt(result, now);
+    // D35: Ångra runs an execute of the same connector or nothing. The action has happened, so a foreign undo is dropped, not thrown.
+    const undo = result.undoCapability ? registry.find(result.undoCapability) : undefined;
+    const undoRefused = result.undoCapability && !(undo?.connector.id === thread.connector && undo.capability.kind === 'execute') ? result.undoCapability : undefined;
+    const accepted: ExecuteResult = undoRefused ? { headline: result.headline, rows: result.rows } : result;
+    const now = clock(), at = now.toISOString(), r: Receipt = receipt(accepted, now);
     await store.transaction(async tx => {
       const items = thread.items.map(i => ({ ...i, selected: selected.includes(i.ref) }));
       await tx.updateThread(threadId, { state: 'handled', handledAt: at, updatedAt: at, receipt: r, items });
       await tx.addMessage(threadId, { role: 'user', body: action.label, at });
       await tx.addMessage(threadId, { role: 'assistant', body: result.headline, at });
-      await tx.writeAudit({ actor: persona.principal.id, action: 'thread.acted', subject: 'thread:' + threadId, at, details: { capability: action.capability, refs: selected, outcomes: r.rows.map(x => x.outcome), undoUntil: r.undoUntil } });
+      await tx.writeAudit({ actor: persona.principal.id, action: 'thread.acted', subject: 'thread:' + threadId, at, details: { capability: action.capability, refs: selected, outcomes: r.rows.map(x => x.outcome), undoUntil: r.undoUntil, ...(undoRefused ? { undoRefused } : {}) } });
       if (r.undoUntil) await tx.scheduleJob({ id: `receipt-final:${threadId}:${now.getTime()}`, kind: 'receipt-final', runAt: r.undoUntil, payload: { threadId } });
     });
     return { kind: 'execute' as const, thread: await read(persona, threadId) };

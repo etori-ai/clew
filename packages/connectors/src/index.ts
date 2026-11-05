@@ -113,10 +113,16 @@ export const inAudience = (audience: ConnectorAudience, actor: Actor) =>
 /** Everything the person may not reach reads like "unknown", so a hidden connector cannot be probed (D23). */
 export const UNKNOWN = 'Okänd förmåga.';
 
+export interface RegistryOptions {
+  /** A draft the scan refused (D35): the server logs it, the connector check fails on it. The other drafts still become cards. */
+  onRefused?: (connectorId: string, topic: string, problem: string) => void;
+}
+
 export class Registry {
   private connectors = new Map<string, Connector>();
   private capabilities = new Map<string, { connector: Connector; capability: Capability<any, any> }>();
   private governed = new Map<string, Governance>();
+  constructor(private readonly options: RegistryOptions = {}) {}
   register(connector: Connector) {
     if (this.connectors.has(connector.id)) throw new Error(`Connector ${connector.id} is already registered.`);
     for (const c of connector.capabilities) {
@@ -210,13 +216,30 @@ export class Registry {
     }
     return out;
   }
-  /** Drafts from every visible connector whose scan is switched on. */
+  /**
+   * Why a connector's draft may not become a card, or undefined when it may (D35). A card is one system's: every action on
+   * it names a capability of the connector that pushed it, with that capability's own kind. Otherwise a connector could put
+   * another system's execute on its card, or call an execute a read so the card would run it without a receipt or an audit row.
+   */
+  draftProblem(connectorId: string, draft: Pick<ThreadDraft, 'actions'>): string | undefined {
+    for (const a of draft.actions) {
+      const found = this.capabilities.get(a.capability);
+      if (!found || found.connector.id !== connectorId) return `action ${a.id} names ${a.capability}, which is not a capability of ${connectorId}`;
+      if (found.capability.kind !== a.kind) return `action ${a.id} says ${a.kind}, but ${a.capability} is ${found.capability.kind}`;
+    }
+    return undefined;
+  }
+  /** Drafts from every visible connector whose scan is switched on. A draft that breaks the action rule (D35) is refused and reported. */
   async scan(actor: Actor): Promise<Array<ThreadDraft & { connector: string }>> {
     const drafts: Array<ThreadDraft & { connector: string }> = [];
     const clew = this.clewFor(actor);
     for (const m of this.connectors.values()) {
       if (!m.scan || !this.visible(actor, m.id) || !this.governance(m.id).scanEnabled) continue;
-      for (const d of await m.scan(actor, clew)) drafts.push({ ...d, connector: m.id });
+      for (const d of await m.scan(actor, clew)) {
+        const problem = this.draftProblem(m.id, d);
+        if (problem) { this.options.onRefused?.(m.id, d.topic, problem); continue; }
+        drafts.push({ ...d, connector: m.id });
+      }
     }
     return drafts;
   }

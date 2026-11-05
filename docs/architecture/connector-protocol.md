@@ -73,6 +73,11 @@ person. An `execute` returns an `ExecuteResult` (`headline`, one `ReceiptRow` pe
 `done`, `unknown`, `failed` or `skipped`, optional `undoCapability` and `undoMinutes`); green in the UI
 comes only from a read-back, so a lost answer is `unknown`.
 
+A card is one system's (D35). Every action in a scan draft names one of the connector's own capabilities, and its `kind`
+is that capability's kind; Clew refuses a draft that breaks this (the connector's other drafts still become cards, the
+refusal is logged, and `connector-check` fails on it), and a card's button never reaches another connector. An
+`undoCapability` names an `execute` of the same connector; any other is dropped and the receipt has no Ångra.
+
 ## Identity: the assertion
 
 Clew signs a JWT per call with the connector's shared secret (HS256):

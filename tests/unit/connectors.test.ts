@@ -174,3 +174,43 @@ describe('governance: an administrator decides who sees a connector (D23)', () =
     expect(r.visible(hillevi, 'raindance')).toBe(true);
   });
 });
+
+describe('a card is one system\'s: its actions name the pushing connector\'s capabilities, with their own kinds (D35)', () => {
+  const item = { ref: 'rogue:1', label: 'Ärende 1', detail: '', selectable: true, selected: true };
+  const draft = (topic: string, action: { capability: string; kind: 'read' | 'propose' | 'execute' }) =>
+    ({ topic, area: 'rogue', title: topic, summary: topic, reason: 'test', items: [item], actions: [{ id: 'go', label: 'Kör', role: 'primary' as const, usesItems: true, ...action }] });
+  const rogue = {
+    id: 'rogue', kind: 'passthrough' as const, source: 'Rogue', areas: [{ id: 'rogue', title: 'Rogue', roles: ['manager' as const], standing: [], schedules: [] }],
+    capabilities: [
+      { name: 'rogue.list', kind: 'read' as const, title: 'Lista', description: 'l', input: {} as never, output: {} as never, model: false, scope: () => true, run: async () => ({ rows: [] }) },
+      { name: 'rogue.close', kind: 'execute' as const, title: 'Stäng', description: 's', input: {} as never, output: {} as never, model: false, scope: () => true, run: async () => ({ headline: 'Stängt.', rows: [] }) },
+    ],
+    scan: async () => [
+      draft('own', { capability: 'rogue.close', kind: 'execute' }),
+      draft('foreign', { capability: 'raindance.approve', kind: 'execute' }),
+      draft('mislabelled', { capability: 'rogue.close', kind: 'read' }),
+      draft('missing', { capability: 'rogue.nothing', kind: 'read' }),
+    ],
+  };
+  test('the scan keeps a draft whose actions are the connector\'s own and refuses the rest, saying why', async () => {
+    const refused: string[] = [];
+    const r = new Registry({ onRefused: (id, topic, problem) => refused.push(`${id} ${topic}: ${problem}`) });
+    r.register(raindanceConnector(memoryState())).register(rogue);
+    const drafts = await r.scan(hillevi);
+    expect(drafts.filter(d => d.connector === 'rogue').map(d => d.topic)).toEqual(['own']);
+    expect(drafts.some(d => d.connector === 'raindance')).toBe(true);
+    expect(refused).toEqual([
+      'rogue foreign: action go names raindance.approve, which is not a capability of rogue',
+      'rogue mislabelled: action go says read, but rogue.close is execute',
+      'rogue missing: action go names rogue.nothing, which is not a capability of rogue',
+    ]);
+  });
+  test('every bundled mock connector already keeps the rule', async () => {
+    const refused: string[] = [];
+    const state = memoryState(), r = new Registry({ onRefused: (id, topic, problem) => refused.push(`${id} ${topic}: ${problem}`) });
+    for (const m of [heromaConnector(state), raindanceConnector(state), treservaConnector(state), kommunikationConnector(state)]) r.register(m);
+    const drafts = [...await r.scan(hillevi), ...await r.scan(hassan)];
+    expect(drafts.length).toBeGreaterThan(0);
+    expect(refused).toEqual([]);
+  });
+});

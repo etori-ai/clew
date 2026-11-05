@@ -34,7 +34,7 @@ export async function checkConnector(options: CheckOptions): Promise<CheckReport
   catch (error) { fail('manifest: ' + (error as Error).message); return { ok: false, findings }; }
   ok(`manifest valid: ${manifest.capabilities.length} capabilities, ${manifest.areas.length} areas, scan ${manifest.scan}`);
   if (manifest.delegation) warn(`delegation: acts as the person for audience "${manifest.delegation.audience}"; not verified by this check (it has no session), so a "denied" answer below is the expected one`);
-  const registry = new Registry().register(remoteConnector(manifest, { url, assert: options.assert, fetch: fetchImpl }));
+  const registry = new Registry({ onRefused: (_id, topic, problem) => fail(`draft ${topic} refused: ${problem}`) }).register(remoteConnector(manifest, { url, assert: options.assert, fetch: fetchImpl }));
   const accepts = options.acceptsEmptyInput ?? (() => true);
   for (const c of manifest.capabilities) {
     if (c.kind === 'execute') { ok(`${c.name}: execute, not a tool, not called by the check`); continue; }

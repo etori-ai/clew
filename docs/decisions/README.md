@@ -24,7 +24,7 @@ the reasoning. Longer designs live in `docs/architecture/`, and the reviews that
 | [D15](D15-postgres-scheduler-now-temporal-later.md) | Postgres-backed scheduler in v1, Temporal later | 2026-11-03 | platform | accepted, narrowed by D17 |
 | [D16](D16-node-is-the-server-runtime.md) | Node is the server runtime; Bun stays the toolchain | 2026-11-04 | platform | accepted |
 | [D17](D17-temporal-runs-the-durable-timers.md) | Temporal runs the durable timers, starting with a person's own reminders | 2026-11-04 | platform | accepted |
-| [D18](D18-errands-are-a-clew-owned-passthrough-domain.md) | Errands are a Clew-owned pass-through domain; SupportManagement is the first adapter | 2026-11-04 | integrations | proposed |
+| [D18](D18-errands-are-a-clew-owned-passthrough-domain.md) | Errands are a Clew-owned pass-through domain; SupportManagement is the first adapter | 2026-11-04 | integrations | proposed, hosting shape replaced by D35 |
 | [D19](D19-change-notification-is-a-clew-owned-contract.md) | Change notification is a Clew-owned contract: payload-free CloudEvents over HTTP | 2026-11-04 | integrations | proposed |
 | [D20](D20-modular-monolith-ports-and-adapters.md) | Backend structure: a modular monolith with ports and adapters, not tactical DDD | 2026-11-04 | platform | accepted |
 | [D21](D21-integrations-are-module-services.md) | Every integration is a module service behind the Clew module protocol | 2026-11-04 | integrations | accepted, vocabulary replaced by D22 (connector) |
@@ -40,6 +40,7 @@ the reasoning. Longer designs live in `docs/architecture/`, and the reviews that
 | [D31](D31-the-conversation-swaps-the-stream-inside-one-chatlayout.md) | The conversation swaps the stream inside one ChatLayout; chips live in the composer drawer; the shell is AppShell | 2026-11-04 | ui | accepted |
 | [D32](D32-one-calendar-family-and-the-persons-own-bookings.md) | One calendar family (page grid, embedded day and list, month picker, one item mapping); a person's own bookings and proposal moves are use cases with audit rows, never tools | 2026-11-04 | ui | accepted |
 | [D33](D33-browser-reads-go-through-one-query-cache.md) | Browser reads go through one query cache (TanStack Query) per session; a mutation's thread is written into it; no page-level reloads | 2026-11-04 | ui | accepted, live pass against Keycloak pending |
+| [D35](D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md) | Errands from several case systems: one connector per system, a shared profile for the reads, and a card's buttons reach only its own connector | 2026-11-05 | integrations | accepted, card-action rule built; errand profile not built |
 
 ## Adding a decision
 

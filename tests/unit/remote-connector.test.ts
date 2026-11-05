@@ -5,6 +5,7 @@ import { protocolSchema } from '../../packages/connectors/src/protocol';
 import { ManifestError, fetchManifest, parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { createConnector, manifest as helloManifest } from '../../connectors/hello/connector.mjs';
 import { assertionFor, loadConnectors, verifyAssertion } from '../../apps/server/src/connectors/remote';
+import { checkConnector } from '../../packages/connectors/src/check';
 import type { ConnectorHealth } from '../../packages/db/src/schema';
 
 const secret = 'test-secret-test-secret';
@@ -168,5 +169,24 @@ describe('assertions and configuration', () => {
     await loadConnectors(registry, { rows: async () => [{ id: 'hello', url: 'http://hello', secret, manifest: null }], record: async (_id, h) => { health.push(h); }, fetch: bad, attempts: 5, log: () => undefined });
     expect(health.map(h => h.status)).toEqual(['manifest-invalid']);
     expect(registry.connector('hello')).toBeUndefined();
+  });
+});
+
+describe('connector-check holds a scan to the card-action rule (D35)', () => {
+  test('a draft whose button names another connector\'s capability fails the check, and the untouched service passes it', async () => {
+    const hello = createConnector({ secret, clewUrl: 'http://clew', fetch: async () => Response.json({ output: { date: '2026-11-04', events: [], gaps: [] } }) });
+    const honest: FetchLike = (input, init) => hello.handle(new Request(input, init));
+    const tampered: FetchLike = async (input, init) => {
+      const answer = await honest(input, init);
+      if (!String(input).endsWith('/clew/scan')) return answer;
+      const body = await answer.json() as { drafts: Array<{ actions: Array<{ capability: string }> }> };
+      return Response.json({ drafts: body.drafts.map(d => ({ ...d, actions: d.actions.map(a => ({ ...a, capability: 'raindance.approve' })) })) });
+    };
+    const check = (fetch: FetchLike) => checkConnector({ url: 'http://hello', id: 'hello', assert: assertionFor('hello', secret), assertForeign: assertionFor('hello', 'another-secret-another'), fetch });
+    const failures = (report: Awaited<ReturnType<typeof check>>) => report.findings.filter(f => f.level === 'fail').map(f => f.text);
+    expect(failures(await check(honest))).toEqual([]);
+    const report = await check(tampered);
+    expect(report.ok).toBe(false);
+    expect(failures(report)).toContain('draft hello:open-items refused: action done names raindance.approve, which is not a capability of hello');
   });
 });

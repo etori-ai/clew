@@ -79,7 +79,9 @@ For `scan`, return the drafts you want pushed for this person now: deterministic
 `topic` for the same occurrence every night (Clew keeps one open card per person and topic). Each draft
 names an `area` from your manifest, a `reason` (shown under "Varför ser jag detta?"), items with refs, and
 actions: at most one primary (`execute` or `propose`), up to two secondary `read`s with `target: 'panel'`
-or `target: 'link'`. Clew adds its standard actions itself.
+or `target: 'link'`. Clew adds its standard actions itself. Every action names one of your own capabilities with
+the `kind` your manifest gives it, and an `undoCapability` is one of your own executes: Clew refuses a draft that names
+another connector's capability or calls an execute a read, and `connector-check` fails on it (D35).
 
 Need another connector's data (the person's calendar, the directory)? Post the assertion you received to
 `{CLEW_URL}/api/connectors/call` with `{ name: 'calendar.today', input: {} }` inside the same request.

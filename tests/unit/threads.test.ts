@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext, Thread } from '../../packages/contracts/src/index';
-import { actorOf, Registry } from '../../packages/connectors/src/index';
+import { actorOf, Registry, type Connector } from '../../packages/connectors/src/index';
 import { memoryState } from '../../packages/connectors/src/memory-state';
 import { heromaConnector } from '../../packages/connectors/src/mock/heroma';
 import { raindanceConnector } from '../../packages/connectors/src/mock/raindance';
@@ -153,6 +153,57 @@ describe('a card action', () => {
     expect(closed.receipt).toMatchObject({ undoUntil: null, undoCapability: null, rows: expect.any(Array) });
     expect(w.store.audit.at(-1)).toMatchObject({ actor: 'system:scheduler', action: 'thread.receipt_final' });
     await expect(w.threads.undoReceipt(hillevi, card.id)).rejects.toThrow('Ångerfönstret har gått ut.');
+  });
+});
+
+describe('a card is one system\'s (D35)', () => {
+  /** A connector that breaks the rule twice: one draft carries Raindance's execute, and its own execute names Raindance's undo. */
+  const rogue = (): Connector => ({
+    id: 'rogue', kind: 'passthrough', source: 'Rogue', areas: [{ id: 'rogue', title: 'Rogue', roles: ['manager'], standing: [], schedules: [] }],
+    capabilities: [{ name: 'rogue.close', kind: 'execute', title: 'Stäng', description: 'Stänger ärenden.', input: {} as never, output: {} as never, model: false, scope: () => true,
+      run: async (_actor, input: { refs: string[] }) => ({ headline: 'Stängt.', rows: input.refs.map(ref => ({ ref, label: ref, outcome: 'done', detail: 'stängt' })), undoCapability: 'raindance.unapprove', undoMinutes: 10 }) }],
+    scan: async () => ['own', 'foreign'].map(topic => ({ topic: 'rogue:' + topic, area: 'rogue', title: 'Ärende 1', summary: 'Ett ärende väntar.', reason: 'test',
+      items: [{ ref: 'rogue:1', label: 'Ärende 1', detail: '', selectable: true, selected: true }],
+      actions: [{ id: 'go', label: 'Stäng', capability: topic === 'own' ? 'rogue.close' : 'raindance.approve', kind: 'execute', role: 'primary', usesItems: true }] })),
+  });
+  const withRogue = () => { const w = world(); w.registry.register(rogue()); return w; };
+  test('the scan pushes only drafts whose buttons are the connector\'s own; a refused draft leaves no card and no audit row', async () => {
+    const w = withRogue();
+    await w.threads.ensureThreads(hillevi);
+    const topics = (await w.threads.listThreadsFor(hillevi)).map(t => t.topic);
+    expect(topics).toContain('rogue:own');
+    expect(topics).not.toContain('rogue:foreign');
+    expect(w.store.audit.filter(e => e.action === 'thread.pushed').map(e => e.details?.topic)).not.toContain('rogue:foreign');
+  });
+  test('an undo naming another connector is dropped: the receipt stands without Ångra, and the audit row names what was refused', async () => {
+    const w = withRogue();
+    await w.threads.ensureThreads(hillevi);
+    const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'rogue:own')!;
+    const thread = (await w.threads.act(hillevi, card.id, 'go') as { thread: Thread }).thread;
+    expect(thread).toMatchObject({ state: 'handled', receipt: { headline: 'Stängt.', undoCapability: null, undoUntil: null } });
+    expect(w.store.audit.at(-1)).toMatchObject({ actor: 'person:hillevi', action: 'thread.acted', subject: 'thread:' + card.id, details: { capability: 'rogue.close', undoUntil: null, undoRefused: 'raindance.unapprove' } });
+    expect(w.store.jobs).toEqual([]);
+    await expect(w.threads.undoReceipt(hillevi, card.id)).rejects.toThrow('Ångerfönstret har gått ut.');
+  });
+  test('a stored card whose button names another connector is refused and runs nothing', async () => {
+    const w = world();
+    const card = await invoices(w);
+    await w.store.transaction(tx => tx.updateThread(card.id, { actions: [...card.actions, { id: 'foreign', label: 'Godkänn', capability: 'heroma.decideLeave', kind: 'execute', role: 'overflow', usesItems: true, input: { decision: 'approve' } }] }));
+    const audit = w.store.audit.length, heroma = await w.state.get('heroma', 'leave-decisions', {});
+    await expect(w.threads.act(hillevi, card.id, 'foreign')).rejects.toThrow('Knappen hör inte till kortets källa och kan inte användas.');
+    expect(w.store.audit.length).toBe(audit);
+    expect(await w.state.get('heroma', 'leave-decisions', {})).toEqual(heroma);
+    expect((await w.threads.threadFor(hillevi, card.id))!.state).toBe('open');
+  });
+  test('a stored card that calls an execute a read still gets its receipt, its audit row and its undo window', async () => {
+    const w = world();
+    const card = await invoices(w);
+    await w.store.transaction(tx => tx.updateThread(card.id, { actions: card.actions.map(a => a.id === 'approve' ? { ...a, kind: 'read' as const } : a) }));
+    const result = await w.threads.act(hillevi, card.id, 'approve');
+    expect(result.kind).toBe('execute');
+    expect((result as { thread: Thread }).thread).toMatchObject({ state: 'handled', receipt: { undoCapability: 'raindance.unapprove' } });
+    expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'thread.acted']);
+    expect(w.store.jobs.map(j => j.kind)).toEqual(['receipt-final']);
   });
 });
 

@@ -21,7 +21,7 @@ import { searchUsecases } from '../modules/search/usecases';
  * `routes/`, `threads/` or `assistant/` knows a connector by name, and connectors reach each other only through
  * the registry (D20): in-process through the `clew.call` handle, remote through `POST /api/connectors/call`.
  */
-export const registry = new Registry();
+export const registry = new Registry({ onRefused: (id, topic, problem) => console.error(`connector ${id}: draft ${topic} refused (D35): ${problem}`) });
 /** The composite search (D26) lists its sources from the registry at call time, so a connector enabled by an administrator is searched from the next question on. */
 const search = searchUsecases({ sources: actor => registry.searchSources(actor), clock });
 /** The card an answer becomes is the stream's use case; the composition root fills this slot once the stream is built over the registry. */
