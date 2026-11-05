@@ -1,6 +1,7 @@
+import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext, Thread } from '../../packages/contracts/src/index';
-import { actorOf, Registry, type Connector } from '../../packages/connectors/src/index';
+import { actorOf, type Connector } from '../../packages/connectors/src/index';
 import { memoryState } from '../../packages/connectors/src/memory-state';
 import { heromaConnector } from '../../packages/connectors/src/mock/heroma';
 import { raindanceConnector } from '../../packages/connectors/src/mock/raindance';
@@ -28,6 +29,7 @@ function fakeClock(start = T0) {
 }
 function world() {
   const state = memoryState(), registry = new Registry();
+  registry.register({ id: 'calendar', kind: 'core', source: 'Kalendern', areas: [], capabilities: [] });
   const store = memoryThreadStore(), clock = fakeClock();
   for (const m of [heromaConnector(state), raindanceConnector(state), treservaConnector(state), searchConnector(searchUsecases({ sources: a => registry.searchSources(a), clock }))]) registry.register(m);
   let n = 0;
@@ -49,6 +51,12 @@ async function invoices(w: ReturnType<typeof world>) {
 }
 
 describe('the scan', () => {
+  test('a disabled calendar cannot be scanned through the legacy proposal path', async () => {
+    const w = world();
+    w.registry.govern('calendar', { ...w.registry.governance('calendar'), state: 'disabled' });
+    await w.threads.ensureThreads(hillevi);
+    expect(w.calendar.calls).toEqual([]);
+  });
   test('pushes one card per draft in scope, with the source on the trigger and an audit row each', async () => {
     const w = world();
     await w.threads.ensureThreads(hillevi, 'Första besöket i dag');
@@ -429,7 +437,7 @@ describe('a cited answer becomes a card (D26)', () => {
     await w.store.transaction(async tx => {
       await tx.insertThread({ id: 'q1', personId: 'hassan', kind: 'question', topic: 'question', title: 'Brukaren har ramlat, vad gör jag?', state: 'open', week: null, connector: 'clew', area: 'fragor', summary: 'svar', items: [], actions: [], waitingOn: null, deadline: null, trigger: { reason: 'Du ställde en fråga', source: 'Startsidan', at }, createdAt: at, updatedAt: at });
       await tx.addMessage('q1', { role: 'user', body: 'Brukaren har ramlat, vad gör jag?', at });
-      await tx.addMessage('q1', { role: 'assistant', body: '1. Lyft inte själv [1].\n2. Skriv avvikelse [2].', at, meta: { shape: 'steg', ...(withSources ? { sources } : {}) } });
+      await tx.addMessage('q1', { role: 'assistant', body: '1. Lyft inte själv [1].\n2. Skriv avvikelse [2].', at, meta: { shape: 'steg', access: { connectors: [], capabilities: [], authorizationVersion: hassan.authorizationVersion }, ...(withSources ? { sources } : {}) } });
       await tx.writeAudit({ actor: 'person:hassan', action: 'conversation.asked', subject: 'thread:q1', at });
     });
     return (await w.store.readThread('hassan', 'q1'))!;

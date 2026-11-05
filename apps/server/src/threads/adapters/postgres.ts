@@ -1,6 +1,6 @@
-import { and, desc, eq, gte, inArray, or } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
-import { toThread } from '@clew/db/threads';
+import { listThreads, toThread } from '@clew/db/threads';
 import { scheduleJob } from '@clew/db/jobs';
 import type { ThreadPatch, ThreadStore, ThreadTx } from '../model';
 
@@ -48,17 +48,7 @@ const txOf = (tx: Transaction): ThreadTx => ({
 });
 export function postgresThreadStore(): ThreadStore {
   return {
-    async listThreads(personId, now) {
-      const since = new Date(Date.parse(now) - 7 * 86400_000);
-      const rows = await database().select().from(threads).where(and(eq(threads.personId, personId), or(eq(threads.state, 'open'), gte(threads.updatedAt, since)))).orderBy(desc(threads.createdAt)).limit(50);
-      if (!rows.length) return [];
-      const ids = rows.map(r => r.id);
-      const [messages, proposalRows] = await Promise.all([
-        database().select().from(threadMessages).where(inArray(threadMessages.threadId, ids)).orderBy(threadMessages.createdAt),
-        database().select().from(proposals).where(inArray(proposals.threadId, ids)).orderBy(proposals.start),
-      ]);
-      return rows.map(row => toThread(row, messages.filter(m => m.threadId === row.id), proposalRows.filter(p => p.threadId === row.id)));
-    },
+    listThreads: (personId, now) => listThreads(personId, new Date(now)),
     readThread: (personId, id) => read(database(), and(eq(threads.id, id), eq(threads.personId, personId))),
     readThreadById: id => read(database(), eq(threads.id, id)),
     async openThread(personId, topic) { return read(database(), and(eq(threads.personId, personId), eq(threads.topic, topic), eq(threads.state, 'open'))); },

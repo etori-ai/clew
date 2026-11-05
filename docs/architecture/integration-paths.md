@@ -1,5 +1,8 @@
 # Integration paths
 
+> **Reading status:** Historical landscape and integration options. Status labels below describe earlier reviews, not a current support commitment. Environment-based model setup, MCP hosting and future SCIM descriptions are not setup instructions. See [implementation status](../reference/status.md) and the [current protocol](../reference/connector-protocol.md).
+
+
 The catalogue of ways a system can be connected to Clew, what each path is for, and what is built. The
 principles are in `integrations.md` (Clew owns the contract, D1; integrations fulfil it first, D10; three
 connector kinds, D3). This file is the menu you pick from when a new system arrives. Much of it is carried

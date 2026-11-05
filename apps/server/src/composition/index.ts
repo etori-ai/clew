@@ -4,6 +4,7 @@ import { postgresConnectorStore, postgresUnits } from '../connectors/adapters/po
 import { connectorUsecases } from '../connectors/usecases/admin';
 import type { LiveRegistration, Secrets } from '../connectors/model';
 import type { ReconcileDeps as ConnectorReconcileDeps } from '../connectors/reconcile';
+import { applyAllRows } from '../connectors/reconcile';
 import { openSecret, sealSecret } from '../auth-crypto';
 import { fetchManifest } from '@clew/connectors/remote';
 import { checkConnector } from '@clew/connectors/check';
@@ -24,6 +25,9 @@ import { reminderUsecases } from '../threads/usecases/reminders';
 import { threadUsecases } from '../threads/usecases/cards';
 import { clock, ids } from './ambient';
 import { calendar, events, notifier } from './calendar';
+import { systemContext } from '../system-context';
+import { cardDecisions } from '../threads/usecases/decisions';
+import { executions } from './executions';
 
 /**
  * The composition root (D25): the one place that pairs use cases with their live adapters. Routes, the scheduler and
@@ -34,11 +38,16 @@ import { calendar, events, notifier } from './calendar';
 const store = postgresThreadStore();
 export { calendar, events };
 const timers = temporalTimers();
-export const threads = threadUsecases({ store, registry, run: runCapability, timers, clock, ids, calendar: { ensureProposalThread: calendar.ensureProposalThread, replan: calendar.replan, dismiss: calendar.dismiss,
+const threadCore = threadUsecases({ store, registry, run: runCapability, timers, clock, ids, calendar: { ensureProposalThread: calendar.ensureProposalThread, replan: calendar.replan, dismiss: calendar.dismiss,
   todayEvents: persona => calendar.readToday(persona).then(v => v.events.filter(e => !e.allDay).map(e => ({ title: e.title, end: e.end }))).catch(() => []) } });
+export const threads = { ...threadCore, ...cardDecisions({ read: threadCore.threadFor, registry, run: runCapability, approve: executions.approve, clock }) };
 export const reminders = reminderUsecases({ store, timers, clock });
 // A cited answer becomes a card (D26) through the search connector's propose; the stream owns the card, so the slot is filled here.
-answerCards.create = (actorId, input) => threads.cardFromAnswer({ id: actorId }, input);
+answerCards.create = async (actorId, input) => {
+  const persona = await systemContext(actorId, 'system:answer-card');
+  if (!persona) throw new Error('Person no longer authorized.');
+  return threads.cardFromAnswer(persona, input);
+};
 // The obligation's follow-up cards (D30) land in the invitee's stream like any pushed card.
 notifier.push = (personId, draft) => threads.pushDraft({ id: personId }, { ...draft, connector: 'calendar' }, 'assistant:obligation');
 export const mocks = mockUsecases({ store: postgresMockResetStore(), registry, clock, enabled: process.env.CLEW_POC === 'true' });
@@ -63,6 +72,12 @@ const connectorLive: LiveRegistration = { register: (source, manifest) => regist
 const sign = (secret: string, audience: string) => (actor: { id: string }) => new SignJWT({ actor }).setProtectedHeader({ alg: 'HS256', typ: 'JWT' }).setIssuer('clew').setAudience(audience).setSubject(actor.id).setIssuedAt().setExpirationTime('2m').sign(new TextEncoder().encode(secret));
 const connectorStore = postgresConnectorStore();
 export const connectorAdmin = connectorUsecases({ store: connectorStore, registry, secrets: connectorSecrets, live: connectorLive, units: postgresUnits(), clock,
-  transport: { fetchManifest: (url, id) => fetchManifest(url, id), check: ({ url, id, secret }) => checkConnector({ url, id, assert: assertionFor(id, secret), assertForeign: sign('wrong-secret-wrong-secret-' + id, id), acceptsEmptyInput }) } });
+  transport: { fetchManifest: (url, id) => fetchManifest(url, id), check: async ({ url, id, secret }) => {
+    const manifest = await fetchManifest(url, id);
+    return checkConnector({ url, id, key: secret, assert: assertionFor(id, manifest.uses), assertForeign: sign('wrong-secret-wrong-secret-' + id, id), acceptsEmptyInput });
+  } } });
 export const connectorReconcile: ConnectorReconcileDeps = { registry, store: connectorStore, secrets: connectorSecrets, live: connectorLive, bundled: bundledIds, clock, log: console.log };
+// Refresh from the authoritative rows, including across server instances, before releasing protected data.
+export const refreshConnectors = () => applyAllRows(connectorReconcile);
+registry.setRefresh(refreshConnectors);
 export const scheduler = createScheduler({ jobs: postgresJobQueue(), people: postgresPeople(), threads, calendar, clock, log: console.error });

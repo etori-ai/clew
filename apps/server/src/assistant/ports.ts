@@ -86,7 +86,7 @@ export interface ModelResolver {
 }
 export interface AssistantDeps {
   store: ThreadStore;
-  registry: Pick<Registry, 'tools' | 'areas' | 'list' | 'find' | 'allowed' | 'capabilitiesFor'>;
+  registry: Pick<Registry, 'tools' | 'areas' | 'list' | 'find' | 'allowed' | 'visible' | 'capabilitiesFor'>;
   run: <O = unknown>(persona: AuthenticatedContext, name: string, input: unknown) => Promise<O>;
   calendar: Pick<CalendarUsecases, 'listWeek' | 'readToday' | 'samtalStatus' | 'ensureProposalThread' | 'replan'>;
   models: ModelResolver;

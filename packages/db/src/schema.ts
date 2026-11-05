@@ -1,6 +1,6 @@
-import { pgTable, text, integer, jsonb, bigserial, boolean, timestamp, check, primaryKey, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, text, integer, bigint, jsonb, bigserial, boolean, timestamp, check, primaryKey, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
-import type { ConnectorAudience, ConnectorHealth, MessageMeta, ProviderHealth, Receipt, ThreadAction, ThreadItem } from '@clew/contracts';
+import type { ConnectorAudience, ConnectorHealth, ExecutionSummary, MessageMeta, ProviderHealth, Receipt, ThreadAction, ThreadItem } from '@clew/contracts';
 
 // Identity. Ported from startsidan: canonical person, explicit subject binding, server-side session with sealed tokens.
 export const people = pgTable('auth_person', {
@@ -41,6 +41,7 @@ export const logoutReceipts = pgTable('auth_logout_receipt', {
 
 // Threads: the only unit of attention on the page. One row per thread, messages and proposals hang off it.
 export const threads = pgTable('thread', {
+  execution: jsonb('execution').$type<ExecutionSummary | null>(),
   id: text('id').primaryKey(), personId: text('person_id').notNull().references(() => people.id),
   kind: text('kind').$type<'pushed' | 'question'>().notNull(), topic: text('topic').notNull(), title: text('title').notNull(),
   state: text('state').$type<'open' | 'handled' | 'dismissed'>().notNull().default('open'),
@@ -164,4 +165,36 @@ export const modelChoices = pgTable('model_choice', {
   // A removed model takes every pick of it along; the person falls back to the default.
   modelId: text('model_id').notNull().references(() => models.id, { onDelete: 'cascade' }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const connectorSigningKey = pgTable('connector_signing_key', {
+  id: text('id').primaryKey(), kid: text('kid').notNull(), sealed: text('sealed').notNull(),
+  previous: jsonb('previous').$type<Array<{ key: Record<string, unknown>; until: string }>>().notNull().default([]),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [check('connector_signing_singleton', sql`${t.id} = 'installation'`)]);
+
+// Approved intent is durable before dispatch. Payload/result contain source data and are sealed by the adapter.
+export const executions = pgTable('execution', {
+  presentation: jsonb('presentation').$type<{ threadId: string; version: string; actionId: string } | null>(),
+  id: text('id').primaryKey(), decisionId: text('decision_id').notNull(), personId: text('person_id').notNull().references(() => people.id),
+  principal: text('principal').notNull(), unitId: text('unit_id').notNull(), authorizationVersion: text('authorization_version').notNull(),
+  connector: text('connector').notNull(), operation: text('operation').notNull(), digest: text('digest').notNull(),
+  payload: text('payload').notNull(), safety: jsonb('safety').notNull(), result: text('result'), compensates: text('compensates'),
+  state: text('state').notNull().default('pending'), reason: text('reason'), attempt: integer('attempt').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(), dispatchedAt: timestamp('dispatched_at', { withTimezone: true }), leaseUntil: timestamp('lease_until', { withTimezone: true }),
+}, t => [uniqueIndex('execution_decision').on(t.personId, t.decisionId), index('execution_person').on(t.personId, t.createdAt),
+  check('execution_state', sql`${t.state} IN ('pending', 'running', 'succeeded', 'partial', 'failed', 'unknown')`)]);
+export const dispatchOutbox = pgTable('dispatch_outbox', {
+  id: text('id').primaryKey(), executionId: text('execution_id').notNull().references(() => executions.id),
+  attempt: integer('attempt').notNull().default(0), nextAt: timestamp('next_at', { withTimezone: true }).notNull(),
+  leaseUntil: timestamp('lease_until', { withTimezone: true }), deliveredAt: timestamp('delivered_at', { withTimezone: true }), lastError: text('last_error'),
+}, t => [index('dispatch_outbox_due').on(t.nextAt)]);
+
+// Transactional invalidation counters. They carry no source payload and are read by every BFF instance.
+export const personChanges = pgTable('person_change', {
+  personId: text('person_id').primaryKey(), content: bigint('content', { mode: 'number' }).notNull().default(0), policy: bigint('policy', { mode: 'number' }).notNull().default(0),
+});
+export const policyChanges = pgTable('policy_change', {
+  id: text('id').primaryKey(), revision: bigint('revision', { mode: 'number' }).notNull().default(0),
 });

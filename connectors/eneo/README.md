@@ -2,7 +2,7 @@
 
 Eneo's retrieval over the person's knowledge bases as a search source for Clew (D14, D26). Clew's composite search asks
 it beside every other source; the person sees Eneo's passages as citations and in the sources view, and nothing of the
-text is stored on Clew's side. The connector is one file and the Node runtime, in the same shape as `connectors/hello`.
+source document is indexed in Clew. The connector uses Node and the companion protocol 2 verifier, in the same service shape as [hello](../hello/README.md). Start with the [integrator guide](../../docs/guides/creating-a-connector.md) and [authorization](../../docs/guides/authorization.md).
 
 ## What it declares
 
@@ -44,15 +44,22 @@ rule (a year without a review) counts from the last change.
 ## Running it
 
 ```sh
-ENEO_SECRET=<16+ characters> ENEO_URL=https://eneo.example docker compose -f connectors/eneo/compose.yaml up eneo
-bun scripts/connector-check.ts http://127.0.0.1:4011 --secret <the secret>          # expects "denied" answers: it has no token
-docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts eneo http://host.docker.internal:4011 --secret <the secret> --enable
+docker exec -w /workspace -e CLEW_CONNECTOR_SECRET=local-docs-only-transport-key -e CLEW_URL=http://127.0.0.1:3000 -e ENEO_URL=https://eneo.example clew-app-1 node connectors/eneo/server.mjs
 ```
+
+Replace the example source URL with your Eneo URL. With that process running, use another terminal:
+
+```sh
+docker exec -w /workspace clew-app-1 bun scripts/connector-check.ts http://127.0.0.1:4011 --id eneo --secret local-docs-only-transport-key
+docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts eneo http://127.0.0.1:4011 --secret local-docs-only-transport-key
+```
+
+The live checker needs the installation database/master key and expects denied delegated reads because it has no session. The second command creates or updates a draft; configure audience and enable it in administration. The key above is for local development only. Validate the Eneo-side settings against the deployed Eneo version before enabling real access.
 
 `bun scripts/auth-setup.ts` creates the Keycloak client `eneo` and the scope `eneo-audience` that the exchange needs,
 and enables standard token exchange on `clew-web`. `bun scripts/auth-exchange-check.ts` logs in as `hillevi` and
 shows the exchanged token's claims through `eneo.whoami`.
 
-Environment: `CLEW_CONNECTOR_SECRET`, `ENEO_URL`, `PORT` (4011), `ENEO_COLLECTIONS_TTL_SECONDS` (300: how long a
+Environment: `CLEW_CONNECTOR_SECRET`, `CLEW_URL` (trusted Clew base URL for public signing keys), `ENEO_URL`, `PORT` (4011), `ENEO_COLLECTIONS_TTL_SECONDS` (300: how long a
 person's collection list and a document's title are remembered). The tests are `tests/unit/eneo-connector.test.ts`,
 against recorded Eneo answers.

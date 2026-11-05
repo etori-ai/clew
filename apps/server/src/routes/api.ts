@@ -14,8 +14,12 @@ import { InputError, protectedRoute, type Env } from '../context';
 import { readFigures } from '../modules/figures/domain';
 import { verbsFor } from '../assistant/verbs';
 import { registry, runCapability } from '../connectors/registry';
-import { assistant, calendar, events, mocks, models, reminders, threads } from '../composition';
+import { assistant, calendar, events, mocks, models, reminders, threads, refreshConnectors } from '../composition';
 import { Type } from '@sinclair/typebox';
+import { executions } from '../composition/executions';
+import { changesFor } from '../composition/changes';
+import { authenticate, AuthError, SESSION_COOKIE } from '../auth';
+import { getCookie } from 'hono/cookie';
 
 const { act, attentionFor, dismissAny, ensureThreads, listAreas, listThreadsFor, reopenThread, snoozeOptions, snoozeThread, threadFor, undoReceipt } = threads;
 const { cancelReminder, remind } = reminders;
@@ -23,6 +27,7 @@ const { confirm, readToday, replan, samtalStatus, undo, weekOverview } = calenda
 const { resetMocks } = mocks;
 const { ask, completionsFor, converse, listObjects, reply } = assistant;
 const ajv = addFormats(new Ajv({ allErrors: false }));
+const approval = ajv.compile(Type.Object({ decisionId: Type.String({ minLength: 1, maxLength: 200 }), operation: Type.String({ minLength: 1, maxLength: 80 }), payload: Type.Unknown(), compensates: Type.Optional(Type.String({ maxLength: 100 })) }, { additionalProperties: false }));
 const RemindInput = Type.Object({ seconds: Type.Integer({ minimum: 1, maximum: 30 * 86400 }) }, { additionalProperties: false });
 const CancelReminderInput = Type.Object({ workflowId: Type.String({ minLength: 1, maxLength: 200 }) }, { additionalProperties: false });
 const validators = { remind: ajv.compile(RemindInput), snooze: ajv.compile(SnoozeInput), cancelReminder: ajv.compile(CancelReminderInput), ask: ajv.compile(AskInput), reply: ajv.compile(ReplyInput), confirm: ajv.compile(ConfirmInput), replan: ajv.compile(ReplanInput), act: ajv.compile(ActInput), conversation: ajv.compile(ConversationInput),
@@ -37,6 +42,46 @@ async function body<T>(request: Request, validate: (value: unknown) => value is 
 
 export const api = new Hono<Env>();
 api.use('*', protectedRoute());
+api.use('*', async (_c, next) => { await refreshConnectors(); await next(); });
+/** Payload-free, authenticated invalidation. Browser reads stay in TanStack Query; no browser polling. */
+api.get('/changes', c => streamSSE(c, async stream => {
+  const cookie = getCookie(c, SESSION_COOKIE);
+  let previous = '', heartbeat = 0, stopped = false;
+  stream.onAbort(() => { stopped = true; });
+  while (!stopped) {
+    try {
+      const session = await authenticate(cookie);
+      const change = await changesFor(session.context.id);
+      const value = JSON.stringify(change);
+      if (value !== previous) { await stream.writeSSE({ data: value, id: change.policy + ':' + change.revision, retry: 5000 }); previous = value; }
+      else if (++heartbeat % 8 === 0) await stream.write(': keepalive\n\n');
+    } catch (error) {
+      // A database/network outage closes the stream so EventSource reconnects.
+      // Only an explicit session denial should send the person back to login.
+      if (error instanceof AuthError && (error.status === 401 || error.status === 403))
+        await stream.writeSSE({ data: JSON.stringify({ ended: true }) });
+      break;
+    }
+    await stream.sleep(2000);
+  }
+}));
+/** Human approval is deliberately separate from capabilities and model tools. */
+api.post('/executions', async c => c.json(await executions.approve(c.get('session').context, await body(c.req.raw, approval)), 202));
+api.get('/executions/:id', async c => {
+  const execution = await executions.read(c.get('session').context, c.req.param('id'));
+  return execution ? c.json(execution) : c.json({ error: 'Åtgärden finns inte.' }, 404);
+});
+api.post('/executions/:id/reconcile', async c => c.json(await executions.reconcile(c.get('session').context, c.req.param('id')), 202));
+// Legacy calendar endpoints have the same connector audience as its capabilities.
+api.use('*', async (c, next) => {
+  const path = c.req.path;
+  if (/^\/api\/(calendar(?:\/|$)|today$)/.test(path) && !registry.visible(c.get('session').context, 'calendar')) return c.json({ error: 'Okänd förmåga.' }, 404);
+  await next();
+});
+api.use('/threads/:id/*', async (c, next) => {
+  if (!await threadFor(c.get('session').context, c.req.param('id')!)) return c.json({ error: 'Tråden finns inte.' }, 404);
+  await next();
+});
 api.get('/threads', async c => {
   const persona = c.get('session').context;
   await ensureThreads(persona, 'Första besöket i dag');
@@ -62,12 +107,19 @@ api.get('/cap/:name', async c => {
 });
 api.post('/cap/:name', async c => {
   const name = c.req.param('name'); const found = registry.find(name);
-  if (!found) return c.json({ error: 'Okänd förmåga.' }, 404);
+  if (!found || found.capability.kind === 'execute') return c.json({ error: 'Okänd förmåga.' }, 404);
   const text = await c.req.raw.text(); if (text.length > 8000) throw new InputError('För stor förfrågan.');
   let input: unknown = {}; try { input = text ? JSON.parse(text) : {}; } catch { throw new InputError('Ogiltig förfrågan.'); }
   return c.json({ output: await runCapability(c.get('session').context, name, input) });
 });
 api.post('/threads/:id/act', async c => { const input = await body(c.req.raw, validators.act as unknown as (value: unknown) => value is ActInputType); return c.json(await act(c.get('session').context, c.req.param('id'), input.actionId, input.refs)); });
+api.post('/threads/:id/execution/check', async c => {
+  const persona = c.get('session').context, id = c.req.param('id');
+  const thread = await threadFor(persona, id);
+  if (!thread) return c.json({ error: 'Tråden finns inte.' }, 404);
+  if (thread.execution && (thread.execution.state === 'unknown' || thread.execution.reason)) await executions.reconcile(persona, thread.execution.id);
+  return c.json(await threadFor(persona, id));
+});
 api.post('/mocks/reset', async c => { await resetMocks(c.get('session').context); return c.json({ ok: true }); });
 api.post('/threads/:id/undo-receipt', async c => c.json(await undoReceipt(c.get('session').context, c.req.param('id'))));
 /** Inte nu (D29): a preset, free text or an instant in the body; an empty body means the next review. */
@@ -130,7 +182,12 @@ api.post('/threads/:id/reopen', async c => c.json(await reopenThread(c.get('sess
 /** The manager's own follow-up (D30): a card to everyone who has not answered, at any time. */
 api.post('/threads/:id/remind-invitees', async c => c.json(await calendar.remindInvitees(c.req.param('id'), c.get('session').context)));
 api.get('/today', async c => c.json(await readToday(c.get('session').context)));
-api.get('/figures', async c => { const persona = c.get('session').context; return c.json({ figures: readFigures(persona, await samtalStatus(persona), new Date().toISOString()) }); });
+api.get('/figures', async c => {
+  const persona = c.get('session').context;
+  const owners: Record<string, string> = { korttidsfranvaro: 'heroma', budgetavvikelse: 'raindance', hme: 'heroma', utvecklingssamtal: 'calendar' };
+  const samtal = registry.visible(persona, 'calendar') ? await samtalStatus(persona) : { held: 0, booked: 0, deadline: '' };
+  return c.json({ figures: readFigures(persona, samtal, new Date().toISOString()).filter(figure => !!owners[figure.id] && registry.visible(persona, owners[figure.id]!)) });
+});
 api.get('/calendar', async c => c.json(await weekOverview(c.get('session').context, c.req.query('from'))));
 /** A person's own bookings (D28): members and rooms for the form, a free-busy check, create, move and cancel; a proposal moved by drag or keyboard. */
 api.get('/calendar/members', async c => c.json({ members: await events.listMembers(c.get('session').context) }));

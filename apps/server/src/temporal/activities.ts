@@ -1,5 +1,7 @@
 import type { ReminderInput } from '../threads/model';
 import { calendar, reminders } from '../composition';
+import { executions } from '../composition/executions';
+export const progressExecution = (id: string) => executions.progress(id);
 
 /**
  * Activities run in Node with the live adapters. Each one is a use case from the composition root (D25): the

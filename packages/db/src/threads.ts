@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, or } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, not, or } from 'drizzle-orm';
 import type { MessageMeta, Proposal, Thread, ThreadMessage } from '@clew/contracts';
 import { database, type Transaction } from './index';
 import { audit, proposals, threadMessages, threads } from './schema';
@@ -12,14 +12,19 @@ export const toProposal = (row: ProposalRow): Proposal => ({ id: row.id, threadI
 const toMessage = (row: MessageRow): ThreadMessage => ({ id: row.id, role: row.role, body: row.body, createdAt: row.createdAt.toISOString(), ...(row.meta ? { meta: row.meta } : {}) });
 export function toThread(row: ThreadRow, messages: MessageRow[], proposalRows: ProposalRow[]): Thread {
   return { id: row.id, kind: row.kind, topic: row.topic, title: row.title, state: row.state, trigger: row.trigger, week: row.week,
-    connector: row.connector, area: row.area, summary: row.summary, items: row.items, actions: row.actions, waitingOn: row.waitingOn, deadline: row.deadline, receipt: row.receipt ?? null,
+    connector: row.connector, area: row.area, summary: row.summary, items: row.items, actions: row.actions, waitingOn: row.waitingOn, deadline: row.deadline, receipt: row.receipt ?? null, ...(row.execution ? { execution: row.execution } : {}),
     createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(), handledAt: iso(row.handledAt), remindedAt: iso(row.remindedAt), snoozedUntil: iso(row.snoozedUntil),
     messages: messages.map(toMessage), proposals: proposalRows.filter(p => p.status !== 'superseded').map(toProposal) };
 }
-/** Open threads plus what was handled in the last seven days, newest first. */
-export async function listThreads(personId: string): Promise<Thread[]> {
-  const since = new Date(Date.now() - 7 * 86400_000);
-  const rows = await database().select().from(threads).where(and(eq(threads.personId, personId), or(eq(threads.state, 'open'), gte(threads.updatedAt, since)))).orderBy(desc(threads.createdAt)).limit(50);
+/** Every unresolved work card plus bounded conversation/handled history. History can never displace work. */
+export async function listThreads(personId: string, now = new Date()): Promise<Thread[]> {
+  const since = new Date(now.getTime() - 7 * 86400_000);
+  const unresolved = and(eq(threads.kind, 'pushed'), eq(threads.state, 'open'))!;
+  const [work, history] = await Promise.all([
+    database().select().from(threads).where(and(eq(threads.personId, personId), unresolved)).orderBy(desc(threads.createdAt)),
+    database().select().from(threads).where(and(eq(threads.personId, personId), not(unresolved), or(eq(threads.state, 'open'), gte(threads.updatedAt, since)))).orderBy(desc(threads.createdAt)).limit(50),
+  ]);
+  const rows = [...work, ...history].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   if (!rows.length) return [];
   const ids = rows.map(r => r.id);
   const [messages, proposalRows] = await Promise.all([

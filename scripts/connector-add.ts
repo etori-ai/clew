@@ -1,5 +1,5 @@
 /**
- * Register a connector in the database (D23) from the command line, until the admin page exists. Runs inside the app
+ * Register a connector in the database (D23) from the command line, as an alternative to administration. Runs inside the app
  * container with the server's local settings (MASTER_KEY, DATABASE_URL). Fetches the manifest, runs the same validation
  * the loader does, seals the secret and writes the row and its audit row in one transaction. The BFF registers enabled
  * rows at boot and watches the rows every few seconds, so a change here reaches it without a restart.

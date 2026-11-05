@@ -1,9 +1,9 @@
 # telefonbok: the organisation's phone book as a Clew connector
 
 A pass-through connector with reads only. It is the reference for two things in the connector protocol
-(`docs/architecture/connector-protocol.md`): a **search source for people** (D26) and **declared views** (D38), where
+([protocol reference](../../docs/reference/connector-protocol.md)): a **search source for people** (D26) and **declared views** (D38), where
 the connector says what its output holds and Clew draws it. The walkthrough is
-`docs/guides/example-custom-directory.md`. No dependencies beyond Node; nothing here imports the rest of the repository.
+[the integrator walkthrough](../../docs/guides/example-custom-directory.md). No dependencies beyond Node; nothing here imports the rest of the repository.
 
 | File | Holds |
 |---|---|
@@ -32,6 +32,7 @@ team" for the team list. Everything works without a model. With a model, the vie
 | Variable | Meaning |
 |---|---|
 | `CLEW_CONNECTOR_SECRET` | The secret shared with Clew, 16 characters or more. Required |
+| `CLEW_URL` | Trusted Clew base URL, used to fetch `/api/connectors/jwks` for protocol 2 verification. Required; HTTPS outside the explicit local development allowlist |
 | `PORT` | Default 4020 |
 | `TELEFONBOK_ADAPTER` | `fixture` (default, the made-up organisation) or `http` |
 | `TELEFONBOK_URL`, `TELEFONBOK_API_KEY` | The phone book API and its integration key, for `http`. The key comes from a secrets store and stays in this container; Clew never sees it |
@@ -61,18 +62,12 @@ number) are not mapped, so they cannot cross.
 
 ## Run and check
 
-```sh
-TELEFONBOK_SECRET=<16+ characters> docker compose -f connectors/telefonbok/compose.yaml up telefonbok
-docker exec -w /workspace clew-app-1 bun scripts/connector-check.ts http://host.docker.internal:4020 --id telefonbok --secret <the secret>
-docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts telefonbok http://host.docker.internal:4020 --secret <the secret> --enable
-```
+Follow [the runnable walkthrough](../../docs/guides/example-custom-directory.md#run-the-fixture-as-a-service) for the service, checker and draft registration commands. Both the transport secret and a valid RS256 assertion are required on every POST; the secret cannot sign identity. The connector uses the verified actor, never the request body's identity. [Authorization](../../docs/guides/authorization.md) explains source access and key rotation.
 
-Inside the devcontainer (a terminal in VS Code) there is no Compose step: the connector is plain Node, and Clew
-reaches it on the same host.
+For a check without any running Clew services:
 
 ```sh
-CLEW_CONNECTOR_SECRET=<16+ characters> node connectors/telefonbok/server.mjs
-bun scripts/connector-add.ts telefonbok http://127.0.0.1:4020 --secret <the secret> --enable
+docker exec -w /workspace clew-app-1 bun run docs:smoke
 ```
 
 After a change to the manifest, restart the connector and press "Hämta manifest igen" on its page in Administration.

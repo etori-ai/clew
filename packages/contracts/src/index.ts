@@ -225,7 +225,7 @@ export type SearchSource = Static<typeof SearchSourceSchema>;
 /** What the composite `clew.search` returns: merged hits, each marked stale or not (null when the source gives no date), and every source's status. */
 export const SearchResultSchema = object({
   /** `view` is the read that shows this hit in the panel, when its source declares one (D38): a person's contact card, a case. */
-  rows: Type.Array(Type.Intersect([SearchHitSchema, object({ stale: Type.Union([Type.Boolean(), Type.Null()]), connector: Type.String(), view: Type.Optional(ViewRefSchema) })])),
+  rows: Type.Array(object({ ...SearchHitSchema.properties, stale: Type.Union([Type.Boolean(), Type.Null()]), connector: Type.String(), view: Type.Optional(ViewRefSchema) })),
   sources: Type.Array(SearchSourceSchema),
 });
 export type SearchResult = Static<typeof SearchResultSchema>;
@@ -244,6 +244,7 @@ export const VerbSchema = object({
 export type Verb = Static<typeof VerbSchema>;
 /** Per-message memory of a conversation: what was pointed at, what came back, and how it was produced. */
 export const MessageMetaSchema = object({
+  access: Type.Optional(object({ connectors: Type.Array(Type.String()), capabilities: Type.Array(Type.String()), authorizationVersion: Type.Optional(Type.String()) })),
   chips: Type.Optional(Type.Array(ChipSchema)), refs: Type.Optional(Type.Array(Type.String())),
   shape: Type.Optional(AnswerShape), view: Type.Optional(ViewRefSchema), draft: Type.Optional(DraftSchema),
   toolCalls: Type.Optional(Type.Array(object({ capability: Type.String(), input: Type.Unknown() }))),
@@ -289,12 +290,14 @@ export const ReceiptRowSchema = object({
   outcome: Type.Union([Type.Literal('done'), Type.Literal('unknown'), Type.Literal('failed'), Type.Literal('skipped')]),
   detail: Type.String(),
 });
-export const ReceiptSchema = object({ at: instant, headline: Type.String(), rows: Type.Array(ReceiptRowSchema), undoUntil: Type.Union([instant, Type.Null()]), undoCapability: Type.Union([Type.String(), Type.Null()]) });
+export const ReceiptSchema = object({ at: instant, headline: Type.String(), rows: Type.Array(ReceiptRowSchema), undoUntil: Type.Union([instant, Type.Null()]), undoCapability: Type.Union([Type.String(), Type.Null()]), undoInput: Type.Optional(Type.Record(Type.String(), Type.Unknown())) });
 export type Receipt = Static<typeof ReceiptSchema>;
 export type ReceiptRow = Static<typeof ReceiptRowSchema>;
 
 export const ThreadKind = Type.Union([Type.Literal('pushed'), Type.Literal('question')]);
 export const ThreadState = Type.Union([Type.Literal('open'), Type.Literal('handled'), Type.Literal('dismissed')]);
+export const ExecutionSummarySchema = object({ id, decisionId: Type.String(), operation: Type.String(), state: Type.Union([Type.Literal('pending'), Type.Literal('running'), Type.Literal('succeeded'), Type.Literal('partial'), Type.Literal('failed'), Type.Literal('unknown')]), reason: Type.Union([Type.String(), Type.Null()]), compensates: Type.Union([Type.String(), Type.Null()]) });
+export type ExecutionSummary = Static<typeof ExecutionSummarySchema>;
 /** Every thread answers "varför ser jag detta?" with trigger, source and time. */
 export const ThreadSchema = object({
   id: id, kind: ThreadKind, topic: Type.String(), title: Type.String(), state: ThreadState,
@@ -314,6 +317,7 @@ export const ThreadSchema = object({
   waitingOn: Type.Union([Type.String(), Type.Null()]),
   deadline: Type.Union([Type.String(), Type.Null()]),
   receipt: Type.Union([ReceiptSchema, Type.Null()]),
+  execution: Type.Optional(Type.Union([ExecutionSummarySchema, Type.Null()])),
   /** When a reminder the person set brought the card back (D17). Counts for that day: the card sorts first, marked "Påminnelse". */
   remindedAt: Type.Union([instant, Type.Null()]),
   /** "Inte nu" (D28): the card sits in the Inte nu pile until this instant, or until something happens in the thread. */

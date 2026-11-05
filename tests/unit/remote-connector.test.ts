@@ -1,10 +1,13 @@
+import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import { SignJWT } from 'jose';
-import { Registry, type Actor } from '../../packages/connectors/src/index';
+import { type Actor } from '../../packages/connectors/src/index';
 import { protocolSchema } from '../../packages/connectors/src/protocol';
 import { ManifestError, fetchManifest, parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { createConnector, manifest as helloManifest } from '../../connectors/hello/connector.mjs';
-import { assertionFor, loadConnectors, verifyAssertion } from '../../apps/server/src/connectors/remote';
+import { loadConnectors } from '../../apps/server/src/connectors/remote';
+import { assertionFor, testJwks, testAuthority } from '../connector-authority';
+import { decodeJwt } from 'jose';
 import { checkConnector } from '../../packages/connectors/src/check';
 import type { ConnectorHealth } from '../../packages/db/src/schema';
 
@@ -19,10 +22,10 @@ function stack() {
     clewCalls.push({ url: String(input), auth: new Headers(init?.headers).get('authorization')?.slice(0, 7), body: JSON.parse(String(init?.body)) });
     return Response.json({ output: { date: '2026-11-04', events: [{ allDay: false }, { allDay: true }, { allDay: false }], gaps: [] } });
   };
-  const hello = createConnector({ secret, clewUrl: 'http://clew', fetch: clewFetch });
+  const hello = createConnector({ jwks: testJwks, secret, clewUrl: 'http://clew', fetch: clewFetch });
   const connectorFetch: FetchLike = (input, init) => hello.handle(new Request(input, init));
   const registry = new Registry();
-  return { registry, connectorFetch, clewCalls, load: async () => registry.register(remoteConnector(await fetchManifest('http://hello', 'hello', connectorFetch), { url: 'http://hello', assert: assertionFor('hello', secret), fetch: connectorFetch })) };
+  return { registry, connectorFetch, clewCalls, load: async () => registry.register(remoteConnector(await fetchManifest('http://hello', 'hello', connectorFetch), { url: 'http://hello', key: secret, assert: assertionFor('hello', secret), fetch: connectorFetch })) };
 }
 
 describe('connector protocol', () => {
@@ -42,7 +45,7 @@ describe('connector protocol', () => {
     expect(() => parseManifest(withIcon('rocket'), 'hello')).toThrow(/Invalid connector manifest/);
     // The loaded connector hands it to the registry, which hands it to the person's areas.
     const registry = new Registry();
-    registry.register(remoteConnector(parseManifest(withIcon('bell'), 'hello'), { url: 'http://hello', assert: async () => 'x', fetch: async () => Response.json({ figure: null }) }));
+    registry.register(remoteConnector(parseManifest(withIcon('bell'), 'hello'), { url: 'http://hello', key: secret, assert: async () => 'x', fetch: async () => Response.json({ figure: null }) }));
     expect((await registry.areas({ id: 'p1', name: 'Testa Testsson', unitId: 'u1', unitLabel: 'Enhet', role: 'manager' })).map(a => a.icon)).toEqual(['bell']);
   });
 });
@@ -76,12 +79,12 @@ describe('a remote connector in the registry', () => {
   });
   test('refuses a call signed with another secret, on the connector side', async () => {
     const { registry, connectorFetch } = stack();
-    registry.register(remoteConnector(parseManifest(helloManifest), { url: 'http://hello', assert: assertionFor('hello', 'another-secret-another'), fetch: connectorFetch }));
+    registry.register(remoteConnector(parseManifest(helloManifest), { url: 'http://hello', key: secret, assert: assertionFor('hello', 'another-secret-another'), fetch: connectorFetch }));
     await expect(registry.run(hassan, 'hello.greeting', {})).rejects.toThrow(/Ogiltigt behörighetsbevis/);
   });
   test('a connector that is down degrades to a Swedish unavailable error and a warning figure', async () => {
     const down: FetchLike = async () => { throw new Error('ECONNREFUSED'); };
-    const registry = new Registry().register(remoteConnector(parseManifest(helloManifest), { url: 'http://hello', assert: assertionFor('hello', secret), fetch: down }));
+    const registry = new Registry().register(remoteConnector(parseManifest(helloManifest), { url: 'http://hello', key: secret, assert: assertionFor('hello', secret), fetch: down }));
     await expect(registry.run(hassan, 'hello.greeting', {})).rejects.toThrow('Hello svarar inte just nu.');
     expect((await registry.areas(hillevi))[0]?.figure).toEqual({ label: 'Hello svarar inte', tone: 'warn' });
   });
@@ -91,7 +94,7 @@ describe('a user-delegated connector (D26)', () => {
   const delegating = { ...(helloManifest as object), delegation: { audience: 'eneo' } };
   /** Hello in-process, with every request's headers recorded; a variant that refuses a call without the person's token. */
   function delegated(options: { requireToken?: boolean } = {}) {
-    const hello = createConnector({ secret, clewUrl: 'http://clew', fetch: async () => Response.json({ output: { date: '2026-11-04', events: [], gaps: [] } }) });
+    const hello = createConnector({ jwks: testJwks, secret, clewUrl: 'http://clew', fetch: async () => Response.json({ output: { date: '2026-11-04', events: [], gaps: [] } }) });
     const headers: Record<string, string | null>[] = [];
     const connectorFetch: FetchLike = (input, init) => {
       const h = new Headers(init?.headers);
@@ -100,7 +103,7 @@ describe('a user-delegated connector (D26)', () => {
       return hello.handle(new Request(input, init));
     };
     const registry = new Registry();
-    registry.register(remoteConnector(parseManifest(delegating, 'hello'), { url: 'http://hello', assert: assertionFor('hello', secret), fetch: connectorFetch }));
+    registry.register(remoteConnector(parseManifest(delegating, 'hello'), { url: 'http://hello', key: secret, assert: assertionFor('hello', secret), fetch: connectorFetch }));
     return { registry, headers };
   }
   test('the token travels beside the assertion, only when the manifest asks and the session has one; the body is unchanged', async () => {
@@ -115,7 +118,7 @@ describe('a user-delegated connector (D26)', () => {
     await registry.run(hassan, 'hello.greeting', {}, { delegate: async () => undefined });
     expect(headers.at(-1)!.delegated).toBeNull();
     // The plain manifest in the same registry never invokes the delegate.
-    const plain = new Registry().register(remoteConnector(parseManifest(helloManifest, 'hello'), { url: 'http://hello', assert: assertionFor('hello', secret), fetch: (i, init) => createConnector({ secret }).handle(new Request(i, init)) }));
+    const plain = new Registry().register(remoteConnector(parseManifest(helloManifest, 'hello'), { url: 'http://hello', key: secret, assert: assertionFor('hello', secret), fetch: (i, init) => createConnector({ jwks: testJwks, secret }).handle(new Request(i, init)) }));
     let invoked = false;
     await plain.run(hassan, 'hello.greeting', {}, { delegate: async () => { invoked = true; return 'x'; } });
     expect(invoked).toBe(false);
@@ -142,20 +145,22 @@ describe('a user-delegated connector (D26)', () => {
 });
 
 describe('assertions and configuration', () => {
-  test('an assertion is accepted only by Clew for the connector it was issued to', async () => {
-    const token = await assertionFor('hello', secret)(hillevi);
-    expect(await verifyAssertion(token, id => (id === 'hello' ? secret : undefined))).toEqual({ connectorId: 'hello', actor: hillevi });
-    await expect(verifyAssertion(token, () => 'wrong-secret-wrong-secret')).rejects.toThrow(/Invalid assertion/);
-    await expect(verifyAssertion(token, () => undefined)).rejects.toThrow(/Unknown connector/);
-    const foreign = await new SignJWT({ actor: hillevi }).setProtectedHeader({ alg: 'HS256' }).setIssuer('someone').setAudience('hello').setSubject('hillevi').setExpirationTime('2m').sign(new TextEncoder().encode(secret));
-    await expect(verifyAssertion(foreign, () => secret)).rejects.toThrow(/Invalid assertion/);
-    await expect(verifyAssertion('nonsense', () => secret)).rejects.toThrow(/Malformed/);
+  test('only a Clew-signed callback grant is accepted; a request assertion or shared-secret forgery cannot call back', async () => {
+    const authority = await testAuthority();
+    const token = await authority.assert('hello', hillevi, ['calendar.today']);
+    const callback = decodeJwt(token).callback as string;
+    expect(await authority.verify(callback)).toMatchObject({ connectorId: 'hello', actor: hillevi, uses: ['calendar.today'] });
+    await expect(authority.verify(token)).rejects.toThrow(/Invalid callback/);
+    await expect((await testAuthority('other')).verify(callback)).rejects.toThrow(/Invalid callback/);
+    const forged = await new SignJWT({ actor: hillevi, connectorId: 'hello', uses: ['calendar.today'], chain: [] }).setProtectedHeader({ alg: 'HS256' }).setIssuer('clew').setAudience('clew:connector-callback').setSubject('hillevi').setExpirationTime('2m').sign(new TextEncoder().encode(secret));
+    await expect(authority.verify(forged)).rejects.toThrow(/Invalid callback/);
+    await expect(authority.verify('nonsense')).rejects.toThrow(/Invalid callback/);
   });
   test('the loader registers enabled rows, refreshes the manifest and records health', async () => {
     const { registry, connectorFetch } = stack();
     const health: Array<[string, ConnectorHealth['status'], boolean]> = [];
     const record = async (id: string, h: ConnectorHealth, manifest?: unknown) => { health.push([id, h.status, manifest !== undefined]); };
-    const loaded = await loadConnectors(registry, { rows: async () => [{ id: 'hello', url: 'http://hello', secret, manifest: null }], record, fetch: connectorFetch, attempts: 1, log: () => undefined });
+    const loaded = await loadConnectors(registry, { authority: await testAuthority(), rows: async () => [{ id: 'hello', url: 'http://hello', secret, manifest: null }], record, fetch: connectorFetch, attempts: 1, log: () => undefined });
     expect(loaded).toEqual(['hello']);
     expect(health).toEqual([['hello', 'ok', true]]);
     expect(registry.connector('hello')?.source).toBe('Hello');
@@ -165,7 +170,7 @@ describe('assertions and configuration', () => {
     const registry = new Registry();
     const health: ConnectorHealth[] = [];
     const down: FetchLike = async () => { throw new Error('ECONNREFUSED'); };
-    const loaded = await loadConnectors(registry, { rows: async () => [{ id: 'hello', url: 'http://hello', secret, manifest: helloManifest }], record: async (_id, h) => { health.push(h); }, fetch: down, attempts: 2, delayMs: 1, log: () => undefined });
+    const loaded = await loadConnectors(registry, { authority: await testAuthority(), rows: async () => [{ id: 'hello', url: 'http://hello', secret, manifest: helloManifest }], record: async (_id, h) => { health.push(h); }, fetch: down, attempts: 2, delayMs: 1, log: () => undefined });
     expect(loaded).toEqual([]);
     expect(health.map(h => h.status)).toEqual(['unreachable']);
     expect((await registry.areas(hillevi))[0]?.figure).toEqual({ label: 'Hello svarar inte', tone: 'warn' });
@@ -175,7 +180,7 @@ describe('assertions and configuration', () => {
     const registry = new Registry();
     const health: ConnectorHealth[] = [];
     const bad: FetchLike = async () => Response.json({ protocol: 2 });
-    await loadConnectors(registry, { rows: async () => [{ id: 'hello', url: 'http://hello', secret, manifest: null }], record: async (_id, h) => { health.push(h); }, fetch: bad, attempts: 5, log: () => undefined });
+    await loadConnectors(registry, { authority: await testAuthority(), rows: async () => [{ id: 'hello', url: 'http://hello', secret, manifest: null }], record: async (_id, h) => { health.push(h); }, fetch: bad, attempts: 5, log: () => undefined });
     expect(health.map(h => h.status)).toEqual(['manifest-invalid']);
     expect(registry.connector('hello')).toBeUndefined();
   });
@@ -183,7 +188,7 @@ describe('assertions and configuration', () => {
 
 describe('connector-check holds a scan to the card-action rule (D35)', () => {
   test('a draft whose button names another connector\'s capability fails the check, and the untouched service passes it', async () => {
-    const hello = createConnector({ secret, clewUrl: 'http://clew', fetch: async () => Response.json({ output: { date: '2026-11-04', events: [], gaps: [] } }) });
+    const hello = createConnector({ jwks: testJwks, secret, clewUrl: 'http://clew', fetch: async () => Response.json({ output: { date: '2026-11-04', events: [], gaps: [] } }) });
     const honest: FetchLike = (input, init) => hello.handle(new Request(input, init));
     const tampered: FetchLike = async (input, init) => {
       const answer = await honest(input, init);
@@ -191,7 +196,7 @@ describe('connector-check holds a scan to the card-action rule (D35)', () => {
       const body = await answer.json() as { drafts: Array<{ actions: Array<{ capability: string }> }> };
       return Response.json({ drafts: body.drafts.map(d => ({ ...d, actions: d.actions.map(a => ({ ...a, capability: 'raindance.approve' })) })) });
     };
-    const check = (fetch: FetchLike) => checkConnector({ url: 'http://hello', id: 'hello', assert: assertionFor('hello', secret), assertForeign: assertionFor('hello', 'another-secret-another'), fetch });
+    const check = (fetch: FetchLike) => checkConnector({ key: secret, url: 'http://hello', id: 'hello', assert: assertionFor('hello', secret), assertForeign: assertionFor('hello', 'another-secret-another'), fetch });
     const failures = (report: Awaited<ReturnType<typeof check>>) => report.findings.filter(f => f.level === 'fail').map(f => f.text);
     expect(failures(await check(honest))).toEqual([]);
     const report = await check(tampered);

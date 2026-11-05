@@ -1,7 +1,7 @@
-import { createHmac } from 'node:crypto';
 import type { MenuEntry, MenuHint, PanelViewSpec, SearchResult, View } from '@clew/contracts';
 import { createConnector, manifest } from '../../connectors/telefonbok/connector.mjs';
 import { user } from './data';
+import { assertionFor, testAuthority } from '../connector-authority';
 
 /**
  * The phone book connector itself (D38), answering the mocked `/api/cap/telefonbok.*` the way Clew's server would: the
@@ -9,15 +9,11 @@ import { user } from './data';
  * supplies the view. So the suite draws what the connector really declares, not a copy of it.
  */
 const secret = 'a11y-secret-a11y-secret';
-const service = createConnector({ secret });
+const service = createConnector({ secret, jwks: async () => (await testAuthority(secret)).jwks });
 const capabilities = (manifest as { capabilities: Array<{ name: string; view?: View }> }).capabilities;
-const part = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
-function assertion() {
-  const body = `${part({ alg: 'HS256', typ: 'JWT' })}.${part({ iss: 'clew', aud: 'telefonbok', sub: user.id, actor: user, exp: Math.floor(Date.now() / 1000) + 120 })}`;
-  return `${body}.${createHmac('sha256', secret).update(body).digest('base64url')}`;
-}
+const assertion = assertionFor('telefonbok', secret);
 export async function telefonbok(name: string, input: unknown): Promise<{ status: number; body: { output: unknown; view?: PanelViewSpec } | { error: string } }> {
-  const response = await service.handle(new Request(`http://telefonbok/clew/capabilities/${name}`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + assertion() }, body: JSON.stringify({ actor: user, input }) }));
+  const response = await service.handle(new Request(`http://telefonbok/clew/capabilities/${name}`, { method: 'POST', headers: { 'content-type': 'application/json', 'X-Clew-Connector-Key': secret, authorization: 'Bearer ' + await assertion(user) }, body: JSON.stringify({ actor: user, input }) }));
   const answer = await response.json() as { output?: unknown; error?: { message: string } };
   if (answer.error) return { status: 400, body: { error: answer.error.message } };
   const view = capabilities.find(c => c.name === name)?.view;

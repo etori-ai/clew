@@ -1,5 +1,8 @@
 # Scheduled work: the Postgres scheduler now, Temporal later
 
+> **Reading status:** Historical scheduler design. Temporal was adopted by D17 and runs alongside legacy PostgreSQL jobs. The “Temporal later” language below records the earlier evaluation, not the current runtime. See [implementation status](../reference/status.md) and the [current protocol](../reference/connector-protocol.md).
+
+
 What runs on a timer in Clew, how the v1 scheduler works, what it cannot do, and the conditions under
 which Temporal replaces it. Decided 2026-11-03 (D15). Written 2026-11-04 against the code as it is.
 

@@ -17,6 +17,7 @@ export function memoryThreadStore(): MemoryThreadStore {
   let audit: AuditEntry[] = [];
   let jobs: JobInput[] = [];
   let messageSequence = 0;
+  let transactions = Promise.resolve();
   const copy = <T>(value: T): T => structuredClone(value);
   const own = (personId: string, id: string) => { const row = threads.get(id); return row && row.personId === personId ? row : undefined; };
   const tx: ThreadTx = {
@@ -48,8 +49,10 @@ export function memoryThreadStore(): MemoryThreadStore {
     dump: () => [...threads.values()].map(copy),
     async listThreads(personId, now) {
       const since = Date.parse(now) - 7 * 86400_000;
-      return [...threads.values()].filter(r => r.personId === personId && (r.thread.state === 'open' || Date.parse(r.thread.updatedAt) >= since))
-        .sort((a, b) => Date.parse(b.thread.createdAt) - Date.parse(a.thread.createdAt)).slice(0, 50).map(r => copy(r.thread));
+      const visible = [...threads.values()].filter(r => r.personId === personId && (r.thread.state === 'open' || Date.parse(r.thread.updatedAt) >= since))
+        .sort((a, b) => Date.parse(b.thread.createdAt) - Date.parse(a.thread.createdAt));
+      let history = 0;
+      return visible.filter(r => (r.thread.kind === 'pushed' && r.thread.state === 'open') || history++ < 50).map(r => copy(r.thread));
     },
     async readThread(personId, id) { const row = own(personId, id); return row ? copy(row.thread) : undefined; },
     async readThreadById(id) { const row = threads.get(id); return row ? copy(row.thread) : undefined; },
@@ -58,9 +61,14 @@ export function memoryThreadStore(): MemoryThreadStore {
       return row ? copy(row.thread) : undefined;
     },
     async transaction(fn) {
+      const previous = transactions;
+      let release!: () => void;
+      transactions = new Promise<void>(resolve => { release = resolve; });
+      await previous;
       const snapshot = { threads: copy(threads), audit: copy(audit), jobs: copy(jobs) };
       try { return await fn(tx); }
       catch (error) { threads = snapshot.threads; audit = snapshot.audit; jobs = snapshot.jobs; throw error; }
+      finally { release(); }
     },
   };
   return store;

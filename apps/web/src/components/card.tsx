@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { attentionLevel, dayWord, daysUntil, isSnoozed, parseSwedishTime, snoozeWhen, streamGroup, type AttentionLevel, type SnoozeInput, type SnoozePreset, type Thread, type ThreadAction } from '@clew/contracts';
-import { Badge, Button, Card, CheckboxList, CheckboxListItem, Collapsible, Dialog, DialogHeader, DropdownMenu, Heading, HStack, Icon, List, ListItem, MoreMenu, StatusDot, Text, TextInput, Timestamp, Token, VStack, useToast } from '@clew/ui';
+import { Badge, Button, Card, CheckboxList, CheckboxListItem, Collapsible, Dialog, DialogHeader, DropdownMenu, Heading, HStack, Icon, List, ListItem, MoreMenu, StatusDot, Text, TextInput, Timestamp, Token, VStack, useToast, useAnnounce } from '@clew/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { today } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
@@ -9,6 +9,7 @@ import { useThreadAction } from '../mutations';
 import { invalidateStream } from '../thread-cache';
 import { useConversation } from './conversation-context';
 import { AddToConversation } from './add-to-conversation';
+import { executionStatus } from '../execution-status';
 
 /**
  * The area as a category tag (Astryx Badge/Token guidance: colour variants classify, status variants demand action): one
@@ -110,6 +111,9 @@ function TimePicker({ label, presets, demo, onPick }: { label: string; presets: 
 type ActionProps = { thread: Thread; onChange: (thread: Thread) => void; onOpenCardView: (threadId: string, actionId: string) => void };
 /** Everything a card can do, shared by the card and the row: run an action, snooze, dismiss, explain, and keep the selection. */
 function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
+  const status = executionStatus(thread.execution);
+  const lastStatus = useRef(status), announce = useAnnounce({ hasReplace: true });
+  useEffect(() => { if (status !== lastStatus.current) { lastStatus.current = status; announce(status ?? thread.receipt?.headline ?? 'Åtgärden är kontrollerad.'); } }, [status, announce, thread.receipt?.headline]);
   const [selected, setSelected] = useState<string[]>(() => thread.items.filter(i => i.selected).map(i => i.ref));
   const [why, setWhy] = useState(false);
   useEffect(() => { setSelected(thread.items.filter(i => i.selected).map(i => i.ref)); }, [thread.updatedAt]);
@@ -184,6 +188,12 @@ function ActionRow({ thread, level, actions }: { thread: Thread; level: Attentio
   const remindMenu = <TimePicker label="Påminn mig" presets={presets} demo={{ label: 'Om 10 sekunder', seconds: 10 }} onPick={pickRemind} />;
   const receipt = thread.receipt;
   const undoOpen = !!receipt && thread.state === 'handled' && !!receipt.undoCapability && !!countdown;
+  const pending = executionStatus(thread.execution);
+  if (pending) return <HStack gap={2} vAlign="center" wrap="wrap">
+    <Button size="sm" label="Kontrollera status" clickAction={() => run(() => api.checkExecution(thread.id))} />
+    <Text type="supporting">{pending}</Text>
+    {addToConversation}
+  </HStack>;
   // In the Inte nu pile (D28): the way back is the first button; nothing else is due until the card is back.
   if (open && isSnoozed(thread, new Date().toISOString())) return <HStack gap={2} vAlign="center" wrap="wrap">
     <Button size="sm" variant="secondary" label="Ta upp nu" clickAction={() => run(() => api.reopen(thread.id))} />
@@ -267,7 +277,7 @@ export function GenericCard({ thread, areaTitle, position, compact, headingLevel
       <Heading ref={title} tabIndex={-1} level={4} accessibilityLevel={headingLevel}>{receipt ? receipt.headline : thread.title}</Heading>
       {!receipt && thread.summary && <Text as="p" color="secondary">{thread.summary}</Text>}
       {thread.items.length > 0 && !receipt && (selectable
-        ? <CheckboxList label="Rader" isLabelHidden value={selected} onChange={setSelected} isReadOnly={!open} density="compact">
+        ? <CheckboxList label="Rader" isLabelHidden value={selected} onChange={setSelected} isReadOnly={!open || !!executionStatus(thread.execution)} density="compact">
           {thread.items.map(i => <CheckboxListItem key={i.ref} value={i.ref} label={<Text>{`${i.label} · ${i.detail}`}</Text>} />)}
         </CheckboxList>
         : <List density="compact" hasDividers>{thread.items.map(i => <ListItem key={i.ref} isSelected={rowChipped(i.ref)} label={<HStack gap={2} vAlign="center"><Text weight="semibold">{i.label}</Text><Text type="supporting">{i.detail}</Text></HStack>} />)}</List>)}

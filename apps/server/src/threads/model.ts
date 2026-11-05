@@ -31,7 +31,7 @@ export interface ThreadTx {
   scheduleJob(job: JobInput): Promise<void>;
 }
 export interface ThreadStore {
-  /** Open threads plus what was handled in the seven days before `now`, newest first. */
+  /** Every unresolved pushed thread, plus at most 50 conversations/recently handled threads, newest first. */
   listThreads(personId: string, now: string): Promise<Thread[]>;
   /** One of the person's threads; undefined when it does not exist or is not theirs. */
   readThread(personId: string, id: string): Promise<Thread | undefined>;

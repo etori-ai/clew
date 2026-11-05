@@ -2,11 +2,21 @@
  * Workflow code. This file runs inside Temporal's deterministic sandbox: it may import only `@temporalio/workflow`
  * and types. Side effects happen in activities (`activities.ts`), which run in Node with the live adapters.
  */
-import { condition, defineSignal, proxyActivities, setHandler } from '@temporalio/workflow';
+import { condition, defineSignal, proxyActivities, setHandler, sleep } from '@temporalio/workflow';
 import type * as activities from './activities';
 import type { ReminderInput } from '../threads/model';
 
 const { surfaceReminder, checkObligation, remindInvitees, returnObligation } = proxyActivities<typeof activities>({ startToCloseTimeout: '1 minute', retry: { maximumAttempts: 5 } });
+const { progressExecution } = proxyActivities<typeof activities>({ startToCloseTimeout: '1 minute', retry: { maximumAttempts: 5 } });
+
+/** Retries re-enter the persisted ledger; a dispatched operation is always investigated before any replay. */
+export async function approvedExecution(id: string): Promise<void> {
+  for (;;) {
+    const state = await progressExecution(id);
+    if (state === 'done') return;
+    await sleep(state === 'busy' ? '30 seconds' : '2 seconds');
+  }
+}
 
 export type { ReminderInput };
 /** "Glöm det": a reminder can be cancelled until it fires. */

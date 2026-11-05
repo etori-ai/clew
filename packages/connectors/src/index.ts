@@ -1,4 +1,6 @@
 import type { TSchema } from '@sinclair/typebox';
+import Ajv from 'ajv';
+import addFormats from 'ajv-formats';
 import type { Area, CapabilityOverride, ConnectorAudience, ConnectorState, MenuEntry, MenuHint, MenuIcon, Receipt, ReceiptRow, SearchKind, SessionUser, PanelViewSpec, ThreadAction, ThreadItem, View, ViewOpen } from '@clew/contracts';
 import { menuProblem, menuRowOf, viewProblem } from './views';
 export { MENU_DEFAULT_ICON, menuEligible, menuProblem, menuRowOf, openRef, readsSummary, rowsKey, viewProblem, viewRows, viewSummary } from './views';
@@ -29,6 +31,9 @@ export const inScope = (scope: Scope, actor: Actor) => typeof scope === 'functio
 
 /** What a capability gets besides the actor and the input: the rest of Clew, as capabilities, for that actor. */
 export interface Clew {
+  chain?: string[];
+  /** Stable approved intent key for a direct source write; never propagated through nested calls. */
+  operationId?: string;
   /** Run another connector's `read` or `propose` as the same actor. Scope applies; `execute` is refused. */
   call<O = unknown>(name: string, input?: unknown): Promise<O>;
   /**
@@ -39,9 +44,12 @@ export interface Clew {
   delegate?: (audience: string) => Promise<string | undefined>;
 }
 /** What a caller with a session adds to a run. The registry carries it into every nested `clew.call`. */
-export interface RunContext { delegate?: Clew['delegate'] }
+export interface RunContext { delegate?: Clew['delegate']; chain?: string[]; operationId?: string }
+
+export type WriteSafety = { strategy: 'manual' } | { strategy: 'deduplicated'; retentionSeconds: number; lookup: string } | { strategy: 'conditional'; lookup: string };
 
 export interface Capability<I = unknown, O = unknown> {
+  execution?: WriteSafety;
   /** `connector.verb`, stable, e.g. `raindance.approveInvoices`. */
   name: string;
   kind: CapabilityKind;
@@ -74,6 +82,7 @@ export interface ExecuteResult {
   /** Name of the capability that reverses this within the undo window, if any. */
   undoCapability?: string;
   undoMinutes?: number;
+  undoInput?: Record<string, unknown>;
 }
 /** A thread a connector wants to push. `topic` is the idempotency key per person. */
 export interface ThreadDraft {
@@ -91,11 +100,14 @@ export interface AreaDefinition {
   icon?: MenuIcon;
 }
 export interface Connector {
+  delegation?: { audience: string };
   id: string; kind: ConnectorKind;
   /** Swedish label of the source, shown on cards: "Heroma", "Raindance". */
   source: string;
   areas: AreaDefinition[];
   capabilities: Capability<any, any>[];
+  /** Explicit dependencies for cross-connector calls. Core composition may use '*'; remote manifests cannot. */
+  uses?: string[];
   /** The connector's triggers: what it wants to push for this actor right now. Deterministic, no model. */
   scan?: (actor: Actor, clew: Clew) => Promise<ThreadDraft[]>;
 }
@@ -104,8 +116,8 @@ export class CapabilityError extends Error { constructor(message: string) { supe
 
 /**
  * What an administrator decided about a connector (D23): on or off, who sees it, whether it pushes cards and offers
- * tools, and per-capability switches. The default is "enabled for everyone", which is what a connector without a row
- * gets. Narrowing only: an override can switch a capability or its tool off, never on. A view in the menu (D40) is the
+ * tools, and per-capability switches. Missing governance denies access. Narrowing only: an override can switch a
+ * capability or its tool off, never on. A view in the menu (D40) is the
  * one thing that is switched on (`menu: true` on the capability): it is a place in the menu, not access, and no connector
  * takes that place by itself.
  */
@@ -117,6 +129,7 @@ export interface Governance {
   capabilities: Record<string, CapabilityOverride>;
 }
 export const openGovernance = (): Governance => ({ state: 'enabled', audience: { mode: 'all' }, scanEnabled: true, toolsEnabled: true, capabilities: {} });
+export const deniedGovernance = (): Governance => ({ state: 'disabled', audience: { mode: 'all' }, scanEnabled: false, toolsEnabled: false, capabilities: {} });
 /** A person is in the audience by role, by unit or by group (any of). Groups match nothing until SCIM provides them. */
 export const inAudience = (audience: ConnectorAudience, actor: Actor) =>
   audience.mode === 'all' || !!audience.roles?.includes(actor.role) || !!audience.units?.includes(actor.unitId);
@@ -129,22 +142,28 @@ export interface RegistryOptions {
 }
 
 export class Registry {
+  private readonly ajv = addFormats(new Ajv({ allErrors: false, strict: false }));
+  private validators = new WeakMap<object, ReturnType<Ajv['compile']>>();
+  private refresh: () => Promise<void> = async () => {};
   private connectors = new Map<string, Connector>();
   private capabilities = new Map<string, { connector: Connector; capability: Capability<any, any> }>();
   private governed = new Map<string, Governance>();
   constructor(private readonly options: RegistryOptions = {}) {}
   register(connector: Connector) {
     if (this.connectors.has(connector.id)) throw new Error(`Connector ${connector.id} is already registered.`);
+    const names = new Set<string>();
     for (const c of connector.capabilities) {
       if (!c.name.startsWith(connector.id + '.')) throw new Error(`Capability ${c.name} must be prefixed with ${connector.id}.`);
       if (c.kind === 'execute' && c.model) throw new Error(`Capability ${c.name}: execute capabilities are never tools (D8).`);
-      if (this.capabilities.has(c.name)) throw new Error(`Capability ${c.name} is already registered.`);
+      if (names.has(c.name) || this.capabilities.has(c.name)) throw new Error(`Capability ${c.name} is already registered.`);
+      names.add(c.name);
       const problem = viewProblem(c, connector.capabilities);
       if (problem) throw new Error(`Capability ${problem} (D38).`);
       const menu = menuProblem(c);
       if (menu) throw new Error(`Capability ${menu} (D40).`);
-      this.capabilities.set(c.name, { connector, capability: c });
+      this.validator(c.input); this.validator(c.output);
     }
+    for (const c of connector.capabilities) this.capabilities.set(c.name, { connector, capability: c });
     this.connectors.set(connector.id, connector);
     return this;
   }
@@ -159,6 +178,8 @@ export class Registry {
   }
   /** Register, replacing an earlier registration with the same id (a refetched manifest, a changed secret). Governance survives. */
   replace(connector: Connector) {
+    // Validate the entire replacement before removing the working registration.
+    new Registry().register(connector);
     const governance = this.governed.get(connector.id);
     this.unregister(connector.id);
     this.register(connector);
@@ -167,7 +188,22 @@ export class Registry {
   }
   /** Apply an administrator's decision. Takes effect on the next call; nothing is restarted. */
   govern(id: string, governance: Governance) { this.governed.set(id, governance); return this; }
-  governance(id: string): Governance { return this.governed.get(id) ?? openGovernance(); }
+  governance(id: string): Governance { return this.governed.get(id) ?? deniedGovernance(); }
+  /** Installed by composition; a failed refresh aborts the invocation before any source access. */
+  setRefresh(refresh: () => Promise<void>) { this.refresh = refresh; }
+  /** Validate an approval without performing its source effect. */
+  async validate(actor: Actor, name: string, input: unknown) {
+    await this.refresh();
+    const found = this.allowed(actor, name);
+    if (!found) throw new CapabilityError(UNKNOWN);
+    if (!this.validator(found.capability.input)(input)) throw new CapabilityError('Ogiltig förfrågan till ' + name + '.');
+    return found;
+  }
+  private validator(schema: object) {
+    let validator = this.validators.get(schema);
+    if (!validator) { validator = this.ajv.compile(schema); this.validators.set(schema, validator); }
+    return validator;
+  }
   /** Every registered connector, governed or not: for the loader and the administrator, never for a person's page. */
   list() { return [...this.connectors.values()]; }
   connector(id: string) { return this.connectors.get(id); }
@@ -190,12 +226,18 @@ export class Registry {
   listFor(actor: Actor) { return this.list().filter(c => this.visible(actor, c.id)); }
   capabilitiesFor(actor: Actor) { return [...this.capabilities.values()].filter(c => this.allowed(actor, c.capability.name)); }
   /** The handle a connector gets to reach the rest of Clew as one actor: reads and proposals only, scope re-checked. */
-  clewFor(actor: Actor, context: RunContext = {}): Clew {
+  clewFor(actor: Actor, context: RunContext = {}, origin?: string): Clew {
     return {
+      chain: context.chain ?? [],
+      ...(context.operationId ? { operationId: context.operationId } : {}),
       call: async <O,>(name: string, input: unknown = {}) => {
+        await this.refresh();
         const found = this.capabilities.get(name);
+        const owner = origin ? this.connectors.get(origin) : undefined;
+        if (origin && (!this.visible(actor, origin) || !(owner?.uses?.includes(name) || owner?.uses?.includes('*')))) throw new CapabilityError(UNKNOWN);
+        if ((context.chain?.length ?? 0) >= 8 || context.chain?.includes(name)) throw new CapabilityError('Anropet innehåller en cirkulär förfrågan.');
         if (found?.capability.kind === 'execute') throw new CapabilityError('En anslutning kan inte utföra åtgärder i en annan anslutning.');
-        return this.run<O>(actor, name, input, context);
+        return this.run<O>(actor, name, input, { delegate: context.delegate, chain: context.chain });
       },
       ...(context.delegate ? { delegate: context.delegate } : {}),
     };
@@ -206,10 +248,17 @@ export class Registry {
    * The context (the session's delegate) travels into every nested call the capability makes.
    */
   async run<O = unknown>(actor: Actor, name: string, input: unknown, context: RunContext = {}): Promise<O> {
+    await this.refresh();
     const found = this.capabilities.get(name);
     if (!found || !this.visible(actor, found.connector.id) || this.governance(found.connector.id).capabilities[name]?.enabled === false) throw new CapabilityError(UNKNOWN);
     if (!inScope(found.capability.scope, actor)) throw new CapabilityError('Du saknar behörighet för åtgärden.');
-    return found.capability.run(actor, input, this.clewFor(actor, context)) as Promise<O>;
+    if (!this.validator(found.capability.input)(input)) throw new CapabilityError('Ogiltig förfrågan till ' + name + '.');
+    const output = await found.capability.run(actor, input, this.clewFor(actor, { ...context, chain: [...(context.chain ?? []), name] }, found.connector.id));
+    if (!this.validator(found.capability.output)(output)) throw new CapabilityError('Källans svar kunde inte verifieras.');
+    // Permission can change while a source is answering. Do not release the result under the old policy.
+    await this.refresh();
+    if (!this.allowed(actor, name)) throw new CapabilityError(UNKNOWN);
+    return output as O;
   }
   /**
    * Areas for one actor: one entry per area definition of a visible connector whose roles include the actor's role.
@@ -217,8 +266,8 @@ export class Registry {
    */
   async areas(actor: Actor, options: { figures?: boolean; connector?: string } = {}): Promise<Omit<Area, 'needsYou' | 'waiting' | 'urgency'>[]> {
     const out: Omit<Area, 'needsYou' | 'waiting' | 'urgency'>[] = [];
-    const clew = this.clewFor(actor);
     for (const m of this.connectors.values()) {
+      const clew = this.clewFor(actor, {}, m.id);
       if (options.connector && m.id !== options.connector) continue;
       if (!this.visible(actor, m.id)) continue;
       for (const a of m.areas) {
@@ -246,8 +295,8 @@ export class Registry {
   /** Drafts from every visible connector whose scan is switched on. A draft that breaks the action rule (D35) is refused and reported. */
   async scan(actor: Actor): Promise<Array<ThreadDraft & { connector: string }>> {
     const drafts: Array<ThreadDraft & { connector: string }> = [];
-    const clew = this.clewFor(actor);
     for (const m of this.connectors.values()) {
+      const clew = this.clewFor(actor, {}, m.id);
       if (!m.scan || !this.visible(actor, m.id) || !this.governance(m.id).scanEnabled) continue;
       for (const d of await m.scan(actor, clew)) {
         const problem = this.draftProblem(m.id, d);
@@ -310,4 +359,5 @@ export const receipt = (result: ExecuteResult, at = new Date()): Receipt => ({
   at: at.toISOString(), headline: result.headline, rows: result.rows,
   undoUntil: result.undoCapability ? new Date(at.getTime() + (result.undoMinutes ?? 10) * 60_000).toISOString() : null,
   undoCapability: result.undoCapability ?? null,
+  ...(result.undoInput ? { undoInput: result.undoInput } : {}),
 });

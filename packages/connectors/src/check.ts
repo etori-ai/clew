@@ -1,5 +1,5 @@
 import type { CheckFinding, CheckReport } from '@clew/contracts';
-import { Registry, type Actor } from './index';
+import { Registry, openGovernance, type Actor } from './index';
 import { fetchManifest, remoteConnector, type FetchLike } from './remote';
 import type { ConnectorManifest } from './protocol';
 import { menuRowOf, rowsKey, viewRows } from './views';
@@ -7,11 +7,12 @@ import { menuRowOf, rowsKey, viewRows } from './views';
 /**
  * The conformance check of a connector service (D21, D23): what `scripts/connector-check.ts` prints and what the admin
  * page runs as "Testa anslutning". It does what Clew's loader does and then exercises the connector as a manager and
- * as an employee. Signing is handed in (`assert` with the right secret, `assertForeign` with a wrong one) so this
- * package stays free of JWT libraries and a test can sign however it likes.
+ * as an employee. Signing is handed in (`assert` from Clew's authority, `assertForeign` for an invalid assertion)
+ * so this package stays free of JWT libraries. The separate `key` is transport authentication only.
  */
 export interface CheckOptions {
   url: string;
+  key?: string;
   id?: string;
   assert: (actor: Actor) => Promise<string>;
   assertForeign: (actor: Actor) => Promise<string>;
@@ -37,7 +38,8 @@ export async function checkConnector(options: CheckOptions): Promise<CheckReport
   catch (error) { fail('manifest: ' + (error as Error).message); return { ok: false, findings }; }
   ok(`manifest valid: ${manifest.capabilities.length} capabilities, ${manifest.areas.length} areas, scan ${manifest.scan}`);
   if (manifest.delegation) warn(`delegation: acts as the person for audience "${manifest.delegation.audience}"; not verified by this check (it has no session), so a "denied" answer below is the expected one`);
-  const registry = new Registry({ onRefused: (_id, topic, problem) => fail(`draft ${topic} refused: ${problem}`) }).register(remoteConnector(manifest, { url, assert: options.assert, fetch: fetchImpl }));
+  const registry = new Registry({ onRefused: (_id, topic, problem) => fail(`draft ${topic} refused: ${problem}`) }).register(remoteConnector(manifest, { url, key: options.key, assert: options.assert, fetch: fetchImpl }));
+  registry.govern(manifest.id, openGovernance());
   const accepts = options.acceptsEmptyInput ?? listsNothingRequired;
   /** A declared view (D38) against a real answer: the rows are where the view says, and no field is missing from every row. */
   const checkView = (c: ConnectorManifest['capabilities'][number], output: unknown) => {
@@ -73,11 +75,11 @@ export async function checkConnector(options: CheckOptions): Promise<CheckReport
   }
   const tools = manifest.capabilities.map(c => ({ name: c.name, row: menuRowOf(c) })).filter(t => t.row);
   if (tools.length) ok(`menu: ${tools.length} ${tools.length === 1 ? 'view' : 'views'} can be a tool in the menu when an administrator chooses it: ${tools.map(t => `"${t.row!.label}" (${t.name})`).join(', ')}`);
-  // Wrong secret must be refused by the connector itself, not only by Clew.
+  // A foreign/invalid signature must be refused by the connector itself, not only by Clew.
   const first = manifest.capabilities[0];
   if (first) {
     try {
-      const r = await fetchImpl(url + '/clew/capabilities/' + first.name, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + await options.assertForeign(CHECK_MANAGER) }, body: JSON.stringify({ actor: CHECK_MANAGER, input: {} }) });
+      const r = await fetchImpl(url + '/clew/capabilities/' + first.name, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + await options.assertForeign(CHECK_MANAGER), ...(options.key ? { 'x-clew-connector-key': options.key } : {}) }, body: JSON.stringify({ actor: CHECK_MANAGER, input: {} }) });
       if (r.status === 401) ok('a call signed with another secret is refused (401)'); else fail(`a call signed with another secret answered ${r.status}, expected 401`);
     } catch (error) { fail('wrong-secret probe: ' + (error as Error).message); }
   }

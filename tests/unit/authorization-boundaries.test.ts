@@ -1,0 +1,101 @@
+import { describe, expect, test } from 'bun:test';
+import { Registry, openGovernance, type Actor, type Connector } from '../../packages/connectors/src/index';
+import { threadAccess } from '../../apps/server/src/threads/access';
+import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
+import { testAuthority } from '../connector-authority';
+import { decodeJwt, generateKeyPair, exportPKCS8 } from 'jose';
+import { connectorAuthority } from '../../apps/server/src/connectors/authority';
+import { verifyAssertion } from '../../connectors/hello/verification.mjs';
+
+const actor: Actor = { id: 'person', name: 'Person', role: 'manager', unitId: 'unit', unitLabel: 'Unit' };
+const shape = (properties: Record<string, object>) => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false }) as never;
+const connector = (id = 'source', run: () => Promise<unknown> = async () => ({ count: 1 })): Connector => ({ id, kind: 'passthrough', source: 'Källa', areas: [], capabilities: [{ name: id + '.count', kind: 'read', title: 'Antal', description: 'Antal', model: true, scope: {}, input: shape({}), output: shape({ count: { type: 'integer' } }), run }] });
+
+describe('authorization and invocation boundaries', () => {
+  test('duplicate capability names reject the entire registration', () => {
+    const registry = new Registry(), duplicate = connector();
+    duplicate.capabilities.push(duplicate.capabilities[0]!);
+    expect(() => registry.register(duplicate)).toThrow('already registered');
+    expect(registry.connector('source')).toBeUndefined();
+    expect(registry.find('source.count')).toBeUndefined();
+  });
+  test('rotation verifies in-flight callback grants with retained public keys and signs only with the new key', async () => {
+    const old = await testAuthority();
+    const keys = await generateKeyPair('RS256', { extractable: true });
+    const next = await connectorAuthority(await exportPKCS8(keys.privateKey), 'rotated', old.jwks.keys);
+    const previousRequest = await old.assert('hello', actor, ['source.count']);
+    expect(await next.verify(decodeJwt(previousRequest).callback as string)).toMatchObject({ actor });
+    const request = await next.assert('hello', actor);
+    expect(verifyAssertion(request, next.jwks, 'hello')).toEqual(actor);
+    expect(verifyAssertion(request, old.jwks, 'hello')).toBeNull();
+    expect(JSON.stringify(next.jwks)).not.toContain('"d":');
+  });
+  test('registration without governance is denied on reads, tools and scans', async () => {
+    const registry = new Registry().register(connector());
+    expect(registry.visible(actor, 'source')).toBe(false);
+    expect(registry.tools(actor)).toEqual([]);
+    expect(await registry.scan(actor)).toEqual([]);
+    await expect(registry.run(actor, 'source.count', {})).rejects.toThrow('Okänd förmåga.');
+    registry.govern('source', openGovernance());
+    expect(await registry.run(actor, 'source.count', {})).toEqual({ count: 1 });
+  });
+  test('nested calls enforce dependencies, schema and current origin governance', async () => {
+    const registry = new Registry().register(connector()).register({ ...connector('caller'), uses: ['source.count'] });
+    for (const id of ['source', 'caller']) registry.govern(id, openGovernance());
+    const call = registry.clewFor(actor, {}, 'caller').call;
+    expect(await call('source.count', {})).toEqual({ count: 1 });
+    await expect(call('caller.count', {})).rejects.toThrow('Okänd förmåga.');
+    registry.govern('caller', { ...openGovernance(), state: 'disabled' });
+    await expect(call('source.count', {})).rejects.toThrow('Okänd förmåga.');
+  });
+  test('output validation rejects bad data, and replacement replaces compiled input schemas', async () => {
+    const registry = new Registry().register(connector('source', async () => ({ count: '1' }))).govern('source', openGovernance());
+    await expect(registry.run(actor, 'source.count', {})).rejects.toThrow('Källans svar kunde inte verifieras.');
+    const next = connector(); next.capabilities[0]!.input = shape({ key: { type: 'string' } });
+    registry.replace(next);
+    await expect(registry.run(actor, 'source.count', {})).rejects.toThrow('Ogiltig förfrågan');
+    expect(await registry.run(actor, 'source.count', { key: 'x' })).toEqual({ count: 1 });
+  });
+  test('revocation during a source call prevents releasing its result', async () => {
+    const registry = new Registry();
+    registry.register(connector('source', async () => { registry.govern('source', { ...openGovernance(), state: 'disabled' }); return { count: 1 }; })).govern('source', openGovernance());
+    await expect(registry.run(actor, 'source.count', {})).rejects.toThrow('Okänd förmåga.');
+  });
+  test('a failed authoritative governance refresh fails closed', async () => {
+    let effects = 0;
+    const registry = new Registry().register(connector('source', async () => { effects++; return { count: 1 }; })).govern('source', openGovernance());
+    registry.setRefresh(async () => { throw new Error('database unavailable'); });
+    await expect(registry.run(actor, 'source.count', {})).rejects.toThrow('database unavailable');
+    expect(effects).toBe(0);
+  });
+  test('disabled cards and generated history cannot be read through the shared reader', async () => {
+    const registry = new Registry().register(connector()).govern('source', openGovernance());
+    const store = memoryThreadStore(), at = '2026-11-05T09:00:00Z';
+    await store.transaction(async tx => {
+      for (const kind of ['pushed', 'question'] as const) {
+        await tx.insertThread({ id: kind, personId: actor.id, kind, topic: kind, title: 'Restricted', summary: 'Restricted', state: 'open', connector: 'source', area: 'source', week: null, actions: [], items: [], waitingOn: null, deadline: null, trigger: { source: 'Source', reason: 'Test', at }, createdAt: at, updatedAt: at });
+        await tx.addMessage(kind, { role: 'assistant', body: 'Restricted', at, meta: { access: { connectors: ['source'], capabilities: ['source.count'] } } });
+      }
+    });
+    const access = threadAccess(store, registry);
+    expect(await access.list(actor, at)).toHaveLength(2);
+    registry.govern('source', { ...openGovernance(), state: 'disabled' });
+    expect(await access.list(actor, at)).toEqual([]);
+    expect(await access.read(actor, 'pushed')).toBeUndefined();
+    expect(await access.read(actor, 'question')).toBeUndefined();
+    expect(await store.readThread(actor.id, 'question')).toBeDefined();
+  });
+  test('public keys verify requests but cannot turn request tokens into callback grants', async () => {
+    const authority = await testAuthority();
+    const request = await authority.assert('hello', actor, ['source.count']);
+    expect(verifyAssertion(request, authority.jwks, 'hello')).toEqual(actor);
+    expect(verifyAssertion(request, authority.jwks, 'other')).toBeNull();
+    expect(verifyAssertion(request, authority.jwks, 'hello', Date.now() + 121_000)).toBeNull();
+    await expect(authority.verify(request)).rejects.toThrow();
+    const grant = await authority.verify(decodeJwt(request).callback as string);
+    expect(grant.uses).toEqual(['source.count']);
+    expect(JSON.stringify(authority.jwks)).not.toContain('"d":');
+    const withSessionFields = { ...actor, sessionBinding: 'must-not-leave-clew', authorize: async () => ({ version: 'v1' }) };
+    expect(decodeJwt(await authority.assert('hello', withSessionFields)).actor).toEqual(actor);
+  });
+});

@@ -1,5 +1,8 @@
 # Identity and authorization
 
+> **Reading status:** Original identity design. OIDC login and session-backed token exchange are implemented. Connector requests now use protocol 2 Clew-signed RS256 assertions, a transport key and separate callback grants. The MCP/ID-JAG, SCIM and dev-login sections below describe unimplemented designs. See [implementation status](../reference/status.md) and the [current protocol](../reference/connector-protocol.md).
+
+
 Decided 2026-11-03. The decision log is in `docs/decisions/`.
 
 ## Principle

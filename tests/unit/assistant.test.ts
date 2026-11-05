@@ -1,6 +1,7 @@
+import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import type { Thread } from '../../packages/contracts/src/index';
-import { Registry, type Actor } from '../../packages/connectors/src/index';
+import { type Actor } from '../../packages/connectors/src/index';
 import { memoryState } from '../../packages/connectors/src/memory-state';
 import { heromaConnector } from '../../packages/connectors/src/mock/heroma';
 import { raindanceConnector } from '../../packages/connectors/src/mock/raindance';

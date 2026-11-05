@@ -1,4 +1,4 @@
-import { StrictMode, Suspense, forwardRef, lazy, useEffect, useState, type AnchorHTMLAttributes } from 'react';
+import { StrictMode, Suspense, forwardRef, lazy, useEffect, useRef, useState, type AnchorHTMLAttributes } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Link, Routes, Route, useLocation, useSearchParams } from 'react-router';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -28,6 +28,7 @@ const Devtools = import.meta.env.DEV ? lazy(() => import('@tanstack/react-query-
 function Protected({ children }: { children: (shell: Shell) => React.ReactNode }) {
   const [shell, setShell] = useState<Shell | 'loading' | 'anonymous'>('loading');
   const [client] = useState(createQueryClient);
+  const policy = useRef<string | undefined>(undefined);
   const location = useLocation();
   useEffect(() => {
     let cancelled = false;
@@ -39,6 +40,35 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
     }).catch(() => { if (!cancelled) setShell('anonymous'); });
     return () => { cancelled = true; };
   }, []);
+  useEffect(() => {
+    if (shell === 'loading' || shell === 'anonymous') return;
+    let source: EventSource | undefined, stopped = false;
+    const connect = () => {
+      source?.close();
+      if (document.visibilityState === 'hidden' || stopped) return;
+      source = new EventSource('/api/changes');
+      source.onmessage = event => {
+        let change: { ended?: boolean; revision?: string; policy?: string };
+        try { change = JSON.parse(event.data); } catch { return; }
+        if (change.ended) { source?.close(); void client.cancelQueries(); client.clear(); setShell('anonymous'); return; }
+        if (typeof change.policy !== 'string' || typeof change.revision !== 'string') return;
+        const revoked = policy.current !== undefined && policy.current !== change.policy;
+        policy.current = change.policy;
+        if (revoked) {
+          // Reset the protected tree too: chips, generated text and panel state can contain retained source snapshots.
+          source?.close(); void client.cancelQueries(); client.clear(); setShell('loading');
+          fetch('/api/auth/session', { cache: 'no-store' }).then(async response => {
+            if (!response.ok) { setShell('anonymous'); return; }
+            const data = await response.json();
+            setShell({ session: { csrfToken: data.csrfToken, sessionKey: data.sessionKey, expiresAt: data.expiresAt }, user: data.user, admin: data.admin === true });
+          }).catch(() => setShell('anonymous'));
+        } else void client.invalidateQueries();
+      };
+    };
+    connect();
+    document.addEventListener('visibilitychange', connect); window.addEventListener('online', connect);
+    return () => { stopped = true; source?.close(); document.removeEventListener('visibilitychange', connect); window.removeEventListener('online', connect); };
+  }, [client, shell]);
   if (shell === 'loading') return null;
   if (shell === 'anonymous') return <LoginPage returnTo={location.pathname} />;
   return <SessionBoundary session={shell.session} onEnded={() => client.clear()}>

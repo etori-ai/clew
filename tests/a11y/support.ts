@@ -45,6 +45,8 @@ export class MockApi {
     const request = route.request(), url = new URL(request.url()), path = url.pathname.replace('/api', ''), post = request.method() === 'POST';
     const json = (body: unknown) => route.fulfill({ json: body });
     const id = path.split('/')[2] ?? '';
+    if (path === '/changes') return route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'retry: 60000\n\n' });
+    if (path === `/threads/${id}/execution/check`) return json(this.threads.find(t => t.id === id));
     if (path === '/auth/session') {
       if (this.sessionDelay) await new Promise(resolve => setTimeout(resolve, this.sessionDelay));
       return this.signedIn ? json({ ...session, admin: this.admin }) : route.fulfill({ status: 401, json: { error: 'Ingen session' } });
@@ -270,14 +272,25 @@ export async function expectNoAxeViolations(page: Page) {
   await undock(true);
   const { violations: sizes } = await new AxeBuilder({ page }).withTags(tags).withRules(['target-size']).analyze();
   await undock(false);
-  expect([...violations, ...sizes].map(v => `${v.id}: ${v.help}\n  ${v.nodes.slice(0, 4).map(n => n.target.join(' ')).join('\n  ')}`)).toEqual([]);
+  expect([...violations, ...sizes].map(v => `${v.id}: ${v.help}\n  ${v.nodes.slice(0, 4).map(n => n.target.join(' ') + '\n  ' + n.html).join('\n  ')}`)).toEqual([]);
 }
 
 /** 1.4.10: nothing may need sideways scrolling, and no text may be clipped to fit. */
 export async function reflowProblems(page: Page) {
   return page.evaluate(() => {
     const width = document.documentElement.clientWidth;
-    const visible = (el: Element) => { const r = el.getBoundingClientRect(), s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
+    const visible = (el: Element) => {
+      const r = el.getBoundingClientRect(), s = getComputedStyle(el);
+      if (!(r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none')) return false;
+      // Astryx keeps hidden section headings in the accessibility tree. Their
+      // descendants have text dimensions but are deliberately clipped by the
+      // VisuallyHidden ancestor; they are not visible reflow failures.
+      for (let parent: Element | null = el; parent; parent = parent.parentElement) {
+        const style = getComputedStyle(parent);
+        if (style.clip === 'rect(0px, 0px, 0px, 0px)' || style.clipPath === 'inset(50%)') return false;
+      }
+      return true;
+    };
     const label = (el: Element) => `${el.tagName.toLowerCase()} "${(el.textContent ?? '').trim().slice(0, 50)}"`;
     const problems: string[] = [];
     if (document.documentElement.scrollWidth > width) problems.push(`page is ${document.documentElement.scrollWidth} px wide at ${width} px`);

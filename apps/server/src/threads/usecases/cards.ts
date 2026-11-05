@@ -3,6 +3,7 @@ import { rhythmFor } from '../domain';
 import { actorOf, receipt, type Actor, type ExecuteResult, type Registry, type ThreadDraft } from '@clew/connectors';
 import { InputError } from '../../context';
 import type { ReminderTimers, ThreadStore, ThreadTx } from '../model';
+import { threadAccess } from '../access';
 
 /**
  * The stream's use cases (D20, D25): one function per user action, the actor first, built over ports. Nothing in here
@@ -11,7 +12,7 @@ import type { ReminderTimers, ThreadStore, ThreadTx } from '../model';
  */
 export interface ThreadDeps {
   store: ThreadStore;
-  registry: Pick<Registry, 'scan' | 'areas' | 'connector' | 'visible' | 'find' | 'viewFor'>;
+  registry: Pick<Registry, 'scan' | 'areas' | 'connector' | 'visible' | 'find' | 'viewFor' | 'allowed'>;
   /** Run a capability as the person, with input validation and scope: `runCapability` in the server. */
   run: <O = unknown>(persona: AuthenticatedContext, name: string, input: unknown) => Promise<O>;
   /** The calendar's proposal path, the one coupling the stream has to a module (recorded as debt in D20). */
@@ -36,6 +37,7 @@ const sameDraft = (t: Thread, d: ThreadDraft, items: Thread['items']) =>
 
 export function threadUsecases(deps: ThreadDeps) {
   const { store, registry, run, calendar, timers, clock, ids } = deps;
+  const access = threadAccess(store, registry);
   const inFlight = new Map<string, Promise<void>>();
   const read = async (persona: Pick<AuthenticatedContext, 'id'>, threadId: string) => (await store.readThread(persona.id, threadId))!;
 
@@ -52,7 +54,7 @@ export function threadUsecases(deps: ThreadDeps) {
     return task;
   }
   async function scanInto(persona: AuthenticatedContext, source: string) {
-    await calendar.ensureProposalThread(persona, source);
+    if (registry.visible(actorOf(persona), 'calendar')) await calendar.ensureProposalThread(persona, source);
     await wakeDue(persona);
     const drafts = await registry.scan(actorOf(persona));
     const now = clock();
@@ -60,7 +62,7 @@ export function threadUsecases(deps: ThreadDeps) {
       const existing = await store.openThread(persona.id, d.topic);
       if (!existing) { await pushDraft(persona, d, 'assistant:scan', now); continue; }
       // An untouched open card follows its source: rows, title and deadline refresh, the person's selection survives.
-      if (existing.receipt) continue;
+      if (existing.receipt || existing.execution && ['pending', 'running', 'unknown'].includes(existing.execution.state)) continue;
       const items = (d.items ?? []).map(i => ({ ...i, selected: existing.items.find(x => x.ref === i.ref)?.selected ?? i.selected }));
       if (sameDraft(existing, d, items)) continue;
       await store.transaction(async tx => {
@@ -99,7 +101,7 @@ export function threadUsecases(deps: ThreadDeps) {
   /** Areas with live counts for the sidebar. */
   async function listAreas(persona: AuthenticatedContext): Promise<Area[]> {
     const now = clock();
-    const [areas, threads] = await Promise.all([registry.areas(actorOf(persona)), store.listThreads(persona.id, now.toISOString())]);
+    const [areas, threads] = await Promise.all([registry.areas(actorOf(persona)), access.list(persona, now.toISOString())]);
     const open = threads.filter(t => t.state === 'open' && t.kind === 'pushed');
     const today = stockholmDate(now.toISOString());
     return areas.map(a => {
@@ -149,7 +151,7 @@ export function threadUsecases(deps: ThreadDeps) {
   }
   /** Undo a receipt within its window: run the undo capability with the same refs, reopen the thread. */
   async function undoReceipt(persona: AuthenticatedContext, threadId: string) {
-    const thread = await store.readThread(persona.id, threadId);
+    const thread = await access.read(persona, threadId);
     if (!thread?.receipt) throw new InputError('Det finns inget att ångra.');
     const r = thread.receipt, now = clock(), at = now.toISOString();
     if (!r.undoCapability || !r.undoUntil || Date.parse(r.undoUntil) < now.getTime()) throw new InputError('Ångerfönstret har gått ut.');
@@ -186,7 +188,7 @@ export function threadUsecases(deps: ThreadDeps) {
   }
   /** The picker's rows (D29): presets with their resolved times, from the clock and today's meetings. */
   async function snoozeOptions(persona: AuthenticatedContext): Promise<SnoozePreset[]> {
-    return snoozePresets(clock().toISOString(), await calendar.todayEvents(persona));
+    return snoozePresets(clock().toISOString(), registry.visible(actorOf(persona), 'calendar') ? await calendar.todayEvents(persona) : []);
   }
   /**
    * Inte nu (D28, D29): the card keeps its state and moves to the Inte nu pile until a time the person chose, a preset,
@@ -227,7 +229,7 @@ export function threadUsecases(deps: ThreadDeps) {
    * Proposal threads whose drawn times were declined get them redrawn by the planner.
    */
   async function reopenThread(persona: AuthenticatedContext, threadId: string) {
-    const t = await store.readThread(persona.id, threadId);
+    const t = await access.read(persona, threadId);
     if (!t) throw new InputError('Tråden finns inte.');
     const now = clock(), at = now.toISOString();
     const snoozed = t.state === 'open' && !!t.snoozedUntil;
@@ -250,7 +252,7 @@ export function threadUsecases(deps: ThreadDeps) {
   async function attentionFor(persona: AuthenticatedContext): Promise<Attention> {
     const now = clock().toISOString();
     const since = stockholmInstant(stockholmDate(now), '00:00');
-    const threads = await store.listThreads(persona.id, now);
+    const threads = await access.list(persona, now);
     const pushed = threads.filter(t => t.kind === 'pushed' && Date.parse(t.createdAt) >= Date.parse(since)).map(t => ({ at: t.createdAt, title: t.title }));
     const rhythm = rhythmFor(now, pushed);
     const used = rhythm.filter(p => p.kind === 'interruption').length;
@@ -258,13 +260,12 @@ export function threadUsecases(deps: ThreadDeps) {
   }
   /**
    * An open card from a connector the person cannot see (switched off, or they are outside its audience, D23) is not
-   * theirs to find: it stays in the store and comes back if the connector does. Handled cards stay: they are the person's history.
+   * theirs to find: it stays in the store and comes back if the connector does. The same check protects handled snapshots.
    */
-  const hidden = (persona: Actor, t: Thread) => t.kind === 'pushed' && t.state === 'open' && !registry.visible(persona, t.connector);
   /** The person's own threads, newest first, as the stream shows them. */
-  const listThreadsFor = async (persona: Actor) => { await wakeDue(persona); return (await store.listThreads(persona.id, clock().toISOString())).filter(t => !hidden(persona, t)); };
+  const listThreadsFor = async (persona: AuthenticatedContext) => { await wakeDue(persona); return access.list(persona, clock().toISOString()); };
   /** One of the person's threads, or undefined when it is not theirs. */
-  const threadFor = async (persona: Actor, threadId: string) => { const t = await store.readThread(persona.id, threadId); return t && !hidden(persona, t) ? t : undefined; };
+  const threadFor = (persona: AuthenticatedContext, threadId: string) => access.read(persona, threadId);
   /** Avfärda from the card: proposal threads decline their drawn times through the planner, every other card is dismissed as is. */
   async function dismissAny(persona: AuthenticatedContext, threadId: string) {
     const thread = await threadFor(persona, threadId);
@@ -275,8 +276,8 @@ export function threadUsecases(deps: ThreadDeps) {
    * A cited answer becomes a card (D26): the sources as rows, the first source's link as the primary button, the answer as
    * the summary. Idempotent per answer: a second click returns the open card. The answer never executes anything; the card does.
    */
-  async function cardFromAnswer(persona: Pick<AuthenticatedContext, 'id'>, input: { conversationId: string; messageId: string }) {
-    const conversation = await store.readThread(persona.id, input.conversationId);
+  async function cardFromAnswer(persona: AuthenticatedContext, input: { conversationId: string; messageId: string }) {
+    const conversation = await access.read(persona, input.conversationId);
     if (!conversation || conversation.kind !== 'question') throw new InputError('Samtalet finns inte.');
     const index = conversation.messages.findIndex(m => m.id === input.messageId && m.role === 'assistant');
     const message = conversation.messages[index];
@@ -296,7 +297,7 @@ export function threadUsecases(deps: ThreadDeps) {
         actions: first.link ? [{ id: 'open', label: 'Öppna källan', capability: 'clew.openSource', kind: 'read', role: 'primary', target: 'link', input: { ref: first.ref.replace(/^document:/, '') } }] : [],
         waitingOn: null, deadline: null, trigger: { reason: `Du frågade ${now.toLocaleTimeString('sv-SE', { timeStyle: 'short', timeZone: 'Europe/Stockholm' })} och gjorde svaret till ett kort`, source: 'Startsidan', at }, createdAt: at, updatedAt: at });
       if (!ok) return false;
-      await tx.addMessage(id, { role: 'assistant', body: message.body, at });
+      await tx.addMessage(id, { role: 'assistant', body: message.body, at, meta: { access: message.meta?.access } });
       await tx.writeAudit({ actor: 'person:' + persona.id, action: 'thread.fromAnswer', subject: 'thread:' + id, at, details: { connector: 'clew', topic, owner: persona.id, conversation: input.conversationId, message: input.messageId, sources: sources.map(s => s.ref) } });
       return true;
     });

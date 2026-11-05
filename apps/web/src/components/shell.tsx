@@ -73,7 +73,7 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
             icon={<Icon icon={BellIcon} size="sm" />} variant="ghost" size="sm" onClick={() => setRemindersOpen(true)} />
           {reminders.length > 0 && <Text type="supporting" aria-hidden="true">{reminders.length}</Text>}
           <DropdownMenu alignment="end" menuWidth={260} hasChevron={false}
-            button={{ label: `Profil för ${user.name}`, isIconOnly: true, variant: 'ghost', size: 'sm', icon: <Avatar name={user.name} size="sm" tooltip={false} /> }}
+            button={{ label: `Profil för ${user.name}`, isIconOnly: true, variant: 'ghost', size: 'sm', icon: <Avatar alt={user.name} size="sm" tooltip={false} aria-hidden="true" /> }}
             header={<VStack gap={1}><Text weight="semibold">{user.name}</Text><Text type="supporting">{user.unitLabel}</Text></VStack>}
             items={[
               { label: 'Inställningar', onClick: () => setSettingsOpen(true) },

@@ -12,5 +12,9 @@ export async function systemContext(personId: string, binding = 'system:scan'): 
   const version = authorizationVersion(access);
   return { id: access.person.id, name: access.person.name, unitId: access.grant.unitId, unitLabel: access.grant.unitLabel, role: access.grant.role,
     organisationId: access.person.organisationId, principal: { id: 'person:' + personId, kind: 'person' }, capabilities: access.grant.capabilities,
-    authorizationVersion: version, sessionBinding: binding, expiresAt: new Date(Date.now() + 60_000).toISOString(), async authorize() { return { version }; } };
+    authorizationVersion: version, sessionBinding: binding, expiresAt: new Date(Date.now() + 60_000).toISOString(), async authorize() {
+      const current = await readAccess(personId);
+      if (!current || authorizationVersion(current) !== version) throw new Error('Authorization changed before dispatch.');
+      return { version };
+    } };
 }

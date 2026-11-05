@@ -12,6 +12,7 @@ import { modelAnswer, systemPrompt, type ToolCallRecord } from './model';
 import { listObjects } from './objects';
 import type { AssistantDeps, ResolvedModel } from './ports';
 import { draftSelection, parseVerb, verbsFor } from './verbs';
+import { threadAccess } from '../threads/access';
 
 export type { AssistantDeps, ModelResolver } from './ports';
 export { verbsFor } from './verbs';
@@ -39,8 +40,9 @@ const whyLine = (t: Thread) => `Varför nu? ${t.trigger.reason.replace(/\.$/, ''
  */
 export function assistantUsecases(deps: AssistantDeps) {
   const { store, registry, calendar, models, clock, ids } = deps;
+  const access = threadAccess(store, registry);
   const todayDate = () => displayDate(clock().toISOString());
-  const thread = async (persona: Pick<AuthenticatedContext, 'id'>, id: string) => (await store.readThread(persona.id, id))!;
+  const thread = async (persona: AuthenticatedContext, id: string) => (await access.read(persona, id))!;
   /** The turn's runner (D36): every capability it reads is a step, running and then complete with its time, named by the registry's title and source. */
   function turnFor(persona: AuthenticatedContext, observer: TurnObserver): Turn {
     const emit = (event: TurnEvent) => { try { observer.emit?.(event); } catch { /* a listener never breaks the turn */ } };
@@ -173,13 +175,13 @@ export function assistantUsecases(deps: AssistantDeps) {
     const turn = turnFor(persona, observer);
     const chips: Chip[] = input.chips ?? [];
     const resolved = await resolveChips(deps, persona, chips);
-    const existing = input.conversationId ? await store.readThread(persona.id, input.conversationId) : undefined;
+    const existing = input.conversationId ? await access.read(persona, input.conversationId) : undefined;
     if (input.conversationId && (!existing || existing.kind !== 'question')) throw new InputError('Samtalet finns inte.');
     const history = existing?.messages ?? [];
     // The cards this turn is about (H1): the chipped cards, else the open cards the question names. Asking for a card and
     // being told about it land on the same card. A card the conversation already shows is not drawn again: that one is live.
     const chippedCards = [...resolved.threads.values()].filter(t => t.kind === 'pushed');
-    const named = chippedCards.length ? [] : matchCards(input.text, (await store.listThreads(persona.id, clock().toISOString())).filter(t => t.state === 'open' && t.kind === 'pushed'));
+    const named = chippedCards.length ? [] : matchCards(input.text, (await access.list(persona, clock().toISOString())).filter(t => t.state === 'open' && t.kind === 'pushed'));
     const shown = new Set(history.flatMap(m => m.meta?.cards ?? []));
     const cards = [...chippedCards, ...named].map(t => t.id).filter(id => !shown.has(id)).slice(0, 3);
     // The model reads a named card as if the person had pointed at it.
@@ -197,6 +199,8 @@ export function assistantUsecases(deps: AssistantDeps) {
     const conversationId = existing?.id ?? ids();
     const refs = chips.map(c => c.ref);
     const assistantMeta: MessageMeta = { shape: produced.shape, assistant: produced.assistant, source: produced.source,
+      // Include the full available source set: nested search and generated prose can combine several sources.
+      access: { connectors: registry.list().filter(c => registry.visible(persona, c.id)).map(c => c.id), capabilities: registry.capabilitiesFor(persona).map(c => c.capability.name), authorizationVersion: persona.authorizationVersion },
       ...(produced.view ? { view: produced.view } : {}), ...(produced.draft ? { draft: { kind: produced.draft.kind, threadId: produced.draft.threadId, ...(produced.draft.refs ? { refs: produced.draft.refs } : {}), ...(produced.draft.week ? { week: produced.draft.week } : {}) } } : {}),
       ...(produced.toolCalls?.length ? { toolCalls: produced.toolCalls.map(c => ({ capability: c.capability, input: c.input })) } : {}),
       ...(produced.sources?.length ? { sources: produced.sources } : {}), ...(produced.followUps.length ? { followUps: produced.followUps.slice(0, 3) } : {}),
@@ -226,7 +230,7 @@ export function assistantUsecases(deps: AssistantDeps) {
   }
   /** A reply in a card keeps today's in-card router; a reply in a question thread is a conversation turn. */
   async function reply(persona: AuthenticatedContext, threadId: string, body: string): Promise<Thread> {
-    const current = await store.readThread(persona.id, threadId);
+    const current = await access.read(persona, threadId);
     if (!current) throw new InputError('Tråden finns inte.');
     if (current.kind === 'question') return (await converse(persona, { text: body, conversationId: threadId })).thread;
     const chipped = await converse(persona, { text: body, chips: [{ ref: 'thread:' + threadId, kind: 'thread', label: current.title }] });

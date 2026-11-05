@@ -1,6 +1,7 @@
+import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import type { SearchResult, View } from '../../packages/contracts/src/index';
-import { Registry, openRef, viewProblem, viewRows, viewSummary, type Actor, type Connector } from '../../packages/connectors/src/index';
+import { openRef, viewProblem, viewRows, viewSummary, type Actor, type Connector } from '../../packages/connectors/src/index';
 import { ManifestError, parseManifest } from '../../packages/connectors/src/remote';
 import { manifest as telefonbokManifest } from '../../connectors/telefonbok/connector.mjs';
 import { citationsOf } from '../../apps/server/src/assistant/answer';

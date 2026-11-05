@@ -1,0 +1,177 @@
+{
+  "protocol": 2,
+  "id": "hello",
+  "kind": "passthrough",
+  "source": "Hello",
+  "areas": [
+    {
+      "id": "hello",
+      "title": "Hello-anslutningen",
+      "roles": [
+        "manager",
+        "employee"
+      ],
+      "standing": [
+        "hello.greeting",
+        "hello.openItems"
+      ],
+      "schedules": [
+        {
+          "label": "Nya saker att göra",
+          "when": "Varje vardag 06:00"
+        }
+      ],
+      "figure": true
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "hello.greeting",
+      "kind": "read",
+      "title": "Säg hej",
+      "description": "En hälsning från hello-anslutningen till den inloggade.",
+      "input": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "model": true,
+      "scope": {}
+    },
+    {
+      "name": "hello.openItems",
+      "kind": "read",
+      "title": "Saker att göra",
+      "description": "Öppna saker i hello-anslutningen för chefens enhet.",
+      "input": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows"
+        ]
+      },
+      "model": true,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      }
+    },
+    {
+      "name": "hello.dayWithMeetings",
+      "kind": "read",
+      "title": "Dagen med möten",
+      "description": "Hur många möten den inloggade har i dag enligt kalendern, hämtat via Clew.",
+      "input": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "meetings": {
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "meetings",
+          "text"
+        ]
+      },
+      "model": true,
+      "scope": {}
+    },
+    {
+      "name": "hello.markDone",
+      "kind": "execute",
+      "title": "Markera klar",
+      "description": "Markerar valda saker som klara.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^hello:item:"
+            },
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "refs"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      },
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      }
+    },
+    {
+      "name": "hello.undo",
+      "kind": "execute",
+      "title": "Ångra",
+      "description": "Öppnar valda saker igen.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^hello:item:"
+            },
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "refs"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object"
+      },
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      }
+    }
+  ],
+  "scan": true,
+  "uses": [
+    "calendar.today"
+  ]
+}

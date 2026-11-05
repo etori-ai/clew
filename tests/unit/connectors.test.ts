@@ -1,5 +1,6 @@
+import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
-import { Registry, receipt, type Actor } from '../../packages/connectors/src/index';
+import { receipt, type Actor } from '../../packages/connectors/src/index';
 import { memoryState } from '../../packages/connectors/src/memory-state';
 import { heromaConnector, rehabCandidates } from '../../packages/connectors/src/mock/heroma';
 import { raindanceConnector } from '../../packages/connectors/src/mock/raindance';
@@ -165,13 +166,13 @@ describe('governance: an administrator decides who sees a connector (D23)', () =
     expect(r.tools(hillevi).some(t => t.name.startsWith('heroma.'))).toBe(false);
     expect(await r.run(hillevi, 'heroma.whoIsOn', {})).toMatchObject({ date: expect.any(String) });
   });
-  test('governance survives a replace and is forgotten on unregister; an ungoverned connector is open to everyone', () => {
+  test('governance survives a replace and is forgotten on unregister; missing governance denies access', () => {
     const { r } = registry();
     r.govern('heroma', { state: 'disabled', audience: { mode: 'all' }, scanEnabled: true, toolsEnabled: true, capabilities: {} });
     r.replace({ id: 'heroma', kind: 'passthrough', source: 'Heroma 2', areas: [], capabilities: [] });
     expect(r.governance('heroma').state).toBe('disabled');
     r.unregister('heroma');
-    expect(r.governance('heroma').state).toBe('enabled');
+    expect(r.governance('heroma').state).toBe('disabled');
     expect(r.visible(hillevi, 'heroma')).toBe(false);
     expect(r.visible(hillevi, 'raindance')).toBe(true);
   });

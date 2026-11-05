@@ -1,6 +1,7 @@
+import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext, Thread, TurnEvent } from '../../packages/contracts/src/index';
-import { actorOf, Registry, type Connector } from '../../packages/connectors/src/index';
+import { actorOf, type Connector } from '../../packages/connectors/src/index';
 import { searchConnector } from '../../apps/server/src/modules/search/connector';
 import { searchUsecases } from '../../apps/server/src/modules/search/usecases';
 import { memoryState } from '../../packages/connectors/src/memory-state';
@@ -18,7 +19,7 @@ import { memoryModelHealth, memoryModelStore, memoryModelWire } from '../../apps
 import { modelUsecases } from '../../apps/server/src/assistant/usecases/models';
 import type { ModelGenerate } from '../../apps/server/src/assistant/model';
 import { parseManifest, remoteConnector } from '../../packages/connectors/src/remote';
-import { assertionFor } from '../../apps/server/src/connectors/remote';
+import { assertionFor, testJwks, testAuthority } from '../connector-authority';
 import { createConnector as createTelefonbok, manifest as telefonbokManifest } from '../../connectors/telefonbok/connector.mjs';
 
 /**
@@ -35,6 +36,7 @@ const account = { ref: 'memory:account:hillevi', email: 'hillevi@clew.test', nam
 const members = ['Anna Lindqvist', 'Erik Sandström'].map(name => { const first = name.split(' ')[0]!.toLowerCase(); return { personId: first, ref: 'memory:account:' + first, email: first + '@clew.test', name }; });
 function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) {
   const state = memoryState(), registry = new Registry();
+  registry.register({ id: 'calendar', kind: 'core', source: 'Kalendern', areas: [], capabilities: [] });
   for (const m of [heromaConnector(state), raindanceConnector(state), ...(options.extra ?? [])]) registry.register(m);
   const store = memoryThreadStore(), proposals = memoryProposalStore(), cal = memoryCalendar(account);
   cal.events.push(occurrence({ uid: 'apt', title: 'APT', start: localInstant('2026-11-04T10:00'), end: localInstant('2026-11-04T11:00') }, account));
@@ -331,8 +333,8 @@ describe('a question answered from documents, with the model (D26)', () => {
 
 /** The phone book as the registry runs it: the real connector over the protocol, in process, on its made-up organisation. */
 function telefonbok(): Connector {
-  const secret = 'test-secret-test-secret', service = createTelefonbok({ secret });
-  return remoteConnector(parseManifest(telefonbokManifest, 'telefonbok'), { url: 'http://telefonbok', assert: assertionFor('telefonbok', secret), fetch: (input, init) => service.handle(new Request(input, init)) });
+  const secret = 'test-secret-test-secret', service = createTelefonbok({ jwks: testJwks, secret });
+  return remoteConnector(parseManifest(telefonbokManifest, 'telefonbok'), { url: 'http://telefonbok', key: secret, assert: assertionFor('telefonbok', secret), fetch: (input, init) => service.handle(new Request(input, init)) });
 }
 describe('a declared view is the answer, with and without the model (D38)', () => {
   test('without the model: what was typed after the capability\'s name is the view\'s question; the turn stores a count, the view and its audit row, never a row', async () => {

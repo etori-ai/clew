@@ -1,6 +1,7 @@
+import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import type { SearchHit } from '../../packages/contracts/src/index';
-import { CapabilityError, Registry, type Actor, type Connector } from '../../packages/connectors/src/index';
+import { CapabilityError, type Actor, type Connector } from '../../packages/connectors/src/index';
 import { headingFollowUps, merge, staleness } from '../../apps/server/src/modules/search/domain';
 import { searchConnector } from '../../apps/server/src/modules/search/connector';
 import { searchUsecases } from '../../apps/server/src/modules/search/usecases';

@@ -1,180 +1,57 @@
-# Creating a connector
+# Create a connector
 
-How a system gets connected to Clew. A connector is its own service behind the Clew connector protocol
-(D21, D22), registered in a running Clew by an administrator (D23). Nothing in Clew's code or image changes
-for it, whoever writes it: the system's owner, a vendor, another municipality, or the Clew team. The
-connectors the Clew team writes live under `connectors/<name>/` in this repository and depend on nothing else
-in it; `connectors/hello` is the reference (one file, no dependencies). The protocol is in
-`docs/architecture/connector-protocol.md` and `docs/protocol/connector-protocol.schema.json`; the
-administration side is `docs/architecture/connector-administration.md`.
+For an integrator connecting an existing system to Clew. The deliverable is your own HTTP service, with a manifest and a source adapter. No Clew SDK, frontend plugin or change to Clew's image is required.
 
-Two ways exist, and the order between them is fixed (D10):
+## 1. Run the contract before editing it
 
-1. **The system fulfils Clew's contract itself.** Its owner serves the manifest and the four routes from the
-   system, or from a thin service next to it. Nothing is written anywhere else.
-2. **Someone writes a connector for it.** When the system cannot or will not do that, a connector translates
-   the system's protocol (REST, SOAP, CalDAV, RPA) to Clew's contract. Whoever is closest to the system writes
-   it; Clew's own process is never the place for it. The only in-process code is Clew's core (people, the
-   stream, and the calendar until it is lifted), which is covered by `docs/architecture/backend-structure.md`.
+With the devcontainer running and dependencies installed, run this from the repository root on the host:
 
-You need: a place to run one more container next to Clew, a shared secret, and about an afternoon.
+```sh
+docker exec -w /workspace clew-app-1 bun run docs:smoke
+```
 
-## 1. Decide what the connector is for
+This runs [the executable walkthrough](../../scripts/docs-smoke.ts) against the real phone book fixture. It creates an ephemeral signing authority in memory, validates the manifest, sends a signed read, verifies the response, checks that a forged body cannot change the actor, and checks rejected credentials. It also runs the shared conformance checker. Expected final line: `Documentation smoke passed.`
 
-Answer these in a short note; it becomes the top of your connector's main file and the row in the landscape
-table in `docs/architecture/integration-paths.md`.
+It needs no running Clew BFF, database, Keycloak, model or source API. The ephemeral issuer exists only to test the connector; an installed connector trusts Clew's public keys, never a private key from this example. For a new checkout, start with [local development](../maintainers/local-development.md).
 
-| Question | Why it matters | Where the answer goes |
+## 2. Choose working code
+
+| Need | Start from | Important limit |
 |---|---|---|
-| Who owns the records? | Almost always the system: a `passthrough` connector (Clew stores refs and audit rows). A scheduled snapshot over other connectors is `derived`. If nobody else owns the domain, it is Clew core and needs a decision (D3) | `kind` in the manifest |
-| What does a person need from it, today, that makes them act? | Each answer is a capability: a `read` to look, a `propose` to draft, an `execute` to do. If nothing makes a person act, the system may only need link-out and search | The capability list |
-| Who may see and do what, and how is a call narrowed to that person's unit or own records? | The manifest's `scope` says who may call at all; the connector narrows further on every call | `scope` and the capability body |
-| How does the system recognise the user? Its own accounts, one integration account, or tokens from the shared IdP? | Picks the auth mode: `bound-credential`, `service` (then you narrow every call yourself) or `user-delegated` (token exchange, D5, later) | The connector's credential handling |
-| Does the system have an API at all? | No API means read through whatever exists plus link-out; writes are not offered in v1 | Capability kinds |
-| What is the system's licence and that of any client library you use? | A connector contributed to this repository must be OSI-licensed | Your README; `HANDOVER.md` section 3 when contributed |
-| Does a dept44 service, another municipality or a vendor already expose this domain? | May already fulfil the contract | The landscape table |
+| Understand routes, callbacks, scan and receipts | [hello](../../connectors/hello/) | In-memory demonstration; its mutations do not prove durable recovery or real source scoping. |
+| Read a directory, catalogue or other lookup service | [telefonbok](../../connectors/telefonbok/) | Fixture data by default; adapt the real API mapping and access policy. |
+| Learn source-side operation deduplication and lookup | [reference](../../connectors/reference/) | Synthetic SQLite durability fixture; not a selected pilot or production connector. |
+| Retrieve documents with a delegated user token | [eneo](../../connectors/eneo/) | Requires an operator-configured IdP and compatible source API. |
 
-Then write the manifest first, before any code, and read it as a list of buttons and questions:
+Copy the complete connector directory into your own project, including its verifier and server. For a read-only integration, the phone book is the most useful starting point. Node is only the example implementation language; another language implements the same [JSON Schema](../protocol/connector-protocol.schema.json) and [HTTP contract](../reference/connector-protocol.md).
 
-- Domain granularity, not endpoint granularity. "Ärenden som väntar på mig", "Avsluta ärende"; never
-  "GET /v2/cases?page=".
-- Every row has a `ref`: a string Clew can store and hand back, prefixed with your connector id
-  (`errands:case:2026-1187`), stable across days.
-- Outputs are rows the UI renders: no markup, no links for the browser to follow, no names of individuals
-  where a card would show them (names belong in a panel view or the source system).
-- Say how a read is shown instead of leaving it to Clew's generic rules: a `view` on the capability (D38) names the
-  kind (a table, a list, one record, a text), the fields with their Swedish labels and formats, the search field and
-  choice the person gets, and what a row opens. Clew draws it; you never send markup. Where the content is about
-  identifiable people, add `modelReads: "summary"` so it reaches the person and not the model. The parts are in
-  `docs/architecture/connector-protocol.md`, "Declaring a view"; `connectors/telefonbok` shows all of them.
-- A view that opens without input can be put in Clew's menu as a tool by an administrator (D40). Nothing is needed for
-  that, but say what the tool is called: `menu: { label, icon }` on the capability ("Telefonbok", not "Sök i
-  telefonboken"). Without it the row takes the capability's title. Clew decides where a row sits.
-- Writes return an outcome per row and, when reversible, what reverses them.
-- If the capability list reads well as five to ten tool descriptions, it is right.
+## 3. Define the smallest contract
 
-## 2. Build the service
+Decide who owns each record, who can read or change it, how a Clew person/unit maps to source identities, and how the source authenticates calls. Start with one useful `read`. Name capabilities at task level (`directory`, `openItems`), with precise input and output schemas. Write Swedish titles, descriptions and user-visible errors; keep identifiers English.
 
-Any language, any framework. Four routes:
+The complete [hello manifest](../generated/hello.manifest.json) and [phone book manifest](../generated/telefonbok.manifest.json) are generated from their actual exports, not abbreviated copy-and-paste samples. Follow the [generated field reference](../generated/README.md) and these rules:
 
-```
-GET  /clew/manifest                → the manifest (static JSON)
-POST /clew/capabilities/{name}     { actor, input } → { output } | { error }
-POST /clew/scan                    { actor } → { drafts }          (if manifest.scan)
-POST /clew/figure                  { actor, area } → { figure }    (if any area has figure: true)
-```
+- Use protocol `2`, a stable lowercase connector id, and `<id>.<verb>` capability names.
+- Declare only implemented operations. A `read` may have a view; `execute` must have `model: false`.
+- List standing capabilities in an area if people should reach them without composing a question.
+- Declare exact callback targets in `uses`, an array of strings such as `calendar.today`.
+- Keep refs stable and validate them when they come back. Refs are opaque within the owner's contract: hello uses `hello:item:1`, while the phone book uses `person:<id>`. They do not grant access.
+- Choose `scan: false` unless you can define a deterministic occurrence and its stable topic.
 
-On every `POST`:
+Do not add fields from a proposed decision unless they exist in the schema. For example, `deprecated` is not a supported manifest field today. See [status](../reference/status.md).
 
-1. Verify the bearer: HS256 JWT, your shared secret, `iss` = `clew`, `aud` = your connector id, not
-   expired. Reject with 401 and `{ error: { code: 'denied', message: 'Ogiltigt behörighetsbevis.' } }`.
-   Take the actor from the `actor` claim. `connectors/hello/connector.mjs` has a 15-line verifier with no
-   library.
-2. Check the capability's scope yourself, then narrow in the body: a manager sees their unit, an employee
-   their own records. Never widen because Clew asked; Clew already filtered, you filter again.
-3. Talk to your system as the person or as the integration account, map its answer to your output schema,
-   and answer `{ output }`. Translate the system's errors into the protocol's: `invalid`, `denied`,
-   `not-found`, `unavailable`, `unknown`. Never let a protocol exception reach Clew as a success.
-4. On a failure, answer `{ error: { code, message } }` with a Swedish `message` the person can read. If
-   your system did not answer at all, `unavailable` and HTTP 503; Clew shows "<source> svarar inte just nu."
+## 4. Implement the request boundary and source adapter
 
-For an `execute`, return an `ExecuteResult`: a Swedish `headline`, one row per ref with `outcome` `done`,
-`unknown`, `failed` or `skipped` and a `detail` that is your system's answer read back, and
-`undoCapability` + `undoMinutes` when you have a compensating capability. Only answer `done` when the
-system confirmed; a timeout is `unknown`. Green in the UI comes only from a read-back.
+Serve `GET /clew/manifest` and `POST /clew/capabilities/{name}`. Add `/clew/scan` and `/clew/figure` only when declared. The [protocol reference](../reference/connector-protocol.md) lists their request and response definitions.
 
-For `scan`, return the drafts you want pushed for this person now: deterministic, no model, the same
-`topic` for the same occurrence every night (Clew keeps one open card per person and topic). Each draft
-names an `area` from your manifest, a `reason` (shown under "Varför ser jag detta?"), items with refs, and
-actions: at most one primary (`execute` or `propose`), up to two secondary `read`s with `target: 'panel'`
-or `target: 'link'`. Clew adds its standard actions itself. Every action names one of your own capabilities with
-the `kind` your manifest gives it, and an `undoCapability` is one of your own executes: Clew refuses a draft that names
-another connector's capability or calls an execute a read, and `connector-check` fails on it (D35).
+For each POST, verify the transport key and Clew's signed assertion, take the actor from verified claims, validate the input, enforce capability and record-level access, then call the source. Map the source's response to the declared output. Map failures to the protocol error envelope with a safe Swedish message. The body actor is not trusted identity. The full flow is in [authorization](authorization.md).
 
-Need another connector's data (the person's calendar, the directory)? Post the assertion you received to
-`{CLEW_URL}/api/connectors/call` with `{ name: 'calendar.today', input: {} }` inside the same request.
-Reads and proposals only; scope is the person's.
+Keep the source's own vocabulary and credentials in the adapter. The phone book isolates that work in [directory.mjs](../../connectors/telefonbok/directory.mjs): a fixture and an HTTP adapter implement the same two functions. Replace its assumed HTTP shape with your source's documented shape and test recorded responses. Do not ship the fixture's organization-wide access policy without checking the real source's rules.
 
-Store nothing but what your system already holds. No cache of rows, no log line with a row in it.
-Dependencies: the standard library first; a client library only if its licence allows what you ship.
+## 5. Add one feature at a time
 
-### Being a search source, and acting as the person
+- [Search and declared views](example-custom-directory.md) make the read useful from both buttons and the composer.
+- [Actions and receipts](actions-and-receipts.md) explain scan drafts, approved writes and uncertain outcomes.
+- [Testing and deployment](testing-and-deployment.md) covers fixture tests, live checks, registration and upgrades.
 
-If your system holds documents, people, cases or rooms, declare a `read` named `<id>.search` with input `{ query }`
-and output `{ rows: SearchHit[] }`, plus a `<id>.fetch` that takes one of your refs back; add `kinds` on the search
-so Clew skips it for questions it cannot answer. Clew's composite search then asks you beside every other source,
-under a budget, and your rows become citations and panel rows. If your system must be called as the person rather
-than as a service, declare `delegation: { audience: "<your IdP client id>" }` in the manifest and read
-`X-Clew-Delegated-Token` on every call; answer `denied` without it. Both are described in
-`docs/architecture/connector-protocol.md` ("Being a search source", "Acting as the person"); `connectors/eneo` does both.
-
-## 3. Check it before connecting it
-
-```sh
-bun scripts/connector-check.ts http://127.0.0.1:4010 --secret <your secret>
-```
-
-The checker does what Clew does when an administrator adds a connector and then exercises it as a manager
-and as an employee: manifest valid, every read callable with its declared scope, out-of-scope roles refused,
-a call signed with another secret refused by your service (not only by Clew), scan idempotent and naming
-known areas, figures present. It needs no database and no Clew. A capability that calls back into Clew is
-reported as a warning when no Clew is running. (The checker ships in this repository today and will ship as
-a small image with Clew's image; the admin page's "Testa anslutning" runs the same checks.)
-
-## 4. Connect it to a running Clew
-
-A connector is registered in Clew's database by an administrator, not by configuration (D23). The stack is
-Clew's image, Postgres, Temporal and one container per connector; nothing on Clew's container names the
-connector:
-
-```yaml
-services:
-  errands:
-    image: your-registry/clew-errands:1.0.0
-    environment:
-      ERRANDS_SECRET: ${ERRANDS_SECRET}     # whatever your service calls it
-      CLEW_URL: http://clew:3000
-  clew:
-    environment:
-      HOST: 0.0.0.0                          # so connectors can reach /api/connectors/call
-```
-
-Then, in Clew, an administrator (grant capability `admin.connectors`) opens Administration › Anslutna
-system › Anslut system, enters the id, the address and the secret, reads the check result, chooses who sees
-it, and turns it on. No restart. The log says `Connector "errands" (…) registered …`; `GET /api/connectors`
-lists it; the sidebar gets your areas; a manager gets your cards after the first visit; the composer offers
-your `model: true` reads.
-
-Until the admin page exists, the same row is written from the command line inside the app container:
-
-```sh
-docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts errands http://errands:4010 --secret <secret> --enable
-```
-
-The BFF registers enabled rows at boot and watches the rows every few seconds, so nothing is restarted after an enable. In the devcontainer
-the BFF listens on loopback, so a connector under development runs inside the app container
-(`node your-connector.mjs` on a port) with `CLEW_URL=http://127.0.0.1:3000`; `bun run auth:setup` seeds the
-hello connector as a draft with a generated secret (`HELLO_CONNECTOR_SECRET` in `.auth-test.env`).
-
-## 5. Ship it
-
-- One image, pinned base, no secrets baked in, `PORT`, your secret variable and `CLEW_URL` documented.
-- Semantic versions. A manifest change that removes a capability or changes an input schema is a major
-  version, because cards already pushed carry the old action; the admin page shows the diff on refresh.
-- A fixture mode (an environment flag) that answers from canned data, so Clew's UI can be demonstrated
-  without your system (D8), and so the checker can run in your CI.
-- Licences: whatever you ship under is yours; Clew asks nothing. If you contribute the connector to this
-  repository under `connectors/<name>/`, it must be OSI-licensed and depend on nothing else in the repository
-  (`bun run deps` checks that), and its row goes in the landscape table in `integration-paths.md`.
-
-## What a review checks
-
-- The contract is Clew's: nothing in the manifest names the system's endpoints, ids or vocabulary.
-- The assertion is verified on every `POST`; the scope is re-checked on the connector side; `run` narrows
-  to the actor; nothing from a request body is trusted for identity.
-- No `execute` with `model: true`. `CLEW_URL` is used only with the assertion from the current request.
-- The connector stores nothing and logs no rows.
-- Names of individuals appear only in panel views or link-outs, never in a card's title, summary or items.
-- Every `execute` returns one outcome per ref and `unknown`, never `done`, when the system did not answer.
-- `scan` is deterministic and idempotent by `topic`.
-- Swedish only in titles, descriptions, headlines and error messages; English everywhere else.
+An independently deployed connector needs the source credentials and a trusted `CLEW_URL`. Clew stores its registration and transport secret in the database. Registration is not an environment variable or a code import.

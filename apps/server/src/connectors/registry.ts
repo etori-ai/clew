@@ -27,26 +27,24 @@ const search = searchUsecases({ sources: actor => registry.searchSources(actor),
 /** The card an answer becomes is the stream's use case; the composition root fills this slot once the stream is built over the registry. */
 export const answerCards: AnswerCards = {};
 const bundled = [heromaConnector(postgresState), raindanceConnector(postgresState), treservaConnector(postgresState), kommunikationConnector(postgresState), calendarConnector(calendar, events), peopleConnector(), searchConnector(search, answerCards)];
-for (const m of bundled) registry.register(m);
+for (const m of bundled) registry.register({ ...m, uses: ['*'] });
 /** The connectors that live in this process: they get a `connector` row at boot so an administrator can govern them too (D23). */
 export const bundledIds = bundled.map(m => m.id);
 export { actorOf };
 
 const ajv = addFormats(new Ajv({ allErrors: false, strict: false }));
-const validators = new Map<string, ReturnType<typeof ajv.compile>>();
-function validateInput(name: string, schemaObject: object, input: unknown) {
-  let v = validators.get(name); if (!v) { v = ajv.compile(schemaObject); validators.set(name, v); }
-  if (!v(input)) throw new InputError('Ogiltig förfrågan till ' + name + '.');
-}
 /** Whether a capability's input schema accepts `{}`: the conformance check calls only the reads that do (the same rule as `scripts/connector-check.ts`). */
 export const acceptsEmptyInput = (schema: object) => { try { return !!ajv.compile(schema)({}); } catch { return true; } };
 /** Run a capability through the registry with input validation. The single path for REST, cards, tools and connector callbacks. */
 export async function runCapability<O = unknown>(persona: AuthenticatedContext, name: string, input: unknown): Promise<O> {
   const found = registry.find(name);
   if (!found) throw new InputError('Okänd förmåga.');
-  validateInput(name, found.capability.input as object, input ?? {});
-  if (found.capability.kind === 'execute') await persona.authorize();
-  try { return await registry.run<O>(actorOf(persona), name, input ?? {}, persona.delegate ? { delegate: persona.delegate } : {}); }
+  await persona.authorize();
+  try {
+    const result = await registry.run<O>(actorOf(persona), name, input ?? {}, persona.delegate ? { delegate: persona.delegate } : {});
+    await persona.authorize();
+    return result;
+  }
   catch (error) { if (error instanceof CapabilityError) throw new InputError(error.message); throw error; }
 }
 /** A connector's call into another connector (D20, D21): reads and proposals only, scope re-checked for the same actor, never execute. */

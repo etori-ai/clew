@@ -72,6 +72,7 @@ export const api = {
   connectors: () => call<{ connectors: unknown[]; tools: string[] }>('/api/connectors'),
   act: (id: string, actionId: string, refs?: string[]) => post<{ kind: 'execute'; thread: Thread } | { kind: 'read' | 'propose'; output: unknown; view?: PanelViewSpec }>(`/api/threads/${id}/act`, { actionId, refs }),
   undoReceipt: (id: string) => post<Thread>(`/api/threads/${id}/undo-receipt`),
+  checkExecution: (id: string) => post<Thread>(`/api/threads/${id}/execution/check`),
   snooze: (id: string, input: SnoozeInput = {}) => post<Thread>(`/api/threads/${id}/snooze`, input),
   snoozePresets: () => call<{ presets: SnoozePreset[] }>('/api/snooze/presets'),
   remindInvitees: (id: string) => post<Thread>(`/api/threads/${id}/remind-invitees`),

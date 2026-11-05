@@ -3,7 +3,7 @@
 // (D26), and declared views (D38) so Clew draws the table, the team list and the contact card itself, with or without
 // a model. Nothing here is markup; the connector says what the fields are and Clew decides how they look.
 // No dependencies beyond Node. The phone book's own API lives behind the port in directory.mjs.
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createVerifier, callbackFor, b64 } from './verification.mjs';
 import { DirectoryUnavailable, createFixtureDirectory } from './directory.mjs';
 
 const CONNECTOR = 'telefonbok';
@@ -22,7 +22,7 @@ const openCard = { capability: 'telefonbok.person', title: 'Kontaktkort', params
 const contact = [{ key: 'phone', label: 'Telefon', format: 'phone' }, { key: 'mobile', label: 'Mobil', format: 'phone' }, { key: 'email', label: 'E-post', format: 'email' }];
 
 export const manifest = {
-  protocol: 1, id: CONNECTOR, kind: 'passthrough', source: SOURCE,
+  protocol: 2, id: CONNECTOR, kind: 'passthrough', source: SOURCE,
   // The area puts both reads under "Gör själv" and as chips under the box for everyone in the connector's audience:
   // each person's own team list is one click away without anyone composing a page.
   areas: [{ id: 'kontakter', title: 'Kontakter', icon: 'phone', roles: ['manager', 'employee'], standing: ['telefonbok.team', 'telefonbok.directory'], schedules: [] }],
@@ -63,19 +63,7 @@ export const manifest = {
 };
 
 // --- the assertion Clew sends: HS256 JWT, iss "clew", aud = this connector id, sub = the person id.
-const b64 = s => Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
-export function verifyAssertion(token, secret, now = Date.now()) {
-  const [h, p, s] = String(token).split('.');
-  if (!h || !p || !s) return null;
-  const expected = createHmac('sha256', secret).update(`${h}.${p}`).digest();
-  const given = b64(s);
-  if (given.length !== expected.length || !timingSafeEqual(given, expected)) return null;
-  let header, payload;
-  try { header = JSON.parse(b64(h).toString()); payload = JSON.parse(b64(p).toString()); } catch { return null; }
-  if (header.alg !== 'HS256' || payload.iss !== 'clew' || payload.aud !== CONNECTOR || !payload.exp || payload.exp * 1000 < now) return null;
-  if (!payload.actor || payload.actor.id !== payload.sub) return null;
-  return payload.actor;
-}
+
 
 class Invalid extends Error {}
 class NotFound extends Error {}
@@ -89,8 +77,8 @@ const hit = p => ({ ref: refOf(p.id), kind: 'person', label: p.name, snippet: [p
  * `unitMap` translates Clew's unit ids to the phone book's when they differ: Clew knows a person's unit from its own
  * grants, and "my team" is whoever the phone book has on that unit.
  */
-export function createConnector({ secret, directory = createFixtureDirectory(), unitMap = {} } = {}) {
-  if (!secret) throw new Error('A shared secret is required (CLEW_CONNECTOR_SECRET).');
+export function createConnector({ jwks, secret, directory = createFixtureDirectory(), unitMap = {} } = {}) {
+  const verify = createVerifier({ secret, jwks, clewUrl: process.env.CLEW_URL ?? '' }, CONNECTOR);
   const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   const fail = (code, message, status) => json({ error: { code, message } }, status);
   const unitOf = actor => unitMap[actor.unitId] ?? actor.unitId;
@@ -124,7 +112,7 @@ export function createConnector({ secret, directory = createFixtureDirectory(), 
     if (request.method === 'GET' && url.pathname === '/clew/manifest') return json(manifest);
     if (request.method !== 'POST' || !url.pathname.startsWith('/clew/')) return fail('not-found', 'Okänd adress.', 404);
     const token = (request.headers.get('authorization') ?? '').replace(/^Bearer /, '');
-    const actor = verifyAssertion(token, secret);
+    const actor = await verify(token, request.headers.get('x-clew-connector-key'));
     if (!actor) return fail('denied', 'Ogiltigt behörighetsbevis.', 401);
     let body; try { body = await request.json(); } catch { return fail('invalid', 'Ogiltig förfrågan.', 400); }
     if (url.pathname === '/clew/scan') return json({ drafts: [] });

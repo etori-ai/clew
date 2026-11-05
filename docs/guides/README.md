@@ -1,12 +1,11 @@
-# Guides
+# Connector guides
 
-Step-by-step instructions for recurring work. A guide says how; the reasons are in `docs/decisions/` and
-`docs/architecture/`. Keep each guide runnable: commands as they are typed inside the devcontainer, code
-that compiles against the current types, and a worked example where one helps.
+Read the [platform overview](../overview.md), then follow the path that matches your integration.
 
-| Guide | For |
-|---|---|
-| [Creating a connector](creating-a-connector.md) | Connecting a system to Clew as its own service behind the connector protocol, in any language, registered by an administrator: the questions to answer first, the manifest, the four routes, the assertion, the checker, connecting it to a running Clew, shipping. The one path for every integration, ours or a third party's (D21, D23) |
-| [Worked example: the phone book](example-custom-directory.md) | A custom phone book reachable through an API becomes a connector end to end: the questions, the manifest with its declared views (D38), the adapter, the search source, registration, the check, and what a person sees with and without a model. The code is `connectors/telefonbok` |
+1. [Create a connector](creating-a-connector.md): exercise the fixture, choose a starting point and implement your source adapter.
+2. [Verify authorization](authorization.md): transport key, signed actor, source scope, callbacks and delegation.
+3. [Add search and views](example-custom-directory.md): adapt the phone book's real code.
+4. [Add actions and receipts](actions-and-receipts.md): deterministic scans, human decisions, source evidence and safe recovery.
+5. [Test and deploy](testing-and-deployment.md): fixture tests, live conformance, registration and troubleshooting.
 
-Adding a guide: one file, kebab-case name, a first sentence that says who it is for, and a row here.
+Use the [protocol reference](../reference/connector-protocol.md) for exact shapes and the [support matrix](../reference/status.md) for implementation limits. Full application setup is in [local development](../maintainers/local-development.md).

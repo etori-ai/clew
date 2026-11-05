@@ -1,0 +1,1436 @@
+{
+  "formatVersion": 1,
+  "generatedBy": "scripts/docs.ts",
+  "pathBase": "repository-root",
+  "protocolVersion": 2,
+  "authorityOrder": [
+    "implementation-and-behavioral-tests",
+    "generated-contracts-and-examples",
+    "current-guides",
+    "decision-intent",
+    "historical-reviews-and-session-notes"
+  ],
+  "entrypoints": [
+    "docs/overview.md",
+    "docs/guides/creating-a-connector.md",
+    "docs/reference/status.md",
+    "docs/reference/connector-protocol.md",
+    "docs/guides/authorization.md"
+  ],
+  "canonical": {
+    "protocol": "packages/connectors/src/protocol.ts",
+    "contracts": "packages/contracts/src/index.ts",
+    "transport": "packages/connectors/src/remote.ts",
+    "registry": "packages/connectors/src/index.ts",
+    "viewValidation": "packages/connectors/src/views.ts",
+    "signingAuthority": "apps/server/src/connectors/authority.ts",
+    "standaloneVerifier": "connectors/hello/verification.mjs",
+    "callbacks": "apps/server/src/routes/connectors.ts",
+    "conformance": "packages/connectors/src/check.ts",
+    "executableWalkthrough": "scripts/docs-smoke.ts",
+    "supportStatus": "docs/reference/status.md"
+  },
+  "commands": {
+    "generate": "bun run docs:generate",
+    "check": "bun run docs:check",
+    "smoke": "bun run docs:smoke",
+    "hostPrefix": "docker exec -w /workspace clew-app-1"
+  },
+  "examples": [
+    {
+      "id": "hello",
+      "source": "connectors/hello/connector.mjs",
+      "manifest": "docs/generated/hello.manifest.json",
+      "capabilities": [
+        "hello.greeting",
+        "hello.openItems",
+        "hello.dayWithMeetings",
+        "hello.markDone",
+        "hello.undo"
+      ]
+    },
+    {
+      "id": "telefonbok",
+      "source": "connectors/telefonbok/connector.mjs",
+      "manifest": "docs/generated/telefonbok.manifest.json",
+      "capabilities": [
+        "telefonbok.directory",
+        "telefonbok.team",
+        "telefonbok.person",
+        "telefonbok.search",
+        "telefonbok.fetch"
+      ]
+    }
+  ],
+  "duplicateDecisionNumbers": [
+    "D37",
+    "D38",
+    "D39"
+  ],
+  "decisions": [
+    {
+      "key": "D01-clew-owns-every-integration-contract",
+      "number": 1,
+      "path": "docs/decisions/D01-clew-owns-every-integration-contract.md",
+      "title": "D1 · Clew owns every integration contract",
+      "status": "accepted",
+      "date": "2026-11-03",
+      "area": "integrations"
+    },
+    {
+      "key": "D02-no-openapi-to-mcp-conversion",
+      "number": 2,
+      "path": "docs/decisions/D02-no-openapi-to-mcp-conversion.md",
+      "title": "D2 · No OpenAPI-to-MCP conversion in the running system",
+      "status": "accepted",
+      "date": "2026-11-03",
+      "area": "integrations"
+    },
+    {
+      "key": "D03-three-module-kinds",
+      "number": 3,
+      "path": "docs/decisions/D03-three-module-kinds.md",
+      "title": "D3 · Three module kinds: core, pass-through, derived",
+      "status": "accepted",
+      "date": "2026-11-03",
+      "area": "integrations"
+    },
+    {
+      "key": "D04-foreign-mcp-servers-are-wrapped",
+      "number": 4,
+      "path": "docs/decisions/D04-foreign-mcp-servers-are-wrapped.md",
+      "title": "D4 · Foreign MCP servers are wrapped, not passed through",
+      "status": "accepted",
+      "date": "2026-11-03",
+      "area": "integrations"
+    },
+    {
+      "key": "D05-oidc-and-oauth-only-identification-path",
+      "number": 5,
+      "path": "docs/decisions/D05-oidc-and-oauth-only-identification-path.md",
+      "title": "D5 · OIDC and OAuth 2.1 with JWT access tokens are the only identification path",
+      "status": "accepted",
+      "date": "2026-11-03",
+      "area": "identity"
+    },
+    {
+      "key": "D06-dev-login-local-only",
+      "number": 6,
+      "path": "docs/decisions/D06-dev-login-local-only.md",
+      "title": "D6 · Dev login with username and password, local only",
+      "status": "accepted, not built yet",
+      "date": "2026-11-03",
+      "area": "identity"
+    },
+    {
+      "key": "D07-bun-is-the-server-runtime",
+      "number": 7,
+      "path": "docs/decisions/D07-bun-is-the-server-runtime.md",
+      "title": "D7 · Bun is the server runtime",
+      "status": "superseded by D16 (2026-11-04)",
+      "date": "2026-11-03",
+      "area": "platform"
+    },
+    {
+      "key": "D08-every-action-works-without-the-model",
+      "number": 8,
+      "path": "docs/decisions/D08-every-action-works-without-the-model.md",
+      "title": "D8 · Every action works without the model",
+      "status": "accepted",
+      "date": "2026-11-03",
+      "area": "product"
+    },
+    {
+      "key": "D09-side-panel-holds-views-and-apps",
+      "number": 9,
+      "path": "docs/decisions/D09-side-panel-holds-views-and-apps.md",
+      "title": "D9 · The side panel holds conversation, Clew views and MCP App views",
+      "status": "accepted, the app half replaced by D38 (2026-11-05): a connector declares its view as data and Clew draws it; nothing is rendered by a connector",
+      "date": "2026-11-03",
+      "area": "ui"
+    },
+    {
+      "key": "D10-integrations-fulfil-clews-api-first",
+      "number": 10,
+      "path": "docs/decisions/D10-integrations-fulfil-clews-api-first.md",
+      "title": "D10 · Integrations fulfil Clew's API; adapters are the fallback",
+      "status": "accepted",
+      "date": "2026-11-03",
+      "area": "integrations"
+    },
+    {
+      "key": "D11-one-calendar-contract-two-adapters",
+      "number": 11,
+      "path": "docs/decisions/D11-one-calendar-contract-two-adapters.md",
+      "title": "D11 · One calendar contract, CalDAV and Microsoft 365 as adapters",
+      "status": "accepted, `microsoft365` adapter not built yet",
+      "date": "2026-11-03",
+      "area": "integrations"
+    },
+    {
+      "key": "D12-objects-chips-proposals",
+      "number": 12,
+      "path": "docs/decisions/D12-objects-chips-proposals.md",
+      "title": "D12 · Objects, chips, proposals: the general interaction pattern",
+      "status": "accepted",
+      "date": "2026-11-03",
+      "area": "ui"
+    },
+    {
+      "key": "D13-conversation-in-the-composer-drawer",
+      "number": 13,
+      "path": "docs/decisions/D13-conversation-in-the-composer-drawer.md",
+      "title": "D13 · The conversation lives in the composer's drawer; the dim is an Astryx Overlay",
+      "status": "superseded by D31",
+      "date": "2026-11-03",
+      "area": "ui"
+    },
+    {
+      "key": "D14-clew-stands-alone-eneo-enhances",
+      "number": 14,
+      "path": "docs/decisions/D14-clew-stands-alone-eneo-enhances.md",
+      "title": "D14 · Clew stands alone; Eneo enhances it through an optional module",
+      "status": "accepted",
+      "date": "2026-11-04",
+      "area": "product"
+    },
+    {
+      "key": "D15-postgres-scheduler-now-temporal-later",
+      "number": 15,
+      "path": "docs/decisions/D15-postgres-scheduler-now-temporal-later.md",
+      "title": "D15 · Postgres-backed scheduler in v1, Temporal later",
+      "status": "accepted, narrowed by D17 (Temporal adopted 2026-11-04 for new timers; the three job kinds remain on the `job` table until migrated)",
+      "date": "2026-11-03",
+      "area": "platform"
+    },
+    {
+      "key": "D16-node-is-the-server-runtime",
+      "number": 16,
+      "path": "docs/decisions/D16-node-is-the-server-runtime.md",
+      "title": "D16 · Node is the server runtime; Bun stays the toolchain",
+      "status": "accepted",
+      "date": "2026-11-04",
+      "area": "platform"
+    },
+    {
+      "key": "D17-temporal-runs-the-durable-timers",
+      "number": 17,
+      "path": "docs/decisions/D17-temporal-runs-the-durable-timers.md",
+      "title": "D17 · Temporal runs the durable timers, starting with a person's own reminders",
+      "status": "accepted",
+      "date": "2026-11-04",
+      "area": "platform"
+    },
+    {
+      "key": "D18-errands-are-a-clew-owned-passthrough-domain",
+      "number": 18,
+      "path": "docs/decisions/D18-errands-are-a-clew-owned-passthrough-domain.md",
+      "title": "D18 · Errands are a Clew-owned pass-through domain; SupportManagement is the first adapter",
+      "status": "proposed, hosting shape replaced by D35",
+      "date": "2026-11-04",
+      "area": "integrations"
+    },
+    {
+      "key": "D19-change-notification-is-a-clew-owned-contract",
+      "number": 19,
+      "path": "docs/decisions/D19-change-notification-is-a-clew-owned-contract.md",
+      "title": "D19 · Change notification is a Clew-owned contract: payload-free CloudEvents over HTTP",
+      "status": "proposed",
+      "date": "2026-11-04",
+      "area": "integrations"
+    },
+    {
+      "key": "D20-modular-monolith-ports-and-adapters",
+      "number": 20,
+      "path": "docs/decisions/D20-modular-monolith-ports-and-adapters.md",
+      "title": "D20 · Backend structure: a modular monolith with ports and adapters, not tactical DDD",
+      "status": "accepted",
+      "date": "2026-11-04",
+      "area": "platform"
+    },
+    {
+      "key": "D21-integrations-are-module-services",
+      "number": 21,
+      "path": "docs/decisions/D21-integrations-are-module-services.md",
+      "title": "D21 · Every integration is a module service behind the Clew module protocol",
+      "status": "accepted",
+      "date": "2026-11-04",
+      "area": "integrations"
+    },
+    {
+      "key": "D22-connectors-not-modules",
+      "number": 22,
+      "path": "docs/decisions/D22-connectors-not-modules.md",
+      "title": "D22 · Connectors, not modules: the word for an integration that a person, an operator or a vendor meets",
+      "status": "accepted",
+      "date": "2026-11-04",
+      "area": "integrations"
+    },
+    {
+      "key": "D23-connectors-are-managed-in-the-database",
+      "number": 23,
+      "path": "docs/decisions/D23-connectors-are-managed-in-the-database.md",
+      "title": "D23 · Connectors are registered and governed in the database by an administrator, not by environment variables",
+      "status": "accepted, admin API and screens not built yet",
+      "date": "2026-11-04",
+      "area": "integrations"
+    },
+    {
+      "key": "D24-model-endpoints-are-administered-in-the-product",
+      "number": 24,
+      "path": "docs/decisions/D24-model-endpoints-are-administered-in-the-product.md",
+      "title": "D24 · Model providers and models are administered in the product, and the chat can choose between them",
+      "status": "accepted, built 2026-11-05",
+      "date": "2026-11-04",
+      "area": "product"
+    },
+    {
+      "key": "D25-use-cases-over-ports-fast-tests",
+      "number": 25,
+      "path": "docs/decisions/D25-use-cases-over-ports-fast-tests.md",
+      "title": "D25 · Use cases take their ports from a composition root; the unit suite runs on memory adapters held to a store contract",
+      "status": "accepted",
+      "date": "2026-11-04",
+      "area": "platform"
+    },
+    {
+      "key": "D26-questions-over-documents-are-search-not-knowledge",
+      "number": 26,
+      "path": "docs/decisions/D26-questions-over-documents-are-search-not-knowledge.md",
+      "title": "D26 · Questions answered from documents are a search fan-out with citations, not a knowledge module",
+      "status": "proposed",
+      "date": "2026-11-04",
+      "area": "product"
+    },
+    {
+      "key": "D27-event-calendar-is-fullcalendar-themed-with-astryx-tokens",
+      "number": 27,
+      "path": "docs/decisions/D27-event-calendar-is-fullcalendar-themed-with-astryx-tokens.md",
+      "title": "D27 · The event calendar is FullCalendar 7 Standard, themed with Astryx tokens, behind Astryx components",
+      "status": "accepted",
+      "date": "2026-11-04",
+      "area": "ui"
+    },
+    {
+      "key": "D28-the-stream-has-two-groups-and-three-piles",
+      "number": 28,
+      "path": "docs/decisions/D28-the-stream-has-two-groups-and-three-piles.md",
+      "title": "D28 · The stream has two groups and three piles, and the day is drawn as one track",
+      "status": "accepted, implementation in progress",
+      "date": "2026-11-04",
+      "area": "ui"
+    },
+    {
+      "key": "D29-inte-nu-is-a-timed-snooze-that-breaks-on-activity",
+      "number": 29,
+      "path": "docs/decisions/D29-inte-nu-is-a-timed-snooze-that-breaks-on-activity.md",
+      "title": "D29 · \"Inte nu\" is a timed snooze with a visible landing time that breaks on activity",
+      "status": "accepted, implementation pending",
+      "date": "2026-11-04",
+      "area": "product"
+    },
+    {
+      "key": "D30-a-proposal-thread-is-an-obligation-with-four-steps",
+      "number": 30,
+      "path": "docs/decisions/D30-a-proposal-thread-is-an-obligation-with-four-steps.md",
+      "title": "D30 · A proposal thread is an obligation with four steps, replies read back and follow-ups as cards",
+      "status": "accepted, the live Temporal run and the Nextcloud reply path unverified",
+      "date": "2026-11-04",
+      "area": "product"
+    },
+    {
+      "key": "D31-the-conversation-swaps-the-stream-inside-one-chatlayout",
+      "number": 31,
+      "path": "docs/decisions/D31-the-conversation-swaps-the-stream-inside-one-chatlayout.md",
+      "title": "D31 · The conversation swaps the stream inside one ChatLayout; chips live in the composer drawer",
+      "status": "accepted",
+      "date": "2026-11-04",
+      "area": "ui"
+    },
+    {
+      "key": "D32-one-calendar-family-and-the-persons-own-bookings",
+      "number": 32,
+      "path": "docs/decisions/D32-one-calendar-family-and-the-persons-own-bookings.md",
+      "title": "D32 · One calendar family, and a person's own bookings as use cases",
+      "status": "accepted",
+      "date": "2026-11-04",
+      "area": "ui"
+    },
+    {
+      "key": "D33-browser-reads-go-through-one-query-cache",
+      "number": 33,
+      "path": "docs/decisions/D33-browser-reads-go-through-one-query-cache.md",
+      "title": "D33 · Browser reads go through one query cache; a mutation's thread is written into it",
+      "status": "accepted",
+      "date": "2026-11-04",
+      "area": "ui"
+    },
+    {
+      "key": "D34-the-box-is-the-page-and-the-push-is-its-brief",
+      "number": 34,
+      "path": "docs/decisions/D34-the-box-is-the-page-and-the-push-is-its-brief.md",
+      "title": "D34 · The box is the page; the push is its brief; one rail orders everything by time",
+      "status": "accepted, implemented 2026-11-04, amended 2026-11-05; the chips under the box and the centred heading replaced by D41",
+      "date": "2026-11-04",
+      "area": "ui"
+    },
+    {
+      "key": "D35-errands-are-a-connector-profile-and-a-card-is-one-systems",
+      "number": 35,
+      "path": "docs/decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md",
+      "title": "D35 · Errands from several case systems: one connector per system, a shared profile for the reads, and a card's buttons reach only its own connector",
+      "status": "accepted, the card-action rule built 2026-11-05; the errand profile, `clew.errands` and the errand connectors not built",
+      "date": "2026-11-05",
+      "area": "integrations"
+    },
+    {
+      "key": "D36-an-answer-is-drawn-as-it-is-written",
+      "number": 36,
+      "path": "docs/decisions/D36-an-answer-is-drawn-as-it-is-written.md",
+      "title": "D36 · An answer is drawn as it is written; the box never moves under the cursor",
+      "status": "accepted, built 2026-11-05",
+      "date": "2026-11-05",
+      "area": "ui"
+    },
+    {
+      "key": "D37-connectors-declare-what-they-use-and-a-capability-name-is-its-contract",
+      "number": 37,
+      "path": "docs/decisions/D37-connectors-declare-what-they-use-and-a-capability-name-is-its-contract.md",
+      "title": "D37 · Connectors declare the capabilities they use; a capability's name is its contract",
+      "status": "proposed",
+      "date": "2026-11-05",
+      "area": "integrations"
+    },
+    {
+      "key": "D37-header-logo-is-installation-branding",
+      "number": 37,
+      "path": "docs/decisions/D37-header-logo-is-installation-branding.md",
+      "title": "D37 · The shared navigation logo is installation branding",
+      "status": "accepted, extended by [D38](D38-municipal-branding-uses-astryx-themes.md)",
+      "date": "2026-11-05",
+      "area": "ui"
+    },
+    {
+      "key": "D38-municipal-branding-uses-astryx-themes",
+      "number": 38,
+      "path": "docs/decisions/D38-municipal-branding-uses-astryx-themes.md",
+      "title": "D38 · Municipal branding uses Astryx themes",
+      "status": "accepted, extended by [D39](D39-compact-header-profile-and-reminders.md)",
+      "date": "2026-11-05",
+      "area": "ui"
+    },
+    {
+      "key": "D38-views-are-declared-by-connectors-and-drawn-by-clew",
+      "number": 38,
+      "path": "docs/decisions/D38-views-are-declared-by-connectors-and-drawn-by-clew.md",
+      "title": "D38 · A view is declared by the connector and drawn by Clew",
+      "status": "accepted, built 2026-11-05; the kinds beyond the first four are not built; a view in the menu is D40, and such a view is a page of its own (D42)",
+      "date": "2026-11-05",
+      "area": "ui"
+    },
+    {
+      "key": "D39-compact-header-profile-and-reminders",
+      "number": 39,
+      "path": "docs/decisions/D39-compact-header-profile-and-reminders.md",
+      "title": "D39 · A compact header owns profile, appearance and the reminder entry point",
+      "status": "accepted",
+      "date": "2026-11-05",
+      "area": "ui"
+    },
+    {
+      "key": "D39-the-landings-box-rests-on-the-columns-centre-line",
+      "number": 39,
+      "path": "docs/decisions/D39-the-landings-box-rests-on-the-columns-centre-line.md",
+      "title": "D39 · The landing's box rests on the column's centre line when what is above it fits",
+      "status": "accepted, built 2026-11-05; what stands under the box is D41's areas and cards, on a 720 px column",
+      "date": "2026-11-05",
+      "area": "ui"
+    },
+    {
+      "key": "D40-views-can-be-tools-in-the-menu-and-an-administrator-chooses-which",
+      "number": 40,
+      "path": "docs/decisions/D40-views-can-be-tools-in-the-menu-and-an-administrator-chooses-which.md",
+      "title": "D40 · A connector's views can be tools in the menu, and an administrator chooses which",
+      "status": "accepted, built 2026-11-05 (first as one row per connector, changed the same day to a choice per view); a tool opens as a page of its own since D42 (item 5 and \"Why the panel and not a page\" below are replaced by it); a row pinned by a person or a manager is not built; the icon list extended and opened to areas by D41",
+      "date": "2026-11-05",
+      "area": "ui"
+    },
+    {
+      "key": "D41-the-landing-is-the-ai-chat-landing-template-with-the-persons-areas-under-the-box",
+      "number": 41,
+      "path": "docs/decisions/D41-the-landing-is-the-ai-chat-landing-template-with-the-persons-areas-under-the-box.md",
+      "title": "D41 · The landing is Astryx's `ai-chat-landing` template, with the person's areas under the box",
+      "status": "accepted, built 2026-11-05",
+      "date": "2026-11-05",
+      "area": "ui"
+    },
+    {
+      "key": "D42-a-tool-opens-as-a-page",
+      "number": 42,
+      "path": "docs/decisions/D42-a-tool-opens-as-a-page.md",
+      "title": "D42 · A tool opens as a page",
+      "status": "accepted, built 2026-11-05; a link from a view in the panel to the tool's page, sorting and column filters on the page, and a canvas artboard for it are not built",
+      "date": "2026-11-05",
+      "area": "ui"
+    },
+    {
+      "key": "D43-addresses-are-english",
+      "number": 43,
+      "path": "docs/decisions/D43-addresses-are-english.md",
+      "title": "D43 · Addresses are English",
+      "status": "accepted, built 2026-11-05; an area's id, which is data and shows in `/areas/:area`, is still Swedish",
+      "date": "2026-11-05",
+      "area": "ui"
+    },
+    {
+      "key": "D44-authorized-reads-and-clew-signed-connector-authority",
+      "number": 44,
+      "path": "docs/decisions/D44-authorized-reads-and-clew-signed-connector-authority.md",
+      "title": "D44 · Authorized reads and Clew-signed connector authority",
+      "status": "accepted; phase 1 of the approved reliability and authorization plan",
+      "date": "2026-11-05",
+      "area": "identity"
+    },
+    {
+      "key": "D45-approved-intent-precedes-source-dispatch",
+      "number": 45,
+      "path": "docs/decisions/D45-approved-intent-precedes-source-dispatch.md",
+      "title": "D45 · Approved intent precedes source dispatch",
+      "status": "accepted, generic card path implemented; calendar migration pending",
+      "date": "2026-11-05",
+      "area": "platform"
+    },
+    {
+      "key": "D46-browser-updates-use-committed-revisions",
+      "number": 46,
+      "path": "docs/decisions/D46-browser-updates-use-committed-revisions.md",
+      "title": "D46 · Browser updates use committed revisions",
+      "status": "accepted, browser invalidation implemented; durable attention pending",
+      "date": "2026-11-05",
+      "area": "platform"
+    }
+  ],
+  "documents": [
+    {
+      "path": "CLAUDE.md",
+      "title": "Clew · project instructions",
+      "category": "repository-instructions",
+      "headings": [
+        "Open source, always",
+        "Working rules carried over from startsidan",
+        "Backend structure (D20) and connectors (D21, D22)"
+      ]
+    },
+    {
+      "path": "HANDOVER.md",
+      "title": "Clew · handover for the first build session",
+      "category": "session-history",
+      "headings": [
+        "0. State after session 1 (2026-11-03)",
+        "1. What Clew is",
+        "2. Decisions taken",
+        "3. Backend: decided, kept for the record",
+        "4. Open questions",
+        "5. First use case: a manager plans the week (built)",
+        "6. UX principles to hold on to",
+        "7. Guardrails carried over from startsidan",
+        "8. Repository layout (as built)",
+        "9. Session log"
+      ]
+    },
+    {
+      "path": "README.md",
+      "title": "Clew",
+      "category": "integrator-guide",
+      "headings": [
+        "Build an integration",
+        "Code is the reference"
+      ]
+    },
+    {
+      "path": "connectors/eneo/README.md",
+      "title": "The Eneo connector",
+      "category": "integrator-guide",
+      "headings": [
+        "What it declares",
+        "Acting as the person",
+        "What Eneo needs",
+        "Running it"
+      ]
+    },
+    {
+      "path": "connectors/hello/README.md",
+      "title": "Hello: a small connector demonstration",
+      "category": "integrator-guide",
+      "headings": [
+        "Run locally"
+      ]
+    },
+    {
+      "path": "connectors/reference/README.md",
+      "title": "Durable synthetic reference source",
+      "category": "integrator-guide",
+      "headings": []
+    },
+    {
+      "path": "connectors/telefonbok/README.md",
+      "title": "telefonbok: the organisation's phone book as a Clew connector",
+      "category": "integrator-guide",
+      "headings": [
+        "What a person gets",
+        "Configuration",
+        "The phone book API",
+        "What it never does",
+        "Run and check"
+      ]
+    },
+    {
+      "path": "docs/README.md",
+      "title": "Integrating with Clew",
+      "category": "integrator-guide",
+      "headings": [
+        "Start here",
+        "Contract and support",
+        "For coding agents",
+        "Maintaining Clew"
+      ]
+    },
+    {
+      "path": "docs/architecture/README.md",
+      "title": "Architecture and design background",
+      "category": "maintainer-design",
+      "headings": []
+    },
+    {
+      "path": "docs/architecture/backend-structure.md",
+      "title": "Backend structure",
+      "category": "maintainer-design",
+      "headings": [
+        "The shape in one paragraph",
+        "Layout",
+        "The four kinds of file",
+        "Rules",
+        "Checking it",
+        "Debt recorded at D20"
+      ]
+    },
+    {
+      "path": "docs/architecture/capability-surfaces.md",
+      "title": "How a capability is exposed: REST, model tools and MCP",
+      "category": "maintainer-design",
+      "headings": [
+        "One descriptor, three surfaces",
+        "1. Deterministic REST: always there, never needs the model",
+        "2. Model tools: the same capabilities, filtered",
+        "3. MCP: two different things with one name",
+        "What each surface may do, by kind",
+        "A worked example",
+        "Questions colleagues ask"
+      ]
+    },
+    {
+      "path": "docs/architecture/connector-administration.md",
+      "title": "Connector administration",
+      "category": "maintainer-design",
+      "headings": [
+        "The model",
+        "Server",
+        "Screens",
+        "Modeller: providers and models (D24)",
+        "What the person sees",
+        "Accessibility",
+        "Built, and what to know",
+        "Order of work"
+      ]
+    },
+    {
+      "path": "docs/architecture/connector-protocol.md",
+      "title": "Connector protocol: current reference",
+      "category": "maintainer-design",
+      "headings": []
+    },
+    {
+      "path": "docs/architecture/identity.md",
+      "title": "Identity and authorization",
+      "category": "maintainer-design",
+      "headings": [
+        "Principle",
+        "Browser to BFF: OIDC",
+        "Model and MCP: OAuth 2.1 per the MCP authorization specification",
+        "Pass-through systems without OAuth",
+        "Users, groups and permissions",
+        "Dev login (local only)"
+      ]
+    },
+    {
+      "path": "docs/architecture/integration-paths.md",
+      "title": "Integration paths",
+      "category": "maintainer-design",
+      "headings": [
+        "How to choose",
+        "Paths into Clew: reading and being told",
+        "Paths out of Clew: acting on systems",
+        "Transports and hosting shapes",
+        "Auth modes, once more",
+        "Paths for the model and for other agents",
+        "What Clew stores, by connector kind",
+        "Sundsvall's landscape mapped onto the paths (2026-11-03)",
+        "Startsidan concepts that do not carry over"
+      ]
+    },
+    {
+      "path": "docs/architecture/integrations.md",
+      "title": "Integration architecture",
+      "category": "maintainer-design",
+      "headings": [
+        "Principle",
+        "One capability layer, two faces",
+        "Three kinds of connector",
+        "When a pass-through connector becomes an MCP server",
+        "Consuming someone else's MCP server",
+        "Identity through adapters",
+        "Thread action contract",
+        "Answers and views",
+        "Without the model (D8)",
+        "Implemented (2026-11-03)",
+        "Packages",
+        "First step"
+      ]
+    },
+    {
+      "path": "docs/architecture/reliability-and-authorization-plan.md",
+      "title": "Reliability and authorization implementation plan",
+      "category": "maintainer-design",
+      "headings": [
+        "Implementation checkpoint — 2026-11-05",
+        "Objective and scope",
+        "Sequence and reviewable increments",
+        "Architecture to establish",
+        "Phase 1 — Close authorization and invocation gaps",
+        "Phase 2 — Prove one durable action end to end",
+        "Phase 3 — Put every existing source write through that lifecycle",
+        "Phase 4 — Persist occurrences and decouple source refresh",
+        "Phase 5 — Make follow-up durable, cancellable and visible",
+        "Phase 6 — Demonstrate readiness, then choose and validate a pilot",
+        "Decisions and documentation to carry with implementation",
+        "Completion and safe rollout"
+      ]
+    },
+    {
+      "path": "docs/architecture/scheduled-work.md",
+      "title": "Scheduled work: the Postgres scheduler now, Temporal later",
+      "category": "maintainer-design",
+      "headings": [
+        "What runs on a schedule today",
+        "How the scheduler works",
+        "What it deliberately does not do",
+        "When Temporal comes in",
+        "What does not change when it does",
+        "Is Temporal a good fit? (assessed 2026-11-04)",
+        "Startsidan background"
+      ]
+    },
+    {
+      "path": "docs/architecture/testing.md",
+      "title": "Testing",
+      "category": "maintainer-design",
+      "headings": [
+        "The shape in one paragraph",
+        "Where a new test goes",
+        "The kinds of test",
+        "Rules the tools enforce",
+        "Commands",
+        "What is ported"
+      ]
+    },
+    {
+      "path": "docs/architecture/working-across-connectors.md",
+      "title": "Working across connectors",
+      "category": "maintainer-design",
+      "headings": [
+        "The short answer",
+        "The three join keys",
+        "Five ways work crosses connectors",
+        "Combinations by connector kind",
+        "What a connector author does",
+        "What is deliberately left out"
+      ]
+    },
+    {
+      "path": "docs/decisions/D01-clew-owns-every-integration-contract.md",
+      "title": "D1 · Clew owns every integration contract",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D02-no-openapi-to-mcp-conversion.md",
+      "title": "D2 · No OpenAPI-to-MCP conversion in the running system",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D03-three-module-kinds.md",
+      "title": "D3 · Three module kinds: core, pass-through, derived",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D04-foreign-mcp-servers-are-wrapped.md",
+      "title": "D4 · Foreign MCP servers are wrapped, not passed through",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D05-oidc-and-oauth-only-identification-path.md",
+      "title": "D5 · OIDC and OAuth 2.1 with JWT access tokens are the only identification path",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D06-dev-login-local-only.md",
+      "title": "D6 · Dev login with username and password, local only",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D07-bun-is-the-server-runtime.md",
+      "title": "D7 · Bun is the server runtime",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D08-every-action-works-without-the-model.md",
+      "title": "D8 · Every action works without the model",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D09-side-panel-holds-views-and-apps.md",
+      "title": "D9 · The side panel holds conversation, Clew views and MCP App views",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D10-integrations-fulfil-clews-api-first.md",
+      "title": "D10 · Integrations fulfil Clew's API; adapters are the fallback",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D11-one-calendar-contract-two-adapters.md",
+      "title": "D11 · One calendar contract, CalDAV and Microsoft 365 as adapters",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D12-objects-chips-proposals.md",
+      "title": "D12 · Objects, chips, proposals: the general interaction pattern",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D13-conversation-in-the-composer-drawer.md",
+      "title": "D13 · The conversation lives in the composer's drawer; the dim is an Astryx Overlay",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D14-clew-stands-alone-eneo-enhances.md",
+      "title": "D14 · Clew stands alone; Eneo enhances it through an optional module",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D15-postgres-scheduler-now-temporal-later.md",
+      "title": "D15 · Postgres-backed scheduler in v1, Temporal later",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D16-node-is-the-server-runtime.md",
+      "title": "D16 · Node is the server runtime; Bun stays the toolchain",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D17-temporal-runs-the-durable-timers.md",
+      "title": "D17 · Temporal runs the durable timers, starting with a person's own reminders",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D18-errands-are-a-clew-owned-passthrough-domain.md",
+      "title": "D18 · Errands are a Clew-owned pass-through domain; SupportManagement is the first adapter",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D19-change-notification-is-a-clew-owned-contract.md",
+      "title": "D19 · Change notification is a Clew-owned contract: payload-free CloudEvents over HTTP",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D20-modular-monolith-ports-and-adapters.md",
+      "title": "D20 · Backend structure: a modular monolith with ports and adapters, not tactical DDD",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D21-integrations-are-module-services.md",
+      "title": "D21 · Every integration is a module service behind the Clew module protocol",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D22-connectors-not-modules.md",
+      "title": "D22 · Connectors, not modules: the word for an integration that a person, an operator or a vendor meets",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D23-connectors-are-managed-in-the-database.md",
+      "title": "D23 · Connectors are registered and governed in the database by an administrator, not by environment variables",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D24-model-endpoints-are-administered-in-the-product.md",
+      "title": "D24 · Model providers and models are administered in the product, and the chat can choose between them",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D25-use-cases-over-ports-fast-tests.md",
+      "title": "D25 · Use cases take their ports from a composition root; the unit suite runs on memory adapters held to a store contract",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D26-questions-over-documents-are-search-not-knowledge.md",
+      "title": "D26 · Questions answered from documents are a search fan-out with citations, not a knowledge module",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D27-event-calendar-is-fullcalendar-themed-with-astryx-tokens.md",
+      "title": "D27 · The event calendar is FullCalendar 7 Standard, themed with Astryx tokens, behind Astryx components",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D28-the-stream-has-two-groups-and-three-piles.md",
+      "title": "D28 · The stream has two groups and three piles, and the day is drawn as one track",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D29-inte-nu-is-a-timed-snooze-that-breaks-on-activity.md",
+      "title": "D29 · \"Inte nu\" is a timed snooze with a visible landing time that breaks on activity",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D30-a-proposal-thread-is-an-obligation-with-four-steps.md",
+      "title": "D30 · A proposal thread is an obligation with four steps, replies read back and follow-ups as cards",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D31-the-conversation-swaps-the-stream-inside-one-chatlayout.md",
+      "title": "D31 · The conversation swaps the stream inside one ChatLayout; chips live in the composer drawer",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D32-one-calendar-family-and-the-persons-own-bookings.md",
+      "title": "D32 · One calendar family, and a person's own bookings as use cases",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D33-browser-reads-go-through-one-query-cache.md",
+      "title": "D33 · Browser reads go through one query cache; a mutation's thread is written into it",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D34-the-box-is-the-page-and-the-push-is-its-brief.md",
+      "title": "D34 · The box is the page; the push is its brief; one rail orders everything by time",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md",
+      "title": "D35 · Errands from several case systems: one connector per system, a shared profile for the reads, and a card's buttons reach only its own connector",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D36-an-answer-is-drawn-as-it-is-written.md",
+      "title": "D36 · An answer is drawn as it is written; the box never moves under the cursor",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D37-connectors-declare-what-they-use-and-a-capability-name-is-its-contract.md",
+      "title": "D37 · Connectors declare the capabilities they use; a capability's name is its contract",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D37-header-logo-is-installation-branding.md",
+      "title": "D37 · The shared navigation logo is installation branding",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D38-municipal-branding-uses-astryx-themes.md",
+      "title": "D38 · Municipal branding uses Astryx themes",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D38-views-are-declared-by-connectors-and-drawn-by-clew.md",
+      "title": "D38 · A view is declared by the connector and drawn by Clew",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D39-compact-header-profile-and-reminders.md",
+      "title": "D39 · A compact header owns profile, appearance and the reminder entry point",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D39-the-landings-box-rests-on-the-columns-centre-line.md",
+      "title": "D39 · The landing's box rests on the column's centre line when what is above it fits",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D40-views-can-be-tools-in-the-menu-and-an-administrator-chooses-which.md",
+      "title": "D40 · A connector's views can be tools in the menu, and an administrator chooses which",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D41-the-landing-is-the-ai-chat-landing-template-with-the-persons-areas-under-the-box.md",
+      "title": "D41 · The landing is Astryx's `ai-chat-landing` template, with the person's areas under the box",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D42-a-tool-opens-as-a-page.md",
+      "title": "D42 · A tool opens as a page",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D43-addresses-are-english.md",
+      "title": "D43 · Addresses are English",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D44-authorized-reads-and-clew-signed-connector-authority.md",
+      "title": "D44 · Authorized reads and Clew-signed connector authority",
+      "category": "decision-history",
+      "headings": [
+        "Decision",
+        "Why",
+        "Replaces"
+      ]
+    },
+    {
+      "path": "docs/decisions/D45-approved-intent-precedes-source-dispatch.md",
+      "title": "D45 · Approved intent precedes source dispatch",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D46-browser-updates-use-committed-revisions.md",
+      "title": "D46 · Browser updates use committed revisions",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/README.md",
+      "title": "Decision log",
+      "category": "integrator-guide",
+      "headings": [
+        "Add a decision"
+      ]
+    },
+    {
+      "path": "docs/decisions/TEMPLATE.md",
+      "title": "D<nn> · <Title in one line>",
+      "category": "integrator-guide",
+      "headings": []
+    },
+    {
+      "path": "docs/generated/README.md",
+      "title": "Generated connector reference",
+      "category": "generated-reference",
+      "headings": [
+        "Complete runnable examples",
+        "ConnectorManifest",
+        "ManifestCapability",
+        "ManifestArea",
+        "Actor",
+        "CallRequest",
+        "ThreadDraft",
+        "ExecuteResult",
+        "CallbackRequest"
+      ]
+    },
+    {
+      "path": "docs/guides/README.md",
+      "title": "Connector guides",
+      "category": "integrator-guide",
+      "headings": []
+    },
+    {
+      "path": "docs/guides/actions-and-receipts.md",
+      "title": "Add actions and trustworthy receipts",
+      "category": "integrator-guide",
+      "headings": [
+        "Scan an occurrence into a card",
+        "Keep approval separate from execution",
+        "Bind an operation to its approved input",
+        "Return what the source confirmed",
+        "Test the failure cases"
+      ]
+    },
+    {
+      "path": "docs/guides/authorization.md",
+      "title": "Authorize every connector request",
+      "category": "integrator-guide",
+      "headings": [
+        "Inbound requests",
+        "Call another connector",
+        "Authenticate to the source",
+        "Rotation and revocation"
+      ]
+    },
+    {
+      "path": "docs/guides/creating-a-connector.md",
+      "title": "Create a connector",
+      "category": "integrator-guide",
+      "headings": [
+        "1. Run the contract before editing it",
+        "2. Choose working code",
+        "3. Define the smallest contract",
+        "4. Implement the request boundary and source adapter",
+        "5. Add one feature at a time"
+      ]
+    },
+    {
+      "path": "docs/guides/example-custom-directory.md",
+      "title": "Add search and views: the phone book",
+      "category": "integrator-guide",
+      "headings": [
+        "Read the implementation in this order",
+        "The five reads",
+        "Declare the view beside the read",
+        "Control what reaches the model",
+        "Join composite search",
+        "Run the fixture as a service",
+        "Verify the adaptation"
+      ]
+    },
+    {
+      "path": "docs/guides/testing-and-deployment.md",
+      "title": "Test, register and operate a connector",
+      "category": "integrator-guide",
+      "headings": [
+        "Checks without external services",
+        "Live conformance",
+        "Register a draft, then enable it",
+        "Deploy the service",
+        "Troubleshoot the boundary that failed",
+        "Additional write verification"
+      ]
+    },
+    {
+      "path": "docs/maintainers/README.md",
+      "title": "Maintain Clew",
+      "category": "maintainer-guide",
+      "headings": [
+        "Documentation is an interface",
+        "Generate and verify"
+      ]
+    },
+    {
+      "path": "docs/maintainers/branding.md",
+      "title": "Installation branding",
+      "category": "maintainer-guide",
+      "headings": [
+        "Municipal branding"
+      ]
+    },
+    {
+      "path": "docs/maintainers/local-development.md",
+      "title": "Local development",
+      "category": "maintainer-guide",
+      "headings": [
+        "Run it",
+        "Source of runtime versions"
+      ]
+    },
+    {
+      "path": "docs/overview.md",
+      "title": "What Clew does",
+      "category": "integrator-guide",
+      "headings": [
+        "The integration boundary",
+        "The vocabulary",
+        "What belongs where",
+        "Choose the smallest useful connector"
+      ]
+    },
+    {
+      "path": "docs/personas.md",
+      "title": "Personas and use cases",
+      "category": "integrator-guide",
+      "headings": [
+        "How the personas map to Clew",
+        "Persona overview",
+        "Eva, kommundirektör",
+        "Johan, förvaltningschef",
+        "Kim, enhetschef hemtjänst",
+        "Alex, handläggare bygglov",
+        "Fatima, undersköterska",
+        "Lena, HR-partner",
+        "Omar, new employee",
+        "Mikael, systemförvaltare (operator)",
+        "Petra, produktionschef (non-municipal check)"
+      ]
+    },
+    {
+      "path": "docs/reference/connector-protocol.md",
+      "title": "Connector protocol reference",
+      "category": "integrator-guide",
+      "headings": [
+        "HTTP routes",
+        "Manifest semantics",
+        "Errors",
+        "Related profiles",
+        "Contract changes",
+        "Source map"
+      ]
+    },
+    {
+      "path": "docs/reference/status.md",
+      "title": "Implementation status for integrators",
+      "category": "integrator-guide",
+      "headings": [
+        "How to read the decision history"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-03-platform-review-against-startsidan.md",
+      "title": "Platform review against startsidan",
+      "category": "review-history",
+      "headings": [
+        "Outcome",
+        "The review as delivered",
+        "How Clew compares with startsidan",
+        "The three integration assumptions that need attention",
+        "What I would do next"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-04-accessibility-and-motion-review.md",
+      "title": "Accessibility, component and motion review · 2026-11-04",
+      "category": "review-history",
+      "headings": [
+        "Outcome",
+        "How it was tested",
+        "Components",
+        "Motion",
+        "WCAG findings",
+        "Governance",
+        "What it led to",
+        "Recommended order"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-04-astryx-adoption-against-the-templates.md",
+      "title": "Review: how Clew composes Astryx, against Astryx's own templates (2026-11-04)",
+      "category": "review-history",
+      "headings": [
+        "Short answer",
+        "Findings, worst first",
+        "Smaller things the templates do differently",
+        "What is fine and should stay",
+        "Proposed order of work",
+        "Template ids worth reading before each step"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-04-calendar-against-the-canvas.md",
+      "title": "Review: the calendar page against the canvas row Chef-kalender (2026-11-04)",
+      "category": "review-history",
+      "headings": [
+        "What matches",
+        "What differs, and why",
+        "Found and fixed while comparing",
+        "Left open"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-04-calendar-component-alternatives.md",
+      "title": "Calendar component alternatives · 2026-11-04",
+      "category": "review-history",
+      "headings": [
+        "Outcome",
+        "Where the calendar stands",
+        "Constraints the choice must satisfy",
+        "Candidates",
+        "Why FullCalendar 7",
+        "Why not the others",
+        "What a FullCalendar build means for the rules",
+        "Order of work, if D27 is accepted",
+        "Sources"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-04-design-exploration-scheduling-and-attention.md",
+      "title": "Design exploration: scheduling and attention · 2026-11-04",
+      "category": "review-history",
+      "headings": [
+        "Outcome",
+        "What was looked at",
+        "Patterns worth taking",
+        "Patterns to avoid",
+        "Where the canvas leaves Astryx",
+        "Open questions",
+        "What it led to"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-04-runtime-and-dependency-review.md",
+      "title": "Runtime and dependency review · 2026-11-04",
+      "category": "review-history",
+      "headings": [
+        "Outcome",
+        "Other packages",
+        "Dependency audit and licences",
+        "Validation",
+        "Upstream references"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-04-start-page-overview-exploration.md",
+      "title": "Design exploration: the start page as an overview, not a list · 2026-11-04",
+      "category": "review-history",
+      "headings": []
+    },
+    {
+      "path": "docs/reviews/2026-11-04-support-management-integration-review.md",
+      "title": "SupportManagement integration review · 2026-11-04",
+      "category": "review-history",
+      "headings": [
+        "Outcome",
+        "1. What SupportManagement is",
+        "2. Is an errand a core entity?",
+        "3. The contract: `ErrandProvider`",
+        "4. SupportManagement mapped onto Clew's paths",
+        "5. Guardrails checked",
+        "6. Changes worth making in SupportManagement",
+        "7. Order of work"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-05-architecture-against-vision.md",
+      "title": "Architecture review against the Clew vision",
+      "category": "review-history",
+      "headings": [
+        "Assessment",
+        "Basis and limits",
+        "Choices worth keeping",
+        "Findings that should block a pilot with real data or actions",
+        "Gaps to close in the next architecture milestone",
+        "Recommended next milestone",
+        "Product and design judgement",
+        "Outcome"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-05-integrator-documentation-review.md",
+      "title": "Documentation review: an integrator and coding-agent entry point",
+      "category": "review-history",
+      "headings": [
+        "Findings",
+        "Organization and preservation",
+        "Maintenance contract",
+        "Validation"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-05-municipal-branding-review.md",
+      "title": "Review: municipal branding and the shared header (2026-11-05)",
+      "category": "review-history",
+      "headings": [
+        "Finding",
+        "Evidence and validation",
+        "Verification still outstanding",
+        "Integrated implementation"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-05-phone-book-and-declared-views.md",
+      "title": "Phone book as a test case, and how a connector attaches a view",
+      "category": "review-history",
+      "headings": [
+        "What the code said before this session",
+        "MCP Apps, read for the purpose",
+        "The alternatives for a declared view",
+        "What the prototype needs, against the catalogue",
+        "What was built",
+        "What is still open"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-05-reliability-implementation-verification.md",
+      "title": "Reliability implementation checkpoint: verification",
+      "category": "review-history",
+      "headings": [
+        "Passing checks",
+        "Browser-suite limits",
+        "Work not established by this checkpoint"
+      ]
+    },
+    {
+      "path": "docs/reviews/README.md",
+      "title": "Reviews and explorations",
+      "category": "review-history",
+      "headings": []
+    },
+    {
+      "path": "docs/vision.md",
+      "title": "Clew · product vision",
+      "category": "integrator-guide",
+      "headings": [
+        "One sentence",
+        "What that means",
+        "What Clew is not",
+        "Principles",
+        "Clew and Eneo: who does what",
+        "Open questions this vision does not settle"
+      ]
+    },
+    {
+      "path": "llms.txt",
+      "title": "Clew integrator documentation",
+      "category": "integrator-guide",
+      "headings": [
+        "Read first",
+        "Build a connector",
+        "Working rules for this documentation",
+        "Maintainers and history"
+      ]
+    }
+  ]
+}

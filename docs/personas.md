@@ -27,7 +27,7 @@ manager), the aggregated views for Johan and Eva, and the operator view for Mika
 
 Each use case has: trigger, what happens, data involved, and what it exercises in the design. Ids are stable (`UC-<persona>-<n>`) for use in ADRs and tests.
 
-The 2026-09-16 source review adds six use cases for the product commitments in B18–B21, bringing the total to 35. Their acceptance remains pending; [30](30-assisted-workflows-and-product-scope.md) records the selected bounded document workflow as the next synthetic slice.
+The 2026-09-16 source review adds six use cases for the product commitments in B18–B21, bringing the total to 35. Their acceptance remains pending; the source repository's `docs/30-assisted-workflows-and-product-scope.md` records the selected bounded document workflow as the next synthetic slice. That document was not carried into Clew; this is a historical reference, not a Clew roadmap commitment.
 
 ## Persona overview
 

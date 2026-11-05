@@ -4,6 +4,7 @@ import { displayDate, weekStart } from '@clew/calendar/dates';
 import { InputError } from '../context';
 import type { ResolvedObject } from './context';
 import type { AssistantDeps } from './ports';
+import { threadAccess } from '../threads/access';
 
 export type { ResolvedObject };
 export interface ResolvedChips { objects: ResolvedObject[]; threads: Map<string, Thread>; primaryThread?: Thread; }
@@ -11,14 +12,15 @@ export interface ResolvedChips { objects: ResolvedObject[]; threads: Map<string,
 const gone = () => new InputError('Något du pekade på finns inte längre.');
 /** What the chips point at, read fresh so a stale ref is refused rather than guessed. */
 export async function resolveChips(deps: AssistantDeps, persona: AuthenticatedContext, chips: Chip[]): Promise<ResolvedChips> {
+  const access = threadAccess(deps.store, deps.registry);
   const objects: ResolvedObject[] = [];
   const threads = new Map<string, Thread>();
   let open: Thread[] | undefined;
-  const openThreads = async () => (open ??= (await deps.store.listThreads(persona.id, deps.clock().toISOString())).filter(t => t.state === 'open'));
+  const openThreads = async () => (open ??= (await access.list(persona, deps.clock().toISOString())).filter(t => t.state === 'open'));
   for (const chip of chips) {
     if (chip.kind === 'thread') {
       const id = chip.ref.replace(/^thread:/, '');
-      const found = await deps.store.readThread(persona.id, id);
+      const found = await access.read(persona, id);
       if (!found) throw gone();
       threads.set(found.id, found);
       objects.push({ kind: 'thread', ref: chip.ref, thread: found });
@@ -36,6 +38,7 @@ export async function resolveChips(deps: AssistantDeps, persona: AuthenticatedCo
       threads.set(thread.id, thread);
       objects.push({ kind: 'proposal', ref: chip.ref, thread, proposal });
     } else if (chip.kind === 'event') {
+      if (!deps.registry.visible(persona, 'calendar')) throw gone();
       const id = chip.ref.replace(/^event:/, '');
       let event: CalendarEvent | undefined;
       try { const { view } = await deps.calendar.listWeek(persona, weekStart(displayDate(deps.clock().toISOString())), 14); event = view.find(e => e.id === id); } catch { event = undefined; }
