@@ -18,7 +18,7 @@ invalidation/provider redirect remains canonical.
 Preserve current D34's shell-side-nav frame: no desktop TopNav, rail on desktop and Astryx's compact
 header/drawer on mobile. Reduce `side-nav-heading` padding through its public theme target and remove
 the identity subheading. The bell belongs in `SideNavHeading.headerEndContent`, beside the logo and
-product name; the named account menu stays in `SideNav.footerIcons` (amendment below). Keep the rail's existing top/sections/footer and elevated shell.
+product name; the named account menu stays in the navigation footer (amendment below). Keep the rail's existing top/sections/footer and elevated shell.
 Close the controlled mobile navigation when a link changes the route.
 The logo's contain box becomes 20 × 20 with `spacing-3` (12 px) clearance. The official dragon's
 rendered width is about 10.9 px, so this still exceeds its own width on every side. No new header CSS.
@@ -72,9 +72,19 @@ configuration/profile ownership and original-asset rules remain in force.
 
 **Amended 2026-11-05: account and reminder placement.** At the product owner's request, the bell and
 its count move to `SideNavHeading.headerEndContent`, beside the logo and Startsidan. The home link
-and bell are separate controls. The account stays in `SideNav.footerIcons` and its trigger shows
+and bell are separate controls. The account stays in the navigation footer and its trigger shows
 `SessionUser.name` as visible text beside a decorative Heroicons account glyph, with the menu chevron.
 No name is parsed, shortened or copied into another owner. This also removes the initials-only
 trigger's label/content mismatch recorded in session 36. Settings, appearance, reminder selection
 and logout retain their existing lifecycle. The desktop/320 px shell cases protect placement, the
 visible full name, keyboard activation and focus restoration; browser/axe execution remains pending.
+
+
+**Amended 2026-11-05: align the account row.** The screenshot showed a centred account control under
+left-aligned navigation rows. Keep the existing DropdownMenu and its complete trigger semantics.
+Remove the button's full width and keep it in footerIcons inside an HStack with start justification,
+so its icon and label start with the other rows. No custom CSS or
+global button override. The standard SideNavItem is not used as DropdownMenu.renderTrigger because
+its public contract does not preserve the dropdown's expanded/controls attributes and its mouse
+event type differs; the supported Button trigger keeps keyboard, pointer, naming and focus behaviour.
+The desktop/320 px shell case compares the account's icon and label positions with Kalender.

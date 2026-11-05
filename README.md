@@ -106,7 +106,7 @@ only the small branding entry and verify that conflicting environment variables 
 cannot change the fixture's browser output.
 
 The shared navigation places the reminder bell beside the logo and product name. The account menu
-stays in the footer icon row, with an account icon and the person’s full session name as visible text. Reminders reuse active thread
+stays as the last left-aligned footer row, with an account icon and the person’s full session name as visible text. Reminders reuse active thread
 reminders and link to their cards; start/calendar shortcuts are always available. Read/unread rules
 and additional notification kinds remain open. Profile settings currently control appearance; the
 profile menu also shows identity/unit and signs out through the existing session flow.

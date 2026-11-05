@@ -73,14 +73,16 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
           {nav.tools && <SideNavSection title="Verktyg">{nav.tools}</SideNavSection>}
           <SideNavSection title="Alltid" isHeaderHidden>{nav.footer}</SideNavSection>
         </>}
-        footerIcons={<DropdownMenu alignment="end" menuWidth={260}
-          button={{ label: user.name, variant: 'ghost', size: 'sm', width: '100%', icon: <Icon icon={UserCircleIcon} size="sm" /> }}
-          header={<VStack gap={1}><Text weight="semibold">{user.name}</Text><Text type="supporting">{user.unitLabel}</Text></VStack>}
-          items={[
-            { label: 'Inställningar', onClick: () => setSettingsOpen(true) },
-            { type: 'divider' },
-            { label: signingOut ? 'Loggar ut …' : 'Logga ut', isDisabled: signingOut, onClick: () => { void logout(); } },
-          ]} />}>
+        footerIcons={<HStack justify="start">
+          <DropdownMenu alignment="end" menuWidth={260}
+            button={{ label: user.name, variant: 'ghost', size: 'sm', icon: <Icon icon={UserCircleIcon} size="sm" /> }}
+            header={<VStack gap={1}><Text weight="semibold">{user.name}</Text><Text type="supporting">{user.unitLabel}</Text></VStack>}
+            items={[
+              { label: 'Inställningar', onClick: () => setSettingsOpen(true) },
+              { type: 'divider' },
+              { label: signingOut ? 'Loggar ut …' : 'Logga ut', isDisabled: signingOut, onClick: () => { void logout(); } },
+            ]} />
+        </HStack>}>
         {nav.sections}
       </SideNav>}>
       {children}
