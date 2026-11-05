@@ -1,5 +1,8 @@
 # Working across connectors
 
+> **Reading status:** Composition rationale. Current cross-connector calls require explicit uses strings and a separately signed callback grant, with current-access checks. Historical identity provisioning and callback examples below are not the current wire contract. See [implementation status](../reference/status.md) and the [current protocol](../reference/connector-protocol.md).
+
+
 How a person's work spans several connectors, and how Clew combines data from more than one source without a
 query engine. Startsidan explored the general problem (docs 03, 24, 25, 26, 27: semantic types, a
 catalogue, a validated query plan, DuckDB joins). Clew keeps the lessons and drops the engine. Written

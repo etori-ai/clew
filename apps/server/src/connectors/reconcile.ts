@@ -1,4 +1,4 @@
-import type { Registry } from '@clew/connectors';
+import { deniedGovernance, type Registry } from '@clew/connectors';
 import type { ConnectorManifest } from '@clew/connectors/protocol';
 import { parseManifest } from '@clew/connectors/remote';
 import { listConnectorVersions } from '@clew/db/connectors';
@@ -29,15 +29,18 @@ export function applyRow(deps: ReconcileDeps, row: ConnectorRecord) {
   const { registry, secrets, live, log = console.log } = deps;
   if (!row.bundled) {
     if (row.state === 'draft') { live.unregister(row.id); return; }
-    if (!registry.connector(row.id) && isManifest(row.manifest) && row.url && row.secret) {
+    if (isManifest(row.manifest) && row.url && row.secret) {
       try { const manifest = parseManifest(row.manifest, row.id); live.register({ id: row.id, url: row.url, secret: secrets.open(row.secret, row.id), manifest }, manifest); }
-      catch (error) { log(`Connector "${row.id}": stored manifest not usable: ${(error as Error).message}`); return; }
+      catch (error) { registry.govern(row.id, deniedGovernance()); log(`Connector "${row.id}": stored manifest not usable: ${(error as Error).message}`); return; }
     }
   }
   if (registry.connector(row.id)) registry.govern(row.id, governanceOf(row));
 }
 export async function applyAllRows(deps: ReconcileDeps) {
-  for (const row of await deps.store.list()) applyRow(deps, row);
+  const rows = await deps.store.list();
+  const present = new Set(rows.map(row => row.id));
+  for (const connector of deps.registry.list()) if (!present.has(connector.id)) deps.registry.govern(connector.id, deniedGovernance());
+  for (const row of rows) applyRow(deps, row);
 }
 /** Poll the rows' versions; apply changed rows, forget deleted ones. Returns a stop function. */
 export function watchConnectors(deps: ReconcileDeps, intervalMs = 5000) {

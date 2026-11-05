@@ -33,11 +33,12 @@ export function EventDialog({ item, dayItems, onClose, onChanged, onOpenDay, onA
   const mobile = useMediaQuery(mobileQuery);
   const announce = useAnnounce();
   const [mode, setMode] = useState<Mode>('view');
+  const [decisionId, setDecisionId] = useState(() => crypto.randomUUID());
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const client = useQueryClient();
   const { run, error, reset } = useThreadAction();
-  useEffect(() => { setMode('view'); reset(); if (item) { setStart(localClock(item.start)); setEnd(hhmm(item.end)); } }, [item?.id]);
+  useEffect(() => { setDecisionId(crypto.randomUUID()); setMode('view'); reset(); if (item) { setStart(localClock(item.start)); setEnd(hhmm(item.end)); } }, [item?.id]);
   if (!item) return <Dialog isOpen={false} onOpenChange={onClose}><DialogHeader title="Möte" /></Dialog>;
   const event = item.event, proposal = item.proposal;
   const day = displayDate(item.start);
@@ -56,9 +57,9 @@ export function EventDialog({ item, dayItems, onClose, onChanged, onOpenDay, onA
   const save = () => {
     if (!newStart || !newEnd || endFirst) return;
     if (proposal) return act(() => api.moveProposal(proposal.threadId, proposal.id, { start: newStart, end: newEnd }), `Förslaget ligger nu ${shortDayLabel(displayDate(newStart))} ${timeRange(newStart, newEnd)}.`);
-    if (event) return act(() => api.rescheduleEvent({ ref: event.ref, revision: event.revision, start: newStart, end: newEnd }).then(() => undefined), `Mötet är flyttat till ${shortDayLabel(displayDate(newStart))} ${timeRange(newStart, newEnd)}.`);
+    if (event) return act(() => api.rescheduleEvent({ decisionId, ref: event.ref, revision: event.revision, start: newStart, end: newEnd }), 'Beslutet att flytta mötet är sparat. Kortet visar kalenderns besked.');
   };
-  const cancel = () => { if (event) void act(() => api.cancelEvent({ ref: event.ref, revision: event.revision }).then(() => undefined), 'Mötet är inställt.'); };
+  const cancel = () => { if (event) void act(() => api.cancelEvent({ decisionId, ref: event.ref, revision: event.revision }), 'Beslutet att ställa in mötet är sparat. Kortet visar kalenderns besked.'); };
   const when = item.allDay ? `${dayLabel(day)}, hela dagen` : `${dayLabel(day)} ${timeRange(item.start, item.end)}`;
   return <Dialog isOpen onOpenChange={open => { if (!open) onClose(); }} width={520} purpose={mode === 'view' ? 'info' : 'form'}>
     <DialogHeader title={item.title} subtitle={when} onOpenChange={open => { if (!open) onClose(); }} />

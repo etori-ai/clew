@@ -28,6 +28,7 @@ export interface AuditEntry { actor: string; action: string; subject: string; at
 export interface JobInput { id: string; kind: string; runAt: string; payload?: Record<string, unknown> }
 
 export interface ProposalTx {
+  lockThread(personId: string, id: string): Promise<ProposalThread | undefined>;
   /** False when the person already has an open pushed thread on the topic. */
   insertThread(thread: NewProposalThread): Promise<boolean>;
   updateThread(id: string, patch: ProposalThreadPatch): Promise<void>;
@@ -43,6 +44,7 @@ export interface ProposalStore {
   readThread(personId: string, id: string): Promise<ProposalThread | undefined>;
   /** For timers that know only the thread. */
   readThreadById(id: string): Promise<ProposalThread | undefined>;
+  latestThread(personId: string, topic: string): Promise<ProposalThread | undefined>;
   openThread(personId: string, topic: string): Promise<ProposalThread | undefined>;
   /** Proposed, confirmed and final proposals of a person, across threads. */
   activeProposals(personId: string): Promise<ProposalRecord[]>;

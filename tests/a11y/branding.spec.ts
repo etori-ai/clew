@@ -129,10 +129,12 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
     }
     await page.keyboard.press('Escape');
     await page.getByRole('link', { name: 'Kalender', exact: true }).click();
-    expect((await appearance()).mode).toBe(dark.mode);
+    await expect(page).toHaveURL('/calendar');
+    // Navigation can detach the previous heading between lookup and style measurement.
+    await expect.poll(async () => (await appearance()).mode).toBe(dark.mode);
     await page.reload();
     await expect(profileButton).toBeVisible();
-    expect((await appearance()).mode).toBe(dark.mode);
+    await expect.poll(async () => (await appearance()).mode).toBe(dark.mode);
     await profileButton.click();
     await page.getByRole('button', { name: 'Inställningar', exact: true }).click();
     await page.getByRole('radio', { name: 'Ljust', exact: true }).check();

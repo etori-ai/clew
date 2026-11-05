@@ -54,4 +54,4 @@ undocumented beta; when it is documented, moving the rendering to Astryx compone
 narrowed to the start-page card, and the session-16 note that the week agenda stays Clew's own `WeekAgenda`
 (`docs/reviews/2026-11-04-design-exploration-scheduling-and-attention.md`), likewise narrowed.
 
-**Amended 2026-11-05 by D47.** The start page's week agenda (§6) reflows with `Grid columns={{ minWidth, max }}`, and a booked event is text with its time.
+**Amended 2026-11-05 by D48.** The start page's week agenda (§6) reflows with `Grid columns={{ minWidth, max }}`, and a booked event is text with its time.

@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://clew.dev/protocol/1/connector-protocol.schema.json",
+  "$id": "https://clew.dev/protocol/2/connector-protocol.schema.json",
   "title": "Clew connector protocol",
-  "description": "Shapes exchanged between Clew and a connector service. See docs/architecture/connector-protocol.md.",
+  "description": "Shapes exchanged between Clew and a connector service. See docs/reference/connector-protocol.md.",
   "$defs": {
     "ConnectorManifest": {
       "additionalProperties": false,
-      "$id": "https://clew.dev/protocol/1/connector-manifest.schema.json",
+      "$id": "https://clew.dev/protocol/2/connector-manifest.schema.json",
       "title": "Clew connector manifest",
       "type": "object",
       "required": [
@@ -20,7 +20,7 @@
       ],
       "properties": {
         "protocol": {
-          "const": 1,
+          "const": 2,
           "type": "number"
         },
         "id": {
@@ -183,6 +183,62 @@
               "scope"
             ],
             "properties": {
+              "execution": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "strategy"
+                    ],
+                    "properties": {
+                      "strategy": {
+                        "const": "manual",
+                        "type": "string"
+                      }
+                    }
+                  },
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "strategy",
+                      "retentionSeconds",
+                      "lookup"
+                    ],
+                    "properties": {
+                      "strategy": {
+                        "const": "deduplicated",
+                        "type": "string"
+                      },
+                      "retentionSeconds": {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "lookup": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "strategy",
+                      "lookup"
+                    ],
+                    "properties": {
+                      "strategy": {
+                        "const": "conditional",
+                        "type": "string"
+                      },
+                      "lookup": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                ]
+              },
               "name": {
                 "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
                 "maxLength": 80,
@@ -1017,6 +1073,15 @@
             }
           }
         },
+        "uses": {
+          "uniqueItems": true,
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
+            "type": "string"
+          }
+        },
         "scan": {
           "description": "Whether Clew should POST /clew/scan for each person nightly and on first visit.",
           "type": "boolean"
@@ -1295,6 +1360,12 @@
           "minimum": 1,
           "maximum": 1440,
           "type": "integer"
+        },
+        "undoInput": {
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {}
+          }
         }
       }
     },
@@ -1368,6 +1439,36 @@
               "actions"
             ],
             "properties": {
+              "occurrences": {
+                "minItems": 1,
+                "maxItems": 100,
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "key",
+                    "revision",
+                    "period"
+                  ],
+                  "properties": {
+                    "key": {
+                      "minLength": 1,
+                      "maxLength": 400,
+                      "type": "string"
+                    },
+                    "revision": {
+                      "maxLength": 400,
+                      "type": "string"
+                    },
+                    "period": {
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "type": "string"
+                    }
+                  }
+                }
+              },
               "topic": {
                 "minLength": 1,
                 "maxLength": 120,
@@ -1525,6 +1626,75 @@
               }
             }
           }
+        },
+        "observation": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "scope",
+            "observedAt",
+            "version",
+            "exhausted",
+            "completeness"
+          ],
+          "properties": {
+            "scope": {
+              "type": "string"
+            },
+            "observedAt": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            },
+            "exhausted": {
+              "type": "boolean"
+            },
+            "completeness": {
+              "anyOf": [
+                {
+                  "const": "complete",
+                  "type": "string"
+                },
+                {
+                  "const": "delta",
+                  "type": "string"
+                },
+                {
+                  "const": "partial",
+                  "type": "string"
+                },
+                {
+                  "const": "unavailable",
+                  "type": "string"
+                },
+                {
+                  "const": "authorization-required",
+                  "type": "string"
+                }
+              ]
+            },
+            "tombstones": {
+              "type": "array",
+              "items": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "key",
+                  "period"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "period": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -1540,6 +1710,36 @@
         "actions"
       ],
       "properties": {
+        "occurrences": {
+          "minItems": 1,
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "key",
+              "revision",
+              "period"
+            ],
+            "properties": {
+              "key": {
+                "minLength": 1,
+                "maxLength": 400,
+                "type": "string"
+              },
+              "revision": {
+                "maxLength": 400,
+                "type": "string"
+              },
+              "period": {
+                "minLength": 1,
+                "maxLength": 100,
+                "type": "string"
+              }
+            }
+          }
+        },
         "topic": {
           "minLength": 1,
           "maxLength": 120,

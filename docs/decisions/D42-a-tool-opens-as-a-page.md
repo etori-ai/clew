@@ -2,7 +2,7 @@
 
 **Status:** accepted, built 2026-11-05; a link from a view in the panel to the tool's page, sorting and column filters on the page, and a canvas artboard for it are not built · **Date:** 2026-11-05 · **Area:** ui
 
-**Amended 2026-11-05 by D47.** The table starts at 1280 px, not 1360 (§8): the phone book's seven columns need 970 px at the new floors, and the rail takes 260, so a 1280 px laptop has the table and nothing scrolls sideways. The reason to keep a list below that still holds.
+**Amended 2026-11-05 by D48.** The table starts at 1280 px, not 1360 (§8): the phone book's seven columns need 970 px at the new floors, and the rail takes 260, so a 1280 px laptop has the table and nothing scrolls sideways. The reason to keep a list below that still holds.
 
 **Decision.** Everything under Verktyg in the menu opens the same way: as a page of its own, inside the one shell.
 Kalender already did. A view an administrator has chosen as a tool (D40) now does too, and no longer opens in the side

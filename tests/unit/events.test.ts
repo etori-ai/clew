@@ -33,73 +33,6 @@ function world() {
 }
 const booking = { title: 'Ledningsgrupp', start: at('2026-11-05T10:00'), end: at('2026-11-05T11:00'), participants: [anna.email] };
 
-describe('a booking of one\'s own', () => {
-  test('creates the event with the unit members as guests and writes one audit row on the event', async () => {
-    const w = world();
-    w.calendar.rooms.push({ ref: 'room:a12', name: 'A12', email: 'a12@clew.test', capacity: 8, equipment: ['skärm'] });
-    const event = await w.createEvent(hillevi, { ...booking, room: 'room:a12' });
-    expect(event).toMatchObject({ title: 'Ledningsgrupp', start: booking.start, end: booking.end, mine: true, canCancel: true, room: 'A12', participants: ['Anna Lindqvist'], organizer: 'Hillevi Berg', ref: 'memory:clew-event-id-1', revision: 'r1' });
-    expect(w.calendar.events.map(e => e.uid)).toEqual(['clew-event-id-1']);
-    expect(w.store.audit).toEqual([{ actor: 'person:hillevi', action: 'event.created', subject: 'event:memory:clew-event-id-1', at: T0, details: { uid: 'clew-event-id-1', start: booking.start, end: booking.end, participants: 1, room: 'A12', readBack: false } }]);
-  });
-  test('refuses an empty title, a window that ends first, a day-long window and a guest outside the unit, before anything is written', async () => {
-    const w = world();
-    await expect(w.createEvent(hillevi, { ...booking, title: '  ' })).rejects.toThrow('Ge mötet en rubrik.');
-    await expect(w.createEvent(hillevi, { ...booking, end: booking.start })).rejects.toThrow('Sluttiden måste vara efter starttiden.');
-    await expect(w.createEvent(hillevi, { ...booking, end: at('2026-11-06T11:00') })).rejects.toThrow('Ett möte kan vara högst ett dygn.');
-    await expect(w.createEvent(hillevi, { ...booking, participants: ['someone@elsewhere.test'] })).rejects.toThrow('Deltagarna måste tillhöra din enhet.');
-    await expect(w.createEvent(hillevi, { ...booking, room: 'room:nowhere' })).rejects.toThrow('Du får inte boka det valda rummet.');
-    expect(w.calendar.events).toEqual([]);
-    expect(w.store.audit).toEqual([]);
-  });
-  test('a lost reply is recorded as unknown and told in Swedish', async () => {
-    const w = world();
-    w.calendar.options.failCreate = true;
-    await expect(w.createEvent(hillevi, booking)).rejects.toThrow('Bokningsresultatet är osäkert. Kontrollera kalendern innan du försöker igen.');
-    expect(w.store.audit).toEqual([{ actor: 'person:hillevi', action: 'event.create_unknown', subject: 'event:clew-event-id-1', at: T0, details: { start: booking.start, end: booking.end, participants: 1, room: null, reason: 'The calendar did not answer.' } }]);
-  });
-  test('a reply lost after the write is read back by uid and counts as created', async () => {
-    const w = world();
-    const create = w.calendar.create.bind(w.calendar);
-    w.calendar.create = async (uid, input) => { await create(uid, input); throw new Error('The calendar did not answer.'); };
-    const event = await w.createEvent(hillevi, booking);
-    expect(event.ref).toBe('memory:clew-event-id-1');
-    expect(w.store.audit.map(e => [e.action, e.details?.readBack])).toEqual([['event.created', true]]);
-  });
-});
-
-describe('moving and cancelling a booking', () => {
-  test('moves a meeting the person organises at the revision they saw, and audits from and to', async () => {
-    const w = world();
-    const event = await w.createEvent(hillevi, booking);
-    const moved = await w.rescheduleEvent(hillevi, { ref: event.ref, revision: event.revision, start: at('2026-11-05T13:00'), end: at('2026-11-05T14:00') });
-    expect(moved).toMatchObject({ ref: event.ref, start: at('2026-11-05T13:00'), end: at('2026-11-05T14:00'), revision: 'r1+' });
-    expect(w.store.audit.at(-1)).toEqual({ actor: 'person:hillevi', action: 'event.rescheduled', subject: 'event:' + event.ref, at: T0, details: { from: { start: booking.start, end: booking.end }, to: { start: at('2026-11-05T13:00'), end: at('2026-11-05T14:00') }, revision: 'r1' } });
-  });
-  test('refuses a stale revision, someone else\'s meeting, a recurring one and a vanished one, with no audit row', async () => {
-    const w = world();
-    const event = await w.createEvent(hillevi, booking);
-    const rows = w.store.audit.length;
-    const later = { start: at('2026-11-05T13:00'), end: at('2026-11-05T14:00') };
-    await expect(w.rescheduleEvent(hillevi, { ref: event.ref, revision: 'old', ...later })).rejects.toThrow('Mötet har ändrats sedan sidan lästes. Läs om och försök igen.');
-    w.calendar.events.push(occurrence({ uid: 'theirs', title: 'Deras möte', start: at('2026-11-06T09:00'), end: at('2026-11-06T10:00'), organizer: 'rektor@clew.test', canCancel: false }, account));
-    await expect(w.rescheduleEvent(hillevi, { ref: 'memory:theirs', revision: 'r1', ...later })).rejects.toThrow('Du kan bara flytta möten du själv har bokat.');
-    w.calendar.events.push(occurrence({ uid: 'weekly', title: 'Veckomöte', start: at('2026-11-06T09:00'), end: at('2026-11-06T10:00'), recurring: true }, account));
-    await expect(w.rescheduleEvent(hillevi, { ref: 'memory:weekly', revision: 'r1', ...later })).rejects.toThrow('Bara enstaka möten med klockslag kan flyttas.');
-    await expect(w.rescheduleEvent(hillevi, { ref: 'memory:gone', revision: 'r1', ...later })).rejects.toThrow('Mötet finns inte längre.');
-    await expect(w.cancelEvent(hillevi, { ref: 'memory:theirs', revision: 'r1' })).rejects.toThrow('Bara den som bokat mötet kan ställa in det.');
-    await expect(w.cancelEvent(hillevi, { ref: event.ref, revision: 'old' })).rejects.toThrow('Mötet har ändrats sedan sidan lästes. Läs om och försök igen.');
-    expect(w.store.audit.length).toBe(rows);
-  });
-  test('cancels a meeting the person organises and audits it', async () => {
-    const w = world();
-    const event = await w.createEvent(hillevi, booking);
-    expect(await w.cancelEvent(hillevi, { ref: event.ref, revision: event.revision })).toEqual({ cancelled: true });
-    expect(w.calendar.cancelled).toEqual([event.ref]);
-    expect(w.store.audit.at(-1)).toEqual({ actor: 'person:hillevi', action: 'event.cancelled', subject: 'event:' + event.ref, at: T0, details: { start: booking.start, end: booking.end, participants: 1, revision: 'r1' } });
-  });
-});
-
 describe('a proposal moved by the person', () => {
   const draw = async (w: ReturnType<typeof world>) => {
     const t = (await w.samtal.ensureProposalThread(hillevi))!;
@@ -140,7 +73,7 @@ describe('the day and the free-busy check', () => {
   test('a day view holds that day\'s events and proposals only', async () => {
     const w = world();
     const { t } = await draw(w);
-    await w.createEvent(hillevi, booking);
+    w.calendar.events.push(occurrence({ uid: 'seed', title: booking.title, start: booking.start, end: booking.end }, account));
     const day = await w.dayView(hillevi, '2026-11-05');
     expect(day.from).toBe('2026-11-05');
     expect(day.events.map(e => e.title)).toEqual(['Ledningsgrupp']);
@@ -155,7 +88,7 @@ describe('the day and the free-busy check', () => {
     w.calendar.rooms.push({ ref: 'room:a12', name: 'A12', email: 'a12@clew.test', capacity: 8, equipment: [] });
     w.calendar.options.busy[anna.ref] = [{ start: at('2026-11-05T10:30'), end: at('2026-11-05T11:30') }];
     w.calendar.options.busy[members[1]!.ref] = 'unknown';
-    await w.createEvent(hillevi, { ...booking, participants: [] });
+    w.calendar.events.push(occurrence({ uid: 'seed', title: booking.title, start: booking.start, end: booking.end }, account));
     const result = await w.checkAvailability(hillevi, { start: booking.start, end: booking.end, participants: [anna.email, members[1]!.email], room: 'room:a12' });
     expect(result).toEqual({ mine: 'busy', participants: [{ email: anna.email, name: 'Anna Lindqvist', state: 'busy' }, { email: members[1]!.email, name: 'Erik Sandström', state: 'unknown' }], room: { ref: 'room:a12', name: 'A12', state: 'free' } });
     expect(await w.listMembers(hillevi)).toEqual(members.map(m => ({ name: m.name, email: m.email })));

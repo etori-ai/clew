@@ -2,7 +2,7 @@
 // file, no dependencies beyond Node, built the way a third party builds a connector (connectors/hello is the reference).
 // It acts as the person: Clew sends an IdP token bound to the audience "eneo" beside its assertion, and every call to
 // Eneo carries that token and nothing else. Nothing of Eneo's text is kept here; a collection list is cached for a while.
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createVerifier, callbackFor, b64 } from './verification.mjs';
 
 const CONNECTOR = 'eneo';
 const Empty = { type: 'object', properties: {}, additionalProperties: false };
@@ -10,7 +10,7 @@ const SNIPPET_LIMIT = 1200;
 const FETCH_LIMIT = 1500;
 
 export const manifest = {
-  protocol: 1, id: CONNECTOR, kind: 'passthrough', source: 'Eneo',
+  protocol: 2, id: CONNECTOR, kind: 'passthrough', source: 'Eneo',
   areas: [],
   capabilities: [
     { name: 'eneo.search', kind: 'read', title: 'Sök i Eneo', description: 'Söker i de kunskapsbaser personen har tillgång till i Eneo och ger avsnitten som matchar. Ange frågan som query.',
@@ -27,18 +27,7 @@ export const manifest = {
 };
 
 // --- the assertion Clew sends: HS256 JWT, iss "clew", aud = this connector id, sub = the person id.
-const b64 = s => Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
-export function verifyAssertion(token, secret, now = Date.now()) {
-  const [h, p, s] = String(token).split('.');
-  if (!h || !p || !s) return null;
-  const expected = createHmac('sha256', secret).update(`${h}.${p}`).digest();
-  const given = b64(s);
-  if (given.length !== expected.length || !timingSafeEqual(given, expected)) return null;
-  const header = JSON.parse(b64(h).toString()), payload = JSON.parse(b64(p).toString());
-  if (header.alg !== 'HS256' || payload.iss !== 'clew' || payload.aud !== CONNECTOR || !payload.exp || payload.exp * 1000 < now) return null;
-  if (!payload.actor || payload.actor.id !== payload.sub) return null;
-  return payload.actor;
-}
+
 /** The claims of a JWT, read without verification: for `whoami` only, so an operator can see what Eneo is handed. */
 export function decodeClaims(token) {
   try { const p = JSON.parse(b64(String(token).split('.')[1] ?? '').toString()); const { sub, iss, aud, azp, email, email_verified, exp, iat } = p; return { sub, iss, aud, azp, email, email_verified, exp, iat }; }
@@ -51,8 +40,8 @@ const clip = (text, limit) => { const t = String(text ?? ''); return t.length <=
  * injectable for tests. Every request to Eneo is built from scratch: the person's token, `accept`, `content-type`, never an
  * Origin and never a header from the incoming request.
  */
-export function createConnector({ secret, eneoUrl = process.env.ENEO_URL ?? '', fetch: fetchImpl = globalThis.fetch, ttlSeconds = Number(process.env.ENEO_COLLECTIONS_TTL_SECONDS ?? 300), now = Date.now, perCallMs = 2000 } = {}) {
-  if (!secret) throw new Error('A shared secret is required (CLEW_CONNECTOR_SECRET).');
+export function createConnector({ jwks, secret, eneoUrl = process.env.ENEO_URL ?? '', fetch: fetchImpl = globalThis.fetch, ttlSeconds = Number(process.env.ENEO_COLLECTIONS_TTL_SECONDS ?? 300), now = Date.now, perCallMs = 2000 } = {}) {
+  const verify = createVerifier({ secret, jwks, clewUrl: process.env.CLEW_URL ?? '' }, CONNECTOR);
   const base = eneoUrl.replace(/\/+$/, '') + '/api/v1';
   const collectionsCache = new Map(); // actor id -> { at, collections }
   const blobCache = new Map(); // info blob id -> { at, blob }
@@ -117,7 +106,7 @@ export function createConnector({ secret, eneoUrl = process.env.ENEO_URL ?? '', 
     if (request.method === 'GET' && url.pathname === '/clew/manifest') return json(manifest);
     if (request.method !== 'POST' || !url.pathname.startsWith('/clew/')) return json({ error: { code: 'not-found', message: 'Okänd adress.' } }, 404);
     const assertion = (request.headers.get('authorization') ?? '').replace(/^Bearer /, '');
-    const actor = verifyAssertion(assertion, secret, now());
+    const actor = await verify(assertion, request.headers.get('x-clew-connector-key'));
     if (!actor) return fail('denied', 'Ogiltigt behörighetsbevis.', 401);
     let body; try { body = await request.json(); } catch { return fail('invalid', 'Ogiltig förfrågan.', 400); }
     if (url.pathname === '/clew/scan') return json({ drafts: [] });

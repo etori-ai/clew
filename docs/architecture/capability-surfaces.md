@@ -1,5 +1,8 @@
 # How a capability is exposed: REST, model tools and MCP
 
+> **Reading status:** Design background. Generic capability REST calls cannot execute writes. External-agent MCP is designed, not implemented; new source integrations use the connector HTTP protocol, not an apps/mcp host. See [implementation status](../reference/status.md) and the [current protocol](../reference/connector-protocol.md).
+
+
 For colleagues who need to know what "a connector is exposed via MCP and also callable deterministically"
 means in Clew, and where the line between those runs. Written 2026-11-04 against the code as it is; each
 surface says whether it is built.

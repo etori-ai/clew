@@ -1,3 +1,4 @@
+import { completeSnapshot } from '../scan';
 import { Type } from '@sinclair/typebox';
 import type { Actor, Capability, ExecuteResult, Connector, ThreadDraft } from '../index';
 import type { StateStore } from '../memory-state';
@@ -65,6 +66,6 @@ export function treservaConnector(state: StateStore): Connector {
     areas: [{ id: 'arbetsmiljo', title: 'Arbetsmiljö', icon: 'document', roles: ['manager'], standing: ['treserva.deviations', 'treserva.report'],
       schedules: [{ label: 'Avvikelser som väntat mer än fem dagar', when: 'Varje vardag 06:00' }],
       figure: async () => { const open = deviations.filter(d => d.unitId === UNIT && d.state !== 'closed').length; return { label: open ? `${open} öppen${open > 1 ? 'na' : ''} avvikelse${open > 1 ? 'r' : ''}` : 'Inga öppna avvikelser', tone: open ? 'warn' : 'ok' }; } }],
-    capabilities, scan,
+    capabilities, scan: async actor => completeSnapshot(actor, await scan(actor)),
   };
 }

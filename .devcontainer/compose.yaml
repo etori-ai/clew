@@ -52,7 +52,7 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
-  # Temporal (MIT) runs the durable timers: user-set reminders today, the scan and undo windows later (D17).
+  # Temporal (MIT) runs approved executions, timers, bounded follow-up and scheduled jobs (D17/D45/D47).
   # auto-setup creates its two databases in the shared Postgres on first start. Dev only; production runs temporalio/server.
   temporal:
     image: temporalio/auto-setup:1.29.7@sha256:f14912b699cf73015ad5c4fc18d522d4b014db90e794039214dfb7c022c2644f

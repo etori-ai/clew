@@ -19,15 +19,15 @@ events), because most records live in other systems and Clew holds refs and audi
 ```
 apps/server/src/
   main.ts  context.ts  auth.ts  auth-crypto.ts  system-context.ts  scheduler.ts     platform
-  composition/       the composition root (D25): ambient.ts (clock, ids), calendar.ts (the calendar over Postgres and bindCalendar, before the registry), index.ts (threads, reminders, mocks, assistant, scheduler over the registry)
-  scheduler/         model.ts (JobQueue, People), usecases.ts (createScheduler: nightly scan, undo and receipt timers), adapters/postgres.ts
+  composition/       the composition root (D25): calendar, executions/projection, follow-up store, refresh, jobs, operations, threads and assistant over ports
+  scheduler/         scheduled housekeeping use cases; durable-postgres.ts owns Temporal delivery/execution leases (D47), not a second polling runner
   routes/            auth.ts, api.ts, connectors.ts, admin.ts   HTTP only: parse, validate, call one use case, map errors
   threads/           the stream (Clew core)
     model.ts         its ports: ThreadStore, ThreadTx, ReminderTimers (D25)
     usecases/        cards.ts, reminders.ts: scan into cards, act, undo, snooze, dismiss, reminders, attention; factories over the ports
     adapters/        postgres.ts and temporal.ts (live), memory.ts (tests); ThreadTx.lockThread holds a row while a reminder surfaces
   assistant/         index.ts (assistantUsecases), ports.ts (ModelProvider, AssistantDeps), router, model, verbs, chips, objects, fixed, completions; adapters/provider.ts (the model from the environment), adapters/memory.ts
-  temporal/          worker, workflows, activities      durable timers (D17); the activity is one line over reminders.surface from the composition root
+  temporal/          worker, workflows, activities      approved executions, generation-fenced timers, follow-up and scheduled jobs (D17/D45/D47)
   connectors/        platform: the connector registry, the remote transport and connector administration (D23)
     registry.ts      the registry the BFF runs with: bundled connectors + remote connectors; runCapability, callFromConnector, bundledIds
     remote.ts        assertions, the boot loader of enabled rows (D21, D23)

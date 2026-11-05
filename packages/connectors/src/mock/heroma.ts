@@ -1,3 +1,4 @@
+import { completeSnapshot } from '../scan';
 import { Type } from '@sinclair/typebox';
 import type { ThreadAction } from '@clew/contracts';
 import type { Actor, Capability, ExecuteResult, Connector, ThreadDraft } from '../index';
@@ -217,7 +218,7 @@ export function heromaConnector(state: StateStore): Connector {
         schedules: [{ label: 'Delegeringar och utbildningar som går ut', when: 'Månadens första måndag' }],
         figure: async (actor) => { const me = own(actor); const s = me && shifts.find(x => x.employee === me.ref && x.date === todayIso()); return s ? { label: `${s.start}–${s.end} på ${s.ward}`, tone: 'ok' } : { label: 'Ledig i dag', tone: 'none' }; } },
     ],
-    capabilities, scan,
+    capabilities, scan: async actor => completeSnapshot(actor, await scan(actor)),
   };
 }
 const _unused: ThreadAction | undefined = undefined; void _unused;

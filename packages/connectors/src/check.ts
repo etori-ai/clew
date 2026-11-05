@@ -1,5 +1,5 @@
 import type { CheckFinding, CheckGroup, CheckItem, CheckLevel, CheckReport, Role } from '@clew/contracts';
-import { Registry, type Actor } from './index';
+import { Registry, openGovernance, type Actor } from './index';
 import { fetchManifest, remoteConnector, type FetchLike } from './remote';
 import type { ConnectorManifest } from './protocol';
 import { menuRowOf, rowsKey, viewRows } from './views';
@@ -7,15 +7,16 @@ import { menuRowOf, rowsKey, viewRows } from './views';
 /**
  * The conformance check of a connector service (D21, D23): what `scripts/connector-check.ts` prints and what the admin
  * page runs as "Testa anslutning". It does what Clew's loader does and then exercises the connector as a manager and
- * as an employee. Signing is handed in (`assert` with the right secret, `assertForeign` with a wrong one) so this
- * package stays free of JWT libraries and a test can sign however it likes.
+ * as an employee. Signing is handed in (`assert` from Clew's authority, `assertForeign` for an invalid assertion)
+ * so this package stays free of JWT libraries. The separate `key` is transport authentication only.
  *
- * Two readers, two results (D44): `findings` is the English log the CLI prints, answers included, for the person who
+ * Two readers, two results (D44-the-connector-check-reads-as-a-result-not-a-log): `findings` is the English log the CLI prints, answers included, for the person who
  * builds the connector. `items` is the Swedish account the administrator reads, one row per fact, with no answer in it:
  * an administrator sees structure, never people's data (D23).
  */
 export interface CheckOptions {
   url: string;
+  key?: string;
   id?: string;
   assert: (actor: Actor) => Promise<string>;
   assertForeign: (actor: Actor) => Promise<string>;
@@ -53,7 +54,8 @@ export async function checkConnector(options: CheckOptions): Promise<CheckReport
     warn(`delegation: acts as the person for audience "${manifest.delegation.audience}"; not verified by this check (it has no session), so a "denied" answer below is the expected one`);
     item('warn', 'connection', 'Agerar som personen', `Använder personens egen behörighet mot ${manifest.delegation.audience}. Kontrollen har ingen inloggning och kan inte pröva det, så nekade svar är väntade.`);
   }
-  const registry = new Registry({ onRefused: (_id, topic, problem) => { fail(`draft ${topic} refused: ${problem}`); item('fail', 'surfaces', 'Kort', `Kortet ${topic} avvisades: ${problem}`); } }).register(remoteConnector(manifest, { url, assert: options.assert, fetch: fetchImpl }));
+  const registry = new Registry({ onRefused: (_id, topic, problem) => { fail(`draft ${topic} refused: ${problem}`); item('fail', 'surfaces', 'Kort', `Kortet ${topic} avvisades: ${problem}`); } }).register(remoteConnector(manifest, { url, key: options.key, assert: options.assert, fetch: fetchImpl }));
+  registry.govern(manifest.id, openGovernance());
   const accepts = options.acceptsEmptyInput ?? listsNothingRequired;
   /** What one capability came to, for the row the administrator reads: every finding about it folds into one sentence each. */
   type Row = { level: CheckLevel; answered: Role[]; refused: Role[]; notes: string[]; note(level: CheckLevel, text: string): void };
@@ -102,11 +104,11 @@ export async function checkConnector(options: CheckOptions): Promise<CheckReport
     ok(`menu: ${tools.length} ${tools.length === 1 ? 'view' : 'views'} can be a tool in the menu when an administrator chooses it: ${tools.map(t => `"${t.row!.label}" (${t.name})`).join(', ')}`);
     item('ok', 'surfaces', 'Verktyg i menyn', `${tools.map(t => t.row!.label).join(', ')} kan väljas till menyn av en administratör.`);
   }
-  // Wrong secret must be refused by the connector itself, not only by Clew.
+  // A foreign/invalid signature must be refused by the connector itself, not only by Clew.
   const first = manifest.capabilities[0];
   if (first) {
     try {
-      const r = await fetchImpl(url + '/clew/capabilities/' + first.name, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + await options.assertForeign(CHECK_MANAGER) }, body: JSON.stringify({ actor: CHECK_MANAGER, input: {} }) });
+      const r = await fetchImpl(url + '/clew/capabilities/' + first.name, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + await options.assertForeign(CHECK_MANAGER), ...(options.key ? { 'x-clew-connector-key': options.key } : {}) }, body: JSON.stringify({ actor: CHECK_MANAGER, input: {} }) });
       if (r.status === 401) { ok('a call signed with another secret is refused (401)'); item('ok', 'connection', 'Fel nyckel nekas', 'Ett anrop signerat med en annan nyckel avvisades av tjänsten.'); }
       else { fail(`a call signed with another secret answered ${r.status}, expected 401`); item('fail', 'connection', 'Fel nyckel släpps igenom', `Ett anrop signerat med en annan nyckel fick svaret ${r.status}. Tjänsten ska svara 401.`); }
     } catch (error) { fail('wrong-secret probe: ' + (error as Error).message); item('fail', 'connection', 'Fel nyckel kunde inte prövas', (error as Error).message); }

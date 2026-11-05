@@ -27,6 +27,28 @@ export const draft = (personId: string, overrides: Partial<NewThread> = {}): New
 
 export function storeContract(name: string, make: () => Promise<StoreHarness>) {
   describe(`${name} store`, () => {
+    test('timer generations, cancellation and audit share the thread transaction', async () => {
+      const { store, people: [a], auditFor } = await make();
+      const t = draft(a), id = `reminder:${t.id}`;
+      await store.transaction(tx => tx.insertThread(t));
+      const input = { id, personId: a, threadId: t.id, kind: 'reminder' as const, unitId: 'unit', authorizationVersion: 'v1', dueAt: plus(T0, 60_000), requestedAt: T0 };
+      await expect(store.transaction(async tx => {
+        await tx.lockThread(a, t.id); await tx.scheduleTimer(input);
+        await tx.writeAudit({ actor: a, action: 'timer.set', subject: `thread:${t.id}`, at: T0 });
+        throw new Error('rollback');
+      })).rejects.toThrow('rollback');
+      expect(await store.readTimer(id)).toBeUndefined();
+      expect(await auditFor(`thread:${t.id}`)).toEqual([]);
+      await store.transaction(async tx => {
+        await tx.lockThread(a, t.id);
+        expect((await tx.scheduleTimer(input)).generation).toBe(1);
+        expect((await tx.scheduleTimer({ ...input, dueAt: plus(T0, 120_000) })).generation).toBe(2);
+        expect(await tx.cancelTimer(id, T0, 1)).toBe(false);
+      });
+      expect(await store.readTimer(id)).toMatchObject({ state: 'active', generation: 2, dueAt: plus(T0, 120_000) });
+      await store.transaction(async tx => { await tx.lockThread(a, t.id); expect(await tx.cancelTimer(id, T0, 2)).toBe(true); });
+      expect(await store.readTimer(id)).toMatchObject({ state: 'cancelled', generation: 2 });
+    });
     test('a thread is read back as the contract describes it, only by its owner', async () => {
       const { store, people: [a, b] } = await make();
       const t = draft(a);
@@ -78,6 +100,17 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       await store.transaction(async tx => { for (const t of [recent, stale]) await tx.updateThread(t.id, { state: 'handled', handledAt: t.updatedAt }); });
       expect((await store.listThreads(a, now)).map(t => t.id)).toEqual([recent.id, open.id]);
     });
+    test('new conversations never displace older unresolved work from the stream or counts', async () => {
+      const { store, people: [a] } = await make();
+      const work = Array.from({ length: 55 }, () => draft(a));
+      await store.transaction(async tx => {
+        for (const t of work) await tx.insertThread(t);
+        for (let i = 0; i < 60; i++) await tx.insertThread(draft(a, { kind: 'question', createdAt: plus(T0, i + 1), updatedAt: plus(T0, i + 1) }));
+      });
+      const listed = await store.listThreads(a, plus(T0, 60));
+      expect(listed.filter(t => t.kind === 'pushed').map(t => t.id).sort()).toEqual(work.map(t => t.id).sort());
+      expect(listed.filter(t => t.kind === 'question')).toHaveLength(50);
+    });
     test('a thread can be locked inside a transaction by its owner only, and reads the same as outside', async () => {
       const { store, people: [a, b] } = await make();
       const t = draft(a);
@@ -88,6 +121,18 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       expect(inside.theirs).toBeUndefined();
       await store.transaction(async tx => { const locked = (await tx.lockThread(a, t.id))!; await tx.updateThread(locked.id, { remindedAt: plus(T0, 2000), trigger: { ...locked.trigger, reason: 'igen' } }); });
       expect(await store.readThread(a, t.id)).toMatchObject({ remindedAt: plus(T0, 2000), trigger: { reason: 'igen', source: t.trigger.source } });
+    });
+    test('an old uncertain compensation keeps its original receipt beyond history limits', async () => {
+      const { store, people: [a] } = await make(), now = plus(T0, 30 * 86400_000);
+      const t = draft(a), receipt = { at: T0, headline: 'Bekräftat i källan.', rows: [{ ref: 'source:1', label: 'Original', outcome: 'done' as const, detail: 'Kontrollerat.' }], undoUntil: null, undoCapability: null };
+      await store.transaction(async tx => {
+        await tx.insertThread({ ...t, execution: { id: 'undo', decisionId: 'undo', operation: 'raindance.unapprove', state: 'unknown', reason: 'source-unavailable', compensates: 'original' } });
+        await tx.updateThread(t.id, { state: 'handled', handledAt: T0, receipt });
+        for (let i = 0; i < 60; i++) await tx.insertThread(draft(a, { kind: 'question', createdAt: plus(now, -i), updatedAt: plus(now, -i) }));
+      });
+      const listed = await store.listThreads(a, now);
+      expect(listed.find(row => row.id === t.id)).toMatchObject({ receipt, execution: { state: 'unknown', compensates: 'original' } });
+      expect(listed.filter(row => row.kind === 'question')).toHaveLength(50);
     });
     test('an audit row and a job commit with the writes they belong to, and roll back with them', async () => {
       const { store, people: [a], auditFor, hasJob } = await make();

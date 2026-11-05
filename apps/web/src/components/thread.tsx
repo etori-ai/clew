@@ -8,6 +8,7 @@ import { addDays, shortDayLabel, timeRange, weekNumber } from '@clew/calendar/da
 import { api } from '../api';
 import { calendarWeekQuery } from '../queries';
 import { useThreadAction } from '../mutations';
+import { executionStatus } from '../execution-status';
 
 type Props = { thread: Thread; compact: boolean; headingLevel?: 2 | 3 | 4; onChange: (thread: Thread) => void };
 const EMPTY_EVENTS: CalendarEvent[] = [];
@@ -15,6 +16,8 @@ const EMPTY_EVENTS: CalendarEvent[] = [];
 const stepLabel = { forslag: 'Förslag', inbjudningar: 'Inbjudningar', svar: 'Svar', klart: 'Klart' } as const;
 /** The thread's state in words; the Stepper carries it too (D30). Only a proposal waiting for the person is a status that needs action, and the one badge. */
 const statusLine = (thread: Thread) => {
+  const pending = executionStatus(thread.execution);
+  if (pending) return { badge: false, label: pending };
   if (thread.kind === 'question') return { badge: false, label: Date.now() - Date.parse(thread.createdAt) < 3600_000 ? 'Du frågade nyss' : 'Du frågade' };
   if (thread.state === 'dismissed') return { badge: false, label: 'Avfärdad' };
   const step = obligationStep(thread.proposals), sum = replySummary(thread.proposals);
@@ -66,9 +69,10 @@ export function ThreadCard({ thread, compact, headingLevel = 3, onChange }: Prop
   const draft = thread.messages.at(-1)?.meta?.draft;
   useEffect(() => { setSelected(seed()); }, [thread.updatedAt, thread.proposals.length]);
   const undoUntil = thread.proposals.map(p => p.undoUntil).filter((v): v is string => !!v).sort().at(-1);
-  const undoOpen = !!undoUntil && Date.parse(undoUntil) > now && thread.proposals.some(p => p.status === 'confirmed');
+  const pending = executionStatus(thread.execution);
+  const undoOpen = !pending && !!undoUntil && Date.parse(undoUntil) > now && thread.proposals.some(p => p.status === 'confirmed');
   useEffect(() => { if (!undoOpen) return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, [undoOpen]);
-  const open = thread.state === 'open' && thread.proposals.some(p => p.status === 'proposed');
+  const open = !pending && thread.state === 'open' && thread.proposals.some(p => p.status === 'proposed');
   // The obligation (D30): where it stands, who could not be placed, and who has answered.
   const step = obligationStep(thread.proposals), sum = replySummary(thread.proposals);
   const unplaced = thread.items.filter(i => i.ref.startsWith('unplaced:'));
@@ -123,7 +127,8 @@ export function ThreadCard({ thread, compact, headingLevel = 3, onChange }: Prop
         : <WeekAgenda week={thread.week} days={5} items={items} label={`Vecka ${weekNumber(thread.week)} med förslagen`} />)}
       {conversation.length > 0 && <Conversation messages={conversation} />}
       {error && <Text as="p" role="alert" color="accent">{error}</Text>}
-      {roster && !open && thread.state === 'open' && !undoOpen && <HStack gap={2} wrap="wrap">
+      {pending && <HStack gap={2} wrap="wrap"><Text role="status">{pending}</Text><Button label="Kontrollera status" clickAction={() => run(() => api.checkExecution(thread.id))} /></HStack>}
+      {roster && !pending && !open && thread.state === 'open' && !undoOpen && <HStack gap={2} wrap="wrap">
         {waiting.length > 0 && <Button variant="secondary" label={waiting.length === 1 ? 'Påminn den som inte svarat' : `Påminn de ${waiting.length} som inte svarat`} clickAction={() => run(() => api.remindInvitees(thread.id))} />}
         {!thread.waitingOn && <Button variant="ghost" label="Inte nu" clickAction={() => run(async () => { const t = await api.snooze(thread.id); leave(t, 'Tas upp i morgon 06:00 i stället.'); return t; })} />}
         <MoreMenu label="Fler val" size="sm" variant="ghost" items={[addItem, { id: 'why', label: 'Varför ser jag detta?', onClick: () => setWhy(v => !v) }]} />

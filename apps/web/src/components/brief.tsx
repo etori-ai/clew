@@ -20,7 +20,7 @@ const sentence = (text: string) => text.replace(/\.$/, '');
  * requirement due today carries the red day; a proposal gets a soft button and no day. A card whose action needs a
  * choice first (attest the invoices you tick) gets "Granska", which opens the card, never a button that starts disabled.
  * The title is a link to the card (a link wraps at 320 px, a button's label does not). What is on the page reaches the box
- * by `@`; a row of its own for that was one more thing to explain on the one page that has to explain itself (D47).
+ * by `@`; a row of its own for that was one more thing to explain on the one page that has to explain itself (D48).
  */
 export function Brief({ threads, areaTitle, cardHref, onChange, onOpenCardView, compact = false }: Props) {
   const now = today();

@@ -1,12 +1,12 @@
+import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
-import { SignJWT } from 'jose';
 import type { SearchResult } from '../../packages/contracts/src/index';
-import { Registry, type Actor } from '../../packages/connectors/src/index';
+import { type Actor } from '../../packages/connectors/src/index';
 import { checkConnector } from '../../packages/connectors/src/check';
 import { parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { createConnector, manifest as telefonbokManifest } from '../../connectors/telefonbok/connector.mjs';
 import { createHttpDirectory, toPerson } from '../../connectors/telefonbok/directory.mjs';
-import { assertionFor } from '../../apps/server/src/connectors/remote';
+import { assertionFor, testJwks } from '../connector-authority';
 import { searchConnector } from '../../apps/server/src/modules/search/connector';
 import { searchUsecases } from '../../apps/server/src/modules/search/usecases';
 
@@ -20,10 +20,10 @@ const karin: Actor = { id: 'karin', name: 'Karin Holm', unitId: 'enhet-17', unit
 type Row = { ref: string; name: string; title: string; unit: string; phone?: string; mobile?: string; email?: string };
 
 function stack(options: Parameters<typeof createConnector>[0] = {}) {
-  const service = createConnector({ secret, ...options });
+  const service = createConnector({ jwks: testJwks, secret, ...options });
   const connectorFetch: FetchLike = (input, init) => service.handle(new Request(input, init));
   const registry = new Registry();
-  registry.register(remoteConnector(parseManifest(telefonbokManifest, 'telefonbok'), { url: 'http://telefonbok', assert: assertionFor('telefonbok', secret), fetch: connectorFetch }));
+  registry.register(remoteConnector(parseManifest(telefonbokManifest, 'telefonbok'), { url: 'http://telefonbok', key: secret, assert: assertionFor('telefonbok', secret), fetch: connectorFetch }));
   registry.register(searchConnector(searchUsecases({ sources: actor => registry.searchSources(actor), clock: () => new Date('2026-11-05T09:00:00Z') })));
   return { registry, connectorFetch };
 }
@@ -60,7 +60,7 @@ describe('the phone book connector', () => {
     expect(await registry.run(hassan, 'telefonbok.person', { ref: 'person:p1002' })).toEqual({ ref: 'person:p1002', name: 'Hassan Ali', title: 'Lärare', unit: 'Bergsåkers skola', phone: '0980-319 202', mobile: '070-174 06 12',
       email: 'hassan.ali@kommun.example', room: 'B204', manager: 'Hillevi Berg', link: 'https://telefonbok.kommun.example/personer/p1002' });
     await expect(registry.run(hassan, 'telefonbok.person', { ref: 'person:p9001' })).rejects.toThrow('Personen finns inte i telefonboken.');
-    await expect(registry.run(hassan, 'telefonbok.person', { ref: 'person:../x' })).rejects.toThrow('Ogiltig referens.');
+    await expect(registry.run(hassan, 'telefonbok.person', { ref: 'person:../x' })).rejects.toThrow('Ogiltig förfrågan till telefonbok.person.');
   });
   test('is one source of the composite search: a hit says who and where, never the number, and carries the contact card as its view', async () => {
     const { registry } = stack();
@@ -88,8 +88,8 @@ describe('the phone book connector', () => {
   });
   test('passes the conformance check and refuses another secret', async () => {
     const { connectorFetch } = stack();
-    const sign = (key: string) => (actor: Actor) => new SignJWT({ actor }).setProtectedHeader({ alg: 'HS256' }).setIssuer('clew').setAudience('telefonbok').setSubject(actor.id).setIssuedAt().setExpirationTime('2m').sign(new TextEncoder().encode(key));
-    const report = await checkConnector({ url: 'http://telefonbok', id: 'telefonbok', assert: sign(secret), assertForeign: sign('another-secret-entirely'), fetch: connectorFetch });
+    const sign = (key: string) => assertionFor('telefonbok', key);
+    const report = await checkConnector({ key: secret, url: 'http://telefonbok', id: 'telefonbok', assert: sign(secret), assertForeign: sign('another-secret-entirely'), fetch: connectorFetch });
     expect(report.findings.filter(f => f.level !== 'ok')).toEqual([]);
     expect(report.ok).toBe(true);
     expect(report.findings.map(f => f.text)).toContain('telefonbok.directory: view table drawn from "rows", 6 fields');
@@ -98,8 +98,9 @@ describe('the phone book connector', () => {
   });
   test('the administrator reads one Swedish row per fact, and no answer from the service (D23, D44)', async () => {
     const { connectorFetch } = stack();
-    const sign = (key: string) => (actor: Actor) => new SignJWT({ actor }).setProtectedHeader({ alg: 'HS256' }).setIssuer('clew').setAudience('telefonbok').setSubject(actor.id).setIssuedAt().setExpirationTime('2m').sign(new TextEncoder().encode(key));
-    const report = await checkConnector({ url: 'http://telefonbok', id: 'telefonbok', assert: sign(secret), assertForeign: sign('another-secret-entirely'), fetch: connectorFetch });
+    const sign = (key: string) => assertionFor('telefonbok', key);
+    const report = await checkConnector({ key: secret, url: 'http://telefonbok', id: 'telefonbok', assert: sign(secret), assertForeign: sign('another-secret-entirely'), fetch: connectorFetch });
+    expect(report.ok).toBe(true);
     // The log keeps the answers for the person who builds the connector; the rows the page gets do not carry them.
     expect(report.findings.some(f => f.text.includes('Anna Lindqvist'))).toBe(true);
     expect(JSON.stringify(report.items)).not.toContain('Anna Lindqvist');
@@ -135,8 +136,8 @@ describe('the phone book API behind the port', () => {
     expect(toPerson({ id: 'a b', name: 'X' })).toBeNull();
   });
   test('an API that fails is "unavailable" in Swedish, without the system\'s own words', async () => {
-    const service = createConnector({ secret, directory });
-    const registry = new Registry().register(remoteConnector(parseManifest(telefonbokManifest, 'telefonbok'), { url: 'http://telefonbok', assert: assertionFor('telefonbok', secret), fetch: (input, init) => service.handle(new Request(input, init)) }));
+    const service = createConnector({ jwks: testJwks, secret, directory });
+    const registry = new Registry().register(remoteConnector(parseManifest(telefonbokManifest, 'telefonbok'), { url: 'http://telefonbok', key: secret, assert: assertionFor('telefonbok', secret), fetch: (input, init) => service.handle(new Request(input, init)) }));
     await expect(registry.run(hassan, 'telefonbok.person', { ref: 'person:500' })).rejects.toThrow('Telefonboken svarar inte just nu.');
   });
 });

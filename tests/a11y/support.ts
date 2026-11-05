@@ -18,6 +18,10 @@ import type { ConnectorSummary } from '@clew/contracts';
 /** The API as the browser sees it, held in memory per test. `/api/**` never leaves the page. */
 export class MockApi {
   threads = threads();
+  deliveries: Array<{ id: string; threadId: string; kind: 'automatic' | 'reminder' }> = [];
+  deliveryClaims: string[] = [];
+  sources: Array<{ connector: string; state: string; lastSuccess: string | null; error: string | null }> = [];
+
   answerDelay = 0;
   private answerHeld?: Promise<void>;
   /** How long the first read of the cards takes, so a test can see the page while they load (D36). */
@@ -52,6 +56,8 @@ export class MockApi {
     const request = route.request(), url = new URL(request.url()), path = url.pathname.replace('/api', ''), post = request.method() === 'POST';
     const json = (body: unknown) => route.fulfill({ json: body });
     const id = path.split('/')[2] ?? '';
+    if (path === '/changes') return route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'retry: 60000\n\n' });
+    if (path === `/threads/${id}/execution/check`) return json(this.threads.find(t => t.id === id));
     if (path === '/auth/session') {
       if (this.sessionDelay) await new Promise(resolve => setTimeout(resolve, this.sessionDelay));
       return this.signedIn ? json({ ...session, admin: this.admin }) : route.fulfill({ status: 401, json: { error: 'Ingen session' } });
@@ -83,7 +89,13 @@ export class MockApi {
         return json(connectorDetail(c, this.menuOn));
       }
     }
-    if (path === '/threads') { if (this.threadsDelay) await new Promise(resolve => setTimeout(resolve, this.threadsDelay)); return json({ threads: this.threads }); }
+    if (path === '/threads') { if (this.threadsDelay) await new Promise(resolve => setTimeout(resolve, this.threadsDelay)); return json({ threads: this.threads, deliveries: this.deliveries, sources: this.sources }); }
+    if (path.startsWith('/deliveries/') && path.endsWith('/claim') && post) {
+      const deliveryId = decodeURIComponent(path.split('/')[2]!);
+      const claimed = !this.deliveryClaims.includes(deliveryId);
+      if (claimed) this.deliveryClaims.push(deliveryId);
+      return json({ claimed });
+    }
     if (path === '/areas') return json({ areas, menu: this.menu });
     if (path === '/today') return json(today);
     if (path === '/attention') return json(attention);
@@ -96,9 +108,11 @@ export class MockApi {
     if (path === '/calendar/members') return json({ members: [{ name: 'Anna Lindqvist', email: 'anna@clew.test' }, { name: 'Erik Sandström', email: 'erik@clew.test' }] });
     if (path === '/calendar/rooms') return json({ rooms: [{ ref: 'room:a12', name: 'A12', capacity: 8, equipment: ['skärm'] }] });
     if (path === '/calendar/availability' && post) return json({ mine: 'free', participants: [{ email: 'anna@clew.test', name: 'Anna Lindqvist', state: 'busy' }], room: { ref: 'room:a12', name: 'A12', state: 'free' } });
-    if (path === '/calendar/events' && post) { const b = request.postDataJSON() as { title: string; start: string; end: string }; return route.fulfill({ status: 201, json: { event: { ...events(WEEK)[0]!, id: 'new', ref: 'memory:new', title: b.title, start: b.start, end: b.end } } }); }
-    if (path === '/calendar/events/reschedule' && post) { const b = request.postDataJSON() as { ref: string; start: string; end: string }; return json({ event: { ...events(WEEK)[0]!, ref: b.ref, start: b.start, end: b.end, revision: 'r2' } }); }
-    if (path === '/calendar/events/cancel' && post) return json({ cancelled: true });
+    if (['/calendar/events', '/calendar/events/reschedule', '/calendar/events/cancel'].includes(path) && post) {
+      const b = request.postDataJSON() as { decisionId: string; title?: string };
+      const card: Thread = { ...this.threads[0]!, id: 'calendar:' + b.decisionId, topic: 'calendar:' + b.decisionId, connector: 'calendar', area: 'kalender', title: b.title ?? 'Kalenderändring', summary: 'Beslutet är sparat.', state: 'open', items: [], actions: [], proposals: [], receipt: null, waitingOn: 'Väntar på kalenderns besked', execution: { id: b.decisionId, decisionId: b.decisionId, operation: 'calendar.createEvent', state: 'pending', reason: null, compensates: null } };
+      this.threads.push(card); return route.fulfill({ status: 202, json: card });
+    }
     if (/^\/threads\/[^/]+\/proposals\/[^/]+\/move$/.test(path) && post) { const b = request.postDataJSON() as { start: string; end: string }; const pid = path.split('/')[4]; const t = this.threads.find(t => t.id === id)!; return json(this.update(id, { proposals: t.proposals.map(p => p.id === pid ? { ...p, start: b.start, end: b.end } : p) })); }
     if (path === '/cap/calendar.day') { const date = (JSON.parse(url.searchParams.get('input') ?? '{}') as { date?: string }).date ?? '2026-11-04'; return json({ output: { from: date, events: events(date).filter(e => e.start.startsWith(date)), proposals: [] } }); }
     // `@` as the server answers it: with nothing typed only the context the box sends (`near`), with text everything open, the context first.
@@ -279,7 +293,7 @@ export async function expectNoAxeViolations(page: Page) {
   await undock(true);
   const { violations: sizes } = await new AxeBuilder({ page }).withTags(tags).withRules(['target-size']).analyze();
   await undock(false);
-  expect([...violations, ...sizes].map(v => `${v.id}: ${v.help}\n  ${v.nodes.slice(0, 4).map(n => n.target.join(' ')).join('\n  ')}`)).toEqual([]);
+  expect([...violations, ...sizes].map(v => `${v.id}: ${v.help}\n  ${v.nodes.slice(0, 4).map(n => n.target.join(' ') + '\n  ' + n.html).join('\n  ')}`)).toEqual([]);
 }
 
 /**
@@ -292,7 +306,18 @@ export async function reflowProblems(page: Page, scope?: Locator) {
   return page.evaluate(async root => {
     await Promise.all(document.getAnimations().filter(a => a.effect?.getComputedTiming().iterations !== Infinity).map(a => a.finished.catch(() => undefined)));
     const width = document.documentElement.clientWidth;
-    const visible = (el: Element) => { const r = el.getBoundingClientRect(), s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
+    const visible = (el: Element) => {
+      const r = el.getBoundingClientRect(), s = getComputedStyle(el);
+      if (!(r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none')) return false;
+      // Astryx keeps hidden section headings in the accessibility tree. Their
+      // descendants have text dimensions but are deliberately clipped by the
+      // VisuallyHidden ancestor; they are not visible reflow failures.
+      for (let parent: Element | null = el; parent; parent = parent.parentElement) {
+        const style = getComputedStyle(parent);
+        if (style.clip === 'rect(0px, 0px, 0px, 0px)' || style.clipPath === 'inset(50%)') return false;
+      }
+      return true;
+    };
     const label = (el: Element) => `${el.tagName.toLowerCase()} "${(el.textContent ?? '').trim().slice(0, 50)}"`;
     const problems: string[] = [];
     if (document.documentElement.scrollWidth > width) problems.push(`page is ${document.documentElement.scrollWidth} px wide at ${width} px`);

@@ -48,7 +48,8 @@ const post = <T,>(path: string, body?: unknown) => call<T>(path, { method: 'POST
 const patch = <T,>(path: string, body: unknown) => call<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
 const del = <T,>(path: string) => call<T>(path, { method: 'DELETE' });
 export const api = {
-  threads: () => call<{ threads: Thread[] }>('/api/threads'),
+  threads: () => call<{ threads: Thread[]; sources?: Array<{ connector: string; state: string; lastSuccess: string | null; error: string | null }>; deliveries?: Array<{ id: string; threadId: string; kind: 'automatic' | 'reminder' }> }>('/api/threads'),
+  claimDelivery: (id: string) => post<{ claimed: boolean }>(`/api/deliveries/${encodeURIComponent(id)}/claim`, {}),
   ask: (question: string) => post<Thread>('/api/ask', { question }),
   reply: (id: string, body: string) => post<Thread>(`/api/threads/${id}/reply`, { body }),
   confirm: (id: string, proposalIds: string[]) => post<Thread>(`/api/threads/${id}/confirm`, { proposalIds }),
@@ -72,6 +73,7 @@ export const api = {
   connectors: () => call<{ connectors: unknown[]; tools: string[] }>('/api/connectors'),
   act: (id: string, actionId: string, refs?: string[]) => post<{ kind: 'execute'; thread: Thread } | { kind: 'read' | 'propose'; output: unknown; view?: PanelViewSpec }>(`/api/threads/${id}/act`, { actionId, refs }),
   undoReceipt: (id: string) => post<Thread>(`/api/threads/${id}/undo-receipt`),
+  checkExecution: (id: string) => post<Thread>(`/api/threads/${id}/execution/check`),
   snooze: (id: string, input: SnoozeInput = {}) => post<Thread>(`/api/threads/${id}/snooze`, input),
   snoozePresets: () => call<{ presets: SnoozePreset[] }>('/api/snooze/presets'),
   remindInvitees: (id: string) => post<Thread>(`/api/threads/${id}/remind-invitees`),
@@ -111,8 +113,8 @@ export const api = {
   members: () => call<{ members: CalendarMember[] }>('/api/calendar/members'),
   rooms: () => call<{ rooms: CalendarRoom[] }>('/api/calendar/rooms'),
   availability: (input: AvailabilityInput) => post<AvailabilityResult>('/api/calendar/availability', input),
-  createEvent: (input: CreateEventInput) => post<{ event: CalendarEvent }>('/api/calendar/events', input).then(r => r.event),
-  rescheduleEvent: (input: RescheduleEventInput) => post<{ event: CalendarEvent }>('/api/calendar/events/reschedule', input).then(r => r.event),
-  cancelEvent: (input: CancelEventInput) => post<{ cancelled: true }>('/api/calendar/events/cancel', input),
+  createEvent: (input: CreateEventInput) => post<Thread>('/api/calendar/events', input),
+  rescheduleEvent: (input: RescheduleEventInput) => post<Thread>('/api/calendar/events/reschedule', input),
+  cancelEvent: (input: CancelEventInput) => post<Thread>('/api/calendar/events/cancel', input),
   moveProposal: (threadId: string, proposalId: string, input: MoveProposalInput) => post<Thread>(`/api/threads/${threadId}/proposals/${proposalId}/move`, input),
 };

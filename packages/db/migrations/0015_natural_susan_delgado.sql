@@ -1,0 +1,1 @@
+ALTER TABLE "connector_signing_key" ADD COLUMN "previous" jsonb DEFAULT '[]'::jsonb NOT NULL;

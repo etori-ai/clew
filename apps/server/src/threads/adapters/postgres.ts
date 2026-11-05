@@ -1,8 +1,10 @@
-import { and, desc, eq, gte, inArray, or } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
-import { toThread } from '@clew/db/threads';
+import { listThreads, toThread } from '@clew/db/threads';
 import { scheduleJob } from '@clew/db/jobs';
 import type { ThreadPatch, ThreadStore, ThreadTx } from '../model';
+import { readTimer, timerTx } from './timer-postgres';
+import { attentionTx } from './attention-postgres';
 
 /** The store the server runs (D25): the `ThreadStore` port over Drizzle and Postgres. Held to the memory adapter's behaviour by `tests/store-contract.ts`. */
 const { threads, threadMessages, proposals, audit } = schema;
@@ -15,26 +17,34 @@ const toRow = (patch: ThreadPatch) => {
 async function read(db: Transaction | ReturnType<typeof database>, where: ReturnType<typeof and>) {
   const [row] = await db.select().from(threads).where(where);
   if (!row) return undefined;
-  const [messages, proposalRows] = await Promise.all([
+  const [messages, proposalRows, timerRows] = await Promise.all([
     db.select().from(threadMessages).where(eq(threadMessages.threadId, row.id)).orderBy(threadMessages.createdAt),
     db.select().from(proposals).where(eq(proposals.threadId, row.id)).orderBy(proposals.start),
+    db.select().from(schema.timerIntents).where(eq(schema.timerIntents.threadId, row.id)),
   ]);
-  return toThread(row, messages, proposalRows);
+  return toThread(row, messages, proposalRows, timerRows);
 }
-const txOf = (tx: Transaction): ThreadTx => ({
+export const threadTx = (tx: Transaction): ThreadTx => ({
+  ...attentionTx(tx),
+  ...timerTx(tx),
+  async lockThreadById(id) {
+    const [r] = await tx.select().from(threads).where(eq(threads.id, id)).for('update');
+    return r ? read(tx, eq(threads.id, id)) : undefined;
+  },
   async lockThread(personId, id) {
     const [row] = await tx.select().from(threads).where(and(eq(threads.id, id), eq(threads.personId, personId))).for('update');
     if (!row) return undefined;
-    const [messages, proposalRows] = await Promise.all([
+    const [messages, proposalRows, timerRows] = await Promise.all([
       tx.select().from(threadMessages).where(eq(threadMessages.threadId, id)).orderBy(threadMessages.createdAt),
       tx.select().from(proposals).where(eq(proposals.threadId, id)).orderBy(proposals.start),
+      tx.select().from(schema.timerIntents).where(eq(schema.timerIntents.threadId, id)),
     ]);
-    return toThread(row, messages, proposalRows);
+    return toThread(row, messages, proposalRows, timerRows);
   },
   async insertThread(thread) {
     const { personId, ...t } = thread;
     const inserted = await tx.insert(threads).values({ id: t.id, personId, kind: t.kind, topic: t.topic, title: t.title, state: t.state, week: t.week, connector: t.connector, area: t.area,
-      summary: t.summary, items: t.items, actions: t.actions, waitingOn: t.waitingOn, deadline: t.deadline, trigger: t.trigger, createdAt: new Date(t.createdAt), updatedAt: new Date(t.updatedAt) })
+      summary: t.summary, items: t.items, actions: t.actions, waitingOn: t.waitingOn, deadline: t.deadline, trigger: t.trigger, execution: t.execution ?? null, createdAt: new Date(t.createdAt), updatedAt: new Date(t.updatedAt) })
       .onConflictDoNothing().returning({ id: threads.id });
     return inserted.length > 0;
   },
@@ -48,20 +58,11 @@ const txOf = (tx: Transaction): ThreadTx => ({
 });
 export function postgresThreadStore(): ThreadStore {
   return {
-    async listThreads(personId, now) {
-      const since = new Date(Date.parse(now) - 7 * 86400_000);
-      const rows = await database().select().from(threads).where(and(eq(threads.personId, personId), or(eq(threads.state, 'open'), gte(threads.updatedAt, since)))).orderBy(desc(threads.createdAt)).limit(50);
-      if (!rows.length) return [];
-      const ids = rows.map(r => r.id);
-      const [messages, proposalRows] = await Promise.all([
-        database().select().from(threadMessages).where(inArray(threadMessages.threadId, ids)).orderBy(threadMessages.createdAt),
-        database().select().from(proposals).where(inArray(proposals.threadId, ids)).orderBy(proposals.start),
-      ]);
-      return rows.map(row => toThread(row, messages.filter(m => m.threadId === row.id), proposalRows.filter(p => p.threadId === row.id)));
-    },
+    readTimer,
+    listThreads: (personId, now) => listThreads(personId, new Date(now)),
     readThread: (personId, id) => read(database(), and(eq(threads.id, id), eq(threads.personId, personId))),
     readThreadById: id => read(database(), eq(threads.id, id)),
     async openThread(personId, topic) { return read(database(), and(eq(threads.personId, personId), eq(threads.topic, topic), eq(threads.state, 'open'))); },
-    transaction: fn => database().transaction(tx => fn(txOf(tx))),
+    transaction: fn => database().transaction(tx => fn(threadTx(tx))),
   };
 }

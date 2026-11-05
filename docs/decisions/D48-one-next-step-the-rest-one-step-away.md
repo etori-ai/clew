@@ -1,4 +1,4 @@
-# D47 · One next step on a surface, the rest one step away
+# D48 · One next step on a surface, the rest one step away
 
 **Status:** accepted, implemented · **Date:** 2026-11-05 · **Area:** ui
 

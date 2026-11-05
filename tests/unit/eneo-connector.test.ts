@@ -1,8 +1,9 @@
+import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
-import { Registry, type Actor } from '../../packages/connectors/src/index';
+import { type Actor } from '../../packages/connectors/src/index';
 import { parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { createConnector, decodeClaims, manifest as eneoManifest } from '../../connectors/eneo/connector.mjs';
-import { assertionFor } from '../../apps/server/src/connectors/remote';
+import { assertionFor, testJwks, testAuthority } from '../connector-authority';
 import { searchConnector } from '../../apps/server/src/modules/search/connector';
 import { searchUsecases } from '../../apps/server/src/modules/search/usecases';
 
@@ -37,10 +38,10 @@ function stack(options: { token?: string | undefined; fixtures?: Record<string, 
     return hit ? Response.json(hit) : new Response('', { status: 404 });
   };
   let now = Date.parse('2026-11-04T10:42:00Z');
-  const eneo = createConnector({ secret, eneoUrl: 'https://eneo.example/', fetch: eneoFetch, now: () => now, ttlSeconds: 300 });
+  const eneo = createConnector({ jwks: testJwks, secret, eneoUrl: 'https://eneo.example/', fetch: eneoFetch, now: () => now, ttlSeconds: 300 });
   const connectorFetch: FetchLike = (input, init) => eneo.handle(new Request(input, init));
   const registry = new Registry();
-  registry.register(remoteConnector(parseManifest(eneoManifest, 'eneo'), { url: 'http://eneo-connector', assert: assertionFor('eneo', secret), fetch: connectorFetch }));
+  registry.register(remoteConnector(parseManifest(eneoManifest, 'eneo'), { url: 'http://eneo-connector', key: secret, assert: assertionFor('eneo', secret), fetch: connectorFetch }));
   const context = 'token' in options ? { delegate: async () => options.token } : { delegate: async () => 'idp-token-for-eneo' };
   return { registry, calls, context, advance: (ms: number) => { now += ms; } };
 }

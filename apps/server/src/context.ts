@@ -2,6 +2,7 @@ import type { Context, MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { AuthError, authenticate, verifyMutation, SESSION_COOKIE, type Session } from './auth';
 import { CalendarError } from '@clew/calendar/model';
+import { ExecutionError } from './modules/executions/model';
 
 export type Env = { Variables: { session: Session } };
 export const privateHeaders = { 'Cache-Control': 'no-store, private', 'X-Content-Type-Options': 'nosniff' };
@@ -27,7 +28,7 @@ export function failure(c: Context, error: unknown) {
     return c.json({ error: message, code: error.code }, error.status, privateHeaders);
   }
   if (error instanceof ForbiddenError) return c.json({ error: error.message, code: 'denied' }, 403, privateHeaders);
-  if (error instanceof CalendarError || error instanceof InputError) return c.json({ error: error.message }, 400, privateHeaders);
+  if (error instanceof CalendarError || error instanceof InputError || error instanceof ExecutionError) return c.json({ error: error.message }, 400, privateHeaders);
   console.error(error);
   return c.json({ error: 'Något gick fel. Försök igen.' }, 503, privateHeaders);
 }

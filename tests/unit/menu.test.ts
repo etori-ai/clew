@@ -1,7 +1,8 @@
+import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import { SignJWT } from 'jose';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
-import { Registry, actorOf, menuEligible, menuProblem, menuRowOf, type Actor, type Capability, type Connector } from '../../packages/connectors/src/index';
+import { actorOf, menuEligible, menuProblem, menuRowOf, type Actor, type Capability, type Connector } from '../../packages/connectors/src/index';
 import { checkConnector } from '../../packages/connectors/src/check';
 import { ManifestError, fetchManifest, parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import type { ConnectorManifest } from '../../packages/connectors/src/protocol';

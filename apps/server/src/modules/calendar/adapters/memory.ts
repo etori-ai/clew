@@ -10,11 +10,13 @@ export function memoryProposalStore(): MemoryProposalStore {
   let audit: AuditEntry[] = [];
   let jobs: JobInput[] = [];
   let sequence = 0;
+  let transactions = Promise.resolve();
   const copy = <T>(value: T): T => structuredClone(value);
   const view = (row: Row): ProposalThread => copy({ thread: { ...row.thread, proposals: row.proposals.filter(p => p.status !== 'superseded').map(toProposal) }, proposals: row.proposals });
   const tx: ProposalTx = {
+    async lockThread(personId, id) { const row = rows.get(id); return row?.personId === personId ? view(row) : undefined; },
     async insertThread(t) {
-      if ([...rows.values()].some(r => r.personId === t.personId && r.thread.topic === t.topic && r.thread.state === 'open' && r.thread.kind === 'pushed')) return false;
+      if (rows.has(t.id) || [...rows.values()].some(r => r.personId === t.personId && r.thread.topic === t.topic && r.thread.state === 'open' && r.thread.kind === 'pushed')) return false;
       rows.set(t.id, { personId: t.personId, proposals: [], thread: { id: t.id, kind: 'pushed', topic: t.topic, title: t.title, state: 'open', trigger: copy(t.trigger), week: t.week, connector: 'calendar', area: t.area,
         summary: t.summary, items: [], actions: [], waitingOn: null, deadline: null, receipt: null, createdAt: t.createdAt, updatedAt: t.updatedAt, handledAt: null, remindedAt: null, snoozedUntil: null, messages: [] } });
       return true;
@@ -43,12 +45,16 @@ export function memoryProposalStore(): MemoryProposalStore {
     get jobs() { return jobs; },
     async readThread(personId, id) { const row = rows.get(id); return row && row.personId === personId ? view(row) : undefined; },
     async readThreadById(id) { const row = rows.get(id); return row ? view(row) : undefined; },
+    async latestThread(personId, topic) { const row = [...rows.values()].filter(r => r.personId === personId && r.thread.topic === topic).sort((a,b) => b.thread.createdAt.localeCompare(a.thread.createdAt))[0]; return row ? view(row) : undefined; },
     async openThread(personId, topic) { const row = [...rows.values()].find(r => r.personId === personId && r.thread.topic === topic && r.thread.state === 'open'); return row ? view(row) : undefined; },
     async activeProposals(personId) { return copy([...rows.values()].filter(r => r.personId === personId).flatMap(r => r.proposals.filter(p => ['proposed', 'confirmed', 'final', 'accepted'].includes(p.status)))); },
     async transaction(fn) {
+      const previous = transactions; let release!: () => void;
+      transactions = new Promise<void>(resolve => { release = resolve; }); await previous;
       const snapshot = { rows: copy(rows), audit: copy(audit), jobs: copy(jobs) };
       try { return await fn(tx); }
       catch (error) { rows = snapshot.rows; audit = snapshot.audit; jobs = snapshot.jobs; throw error; }
+      finally { release(); }
     },
   };
 }

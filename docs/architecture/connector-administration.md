@@ -1,5 +1,8 @@
 # Connector administration
 
+> **Reading status:** Administration design with later as-built notes. The connector and model administration screens exist. For current protocol 2 trust, source access and registration instructions, use the integrator guides rather than early proposal wording below. See [implementation status](../reference/status.md) and the [current protocol](../reference/connector-protocol.md).
+
+
 How an administrator connects a system to a running Clew, decides who sees it, and keeps it healthy, from
 the browser and without a restart; and, on the same surface, which model providers and models the composer
 may use (D24). Implements D22 (the word), D23 (the database as the only registration path) and D24.
@@ -92,7 +95,7 @@ Områden, with Anslutna system and Modeller as links under it; Bundlingstider an
 a phone the rail is the drawer, as everywhere. Everything is Astryx: no custom components, no CSS.
 
 **1. Anslutna system (list).** `Toolbar` with the primary `Button` "Anslut system" and a `SegmentedControl`
-Alla · På · Problem · Av, each with its count (D47). An Astryx `Table` on desktop, `List` rows on the phone (same switch as the areas):
+Alla · På · Problem · Av, each with its count (D48). An Astryx `Table` on desktop, `List` rows on the phone (same switch as the areas):
 
 | Column | Rendered as |
 |---|---|

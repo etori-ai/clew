@@ -57,4 +57,4 @@ needed because the sentinel string conflated two states the piles must tell apar
 **Replaces.** Narrows the canvas row "Clew uppmärksamhet" (session 7): the levels stay as a sort key, the
 grouping by level goes. The sentinel `waitingOn === 'i morgon 06:00'` from session 4 is withdrawn.
 
-**Amended 2026-11-05 by D47.** The reason and the area are text, never a colour.
+**Amended 2026-11-05 by D48.** The reason and the area are text, never a colour.

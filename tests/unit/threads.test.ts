@@ -1,6 +1,7 @@
+import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext, Thread } from '../../packages/contracts/src/index';
-import { actorOf, Registry, type Connector } from '../../packages/connectors/src/index';
+import { actorOf, type Connector } from '../../packages/connectors/src/index';
 import { memoryState } from '../../packages/connectors/src/memory-state';
 import { heromaConnector } from '../../packages/connectors/src/mock/heroma';
 import { raindanceConnector } from '../../packages/connectors/src/mock/raindance';
@@ -28,6 +29,7 @@ function fakeClock(start = T0) {
 }
 function world() {
   const state = memoryState(), registry = new Registry();
+  registry.register({ id: 'calendar', kind: 'core', source: 'Kalendern', areas: [], capabilities: [] });
   const store = memoryThreadStore(), clock = fakeClock();
   for (const m of [heromaConnector(state), raindanceConnector(state), treservaConnector(state), searchConnector(searchUsecases({ sources: a => registry.searchSources(a), clock }))]) registry.register(m);
   let n = 0;
@@ -39,7 +41,7 @@ function world() {
   const timers = memoryTimers();
   const deps: ThreadDeps = { store, registry, run: (p, name, input) => registry.run(actorOf(p), name, input), calendar, timers, clock, ids: () => `thread-${++n}` };
   const threads = threadUsecases(deps);
-  const reminders = reminderUsecases({ store, timers, clock });
+  const reminders = reminderUsecases({ store, clock, authorized: async () => true });
   return { state, registry, store, clock, calendar, deps, threads, reminders, timers };
 }
 const actions = (store: ReturnType<typeof memoryThreadStore>, id: string) => store.audit.filter(e => e.subject === 'thread:' + id).map(e => e.action);
@@ -49,6 +51,12 @@ async function invoices(w: ReturnType<typeof world>) {
 }
 
 describe('the scan', () => {
+  test('a disabled calendar cannot be scanned through the legacy proposal path', async () => {
+    const w = world();
+    w.registry.govern('calendar', { ...w.registry.governance('calendar'), state: 'disabled' });
+    await w.threads.ensureThreads(hillevi);
+    expect(w.calendar.calls).toEqual([]);
+  });
   test('pushes one card per draft in scope, with the source on the trigger and an audit row each', async () => {
     const w = world();
     await w.threads.ensureThreads(hillevi, 'Första besöket i dag');
@@ -94,119 +102,6 @@ describe('the scan', () => {
   });
 });
 
-describe('a card action', () => {
-  test('executes the capability with the selected refs, closes the card with a receipt and schedules the undo expiry', async () => {
-    const w = world();
-    const card = await invoices(w);
-    const selected = card.items.filter(i => i.selected).map(i => i.ref);
-    const result = await w.threads.act(hillevi, card.id, 'approve');
-    expect(result.kind).toBe('execute');
-    const thread = (result as { thread: Thread }).thread;
-    expect(thread).toMatchObject({ state: 'handled', handledAt: T0, receipt: { at: T0, undoCapability: 'raindance.unapprove', undoUntil: new Date(Date.parse(T0) + 10 * MINUTE).toISOString() } });
-    expect(thread.receipt!.rows.map(r => r.ref)).toEqual(selected);
-    expect(thread.messages.slice(-2).map(m => [m.role, m.body])).toEqual([['user', 'Attestera valda'], ['assistant', thread.receipt!.headline]]);
-    expect(w.store.audit.at(-1)).toMatchObject({ actor: 'person:hillevi', action: 'thread.acted', subject: 'thread:' + card.id, at: T0, details: { capability: 'raindance.approve', refs: selected } });
-    expect(w.store.jobs).toEqual([{ id: `receipt-final:${card.id}:${Date.parse(T0)}`, kind: 'receipt-final', runAt: thread.receipt!.undoUntil!, payload: { threadId: card.id } }]);
-    expect(await w.state.get('raindance', 'approved', {})).toMatchObject(Object.fromEntries(selected.map(ref => [ref, expect.any(String)])));
-  });
-  test('a read action returns its output and changes nothing', async () => {
-    const w = world();
-    const card = await invoices(w);
-    const audit = w.store.audit.length;
-    const result = await w.threads.act(hillevi, card.id, 'open');
-    expect(result).toMatchObject({ kind: 'read', output: { url: expect.stringContaining('raindance.example.invalid') } });
-    expect(w.store.audit.length).toBe(audit);
-    expect((await w.threads.threadFor(hillevi, card.id))!.state).toBe('open');
-  });
-  test('refuses an unknown action, a stale ref, a handled card and another person\'s card', async () => {
-    const w = world();
-    const card = await invoices(w);
-    await expect(w.threads.act(hillevi, card.id, 'nope')).rejects.toThrow('Okänd handling.');
-    await expect(w.threads.act(hillevi, card.id, 'approve', ['raindance:inv:gone'])).rejects.toThrow('Något val är inte längre aktuellt. Läs om sidan.');
-    await expect(w.threads.act(hassan, card.id, 'approve')).rejects.toThrow('Kortet finns inte.');
-    await w.threads.act(hillevi, card.id, 'approve');
-    await expect(w.threads.act(hillevi, card.id, 'approve')).rejects.toThrow('Kortet är redan hanterat.');
-  });
-  test('can be undone within the window and not after it', async () => {
-    const w = world();
-    const card = await invoices(w);
-    await w.threads.act(hillevi, card.id, 'approve');
-    w.clock.advance(9 * MINUTE);
-    const reopened = await w.threads.undoReceipt(hillevi, card.id);
-    expect(reopened).toMatchObject({ state: 'open', handledAt: null, receipt: null });
-    expect(reopened.messages.slice(-2).map(m => m.body)).toEqual(['Ångra', 'Attesten är återtagen.']);
-    expect(await w.state.get('raindance', 'approved', {})).toEqual({});
-    expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'thread.acted', 'thread.undone']);
-    await w.threads.act(hillevi, card.id, 'approve');
-    w.clock.advance(11 * MINUTE);
-    await expect(w.threads.undoReceipt(hillevi, card.id)).rejects.toThrow('Ångerfönstret har gått ut.');
-  });
-  test('the scheduler closes the undo window: the receipt stays, Ångra goes', async () => {
-    const w = world();
-    const card = await invoices(w);
-    await w.threads.closeReceiptWindow(card.id);
-    expect(actions(w.store, card.id)).toEqual(['thread.pushed']);
-    await w.threads.act(hillevi, card.id, 'approve');
-    w.clock.advance(10 * MINUTE);
-    await w.threads.closeReceiptWindow(card.id);
-    const closed = (await w.threads.threadFor(hillevi, card.id))!;
-    expect(closed.receipt).toMatchObject({ undoUntil: null, undoCapability: null, rows: expect.any(Array) });
-    expect(w.store.audit.at(-1)).toMatchObject({ actor: 'system:scheduler', action: 'thread.receipt_final' });
-    await expect(w.threads.undoReceipt(hillevi, card.id)).rejects.toThrow('Ångerfönstret har gått ut.');
-  });
-});
-
-describe('a card is one system\'s (D35)', () => {
-  /** A connector that breaks the rule twice: one draft carries Raindance's execute, and its own execute names Raindance's undo. */
-  const rogue = (): Connector => ({
-    id: 'rogue', kind: 'passthrough', source: 'Rogue', areas: [{ id: 'rogue', title: 'Rogue', roles: ['manager'], standing: [], schedules: [] }],
-    capabilities: [{ name: 'rogue.close', kind: 'execute', title: 'Stäng', description: 'Stänger ärenden.', input: {} as never, output: {} as never, model: false, scope: () => true,
-      run: async (_actor, input: { refs: string[] }) => ({ headline: 'Stängt.', rows: input.refs.map(ref => ({ ref, label: ref, outcome: 'done', detail: 'stängt' })), undoCapability: 'raindance.unapprove', undoMinutes: 10 }) }],
-    scan: async () => ['own', 'foreign'].map(topic => ({ topic: 'rogue:' + topic, area: 'rogue', title: 'Ärende 1', summary: 'Ett ärende väntar.', reason: 'test',
-      items: [{ ref: 'rogue:1', label: 'Ärende 1', detail: '', selectable: true, selected: true }],
-      actions: [{ id: 'go', label: 'Stäng', capability: topic === 'own' ? 'rogue.close' : 'raindance.approve', kind: 'execute', role: 'primary', usesItems: true }] })),
-  });
-  const withRogue = () => { const w = world(); w.registry.register(rogue()); return w; };
-  test('the scan pushes only drafts whose buttons are the connector\'s own; a refused draft leaves no card and no audit row', async () => {
-    const w = withRogue();
-    await w.threads.ensureThreads(hillevi);
-    const topics = (await w.threads.listThreadsFor(hillevi)).map(t => t.topic);
-    expect(topics).toContain('rogue:own');
-    expect(topics).not.toContain('rogue:foreign');
-    expect(w.store.audit.filter(e => e.action === 'thread.pushed').map(e => e.details?.topic)).not.toContain('rogue:foreign');
-  });
-  test('an undo naming another connector is dropped: the receipt stands without Ångra, and the audit row names what was refused', async () => {
-    const w = withRogue();
-    await w.threads.ensureThreads(hillevi);
-    const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'rogue:own')!;
-    const thread = (await w.threads.act(hillevi, card.id, 'go') as { thread: Thread }).thread;
-    expect(thread).toMatchObject({ state: 'handled', receipt: { headline: 'Stängt.', undoCapability: null, undoUntil: null } });
-    expect(w.store.audit.at(-1)).toMatchObject({ actor: 'person:hillevi', action: 'thread.acted', subject: 'thread:' + card.id, details: { capability: 'rogue.close', undoUntil: null, undoRefused: 'raindance.unapprove' } });
-    expect(w.store.jobs).toEqual([]);
-    await expect(w.threads.undoReceipt(hillevi, card.id)).rejects.toThrow('Ångerfönstret har gått ut.');
-  });
-  test('a stored card whose button names another connector is refused and runs nothing', async () => {
-    const w = world();
-    const card = await invoices(w);
-    await w.store.transaction(tx => tx.updateThread(card.id, { actions: [...card.actions, { id: 'foreign', label: 'Godkänn', capability: 'heroma.decideLeave', kind: 'execute', role: 'overflow', usesItems: true, input: { decision: 'approve' } }] }));
-    const audit = w.store.audit.length, heroma = await w.state.get('heroma', 'leave-decisions', {});
-    await expect(w.threads.act(hillevi, card.id, 'foreign')).rejects.toThrow('Knappen hör inte till kortets källa och kan inte användas.');
-    expect(w.store.audit.length).toBe(audit);
-    expect(await w.state.get('heroma', 'leave-decisions', {})).toEqual(heroma);
-    expect((await w.threads.threadFor(hillevi, card.id))!.state).toBe('open');
-  });
-  test('a stored card that calls an execute a read still gets its receipt, its audit row and its undo window', async () => {
-    const w = world();
-    const card = await invoices(w);
-    await w.store.transaction(tx => tx.updateThread(card.id, { actions: card.actions.map(a => a.id === 'approve' ? { ...a, kind: 'read' as const } : a) }));
-    const result = await w.threads.act(hillevi, card.id, 'approve');
-    expect(result.kind).toBe('execute');
-    expect((result as { thread: Thread }).thread).toMatchObject({ state: 'handled', receipt: { undoCapability: 'raindance.unapprove' } });
-    expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'thread.acted']);
-    expect(w.store.jobs.map(j => j.kind)).toEqual(['receipt-final']);
-  });
-});
-
 describe('avfärda, inte nu and ångra', () => {
   test('a dismissed card comes back within ten minutes, a snoozed one any time', async () => {
     const w = world();
@@ -227,14 +122,14 @@ describe('avfärda, inte nu and ångra', () => {
     const snoozed = await w.threads.snoozeThread(hillevi, card.id);
     expect(snoozed.snoozedUntil).toBe('2026-11-05T05:00:00.000Z');
     expect(snoozed.messages.at(-1)!.body).toBe('Inte nu · i morgon 06:00');
-    // A silent timer for the open page; the sweep is the guarantee.
-    expect(w.timers.started).toEqual([{ workflowId: `snooze:${card.id}:${Date.parse('2026-11-05T05:00:00.000Z')}`, personId: 'hillevi', threadId: card.id, title: card.title, area: 'budget', seconds: 22 * 3600, requestedAt: T0, silent: true }]);
+    expect(await w.store.readTimer(`snooze:${card.id}`)).toMatchObject({ generation: 1, state: 'active', dueAt: '2026-11-05T05:00:00.000Z', requestedAt: T0, deliveredGeneration: null });
     w.clock.advance(60 * MINUTE);
     expect((await w.threads.listThreadsFor(hillevi)).find(t => t.id === card.id)?.snoozedUntil).toBe('2026-11-05T05:00:00.000Z');
     w.clock.set('2026-11-05T05:00:00.000Z');
+    await w.reminders.fire(`snooze:${card.id}`, 1);
     expect((await w.threads.listThreadsFor(hillevi)).find(t => t.id === card.id)?.snoozedUntil).toBeNull();
     expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'thread.snoozed', 'thread.woken']);
-    expect(w.store.audit.at(-1)?.details).toEqual({ reason: 'time', snoozedUntil: '2026-11-05T05:00:00.000Z' });
+    expect(w.store.audit.at(-1)?.details).toMatchObject({ reason: 'time', snoozedUntil: '2026-11-05T05:00:00.000Z' });
   });
   test('a snoozed card wakes early when its source changes (the snooze breaks on activity)', async () => {
     const w = world();
@@ -246,7 +141,7 @@ describe('avfärda, inte nu and ångra', () => {
     expect(after.snoozedUntil).toBeNull();
     expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'thread.snoozed', 'thread.refreshed', 'thread.woken']);
     expect(w.store.audit.at(-1)?.details).toMatchObject({ reason: 'changed' });
-    expect(w.timers.cancelled).toEqual([`snooze:${card.id}:${Date.parse('2026-11-05T05:00:00.000Z')}`]);
+    expect(await w.store.readTimer(`snooze:${card.id}`)).toMatchObject({ state: 'cancelled' });
   });
   test('the picker (D29): a preset, free text or an instant sets the time; the rows carry their resolved times', async () => {
     const w = world();
@@ -269,7 +164,7 @@ describe('avfärda, inte nu and ångra', () => {
     await expect(w.threads.snoozeThread(hillevi, card.id, { until: '2026-11-04T06:00:00.000Z' })).rejects.toThrow('Tiden har redan passerat.');
     await expect(w.threads.snoozeThread(hillevi, card.id, { until: '2026-12-20T06:00:00.000Z' })).rejects.toThrow('Högst 30 dagar framåt.');
     expect(w.store.audit.filter(e => e.action === 'thread.snoozed').map(e => e.details)).toEqual([
-      expect.objectContaining({ preset: 'lunch', timer: 'started' }), expect.objectContaining({ text: 'fredag kl 9' }), expect.objectContaining({ until: '2026-11-04T15:00:00.000Z' })]);
+      expect.objectContaining({ preset: 'lunch', delivery: 'queued', generation: 1 }), expect.objectContaining({ text: 'fredag kl 9' }), expect.objectContaining({ until: '2026-11-04T15:00:00.000Z' })]);
   });
   test('a silent timer wakes the card without a badge; one that was woken earlier or re-snoozed does nothing', async () => {
     const w = world();
@@ -277,7 +172,7 @@ describe('avfärda, inte nu and ångra', () => {
     await w.threads.snoozeThread(hillevi, card.id, { until: '2026-11-04T09:00:00.000Z' });
     const fired = { personId: 'hillevi', threadId: card.id, title: card.title, area: card.area, seconds: 2 * 3600, requestedAt: T0, silent: true };
     w.clock.set('2026-11-04T09:00:00.000Z');
-    expect(await w.reminders.surface(fired)).toBe('surfaced');
+    expect(await w.reminders.fire(`snooze:${card.id}`, 1)).toBe('surfaced');
     const back = (await w.threads.threadFor(hillevi, card.id))!;
     expect(back).toMatchObject({ state: 'open', snoozedUntil: null, remindedAt: null });
     expect(back.trigger.reason).toBe(card.trigger.reason);
@@ -292,7 +187,7 @@ describe('avfärda, inte nu and ångra', () => {
     const card = await invoices(w);
     const threads = threadUsecases({ ...w.deps, timers: memoryTimers({ available: false }) });
     expect((await threads.snoozeThread(hillevi, card.id)).snoozedUntil).toBe('2026-11-05T05:00:00.000Z');
-    expect(w.store.audit.at(-1)?.details).toMatchObject({ timer: 'unavailable' });
+    expect(w.store.audit.at(-1)?.details).toMatchObject({ delivery: 'queued' });
   });
   test('a card dismissed more than ten minutes ago stays dismissed, an open card cannot be reopened', async () => {
     const w = world();
@@ -307,29 +202,15 @@ describe('avfärda, inte nu and ångra', () => {
 });
 
 describe('every mutation and its audit row', () => {
-  test('are one transaction: when a write after the audit row fails, nothing of the mutation remains', async () => {
-    const w = world();
-    const card = await invoices(w);
-    const audit = w.store.audit.length;
-    const faulty = { ...w.store, transaction: <T,>(fn: (tx: Parameters<Parameters<typeof w.store.transaction>[0]>[0]) => Promise<T>) =>
-      w.store.transaction(tx => fn({ ...tx, async scheduleJob() { throw new Error('job table away'); } })) };
-    const threads = threadUsecases({ ...w.deps, store: faulty });
-    await expect(threads.act(hillevi, card.id, 'approve')).rejects.toThrow('job table away');
-    expect(await w.threads.threadFor(hillevi, card.id)).toMatchObject({ state: 'open', receipt: null, messages: card.messages });
-    expect(w.store.audit.length).toBe(audit);
-    expect(w.store.jobs).toEqual([]);
-  });
   test('name the person as actor and the thread as subject, once per mutation', async () => {
     const w = world();
     const card = await invoices(w);
     const steps: Array<[string, () => Promise<unknown>]> = [
       ['thread.snoozed', () => w.threads.snoozeThread(hillevi, card.id)],
       ['thread.reopened', () => w.threads.reopenThread(hillevi, card.id)],
-      ['thread.acted', () => w.threads.act(hillevi, card.id, 'approve')],
-      ['thread.undone', () => w.threads.undoReceipt(hillevi, card.id)],
       ['thread.dismissed', () => w.threads.dismissThread(hillevi, card.id)],
       ['reminder.set', async () => { await w.threads.reopenThread(hillevi, card.id); return w.reminders.remind(hillevi, card.id, 600); }],
-      ['reminder.cancelled', () => w.reminders.cancelReminder(hillevi, card.id, w.timers.started.at(-1)!.workflowId)],
+      ['reminder.cancelled', () => w.reminders.cancelReminder(hillevi, card.id, `reminder:${card.id}:v2:1`)],
     ];
     for (const [action, step] of steps) {
       const before = w.store.audit.length;
@@ -371,16 +252,16 @@ describe('attention and areas', () => {
 });
 
 describe('påminn mig', () => {
-  test('starts a timer, parks the card and audits; the timer id is the thread plus the request time', async () => {
+  test('saves a timer intent, parks the card and audits; the public id identifies the generation', async () => {
     const w = world();
     const card = await invoices(w);
     const set = await w.reminders.remind(hillevi, card.id, 600);
-    expect(set).toMatchObject({ id: `reminder:${card.id}:${Date.parse(T0)}`, fireAt: new Date(Date.parse(T0) + 10 * MINUTE).toISOString(), thread: { waitingOn: 'påminnelsen 08:10' } });
-    expect(w.timers.started).toEqual([{ workflowId: set.id, personId: 'hillevi', threadId: card.id, title: card.title, area: 'budget', seconds: 600, requestedAt: T0 }]);
+    expect(set).toMatchObject({ id: `reminder:${card.id}:v2:1`, fireAt: new Date(Date.parse(T0) + 10 * MINUTE).toISOString(), thread: { waitingOn: 'påminnelsen 08:10' } });
+    expect(await w.store.readTimer(`reminder:${card.id}`)).toMatchObject({ state: 'active', generation: 1, dueAt: set.fireAt, deliveredGeneration: null });
     expect(set.thread.messages.at(-1)!.body).toBe('Påminn mig 08:10');
     const cancelled = await w.reminders.cancelReminder(hillevi, card.id, set.id);
     expect(cancelled.waitingOn).toBeNull();
-    expect(w.timers.cancelled).toEqual([set.id]);
+    expect(await w.store.readTimer(`reminder:${card.id}`)).toMatchObject({ state: 'cancelled', generation: 1 });
     expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'reminder.set', 'reminder.cancelled']);
   });
   test('when the timer fires the card comes back once, reopened and marked, with the reason on its trigger', async () => {
@@ -390,7 +271,7 @@ describe('påminn mig', () => {
     await w.threads.dismissThread(hillevi, card.id);
     w.clock.advance(10 * MINUTE);
     const fired = { personId: 'hillevi', threadId: card.id, title: card.title, area: card.area, seconds: 600, requestedAt: T0 };
-    expect(await w.reminders.surface(fired)).toBe('surfaced');
+    expect(await w.reminders.fire(`reminder:${card.id}`, 1)).toBe('surfaced');
     const back = (await w.threads.threadFor(hillevi, card.id))!;
     const at = new Date(Date.parse(T0) + 10 * MINUTE).toISOString();
     expect(back).toMatchObject({ state: 'open', handledAt: null, waitingOn: null, remindedAt: at, trigger: { reason: `Du bad 08:00 om en påminnelse · ${card.trigger.reason}`, source: card.trigger.source, at } });
@@ -401,18 +282,18 @@ describe('påminn mig', () => {
     expect(await w.reminders.surface({ ...fired, personId: 'hassan' })).toBe('skipped');
     expect(w.store.audit.filter(e => e.action === 'thread.reminded')).toHaveLength(1);
     // A card handled with a receipt is left alone: the work is done.
-    await w.threads.act(hillevi, card.id, 'approve');
+    await w.store.transaction(tx => tx.updateThread(card.id, { state: 'handled', receipt: { at, headline: 'Klart', rows: [], undoUntil: null, undoCapability: null } }));
     expect(await w.reminders.surface({ ...fired, requestedAt: at })).toBe('skipped');
     expect((await w.threads.threadFor(hillevi, card.id))!.state).toBe('handled');
     void set;
   });
-  test('leaves the card untouched when the timer service is away, and refuses bad input', async () => {
+  test('queues the reminder when the timer service is away, and refuses bad input', async () => {
     const w = world();
     const card = await invoices(w);
     const reminders = reminderUsecases({ store: w.store, timers: memoryTimers({ available: false }), clock: w.clock });
-    await expect(reminders.remind(hillevi, card.id, 600)).rejects.toThrow('Påminnelser är inte tillgängliga just nu.');
-    expect((await w.threads.threadFor(hillevi, card.id))!.waitingOn).toBeNull();
-    expect(actions(w.store, card.id)).toEqual(['thread.pushed']);
+    await expect(reminders.remind(hillevi, card.id, 600)).resolves.toMatchObject({ id: `reminder:${card.id}:v2:1` });
+    expect((await w.threads.threadFor(hillevi, card.id))!.waitingOn).toBe('påminnelsen 08:10');
+    expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'reminder.set']);
     await expect(w.reminders.remind(hillevi, card.id, 0)).rejects.toThrow('Ogiltig tid för påminnelsen.');
     await expect(w.reminders.remind(hillevi, card.id, 30 * 24 * 3600 + 1)).rejects.toThrow('Ogiltig tid för påminnelsen.');
     await expect(w.reminders.cancelReminder(hillevi, card.id, 'reminder:other:1')).rejects.toThrow('Okänd påminnelse.');
@@ -429,7 +310,7 @@ describe('a cited answer becomes a card (D26)', () => {
     await w.store.transaction(async tx => {
       await tx.insertThread({ id: 'q1', personId: 'hassan', kind: 'question', topic: 'question', title: 'Brukaren har ramlat, vad gör jag?', state: 'open', week: null, connector: 'clew', area: 'fragor', summary: 'svar', items: [], actions: [], waitingOn: null, deadline: null, trigger: { reason: 'Du ställde en fråga', source: 'Startsidan', at }, createdAt: at, updatedAt: at });
       await tx.addMessage('q1', { role: 'user', body: 'Brukaren har ramlat, vad gör jag?', at });
-      await tx.addMessage('q1', { role: 'assistant', body: '1. Lyft inte själv [1].\n2. Skriv avvikelse [2].', at, meta: { shape: 'steg', ...(withSources ? { sources } : {}) } });
+      await tx.addMessage('q1', { role: 'assistant', body: '1. Lyft inte själv [1].\n2. Skriv avvikelse [2].', at, meta: { shape: 'steg', access: { connectors: [], capabilities: [], authorizationVersion: hassan.authorizationVersion }, ...(withSources ? { sources } : {}) } });
       await tx.writeAudit({ actor: 'person:hassan', action: 'conversation.asked', subject: 'thread:q1', at });
     });
     return (await w.store.readThread('hassan', 'q1'))!;

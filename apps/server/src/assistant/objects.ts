@@ -2,6 +2,7 @@ import { actorOf } from '@clew/connectors';
 import type { AuthenticatedContext, ClewObject } from '@clew/contracts';
 import { displayDate, shortDayLabel, timeRange } from '@clew/calendar/dates';
 import type { AssistantDeps } from './ports';
+import { threadAccess } from '../threads/access';
 
 /** How many objects one `@` menu offers: a menu, not an index. */
 const LIMIT = 12;
@@ -16,7 +17,7 @@ const LIMIT = 12;
 export async function listObjects(deps: AssistantDeps, persona: AuthenticatedContext, q: string, near: string[] = []): Promise<ClewObject[]> {
   const needle = q.trim().toLowerCase();
   const context = new Set(near);
-  const threads = (await deps.store.listThreads(persona.id, deps.clock().toISOString())).filter(t => t.state === 'open' && t.kind === 'pushed');
+  const threads = (await threadAccess(deps.store, deps.registry).list(persona, deps.clock().toISOString())).filter(t => t.state === 'open' && t.kind === 'pushed');
   const close = (t: (typeof threads)[number]) => context.has('thread:' + t.id) || t.items.some(i => context.has(i.ref)) || t.proposals.some(p => context.has('proposal:' + p.id));
   const all: ClewObject[] = [];
   for (const t of threads) {
@@ -25,7 +26,7 @@ export async function listObjects(deps: AssistantDeps, persona: AuthenticatedCon
     for (const i of t.items) all.push({ ref: i.ref, kind: 'item', label: i.label, detail: `rad i ${t.title} · ${i.detail}`, threadId: t.id, visible });
     for (const p of t.proposals.filter(p => p.status === 'proposed')) all.push({ ref: 'proposal:' + p.id, kind: 'proposal', label: p.participant.name, detail: `förslag · ${shortDayLabel(displayDate(p.start))} ${timeRange(p.start, p.end)}`, threadId: t.id, visible });
   }
-  try { const day = await deps.calendar.readToday(persona); for (const e of day.events) all.push({ ref: 'event:' + e.id, kind: 'event', label: e.title, detail: `i dag · ${e.allDay ? 'heldag' : timeRange(e.start, e.end)}`, visible: context.has('event:' + e.id) }); } catch { /* the calendar is optional here */ }
+  if (deps.registry.visible(persona, 'calendar')) try { const day = await deps.calendar.readToday(persona); for (const e of day.events) all.push({ ref: 'event:' + e.id, kind: 'event', label: e.title, detail: `i dag · ${e.allDay ? 'heldag' : timeRange(e.start, e.end)}`, visible: context.has('event:' + e.id) }); } catch { /* the calendar is optional here */ }
   if (!needle) return all.filter(o => o.visible).slice(0, LIMIT);
   // Only what the person may call (D23): a connector outside their audience has no capabilities to find.
   const actor = actorOf(persona);

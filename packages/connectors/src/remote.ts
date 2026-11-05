@@ -13,8 +13,10 @@ export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>
 export interface RemoteTransport {
   /** Base URL of the connector service, without a trailing slash. */
   url: string;
+  /** Connector transport credential. It never signs user identity or callback authority. */
+  key?: string;
   /** The assertion Clew sends as the bearer token: who is acting, signed for this connector. */
-  assert: (actor: Actor) => Promise<string>;
+  assert: (actor: Actor, chain?: string[]) => Promise<string>;
   fetch?: FetchLike;
   /** Milliseconds before a call counts as unavailable. */
   timeoutMs?: number;
@@ -39,7 +41,7 @@ export function parseManifest(document: unknown, expectedId?: string): Connector
   return manifest;
 }
 export async function fetchManifest(url: string, expectedId?: string, fetchImpl: FetchLike = fetch): Promise<ConnectorManifest> {
-  const response = await fetchImpl(url + '/clew/manifest', { headers: { accept: 'application/json' } });
+  const response = await fetchImpl(url + '/clew/manifest', { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(5000) });
   if (!response.ok) throw new ManifestError(`GET ${url}/clew/manifest answered ${response.status}.`);
   return parseManifest(await response.json(), expectedId);
 }
@@ -52,12 +54,12 @@ async function delegated(manifest: ConnectorManifest, clew: Clew | undefined, so
   try { return await clew.delegate(manifest.delegation.audience); }
   catch { throw new CapabilityError(`${source} kunde inte få din behörighet just nu.`); }
 }
-async function post(transport: RemoteTransport, source: string, path: string, actor: Actor, body: unknown, token?: string) {
+async function post(transport: RemoteTransport, source: string, path: string, actor: Actor, body: unknown, token?: string, chain?: string[], operationId?: string) {
   const fetchImpl = transport.fetch ?? fetch;
   let response: Response;
   try {
     response = await fetchImpl(transport.url + path, {
-      method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json', authorization: 'Bearer ' + await transport.assert(actor), ...(token ? { [DELEGATED_TOKEN_HEADER]: token } : {}) },
+      method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json', authorization: 'Bearer ' + await transport.assert(actor, chain), ...(operationId ? { 'x-clew-operation-id': operationId } : {}), ...(transport.key ? { 'x-clew-connector-key': transport.key } : {}), ...(token ? { [DELEGATED_TOKEN_HEADER]: token } : {}) },
       body: JSON.stringify(body), signal: AbortSignal.timeout(transport.timeoutMs ?? 10_000),
     });
   } catch { throw unavailable(source); }
@@ -77,16 +79,16 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
   const source = manifest.source;
   const capabilities: Capability<any, any>[] = manifest.capabilities.map(c => ({
     name: c.name, kind: c.kind, title: c.title, description: c.description, input: c.input as never, output: c.output as never, model: c.model, scope: c.scope,
-    ...(c.kinds ? { kinds: c.kinds } : {}), ...(c.view ? { view: c.view } : {}), ...(c.menu ? { menu: c.menu } : {}),
+    ...(c.execution ? { execution: c.execution } : {}), ...(c.kinds ? { kinds: c.kinds } : {}), ...(c.view ? { view: c.view } : {}), ...(c.menu ? { menu: c.menu } : {}),
     run: async (actor, input, clew) => {
-      const { status, json } = await post(transport, source, '/clew/capabilities/' + encodeURIComponent(c.name), actor, { actor, input }, await delegated(manifest, clew, source));
+      const { status, json } = await post(transport, source, '/clew/capabilities/' + encodeURIComponent(c.name), actor, { actor, input }, await delegated(manifest, clew, source), clew.chain, clew.operationId);
       if (status >= 500 || !Value.Check(CallResponseSchema, json)) throw unavailable(source);
       if ('error' in json) failWith(json, source);
       return json.output;
     },
   }));
   return {
-    id: manifest.id, kind: manifest.kind, source,
+    id: manifest.id, kind: manifest.kind, source, uses: manifest.uses ?? [], ...(manifest.delegation ? { delegation: manifest.delegation } : {}),
     areas: manifest.areas.map(a => ({
       id: a.id, title: a.title, roles: a.roles, standing: a.standing, schedules: a.schedules, ...(a.icon ? { icon: a.icon } : {}),
       ...(a.figure ? { figure: async (actor: Actor) => {
@@ -101,7 +103,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
     ...(manifest.scan ? { scan: async (actor: Actor) => {
       const { status, json } = await post(transport, source, '/clew/scan', actor, { actor });
       if (status >= 400 || !Value.Check(ScanResponseSchema, json)) throw unavailable(source);
-      return json.drafts;
+      return json;
     } } : {}),
   };
 }

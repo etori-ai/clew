@@ -1,0 +1,508 @@
+{
+  "protocol": 2,
+  "id": "telefonbok",
+  "kind": "passthrough",
+  "source": "Telefonboken",
+  "areas": [
+    {
+      "id": "kontakter",
+      "title": "Kontakter",
+      "icon": "phone",
+      "roles": [
+        "manager",
+        "employee"
+      ],
+      "standing": [
+        "telefonbok.team",
+        "telefonbok.directory"
+      ],
+      "schedules": []
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "telefonbok.directory",
+      "kind": "read",
+      "title": "Sök i telefonboken",
+      "model": true,
+      "scope": {},
+      "menu": {
+        "label": "Telefonbok",
+        "icon": "phone"
+      },
+      "description": "Söker kollegor i hela organisationen eller på den egna enheten, på namn, titel eller enhet. Träffarna visas för personen som en tabell med telefon och e-post.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "all",
+              "unit"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "unit": {
+                  "type": "string"
+                },
+                "phone": {
+                  "type": "string"
+                },
+                "mobile": {
+                  "type": "string"
+                },
+                "email": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "name",
+                "title",
+                "unit"
+              ]
+            }
+          }
+        },
+        "required": [
+          "rows"
+        ]
+      },
+      "view": {
+        "kind": "table",
+        "title": "name",
+        "ref": "ref",
+        "open": {
+          "capability": "telefonbok.person",
+          "title": "Kontaktkort",
+          "params": {
+            "ref": "ref"
+          }
+        },
+        "modelReads": "summary",
+        "empty": "Inga träffar i telefonboken.",
+        "fields": [
+          {
+            "key": "name",
+            "label": "Namn"
+          },
+          {
+            "key": "title",
+            "label": "Titel"
+          },
+          {
+            "key": "unit",
+            "label": "Enhet"
+          },
+          {
+            "key": "phone",
+            "label": "Telefon",
+            "format": "phone"
+          },
+          {
+            "key": "mobile",
+            "label": "Mobil",
+            "format": "phone"
+          },
+          {
+            "key": "email",
+            "label": "E-post",
+            "format": "email"
+          }
+        ],
+        "input": {
+          "query": {
+            "key": "query",
+            "label": "Sök i telefonboken",
+            "placeholder": "Namn, titel eller enhet"
+          },
+          "filter": {
+            "key": "scope",
+            "label": "Sök i",
+            "options": [
+              {
+                "value": "all",
+                "label": "Hela organisationen"
+              },
+              {
+                "value": "unit",
+                "label": "Min enhet"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "telefonbok.team",
+      "kind": "read",
+      "title": "Mitt teams kontaktlista",
+      "model": true,
+      "scope": {},
+      "menu": {
+        "label": "Mitt team",
+        "icon": "people"
+      },
+      "description": "Kontaktuppgifter till alla på den inloggades enhet. Listan visas för personen i en vy.",
+      "input": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "unit": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "unit": {
+                  "type": "string"
+                },
+                "phone": {
+                  "type": "string"
+                },
+                "mobile": {
+                  "type": "string"
+                },
+                "email": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "name",
+                "title",
+                "unit"
+              ]
+            }
+          }
+        },
+        "required": [
+          "unit",
+          "rows"
+        ]
+      },
+      "view": {
+        "kind": "list",
+        "title": "name",
+        "ref": "ref",
+        "open": {
+          "capability": "telefonbok.person",
+          "title": "Kontaktkort",
+          "params": {
+            "ref": "ref"
+          }
+        },
+        "modelReads": "summary",
+        "empty": "Telefonboken har ingen på din enhet.",
+        "fields": [
+          {
+            "key": "name",
+            "label": "Namn"
+          },
+          {
+            "key": "title",
+            "label": "Titel"
+          },
+          {
+            "key": "phone",
+            "label": "Telefon",
+            "format": "phone"
+          },
+          {
+            "key": "mobile",
+            "label": "Mobil",
+            "format": "phone"
+          },
+          {
+            "key": "email",
+            "label": "E-post",
+            "format": "email"
+          }
+        ]
+      }
+    },
+    {
+      "name": "telefonbok.person",
+      "kind": "read",
+      "title": "Kontaktkort",
+      "model": false,
+      "scope": {},
+      "description": "Arbetsrelaterade kontaktuppgifter för en kollega: telefon, e-post, rum, enhet och chef.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "pattern": "^person:[A-Za-z0-9_.@-]{1,80}$"
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "mobile": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "room": {
+            "type": "string"
+          },
+          "manager": {
+            "type": "string"
+          },
+          "link": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "name",
+          "title",
+          "unit"
+        ]
+      },
+      "view": {
+        "kind": "detail",
+        "title": "name",
+        "modelReads": "summary",
+        "fields": [
+          {
+            "key": "title",
+            "label": "Titel"
+          },
+          {
+            "key": "unit",
+            "label": "Enhet"
+          },
+          {
+            "key": "phone",
+            "label": "Telefon",
+            "format": "phone"
+          },
+          {
+            "key": "mobile",
+            "label": "Mobil",
+            "format": "phone"
+          },
+          {
+            "key": "email",
+            "label": "E-post",
+            "format": "email"
+          },
+          {
+            "key": "room",
+            "label": "Rum"
+          },
+          {
+            "key": "manager",
+            "label": "Chef"
+          },
+          {
+            "key": "link",
+            "label": "Öppna i telefonboken",
+            "format": "link"
+          }
+        ]
+      }
+    },
+    {
+      "name": "telefonbok.search",
+      "kind": "read",
+      "title": "Sök person",
+      "model": true,
+      "scope": {},
+      "kinds": [
+        "person"
+      ],
+      "description": "Hittar kollegor på namn, titel eller enhet.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "snippet": {
+                  "type": "string"
+                },
+                "link": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "kind",
+                "label",
+                "snippet",
+                "source"
+              ]
+            }
+          }
+        },
+        "required": [
+          "rows"
+        ]
+      },
+      "view": {
+        "kind": "list",
+        "title": "label",
+        "ref": "ref",
+        "open": {
+          "capability": "telefonbok.person",
+          "title": "Kontaktkort",
+          "params": {
+            "ref": "ref"
+          }
+        },
+        "fields": [
+          {
+            "key": "label",
+            "label": "Namn"
+          },
+          {
+            "key": "snippet",
+            "label": "Titel och enhet"
+          }
+        ]
+      }
+    },
+    {
+      "name": "telefonbok.fetch",
+      "kind": "read",
+      "title": "Hämta person",
+      "model": false,
+      "scope": {},
+      "description": "En träff från en tidigare sökning, hämtad igen.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "pattern": "^person:[A-Za-z0-9_.@-]{1,80}$"
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "snippet": {
+            "type": "string"
+          },
+          "link": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "kind",
+          "label",
+          "snippet",
+          "source"
+        ]
+      }
+    }
+  ],
+  "scan": false
+}

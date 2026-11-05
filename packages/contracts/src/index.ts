@@ -225,7 +225,7 @@ export type SearchSource = Static<typeof SearchSourceSchema>;
 /** What the composite `clew.search` returns: merged hits, each marked stale or not (null when the source gives no date), and every source's status. */
 export const SearchResultSchema = object({
   /** `view` is the read that shows this hit in the panel, when its source declares one (D38): a person's contact card, a case. */
-  rows: Type.Array(Type.Intersect([SearchHitSchema, object({ stale: Type.Union([Type.Boolean(), Type.Null()]), connector: Type.String(), view: Type.Optional(ViewRefSchema) })])),
+  rows: Type.Array(object({ ...SearchHitSchema.properties, stale: Type.Union([Type.Boolean(), Type.Null()]), connector: Type.String(), view: Type.Optional(ViewRefSchema) })),
   sources: Type.Array(SearchSourceSchema),
 });
 export type SearchResult = Static<typeof SearchResultSchema>;
@@ -244,6 +244,7 @@ export const VerbSchema = object({
 export type Verb = Static<typeof VerbSchema>;
 /** Per-message memory of a conversation: what was pointed at, what came back, and how it was produced. */
 export const MessageMetaSchema = object({
+  access: Type.Optional(object({ connectors: Type.Array(Type.String()), capabilities: Type.Array(Type.String()), authorizationVersion: Type.Optional(Type.String()) })),
   chips: Type.Optional(Type.Array(ChipSchema)), refs: Type.Optional(Type.Array(Type.String())),
   shape: Type.Optional(AnswerShape), view: Type.Optional(ViewRefSchema), draft: Type.Optional(DraftSchema),
   toolCalls: Type.Optional(Type.Array(object({ capability: Type.String(), input: Type.Unknown() }))),
@@ -286,15 +287,18 @@ export type ThreadAction = Static<typeof ThreadActionSchema>;
 /** What the source system answered, row by row, read back after an execute. Green only on a read-back. */
 export const ReceiptRowSchema = object({
   ref: Type.String(), label: Type.String(),
+  source: Type.Optional(object({ ref: Type.String(), revision: Type.String(), uid: Type.Optional(Type.String()) })),
   outcome: Type.Union([Type.Literal('done'), Type.Literal('unknown'), Type.Literal('failed'), Type.Literal('skipped')]),
   detail: Type.String(),
 });
-export const ReceiptSchema = object({ at: instant, headline: Type.String(), rows: Type.Array(ReceiptRowSchema), undoUntil: Type.Union([instant, Type.Null()]), undoCapability: Type.Union([Type.String(), Type.Null()]) });
+export const ReceiptSchema = object({ at: instant, headline: Type.String(), rows: Type.Array(ReceiptRowSchema), undoUntil: Type.Union([instant, Type.Null()]), undoCapability: Type.Union([Type.String(), Type.Null()]), undoInput: Type.Optional(Type.Record(Type.String(), Type.Unknown())) });
 export type Receipt = Static<typeof ReceiptSchema>;
 export type ReceiptRow = Static<typeof ReceiptRowSchema>;
 
 export const ThreadKind = Type.Union([Type.Literal('pushed'), Type.Literal('question')]);
 export const ThreadState = Type.Union([Type.Literal('open'), Type.Literal('handled'), Type.Literal('dismissed')]);
+export const ExecutionSummarySchema = object({ id, decisionId: Type.String(), operation: Type.String(), state: Type.Union([Type.Literal('pending'), Type.Literal('running'), Type.Literal('succeeded'), Type.Literal('partial'), Type.Literal('failed'), Type.Literal('unknown')]), reason: Type.Union([Type.String(), Type.Null()]), compensates: Type.Union([Type.String(), Type.Null()]) });
+export type ExecutionSummary = Static<typeof ExecutionSummarySchema>;
 /** Every thread answers "varför ser jag detta?" with trigger, source and time. */
 export const ThreadSchema = object({
   id: id, kind: ThreadKind, topic: Type.String(), title: Type.String(), state: ThreadState,
@@ -314,12 +318,16 @@ export const ThreadSchema = object({
   waitingOn: Type.Union([Type.String(), Type.Null()]),
   deadline: Type.Union([Type.String(), Type.Null()]),
   receipt: Type.Union([ReceiptSchema, Type.Null()]),
+  execution: Type.Optional(Type.Union([ExecutionSummarySchema, Type.Null()])),
+  timers: Type.Optional(Type.Array(object({ kind: Type.Union([Type.Literal('reminder'), Type.Literal('snooze')]), dueAt: instant,
+    state: Type.Union([Type.Literal('queued'), Type.Literal('scheduled'), Type.Literal('blocked')]) }))),
   /** When a reminder the person set brought the card back (D17). Counts for that day: the card sorts first, marked "Påminnelse". */
   remindedAt: Type.Union([instant, Type.Null()]),
   /** "Inte nu" (D28): the card sits in the Inte nu pile until this instant, or until something happens in the thread. */
   snoozedUntil: Type.Union([instant, Type.Null()]),
 });
 export type Thread = Static<typeof ThreadSchema>;
+export const unresolvedExecution = (t: Pick<Thread, 'execution'>) => !!t.execution && ['pending', 'running', 'unknown', 'partial', 'failed'].includes(t.execution.state);
 
 /**
  * Attention level of an open card (design canvas "Clew uppmärksamhet", 2026-11-04). Colour on the page follows this
@@ -711,9 +719,9 @@ export type AskInput = Static<typeof AskInput>; export type ReplyInput = Static<
 export type ConfirmInput = Static<typeof ConfirmInput>; export type ReplanInput = Static<typeof ReplanInput>;
 /** A person's own booking and changes to it (D28): one event, one call, re-validated by the use case before the calendar is written. */
 const email = Type.String({ format: 'email', maxLength: 200 });
-export const CreateEventInput = object({ title: Type.String({ minLength: 1, maxLength: 200, pattern: '^[^\\r\\n]+$' }), start: instant, end: instant, participants: Type.Array(email, { maxItems: 8, uniqueItems: true }), room: Type.Optional(Type.String({ minLength: 1, maxLength: 400 })) });
-export const RescheduleEventInput = object({ ref: Type.String({ minLength: 1, maxLength: 400 }), revision: Type.String({ minLength: 1, maxLength: 200 }), start: instant, end: instant });
-export const CancelEventInput = object({ ref: Type.String({ minLength: 1, maxLength: 400 }), revision: Type.String({ minLength: 1, maxLength: 200 }) });
+export const CreateEventInput = object({ decisionId: Type.String({ minLength: 1, maxLength: 100, pattern: "^[A-Za-z0-9:_.-]+$" }), title: Type.String({ minLength: 1, maxLength: 200, pattern: '^[^\\r\\n]+$' }), start: instant, end: instant, participants: Type.Array(email, { maxItems: 8, uniqueItems: true }), room: Type.Optional(Type.String({ minLength: 1, maxLength: 400 })) });
+export const RescheduleEventInput = object({ decisionId: Type.String({ minLength: 1, maxLength: 100, pattern: "^[A-Za-z0-9:_.-]+$" }), ref: Type.String({ minLength: 1, maxLength: 400 }), revision: Type.String({ minLength: 1, maxLength: 200 }), start: instant, end: instant });
+export const CancelEventInput = object({ decisionId: Type.String({ minLength: 1, maxLength: 100, pattern: "^[A-Za-z0-9:_.-]+$" }), ref: Type.String({ minLength: 1, maxLength: 400 }), revision: Type.String({ minLength: 1, maxLength: 200 }) });
 export const MoveProposalInput = object({ start: instant, end: instant });
 export const AvailabilityInput = object({ start: instant, end: instant, participants: Type.Array(email, { maxItems: 8, uniqueItems: true }), room: Type.Optional(Type.String({ minLength: 1, maxLength: 400 })) });
 export const DayInput = object({ date: Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' }) });

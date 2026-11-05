@@ -51,7 +51,7 @@ export function viewInput(text: string, tool: ToolInfo): Record<string, unknown>
 }
 /**
  * The sentence for a view the model may not read (D38): how much is shown, never what it holds. The view is the answer and
- * is drawn right under it, and the source and time stand on the message's own line, so the sentence repeats neither (D47).
+ * is drawn right under it, and the source and time stand on the message's own line, so the sentence repeats neither (D48).
  */
 export function viewAnswer(tool: ToolInfo & { view: View }, input: Record<string, unknown>, output: unknown): { body: string; view: ViewRef } {
   const rows = viewRows(tool.view, output);

@@ -1,7 +1,9 @@
+import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import { SignJWT } from 'jose';
+import { assertionFor, testJwks } from '../connector-authority';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
-import { Registry, actorOf, type Actor } from '../../packages/connectors/src/index';
+import { actorOf, type Actor } from '../../packages/connectors/src/index';
 import { memoryState } from '../../packages/connectors/src/memory-state';
 import { raindanceConnector } from '../../packages/connectors/src/mock/raindance';
 import { checkConnector } from '../../packages/connectors/src/check';
@@ -23,7 +25,7 @@ const persona = (id: string, role: 'manager' | 'employee', capabilities: string[
 const mikael = persona('mikael', 'employee', ['admin.connectors']), hassan = persona('hassan', 'employee'), hillevi = persona('hillevi', 'manager');
 const SECRET = 'test-secret-test-secret';
 const T0 = '2026-11-04T07:00:00.000Z';
-const sign = (secret: string, aud: string) => (actor: Actor) => new SignJWT({ actor }).setProtectedHeader({ alg: 'HS256', typ: 'JWT' }).setIssuer('clew').setAudience(aud).setSubject(actor.id).setIssuedAt().setExpirationTime('2m').sign(new TextEncoder().encode(secret));
+const sign = (secret: string, aud: string) => assertionFor(aud, secret);
 
 function world(options: { helloUp?: boolean } = {}) {
   const registry = new Registry();
@@ -32,15 +34,15 @@ function world(options: { helloUp?: boolean } = {}) {
   const store = memoryConnectorStore();
   let now = Date.parse(T0);
   const clock = () => new Date(now);
-  const hello = createConnector({ secret: SECRET, clewUrl: 'http://clew', fetch: async () => Response.json({ output: { events: [] } }) });
+  const hello = createConnector({ jwks: testJwks, secret: SECRET, clewUrl: 'http://clew', fetch: async () => Response.json({ output: { events: [] } }) });
   const helloFetch: FetchLike = async (input, init) => { if (options.helloUp === false) throw new Error('ECONNREFUSED'); return hello.handle(new Request(input, init)); };
   const live = { registered: [] as string[],
-    register(source: { id: string; url: string; secret: string }, manifest: ConnectorManifest) { live.registered.push(source.id); registry.replace(remoteConnector(manifest, { url: source.url, assert: sign(source.secret, source.id), fetch: helloFetch })); },
+    register(source: { id: string; url: string; secret: string }, manifest: ConnectorManifest) { live.registered.push(source.id); registry.replace(remoteConnector(manifest, { url: source.url, key: source.secret, assert: sign(SECRET, source.id), fetch: helloFetch })); },
     unregister(id: string) { registry.unregister(id); } };
   const deps: AdminDeps = {
     store, registry, clock, live, units: { list: async () => [{ id: 'unit-skola', label: 'Bergsåkers skola' }] },
     secrets: { seal: (v, id) => `sealed(${id}):${v}`, open: (s, id) => s.replace(`sealed(${id}):`, '') },
-    transport: { fetchManifest: (url, id) => fetchManifest(url, id, helloFetch), check: ({ url, id, secret }) => checkConnector({ url, id, assert: sign(secret, id), assertForeign: sign('another-secret-another', id), fetch: helloFetch }) },
+    transport: { fetchManifest: (url, id) => fetchManifest(url, id, helloFetch), check: ({ url, id, secret }) => checkConnector({ url, id, key: secret, assert: sign(SECRET, id), assertForeign: sign('another-secret-another', id), fetch: helloFetch }) },
   };
   const admin = connectorUsecases(deps);
   const reconcile: ReconcileDeps = { registry, store, secrets: deps.secrets, live, bundled: ['raindance'], clock, log: () => undefined };

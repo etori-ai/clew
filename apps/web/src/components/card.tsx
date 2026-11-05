@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { attentionLevel, dayWord, daysUntil, isSnoozed, parseSwedishTime, snoozeWhen, streamGroup, type AttentionLevel, type SnoozeInput, type SnoozePreset, type Thread, type ThreadAction } from '@clew/contracts';
-import { Badge, Button, Card, CheckboxList, CheckboxListItem, Collapsible, Dialog, DialogHeader, DropdownMenu, DropdownMenuDivider, DropdownMenuItem, DropdownMenuSubMenu, Heading, HStack, Icon, IconButton, List, ListItem, StatusDot, Text, TextInput, Timestamp, VStack, useToast, useMediaQuery } from '@clew/ui';
+import { Badge, Button, Card, CheckboxList, CheckboxListItem, Collapsible, Dialog, DialogHeader, DropdownMenu, DropdownMenuDivider, DropdownMenuItem, DropdownMenuSubMenu, Heading, HStack, Icon, IconButton, List, ListItem, MoreMenu, StatusDot, Text, TextInput, Timestamp, useAnnounce, useMediaQuery, useToast, VStack } from '@clew/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { today } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
@@ -8,6 +8,7 @@ import { snoozePresetsQuery } from '../queries';
 import { useThreadAction } from '../mutations';
 import { invalidateStream } from '../thread-cache';
 import { useConversation } from './conversation-context';
+import { executionStatus } from '../execution-status';
 
 const outcomeDot = { done: { variant: 'success', label: 'Klart' }, unknown: { variant: 'warning', label: 'Okänt' }, failed: { variant: 'error', label: 'Misslyckades' }, skipped: { variant: 'neutral', label: 'Inte skickad' } } as const;
 const shortDate = (d: string) => new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'short' }).format(new Date(d.slice(0, 10) + 'T12:00:00'));
@@ -110,6 +111,9 @@ const TimeSubMenu = ({ label, rows, own }: { label: string; rows: TimeRows['rows
 type ActionProps = { thread: Thread; onChange: (thread: Thread) => void; onOpenCardView: (threadId: string, actionId: string) => void };
 /** Everything a card can do, shared by the card and the row: run an action, snooze, dismiss, explain, and keep the selection. */
 function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
+  const status = executionStatus(thread.execution);
+  const lastStatus = useRef(status), announce = useAnnounce({ hasReplace: true });
+  useEffect(() => { if (status !== lastStatus.current) { lastStatus.current = status; announce(status ?? thread.receipt?.headline ?? 'Åtgärden är kontrollerad.'); } }, [status, announce, thread.receipt?.headline]);
   const [selected, setSelected] = useState<string[]>(() => thread.items.filter(i => i.selected).map(i => i.ref));
   const [why, setWhy] = useState(false);
   useEffect(() => { setSelected(thread.items.filter(i => i.selected).map(i => i.ref)); }, [thread.updatedAt]);
@@ -190,6 +194,14 @@ function ActionRow({ thread, level, actions, quiet = false }: { thread: Thread; 
   </>;
   const receipt = thread.receipt;
   const undoOpen = !!receipt && thread.state === 'handled' && !!receipt.undoCapability && !!countdown;
+  const pending = executionStatus(thread.execution);
+  if (pending) return <HStack gap={2} vAlign="center" wrap="wrap">
+    <Button size="sm" label="Kontrollera status" clickAction={() => run(() => api.checkExecution(thread.id))} />
+    <Text type="supporting">{pending}</Text>
+    <DropdownMenu renderTrigger={trigger => <IconButton {...trigger} size="sm" variant="ghost" label="Fler val" tooltip="Fler val" icon={<Icon icon="moreHorizontal" />} />} alignment="end">
+      <DropdownMenuItem label={inConversation ? 'I samtalet' : 'Lägg till i samtalet'} isDisabled={inConversation} onClick={() => conversation.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id })} />
+    </DropdownMenu>
+  </HStack>;
   // In the Inte nu pile (D28): the way back is the first button; nothing else is due until the card is back.
   if (open && isSnoozed(thread, new Date().toISOString())) return <HStack gap={2} vAlign="center" wrap="wrap">
     <Button size="sm" variant="secondary" label="Ta upp nu" clickAction={() => run(() => api.reopen(thread.id))} />
@@ -217,6 +229,8 @@ const WhyLine = ({ thread }: { thread: Thread }) => <Text type="supporting" as="
 /** The right-hand state of a card or row: the receipt, the snooze, who it waits on, or the deadline. Never more than one. */
 function State({ thread }: { thread: Thread }) {
   const open = thread.state === 'open';
+  if (thread.timers?.some(t => t.state === 'blocked')) return <Text type="supporting" role="status">Påminnelsen stoppades eftersom behörigheten har ändrats. Välj en ny påminnelse om den fortfarande behövs.</Text>;
+  if (thread.timers?.some(t => t.state === 'queued')) return <Text type="supporting" role="status">Påminnelsen är sparad och väntar på schemaläggning.</Text>;
   if (thread.receipt) return <ReceiptStatus thread={thread} />;
   if (open && thread.snoozedUntil && isSnoozed(thread, new Date().toISOString())) return <Text type="supporting">{snoozedLabel(thread.snoozedUntil)}</Text>;
   if (thread.waitingOn) return <Text type="supporting">Väntar på {thread.waitingOn}</Text>;
@@ -273,7 +287,7 @@ export function GenericCard({ thread, areaTitle, position, headingLevel = 3, aut
       {/* Why the card is here, as words that can be read and announced, never a tooltip (D28). */}
       {!receipt && <Text as="p" type="supporting">Varför: {thread.trigger.reason}</Text>}
       {thread.items.length > 0 && !receipt && (selectable
-        ? <CheckboxList label="Rader" isLabelHidden value={selected} onChange={setSelected} isReadOnly={!open} density="compact">
+        ? <CheckboxList label="Rader" isLabelHidden value={selected} onChange={setSelected} isReadOnly={!open || !!executionStatus(thread.execution)} density="compact">
           {thread.items.map(i => <CheckboxListItem key={i.ref} value={i.ref} label={<Text>{`${i.label} · ${i.detail}`}</Text>} />)}
         </CheckboxList>
         : <List density="compact" hasDividers>{thread.items.map(i => <ListItem key={i.ref} isSelected={rowChipped(i.ref)} label={<HStack gap={2} vAlign="center"><Text weight="semibold">{i.label}</Text><Text type="supporting">{i.detail}</Text></HStack>} />)}</List>)}

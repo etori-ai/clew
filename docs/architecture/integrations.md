@@ -1,5 +1,8 @@
 # Integration architecture
 
+> **Reading status:** Early integration design. The in-process/MCP hosting and connector-rendered app examples below predate D21/D22 and declared views. New integrations are independent connector services; source writes go through human decision paths. See [implementation status](../reference/status.md) and the [current protocol](../reference/connector-protocol.md).
+
+
 How Clew connects to systems outside its own database: the calendar today, Heroma, Raindance and other
 municipal systems later. Decided 2026-11-03. The decision log is in `docs/decisions/`. This file holds the
 principles; the catalogue of concrete paths, their auth modes and their status is `integration-paths.md`, and

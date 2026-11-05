@@ -139,8 +139,12 @@ test.describe('model administration', () => {
       await expect(dialog.getByText('Modellen är redan tillagd.').first()).toBeVisible();
       await dialog.getByRole('textbox', { name: /^Eller en modell som inte finns i listan/ }).fill('');
       await listed.getByRole('checkbox', { name: 'llama3.3:70b' }).check();
+      // The button fades from disabled to enabled: axe measures a colour, so it waits for the one the fade ends on.
+      const add = dialog.getByRole('button', { name: 'Lägg till 1 modell' });
+      await expect(add).toBeEnabled();
+      await add.evaluate(button => Promise.all(button.getAnimations().map(animation => animation.finished)));
       await expectNoAxeViolations(page);
-      await dialog.getByRole('button', { name: 'Lägg till 1 modell' }).click();
+      await add.click();
       await expect(dialog).toHaveCount(0);
       await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('1 modell tillagd, avstängd tills du slår på den'));
       await expect(page.getByRole('link', { name: 'llama3.3:70b' })).toBeVisible();
