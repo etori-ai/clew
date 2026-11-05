@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { ProviderSummary, ProviderTestReport } from '@clew/contracts';
-import { Banner, Button, CheckboxList, CheckboxListItem, Dialog, DialogHeader, FormLayout, HStack, Heading, Layout, LayoutContent, LayoutFooter, LayoutHeader, List, ListItem, Spinner, StackItem, StatusDot, Step, Stepper, Switch, Text, TextInput, VStack } from '@clew/ui';
+import { Banner, Button, CheckboxList, CheckboxListItem, Dialog, DialogHeader, FormLayout, Heading, LayoutHeader, List, ListItem, Spinner, StatusDot, Step, Stepper, Switch, Text, TextInput, VStack } from '@clew/ui';
 import { api } from '../../api';
 import { adminQueries } from '../../queries';
 import { useAdminAction } from '../../mutations';
+import { DialogFrame } from './dialog-frame';
 
 /**
  * Adding models (D24). Both dialogs follow Astryx's `form-wizard-dialog` composition: a Layout that fills the dialog,
@@ -67,18 +68,6 @@ export function ModelPicker({ listed, existing, value, onChange }: { listed: str
     </FormLayout>
     <Switch label="Sätt på dem direkt" description="Annars läggs de till avstängda, och du sätter på dem i listan." value={value.enable} onChange={enable => onChange({ ...value, enable })} />
   </VStack>;
-}
-
-/** The dialog frame of `form-wizard-dialog`: pinned header, scrolling content, pinned footer with the actions and the error. */
-function DialogFrame({ header, children, secondary, primary, error }: { header: ReactNode; children: ReactNode; secondary: ReactNode; primary?: ReactNode; error: string | null }) {
-  return <Layout height="fill" padding={4} defaultHasDividers header={header}
-    content={<LayoutContent>{children}</LayoutContent>}
-    footer={<LayoutFooter><HStack gap={2} vAlign="center" wrap="wrap">
-      {secondary}
-      <StackItem size="fill" />
-      {error && <Text as="p" role="alert" color="accent">{error}</Text>}
-      {primary}
-    </HStack></LayoutFooter>} />;
 }
 
 const steps = ['Adress och nyckel', 'Modeller'];

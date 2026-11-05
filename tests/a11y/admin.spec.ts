@@ -99,6 +99,29 @@ test.describe('administration', () => {
       await expect(dialog).toHaveCount(0);
       await expect(page.getByRole('table').getByRole('link', { name: 'Nytt system' })).toBeVisible();
     });
+    test('on a short screen the add dialog scrolls its step and keeps its buttons on screen', async ({ page, api }) => {
+      api.admin = true;
+      await page.setViewportSize({ width: 1280, height: 560 });
+      await open(page, '/admin/anslutningar');
+      await page.getByRole('button', { name: 'Anslut system' }).click();
+      const dialog = page.getByRole('dialog');
+      await dialog.getByRole('textbox', { name: /^Id/ }).fill('nytt');
+      await dialog.getByRole('textbox', { name: /^Adress/ }).fill('http://nytt:4010');
+      await dialog.getByLabel(/Delad nyckel/).fill('en-tillräckligt-lång-nyckel');
+      await dialog.getByRole('button', { name: 'Kontrollera' }).click();
+      await dialog.getByRole('button', { name: 'Nästa' }).click();
+      // The longest step: the audience editor with every list shown, then the two switches.
+      await dialog.getByRole('radio', { name: 'Endast valda' }).check();
+      await expect(dialog.getByRole('switch', { name: 'Erbjud assistenten' })).toBeAttached();
+      await expect(dialog.getByRole('button', { name: 'Tillbaka' })).toBeInViewport();
+      await expect(dialog.getByRole('button', { name: 'Nästa' })).toBeInViewport();
+      // axe reads the step as a person first meets it; scrolled to its end, the step's first labels sit outside the
+      // dialog's scrollport and axe's best-practice rule would count them as hidden.
+      await expectNoAxeViolations(page);
+      await dialog.getByRole('switch', { name: 'Erbjud assistenten' }).scrollIntoViewIfNeeded();
+      await expect(dialog.getByRole('switch', { name: 'Erbjud assistenten' })).toBeInViewport();
+      await expect(dialog.getByRole('button', { name: 'Nästa' })).toBeInViewport();
+    });
     test('a connector page is titled, the health is a sentence, and the tabs follow the tabs pattern', async ({ page, api }) => {
       api.admin = true;
       await open(page, '/admin/anslutningar/hello');

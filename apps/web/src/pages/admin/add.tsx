@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CheckReport, ConnectorAudience, ConnectorDetail } from '@clew/contracts';
-import { Banner, Button, Dialog, DialogHeader, FormLayout, HStack, Heading, List, ListItem, MetadataList, MetadataListItem, Spinner, StatusDot, Step, Stepper, Switch, Text, TextInput, VStack } from '@clew/ui';
+import { Banner, Button, Dialog, DialogHeader, FormLayout, Heading, LayoutHeader, List, ListItem, MetadataList, MetadataListItem, Spinner, StatusDot, Step, Stepper, Switch, Text, TextInput, VStack } from '@clew/ui';
 import { api } from '../../api';
 import { useAdminAction } from '../../mutations';
 import { AudienceEditor } from './audience';
+import { DialogFrame } from './dialog-frame';
 import { audienceLabel } from './labels';
 
 /**
@@ -35,12 +36,28 @@ export function AddConnectorDialog({ isOpen, onClose, units }: Props) {
   const retry = () => run(async () => { if (!result) return; const report = await api.admin.test(result.connector.id); const connector = await api.admin.connector(result.connector.id); setResult({ connector, report }); });
   const finish = (state: 'draft' | 'enabled') => run(async () => { if (!result) return; await api.admin.update(result.connector.id, { audience, scanEnabled: scan, toolsEnabled: tools, ...(state === 'enabled' ? { state } : {}) }); close(true); });
   const fetched = !!result?.connector.counts.capabilities;
-  return <Dialog isOpen={isOpen} onOpenChange={open => { if (!open) close(!!result); }} width={620} purpose="form" padding={4}>
-    <VStack gap={4}>
-      <DialogHeader title="Anslut system" subtitle={result ? 'Anslutningen är sparad som utkast tills du sätter på den.' : undefined} onOpenChange={open => { if (!open) close(!!result); }} />
+  // Astryx's form-wizard-dialog: the title and the stepper pinned, the step scrolling, the buttons pinned in the footer.
+  const header = <>
+    <DialogHeader title="Anslut system" subtitle={result ? 'Anslutningen är sparad som utkast tills du sätter på den.' : undefined} onOpenChange={open => { if (!open) close(!!result); }} hasDivider={false} />
+    <LayoutHeader hasDivider={false}>
       <Stepper activeStep={step} label="Steg" density="compact" horizontalOptions={{ minimumStepWidth: 100, collapsedVariant: 'withLabel' }}>
         {steps.map((s, i) => <Step key={s} step={i} label={s} />)}
       </Stepper>
+    </LayoutHeader>
+  </>;
+  return <Dialog isOpen={isOpen} onOpenChange={open => { if (!open) close(!!result); }} width={620} purpose="form">
+    <DialogFrame header={header} error={error}
+      secondary={step > 0 && <Button variant="ghost" label="Tillbaka" isDisabled={busy} onClick={() => setStep(step - 1)} />}
+      primary={<>
+        {step === 0 && <Button variant="primary" label="Kontrollera" isDisabled={busy || (touched && !valid)} clickAction={async () => { setTouched(true); if (valid) await check(); }} />}
+        {step === 1 && <Button variant="primary" label="Nästa" isDisabled={busy || !result} onClick={() => setStep(2)} />}
+        {step === 2 && <Button variant="primary" label="Nästa" onClick={() => setStep(3)} />}
+        {step === 3 && <>
+          <Button variant="secondary" label="Spara som utkast" isDisabled={busy} clickAction={() => finish('draft')} />
+          <Button variant="primary" label="Sätt på" isDisabled={busy || !fetched} clickAction={() => finish('enabled')} />
+        </>}
+      </>}>
+    <VStack gap={4}>
       <Heading level={3} ref={heading} tabIndex={-1}>{steps[step]}</Heading>
       {step === 0 && <FormLayout>
         <TextInput label="Id" value={id} onChange={setId} description="Samma id som anslutningen själv anger i sitt manifest, till exempel heroma." isRequired autoComplete="off" hasAutoCorrect={false} autoCapitalize="none" status={idError ? { type: 'error', message: idError } : undefined} />
@@ -72,22 +89,7 @@ export function AddConnectorDialog({ isOpen, onClose, units }: Props) {
         <MetadataListItem label="Skickar kort">{scan ? 'Ja' : 'Nej'}</MetadataListItem>
         <MetadataListItem label="Erbjuder assistenten">{tools ? 'Ja' : 'Nej'}</MetadataListItem>
       </MetadataList>}
-      {error && <Text as="p" role="alert" color="accent">{error}</Text>}
-      <HStack justify="between" gap={2} wrap="wrap">
-        <HStack gap={2}>
-          {step > 0 && step < 3 && <Button variant="ghost" label="Tillbaka" isDisabled={busy} onClick={() => setStep(step - 1)} />}
-          {step === 3 && <Button variant="ghost" label="Tillbaka" isDisabled={busy} onClick={() => setStep(2)} />}
-        </HStack>
-        <HStack gap={2}>
-          {step === 0 && <Button variant="primary" label="Kontrollera" isDisabled={busy || (touched && !valid)} clickAction={async () => { setTouched(true); if (valid) await check(); }} />}
-          {step === 1 && <Button variant="primary" label="Nästa" isDisabled={busy || !result} onClick={() => setStep(2)} />}
-          {step === 2 && <Button variant="primary" label="Nästa" onClick={() => setStep(3)} />}
-          {step === 3 && <>
-            <Button variant="secondary" label="Spara som utkast" isDisabled={busy} clickAction={() => finish('draft')} />
-            <Button variant="primary" label="Sätt på" isDisabled={busy || !fetched} clickAction={() => finish('enabled')} />
-          </>}
-        </HStack>
-      </HStack>
     </VStack>
+    </DialogFrame>
   </Dialog>;
 }

@@ -108,7 +108,9 @@ Alla · På · Av · Problem. An Astryx `Table` on desktop, `List` rows on the p
 word carries the state, colour never alone).
 
 **2. Anslut system (add).** A `Dialog` holding an Astryx `Stepper` with four steps, `FormLayout` and `Field`
-inside each:
+inside each. Since 2026-11-05 it is Astryx's `form-wizard-dialog` composition (`pages/admin/dialog-frame.tsx`, shared
+with the model dialogs): the title and the stepper pinned, the step scrolling in `LayoutContent`, Tillbaka and the
+step's buttons pinned in `LayoutFooter`, so the longest step (the audience editor) never pushes them off a short screen:
 
 1. *Adress och nyckel.* `TextInput` id (pattern shown as `FieldStatus`), `TextInput` URL, `TextInput`
    type password for the secret with the rule "minst 16 tecken". Nothing is sent until Nästa.
