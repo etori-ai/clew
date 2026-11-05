@@ -1,11 +1,12 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import type { Area, MenuEntry, MenuIcon, Thread } from '@clew/contracts';
-import { BookOpenIcon, ChartBarIcon, DocumentTextIcon, LinkIcon, PhoneIcon, UsersIcon, Badge, Button, SideNavItem, SideNavSection, StatusDot, Text, Typeahead, TypeaheadItem, VStack, createStaticSource, type SearchableItem } from '@clew/ui';
+import type { Area, MenuEntry, Thread } from '@clew/contracts';
+import { Badge, Button, SideNavItem, SideNavSection, StatusDot, Text, Typeahead, TypeaheadItem, VStack, createStaticSource, type SearchableItem } from '@clew/ui';
 import { addDays, displayDate, timeLabel, today } from '@clew/calendar/dates';
 import { areasQuery, threadsQuery } from '../queries';
 import { groupThreads } from '../stream';
+import { clewIcon } from '../icons';
 import type { ShellNav } from './shell';
 
 /** What the rail marks as current: the surface, and within the start page the group, the pile, the area or the conversation. */
@@ -21,12 +22,6 @@ export interface RailCurrent {
 const EMPTY_THREADS: Thread[] = [];
 const EMPTY_AREAS: Area[] = [];
 const EMPTY_MENU: MenuEntry[] = [];
-/**
- * The menu's icons (D40): a connector names one, Clew draws it. Astryx's semantic names have no phone, people, book,
- * document, chart or link, so those are Heroicons outline components handed over as SVG components, the documented way
- * for an icon outside the semantic list (`astryx docs icons custom-icons`), as `AtSymbolIcon` already is.
- */
-const menuIcon = { phone: PhoneIcon, people: UsersIcon, book: BookOpenIcon, document: DocumentTextIcon, chart: ChartBarIcon, link: LinkIcon, search: 'search', clock: 'clock' } as const satisfies Record<MenuIcon, unknown>;
 /** How many tools show at once; the rest sit under "Fler verktyg", so the foot of the menu keeps its height however many connectors offer a row. */
 const TOOLS_SHOWN = 4;
 /** The address of a tool: its view in the panel over the start page, the same address the chip under the box opens. */
@@ -77,7 +72,7 @@ export function useRail({ current, admin }: { current: RailCurrent; admin: boole
     ];
     return createStaticSource(items);
   }, [threads, areas, menu]);
-  const tool = (e: MenuEntry) => <SideNavItem key={e.capability} label={e.label} icon={menuIcon[e.icon]} href={menuHref(e)} isSelected={onStart && current.view === e.capability} />;
+  const tool = (e: MenuEntry) => <SideNavItem key={e.capability} label={e.label} icon={clewIcon[e.icon]} href={menuHref(e)} isSelected={onStart && current.view === e.capability} />;
   const more = menu.slice(TOOLS_SHOWN);
   return {
     top: <VStack gap={2}>

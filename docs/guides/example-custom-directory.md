@@ -30,9 +30,10 @@ Five capabilities, all `read` (`connectors/telefonbok/connector.mjs`):
 | `telefonbok.search` | Sök person | The search source (D26) with `kinds: ["person"]`: what the box finds when a name is typed. |
 | `telefonbok.fetch` | Hämta person | One hit back by its ref, so a hit can be chipped into the conversation. |
 
-One area, `Kontakter`, for both roles, with the team list and the search as its standing actions. That alone puts both
-as chips under the box and under Områden for everyone in the connector's audience: each person's own team list is one
-click away without anyone composing a page.
+One area, `Kontakter`, for both roles, with the team list and the search as its standing actions and `icon: "phone"`.
+That alone puts the area as a button under the box on the start page, with both actions as cards under it (D41), and
+under Områden, for everyone in the connector's audience: each person's own team list is two clicks away without
+anyone composing a page.
 
 The chips show only on the landing. A phone book is looked up in from anywhere, and both views open without input, so
 an administrator can put them in the menu as tools (D40). The manifest says what their rows are called:

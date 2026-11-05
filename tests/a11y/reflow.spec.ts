@@ -1,4 +1,4 @@
-import { desktop, dockOf, expect, heading, hiddenFocusStops, narrow, open, openNav, reflowProblems, short, snoozeFirst, test } from './support';
+import { composer, desktop, dockOf, expect, heading, hiddenFocusStops, narrow, open, openNav, reflowProblems, short, snoozeFirst, test } from './support';
 
 const routes = [['start', '/'], ['the overview', '/oversikt'], ['an area', '/omrade/personal'], ['the log', '/hanterat'], ['the calendar page', '/kalender']] as const;
 
@@ -6,6 +6,21 @@ test.describe('1.4.10 reflow', () => {
   for (const viewport of [narrow, short]) for (const [name, path] of routes) test(`${name} reflows at ${viewport.width}×${viewport.height}`, async ({ page, api: _ }) => {
     await page.setViewportSize(viewport);
     await open(page, path);
+    expect(await reflowProblems(page)).toEqual([]);
+  });
+
+  test('the areas under the box wrap at 320 px, and the chosen area\'s cards are brought into view above the docked box', async ({ page, api: _ }) => {
+    await page.setViewportSize(narrow);
+    await open(page, '/');
+    const areas = page.getByRole('group', { name: 'Områden' });
+    const tops = await areas.getByRole('button').evaluateAll(list => list.map(el => Math.round(el.getBoundingClientRect().top)));
+    expect(new Set(tops).size).toBeGreaterThan(1);
+    await areas.getByRole('button', { name: 'Budget' }).click();
+    const cards = page.getByRole('group', { name: 'Budget', exact: true });
+    // The card's link is a hidden element over the card; what the person sees is its text.
+    await expect(cards.getByText('Attestera fakturor', { exact: true })).toBeInViewport({ ratio: 1 });
+    const box = (await composer(page).boundingBox())!, last = (await cards.boundingBox())!;
+    expect(last.y + last.height).toBeLessThanOrEqual(box.y);
     expect(await reflowProblems(page)).toEqual([]);
   });
 

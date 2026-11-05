@@ -171,10 +171,11 @@ export type PanelViewSpec = View & { capability: string; connector: string; sour
 /**
  * A view as a tool in the menu (D40): one click away on every page, under Verktyg. Any read that declares a view and
  * opens without input can be one; an administrator chooses which, view by view. A connector may say what a view's row
- * is called and which of Clew's icons it carries; without that the row takes the capability's title and a plain icon.
+ * is called and which of Clew's icons it carries; without that the row takes the capability's title and a plain icon. The same list of
+ * icons serves an area (D41): the name a connector gives its area is drawn on the area's button under the box.
  */
-export const MENU_ICONS = ['phone', 'people', 'book', 'document', 'chart', 'search', 'clock', 'link'] as const;
-export const MenuIconSchema = Type.Union(MENU_ICONS.map(name => Type.Literal(name)), { description: 'One of Clew\'s menu icons. The connector sends a name, never a drawing.' });
+export const MENU_ICONS = ['phone', 'people', 'book', 'document', 'chart', 'search', 'clock', 'link', 'calendar', 'bell'] as const;
+export const MenuIconSchema = Type.Union(MENU_ICONS.map(name => Type.Literal(name)), { description: 'One of Clew\'s icons. The connector sends a name, never a drawing.' });
 export type MenuIcon = (typeof MENU_ICONS)[number];
 export const MenuHintSchema = Type.Object({
   label: Type.String({ minLength: 1, maxLength: 24, description: 'Swedish. The row in the menu, the name of the tool: "Telefonbok".' }),
@@ -597,6 +598,8 @@ export interface ProviderTestReport { ok: boolean; findings: CheckFinding[]; mod
 /** An area in the sidebar: a lens on one connector for one role (D3). Configuration, not code. */
 export const AreaSchema = object({
   id: Type.String(), title: Type.String(), connector: Type.String(), source: Type.String(),
+  /** The icon the connector named for the area (D41), from Clew's list; drawn on the area's button under the box. */
+  icon: Type.Optional(MenuIconSchema),
   figure: Type.Union([object({ label: Type.String(), tone: Type.Union([Type.Literal('ok'), Type.Literal('warn'), Type.Literal('alert'), Type.Literal('none')]) }), Type.Null()]),
   needsYou: Type.Integer(), waiting: Type.Integer(),
   /** The highest attention level among the open cards that need the person; the sidebar count takes its colour from it. */

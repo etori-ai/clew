@@ -56,7 +56,7 @@ area's figure turns into a warning. One connector being down never takes the pag
   "id": "hello",
   "kind": "passthrough",
   "source": "Hello",
-  "areas": [{ "id": "hello", "title": "Hello-anslutningen", "roles": ["manager", "employee"], "standing": ["hello.greeting"], "schedules": [], "figure": true }],
+  "areas": [{ "id": "hello", "title": "Hello-anslutningen", "roles": ["manager", "employee"], "standing": ["hello.greeting"], "schedules": [], "figure": true, "icon": "document" }],
   "capabilities": [
     { "name": "hello.greeting", "kind": "read", "title": "Säg hej", "description": "En hälsning …", "input": { "type": "object", "properties": {}, "additionalProperties": false }, "output": { "type": "object" }, "model": true, "scope": {} },
     { "name": "hello.markDone", "kind": "execute", "title": "Markera klar", "description": "…", "input": { "…": "…" }, "output": { "type": "object" }, "model": false, "scope": { "roles": ["manager"] } }
@@ -67,7 +67,7 @@ area's figure turns into a warning. One connector being down never takes the pag
 
 Rules the loader enforces, the same as the registry's for bundled connectors: `id` equals the configured id;
 every capability name is `<id>.<verb>`; an `execute` is never `model: true` (D8); every standing capability
-exists; `menu` (D40, below) sits only on a capability whose view can be a tool; `kind` is `passthrough` or `derived` (core connectors live in Clew, D3). `scope` is declarative so Clew
+exists; an area's optional `icon` is a name from Clew's list (D41, the list under "A view as a tool in the menu"); `menu` (D40, below) sits only on a capability whose view can be a tool; `kind` is `passthrough` or `derived` (core connectors live in Clew, D3). `scope` is declarative so Clew
 can evaluate it when listing tools and areas without a round trip: no `roles` means every signed-in
 person. An `execute` returns an `ExecuteResult` (`headline`, one `ReceiptRow` per ref with `outcome`
 `done`, `unknown`, `failed` or `skipped`, optional `undoCapability` and `undoMinutes`); green in the UI
@@ -212,7 +212,7 @@ administrator's list. What a connector may add is what the row is called, with `
 | Field | Meaning |
 |---|---|
 | `label` | Swedish, at most 24 characters. The row in the menu, so the name of the tool, not of the action: "Telefonbok", not "Sök i telefonboken" |
-| `icon` | One of `phone`, `people`, `book`, `document`, `chart`, `search`, `clock`, `link`. Clew draws it; a connector sends a name |
+| `icon` | One of `phone`, `people`, `book`, `document`, `chart`, `search`, `clock`, `link`, `calendar`, `bell`. Clew draws it; a connector sends a name. An area's optional `icon` takes a name from the same list (D41): it is drawn on the area's button under the box on the start page, where the area's standing actions open as cards |
 
 Without `menu` the row takes the capability's `title` and the `document` icon. The loader refuses `menu` on a
 capability that cannot be a tool. Nothing is in the menu until an administrator chooses it (Administration › Anslutna

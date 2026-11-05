@@ -71,7 +71,7 @@ export function raindanceConnector(state: StateStore): Connector {
   }
   return {
     id: CONNECTOR, kind: 'passthrough', source: 'Raindance',
-    areas: [{ id: 'budget', title: 'Budget', roles: ['manager'], standing: ['raindance.invoices', 'raindance.budget'],
+    areas: [{ id: 'budget', title: 'Budget', icon: 'chart', roles: ['manager'], standing: ['raindance.invoices', 'raindance.budget'],
       schedules: [{ label: 'Fakturor som förfaller inom en vecka', when: 'Varje vardag 06:00' }, { label: 'Prognosavvikelse', when: 'Månadens första måndag' }],
       figure: async () => { const b = budgets.find(b => b.costCentre === costCentreOf[UNIT])!; const pct = Math.round(1000 * (b.budget - b.forecast) / b.budget) / 10; return { label: `${pct > 0 ? '+' : ''}${String(pct).replace('.', ',')} % · ${b.driver}`, tone: pct < -1.5 ? 'alert' : pct < 0 ? 'warn' : 'ok' }; } }],
     capabilities, scan,

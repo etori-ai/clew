@@ -36,6 +36,15 @@ describe('connector protocol', () => {
     expect(() => parseManifest({ ...(helloManifest as object), capabilities: [{ name: 'hello.x', kind: 'execute', title: 'x', description: 'x', input: {}, output: {}, model: true, scope: {} }] })).toThrow(/D8/);
     expect(() => parseManifest({ protocol: 2 })).toThrow(/Invalid connector manifest/);
   });
+  test('an area may name one of Clew\'s icons, and only one of them (D41)', async () => {
+    const withIcon = (icon: string) => ({ ...(helloManifest as { areas: object[] }), areas: (helloManifest as { areas: object[] }).areas.map(a => ({ ...a, icon })) });
+    expect(parseManifest(withIcon('calendar'), 'hello').areas[0]!.icon).toBe('calendar');
+    expect(() => parseManifest(withIcon('rocket'), 'hello')).toThrow(/Invalid connector manifest/);
+    // The loaded connector hands it to the registry, which hands it to the person's areas.
+    const registry = new Registry();
+    registry.register(remoteConnector(parseManifest(withIcon('bell'), 'hello'), { url: 'http://hello', assert: async () => 'x', fetch: async () => Response.json({ figure: null }) }));
+    expect((await registry.areas({ id: 'p1', name: 'Testa Testsson', unitId: 'u1', unitLabel: 'Enhet', role: 'manager' })).map(a => a.icon)).toEqual(['bell']);
+  });
 });
 
 describe('a remote connector in the registry', () => {

@@ -210,10 +210,10 @@ export function heromaConnector(state: StateStore): Connector {
   return {
     id: CONNECTOR, kind: 'passthrough', source: 'Heroma',
     areas: [
-      { id: 'medarbetare', title: 'Medarbetare', roles: ['manager'], standing: ['heroma.whoIsOn', 'heroma.absenceOverview', 'heroma.leaveRequests'],
+      { id: 'medarbetare', title: 'Medarbetare', icon: 'people', roles: ['manager'], standing: ['heroma.whoIsOn', 'heroma.absenceOverview', 'heroma.leaveRequests'],
         schedules: [{ label: 'Frånvaro och mönster enligt rehabrutinen', when: 'Varje vardag 06:00' }, { label: 'Ledighetsansökningar', when: 'När en ansökan kommer' }],
         figure: async () => { const a = absentToday(UNIT); const n = employees.filter(e => e.unitId === UNIT).length; const pct = (100 * a.length / n); return { label: `Frånvaro ${pct.toFixed(0)} % · ${n - a.length} av ${n} på plats`, tone: pct > 15 ? 'alert' : pct > 8 ? 'warn' : 'ok' }; } },
-      { id: 'mitt-pass', title: 'Mitt pass', roles: ['employee'], standing: ['heroma.myShift', 'heroma.whoIsOn', 'heroma.myBalance'],
+      { id: 'mitt-pass', title: 'Mitt pass', icon: 'clock', roles: ['employee'], standing: ['heroma.myShift', 'heroma.whoIsOn', 'heroma.myBalance'],
         schedules: [{ label: 'Delegeringar och utbildningar som går ut', when: 'Månadens första måndag' }],
         figure: async (actor) => { const me = own(actor); const s = me && shifts.find(x => x.employee === me.ref && x.date === todayIso()); return s ? { label: `${s.start}–${s.end} på ${s.ward}`, tone: 'ok' } : { label: 'Ledig i dag', tone: 'none' }; } },
     ],

@@ -2,13 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Area, Figure, SessionUser, Thread, ViewRef, PanelViewSpec } from '@clew/contracts';
-import { Banner, Button, ChatLayout, Divider, EmptyState, Grid, GridSpan, Heading, HStack, Icon, IconButton, Layout, LayoutContent, LayoutFooter, Link, List, ListItem, MoreMenu, ProgressBar, Skeleton, Text, Toolbar, VisuallyHidden, VStack, useMediaQuery, useToast } from '@clew/ui';
+import { Banner, Button, ChatLayout, ClickableCard, Divider, EmptyState, Grid, GridSpan, Heading, HStack, Icon, IconButton, Layout, LayoutContent, LayoutFooter, Link, List, ListItem, MoreMenu, ProgressBar, Skeleton, SparklesIcon, Text, ToggleButton, Toolbar, VisuallyHidden, VStack, useMediaQuery, useToast } from '@clew/ui';
 import { addDays, displayDate, shortDayLabel, timeLabel, timeRange, today } from '@clew/calendar/dates';
 import { errorMessage } from '../query-policy';
-import { areasQuery, assistantQuery, attentionQuery, cardViewQuery, completionsQuery, figuresQuery, threadsQuery, todayQuery, viewQuery } from '../queries';
+import { areasQuery, assistantQuery, attentionQuery, cardViewQuery, figuresQuery, threadsQuery, todayQuery, viewQuery } from '../queries';
 import { applyThread } from '../thread-cache';
 import { keys } from '../query-keys';
 import { digestSentence, groupThreads } from '../stream';
+import { clewIcon } from '../icons';
 import { Composer, Suggestions } from '../components/composer';
 import { ConversationContext, ConversationProvider, type ConversationState } from '../components/conversation-context';
 import { Transcript } from '../components/conversation';
@@ -38,8 +39,9 @@ const EMPTY_AREAS: Area[] = [];
 const EMPTY_FIGURES: Figure[] = [];
 
 /**
- * The start page (D34): "Vad vill du göra?" first. At `/` the box is the page, with the push as a brief of at most three
- * rows above it and the connectors' standing actions as chips under it; a pull and a push produce the same card. The
+ * The start page (D34): "Vad vill du göra?" first. At `/` the box is the page, drawn as Astryx's `ai-chat-landing`
+ * template (D41): the greeting and the question over the box, the person's areas as a row of toggles under it, and the
+ * chosen area's standing actions as cards; the push is a brief of at most three rows above. A pull and a push produce the same card. The
  * whole picture is `/oversikt`: the greeting, Läget, the groups (Nu, Senare, Jag föreslår, Till kännedom) beside the day
  * and the piles. A conversation takes the column at `/samtal/:id` (D31). The route is the state throughout: `/omrade/:area`
  * filters the overview, `/pagar`, `/inte-nu` and `/hanterat` open a pile, `/vy/…` the side panel. Every card comes from a
@@ -59,7 +61,6 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
   const attentionQ = useQuery(attentionQuery);
   const assistantQ = useQuery(assistantQuery);
   const figuresQ = useQuery({ ...figuresQuery, enabled: mode === 'oversikt' });
-  const completionsQ = useQuery({ ...completionsQuery, enabled: mode === 'fraga' });
   const threads = threadsQ.data?.threads ?? EMPTY_THREADS;
   // The first read of the cards (D36): until it is here the page draws their shape, never "nothing needs you".
   const loadingThreads = threadsQ.isPending;
@@ -330,14 +331,16 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
     </>}
   </VStack>;
 
-  /** The chips under the box (D34): the connectors' standing actions for the role, the doing ones first, eight at most; a read opens its view, the rest is asked. */
-  const chips = useMemo(() => {
-    const seen = new Set<string>();
-    const out: { capability: string; text: string; kind: string }[] = [];
-    for (const d of completionsQ.data?.do ?? []) if (!seen.has(d.capability)) { seen.add(d.capability); out.push({ capability: d.capability, text: d.text, kind: d.kind }); }
-    for (const a of areas) for (const s of a.standing) if (!seen.has(s.capability)) { seen.add(s.capability); out.push({ capability: s.capability, text: s.label, kind: s.kind }); }
-    return out.slice(0, 8);
-  }, [completionsQ.data, areas]);
+  /**
+   * What the box offers under it (D41, the template's categories): the person's own areas that have something to start,
+   * each a toggle; the chosen one shows its connector's standing actions for the role as cards. Nothing is chosen at
+   * first, as in the template, and choosing never moves the box: the cards come under it. Where they open under the
+   * fold (a phone, a low window) they are brought into view, without animation.
+   */
+  const offers = useMemo(() => areas.filter(a => a.standing.length > 0), [areas]);
+  const [chosen, setChosen] = useState<string | null>(null);
+  const offer = offers.find(a => a.id === chosen) ?? null;
+  useEffect(() => { if (chosen) document.getElementById('omradets-kort')?.scrollIntoView({ block: 'nearest' }); }, [chosen]);
   const brief = [...g.nu, ...g.foreslar, ...g.senare].slice(0, 3);
   // The overview's context for `@`: the cards in view, in the area or the pile the address names.
   const overviewNear = (pile === 'pagar' ? g.waiting : pile === 'inte-nu' ? g.snoozed : [...g.nu, ...g.senare, ...g.foreslar, ...g.kannedom]).map(t => 'thread:' + t.id);
@@ -349,7 +352,7 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
   // The day as one line at the foot of the landing (G): the meetings in order and the longest gap; the week is one link away.
   const longest = day ? [...day.gaps].sort((a, b) => (Date.parse(b.end) - Date.parse(b.start)) - (Date.parse(a.end) - Date.parse(a.start)))[0] : undefined;
   const dayLine = day && [...day.events.filter(e => !e.allDay).map(e => `${timeLabel(e.start)} ${e.title}`), longest && `längsta luckan ${timeRange(longest.start, longest.end)}`].filter(Boolean).join(' · ');
-  // On a phone the box is docked at the foot (G on the phone): the heading and the chips sit right above it.
+  // On a phone the box is docked at the foot (G on the phone): the heading and the areas sit right above it.
   const docked = mobile && !short;
   // The day line (G): the foot of the landing. With the box in the page it is the Layout's footer; on a short screen it ends the flow.
   const dayFoot = !docked && dayLine !== null && dayLine !== undefined ? <VStack gap={3} as="section" aria-label="I dag">
@@ -361,48 +364,68 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
     </VStack> : null;
   // The box sits on the column's centre line whenever what is above it fits in the upper half (D39): the brief and the box
   // are one block that is at least half the column high, with the box at its lower edge. What grows under the box while
-  // the person types ("Menar du", then the chips) comes after that block, so it never moves the field they are typing in
+  // the person types ("Menar du", then the areas and their cards) comes after that block, so it never moves the field they are typing in
   // (D36), and a brief too long for the half pushes the box down as before. Centring the box between the brief and the
   // foot made it jump by half of every change in the suggestions.
   const landing = (talk: ConversationState) => {
     const need = <VStack gap={2} as="section" aria-label="Det som behöver dig">
       {error && <Text as="p" role="alert" color="accent">{error}</Text>}
       <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-        {loadingThreads ? <Skeleton height={16} width={260} /> : <Text type="supporting">{hello}. {sentence}</Text>}
+        {loadingThreads ? <Skeleton height={16} width={260} /> : <Text type="supporting">{sentence}</Text>}
         <Link href="/oversikt">Visa hela bilden</Link>
       </HStack>
       {loadingThreads ? <BriefSkeleton compact={mobile} /> : <Brief threads={brief} areaTitle={areaTitle} cardHref={cardHref} onChange={replace} onOpenCardView={openCardView} compact={mobile} />}
       {!loadingThreads && restLine && <Text type="supporting">{restLine}</Text>}
     </VStack>;
-    const heading = <Heading id="vad-vill-du-gora" tabIndex={-1} level={1} type={mobile ? undefined : 'display-3'} weight="semibold" justify={mobile ? 'start' : 'center'}>Vad vill du göra?</Heading>;
-    const box = <Composer place="landing" near={brief.map(t => 'thread:' + t.id)} />;
+    // The lead (the template's greeting): the person by first name on a line of its own, then the question as the page's h1.
+    const lead = <VStack gap={1}>
+      <HStack gap={2} vAlign="center">
+        <Icon icon={SparklesIcon} size="md" color="accent" />
+        <Text type="large" as="p">Hej, {user.name.split(' ')[0]}</Text>
+      </HStack>
+      <Heading id="vad-vill-du-gora" tabIndex={-1} level={1} type={mobile ? undefined : 'display-2'}>Vad vill du göra?</Heading>
+    </VStack>;
+    const box = <Composer place="landing" roomy near={brief.map(t => 'thread:' + t.id)} />;
     const menarDu = <Suggestions viewHref={viewHref} cardHref={cardHref} />;
-    const chipRow = chips.length > 0 && <HStack gap={2} wrap="wrap" justify={mobile ? 'start' : 'center'} role="group" aria-label="Det du brukar göra">
-      {chips.map(c => <Button key={c.capability} variant="secondary" label={c.text} onClick={() => c.kind === 'read' ? navigate(viewHref(c.capability, c.text)) : talk.ask(c.text)} />)}
-    </HStack>;
-    const chipNote = <Text type="supporting" justify={mobile ? 'start' : 'center'}>{assistantDown ? 'Knapparna är vägen just nu: varje knapp är en rutt bakom en anslutning och behöver ingen modell.' : 'Knapparna är anslutningarnas stående handlingar för din roll. Samma kort oavsett om du frågar eller jag föreslår.'}</Text>;
+    // A card is one standing action: a read is a link to its view, anything else is asked in the box, as "Menar du" does it.
+    const offered = offers.length > 0 && <VStack gap={6} paddingInline={mobile ? 0 : 3} as="section" aria-label="Det du kan göra">
+      {/* The template's row is a ToggleButtonGroup, which keeps its buttons on one line whatever the width. A person's areas
+          are as many as their connectors give them, so the same toggles stand in a wrapping HStack (D41, the gap noted there). */}
+      <HStack gap={1} wrap="wrap" role="group" aria-label="Områden">
+        {offers.map(a => <ToggleButton key={a.id} size="lg" label={a.title} isPressed={a.id === offer?.id} onPressedChange={pressed => setChosen(pressed ? a.id : null)}
+          icon={a.icon ? <Icon icon={clewIcon[a.icon]} size="sm" /> : undefined} />)}
+      </HStack>
+      {offer && <Grid id="omradets-kort" columns={{ minWidth: 280 }} gap={3} role="group" aria-label={offer.title}>
+        {offer.standing.map(s => <ClickableCard key={s.capability} label={s.label} variant="muted" padding={3}
+          {...(s.kind === 'read' ? { href: viewHref(s.capability, s.label) } : { onClick: () => talk.ask(s.label) })}>
+          <VStack gap={0.5}>
+            <Text weight="semibold">{s.label}</Text>
+            <Text type="supporting">{offer.source} · {s.kind === 'read' ? 'öppnar vyn' : 'öppnar kortet'}</Text>
+          </VStack>
+        </ClickableCard>)}
+      </Grid>}
+    </VStack>;
     // A short screen and a phone are one flow from the top: nothing is docked on the first, the box is docked on the second.
     if (short || docked) return <VStack gap={8}>
       <VStack gap={10}>
         {need}
-        <VStack gap={4} as="section" aria-label="Vad vill du göra">
-          {heading}
+        <VStack gap={mobile ? 4 : 8} as="section" aria-label="Vad vill du göra">
+          {lead}
           {!docked && <VStack gap={2}>{box}{menarDu}</VStack>}
-          {chipRow}
-          {chipNote}
         </VStack>
       </VStack>
+      {offered}
       {dayFoot}
     </VStack>;
     return <>
       <VStack gap={10} vAlign="between" minHeight="50%">
         {need}
-        <VStack gap={4} as="section" aria-label="Vad vill du göra">{heading}{box}</VStack>
+        <VStack gap={8} as="section" aria-label="Vad vill du göra">{lead}{box}</VStack>
       </VStack>
-      {/* The same distances as in the flow: "Menar du" a step under the box, the chips two steps under whichever ends above them. */}
+      {/* "Menar du" a step under the box; the areas the template's distance under whichever ends above them. */}
       <VStack gap={2} paddingBlockStart={2}>
         {menarDu}
-        <VStack gap={4} paddingBlockStart={2}>{chipRow}{chipNote}</VStack>
+        <VStack paddingBlockStart={6}>{offered}</VStack>
       </VStack>
     </>;
   };
@@ -428,11 +451,11 @@ export function StartPage({ user, admin = false, mode }: { user: SessionUser; ad
           {/* The ChatLayout spans the content area full bleed and owns the scroll, so its scrollbar sits at the window's edge like a page's; the spacious density centres its stream and dock to one 800 px column. */}
           <VStack height="100%"><ChatLayout density="spacious" composer={<Composer place="conversation" />}><Transcript onOpenView={openView} renderCard={t => card(t, undefined, 2)} viewHref={v => viewHref(v.capability, v.title, v.input, true)} /></ChatLayout></VStack>
         </LayoutContent>} />;
-    // The landing (G, the `ai-chat-landing` template): one 760 px column, the box in the page flow and the day line in the
+    // The landing (G, the `ai-chat-landing` template, D41): the template's 720 px column, the box in the page flow and the day line in the
     // footer (D39); on a phone the box is docked at the foot.
     if (mode === 'fraga') return short
       ? <VStack gap={4} padding={3}>{landing(talk)}</VStack>
-      : <Layout height="fill" contentWidth={760} padding={mobile ? 3 : 6} content={<LayoutContent isScrollable>{landing(talk)}</LayoutContent>}
+      : <Layout height="fill" contentWidth={720} padding={mobile ? 3 : 6} content={<LayoutContent isScrollable>{landing(talk)}</LayoutContent>}
         footer={docked ? <LayoutFooter><VStack gap={2}><Suggestions viewHref={viewHref} cardHref={cardHref} /><Composer place="landing" near={brief.map(t => 'thread:' + t.id)} /></VStack></LayoutFooter>
           : dayFoot ? <LayoutFooter>{dayFoot}</LayoutFooter> : undefined} />;
     // The overview keeps the box at the foot of its column; the whole picture is wider than the chat's one column.

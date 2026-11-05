@@ -34,6 +34,6 @@ export function kommunikationConnector(state: StateStore): Connector {
       actions: [{ id: 'ack', label: 'Jag har läst', capability: 'kommunikation.acknowledge', kind: 'execute', role: 'primary', usesItems: true }] }));
   }
   return { id: CONNECTOR, kind: 'core', source: 'Kommunikation',
-    areas: [{ id: 'viktigt-nu', title: 'Viktigt nu', roles: ['manager', 'employee'], standing: ['kommunikation.notices'], schedules: [{ label: 'Nya meddelanden som kräver läskvitto', when: 'Direkt när de publiceras' }] }],
+    areas: [{ id: 'viktigt-nu', title: 'Viktigt nu', icon: 'bell', roles: ['manager', 'employee'], standing: ['kommunikation.notices'], schedules: [{ label: 'Nya meddelanden som kräver läskvitto', when: 'Direkt när de publiceras' }] }],
     capabilities, scan };
 }

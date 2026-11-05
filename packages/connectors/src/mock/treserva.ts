@@ -62,7 +62,7 @@ export function treservaConnector(state: StateStore): Connector {
   }
   return {
     id: CONNECTOR, kind: 'passthrough', source: 'Treserva',
-    areas: [{ id: 'arbetsmiljo', title: 'Arbetsmiljö', roles: ['manager'], standing: ['treserva.deviations', 'treserva.report'],
+    areas: [{ id: 'arbetsmiljo', title: 'Arbetsmiljö', icon: 'document', roles: ['manager'], standing: ['treserva.deviations', 'treserva.report'],
       schedules: [{ label: 'Avvikelser som väntat mer än fem dagar', when: 'Varje vardag 06:00' }],
       figure: async () => { const open = deviations.filter(d => d.unitId === UNIT && d.state !== 'closed').length; return { label: open ? `${open} öppen${open > 1 ? 'na' : ''} avvikelse${open > 1 ? 'r' : ''}` : 'Inga öppna avvikelser', tone: open ? 'warn' : 'ok' }; } }],
     capabilities, scan,

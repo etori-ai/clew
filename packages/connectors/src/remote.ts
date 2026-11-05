@@ -88,7 +88,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
   return {
     id: manifest.id, kind: manifest.kind, source,
     areas: manifest.areas.map(a => ({
-      id: a.id, title: a.title, roles: a.roles, standing: a.standing, schedules: a.schedules,
+      id: a.id, title: a.title, roles: a.roles, standing: a.standing, schedules: a.schedules, ...(a.icon ? { icon: a.icon } : {}),
       ...(a.figure ? { figure: async (actor: Actor) => {
         try {
           const { status, json } = await post(transport, source, '/clew/figure', actor, { actor, area: a.id });

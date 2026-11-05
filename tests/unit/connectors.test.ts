@@ -34,6 +34,8 @@ describe('registry', () => {
     expect(employee.map(a => a.id)).toEqual(['mitt-pass', 'viktigt-nu']);
     expect(manager[0]!.figure?.label).toMatch(/Frånvaro/);
     expect(manager[0]!.standing.map(s => s.capability)).toContain('heroma.whoIsOn');
+    // The icon a connector names for its area (D41) comes with the area, for the button under the box.
+    expect(manager.map(a => a.icon)).toEqual(['people', 'chart', 'document', 'bell']);
   });
 });
 describe('mock scans push threads a person can act on, and the state survives in the store', () => {

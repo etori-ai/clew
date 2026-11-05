@@ -18,7 +18,7 @@ export function calendarConnector(calendar: Pick<CalendarUsecases, 'readToday' |
   return {
     id: 'calendar', kind: 'passthrough', source: 'Kalendern',
     areas: [
-      { id: 'kalender', title: 'Kalender', roles: ['manager', 'employee'], standing: ['calendar.today', 'calendar.week'], schedules: [],
+      { id: 'kalender', title: 'Kalender', icon: 'calendar', roles: ['manager', 'employee'], standing: ['calendar.today', 'calendar.week'], schedules: [],
         figure: async actor => { try { const v = await calendar.readToday(await personaFor(actor.id)); const n = v.events.filter(e => !e.allDay).length; const gap = v.gaps[0]; return { label: `${n} möten i dag${gap ? ', lucka ' + new Date(gap.start).toLocaleTimeString('sv-SE', { timeStyle: 'short' }) : ''}`, tone: 'none' }; } catch { return { label: 'Kalendern svarar inte', tone: 'warn' }; } } },
       { id: 'utvecklingssamtal', title: 'Utvecklingssamtal', roles: ['manager'], standing: [], schedules: [{ label: 'Samtal utan tid före deadline', when: 'Varje vardag 06:00' }],
         figure: async actor => { try { const s = await calendar.samtalStatus(await personaFor(actor.id)); const total = s.held + s.booked; return { label: `${s.held} hållna, ${s.booked} bokade · senast ${s.deadline}`, tone: total >= 12 ? 'ok' : 'warn' }; } catch { return { label: 'Kalendern svarar inte', tone: 'warn' }; } } },

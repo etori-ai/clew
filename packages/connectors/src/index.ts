@@ -1,5 +1,5 @@
 import type { TSchema } from '@sinclair/typebox';
-import type { Area, CapabilityOverride, ConnectorAudience, ConnectorState, MenuEntry, MenuHint, Receipt, ReceiptRow, SearchKind, SessionUser, PanelViewSpec, ThreadAction, ThreadItem, View, ViewOpen } from '@clew/contracts';
+import type { Area, CapabilityOverride, ConnectorAudience, ConnectorState, MenuEntry, MenuHint, MenuIcon, Receipt, ReceiptRow, SearchKind, SessionUser, PanelViewSpec, ThreadAction, ThreadItem, View, ViewOpen } from '@clew/contracts';
 import { menuProblem, menuRowOf, viewProblem } from './views';
 export { MENU_DEFAULT_ICON, menuEligible, menuProblem, menuRowOf, openRef, readsSummary, rowsKey, viewProblem, viewRows, viewSummary } from './views';
 
@@ -87,6 +87,8 @@ export interface AreaDefinition {
   /** Capability names shown under "Gör själv". */
   standing: string[];
   schedules: Array<{ label: string; when: string }>;
+  /** One of Clew's icons for the area's button under the box (D41). */
+  icon?: MenuIcon;
 }
 export interface Connector {
   id: string; kind: ConnectorKind;
@@ -223,7 +225,7 @@ export class Registry {
         if (!a.roles.includes(actor.role)) continue;
         const standing = a.standing.map(n => this.allowed(actor, n)).filter((c): c is NonNullable<typeof c> => !!c)
           .map(c => ({ capability: c.capability.name, label: c.capability.title, kind: c.capability.kind }));
-        out.push({ id: a.id, title: a.title, connector: m.id, source: m.source, figure: a.figure && options.figures !== false ? await a.figure(actor, clew) : null, standing, schedules: a.schedules });
+        out.push({ id: a.id, title: a.title, connector: m.id, source: m.source, ...(a.icon ? { icon: a.icon } : {}), figure: a.figure && options.figures !== false ? await a.figure(actor, clew) : null, standing, schedules: a.schedules });
       }
     }
     return out;

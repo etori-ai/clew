@@ -1,5 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { MenuHintSchema, SearchHitSchema, SearchKind, SearchOutputSchema, ThreadActionSchema, ThreadItemSchema, ViewSchema } from '@clew/contracts';
+import { MenuHintSchema, MenuIconSchema, SearchHitSchema, SearchKind, SearchOutputSchema, ThreadActionSchema, ThreadItemSchema, ViewSchema } from '@clew/contracts';
 
 /**
  * The Clew connector protocol (D21): how a connector that is not part of this repository plugs into a running Clew.
@@ -53,6 +53,7 @@ export const ManifestAreaSchema = object({
   standing: Type.Array(Type.String(), { description: 'Capability names shown under "Gör själv".' }),
   schedules: Type.Array(object({ label: Type.String(), when: Type.String() })),
   figure: Type.Optional(Type.Boolean({ description: 'Clew asks POST /clew/figure for a one-line figure for this area.' })),
+  icon: Type.Optional(MenuIconSchema),
 });
 /**
  * The connector calls its system as the person (D26): Clew trades the person's session for a token bound to this audience

@@ -25,7 +25,7 @@ export const manifest = {
   protocol: 1, id: CONNECTOR, kind: 'passthrough', source: SOURCE,
   // The area puts both reads under "Gör själv" and as chips under the box for everyone in the connector's audience:
   // each person's own team list is one click away without anyone composing a page.
-  areas: [{ id: 'kontakter', title: 'Kontakter', roles: ['manager', 'employee'], standing: ['telefonbok.team', 'telefonbok.directory'], schedules: [] }],
+  areas: [{ id: 'kontakter', title: 'Kontakter', icon: 'phone', roles: ['manager', 'employee'], standing: ['telefonbok.team', 'telefonbok.directory'], schedules: [] }],
   capabilities: [
     { name: 'telefonbok.directory', kind: 'read', title: 'Sök i telefonboken', model: true, scope: {},
       // What the view is called when an administrator puts it under Verktyg in Clew's menu (D40): the tool, not the action.

@@ -69,12 +69,13 @@ export const threads = (): Thread[] => [
 
 const area = (id: string, title: string, values: Partial<Area> = {}): Area => ({ id, title, connector: id, source: 'Heroma', figure: null, needsYou: 0, waiting: 0, urgency: null, standing: [], schedules: [], ...values });
 export const areas: Area[] = [
-  area('viktigt-nu', 'Viktigt nu', { source: 'Kommunikation', needsYou: 1, urgency: 'notice' }),
-  area('kalender', 'Kalender', { source: 'Kalendern', needsYou: 1, urgency: 'soon', schedules: [{ label: 'Bevakar utvecklingssamtalen', when: 'Måndagar 06:00' }] }),
-  area('personal', 'Personal', { figure: { label: 'Korttidsfrånvaro 4,2 %', tone: 'warn' }, needsYou: 2, urgency: 'soon',
+  area('viktigt-nu', 'Viktigt nu', { source: 'Kommunikation', needsYou: 1, urgency: 'notice', standing: [{ capability: 'kommunikation.notices', label: 'Viktigt nu', kind: 'read' }] }),
+  area('kalender', 'Kalender', { source: 'Kalendern', icon: 'calendar', needsYou: 1, urgency: 'soon', standing: [{ capability: 'calendar.today', label: 'Dagens möten', kind: 'read' }], schedules: [{ label: 'Bevakar utvecklingssamtalen', when: 'Måndagar 06:00' }] }),
+  area('personal', 'Personal', { icon: 'people', figure: { label: 'Korttidsfrånvaro 4,2 %', tone: 'warn' }, needsYou: 2, urgency: 'soon',
     standing: [{ capability: 'heroma.whoIsOn', label: 'Vem är på plats?', kind: 'read' }, { capability: 'heroma.absenceOverview', label: 'Frånvaro per person', kind: 'read' }],
     schedules: [{ label: 'Läser frånvaron', when: 'Varje morgon 06:00' }] }),
-  area('budget', 'Budget', { source: 'Raindance', figure: { label: 'Prognos +1,8 %', tone: 'ok' }, needsYou: 1, urgency: 'urgent', standing: [{ capability: 'raindance.budget', label: 'Budget mot prognos', kind: 'read' }] }),
+  area('budget', 'Budget', { source: 'Raindance', icon: 'chart', figure: { label: 'Prognos +1,8 %', tone: 'ok' }, needsYou: 1, urgency: 'urgent',
+    standing: [{ capability: 'raindance.budget', label: 'Budget mot prognos', kind: 'read' }, { capability: 'raindance.approve', label: 'Attestera fakturor', kind: 'execute' }] }),
   area('kvalitet', 'Kvalitet', { source: 'Treserva', waiting: 1 }),
 ];
 /** The picker's rows (D29), fixed to the frozen clock. */
@@ -100,7 +101,7 @@ export const figures: Figure[] = [
   { id: 'hme', label: 'HME', value: '79', comparison: '76 i fjol, kommunen 77', tone: 'ok', source: 'Medarbetarenkät', observedAt: NOW },
   { id: 'utvecklingssamtal', label: 'Utvecklingssamtal', value: '4 av 12 kvar', comparison: '8 bokade, senast 28 nov', tone: 'warn', source: 'Kalendern', observedAt: NOW, progress: { value: 8, max: 12 } },
 ];
-/** What the box offers (D34): the standing actions for the role; the chips under the box are drawn from `do` and the areas. */
+/** What the box offers while the person types (D34): the standing actions for the role. The areas under the box (D41) come from `areas`. */
 export const completions: Completions = {
   completions: ['Vad har jag i dag?'], ask: [], recent: [],
   do: [{ text: 'Attestera fakturor', capability: 'raindance.approve', source: 'Raindance', kind: 'execute' }, { text: 'Rapportera avvikelse', capability: 'treserva.report', source: 'Treserva', kind: 'execute' }],

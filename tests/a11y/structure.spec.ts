@@ -1,4 +1,4 @@
-import { answer, composer, desktop, expect, heading, open, openAreas, openNav, phone, test } from './support';
+import { answer, composer, desktop, expect, expectNoAxeViolations, heading, open, openAreas, openNav, phone, test } from './support';
 
 test.use({ viewport: desktop });
 
@@ -65,17 +65,72 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
-  test('the box is the page: the brief above it has at most three rows, each with its next step, and the chips are a group', async ({ page, api: _ }) => {
+  test('the box is the page: the greeting and the question over it, and the brief above has at most three rows, each with its next step', async ({ page, api: _ }) => {
     await open(page, '/');
     await expect(heading(page, 1, 'Vad vill du göra?')).toBeVisible();
+    // The greeting is a line of text by first name, not a heading: the question is the page's one h1.
+    await expect(page.getByRole('region', { name: 'Vad vill du göra' }).getByText('Hej, Testa', { exact: true })).toBeVisible();
     const brief = page.getByRole('list', { name: 'Det som behöver dig' });
     await expect(brief.getByRole('listitem')).toHaveCount(3);
     // A card that needs a choice first gets "Granska", which opens it; never a button that starts disabled.
     await expect(brief.getByRole('link', { name: 'Granska 3' })).toHaveAttribute('href', '/oversikt?kort=fakturor');
     await expect(brief.getByRole('link', { name: 'Attestera 3 fakturor, 48 200 kr' })).toHaveAttribute('href', '/oversikt?kort=fakturor');
-    await expect(page.getByRole('group', { name: 'Det du brukar göra' }).getByRole('button', { name: 'Budget mot prognos' })).toBeVisible();
     await page.getByRole('link', { name: 'Visa hela bilden' }).click();
     await expect(heading(page, 2, 'Nu · 1')).toBeVisible();
+  });
+
+  test('the areas under the box are toggles for the areas that have something to start, and the chosen one shows its standing actions as cards', async ({ page, api: _ }) => {
+    await open(page, '/');
+    const areas = page.getByRole('group', { name: 'Områden' });
+    // Only an area with a standing action is offered (not Kvalitet, which has none), in the order the person's areas come; nothing is chosen at first.
+    expect(await areas.getByRole('button').evaluateAll(list => list.map(el => el.getAttribute('aria-label')))).toEqual(['Viktigt nu', 'Kalender', 'Personal', 'Budget']);
+    await expect(areas.getByRole('button', { pressed: true })).toHaveCount(0);
+    // The icon is the one the connector named for its area; an area that names none is its title alone.
+    await expect(areas.getByRole('button', { name: 'Budget' }).locator('svg')).toHaveCount(1);
+    await expect(areas.getByRole('button', { name: 'Viktigt nu' }).locator('svg')).toHaveCount(0);
+    const top = (await composer(page).boundingBox())!.y;
+    await areas.getByRole('button', { name: 'Budget' }).click();
+    await expect(areas.getByRole('button', { name: 'Budget' })).toHaveAttribute('aria-pressed', 'true');
+    const cards = page.getByRole('group', { name: 'Budget', exact: true });
+    // A read is a link to its view; the line under the title says which system and what happens.
+    await expect(cards.getByRole('link', { name: 'Budget mot prognos' })).toHaveAttribute('href', /^\/vy\/raindance\.budget\?titel=/);
+    await expect(cards.getByText('Raindance · öppnar vyn')).toBeVisible();
+    await expect(cards.getByRole('button', { name: 'Attestera fakturor' })).toBeVisible();
+    // The cards come under the box: choosing an area never moves the field (D36).
+    expect((await composer(page).boundingBox())!.y).toBe(top);
+    await expectNoAxeViolations(page);
+    // Another area takes its place; the chosen one pressed again closes the cards.
+    await areas.getByRole('button', { name: 'Personal' }).click();
+    await expect(page.getByRole('group', { name: 'Personal', exact: true }).getByRole('link')).toHaveText([/Vem är på plats\?/, /Frånvaro per person/]);
+    await expect(cards).toHaveCount(0);
+    await areas.getByRole('button', { name: 'Personal' }).click();
+    await expect(page.getByRole('group', { name: 'Personal', exact: true })).toHaveCount(0);
+  });
+
+  test('a card that reads opens its view in the panel, and the area is still chosen when the panel closes', async ({ page, api: _ }) => {
+    await open(page, '/');
+    await page.getByRole('group', { name: 'Områden' }).getByRole('button', { name: 'Budget' }).click();
+    const cards = page.getByRole('group', { name: 'Budget', exact: true });
+    // The whole card is the target: a click on its text follows the link.
+    await cards.getByText('Budget mot prognos', { exact: true }).click();
+    await expect(page).toHaveURL(/\/vy\/raindance\.budget\?titel=/);
+    await expect(page.getByRole('dialog', { name: 'Budget mot prognos' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page).toHaveURL(/\/$/);
+    await expect(cards.getByRole('link', { name: 'Budget mot prognos' })).toBeVisible();
+  });
+
+  test('a card that is not a read asks its question in the box, from the keyboard too, and the answer opens as a conversation', async ({ page, api: _ }) => {
+    await open(page, '/');
+    const areas = page.getByRole('group', { name: 'Områden' });
+    await areas.getByRole('button', { name: 'Budget' }).focus();
+    await page.keyboard.press('Enter');
+    const card = page.getByRole('group', { name: 'Budget', exact: true }).getByRole('button', { name: 'Attestera fakturor' });
+    await card.focus();
+    await expect(card).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('log')).toContainText('Attestera fakturor');
+    await expect(page).toHaveURL(/\/samtal\//);
   });
 
   test('typing in the box offers what the router finds without the model, the open card first, and each row is a button', async ({ page, api: _ }) => {

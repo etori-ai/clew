@@ -47,13 +47,16 @@ function Dictation({ onResult }: { onResult: (text: string) => void }) {
  */
 const STOP = new Set(['att', 'och', 'som', 'för', 'med', 'den', 'det', 'ett', 'jag', 'vad', 'hur', 'när', 'var', 'min', 'mitt', 'mina', 'har', 'kan', 'vill', 'ska', 'till', 'från', 'över', 'om']);
 export type ComposerPlace = 'landing' | 'conversation' | 'footer';
+/** The landing's field is three lines tall from the start, as the `ai-chat-landing` template sets it on its `ChatComposerInput` (D41). */
+const landingField = { minHeight: 84 };
 /**
  * The box (D31, D34): Astryx's ChatComposer, in the page flow on the landing and docked by ChatLayout in a
  * conversation. The chips the person pointed at sit in the composer's drawer as removable tokens; `@` in the field
  * inserts a token for anything on the page. With one chip and nothing typed the footer offers the verbs about it. The
- * row keeps focus throughout; sending never moves it.
+ * row keeps focus throughout; sending never moves it. `roomy` is the landing's box in the page flow (D41); docked on a
+ * phone it keeps the field's own height.
  */
-export function Composer({ place, near = [] }: { place: ComposerPlace; near?: string[] }) {
+export function Composer({ place, near = [], roomy = false }: { place: ComposerPlace; near?: string[]; roomy?: boolean }) {
   const talk = useConversation();
   // What `@` treats as the context: what the page shows (`near`), what is in the drawer and the field, and in a
   // conversation every card and row it has touched (the chips of its turns, a draft's card, a proposal's card).
@@ -85,7 +88,7 @@ export function Composer({ place, near = [] }: { place: ComposerPlace; near?: st
     drawer={talk.chips.length > 0 ? <ChatComposerDrawer count={talk.chips.length} label="Objekt i samtalet">
       {talk.chips.map(c => <Token key={c.ref} label={c.label} onRemove={() => talk.removeChip(c.ref)} data-chip-remove="" />)}
     </ChatComposerDrawer> : undefined}
-    input={<ChatComposerInput handleRef={talk.input} label={place === 'conversation' ? 'Svara i samtalet' : 'Vad vill du göra'} maxRows={place === 'landing' ? 4 : 3} hasHistory={false} triggers={[trigger]} placeholder={placeholder}
+    input={<ChatComposerInput handleRef={talk.input} label={place === 'conversation' ? 'Svara i samtalet' : 'Vad vill du göra'} maxRows={place === 'landing' ? 4 : 3} style={place === 'landing' && roomy ? landingField : undefined} hasHistory={false} triggers={[trigger]} placeholder={placeholder}
       onKeyDown={e => { if (talk.pending && e.key === 'Enter' && !e.shiftKey) e.preventDefault(); }} />}
     headerActions={scope}
     headerContext={place === 'conversation' ? <HStack gap={2} vAlign="center"><Link href="/" onClick={e => { e.preventDefault(); talk.newConversation(); }}>Ny fråga i stället</Link><Kbd keys="mod+k" /></HStack>

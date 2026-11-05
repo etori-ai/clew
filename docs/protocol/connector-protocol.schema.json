@@ -118,6 +118,51 @@
               "figure": {
                 "description": "Clew asks POST /clew/figure for a one-line figure for this area.",
                 "type": "boolean"
+              },
+              "icon": {
+                "description": "One of Clew's icons. The connector sends a name, never a drawing.",
+                "anyOf": [
+                  {
+                    "const": "phone",
+                    "type": "string"
+                  },
+                  {
+                    "const": "people",
+                    "type": "string"
+                  },
+                  {
+                    "const": "book",
+                    "type": "string"
+                  },
+                  {
+                    "const": "document",
+                    "type": "string"
+                  },
+                  {
+                    "const": "chart",
+                    "type": "string"
+                  },
+                  {
+                    "const": "search",
+                    "type": "string"
+                  },
+                  {
+                    "const": "clock",
+                    "type": "string"
+                  },
+                  {
+                    "const": "link",
+                    "type": "string"
+                  },
+                  {
+                    "const": "calendar",
+                    "type": "string"
+                  },
+                  {
+                    "const": "bell",
+                    "type": "string"
+                  }
+                ]
               }
             }
           }
@@ -923,7 +968,7 @@
                     "type": "string"
                   },
                   "icon": {
-                    "description": "One of Clew's menu icons. The connector sends a name, never a drawing.",
+                    "description": "One of Clew's icons. The connector sends a name, never a drawing.",
                     "anyOf": [
                       {
                         "const": "phone",
@@ -955,6 +1000,14 @@
                       },
                       {
                         "const": "link",
+                        "type": "string"
+                      },
+                      {
+                        "const": "calendar",
+                        "type": "string"
+                      },
+                      {
+                        "const": "bell",
                         "type": "string"
                       }
                     ]
@@ -2639,7 +2692,7 @@
           "type": "string"
         },
         "icon": {
-          "description": "One of Clew's menu icons. The connector sends a name, never a drawing.",
+          "description": "One of Clew's icons. The connector sends a name, never a drawing.",
           "anyOf": [
             {
               "const": "phone",
@@ -2671,6 +2724,14 @@
             },
             {
               "const": "link",
+              "type": "string"
+            },
+            {
+              "const": "calendar",
+              "type": "string"
+            },
+            {
+              "const": "bell",
               "type": "string"
             }
           ]
