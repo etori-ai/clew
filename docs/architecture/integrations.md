@@ -125,7 +125,7 @@ calendar, Heroma or Raindance:
 |---|---|---|---|
 | Primary | connector, `kind: execute` or `propose` | exactly 1 | The verb in the headline. Filled button. |
 | Secondary | connector, `kind: read` (a link into the source system or a view) | 0 to 2 | Tonal buttons. The first is usually "open in the source". |
-| Standard | Clew | always the same | `Lägg till i samtalet` (adds the card as a chip, D12), `Inte nu` (snooze to the next bundle), `Påminn mig` (a menu of durations; a Temporal reminder that brings this card back to the top of the stream, D17), `Avfärda` (closes the thread with a reason, undoable), `Varför ser jag detta?` (trigger, source, time). |
+| Standard | Clew | always the same | `Lägg till i samtalet` (adds the card as a chip, D12), `Inte nu` on an open card and `Påminn mig` on a card that waits on someone (one time action per card, D49; a Temporal timer that brings the card back to the top of the stream with a notice, D17), `Avfärda` (closes the thread with a reason, undoable), `Varför ser jag detta?` (trigger, source, time). |
 | Overflow | connector, anything beyond the slots above | any | Behind the `⋯` menu together with the standard actions, connector items first. |
 
 A connector action carries `label`, `capability`, `kind`, and an optional `confirm` text. Clew decides

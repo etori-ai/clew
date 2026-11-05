@@ -62,7 +62,8 @@ Historical numbering collisions: **D37, D38, D39, D44, D45, D46** each identify 
 | [D46 · Browser updates use committed revisions](D46-browser-updates-use-committed-revisions.md) | platform | 2026-11-05 | accepted, browser invalidation implemented; durable attention pending |
 | [D47 · Occurrences, timers and attention have durable identities](D47-occurrences-timers-and-attention-have-durable-identities.md) | platform | 2026-11-05 | accepted, implemented |
 | [D48 · One next step on a surface, the rest one step away](D48-one-next-step-the-rest-one-step-away.md) | ui | 2026-11-05 | accepted, implemented |
+| [D49 · A card has one time action, and it always says when it is back](D49-a-card-has-one-time-action-and-always-says-when-it-is-back.md) | product | 2026-11-05 | accepted |
 
 ## Add a decision
 
-Use [TEMPLATE.md](TEMPLATE.md) and a new unused number (currently D49). Include status, date, area, decision, rationale and what it replaces. Preserve earlier decision bodies; record supersession explicitly. Refer to the full filename when a number is ambiguous. Update the implementation-status guide when delivery changes, add a session note to [HANDOVER.md](../../HANDOVER.md), and run `bun run docs:generate` followed by `bun run docs:check`. The generated context map includes every record.
+Use [TEMPLATE.md](TEMPLATE.md) and a new unused number (currently D50). Include status, date, area, decision, rationale and what it replaces. Preserve earlier decision bodies; record supersession explicitly. Refer to the full filename when a number is ambiguous. Update the implementation-status guide when delivery changes, add a session note to [HANDOVER.md](../../HANDOVER.md), and run `bun run docs:generate` followed by `bun run docs:check`. The generated context map includes every record.

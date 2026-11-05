@@ -35,3 +35,5 @@ conditions later on 2026-11-04 because a condition watch has no real source to p
 D17 (10 seconds, 10 minutes, an hour, three hours), which becomes the same picker.
 
 **Amended 2026-11-05 by D48.** Påminn mig and, on a row, Inte nu sit under Fler val as sub-menus; a card keeps Inte nu in view.
+
+**Amended 2026-11-05 by D49.** A card has one time action, and a snooze comes back the way a reminder does: first under Nu, with the badge and the toast. §3's silent return and Påminn mig on an open card are gone; Påminn mig stays on a card that waits on someone.

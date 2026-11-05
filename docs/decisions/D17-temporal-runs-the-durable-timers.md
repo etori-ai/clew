@@ -27,3 +27,5 @@ and Clew is operated hosted for most municipalities, so one more well-known comp
 
 **Replaces.** Narrows D15 ("Temporal later") to "Temporal now for new timers, the existing three job kinds
 migrate later". D15's status is updated accordingly.
+
+**Amended 2026-11-05 by D49.** The button sits only on a card that waits on someone; an open card's Inte nu ends the same way. A reminder keeps who the card waits on, and the card comes to the person when it fires.

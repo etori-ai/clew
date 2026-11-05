@@ -14,7 +14,7 @@ before and after a prototype.
    nothing is.
 3. **Fler val.** Everything a row or card tucks away sits behind one `DropdownMenu` in compound mode (`DropdownMenuItem`,
    `DropdownMenuDivider`, `DropdownMenuSubMenu`) in `apps/web/src/components/card.tsx`: the remaining actions, Lägg till i
-   samtalet, the two time pickers, Avfärda · inte aktuellt and Varför ser jag detta?. A card keeps Inte nu in view, a row
+   samtalet, the card's time picker (one since D49), Avfärda · inte aktuellt and Varför ser jag detta?. A card keeps Inte nu in view, a row
    does not. `MoreMenu` cannot hold a sub-menu, which is why the compound form is used. The assistant's page context
    (`apps/server/src/assistant/context.ts`) names the same places, so it does not point at a button that is not there.
 4. **What a card prints.** The title, the reason as a line (`Varför: …`), and the rows. The area is a word, never a colour:
@@ -72,8 +72,7 @@ before and after a prototype.
     their own, and a word too long for a block ends in an ellipsis. A week's meeting name is the one cut that stays: the
     block is what it is, and its dialog has the name.
 
-**Not changed.** Inte nu and Påminn mig stay two sub-menus, each now saying what it does (`lägg undan`, `kortet ligger kvar`).
-They are two behaviours, D28's pile and D17's timer, and merging them is a product decision, not a layout one. The answer's
+**Not changed.** The answer's
 text stands 36 px inside the box's edge: that is `ChatLayout`'s own spacious column, with no prop to change it. The 9.6 px
 numeral in a Stepper's pending step is Astryx's.
 
@@ -86,3 +85,5 @@ buttons, not the words, were what made every row shout at once).
 
 **Replaces.** Amends D27 §6, D28, D29, D34, D36, D39 and D42 §8, each noted there. HANDOVER §6's slots for thread actions now read as
 "one visible next step, the rest behind Fler val".
+
+**Amended 2026-11-05 by D49.** Inte nu and Påminn mig are no longer two sub-menus. A card has one time action; this decision left that open as a product question, and D49 settled it the same day.

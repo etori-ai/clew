@@ -556,6 +556,15 @@
       "status": "accepted, implemented",
       "date": "2026-11-05",
       "area": "ui"
+    },
+    {
+      "key": "D49-a-card-has-one-time-action-and-always-says-when-it-is-back",
+      "number": 49,
+      "path": "docs/decisions/D49-a-card-has-one-time-action-and-always-says-when-it-is-back.md",
+      "title": "D49 · A card has one time action, and it always says when it is back",
+      "status": "accepted",
+      "date": "2026-11-05",
+      "area": "product"
     }
   ],
   "documents": [
@@ -1126,6 +1135,12 @@
     {
       "path": "docs/decisions/D48-one-next-step-the-rest-one-step-away.md",
       "title": "D48 · One next step on a surface, the rest one step away",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D49-a-card-has-one-time-action-and-always-says-when-it-is-back.md",
+      "title": "D49 · A card has one time action, and it always says when it is back",
       "category": "decision-history",
       "headings": []
     },
