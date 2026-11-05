@@ -43,7 +43,7 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
   return <SessionBoundary session={shell.session} onEnded={() => client.clear()}>
     <QueryClientProvider client={client}>
       {children(shell)}
-      {Devtools && <Suspense fallback={null}><Devtools initialIsOpen={false} buttonPosition="bottom-left" /></Suspense>}
+      {Devtools && <Suspense fallback={null}><Devtools initialIsOpen={false} buttonPosition="bottom-right" /></Suspense>}
     </QueryClientProvider>
   </SessionBoundary>;
 }
