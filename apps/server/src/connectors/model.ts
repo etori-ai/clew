@@ -1,4 +1,4 @@
-import type { AuditEntryView, CapabilityOverride, CheckReport, ConnectorAudience, ConnectorHealth, ConnectorState } from '@clew/contracts';
+import type { AuditEntryView, CapabilityOverride, CheckFinding, CheckReport, ConnectorAudience, ConnectorHealth, ConnectorState } from '@clew/contracts';
 import type { ConnectorManifest } from '@clew/connectors/protocol';
 
 /**
@@ -44,7 +44,7 @@ export interface Secrets { seal(value: string, connectorId: string): string; ope
 /** The service side: fetching a manifest and running the conformance check, with the secret the use case opened. */
 export interface Transport {
   fetchManifest(url: string, id: string): Promise<ConnectorManifest>;
-  check(input: { url: string; id: string; secret: string }): Promise<CheckReport & { manifest?: ConnectorManifest }>;
+  check(input: { url: string; id: string; secret: string }): Promise<CheckReport & { findings: CheckFinding[]; manifest?: ConnectorManifest }>;
 }
 /** The live registry's remote side (`remote.ts`): put a connector in with its signer, or take it out. */
 export interface LiveRegistration {

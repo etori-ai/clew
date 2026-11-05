@@ -188,7 +188,12 @@ export const connectorDetail = (c: ConnectorSummary, menuOn: string[] = []): Con
   ],
   areas: [{ id: c.id, title: c.source, roles: ['manager', 'employee'], standing: [`${c.id}.overview`], figure: true }],
   history: [{ at: '2026-11-03T06:00:00.000Z', actor: 'person:mikael', action: 'connector.added', details: { url: c.url } }, { at: NOW, actor: 'person:mikael', action: 'connector.enabled', details: {} }] });
-export const checkReport: CheckReport = { ok: false, findings: [{ level: 'ok', text: 'manifest valid: 5 capabilities, 1 areas, scan true' }, { level: 'warn', text: 'hello.dayWithMeetings as manager: Hello svarar inte just nu.' }, { level: 'fail', text: 'a call signed with another secret answered 200, expected 401' }] };
+export const checkReport: CheckReport = { ok: false, items: [
+  { level: 'ok', group: 'connection', label: 'Manifestet är giltigt', description: '5 förmågor, 1 område. Skickar kort.' },
+  { level: 'fail', group: 'connection', label: 'Fel nyckel släpps igenom', description: 'Ett anrop signerat med en annan nyckel fick svaret 200. Tjänsten ska svara 401.' },
+  { level: 'warn', group: 'capabilities', label: 'Dagens möten', description: 'Svarar inte för chef. En förmåga som anropar Clew behöver att Clew är igång.', capability: 'hello.dayWithMeetings' },
+  { level: 'ok', group: 'surfaces', label: 'Området Hej', description: 'Chef och medarbetare: 1 stående handling, inget nyckeltal.' },
+] };
 export const connectorPreview = (role: 'manager' | 'employee'): ConnectorPreview => ({ role, unitId: null, visible: role === 'manager', areas: role === 'manager' ? [{ id: 'budget', title: 'Budget', standing: ['Budget mot prognos'] }] : [], tools: role === 'manager' ? ['raindance.budget'] : [], menu: [] });
 /** Modeller (D24): one provider with a capable default and a small model for managers, one provider that is down with a model switched off. */
 const provider = (values: Partial<ProviderSummary> & Pick<ProviderSummary, 'id' | 'title'>): ProviderSummary => ({

@@ -52,7 +52,7 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
         await expect(heading.getByRole('img')).toHaveCount(0);
       }
       await expect(home).toHaveAttribute('href', '/');
-      expect(await reflowProblems(page)).toEqual([]);
+      expect(await reflowProblems(page, heading)).toEqual([]);
       await home.focus();
       await expect(home).toBeFocused();
       await page.keyboard.press('Enter');
@@ -85,7 +85,7 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
     }));
     const light = await appearance();
     await profileButton.click();
-    await page.getByRole('menuitem', { name: 'Inställningar', exact: true }).click();
+    await page.getByRole('button', { name: 'Inställningar', exact: true }).click();
     await page.getByRole('radio', { name: 'Mörkt', exact: true }).check();
     const dark = await appearance();
     expect(dark.mode).toBe('dark');
@@ -101,7 +101,7 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
     await expect(profileButton).toBeVisible();
     expect((await appearance()).mode).toBe(dark.mode);
     await profileButton.click();
-    await page.getByRole('menuitem', { name: 'Inställningar', exact: true }).click();
+    await page.getByRole('button', { name: 'Inställningar', exact: true }).click();
     await page.getByRole('radio', { name: 'Ljust', exact: true }).check();
     expect(await appearance()).toEqual(light);
   });

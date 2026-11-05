@@ -21,11 +21,11 @@ export function audienceLabel(a: ConnectorAudience): string {
 }
 export const capabilityKindLabel = { read: 'Läs', propose: 'Föreslå', execute: 'Utför' } as const;
 export const actionLabel: Record<string, string> = {
-  'connector.added': 'Tillagd', 'connector.enabled': 'Satt på', 'connector.disabled': 'Avstängd', 'connector.draft': 'Satt som utkast',
+  'connector.added': 'Tillagd', 'connector.enabled': 'Påslagen', 'connector.disabled': 'Avstängd', 'connector.draft': 'Satt som utkast',
   'connector.audience': 'Vem ser det ändrat', 'connector.scan': 'Kortutskick ändrat', 'connector.tools': 'Assistentens verktyg ändrade', 'connector.menu': 'Verktyg i menyn ändrat',
   'connector.capability': 'Förmågor ändrade', 'connector.url': 'Adress ändrad', 'connector.secret': 'Nyckel bytt', 'connector.manifest': 'Manifest uppdaterat', 'connector.removed': 'Borttagen',
   'provider.added': 'Tillagd', 'provider.title': 'Namn ändrat', 'provider.url': 'Adress ändrad', 'provider.key': 'Nyckel bytt', 'provider.removed': 'Borttagen',
-  'model.added': 'Tillagd', 'model.enabled': 'Satt på', 'model.disabled': 'Avstängd', 'model.default': 'Standard ändrad', 'model.audience': 'Vem kan välja den ändrat',
+  'model.added': 'Tillagd', 'model.enabled': 'Påslagen', 'model.disabled': 'Avstängd', 'model.default': 'Standard ändrad', 'model.audience': 'Vem kan välja den ändrat',
   'model.tools': 'Verktyg ändrade', 'model.title': 'Namn ändrat', 'model.description': 'Beskrivning ändrad', 'model.model': 'Modellens id ändrat', 'model.removed': 'Borttagen',
 };
 /** Modeller (D24): the provider's health in words, a model's status from its state and its endpoint, and the audit actions. */

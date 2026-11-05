@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { Area, MenuEntry, Thread, ViewRef } from '@clew/contracts';
-import { Badge, Button, SideNavItem, SideNavSection, StatusDot, Text, Typeahead, TypeaheadItem, VStack, createStaticSource, type SearchableItem } from '@clew/ui';
+import { Badge, Button, SideNavItem, SideNavSection, Squares2X2Icon, StatusDot, Text, Typeahead, TypeaheadItem, VStack, createStaticSource, type SearchableItem } from '@clew/ui';
 import { addDays, displayDate, timeLabel, today } from '@clew/calendar/dates';
 import { areasQuery, threadsQuery } from '../queries';
 import { groupThreads } from '../stream';
@@ -120,10 +120,10 @@ export function useRail({ current, admin }: { current: RailCurrent; admin: boole
     tools: <>
       <SideNavItem label="Kalender" icon="calendar" href="/calendar" isSelected={current.surface === 'kalender'} />
       {menu.slice(0, TOOLS_SHOWN).map(tool)}
-      {more.length > 0 && <SideNavItem label="Fler verktyg" collapsible={{ defaultIsCollapsed: !more.some(e => e.capability === current.view) }}>{more.map(tool)}</SideNavItem>}
+      {more.length > 0 && <SideNavItem label="Fler verktyg" icon="moreHorizontal" collapsible={{ defaultIsCollapsed: !more.some(e => e.capability === current.view) }}>{more.map(tool)}</SideNavItem>}
     </>,
     footer: <>
-      <SideNavItem label="Områden" collapsible={{ defaultIsCollapsed: !current.area }}>
+      <SideNavItem label="Områden" icon={Squares2X2Icon} collapsible={{ defaultIsCollapsed: !current.area }}>
         {areas.map(a => <SideNavItem key={a.id} label={a.title} href={`/areas/${a.id}`} isSelected={onStart && current.area === a.id}
           endContent={a.needsYou || dot(a) ? <>{dot(a)}{count(a.needsYou)}</> : a.waiting ? <Text type="supporting">{a.waiting} pågår</Text> : undefined} />)}
       </SideNavItem>

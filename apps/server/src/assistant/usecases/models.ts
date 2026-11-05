@@ -157,7 +157,7 @@ export function modelUsecases(deps: ModelDeps) {
     const { by, at } = await mutating(persona);
     const row = await mustModel(id);
     const state = patch.state ?? row.state;
-    if (patch.isDefault === true && state !== 'enabled') throw new InputError('Sätt på modellen innan den blir standard.');
+    if (patch.isDefault === true && state !== 'enabled') throw new InputError('Slå på modellen innan den blir standard.');
     const changes: Array<{ action: string; details: Record<string, unknown> }> = [];
     const next: Partial<ModelRecord> = {};
     const text = (key: 'title' | 'description' | 'model', value: string | undefined) => {

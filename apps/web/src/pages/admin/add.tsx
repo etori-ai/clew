@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CheckReport, ConnectorAudience, ConnectorDetail } from '@clew/contracts';
-import { Banner, Button, Dialog, DialogHeader, FormLayout, Heading, LayoutHeader, List, ListItem, MetadataList, MetadataListItem, Spinner, StatusDot, Step, Stepper, Switch, Text, TextInput, VStack } from '@clew/ui';
+import { Button, Dialog, DialogHeader, FormLayout, Heading, LayoutHeader, MetadataList, MetadataListItem, Spinner, Step, Stepper, Switch, TextInput, VStack } from '@clew/ui';
 import { api } from '../../api';
 import { useAdminAction } from '../../mutations';
 import { AudienceEditor } from './audience';
+import { CheckResult } from './check-result';
 import { DialogFrame } from './dialog-frame';
 import { audienceLabel } from './labels';
 
@@ -38,7 +39,7 @@ export function AddConnectorDialog({ isOpen, onClose, units }: Props) {
   const fetched = !!result?.connector.counts.capabilities;
   // Astryx's form-wizard-dialog: the title and the stepper pinned, the step scrolling, the buttons pinned in the footer.
   const header = <>
-    <DialogHeader title="Anslut system" subtitle={result ? 'Anslutningen är sparad som utkast tills du sätter på den.' : undefined} onOpenChange={open => { if (!open) close(!!result); }} hasDivider={false} />
+    <DialogHeader title="Anslut system" subtitle={result ? 'Anslutningen är sparad som utkast tills du slår på den.' : undefined} onOpenChange={open => { if (!open) close(!!result); }} hasDivider={false} />
     <LayoutHeader hasDivider={false}>
       <Stepper activeStep={step} label="Steg" density="compact" horizontalOptions={{ minimumStepWidth: 100, collapsedVariant: 'withLabel' }}>
         {steps.map((s, i) => <Step key={s} step={i} label={s} />)}
@@ -54,7 +55,7 @@ export function AddConnectorDialog({ isOpen, onClose, units }: Props) {
         {step === 2 && <Button variant="primary" label="Nästa" onClick={() => setStep(3)} />}
         {step === 3 && <>
           <Button variant="secondary" label="Spara som utkast" isDisabled={busy} clickAction={() => finish('draft')} />
-          <Button variant="primary" label="Sätt på" isDisabled={busy || !fetched} clickAction={() => finish('enabled')} />
+          <Button variant="primary" label="Slå på" isDisabled={busy || !fetched} clickAction={() => finish('enabled')} />
         </>}
       </>}>
     <VStack gap={4}>
@@ -67,12 +68,8 @@ export function AddConnectorDialog({ isOpen, onClose, units }: Props) {
       {step === 1 && <VStack gap={3}>
         {busy && <Spinner label="Kontrollerar anslutningen …" />}
         {!busy && result && <>
-          {!result.report.ok && <Banner status={fetched ? 'error' : 'warning'} container="section" collapsible={false} title={fetched ? 'Kontrollen hittade fel.' : 'Tjänsten svarade inte.'}
-            description={fetched ? 'Utkastet är sparat. Rätta tjänsten och kontrollera igen.' : 'Utkastet är sparat utan manifest. Starta tjänsten och kontrollera igen, eller sätt på senare.'}
-            endContent={<Button size="sm" variant="secondary" label="Försök igen" clickAction={retry} />} />}
-          <List density="compact" aria-label="Kontrollens resultat">
-            {result.report.findings.map((f, i) => <ListItem key={i} startContent={<StatusDot variant={f.level === 'ok' ? 'success' : f.level === 'warn' ? 'warning' : 'error'} label={f.level === 'ok' ? 'Ok' : f.level === 'warn' ? 'Varning' : 'Fel'} />} label={<Text>{f.text}</Text>} />)}
-          </List>
+          <CheckResult report={result.report} action={!result.report.ok && <Button size="sm" variant="secondary" label="Försök igen" clickAction={retry} />}
+            failure={fetched ? { description: 'Utkastet är sparat. Rätta tjänsten och kontrollera igen.' } : { status: 'warning', title: 'Tjänsten svarade inte.', description: 'Utkastet är sparat utan manifest. Starta tjänsten och kontrollera igen, eller slå på senare.' }} />
         </>}
       </VStack>}
       {step === 2 && <VStack gap={3}>

@@ -135,7 +135,7 @@ describe('models', () => {
   test('the default is one switched-on model: a new default clears the old one with its own row, and switching the default off clears its flag', async () => {
     const w = world();
     const { big, small } = await installed(w);
-    await expect(w.models.updateModel(w.mikael, (await w.models.addModel(w.mikael, { providerId: 'kommunen', model: 'extra' })).id, { isDefault: true })).rejects.toThrow('Sätt på modellen');
+    await expect(w.models.updateModel(w.mikael, (await w.models.addModel(w.mikael, { providerId: 'kommunen', model: 'extra' })).id, { isDefault: true })).rejects.toThrow('Slå på modellen');
     await w.models.updateModel(w.mikael, small, { isDefault: true });
     expect((await w.store.listModels()).filter(m => m.isDefault).map(m => m.id)).toEqual([small]);
     expect(actions(w.store, 'model:' + big)).toEqual(['model.added', 'model.enabled', 'model.default', 'model.default']);

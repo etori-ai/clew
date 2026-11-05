@@ -81,7 +81,7 @@ test.describe('model administration', () => {
       const listed = dialog.getByRole('group', { name: 'Modeller att lägga till' });
       await expect(listed.getByRole('checkbox')).toHaveCount(3);
       await listed.getByRole('checkbox', { name: 'llama3.3:70b' }).check();
-      await dialog.getByRole('switch', { name: 'Sätt på dem direkt' }).check();
+      await dialog.getByRole('switch', { name: 'Slå på dem direkt' }).check();
       await expectNoAxeViolations(page);
       await dialog.getByRole('button', { name: 'Lägg till 1 modell' }).click();
       await expect(dialog).toHaveCount(0);
@@ -117,7 +117,7 @@ test.describe('model administration', () => {
       await dialog.getByLabel(/^Ny nyckel/).fill('ny-nyckel');
       await dialog.getByRole('button', { name: 'Byt nyckel' }).click();
       await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Nyckeln är bytt'));
-      await page.getByRole('button', { name: 'Testa' }).click();
+      await page.getByRole('button', { name: 'Testa', exact: true }).click();
       await expect(page.getByRole('list', { name: 'Testets resultat' })).toContainText('listar 3 modeller');
       await expect(page.getByText('3 modeller som leverantören listar är inte tillagda.')).toBeVisible();
       await expectNoAxeViolations(page);
@@ -142,7 +142,7 @@ test.describe('model administration', () => {
       await expectNoAxeViolations(page);
       await dialog.getByRole('button', { name: 'Lägg till 1 modell' }).click();
       await expect(dialog).toHaveCount(0);
-      await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('1 modell tillagd, avstängd tills du sätter på den'));
+      await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('1 modell tillagd, avstängd tills du slår på den'));
       await expect(page.getByRole('link', { name: 'llama3.3:70b' })).toBeVisible();
     });
     test('with a long model list on a short screen the list scrolls inside the dialog and its actions stay on screen', async ({ page, api }) => {

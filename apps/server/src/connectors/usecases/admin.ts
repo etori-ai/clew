@@ -1,4 +1,4 @@
-import type { AddConnectorInput, AuthenticatedContext, CheckReport, ConnectorDetail, ConnectorHealth, ConnectorPatchInput, ConnectorPreview, ConnectorSummary, ManifestDiff, PreviewQuery, RefreshManifestInput, Role, RotateSecretInput } from '@clew/contracts';
+import type { AddConnectorInput, AuthenticatedContext, CheckFinding, CheckReport, ConnectorDetail, ConnectorHealth, ConnectorPatchInput, ConnectorPreview, ConnectorSummary, ManifestDiff, PreviewQuery, RefreshManifestInput, Role, RotateSecretInput } from '@clew/contracts';
 import { menuRowOf, type Actor, type Connector, type Governance, type Registry } from '@clew/connectors';
 import type { ConnectorManifest } from '@clew/connectors/protocol';
 import { ForbiddenError, InputError } from '../../context';
@@ -39,7 +39,7 @@ export function connectorUsecases(deps: AdminDeps) {
     const live = registry.connector(row.id);
     return live && row.bundled ? describeBundled(live) : undefined;
   };
-  const healthFrom = (report: CheckReport & { manifest?: ConnectorManifest }, at: string): ConnectorHealth => {
+  const healthFrom = (report: { findings: CheckFinding[]; manifest?: ConnectorManifest }, at: string): ConnectorHealth => {
     if (!report.manifest) { const text = report.findings[0]?.text ?? ''; return { status: /Invalid connector manifest/.test(text) ? 'manifest-invalid' : 'unreachable', at, detail: text }; }
     const failed = report.findings.filter(f => f.level === 'fail');
     if (!failed.length) return { status: 'ok', at };
@@ -102,7 +102,7 @@ export function connectorUsecases(deps: AdminDeps) {
       await tx.insert({ id: input.id, bundled: false, url, secret: secrets.seal(input.secret, input.id), state: 'draft', manifest: report.manifest ?? null, health, createdBy: by, at });
       await tx.writeAudit({ actor: by, action: 'connector.added', subject: 'connector:' + input.id, at, details: { url, source: report.manifest?.source ?? null, capabilities: report.manifest?.capabilities.length ?? 0, health: health.status } });
     });
-    return { connector: await detail((await store.read(input.id))!), report: { ok: report.ok, findings: report.findings } };
+    return { connector: await detail((await store.read(input.id))!), report: { ok: report.ok, items: report.items } };
   }
   /** Switches, audience, state and address. Narrowing only; a changed field is one audit row. */
   async function update(persona: AuthenticatedContext, id: string, patch: ConnectorPatchInput): Promise<ConnectorDetail> {
@@ -118,7 +118,7 @@ export function connectorUsecases(deps: AdminDeps) {
     if (patch.state === 'enabled' && !row.bundled && !m) {
       // A draft that never answered: try once more now, so enabling fails loudly instead of registering nothing.
       try { const fetched = await transport.fetchManifest(row.url!, row.id); await store.recordHealth(id, { status: 'ok', at }, fetched, at); }
-      catch (error) { throw new InputError('Anslutningen svarar inte, så den kan inte sättas på: ' + (error as Error).message); }
+      catch (error) { throw new InputError('Anslutningen svarar inte, så den kan inte slås på: ' + (error as Error).message); }
     }
     const changes: Array<{ action: string; details: Record<string, unknown> }> = [];
     const next: Partial<ConnectorRecord> = {};
@@ -170,11 +170,11 @@ export function connectorUsecases(deps: AdminDeps) {
   async function test(persona: AuthenticatedContext, id: string): Promise<CheckReport & { health: ConnectorHealth }> {
     requireAdmin(persona);
     const row = await must(id), at = clock().toISOString();
-    if (row.bundled) return { ok: true, findings: [{ level: 'ok', text: 'Inbyggd anslutning: körs i Clews egen process.' }], health: { status: 'ok', at } };
+    if (row.bundled) return { ok: true, items: [{ level: 'ok', group: 'connection', label: 'Inbyggd anslutning', description: 'Körs i Clews egen process.' }], health: { status: 'ok', at } };
     const report = await transport.check({ ...remote(row), id });
     const health = healthFrom(report, at);
     await store.recordHealth(id, health, report.manifest, at);
-    return { ok: report.ok, findings: report.findings, health };
+    return { ok: report.ok, items: report.items, health };
   }
   /** "Hämta manifest igen": what changed since the stored one; with `apply` the new manifest is stored and goes live. */
   async function refreshManifest(persona: AuthenticatedContext, id: string, input: RefreshManifestInput): Promise<{ diff: ManifestDiff; connector: ConnectorDetail }> {
