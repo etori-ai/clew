@@ -51,18 +51,18 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
   const actions = <>
         <Button variant="secondary" label="Testa" isDisabled={busy} clickAction={() => run(async () => { const r = await api.admin.testProvider(id); setReport(r); return r.ok ? 'Leverantören svarar.' : 'Testet hittade fel, se listan.'; })} />
         <Button variant="secondary" label="Byt nyckel" isDisabled={busy} onClick={() => setKeyOpen(true)} />
-        <Button variant="destructive" label="Ta bort" isDisabled={busy || models.length > 0} tooltip={models.length > 0 ? 'Ta bort leverantörens modeller först.' : undefined} onClick={() => setRemoveOpen(true)} />
   </>;
+  const remove = <Button variant="destructive" label="Ta bort" isDisabled={busy || models.length > 0} tooltip={models.length > 0 ? 'Ta bort leverantörens modeller först.' : undefined} onClick={() => setRemoveOpen(true)} />;
   return <AdminShell user={user} section="modeller" crumbs={crumbs(p.title)}>
     <PageLead title={p.title} actions={<Button variant="primary" label="Lägg till modell" onClick={() => setAdding(true)} />}>
       <HStack gap={1} vAlign="center" wrap="wrap"><StatusDot variant={s.tone} label={s.label} /><Text color="secondary">{s.label} · {p.baseUrl}</Text></HStack>
     </PageLead>
     {(p.health.status === 'unreachable' || p.health.status === 'key-rejected') && <Banner status={p.health.status === 'unreachable' ? 'warning' : 'error'} container="section" collapsible={false}
       title={p.health.status === 'unreachable' ? `${p.title} svarar inte.` : `${p.title} avvisar nyckeln.`}
-      description={`${p.health.detail ?? ''} ${p.health.status === 'key-rejected' ? 'Byt nyckel här, eller kontrollera den hos leverantören.' : 'Frågor till dess modeller besvaras av den inbyggda routern tills den svarar igen.'}`.trim()} endContent={<Timestamp value={p.health.at} format="date_time" />} />}
+      description={`${p.health.detail ?? ''} ${p.health.status === 'key-rejected' ? 'Byt nyckel här, eller kontrollera den hos leverantören.' : 'Rutan hittar bara exakta saker tills den svarar igen.'}`.trim()} endContent={<Timestamp value={p.health.at} format="date_time" />} />}
     {error && <Text as="p" role="alert" color="accent">{error}</Text>}
     <Card padding={4}><VStack gap={4}>
-      {mobile ? <HStack gap={2} wrap="wrap" role="group" aria-label="Åtgärder">{actions}</HStack> : <Toolbar label="Åtgärder" size="sm" variant="muted" startContent={actions} />}
+      {mobile ? <VStack gap={3}><HStack gap={2} wrap="wrap" role="group" aria-label="Åtgärder">{actions}</HStack><HStack>{remove}</HStack></VStack> : <Toolbar label="Åtgärder" size="sm" variant="muted" startContent={actions} endContent={remove} />}
       {report && <VStack gap={3}>
         <Findings report={report} label="Testets resultat" />
         {notAdded.length > 0 && <HStack gap={2} vAlign="center" wrap="wrap">
@@ -83,16 +83,16 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
       <Heading level={2} id="provider-models">Modeller</Heading>
       {models.length === 0 ? <Text type="supporting">Inga modeller ännu. Testa leverantören för att se vilka den listar, eller lägg till en med namn.</Text>
         : <List aria-label={`Modeller hos ${p.title}`} hasDividers>
-          {models.map(m => { const ms = modelStatusOf(m); return <ListItem key={m.id} href={`/admin/models/${m.id}`} label={<HStack gap={2} vAlign="center"><Text weight="semibold">{m.title}</Text>{m.isDefault && <Badge variant="info" label="Standard" />}</HStack>}
+          {models.map(m => { const ms = modelStatusOf(m); return <ListItem key={m.id} href={`/admin/models/${m.id}`} label={<HStack gap={2} vAlign="center"><Text weight="semibold">{m.title}</Text>{m.isDefault && <Badge variant="neutral" label="Standard" />}</HStack>}
             description={<VStack gap={0} hAlign="start"><Code color="secondary">{m.model}</Code><HStack gap={1} vAlign="center"><StatusDot variant={ms.tone} label={ms.label} /><Text type="supporting">{ms.label} · {audienceLabel(m.audience)}</Text></HStack></VStack>} />; })}
         </List>}
     </VStack></Card>
     <Card padding={4}><VStack gap={3} as="section" aria-labelledby="provider-details">
       <Heading level={2} id="provider-details">Uppgifter</Heading>
-      <FormLayout>
+      <VStack maxWidth={560} gap={3}><FormLayout>
         <TextInput label="Namn" value={draft.title} onChange={title => setDraft({ ...draft, title })} isRequired autoComplete="off" />
         <TextInput label="Adress" type="url" value={draft.baseUrl} onChange={baseUrl => setDraft({ ...draft, baseUrl })} description="Basadressen, oftast slutar den på /v1." isRequired autoComplete="off" />
-      </FormLayout>
+      </FormLayout></VStack>
       <HStack gap={2}>
         <Button variant="primary" label="Spara" isDisabled={busy || !changed || !draft.title.trim() || !/^https?:\/\/\S+$/.test(draft.baseUrl)} clickAction={() => run(async () => { await api.admin.updateProvider(id, draft); return 'Sparat.'; })} />
         <Button variant="ghost" label="Ångra ändringar" isDisabled={!changed} onClick={() => setDraft({ title: p.title, baseUrl: p.baseUrl })} />

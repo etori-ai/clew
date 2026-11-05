@@ -189,7 +189,7 @@ export const connectorDetail = (c: ConnectorSummary, menuOn: string[] = []): Con
   areas: [{ id: c.id, title: c.source, roles: ['manager', 'employee'], standing: [`${c.id}.overview`], figure: true }],
   history: [{ at: '2026-11-03T06:00:00.000Z', actor: 'person:mikael', action: 'connector.added', details: { url: c.url } }, { at: NOW, actor: 'person:mikael', action: 'connector.enabled', details: {} }] });
 export const checkReport: CheckReport = { ok: false, items: [
-  { level: 'ok', group: 'connection', label: 'Manifestet är giltigt', description: '5 förmågor, 1 område. Skickar kort.' },
+  { level: 'ok', group: 'connection', label: 'Systemets beskrivning är giltig', description: '5 funktioner, 1 område. Skickar kort.' },
   { level: 'fail', group: 'connection', label: 'Fel nyckel släpps igenom', description: 'Ett anrop signerat med en annan nyckel fick svaret 200. Tjänsten ska svara 401.' },
   { level: 'warn', group: 'capabilities', label: 'Dagens möten', description: 'Svarar inte för chef. En förmåga som anropar Clew behöver att Clew är igång.', capability: 'hello.dayWithMeetings' },
   { level: 'ok', group: 'surfaces', label: 'Området Hej', description: 'Chef och medarbetare: 1 stående handling, inget nyckeltal.' },

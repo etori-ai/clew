@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import type { CheckReport, ConnectorAudience, ConnectorDetail, ManifestDiff, SessionUser } from '@clew/contracts';
-import { AlertDialog, Badge, Banner, Button, Card, Code, Dialog, DialogHeader, DropdownMenu, EmptyState, FormLayout, HStack, Heading, InfoTip, List, ListItem, MetadataList, MetadataListItem, Section, StatusDot, Switch, Tab, TabList, Table, Text, TextInput, Timestamp, Toolbar, VStack, useMediaQuery, useToast } from '@clew/ui';
+import { AlertDialog, Banner, Button, Card, Code, Collapsible, Dialog, DialogHeader, DropdownMenu, EmptyState, FormLayout, HStack, Heading, InfoTip, List, ListItem, MetadataList, MetadataListItem, Section, StatusDot, Switch, Tab, TabList, Table, Text, TextInput, Timestamp, Toolbar, VStack, useMediaQuery, useToast } from '@clew/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api';
 import { adminQueries } from '../../queries';
@@ -17,14 +17,14 @@ import { DialogFrame } from './dialog-frame';
 
 /** One connector (D23): overview and actions, capabilities with their switches, areas, who sees it, and its history. */
 type TabId = 'oversikt' | 'formagor' | 'omraden' | 'publik' | 'historik';
-const tabs: Array<{ id: TabId; label: string }> = [{ id: 'oversikt', label: 'Översikt' }, { id: 'formagor', label: 'Förmågor' }, { id: 'omraden', label: 'Områden' }, { id: 'publik', label: 'Vem ser det' }, { id: 'historik', label: 'Historik' }];
+const tabs: Array<{ id: TabId; label: string }> = [{ id: 'oversikt', label: 'Översikt' }, { id: 'formagor', label: 'Funktioner' }, { id: 'omraden', label: 'Områden' }, { id: 'publik', label: 'Vem ser det' }, { id: 'historik', label: 'Historik' }];
 interface CapRow extends Record<string, unknown> { name: string; c: ConnectorDetail['capabilities'][number] }
 const EMPTY_UNITS: Array<{ id: string; label: string }> = [];
 
 type CapabilityView = ConnectorDetail['capabilities'][number];
 /** The "Assistent" switch of one capability, disabled with its reason when the manifest, the kind or the connector says no. */
 function ToolSwitch({ row, toolsEnabled, onChange }: { row: CapabilityView; toolsEnabled: boolean; onChange: (on: boolean) => Promise<void> }) {
-  const reason = row.kind === 'execute' ? 'En åtgärd är aldrig ett verktyg för assistenten (D8).' : !row.model ? 'Anslutningen har inte märkt förmågan som verktyg.' : !row.enabled ? 'Förmågan är avstängd.' : 'Assistenten är avstängd för hela anslutningen.';
+  const reason = row.kind === 'execute' ? 'En åtgärd är aldrig ett verktyg för assistenten (D8).' : !row.model ? 'Anslutningen har inte märkt funktionen som verktyg.' : !row.enabled ? 'Funktionen är avstängd.' : 'Assistenten är avstängd för hela anslutningen.';
   const disabled = !row.model || row.kind === 'execute' || !row.enabled || !toolsEnabled;
   return <HStack gap={1} vAlign="center">
     <Switch size="sm" label={row.title + ' till assistenten'} isLabelHidden value={row.tool} isDisabled={disabled} disabledMessage={reason} changeAction={onChange} />
@@ -68,9 +68,9 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
   // Off is the only value an override can hold (narrowing only, D23); on clears it.
   const capPatch = (on: boolean, key: 'enabled' | 'model'): { enabled?: false; model?: false } => on ? {} : key === 'enabled' ? { enabled: false } : { model: false };
   const capColumns = [
-    { key: 'title', header: 'Förmåga', renderCell: (r: CapRow) => <VStack gap={0}><Text>{r.c.title}</Text><Code>{r.c.name}</Code></VStack> },
+    { key: 'title', header: 'Funktion', renderCell: (r: CapRow) => <VStack gap={0}><Text>{r.c.title}</Text><Code>{r.c.name}</Code></VStack> },
     { key: 'kind', header: 'Typ', renderCell: (r: CapRow) => <Text weight={r.c.kind === 'execute' ? 'semibold' : undefined}>{capabilityKindLabel[r.c.kind]}</Text> },
-    { key: 'roles', header: 'Roller enligt manifestet', renderCell: (r: CapRow) => <Text type="supporting">{r.c.roles ? r.c.roles.map(x => roleLabel[x]).join(', ') : 'Alla (regeln ligger i koden)'}</Text> },
+    { key: 'roles', header: 'Roller enligt systemet', renderCell: (r: CapRow) => <Text type="supporting">{r.c.roles ? r.c.roles.map(x => roleLabel[x]).join(', ') : 'Alla (regeln ligger i koden)'}</Text> },
     { key: 'on', header: 'På', renderCell: (r: CapRow) => <Switch size="sm" label={`${r.c.title} på`} isLabelHidden value={r.c.enabled} changeAction={on => setCap(r.name, capPatch(on, 'enabled'))} /> },
     { key: 'tool', header: 'Assistent', renderCell: (r: CapRow) => <ToolSwitch row={r.c} toolsEnabled={c.toolsEnabled} onChange={on => setCap(r.name, capPatch(on, 'model'))} /> },
   ];
@@ -78,14 +78,15 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
   // A Toolbar keeps one row, which four buttons cannot at 320 px: on a phone they wrap (1.4.10).
   const actions = <>
     <Button variant="secondary" label="Testa anslutning" isDisabled={busy} clickAction={() => run(async () => { const r = await api.admin.test(id); setReport(r); return r.ok ? 'Kontrollen gick bra.' : 'Kontrollen hittade fel, se listan.'; })} />
-    <Button variant="secondary" label="Hämta manifest igen" isDisabled={busy} clickAction={() => run(async () => { const r = await api.admin.refresh(id, false); if (r.diff.same) return 'Manifestet är oförändrat.'; setDiff(r.diff); })} />
+    <Button variant="secondary" label="Läs in igen från systemet" isDisabled={busy} clickAction={() => run(async () => { const r = await api.admin.refresh(id, false); if (r.diff.same) return 'Inget har ändrats i systemet.'; setDiff(r.diff); })} />
     <Button variant="secondary" label="Byt nyckel" isDisabled={busy} onClick={() => setSecretOpen(true)} />
-    <Button variant="destructive" label="Ta bort" isDisabled={busy} onClick={() => setRemoveOpen(true)} />
   </>;
+  // Set apart from the rest: the one action here that cannot be taken back.
+  const remove = <Button variant="destructive" label="Ta bort" isDisabled={busy} onClick={() => setRemoveOpen(true)} />;
   return <AdminShell user={user} crumbs={[{ label: 'Anslutna system', href: '/admin/connectors' }, { label: c.source }]}>
     <PageLead title={<HStack gap={2} vAlign="end" wrap="wrap"><Heading level={1}>{c.source}</Heading><Text type="supporting">{[c.kind ? kindLabel[c.kind] : null, c.bundled ? 'inbyggd' : null].filter(Boolean).join(' · ')}</Text></HStack>}
-      actions={<Switch label={c.state === 'enabled' ? 'På' : 'Av'} labelPosition="start" value={c.state === 'enabled'} isDisabled={busy || (c.state === 'draft' && !c.counts.capabilities)} disabledMessage="Utkastet saknar manifest: kontrollera anslutningen först." changeAction={on => run(async () => { await api.admin.update(id, { state: on ? 'enabled' : 'disabled' }); return `${c.source} ${on ? 'är på' : 'är avstängd'}.`; })} />}>
-      <HStack gap={1} vAlign="center" wrap="wrap"><StatusDot variant={s.tone} label={s.label} /><Text color="secondary">{s.label}{c.bundled ? ' · körs i Clews egen process' : c.url ? ` · ${c.url}` : ''}</Text></HStack>
+      actions={<Switch label={c.state === 'enabled' ? 'På' : 'Av'} labelPosition="start" value={c.state === 'enabled'} isDisabled={busy || (c.state === 'draft' && !c.counts.capabilities)} disabledMessage="Utkastet är inte kontrollerat: kontrollera anslutningen först." changeAction={on => run(async () => { await api.admin.update(id, { state: on ? 'enabled' : 'disabled' }); return `${c.source} ${on ? 'är på' : 'är avstängd'}.`; })} />}>
+      <HStack gap={1} vAlign="center" wrap="wrap"><StatusDot variant={s.tone} label={s.label} /><Text color="secondary">{s.label}{c.bundled ? ' · körs i Startsidan' : c.url ? ` · ${c.url}` : ''}</Text></HStack>
     </PageLead>
     {unhealthy && <Banner status={c.health.status === 'unreachable' ? 'warning' : 'error'} container="section" collapsible={false} title={`${c.source}: ${healthLabel[c.health.status].toLowerCase()}${c.health.at ? ' sedan ' : ''}`}
       description={`Kort och figurer visas från senast kända läge.${c.health.detail ? ` Teknisk orsak: ${c.health.detail}.` : ''}`} endContent={<Timestamp value={c.health.at} format="date_time" />} />}
@@ -101,38 +102,41 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
     </Section>
     <Section variant="transparent" padding={4}>
     {tab === 'oversikt' && <div id={panel('oversikt')} role={mobile ? "region" : "tabpanel"} aria-label="Översikt"><VStack gap={4}>
-      {!c.bundled && (mobile ? <HStack gap={2} wrap="wrap">{actions}</HStack> : <Toolbar label="Åtgärder" size="sm" variant="muted" startContent={actions} />)}
+      {!c.bundled && (mobile ? <VStack gap={3}><HStack gap={2} wrap="wrap" role="group" aria-label="Åtgärder">{actions}</HStack><HStack>{remove}</HStack></VStack> : <Toolbar label="Åtgärder" size="sm" variant="muted" startContent={actions} endContent={remove} />)}
+      {/* What an administrator acts on stands open; what a technician looks up when something is wrong folds away. The name, the status and the address are in the page's head. */}
       <MetadataList columns={mobile ? 'single' : 'multi'}>
-        <MetadataListItem label="Id">{c.id}</MetadataListItem>
-        <MetadataListItem label="Källa">{c.source}</MetadataListItem>
-        <MetadataListItem label="Typ">{c.kind ? kindLabel[c.kind] : '–'}{c.bundled ? ' · inbyggd i Clew' : ''}</MetadataListItem>
-        {!c.bundled && <MetadataListItem label="Adress">{c.url}</MetadataListItem>}
-        <MetadataListItem label="Protokoll">{c.protocol ? `Version ${c.protocol}` : '–'}</MetadataListItem>
-        <MetadataListItem label="Hälsa">{healthLabel[c.health.status]}{c.bundled ? '' : ' · '}{!c.bundled && <Timestamp value={c.health.at} format="auto" />}</MetadataListItem>
-        <MetadataListItem label="Förmågor">{`${c.counts.capabilities} · ${c.counts.execute} åtgärder · ${c.counts.tools} till assistenten`}</MetadataListItem>
-        <MetadataListItem label="Skickar kort">{c.scan ? (c.scanEnabled ? 'Ja' : 'Avstängt') : 'Anslutningen skickar inga kort'}</MetadataListItem>
         <MetadataListItem label="Vem ser det">{audienceLabel(c.audience)}</MetadataListItem>
+        <MetadataListItem label="Skickar kort">{c.scan ? (c.scanEnabled ? 'Ja' : 'Avstängt') : 'Anslutningen skickar inga kort'}</MetadataListItem>
         <MetadataListItem label="I menyn">{tools.some(t => t.menu.on) ? tools.filter(t => t.menu.on).map(t => t.menu.label).join(', ') : tools.length ? 'Ingen vy vald' : 'Ingen vy kan ligga i menyn'}</MetadataListItem>
-        {c.manifestAt && <MetadataListItem label="Manifest hämtat"><Timestamp value={c.manifestAt} format="date_time" /></MetadataListItem>}
-        {c.secretChangedAt && <MetadataListItem label="Nyckel bytt"><Timestamp value={c.secretChangedAt} format="date_time" /></MetadataListItem>}
-        <MetadataListItem label="Tillagd">{actorLabel(c.createdBy)} · <Timestamp value={c.createdAt} format="date_time" /></MetadataListItem>
+        <MetadataListItem label="Funktioner">{`${c.counts.capabilities} · ${c.counts.execute} utför · ${c.counts.tools} för assistenten`}</MetadataListItem>
       </MetadataList>
+      <Collapsible defaultIsOpen={false} chevronPosition="start" trigger={<Text type="supporting">Tekniska uppgifter</Text>}>
+        <MetadataList columns={mobile ? 'single' : 'multi'}>
+          <MetadataListItem label="Id">{c.id}</MetadataListItem>
+          <MetadataListItem label="Typ">{c.kind ? kindLabel[c.kind] : '–'}{c.bundled ? ' · inbyggd' : ''}</MetadataListItem>
+          <MetadataListItem label="Hälsa">{healthLabel[c.health.status]}{c.bundled ? '' : ' · '}{!c.bundled && <Timestamp value={c.health.at} format="auto" />}</MetadataListItem>
+          <MetadataListItem label="Protokoll">{c.protocol ? `Version ${c.protocol}` : '–'}</MetadataListItem>
+          {c.manifestAt && <MetadataListItem label="Senast inläst"><Timestamp value={c.manifestAt} format="date_time" /></MetadataListItem>}
+          {c.secretChangedAt && <MetadataListItem label="Nyckel bytt"><Timestamp value={c.secretChangedAt} format="date_time" /></MetadataListItem>}
+          <MetadataListItem label="Tillagd">{actorLabel(c.createdBy)} · <Timestamp value={c.createdAt} format="date_time" /></MetadataListItem>
+        </MetadataList>
+      </Collapsible>
       {report && <VStack gap={2}><Heading level={2}>Senaste kontroll</Heading><CheckResult report={report} /></VStack>}
     </VStack></div>}
-    {tab === 'formagor' && <div id={panel('formagor')} role={mobile ? "region" : "tabpanel"} aria-label="Förmågor"><VStack gap={3}>
-      <Toolbar label="Förmågor" size="sm" startContent={<Switch size="sm" label="Erbjud assistenten" value={c.toolsEnabled} isDisabled={busy} changeAction={on => run(async () => { await api.admin.update(id, { toolsEnabled: on }); })} />}
+    {tab === 'formagor' && <div id={panel('formagor')} role={mobile ? "region" : "tabpanel"} aria-label="Funktioner"><VStack gap={3}>
+      <Toolbar label="Funktioner" size="sm" startContent={<Switch size="sm" label="Erbjud assistenten" value={c.toolsEnabled} isDisabled={busy} changeAction={on => run(async () => { await api.admin.update(id, { toolsEnabled: on }); })} />}
         endContent={c.counts.execute > 0 && c.capabilities.some(x => x.kind === 'execute' && x.enabled) ? <Button variant="secondary" label="Stäng av alla åtgärder" isDisabled={busy} clickAction={() => run(async () => { await api.admin.update(id, { capabilities: Object.fromEntries(c.capabilities.filter(x => x.kind === 'execute').map(x => [x.name, { enabled: false as const }])) }); return 'Alla åtgärder är avstängda: anslutningen är skrivskyddad.'; })} /> : undefined} />
       {mobile
-        ? <List aria-label="Förmågor">{capRows.map(r => <ListItem key={r.name} label={<Text>{r.c.title}</Text>} description={<VStack gap={0}><Code>{r.c.name}</Code><Text type="supporting">{capabilityKindLabel[r.c.kind]}</Text></VStack>} endContent={<Switch size="sm" label={`${r.c.title} på`} isLabelHidden value={r.c.enabled} changeAction={on => setCap(r.name, capPatch(on, 'enabled'))} />} />)}</List>
+        ? <List aria-label="Funktioner">{capRows.map(r => <ListItem key={r.name} label={<Text>{r.c.title}</Text>} description={<VStack gap={0}><Code>{r.c.name}</Code><Text type="supporting">{capabilityKindLabel[r.c.kind]}</Text></VStack>} endContent={<Switch size="sm" label={`${r.c.title} på`} isLabelHidden value={r.c.enabled} changeAction={on => setCap(r.name, capPatch(on, 'enabled'))} />} />)}</List>
         : <Table<CapRow> data={capRows} idKey="name" columns={capColumns} density="compact" />}
     </VStack></div>}
     {tab === 'omraden' && <div id={panel('omraden')} role={mobile ? "region" : "tabpanel"} aria-label="Områden"><VStack gap={3}>
-      <Switch label="Skicka kort" description="Anslutningen får föreslå kort i strömmen." value={c.scanEnabled} isDisabled={busy || !c.scan} disabledMessage="Anslutningen har ingen genomgång." changeAction={on => run(async () => { await api.admin.update(id, { scanEnabled: on }); })} />
+      <Switch label="Skicka kort" description="Anslutningen får föreslå kort i strömmen." value={c.scanEnabled} isDisabled={busy || !c.scan} disabledMessage="Anslutningen skickar inga kort." changeAction={on => run(async () => { await api.admin.update(id, { scanEnabled: on }); })} />
       {/* Verktyg i menyn (D40): every view that can be a tool, with its own switch. The same list on a phone. */}
       {tools.length === 0 ? <Text type="supporting">Ingen av anslutningens vyer kan ligga i menyn. Det kan en läsning med en vy som öppnas utan indata.</Text>
         : <List aria-label="Verktyg i menyn" header={<VStack gap={0}><Text weight="semibold">Verktyg i menyn</Text><Text type="supporting">Välj vilka av anslutningens vyer som ligger under Verktyg i menyn, för alla som ser anslutningen.</Text></VStack>}>
-          {tools.map(t => <ListItem key={t.name} label={<Text>{t.menu.label}</Text>} description={<Text type="supporting">Öppnar {t.title}{t.enabled ? '' : ' · förmågan är avstängd'}</Text>}
-            endContent={<Switch size="sm" label={`Visa ${t.menu.label} i menyn`} isLabelHidden value={t.menu.on} isDisabled={busy || !t.enabled} disabledMessage="Förmågan är avstängd under Förmågor."
+          {tools.map(t => <ListItem key={t.name} label={<Text>{t.menu.label}</Text>} description={<Text type="supporting">Öppnar {t.title}{t.enabled ? '' : ' · funktionen är avstängd'}</Text>}
+            endContent={<Switch size="sm" label={`Visa ${t.menu.label} i menyn`} isLabelHidden value={t.menu.on} isDisabled={busy || !t.enabled} disabledMessage="Funktionen är avstängd under Funktioner."
               changeAction={on => run(async () => { await api.admin.update(id, { menu: { [t.name]: on } }); return on ? `${t.menu.label} visas i menyn under Verktyg.` : `${t.menu.label} visas inte längre i menyn.`; })} />} />)}
         </List>}
       {c.areas.length === 0 ? <Text type="supporting">Anslutningen har inga områden i sidopanelen.</Text> : <List aria-label="Områden">
@@ -167,14 +171,14 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
     {/* Astryx's form-wizard-dialog frame: a manifest with many changes scrolls its list, the two choices stay pinned in the
         footer. The frame and its DialogHeader are always rendered: the Dialog takes its name from a title present when it mounts. */}
     <Dialog isOpen={!!diff} onOpenChange={open => { if (!open) setDiff(null); }} width={520}>
-      <DialogFrame error={actionError} scrollLabel="Ändringarna i manifestet"
-        header={<DialogHeader title="Manifestet har ändrats" subtitle="Så här skiljer sig tjänstens manifest från det Clew använder." onOpenChange={() => setDiff(null)} hasDivider={false} />}
+      <DialogFrame error={actionError} scrollLabel="Ändringarna i systemet"
+        header={<DialogHeader title="Systemet har ändrats" subtitle="Så här skiljer sig systemet från det Startsidan använder i dag." onOpenChange={() => setDiff(null)} hasDivider={false} />}
         secondary={<Button variant="ghost" label="Behåll det gamla" onClick={() => setDiff(null)} />}
-        primary={<Button variant="primary" label="Använd det nya" isDisabled={busy || !diff} clickAction={() => run(async () => { await api.admin.refresh(id, true); setDiff(null); return 'Manifestet är uppdaterat.'; })} />}>
+        primary={<Button variant="primary" label="Använd det nya" isDisabled={busy || !diff} clickAction={() => run(async () => { await api.admin.refresh(id, true); setDiff(null); return 'Uppdaterat från systemet.'; })} />}>
         {diff && <List density="compact" aria-label="Ändringar">
-          {diff.added.map(n => <ListItem key={'a' + n} startContent={<StatusDot variant="success" label="Ny" />} label={<Text>Ny förmåga: {n}</Text>} />)}
-          {diff.removed.map(n => <ListItem key={'r' + n} startContent={<StatusDot variant="error" label="Borttagen" />} label={<Text>Borttagen förmåga: {n}</Text>} description={<Text type="supporting">Kort som pekar på den slutar fungera.</Text>} />)}
-          {diff.changed.map(n => <ListItem key={'c' + n} startContent={<StatusDot variant="warning" label="Ändrad" />} label={<Text>Ändrad förmåga: {n}</Text>} />)}
+          {diff.added.map(n => <ListItem key={'a' + n} startContent={<StatusDot variant="success" label="Ny" />} label={<Text>Ny funktion: {n}</Text>} />)}
+          {diff.removed.map(n => <ListItem key={'r' + n} startContent={<StatusDot variant="error" label="Borttagen" />} label={<Text>Borttagen funktion: {n}</Text>} description={<Text type="supporting">Kort som pekar på den slutar fungera.</Text>} />)}
+          {diff.changed.map(n => <ListItem key={'c' + n} startContent={<StatusDot variant="warning" label="Ändrad" />} label={<Text>Ändrad funktion: {n}</Text>} />)}
           {diff.areasAdded.map(n => <ListItem key={'aa' + n} startContent={<StatusDot variant="success" label="Nytt" />} label={<Text>Nytt område: {n}</Text>} />)}
           {diff.areasRemoved.map(n => <ListItem key={'ar' + n} startContent={<StatusDot variant="error" label="Borttaget" />} label={<Text>Borttaget område: {n}</Text>} />)}
         </List>}

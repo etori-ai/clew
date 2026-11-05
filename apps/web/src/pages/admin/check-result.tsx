@@ -7,7 +7,7 @@ import { Banner, Code, Collapsible, CollapsibleGroup, HStack, List, ListItem, St
  * with a count on each. A group with something to look at opens by itself, its problems first; a group that passed stays
  * shut and says so. Colour never stands alone: every dot has its word.
  */
-const GROUPS: Array<{ id: CheckGroup; label: string }> = [{ id: 'connection', label: 'Anslutning' }, { id: 'capabilities', label: 'Förmågor' }, { id: 'surfaces', label: 'I Startsidan' }];
+const GROUPS: Array<{ id: CheckGroup; label: string }> = [{ id: 'connection', label: 'Anslutning' }, { id: 'capabilities', label: 'Funktioner' }, { id: 'surfaces', label: 'I Startsidan' }];
 const SEVERITY: Record<CheckLevel, number> = { fail: 0, warn: 1, ok: 2 };
 const DOT = { ok: { variant: 'success', label: 'Ok' }, warn: { variant: 'warning', label: 'Varning' }, fail: { variant: 'error', label: 'Fel' } } as const;
 

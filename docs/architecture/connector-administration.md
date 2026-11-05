@@ -134,7 +134,7 @@ the `StatusDot` and the on/off `Switch`, a `Banner` when health is not ok ("Hero
 Kort och figurer visas från senast kända läge."). Then `TabList`:
 
 - *Översikt.* `MetadataList`: id, adress, protokollversion, typ, källa, manifest hämtat, nyckel bytt,
-  senaste skanning, tillagd av och när. `ButtonGroup`: Testa anslutning, Hämta manifest igen, Byt nyckel
+  senaste skanning, tillagd av och när. `ButtonGroup`: Testa anslutning, Läs in igen från systemet, Byt nyckel
   (a `Dialog` with one password field), Ta bort (an `AlertDialog` that names the number of open cards that
   will close).
 - *Förmågor.* `Table`: titel, namn (`Code`), typ `Badge` (Läs · Föreslå · Utför), manifestets roller, two

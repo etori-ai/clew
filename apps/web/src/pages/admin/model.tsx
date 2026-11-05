@@ -55,15 +55,15 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
             {m.isDefault
               ? <Button variant="secondary" label="Ta bort som standard" isDisabled={busy} clickAction={() => run(async () => { await api.admin.updateModel(id, { isDefault: false }); return 'Ingen modell är standard nu.'; })} />
               : <Button variant="secondary" label="Gör till standard" isDisabled={busy || m.state !== 'enabled'} tooltip={m.state !== 'enabled' ? 'Slå på modellen först.' : undefined} clickAction={() => run(async () => { await api.admin.updateModel(id, { isDefault: true }); return `${m.title} är standard.`; })} />}
-            <Button variant="destructive" label="Ta bort" isDisabled={busy} onClick={() => setRemoveOpen(true)} />
   </>;
+  const remove = <Button variant="destructive" label="Ta bort" isDisabled={busy} onClick={() => setRemoveOpen(true)} />;
   return <AdminShell user={user} section="modeller" crumbs={crumbs(m.title)}>
-    <PageLead title={<HStack gap={2} vAlign="end" wrap="wrap"><Heading level={1}>{m.title}</Heading>{m.isDefault && <Badge variant="info" label="Standard" />}</HStack>}
+    <PageLead title={<HStack gap={2} vAlign="end" wrap="wrap"><Heading level={1}>{m.title}</Heading>{m.isDefault && <Badge variant="neutral" label="Standard" />}</HStack>}
       actions={<Switch label={m.state === 'enabled' ? 'På' : 'Av'} labelPosition="start" value={m.state === 'enabled'} isDisabled={busy} changeAction={on => run(async () => { await api.admin.updateModel(id, { state: on ? 'enabled' : 'disabled' }); return `${m.title} ${on ? 'är på' : 'är avstängd'}.`; })} />}>
       <HStack gap={1} vAlign="center" wrap="wrap"><StatusDot variant={s.tone} label={s.label} /><Text color="secondary">{s.label} · <Code color="secondary">{m.model}</Code> hos {m.providerTitle}</Text></HStack>
     </PageLead>
     {down && <Banner status={m.health.status === 'unreachable' ? 'warning' : 'error'} container="section" collapsible={false} title={`${m.providerTitle}: ${providerHealthLabel[m.health.status].toLowerCase()}`}
-      description={`${m.health.detail ?? ''} Frågor besvaras av den inbyggda routern tills leverantören svarar igen.`.trim()} endContent={<Timestamp value={m.health.at} format="date_time" />} />}
+      description={`${m.health.detail ?? ''} Rutan hittar bara exakta saker tills leverantören svarar igen.`.trim()} endContent={<Timestamp value={m.health.at} format="date_time" />} />}
     {error && <Text as="p" role="alert" color="accent">{error}</Text>}
     <Card padding={0}>
       {/* Three tabs do not fit 320 px with these words, so a phone gets the sections as a menu with the same panels (1.4.10), as on a connector. */}
@@ -74,29 +74,29 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
       </Section>
       <Section variant="transparent" padding={4}>
         {tab === 'oversikt' && <div id={panel('oversikt')} role={role} aria-label="Översikt"><VStack gap={4}>
-          {mobile ? <HStack gap={2} wrap="wrap" role="group" aria-label="Åtgärder">{actions}</HStack> : <Toolbar label="Åtgärder" size="sm" variant="muted" startContent={actions} />}
+          {mobile ? <VStack gap={3}><HStack gap={2} wrap="wrap" role="group" aria-label="Åtgärder">{actions}</HStack><HStack>{remove}</HStack></VStack> : <Toolbar label="Åtgärder" size="sm" variant="muted" startContent={actions} endContent={remove} />}
           {report && <Findings report={report} label="Testets resultat" />}
           <MetadataList columns={mobile ? 'single' : 'multi'}>
             <MetadataListItem label="Id">{m.id}</MetadataListItem>
             <MetadataListItem label="Leverantör"><Link href={`/admin/models/providers/${m.providerId}`}>{m.providerTitle}</Link></MetadataListItem>
             <MetadataListItem label="Vem kan välja den">{audienceLabel(m.audience)}</MetadataListItem>
-            <MetadataListItem label="Standard">{m.isDefault ? 'Ja' : 'Nej'}</MetadataListItem>
             <MetadataListItem label="Leverantörens hälsa">{providerHealthLabel[m.health.status]} · <Timestamp value={m.health.at} format="auto" /></MetadataListItem>
             <MetadataListItem label="Tillagd">{actorLabel(m.createdBy)} · <Timestamp value={m.createdAt} format="date_time" /></MetadataListItem>
           </MetadataList>
+          {/* It applies at once, so it stands apart from the form that waits for Spara. */}
+          <Switch label="Verktyg" description="Assistenten får läsa genom anslutningarnas verktyg. Stäng av för en modell som inte anropar verktyg pålitligt; den svarar då bara ur samtalet." value={m.tools} isDisabled={busy}
+            changeAction={on => run(async () => { await api.admin.updateModel(id, { tools: on }); return on ? 'Modellen får använda verktyg.' : 'Modellen svarar utan verktyg.'; })} />
           <VStack gap={3} as="section" aria-label="Uppgifter">
             <Heading level={2}>Uppgifter</Heading>
-            <FormLayout>
+            <VStack maxWidth={560} gap={3}><FormLayout>
               <TextInput label="Namn i frågerutan" value={draft.title} onChange={title => setDraft({ ...draft, title })} isRequired autoComplete="off" />
               <TextInput label="Beskrivning" value={draft.description} onChange={description => setDraft({ ...draft, description })} description="En rad om vad modellen är bra på. Visas i frågerutans meny." autoComplete="off" />
               <TextInput label="Modellens id hos leverantören" value={draft.model} onChange={model => setDraft({ ...draft, model })} isRequired autoComplete="off" hasAutoCorrect={false} autoCapitalize="none" />
-            </FormLayout>
+            </FormLayout></VStack>
             <HStack gap={2}>
               <Button variant="primary" label="Spara" isDisabled={busy || !changed || !draft.title.trim() || !/^\S+$/.test(draft.model.trim())} clickAction={() => run(async () => { await api.admin.updateModel(id, draft); return 'Sparat.'; })} />
               <Button variant="ghost" label="Ångra ändringar" isDisabled={!changed} onClick={() => setDraft({ title: m.title, description: m.description, model: m.model })} />
             </HStack>
-            <Switch label="Verktyg" description="Assistenten får läsa genom anslutningarnas verktyg. Stäng av för en modell som inte anropar verktyg pålitligt; den svarar då bara ur samtalet." value={m.tools} isDisabled={busy}
-              changeAction={on => run(async () => { await api.admin.updateModel(id, { tools: on }); return on ? 'Modellen får använda verktyg.' : 'Modellen svarar utan verktyg.'; })} />
           </VStack>
         </VStack></div>}
         {tab === 'publik' && audience && <div id={panel('publik')} role={role} aria-label="Vem kan välja den"><VStack gap={4}>
@@ -105,7 +105,7 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
             <Button variant="primary" label="Spara" isDisabled={busy || JSON.stringify(audience) === JSON.stringify(m.audience)} clickAction={() => run(async () => { await api.admin.updateModel(id, { audience }); return 'Sparat: ' + audienceLabel(audience) + '.'; })} />
             <Button variant="ghost" label="Ångra ändringar" isDisabled={JSON.stringify(audience) === JSON.stringify(m.audience)} onClick={() => setAudience(m.audience)} />
           </HStack>
-          {m.isDefault && audience.mode === 'selected' && <Text type="supporting">Den här modellen är standard. Den som inte är med får nästa påslagna modell de får välja, eller den inbyggda routern om de inte får välja någon.</Text>}
+          {m.isDefault && audience.mode === 'selected' && <Text type="supporting">Den här modellen är standard. Den som inte är med får nästa påslagna modell de får välja, eller så hittar rutan bara exakta saker om de inte får välja någon.</Text>}
         </VStack></div>}
         {tab === 'historik' && <div id={panel('historik')} role={role} aria-label="Historik">
           <History history={m.history} />

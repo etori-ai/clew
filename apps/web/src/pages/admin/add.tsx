@@ -61,7 +61,7 @@ export function AddConnectorDialog({ isOpen, onClose, units }: Props) {
     <VStack gap={4}>
       <Heading level={3} ref={heading} tabIndex={-1}>{steps[step]}</Heading>
       {step === 0 && <FormLayout>
-        <TextInput label="Id" value={id} onChange={setId} description="Samma id som anslutningen själv anger i sitt manifest, till exempel heroma." isRequired autoComplete="off" hasAutoCorrect={false} autoCapitalize="none" status={idError ? { type: 'error', message: idError } : undefined} />
+        <TextInput label="Id" value={id} onChange={setId} description="Samma id som systemet själv anger, till exempel heroma." isRequired autoComplete="off" hasAutoCorrect={false} autoCapitalize="none" status={idError ? { type: 'error', message: idError } : undefined} />
         <TextInput label="Adress" type="url" value={url} onChange={setUrl} description="Adressen Clew når tjänsten på, utan /clew." placeholder="https://heroma-anslutning.kommunen.se" isRequired autoComplete="off" status={urlError ? { type: 'error', message: urlError } : undefined} />
         <TextInput label="Delad nyckel" type="password" value={secret} onChange={setSecret} description="Minst 16 tecken. Samma nyckel som tjänsten startas med. Den sparas förseglad och visas aldrig igen." isRequired autoComplete="new-password" status={secretError ? { type: 'error', message: secretError } : undefined} />
       </FormLayout>}
@@ -81,7 +81,7 @@ export function AddConnectorDialog({ isOpen, onClose, units }: Props) {
         <MetadataListItem label="System">{result.connector.source}</MetadataListItem>
         <MetadataListItem label="Id">{result.connector.id}</MetadataListItem>
         <MetadataListItem label="Adress">{result.connector.url}</MetadataListItem>
-        <MetadataListItem label="Förmågor">{`${result.connector.counts.capabilities} · ${result.connector.counts.execute} åtgärder`}</MetadataListItem>
+        <MetadataListItem label="Funktioner">{`${result.connector.counts.capabilities} · ${result.connector.counts.execute} utför`}</MetadataListItem>
         <MetadataListItem label="Vem ser det">{audienceLabel(audience)}</MetadataListItem>
         <MetadataListItem label="Skickar kort">{scan ? 'Ja' : 'Nej'}</MetadataListItem>
         <MetadataListItem label="Erbjuder assistenten">{tools ? 'Ja' : 'Nej'}</MetadataListItem>

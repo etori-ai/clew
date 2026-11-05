@@ -46,9 +46,9 @@ export async function checkConnector(options: CheckOptions): Promise<CheckReport
   const url = options.url.replace(/\/+$/, '');
   let manifest: ConnectorManifest;
   try { manifest = await fetchManifest(url, options.id, fetchImpl); }
-  catch (error) { fail('manifest: ' + (error as Error).message); item('fail', 'connection', 'Manifestet kunde inte hämtas', (error as Error).message); return { ok: false, items, findings }; }
+  catch (error) { fail('manifest: ' + (error as Error).message); item('fail', 'connection', 'Systemets beskrivning kunde inte hämtas', (error as Error).message); return { ok: false, items, findings }; }
   ok(`manifest valid: ${manifest.capabilities.length} capabilities, ${manifest.areas.length} areas, scan ${manifest.scan}`);
-  item('ok', 'connection', 'Manifestet är giltigt', `${count(manifest.capabilities.length, 'förmåga', 'förmågor')}, ${count(manifest.areas.length, 'område', 'områden')}. ${manifest.scan ? 'Skickar kort.' : 'Skickar inga kort.'}`);
+  item('ok', 'connection', 'Systemets beskrivning är giltig', `${count(manifest.capabilities.length, 'funktion', 'funktioner')}, ${count(manifest.areas.length, 'område', 'områden')}. ${manifest.scan ? 'Skickar kort.' : 'Skickar inga kort.'}`);
   if (manifest.delegation) {
     warn(`delegation: acts as the person for audience "${manifest.delegation.audience}"; not verified by this check (it has no session), so a "denied" answer below is the expected one`);
     item('warn', 'connection', 'Agerar som personen', `Använder personens egen behörighet mot ${manifest.delegation.audience}. Kontrollen har ingen inloggning och kan inte pröva det, så nekade svar är väntade.`);

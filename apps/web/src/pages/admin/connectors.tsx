@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ConnectorSummary, SessionUser } from '@clew/contracts';
-import { Button, Card, EmptyState, Grid, HStack, Link, List, ListItem, Section, SegmentedControl, SegmentedControlItem, StatusDot, Switch, Table, Text, Timestamp, Toolbar, VStack, pixel, proportional, useMediaQuery, useToast } from '@clew/ui';
+import { Button, Card, EmptyState, HStack, Link, List, ListItem, Section, SegmentedControl, SegmentedControlItem, StatusDot, Switch, Table, Text, Timestamp, Toolbar, VStack, pixel, proportional, useMediaQuery, useToast } from '@clew/ui';
 import { api } from '../../api';
 import { adminQueries } from '../../queries';
 import { keys } from '../../query-keys';
@@ -13,9 +13,11 @@ import { AdminShell, PageLead } from './shell';
 
 /** "Anslutna system" (D23): every connector, bundled and remote, with its status, its audience and an on/off switch. */
 type Filter = 'alla' | 'pa' | 'av' | 'problem';
-const filters: Array<{ value: Filter; label: string }> = [{ value: 'alla', label: 'Alla' }, { value: 'pa', label: 'På' }, { value: 'av', label: 'Av' }, { value: 'problem', label: 'Problem' }];
+const filters: Array<{ value: Filter; label: string }> = [{ value: 'alla', label: 'Alla' }, { value: 'pa', label: 'På' }, { value: 'problem', label: 'Problem' }, { value: 'av', label: 'Av' }];
 const matches = (c: ConnectorSummary, f: Filter) => f === 'alla' || (f === 'pa' ? c.state === 'enabled' : f === 'av' ? c.state !== 'enabled' : c.state === 'enabled' && !c.bundled && c.health.status !== 'ok');
-const counts = (c: ConnectorSummary) => `${c.counts.capabilities} · ${c.counts.execute} ${c.counts.execute === 1 ? 'åtgärd' : 'åtgärder'} · ${c.counts.tools} till assistenten`;
+/** How much a system can do, in words: what it can do at all on one line, what of that changes something or reaches the assistant on the other. */
+const functions = (c: ConnectorSummary) => `${c.counts.capabilities} ${c.counts.capabilities === 1 ? 'funktion' : 'funktioner'}`;
+const reach = (c: ConnectorSummary) => `${c.counts.execute} utför · ${c.counts.tools} för assistenten`;
 interface Row extends Record<string, unknown> { id: string; c: ConnectorSummary }
 const EMPTY_UNITS: Array<{ id: string; label: string }> = [];
 const EMPTY_CONNECTORS: ConnectorSummary[] = [];
@@ -48,38 +50,23 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
     { key: 'system', header: 'System', width: proportional(1, { minWidth: 200 }), renderCell: (r: Row) => <VStack gap={0}><Link href={`/admin/connectors/${r.c.id}`} weight="semibold">{r.c.source}</Link><Text type="supporting">{r.c.id}{r.c.bundled ? ' · inbyggd' : ''}</Text></VStack> },
     { key: 'status', header: 'Status', width: pixel(150), renderCell: (r: Row) => statusText(r.c) },
     { key: 'audience', header: 'Vem ser det', width: proportional(1, { minWidth: 120 }), renderCell: (r: Row) => <Text>{audienceLabel(r.c.audience)}</Text> },
-    { key: 'caps', header: 'Förmågor', width: proportional(1, { minWidth: 160 }), renderCell: (r: Row) => <Text type="supporting">{counts(r.c)}</Text> },
+    { key: 'caps', header: 'Funktioner', width: proportional(1, { minWidth: 160 }), renderCell: (r: Row) => <VStack gap={0}><Text>{functions(r.c)}</Text><Text type="supporting">{reach(r.c)}</Text></VStack> },
     { key: 'on', header: 'På', width: pixel(72), renderCell: (r: Row) => toggle(r.c) },
   ];
-  // The lead counts: what is on, what is off, what needs a hand. Tiles are KPI widgets, so Cards in a reflowing Grid (structure guide); a problem is a dot with its word, never a coloured card.
   const all = connectors ?? [];
-  const tiles = [
-    { label: 'På', value: all.filter(c => c.state === 'enabled' && (c.bundled || c.health.status === 'ok')).length },
-    { label: 'Problem', value: all.filter(c => matches(c, 'problem')).length },
-    { label: 'Avstängda', value: all.filter(c => c.state === 'disabled').length },
-    { label: 'Utkast', value: all.filter(c => c.state === 'draft').length },
-  ];
   return <AdminShell user={user} crumbs={[{ label: 'Anslutna system' }]}>
     <PageLead title="Anslutna system" lead="Systemen Startsidan läser från och agerar i. Här avgör du vem som ser en anslutning; vad var och en får göra avgör systemet självt."
       actions={<Button variant="primary" label="Anslut system" onClick={() => setAdding(true)} />} />
-    {connectors !== null && all.length > 0 && <VStack as="section" aria-label="Läget"><Grid columns={{ minWidth: 140, max: 4 }} gap={3}>
-      {tiles.map(t => <Card key={t.label} variant="muted" padding={3}>
-        <VStack gap={0}>
-          <HStack gap={2} justify="between" vAlign="center"><Text type="supporting">{t.label}</Text>{t.label === 'Problem' && t.value > 0 && <StatusDot variant="warning" label="Behöver åtgärd" />}</HStack>
-          <Text type="large" weight="semibold" hasTabularNumbers>{t.value}</Text>
-        </VStack>
-      </Card>)}
-    </Grid></VStack>}
     {error && <Text as="p" role="alert" color="accent">{error}</Text>}
     {connectors === null && <Text type="supporting" role="status">Läser anslutningarna …</Text>}
-    {/* A Section with padding 0 bleeds over the page's gutters (it is edge-to-edge by definition); the bordered box is a Card. */}
+    {/* What is on, what has a problem and what is off are the filter's own counts: one row that both says and does. A Section with padding 0 bleeds over the page's gutters (it is edge-to-edge by definition); the bordered box is a Card. */}
     {connectors !== null && <Card padding={0}>
-      <Toolbar label="Anslutningar" size="sm" dividers={['bottom']} startContent={<SegmentedControl label="Visa" size="sm" value={filter} onChange={v => setFilter(v as Filter)}>{filters.map(f => <SegmentedControlItem key={f.value} value={f.value} label={f.label} />)}</SegmentedControl>}
+      <Toolbar label="Anslutningar" size="sm" dividers={['bottom']} startContent={<SegmentedControl label="Visa" size="sm" value={filter} onChange={v => setFilter(v as Filter)}>{filters.map(f => <SegmentedControlItem key={f.value} value={f.value} label={`${f.label} ${all.filter(c => matches(c, f.value)).length}`} />)}</SegmentedControl>}
         endContent={<Text type="supporting">{shown.length === all.length ? `${all.length} anslutningar` : `${shown.length} av ${all.length}`}</Text>} />
       {shown.length === 0 && <Section variant="transparent" padding={6}><EmptyState isCompact title={filter === 'alla' ? 'Inga anslutningar ännu' : 'Inget att visa'} description={filter === 'alla' ? 'Anslut det första systemet så får det en rad här.' : 'Inga anslutningar matchar filtret.'} actions={filter === 'alla' ? <Button label="Anslut system" onClick={() => setAdding(true)} /> : undefined} /></Section>}
       {shown.length > 0 && (mobile
         ? <List aria-label="Anslutningar" hasDividers>
-          {shown.map(c => <ListItem key={c.id} href={`/admin/connectors/${c.id}`} label={name(c)} description={<VStack gap={0}><HStack gap={1} vAlign="center">{status(c)}<Text type="supporting">{statusOf(c).label} · {audienceLabel(c.audience)}</Text></HStack><Text type="supporting">{counts(c)}</Text></VStack>} endContent={toggle(c)} />)}
+          {shown.map(c => <ListItem key={c.id} href={`/admin/connectors/${c.id}`} label={name(c)} description={<VStack gap={0}><HStack gap={1} vAlign="center">{status(c)}<Text type="supporting">{statusOf(c).label} · {audienceLabel(c.audience)}</Text></HStack><Text type="supporting">{functions(c)} · {reach(c)}</Text></VStack>} endContent={toggle(c)} />)}
         </List>
         : <Table<Row> data={shown.map(c => ({ id: c.id, c }))} idKey="id" columns={columns} density="balanced" hasHover />)}
     </Card>}

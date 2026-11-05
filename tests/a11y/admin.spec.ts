@@ -26,7 +26,7 @@ test.describe('administration', () => {
     test('every tab of a connector has no axe violations', async ({ page, api }) => {
       api.admin = true;
       await open(page, '/admin/connectors/raindance');
-      for (const tab of ['Förmågor', 'Områden', 'Vem ser det', 'Historik']) {
+      for (const tab of ['Funktioner', 'Områden', 'Vem ser det', 'Historik']) {
         await expect(await pickSection(page, tab)).toBeVisible();
         await expectNoAxeViolations(page);
       }
@@ -164,24 +164,24 @@ test.describe('administration', () => {
         diff: { added: names('ny', 12), removed: names('gammal', 8), changed: names('andrad', 4), areasAdded: [], areasRemoved: [], same: false },
         connector: connectorDetail(api.connectors.find(c => c.id === 'hello')!) } }));
       await open(page, '/admin/connectors/hello');
-      await page.getByRole('button', { name: 'Hämta manifest igen' }).click();
+      await page.getByRole('button', { name: 'Läs in igen från systemet' }).click();
       // Named by its title (4.1.2): the Dialog takes its name from a DialogHeader present when it mounts.
-      const dialog = page.getByRole('dialog', { name: 'Manifestet har ändrats' });
+      const dialog = page.getByRole('dialog', { name: 'Systemet har ändrats' });
       await expect(dialog.getByRole('list', { name: 'Ändringar' }).getByRole('listitem')).toHaveCount(24);
       await expect(dialog.getByRole('button', { name: 'Behåll det gamla' })).toBeInViewport();
       await expect(dialog.getByRole('button', { name: 'Använd det nya' })).toBeInViewport();
       await expectNoAxeViolations(page);
       // A list to read has nothing focusable, so the scrolling area itself takes focus and the keyboard scrolls it (2.1.1).
-      const changes = dialog.getByRole('group', { name: 'Ändringarna i manifestet' });
+      const changes = dialog.getByRole('group', { name: 'Ändringarna i systemet' });
       await changes.focus();
       await expect(changes).toBeFocused();
-      await expect(dialog.getByText('Ändrad förmåga: hello.andrad4')).not.toBeInViewport();
+      await expect(dialog.getByText('Ändrad funktion: hello.andrad4')).not.toBeInViewport();
       await page.keyboard.press('End');
-      await expect(dialog.getByText('Ändrad förmåga: hello.andrad4')).toBeInViewport();
+      await expect(dialog.getByText('Ändrad funktion: hello.andrad4')).toBeInViewport();
       await expect(dialog.getByRole('button', { name: 'Använd det nya' })).toBeInViewport();
       await dialog.getByRole('button', { name: 'Använd det nya' }).click();
       await expect(dialog).toHaveCount(0);
-      await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Manifestet är uppdaterat'));
+      await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Uppdaterat från systemet'));
     });
     test('a connector page is titled, the health is a sentence, and the tabs follow the tabs pattern', async ({ page, api }) => {
       api.admin = true;
@@ -191,9 +191,9 @@ test.describe('administration', () => {
       const tablist = page.getByRole('tablist');
       await tablist.getByRole('tab', { name: 'Översikt' }).focus();
       await page.keyboard.press('ArrowRight');
-      expect((await focused(page)).text).toContain('Förmågor');
+      expect((await focused(page)).text).toContain('Funktioner');
       await page.keyboard.press('Enter');
-      await expect(page.getByRole('tabpanel', { name: 'Förmågor' })).toBeVisible();
+      await expect(page.getByRole('tabpanel', { name: 'Funktioner' })).toBeVisible();
       await expect(page.getByRole('switch', { name: 'Godkänn valda till assistenten' })).toBeDisabled();
     });
     test('a check that found problems opens their groups, shuts the rest and says the verdict in words', async ({ page, api }) => {
@@ -203,7 +203,7 @@ test.describe('administration', () => {
       await expect(page.getByRole('heading', { level: 2, name: 'Senaste kontroll' })).toBeVisible();
       await expect(page.getByText('Kontrollen hittade 1 fel.', { exact: true })).toBeVisible();
       await expect(page.getByRole('list', { name: 'Anslutning' }).getByRole('listitem').first()).toContainText('Fel nyckel släpps igenom');
-      await expect(page.getByRole('list', { name: 'Förmågor' })).toContainText('hello.dayWithMeetings');
+      await expect(page.getByRole('list', { name: 'Funktioner' })).toContainText('hello.dayWithMeetings');
       const passed = page.getByRole('button', { name: /I Startsidan.*1 godkänd/ });
       await expect(passed).toHaveAttribute('aria-expanded', 'false');
       await passed.focus();
@@ -246,7 +246,7 @@ test.describe('administration', () => {
       await expect(page.getByRole('list', { name: 'Anslutningar' })).toBeVisible();
       await open(page, '/admin/connectors/raindance');
       expect(await reflowProblems(page)).toEqual([]);
-      await expect(await pickSection(page, 'Förmågor')).toBeVisible();
+      await expect(await pickSection(page, 'Funktioner')).toBeVisible();
       expect(await reflowProblems(page)).toEqual([]);
     });
     test('a check result reflows at 320 px', async ({ page, api }) => {
@@ -254,7 +254,7 @@ test.describe('administration', () => {
       await page.setViewportSize(narrow);
       await open(page, '/admin/connectors/hello');
       await page.getByRole('button', { name: 'Testa anslutning' }).click();
-      await expect(page.getByRole('list', { name: 'Förmågor' })).toBeVisible();
+      await expect(page.getByRole('list', { name: 'Funktioner' })).toBeVisible();
       expect(await reflowProblems(page)).toEqual([]);
     });
     test('the add dialog reflows at 320 px', async ({ page, api }) => {

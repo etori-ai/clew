@@ -94,7 +94,7 @@ export function AddProviderDialog({ isOpen, onClose }: { isOpen: boolean; onClos
   const save = () => run(async () => { const r = await api.admin.addProvider({ id: shownId, title: title.trim(), baseUrl: url.trim(), ...(key ? { apiKey: key } : {}) }); setKey(''); setResult({ providerId: r.provider.id, report: r.report }); setStep(1); });
   const ids = result ? pickedIds(pick, []) : [];
   const header = <>
-    <DialogHeader title="Lägg till leverantör" subtitle={result ? 'Leverantören är sparad. Välj vilka modeller som ska läggas till.' : 'En adress som talar det OpenAI-kompatibla gränssnittet, till exempel en egen server med en öppen modell.'} onOpenChange={open => { if (!open) close(); }} hasDivider={false} />
+    <DialogHeader title="Lägg till leverantör" subtitle={result ? 'Leverantören är sparad. Välj vilka modeller som ska läggas till.' : 'Adressen till en tjänst som följer OpenAI:s API, till exempel en egen server med en öppen modell.'} onOpenChange={open => { if (!open) close(); }} hasDivider={false} />
     <LayoutHeader hasDivider={false}>
       <Stepper activeStep={step} label="Steg" density="compact" horizontalOptions={{ minimumStepWidth: 160, collapsedVariant: 'withLabel' }}>
         {steps.map((s, i) => <Step key={s} step={i} label={s} />)}
@@ -111,7 +111,7 @@ export function AddProviderDialog({ isOpen, onClose }: { isOpen: boolean; onClos
         <Heading level={3} ref={heading} tabIndex={-1}>{steps[step]}</Heading>
         {step === 0 && <FormLayout>
           <TextInput label="Namn" value={title} onChange={setTitle} description="Så heter leverantören i listan, till exempel Kommunens egna modeller." isRequired autoComplete="off" status={errors.title ? { type: 'error', message: errors.title } : undefined} />
-          <TextInput label="Id" value={shownId} onChange={v => { setIdTouched(true); setId(v); }} description="Clews namn på leverantören. Föreslås från namnet." isRequired autoComplete="off" hasAutoCorrect={false} autoCapitalize="none" status={errors.id ? { type: 'error', message: errors.id } : undefined} />
+          <TextInput label="Id" value={shownId} onChange={v => { setIdTouched(true); setId(v); }} description="Startsidans namn på leverantören. Föreslås från namnet." isRequired autoComplete="off" hasAutoCorrect={false} autoCapitalize="none" status={errors.id ? { type: 'error', message: errors.id } : undefined} />
           <TextInput label="Adress" type="url" value={url} onChange={setUrl} description="Basadressen, oftast slutar den på /v1." placeholder="https://modeller.kommunen.se/v1" isRequired autoComplete="off" status={errors.url ? { type: 'error', message: errors.url } : undefined} />
           <TextInput label="Nyckel" type="password" value={key} onChange={setKey} description="Lämna tomt för en adress utan nyckel. Den sparas förseglad och visas aldrig igen." autoComplete="new-password" />
         </FormLayout>}

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ModelSummary, ProviderSummary, SessionUser } from '@clew/contracts';
-import { Badge, Button, Card, Code, EmptyState, Grid, HStack, Link, List, ListItem, Section, StatusDot, Switch, Table, Text, Toolbar, VStack, pixel, proportional, useMediaQuery, useToast } from '@clew/ui';
+import { Badge, Button, Card, Code, EmptyState, HStack, Link, List, ListItem, Section, StatusDot, Switch, Table, Text, Toolbar, VStack, pixel, proportional, useMediaQuery, useToast } from '@clew/ui';
 import { api } from '../../api';
 import { adminQueries } from '../../queries';
 import { keys } from '../../query-keys';
@@ -39,7 +39,7 @@ export function AdminModelsPage({ user }: { user: SessionUser }) {
   const toggle = (m: ModelSummary) => <Switch size="sm" label={`${m.title} på`} isLabelHidden value={m.state === 'enabled'} changeAction={on => flip(m, on)} />;
   const columns = [
     { key: 'model', header: 'Modell', width: proportional(2, { minWidth: 220 }), renderCell: (r: Row) => <VStack gap={0} hAlign="start">
-      <HStack gap={2} vAlign="center" wrap="wrap"><Link href={`/admin/models/${r.m.id}`} weight="semibold">{r.m.title}</Link>{r.m.isDefault && <Badge variant="info" label="Standard" />}</HStack>
+      <HStack gap={2} vAlign="center" wrap="wrap"><Link href={`/admin/models/${r.m.id}`} weight="semibold">{r.m.title}</Link>{r.m.isDefault && <Badge variant="neutral" label="Standard" />}</HStack>
       <Code color="secondary">{r.m.model}</Code>
       {r.m.description && <Text type="supporting">{r.m.description}</Text>}
     </VStack> },
@@ -50,29 +50,15 @@ export function AdminModelsPage({ user }: { user: SessionUser }) {
   ];
   const providers = data?.providers ?? [];
   const models = data?.models ?? [];
-  const tiles = [
-    { label: 'På', value: models.filter(m => m.state === 'enabled').length },
-    { label: 'Problem', value: providers.filter(p => p.enabledModels > 0 && (p.health.status === 'unreachable' || p.health.status === 'key-rejected')).length },
-    { label: 'Avstängda', value: models.filter(m => m.state === 'disabled').length },
-    { label: 'Leverantörer', value: providers.length },
-  ];
   const fallback = models.find(m => m.isDefault && m.state === 'enabled') ?? models.find(m => m.state === 'enabled');
   return <AdminShell user={user} section="modeller" crumbs={[{ label: 'Modeller' }]}>
-    <PageLead title="Modeller" lead="Modellerna som svarar i frågerutan. Du avgör vilka som är på, vem som kan välja dem och vilken som är standard. Varje leverantör nås genom det öppna OpenAI-kompatibla gränssnittet."
+    <PageLead title="Modeller" lead="Modellerna som svarar i frågerutan. Du avgör vilka som är på, vem som kan välja dem och vilken som är standard."
       actions={<Button variant="primary" label="Lägg till leverantör" onClick={() => setAddingProvider(true)} />}>
-      {data && models.length > 0 && <Text color="secondary">{fallback ? `Den som inte valt själv får ${fallback.title}${fallback.isDefault ? ' (standard)' : ', eftersom ingen modell är standard'}.` : 'Ingen modell är på: frågor besvaras av den inbyggda routern.'}</Text>}
+      {data && models.length > 0 && <Text color="secondary">{fallback ? `Den som inte valt själv får ${fallback.title}${fallback.isDefault ? ' (standard)' : ', eftersom ingen modell är standard'}.` : 'Ingen modell är på: rutan hittar bara exakta saker.'}</Text>}
     </PageLead>
-    {data && providers.length > 0 && <VStack as="section" aria-label="Läget"><Grid columns={{ minWidth: 140, max: 4 }} gap={3}>
-      {tiles.map(t => <Card key={t.label} variant="muted" padding={3}>
-        <VStack gap={0}>
-          <HStack gap={2} justify="between" vAlign="center"><Text type="supporting">{t.label}</Text>{t.label === 'Problem' && t.value > 0 && <StatusDot variant="warning" label="Behöver åtgärd" />}</HStack>
-          <Text type="large" weight="semibold" hasTabularNumbers>{t.value}</Text>
-        </VStack>
-      </Card>)}
-    </Grid></VStack>}
     {error && <Text as="p" role="alert" color="accent">{error}</Text>}
     {data === null && <Text type="supporting" role="status">Läser modellerna …</Text>}
-    {data && providers.length === 0 && <Card><EmptyState isCompact title="Inga modeller ännu" description="Lägg till en leverantör, en OpenAI-kompatibel adress, så kan du välja bland dess modeller. Utan modell svarar den inbyggda routern på frågorna." actions={<Button label="Lägg till leverantör" onClick={() => setAddingProvider(true)} />} /></Card>}
+    {data && providers.length === 0 && <Card><EmptyState isCompact title="Inga modeller ännu" description="Lägg till en leverantör, adressen till en tjänst som följer OpenAI:s API, så kan du välja bland dess modeller. Utan modell hittar rutan bara exakta saker." actions={<Button label="Lägg till leverantör" onClick={() => setAddingProvider(true)} />} /></Card>}
     {providers.map(p => {
       const mine = models.filter(m => m.providerId === p.id);
       const s = providerStatusOf(p);
@@ -83,7 +69,7 @@ export function AdminModelsPage({ user }: { user: SessionUser }) {
         {mine.length === 0 && <Section variant="transparent" padding={4}><Text type="supporting">Inga modeller under {p.title} ännu.</Text></Section>}
         {mine.length > 0 && (mobile
           ? <List aria-label={`Modeller hos ${p.title}`} hasDividers>
-            {mine.map(m => <ListItem key={m.id} href={`/admin/models/${m.id}`} label={<HStack gap={2} vAlign="center"><Text weight="semibold">{m.title}</Text>{m.isDefault && <Badge variant="info" label="Standard" />}</HStack>}
+            {mine.map(m => <ListItem key={m.id} href={`/admin/models/${m.id}`} label={<HStack gap={2} vAlign="center"><Text weight="semibold">{m.title}</Text>{m.isDefault && <Badge variant="neutral" label="Standard" />}</HStack>}
               description={<VStack gap={0} hAlign="start"><Code color="secondary">{m.model}</Code><Text type="supporting">{modelStatusOf(m).label} · {audienceLabel(m.audience)}</Text></VStack>} endContent={toggle(m)} />)}
           </List>
           : <Table<Row> data={mine.map(m => ({ id: m.id, m }))} idKey="id" columns={columns} density="balanced" hasHover />)}
