@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import type { CalendarEvent, SourceCitation, Thread, ViewRef } from '@clew/contracts';
+import type { CalendarEvent, MessageMeta, SourceCitation, Thread, ViewRef } from '@clew/contracts';
 import { Badge, Button, ChatMessage, ChatMessageBubble, ChatMessageList, ChatMessageMetadata, ChatSystemMessage, EventList, HStack, Icon, List, ListItem, Markdown, MetadataList, MetadataListItem, Text, Timestamp, Token, VisuallyHidden, VStack, agendaItems } from '@clew/ui';
 import { weekNumber } from '@clew/calendar/dates';
 import { calendarWeekQuery, threadQuery } from '../queries';
@@ -17,6 +17,8 @@ function Sources({ sources }: { sources: SourceCitation[] }) {
     {stale && <MetadataListItem label="Obs">{staleLabel(true, stale.reviewedAt)}</MetadataListItem>}
   </MetadataList>;
 }
+/** Under an answer: where it came from and, when a model wrote it, which one (D24), so a changed model is visible. */
+const answerFooter = (meta: MessageMeta | undefined) => [meta?.source, meta?.model ? `Svar från ${meta.model.title}` : undefined].filter(Boolean).join(' · ') || undefined;
 const citationSources = (sources: SourceCitation[]) => Object.fromEntries(sources.map(s => [String(s.n), { title: s.label, ...(s.link ? { url: s.link } : {}) }]));
 
 const EMPTY_EVENTS: CalendarEvent[] = [];
@@ -50,7 +52,7 @@ export function Transcript({ onOpenView }: { onOpenView: (view: ViewRef) => void
       {conversation.messages.map(m => <ChatMessage key={m.id} sender={m.role} name={<VisuallyHidden>{m.role === 'user' ? 'Du' : 'Assistenten'}</VisuallyHidden>}>
         {m.role === 'user' && (m.meta?.chips?.length ?? 0) > 0 && <HStack gap={1} wrap="wrap">{m.meta!.chips!.map(c => <Token key={c.ref} size="sm" label={c.label} />)}</HStack>}
         <ChatMessageBubble variant={m.role === 'assistant' ? 'ghost' : 'filled'} width={m.role === 'assistant' ? '100%' : undefined}
-          metadata={<ChatMessageMetadata timestamp={<Timestamp value={m.createdAt} format="time" hasTooltip={false} />} footer={m.role === 'assistant' ? (m.meta?.source ?? undefined) : undefined} />}>
+          metadata={<ChatMessageMetadata timestamp={<Timestamp value={m.createdAt} format="time" hasTooltip={false} />} footer={m.role === 'assistant' ? answerFooter(m.meta) : undefined} />}>
           {m.role === 'assistant' ? <Markdown density="compact" headingLevelStart={2} {...(m.meta?.sources?.length ? { sources: citationSources(m.meta.sources), citationStyle: 'number' as const } : {})}>{m.body}</Markdown> : m.body}
           {m.meta?.sources && m.meta.sources.length > 0 && <Sources sources={m.meta.sources} />}
           {(m.meta?.view || m.meta?.sources?.length) && <HStack gap={2} wrap="wrap">

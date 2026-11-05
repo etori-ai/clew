@@ -48,20 +48,17 @@ export function systemPrompt(ctx: PromptContext): string {
   return lines.join('\n');
 }
 export type ModelGenerate = (request: { system: string; messages: ModelMessage[]; tools: ToolSet; timeoutMs: number }) => Promise<{ text: string; toolCalls: ToolCallRecord[] }>;
-/** The provider from the environment, or undefined when the model is not configured. The system runs fully without it (D8). */
-export function createProvider(env: Record<string, string | undefined>, fetchImpl?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>): { generate: ModelGenerate; model: string; baseURL: string; apiKey: string | undefined } | undefined {
-  const baseURL = env.AI_BASE_URL?.trim();
-  if (!baseURL) return undefined;
-  const model = env.AI_MODEL?.trim();
-  if (!model) throw new Error('AI_BASE_URL is set but AI_MODEL is missing.');
-  const apiKey = env.AI_API_KEY?.trim() || undefined;
-  const provider = createOpenAICompatible({ name: 'clew', baseURL, ...(apiKey ? { apiKey } : {}), ...(fetchImpl ? { fetch: fetchImpl as typeof fetch } : {}) });
-  const generate: ModelGenerate = async ({ system, messages, tools, timeoutMs }) => {
+/**
+ * The generate function for one model on one OpenAI-compatible endpoint (D24): the administered provider gives the base
+ * URL and the opened key. Four steps at most, no retries, the caller's timeout. `fetchImpl` is for tests.
+ */
+export function createGenerator(endpoint: { baseUrl: string; apiKey?: string }, model: string, fetchImpl?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>): ModelGenerate {
+  const provider = createOpenAICompatible({ name: 'clew', baseURL: endpoint.baseUrl, ...(endpoint.apiKey ? { apiKey: endpoint.apiKey } : {}), ...(fetchImpl ? { fetch: fetchImpl as typeof fetch } : {}) });
+  return async ({ system, messages, tools, timeoutMs }) => {
     const result = await generateText({ model: provider(model), system, messages, tools, stopWhen: stepCountIs(4), maxRetries: 0, abortSignal: AbortSignal.timeout(timeoutMs) });
     const toolCalls: ToolCallRecord[] = result.steps.flatMap(step => step.toolResults.map(r => ({ capability: fromToolName(r.toolName), input: (r.input ?? {}) as Record<string, unknown>, output: r.output })));
     return { text: result.text, toolCalls };
   };
-  return { generate, model, baseURL, apiKey };
 }
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 /** Ask the model. The answer is its text; the first tool result with rows is offered as a view. Any failure becomes ModelUnavailable. */

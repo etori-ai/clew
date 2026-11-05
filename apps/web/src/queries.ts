@@ -40,4 +40,8 @@ export const adminQueries = {
   units: queryOptions({ queryKey: keys.admin.units, queryFn: () => api.admin.units() }),
   connector: (id: string) => queryOptions({ queryKey: keys.admin.connector(id), queryFn: () => api.admin.connector(id) }),
   preview: (id: string, role: Role) => queryOptions({ queryKey: keys.admin.preview(id, role), queryFn: () => api.admin.preview(id, role) }),
+  /** Modeller (D24): the list, one model, one provider. A 400 on a detail is "finns inte", as for a connector. */
+  models: queryOptions({ queryKey: keys.admin.models, queryFn: () => api.admin.models() }),
+  model: (id: string) => queryOptions({ queryKey: keys.admin.model(id), queryFn: () => api.admin.model(id) }),
+  provider: (id: string) => queryOptions({ queryKey: keys.admin.provider(id), queryFn: () => api.admin.provider(id) }),
 };

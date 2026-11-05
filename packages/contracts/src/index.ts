@@ -98,6 +98,9 @@ export type SourceCitation = Static<typeof SourceCitationSchema>;
 /** How the answer was produced: the model with read tools, the deterministic router, or the router because the configured model failed (D8). */
 export const AssistantMode = Type.Union([Type.Literal('model'), Type.Literal('router'), Type.Literal('unavailable')]);
 export type AssistantMode = Static<typeof AssistantMode>;
+/** Which administered model produced an answer (D24): Clew's own id and the Swedish name the person chose it by. */
+export const ModelRefSchema = object({ id: Type.String({ maxLength: 60 }), title: Type.String({ maxLength: 80 }) });
+export type ModelRef = Static<typeof ModelRefSchema>;
 /** A view the client can open in the side panel: a read capability and its input, rendered by Clew from the output. */
 export const ViewRefSchema = object({ capability: Type.String(), input: Type.Record(Type.String(), Type.Unknown()), title: Type.String(), source: Type.String() });
 export type ViewRef = Static<typeof ViewRefSchema>;
@@ -166,6 +169,8 @@ export const MessageMetaSchema = object({
   /** The sources a document answer cites (D26), numbered as `[n]` in the body; refs only. */
   sources: Type.Optional(Type.Array(SourceCitationSchema, { maxItems: 10 })),
   followUps: Type.Optional(Type.Array(Type.String(), { maxItems: 3 })),
+  /** The model that wrote this answer (D24); absent when the router answered. */
+  model: Type.Optional(ModelRefSchema),
 });
 export type MessageMeta = Static<typeof MessageMetaSchema>;
 export const ThreadMessageSchema = object({
@@ -430,6 +435,57 @@ export interface ConnectorDetail extends ConnectorSummary {
 export interface ConnectorPreview { role: Role; unitId: string | null; visible: boolean; areas: Array<{ id: string; title: string; standing: string[] }>; tools: string[] }
 export interface ManifestDiff { added: string[]; removed: string[]; changed: string[]; areasAdded: string[]; areasRemoved: string[]; same: boolean }
 
+/**
+ * Model administration (D24): providers (an OpenAI-compatible endpoint with a sealed key) and the models under them,
+ * each with the connector's audience shape, an on/off state, a default flag and a tools switch. A key is never
+ * returned; the views say only whether there is one and when it changed.
+ */
+export const ProviderHealthSchema = object({
+  status: Type.Union([Type.Literal('ok'), Type.Literal('unreachable'), Type.Literal('key-rejected'), Type.Literal('untested')]),
+  at: Type.String(), detail: Type.Optional(Type.String()),
+});
+export type ProviderHealth = Static<typeof ProviderHealthSchema>;
+export const ModelStateSchema = Type.Union([Type.Literal('enabled'), Type.Literal('disabled')]);
+export type ModelState = Static<typeof ModelStateSchema>;
+const adminSlug = Type.String({ pattern: '^[a-z][a-z0-9-]*$', minLength: 1, maxLength: 60 });
+const endpointUrl = Type.String({ pattern: '^https?://[^\\s]+$', minLength: 8, maxLength: 500 });
+/** Empty means no key: a local endpoint may need none. */
+const providerKey = Type.String({ maxLength: 1000 });
+const adminTitle = Type.String({ minLength: 1, maxLength: 80, pattern: '^[^\\r\\n]+$' });
+const adminDescription = Type.String({ maxLength: 200, pattern: '^[^\\r\\n]*$' });
+/** The id the endpoint knows the model by, sent as `model` in every request. */
+const wireModel = Type.String({ minLength: 1, maxLength: 200, pattern: '^[^\\s]+$' });
+export const AddProviderInput = object({ id: adminSlug, title: adminTitle, baseUrl: endpointUrl, apiKey: Type.Optional(providerKey) });
+export type AddProviderInput = Static<typeof AddProviderInput>;
+export const ProviderPatchInput = Type.Partial(object({ title: adminTitle, baseUrl: endpointUrl }));
+export type ProviderPatchInput = Static<typeof ProviderPatchInput>;
+export const ProviderKeyInput = object({ apiKey: providerKey });
+export type ProviderKeyInput = Static<typeof ProviderKeyInput>;
+export const AddModelInput = object({ providerId: adminSlug, model: wireModel, title: Type.Optional(adminTitle), description: Type.Optional(adminDescription), tools: Type.Optional(Type.Boolean()) });
+export type AddModelInput = Static<typeof AddModelInput>;
+export const ModelPatchInput = Type.Partial(object({
+  title: adminTitle, description: adminDescription, model: wireModel, state: ModelStateSchema, audience: ConnectorAudienceSchema, isDefault: Type.Boolean(), tools: Type.Boolean(),
+}));
+export type ModelPatchInput = Static<typeof ModelPatchInput>;
+/** The person's own pick in the composer; null goes back to the default. */
+export const ModelChoiceInput = object({ modelId: Type.Union([adminSlug, Type.Null()]) });
+export type ModelChoiceInput = Static<typeof ModelChoiceInput>;
+export interface ProviderSummary {
+  id: string; title: string; baseUrl: string; hasKey: boolean; keyChangedAt: string | null; health: ProviderHealth;
+  /** How many models are added under it, and how many of them are on. */
+  models: number; enabledModels: number; createdAt: string; updatedAt: string;
+}
+export interface ProviderDetail extends ProviderSummary { createdBy: string; updatedBy: string; history: AuditEntryView[] }
+export interface ModelSummary {
+  id: string; providerId: string; providerTitle: string; model: string; title: string; description: string;
+  state: ModelState; audience: ConnectorAudience; isDefault: boolean; tools: boolean;
+  /** The provider's health: a model answers when its endpoint does. */
+  health: ProviderHealth; createdAt: string; updatedAt: string;
+}
+export interface ModelDetail extends ModelSummary { createdBy: string; updatedBy: string; history: AuditEntryView[] }
+/** "Testa": what the endpoint said, the model ids it lists (when it answers `GET /models`), and the health recorded. */
+export interface ProviderTestReport { ok: boolean; findings: CheckFinding[]; models: string[]; health: ProviderHealth }
+
 /** An area in the sidebar: a lens on one connector for one role (D3). Configuration, not code. */
 export const AreaSchema = object({
   id: Type.String(), title: Type.String(), connector: Type.String(), source: Type.String(),
@@ -475,6 +531,7 @@ export const ConversationResponseSchema = object({
   verbs: Type.Optional(Type.Array(VerbSchema)),
   followUps: Type.Array(Type.String()),
   sources: Type.Optional(Type.Array(SourceCitationSchema, { maxItems: 10 })),
+  model: Type.Optional(ModelRefSchema),
 });
 export type ConversationResponse = Static<typeof ConversationResponseSchema>;
 /** An object the `@` menu can offer: what is visible on the page first, then everything in scope. */
@@ -488,7 +545,18 @@ export const CompletionsSchema = object({
   recent: Type.Array(object({ conversationId: id, title: Type.String(), at: instant })),
 });
 export type Completions = Static<typeof CompletionsSchema>;
-export const AssistantStatusSchema = object({ configured: Type.Boolean(), available: Type.Boolean(), model: Type.Union([Type.String(), Type.Null()]), checkedAt: Type.Union([instant, Type.Null()]) });
+/** One model a person may pick in the composer (D24): its name, what it is good for, and whether it is the installation's default. */
+export const ModelChoiceSchema = object({ id: Type.String(), title: Type.String(), description: Type.String(), isDefault: Type.Boolean() });
+export type ModelChoice = Static<typeof ModelChoiceSchema>;
+/**
+ * The model behind the box, for one person (D8, D24): `configured` when they have any model at all, `available` while
+ * its endpoint answers, `model` its name for the D8 banner, `current` the one their next question uses and `choices`
+ * every model they may pick, the default first.
+ */
+export const AssistantStatusSchema = object({
+  configured: Type.Boolean(), available: Type.Boolean(), model: Type.Union([Type.String(), Type.Null()]), checkedAt: Type.Union([instant, Type.Null()]),
+  current: Type.Union([ModelChoiceSchema, Type.Null()]), choices: Type.Array(ModelChoiceSchema),
+});
 export type AssistantStatus = Static<typeof AssistantStatusSchema>;
 
 /** Browser inputs. Everything is validated again on the server before it touches a source. */

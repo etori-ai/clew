@@ -8,13 +8,19 @@ import { roleLabel } from './labels';
  * "Vem ser det" (D23): everyone, or a selection of roles, units and (later) groups. Any of the three lists admits a
  * person. Groups wait for SCIM and are shown disabled with the reason, so the editor does not change shape later.
  */
-export function AudienceEditor({ value, onChange, units }: { value: ConnectorAudience; onChange: (a: ConnectorAudience) => void; units: Array<{ id: string; label: string }> }) {
+/** What the editor says about the thing it governs: a connector (D23) or a model (D24). */
+const wording = {
+  connector: { label: 'Vem ser anslutningen', all: 'Anslutningens eget regelverk avgör sedan vad var och en får göra.', selected: 'En person som inte är med ser inte att anslutningen finns: inget område, inga frågor, inga kort.' },
+  model: { label: 'Vem kan välja modellen', all: 'Alla kan välja modellen i frågerutan när den är på.', selected: 'En person som inte är med ser inte modellen och får standardmodellen i stället.' },
+};
+export function AudienceEditor({ value, onChange, units, of = 'connector' }: { value: ConnectorAudience; onChange: (a: ConnectorAudience) => void; units: Array<{ id: string; label: string }>; of?: keyof typeof wording }) {
   const selected = value.mode === 'selected' ? value : null;
   const update = (patch: Partial<Extract<ConnectorAudience, { mode: 'selected' }>>) => onChange({ mode: 'selected', roles: selected?.roles ?? [], units: selected?.units ?? [], groups: selected?.groups ?? [], ...patch });
+  const words = wording[of];
   return <VStack gap={3}>
-    <RadioList label="Vem ser anslutningen" value={value.mode} onChange={mode => onChange(mode === 'all' ? { mode: 'all' } : { mode: 'selected', roles: [], units: [], groups: [] })}>
-      <RadioListItem value="all" label="Alla som är inloggade" description="Anslutningens eget regelverk avgör sedan vad var och en får göra." />
-      <RadioListItem value="selected" label="Endast valda" description="En person som inte är med ser inte att anslutningen finns: inget område, inga frågor, inga kort." />
+    <RadioList label={words.label} value={value.mode} onChange={mode => onChange(mode === 'all' ? { mode: 'all' } : { mode: 'selected', roles: [], units: [], groups: [] })}>
+      <RadioListItem value="all" label="Alla som är inloggade" description={words.all} />
+      <RadioListItem value="selected" label="Endast valda" description={words.selected} />
     </RadioList>
     {selected && <VStack gap={3}>
       <CheckboxList label="Roller" value={selected.roles ?? []} onChange={roles => update({ roles: roles as Role[] })}>

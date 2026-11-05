@@ -32,7 +32,7 @@ export { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/Segme
 export { EmptyState } from '@astryxdesign/core/EmptyState';
 export { Layout, LayoutHeader, LayoutContent, LayoutFooter, LayoutPanel, VStack, HStack, StackItem } from '@astryxdesign/core/Layout';
 export { SideNav, SideNavItem, SideNavSection, SideNavHeading } from '@astryxdesign/core/SideNav';
-export { DropdownMenu } from '@astryxdesign/core/DropdownMenu';
+export { DropdownMenu, DropdownMenuRadioGroup, DropdownMenuRadioItem } from '@astryxdesign/core/DropdownMenu';
 export { MoreMenu } from '@astryxdesign/core/MoreMenu';
 export { Banner } from '@astryxdesign/core/Banner';
 export { Drawer, DrawerHeader } from '@astryxdesign/core/Drawer';

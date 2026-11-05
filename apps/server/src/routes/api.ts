@@ -2,7 +2,8 @@ import { actorOf } from '@clew/connectors';
 import { Hono } from 'hono';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
-import { ActInput, AskInput, AvailabilityInput, CancelEventInput, ConfirmInput, ConversationInput, CreateEventInput, MoveProposalInput, ReplanInput, ReplyInput, RescheduleEventInput, SnoozeInput } from '@clew/contracts';
+import { ActInput, AskInput, AvailabilityInput, CancelEventInput, ConfirmInput, ConversationInput, CreateEventInput, ModelChoiceInput, MoveProposalInput, ReplanInput, ReplyInput, RescheduleEventInput, SnoozeInput } from '@clew/contracts';
+import type { ModelChoiceInput as ModelChoiceInputType } from '@clew/contracts';
 import type { AvailabilityInput as AvailabilityInputType, CancelEventInput as CancelEventInputType, CreateEventInput as CreateEventInputType, MoveProposalInput as MoveProposalInputType, RescheduleEventInput as RescheduleEventInputType } from '@clew/contracts';
 import type { ConversationInput as ConversationInputType } from '@clew/contracts';
 import type { ActInput as ActInputType } from '@clew/contracts';
@@ -10,7 +11,7 @@ import { InputError, protectedRoute, type Env } from '../context';
 import { readFigures } from '../modules/figures/domain';
 import { verbsFor } from '../assistant/verbs';
 import { registry, runCapability } from '../connectors/registry';
-import { assistant, calendar, events, mocks, reminders, threads } from '../composition';
+import { assistant, calendar, events, mocks, models, reminders, threads } from '../composition';
 import { Type } from '@sinclair/typebox';
 
 const { act, attentionFor, dismissAny, ensureThreads, listAreas, listThreadsFor, reopenThread, snoozeOptions, snoozeThread, threadFor, undoReceipt } = threads;
@@ -22,7 +23,7 @@ const ajv = addFormats(new Ajv({ allErrors: false }));
 const RemindInput = Type.Object({ seconds: Type.Integer({ minimum: 1, maximum: 30 * 86400 }) }, { additionalProperties: false });
 const CancelReminderInput = Type.Object({ workflowId: Type.String({ minLength: 1, maxLength: 200 }) }, { additionalProperties: false });
 const validators = { remind: ajv.compile(RemindInput), snooze: ajv.compile(SnoozeInput), cancelReminder: ajv.compile(CancelReminderInput), ask: ajv.compile(AskInput), reply: ajv.compile(ReplyInput), confirm: ajv.compile(ConfirmInput), replan: ajv.compile(ReplanInput), act: ajv.compile(ActInput), conversation: ajv.compile(ConversationInput),
-  createEvent: ajv.compile(CreateEventInput), rescheduleEvent: ajv.compile(RescheduleEventInput), cancelEvent: ajv.compile(CancelEventInput), moveProposal: ajv.compile(MoveProposalInput), availability: ajv.compile(AvailabilityInput) };
+  modelChoice: ajv.compile(ModelChoiceInput), createEvent: ajv.compile(CreateEventInput), rescheduleEvent: ajv.compile(RescheduleEventInput), cancelEvent: ajv.compile(CancelEventInput), moveProposal: ajv.compile(MoveProposalInput), availability: ajv.compile(AvailabilityInput) };
 async function body<T>(request: Request, validate: (value: unknown) => value is T): Promise<T> {
   const text = await request.text();
   if (text.length > 4000) throw new InputError('För stor förfrågan.');
@@ -87,7 +88,9 @@ api.get('/threads/:id/verbs', async c => {
   const thread = await threadFor(c.get('session').context, c.req.param('id'));
   return thread ? c.json({ verbs: verbsFor(thread) }) : c.json({ error: 'Tråden finns inte.' }, 404);
 });
-api.get('/assistant/status', c => c.json(assistant.status()));
+/** The person's models (D24): the ones they may pick, the one in use and whether it answers; choosing one is their own preference. */
+api.get('/assistant/status', async c => c.json(await models.statusFor(c.get('session').context)));
+api.patch('/assistant/model', async c => c.json(await models.choose(c.get('session').context, (await body(c.req.raw, validators.modelChoice as unknown as (value: unknown) => value is ModelChoiceInputType)).modelId)));
 api.post('/threads/:id/reopen', async c => c.json(await reopenThread(c.get('session').context, c.req.param('id'))));
 /** The manager's own follow-up (D30): a card to everyone who has not answered, at any time. */
 api.post('/threads/:id/remind-invitees', async c => c.json(await calendar.remindInvitees(c.req.param('id'), c.get('session').context)));

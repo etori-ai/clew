@@ -1,6 +1,6 @@
 import { pgTable, text, integer, jsonb, bigserial, boolean, timestamp, check, primaryKey, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
-import type { ConnectorAudience, ConnectorHealth, MessageMeta, Receipt, ThreadAction, ThreadItem } from '@clew/contracts';
+import type { ConnectorAudience, ConnectorHealth, MessageMeta, ProviderHealth, Receipt, ThreadAction, ThreadItem } from '@clew/contracts';
 
 // Identity. Ported from startsidan: canonical person, explicit subject binding, server-side session with sealed tokens.
 export const people = pgTable('auth_person', {
@@ -131,3 +131,36 @@ export const connectors = pgTable('connector', {
 }, t => [check('connector_state', sql`${t.state} IN ('draft', 'enabled', 'disabled')`), check('connector_id', sql`${t.id} ~ '^[a-z][a-z0-9-]*$'`),
   // A remote connector has an address and a secret; a bundled one has neither.
   check('connector_remote', sql`${t.bundled} OR (${t.url} IS NOT NULL AND ${t.secret} IS NOT NULL)`)]);
+
+// Model providers and models (D24). A provider is one OpenAI-compatible endpoint; its key is a sealed envelope
+// (auth-crypto, purpose `provider:key:<id>`) or null for a local endpoint that needs none. A model is one id on that
+// endpoint with a Swedish name, an audience of the connector's shape, an on/off state and the installation's default
+// flag (at most one row, enforced by the partial unique index). `model_choice` is a person's own pick in the composer.
+export type { ProviderHealth };
+export const modelProviders = pgTable('model_provider', {
+  id: text('id').primaryKey(), title: text('title').notNull(), baseUrl: text('base_url').notNull(),
+  apiKey: text('api_key'), keyChangedAt: timestamp('key_changed_at', { withTimezone: true }),
+  health: jsonb('health').$type<ProviderHealth>().notNull().default({ status: 'untested', at: '1970-01-01T00:00:00.000Z' }),
+  createdBy: text('created_by').notNull(), updatedBy: text('updated_by').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  version: integer('version').notNull().default(1),
+}, t => [check('model_provider_id', sql`${t.id} ~ '^[a-z][a-z0-9-]*$'`)]);
+export const models = pgTable('model', {
+  id: text('id').primaryKey(), providerId: text('provider_id').notNull().references(() => modelProviders.id),
+  model: text('model').notNull(), title: text('title').notNull(), description: text('description').notNull().default(''),
+  state: text('state').$type<'enabled' | 'disabled'>().notNull().default('disabled'),
+  audience: jsonb('audience').$type<ConnectorAudience>().notNull().default({ mode: 'all' }),
+  isDefault: boolean('is_default').notNull().default(false), tools: boolean('tools').notNull().default(true),
+  createdBy: text('created_by').notNull(), updatedBy: text('updated_by').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  version: integer('version').notNull().default(1),
+}, t => [check('model_id', sql`${t.id} ~ '^[a-z][a-z0-9-]*$'`), check('model_state', sql`${t.state} IN ('enabled', 'disabled')`),
+  index('model_by_provider').on(t.providerId),
+  // One default per installation: a second row with the flag is refused by the database, not only by the use case.
+  uniqueIndex('model_one_default').on(t.isDefault).where(sql`${t.isDefault}`)]);
+export const modelChoices = pgTable('model_choice', {
+  personId: text('person_id').primaryKey().references(() => people.id, { onDelete: 'cascade' }),
+  // A removed model takes every pick of it along; the person falls back to the default.
+  modelId: text('model_id').notNull().references(() => models.id, { onDelete: 'cascade' }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});

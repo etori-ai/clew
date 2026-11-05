@@ -5,21 +5,22 @@ import { Shell, mobileQuery } from '../../components/shell';
 import { useMediaQuery } from '@clew/ui';
 
 /**
- * The administration surface (D23) on the shared shell (D31): the SideNav holds the admin sections (Anslutna system
- * today, Modeller when D24 lands; the drawer on a phone), and the page sits in a Section with a bounded width so a
- * table does not run to the edge of a wide screen. Only Astryx.
+ * The administration surface (D23, D24) on the shared shell (D31): the SideNav holds the admin sections (Anslutna
+ * system and Modeller; the drawer on a phone), and the page sits in a Section with a bounded width so a table does not
+ * run to the edge of a wide screen. Only Astryx.
  */
 export type Crumb = { label: string; href?: string };
-export function AdminShell({ user, crumbs, children }: { user: SessionUser; crumbs: Crumb[]; children: ReactNode }) {
+export type AdminSection = 'anslutningar' | 'modeller';
+export function AdminShell({ user, crumbs, children, section = 'anslutningar' }: { user: SessionUser; crumbs: Crumb[]; children: ReactNode; section?: AdminSection }) {
   const mobile = useMediaQuery(mobileQuery);
   return <Shell user={user} admin current="admin"
     sideNav={<SideNav>
       <SideNavSection title="Anslutningar">
-        <SideNavItem label="Anslutna system" icon="wrench" isSelected href="/admin/anslutningar" />
-        <SideNavItem label="Modeller" isDisabled endContent={<Text type="supporting">Kommer</Text>} />
+        <SideNavItem label="Anslutna system" isSelected={section === 'anslutningar'} href="/admin/anslutningar" />
+        <SideNavItem label="Modeller" isSelected={section === 'modeller'} href="/admin/modeller" />
       </SideNavSection>
       <SideNavSection title="Om administrationen" isHeaderHidden>
-        <Text type="supporting" as="p">Du styr vilka system Startsidan är ansluten till och vem som ser dem. Vad var och en får göra i ett system avgör systemet självt.</Text>
+        <Text type="supporting" as="p">Du styr vilka system Startsidan är ansluten till, vilka modeller som svarar i frågerutan och vem som ser dem. Vad var och en får göra i ett system avgör systemet självt.</Text>
       </SideNavSection>
     </SideNav>}>
     {/* The page's gutters live on this Section: a Layout, or a Section with padding 0, is full-bleed and would cancel the shell's padding. */}

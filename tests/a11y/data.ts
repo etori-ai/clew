@@ -1,3 +1,4 @@
+import type { AssistantStatus, ModelDetail, ModelSummary, ProviderDetail, ProviderSummary, ProviderTestReport } from '@clew/contracts';
 import type { Area, Attention, CalendarEvent, SnoozePreset, CheckReport, ConnectorDetail, ConnectorPreview, ConnectorSummary, ConversationResponse, Proposal, SearchResult, SessionUser, SourceCitation, Thread, TodayView } from '@clew/contracts';
 
 /** Synthetic data, typed against the contracts so the suite follows the API. The clock is frozen to this Wednesday. */
@@ -123,6 +124,13 @@ export const conversation = (source: Thread[], text: string, conversationId = 'k
       messages: [...previous, { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW }, { id: `a${previous.length}`, role: 'assistant', body, createdAt: NOW, meta: { source: 'Startsidan', shape: 'steg', view, sources: citations, followUps: ['Och om hen slagit i huvudet?'] } }] });
     return { conversationId, thread: reply, shape: 'steg', assistant: 'model', answer: { body, source: 'Startsidan', at: NOW }, view, clewActions: [], followUps: ['Och om hen slagit i huvudet?', 'Vem ringer jag på natten?'], sources: citations };
   }
+  // A question the administered model answers (D24): the answer names the model under it.
+  if (/semester/i.test(text)) {
+    const body = 'Du har 18 semesterdagar kvar i år.', model = { id: 'gpt-oss-120b', title: 'Kapabel' };
+    const reply = thread({ id: conversationId, title: text.slice(0, 80), kind: 'question', connector: 'clew', area: 'fragor',
+      messages: [...previous, { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW }, { id: `a${previous.length}`, role: 'assistant', body, createdAt: NOW, meta: { source: 'Heroma', assistant: 'model', model } }] });
+    return { conversationId, thread: reply, shape: 'svar', assistant: 'model', answer: { body, source: 'Heroma', at: NOW }, clewActions: [], followUps: [], model };
+  }
   const body = 'Tio personer är på plats i dag. Sara Nyström är sjuk.';
   const reply = thread({ id: conversationId, title: 'Vem är på plats i dag?', kind: 'question', connector: 'clew', area: 'fragor',
     messages: [...previous, { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW }, { id: `a${previous.length}`, role: 'assistant', body, createdAt: NOW, meta: { source: 'Heroma' } }] });
@@ -149,4 +157,28 @@ export const connectorDetail = (c: ConnectorSummary): ConnectorDetail => ({ ...c
   history: [{ at: '2026-11-03T06:00:00.000Z', actor: 'person:mikael', action: 'connector.added', details: { url: c.url } }, { at: NOW, actor: 'person:mikael', action: 'connector.enabled', details: {} }] });
 export const checkReport: CheckReport = { ok: false, findings: [{ level: 'ok', text: 'manifest valid: 5 capabilities, 1 areas, scan true' }, { level: 'warn', text: 'hello.dayWithMeetings as manager: Hello svarar inte just nu.' }, { level: 'fail', text: 'a call signed with another secret answered 200, expected 401' }] };
 export const connectorPreview = (role: 'manager' | 'employee'): ConnectorPreview => ({ role, unitId: null, visible: role === 'manager', areas: role === 'manager' ? [{ id: 'budget', title: 'Budget', standing: ['Budget mot prognos'] }] : [], tools: role === 'manager' ? ['raindance.budget'] : [] });
+/** Modeller (D24): one provider with a capable default and a small model for managers, one provider that is down with a model switched off. */
+const provider = (values: Partial<ProviderSummary> & Pick<ProviderSummary, 'id' | 'title'>): ProviderSummary => ({
+  baseUrl: `http://${values.id}.test/v1`, hasKey: true, keyChangedAt: NOW, health: { status: 'ok', at: NOW }, models: 2, enabledModels: 2, createdAt: '2026-11-03T06:00:00.000Z', updatedAt: NOW, ...values });
+const modelSummary = (values: Partial<ModelSummary> & Pick<ModelSummary, 'id' | 'title' | 'model' | 'providerId' | 'providerTitle'>): ModelSummary => ({
+  description: '', state: 'enabled', audience: { mode: 'all' }, isDefault: false, tools: true, health: { status: 'ok', at: NOW }, createdAt: '2026-11-03T06:00:00.000Z', updatedAt: NOW, ...values });
+export const modelProviders = (): ProviderSummary[] => [
+  provider({ id: 'kommunen', title: 'Kommunens modeller' }),
+  provider({ id: 'pilot', title: 'Pilotleverantör', hasKey: false, keyChangedAt: null, health: { status: 'unreachable', at: NOW, detail: 'ECONNREFUSED' }, models: 1, enabledModels: 0 }),
+];
+export const models = (): ModelSummary[] => [
+  modelSummary({ id: 'gpt-oss-120b', title: 'Kapabel', model: 'gpt-oss:120b', providerId: 'kommunen', providerTitle: 'Kommunens modeller', description: 'Långa svar och utkast.', isDefault: true }),
+  modelSummary({ id: 'gpt-oss-20b', title: 'Snabb (lokal)', model: 'gpt-oss:20b', providerId: 'kommunen', providerTitle: 'Kommunens modeller', description: 'Korta frågor om dagen.', audience: { mode: 'selected', roles: ['manager'] } }),
+  modelSummary({ id: 'qwen3-32b', title: 'Qwen3 32B', model: 'qwen3:32b', providerId: 'pilot', providerTitle: 'Pilotleverantör', state: 'disabled', health: { status: 'unreachable', at: NOW, detail: 'ECONNREFUSED' } }),
+];
+const modelHistory = (kind: 'model' | 'provider') => [{ at: '2026-11-03T06:00:00.000Z', actor: 'person:mikael', action: `${kind}.added`, details: {} }, { at: NOW, actor: 'person:mikael', action: kind === 'model' ? 'model.enabled' : 'provider.key', details: {} }];
+export const modelDetail = (m: ModelSummary): ModelDetail => ({ ...m, createdBy: 'person:mikael', updatedBy: 'person:mikael', history: modelHistory('model') });
+export const providerDetail = (p: ProviderSummary): ProviderDetail => ({ ...p, createdBy: 'person:mikael', updatedBy: 'person:mikael', history: modelHistory('provider') });
+export const providerReport: ProviderTestReport = { ok: true, models: ['gpt-oss:120b', 'gpt-oss:20b', 'llama3.3:70b'], health: { status: 'ok', at: NOW }, findings: [{ level: 'ok', text: 'Adressen svarar och listar 3 modeller.' }] };
+/** The person's models in the box: one choice hides the menu (every other suite), two show it. */
+export const assistantStatus = (choices: number, currentId = 'gpt-oss-120b'): AssistantStatus => {
+  const all = models().filter(m => m.state === 'enabled').slice(0, choices).map(m => ({ id: m.id, title: m.title, description: m.description, isDefault: m.isDefault }));
+  const current = all.find(c => c.id === currentId) ?? all[0] ?? null;
+  return { configured: !!current, available: !!current, model: current?.title ?? null, checkedAt: NOW, current, choices: all };
+};
 export const units = [{ id: 'unit-skola', label: 'Bergsåkers skola' }, { id: 'unit-omsorg', label: 'Hemtjänst Centrum' }, { id: 'unit-it', label: 'IT och digitalisering' }];

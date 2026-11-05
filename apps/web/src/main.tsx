@@ -11,6 +11,9 @@ import { CalendarPage } from './pages/calendar';
 import { LoginPage } from './pages/login';
 import { AdminConnectorsPage } from './pages/admin/connectors';
 import { AdminConnectorPage } from './pages/admin/connector';
+import { AdminModelsPage } from './pages/admin/models';
+import { AdminModelPage } from './pages/admin/model';
+import { AdminProviderPage } from './pages/admin/provider';
 import { NotAdmin } from './pages/admin/shell';
 
 type Shell = { session: BrowserSession; user: SessionUser; admin: boolean };
@@ -63,6 +66,9 @@ function App() {
     <Route path="/admin" element={admin(shell => <AdminConnectorsPage user={shell.user} />)} />
     <Route path="/admin/anslutningar" element={admin(shell => <AdminConnectorsPage user={shell.user} />)} />
     <Route path="/admin/anslutningar/:id" element={admin(shell => <AdminConnectorPage user={shell.user} />)} />
+    <Route path="/admin/modeller" element={admin(shell => <AdminModelsPage user={shell.user} />)} />
+    <Route path="/admin/modeller/leverantorer/:id" element={admin(shell => <AdminProviderPage user={shell.user} />)} />
+    <Route path="/admin/modeller/:id" element={admin(shell => <AdminModelPage user={shell.user} />)} />
     <Route path="/" element={start} />
     <Route path="/omrade/:area" element={start} />
     <Route path="/hanterat" element={start} />

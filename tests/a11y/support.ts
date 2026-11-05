@@ -2,6 +2,8 @@ import { test as base, expect, type Page, type Route } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import type { Thread } from '@clew/contracts';
 import { NEXT_WEEK, NOW, WEEK, areas, attention, checkReport, connectorDetail, connectorPreview, connectors, conversation, events, searchOutput, snoozePresets, threads, today, units, user } from './data';
+import { assistantStatus, modelDetail, modelProviders, models, providerDetail, providerReport } from './data';
+import type { ModelSummary, ProviderSummary } from '@clew/contracts';
 
 export const desktop = { width: 1280, height: 800 };
 export const phone = { width: 375, height: 667 };
@@ -21,6 +23,11 @@ export class MockApi {
   /** The session says the person may administer connectors (D23). Off by default so the other suites see the ordinary page. */
   admin = false;
   connectors: ConnectorSummary[] = connectors();
+  /** Modeller (D24): the providers and models the admin pages show, and how many models the person may pick in the box (two shows the menu). */
+  providers: ProviderSummary[] = modelProviders();
+  models: ModelSummary[] = models();
+  modelChoices = 1;
+  currentModel = 'gpt-oss-120b';
   output: unknown = { date: '2026-11-04', onDuty: ['Anna Lindqvist 07:00–16:00'], absent: [{ name: 'Sara Nyström', kind: 'short' }] };
   unmocked: string[] = [];
   private update(id: string, change: Partial<Thread>) {
@@ -42,6 +49,7 @@ export class MockApi {
       const cid = path.split('/')[3] ?? '';
       const found = () => this.connectors.find(c => c.id === cid);
       if (path === '/admin/units') return json({ units });
+      if (path.startsWith('/admin/models') || path.startsWith('/admin/providers')) return this.handleModels(route, method, path);
       if (path === '/admin/connectors' && method === 'GET') return json({ connectors: this.connectors });
       if (path === '/admin/connectors' && method === 'POST') {
         const input = request.postDataJSON() as { id: string; url: string };
@@ -65,7 +73,8 @@ export class MockApi {
     if (path === '/areas') return json({ areas });
     if (path === '/today') return json(today);
     if (path === '/attention') return json(attention);
-    if (path === '/assistant/status') return json({ configured: true, available: true, model: 'test', checkedAt: NOW });
+    if (path === '/assistant/status') return json(assistantStatus(this.modelChoices, this.currentModel));
+    if (path === '/assistant/model' && request.method() === 'PATCH') { this.currentModel = (request.postDataJSON() as { modelId: string }).modelId; return json(assistantStatus(this.modelChoices, this.currentModel)); }
     if (path === '/calendar') { const from = url.searchParams.get('from') ?? '2026-11-02'; return json({ from, events: events(from), proposals: from === NEXT_WEEK ? this.threads.find(t => t.id === 'samtal')?.proposals ?? [] : [] }); }
     // A person's own bookings and proposal moves (D32): the form's lists, the free-busy check, and the writes answered as the server would.
     if (path === '/calendar/members') return json({ members: [{ name: 'Anna Lindqvist', email: 'anna@clew.test' }, { name: 'Erik Sandström', email: 'erik@clew.test' }] });
@@ -101,6 +110,49 @@ export class MockApi {
     if (path.startsWith('/threads/') && !post) return json(this.threads.find(t => t.id === id));
     this.unmocked.push(`${request.method()} ${path}`);
     return route.fulfill({ status: 500, json: { error: 'Inte mockat' } });
+  }
+  /** Modeller (D24), answered as the server would: the list, one model or provider, the writes, and a test that lists three models. */
+  private handleModels(route: Route, method: string, path: string) {
+    const json = (body: unknown, status = 200) => route.fulfill({ status, json: body });
+    const missing = (what: string) => route.fulfill({ status: 400, json: { error: `${what} finns inte.` } });
+    const [, , kind, id = '', action] = path.split('/');
+    const body = () => (route.request().postDataJSON() ?? {}) as Record<string, unknown>;
+    const counted = () => { this.providers = this.providers.map(p => ({ ...p, models: this.models.filter(m => m.providerId === p.id).length, enabledModels: this.models.filter(m => m.providerId === p.id && m.state === 'enabled').length })); };
+    if (kind === 'models') {
+      if (!id && method === 'GET') return json({ providers: this.providers, models: this.models });
+      if (!id && method === 'POST') {
+        const input = body() as { providerId: string; model: string; title?: string; description?: string };
+        const p = this.providers.find(x => x.id === input.providerId)!;
+        const m: ModelSummary = { ...this.models[0]!, id: input.model.replace(/[^a-z0-9]+/g, '-'), model: input.model, title: input.title ?? input.model, description: input.description ?? '', providerId: p.id, providerTitle: p.title, state: 'disabled', isDefault: false, audience: { mode: 'all' } };
+        this.models = [...this.models, m]; counted();
+        return json(modelDetail(m), 201);
+      }
+      const m = this.models.find(x => x.id === id);
+      if (!m) return missing('Modellen');
+      if (action === 'test') return json({ ok: true, models: [], health: { status: 'ok', at: NOW }, findings: [{ level: 'ok', text: `${m.title} svarar.` }] });
+      if (method === 'DELETE') { this.models = this.models.filter(x => x.id !== id); counted(); return json({ removed: true }); }
+      if (method === 'PATCH') {
+        const patch = body() as Partial<ModelSummary>;
+        if (patch.isDefault) this.models = this.models.map(x => ({ ...x, isDefault: false }));
+        const next = { ...m, ...patch, ...(patch.state === 'disabled' ? { isDefault: false } : {}), updatedAt: new Date().toISOString() };
+        this.models = this.models.map(x => x.id === id ? next : x); counted();
+        return json(modelDetail(next));
+      }
+      return json(modelDetail(m));
+    }
+    if (!id && method === 'POST') {
+      const input = body() as { id: string; title: string; baseUrl: string; apiKey?: string };
+      const p: ProviderSummary = { ...this.providers[0]!, id: input.id, title: input.title, baseUrl: input.baseUrl, hasKey: !!input.apiKey, models: 0, enabledModels: 0 };
+      this.providers = [...this.providers, p];
+      return json({ provider: providerDetail(p), report: providerReport }, 201);
+    }
+    const p = this.providers.find(x => x.id === id);
+    if (!p) return missing('Leverantören');
+    if (action === 'test') return json(providerReport);
+    if (action === 'key') { const next = { ...p, hasKey: !!body().apiKey, keyChangedAt: NOW }; this.providers = this.providers.map(x => x.id === id ? next : x); return json(providerDetail(next)); }
+    if (method === 'DELETE') { this.providers = this.providers.filter(x => x.id !== id); return json({ removed: true }); }
+    if (method === 'PATCH') { const next = { ...p, ...(body() as Partial<ProviderSummary>), updatedAt: new Date().toISOString() }; this.providers = this.providers.map(x => x.id === id ? next : x); return json(providerDetail(next)); }
+    return json(providerDetail(p));
   }
 }
 

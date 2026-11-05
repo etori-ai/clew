@@ -1,3 +1,4 @@
+import type { AddModelInput, AddProviderInput, ModelDetail, ModelPatchInput, ModelSummary, ProviderDetail, ProviderPatchInput, ProviderSummary, ProviderTestReport } from '@clew/contracts';
 import type { SnoozeInput, SnoozePreset, AddConnectorInput, Area, AssistantStatus, Attention, AvailabilityInput, AvailabilityResult, CalendarEvent, CalendarMember, CalendarRoom, CancelEventInput, CreateEventInput, DayView, MoveProposalInput, RescheduleEventInput, CheckReport, ClewObject, Completions, ConnectorDetail, ConnectorHealth, ConnectorPatchInput, ConnectorPreview, ConnectorSummary, ConversationInput, ConversationResponse, Figure, ManifestDiff, Proposal, Role, Thread, TodayView, Verb } from '@clew/contracts';
 import { sessionFetch } from '@clew/ui';
 
@@ -30,6 +31,8 @@ export const api = {
   verbs: (id: string) => call<{ verbs: Verb[] }>(`/api/threads/${id}/verbs`),
   reopen: (id: string) => post<Thread>(`/api/threads/${id}/reopen`),
   assistantStatus: () => call<AssistantStatus>('/api/assistant/status'),
+  /** The person's own model in the composer (D24); null goes back to the default. */
+  chooseModel: (modelId: string | null) => patch<AssistantStatus>('/api/assistant/model', { modelId }),
   today: () => call<TodayView>('/api/today'),
   figures: () => call<{ figures: Figure[] }>('/api/figures'),
   attention: () => call<Attention>('/api/attention'),
@@ -56,6 +59,19 @@ export const api = {
     test: (id: string) => post<CheckReport & { health: ConnectorHealth }>(`/api/admin/connectors/${id}/test`),
     refresh: (id: string, apply: boolean) => post<{ diff: ManifestDiff; connector: ConnectorDetail }>(`/api/admin/connectors/${id}/refresh`, { apply }),
     preview: (id: string, role: Role, unitId?: string) => call<ConnectorPreview>(`/api/admin/connectors/${id}/preview?role=${role}` + (unitId ? `&unitId=${encodeURIComponent(unitId)}` : '')),
+    // Modeller (D24): providers and the models under them. A key goes in, never comes out.
+    models: () => call<{ providers: ProviderSummary[]; models: ModelSummary[] }>('/api/admin/models'),
+    model: (id: string) => call<ModelDetail>(`/api/admin/models/${id}`),
+    addModel: (input: AddModelInput) => post<ModelDetail>('/api/admin/models', input),
+    updateModel: (id: string, input: ModelPatchInput) => patch<ModelDetail>(`/api/admin/models/${id}`, input),
+    removeModel: (id: string) => del<{ removed: true }>(`/api/admin/models/${id}`),
+    testModel: (id: string) => post<ProviderTestReport>(`/api/admin/models/${id}/test`),
+    provider: (id: string) => call<ProviderDetail>(`/api/admin/providers/${id}`),
+    addProvider: (input: AddProviderInput) => post<{ provider: ProviderDetail; report: ProviderTestReport }>('/api/admin/providers', input),
+    updateProvider: (id: string, input: ProviderPatchInput) => patch<ProviderDetail>(`/api/admin/providers/${id}`, input),
+    removeProvider: (id: string) => del<{ removed: true }>(`/api/admin/providers/${id}`),
+    providerKey: (id: string, apiKey: string) => post<ProviderDetail>(`/api/admin/providers/${id}/key`, { apiKey }),
+    testProvider: (id: string) => post<ProviderTestReport>(`/api/admin/providers/${id}/test`),
   },
   calendar: (from?: string) => call<{ from: string; events: CalendarEvent[]; proposals: Proposal[] }>('/api/calendar' + (from ? `?from=${from}` : '')),
   // A person's own bookings and proposal moves (D28). The day view is a read capability, so the side panel reaches it the same way as any view.

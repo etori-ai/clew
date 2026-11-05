@@ -1,4 +1,4 @@
-import type { AuthenticatedContext, Chip, ClewAction, ConversationInput, ConversationResponse, MessageMeta, SearchResult, SourceCitation, Thread, Verb, ViewRef } from '@clew/contracts';
+import type { AuthenticatedContext, Chip, ClewAction, ConversationInput, ConversationResponse, MessageMeta, ModelRef, SearchResult, SourceCitation, Thread, Verb, ViewRef } from '@clew/contracts';
 import { citationsOf, parseAnswer } from './answer';
 import { actorOf, SEARCH_CONNECTOR } from '@clew/connectors';
 import { displayDate, weekNumber } from '@clew/calendar/dates';
@@ -10,15 +10,17 @@ import { routeFixed } from './fixed';
 import { headingFollowUps, matchCapability, nearest, searchAnswer, templatedAnswer } from './router';
 import { modelAnswer, systemPrompt, type ToolCallRecord } from './model';
 import { listObjects } from './objects';
-import type { AssistantDeps } from './ports';
+import type { AssistantDeps, ResolvedModel } from './ports';
 import { draftSelection, parseVerb, verbsFor } from './verbs';
 
-export type { AssistantDeps, ModelProvider } from './ports';
+export type { AssistantDeps, ModelResolver } from './ports';
 export { verbsFor } from './verbs';
 
 type Produced = {
   body: string; source: string; shape: ConversationResponse['shape']; assistant: ConversationResponse['assistant'];
   view?: ViewRef; draft?: NonNullable<ConversationResponse['draft']>; forslag?: { threadId: string }; clewActions: ClewAction[]; toolCalls?: ToolCallRecord[]; followUps: string[]; sources?: SourceCitation[];
+  /** The administered model that wrote the answer (D24). */
+  model?: ModelRef;
 };
 const SEARCH_TOOL = SEARCH_CONNECTOR + '.search';
 const isSearchResult = (v: unknown): v is SearchResult => !!v && typeof v === 'object' && Array.isArray((v as SearchResult).rows) && Array.isArray((v as SearchResult).sources);
@@ -30,7 +32,7 @@ const whyLine = (t: Thread) => `Varför nu? ${t.trigger.reason}. Källa: ${t.tri
  * capabilities and the decision endpoint are never reached from here.
  */
 export function assistantUsecases(deps: AssistantDeps) {
-  const { store, registry, run, calendar, model, clock, ids } = deps;
+  const { store, registry, run, calendar, models, clock, ids } = deps;
   const todayDate = () => displayDate(clock().toISOString());
   const thread = async (persona: Pick<AuthenticatedContext, 'id'>, id: string) => (await store.readThread(persona.id, id))!;
 
@@ -86,17 +88,21 @@ export function assistantUsecases(deps: AssistantDeps) {
     const near = nearest(text, tools).map(t => t.title);
     return { body: `Det där kan jag inte svara på ännu. Jag kan svara om ${near.length ? near.map(t => t.toLowerCase()).join(', ') : 'dagen, utvecklingssamtalen, frånvaron, budgeten och HME'}.`, source: 'Startsidan', shape: 'svar', assistant, clewActions: [], followUps: near };
   }
-  /** The model path: read tools only, chips as explicit context, the deterministic router as the fallback when it fails. */
-  async function modelPath(persona: AuthenticatedContext, text: string, history: Thread['messages'], chips: ResolvedChips): Promise<Produced | undefined> {
-    if (!model.generate || !model.status().available) return undefined;
-    const tools = registry.tools(actorOf(persona));
+  /**
+   * The model path: the person's model (D24), read tools only (none when the model is set not to use them), chips as
+   * explicit context, the deterministic router as the fallback when it fails. A failure marks the provider down until
+   * the probe or a test brings it back (D8).
+   */
+  async function modelPath(persona: AuthenticatedContext, text: string, history: Thread['messages'], chips: ResolvedChips, model: ResolvedModel): Promise<Produced | undefined> {
+    if (!models.health.available(model.providerId)) return undefined;
+    const tools = model.tools ? registry.tools(actorOf(persona)) : [];
     const now = clock();
     const system = systemPrompt({ name: persona.name, role: persona.role, unitLabel: persona.unitLabel, now, week: weekNumber(displayDate(now.toISOString())), objects: serialiseContext(chips.objects) });
     try {
       // The search fan-out (D26) takes up to four seconds of its own, so a turn that may search gets a longer budget than a plain read.
       const timeoutMs = tools.some(t => t.name === SEARCH_TOOL) ? 12_000 : 8_000;
       const answer = await modelAnswer({ system, history: history.slice(-20).map(m => ({ role: m.role, body: m.body })), text, tools, run: (name, input) => run(persona, name, input), generate: model.generate, timeoutMs });
-      model.markAvailable();
+      models.health.mark(model.providerId, true, clock().toISOString());
       const source = answer.toolCalls.length ? [...new Set(answer.toolCalls.map(c => tools.find(t => t.name === c.capability)?.source ?? 'Startsidan'))].join(', ') : 'Assistenten';
       const searched = answer.toolCalls.find(c => c.capability === SEARCH_TOOL && isSearchResult(c.output));
       const parsed = parseAnswer(answer.body);
@@ -105,9 +111,9 @@ export function assistantUsecases(deps: AssistantDeps) {
       const view = answer.view && answer.view.capability === SEARCH_TOOL ? { ...answer.view, title: 'Källor' } : answer.view;
       const followUps = parsed.followUps.length ? parsed.followUps : searched ? headingFollowUps((searched.output as SearchResult).rows) : nearest(text, tools).map(t => t.title);
       const shape: Produced['shape'] = parsed.shape ?? (view ? 'vy' : 'svar');
-      return { body: parsed.body, source, shape, assistant: 'model', clewActions: [], toolCalls: answer.toolCalls, followUps, ...(view ? { view } : {}), ...(sources?.length ? { sources } : {}) };
+      return { body: parsed.body, source, shape, assistant: 'model', clewActions: [], toolCalls: answer.toolCalls, followUps, ...(view ? { view } : {}), ...(sources?.length ? { sources } : {}), model: { id: model.id, title: model.title } };
     } catch (e) {
-      model.markUnavailable();
+      models.health.mark(model.providerId, false, clock().toISOString());
       deps.log('assistant: model unavailable, falling back to the router:', e instanceof Error ? e.message : e);
       return undefined;
     }
@@ -121,15 +127,17 @@ export function assistantUsecases(deps: AssistantDeps) {
     const history = existing?.messages ?? [];
     let produced: Produced | undefined;
     if (resolved.primaryThread) produced = await chipPath(persona, input.text, resolved.primaryThread);
-    if (!produced) produced = await modelPath(persona, input.text, history, resolved);
-    if (!produced) produced = await routerPath(persona, input.text, model.status().configured ? 'unavailable' : 'router');
+    // The person's model is resolved on the server for every turn (D24): their pick, else the default; none means the router (D8).
+    const model = produced ? undefined : await models.resolve(persona);
+    if (!produced && model) produced = await modelPath(persona, input.text, history, resolved, model);
+    if (!produced) produced = await routerPath(persona, input.text, model ? 'unavailable' : 'router');
     const at = clock().toISOString();
     const conversationId = existing?.id ?? ids();
     const refs = chips.map(c => c.ref);
     const assistantMeta: MessageMeta = { shape: produced.shape, assistant: produced.assistant, source: produced.source,
       ...(produced.view ? { view: produced.view } : {}), ...(produced.draft ? { draft: { kind: produced.draft.kind, threadId: produced.draft.threadId, ...(produced.draft.refs ? { refs: produced.draft.refs } : {}), ...(produced.draft.week ? { week: produced.draft.week } : {}) } } : {}),
       ...(produced.toolCalls?.length ? { toolCalls: produced.toolCalls.map(c => ({ capability: c.capability, input: c.input })) } : {}),
-      ...(produced.sources?.length ? { sources: produced.sources } : {}), ...(produced.followUps.length ? { followUps: produced.followUps.slice(0, 3) } : {}) };
+      ...(produced.sources?.length ? { sources: produced.sources } : {}), ...(produced.followUps.length ? { followUps: produced.followUps.slice(0, 3) } : {}), ...(produced.model ? { model: produced.model } : {}) };
     await store.transaction(async tx => {
       if (!existing) {
         await tx.insertThread({ id: conversationId, personId: persona.id, kind: 'question', topic: 'question', title: input.text.slice(0, 80), state: 'open', week: null, connector: 'clew', area: 'fragor', summary: produced!.body,
@@ -141,13 +149,13 @@ export function assistantUsecases(deps: AssistantDeps) {
       await tx.addMessage(conversationId, { role: 'assistant', body: produced!.body, at, meta: assistantMeta });
       await tx.writeAudit({ actor: persona.principal.id, action: existing ? 'conversation.replied' : 'conversation.asked', subject: 'thread:' + conversationId, at,
         details: { assistant: produced!.assistant, shape: produced!.shape, chips: refs, tools: (produced!.toolCalls ?? []).map(c => c.capability), ...(produced!.view ? { view: produced!.view.capability } : {}),
-          ...(produced!.sources?.length ? { sources: produced!.sources.map(s => s.ref) } : {}) } });
+          ...(produced!.sources?.length ? { sources: produced!.sources.map(s => s.ref) } : {}), ...(produced!.model ? { model: produced!.model.id } : {}) } });
     });
     const conversation = await thread(persona, conversationId);
     const verbs: Verb[] | undefined = resolved.primaryThread ? verbsFor(produced.draft?.thread ?? resolved.primaryThread) : undefined;
     return { conversationId, thread: conversation, shape: produced.shape, assistant: produced.assistant, answer: { body: produced.body, source: produced.source, at },
       ...(produced.view ? { view: produced.view } : {}), ...(produced.forslag ? { forslag: produced.forslag } : {}), ...(produced.draft ? { draft: produced.draft } : {}),
-      clewActions: produced.clewActions, ...(verbs ? { verbs } : {}), followUps: produced.followUps.slice(0, 3), ...(produced.sources?.length ? { sources: produced.sources } : {}) };
+      clewActions: produced.clewActions, ...(verbs ? { verbs } : {}), followUps: produced.followUps.slice(0, 3), ...(produced.sources?.length ? { sources: produced.sources } : {}), ...(produced.model ? { model: produced.model } : {}) };
   }
   /** Kept for the first-session routes: a question is one conversation turn. */
   async function ask(persona: AuthenticatedContext, question: string): Promise<Thread> {
@@ -162,7 +170,7 @@ export function assistantUsecases(deps: AssistantDeps) {
     const at = clock().toISOString();
     await store.transaction(async tx => {
       await tx.addMessage(threadId, { role: 'user', body, at });
-      await tx.addMessage(threadId, { role: 'assistant', body: chipped.answer.body, at, meta: { shape: chipped.shape, assistant: chipped.assistant, source: chipped.answer.source } });
+      await tx.addMessage(threadId, { role: 'assistant', body: chipped.answer.body, at, meta: { shape: chipped.shape, assistant: chipped.assistant, source: chipped.answer.source, ...(chipped.model ? { model: chipped.model } : {}) } });
       await tx.writeAudit({ actor: persona.principal.id, action: 'thread.replied', subject: 'thread:' + threadId, at, details: { conversation: chipped.conversationId } });
     });
     return thread(persona, threadId);
@@ -171,7 +179,6 @@ export function assistantUsecases(deps: AssistantDeps) {
     converse, ask, reply,
     completionsFor: (persona: AuthenticatedContext) => completionsFor(deps, persona),
     listObjects: (persona: AuthenticatedContext, q: string) => listObjects(deps, persona, q),
-    status: () => model.status(),
   };
 }
 export type AssistantUsecases = ReturnType<typeof assistantUsecases>;

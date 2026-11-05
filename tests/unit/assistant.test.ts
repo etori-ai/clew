@@ -7,7 +7,9 @@ import { raindanceConnector } from '../../packages/connectors/src/mock/raindance
 import { treservaConnector } from '../../packages/connectors/src/mock/treserva';
 import { draftSelection, parseVerb, verbsFor } from '../../apps/server/src/assistant/verbs';
 import { matchCapability, nearest, templatedAnswer } from '../../apps/server/src/assistant/router';
-import { buildTools, createProvider, fromToolName, modelAnswer, ModelUnavailable, systemPrompt, toToolName } from '../../apps/server/src/assistant/model';
+import { buildTools, createGenerator, fromToolName, modelAnswer, ModelUnavailable, systemPrompt, toToolName } from '../../apps/server/src/assistant/model';
+import { openAICompatibleWire } from '../../apps/server/src/assistant/adapters/openai-compatible';
+import type { WireError } from '../../apps/server/src/assistant/ports';
 import { serialiseContext } from '../../apps/server/src/assistant/context';
 import { citationsOf, parseAnswer } from '../../apps/server/src/assistant/answer';
 
@@ -155,17 +157,32 @@ describe('the model path only reads, and falls back when the provider fails', ()
       if (call === 1) return completion({ role: 'assistant', content: null, tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'heroma__whoIsOn', arguments: '{}' } }] }, 'tool_calls');
       return completion({ role: 'assistant', content: 'Tre på plats. Heroma 08:00.' }, 'stop');
     };
-    const provider = createProvider({ AI_BASE_URL: 'http://fake.test/v1', AI_MODEL: 'open-model' }, fakeFetch)!;
+    const generate = createGenerator({ baseUrl: 'http://fake.test/v1' }, 'open-model', fakeFetch);
     const ran: string[] = [];
-    const answer = await modelAnswer({ system: 's', history: [], text: 'vem är på plats?', tools: r.tools(hillevi), run: async name => { ran.push(name); return r.run(hillevi, name, {}); }, generate: provider.generate });
+    const answer = await modelAnswer({ system: 's', history: [], text: 'vem är på plats?', tools: r.tools(hillevi), run: async name => { ran.push(name); return r.run(hillevi, name, {}); }, generate });
     expect(ran).toEqual(['heroma.whoIsOn']);
     expect(answer.body).toBe('Tre på plats. Heroma 08:00.');
     expect(answer.toolCalls[0]?.capability).toBe('heroma.whoIsOn');
     expect(seen).toContain('raindance__invoices');
     expect(seen.some(n => n.includes('approve'))).toBe(false);
   });
-  test('no AI_BASE_URL means no provider; a base URL without a model is a configuration error', () => {
-    expect(createProvider({})).toBeUndefined();
-    expect(() => createProvider({ AI_BASE_URL: 'http://x' })).toThrow(/AI_MODEL/);
+  test('the OpenAI-compatible wire (D24) lists models with the key as a bearer and names every failure: no answer, a refused key, an answer that is not a list', async () => {
+    const seen: Array<{ url: string; auth: string | null }> = [];
+    const endpoint = (status: number, body: unknown): typeof fetch => (async (input: RequestInfo | URL, init?: RequestInit) => {
+      seen.push({ url: String(input), auth: new Headers(init?.headers).get('authorization') });
+      return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch;
+    expect(await openAICompatibleWire(endpoint(200, { data: [{ id: 'qwen3:32b' }, { id: 'gpt-oss:20b' }] })).listModels({ baseUrl: 'http://llm.test/v1/', apiKey: 'nyckel' })).toEqual(['gpt-oss:20b', 'qwen3:32b']);
+    expect(seen[0]).toEqual({ url: 'http://llm.test/v1/models', auth: 'Bearer nyckel' });
+    await openAICompatibleWire(endpoint(200, { data: [] })).listModels({ baseUrl: 'http://llm.test/v1' });
+    expect(seen[1]!.auth).toBeNull();
+    const kind = (p: Promise<unknown>) => p.then(() => 'ok', (e: WireError) => e.kind);
+    expect(await kind(openAICompatibleWire(endpoint(401, { error: 'nope' })).listModels({ baseUrl: 'http://llm.test' }))).toBe('key-rejected');
+    expect(await kind(openAICompatibleWire(endpoint(503, {})).listModels({ baseUrl: 'http://llm.test' }))).toBe('unreachable');
+    expect(await kind(openAICompatibleWire(endpoint(404, { error: { message: 'not found' } })).listModels({ baseUrl: 'http://llm.test' }))).toBe('unsupported');
+    expect(await kind(openAICompatibleWire(endpoint(200, { models: [] })).listModels({ baseUrl: 'http://llm.test' }))).toBe('unsupported');
+    expect(await kind(openAICompatibleWire((async () => { throw new TypeError('fetch failed'); }) as unknown as typeof fetch).listModels({ baseUrl: 'http://llm.test' }))).toBe('unreachable');
+    expect(await kind(openAICompatibleWire(endpoint(404, { error: { message: 'model "x" not found' } })).ping({ baseUrl: 'http://llm.test' }, 'x'))).toBe('unsupported');
+    expect(await kind(openAICompatibleWire(endpoint(200, { choices: [] })).ping({ baseUrl: 'http://llm.test' }, 'x'))).toBe('ok');
   });
 });

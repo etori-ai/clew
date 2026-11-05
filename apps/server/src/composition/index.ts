@@ -8,7 +8,11 @@ import { openSecret, sealSecret } from '../auth-crypto';
 import { fetchManifest } from '@clew/connectors/remote';
 import { checkConnector } from '@clew/connectors/check';
 import { SignJWT } from 'jose';
-import { liveModelProvider } from '../assistant/adapters/provider';
+import { openAICompatibleWire } from '../assistant/adapters/openai-compatible';
+import { postgresModelStore } from '../assistant/adapters/postgres';
+import { memoryModelHealth } from '../assistant/adapters/memory';
+import { modelUsecases } from '../assistant/usecases/models';
+import type { KeySealer } from '../assistant/ports';
 import { assistantUsecases } from '../assistant';
 import { postgresMockResetStore } from '../modules/mocks/adapters/postgres';
 import { mockUsecases } from '../modules/mocks/usecases';
@@ -38,10 +42,21 @@ answerCards.create = (actorId, input) => threads.cardFromAnswer({ id: actorId },
 // The obligation's follow-up cards (D30) land in the invitee's stream like any pushed card.
 notifier.push = (personId, draft) => threads.pushDraft({ id: personId }, { ...draft, connector: 'calendar' }, 'assistant:obligation');
 export const mocks = mockUsecases({ store: postgresMockResetStore(), registry, clock, enabled: process.env.CLEW_POC === 'true' });
-const model = liveModelProvider();
-export const assistant = assistantUsecases({ store, registry, run: runCapability, calendar, model, clock, ids, log: console.error });
-/** The model's health probe (D8), started by main.ts beside the server. */
-export const startAssistantProbe = () => model.startProbe();
+/**
+ * The models behind the box (D24): providers and models in Postgres, keys sealed with the master key under
+ * `provider:key:<id>`, the OpenAI-compatible wire, and which endpoints answer kept in this process (it is in-process by
+ * nature, so the memory adapter is the live one). No environment variable names a model.
+ */
+const modelSealer: KeySealer = { seal: (value, id) => sealSecret(value, 'provider:key:' + id), open: (sealed, id) => openSecret(sealed, 'provider:key:' + id) };
+const modelHealth = memoryModelHealth();
+export const models = modelUsecases({ store: postgresModelStore(), sealer: modelSealer, wire: openAICompatibleWire(), health: modelHealth, clock });
+export const assistant = assistantUsecases({ store, registry, run: runCapability, calendar, models: { resolve: models.resolve, health: modelHealth }, clock, ids, log: console.error });
+/** The models' health probe (D8), started by main.ts beside the server: once at boot, then every minute. */
+export const startAssistantProbe = (intervalMs = 60_000) => {
+  const tick = () => void models.probe().catch(error => console.error('models: probe failed:', error instanceof Error ? error.message : error));
+  tick();
+  setInterval(tick, intervalMs).unref?.();
+};
 /** Connector administration (D23): sealing with the master key, the live registry's remote side, and the conformance check with a real signer. */
 const connectorSecrets: Secrets = { seal: (value, id) => sealSecret(value, secretPurpose(id)), open: (sealed, id) => openSecret(sealed, secretPurpose(id)) };
 const connectorLive: LiveRegistration = { register: (source, manifest) => registerConnector(registry, source, manifest), unregister: id => unregisterConnector(registry, id) };

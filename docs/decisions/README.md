@@ -30,7 +30,7 @@ the reasoning. Longer designs live in `docs/architecture/`, and the reviews that
 | [D21](D21-integrations-are-module-services.md) | Every integration is a module service behind the Clew module protocol | 2026-11-04 | integrations | accepted, vocabulary replaced by D22 (connector) |
 | [D22](D22-connectors-not-modules.md) | Connectors, not modules: the word for an integration that a person, an operator or a vendor meets | 2026-11-04 | integrations | accepted |
 | [D23](D23-connectors-are-managed-in-the-database.md) | Connectors are registered and governed in the database by an administrator, not by environment variables | 2026-11-04 | integrations | accepted, admin API and screens not built yet |
-| [D24](D24-model-endpoints-are-administered-in-the-product.md) | Model providers and models are administered in the product, and the chat can choose between them | 2026-11-04 | product | proposed |
+| [D24](D24-model-endpoints-are-administered-in-the-product.md) | Model providers and models are administered in the product, and the chat can choose between them | 2026-11-04 | product | accepted, built |
 | [D25](D25-use-cases-over-ports-fast-tests.md) | Use cases take their ports from a composition root; the unit suite runs on memory adapters held to a store contract | 2026-11-04 | platform | accepted |
 | [D26](D26-questions-over-documents-are-search-not-knowledge.md) | Questions answered from documents are a search fan-out with citations, not a knowledge module | 2026-11-04 | product | proposed |
 | [D27](D27-event-calendar-is-fullcalendar-themed-with-astryx-tokens.md) | The event calendar is FullCalendar 7 Standard, themed with Astryx tokens, behind Astryx components | 2026-11-04 | ui | accepted, built; narrowed by D32 |

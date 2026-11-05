@@ -14,7 +14,8 @@ import { reminderUsecases } from '../../apps/server/src/threads/usecases/reminde
 import { memoryObligations, memoryProposalStore } from '../../apps/server/src/modules/calendar/adapters/memory';
 import { calendarUsecases } from '../../apps/server/src/modules/calendar/usecases/samtal';
 import { assistantUsecases } from '../../apps/server/src/assistant';
-import { memoryModelProvider } from '../../apps/server/src/assistant/adapters/memory';
+import { memoryModelHealth, memoryModelStore, memoryModelWire } from '../../apps/server/src/assistant/adapters/memory';
+import { modelUsecases } from '../../apps/server/src/assistant/usecases/models';
 import type { ModelGenerate } from '../../apps/server/src/assistant/model';
 
 /**
@@ -41,11 +42,20 @@ function world(options: { generate?: ModelGenerate } = {}) {
   const timers = memoryTimers();
   const threads = threadUsecases({ store, registry, run, calendar: { ...calendar, todayEvents: async () => [] }, timers, clock, ids });
   const reminders = reminderUsecases({ store, timers, clock });
-  const model = memoryModelProvider({ generate: options.generate });
+  // The administered model (D24): with a `generate`, one provider and one switched-on default model the test plays.
+  const modelStore = memoryModelStore(), health = memoryModelHealth();
+  const wire = memoryModelWire({ endpoints: { 'http://llm.test/v1': { models: ['open-model'] } }, generate: options.generate });
+  const models = modelUsecases({ store: modelStore, wire, health, clock, sealer: { seal: v => v, open: v => v } });
+  const seeded = options.generate ? modelStore.transaction(async tx => {
+    await tx.insertProvider({ id: 'llm', title: 'Kommunens modeller', baseUrl: 'http://llm.test/v1', apiKey: null, health: { status: 'ok', at: T0 }, createdBy: 'test', at: T0 });
+    await tx.insertModel({ id: 'open-model', providerId: 'llm', model: 'open-model', title: 'Öppen modell', description: '', tools: true, createdBy: 'test', at: T0 });
+    await tx.updateModel('open-model', { state: 'enabled', isDefault: true }, 'test', T0);
+  }) : Promise.resolve();
   const logged: unknown[] = [];
-  const deps = { store, registry, run, calendar, model, clock, ids, log: (...args: unknown[]) => { logged.push(args); } };
+  const deps = { store, registry, run, calendar, models: { resolve: async (p: AuthenticatedContext) => { await seeded; return models.resolve(p); }, health }, clock, ids, log: (...args: unknown[]) => { logged.push(args); } };
   const assistant = assistantUsecases(deps);
-  return { store, proposals, cal, registry, threads, reminders, calendar, assistant, model, logged, deps, advance: (ms: number) => { time += ms; } };
+  const status = async (p: AuthenticatedContext) => { await seeded; return models.statusFor(p); };
+  return { store, proposals, cal, registry, threads, reminders, calendar, assistant, health, status, logged, deps, advance: (ms: number) => { time += ms; } };
 }
 const audit = (store: ReturnType<typeof memoryThreadStore>, id: string) => store.audit.filter(e => e.subject === 'thread:' + id).map(e => e.action);
 
@@ -105,7 +115,7 @@ describe('a question without the model', () => {
     expect(objects.filter(o => o.kind === 'thread').map(o => o.label)).toContain((await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'raindance:invoices')!.title);
     expect(objects.some(o => o.kind === 'event' && o.label === 'APT')).toBe(true);
     expect((await w.assistant.listObjects(hillevi, 'lekolar')).every(o => /lekolar/i.test(o.label + o.detail))).toBe(true);
-    expect(w.assistant.status()).toEqual({ configured: false, available: false, model: null, checkedAt: null });
+    expect(await w.status(hillevi)).toEqual({ configured: false, available: false, model: null, checkedAt: null, current: null, choices: [] });
   });
 });
 
@@ -174,13 +184,17 @@ describe('with a model', () => {
     expect(generated[0]).toContain('onsdag 4 november 2026, klockan 08:00, vecka 45');
     expect(generated).toContain('heroma__whoIsOn');
     expect(generated.some(g => g.includes('approve'))).toBe(false);
-    expect(w.store.audit.at(-1)).toMatchObject({ action: 'conversation.asked', details: { assistant: 'model', tools: ['heroma.whoIsOn'] } });
+    // The answer says which administered model wrote it (D24): in the response, in the message and in the audit row.
+    expect(turn.model).toEqual({ id: 'open-model', title: 'Öppen modell' });
+    expect(turn.thread.messages.at(-1)!.meta?.model).toEqual({ id: 'open-model', title: 'Öppen modell' });
+    expect(w.store.audit.at(-1)).toMatchObject({ action: 'conversation.asked', details: { assistant: 'model', tools: ['heroma.whoIsOn'], model: 'open-model' } });
     fail = true;
     const fallback = await w.assistant.converse(hillevi, { text: 'vem är på plats i dag?' });
     expect(fallback.assistant).toBe('unavailable');
-    expect(w.assistant.status()).toMatchObject({ configured: true, available: false, model: 'test-model' });
+    expect(fallback.model).toBeUndefined();
+    expect(await w.status(hillevi)).toMatchObject({ configured: true, available: false, model: 'Öppen modell' });
     expect(w.logged).toHaveLength(1);
-    w.model.markAvailable();
+    w.health.mark('llm', true, T0);
     fail = false;
     expect((await w.assistant.converse(hillevi, { text: 'vem är här?' })).assistant).toBe('model');
   });

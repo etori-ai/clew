@@ -1,6 +1,6 @@
 # D24 · Model providers and models are administered in the product, and the chat can choose between them
 
-**Status:** proposed · **Date:** 2026-11-04 · **Area:** product
+**Status:** accepted, built 2026-11-05 · **Date:** 2026-11-04 · **Area:** product
 
 **Decision.** The inference endpoint behind the composer is no longer one set of environment variables
 (`AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`). An administrator adds **providers** (an OpenAI-compatible base
@@ -35,3 +35,28 @@ updated with this decision.
 two vision sentences above. D8 is unchanged: every model may be off and the composer still routes
 deterministically. D14 is unchanged in substance; its "one environment variable" wording is superseded by
 this decision.
+
+**As built (2026-11-05).** The design in `docs/architecture/connector-administration.md` (section Modeller) holds,
+with these settled while building:
+
+- *Nothing is cached in process.* The turn reads the provider and model rows and the person's pick from Postgres
+  and opens the key for that call only, so a change on any instance is live on the next question without a watcher
+  or a restart. What stays in process is health per provider (`ModelHealth`): a failed turn marks it down, the
+  minute probe (`GET /models`; an endpoint without a list counts as answering) or "Testa" brings it back, and a
+  provider nobody has checked yet is worth trying.
+- *The person's model* is their pick if they may still use it, else the default, else the first switched-on model
+  in their audience; none means the router (D8). So one switched-on model works without being marked default, and a
+  model taken away falls back without a word: the answer's "Svar från …" line shows it.
+- *The default* is at most one switched-on model, held by a partial unique index; setting a new one clears the old
+  one in the same transaction, each with its audit row, and switching the default off clears its flag. A new model
+  starts off, for everyone, not the default.
+- *The grant* is the administration grant `admin.connectors`: one surface, one grant, until a reason to split them.
+- *The composer's menu* sits in `ChatComposer`'s `footerActions`, the slot Astryx documents for a model selector
+  (template `ChatComposerFooterActions`), not in `headerActions`. It is a compound `DropdownMenu` with a
+  `DropdownMenuRadioGroup`, which Astryx supports in the popover presentation only, so a phone gets the anchored
+  menu, not a sheet. The menu shows when the person has two models or more; a pick is `PATCH /api/assistant/model`,
+  audited as `model.chosen` on `person:<id>`.
+- *Not built:* the context and cost notes, a structural preview per role (a model is either in the audience or not),
+  reordering (the order is the order added), and classification-gated inference (still the open question in
+  `vision.md`). `bun scripts/models-check.ts` proves the live adapters against a stand-in endpoint, or against a
+  real one with `--url` and `--model`.

@@ -5,7 +5,8 @@ the browser and without a restart; and, on the same surface, which model provide
 may use (D24). Implements D22 (the word), D23 (the database as the only registration path) and D24.
 Status: D23 built 2026-11-04 (sessions 15 and 18): the rows, the loader, governance in the registry, bundled connectors as
 rows, the admin use cases and API, the shared checker, reconciliation without a restart, the screens and their tests.
-The canvas row for the screens is still to be drawn and compared against (`CLAUDE.md`). D24 (section Modeller) is not built.
+The canvas row for the screens is still to be drawn and compared against (`CLAUDE.md`). D24 (section Modeller) built
+2026-11-05 (session 29).
 
 ## The model
 
@@ -84,8 +85,8 @@ the server still checks on every admin call.
 
 ## Screens
 
-Route `/admin` with `/admin/anslutningar`, `/admin/anslutningar/:id`, `/admin/modeller` and
-`/admin/modeller/:id`. Same `Layout`, `LayoutHeader` and `LayoutPanel` as the start and calendar pages; the
+Route `/admin` with `/admin/anslutningar`, `/admin/anslutningar/:id`, `/admin/modeller`, `/admin/modeller/:id` and
+`/admin/modeller/leverantorer/:id`. Same `Layout`, `LayoutHeader` and `LayoutPanel` as the start and calendar pages; the
 panel is an Astryx `List` of admin sections (Anslutna system and Modeller; Bundlingstider and Behörigheter
 are later rows of the same list). The entry point is
 an item "Administration" in the avatar menu, rendered only when the session says `admin`. On a phone the
@@ -151,9 +152,9 @@ side (health `secret-rejected`, Banner tells the admin which side to change); re
 
 ## Modeller: providers and models (D24)
 
-The second admin section. Today the composer's model is `AI_BASE_URL`, `AI_API_KEY` and `AI_MODEL`
-(`apps/server/src/assistant/model.ts`); D24 moves it into the database so an administrator adds providers
-and models in the browser and the composer can offer more than one.
+The second admin section, built 2026-11-05. Until then the composer's model was three environment variables
+(`AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`); D24 moved it into the database so an administrator adds providers
+and models in the browser and the composer can offer more than one. Migration `0011_model_administration`.
 
 ```
 model_provider
@@ -169,47 +170,77 @@ model
   description          Swedish, one line: what it is good for
   state                'enabled' | 'disabled'
   audience             same shape as a connector's
-  is_default           exactly one enabled model per installation, or none (the composer then routes without a model, D8)
+  is_default           at most one row (partial unique index model_one_default), always a switched-on model
   tools                boolean: offer capabilities as tools; off for a model that does not call tools reliably
   created_by, updated_by, created_at, updated_at, version
+
+model_choice
+  person_id            pk, the person's own pick in the composer (cascade with the person)
+  model_id             cascade with the model: a removed model takes every pick of it along
+  updated_at
 ```
 
-Effective choice for a person: the enabled models whose audience includes them, in admin order, the
-default first. The server resolves the model per request from the person's saved choice (a per-person
-preference row, falling back to the default) and never from the browser alone: the browser sends a model
-id, the server checks it is enabled and in the audience, else uses the default and says so. Every answer
-records the model id in the message metadata, so a reply can say "Svar från Snabb (lokal)" and the audit
-shows which model drafted a card. The `AssistantStatus` the page reads becomes the list of models the
-person may choose plus the current one; `configured: false` when none is enabled (the D8 banner).
+**Server.** In `apps/server/src/assistant/` (D20, D25): the ports in `ports.ts` (`ModelStore`, `ModelTx`,
+`KeySealer`, `ModelWire`, `ModelHealth`, `ModelResolver`), the pure rules in `domain.ts` (`slugFor`, `choicesFor`,
+`pickModel`), the use cases in `usecases/models.ts` (`modelUsecases(deps)`), and the adapters: `adapters/postgres.ts`
+(the store), `adapters/memory.ts` (the store, a played endpoint and the in-process health), and
+`adapters/openai-compatible.ts` (the wire: `GET /models`, one tiny chat completion for "Testa", the AI SDK for a turn;
+every failure is a `WireError` of kind `unreachable`, `key-rejected` or `unsupported`). The composition root seals with
+the master key under `provider:key:<id>` and starts the minute probe beside the server.
 
-**Screens.** The list is a `Table` grouped by provider: title, model id (`Code`), audience summary, Standard
-`Badge`, Verktyg yes/no, health `StatusDot`, on/off `Switch`. "Lägg till leverantör" opens a `Dialog`
-with `FormLayout`: title, base URL, key (password field, may be empty), then "Testa" runs one tiny
-completion and, when the endpoint answers `GET /v1/models`, offers the returned ids in a `CheckboxList` to
-add in one go; otherwise the admin adds models by id. A model's detail page has the same tabs as a
-connector where they apply: Översikt (`MetadataList`, Testa, Ta bort), Vem ser det (the audience editor),
-Historik. The provider's detail page holds the key rotation and the health banner.
+Effective choice for a person: the switched-on models on a provider that exists and whose audience includes them,
+the default first, then in the order they were added. The model a turn uses is resolved on the server from the rows
+as they are now: the person's pick if they may still use it, else the default, else the first they may use; none
+means the router (D8). Nothing is cached in process, so a change on any instance is live on the next question. Every
+answer a model wrote carries `model: { id, title }` in the message metadata, the response and the audit row
+(`conversation.asked` details `model`), so a reply says "Svar från Snabb (lokal)". `AssistantStatus` is per person:
+`configured`, `available`, `model` (the current title, for the D8 banner), `checkedAt`, `current` and `choices`.
 
-**In the composer.** The scope line in the composer's header already sits in `headerActions`; the model
-choice goes beside it as an Astryx `DropdownMenu` with a `DropdownMenuRadioGroup` of the person's models,
-each with title and description, shown only when more than one model is available. Choosing one is a
-PATCH to the person's preference; the next message uses it; the menu's label shows the current model's
-title. On the phone the same menu opens as a sheet (adaptive presentation, as the reminder menu does). A
-model that is removed or taken out of the person's audience falls back to the default silently, with the
-"Svar från …" line making the change visible.
+**Screens** (`apps/web/src/pages/admin/`). `models.tsx`: the lead says who gets which model when they have not
+picked one; four count tiles (På, Problem, Avstängda, Leverantörer); one `Card` per provider (Astryx has no grouped
+table) with a `Toolbar` holding the provider's name as a link, its health as a `StatusDot` with the word, and
+"Lägg till modell"; under it a `Table` of its models (title as a link with a Standard `Badge`, the endpoint's id as
+`Code`, the description; Vem kan välja den; Verktyg; Status; the on/off `Switch`), `List` rows on a phone.
+`add-model.tsx`: "Lägg till leverantör" is a `Dialog` with a two-step `Stepper` (Adress och nyckel: name, an id
+suggested from the name, base URL, key that may be empty; then Modeller: the test's findings and, when the endpoint
+lists models, a `CheckboxList` of them with "Sätt på dem direkt", else one model by id); "Lägg till modell" adds one
+by id with a name and a description and opens its page. `model.tsx`: Översikt (Testa, Gör till standard or Ta bort
+som standard, Ta bort; `MetadataList`; a form for the name, the description and the endpoint's id; the Verktyg
+switch), Vem kan välja den (the audience editor, worded for a model), Historik; a phone gets the sections as a
+menu, as on a connector. `provider.tsx`: the health `Banner`, Testa (findings, then the listed models not yet added
+to tick and add), Byt nyckel (empty removes it), Ta bort (disabled with a tooltip while it has models), its models,
+the name and address form, Historik.
+
+**In the composer.** `ChatComposer`'s `footerActions`, the slot Astryx documents for a model selector (template
+`ChatComposerFooterActions`), holds a `DropdownMenu` whose trigger reads "Modell: Kapabel" and whose
+`DropdownMenuRadioGroup` lists the person's models with title, "(standard)" and description. It shows only when the
+person has two models or more. Choosing one is `PATCH /api/assistant/model`; the toast says which model the next
+question uses. A compound menu is popover-only in Astryx 0.7.7, so a phone gets the anchored menu, not a sheet. A
+model that is removed or taken out of the person's audience falls back silently; the "Svar från …" line under the
+answer makes the change visible.
 
 **Rules.** Keys are never returned by any API, logged or shown again (D23). Only the OpenAI-compatible
 protocol is supported, so the repository depends on no closed provider (`CLAUDE.md`); a closed model is an
 operator's entry in this table. Classification-gated inference (which data may go to which endpoint) stays
 an open question in `vision.md`; the audience is not that gate, it only says who may pick a model. Every
-mutation: step-up, audit row (`provider.added`, `provider.key`, `model.added`, `model.enabled`,
-`model.audience`, `model.default`, `model.removed`), registry of models refreshed in process.
+administrative mutation needs the administration grant `admin.connectors` and the step-up and writes its audit row
+in the same transaction: `provider.added`, `provider.title`, `provider.url`, `provider.key`, `provider.removed`,
+`model.added`, `model.enabled`, `model.disabled`, `model.default` (on the new default and, with `replacedBy`, on the
+old one), `model.audience`, `model.tools`, `model.title`, `model.description`, `model.model`, `model.removed`. The
+person's pick is `model.chosen` on `person:<id>`. A provider is removed only once its models are gone. Health is not
+administration: a test or a probe that changes it is stored without a version bump or an audit row.
 
-**Admin API.** `GET|POST /api/admin/providers`, `GET|PATCH|DELETE /api/admin/providers/:id`,
-`POST /api/admin/providers/:id/key`, `POST /api/admin/providers/:id/test` (returns the model ids the
-endpoint lists, when it does), `GET|POST /api/admin/models`, `GET|PATCH|DELETE /api/admin/models/:id`.
-For the person: `GET /api/assistant/status` (models in audience, current, default) and
-`PATCH /api/assistant/model { id }`.
+**Admin API.** `GET /api/admin/models` (providers and models), `POST /api/admin/models`,
+`GET|PATCH|DELETE /api/admin/models/:id`, `POST /api/admin/models/:id/test`, `POST /api/admin/providers`
+(adds and tests; returns the report with the ids the endpoint lists), `GET|PATCH|DELETE /api/admin/providers/:id`,
+`POST /api/admin/providers/:id/key`, `POST /api/admin/providers/:id/test`. For the person:
+`GET /api/assistant/status` and `PATCH /api/assistant/model { modelId }` (null goes back to the default).
+
+**Checks.** `tests/unit/model-admin.test.ts` (the use cases and the pure rules), `tests/model-store-contract.ts` on
+both adapters (`tests/unit/model-store.test.ts`, `tests/db/postgres-model-store.test.ts`), the wire's error kinds and
+the SDK wiring in `tests/unit/assistant.test.ts`, the model recorded on an answer in `tests/unit/conversation.test.ts`,
+`tests/a11y/models.spec.ts` (the pages, the add dialog by keyboard, the composer menu, the answer's model line, reflow),
+and `bun scripts/models-check.ts` in the devcontainer for the live adapters against a stand-in or a real endpoint.
 
 ## What the person sees
 
