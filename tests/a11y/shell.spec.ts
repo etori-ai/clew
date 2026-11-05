@@ -38,9 +38,10 @@ for (const viewport of [desktop, narrow]) test(`the account is a rail row like t
   await account.click({ trial: true }); // The phone drawer slides in; measure it where it stops.
 
   const calendar = nav.getByRole('link', { name: 'Kalender', exact: true });
-  const administration = nav.getByRole('link', { name: 'Administration', exact: true });
+  const administration = nav.getByRole('button', { name: 'Administration', exact: true });
   const areas = nav.getByRole('button', { name: 'Områden', exact: true });
   expect(await rowLook(account)).toEqual(await rowLook(calendar));
+  expect(await rowLook(administration)).toEqual(await rowLook(calendar));
   const calendarIcon = (await calendar.locator('svg').first().boundingBox())!;
   const calendarLabel = (await calendar.getByText('Kalender', { exact: true }).boundingBox())!;
   for (const [row, label] of [[account, 'Testa Testsson'], [areas, 'Områden'], [administration, 'Administration']] as const) {
@@ -51,6 +52,7 @@ for (const viewport of [desktop, narrow]) test(`the account is a rail row like t
   const accountChevron = (await account.locator('svg').last().boundingBox())!;
   const areasChevron = (await areas.locator('svg').last().boundingBox())!;
   expect(accountChevron.x).toBe(areasChevron.x);
+  expect((await administration.locator('svg').last().boundingBox())!.x).toBe(areasChevron.x);
   const [above, middle, below] = [(await areas.boundingBox())!, (await administration.boundingBox())!, (await account.boundingBox())!];
   expect(below.y - (middle.y + middle.height)).toBe(middle.y - (above.y + above.height));
 

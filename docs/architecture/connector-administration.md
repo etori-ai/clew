@@ -86,11 +86,10 @@ the server still checks on every admin call.
 ## Screens
 
 Route `/admin` with `/admin/connectors`, `/admin/connectors/:id`, `/admin/models`, `/admin/models/:id` and
-`/admin/models/providers/:id`. Same `Layout`, `LayoutHeader` and `LayoutPanel` as the start and calendar pages; the
-panel is an Astryx `List` of admin sections (Anslutna system and Modeller; Bundlingstider and Behörigheter
-are later rows of the same list). The entry point is
-an item "Administration" in the avatar menu, rendered only when the session says `admin`. On a phone the
-list collapses to the compact `Button` row the areas use. Everything is Astryx: no custom components, no CSS.
+`/admin/models/providers/:id`. The pages sit in the same shell and rail as the start and calendar pages (D45). The entry
+point is the row Administration in the rail, rendered only when the session says `admin`. It opens and closes like
+Områden, with Anslutna system and Modeller as links under it; Bundlingstider and Behörigheter are later rows of the same group. On
+a phone the rail is the drawer, as everywhere. Everything is Astryx: no custom components, no CSS.
 
 **1. Anslutna system (list).** `Toolbar` with the primary `Button` "Anslut system" and a `SegmentedControl`
 Alla · På · Av · Problem. An Astryx `Table` on desktop, `List` rows on the phone (same switch as the areas):

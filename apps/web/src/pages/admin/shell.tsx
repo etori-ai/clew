@@ -1,28 +1,21 @@
 import type { ReactNode } from 'react';
 import type { SessionUser } from '@clew/contracts';
-import { BreadcrumbItem, Breadcrumbs, Button, EmptyState, HStack, Heading, Layout, LayoutContent, SideNavItem, SideNavSection, Text, VStack } from '@clew/ui';
+import { BreadcrumbItem, Breadcrumbs, Button, EmptyState, HStack, Heading, Layout, LayoutContent, Text, VStack } from '@clew/ui';
+import { useRail, type AdminSection } from '../../components/nav';
 import { Shell, mobileQuery } from '../../components/shell';
 import { useMediaQuery } from '@clew/ui';
 
 /**
- * The administration surface (D23, D24) on the shared shell (D31): the SideNav holds the admin sections (Anslutna
- * system and Modeller; the drawer on a phone), and the page sits in a Layout whose contentWidth bounds and centres it, so
- * a table does not run to the edge of a wide screen and the page lines up with the start page's column. Only Astryx.
+ * The administration surface (D23, D24) on the shared shell (D31) with the same rail as every other page (D45): Anslutna
+ * system and Modeller are rows under Administration. The page sits in a Layout whose contentWidth bounds and centres it,
+ * so a table does not run to the edge of a wide screen and the page lines up with the start page's column. Only Astryx.
  */
 export type Crumb = { label: string; href?: string };
-export type AdminSection = 'anslutningar' | 'modeller';
 export function AdminShell({ user, crumbs, children, section = 'anslutningar' }: { user: SessionUser; crumbs: Crumb[]; children: ReactNode; section?: AdminSection }) {
   const mobile = useMediaQuery(mobileQuery);
-  return <Shell user={user}
-    nav={{ sections: <>
-      <SideNavSection title="Anslutningar">
-        <SideNavItem label="Anslutna system" isSelected={section === 'anslutningar'} href="/admin/connectors" />
-        <SideNavItem label="Modeller" isSelected={section === 'modeller'} href="/admin/models" />
-      </SideNavSection>
-      <SideNavSection title="Om administrationen" isHeaderHidden>
-        <Text type="supporting" as="p">Du styr vilka system Startsidan är ansluten till, vilka modeller som svarar i frågerutan och vem som ser dem. Vad var och en får göra i ett system avgör systemet självt.</Text>
-      </SideNavSection>
-    </>, footer: <SideNavItem label="Till startsidan" href="/" /> }}>
+  // Only an administrator reaches this shell: `main.tsx` draws NotAdmin for anyone else.
+  const nav = useRail({ current: { surface: 'admin', section }, admin: true });
+  return <Shell user={user} nav={nav}>
     {/* Layout's contentWidth bounds the page and centres it in the content area, the same mechanism as the start page's
         column; the Layout owns its gutters through `padding`, and grows with the page so the shell keeps the scroll. */}
     <Layout height="auto" contentWidth={1216} padding={mobile ? 3 : 6} content={<LayoutContent isScrollable={false}>

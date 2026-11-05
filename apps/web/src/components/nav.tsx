@@ -9,6 +9,8 @@ import { groupThreads } from '../stream';
 import { clewIcon } from '../icons';
 import type { ShellNav } from './shell';
 
+/** The administration's two sections, rows under Administration (D45). */
+export type AdminSection = 'anslutningar' | 'modeller';
 /** What the rail marks as current: the surface, and within the start page the group, the pile, the area or the conversation. */
 export interface RailCurrent {
   surface: 'start' | 'oversikt' | 'kalender' | 'verktyg' | 'admin';
@@ -18,6 +20,8 @@ export interface RailCurrent {
   conversationId?: string | null;
   /** The capability whose tool page is open (D42), so its row under Verktyg is marked. */
   view?: string | null;
+  /** The administration's section that is open (D45), so its row under Administration is marked. */
+  section?: AdminSection;
 }
 const EMPTY_THREADS: Thread[] = [];
 const EMPTY_AREAS: Area[] = [];
@@ -46,7 +50,7 @@ type Found = { href: string; detail: string };
  * The rail (D34, the canvas's H1, H3 and H4): one navigation ordered by time relative to the person, after the
  * `shell-side-nav` template. On top Ny fråga and the search; then Från mig, the push in its three groups; Pågår, what
  * moves without the person; Samtal, the person's own conversations by day; and at the foot what is always there:
- * Verktyg (Kalender and the views connectors offer as tools, D40, each a page of its own, D42), the areas as lenses, collapsed, and Administration. Every row is a link to a route, so the back button and
+ * Verktyg (Kalender and the views connectors offer as tools, D40, each a page of its own, D42), the areas as lenses, collapsed, and Administration with its two sections, collapsed until one of them is open (D45). Every row is a link to a route, so the back button and
  * a reload land in the same place. Returned as the shell's three slots so the shell keeps the heading and the way out.
  */
 export function useRail({ current, admin }: { current: RailCurrent; admin: boolean }): ShellNav {
@@ -127,7 +131,10 @@ export function useRail({ current, admin }: { current: RailCurrent; admin: boole
         {areas.map(a => <SideNavItem key={a.id} label={a.title} href={`/areas/${a.id}`} isSelected={onStart && current.area === a.id}
           endContent={a.needsYou || dot(a) ? <>{dot(a)}{count(a.needsYou)}</> : a.waiting ? <Text type="supporting">{a.waiting} pågår</Text> : undefined} />)}
       </SideNavItem>
-      {admin && <SideNavItem label="Administration" icon="wrench" href="/admin/connectors" isSelected={current.surface === 'admin'} />}
+      {admin && <SideNavItem label="Administration" icon="wrench" collapsible={{ defaultIsCollapsed: current.surface !== 'admin' }}>
+        <SideNavItem label="Anslutna system" href="/admin/connectors" isSelected={current.section === 'anslutningar'} />
+        <SideNavItem label="Modeller" href="/admin/models" isSelected={current.section === 'modeller'} />
+      </SideNavItem>}
     </>,
   };
 }
