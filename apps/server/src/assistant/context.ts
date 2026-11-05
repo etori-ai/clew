@@ -40,7 +40,7 @@ function cardState(t: Thread, now: string): string {
   }
   if (isSnoozed(t, now)) return ' Kortet ligger under Inte nu.' + buttons(['Ta upp nu', more()]);
   if (t.waitingOn) return ` Kortet väntar på ${t.waitingOn}.` + buttons(['Påminn mig', more()]);
-  return buttons([...(primary ? [primary.label] : []), ...secondary.map(a => a.label), 'Inte nu', more('Påminn mig')]);
+  return buttons([...(primary ? [primary.label] : []), ...secondary.map(a => a.label), 'Inte nu', more()]);
 }
 /**
  * Swedish lines for the system prompt's "Du tittar på" block. Names appear here only because the person pointed at the

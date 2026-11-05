@@ -145,7 +145,7 @@ describe('the model path only reads, and falls back when the provider fails', ()
     expect(prompt).toContain('Du tittar på');
     expect(prompt).toContain('Kort "Attestera 3 fakturor, 37 050 kr" (Raindance');
     expect(prompt).toContain('Lekolar · 11 200 kr · 6451 · förfaller 5 nov [vald]');
-    expect(prompt).toContain('Knappar på kortet nu: Attestera valda, Öppna i Raindance, Inte nu, Fler val (Påminn mig, Lägg till i samtalet, Avfärda, Varför ser jag detta?).');
+    expect(prompt).toContain('Knappar på kortet nu: Attestera valda, Öppna i Raindance, Inte nu, Fler val (Lägg till i samtalet, Avfärda, Varför ser jag detta?).');
     expect(systemPrompt({ name: 'x', role: 'employee', unitLabel: 'y', now: new Date(now), week: 45, objects: [] })).not.toContain('Du tittar på');
   });
   test('a card already acted on offers Ångra allt, never its own buttons, and nothing once the window has closed', () => {

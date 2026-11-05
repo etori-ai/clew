@@ -30,7 +30,7 @@ export interface TimerDelivery {
 }
 
 /** What a reminder timer carries back when it fires (D17). Declared here so the workflow, the activity and the use case share one shape. */
-export interface ReminderInput { personId: string; threadId: string; title: string; area: string; seconds: number; requestedAt: string; /** A snooze's timer (D29): the card comes back without a badge or a toast. */ silent?: boolean }
+export interface ReminderInput { personId: string; threadId: string; title: string; area: string; seconds: number; requestedAt: string; /** This timer belongs to a snooze (D29). The name stays for the workflows already running; since D49 it no longer means a quiet return. */ silent?: boolean }
 
 /** Writes inside one transaction. The audit row of a mutation is written through the same `tx`, so it commits or rolls back with the rest. */
 export interface ThreadTx {
@@ -65,7 +65,7 @@ export interface ThreadStore {
   transaction<T>(fn: (tx: ThreadTx) => Promise<T>): Promise<T>;
 }
 
-/** The timers behind "Påminn mig" (D17). Temporal runs them; the memory adapter records them. */
+/** The timers behind "Inte nu" and "Påminn mig" (D17, D49). Temporal runs them; the memory adapter records them. */
 export interface ReminderTimers {
   /** Rejects when the timer service cannot be reached. */
   start(input: { workflowId: string; personId: string; threadId: string; title: string; area: string; seconds: number; requestedAt: string; silent?: boolean }): Promise<void>;

@@ -23,7 +23,7 @@ export interface ThreadDeps {
     /** Today's timed meetings, for the preset "när jag är tillbaka från …" (D29). Empty when the calendar cannot be read. */
     todayEvents(persona: AuthenticatedContext): Promise<Array<{ title: string; end: string }>>;
   };
-  /** The timers behind a snooze (D29): the same reminder workflow as D17, silent. */
+  /** The timers behind a snooze (D29, D49): the same reminder workflow as D17, and the same return. */
   timers?: ReminderTimers;
   clock: () => Date;
   ids: () => string;
@@ -70,7 +70,11 @@ export function threadUsecases(deps: ThreadDeps) {
         await tx.updateThread(existing.id, { title: d.title, summary: d.summary, items, actions: d.actions, deadline: d.deadline ?? null, updatedAt: now.toISOString() });
         await tx.writeAudit({ actor: 'assistant:scan', action: 'thread.refreshed', subject: 'thread:' + existing.id, at: now.toISOString(), details: { connector: d.connector, topic: d.topic, owner: persona.id } });
         // A snoozed card whose source moved comes back early (D28, D29): the snooze breaks on activity.
-        if (existing.snoozedUntil) await wake(tx, existing, 'changed', now.toISOString());
+        if (existing.snoozedUntil) {
+          await wake(tx, existing, 'changed', now.toISOString());
+          // The timer ends here, so the word the person was promised goes out now (D49), as it does on the refresh path.
+          await tx.admitDelivery({ id: `woken:${existing.id}:${now.toISOString()}`, personId: persona.id, threadId: existing.id, kind: 'automatic', at: now.toISOString() });
+        }
       });
     }
   }
@@ -145,8 +149,8 @@ export function threadUsecases(deps: ThreadDeps) {
   }
   /**
    * Inte nu (D28, D29): the card keeps its state and moves to the Inte nu pile until a time the person chose, a preset,
-   * free text in Swedish, or an instant; nothing means the next 06:00 review. A silent reminder timer brings it back on
-   * time while the page is open; the sweep covers the rest. The snooze breaks early when something happens in the thread.
+   * free text in Swedish, or an instant; nothing means the next 06:00 review. Its timer brings it back on time and says
+   * so, as a reminder does (D49). The snooze breaks early when something happens in the thread.
    */
   async function snoozeThread(persona: AuthenticatedContext, threadId: string, input: SnoozeInput = {}) {
     const thread = await threadFor(persona, threadId);

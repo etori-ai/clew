@@ -22,11 +22,12 @@ test('real timer workflows recover delayed delivery; cancelled/replaced generati
   const client = new Client({ connection });
   let worker: Worker | undefined, running: Promise<void> | undefined, legacy: Worker | undefined, legacyRun: Promise<void> | undefined;
   const ids: string[] = [];
-  const seed = async (suffix: string) => {
+  const seed = async (suffix: string, kind: 'reminder' | 'snooze' = 'reminder') => {
     const threadId = id + suffix; ids.push(threadId);
     return store.transaction(async tx => {
       await tx.insertThread({ id: threadId, personId: id, topic: threadId, kind: 'pushed', connector: 'clew', area: 'test', title: 'Synthetic timer', state: 'open', summary: '', week: null, items: [], actions: [], waitingOn: 'påminnelse', deadline: null, trigger: { reason: '', source: 'test', at: clock().toISOString() }, createdAt: clock().toISOString(), updatedAt: clock().toISOString() });
-      const timer = await tx.scheduleTimer({ id: 'reminder:' + threadId, threadId, personId: id, kind: 'reminder', unitId: 'test', authorizationVersion: 'v1', requestedAt: clock().toISOString(), dueAt: '2020-01-01T00:00:00.000Z' });
+      if (kind === 'snooze') await tx.updateThread(threadId, { waitingOn: null, snoozedUntil: '2020-01-01T00:00:00.000Z' });
+      const timer = await tx.scheduleTimer({ id: kind + ':' + threadId, threadId, personId: id, kind, unitId: 'test', authorizationVersion: 'v1', requestedAt: clock().toISOString(), dueAt: '2020-01-01T00:00:00.000Z' });
       await tx.writeAudit({ actor: 'test', action: 'reminder.set', subject: 'thread:' + threadId, at: clock().toISOString() }); return timer;
     });
   };
@@ -44,6 +45,14 @@ test('real timer workflows recover delayed delivery; cancelled/replaced generati
     await uc.fire(first.id, 1); // Crash after commit but before activity acknowledgement.
     assert.equal((await database().select().from(schema.deliveries).where(eq(schema.deliveries.threadId, first.threadId))).length, 1);
     assert.equal((await database().select().from(schema.audit).where(and(eq(schema.audit.subject, 'thread:' + first.threadId), eq(schema.audit.action, 'thread.reminded')))).length, 1);
+    // A snooze's timer comes back the way a reminder does (D49): the same delivery and mark, its own audit action.
+    const snoozed = await seed(':snoozed', 'snooze');
+    await (await start(snoozed)).result();
+    const back = await store.readThread(id, snoozed.threadId);
+    assert.equal(back?.snoozedUntil, null);
+    assert.ok(back?.remindedAt);
+    assert.equal((await database().select().from(schema.deliveries).where(eq(schema.deliveries.threadId, snoozed.threadId))).length, 1);
+    assert.equal((await database().select().from(schema.audit).where(and(eq(schema.audit.subject, 'thread:' + snoozed.threadId), eq(schema.audit.action, 'thread.woken')))).length, 1);
     const cancelled = await seed(':cancelled');
     await store.transaction(async tx => { await tx.cancelTimer(cancelled.id, clock().toISOString()); await tx.writeAudit({ actor: 'test', action: 'reminder.cancelled', subject: 'thread:' + cancelled.threadId, at: clock().toISOString() }); });
     await (await start(cancelled)).result(); assert.equal((await store.readThread(id, cancelled.threadId))?.remindedAt, null);

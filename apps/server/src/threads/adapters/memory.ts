@@ -9,6 +9,8 @@ import { admitAttention, type AttentionDay } from '../attention-domain';
  */
 export interface MemoryThreadStore extends ThreadStore, TimerDelivery {
   audit: AuditEntry[];
+  /** What the person is due to be told, by delivery id. */
+  deliveries: string[];
   jobs: JobInput[];
   /** Every thread with its owner, for assertions that need to see across people. */
   dump(): Array<{ personId: string; thread: Thread }>;
@@ -82,6 +84,7 @@ export function memoryThreadStore(): MemoryThreadStore {
       timerRows.set(t.id, { ...current, nextAt: retryAt, leaseUntil: null, reason: error ?? null, ...(!error ? { deliveredGeneration: t.generation, deliveredState: t.state } : {}) });
     }),
     get audit() { return audit; },
+    get deliveries() { return [...deliveries]; },
     get jobs() { return jobs; },
     dump: () => [...threads.values()].map(copy),
     async listThreads(personId, now) {

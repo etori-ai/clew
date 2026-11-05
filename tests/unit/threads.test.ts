@@ -142,6 +142,8 @@ describe('avfärda, inte nu and ångra', () => {
     expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'thread.snoozed', 'thread.refreshed', 'thread.woken']);
     expect(w.store.audit.at(-1)?.details).toMatchObject({ reason: 'changed' });
     expect(await w.store.readTimer(`snooze:${card.id}`)).toMatchObject({ state: 'cancelled' });
+    // The timer is gone, so the word the person was promised goes out now (D49).
+    expect(w.store.deliveries).toEqual([expect.stringMatching(new RegExp(`^woken:${card.id}:`))]);
   });
   test('the picker (D29): a preset, free text or an instant sets the time; the rows carry their resolved times', async () => {
     const w = world();
@@ -166,7 +168,7 @@ describe('avfärda, inte nu and ångra', () => {
     expect(w.store.audit.filter(e => e.action === 'thread.snoozed').map(e => e.details)).toEqual([
       expect.objectContaining({ preset: 'lunch', delivery: 'queued', generation: 1 }), expect.objectContaining({ text: 'fredag kl 9' }), expect.objectContaining({ until: '2026-11-04T15:00:00.000Z' })]);
   });
-  test('a silent timer wakes the card without a badge; one that was woken earlier or re-snoozed does nothing', async () => {
+  test('a snooze comes back the way a reminder does (D49); one that was woken earlier or re-snoozed does nothing', async () => {
     const w = world();
     const card = await invoices(w);
     await w.threads.snoozeThread(hillevi, card.id, { until: '2026-11-04T09:00:00.000Z' });
@@ -174,9 +176,11 @@ describe('avfärda, inte nu and ångra', () => {
     w.clock.set('2026-11-04T09:00:00.000Z');
     expect(await w.reminders.fire(`snooze:${card.id}`, 1)).toBe('surfaced');
     const back = (await w.threads.threadFor(hillevi, card.id))!;
-    expect(back).toMatchObject({ state: 'open', snoozedUntil: null, remindedAt: null });
-    expect(back.trigger.reason).toBe(card.trigger.reason);
-    expect(w.store.audit.at(-1)).toMatchObject({ actor: 'assistant:reminder', action: 'thread.woken', details: { reason: 'time' } });
+    expect(back).toMatchObject({ state: 'open', snoozedUntil: null, remindedAt: '2026-11-04T09:00:00.000Z' });
+    expect(back.trigger.reason).toBe(`Du bad 08:00 om en påminnelse · ${card.trigger.reason}`);
+    expect(back.messages.at(-1)!.body).toBe('Påminnelse: du bad 08:00 om att få det här kortet igen.');
+    expect(w.store.deliveries).toEqual([`reminded:${card.id}:1`]);
+    expect(w.store.audit.at(-1)).toMatchObject({ actor: 'assistant:reminder', action: 'thread.woken', subject: 'thread:' + card.id, details: { reason: 'time', snoozedUntil: '2026-11-04T09:00:00.000Z', owner: 'hillevi' } });
     expect(await w.reminders.surface(fired)).toBe('skipped');
     await w.threads.snoozeThread(hillevi, card.id, { until: '2026-11-04T12:00:00.000Z' });
     expect(await w.reminders.surface(fired)).toBe('skipped');
@@ -263,6 +267,22 @@ describe('påminn mig', () => {
     expect(cancelled.waitingOn).toBeNull();
     expect(await w.store.readTimer(`reminder:${card.id}`)).toMatchObject({ state: 'cancelled', generation: 1 });
     expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'reminder.set', 'reminder.cancelled']);
+  });
+  test('on a card that waits on someone, the reminder never replaces who it waits on (D49)', async () => {
+    const w = world();
+    const card = await invoices(w);
+    await w.store.transaction(tx => tx.updateThread(card.id, { waitingOn: 'skyddsombudet' }));
+    const set = await w.reminders.remind(hillevi, card.id, 600);
+    expect(set.thread.waitingOn).toBe('skyddsombudet');
+    expect((await w.reminders.cancelReminder(hillevi, card.id, set.id)).waitingOn).toBe('skyddsombudet');
+    expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'reminder.set', 'reminder.cancelled']);
+    await w.reminders.remind(hillevi, card.id, 600);
+    w.clock.advance(10 * MINUTE);
+    expect(await w.reminders.fire(`reminder:${card.id}`, 2)).toBe('surfaced');
+    const back = (await w.threads.threadFor(hillevi, card.id))!;
+    expect(back).toMatchObject({ waitingOn: null, trigger: { reason: `Du bad 08:00 om en påminnelse · Väntade på skyddsombudet · ${card.trigger.reason}` } });
+    expect(actions(w.store, card.id).at(-1)).toBe('thread.reminded');
+    expect(w.store.deliveries).toEqual([`reminded:${card.id}:2`]);
   });
   test('when the timer fires the card comes back once, reopened and marked, with the reason on its trigger', async () => {
     const w = world();
