@@ -18,7 +18,7 @@ Historical numbering collisions: **D37, D38, D39, D44, D45, D46** each identify 
 | [D8 · Every action works without the model](D08-every-action-works-without-the-model.md) | product | 2026-11-03 | accepted |
 | [D9 · The side panel holds conversation, Clew views and MCP App views](D09-side-panel-holds-views-and-apps.md) | ui | 2026-11-03 | accepted, the app half replaced by D38 (2026-11-05): a connector declares its view as data and Clew draws it; nothing is rendered by a connector |
 | [D10 · Integrations fulfil Clew's API; adapters are the fallback](D10-integrations-fulfil-clews-api-first.md) | integrations | 2026-11-03 | accepted |
-| [D11 · One calendar contract, CalDAV and Microsoft 365 as adapters](D11-one-calendar-contract-two-adapters.md) | integrations | 2026-11-03 | accepted, `microsoft365` adapter not built yet |
+| [D11 · One calendar contract, CalDAV and Microsoft 365 as adapters](D11-one-calendar-contract-two-adapters.md) | integrations | 2026-11-03 | accepted, `microsoft365` adapter built against a local fake (D61), not yet run against a tenant |
 | [D12 · Objects, chips, proposals: the general interaction pattern](D12-objects-chips-proposals.md) | ui | 2026-11-03 | accepted |
 | [D13 · The conversation lives in the composer's drawer; the dim is an Astryx Overlay](D13-conversation-in-the-composer-drawer.md) | ui | 2026-11-03 | superseded by D31 |
 | [D14 · Clew stands alone; Eneo enhances it through an optional module](D14-clew-stands-alone-eneo-enhances.md) | product | 2026-11-04 | accepted |
@@ -73,7 +73,9 @@ Historical numbering collisions: **D37, D38, D39, D44, D45, D46** each identify 
 | [D57 · Prettier formats the code, and `bun run check` enforces it](D57-prettier-formats-the-code-and-check-enforces-it.md) | platform | 2026-11-06 | accepted |
 | [D58 · A click on the calendar's grid starts a booking](D58-a-click-on-the-calendar-grid-starts-a-booking.md) | ui | 2026-11-06 | accepted |
 | [D59 · The WCAG suite runs by hand until the run-up to a release](D59-the-wcag-suite-runs-by-hand-until-the-run-up-to-a-release.md) | platform | 2026-11-06 | accepted |
+| [D60 · People are pushed into Clew through standard SCIM, and mapping happens outside Clew](D60-people-are-pushed-into-clew-through-standard-scim.md) | identity | 2026-11-06 | accepted, not built yet; the group keys are proposed until a first provisioner has used them |
+| [D61 · A local fake of Microsoft Graph tests the Microsoft 365 adapter](D61-a-local-fake-of-microsoft-graph-tests-the-microsoft-365-adapter.md) | integrations | 2026-11-06 | accepted, built 2026-11-06, not yet run against a real tenant |
 
 ## Add a decision
 
-Use [TEMPLATE.md](TEMPLATE.md) and a new unused number (currently D60). Include status, date, area, decision, rationale and what it replaces. Preserve earlier decision bodies; record supersession explicitly. Refer to the full filename when a number is ambiguous. Update the implementation-status guide when delivery changes, add a session note to [HANDOVER.md](../../HANDOVER.md), and run `bun run docs:generate` followed by `bun run docs:check`. The generated context map includes every record.
+Use [TEMPLATE.md](TEMPLATE.md) and a new unused number (currently D62). Include status, date, area, decision, rationale and what it replaces. Preserve earlier decision bodies; record supersession explicitly. Refer to the full filename when a number is ambiguous. Update the implementation-status guide when delivery changes, add a session note to [HANDOVER.md](../../HANDOVER.md), and run `bun run docs:generate` followed by `bun run docs:check`. The generated context map includes every record.

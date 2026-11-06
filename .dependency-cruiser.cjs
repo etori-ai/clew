@@ -1,6 +1,6 @@
 /** Backend structure rules (D20), run by `bun run deps` as part of `bun run check`. See docs/architecture/backend-structure.md. */
 const store = '^packages/db/|node_modules/(drizzle-orm|postgres)/';
-const adapters = '^packages/calendar/src/(nextcloud|adapters)\\.ts$|/adapters?/';
+const adapters = '^packages/calendar/src/(nextcloud|microsoft365|fake-graph|adapters)\\.ts$|/adapters?/';
 const runtime = 'node_modules/(hono|jose|openid-client|@temporalio|@hono|ai|@ai-sdk)/';
 const timers = 'node_modules/@temporalio/|^apps/server/src/temporal/';
 const liveAdapters =

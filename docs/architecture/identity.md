@@ -140,15 +140,16 @@ that cannot do better, not alternative identification paths.
 
 ## Users, groups and permissions
 
-- Users and groups are a **core** connector in Clew's Postgres. The IdP provisions them through SCIM 2.0:
-  Clew is the SCIM server, Keycloak or Entra is the client, authenticated with a long-lived bearer token
+- Users and groups are a **core** connector in Clew's Postgres. Each installation runs a provisioner that
+  pushes them through SCIM 2.0 ([D60](../decisions/D60-people-are-pushed-into-clew-through-standard-scim.md)):
+  Clew is the SCIM server, the provisioner is the client, authenticated with a long-lived bearer token
   issued by Clew for that one purpose. SCIM is provisioning, not identification; a provisioned user still
-  logs in through OIDC.
-- On login the OIDC subject is matched to the provisioned user. A subject without a provisioned user is
-  not logged in (no just-in-time user creation in v1).
-- Clew roles (`manager`, `employee`, later finer scopes) are derived from SCIM group membership and OIDC
-  claims, in Clew. The `capabilities` list and `authorizationVersion` on the context come from this
-  derivation, so a group change invalidates cached authorization on the next request.
+  logs in through OIDC. The provisioner holds all knowledge of its source and maps it to D60's contract.
+- On first login the OIDC subject is bound to the provisioned user whose `userName` matches a configured
+  claim. A subject without a provisioned user is not logged in (no just-in-time user creation in v1).
+- Clew roles (`manager`, `employee`, later finer scopes) are derived from SCIM group membership alone, in
+  Clew. The `capabilities` list and `authorizationVersion` on the context come from this derivation, so a
+  group change invalidates cached authorization on the next request.
 
 ## Dev login (local only)
 

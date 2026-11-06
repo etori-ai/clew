@@ -7,6 +7,8 @@
     "./dates": "./src/dates.ts",
     "./adapters": "./src/adapters.ts",
     "./nextcloud": "./src/nextcloud.ts",
+    "./microsoft365": "./src/microsoft365.ts",
+    "./fake-graph": "./src/fake-graph.ts",
     "./proposals": "./src/proposals.ts",
     "./accounts": "./src/accounts.ts",
     "./memory": "./src/memory.ts"
