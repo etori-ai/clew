@@ -5,6 +5,8 @@ import { hrConnector } from '../../packages/connectors/src/mock/hr';
 import { kommunikationConnector } from '../../packages/connectors/src/mock/kommunikation';
 import { financeConnector } from '../../packages/connectors/src/mock/finance';
 import { incidentsConnector } from '../../packages/connectors/src/mock/incidents';
+import { payrollConnector } from '../../packages/connectors/src/mock/payroll';
+import { timesheetConnector } from '../../packages/connectors/src/mock/timesheet';
 
 type Schema = { properties?: Record<string, Schema>; items?: Schema; anyOf?: Schema[] };
 const keys = (schema: Schema): string[] => [
@@ -16,7 +18,7 @@ const keys = (schema: Schema): string[] => [
 describe('side panel labels (3.1.2)', () => {
   test('every field a connector returns has a Swedish name', () => {
     const state = memoryState();
-    const connectors = [hrConnector(state), financeConnector(state), incidentsConnector(state), kommunikationConnector(state)];
+    const connectors = [hrConnector(state), financeConnector(state), incidentsConnector(state), kommunikationConnector(state), payrollConnector(state), timesheetConnector(state)];
     const fields = new Set(connectors.flatMap(m => m.capabilities.flatMap(c => keys(c.output as Schema))));
     expect(fields.size).toBeGreaterThan(20);
     expect([...fields].filter(key => !fieldLabels[key] && !hiddenFields.has(key))).toEqual([]);

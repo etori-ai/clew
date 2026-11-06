@@ -110,7 +110,7 @@ watch step was wired to Temporal as item 5 says: the approval commits a `watch_i
 one `jobWatch` workflow per step, and the workflow calls the fenced `observe` at each committed check and at the window's end,
 where `expired` leaves the person a card through the stream's attention admission (D47); proven on the memory adapters
 (`tests/unit/job-executions.test.ts`), the store contract, the Postgres store test and `apps/server/tests/watch-runtime.test.ts`
-(PostgreSQL, Temporal, Node). Implementation status and limits: `docs/reference/status.md`, row "Jobs across systems".
+(PostgreSQL, Temporal, Node). Still the same day the bundled mocks took up the offer: the HR mock declares `hr:absence` and follows it with its own write (`hr.proposeAbsence`, `creates`), the new time-reporting mock follows it with one execute and the new payroll mock with one watch, read-only, since payroll reads the HR system itself once a night; `scripts/job-bind.ts --mocks` binds them, thin routes assemble, approve and read a job, and `scripts/jobs-check.ts` runs the whole scenario against the running stack as the manager, through to the expired watch's card (`tests/unit/mock-job.test.ts` proves the same on the memory adapters). Implementation status and limits: `docs/reference/status.md`, row "Jobs across systems".
 
 **Replaces.** Refines [D35](D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md) items 6 and 7: a
 pushed card is still one system's and no connector executes in another, and a job card, which is Clew's, is the one

@@ -9,9 +9,12 @@ export const fieldLabels: Record<string, string> = {
   // Found text (D26)
   owner: 'Ägare', query: 'Fråga', reviewedAt: 'Granskad', reviewIntervalDays: 'Granskas var, dagar', section: 'Avsnitt', snippet: 'Utdrag', source: 'Källa', sources: 'Källor', stale: 'Inaktuell',
   status: 'Status', updatedAt: 'Ändrad',
+  // Jobs across systems (D55): the HR, time-reporting and payroll mocks
+  checkedAt: 'Kontrollerad', extent: 'Omfattning, procent', found: 'Finns', importedAt: 'Inläst', person: 'Medarbetare', result: 'Resultat',
 };
 /** Addresses and references: useful to the code, never to the person reading the panel. */
-export const hiddenFields = new Set(['ref', 'url', 'undoCapability', 'link', 'connector', 'score', 'kinds']);
+/** A follower's step drafts (D55) are Clew's input, drawn as a job, never as panel fields. */
+export const hiddenFields = new Set(['ref', 'url', 'undoCapability', 'link', 'connector', 'score', 'kinds', 'steps', 'operation', 'payload', 'input', 'expect', 'path', 'equals', 'within']);
 const dateOnly = new Intl.DateTimeFormat('sv-SE', { dateStyle: 'long' });
 /** "granskad 12 mars 2026", or nothing when the source gives no date. */
 export const reviewLabel = (iso: string | undefined) => iso ? `granskad ${dateOnly.format(new Date(iso))}` : '';

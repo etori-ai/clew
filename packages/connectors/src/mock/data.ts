@@ -3,6 +3,8 @@
  * members match `@clew/calendar/accounts` so the planner and the HR mock agree on who works at the school.
  * Everything here is deterministic so a demo repeats itself.
  */
+import type { StateStore } from '../memory-state';
+
 export interface Employee { ref: string; personId: string; name: string; email: string; unitId: string; role: string; }
 export const UNIT = 'unit-skola';
 export const employees: Employee[] = [
@@ -71,3 +73,13 @@ export const notices: Notice[] = [
 export const daysBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
 export const money = (n: number) => new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK', maximumFractionDigits: 0 }).format(n);
 export const shortDate = (d: string) => new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'short' }).format(new Date(d + 'T12:00:00'));
+
+/** The fact `hr:absence` (D55): what every follower receives when a sick report is made or found. The kind's name is the contract (D37). */
+export const ABSENCE_FACT = 'hr:absence';
+export interface ReportedAbsence { ref: string; person: string; from: string; to: string; extent: number; at: string }
+/**
+ * Sick reports registered in the HR mock through Clew, keyed by the approved operation so a retried write is read back,
+ * not repeated. The payroll mock reads these the way a payroll system reads an HR system: on its own, once a night,
+ * through the systems' shared records and never through Clew (D55 item 8).
+ */
+export const reportedAbsences = (state: StateStore) => state.get<Record<string, ReportedAbsence>>('hr', 'reported-absences', {});

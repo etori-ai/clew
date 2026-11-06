@@ -17,6 +17,8 @@ import { registry, runCapability } from '../connectors/registry';
 import { assistant, calendar, events, mocks, models, reminders, threads, refreshConnectors, refresh, attention } from '../composition';
 import { Type } from '@sinclair/typebox';
 import { executions } from '../composition/executions';
+import { jobs } from '../composition/jobs-across-systems';
+import { FactEnvelopeSchema, StepDraftSchema } from '@clew/connectors/protocol';
 import { changesFor } from '../composition/changes';
 import { authenticate, AuthError, SESSION_COOKIE } from '../auth';
 import { getCookie } from 'hono/cookie';
@@ -28,9 +30,16 @@ const { resetMocks } = mocks;
 const { ask, completionsFor, converse, listObjects, reply } = assistant;
 const ajv = addFormats(new Ajv({ allErrors: false }));
 const approval = ajv.compile(Type.Object({ decisionId: Type.String({ minLength: 1, maxLength: 200 }), operation: Type.String({ minLength: 1, maxLength: 80 }), payload: Type.Unknown(), compensates: Type.Optional(Type.String({ maxLength: 100 })) }, { additionalProperties: false }));
+// A job (D55): the fact Clew fans out, and the proposal the person approves once, echoed back as it was assembled; the ledger re-authorizes every step.
+const JobApprovalInput = Type.Object({ decisionId: Type.String({ minLength: 1, maxLength: 200 }), proposal: Type.Object({
+  fact: FactEnvelopeSchema.properties.fact,
+  steps: Type.Array(Type.Object({ id: Type.String({ minLength: 1, maxLength: 80 }), connector: Type.String({ maxLength: 80 }), source: Type.String({ maxLength: 80 }), draft: StepDraftSchema }, { additionalProperties: false }), { maxItems: 10 }),
+  sources: Type.Array(Type.Object({ binding: Type.String(), connector: Type.String(), source: Type.String(), capability: Type.String(), status: Type.Union([Type.Literal('ok'), Type.Literal('timeout'), Type.Literal('unavailable'), Type.Literal('degraded'), Type.Literal('disabled')]), reason: Type.Optional(Type.String()) }, { additionalProperties: false }), { maxItems: 50 }),
+  partial: Type.Boolean(),
+}, { additionalProperties: false }) }, { additionalProperties: false });
 const RemindInput = Type.Object({ seconds: Type.Integer({ minimum: 1, maximum: 30 * 86400 }) }, { additionalProperties: false });
 const CancelReminderInput = Type.Object({ workflowId: Type.String({ minLength: 1, maxLength: 200 }) }, { additionalProperties: false });
-const validators = { remind: ajv.compile(RemindInput), snooze: ajv.compile(SnoozeInput), cancelReminder: ajv.compile(CancelReminderInput), ask: ajv.compile(AskInput), reply: ajv.compile(ReplyInput), confirm: ajv.compile(ConfirmInput), replan: ajv.compile(ReplanInput), act: ajv.compile(ActInput), conversation: ajv.compile(ConversationInput),
+const validators = { fact: ajv.compile(FactEnvelopeSchema), jobApproval: ajv.compile(JobApprovalInput), remind: ajv.compile(RemindInput), snooze: ajv.compile(SnoozeInput), cancelReminder: ajv.compile(CancelReminderInput), ask: ajv.compile(AskInput), reply: ajv.compile(ReplyInput), confirm: ajv.compile(ConfirmInput), replan: ajv.compile(ReplanInput), act: ajv.compile(ActInput), conversation: ajv.compile(ConversationInput),
   modelChoice: ajv.compile(ModelChoiceInput), createEvent: ajv.compile(CreateEventInput), rescheduleEvent: ajv.compile(RescheduleEventInput), cancelEvent: ajv.compile(CancelEventInput), moveProposal: ajv.compile(MoveProposalInput), availability: ajv.compile(AvailabilityInput) };
 async function body<T>(request: Request, validate: (value: unknown) => value is T): Promise<T> {
   const text = await request.text();
@@ -76,6 +85,19 @@ api.get('/executions/:id', async c => {
   return execution ? c.json(execution) : c.json({ error: 'Åtgärden finns inte.' }, 404);
 });
 api.post('/executions/:id/reconcile', async c => c.json(await executions.reconcile(c.get('session').context, c.req.param('id')), 202));
+/** A job across systems (D55): assemble the proposal for one fact as the person (nothing is written), approve it once (the human decision endpoint, never a tool), read it back. */
+api.post('/jobs/assemble', async c => {
+  const { fact } = await body(c.req.raw, validators.fact as unknown as (value: unknown) => value is typeof FactEnvelopeSchema.static), persona = c.get('session').context;
+  return c.json(await jobs.assemble(actorOf(persona), fact, (name, input) => runCapability(persona, name, input)));
+});
+api.post('/jobs', async c => {
+  const input = await body(c.req.raw, validators.jobApproval as unknown as (value: unknown) => value is typeof JobApprovalInput.static);
+  return c.json(await jobs.approve(c.get('session').context, input), 202);
+});
+api.get('/jobs/:id', async c => {
+  const job = await executions.readJob(c.get('session').context, c.req.param('id'));
+  return job ? c.json(job) : c.json({ error: 'Jobbet finns inte.' }, 404);
+});
 // Legacy calendar endpoints have the same connector audience as its capabilities.
 api.use('*', async (c, next) => {
   const path = c.req.path;

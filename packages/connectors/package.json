@@ -13,6 +13,8 @@
     "./mock/finance": "./src/mock/finance.ts",
     "./mock/incidents": "./src/mock/incidents.ts",
     "./mock/kommunikation": "./src/mock/kommunikation.ts",
+    "./mock/payroll": "./src/mock/payroll.ts",
+    "./mock/timesheet": "./src/mock/timesheet.ts",
     "./check": "./src/check.ts"
   },
   "dependencies": {

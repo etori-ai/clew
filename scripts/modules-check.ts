@@ -40,7 +40,7 @@ const ok = (cond: unknown, msg: string) => { if (!cond) throw new Error('FAIL: '
   ok(!tools.some((t: string) => /approve|decide|book|acknowledge|report/.test(t)), 'no execute capability is a tool (D8)');
   const { areas } = await api('/api/areas');
   console.log('  areas:', areas.map((a: any) => `${a.id}[${a.needsYou}/${a.waiting}] ${a.figure?.label ?? ''}`).join(' | '));
-  ok(areas.map((a: any) => a.id).join() === 'medarbetare,budget,arbetsmiljo,viktigt-nu,kalender,utvecklingssamtal', 'manager areas derived from connectors and role');
+  ok(areas.map((a: any) => a.id).join() === 'medarbetare,budget,arbetsmiljo,viktigt-nu,lon,bemanning,kalender,utvecklingssamtal', 'manager areas derived from connectors and role');
   let { threads } = await api('/api/threads');
   const open = threads.filter((t: any) => t.state === 'open');
   console.log('  open threads:', open.map((t: any) => `${t.connector}:${t.area} "${t.title}"${t.waitingOn ? ' [väntar]' : ''}`).join('\n    '));

@@ -2,8 +2,10 @@ import { completeSnapshot } from '../scan';
 import { Type } from '@sinclair/typebox';
 import type { ThreadAction } from '@clew/contracts';
 import type { Actor, Capability, ExecuteResult, Connector, ThreadDraft } from '../index';
+import { FactEnvelopeSchema, FollowResponseSchema } from '../protocol';
 import type { StateStore } from '../memory-state';
-import { absences, daysBetween, delegations, employees, leaveRequests, managerOf, shifts, shortDate, UNIT } from './data';
+import { ABSENCE_FACT, absences, daysBetween, delegations, employees, leaveRequests, managerOf, reportedAbsences, shifts, shortDate, UNIT, type ReportedAbsence } from './data';
+export { ABSENCE_FACT, reportedAbsences } from './data';
 
 /**
  * Mock HR system (HR and scheduling), a generic stand-in for any municipal HR system; no vendor is named (D52). A pass-through connector: Clew stores refs and audit rows, the records live here.
@@ -16,6 +18,20 @@ const nameOf = (ref: string) => employees.find(e => e.ref === ref)?.name ?? 'Med
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const Empty = Type.Object({}, { additionalProperties: false });
 const Refs = Type.Object({ refs: Type.Array(Type.String()) }, { additionalProperties: false });
+const DATE = '^\\d{4}-\\d{2}-\\d{2}$';
+/** The attributes of `hr:absence` (D55), the JSON Schema followers are promised. */
+export const AbsenceAttributes = Type.Object({
+  person: Type.String({ pattern: '^hr:emp:[0-9]+$', description: 'Medarbetarens ref i personalsystemet.' }),
+  from: Type.String({ pattern: DATE, description: 'Första frånvarodagen.' }),
+  to: Type.Optional(Type.String({ pattern: DATE, description: 'Sista frånvarodagen; samma som from när den saknas.' })),
+  extent: Type.Optional(Type.Integer({ minimum: 25, maximum: 100, description: 'Omfattning i procent; 100 när den saknas.' })),
+}, { additionalProperties: false });
+type AbsenceAttributes = typeof AbsenceAttributes.static;
+const absenceReceipt = (row: ReportedAbsence): ExecuteResult => ({
+  headline: 'Sjukanmälan är registrerad i personalsystemet.',
+  rows: [{ ref: row.ref, label: 'Sjukanmälan', outcome: 'done', detail: `${shortDate(row.from)}${row.to !== row.from ? '–' + shortDate(row.to) : ''}, ${row.extent} %, registrerad i personalsystemet` }],
+  undoCapability: 'hr.withdrawAbsence', undoMinutes: 10,
+});
 
 /** Rehab rule 4.2 (synthetic): three or more short absences in 180 days triggers a talk within two weeks. */
 export function rehabCandidates(unitId: string, today = todayIso()) {
@@ -133,6 +149,46 @@ export function hrConnector(state: StateStore): Connector {
       },
     },
     {
+      // The follower of its own fact (D55): when the sick report already exists in the HR system (the employee made it) there is nothing to write; otherwise the job registers it.
+      name: 'hr.proposeAbsence', kind: 'propose', title: 'Sjukanmälan', model: false,
+      description: 'Vad personalsystemet gör när en medarbetare blir sjuk: registrerar sjukanmälan, om den inte redan finns där.',
+      input: FactEnvelopeSchema, output: FollowResponseSchema, scope: actor => isManagerOf(actor, UNIT), follows: [ABSENCE_FACT], creates: ABSENCE_FACT,
+      run: async (_actor, input: typeof FactEnvelopeSchema.static) => {
+        const f = input.fact; if (f.ref) return { steps: [] };
+        const a = f.attributes as AbsenceAttributes, extent = a.extent ?? 100;
+        return { steps: [{ kind: 'execute' as const, operation: 'hr.reportAbsence', payload: { person: a.person, from: a.from, ...(a.to ? { to: a.to } : {}), extent }, title: 'Sjukanmälan registreras', detail: `Från ${shortDate(a.from)}, ${extent} %` }] };
+      },
+    },
+    {
+      name: 'hr.reportAbsence', kind: 'execute', title: 'Registrera sjukanmälan', model: false, description: 'Registrerar en sjukanmälan i personalsystemet.',
+      input: AbsenceAttributes, output: Type.Any(), scope: actor => isManagerOf(actor, UNIT),
+      // Clew's approved operation id is the write's identity (D45): a lost reply is read back through `hr.absenceLookup`, never written twice.
+      execution: { strategy: 'deduplicated', retentionSeconds: 86400, lookup: 'hr.absenceLookup' },
+      run: async (_actor, input: AbsenceAttributes, clew): Promise<ExecuteResult> => {
+        const reported = await reportedAbsences(state); const key = clew.operationId ?? `${input.person}:${input.from}`;
+        const existing = reported[key]; if (existing) return absenceReceipt(existing);
+        const row: ReportedAbsence = { ref: `hr:absence:${input.person.split(':').pop()}:${input.from}`, person: input.person, from: input.from, to: input.to ?? input.from, extent: input.extent ?? 100, at: new Date().toISOString() };
+        reported[key] = row; await state.set(CONNECTOR, 'reported-absences', reported);
+        return absenceReceipt(row);
+      },
+    },
+    {
+      name: 'hr.absenceLookup', kind: 'read', title: 'Läs tillbaka en sjukanmälan', model: false, description: 'Om en registrering med ett givet operations-id finns i personalsystemet.',
+      input: Type.Object({ operationId: Type.String() }, { additionalProperties: false }), output: Type.Object({ found: Type.Boolean(), result: Type.Optional(Type.Any()) }),
+      scope: actor => isManagerOf(actor, UNIT),
+      run: async (_actor, input: { operationId: string }) => { const row = (await reportedAbsences(state))[input.operationId]; return row ? { found: true, result: absenceReceipt(row) } : { found: false }; },
+    },
+    {
+      name: 'hr.withdrawAbsence', kind: 'execute', title: 'Ta bort sjukanmälan', model: false, description: 'Tar bort en sjukanmälan som registrerades av misstag, inom ångerfönstret.',
+      input: Refs, output: Type.Any(), scope: actor => isManagerOf(actor, UNIT),
+      run: async (_actor, input: { refs: string[] }): Promise<ExecuteResult> => {
+        const reported = await reportedAbsences(state);
+        for (const [key, row] of Object.entries(reported)) if (input.refs.includes(row.ref)) delete reported[key];
+        await state.set(CONNECTOR, 'reported-absences', reported);
+        return { headline: 'Sjukanmälan är borttagen.', rows: input.refs.map(ref => ({ ref, label: 'Sjukanmälan', outcome: 'done' as const, detail: 'borttagen i personalsystemet' })) };
+      },
+    },
+    {
       name: 'hr.myShift', kind: 'read', title: 'Mitt pass', model: true,
       description: 'Dagens och morgondagens pass för den inloggade, och vilka kollegor som jobbar.',
       input: Empty, output: Type.Object({ today: Type.Union([Type.Object({ start: Type.String(), end: Type.String(), ward: Type.String(), colleagues: Type.Array(Type.String()) }), Type.Null()]) }),
@@ -225,6 +281,7 @@ export function hrConnector(state: StateStore): Connector {
         schedules: [{ label: 'Delegeringar och utbildningar som går ut', when: 'Månadens första måndag' }],
         figure: async (actor) => { const me = own(actor); const s = me && shifts.find(x => x.employee === me.ref && x.date === todayIso()); return s ? { label: `${s.start}–${s.end} på ${s.ward}`, tone: 'ok' } : { label: 'Ledig i dag', tone: 'none' }; } },
     ],
+    facts: [{ kind: ABSENCE_FACT, title: 'Sjukfrånvaro', attributes: AbsenceAttributes }],
     capabilities, scan: async actor => completeSnapshot(actor, await scan(actor)),
   };
 }

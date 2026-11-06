@@ -46,6 +46,15 @@ docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts --list
 
 Use the administration UI to narrow the audience before enabling a real integration. `connector-add.ts <id> --enable` enables an existing registration; the CLI does not run the entire conformance suite. Registration lives in PostgreSQL, with a sealed transport secret and audit; the running server reconciles it without a rebuild or restart. A connector missing governance is not callable.
 
+A connector that follows a fact kind (D55, `follows` on a `propose`) runs nothing until an administrator binds it. Until the administration page has bindings, the CLI is the way: one row per fact kind and follower with its audit row, default deny. The `--mocks` form binds the bundled mocks' followers of `hr:absence` with a short payroll window so a watch can be seen expiring in development; `scripts/jobs-check.ts` on the host then runs the scenario end to end as the manager.
+
+```sh
+docker exec -w /workspace clew-app-1 bun scripts/job-bind.ts hr:absence payroll.followAbsence --within PT4H
+docker exec -w /workspace clew-app-1 bun scripts/job-bind.ts --mocks
+docker exec -w /workspace clew-app-1 bun scripts/job-bind.ts --list
+bun scripts/jobs-check.ts
+```
+
 ## Deploy the service
 
 Ship an independently runnable image with documented configuration and a health/operations procedure appropriate to the source. Keep the source credential in that service; Clew needs its registration transport secret, not the source's service-account password. Configure `CLEW_URL` as the trusted, reachable Clew base URL, and use HTTPS for nonlocal traffic. A container's loopback address is not another container's address. The development BFF normally listens on loopback; a separate service needs a reachable listener and network route.

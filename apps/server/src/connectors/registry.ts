@@ -7,6 +7,8 @@ import { hrConnector } from '@clew/connectors/mock/hr';
 import { financeConnector } from '@clew/connectors/mock/finance';
 import { incidentsConnector } from '@clew/connectors/mock/incidents';
 import { kommunikationConnector } from '@clew/connectors/mock/kommunikation';
+import { payrollConnector } from '@clew/connectors/mock/payroll';
+import { timesheetConnector } from '@clew/connectors/mock/timesheet';
 import { InputError } from '../context';
 import { calendarConnector } from '../modules/calendar/connector';
 import { calendar, events } from '../composition/calendar';
@@ -26,7 +28,7 @@ export const registry = new Registry({ onRefused: (id, topic, problem) => consol
 const search = searchUsecases({ sources: actor => registry.searchSources(actor), clock });
 /** The card an answer becomes is the stream's use case; the composition root fills this slot once the stream is built over the registry. */
 export const answerCards: AnswerCards = {};
-const bundled = [hrConnector(postgresState), financeConnector(postgresState), incidentsConnector(postgresState), kommunikationConnector(postgresState), calendarConnector(calendar, events), peopleConnector(), searchConnector(search, answerCards)];
+const bundled = [hrConnector(postgresState), financeConnector(postgresState), incidentsConnector(postgresState), kommunikationConnector(postgresState), payrollConnector(postgresState), timesheetConnector(postgresState), calendarConnector(calendar, events), peopleConnector(), searchConnector(search, answerCards)];
 for (const m of bundled) registry.register({ ...m, uses: ['*'] });
 /** The connectors that live in this process: they get a `connector` row at boot so an administrator can govern them too (D23). */
 export const bundledIds = bundled.map(m => m.id);
