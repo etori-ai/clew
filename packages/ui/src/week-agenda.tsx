@@ -7,16 +7,23 @@ import { ProgressBar } from '@astryxdesign/core/ProgressBar';
 import { VisuallyHidden } from '@astryxdesign/core/VisuallyHidden';
 import { dates, displayDate, occursOn, shortDayLabel, timeLabel, timeRange, today } from '@clew/calendar/dates';
 import { dayLoad } from '@clew/calendar/proposals';
+import { PROPOSAL_MARK } from './agenda-items';
 
-/** One entry in a day column: an existing meeting, a drawn proposal or a booked samtal. */
+/** One entry in a day: an existing meeting, a drawn proposal, a booked samtal, or (in I dag alone) a free gap. */
 export interface AgendaItem {
   id: string;
   title: string;
   start: string;
   end: string;
   allDay: boolean;
-  kind: 'event' | 'proposal' | 'booked';
+  kind: 'event' | 'proposal' | 'booked' | 'gap';
   subtitle?: string;
+  /** The assistant's mark before a proposal's title (D71): "✦". */
+  marker?: string;
+  /** Where the meeting is, the second half of the grid's time line. */
+  place?: string;
+  /** The row's meta line (D71): the length and the place ("30 min · Personalrummet"), or the longest gap's promise. */
+  meta?: string;
   /** One or two words for the token on the start-page card; the full title stays in the description. */
   short?: string;
   /** What the entry stands for, so a dialog can act on it: the calendar's event or the drawn proposal. */
@@ -25,7 +32,8 @@ export interface AgendaItem {
 }
 type Props = { week: string; days?: number; items: AgendaItem[]; label?: string };
 
-const color = { proposal: 'purple', booked: 'green' } as const;
+// The proposal is the assistant's blue (D71, artboard 6), the only blue in the calendar; a booked samtal is a status, green.
+const color = { proposal: 'blue', booked: 'green' } as const;
 const kindLabel = { event: 'Redan bokat', proposal: 'Förslag', booked: 'Bokat' } as const;
 
 /**
@@ -38,7 +46,9 @@ export function WeekAgenda({ week, days = 5, items, label = 'Veckovy' }: Props) 
   const current = today();
   const columns = dates(week, days).map(day => ({
     day,
-    entries: items.filter(item => occursOn(item, day)).sort((a, b) => a.start.localeCompare(b.start)),
+    entries: items
+      .filter(item => item.kind !== 'gap' && occursOn(item, day))
+      .sort((a, b) => a.start.localeCompare(b.start)),
   }));
   return (
     <VStack gap={2} role="group" aria-label={label}>
@@ -67,8 +77,8 @@ export function WeekAgenda({ week, days = 5, items, label = 'Veckovy' }: Props) 
             })()}
             {entries.length === 0 && <Text type="supporting">Ledigt</Text>}
             {entries.map(item => {
-              const label = `${item.allDay ? 'Hela dagen' : timeLabel(item.start)} ${item.short ?? item.title}`;
-              return item.kind === 'event' ? (
+              const label = `${item.allDay ? 'Hela dagen' : timeLabel(item.start)} ${item.marker ? `${item.marker} ` : ''}${item.short ?? item.title}`;
+              return item.kind === 'event' || item.kind === 'gap' ? (
                 <Text key={item.id} type="supporting">
                   {label}
                   <VisuallyHidden> · {kindLabel.event}</VisuallyHidden>
@@ -88,7 +98,12 @@ export function WeekAgenda({ week, days = 5, items, label = 'Veckovy' }: Props) 
       </Grid>
       <HStack gap={2} wrap="wrap" role="group" aria-label="Teckenförklaring">
         {(['proposal', 'booked'] as const).map(kind => (
-          <Token key={kind} size="sm" color={color[kind]} label={kindLabel[kind]} />
+          <Token
+            key={kind}
+            size="sm"
+            color={color[kind]}
+            label={kind === 'proposal' ? `${PROPOSAL_MARK} ${kindLabel[kind]}` : kindLabel[kind]}
+          />
         ))}
       </HStack>
     </VStack>

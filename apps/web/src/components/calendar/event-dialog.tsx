@@ -36,7 +36,7 @@ type Props = {
   onOpenDay?: (date: string) => void;
   onAddChip?: (item: AgendaItem) => void;
 };
-const kindLabel = { event: 'Bokat', proposal: 'Förslag', booked: 'Bokat samtal' } as const;
+const kindLabel = { event: 'Bokat', proposal: 'Förslag', booked: 'Bokat samtal', gap: 'Ledigt' } as const;
 const minutes = (item: { start: string; end: string }) =>
   Math.round((Date.parse(item.end) - Date.parse(item.start)) / 60000);
 const hhmm = (instant: string) => localClock(instant).slice(11, 16);

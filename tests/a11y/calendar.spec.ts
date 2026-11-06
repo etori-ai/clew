@@ -71,6 +71,44 @@ test.describe('the three views', () => {
   });
 });
 
+test.describe('the levels and the mark (D71, artboard 6)', () => {
+  for (const viewport of [desktop, phone])
+    test(`at ${viewport.width} px the page has one h1, and it is the week`, async ({ page, api: _ }) => {
+      await page.setViewportSize(viewport);
+      await open(page, '/calendar');
+      await expect(page.locator('h1, [aria-level="1"]')).toHaveCount(1);
+      await expect(heading(page, 1, 'Vecka 45')).toBeVisible();
+    });
+  test('a meeting in the grid is named by its title and its time, and said to be booked', async ({ page, api: _ }) => {
+    await page.setViewportSize(desktop);
+    await open(page, '/calendar');
+    const block = page.locator('.clew-cal-event').first();
+    await expect(block).toHaveAccessibleName(/^Morgonmöte ledningsgrupp\s*08:15–08:45 · A12\s*, bokat$/);
+  });
+  test('a proposal is the assistant’s: the ✦ is seen, the word förslag is heard', async ({ page, api: _ }) => {
+    await page.setViewportSize(desktop);
+    await open(page, `/calendar?date=${NEXT_WEEK}`);
+    const block = page.locator('.clew-cal-event-proposal').first();
+    await expect(block).toContainText('✦ Utvecklingssamtal');
+    await expect(block).toHaveAccessibleName(/^Utvecklingssamtal\s*\d\d:\d\d–\d\d:\d\d · Anna Lindqvist\s*, förslag$/);
+  });
+  test('the panel is the card: the house chip, the source and the week, the one badge, the title at level 2', async ({
+    page,
+    api: _,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await open(page, `/calendar?date=${NEXT_WEEK}`);
+    const panel = page.getByRole('complementary', { name: 'Förslag' });
+    await expect(panel.getByText('Kalender', { exact: true })).toBeVisible();
+    await expect(panel.getByText('Kalendern · vecka 46', { exact: true })).toBeVisible();
+    await expect(panel.getByText('Förslag att bekräfta')).toBeVisible();
+    await expect(panel.getByRole('heading', { level: 2, name: 'Planera utvecklingssamtal' })).toBeVisible();
+    // A proposal row is the row level: the day in its cell, the person, the time under; the ✦ is not read.
+    await expect(panel.getByRole('checkbox', { name: 'tis 10 Anna Lindqvist 10:00–10:45' })).toBeChecked();
+    await expectNoAxeViolations(page);
+  });
+});
+
 test.describe("a booking of one's own", () => {
   test('Ny bokning is a form dialog with labelled fields; Escape closes it and focus returns to the button', async ({
     page,

@@ -267,27 +267,28 @@
   border-radius: var(--radius-full);
 }
 
-/* Events. --fc-event-color is set by FullCalendar from the kind-independent eventColor; the kind classes override it. */
+/*
+  Events (D71, artboard 6). A meeting is neutral: the surface with an emphasized edge. A proposal is the assistant's:
+  the info-muted fill and a dashed info edge, the only blue in the calendar. A booked samtal is a meeting. No hue in a
+  cell: the system colours are the cards', and the calendar is Clew's own.
+*/
 .clew-cal-event {
-  --clew-cal-event-bg: var(--fc-event-color);
-  --clew-cal-event-fg: var(--fc-event-contrast-color);
-  --clew-cal-event-border: transparent;
-}
-.clew-cal-event-event {
-  --clew-cal-event-bg: var(--color-background-gray);
-  --clew-cal-event-fg: var(--color-text-gray);
+  --clew-cal-event-bg: var(--color-background-surface);
+  --clew-cal-event-fg: var(--color-text-primary);
+  --clew-cal-event-border: var(--color-border-emphasized);
+  --clew-cal-event-edge: var(--color-border-emphasized);
+  --clew-cal-event-line: solid;
 }
 .clew-cal-event-proposal {
-  --clew-cal-event-bg: var(--color-background-surface);
-  --clew-cal-event-fg: var(--color-text-purple);
-  --clew-cal-event-border: var(--color-border-purple);
+  --clew-cal-event-bg: var(--color-info-muted);
+  --clew-cal-event-fg: var(--color-on-info-muted);
+  --clew-cal-event-border: var(--color-border-info);
+  --clew-cal-event-edge: var(--color-border-info);
+  --clew-cal-event-line: dashed;
 }
-.clew-cal-event-booked {
-  --clew-cal-event-bg: var(--color-background-green);
-  --clew-cal-event-fg: var(--color-text-green);
-}
+/* The past is told by a quieter edge, never by opacity: the meta line in supporting has to keep its contrast (1.4.3). */
 .clew-cal-event.clew-cal-past {
-  opacity: 0.7;
+  --clew-cal-event-edge: var(--color-border);
 }
 .clew-cal-event.clew-cal-dragging {
   box-shadow: var(--shadow-high);
@@ -304,7 +305,8 @@
   border-radius: var(--radius-inner);
   background-color: var(--clew-cal-event-bg);
   color: var(--clew-cal-event-fg);
-  border: 2px var(--clew-cal-border-style) var(--clew-cal-event-border);
+  border: var(--border-width, 1px) var(--clew-cal-event-line) var(--clew-cal-event-border);
+  border-inline-start: calc(3 * var(--border-width, 1px)) var(--clew-cal-event-line) var(--clew-cal-event-edge);
   overflow: hidden;
 }
 .clew-cal-block-event-inner {
@@ -379,8 +381,6 @@
 
 .clew-cal-row-event {
   margin-bottom: 1px;
-  border-width: 2px;
-  border-style: var(--clew-cal-border-style);
 }
 .clew-cal-row-event-start {
   margin-inline-start: 1px;
@@ -430,15 +430,12 @@
   width: var(--spacing-2);
   height: var(--spacing-2);
   border-radius: var(--radius-full);
-  background-color: var(--clew-cal-event-bg);
-  border: 2px solid var(--clew-cal-event-border);
+  background-color: var(--clew-cal-event-edge);
+  border: 2px var(--clew-cal-event-line) var(--clew-cal-event-edge);
   box-sizing: border-box;
 }
-.clew-cal-event-event .clew-cal-dot-event-dot {
-  background-color: var(--color-icon-gray);
-}
-.clew-cal-event-booked .clew-cal-dot-event-dot {
-  background-color: var(--color-icon-green);
+.clew-cal-event-proposal .clew-cal-dot-event-dot {
+  background-color: var(--clew-cal-event-bg);
 }
 .clew-cal-dot-event-inner {
   display: flex;
@@ -617,26 +614,15 @@
   padding: var(--spacing-2);
   border-radius: var(--radius-element);
 }
+/* A list is rows at the row level, as I dag draws them: the time in its cell, no dot (D71, artboard 6). */
 .clew-cal-list-event-dot {
-  flex-shrink: 0;
-  width: var(--spacing-2-5, 0.625rem);
-  height: var(--spacing-2-5, 0.625rem);
-  border-radius: var(--radius-full);
-  background-color: var(--clew-cal-event-bg);
-  border: 2px solid var(--clew-cal-event-border);
-  box-sizing: border-box;
-}
-.clew-cal-event-event .clew-cal-list-event-dot {
-  background-color: var(--color-icon-gray);
-}
-.clew-cal-event-booked .clew-cal-list-event-dot {
-  background-color: var(--color-icon-green);
+  display: none;
 }
 .clew-cal-list-event-inner {
   display: flex;
   flex-direction: row;
-  align-items: center;
-  gap: var(--spacing-2);
+  align-items: flex-start;
+  gap: var(--spacing-3);
   min-width: 0;
 }
 .clew-cal-list-event-time {

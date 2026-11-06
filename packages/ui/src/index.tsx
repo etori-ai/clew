@@ -148,7 +148,7 @@ export { WeekAgenda, type AgendaItem } from './week-agenda';
 export { EventCalendar, type CalendarView } from './calendar';
 // The calendar family (D32): the page's grid, the embedded day and list, the date picker, and the one item mapping.
 export { DayStrip, EventList, DatePicker } from './calendar-embeds';
-export { agendaItems } from './agenda-items';
+export { agendaItems, PROPOSAL_MARK } from './agenda-items';
 export { DateTimeInput } from '@astryxdesign/core/DateTimeInput';
 export { TimeInput } from '@astryxdesign/core/TimeInput';
 export { DateInput } from '@astryxdesign/core/DateInput';

@@ -9,6 +9,7 @@ import '@fullcalendar/react/skeleton.css';
 import './calendar-theme.css';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
+import { VStack } from '@astryxdesign/core/Layout';
 import { VisuallyHidden } from '@astryxdesign/core/VisuallyHidden';
 import {
   dates,
@@ -19,6 +20,7 @@ import {
   monthLabel,
   occursOn,
   shortDayLabel,
+  timeRange,
   timeZone,
   weekNumber,
 } from '@clew/calendar/dates';
@@ -51,7 +53,7 @@ type Props = {
   onSelectRange?: (start: string, end: string) => void;
 };
 
-const kindLabel = { event: 'bokat', proposal: 'förslag', booked: 'bokat samtal' } as const;
+const kindLabel = { event: 'bokat', proposal: 'förslag', booked: 'bokat samtal', gap: 'ledigt' } as const;
 const plugins = [clewCalendarTheme, timeGridPlugin, dayGridPlugin, listPlugin, interactionPlugin];
 const timeFormat = { hour: '2-digit', minute: '2-digit', hour12: false } as const;
 const office = { start: 8 * 60, end: 17 * 60 };
@@ -79,6 +81,7 @@ function clickedHour({ allDay, date, dateStr }: { allDay: boolean; date: Date; d
 }
 const isDay = (view: CalendarView) => view === 'timeGridDay' || view === 'listDay';
 const isMonth = (view: CalendarView) => view === 'dayGridMonth';
+const isList = (view: CalendarView) => view === 'listWeek' || view === 'listDay';
 /** The days a view shows, for the axis and the spoken summary. */
 const shownDays = (view: CalendarView, date: string) => (isDay(view) ? [date] : isMonth(view) ? [] : dates(date, 5));
 
@@ -92,7 +95,7 @@ const shownDays = (view: CalendarView, date: string) => (isDay(view) ? [date] : 
 export function EventCalendar({
   view,
   date,
-  items,
+  items: all,
   label,
   dayHeadingLevel = 2,
   accessiblePath,
@@ -103,6 +106,8 @@ export function EventCalendar({
   onSelectRange,
 }: Props) {
   const ref = useRef<CalendarRef>(null);
+  // A free gap is a row in I dag and nothing in the grid (D71, artboard 6).
+  const items = useMemo(() => all.filter(item => item.kind !== 'gap'), [all]);
   const byId = useMemo(() => new Map(items.map(item => [item.id, item])), [items]);
   const events = useMemo<EventInput[]>(
     () =>
@@ -114,7 +119,7 @@ export function EventCalendar({
         allDay: item.allDay,
         editable: item.kind === 'proposal' && !!onMoveProposal,
         durationEditable: false,
-        extendedProps: { kind: item.kind, subtitle: item.subtitle, selected: item.id === selectedId },
+        extendedProps: { kind: item.kind, selected: item.id === selectedId },
       })),
     [items, onMoveProposal, selectedId],
   );
@@ -160,8 +165,8 @@ export function EventCalendar({
         eventInteractive
         eventOrder="start,-duration,title"
         eventTimeFormat={timeFormat}
-        // Five columns leave no room for a range on a short block; the block's height tells the end, and the dialog says it.
-        displayEventEnd={view !== 'timeGridWeek'}
+        // The start alone: a list and the month say the length in their own words, the grid draws the range under the title.
+        displayEventEnd={false}
         slotDuration="00:30"
         slotHeaderInterval="01:00"
         slotMinHeight={compact ? 20 : 28}
@@ -196,29 +201,65 @@ export function EventCalendar({
         eventContent={info => {
           const item = byId.get(info.event.id);
           const kind = item?.kind ?? 'event';
-          const subtitle = kind !== 'event' ? item?.subtitle : undefined;
-          // A week's five columns leave a short meeting room for its name or its time: the grid's own axis says when, the name is what only the block can say.
-          const time = info.timeText && (
-            <Text type="inherit" weight="semibold" hasTabularNumbers>
-              {info.timeText}
-            </Text>
+          // The assistant's mark is seen, not read: the kind is said in words at the end of the name.
+          const title = (
+            <>
+              {item?.marker && <Text aria-hidden="true">{`${item.marker} `}</Text>}
+              {info.event.title}
+            </>
           );
+          const hidden = (
+            <VisuallyHidden>
+              , {kindLabel[kind]}
+              {item?.id === selectedId ? ', öppet' : ''}
+            </VisuallyHidden>
+          );
+          // A list is the row level (D71, artboard 6): the time in its start cell, the title at 14 semibold, the length and the place under it.
+          if (isList(view))
+            return (
+              <>
+                <VStack width={52}>
+                  <Text weight="semibold" hasTabularNumbers>
+                    {info.event.allDay ? 'Heldag' : info.timeText}
+                  </Text>
+                </VStack>
+                <VStack>
+                  <Text weight="semibold">{title}</Text>
+                  {item?.meta && <Text type="supporting">{item.meta}</Text>}
+                </VStack>
+                {hidden}
+              </>
+            );
+          // The month is one line a day can hold several of: the start, then the title.
+          if (isMonth(view))
+            return (
+              <>
+                {info.timeText && (
+                  <Text type="supporting" hasTabularNumbers>
+                    {info.timeText}
+                  </Text>
+                )}
+                <Text type="supporting" weight="semibold" color="primary">
+                  {title}
+                </Text>
+                {hidden}
+              </>
+            );
+          // The grid is the one place a title is 12 px (D71): the title in supporting semibold, the time and the place in supporting under it.
+          const { start, end } = info.event;
+          const when = !info.event.allDay && start && end ? timeRange(start.toISOString(), end.toISOString()) : '';
+          const where = item?.place ?? (kind === 'event' ? undefined : item?.subtitle);
           return (
             <>
-              {time && (view === 'timeGridWeek' ? <VisuallyHidden>{time}</VisuallyHidden> : time)}
-              {/* In a week's narrow column who it is gets its own line, so "Utvecklingssamtal · Anna" neither breaks a word nor loses the name. */}
-              {subtitle && view === 'timeGridWeek' ? (
-                <>
-                  <Text type="inherit">{info.event.title}</Text>
-                  <Text type="inherit">{subtitle}</Text>
-                </>
-              ) : (
-                <Text type="inherit">{subtitle ? `${info.event.title} · ${subtitle}` : info.event.title}</Text>
+              <Text type="supporting" weight="semibold" color="inherit">
+                {title}
+              </Text>
+              {(when || where) && (
+                <Text type="supporting" hasTabularNumbers>
+                  {[when, where].filter(Boolean).join(' · ')}
+                </Text>
               )}
-              <VisuallyHidden>
-                , {kindLabel[kind]}
-                {item?.id === selectedId ? ', öppet' : ''}
-              </VisuallyHidden>
+              {hidden}
             </>
           );
         }}

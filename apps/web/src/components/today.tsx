@@ -1,16 +1,13 @@
+import { useMemo } from 'react';
 import type { Thread, TodayView } from '@clew/contracts';
-import { Card, Heading, HStack, Link, List, ListItem, Text, VStack } from '@clew/ui';
+import { Card, Heading, HStack, Link, List, ListItem, PROPOSAL_MARK, Text, VStack, agendaItems } from '@clew/ui';
 import { timeLabel } from '@clew/calendar/dates';
 
-const minutes = (g: { start: string; end: string }) => Math.round((Date.parse(g.end) - Date.parse(g.start)) / 60000);
-/** How long a meeting is, as the artboard writes it: "30 min", "1 tim", "1,5 tim". */
-const duration = (m: number) =>
-  m < 60 ? `${m} min` : `${(m / 60).toLocaleString('sv-SE', { maximumFractionDigits: 1 })} tim`;
-
 /**
- * "I dag" (D53, artboard A): a card with the day's meetings in order, each with its time, its name and its room and
- * length, and the free gaps as their own rows ("Ledigt till …"); the longest gap says that the assistant books nothing
- * there without asking. The week is one link away. No sentence sums the day up: the rows do.
+ * "I dag" (D53, artboard A; D71, artboard 6): a card with the day's meetings in order, each with its time, its name and
+ * its length and room, and the free gaps as their own rows ("Ledigt till …"); the longest gap says that the assistant
+ * books nothing there without asking. The rows come from `agendaItems()`, the calendar family's one mapping (D32). The
+ * week is one link away. No sentence sums the day up: the rows do.
  */
 type Props = {
   view: TodayView;
@@ -27,31 +24,15 @@ export function Today({ view, threads = [], cardHref }: Props) {
     threads.find(
       t => t.kind === 'question' && t.messages.some(m => m.meta?.chips?.some(c => c.ref === 'event:' + e.id)),
     );
-  const timed = view.events.filter(e => !e.allDay);
-  const longest = view.gaps.reduce<(typeof view.gaps)[number] | null>(
-    (best, g) => (best && minutes(best) >= minutes(g) ? best : g),
-    null,
+  const rows = useMemo(
+    () =>
+      agendaItems(
+        view.events.filter(e => !e.allDay),
+        [],
+        view.gaps,
+      ).sort((a, b) => a.start.localeCompare(b.start)),
+    [view],
   );
-  const rows = [
-    ...timed.map(e => ({
-      kind: 'event' as const,
-      start: e.start,
-      end: e.end,
-      title: e.title,
-      room: e.room,
-      card: madeBy(e),
-      talk: talkedIn(e),
-    })),
-    ...view.gaps.map(g => ({
-      kind: 'gap' as const,
-      start: g.start,
-      end: g.end,
-      title: '',
-      room: '',
-      card: undefined,
-      talk: undefined,
-    })),
-  ].sort((a, b) => a.start.localeCompare(b.start));
   return (
     <Card padding={4}>
       <VStack gap={1} as="section" aria-label="I dag">
@@ -67,10 +48,27 @@ export function Today({ view, threads = [], cardHref }: Props) {
         </HStack>
         <List hasDividers density="balanced" edge="flush" listStyle="none">
           {rows.length === 0 && <ListItem label={<Text color="secondary">Inga inbokade möten i dag</Text>} />}
-          {rows.map(row =>
-            row.kind === 'event' ? (
+          {rows.map(row => {
+            if (row.kind === 'gap')
+              return (
+                <ListItem
+                  key={row.id}
+                  startContent={
+                    <VStack width={52}>
+                      <Text weight="medium" color="secondary" hasTabularNumbers>
+                        {timeLabel(row.start)}
+                      </Text>
+                    </VStack>
+                  }
+                  label={<Text color="secondary">{row.title}</Text>}
+                  description={row.meta ? <Text type="supporting">{row.meta}</Text> : undefined}
+                />
+              );
+            const card = row.event && madeBy(row.event),
+              talk = row.event && talkedIn(row.event);
+            return (
               <ListItem
-                key={row.start + row.kind}
+                key={row.id}
                 startContent={
                   <VStack width={52}>
                     <Text weight="semibold" hasTabularNumbers>
@@ -78,48 +76,36 @@ export function Today({ view, threads = [], cardHref }: Props) {
                     </Text>
                   </VStack>
                 }
-                label={<Text weight="semibold">{row.title}</Text>}
+                label={
+                  <Text weight="semibold">
+                    {row.marker && <Text aria-hidden="true">{`${PROPOSAL_MARK} `}</Text>}
+                    {row.title}
+                  </Text>
+                }
                 description={
                   <Text type="supporting">
-                    {[row.room, duration(minutes(row))].filter(Boolean).join(' · ')}
-                    {row.talk && (
+                    {row.meta}
+                    {talk && (
                       <>
                         {' · '}
-                        <Link href={`/conversations/${row.talk.id}`} color="secondary" hasUnderline>
+                        <Link href={`/conversations/${talk.id}`} color="secondary" hasUnderline>
                           underlaget ligger i samtalet
                         </Link>
                       </>
                     )}
-                    {row.card && cardHref && (
+                    {card && cardHref && (
                       <>
                         {' · '}
-                        <Link href={cardHref(row.card.id)} color="secondary" hasUnderline>
-                          från kortet {row.card.title}
+                        <Link href={cardHref(card.id)} color="secondary" hasUnderline>
+                          från kortet {card.title}
                         </Link>
                       </>
                     )}
                   </Text>
                 }
               />
-            ) : (
-              <ListItem
-                key={row.start + row.kind}
-                startContent={
-                  <VStack width={52}>
-                    <Text weight="medium" color="secondary" hasTabularNumbers>
-                      {timeLabel(row.start)}
-                    </Text>
-                  </VStack>
-                }
-                label={<Text color="secondary">Ledigt till {timeLabel(row.end)}</Text>}
-                description={
-                  longest && longest.start === row.start ? (
-                    <Text type="supporting">Längsta luckan · jag bokar inget här utan att fråga</Text>
-                  ) : undefined
-                }
-              />
-            ),
-          )}
+            );
+          })}
         </List>
       </VStack>
     </Card>

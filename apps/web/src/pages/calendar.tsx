@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router';
 import { keepPreviousData, useQueries, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import type { Area, CalendarEvent, Proposal, SessionUser, Thread } from '@clew/contracts';
 import {
+  AreaChip,
   Badge,
   Button,
   ChatComposer,
@@ -28,6 +29,7 @@ import {
   Text,
   Toolbar,
   VStack,
+  PROPOSAL_MARK,
   agendaItems,
   useMediaQuery,
   type AgendaItem,
@@ -52,6 +54,7 @@ import { pickProposalThread } from '../thread-cache';
 import { useThreadAction } from '../mutations';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
+import { useMarks } from '../marks';
 import { Shell, mobileQuery } from '../components/shell';
 import { useRail } from '../components/nav';
 import { EventDialog } from '../components/calendar/event-dialog';
@@ -130,6 +133,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const client = useQueryClient();
   const areas = useQuery(areasQuery).data?.areas ?? EMPTY_AREAS;
   const nav = useRail({ current: { surface: 'calendar' }, admin });
+  const marks = useMarks();
   // The proposal thread beside the grid is picked from the stream's own list, so a confirm here and the card on the start page agree.
   const threadsQ = useQuery({ ...threadsQuery, select: selectProposalThread });
   const thread = threadsQ.data ?? null;
@@ -207,30 +211,27 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
     .at(-1);
   const undoOpen =
     !!undoUntil && Date.parse(undoUntil) > Date.now() && !!thread?.proposals.some(p => p.status === 'confirmed');
-  const lead = thread?.messages.find(m => m.role === 'assistant')?.body.split(/(?<=[.!?])\s/)[0];
+  const mark = thread ? marks.ofThread(thread) : null;
   const plural = selected.length === 1 ? 'inbjudan' : 'inbjudningar';
-  // The panel is its own Layout (side-panels guide): the lead and the list scroll, the reply field is the pinned footer.
-  const panelBody = thread && (
+  // The panel is its own Layout (side-panels guide): the card and the list scroll, the reply field is the pinned footer.
+  // The card is drawn as artboard 6 draws it (D71): the mark row (the house chip, the source and the week, the one
+  // badge), the title at level 2, the proposals as rows with the assistant's ✦.
+  const panelBody = thread && mark && (
     <VStack gap={3}>
-      <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-        {open ? (
-          <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Förslag att bekräfta" />
-        ) : (
-          <Text type="supporting" weight="semibold">
-            Hanterad
-          </Text>
-        )}
-        {open && (
+      <VStack gap={2}>
+        <HStack gap={2} vAlign="center" wrap="wrap">
+          <AreaChip ordinal={mark.ordinal} icon={mark.icon} label={mark.title} />
           <Text type="supporting">
-            {selected.length} av {proposed.length} valda
+            {thread.week ? `${mark.source} · vecka ${weekNumber(thread.week)}` : mark.source}
           </Text>
-        )}
-      </HStack>
-      {lead && (
-        <Text type="large" weight="medium" as="p">
-          {lead}
-        </Text>
-      )}
+          {open ? (
+            <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Förslag att bekräfta" />
+          ) : (
+            <StatusDot variant="neutral" label="Hanterad" />
+          )}
+        </HStack>
+        <Heading level={2}>{thread.title}</Heading>
+      </VStack>
       {/* The grid can show another week than the proposals are in: said first, with the way there, before anything is decided. */}
       {thread.week && (view !== 'week' || thread.week !== anchor) && (
         <HStack gap={2} vAlign="center" justify="between" wrap="wrap">
@@ -260,8 +261,22 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
             <CheckboxListItem
               key={p.id}
               value={p.id}
-              label={p.participant.name}
-              description={`${shortDayLabel(p.start.slice(0, 10))} · ${timeRange(p.start, p.end)}`}
+              label={
+                <HStack gap={3} vAlign="start">
+                  <VStack width={52}>
+                    <Text weight="semibold" hasTabularNumbers>
+                      {shortDayLabel(p.start.slice(0, 10)).split(' ').slice(0, 2).join(' ')}
+                    </Text>
+                  </VStack>
+                  <VStack>
+                    <Text weight="semibold">
+                      {p.status === 'proposed' && <Text aria-hidden="true">{`${PROPOSAL_MARK} `}</Text>}
+                      {p.participant.name}
+                    </Text>
+                    <Text type="supporting">{timeRange(p.start, p.end)}</Text>
+                  </VStack>
+                </HStack>
+              }
               isChecked={p.status !== 'proposed' || selected.includes(p.id)}
               isDisabled={p.status !== 'proposed'}
               endContent={
@@ -360,9 +375,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const toolbar = mobile ? (
     <VStack gap={2} as="section" aria-label="Kalender">
       <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-        <Heading level={3} accessibilityLevel={1}>
-          {short}
-        </Heading>
+        <Heading level={1}>{short}</Heading>
         <HStack gap={2} vAlign="center">
           {proposalsButton}
           {bookButton}
