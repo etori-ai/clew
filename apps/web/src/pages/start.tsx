@@ -6,6 +6,7 @@ import { isSnoozed } from '@clew/contracts';
 import {
   Badge,
   Banner,
+  BottomSheet,
   Button,
   Card,
   ChatLayout,
@@ -63,6 +64,7 @@ import { Handled } from '../components/handled';
 import { Today } from '../components/today';
 import { Since } from '../components/since';
 import { usePageTitle } from '../page-title';
+import { useMarks } from '../marks';
 
 /** Hem's tabs (D53): a card's state, named as the address names it (D43). */
 type TodoTab = 'needs-you' | 'waiting' | 'snoozed' | 'done';
@@ -313,7 +315,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         ? errorMessage(cardView.error, 'Kunde inte hämta.')
         : null;
   const openView = (v: ViewRef) => navigate(viewHref(v.capability, v.title, v.input));
-  const areaTitle = (id: string) => areas.find(a => a.id === id)?.title ?? (id === 'fragor' ? 'Fråga' : id);
+  const { areaTitle } = useMarks();
   // The filter changes the rows under it without a change of page: what is shown now is said aloud (4.1.3).
   const announce = useAnnounce();
   const shownArea = useRef(area);
@@ -348,28 +350,10 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const nav = useRail({ current: railCurrent, admin });
 
   const openCardView = (threadId: string, actionId: string) => navigate(withAction(here, search, threadId, actionId));
-  // On a phone Hem has no panel for a card: every thread is a card in the list, and the one the address names is brought into view.
-  const cardsInline = mobile && !talk.open;
-  const besideOpen = !!panel && !(panel.kind === 'card' && cardsInline) && panelFits && !short && !talk.open;
-  const focusedCard = useRef<string | null>(null);
-  useEffect(() => {
-    if (!cardsInline || !openId || !threadsQ.data || focusedCard.current === location.key) return;
-    const focus = () => {
-      if (focusedCard.current === location.key || document.querySelector('dialog[open]')) return;
-      const target = document.getElementById('thread-' + openId);
-      if (!target) return;
-      focusedCard.current = location.key;
-      target.scrollIntoView({ block: 'center' });
-      target.focus({ preventScroll: true });
-    };
-    // After the navigation drawer has closed, including its exit animation: an open modal rejects focus outside it.
-    const frame = requestAnimationFrame(focus);
-    document.addEventListener('close', focus, true);
-    return () => {
-      cancelAnimationFrame(frame);
-      document.removeEventListener('close', focus, true);
-    };
-  }, [cardsInline, openId, location.key, threadsQ.data]);
+  // On a phone Hem has no panel for a card (artboards 11 and 12): the threads are rows, and the card the address names
+  // rises in Astryx's bottom sheet over them; closing the sheet leaves the address as the ✕ beside the column does.
+  const cardsInSheet = mobile && !talk.open;
+  const besideOpen = !!panel && !(panel.kind === 'card' && cardsInSheet) && panelFits && !short && !talk.open;
   /** The way on from a done card (D70): the first other card under Nu, else under Senare. */
   const nextFor = (t: Thread) => {
     const next = [...g.nu, ...g.senare].find(x => x.id !== t.id);
@@ -377,7 +361,13 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   };
   const card = (
     t: Thread,
-    options: { level?: 2 | 3; beside?: boolean; compact?: boolean; next?: { title: string; href: string } } = {},
+    options: {
+      level?: 2 | 3;
+      beside?: boolean;
+      compact?: boolean;
+      sheet?: boolean;
+      next?: { title: string; href: string };
+    } = {},
   ) =>
     t.proposals.length ? (
       <ThreadCard
@@ -392,33 +382,32 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       <GenericCard
         key={t.id}
         thread={t}
-        areaTitle={areaTitle(t.area)}
         headingLevel={options.level ?? 3}
         beside={!!options.beside}
+        sheet={!!options.sheet}
         next={options.next}
         onChange={replace}
         onOpenCardView={openCardView}
       />
     );
   /**
-   * A group's threads (D31, D50, artboard A): rows in one list, the title of each the link to its card beside the column;
-   * on a phone every thread is a card. What is due today stands in a red-tinted card; the other groups are rows fenced
-   * by dividers, their text on the column's content line (edge flush).
+   * A group's threads (D31, D50, artboard A): rows in one list, the title of each the link to its card beside the column,
+   * or in the sheet on a phone, where the next step goes under the line (artboard 11). What is due today stands in a
+   * red-tinted card; the other groups are rows fenced by dividers, their text on the column's content line (edge flush).
    */
   const records = (list: Thread[], options: { notice?: boolean; due?: boolean } = {}) => {
-    if (cardsInline) return <VStack gap={2}>{list.map(t => card(t))}</VStack>;
     const rows = (
       <List hasDividers density="balanced" edge="flush">
         {list.map(t => (
           <ThreadRow
             key={t.id}
             thread={t}
-            areaTitle={areaTitle(t.area)}
             notice={options.notice}
             href={cardHref(t.id)}
-            isOpen={openId === t.id}
+            isOpen={!cardsInSheet && openId === t.id}
             onClose={closePanel}
             compact={besideOpen}
+            phone={mobile}
             onChange={replace}
             onOpenCardView={openCardView}
           />
@@ -706,18 +695,28 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   // types ("Menar du") pushes the day's work down, never the field they are typing in (D36).
   const landing = () => {
     // The lead (artboard A): the person by first name as the page's h1 at level 1 (D71's page title), the sparkle beside it, and the day, the week and the unit at the end of the line.
-    const lead = (
+    const greeting = (
+      <HStack gap={2} vAlign="center">
+        <Icon icon={SparklesIcon} size="md" color="accent" />
+        <Heading id="hem" tabIndex={-1} level={1}>
+          Hej {user.name.split(' ')[0]}
+        </Heading>
+      </HStack>
+    );
+    const date = `${capital(dayLabel(todayDate))} · vecka ${weekNumber(todayDate)} · ${user.unitLabel}`;
+    // On a phone the day stands under the greeting in supporting, where it can wrap (artboard 11).
+    const lead = mobile ? (
+      <VStack gap={0.5}>
+        {greeting}
+        <Text type="supporting" as="p">
+          {date}
+        </Text>
+      </VStack>
+    ) : (
       <HStack justify="between" vAlign="center" gap={4} wrap="wrap">
-        <HStack gap={2} vAlign="center">
-          <Icon icon={SparklesIcon} size="md" color="accent" />
-          <Heading id="hem" tabIndex={-1} level={1}>
-            Hej {user.name.split(' ')[0]}
-          </Heading>
-        </HStack>
-        <Text type={mobile ? 'supporting' : 'body'} color="secondary" as="p">
-          {mobile
-            ? `${capital(shortDayLabel(todayDate))} · v. ${weekNumber(todayDate)}`
-            : `${capital(dayLabel(todayDate))} · vecka ${weekNumber(todayDate)} · ${user.unitLabel}`}
+        {greeting}
+        <Text color="secondary" as="p">
+          {date}
         </Text>
       </HStack>
     );
@@ -761,8 +760,17 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
    * asked about; on a phone Hem draws its cards in the list, so a card has no panel there. With nothing open, the
    * panel beside Hem rests on the day and what happened since yesterday (D53).
    */
+  // A card stays a tab while it is in the stream (D66): snoozed or dismissed, it leaves the row with the pile. A done
+  // card stays while its receipt can still be undone (D70): the receipt is the person's own result, and Ångra is on it.
+  const inStream = (threadId: string) =>
+    threads.some(
+      t =>
+        t.id === threadId &&
+        ((t.state === 'open' && !isSnoozed(t, now)) ||
+          (t.state === 'handled' && !!t.receipt?.undoCapability && !!t.receipt.undoUntil && t.receipt.undoUntil > now)),
+    );
   const panelCard =
-    panel?.kind === 'card' && !cardsInline ? (threads.find(t => t.id === panel.threadId) ?? null) : null;
+    panel?.kind === 'card' && !cardsInSheet ? (threads.find(t => t.id === panel.threadId) ?? null) : null;
   const tool = viewPanel ? menu.find(e => e.capability === viewPanel.capability) : undefined;
   const frame: PanelFrame | null = view
     ? {
@@ -822,20 +830,37 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     overlayOnly: short,
     // Where the panel fits beside Hem it rests on the day and Sedan i går and can be folded away like an open card.
     rest: talk.open ? undefined : asideContent,
-    // A card stays a tab while it is in the stream (D66): snoozed or dismissed, it leaves the row with the pile. A done
-    // card stays while its receipt can still be undone (D70): the receipt is the person's own result, and Ångra is on it.
-    isOpen: id =>
-      !id.startsWith('card:') ||
-      threads.some(
-        t =>
-          t.id === id.slice(5) &&
-          ((t.state === 'open' && !isSnoozed(t, now)) ||
-            (t.state === 'handled' &&
-              !!t.receipt?.undoCapability &&
-              !!t.receipt.undoUntil &&
-              t.receipt.undoUntil > now)),
-      ),
+    isOpen: id => !id.startsWith('card:') || inStream(id.slice(5)),
   });
+  /**
+   * The card on a phone (artboard 12): Astryx's BottomSheet over the rows, with the way back to Hem and ✕ on its first
+   * line, the card under them as beside the column. The last card shown stays drawn while the sheet slides away.
+   */
+  const sheetThread =
+    cardsInSheet && panel?.kind === 'card' && inStream(panel.threadId)
+      ? (threads.find(t => t.id === panel.threadId) ?? null)
+      : null;
+  const sheetShown = useRef<Thread | null>(null);
+  if (sheetThread) sheetShown.current = sheetThread;
+  const sheetCard = sheetShown.current;
+  const sheet = (
+    <BottomSheet
+      isOpen={!!sheetThread}
+      onOpenChange={isOpen => !isOpen && closePanel()}
+      label={sheetCard ? `Kort: ${sheetCard.title}` : 'Kort'}
+      height="tall"
+    >
+      {sheetCard && (
+        <VStack gap={3}>
+          <HStack justify="between" vAlign="center" gap={2}>
+            <Button variant="ghost" label="Hem" icon={<Icon icon="chevronLeft" />} onClick={closePanel} />
+            <IconButton variant="ghost" label="Stäng kortet" icon={<Icon icon="close" />} onClick={closePanel} />
+          </HStack>
+          {card(sheetCard, { beside: true, compact: true, sheet: true, level: 2, next: nextFor(sheetCard) })}
+        </VStack>
+      )}
+    </BottomSheet>
+  );
   /** What Hem's box asks about: the open card, which the conversation then keeps beside the transcript; "Ny fråga i stället" lets go of it. */
   const about: ComposerAbout | undefined = panelCard
     ? {
@@ -1012,6 +1037,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         {column()}
       </Shell>
       {slot.overlay}
+      {sheet}
       <EventDialog
         item={openItem?.item ?? null}
         dayItems={openItem?.dayItems ?? []}

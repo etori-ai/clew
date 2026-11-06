@@ -15,6 +15,8 @@ import {
   type ThreadAction,
 } from '@clew/contracts';
 import {
+  AreaChip,
+  AreaLine,
   Badge,
   Button,
   Card,
@@ -47,7 +49,7 @@ import {
 } from '@clew/ui';
 import { ReviewDialog } from './review';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { today } from '@clew/calendar/dates';
+import { displayDate, today } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
 import { snoozePresetsQuery } from '../queries';
 import { useSettling, useThreadAction, type RunAction } from '../mutations';
@@ -55,6 +57,8 @@ import { dismissed, reopened, snoozed } from '../optimistic';
 import { invalidateStream } from '../thread-cache';
 import { useConversation } from './conversation-context';
 import { executionStatus } from '../execution-status';
+import { useMarks, type Mark, type Marks } from '../marks';
+import { AddToConversation } from './add-to-conversation';
 
 const outcomeDot = {
   done: { variant: 'success', label: 'Klart' },
@@ -63,7 +67,9 @@ const outcomeDot = {
   skipped: { variant: 'neutral', label: 'Inte skickad' },
 } as const;
 const shortDate = (d: string) =>
-  new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'short' }).format(new Date(d.slice(0, 10) + 'T12:00:00'));
+  new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'short' })
+    .format(new Date(d.slice(0, 10) + 'T12:00:00'))
+    .replace(/\.$/, '');
 const clock = (iso: string) => new Date(iso).toLocaleTimeString('sv-SE', { timeStyle: 'short' });
 /** The check a receipt earns (D70): drawn when the receipt arrives, on Astryx's own entry motion (which honours reduced motion), never before the source has read back. */
 export function ReceiptCheck({ size = 'md' }: { size?: 'md' | 'lg' }) {
@@ -112,67 +118,150 @@ export function useLeaveWithUndo(apply: (thread: Thread) => void) {
   };
 }
 
-/**
- * The deadline is text, with the day word in place of a colour (D28); only a deadline that is today or has passed is a
- * status that needs action, and gets the one red badge on the page (Astryx: a Badge is for status that needs action,
- * never for a date or a duration).
- */
-export function deadlineLabel(deadline: string, now = today()) {
-  const days = daysUntil(deadline.slice(0, 10), now);
-  if (days < 0) return `Skulle varit klar ${shortDate(deadline)}`;
-  if (days === 0) return 'Senast i dag';
-  return days <= 30
-    ? `${dayWord(deadline.slice(0, 10), now)} · ${days} ${days === 1 ? 'dag' : 'dagar'}`
-    : `${dayWord(deadline.slice(0, 10), now)}`;
-}
-export function Deadline({ thread }: { thread: Thread }) {
-  if (!thread.deadline) return null;
-  const now = today();
-  if (streamGroup({ deadline: thread.deadline }, now) === 'nu')
-    return <Badge variant="error" label={daysUntil(thread.deadline.slice(0, 10), now) < 0 ? 'försenad' : 'i dag'} />;
-  return (
-    <Text type="supporting" hasTabularNumbers>
-      {deadlineLabel(thread.deadline, now)}
-    </Text>
-  );
-}
 /** Inte nu (D28): when the card comes back, as words on a card in the pile. */
 const snoozedLabel = (until: string, now = today()) => {
   const date = new Date(until).toLocaleDateString('sv-SE', { timeZone: 'Europe/Stockholm' });
   return `Tillbaka ${dayWord(date, now) === 'i dag' ? '' : dayWord(date, now) + ' '}${clock(until)}`;
 };
-/** The receipt: green only when every row was read back, as a dot with its word; a row the source did not confirm is a badge, because it needs a hand. */
-export function ReceiptStatus({ thread }: { thread: Thread }) {
+/** The receipt's one status (D70, D71): green only when every row was read back, as a dot with its word; a row the source did not confirm, or that failed, is a badge, because it needs a hand. */
+function ReceiptFlag({ thread, quiet = false }: { thread: Thread; quiet?: boolean }) {
   const receipt = thread.receipt;
   if (!receipt) return null;
   const unknown = receipt.rows.filter(r => r.outcome === 'unknown').length,
     failed = receipt.rows.filter(r => r.outcome === 'failed').length;
-  const sent = (
-    <Text type="supporting">
-      Skickat {clock(receipt.at)}
-      {!failed && !unknown ? ` · kontrollerat mot ${thread.trigger.source}` : ''}
-    </Text>
-  );
   if (failed)
-    return (
-      <HStack gap={2} vAlign="center" wrap="wrap">
-        <Badge variant="error" icon={<Icon icon="error" size="sm" />} label={`${failed} rad misslyckades`} />
-        {sent}
-      </HStack>
-    );
+    return <Badge variant="error" icon={<Icon icon="error" size="sm" />} label={`${failed} rad misslyckades`} />;
   if (unknown)
-    return (
+    return <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label={`${unknown} rad obekräftad`} />;
+  return quiet ? null : <StatusDot variant="success" label="Läst tillbaka" />;
+}
+/**
+ * The systems a card's rows come from (D55, artboard 10): a row's system when its ref names one the person can see. A
+ * card is a job across systems when a row is another system's than the card's; then every row carries its system.
+ */
+function rowSystems(thread: Thread, marks: Marks) {
+  const of = new Map<string, ReturnType<Marks['ofRef']>>();
+  for (const r of [...thread.items, ...(thread.receipt?.rows ?? [])]) of.set(r.ref, marks.ofRef(r.ref));
+  const systems = new Set(thread.items.map(i => of.get(i.ref)?.connector).filter(Boolean));
+  return { of, multi: [...of.values()].some(m => m && m.connector !== thread.connector), count: systems.size };
+}
+type RowSystems = ReturnType<typeof rowSystems>;
+/** "3 steg i 3 system": a job's rows in the list and on its card's mark row, never three glyphs (artboard 10). */
+const stepsLine = (thread: Thread, systems: RowSystems) =>
+  systems.multi ? `${thread.items.length} steg i ${systems.count} system` : '';
+/**
+ * A row of a job across systems (artboard 10): its system's glyph, the system's word, the area's word, then what it
+ * says. A receipt row says which system answered and when instead of the area ("Tidrapporteringen svarade 07:02").
+ */
+function SystemLine({ mark, words, answered }: { mark: ReturnType<Marks['ofRef']>; words: string; answered?: string }) {
+  if (!mark) return <Text type="supporting">{words}</Text>;
+  // Clew's own system is named alone ("Kalendern"): its area is the house's, not a guest's place.
+  const lead = answered
+    ? `${mark.source} svarade ${answered}`
+    : [mark.source, mark.area && mark.ordinal !== null ? mark.title : ''].filter(Boolean).join(' · ');
+  return <AreaLine icon={mark.area ? mark.icon : undefined}>{[lead, words].filter(Boolean).join(' · ')}</AreaLine>;
+}
+/** When a card's mark row says it is: the deadline with the days left, the time it was sent, or when the source pushed it. */
+function markWhen(thread: Thread, now: string) {
+  if (thread.receipt) return `skickat ${clock(thread.receipt.at)}`;
+  if (thread.deadline && streamGroup({ deadline: thread.deadline }, now) !== 'nu') {
+    const days = daysUntil(thread.deadline.slice(0, 10), now);
+    return days <= 30
+      ? `${shortDate(thread.deadline)} · ${days} ${days === 1 ? 'dag' : 'dagar'}`
+      : shortDate(thread.deadline);
+  }
+  return `${dayWord(displayDate(thread.trigger.at), now)} ${clock(thread.trigger.at)}`;
+}
+/**
+ * The card's mark row (D71, artboards 5 and 10): the area's chip, then the source and when in supporting, then the one
+ * status that needs a hand. On a phone (`stacked`) the chip stands on its own line and the source under it (artboard 12).
+ */
+function MarkRow({
+  thread,
+  mark,
+  systems,
+  position,
+  inConversation,
+  stacked = false,
+}: {
+  thread: Thread;
+  mark: Mark;
+  systems: RowSystems;
+  position?: string;
+  inConversation?: boolean;
+  stacked?: boolean;
+}) {
+  const now = today();
+  const line = [
+    systems.multi && thread.receipt ? '' : mark.source,
+    markWhen(thread, now),
+    thread.receipt ? (systems.multi ? `${systems.count} system` : '') : stepsLine(thread, systems),
+    position ?? '',
+    inConversation ? 'i samtalet' : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const chip = <AreaChip ordinal={mark.ordinal} icon={mark.icon} label={mark.title} />;
+  const rest = (
+    <>
+      <Text type="supporting" hasTabularNumbers>
+        {line}
+      </Text>
+      <CardStatus thread={thread} />
+      <Flags thread={thread} />
+    </>
+  );
+  return stacked ? (
+    <VStack gap={1.5}>
+      <HStack>{chip}</HStack>
       <HStack gap={2} vAlign="center" wrap="wrap">
-        <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label={`${unknown} rad obekräftad`} />
-        {sent}
+        {rest}
       </HStack>
-    );
-  return (
-    <HStack gap={1} vAlign="center" wrap="wrap">
-      <StatusDot variant="success" label="Läst tillbaka" />
-      {sent}
+    </VStack>
+  ) : (
+    <HStack gap={2} vAlign="center" wrap="wrap">
+      {chip}
+      {rest}
     </HStack>
   );
+}
+/** The card's state on its mark row: the receipt's status, the one red badge for what is due, the snooze or who it waits on. Never more than one. */
+function CardStatus({ thread }: { thread: Thread }) {
+  const open = thread.state === 'open';
+  if (thread.receipt) return <ReceiptFlag thread={thread} />;
+  if (open && thread.snoozedUntil && isSnoozed(thread, new Date().toISOString()))
+    return <Text type="supporting">{snoozedLabel(thread.snoozedUntil)}</Text>;
+  if (thread.waitingOn) {
+    const reminder = thread.waitingOn.startsWith('påminnelsen ')
+      ? undefined
+      : thread.timers?.find(t => t.kind === 'reminder' && t.state === 'scheduled');
+    return (
+      <Text type="supporting">
+        Väntar på {thread.waitingOn}
+        {reminder ? ` · påminner dig ${snoozeWhen(reminder.dueAt, new Date().toISOString())}` : ''}
+      </Text>
+    );
+  }
+  const now = today();
+  if (thread.deadline && streamGroup({ deadline: thread.deadline }, now) === 'nu')
+    return <Badge variant="error" label={daysUntil(thread.deadline.slice(0, 10), now) < 0 ? 'försenad' : 'i dag'} />;
+  return null;
+}
+/** A reminder the person set that could not be scheduled, said in a sentence under the mark row. */
+function TimerNote({ thread }: { thread: Thread }) {
+  if (thread.timers?.some(t => t.state === 'blocked'))
+    return (
+      <Text type="supporting" role="status">
+        Påminnelsen stoppades eftersom behörigheten har ändrats. Välj en ny påminnelse om den fortfarande behövs.
+      </Text>
+    );
+  if (thread.timers?.some(t => t.state === 'queued'))
+    return (
+      <Text type="supporting" role="status">
+        Påminnelsen är sparad och väntar på schemaläggning.
+      </Text>
+    );
+  return null;
 }
 
 /** The picker's rows (D29): one query for the whole page, kept a minute (snoozePresetsQuery), so every card shows the same times. */
@@ -446,7 +535,9 @@ type Actions = ReturnType<typeof useThreadActions>;
  * (D49) beside it on a card, also when the card is open beside the page (the product owner, 2026-11-06: the panel's
  * header is the panel's, so the picker left it for the card's own buttons, against artboard E). A row (`quiet`) shows
  * "Lägg till i samtalet" and the next step, nothing more: Inte nu, Avfärda and "Varför nu?" belong to the open card.
- * Beside a panel (`compact`) a row keeps the next step alone.
+ * Beside a panel (`compact`) a row keeps the next step alone. On a phone (artboards 11 and 12) a row's next step fills
+ * the line under it with "Lägg till i samtalet" as the `@` beside it (`phone`), and the card in the sheet stands its
+ * next step and secondary actions full width above the rest (`stacked`).
  */
 function ActionRow({
   thread,
@@ -454,12 +545,16 @@ function ActionRow({
   actions,
   quiet = false,
   compact = false,
+  phone = false,
+  stacked = false,
 }: {
   thread: Thread;
   level: AttentionLevel;
   actions: Actions;
   quiet?: boolean;
   compact?: boolean;
+  phone?: boolean;
+  stacked?: boolean;
 }) {
   const conversation = useConversation();
   const countdown = useCountdown(thread.receipt?.undoUntil ?? null);
@@ -486,6 +581,8 @@ function ActionRow({
   const due = level !== 'notice' && streamGroup(thread, today()) === 'nu';
   // Rows take the artboard's 32 px buttons, a card its 36 px ones.
   const size = quiet ? 'md' : 'lg';
+  // A row's step fills the phone's line, and the sheet's steps stand full width (artboards 11 and 12).
+  const width = phone || stacked ? '100%' : undefined;
   // The one next step: the execute itself, or "Granska N" when the rows are reviewed one at a time first (D70).
   const primaryButton = primary ? (
     reviewed ? (
@@ -494,6 +591,7 @@ function ActionRow({
         variant={due ? 'primary' : 'secondary'}
         label={`Granska ${thread.items.filter(i => i.selectable).length}`}
         isLoading={settling && pressed === primary.id}
+        width={width}
         onClick={openReview}
       />
     ) : (
@@ -503,17 +601,22 @@ function ActionRow({
         label={primaryLabel ?? ''}
         isDisabled={selectable && count === 0}
         isLoading={settling && pressed === primary.id}
+        width={width}
         clickAction={() => perform(primary)}
       />
     )
   ) : null;
-  const addToConversation = (
+  const addChip = () =>
+    conversation.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id });
+  const addToConversation = phone ? (
+    <AddToConversation size="md" added={inConversation} onAdd={addChip} />
+  ) : (
     <Button
       size={size}
       variant="ghost"
       label={inConversation ? 'I samtalet' : 'Lägg till i samtalet'}
       isDisabled={inConversation}
-      onClick={() => conversation.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id })}
+      onClick={addChip}
     />
   );
   /** ⋯: MoreMenu's button over DropdownMenu's compound rows, because MoreMenu's data rows cannot hold a sub-menu. */
@@ -591,6 +694,14 @@ function ActionRow({
         {quiet ? !compact && addToConversation : more({})}
       </HStack>
     );
+  if (open && !thread.waitingOn && quiet && phone)
+    return (
+      <HStack gap={2} vAlign="center">
+        {primaryButton}
+        {reviewDialog}
+        {addToConversation}
+      </HStack>
+    );
   if (open && !thread.waitingOn && quiet)
     return (
       <HStack gap={2} vAlign="center">
@@ -599,26 +710,43 @@ function ActionRow({
         {reviewDialog}
       </HStack>
     );
-  if (open && !thread.waitingOn)
-    return (
-      <HStack gap={2} vAlign="center" wrap="wrap">
-        {primaryButton}
-        {reviewDialog}
-        {secondary.map(a => (
-          <Button
-            key={a.id}
-            size={size}
-            variant="secondary"
-            label={a.label}
-            isLoading={settling && pressed === a.id}
-            clickAction={() => perform(a)}
-          />
-        ))}
+  if (open && !thread.waitingOn) {
+    const secondaryButtons = secondary.map(a => (
+      <Button
+        key={a.id}
+        size={size}
+        variant="secondary"
+        label={a.label}
+        isLoading={settling && pressed === a.id}
+        width={width}
+        clickAction={() => perform(a)}
+      />
+    ));
+    const rest = (
+      <>
         <TimePicker label="Inte nu" rows={snoozeRows.rows} own={snoozeRows.own} size={size === 'lg' ? 'md' : size} />
         {addToConversation}
         {more({})}
+      </>
+    );
+    return stacked ? (
+      <VStack gap={2}>
+        {primaryButton}
+        {reviewDialog}
+        {secondaryButtons}
+        <HStack gap={1} vAlign="center" wrap="wrap">
+          {rest}
+        </HStack>
+      </VStack>
+    ) : (
+      <HStack gap={2} vAlign="center" wrap="wrap">
+        {primaryButton}
+        {reviewDialog}
+        {secondaryButtons}
+        {rest}
       </HStack>
     );
+  }
   // A card that waits on others after the person's own decision (D70 amended): the way back comes first while the window
   // is open, with the time left, then the card's own timer. The receipt line beside it says what was done.
   if (open && thread.waitingOn)
@@ -665,37 +793,6 @@ function ActionRow({
     );
   return null;
 }
-/** The right-hand state of a card or row: the receipt, the snooze, who it waits on, or the deadline. Never more than one. */
-function State({ thread }: { thread: Thread }) {
-  const open = thread.state === 'open';
-  if (thread.timers?.some(t => t.state === 'blocked'))
-    return (
-      <Text type="supporting" role="status">
-        Påminnelsen stoppades eftersom behörigheten har ändrats. Välj en ny påminnelse om den fortfarande behövs.
-      </Text>
-    );
-  if (thread.timers?.some(t => t.state === 'queued'))
-    return (
-      <Text type="supporting" role="status">
-        Påminnelsen är sparad och väntar på schemaläggning.
-      </Text>
-    );
-  if (thread.receipt) return <ReceiptStatus thread={thread} />;
-  if (open && thread.snoozedUntil && isSnoozed(thread, new Date().toISOString()))
-    return <Text type="supporting">{snoozedLabel(thread.snoozedUntil)}</Text>;
-  if (thread.waitingOn) {
-    const reminder = thread.waitingOn.startsWith('påminnelsen ')
-      ? undefined
-      : thread.timers?.find(t => t.kind === 'reminder' && t.state === 'scheduled');
-    return (
-      <Text type="supporting">
-        Väntar på {thread.waitingOn}
-        {reminder ? ` · påminner dig ${snoozeWhen(reminder.dueAt, new Date().toISOString())}` : ''}
-      </Text>
-    );
-  }
-  return <Deadline thread={thread} />;
-}
 /** The badges that need a hand: a draft to confirm, a reminder that has fired. */
 function Flags({ thread }: { thread: Thread }) {
   const open = thread.state === 'open';
@@ -709,32 +806,7 @@ function Flags({ thread }: { thread: Thread }) {
     </>
   );
 }
-/** A card's metadata line, in words and one colour: the area, the position in the group, the source and the time, whether it is in the conversation. On the page, colour means something is due. */
-function Meta({
-  thread,
-  areaTitle,
-  position,
-  inConversation,
-}: {
-  thread: Thread;
-  areaTitle: string;
-  position?: string;
-  inConversation?: boolean;
-}) {
-  return (
-    <HStack gap={2} vAlign="center" wrap="wrap">
-      <Text type="supporting">
-        {areaTitle} · {position ? `${position} · ` : ''}
-        {thread.trigger.source.toLowerCase()}
-        {inConversation ? ' · i samtalet' : ''}
-      </Text>
-      <Flags thread={thread} />
-    </HStack>
-  );
-}
-
 type Props = ActionProps & {
-  areaTitle: string;
   position?: string;
   headingLevel?: 2 | 3 | 4;
   autoFocusTitle?: boolean;
@@ -742,6 +814,8 @@ type Props = ActionProps & {
   beside?: boolean;
   /** After a receipt (D70): the first card that needs the person, as the way on from the done card. */
   next?: { title: string; href: string };
+  /** In the phone's bottom sheet (artboard 12): the chip on its own line, the next step and the secondary actions full width. */
+  sheet?: boolean;
 };
 /**
  * A thread open on the page (thread action contract, artboard E): the state line (what is due, the area and the source),
@@ -752,12 +826,12 @@ type Props = ActionProps & {
  */
 export function GenericCard({
   thread,
-  areaTitle,
   position,
   headingLevel = 3,
   autoFocusTitle = false,
   beside = false,
   next,
+  sheet = false,
   onChange,
   onOpenCardView,
 }: Props) {
@@ -769,6 +843,9 @@ export function GenericCard({
   const actions = useThreadActions({ thread, onChange, onOpenCardView });
   const { selected, setSelected, selectable, error } = actions;
   const conversation = useConversation();
+  const marks = useMarks();
+  const mark = marks.ofThread(thread);
+  const systems = rowSystems(thread, marks);
   const rowChipped = (ref: string) => conversation.chipped.includes(ref);
   const inConversation = rowChipped('thread:' + thread.id) || thread.items.some(i => rowChipped(i.ref));
   const open = thread.state === 'open';
@@ -793,14 +870,20 @@ export function GenericCard({
       aria-current={inConversation ? 'true' : undefined}
     >
       <VStack gap={1.5}>
-        <HStack gap={2} vAlign="center" wrap="wrap">
-          <State thread={thread} />
-          <Meta thread={thread} areaTitle={areaTitle} position={position} inConversation={inConversation} />
-        </HStack>
+        {/* The mark row (D71) in place of the area and source words: the chip, the source and when, the one status. */}
+        <MarkRow
+          thread={thread}
+          mark={mark}
+          systems={systems}
+          position={position}
+          inConversation={inConversation}
+          stacked={sheet}
+        />
+        <TimerNote thread={thread} />
         {/* The check is drawn once, here, when the receipt has come (D70): the card's heading is then what was done. */}
         <HStack gap={3} vAlign="center">
           {receipt && <ReceiptCheck size="lg" />}
-          <Heading ref={title} tabIndex={-1} level={beside ? 2 : 3} accessibilityLevel={headingLevel}>
+          <Heading ref={title} tabIndex={-1} level={2} accessibilityLevel={headingLevel}>
             {receipt ? receipt.headline : thread.title}
           </Heading>
         </HStack>
@@ -827,7 +910,13 @@ export function GenericCard({
                   value={i.ref}
                   align="start"
                   label={<Text weight="semibold">{i.label}</Text>}
-                  description={<Text type="supporting">{i.detail}</Text>}
+                  description={
+                    systems.multi ? (
+                      <SystemLine mark={systems.of.get(i.ref)} words={i.detail} />
+                    ) : (
+                      <Text type="supporting">{i.detail}</Text>
+                    )
+                  }
                 />
               ))}
             </CheckboxList>
@@ -838,7 +927,13 @@ export function GenericCard({
                   key={i.ref}
                   isSelected={rowChipped(i.ref)}
                   label={<Text weight="semibold">{i.label}</Text>}
-                  description={<Text type="supporting">{i.detail}</Text>}
+                  description={
+                    systems.multi ? (
+                      <SystemLine mark={systems.of.get(i.ref)} words={i.detail} />
+                    ) : (
+                      <Text type="supporting">{i.detail}</Text>
+                    )
+                  }
                 />
               ))}
             </List>
@@ -853,10 +948,21 @@ export function GenericCard({
               label={
                 <HStack gap={2} vAlign="center">
                   <StatusDot variant={outcomeDot[r.outcome].variant} label={outcomeDot[r.outcome].label} />
-                  <Text>{r.label}</Text>
+                  <Text weight="semibold">{r.label}</Text>
                 </HStack>
               }
-              description={<Text type="supporting">{r.detail}</Text>}
+              description={
+                // A job's receipt reads back per system (artboard 10): which system answered and when.
+                systems.multi ? (
+                  <SystemLine
+                    mark={systems.of.get(r.ref)}
+                    words={r.detail}
+                    answered={r.outcome === 'done' ? clock(receipt.at) : undefined}
+                  />
+                ) : (
+                  <Text type="supporting">{r.detail}</Text>
+                )
+              }
             />
           ))}
         </List>
@@ -871,7 +977,7 @@ export function GenericCard({
           {error}
         </Text>
       )}
-      <ActionRow thread={thread} level={level} actions={actions} />
+      <ActionRow thread={thread} level={level} actions={actions} stacked={sheet} />
       {/* The way on from a done card (D70, artboard D): the first card that needs the person, never opened on its own. */}
       {receipt && next && (
         <Card padding={3} variant="muted">
@@ -941,7 +1047,6 @@ export function GenericCard({
 }
 
 type RowProps = ActionProps & {
-  areaTitle: string;
   notice?: boolean;
   /** Where the title leads: the card beside the column (D50, artboard E). */
   href: string;
@@ -950,12 +1055,15 @@ type RowProps = ActionProps & {
   onClose?: () => void;
   /** Beside an open panel the column is narrower: the row keeps its next step alone (artboard E). */
   compact?: boolean;
+  /** On a phone (artboard 11): the next step fills the line under the row, with the `@` beside it. */
+  phone?: boolean;
 };
 /**
  * A thread as a row in its group's list (artboard A; Astryx: records are rows, a Card is the exception): the day cell at
  * the start ("i dag" as the one red badge, the day word for a later deadline, "✦ klart" or "✦ utkast" on a proposal, the
- * info mark on a notice), the title as the link to its card, one line under it with the area and why it is here, and at
- * the end "Lägg till i samtalet" and the one next step. The row keeps the card's id so focus and the toasts find it.
+ * info mark on a notice), the title as the link to its card, the meta line under it (D71: the area's glyph first, then
+ * the area and why it is here in supporting, a status badge after it only when the row needs a hand), and at the end
+ * "Lägg till i samtalet" and the one next step. The row keeps the card's id so focus and the toasts find it.
  */
 const rowNarrowQuery = '(max-width: 1200px)';
 /** The day cell is one word (artboard A: "fre"): tomorrow is its weekday, since "i morgon" is two. */
@@ -968,24 +1076,27 @@ const dayCell = (date: string, now: string) => {
 
 export function ThreadRow({
   thread,
-  areaTitle,
   notice = false,
   href,
   isOpen = false,
   onClose,
   compact = false,
+  phone = false,
   onChange,
   onOpenCardView,
 }: RowProps) {
   const actions = useThreadActions({ thread, onChange, onOpenCardView });
   const { error } = actions;
   const conversation = useConversation();
+  const marks = useMarks();
+  const mark = marks.ofThread(thread);
   const level = notice ? 'notice' : attentionLevel(thread, today());
   const inConversation = conversation.chipped.includes('thread:' + thread.id);
   const todayDate = today();
   // A button's label does not wrap, so where the column beside the day is narrow the step goes under the line and the title keeps its words.
   // A decision on its way says so in a sentence, which takes the room the title needs: then too the step goes under the line.
-  const narrow = useMediaQuery(rowNarrowQuery) || (!!executionStatus(thread.execution) && !actions.settling);
+  const narrowColumn = useMediaQuery(rowNarrowQuery);
+  const narrow = phone || narrowColumn || (!!executionStatus(thread.execution) && !actions.settling);
   const open = thread.state === 'open';
   const draft = thread.messages.at(-1)?.meta?.draft;
   const due = open && !thread.waitingOn && !notice && streamGroup(thread, todayDate) === 'nu';
@@ -1009,8 +1120,10 @@ export function ThreadRow({
     </Text>
   ) : null;
   const reminder = thread.timers?.find(t => t.kind === 'reminder' && t.state === 'scheduled');
+  // A job across systems says how many steps in how many systems, never three glyphs (artboard 10).
   const line = [
-    areaTitle,
+    mark.title,
+    stepsLine(thread, rowSystems(thread, marks)),
     thread.receipt ? receiptLine(thread) : thread.trigger.reason.replace(/\.$/, ''),
     thread.waitingOn ? `väntar på ${thread.waitingOn}` : '',
     thread.waitingOn && reminder ? `påminner dig ${snoozeWhen(reminder.dueAt, new Date().toISOString())}` : '',
@@ -1025,26 +1138,30 @@ export function ThreadRow({
     isOpen && onClose ? (
       <IconButton size="md" variant="ghost" label="Stäng kortet" icon={<Icon icon="close" />} onClick={onClose} />
     ) : null;
-  const end = close ?? <ActionRow thread={thread} level={level} actions={actions} quiet compact={compact} />;
+  const end = close ?? (
+    <ActionRow thread={thread} level={level} actions={actions} quiet compact={compact} phone={phone} />
+  );
   const under = narrow && !close;
   return (
     <ListItem
       id={`thread-${thread.id}`}
       tabIndex={-1}
-      align="center"
+      align={phone ? 'start' : 'center'}
       isSelected={isOpen}
-      startContent={<VStack width={56}>{day}</VStack>}
+      // The day cell is one width so the titles line up; on a phone it takes what it needs, as artboard 11 draws it.
+      startContent={phone ? day : <VStack width={56}>{day}</VStack>}
       label={
         <Text weight="semibold">
-          <Link href={href} color="primary">
+          <Link href={href} color="primary" weight="semibold">
             {thread.title}
           </Link>
         </Text>
       }
       description={
-        <VStack gap={1}>
+        <VStack gap={phone ? 2 : 1}>
           <HStack gap={2} vAlign="center" wrap="wrap">
-            <Text color="secondary">{line}</Text>
+            <AreaLine icon={mark.icon}>{line}</AreaLine>
+            <ReceiptFlag thread={thread} quiet />
             <Flags thread={thread} />
           </HStack>
           {under && end}

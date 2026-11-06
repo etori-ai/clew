@@ -114,7 +114,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await open(page, '/');
     // The greeting by first name is the page's one h1 (D53), with the day under it; nothing sums the day up in a sentence.
     const lead = page.getByRole('region', { name: 'Vad vill du göra' });
-    await expect(lead.locator('[aria-level="1"]').filter({ hasText: 'Hej Testa' })).toBeVisible();
+    await expect(lead.getByRole('heading', { level: 1, name: 'Hej Testa' })).toBeVisible();
     await expect(lead.getByText('Onsdag 4 november · vecka 45 · Skönsmons skola', { exact: true })).toBeVisible();
     await expect(page.getByText(/behöver dig i dag/)).toHaveCount(0);
     const greeting = (await heading(page, 1, 'Hej Testa').boundingBox())!,

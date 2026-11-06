@@ -64,7 +64,6 @@ export function CardPage({ user }: { user: SessionUser }) {
             ) : (
               <GenericCard
                 thread={thread}
-                areaTitle={areaTitle}
                 headingLevel={2}
                 autoFocusTitle
                 onChange={noop}

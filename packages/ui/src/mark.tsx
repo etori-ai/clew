@@ -1,6 +1,9 @@
+import type { ReactNode } from 'react';
 import type { MenuIcon } from '@clew/contracts';
 import { Badge } from '@astryxdesign/core/Badge';
 import { Icon } from '@astryxdesign/core/Icon';
+import { HStack } from '@astryxdesign/core/Layout';
+import { Text } from '@astryxdesign/core/Text';
 import {
   BellIcon,
   BookOpenIcon,
@@ -58,18 +61,30 @@ export function AreaChip({ ordinal, icon, label }: { ordinal: number | null; ico
 export function AreaGlyph({ icon }: { icon?: MenuIcon }) {
   return icon ? <Icon icon={clewIcon[icon]} color="secondary" size="sm" /> : null;
 }
-/** What a system's swatch says to a screen reader, and the administration's line beside it: "2:a anslutna systemet · färg lila". */
+/**
+ * A row's meta line with its glyph first (D71): the icon, then the words in supporting. The two never part: the words
+ * wrap under themselves beside the icon, and a status badge goes after this line, never inside it.
+ */
+export function AreaLine({ icon, children }: { icon?: MenuIcon; children: ReactNode }) {
+  return (
+    <HStack gap={1.5} vAlign="start">
+      <AreaGlyph icon={icon} />
+      <Text type="supporting">{children}</Text>
+    </HStack>
+  );
+}
+/** Where a system stands in the order and what colour that gives it, in words: "2:a anslutna systemet · färg lila", or "Clews egen". */
 export const swatchWords = (ordinal: number | null) => {
   const hue = hueOf(ordinal);
-  return hue && ordinal
-    ? `${ordinalWord(ordinal)} anslutna systemet · färg ${hueWord[hue]}`
-    : 'Clews egen · ingen färg';
+  return hue && ordinal ? `${ordinalWord(ordinal)} anslutna systemet · färg ${hueWord[hue]}` : 'Clews egen';
 };
 /**
  * The system's colour on its own (artboard 9): Astryx's colour-only Badge (a Badge with no label keeps its geometry),
- * the house's white with its outline. It carries an accessible name with the colour and the ordinal, since the
- * administration is where a person learns which colour is which system.
+ * the house's white with its outline. Its accessible name says the colour and the ordinal, since the administration is
+ * where a person learns which colour is which system.
  */
 export function SystemSwatch({ ordinal }: { ordinal: number | null }) {
-  return <Badge variant={hueOf(ordinal) ?? 'house'} label="" role="img" aria-label={`Färg: ${swatchWords(ordinal)}`} />;
+  const hue = hueOf(ordinal);
+  const name = hue && ordinal ? `Färg ${hueWord[hue]}, ${ordinalWord(ordinal)} anslutna systemet` : 'Vit, Clews egen';
+  return <Badge variant={hue ?? 'house'} label="" role="img" aria-label={name} />;
 }

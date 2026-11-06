@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router';
 import type { CheckReport, ConnectorAudience, ConnectorDetail, ManifestDiff, SessionUser } from '@clew/contracts';
 import {
   AlertDialog,
+  AreaChip,
   Banner,
   Button,
   Card,
@@ -22,6 +23,7 @@ import {
   Section,
   StatusDot,
   Switch,
+  SystemSwatch,
   Tab,
   TabList,
   Table,
@@ -30,6 +32,7 @@ import {
   Timestamp,
   Toolbar,
   VStack,
+  swatchWords,
   useMediaQuery,
   useToast,
   proportional,
@@ -274,12 +277,22 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
     <AdminShell user={user} crumbs={[{ label: 'Anslutna system', href: '/admin/connectors' }, { label: c.source }]}>
       <PageLead
         title={
-          <HStack gap={2} vAlign="end" wrap="wrap">
-            <Heading level={1}>{c.source}</Heading>
+          <VStack gap={1}>
+            {/* The system's colour beside its name, and its place in the order under it (artboard 9, D71). */}
+            <HStack gap={2} vAlign="center">
+              <SystemSwatch ordinal={c.ordinal} />
+              <Heading level={1}>{c.source}</Heading>
+            </HStack>
             <Text type="supporting">
-              {[c.kind ? kindLabel[c.kind] : null, c.bundled ? 'inbyggd' : null].filter(Boolean).join(' · ')}
+              {[
+                swatchWords(c.ordinal),
+                c.kind ? kindLabel[c.kind].toLowerCase() : null,
+                c.protocol ? `protokoll ${c.protocol}` : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
             </Text>
-          </HStack>
+          </VStack>
         }
         actions={
           <Switch
@@ -551,6 +564,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                     ))}
                   </List>
                 )}
+                {/* Each area with its chip, where the area is governed (artboard 9): the system's colour, the area's icon and word. */}
                 {c.areas.length === 0 ? (
                   <Text type="supporting">Anslutningen har inga områden i sidopanelen.</Text>
                 ) : (
@@ -558,7 +572,11 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                     {c.areas.map(a => (
                       <ListItem
                         key={a.id}
-                        label={<Text>{a.title}</Text>}
+                        label={
+                          <HStack>
+                            <AreaChip ordinal={c.ordinal} icon={a.icon} label={a.title} />
+                          </HStack>
+                        }
                         description={
                           <Text type="supporting">
                             {a.roles.map(r => roleLabel[r]).join(', ')}

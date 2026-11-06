@@ -134,9 +134,10 @@ test.describe('a phone', () => {
     expect(work!.y).toBeLessThan(day!.y);
   });
 
-  test('Inte nu opens from the card and shows its rows', async ({ page, api: _ }) => {
-    await open(page, '/');
+  test('Inte nu opens from the card in the sheet and shows its rows', async ({ page, api: _ }) => {
+    await open(page, '/?card=fakturor');
     await page
+      .getByRole('dialog', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' })
       .getByRole('article', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' })
       .getByRole('button', { name: 'Inte nu', exact: true })
       .click();

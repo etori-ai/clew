@@ -14,6 +14,7 @@ import {
   SegmentedControlItem,
   StatusDot,
   Switch,
+  SystemSwatch,
   Table,
   Text,
   Timestamp,
@@ -33,7 +34,10 @@ import { AddConnectorDialog } from './add';
 import { audienceLabel, kindLabel, statusOf } from './labels';
 import { AdminShell, PageLead } from './shell';
 
-/** "Anslutna system" (D23): every connector, bundled and remote, with its status, its audience and an on/off switch. */
+/**
+ * "Anslutna system" (D23): every connector, bundled and remote, with its status, its audience and an on/off switch, in
+ * the order the systems were registered with each one's colour beside its name (D71).
+ */
 type Filter = 'alla' | 'pa' | 'av' | 'problem';
 const filters: Array<{ value: Filter; label: string }> = [
   { value: 'alla', label: 'Alla' },
@@ -56,6 +60,11 @@ interface Row extends Record<string, unknown> {
   id: string;
   c: ConnectorSummary;
 }
+/** The list in registration order (D71), so the colours read from the top; Clew's own systems last, by name. */
+const byOrdinal = (a: ConnectorSummary, b: ConnectorSummary) =>
+  (a.ordinal ?? Infinity) - (b.ordinal ?? Infinity) || a.source.localeCompare(b.source, 'sv');
+/** The words under a system's name: its id, and "Clews egen" on the house's rows. */
+const idLine = (c: ConnectorSummary) => `${c.id}${c.ordinal === null ? ' · Clews egen' : ''}`;
 const EMPTY_UNITS: Array<{ id: string; label: string }> = [];
 const EMPTY_CONNECTORS: ConnectorSummary[] = [];
 
@@ -81,7 +90,7 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
     }
     await client.invalidateQueries({ queryKey: keys.admin.all });
   };
-  const shown = (connectors ?? []).filter(c => matches(c, filter));
+  const shown = (connectors ?? []).filter(c => matches(c, filter)).sort(byOrdinal);
   const status = (c: ConnectorSummary) => {
     const s = statusOf(c);
     return <StatusDot variant={s.tone} label={s.label} />;
@@ -107,15 +116,18 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
       changeAction={on => flip(c, on)}
     />
   );
+  // The system's colour beside its name (artboard 9): this list is where a person learns which colour is which system.
   const name = (c: ConnectorSummary) => (
-    <VStack gap={0}>
-      <Text weight="semibold">{c.source}</Text>
-      <Text type="supporting">
-        {c.id}
-        {c.bundled ? ' · inbyggd' : ''}
-        {c.kind ? ` · ${kindLabel[c.kind].toLowerCase()}` : ''}
-      </Text>
-    </VStack>
+    <HStack gap={2} vAlign="center">
+      <SystemSwatch ordinal={c.ordinal} />
+      <VStack gap={0}>
+        <Text weight="semibold">{c.source}</Text>
+        <Text type="supporting">
+          {idLine(c)}
+          {c.kind ? ` · ${kindLabel[c.kind].toLowerCase()}` : ''}
+        </Text>
+      </VStack>
+    </HStack>
   );
   const columns = [
     {
@@ -123,15 +135,15 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
       header: 'System',
       width: proportional(1, { minWidth: 200 }),
       renderCell: (r: Row) => (
-        <VStack gap={0}>
-          <Link href={`/admin/connectors/${r.c.id}`} weight="semibold">
-            {r.c.source}
-          </Link>
-          <Text type="supporting">
-            {r.c.id}
-            {r.c.bundled ? ' · inbyggd' : ''}
-          </Text>
-        </VStack>
+        <HStack gap={2} vAlign="center">
+          <SystemSwatch ordinal={r.c.ordinal} />
+          <VStack gap={0}>
+            <Link href={`/admin/connectors/${r.c.id}`} weight="semibold">
+              {r.c.source}
+            </Link>
+            <Text type="supporting">{idLine(r.c)}</Text>
+          </VStack>
+        </HStack>
       ),
     },
     { key: 'status', header: 'Status', width: pixel(150), renderCell: (r: Row) => statusText(r.c) },

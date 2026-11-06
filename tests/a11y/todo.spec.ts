@@ -71,16 +71,28 @@ test.describe("Hem: the day's work", () => {
     await expect(page).toHaveURL(/\/\?tab=waiting$/);
   });
 
-  test('on a phone every thread is a card in the list, and the one the address names has the focus', async ({
+  test('on a phone the threads are rows with the next step under the line, and the card the address names rises in a sheet (D71)', async ({
     page,
     api: _,
   }) => {
     await page.setViewportSize(phone);
-    await open(page, '/?card=ledighet');
+    await open(page, '/');
+    const row = page.locator('#thread-ledighet');
+    const title = row.getByRole('link', { name: 'Ledighetsansökan från Johan Byström', exact: true });
+    const step = row.getByRole('button', { name: 'Godkänn', exact: true });
+    expect((await step.boundingBox())!.y).toBeGreaterThan((await title.boundingBox())!.y);
+    await expect(row.getByRole('button', { name: 'Lägg till i samtalet' })).toBeVisible();
+    await title.click();
+    await expect(page).toHaveURL(/\/\?card=ledighet$/);
+    const sheet = page.getByRole('dialog', { name: 'Kort: Ledighetsansökan från Johan Byström' });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByRole('heading', { level: 2, name: 'Ledighetsansökan från Johan Byström' })).toBeVisible();
+    await expect(sheet.getByText('Personal', { exact: true })).toBeVisible();
+    await expect.poll(() => sheet.evaluate(el => el.contains(document.activeElement))).toBe(true);
+    await expectNoAxeViolations(page);
+    await sheet.getByRole('button', { name: 'Stäng kortet' }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    const card = page.locator('#thread-ledighet');
-    await expect(card).toBeInViewport();
-    await expect.poll(() => card.evaluate(el => el.contains(document.activeElement))).toBe(true);
+    await expect(page).toHaveURL(/\/$/);
   });
 });
 

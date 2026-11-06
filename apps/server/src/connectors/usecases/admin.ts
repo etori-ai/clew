@@ -197,6 +197,7 @@ export function connectorUsecases(deps: AdminDeps) {
         roles: [...a.roles],
         standing: [...a.standing],
         figure: !!a.figure,
+        ...(a.icon ? { icon: a.icon } : {}),
       })),
       history: await store.history(row.id),
     };

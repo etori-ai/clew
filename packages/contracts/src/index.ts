@@ -1119,6 +1119,8 @@ export interface ConnectorAreaView {
   roles: Role[];
   standing: string[];
   figure: boolean;
+  /** The area's icon from the manifest (D41), drawn in its chip on the Områden tab (D71). */
+  icon?: MenuIcon;
 }
 export interface ConnectorSummary {
   id: string;

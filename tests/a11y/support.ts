@@ -6,6 +6,7 @@ import {
   NOW,
   WEEK,
   areas,
+  systems,
   attention,
   checkReport,
   completions,
@@ -48,6 +49,9 @@ import type { ConnectorSummary } from '@clew/contracts';
 /** The API as the browser sees it, held in memory per test. `/api/**` never leaves the page. */
 export class MockApi {
   threads = threads();
+  /** The areas and the systems behind them with their marks' ordinals (D71); a test may add a system's area. */
+  areas = [...areas];
+  systems = [...systems];
   deliveries: Array<{ id: string; threadId: string; kind: 'automatic' | 'reminder' }> = [];
   deliveryClaims: string[] = [];
   sources: Array<{ connector: string; state: string; lastSuccess: string | null; error: string | null }> = [];
@@ -205,7 +209,7 @@ export class MockApi {
       if (claimed) this.deliveryClaims.push(deliveryId);
       return json({ claimed });
     }
-    if (path === '/areas') return json({ areas, menu: this.menu });
+    if (path === '/areas') return json({ areas: this.areas, menu: this.menu, systems: this.systems });
     if (path === '/today') return json(today);
     if (path === '/attention') return json(attention);
     if (path === '/figures') return json({ figures });

@@ -23,7 +23,8 @@ test.describe('the manifest reference', () => {
     await expect(outline.getByRole('link')).toHaveCount(
       reference.fields.length + reference.sections.length + reference.recipes.length + 3,
     );
-    await expect(page.getByRole('heading', { level: 4 })).toHaveCount(reference.fields.length);
+    // The recipes and sections draw at level 4 too (D71: under a level 3 section), with the outline's aria-level 3.
+    await expect(page.locator('h4:not([aria-level])')).toHaveCount(reference.fields.length);
     // A field's heading is its full path; the outline names it by its last part, indented, so nothing is cut off.
     await expect(
       page.getByRole('heading', { level: 4, name: 'capabilities[].view.input.filter.options[].label' }),

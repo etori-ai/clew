@@ -183,7 +183,9 @@ test.describe('on a touch phone', () => {
     await sheet.getByRole('link', { name: /Ledighetsansökan/ }).click();
     await expect(page).toHaveURL('/?card=ledighet');
     await expect(sheet).not.toBeVisible();
-    const card = page.getByRole('article', { name: 'Kort: Ledighetsansökan från Johan Byström', exact: true });
+    // On a phone the card rises in its own sheet (D71), and the focus is in it.
+    const card = page.getByRole('dialog', { name: 'Kort: Ledighetsansökan från Johan Byström', exact: true });
+    await expect(card).toBeVisible();
     await expect.poll(() => card.evaluate(el => el.contains(document.activeElement))).toBe(true);
   });
 });

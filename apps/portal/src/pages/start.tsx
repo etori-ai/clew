@@ -106,7 +106,6 @@ export function PortalStart({ user }: { user: SessionUser }) {
   const toDo = useMemo(() => [...g.nu, ...g.foreslar, ...g.senare, ...g.kannedom], [g]);
   const notice = useMemo(() => new Set(g.kannedom.map(t => t.id)), [g.kannedom]);
   const older = threads.filter(t => t.state !== 'open');
-  const areaTitle = (id: string) => areas.find(a => a.id === id)?.title ?? (id === 'fragor' ? 'Fråga' : id);
   const title = talk.open ? 'Samtal' : 'Start';
   usePageTitle(title);
   const card = (t: Thread) =>
@@ -116,7 +115,6 @@ export function PortalStart({ user }: { user: SessionUser }) {
       <GenericCard
         key={t.id}
         thread={t}
-        areaTitle={areaTitle(t.area)}
         headingLevel={2}
         onChange={noop}
         onOpenCardView={(threadId, actionId) => navigate(cardHref(threadId, actionId))}
@@ -162,7 +160,7 @@ export function PortalStart({ user }: { user: SessionUser }) {
           {threadsQ.isPending ? (
             <Text type="supporting">Hämtar …</Text>
           ) : toDo.length ? (
-            <ThreadRows threads={toDo.slice(0, ROWS)} areaTitle={areaTitle} notice={notice} />
+            <ThreadRows threads={toDo.slice(0, ROWS)} notice={notice} />
           ) : (
             <Text type="supporting">Inget väntar på dig just nu.</Text>
           )}

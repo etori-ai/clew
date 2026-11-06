@@ -22,6 +22,7 @@ import type {
   SearchResult,
   SessionUser,
   SourceCitation,
+  SystemMark,
   Thread,
   TodayView,
 } from '@clew/contracts';
@@ -333,7 +334,9 @@ const area = (id: string, title: string, values: Partial<Area> = {}): Area => ({
 });
 export const areas: Area[] = [
   area('viktigt-nu', 'Viktigt nu', {
+    connector: 'communication',
     source: 'Kommunikation',
+    icon: 'bell',
     needsYou: 1,
     urgency: 'notice',
     standing: [{ capability: 'communication.notices', label: 'Viktigt nu', kind: 'read' }],
@@ -347,6 +350,7 @@ export const areas: Area[] = [
     schedules: [{ label: 'Bevakar utvecklingssamtalen', when: 'Måndagar 06:00' }],
   }),
   area('personal', 'Personal', {
+    connector: 'hr',
     icon: 'people',
     figure: { label: 'Korttidsfrånvaro 4,2 %', tone: 'warn' },
     needsYou: 2,
@@ -358,6 +362,7 @@ export const areas: Area[] = [
     schedules: [{ label: 'Läser frånvaron', when: 'Varje morgon 06:00' }],
   }),
   area('budget', 'Budget', {
+    connector: 'finance',
     source: 'Ekonomisystemet',
     icon: 'chart',
     figure: { label: 'Prognos +1,8 %', tone: 'ok' },
@@ -368,7 +373,18 @@ export const areas: Area[] = [
       { capability: 'finance.approve', label: 'Attestera fakturor', kind: 'execute' },
     ],
   }),
-  area('kvalitet', 'Kvalitet', { source: 'Avvikelsesystemet', waiting: 1 }),
+  area('kvalitet', 'Kvalitet', { connector: 'incidents', source: 'Avvikelsesystemet', icon: 'document', waiting: 1 }),
+];
+/**
+ * The systems behind the areas with their marks' ordinals (D71), in the order an administrator registered them: the
+ * personnel system first (teal), the finance system second (purple), the calendar Clew's own (the house).
+ */
+export const systems: SystemMark[] = [
+  { connector: 'hr', source: 'Personalsystemet', ordinal: 1 },
+  { connector: 'finance', source: 'Ekonomisystemet', ordinal: 2 },
+  { connector: 'incidents', source: 'Avvikelsesystemet', ordinal: 3 },
+  { connector: 'communication', source: 'Kommunikation', ordinal: 5 },
+  { connector: 'calendar', source: 'Kalendern', ordinal: null },
 ];
 /** The picker's rows (D29), fixed to the frozen clock. */
 export const snoozePresets: SnoozePreset[] = [
@@ -717,7 +733,10 @@ export const conversation = (source: Thread[], text: string, conversationId = 'k
   };
 };
 
-/** Administration (D23): two bundled connectors, one remote that is down, one draft. Typed against the admin contracts. */
+/**
+ * Administration (D23): the calendar bundled (Clew's own, no ordinal), two remote systems that answer, one that is down
+ * and one draft, each with its place in the registration order (D71). Typed against the admin contracts.
+ */
 const summary = (values: Partial<ConnectorSummary> & Pick<ConnectorSummary, 'id' | 'source'>): ConnectorSummary => ({
   bundled: false,
   kind: 'passthrough',
@@ -738,26 +757,31 @@ const summary = (values: Partial<ConnectorSummary> & Pick<ConnectorSummary, 'id'
 });
 export const connectors = (): ConnectorSummary[] => [
   summary({
-    id: 'hr',
-    source: 'Personalsystemet',
+    id: 'calendar',
+    source: 'Kalendern',
     bundled: true,
     url: null,
     secretChangedAt: null,
-    counts: { capabilities: 9, execute: 3, tools: 5 },
+    counts: { capabilities: 7, execute: 2, tools: 4 },
   }),
+  summary({ id: 'hr', source: 'Personalsystemet', ordinal: 1, counts: { capabilities: 9, execute: 3, tools: 5 } }),
   summary({
     id: 'finance',
     source: 'Ekonomisystemet',
-    bundled: true,
-    url: null,
-    secretChangedAt: null,
+    ordinal: 2,
     audience: { mode: 'selected', roles: ['manager'], units: ['unit-skola'] },
     counts: { capabilities: 4, execute: 1, tools: 2 },
   }),
-  summary({ id: 'hello', source: 'Hello', health: { status: 'unreachable', at: NOW, detail: 'ECONNREFUSED' } }),
+  summary({
+    id: 'hello',
+    source: 'Hello',
+    ordinal: 3,
+    health: { status: 'unreachable', at: NOW, detail: 'ECONNREFUSED' },
+  }),
   summary({
     id: 'errands',
     source: 'SupportManagement',
+    ordinal: 4,
     state: 'draft',
     registered: false,
     health: { status: 'untested', at: NOW },
@@ -825,7 +849,16 @@ export const connectorDetail = (c: ConnectorSummary, menuOn: string[] = []): Con
         ]
       : []),
   ],
-  areas: [{ id: c.id, title: c.source, roles: ['manager', 'employee'], standing: [`${c.id}.overview`], figure: true }],
+  areas: [
+    {
+      id: c.id,
+      title: c.id === 'finance' ? 'Budget' : c.source,
+      roles: ['manager', 'employee'],
+      standing: [`${c.id}.overview`],
+      figure: true,
+      icon: c.id === 'finance' ? 'chart' : 'people',
+    },
+  ],
   history: [
     { at: '2026-11-03T06:00:00.000Z', actor: 'person:mikael', action: 'connector.added', details: { url: c.url } },
     { at: NOW, actor: 'person:mikael', action: 'connector.enabled', details: {} },

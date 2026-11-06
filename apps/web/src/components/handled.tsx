@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Thread } from '@clew/contracts';
 import {
+  AreaLine,
   Button,
   DropdownMenu,
   Heading,
@@ -15,6 +16,7 @@ import {
 } from '@clew/ui';
 import { api } from '../api';
 import { useThreadAction } from '../mutations';
+import { useMarks } from '../marks';
 
 type Period = 'idag' | 'veckan' | 'allt';
 type Kind = 'alla' | 'hanterade' | 'avfardade' | 'fragor';
@@ -46,6 +48,7 @@ type RowProps = {
 /** One row of the log with its one way back: Ångra while the window is open, Återöppna on a dismissed card. Its error sits under the row. */
 function HandledRow({ thread: t, now, onChange, conversationHref }: RowProps) {
   const { run, error } = useThreadAction({ onChange });
+  const mark = useMarks().ofThread(t);
   const last = [...t.messages].reverse().find(m => m.role === 'assistant');
   const undoUntil = t.proposals
     .map(p => p.undoUntil)
@@ -82,12 +85,13 @@ function HandledRow({ thread: t, now, onChange, conversationHref }: RowProps) {
     <ListItem
       startContent={icon}
       align="start"
-      label={<Text>{question ? `Fråga: ${t.title}` : t.title}</Text>}
+      label={<Text weight="semibold">{question ? `Fråga: ${t.title}` : t.title}</Text>}
       description={
         <VStack gap={0}>
-          <Text type="supporting">
-            {at} · {line}
-          </Text>
+          {/* The row's meta line (D71): the area's glyph first, the time leading the words. */}
+          <AreaLine icon={question ? undefined : mark.icon}>
+            {at} · {question ? line : `${mark.title} · ${line}`}
+          </AreaLine>
           {error && (
             <Text as="p" role="alert" color="accent">
               {error}

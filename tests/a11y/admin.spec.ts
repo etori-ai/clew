@@ -30,7 +30,8 @@ async function pickSection(page: import('@playwright/test').Page, name: string) 
 }
 const routes = [
   ['the connectors list', '/admin/connectors'],
-  ['a bundled connector', '/admin/connectors/finance'],
+  ['a bundled connector', '/admin/connectors/calendar'],
+  ['a remote connector', '/admin/connectors/finance'],
   ['a remote connector that is down', '/admin/connectors/hello'],
 ] as const;
 
@@ -107,6 +108,28 @@ test.describe('administration', () => {
       await expect(rail.getByRole('link', { name: 'Modeller', exact: true })).toHaveCount(0);
       await page.keyboard.press('Enter');
       await expect(administration).toHaveAttribute('aria-expanded', 'true');
+    });
+    test('the list is in registration order with each system’s colour named; the area chip names the area (D71)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/connectors');
+      const table = page.getByRole('table');
+      const names = await table.getByRole('link').allTextContents();
+      expect(names).toEqual(['Personalsystemet', 'Ekonomisystemet', 'Hello', 'SupportManagement', 'Kalendern']);
+      await expect(table.getByRole('img', { name: 'Färg blågrön, 1:a anslutna systemet' })).toBeVisible();
+      await expect(table.getByRole('img', { name: 'Färg lila, 2:a anslutna systemet' })).toBeVisible();
+      await expect(table.getByRole('img', { name: 'Vit, Clews egen' })).toBeVisible();
+      await expect(table.getByText('calendar · Clews egen')).toBeVisible();
+      await open(page, '/admin/connectors/finance');
+      await expect(page.getByRole('img', { name: 'Färg lila, 2:a anslutna systemet' })).toBeVisible();
+      await expect(
+        page.getByText('2:a anslutna systemet · färg lila · direkt från källan · protokoll 1'),
+      ).toBeVisible();
+      const areas = (await pickSection(page, 'Områden')).getByRole('list', { name: 'Områden' });
+      await expect(areas.getByRole('listitem').first()).toContainText('Budget');
+      await expectNoAxeViolations(page);
     });
     test('the list names each connector, its status in words and its audience', async ({ page, api }) => {
       api.admin = true;
@@ -257,7 +280,7 @@ test.describe('administration', () => {
       api.admin = true;
       await open(page, '/admin/connectors/hello');
       await page.getByRole('button', { name: 'Testa anslutning' }).click();
-      await expect(page.getByRole('heading', { level: 2, name: 'Senaste kontroll' })).toBeVisible();
+      await expect(page.locator('[aria-level="2"]').filter({ hasText: 'Senaste kontroll' })).toBeVisible();
       await expect(page.getByText('Kontrollen hittade 1 fel.', { exact: true })).toBeVisible();
       await expect(page.getByRole('list', { name: 'Anslutning' }).getByRole('listitem').first()).toContainText(
         'Fel nyckel släpps igenom',

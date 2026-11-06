@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { obligationStep, obligationSteps, replySummary, type CalendarEvent, type Thread } from '@clew/contracts';
 import {
+  AreaChip,
   Avatar,
   AvatarGroup,
   AvatarGroupOverflow,
@@ -38,6 +39,7 @@ import { api } from '../api';
 import { calendarWeekQuery } from '../queries';
 import { useThreadAction } from '../mutations';
 import { executionStatus } from '../execution-status';
+import { useMarks } from '../marks';
 
 type Props = {
   thread: Thread;
@@ -132,6 +134,7 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
   const [why, setWhy] = useState(false);
   const [now, setNow] = useState(Date.now());
   const talk = useConversation();
+  const mark = useMarks().ofThread(thread);
   // Busy never disables the buttons: a disabled button drops the focus it holds (2.4.3). Action-buttons wait on their own promise.
   const { run, apply, error } = useThreadAction({ onChange });
   const leave = useLeaveWithUndo(apply);
@@ -190,25 +193,23 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
       id={`${beside ? 'card' : 'thread'}-${thread.id}`}
       aria-current={inConversation ? 'true' : undefined}
     >
-      <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-        <HStack gap={2} vAlign="center" wrap="wrap">
-          {status.badge ? (
-            <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label={status.label} />
-          ) : (
-            <Text type="supporting" weight="semibold">
-              {status.label}
-            </Text>
-          )}
-          {draft && open && <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Att bekräfta" />}
-        </HStack>
+      {/* The mark row (D71, artboard 5): the area's chip, the source and the time in supporting, then where it stands. */}
+      <HStack gap={2} vAlign="center" wrap="wrap">
+        <AreaChip ordinal={mark.ordinal} icon={mark.icon} label={mark.title} />
         <Text type="supporting">
-          {thread.state === 'open' && thread.waitingOn ? `Väntar på ${thread.waitingOn} · ` : ''}
-          {thread.trigger.source} · <Timestamp value={thread.trigger.at} format="time" hasTooltip={false} />
+          {mark.source} · <Timestamp value={thread.trigger.at} format="time" hasTooltip={false} />
+          {thread.state === 'open' && thread.waitingOn ? ` · Väntar på ${thread.waitingOn}` : ''}
         </Text>
+        {status.badge ? (
+          <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label={status.label} />
+        ) : (
+          <Text type="supporting">{status.label}</Text>
+        )}
+        {draft && open && <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Att bekräfta" />}
       </HStack>
       {thread.kind === 'pushed' && (
         <>
-          <Heading level={3} accessibilityLevel={headingLevel} weight="medium">
+          <Heading level={2} accessibilityLevel={headingLevel}>
             {lead}
           </Heading>
           {rest && (

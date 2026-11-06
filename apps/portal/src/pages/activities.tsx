@@ -161,7 +161,7 @@ export function ActivitiesPage({ user }: { user: SessionUser }) {
               conversationHref={conversationHref}
             />
           ) : rows.length ? (
-            <ThreadRows threads={rows} areaTitle={areaTitle} notice={notice} />
+            <ThreadRows threads={rows} notice={notice} />
           ) : (
             <Text type="supporting">Inget här just nu.</Text>
           )}
