@@ -69,9 +69,9 @@ export interface Capability<I = unknown, O = unknown> {
   view?: View;
   /** What the view's row is called and marked with when an administrator puts it in the menu (D40). */
   menu?: MenuHint;
-  /** For a `propose` (D54): the fact kinds it answers for with step drafts of its own connector. Input is a fact envelope, output a follow response. */
+  /** For a `propose` (D55): the fact kinds it answers for with step drafts of its own connector. Input is a fact envelope, output a follow response. */
   follows?: string[];
-  /** The fact kind this capability brings about (D54); one of the connector's `facts`. */
+  /** The fact kind this capability brings about (D55); one of the connector's `facts`. */
   creates?: string;
   run: (actor: Actor, input: I, clew: Clew) => Promise<O>;
 }
@@ -95,7 +95,7 @@ export interface ThreadDraft {
   reason: string; items?: ThreadItem[]; actions: ThreadAction[];
   waitingOn?: string | null; deadline?: string | null;
 }
-/** A fact kind a connector creates (D54). The kind's name is its contract (D37): a breaking change is a new kind. */
+/** A fact kind a connector creates (D55). The kind's name is its contract (D37): a breaking change is a new kind. */
 export interface FactDeclaration { kind: string; title: string; attributes: TSchema | Record<string, unknown> }
 /** The follower a binding names, as the job assembler sees it: `available` is the actor's visibility, switch and scope for it. */
 export interface FollowerRef { name: string; connectorId: string; source: string; follows: string[]; available: boolean }
@@ -117,7 +117,7 @@ export interface Connector {
   capabilities: Capability<any, any>[];
   /** Explicit dependencies for cross-connector calls. Core composition may use '*'; remote manifests cannot. */
   uses?: string[];
-  /** The fact kinds this connector creates (D54), `<id>:<kind>`, each with the JSON Schema of its attributes. */
+  /** The fact kinds this connector creates (D55), `<id>:<kind>`, each with the JSON Schema of its attributes. */
   facts?: FactDeclaration[];
   /** The connector's triggers: what it wants to push for this actor right now. Deterministic, no model. */
   scan?: (actor: Actor, clew: Clew) => Promise<ThreadDraft[] | ScanObservation>;
@@ -177,11 +177,11 @@ export class Registry {
       if (problem) throw new Error(`Capability ${problem} (D38).`);
       const menu = menuProblem(c);
       if (menu) throw new Error(`Capability ${menu} (D40).`);
-      if (c.follows && c.kind !== 'propose') throw new Error(`Capability ${c.name}: only a propose can follow a fact (D54).`);
-      if (c.creates && !connector.facts?.some(f => f.kind === c.creates)) throw new Error(`Capability ${c.name} creates ${c.creates}, which ${connector.id} does not declare (D54).`);
+      if (c.follows && c.kind !== 'propose') throw new Error(`Capability ${c.name}: only a propose can follow a fact (D55).`);
+      if (c.creates && !connector.facts?.some(f => f.kind === c.creates)) throw new Error(`Capability ${c.name} creates ${c.creates}, which ${connector.id} does not declare (D55).`);
       this.validator(c.input); this.validator(c.output);
     }
-    for (const f of connector.facts ?? []) if (!f.kind.startsWith(connector.id + ':')) throw new Error(`Fact ${f.kind} must be prefixed with ${connector.id}: (D54).`);
+    for (const f of connector.facts ?? []) if (!f.kind.startsWith(connector.id + ':')) throw new Error(`Fact ${f.kind} must be prefixed with ${connector.id}: (D55).`);
     for (const c of connector.capabilities) this.capabilities.set(c.name, { connector, capability: c });
     this.connectors.set(connector.id, connector);
     return this;
@@ -343,14 +343,14 @@ export class Registry {
       .map(c => ({ name: c.capability.name, connectorId: c.connector.id, source: c.connector.source, ...(c.capability.kinds ? { kinds: c.capability.kinds } : {}), ...(this.opens(actor, c.capability) ? { open: this.opens(actor, c.capability)! } : {}) }));
   }
   /**
-   * Every registered `propose` that follows a fact kind (D54), whether or not this person may call it: the job assembler
+   * Every registered `propose` that follows a fact kind (D55), whether or not this person may call it: the job assembler
    * classifies an administrator's binding against it, so a follower that went away or out of scope is named, never silently skipped.
    */
   followers(actor: Actor, kind: string): FollowerRef[] {
     return [...this.capabilities.values()].filter(c => c.capability.kind === 'propose' && c.capability.follows?.includes(kind))
       .map(c => ({ name: c.capability.name, connectorId: c.connector.id, source: c.connector.source, follows: c.capability.follows!, available: !!this.allowed(actor, c.capability.name) }));
   }
-  /** Whether an enabled connector still creates this fact kind (D54). A binding on a kind nobody creates is degraded. */
+  /** Whether an enabled connector still creates this fact kind (D55). A binding on a kind nobody creates is degraded. */
   offered(kind: string) { return [...this.connectors.values()].some(c => this.governance(c.id).state === 'enabled' && c.facts?.some(f => f.kind === kind)); }
   /** The read a row of this capability's view opens (D38), when the person may call it. */
   private opens(actor: Actor, capability: Capability): ViewOpen | undefined {

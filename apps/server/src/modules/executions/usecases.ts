@@ -37,7 +37,7 @@ export function executionUsecases({ store, source, watch, clock, ids, digest }: 
     return store.transaction(async tx => executionView(await commit(tx, persona, execution)));
   }
   /**
-   * One approval over several steps (D54). Every execute step is prepared and authorized on its own connector first, so a
+   * One approval over several steps (D55). Every execute step is prepared and authorized on its own connector first, so a
    * refused step persists nothing; then the steps and the job row commit together. A repeated identical approval returns
    * the same job and the same executions; a changed step is refused. Steps are independent: no step reads another's result.
    */
@@ -113,7 +113,7 @@ export function executionUsecases({ store, source, watch, clock, ids, digest }: 
     });
   }
   /**
-   * One check of a watch step (D54), the activity a timer will call with the check's index as its fence: nothing is read
+   * One check of a watch step (D55), the activity a timer will call with the check's index as its fence: nothing is read
    * before the check's time or twice for one check, the window's end wins over a late check, authority is current, and the
    * read is the step's own connector's read, never an execute. A source that does not answer leaves the watch waiting.
    */

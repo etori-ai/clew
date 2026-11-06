@@ -3,7 +3,7 @@ import type { FollowBinding, JobSource, JobStepDraft, StepDraft } from './contra
 import type { LedgerStep } from './model';
 
 /**
- * The pure part of jobs (D54): whether a binding may run for this actor now, whether a follower's step is its own, how a
+ * The pure part of jobs (D55): whether a binding may run for this actor now, whether a follower's step is its own, how a
  * watch window becomes committed check times, and how the fan-out is reported. No I/O, no clock of its own.
  */
 export type BindingVerdict = { status: 'ok' } | { status: 'disabled'; reason: 'switched-off' | 'audience' } | { status: 'degraded'; reason: 'kind-not-offered' | 'not-a-follower' | 'capability-unavailable' };

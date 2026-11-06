@@ -22,7 +22,7 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 | `areas` | yes | array of object |  |
 | `capabilities` | yes | array of object |  |
 | `uses` | no | array of string |  |
-| `facts` | no | array of object | The fact kinds this connector creates (D54), each prefixed with its id. |
+| `facts` | no | array of object | The fact kinds this connector creates (D55), each prefixed with its id. |
 | `scan` | yes | boolean | Whether Clew should POST /clew/scan for each person nightly and on first visit. |
 | `delegation` | no | object | The connector acts as the person against its system with a token Clew obtains by token exchange. |
 
@@ -42,8 +42,8 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 | `kinds` | no | array of "document" / "person" / "case" / "room" | For `<id>.search` (D26): what it can find. Its output is a SearchOutput; `<id>.fetch` takes one of its refs back and returns one SearchHit. |
 | `view` | no | object / object / object / object | How Clew draws the output: `table` and `list` over an array of records (`rows`, default "rows"; `title` names the field that names a row and is one of `fields`; `ref` the field holding the connector's ref), `detail` over one record, `text` over one Markdown string. |
 | `menu` | no | object | How this capability's view is named and marked when an administrator puts it in Clew's menu under Verktyg (D40). Only on a read that declares a view and needs no input. |
-| `follows` | no | array of string | For a `propose` (D54): the fact kinds it answers for. Input is a FactEnvelope, output a FollowResponse; steps name this connector only. |
-| `creates` | no | string | The fact kind this `propose` or `execute` brings about (D54); must be one of the manifest's `facts`. |
+| `follows` | no | array of string | For a `propose` (D55): the fact kinds it answers for. Input is a FactEnvelope, output a FollowResponse; steps name this connector only. |
+| `creates` | no | string | The fact kind this `propose` or `execute` brings about (D55); must be one of the manifest's `facts`. |
 
 ## ManifestArea
 

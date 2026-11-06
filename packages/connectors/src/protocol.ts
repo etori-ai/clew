@@ -36,7 +36,7 @@ export type ProtocolActor = Static<typeof ActorSchema>;
 export const ScopeRuleSchema = object({ roles: Type.Optional(Type.Array(RoleSchema, { uniqueItems: true })) },
   'Who may call the capability at all. Omitted roles means every signed-in person. The connector narrows further in the call.');
 /**
- * A fact kind a connector brings about (D54): `<connector id>:<kind>`, such as `hr:absence`. The name is its contract (D37):
+ * A fact kind a connector brings about (D55): `<connector id>:<kind>`, such as `hr:absence`. The name is its contract (D37):
  * a new optional attribute or a looser constraint keeps the name; anything else is a new kind, the old one deprecated.
  */
 const FACT_KIND = '^[a-z][a-z0-9-]*:[a-z][a-zA-Z0-9-]*$';
@@ -47,12 +47,12 @@ export const ManifestFactSchema = object({
   title: swedish('Swedish. What the fact is called on a job: "Sjukfrånvaro".'),
   attributes: jsonSchema,
 }, 'A fact this connector creates, with the JSON Schema of its attributes. Followers receive exactly these attributes.');
-/** What a follower is asked with (D54): the fact, with `ref` when it already exists in its source and absent when the job would create it. */
+/** What a follower is asked with (D55): the fact, with `ref` when it already exists in its source and absent when the job would create it. */
 export const FactEnvelopeSchema = object({
   fact: object({ kind: FactKindName, ref: Type.Optional(Type.String({ minLength: 1, maxLength: 400 })), attributes: Type.Record(Type.String(), Type.Unknown()) }),
 }, 'The input of every `follows` capability.');
 /**
- * One step a follower proposes for a job (D54). It names a capability of the follower's own connector only: an `execute`
+ * One step a follower proposes for a job (D55). It names a capability of the follower's own connector only: an `execute`
  * with its approved payload, or a `watch`, a read Clew repeats within a bounded window until `expect` holds. A follower
  * never writes; the person approves the job once and Clew runs each step as its own execution or watch.
  */
@@ -80,8 +80,8 @@ export const ManifestCapabilitySchema = object({
   kinds: Type.Optional(Type.Array(SearchKind, { uniqueItems: true, description: 'For `<id>.search` (D26): what it can find. Its output is a SearchOutput; `<id>.fetch` takes one of its refs back and returns one SearchHit.' })),
   view: Type.Optional(ViewSchema),
   menu: Type.Optional(MenuHintSchema),
-  follows: Type.Optional(Type.Array(FactKindName, { uniqueItems: true, maxItems: 20, description: 'For a `propose` (D54): the fact kinds it answers for. Input is a FactEnvelope, output a FollowResponse; steps name this connector only.' })),
-  creates: Type.Optional(Type.String({ pattern: FACT_KIND, maxLength: 80, description: 'The fact kind this `propose` or `execute` brings about (D54); must be one of the manifest\'s `facts`.' })),
+  follows: Type.Optional(Type.Array(FactKindName, { uniqueItems: true, maxItems: 20, description: 'For a `propose` (D55): the fact kinds it answers for. Input is a FactEnvelope, output a FollowResponse; steps name this connector only.' })),
+  creates: Type.Optional(Type.String({ pattern: FACT_KIND, maxLength: 80, description: 'The fact kind this `propose` or `execute` brings about (D55); must be one of the manifest\'s `facts`.' })),
 });
 export const ManifestAreaSchema = object({
   id: Type.String({ pattern: '^[a-z][a-z0-9-]*$', maxLength: 40 }), title: swedish('Swedish. The sidebar entry.'),
@@ -107,7 +107,7 @@ export const ConnectorManifestSchema = Type.Object({
   areas: Type.Array(ManifestAreaSchema),
   capabilities: Type.Array(ManifestCapabilitySchema),
   uses: Type.Optional(Type.Array(Type.String({ pattern: '^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$' }), { uniqueItems: true, maxItems: 100 })),
-  facts: Type.Optional(Type.Array(ManifestFactSchema, { maxItems: 50, description: 'The fact kinds this connector creates (D54), each prefixed with its id.' })),
+  facts: Type.Optional(Type.Array(ManifestFactSchema, { maxItems: 50, description: 'The fact kinds this connector creates (D55), each prefixed with its id.' })),
   scan: Type.Boolean({ description: 'Whether Clew should POST /clew/scan for each person nightly and on first visit.' }),
   delegation: Type.Optional(DelegationSchema),
 }, { additionalProperties: false, $id: 'https://clew.dev/protocol/2/connector-manifest.schema.json', title: 'Clew connector manifest' });

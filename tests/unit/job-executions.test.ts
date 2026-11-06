@@ -11,7 +11,7 @@ import { durationMs, watchSchedule } from '../../apps/server/src/modules/jobs/do
 import type { JobProposal } from '../../apps/server/src/modules/jobs/contracts';
 
 /**
- * The stress-test scenario (D54, canvas J): an employee is sick today. The HR system writes the sick report, time reporting
+ * The stress-test scenario (D55, canvas J): an employee is sick today. The HR system writes the sick report, time reporting
  * marks the shift, payroll reads the HR system itself and is only watched. Nothing here is flow code: the three systems are
  * connectors that declare facts and follows, an administrator binds them, Clew assembles, the manager approves once.
  */

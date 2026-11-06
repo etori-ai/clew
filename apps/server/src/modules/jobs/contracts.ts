@@ -3,7 +3,7 @@ import { ConnectorAudienceSchema } from '@clew/contracts';
 import { FactEnvelopeSchema, FactKindName, StepDraftSchema } from '@clew/connectors/protocol';
 
 /**
- * Jobs (D54): one event, work in several systems, assembled from what connectors declare and approved once. The fact is
+ * Jobs (D55): one event, work in several systems, assembled from what connectors declare and approved once. The fact is
  * Clew's envelope; a step draft is the follower's answer; a binding is the administrator's decision that this follower
  * runs for this fact kind in this installation (D23: in the database, default deny, no restart).
  */

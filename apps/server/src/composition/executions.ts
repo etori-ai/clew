@@ -52,7 +52,7 @@ const source: ExecutionSource = {
     return response.result;
   },
 };
-/** A watch step's read (D54): a `read` the person may call, run as the person; never an execute. */
+/** A watch step's read (D55): a `read` the person may call, run as the person; never an execute. */
 const watch: WatchSource = {
   async authorize(persona, operation, input) {
     const found = await registry.validate(actorOf(persona), operation, input);

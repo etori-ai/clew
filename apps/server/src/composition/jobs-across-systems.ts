@@ -5,7 +5,7 @@ import { executions } from './executions';
 import { clock, ids } from './ambient';
 
 /**
- * Jobs across systems (D54): the registry supplies followers and offers, the executions module is the ledger behind one
+ * Jobs across systems (D55): the registry supplies followers and offers, the executions module is the ledger behind one
  * approval. No route yet; the proof is the unit scenario and the store contract. Not the scheduler's job rows (`./jobs.ts`).
  */
 export const followBindings = postgresFollowBindingStore();

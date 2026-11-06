@@ -16,7 +16,7 @@ export interface ExecutionAudit { actor: string; action: string; subject: string
 export interface DispatchIntent { id: string; executionId: string; attempt: number; leaseUntil: string | null; nextAt: string; deliveredAt: string | null; lastError: string | null }
 
 /**
- * A job (D54): one human approval over several steps, each one system's. An execute step is an ordinary execution row
+ * A job (D55): one human approval over several steps, each one system's. An execute step is an ordinary execution row
  * with the decision key `<job decision>:<step>`, so dispatch, read-back, recovery and undo are unchanged. A watch step
  * writes nothing: a read repeated at committed absolute times until `expect` holds or the window ends. Steps are
  * independent; the job row only links them. Timers for watches are a later wiring; `observe` is the fenced activity.
@@ -64,7 +64,7 @@ export interface ExecutionSource {
   /** undefined proves absence only for the declared source lookup contract; throw means unknown. */
   lookup(persona: AuthenticatedContext, execution: Execution): Promise<ExecuteResult | undefined>;
 }
-/** The read behind a watch step (D54): a `read` of the step's own connector, run as the person, never an execute. */
+/** The read behind a watch step (D55): a `read` of the step's own connector, run as the person, never an execute. */
 export interface WatchSource {
   authorize(persona: AuthenticatedContext, operation: string, input: unknown): Promise<{ connector: string }>;
   read(persona: AuthenticatedContext, operation: string, input: unknown): Promise<unknown>;

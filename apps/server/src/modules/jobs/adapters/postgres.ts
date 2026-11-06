@@ -7,7 +7,7 @@ const { followBindings: table, audit } = schema;
 type Row = typeof table.$inferSelect;
 const fromRow = (r: Row): FollowBinding => ({ id: r.id, kind: r.kind, capability: r.capability, audience: r.audience, ...(r.within ? { within: r.within } : {}), enabled: r.enabled, createdAt: r.createdAt.toISOString(), updatedAt: r.updatedAt.toISOString() });
 const toRow = (b: FollowBinding): typeof table.$inferInsert => ({ id: b.id, kind: b.kind, capability: b.capability, audience: b.audience, within: b.within ?? null, enabled: b.enabled, createdAt: new Date(b.createdAt), updatedAt: new Date(b.updatedAt) });
-/** An administrator's bindings (D54) live in Clew's database like every other connector governance (D23). */
+/** An administrator's bindings (D55) live in Clew's database like every other connector governance (D23). */
 export function postgresFollowBindingStore(): FollowBindingStore {
   return {
     async list(kind) { const rows = await (kind ? database().select().from(table).where(eq(table.kind, kind)) : database().select().from(table)).orderBy(table.createdAt, table.id); return rows.map(fromRow); },

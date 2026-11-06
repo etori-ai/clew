@@ -1073,7 +1073,7 @@
               "follows": {
                 "uniqueItems": true,
                 "maxItems": 20,
-                "description": "For a `propose` (D54): the fact kinds it answers for. Input is a FactEnvelope, output a FollowResponse; steps name this connector only.",
+                "description": "For a `propose` (D55): the fact kinds it answers for. Input is a FactEnvelope, output a FollowResponse; steps name this connector only.",
                 "type": "array",
                 "items": {
                   "pattern": "^[a-z][a-z0-9-]*:[a-z][a-zA-Z0-9-]*$",
@@ -1085,7 +1085,7 @@
               "creates": {
                 "pattern": "^[a-z][a-z0-9-]*:[a-z][a-zA-Z0-9-]*$",
                 "maxLength": 80,
-                "description": "The fact kind this `propose` or `execute` brings about (D54); must be one of the manifest's `facts`.",
+                "description": "The fact kind this `propose` or `execute` brings about (D55); must be one of the manifest's `facts`.",
                 "type": "string"
               }
             }
@@ -1102,7 +1102,7 @@
         },
         "facts": {
           "maxItems": 50,
-          "description": "The fact kinds this connector creates (D54), each prefixed with its id.",
+          "description": "The fact kinds this connector creates (D55), each prefixed with its id.",
           "type": "array",
           "items": {
             "additionalProperties": false,

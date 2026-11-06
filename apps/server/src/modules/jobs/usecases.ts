@@ -9,7 +9,7 @@ import { DEFAULT_BUDGET, type JobCall, type JobDeps } from './model';
 export const ADMIN_CAPABILITY = 'admin.connectors';
 const TIMEOUT = Symbol('timeout');
 /**
- * Jobs (D54). `assemble` is the composite that replaces per-flow code: for one fact it asks every follower an administrator
+ * Jobs (D55). `assemble` is the composite that replaces per-flow code: for one fact it asks every follower an administrator
  * bound to the fact's kind, all at once under a budget, as the person, and merges the step drafts into one proposal that
  * names every bound system and its outcome. `approve` hands the proposal to the ledger as one decision. `bind` and `unbind`
  * are the administrator's composition layer: a binding is governance (D23), not a process.

@@ -186,14 +186,14 @@ export const executions = pgTable('execution', {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(), dispatchedAt: timestamp('dispatched_at', { withTimezone: true }), leaseUntil: timestamp('lease_until', { withTimezone: true }),
 }, t => [uniqueIndex('execution_decision').on(t.personId, t.decisionId), index('execution_person').on(t.personId, t.createdAt),
   check('execution_state', sql`${t.state} IN ('pending', 'running', 'succeeded', 'partial', 'failed', 'unknown')`)]);
-/** A job (D54): one approval over several steps, each its own execution row or a watch; `steps` is sealed like a payload. One row per (person, decision). */
+/** A job (D55): one approval over several steps, each its own execution row or a watch; `steps` is sealed like a payload. One row per (person, decision). */
 export const executionJobs = pgTable('execution_job', {
   id: text('id').primaryKey(), decisionId: text('decision_id').notNull(), personId: text('person_id').notNull().references(() => people.id),
   principal: text('principal').notNull(), unitId: text('unit_id').notNull(), authorizationVersion: text('authorization_version').notNull(),
   digest: text('digest').notNull(), steps: text('steps').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
 }, t => [uniqueIndex('execution_job_decision').on(t.personId, t.decisionId), index('execution_job_person').on(t.personId, t.createdAt)]);
-/** An administrator's binding of a follower to a fact kind (D54): connector governance in the database (D23), default deny. */
+/** An administrator's binding of a follower to a fact kind (D55): connector governance in the database (D23), default deny. */
 export const followBindings = pgTable('follow_binding', {
   id: text('id').primaryKey(), kind: text('kind').notNull(), capability: text('capability').notNull(), audience: jsonb('audience').$type<ConnectorAudience>().notNull(),
   within: text('within'), enabled: boolean('enabled').notNull().default(true),

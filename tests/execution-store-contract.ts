@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Execution, ExecutionStore, Job } from '../apps/server/src/modules/executions/model';
 export const executionRecord = (personId: string, id: string): Execution => ({ id, personId, decisionId: 'decision:' + personId, principal: 'person:' + personId, unitId: 'test', authorizationVersion: 'v1', connector: 'reference', operation: 'reference.complete', digest: 'input-digest', payload: { ref: 'reference:item:1', revision: 1 }, safety: { strategy: 'deduplicated', retentionSeconds: 86400, lookup: 'reference.lookup' }, state: 'pending', reason: null, result: null, compensates: null, createdAt: '2099-11-05T10:00:00.000Z', updatedAt: '2099-11-05T10:00:00.000Z', expiresAt: '2099-11-06T10:00:00.000Z', dispatchedAt: null, attempt: 0, leaseUntil: null });
-/** A job (D54) over two step executions; the watch step carries the read input a Postgres adapter must seal. */
+/** A job (D55) over two step executions; the watch step carries the read input a Postgres adapter must seal. */
 export const jobRecord = (personId: string, id: string, steps: Execution[]): Job => ({ id, personId, decisionId: 'job:' + personId, principal: 'person:' + personId, unitId: 'test', authorizationVersion: 'v1', digest: 'job-digest',
   steps: [...steps.map((e, i) => ({ id: 'step-' + (i + 1), kind: 'execute' as const, connector: e.connector, operation: e.operation, executionId: e.id })),
     { id: 'watch-1', kind: 'watch' as const, connector: 'payroll', operation: 'payroll.absenceStatus', input: { person: 'hr:emp:1004' }, expect: { path: ['status'], equals: 'registered' }, checks: ['2099-11-05T14:00:00.000Z'], expiresAt: '2099-11-06T10:00:00.000Z', state: 'waiting' as const, reason: null, observations: [] }],
