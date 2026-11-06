@@ -151,8 +151,5 @@ console.log(`  card: "${card.title}" · ${card.summary}`);
 ok(card.area === 'lon', "the card is filed under payroll's area");
 const final = await api('/api/jobs/' + approved.id);
 const w = final.steps.find((s: any) => s.kind === 'watch');
-ok(
-  w.state === 'expired' && w.observations >= 3,
-  `the watch is expired after ${w.observations} observations`,
-);
+ok(w.state === 'expired' && w.observations >= 3, `the watch is expired after ${w.observations} observations`);
 console.log('\nJob across systems: OK');
