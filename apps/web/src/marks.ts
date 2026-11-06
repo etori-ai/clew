@@ -70,16 +70,17 @@ export function useMarks() {
       };
     };
     /**
-     * A declared view's mark (D71, artboards 4 and 7): the area that offers the capability, else its row in the menu
-     * ("Mötesrum"), else the system's one area, else the system's word alone. The hue is always the system's.
+     * A declared view's mark (D71, artboards 4 and 7): the area that offers the capability, else the system's one area
+     * (a contact card is Kontakter's), else its row in the menu ("Mötesrum" of a calendar with two areas), else the
+     * system's word alone. The hue is always the system's.
      */
     const ofCapability = (capability: string, connector: string, source: string): Mark => {
       const offering = areas.find(a => a.connector === connector && a.standing.some(s => s.capability === capability));
       if (offering) return ofArea(offering.id, connector);
+      const own = areas.filter(a => a.connector === connector);
+      if (own.length === 1) return ofArea(own[0]!.id, connector);
       const s = system(connector);
       const entry = menu.find(e => e.capability === capability);
-      const own = areas.filter(a => a.connector === connector);
-      if (!entry && own.length === 1) return ofArea(own[0]!.id, connector);
       return {
         title: entry?.label ?? s?.source ?? source,
         ...(entry?.icon ? { icon: entry.icon } : {}),

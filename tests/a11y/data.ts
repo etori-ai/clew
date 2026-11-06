@@ -411,6 +411,17 @@ export const areas: Area[] = [
     },
     waiting: 1,
   }),
+  // The phone book as its connector declares its area (connectors/phonebook/manifest.mjs), so a view's header, a
+  // token and an `@` row draw what production draws (D71): Kontakter with the phone icon, Telefonboken's hue.
+  area('kontakter', 'Kontakter', {
+    connector: 'phonebook',
+    source: 'Telefonboken',
+    icon: 'phone',
+    standing: [
+      { capability: 'phonebook.team', label: 'Mitt teams kontaktlista', kind: 'read' },
+      { capability: 'phonebook.directory', label: 'Sök i telefonboken', kind: 'read' },
+    ],
+  }),
 ];
 /**
  * The systems behind the areas with their marks' ordinals (D71), in the order an administrator registered them: the
@@ -420,6 +431,7 @@ export const systems: SystemMark[] = [
   { connector: 'hr', source: 'Personalsystemet', ordinal: 1 },
   { connector: 'finance', source: 'Ekonomisystemet', ordinal: 2 },
   { connector: 'incidents', source: 'Avvikelsesystemet', ordinal: 3 },
+  { connector: 'phonebook', source: 'Telefonboken', ordinal: 4 },
   { connector: 'communication', source: 'Kommunikation', ordinal: 5 },
   { connector: 'calendar', source: 'Kalendern', ordinal: null },
 ];
