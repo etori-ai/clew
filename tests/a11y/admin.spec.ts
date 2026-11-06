@@ -131,6 +131,30 @@ test.describe('administration', () => {
       await expect(areas.getByRole('listitem').first()).toContainText('Budget');
       await expectNoAxeViolations(page);
     });
+    test('"Visa nyckeltalet" switches an area\'s figure on Hem per area, says so aloud and keeps focus (D54)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/connectors/finance');
+      const areas = (await pickSection(page, 'Områden')).getByRole('list', { name: 'Områden' });
+      const row = areas.getByRole('listitem').filter({ hasText: 'Budget' });
+      const toggle = row.getByRole('switch', { name: 'Visa nyckeltalet' });
+      await expect(toggle).toBeChecked();
+      await expect(row.getByText(/nyckeltalet är en ruta på Hem/)).toBeVisible();
+      await expectNoAxeViolations(page);
+      await toggle.focus();
+      await page.keyboard.press('Space');
+      await expect(toggle).not.toBeChecked();
+      await expect.poll(() => api.figuresOff).toEqual(['finance']);
+      await expect(
+        page.getByRole('region', { name: 'Aviseringar' }).getByText('Nyckeltalet för Budget visas inte längre på Hem.'),
+      ).toBeVisible();
+      await expect(row.getByText(/nyckeltalet visas inte/)).toBeVisible();
+      await expect(toggle).toBeFocused();
+      await toggle.click();
+      await expect.poll(() => api.figuresOff).toEqual([]);
+    });
     test('the list names each connector, its status in words and its audience', async ({ page, api }) => {
       api.admin = true;
       await open(page, '/admin/connectors');

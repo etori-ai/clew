@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto';
 import { createVerifier } from './verification.mjs';
 import { manifest, CONNECTOR } from './manifest.mjs';
-import { dateIn, seed, shortDate } from './fixture.mjs';
+import { addDays, dateIn, seed, shortDate } from './fixture.mjs';
 import { memoryState } from './state.mjs';
 
 export { manifest };
@@ -192,10 +192,17 @@ export function createConnector({
 
   function figure(actor, area) {
     if (area !== 'work-environment' || !managerOf(actor, unitOf(actor))) return null;
-    const open = openDeviations(unitOf(actor)).length + reports().filter(r => r.unitId === unitOf(actor)).length;
+    // The figure (D54): the open incidents and reports, alert while one has waited more than two weeks.
+    const unitId = unitOf(actor);
+    const cutoff = addDays(today(), -14);
+    const older = openDeviations(unitId).filter(d => d.reportedAt.slice(0, 10) < cutoff).length;
+    const open = openDeviations(unitId).length + reports().filter(r => r.unitId === unitId).length;
     return {
-      label: open === 0 ? 'Inga öppna avvikelser' : open === 1 ? '1 öppen avvikelse' : `${open} öppna avvikelser`,
-      tone: open ? 'warn' : 'ok',
+      label: 'Öppna tillbud',
+      value: String(open),
+      ...(older ? { comparison: `${older} äldre än 14 dagar` } : open ? {} : { comparison: 'inga öppna' }),
+      tone: older ? 'alert' : open ? 'warn' : 'ok',
+      opens: 'incidents.deviations',
     };
   }
 

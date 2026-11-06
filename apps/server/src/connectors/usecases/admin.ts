@@ -49,13 +49,14 @@ export interface AdminDeps {
 }
 export const governanceOf = (
   r: Pick<ConnectorRecord, 'state' | 'audience' | 'scanEnabled' | 'toolsEnabled' | 'capabilities'> &
-    Partial<Pick<ConnectorRecord, 'ordinal'>>,
+    Partial<Pick<ConnectorRecord, 'ordinal' | 'areas'>>,
 ): Governance => ({
   state: r.state,
   audience: r.audience,
   scanEnabled: r.scanEnabled,
   toolsEnabled: r.toolsEnabled,
   capabilities: r.capabilities,
+  ...(r.areas && Object.keys(r.areas).length ? { areas: r.areas } : {}),
   ...(r.ordinal ? { ordinal: r.ordinal } : {}),
 });
 const isManifest = (value: unknown): value is ConnectorManifest =>
@@ -197,6 +198,7 @@ export function connectorUsecases(deps: AdminDeps) {
         roles: [...a.roles],
         standing: [...a.standing],
         figure: !!a.figure,
+        figureShown: !!a.figure && row.areas[a.id]?.figure !== false,
         ...(a.icon ? { icon: a.icon } : {}),
       })),
       history: await store.history(row.id),
@@ -272,6 +274,10 @@ export function connectorUsecases(deps: AdminDeps) {
     if (patch.capabilities)
       for (const name of Object.keys(patch.capabilities))
         if (!m?.capabilities.some(c => c.name === name)) throw new InputError('Okänd förmåga: ' + name);
+    if (patch.figures)
+      for (const area of Object.keys(patch.figures))
+        if (!m?.areas.some(a => a.id === area && a.figure))
+          throw new InputError('Området har inget nyckeltal: ' + area);
     if (patch.state === 'enabled' && !row.bundled && !m) {
       // A draft that never answered: try once more now, so enabling fails loudly instead of registering nothing.
       try {
@@ -335,6 +341,20 @@ export function connectorUsecases(deps: AdminDeps) {
         });
       }
       if (JSON.stringify(merged) !== JSON.stringify(next.capabilities ?? row.capabilities)) next.capabilities = merged;
+    }
+    if (patch.figures !== undefined) {
+      // An area's figure on Hem or not (D54): one audit row per area that changed, with the area's title as the administrator read it.
+      const merged = { ...row.areas };
+      for (const [area, on] of Object.entries(patch.figures)) {
+        if ((merged[area]?.figure !== false) === on) continue;
+        if (on) delete merged[area];
+        else merged[area] = { figure: false };
+        changes.push({
+          action: 'connector.figure',
+          details: { area, to: on, title: m?.areas.find(a => a.id === area)?.title ?? area },
+        });
+      }
+      if (JSON.stringify(merged) !== JSON.stringify(row.areas)) next.areas = merged;
     }
     if (patch.url !== undefined) {
       const url = patch.url.replace(/\/+$/, '');

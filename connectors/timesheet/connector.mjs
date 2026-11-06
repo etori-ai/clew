@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto';
 import { createVerifier } from './verification.mjs';
 import { manifest, CONNECTOR } from './manifest.mjs';
-import { dateIn, seed, shortDate } from './fixture.mjs';
+import { dateIn, seed, shortDate, substitutesOf } from './fixture.mjs';
 import { memoryState } from './state.mjs';
 
 export { manifest };
@@ -164,6 +164,21 @@ export function createConnector({
     });
   }
 
+  // The figure (D54): today's booked substitutes, and whether a shift marked absent is still without a person.
+  function figure(actor, area) {
+    if (area !== 'staffing' || actor.role !== 'manager') return null;
+    const date = today();
+    const mine = shifts().filter(s => s.date === date && s.unitId === unitOf(actor));
+    if (!mine.length) return { label: 'Inga pass i dag.', tone: 'none' };
+    const open = Object.values(marked()).filter(a => a.date === date && mine.some(s => s.employee === a.person)).length;
+    return {
+      label: 'Vikarier i dag',
+      value: String(substitutesOf[unitOf(actor)] ?? 0),
+      comparison: open ? (open === 1 ? '1 pass obemannat' : `${open} pass obemannade`) : 'alla pass bemannade',
+      tone: open ? 'warn' : 'ok',
+    };
+  }
+
   async function handle(request) {
     const url = new URL(request.url);
     if (request.method === 'GET' && url.pathname === '/clew/manifest') return json(manifest);
@@ -182,7 +197,7 @@ export function createConnector({
     }
     try {
       if (url.pathname === '/clew/scan') return json({ drafts: [] });
-      if (url.pathname === '/clew/figure') return json({ figure: null });
+      if (url.pathname === '/clew/figure') return json({ figure: figure(actor, body.area) });
       const name = decodeURIComponent(url.pathname.slice('/clew/capabilities/'.length));
       const declared = manifest.capabilities.find(c => c.name === name);
       if (!declared) return fail('not-found', 'Okänd förmåga.', 404);

@@ -63,6 +63,7 @@ import { ThreadCard } from '../components/thread';
 import { Handled } from '../components/handled';
 import { Today } from '../components/today';
 import { Since } from '../components/since';
+import { Lage } from '../components/lage';
 import { usePageTitle } from '../page-title';
 import { useMarks } from '../marks';
 
@@ -518,6 +519,18 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           {groupHeading('notices', `Till kännedom · ${g.kannedom.length}`, 'Inget att göra, bara att veta')}
           {records(g.kannedom, { notice: true })}
         </VStack>
+      )}
+      {/* Läget (D54): the areas' figures after the groups, for every area at once, so not while one area is chosen. */}
+      {!area && (
+        <Lage
+          areas={areas}
+          loading={areasQ.isPending}
+          sources={sources}
+          now={now}
+          unitLabel={user.unitLabel}
+          viewHref={(capability, title) => viewHref(capability, title)}
+          twoAcross={mobile}
+        />
       )}
     </VStack>
   );

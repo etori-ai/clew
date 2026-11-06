@@ -55,6 +55,7 @@ export function memoryConnectorStore(): MemoryConnectorStore {
             scanEnabled: true,
             toolsEnabled: true,
             capabilities: {},
+            areas: {},
             manifest: structuredClone(r.manifest),
             manifestAt: r.manifest ? r.at : null,
             health: structuredClone(r.health),

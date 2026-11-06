@@ -73,7 +73,14 @@ describe('the incidents fixture connector', () => {
       'incidents:dev:2026-1182',
     ]);
     const [area] = await registry.areas(hillevi);
-    expect(area!.figure).toEqual({ label: '1 öppen avvikelse', tone: 'warn' });
+    // Three open, one of them reported more than two weeks ago: the figure needs the manager (D54).
+    expect(area!.figure).toEqual({
+      label: 'Öppna tillbud',
+      value: '3',
+      comparison: '1 äldre än 14 dagar',
+      tone: 'alert',
+      opens: { capability: 'incidents.deviations', title: 'Avvikelser och tillbud' },
+    });
   });
   test('a report filed by an employee reaches the manager, runs once per operation id, and can be withdrawn by its reporter only', async () => {
     const { registry } = stack();
@@ -85,7 +92,7 @@ describe('the incidents fixture connector', () => {
     expect((await registry.run<Rows>(hillevi, 'incidents.deviations', {})).rows.map(r => r.waitingOn)).toContain(
       'chefens bedömning',
     );
-    expect((await registry.areas(hillevi))[0]!.figure?.label).toBe('2 öppna avvikelser');
+    expect((await registry.areas(hillevi))[0]!.figure?.value).toBe('4');
     const other: Actor = { ...hassan, id: 'erik' };
     const refused = await registry.run<Result>(other, 'incidents.withdraw', { refs: ['incidents:dev:2026-1200'] });
     expect(refused.rows[0]!.outcome).toBe('failed');

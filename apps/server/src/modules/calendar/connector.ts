@@ -35,18 +35,21 @@ export function calendarConnector(
         roles: ['manager', 'employee'],
         standing: ['calendar.today', 'calendar.week'],
         schedules: [],
+        // Läget's calendar tile (D54, artboard 3): the unit's development talks booked out of everyone due one, for the
+        // manager; the day itself is I dag beside the column. A unit without members has no figure. A throw is the
+        // registry's warning figure.
         figure: async actor => {
-          try {
-            const v = await calendar.readToday(await personaFor(actor.id));
-            const n = v.events.filter(e => !e.allDay).length;
-            const gap = v.gaps[0];
-            return {
-              label: `${n} möten i dag${gap ? ', lucka ' + new Date(gap.start).toLocaleTimeString('sv-SE', { timeStyle: 'short' }) : ''}`,
-              tone: 'none',
-            };
-          } catch {
-            return { label: 'Kalendern svarar inte', tone: 'warn' };
-          }
+          if (actor.role !== 'manager') return null;
+          const s = await calendar.samtalStatus(await personaFor(actor.id));
+          if (!s.members) return null;
+          const done = s.held + s.booked;
+          return {
+            label: 'Utvecklingssamtal bokade',
+            value: `${done} av ${s.members}`,
+            comparison: `senast ${s.deadline}`,
+            progress: { value: done, max: s.members },
+            tone: 'none',
+          };
         },
       },
       {
@@ -55,18 +58,6 @@ export function calendarConnector(
         roles: ['manager'],
         standing: [],
         schedules: [{ label: 'Samtal utan tid före deadline', when: 'Varje vardag 06:00' }],
-        figure: async actor => {
-          try {
-            const s = await calendar.samtalStatus(await personaFor(actor.id));
-            const total = s.held + s.booked;
-            return {
-              label: `${s.held} hållna, ${s.booked} bokade · senast ${s.deadline}`,
-              tone: total >= 12 ? 'ok' : 'warn',
-            };
-          } catch {
-            return { label: 'Kalendern svarar inte', tone: 'warn' };
-          }
-        },
       },
     ],
     capabilities: [

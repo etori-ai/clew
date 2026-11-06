@@ -22,7 +22,8 @@
           "label": "Nya meddelanden som kräver läskvitto",
           "when": "Direkt när de publiceras"
         }
-      ]
+      ],
+      "figure": true
     }
   ],
   "capabilities": [

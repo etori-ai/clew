@@ -99,6 +99,7 @@ export const manifest = {
       roles: ['manager', 'employee'],
       standing: ['communication.notices'],
       schedules: [{ label: 'Nya meddelanden som kräver läskvitto', when: 'Direkt när de publiceras' }],
+      figure: true,
     },
   ],
   capabilities: [notices, acknowledge, lookup],

@@ -244,7 +244,10 @@ export const ManifestAreaSchema = object({
     },
   ),
   figure: Type.Optional(
-    Type.Boolean({ description: 'Clew asks POST /clew/figure for a one-line figure for this area.' }),
+    Type.Boolean({
+      description:
+        "Clew asks POST /clew/figure for this area's figure and draws it as a tile on Hem (D54), unless an administrator switched it off.",
+    }),
   ),
   icon: Type.Optional(MenuIconSchema),
 });
@@ -374,15 +377,52 @@ export const ScanResponseSchema = object({
 });
 export type ScanResponse = Static<typeof ScanResponseSchema>;
 export const FigureRequestSchema = object({ actor: ActorSchema, area: Type.String() });
-export const FigureResponseSchema = object({
-  figure: Type.Union([
-    object({
-      label: Type.String(),
-      tone: Type.Union([Type.Literal('ok'), Type.Literal('warn'), Type.Literal('alert'), Type.Literal('none')]),
+/**
+ * An area's figure (D54): one fact about the area that the person did not ask for, drawn by Clew as a tile on Hem, a line
+ * in a text and a word in the rail. The connector says what and in which tone; Clew says the tone in its own words.
+ */
+export const FigureSchema = object(
+  {
+    label: Type.String({
+      maxLength: 120,
+      description:
+        'Swedish. What the value is ("Sjukfrånvaro", "Förbrukat av ramen"); without a value, the whole figure as one sentence ("Inget nytt sedan i går.").',
     }),
-    Type.Null(),
-  ]),
-});
+    tone: Type.Union([Type.Literal('ok'), Type.Literal('warn'), Type.Literal('alert'), Type.Literal('none')], {
+      description:
+        'ok, warn or alert; Clew draws them as Lugnt, Bevaka and Behöver dig. `none` when the number is the whole message.',
+    }),
+    value: Type.Optional(
+      Type.String({
+        maxLength: 40,
+        description: 'Swedish, formatted by the connector: one number and its unit ("4,2 %", "14 av 23", "3").',
+      }),
+    ),
+    comparison: Type.Optional(
+      Type.String({
+        maxLength: 160,
+        description:
+          'Swedish. A target, a change or a period, in supporting text ("mål ≤ 4,0 % · +0,3 sedan oktober").',
+      }),
+    ),
+    progress: Type.Optional(
+      object(
+        { value: Type.Number({ minimum: 0 }), max: Type.Number({ exclusiveMinimum: 0 }) },
+        'Progress towards a target, drawn as a bar in the tile in place of the comparison.',
+      ),
+    ),
+    opens: Type.Optional(
+      Type.String({
+        maxLength: 80,
+        description:
+          'A read capability of this connector with a declared view that needs no input: the tile is then a link to that view. Clew drops it when it names another connector or a capability without such a view.',
+      }),
+    ),
+  },
+  'One figure for an area.',
+);
+export type Figure = Static<typeof FigureSchema>;
+export const FigureResponseSchema = object({ figure: Type.Union([FigureSchema, Type.Null()]) });
 export type FigureResponse = Static<typeof FigureResponseSchema>;
 export const ExecuteResultSchema = object(
   {
@@ -432,6 +472,7 @@ export function protocolSchema() {
       ScanResponse: ScanResponseSchema,
       ThreadDraft: ThreadDraftSchema,
       FigureRequest: FigureRequestSchema,
+      Figure: FigureSchema,
       FigureResponse: FigureResponseSchema,
       CallbackRequest: CallbackRequestSchema,
       SearchHit: SearchHitSchema,

@@ -64,6 +64,7 @@ export function connectorStoreContract(name: string, make: () => Promise<Connect
         scanEnabled: true,
         toolsEnabled: true,
         capabilities: {},
+        areas: {},
         manifestAt: T0,
         health: { status: 'ok', at: T0 },
         createdBy: 'person:mikael',
@@ -116,6 +117,17 @@ export function connectorStoreContract(name: string, make: () => Promise<Connect
         version: 2,
       });
       expect(await store.transaction(tx => tx.update('nope-' + id, { state: 'enabled' }, 'x', T1))).toBe(false);
+    });
+    test("an area's figure switch is stored per area, read back, and kept by an update of something else (D54)", async () => {
+      const { store, fresh } = await make();
+      const id = fresh();
+      await store.transaction(tx => tx.insert(remoteRow(id)));
+      await store.transaction(tx => tx.update(id, { areas: { work: { figure: false } } }, 'person:mikael', T1));
+      expect(await store.read(id)).toMatchObject({ areas: { work: { figure: false } }, version: 2 });
+      await store.transaction(tx => tx.update(id, { scanEnabled: false }, 'person:mikael', T1));
+      expect(await store.read(id)).toMatchObject({ areas: { work: { figure: false } }, scanEnabled: false });
+      await store.transaction(tx => tx.update(id, { areas: {} }, 'person:mikael', T1));
+      expect((await store.read(id))!.areas).toEqual({});
     });
     test('recordHealth changes health and the manifest without a version bump', async () => {
       const { store, fresh } = await make();

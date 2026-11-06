@@ -201,6 +201,35 @@ describe('adding and governing a remote connector', () => {
     );
     await expect(admin.add(mikael, { id: 'finance', url: 'http://hello', secret: SECRET })).rejects.toThrow('inbyggd');
   });
+  test('"Visa nyckeltalet" switches an area\'s figure off for the audience and on again, one audit row each (D54)', async () => {
+    const { admin, store, registry } = world();
+    await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    await admin.update(mikael, 'hello', { state: 'enabled' });
+    const figureOf = async () => (await registry.areas(actorOf(hillevi))).find(a => a.id === 'hello')!.figure;
+    expect(await figureOf()).toMatchObject({ label: '2 saker väntar', tone: 'warn' });
+    const off = await admin.update(mikael, 'hello', { figures: { hello: false } });
+    expect(off.areas.find(a => a.id === 'hello')).toMatchObject({ figure: true, figureShown: false });
+    expect((await store.read('hello'))!.areas).toEqual({ hello: { figure: false } });
+    expect(await figureOf()).toBeNull();
+    expect(store.audit.filter(a => a.action === 'connector.figure')).toEqual([
+      {
+        actor: 'person:mikael',
+        action: 'connector.figure',
+        subject: 'connector:hello',
+        at: T0,
+        details: { area: 'hello', to: false, title: 'Hello-anslutningen' },
+      },
+    ]);
+    // The same switch again changes nothing and writes nothing.
+    await admin.update(mikael, 'hello', { figures: { hello: false } });
+    expect(store.audit.filter(a => a.action === 'connector.figure')).toHaveLength(1);
+    const on = await admin.update(mikael, 'hello', { figures: { hello: true } });
+    expect(on.areas.find(a => a.id === 'hello')!.figureShown).toBe(true);
+    expect((await store.read('hello'))!.areas).toEqual({});
+    expect(await figureOf()).toMatchObject({ label: '2 saker väntar' });
+    expect(store.audit.filter(a => a.action === 'connector.figure').map(a => a.details?.to)).toEqual([false, true]);
+    await expect(admin.update(mikael, 'hello', { figures: { nope: false } })).rejects.toThrow('inget nyckeltal');
+  });
   test('a service that is down still gets its draft, with health unreachable and no manifest', async () => {
     const { admin } = world({ helloUp: false });
     const { connector, report } = await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });

@@ -62,7 +62,7 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 | `roles` | yes | array of "manager" / "employee" | Who sees the area: at least one role. |
 | `standing` | yes | array of string | Capability names shown under "Gör själv": what a person can do here without composing a question. Each must be a capability of this manifest. |
 | `schedules` | yes | array of object | What the connector does for this area on its own and when, as a person reads it under the area. Informational text; the scan itself runs nightly and on first visit. |
-| `figure` | no | boolean | Clew asks POST /clew/figure for a one-line figure for this area. |
+| `figure` | no | boolean | Clew asks POST /clew/figure for this area's figure and draws it as a tile on Hem (D54), unless an administrator switched it off. |
 | `icon` | no | "phone" / "people" / "book" / "document" / "chart" / "search" / "clock" / "link" / "calendar" / "bell" | One of Clew's icons. The connector sends a name, never a drawing. |
 
 ## Actor

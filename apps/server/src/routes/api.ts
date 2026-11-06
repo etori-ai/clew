@@ -31,7 +31,6 @@ import { CalendarError } from '@clew/calendar/model';
 import { TurnStopped } from '../assistant';
 import type { ActInput as ActInputType } from '@clew/contracts';
 import { InputError, protectedRoute, type Env } from '../context';
-import { readFigures } from '../modules/figures/domain';
 import { verbsFor } from '../assistant/verbs';
 import { registry, runCapability } from '../connectors/registry';
 import {
@@ -473,23 +472,6 @@ api.post('/threads/:id/remind-invitees', async c =>
   c.json(await calendar.remindInvitees(c.req.param('id'), c.get('session').context)),
 );
 api.get('/today', async c => c.json(await readToday(c.get('session').context)));
-api.get('/figures', async c => {
-  const persona = c.get('session').context;
-  const owners: Record<string, string> = {
-    korttidsfranvaro: 'hr',
-    budgetavvikelse: 'finance',
-    hme: 'hr',
-    utvecklingssamtal: 'calendar',
-  };
-  const samtal = registry.visible(persona, 'calendar')
-    ? await samtalStatus(persona)
-    : { held: 0, booked: 0, deadline: '' };
-  return c.json({
-    figures: readFigures(persona, samtal, new Date().toISOString()).filter(
-      figure => !!owners[figure.id] && registry.visible(persona, owners[figure.id]!),
-    ),
-  });
-});
 api.get('/calendar', async c => c.json(await weekOverview(c.get('session').context, c.req.query('from'))));
 /** A person's own bookings (D28): members and rooms for the form, a free-busy check, create, move and cancel; a proposal moved by drag or keyboard. */
 api.get('/calendar/members', async c => c.json({ members: await events.listMembers(c.get('session').context) }));

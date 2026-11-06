@@ -17,6 +17,7 @@ export const toRecord = (row: typeof connectors.$inferSelect): ConnectorRecord =
   scanEnabled: row.scanEnabled,
   toolsEnabled: row.toolsEnabled,
   capabilities: row.capabilities,
+  areas: row.areas,
   manifest: row.manifest ?? null,
   manifestAt: iso(row.manifestAt),
   health: row.health,

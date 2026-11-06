@@ -41,25 +41,6 @@ if (!FormatRegistry.Has('date-time'))
   );
 const id = Type.String({ minLength: 1, maxLength: 80 });
 
-/** One figure in the fixed "Läget" row: a sentence with a comparison, never a bare KPI tile. */
-export const FigureSchema = object({
-  id: Type.Union([
-    Type.Literal('korttidsfranvaro'),
-    Type.Literal('budgetavvikelse'),
-    Type.Literal('hme'),
-    Type.Literal('utvecklingssamtal'),
-  ]),
-  label: Type.String(),
-  value: Type.String(),
-  comparison: Type.String(),
-  tone: Type.Union([Type.Literal('ok'), Type.Literal('warn'), Type.Literal('alert')]),
-  source: Type.String(),
-  observedAt: instant,
-  /** Optional progress towards a target, drawn as a bar in the tile. */
-  progress: Type.Optional(object({ value: Type.Integer(), max: Type.Integer() })),
-});
-export type Figure = Static<typeof FigureSchema>;
-
 /** A calendar occurrence as the browser sees it. Participant names stay inside the calendar surface. */
 export const CalendarEventSchema = object({
   id: id,
@@ -1079,6 +1060,9 @@ export const CapabilityOverrideSchema = object({
   menu: Type.Optional(Type.Literal(true)),
 });
 export type CapabilityOverride = Static<typeof CapabilityOverrideSchema>;
+/** What is stored per area of a connector (D54): `figure: false` when the administrator switched its figure off on Hem. Narrowing only. */
+export const AreaOverrideSchema = object({ figure: Type.Optional(Type.Literal(false)) });
+export type AreaOverride = Static<typeof AreaOverrideSchema>;
 const connectorId = Type.String({ pattern: '^[a-z][a-z0-9-]*$', minLength: 1, maxLength: 40 });
 const connectorUrl = Type.String({ pattern: '^https?://[^\\s]+$', minLength: 8, maxLength: 500 });
 const connectorSecret = Type.String({ minLength: 16, maxLength: 500 });
@@ -1095,6 +1079,8 @@ export const ConnectorPatchInput = Type.Partial(
     url: connectorUrl,
     /** Views in the menu (D40), by capability name: true puts the view under Verktyg, false takes it out. */
     menu: Type.Record(Type.String({ maxLength: 80 }), Type.Boolean()),
+    /** Figures on Hem (D54), by area id: false switches the area's figure off for the connector's audience, true back on. */
+    figures: Type.Record(Type.String({ maxLength: 80 }), Type.Boolean()),
   }),
 );
 export type ConnectorPatchInput = Static<typeof ConnectorPatchInput>;
@@ -1142,7 +1128,10 @@ export interface ConnectorAreaView {
   title: string;
   roles: Role[];
   standing: string[];
+  /** The connector declares a figure for the area. */
   figure: boolean;
+  /** "Visa nyckeltalet" (D54): the figure is drawn on Hem; false when the administrator switched it off. */
+  figureShown: boolean;
   /** The area's icon from the manifest (D41), drawn in its chip on the Områden tab (D71). */
   icon?: MenuIcon;
 }
@@ -1307,6 +1296,30 @@ export interface ProviderTestReport {
   health: ProviderHealth;
 }
 
+/** A figure's tone (D54): the connector sends it, Clew says it in its own words (Lugnt, Bevaka, Behöver dig) or not at all. */
+export const FigureToneSchema = Type.Union([
+  Type.Literal('ok'),
+  Type.Literal('warn'),
+  Type.Literal('alert'),
+  Type.Literal('none'),
+]);
+export type FigureTone = Static<typeof FigureToneSchema>;
+/**
+ * An area's figure as the browser gets it (D54): the connector's answer, with `opens` resolved to the read it names when
+ * the person may call it, and the time Clew read it. Without a value the label is a sentence. A connector that did not
+ * answer is the registry's one warning figure (`unavailable`, D8), never an empty tile.
+ */
+export const AreaFigureSchema = object({
+  label: Type.String({ maxLength: 120 }),
+  tone: FigureToneSchema,
+  value: Type.Optional(Type.String({ maxLength: 40 })),
+  comparison: Type.Optional(Type.String({ maxLength: 160 })),
+  progress: Type.Optional(object({ value: Type.Number({ minimum: 0 }), max: Type.Number({ exclusiveMinimum: 0 }) })),
+  opens: Type.Optional(object({ capability: Type.String(), title: Type.String() })),
+  unavailable: Type.Optional(Type.Literal(true)),
+  observedAt: Type.Optional(instant),
+});
+export type AreaFigure = Static<typeof AreaFigureSchema>;
 /** An area in the sidebar: a lens on one connector for one role (D3). Configuration, not code. */
 export const AreaSchema = object({
   id: Type.String(),
@@ -1315,13 +1328,8 @@ export const AreaSchema = object({
   source: Type.String(),
   /** The icon the connector named for the area (D41), from Clew's list; drawn on the area's button under the box. */
   icon: Type.Optional(MenuIconSchema),
-  figure: Type.Union([
-    object({
-      label: Type.String(),
-      tone: Type.Union([Type.Literal('ok'), Type.Literal('warn'), Type.Literal('alert'), Type.Literal('none')]),
-    }),
-    Type.Null(),
-  ]),
+  /** The area's figure (D54): what its connector answered, null when it answered none or the administrator switched it off. */
+  figure: Type.Union([AreaFigureSchema, Type.Null()]),
   needsYou: Type.Integer(),
   waiting: Type.Integer(),
   /** The highest attention level among the open cards that need the person; the sidebar count takes its colour from it. */

@@ -564,7 +564,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                     ))}
                   </List>
                 )}
-                {/* Each area with its chip, where the area is governed (artboard 9): the system's colour, the area's icon and word. */}
+                {/* Each area with its chip, where the area is governed (artboard 9): the system's colour, the area's icon and word, and "Visa nyckeltalet" (D54) for an area with a figure. */}
                 {c.areas.length === 0 ? (
                   <Text type="supporting">Anslutningen har inga områden i sidopanelen.</Text>
                 ) : (
@@ -581,8 +581,31 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                           <Text type="supporting">
                             {a.roles.map(r => roleLabel[r]).join(', ')}
                             {a.standing.length ? ` · Gör själv: ${a.standing.join(', ')}` : ''}
-                            {a.figure ? ' · med figur' : ''}
+                            {a.figure
+                              ? a.figureShown
+                                ? ' · nyckeltalet är en ruta på Hem'
+                                : ' · nyckeltalet visas inte'
+                              : ''}
                           </Text>
+                        }
+                        endContent={
+                          a.figure ? (
+                            <Switch
+                              size="sm"
+                              label="Visa nyckeltalet"
+                              labelPosition="start"
+                              value={a.figureShown}
+                              isDisabled={busy}
+                              changeAction={on =>
+                                run(async () => {
+                                  await api.admin.update(id, { figures: { [a.id]: on } });
+                                  return on
+                                    ? `Nyckeltalet för ${a.title} visas på Hem.`
+                                    : `Nyckeltalet för ${a.title} visas inte längre på Hem.`;
+                                })
+                              }
+                            />
+                          ) : undefined
                         }
                       />
                     ))}

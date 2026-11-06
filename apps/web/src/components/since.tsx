@@ -1,6 +1,7 @@
 import type { Thread } from '@clew/contracts';
 import { Card, Heading, HStack, Link, StatusDot, Text, VStack } from '@clew/ui';
 import { sinceSentences, type Source } from '../since';
+import { FigureLines } from './figure-line';
 
 type Props = {
   /** Done or dismissed since the day began, newest first. */
@@ -16,7 +17,8 @@ type Props = {
 
 /**
  * "Sedan i går" (D53, artboard A): three sentences in the artboard's words, built by `sinceSentences` (D65: a sentence
- * names a few cards and sums the rest). "Allt som är klart" leads to the log.
+ * names a few cards and sums the rest). Then the figures to watch as lines (D54, artboard 3): those whose tone is warn or
+ * alert; a source that did not answer is the review line's. "Allt som är klart" leads to the log.
  */
 export function Since({ handled, waiting, sources, now, doneHref }: Props) {
   const { doneLine, waitingLine, reviewLine, failed } = sinceSentences({ handled, waiting, sources, now });
@@ -50,6 +52,7 @@ export function Since({ handled, waiting, sources, now, doneHref }: Props) {
         <Text as="p" color="secondary">
           {reviewLine}
         </Text>
+        <FigureLines select={a => !a.figure!.unavailable && ['warn', 'alert'].includes(a.figure!.tone)} now={now} />
         <Text type="supporting" weight="medium">
           <Link href={doneHref} color="primary" hasUnderline>
             Allt som är klart

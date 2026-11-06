@@ -3,6 +3,8 @@ import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import type {
   Area,
+  AreaFigure,
+  AreaOverride,
   CapabilityOverride,
   ConnectorAudience,
   ConnectorState,
@@ -20,7 +22,8 @@ import type {
   View,
   ViewOpen,
 } from '@clew/contracts';
-import { menuProblem, menuRowOf, viewProblem } from './views';
+import type { Figure } from './protocol';
+import { menuEligible, menuProblem, menuRowOf, viewProblem } from './views';
 export {
   MENU_DEFAULT_ICON,
   menuEligible,
@@ -165,7 +168,8 @@ export interface AreaDefinition {
   id: string;
   title: string;
   roles: Array<Actor['role']>;
-  figure?: (actor: Actor, clew: Clew) => Promise<Area['figure']>;
+  /** The area's figure (D54): the connector's answer, or null. The registry turns a throw into the warning figure and checks `opens`. */
+  figure?: (actor: Actor, clew: Clew) => Promise<Figure | null>;
   /** Capability names shown under "Gör själv". */
   standing: string[];
   schedules: Array<{ label: string; when: string }>;
@@ -208,6 +212,8 @@ export interface Governance {
   scanEnabled: boolean;
   toolsEnabled: boolean;
   capabilities: Record<string, CapabilityOverride>;
+  /** Per area (D54): `figure: false` when the administrator switched the area's figure off on Hem. */
+  areas?: Record<string, AreaOverride>;
   /** The row's place in the registration order (D71), for the hue of the system's mark; absent for Clew's own. */
   ordinal?: number;
 }
@@ -244,7 +250,10 @@ export const inAudience = (audience: ConnectorAudience, actor: Actor) =>
 export const UNKNOWN = 'Okänd förmåga.';
 
 export interface RegistryOptions {
-  /** A draft the scan refused (D35): the server logs it, the connector check fails on it. The other drafts still become cards. */
+  /**
+   * A draft the scan refused (D35), or a figure's `opens` the registry dropped (D54, topic `figure:<area>`): the server
+   * logs it, the connector check fails on it. The other drafts still become cards, the figure is drawn without its link.
+   */
   onRefused?: (connectorId: string, topic: string, problem: string) => void;
 }
 
@@ -456,13 +465,55 @@ export class Registry {
           connector: m.id,
           source: m.source,
           ...(a.icon ? { icon: a.icon } : {}),
-          figure: a.figure && options.figures !== false ? await a.figure(actor, clew) : null,
+          figure:
+            a.figure && options.figures !== false && this.governance(m.id).areas?.[a.id]?.figure !== false
+              ? await this.figureOf(actor, m, a.id, () => a.figure!(actor, clew))
+              : null,
           standing,
           schedules: a.schedules,
         });
       }
     }
     return out;
+  }
+  /**
+   * Why a figure's `opens` may not be a link, or undefined when it may (D54): it names a read of the same connector whose
+   * view opens without input, the rule a view in the menu follows (D40).
+   */
+  figureProblem(connectorId: string, opens: string): string | undefined {
+    const found = this.capabilities.get(opens);
+    if (!found || found.connector.id !== connectorId)
+      return `figure opens ${opens}, which is not a capability of ${connectorId}`;
+    if (!menuEligible(found.capability))
+      return `figure opens ${opens}, which is not a read with a view that opens without input`;
+    return undefined;
+  }
+  /**
+   * One area's figure for one actor (D54): a connector that throws or does not answer is the one warning figure (D8);
+   * `opens` stays only when it may be a link and the person may call it, and is resolved to the view's title.
+   */
+  private async figureOf(
+    actor: Actor,
+    connector: Connector,
+    areaId: string,
+    read: () => Promise<Figure | null>,
+  ): Promise<AreaFigure | null> {
+    let answer: Figure | null;
+    try {
+      answer = await read();
+    } catch {
+      return { label: `${connector.source} svarar inte.`, tone: 'warn', unavailable: true };
+    }
+    if (!answer) return null;
+    const { opens, ...figure } = answer;
+    if (!opens) return figure;
+    const problem = this.figureProblem(connector.id, opens);
+    if (problem) {
+      this.options.onRefused?.(connector.id, 'figure:' + areaId, problem);
+      return figure;
+    }
+    const target = this.allowed(actor, opens);
+    return target ? { ...figure, opens: { capability: opens, title: target.capability.title } } : figure;
   }
   /**
    * Why a connector's draft may not become a card, or undefined when it may (D35). A card is one system's: every action on

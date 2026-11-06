@@ -1,4 +1,5 @@
 import type {
+  AreaOverride,
   AuditEntryView,
   CapabilityOverride,
   CheckFinding,
@@ -27,6 +28,8 @@ export interface ConnectorRecord {
   scanEnabled: boolean;
   toolsEnabled: boolean;
   capabilities: Record<string, CapabilityOverride>;
+  /** Per area of the manifest (D54): `figure: false` when its figure is switched off on Hem. */
+  areas: Record<string, AreaOverride>;
   manifest: unknown | null;
   manifestAt: string | null;
   health: ConnectorHealth;
@@ -60,6 +63,7 @@ export type ConnectorPatch = Partial<
     | 'scanEnabled'
     | 'toolsEnabled'
     | 'capabilities'
+    | 'areas'
     | 'manifest'
     | 'manifestAt'
     | 'health'

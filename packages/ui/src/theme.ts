@@ -53,6 +53,14 @@ const clewBaseTheme = defineTheme({
         boxShadow: 'inset 0 0 0 1px var(--color-border-emphasized)',
       },
     },
+    // A figure that needs the person (D54, `figure.tsx`): the card's own background with an error-coloured outline,
+    // the same documented extension as the badges above. Astryx's Card has tinted variants but no outlined status.
+    card: {
+      'variant:alert': {
+        backgroundColor: 'var(--color-background-card)',
+        boxShadow: 'inset 0 0 0 1px var(--color-border-error)',
+      },
+    },
     'side-nav-heading': { base: { paddingBlock: 'var(--spacing-1)' } },
   },
 });

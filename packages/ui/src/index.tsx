@@ -149,6 +149,18 @@ export { EventCalendar, type CalendarView } from './calendar';
 // The calendar family (D32): the page's grid, the embedded day and list, the date picker, and the one item mapping.
 export { DayStrip, EventList, DatePicker } from './calendar-embeds';
 export { agendaItems, PROPOSAL_MARK } from './agenda-items';
+export { FigureLine, FigureTile, FigureTileSkeleton } from './figure';
+export {
+  figureItems,
+  retryWhen,
+  TONE_WORDS,
+  worstWord,
+  type FigureForms,
+  type FigureMark,
+  type FigureTile as FigureTileItem,
+  type FigureLine as FigureLineItem,
+  type ToneWord,
+} from './figure-items';
 export { DateTimeInput } from '@astryxdesign/core/DateTimeInput';
 export { TimeInput } from '@astryxdesign/core/TimeInput';
 export { DateInput } from '@astryxdesign/core/DateInput';

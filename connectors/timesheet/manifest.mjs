@@ -157,6 +157,7 @@ export const manifest = {
       roles: ['manager'],
       standing: ['timesheet.today'],
       schedules: [{ label: 'Pass som saknar bemanning', when: 'Varje vardag 06:00' }],
+      figure: true,
     },
   ],
   capabilities: [today, followAbsence, markAbsence, unmarkAbsence, lookup],

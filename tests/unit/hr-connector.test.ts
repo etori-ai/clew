@@ -114,10 +114,16 @@ describe('the HR fixture connector', () => {
   test('the figures and the reads follow the role: names for the manager, "En kollega" for an employee', async () => {
     const { registry } = stack();
     const [employees] = await registry.areas(hillevi);
-    expect(employees!.figure?.label).toMatch(/^Frånvaro 17 % · 10 av 12 på plats$/);
-    expect(employees!.figure?.tone).toBe('alert');
+    // The figure (D54): the period's sick leave against the target, opening absence per person, which only the manager may read.
+    expect(employees!.figure).toEqual({
+      label: 'Sjukfrånvaro',
+      value: '4,2 %',
+      comparison: 'mål ≤ 4,0 % · +0,3 sedan oktober',
+      tone: 'warn',
+      opens: { capability: 'hr.absenceOverview', title: 'Frånvaro per person' },
+    });
     const [myShift] = await registry.areas(hassan);
-    expect(myShift!.figure).toEqual({ label: '07:00–16:00 på Björken', tone: 'ok' });
+    expect(myShift!.figure).toEqual({ label: '07:00–16:00 på Björken.', tone: 'none' });
     const forManager = await registry.run<{ absent: Array<{ name: string }> }>(hillevi, 'hr.whoIsOn', {});
     expect(forManager.absent.map(a => a.name)).toEqual(['Lena Öhman', 'Jonas Kask']);
     const forEmployee = await registry.run<{ absent: Array<{ name: string }> }>(hassan, 'hr.whoIsOn', {});

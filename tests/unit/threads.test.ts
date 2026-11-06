@@ -380,6 +380,12 @@ describe('attention and areas', () => {
     const card = await invoices(w);
     const budget = (await w.threads.listAreas(hillevi)).find(a => a.id === 'budget')!;
     expect(budget).toMatchObject({ needsYou: 1, waiting: 0, urgency: 'urgent' });
+    // The figure comes with the time Clew read it, for the line's "Ekonomisystemet 06:00" (D54).
+    expect(budget.figure).toMatchObject({
+      label: 'Förbrukat av ramen',
+      value: '98 %',
+      observedAt: expect.stringMatching(/T/),
+    });
     await w.threads.snoozeThread(hillevi, card.id);
     expect((await w.threads.listAreas(hillevi)).find(a => a.id === 'budget')).toMatchObject({
       needsYou: 0,

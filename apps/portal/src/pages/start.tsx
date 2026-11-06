@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { Area, SessionUser, Thread } from '@clew/contracts';
 import { Button, Card, ChatLayout, Grid, Heading, HStack, Link, StatusDot, Text, VStack } from '@clew/ui';
 import { today } from '@clew/calendar/dates';
-import { areasQuery, completionsQuery, figuresQuery, threadsQuery, todayQuery } from '../../../web/src/queries';
+import { areasQuery, completionsQuery, threadsQuery, todayQuery } from '../../../web/src/queries';
 import { groupThreads } from '../../../web/src/stream';
 import { Composer, Suggestions } from '../../../web/src/components/composer';
 import { useConversation } from '../../../web/src/components/conversation-context';
@@ -16,7 +16,7 @@ import { Since } from '../../../web/src/components/since';
 import { Handled } from '../../../web/src/components/handled';
 import { usePageTitle } from '../../../web/src/page-title';
 import { PortalShell } from '../shell';
-import { Figures } from '../figures';
+import { Lage } from '../../../web/src/components/lage';
 import { ThreadRows } from '../rows';
 import { activitiesHref, cardHref, conversationHref, viewHref } from '../hrefs';
 
@@ -96,7 +96,6 @@ export function PortalStart({ user }: { user: SessionUser }) {
   const threadsQ = useQuery(threadsQuery);
   const areasQ = useQuery(areasQuery);
   const dayQ = useQuery(todayQuery);
-  const figuresQ = useQuery(figuresQuery);
   const threads = threadsQ.data?.threads ?? EMPTY_THREADS;
   const areas = areasQ.data?.areas ?? EMPTY_AREAS;
   const now = new Date().toISOString();
@@ -149,7 +148,15 @@ export function PortalStart({ user }: { user: SessionUser }) {
           <Suggestions viewHref={(capability, label) => viewHref({ capability, title: label })} cardHref={cardHref} />
           <Chips />
         </VStack>
-        <Figures figures={figuresQ.data?.figures} />
+        {/* The areas' figures as Hem draws them (D54): one tile per area with a figure, from its connector. */}
+        <Lage
+          areas={areas}
+          loading={areasQ.isPending}
+          sources={threadsQ.data?.sources}
+          now={now}
+          unitLabel={user.unitLabel}
+          viewHref={(capability, title) => viewHref({ capability, title })}
+        />
         <VStack gap={3} as="section" aria-labelledby="att-agera-pa">
           <HStack justify="between" vAlign="center" gap={2}>
             <Heading level={2} id="att-agera-pa">

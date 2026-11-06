@@ -89,7 +89,15 @@ describe('the finance fixture connector', () => {
   test('the figure and the budget detail say where the cost centre stands', async () => {
     const { registry } = stack();
     const [budget] = await registry.areas(hillevi);
-    expect(budget!.figure).toEqual({ label: '-1,9 % · vikarier −710 tkr', tone: 'alert' });
+    // The figure (D54): the share of the period's frame spent, a bar towards it, and the budget view it opens.
+    expect(budget!.figure).toEqual({
+      label: 'Förbrukat av ramen',
+      value: '98 %',
+      comparison: 'av periodens ram',
+      progress: { value: 98, max: 100 },
+      tone: 'ok',
+      opens: { capability: 'finance.budget', title: 'Budget mot prognos' },
+    });
     expect(await registry.run(hillevi, 'finance.budget', {})).toMatchObject({
       label: 'Kostnadsställe KS-4410',
       deviationPct: -1.9,

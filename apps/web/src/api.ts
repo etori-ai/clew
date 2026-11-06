@@ -41,7 +41,6 @@ import type {
   ConversationEvent,
   ConversationInput,
   ConversationResponse,
-  Figure,
   TurnEvent,
   ManifestDiff,
   PreviewOutput,
@@ -168,7 +167,6 @@ export const api = {
   /** The person's own model in the composer (D24); null goes back to the default. */
   chooseModel: (modelId: string | null) => patch<AssistantStatus>('/api/assistant/model', { modelId }),
   today: () => call<TodayView>('/api/today'),
-  figures: () => call<{ figures: Figure[] }>('/api/figures'),
   attention: () => call<Attention>('/api/attention'),
   areas: () => call<{ areas: Area[]; menu?: MenuEntry[]; systems?: SystemMark[] }>('/api/areas'),
   connectors: () => call<{ connectors: unknown[]; tools: string[] }>('/api/connectors'),

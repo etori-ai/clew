@@ -144,6 +144,15 @@ export function createConnector({
       });
   }
 
+  // The figure (D54): what was published today. Nothing new is a sentence, without a tone and without a link.
+  function figure(actor, area) {
+    if (area !== 'important-now') return null;
+    const fresh = forActor(actor).filter(n => n.publishedAt.slice(0, 10) >= today()).length;
+    return fresh
+      ? { label: 'Nytt sedan i går', value: String(fresh), tone: 'none', opens: 'communication.notices' }
+      : { label: 'Inget nytt sedan i går.', tone: 'none' };
+  }
+
   async function handle(request) {
     const url = new URL(request.url);
     if (request.method === 'GET' && url.pathname === '/clew/manifest') return json(manifest);
@@ -174,7 +183,7 @@ export function createConnector({
           },
         });
       }
-      if (url.pathname === '/clew/figure') return json({ figure: null });
+      if (url.pathname === '/clew/figure') return json({ figure: figure(actor, body.area) });
       const name = decodeURIComponent(url.pathname.slice('/clew/capabilities/'.length));
       const declared = manifest.capabilities.find(c => c.name === name);
       if (!declared) return fail('not-found', 'Okänd förmåga.', 404);

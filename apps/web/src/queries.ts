@@ -14,8 +14,6 @@ export const areasQuery = queryOptions({ queryKey: keys.areas, queryFn: () => ap
 /** The day and the model's status are extras on the page: a failure is tolerated, never retried, never shown as the page's error. */
 export const todayQuery = queryOptions({ queryKey: keys.today, queryFn: () => api.today(), retry: false });
 export const attentionQuery = queryOptions({ queryKey: keys.attention, queryFn: () => api.attention() });
-/** Läget: the four figures, an extra like the day. */
-export const figuresQuery = queryOptions({ queryKey: keys.figures, queryFn: () => api.figures(), retry: false });
 /** What the box offers (D34): the standing actions for the role and the recent conversations, kept a minute. */
 export const completionsQuery = queryOptions({
   queryKey: keys.completions,

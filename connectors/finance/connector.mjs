@@ -273,14 +273,19 @@ export function createConnector({
     ];
   }
 
+  // The figure (D54): how much of the period's frame is spent, as a bar towards it. Over the frame is warn, well over is alert.
   function figure(actor, area) {
     if (area !== 'budget') return null;
     const b = budgetOf(actor);
-    if (!b) return null;
-    const pct = deviation(b);
+    if (!b?.frame) return null;
+    const used = Math.round((100 * b.outcome) / b.frame);
     return {
-      label: `${pct > 0 ? '+' : ''}${String(pct).replace('.', ',')} % · ${b.driver}`,
-      tone: pct < -1.5 ? 'alert' : pct < 0 ? 'warn' : 'ok',
+      label: 'Förbrukat av ramen',
+      value: `${used} %`,
+      comparison: 'av periodens ram',
+      progress: { value: Math.min(used, 100), max: 100 },
+      tone: used > 103 ? 'alert' : used > 100 ? 'warn' : 'ok',
+      opens: 'finance.budget',
     };
   }
 

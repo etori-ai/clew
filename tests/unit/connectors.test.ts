@@ -1,6 +1,6 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
-import { receipt, type Actor } from '../../packages/connectors/src/index';
+import { openGovernance, receipt, type Actor, type Connector } from '../../packages/connectors/src/index';
 import { fixtureConnectors } from '../fixture-connectors';
 
 const hillevi: Actor = {
@@ -68,12 +68,117 @@ describe('registry', () => {
       employee = await r.areas(hassan);
     expect(manager.map(a => a.id)).toEqual(['employees', 'budget', 'work-environment', 'important-now']);
     expect(employee.map(a => a.id)).toEqual(['my-shift', 'important-now']);
-    expect(manager[0]!.figure?.label).toMatch(/Frånvaro/);
+    expect(manager[0]!.figure).toMatchObject({ label: 'Sjukfrånvaro', value: '4,2 %', tone: 'warn' });
     expect(manager[0]!.standing.map(s => s.capability)).toContain('hr.whoIsOn');
     // The icon a connector names for its area (D41) comes with the area, for the button under the box.
     expect(manager.map(a => a.icon)).toEqual(['people', 'chart', 'document', 'bell']);
   });
 });
+describe("an area's figure (D54)", () => {
+  const empty = { type: 'object', properties: {}, additionalProperties: false } as never;
+  const read = (name: string, view?: object, input = empty): Connector['capabilities'][number] => ({
+    name,
+    kind: 'read' as const,
+    title: name === 'w.list' ? 'Alla ärenden' : name,
+    description: name,
+    input,
+    output: { type: 'object' } as never,
+    model: false,
+    scope: () => true,
+    run: async () => ({ rows: [] }),
+    ...(view ? { view: view as never } : {}),
+  });
+  const listView = { kind: 'list', title: 'title', fields: [{ key: 'title', label: 'Titel' }] };
+  const area = (id: string, figure: NonNullable<Connector['areas'][number]['figure']>) => ({
+    id,
+    title: id,
+    roles: ['manager' as const],
+    standing: [],
+    schedules: [],
+    figure,
+  });
+  const world = () => {
+    const refused: string[] = [];
+    const r = new Registry({ onRefused: (id, topic, problem) => refused.push(`${id} ${topic}: ${problem}`) });
+    r.register({
+      id: 'w',
+      kind: 'passthrough',
+      source: 'Arbetssystemet',
+      capabilities: [
+        read('w.list', listView),
+        read('w.raw'),
+        read('w.one', listView, { ...(empty as object), required: ['id'] } as never),
+      ],
+      areas: [
+        area('rich', async () => ({
+          label: 'Öppna ärenden',
+          value: '3',
+          comparison: '1 äldre än 14 dagar',
+          progress: { value: 3, max: 10 },
+          tone: 'alert',
+          opens: 'w.list',
+        })),
+        area('none', async () => null),
+        area('down', async () => {
+          throw new Error('ECONNREFUSED');
+        }),
+        area('foreign', async () => ({ label: 'Annat', value: '1', tone: 'ok', opens: 'v.list' })),
+        area('noview', async () => ({ label: 'Rått', value: '2', tone: 'ok', opens: 'w.raw' })),
+        area('input', async () => ({ label: 'Ett', value: '3', tone: 'ok', opens: 'w.one' })),
+      ],
+    });
+    r.register({ id: 'v', kind: 'passthrough', source: 'Andra', capabilities: [read('v.list', listView)], areas: [] });
+    return { r, refused };
+  };
+  test('the richer figure comes through with opens resolved to the view it names; a null figure is null', async () => {
+    const { r } = world();
+    const areas = await r.areas(hillevi);
+    expect(areas.find(a => a.id === 'rich')!.figure).toEqual({
+      label: 'Öppna ärenden',
+      value: '3',
+      comparison: '1 äldre än 14 dagar',
+      progress: { value: 3, max: 10 },
+      tone: 'alert',
+      opens: { capability: 'w.list', title: 'Alla ärenden' },
+    });
+    expect(areas.find(a => a.id === 'none')!.figure).toBeNull();
+  });
+  test('a connector that throws is the one warning figure (D8), never an error', async () => {
+    const { r } = world();
+    expect((await r.areas(hillevi)).find(a => a.id === 'down')!.figure).toEqual({
+      label: 'Arbetssystemet svarar inte.',
+      tone: 'warn',
+      unavailable: true,
+    });
+  });
+  test('opens is dropped and reported when it names another connector, a read without a view, or one that needs input', async () => {
+    const { r, refused } = world();
+    const areas = await r.areas(hillevi);
+    for (const id of ['foreign', 'noview', 'input'])
+      expect(areas.find(a => a.id === id)!.figure!.opens).toBeUndefined();
+    expect(areas.find(a => a.id === 'foreign')!.figure).toEqual({ label: 'Annat', value: '1', tone: 'ok' });
+    expect(refused).toEqual([
+      'w figure:foreign: figure opens v.list, which is not a capability of w',
+      'w figure:noview: figure opens w.raw, which is not a read with a view that opens without input',
+      'w figure:input: figure opens w.one, which is not a read with a view that opens without input',
+    ]);
+  });
+  test('opens stays out when the person may not call the view, and an area switched off has no figure', async () => {
+    const { r } = world();
+    r.govern('w', {
+      ...openGovernance(),
+      capabilities: { 'w.list': { enabled: false } },
+      areas: { none: { figure: false } },
+    });
+    expect((await r.areas(hillevi)).find(a => a.id === 'rich')!.figure!.opens).toBeUndefined();
+    r.govern('w', { ...openGovernance(), areas: { rich: { figure: false } } });
+    const off = (await r.areas(hillevi)).find(a => a.id === 'rich')!;
+    expect(off.figure).toBeNull();
+    // The structural preview asks no figure at all.
+    expect((await r.areas(hillevi, { figures: false })).every(a => a.figure === null)).toBe(true);
+  });
+});
+
 describe('the fixture connectors push cards a person can act on, and the state survives in the source', () => {
   test('hr finds the rehab candidate and the pending leave requests', async () => {
     const { r } = registry();

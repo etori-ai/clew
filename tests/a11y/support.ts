@@ -15,7 +15,6 @@ import {
   connectors,
   conversation,
   events,
-  figures,
   searchOutput,
   snoozePresets,
   threads,
@@ -62,6 +61,8 @@ export class MockApi {
   asked: { text: string; conversationId?: string; chips?: { ref: string }[] }[] = [];
   /** How long the first read of the cards takes, so a test can see the page while they load (D36). */
   threadsDelay = 0;
+  /** How long the areas take, so a test can see Läget's tiles in their shape (D54). */
+  areasDelay = 0;
   /** How long Avfärda, Inte nu and Ta upp nu take to answer, and whether the server refuses, so a test can see the card as the person's action leaves it (D64). */
   mutationDelay = 0;
   mutationFails = false;
@@ -74,6 +75,8 @@ export class MockApi {
   menu: MenuEntry[] = [];
   /** The views an administrator has put in the menu on the admin pages, by capability name. */
   menuOn: string[] = [];
+  /** The areas whose figure an administrator switched off on the admin pages (D54), by area id. */
+  figuresOff: string[] = [];
   /** Modeller (D24): the providers and models the admin pages show, and how many models the person may pick in the box (two shows the menu). */
   providers: ProviderSummary[] = modelProviders();
   models: ModelSummary[] = models();
@@ -193,10 +196,13 @@ export class MockApi {
           if ('menu' in patch)
             for (const [name, on] of Object.entries((patch as { menu: Record<string, boolean> }).menu))
               this.menuOn = on ? [...new Set([...this.menuOn, name])] : this.menuOn.filter(n => n !== name);
+          if ('figures' in patch)
+            for (const [area, on] of Object.entries((patch as { figures: Record<string, boolean> }).figures))
+              this.figuresOff = on ? this.figuresOff.filter(a => a !== area) : [...new Set([...this.figuresOff, area])];
           this.connectors = this.connectors.map(x => (x.id === cid ? next : x));
-          return json(connectorDetail(next, this.menuOn));
+          return json(connectorDetail(next, this.menuOn, this.figuresOff));
         }
-        return json(connectorDetail(c, this.menuOn));
+        return json(connectorDetail(c, this.menuOn, this.figuresOff));
       }
     }
     if (path === '/threads') {
@@ -209,10 +215,12 @@ export class MockApi {
       if (claimed) this.deliveryClaims.push(deliveryId);
       return json({ claimed });
     }
-    if (path === '/areas') return json({ areas: this.areas, menu: this.menu, systems: this.systems });
+    if (path === '/areas') {
+      if (this.areasDelay) await new Promise(resolve => setTimeout(resolve, this.areasDelay));
+      return json({ areas: this.areas, menu: this.menu, systems: this.systems });
+    }
     if (path === '/today') return json(today);
     if (path === '/attention') return json(attention);
-    if (path === '/figures') return json({ figures });
     if (path === '/completions') return json(completions);
     if (path === '/assistant/status') return json(assistantStatus(this.modelChoices, this.currentModel));
     if (path === '/assistant/model' && request.method() === 'PATCH') {

@@ -1,10 +1,10 @@
 import type { AuthenticatedContext } from '@clew/contracts';
 import { dayLabel, displayDate, timeRange, weekNumber, nextWeekStart } from '@clew/calendar/dates';
-import { readFigures } from '../modules/figures/domain';
+import { actorOf } from '@clew/connectors';
 import type { AssistantDeps } from './ports';
 
 export type FixedAnswer = { title: string; body: string; reason: string; source: string; forslagThreadId?: string };
-/** The first-session intent router: a few questions answered from the calendar and the synthetic figures. Deterministic, no registry. */
+/** The first-session intent router: a few questions answered from the calendar and the areas' figures (D54). Deterministic, no model. */
 export async function routeFixed(
   deps: AssistantDeps,
   persona: AuthenticatedContext,
@@ -41,23 +41,22 @@ export async function routeFixed(
       ...(open && thread ? { forslagThreadId: thread.id } : {}),
     };
   }
-  if (
-    /frånvaro|\bsjuk|budget|hme|läget|siffr/.test(q) &&
-    ['calendar', 'hr', 'finance'].every(id => deps.registry.visible(persona, id))
-  ) {
-    const figures = readFigures(persona, await deps.calendar.samtalStatus(persona), now);
-    const pick = figures.filter(
-      f =>
-        (/frånvaro|sjuk/.test(q) && f.id === 'korttidsfranvaro') ||
-        (/budget/.test(q) && f.id === 'budgetavvikelse') ||
-        (/hme/.test(q) && f.id === 'hme'),
+  if (/frånvaro|\bsjuk|budget|ramen|tillbud|vikarie|läget|siffr|nyckeltal/.test(q)) {
+    // The figures the person's connectors answer (D54), as Läget draws them; one whose words the question names, else all.
+    const figures = (await deps.registry.areas(actorOf(persona)))
+      .filter(a => a.figure?.value && !a.figure.unavailable)
+      .map(a => ({ ...a.figure!, area: a.title, source: a.source }));
+    const words = q.match(/[a-zåäö]{5,}/g) ?? [];
+    const pick = figures.filter(f =>
+      words.some(w => `${f.label} ${f.area}`.toLowerCase().includes(w.slice(0, Math.max(5, w.length - 3)))),
     );
     const chosen = pick.length ? pick : figures;
+    if (!chosen.length) return undefined;
     return {
       title: chosen.length === 1 ? chosen[0]!.label : 'Läget',
-      body: chosen.map(f => `${f.label}: ${f.value}, ${f.comparison}.`).join(' '),
+      body: chosen.map(f => `${f.label}: ${f.value}${f.comparison ? `, ${f.comparison}` : ''}.`).join(' '),
       reason: 'Du frågade om läget',
-      source: chosen.map(f => f.source).join(', '),
+      source: [...new Set(chosen.map(f => f.source))].join(', '),
     };
   }
   if (/varför|vafför|why/.test(q)) {

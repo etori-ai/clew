@@ -5,6 +5,9 @@
 
 export const UNIT = 'unit-skola';
 export const WARD = 'Björken';
+// The unit's sick leave over the running period as the system's statistics hold it, against the municipality's target
+// (D52: synthetic). The figure on Hem reads it (D54); the absence per person stays in the view it opens.
+export const sickLeaveOf = { [UNIT]: { percent: 4.2, target: 4.0, change: 0.3, since: 'oktober' } };
 
 /** The calendar date in Stockholm, which is where the people in this fixture work. */
 export const dateIn = date => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm' }).format(date);

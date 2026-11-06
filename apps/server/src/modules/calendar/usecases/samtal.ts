@@ -147,7 +147,7 @@ export function calendarUsecases(deps: CalendarDeps) {
     const pending = booked
       .filter(p => p.status === 'confirmed' || p.status === 'final' || p.status === 'accepted')
       .filter(p => !done.has(p.participant.email.toLowerCase())).length;
-    return { held, booked: pending, deadline: '28 november' };
+    return { held, booked: pending, members: binding.members.length, deadline: '28 november' };
   }
   /** Draw proposals for one week. Reads the manager's calendar and the unit's free-busy, nothing is written to any source. */
   async function draw(persona: AuthenticatedContext, week: string, excludeThread?: string) {

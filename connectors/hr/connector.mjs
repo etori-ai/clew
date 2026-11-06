@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto';
 import { createVerifier } from './verification.mjs';
 import { manifest, ABSENCE_FACT, CONNECTOR } from './manifest.mjs';
-import { addDays, dateIn, daysBetween, seed, shortDate } from './fixture.mjs';
+import { addDays, dateIn, daysBetween, seed, shortDate, sickLeaveOf } from './fixture.mjs';
 import { memoryState } from './state.mjs';
 
 export { manifest };
@@ -519,22 +519,26 @@ export function createConnector({
     }));
   }
 
+  /** A share as a person reads it, one decimal and a comma: 4,2. */
+  const decimal = n => n.toFixed(1).replace('.', ',');
+  // The figures (D54): one number per area, formatted here; Clew says the tone in its own words.
   function figure(actor, area) {
     if (area === 'employees' && managerOf(actor, unitOf(actor))) {
-      const unitId = unitOf(actor);
-      const n = staff(unitId).length;
-      if (!n) return null;
-      const a = absentOn(unitId, today()).length;
-      const pct = (100 * a) / n;
+      const s = sickLeaveOf[unitOf(actor)];
+      if (!s || !staff(unitOf(actor)).length) return null;
       return {
-        label: `Frånvaro ${pct.toFixed(0)} % · ${n - a} av ${n} på plats`,
-        tone: pct > 15 ? 'alert' : pct > 8 ? 'warn' : 'ok',
+        label: 'Sjukfrånvaro',
+        value: `${decimal(s.percent)} %`,
+        comparison: `mål ≤ ${decimal(s.target)} % · ${s.change >= 0 ? '+' : '−'}${decimal(Math.abs(s.change))} sedan ${s.since}`,
+        tone: s.percent > s.target + 1 ? 'alert' : s.percent > s.target ? 'warn' : 'ok',
+        opens: 'hr.absenceOverview',
       };
     }
     if (area === 'my-shift') {
       const me = own(actor);
       const s = me && records().shifts.find(x => x.employee === me.ref && x.date === today());
-      return s ? { label: `${s.start}–${s.end} på ${s.ward}`, tone: 'ok' } : { label: 'Ledig i dag', tone: 'none' };
+      // A sentence without a value: the shift is the whole message, so it has no tone.
+      return s ? { label: `${s.start}–${s.end} på ${s.ward}.`, tone: 'none' } : { label: 'Ledig i dag.', tone: 'none' };
     }
     return null;
   }

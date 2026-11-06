@@ -1,6 +1,7 @@
 // The generic deviation system's records (D52: a kind of system, no vendor; everything is made up). Generated from the
 // day the fixture is seeded: one incident reported five days ago waits on the safety representative and falls due in
-// two days. The people are the unit's staff, by the same person ids the HR system knows; refs are stable.
+// two days; two more are under investigation, one of them reported more than two weeks ago, so Läget has something to
+// say (D54). The people are the unit's staff, by the same person ids the HR system knows; refs are stable.
 
 export const UNIT = 'unit-skola';
 
@@ -37,6 +38,26 @@ export function seed(today) {
       state: 'waiting-safety-rep',
       waitingOn: 'skyddsombudets yttrande',
       dueBy: d(2),
+    },
+    {
+      ref: 'incidents:dev:2026-1141',
+      unitId: UNIT,
+      title: 'Tillbud 2026-1141, trasig grind mot parkeringen',
+      reportedBy: 'hr:emp:1011',
+      reportedAt: d(-18) + 'T08:40:00+01:00',
+      state: 'investigating',
+      waitingOn: 'fastighetens åtgärd',
+      dueBy: d(4),
+    },
+    {
+      ref: 'incidents:dev:2026-1190',
+      unitId: UNIT,
+      title: 'Tillbud 2026-1190, elev klämde handen i en dörr',
+      reportedBy: 'hr:emp:1012',
+      reportedAt: d(-2) + 'T13:25:00+01:00',
+      state: 'investigating',
+      waitingOn: 'utredning',
+      dueBy: d(12),
     },
   ];
   return { seededOn: today, employees, deviations };

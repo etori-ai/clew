@@ -1,0 +1,1 @@
+ALTER TABLE "connector" ADD COLUMN "areas" jsonb DEFAULT '{}'::jsonb NOT NULL;

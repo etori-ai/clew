@@ -4,6 +4,8 @@
 
 export const UNIT = 'unit-skola';
 export const WARD = 'Björken';
+// The substitutes the staffing pool has booked for the ward on a weekday (D52: synthetic), for the figure on Hem (D54).
+export const substitutesOf = { [UNIT]: 2 };
 
 export const dateIn = date => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm' }).format(date);
 export const addDays = (day, n) => new Date(Date.parse(day + 'T12:00:00Z') + n * 86400000).toISOString().slice(0, 10);

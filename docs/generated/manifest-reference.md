@@ -261,7 +261,7 @@ export const directory = {
 
 ### A scan that becomes cards
 
-With `scan: true` Clew asks the connector, per person, what needs attention; each draft names an area of the manifest and carries actions of this connector (D35). The area shows the drafts as cards, its standing actions under "Gör själv", its schedules as text, and, with `figure: true`, one line from `/clew/figure` on its button.
+With `scan: true` Clew asks the connector, per person, what needs attention; each draft names an area of the manifest and carries actions of this connector (D35). The area shows the drafts as cards, its standing actions under "Gör själv", its schedules as text, and, with `figure: true`, its figure from `/clew/figure` as a tile on Hem.
 
 ```json
 {
@@ -920,12 +920,12 @@ Example:
 
 #### `areas[].figure`
 
-Clew asks POST /clew/figure for a one-line figure for this area.
+Clew asks POST /clew/figure for this area's figure and draws it as a tile on Hem (D54), unless an administrator switched it off.
 
 - Type: boolean
 - optional
 - Pairs with:
-  - **figure: true means you serve the figure route.** For an area with `figure: true` Clew posts `/clew/figure` with the area id and draws the one-line answer on the area's button. A connector that does not answer shows a warning figure, never an error.
+  - **figure: true means you serve the figure route.** For an area with `figure: true` Clew posts `/clew/figure` with the area id and draws the answer as the area's tile on Hem (D54): `label` and `tone`, and optionally `value` (one number and its unit, formatted by you), `comparison`, `progress` and `opens`, a read of yours whose view needs no input, which the tile then links to. Without `value` the label is a sentence. Clew says the tone in its own words. A connector that does not answer shows the warning tile, never an error; an administrator can switch an area's figure off.
 
 Example:
 
@@ -1893,7 +1893,7 @@ Where Clew applies each: when the manifest is loaded, when the connector is regi
 - **Only a propose follows a fact** (registry; `capabilities[].kind`, `capabilities[].follows`) ([D55](../decisions/D55-a-job-is-assembled-from-what-connectors-follow-approved-once-and-run-per-system.md)): `follows` may be declared only on a `propose`. Its input is a `FactEnvelope` and its output a `FollowResponse` whose steps name this connector only.
 - **A created fact kind is declared in facts** (registry; `capabilities[].creates`, `facts[].kind`) ([D55](../decisions/D55-a-job-is-assembled-from-what-connectors-follow-approved-once-and-run-per-system.md)): `creates` must name one of the manifest's `facts`, so followers know the attributes they will receive.
 - **scan: true means you serve the scan route** (check; `scan`, `areas[].id`) ([D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md)): With `scan: true` Clew posts `/clew/scan` per person, nightly and on first visit. Each draft names an `area` of this manifest, its `topic` is the same for the same occurrence, and its actions name capabilities of this connector only. The conformance check runs the scan twice and compares.
-- **figure: true means you serve the figure route** (call; `areas[].figure`): For an area with `figure: true` Clew posts `/clew/figure` with the area id and draws the one-line answer on the area's button. A connector that does not answer shows a warning figure, never an error.
+- **figure: true means you serve the figure route** (call; `areas[].figure`): For an area with `figure: true` Clew posts `/clew/figure` with the area id and draws the answer as the area's tile on Hem (D54): `label` and `tone`, and optionally `value` (one number and its unit, formatted by you), `comparison`, `progress` and `opens`, a read of yours whose view needs no input, which the tile then links to. Without `value` the label is a sentence. Clew says the tone in its own words. A connector that does not answer shows the warning tile, never an error; an administrator can switch an area's figure off.
 - **Callbacks reach only what uses lists** (call; `uses`) ([D37](../decisions/README.md)): While serving a request, a connector may call back `POST /api/connectors/call` with the `callback` grant from the assertion, for the exact names in `uses` and as the same person. Anything else, and every `execute`, is refused.
 - **search and fetch make a search source** (call; `capabilities[].kinds`, `capabilities[].name`) ([D26](../decisions/D26-questions-over-documents-are-search-not-knowledge.md)): A `read` named `<id>.search` with `kinds` is a source of Clew's composite search: its output is a `SearchOutput`, and `<id>.fetch` takes one of its refs back and returns one `SearchHit`.
 - **Delegation brings the person's own token** (call; `delegation.audience`) ([D26](../decisions/D26-questions-over-documents-are-search-not-knowledge.md)): With `delegation`, Clew exchanges the person's session for a token bound to `audience` and sends it in `X-Clew-Delegated-Token` beside the assertion. Scans, figures, callbacks and sessions without an IdP token carry none; the connector then answers `denied`.

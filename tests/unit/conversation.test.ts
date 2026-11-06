@@ -285,7 +285,9 @@ describe('a question without the model', () => {
     const why = await w.assistant.converse(hillevi, { text: 'varför ser jag detta?' });
     expect(why.answer.source).toBe('Startsidan');
     const budget = await w.assistant.converse(hillevi, { text: 'hur ligger budgeten?' });
-    expect(budget.answer.body).toMatch(/^Budgetavvikelse: /);
+    // The router reads the areas' figures (D54): the one the question names.
+    expect(budget.answer.body).toBe('Förbrukat av ramen: 98 %, av periodens ram.');
+    expect(budget.answer.source).toBe('Ekonomisystemet');
   });
   test('completions and the @ objects come from the registry and the open cards in scope', async () => {
     const w = world();

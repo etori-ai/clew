@@ -274,6 +274,8 @@ export const connectors = pgTable(
       .$type<Record<string, { enabled?: false; model?: false; menu?: true }>>()
       .notNull()
       .default({}),
+    // Per area: `figure: false` when the administrator switched the area's figure off on Hem (D54).
+    areas: jsonb('areas').$type<Record<string, { figure?: false }>>().notNull().default({}),
     manifest: jsonb('manifest').$type<unknown>(),
     manifestAt: timestamp('manifest_at', { withTimezone: true }),
     health: jsonb('health')

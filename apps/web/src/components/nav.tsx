@@ -14,6 +14,7 @@ import {
   TypeaheadItem,
   VStack,
   createStaticSource,
+  worstWord,
   type SearchableItem,
 } from '@clew/ui';
 import { addDays, displayDate, shortDayLabel, today } from '@clew/calendar/dates';
@@ -95,6 +96,7 @@ export function useRail({ current, admin }: { current: RailCurrent; admin: boole
   };
   const capital = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
   const needsYou = g.nu.length + g.senare.length + g.foreslar.length + g.kannedom.length;
+  const word = useMemo(() => worstWord(areas.map(a => a.figure)), [areas]);
   // The search finds conversations, open cards, the areas and the tools from what the page already has: the same things the box's router finds without the model.
   const source = useMemo(() => {
     const items: SearchableItem<Found>[] = [
@@ -164,14 +166,15 @@ export function useRail({ current, admin }: { current: RailCurrent; admin: boole
             icon={HomeIcon}
             href="/"
             isSelected={current.surface === 'start' && !current.conversationId}
+            /* The word (D54, artboard 3): the worst tone among the person's figures, "lugnt", "bevaka" or "behöver dig". Without a figure that has a tone, what needs the person today or how much. */
             endContent={
-              g.nu.length ? (
+              word ? (
+                <Badge variant={word.variant} label={word.word} />
+              ) : g.nu.length ? (
                 <Badge variant="error" label={`${g.nu.length} i dag`} />
               ) : needsYou ? (
                 count(needsYou)
-              ) : (
-                <Badge variant="success" label="lugnt" />
-              )
+              ) : undefined
             }
           />
         </SideNavSection>

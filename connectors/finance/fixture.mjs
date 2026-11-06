@@ -57,6 +57,8 @@ export function seed(today) {
     {
       costCentre: 'KS-4410',
       budget: 37_400_000,
+      // The period's frame to date: the share of the year's budget the cost centre may have spent by now.
+      frame: 32_550_000,
       outcome: 31_900_000,
       forecast: 38_110_000,
       driver: 'vikarier −710 tkr',

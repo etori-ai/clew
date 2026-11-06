@@ -190,7 +190,50 @@ describe('a remote connector in the registry', () => {
       }),
     );
     await expect(registry.run(hassan, 'hello.greeting', {})).rejects.toThrow('Hello svarar inte just nu.');
-    expect((await registry.areas(hillevi))[0]?.figure).toEqual({ label: 'Hello svarar inte', tone: 'warn' });
+    expect((await registry.areas(hillevi))[0]?.figure).toEqual({
+      label: 'Hello svarar inte.',
+      tone: 'warn',
+      unavailable: true,
+    });
+  });
+});
+
+describe("a remote connector's figure (D54)", () => {
+  const answering =
+    (figure: unknown): FetchLike =>
+    async input =>
+      String(input).endsWith('/clew/figure')
+        ? Response.json({ figure })
+        : Response.json({ error: 'nej' }, { status: 404 });
+  const withFigure = (figure: unknown) =>
+    new Registry().register(
+      remoteConnector(parseManifest(helloManifest), {
+        url: 'http://hello',
+        key: secret,
+        assert: assertionFor('hello', secret),
+        fetch: answering(figure),
+      }),
+    );
+  test('the richer figure from a manifest comes through; opens naming a read without a view is dropped', async () => {
+    const figure = {
+      label: 'Öppna saker',
+      value: '2',
+      comparison: 'mål 0 · +1 sedan i går',
+      progress: { value: 2, max: 5 },
+      tone: 'warn' as const,
+    };
+    expect((await withFigure(figure).areas(hillevi))[0]?.figure).toEqual(figure);
+    // hello.openItems is a read with no declared view: the tile cannot open it, so the figure comes without it.
+    expect((await withFigure({ ...figure, opens: 'hello.openItems' }).areas(hillevi))[0]?.figure).toEqual(figure);
+    expect((await withFigure({ ...figure, opens: 'finance.budget' }).areas(hillevi))[0]?.figure).toEqual(figure);
+  });
+  test('a null figure is no figure, and an answer outside the protocol shape is the warning figure', async () => {
+    expect((await withFigure(null).areas(hillevi))[0]?.figure).toBeNull();
+    expect((await withFigure({ label: 'Två', tone: 'warn', value: 2 }).areas(hillevi))[0]?.figure).toEqual({
+      label: 'Hello svarar inte.',
+      tone: 'warn',
+      unavailable: true,
+    });
   });
 });
 
@@ -392,7 +435,11 @@ describe('assertions and configuration', () => {
     });
     expect(loaded).toEqual([]);
     expect(health.map(h => h.status)).toEqual(['unreachable']);
-    expect((await registry.areas(hillevi))[0]?.figure).toEqual({ label: 'Hello svarar inte', tone: 'warn' });
+    expect((await registry.areas(hillevi))[0]?.figure).toEqual({
+      label: 'Hello svarar inte.',
+      tone: 'warn',
+      unavailable: true,
+    });
     await expect(registry.run(hassan, 'hello.greeting', {})).rejects.toThrow('Hello svarar inte just nu.');
   });
   test('an invalid manifest is recorded once and the row is skipped', async () => {

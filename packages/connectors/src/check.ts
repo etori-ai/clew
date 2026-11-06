@@ -1,4 +1,4 @@
-import type { CheckFinding, CheckGroup, CheckItem, CheckLevel, CheckReport, Role } from '@clew/contracts';
+import type { Area, CheckFinding, CheckGroup, CheckItem, CheckLevel, CheckReport, Role } from '@clew/contracts';
 import { Registry, openGovernance, type Actor } from './index';
 import { fetchManifest, remoteConnector, type FetchLike } from './remote';
 import type { ConnectorManifest } from './protocol';
@@ -97,6 +97,11 @@ export async function checkConnector(
   }
   const registry = new Registry({
     onRefused: (_id, topic, problem) => {
+      if (topic.startsWith('figure:')) {
+        fail(`${topic}: ${problem}`);
+        item('fail', 'surfaces', 'Nyckeltal', `Nyckeltalet för ${topic.slice(7)} kan inte vara en länk: ${problem}`);
+        return;
+      }
       fail(`draft ${topic} refused: ${problem}`);
       item('fail', 'surfaces', 'Kort', `Kortet ${topic} avvisades: ${problem}`);
     },
@@ -317,14 +322,30 @@ export async function checkConnector(
         `Genomgången föreslår ${counts.join(' och ')}. ${same ? 'Två genomgångar gav samma kort.' : 'Två genomgångar gav olika kort.'}`,
       );
   }
-  // One row per area: the roles that see the same thing share a sentence. The figure's value is an answer and stays out (D23, D44).
+  // One row per area: the roles that see the same thing share a sentence. The figure's value is an answer and stays out
+  // (D23, D44): the check says which parts of the richer shape (D54) came back, never what they say.
   const areas = new Map<string, { title: string; byRole: Map<string, Role[]> }>();
+  const shapeOf = (f: NonNullable<Area['figure']>) =>
+    (['value', 'comparison', 'progress', 'opens'] as const).filter(k => f[k] !== undefined);
+  const shapeWords = { value: 'värde', comparison: 'jämförelse', progress: 'mål', opens: 'länk till en vy' } as const;
   for (const actor of [CHECK_MANAGER, CHECK_EMPLOYEE])
     for (const a of await registry.areas(actor)) {
+      const shape = a.figure && !a.figure.unavailable ? shapeOf(a.figure) : [];
       ok(
-        `area ${a.id} as ${actor.role}: figure ${a.figure ? JSON.stringify(a.figure) : 'none'}, ${a.standing.length} standing`,
+        `area ${a.id} as ${actor.role}: figure ${a.figure ? (a.figure.unavailable ? 'did not answer' : `tone ${a.figure.tone}${shape.length ? ' with ' + shape.join(', ') : ', a sentence'}`) : 'none'}, ${a.standing.length} standing`,
       );
-      const text = `${count(a.standing.length, 'stående handling', 'stående handlingar')}, ${a.figure ? 'med nyckeltal' : 'inget nyckeltal'}`;
+      if (a.figure?.unavailable) {
+        fail(`figure ${a.id} as ${actor.role}: no answer in the protocol's shape`);
+        item('fail', 'surfaces', 'Nyckeltal', `Nyckeltalet för ${a.title} svarade inte i protokollets form.`);
+      }
+      const figure = !a.figure
+        ? 'inget nyckeltal'
+        : a.figure.unavailable
+          ? 'nyckeltalet svarade inte'
+          : shape.length
+            ? `nyckeltal med ${shape.map(k => shapeWords[k]).join(', ')}`
+            : 'nyckeltal som en mening';
+      const text = `${count(a.standing.length, 'stående handling', 'stående handlingar')}, ${figure}`;
       const area = areas.get(a.id) ?? { title: a.title, byRole: new Map<string, Role[]>() };
       area.byRole.set(text, [...(area.byRole.get(text) ?? []), actor.role]);
       areas.set(a.id, area);

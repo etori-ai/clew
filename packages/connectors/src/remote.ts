@@ -205,15 +205,11 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
       ...(a.icon ? { icon: a.icon } : {}),
       ...(a.figure
         ? {
+            // A figure that does not come back, or not in the protocol's shape, throws: the registry makes it the warning figure (D8).
             figure: async (actor: Actor) => {
-              try {
-                const { status, json } = await post(transport, source, '/clew/figure', actor, { actor, area: a.id });
-                if (status >= 400 || !Value.Check(FigureResponseSchema, json))
-                  return { label: `${source} svarar inte`, tone: 'warn' as const };
-                return json.figure;
-              } catch {
-                return { label: `${source} svarar inte`, tone: 'warn' as const };
-              }
+              const { status, json } = await post(transport, source, '/clew/figure', actor, { actor, area: a.id });
+              if (status >= 400 || !Value.Check(FigureResponseSchema, json)) throw unavailable(source);
+              return json.figure;
             },
           }
         : {}),

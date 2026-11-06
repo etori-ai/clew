@@ -232,6 +232,13 @@
       "when": 1793999920822,
       "tag": "0032_connector_ordinal",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1794002225863,
+      "tag": "0033_connector_areas",
+      "breakpoints": true
     }
   ]
 }

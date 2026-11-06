@@ -168,7 +168,7 @@ describe('the nightly draw', () => {
     const t = (await w.ensureProposalThread(hillevi))!;
     expect(t.proposals.map(p => p.participant.name)).not.toContain('Anna Lindqvist');
     expect(t.proposals).toHaveLength(3);
-    expect(await w.samtalStatus(hillevi)).toEqual({ held: 1, booked: 0, deadline: '28 november' });
+    expect(await w.samtalStatus(hillevi)).toEqual({ held: 1, booked: 0, members: 4, deadline: '28 november' });
   });
   test("plans around the manager's meetings and the members' busy time, and refuses when a member's calendar cannot be read", async () => {
     const w = world();
@@ -341,7 +341,7 @@ describe('the obligation (D30)', () => {
       details: { accepted: read.accepted, declined: [], alternatives: [] },
     });
     expect(await w.readReplies(t.id)).toEqual({ accepted: [], declined: [] });
-    expect(await w.samtalStatus(hillevi)).toEqual({ held: 4, booked: 0, deadline: '28 november' });
+    expect(await w.samtalStatus(hillevi)).toEqual({ held: 4, booked: 0, members: 4, deadline: '28 november' });
   });
   test('a no draws two other times for that one person and puts the thread back under Nu', async () => {
     const w = world();

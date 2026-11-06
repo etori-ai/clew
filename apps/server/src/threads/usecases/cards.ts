@@ -206,7 +206,7 @@ export function threadUsecases(deps: ThreadDeps) {
       return id;
     });
   }
-  /** Areas with live counts for the sidebar. */
+  /** Areas with live counts for the sidebar, and each figure with the time Clew read it (D54: "Personalsystemet 06:00"). */
   async function listAreas(persona: AuthenticatedContext): Promise<Area[]> {
     const now = clock();
     const [areas, threads] = await Promise.all([
@@ -219,6 +219,7 @@ export function threadUsecases(deps: ThreadDeps) {
       const needsYou = open.filter(t => t.area === a.id && !t.waitingOn && !isSnoozed(t, now.toISOString()));
       return {
         ...a,
+        figure: a.figure && !a.figure.unavailable ? { ...a.figure, observedAt: now.toISOString() } : a.figure,
         needsYou: needsYou.length,
         waiting: open.filter(t => t.area === a.id && !!t.waitingOn).length,
         urgency: worstLevel(needsYou.map(t => attentionLevel(t, today))),

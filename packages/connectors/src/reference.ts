@@ -318,7 +318,7 @@ export const RULES: Rule[] = [
     title: 'figure: true means you serve the figure route',
     fields: ['areas[].figure'],
     enforced: 'call',
-    text: "For an area with `figure: true` Clew posts `/clew/figure` with the area id and draws the one-line answer on the area's button. A connector that does not answer shows a warning figure, never an error.",
+    text: "For an area with `figure: true` Clew posts `/clew/figure` with the area id and draws the answer as the area's tile on Hem (D54): `label` and `tone`, and optionally `value` (one number and its unit, formatted by you), `comparison`, `progress` and `opens`, a read of yours whose view needs no input, which the tile then links to. Without `value` the label is a sentence. Clew says the tone in its own words. A connector that does not answer shows the warning tile, never an error; an administrator can switch an area's figure off.",
   },
   {
     id: 'uses-exact',
@@ -576,7 +576,7 @@ export function recipes(examples: ConnectorManifest[]): Recipe[] {
     {
       id: 'scan-cards',
       title: 'A scan that becomes cards',
-      text: 'With `scan: true` Clew asks the connector, per person, what needs attention; each draft names an area of the manifest and carries actions of this connector (D35). The area shows the drafts as cards, its standing actions under "Gör själv", its schedules as text, and, with `figure: true`, one line from `/clew/figure` on its button.',
+      text: 'With `scan: true` Clew asks the connector, per person, what needs attention; each draft names an area of the manifest and carries actions of this connector (D35). The area shows the drafts as cards, its standing actions under "Gör själv", its schedules as text, and, with `figure: true`, its figure from `/clew/figure` as a tile on Hem.',
       example: scanning ? { scan: scanning.scan, areas: scanning.areas } : {},
     },
     {

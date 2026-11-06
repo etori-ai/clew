@@ -123,7 +123,7 @@
                 }
               },
               "figure": {
-                "description": "Clew asks POST /clew/figure for a one-line figure for this area.",
+                "description": "Clew asks POST /clew/figure for this area's figure and draws it as a tile on Hem (D54), unless an administrator switched it off.",
                 "type": "boolean"
               },
               "icon": {
@@ -2223,6 +2223,77 @@
         }
       }
     },
+    "Figure": {
+      "additionalProperties": false,
+      "description": "One figure for an area.",
+      "type": "object",
+      "required": [
+        "label",
+        "tone"
+      ],
+      "properties": {
+        "label": {
+          "maxLength": 120,
+          "description": "Swedish. What the value is (\"Sjukfrånvaro\", \"Förbrukat av ramen\"); without a value, the whole figure as one sentence (\"Inget nytt sedan i går.\").",
+          "type": "string"
+        },
+        "tone": {
+          "description": "ok, warn or alert; Clew draws them as Lugnt, Bevaka and Behöver dig. `none` when the number is the whole message.",
+          "anyOf": [
+            {
+              "const": "ok",
+              "type": "string"
+            },
+            {
+              "const": "warn",
+              "type": "string"
+            },
+            {
+              "const": "alert",
+              "type": "string"
+            },
+            {
+              "const": "none",
+              "type": "string"
+            }
+          ]
+        },
+        "value": {
+          "maxLength": 40,
+          "description": "Swedish, formatted by the connector: one number and its unit (\"4,2 %\", \"14 av 23\", \"3\").",
+          "type": "string"
+        },
+        "comparison": {
+          "maxLength": 160,
+          "description": "Swedish. A target, a change or a period, in supporting text (\"mål ≤ 4,0 % · +0,3 sedan oktober\").",
+          "type": "string"
+        },
+        "progress": {
+          "additionalProperties": false,
+          "description": "Progress towards a target, drawn as a bar in the tile in place of the comparison.",
+          "type": "object",
+          "required": [
+            "value",
+            "max"
+          ],
+          "properties": {
+            "value": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "max": {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            }
+          }
+        },
+        "opens": {
+          "maxLength": 80,
+          "description": "A read capability of this connector with a declared view that needs no input: the tile is then a link to that view. Clew drops it when it names another connector or a capability without such a view.",
+          "type": "string"
+        }
+      }
+    },
     "FigureResponse": {
       "additionalProperties": false,
       "type": "object",
@@ -2234,6 +2305,7 @@
           "anyOf": [
             {
               "additionalProperties": false,
+              "description": "One figure for an area.",
               "type": "object",
               "required": [
                 "label",
@@ -2241,9 +2313,12 @@
               ],
               "properties": {
                 "label": {
+                  "maxLength": 120,
+                  "description": "Swedish. What the value is (\"Sjukfrånvaro\", \"Förbrukat av ramen\"); without a value, the whole figure as one sentence (\"Inget nytt sedan i går.\").",
                   "type": "string"
                 },
                 "tone": {
+                  "description": "ok, warn or alert; Clew draws them as Lugnt, Bevaka and Behöver dig. `none` when the number is the whole message.",
                   "anyOf": [
                     {
                       "const": "ok",
@@ -2262,6 +2337,40 @@
                       "type": "string"
                     }
                   ]
+                },
+                "value": {
+                  "maxLength": 40,
+                  "description": "Swedish, formatted by the connector: one number and its unit (\"4,2 %\", \"14 av 23\", \"3\").",
+                  "type": "string"
+                },
+                "comparison": {
+                  "maxLength": 160,
+                  "description": "Swedish. A target, a change or a period, in supporting text (\"mål ≤ 4,0 % · +0,3 sedan oktober\").",
+                  "type": "string"
+                },
+                "progress": {
+                  "additionalProperties": false,
+                  "description": "Progress towards a target, drawn as a bar in the tile in place of the comparison.",
+                  "type": "object",
+                  "required": [
+                    "value",
+                    "max"
+                  ],
+                  "properties": {
+                    "value": {
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "max": {
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    }
+                  }
+                },
+                "opens": {
+                  "maxLength": 80,
+                  "description": "A read capability of this connector with a declared view that needs no input: the tile is then a link to that view. Clew drops it when it names another connector or a capability without such a view.",
+                  "type": "string"
                 }
               }
             },

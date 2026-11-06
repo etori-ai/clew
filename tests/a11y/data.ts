@@ -11,7 +11,6 @@ import type {
   Attention,
   CalendarEvent,
   Completions,
-  Figure,
   SnoozePreset,
   CheckReport,
   ConnectorDetail,
@@ -337,6 +336,8 @@ export const areas: Area[] = [
     connector: 'communication',
     source: 'Kommunikation',
     icon: 'bell',
+    // Läget (D54, artboard 3): a figure without a value is a sentence.
+    figure: { label: 'Inget nytt sedan i går.', tone: 'none' },
     needsYou: 1,
     urgency: 'notice',
     standing: [{ capability: 'communication.notices', label: 'Viktigt nu', kind: 'read' }],
@@ -344,6 +345,14 @@ export const areas: Area[] = [
   area('calendar', 'Kalender', {
     source: 'Kalendern',
     icon: 'calendar',
+    figure: {
+      label: 'Utvecklingssamtal bokade',
+      value: '14 av 23',
+      comparison: 'senast 28 november',
+      progress: { value: 14, max: 23 },
+      tone: 'none',
+      observedAt: NOW,
+    },
     needsYou: 1,
     urgency: 'soon',
     standing: [{ capability: 'calendar.today', label: 'Dagens möten', kind: 'read' }],
@@ -352,7 +361,14 @@ export const areas: Area[] = [
   area('personal', 'Personal', {
     connector: 'hr',
     icon: 'people',
-    figure: { label: 'Korttidsfrånvaro 4,2 %', tone: 'warn' },
+    figure: {
+      label: 'Sjukfrånvaro',
+      value: '4,2 %',
+      comparison: 'mål ≤ 4,0 % · +0,3 sedan oktober',
+      tone: 'warn',
+      opens: { capability: 'hr.absenceOverview', title: 'Frånvaro per person' },
+      observedAt: NOW,
+    },
     needsYou: 2,
     urgency: 'soon',
     standing: [
@@ -365,7 +381,15 @@ export const areas: Area[] = [
     connector: 'finance',
     source: 'Ekonomisystemet',
     icon: 'chart',
-    figure: { label: 'Prognos +1,8 %', tone: 'ok' },
+    figure: {
+      label: 'Förbrukat av ramen',
+      value: '98 %',
+      comparison: 'av periodens ram',
+      progress: { value: 98, max: 100 },
+      tone: 'ok',
+      opens: { capability: 'finance.budget', title: 'Budget mot prognos' },
+      observedAt: NOW,
+    },
     needsYou: 1,
     urgency: 'urgent',
     standing: [
@@ -373,7 +397,20 @@ export const areas: Area[] = [
       { capability: 'finance.approve', label: 'Attestera fakturor', kind: 'execute' },
     ],
   }),
-  area('kvalitet', 'Kvalitet', { connector: 'incidents', source: 'Avvikelsesystemet', icon: 'document', waiting: 1 }),
+  area('kvalitet', 'Kvalitet', {
+    connector: 'incidents',
+    source: 'Avvikelsesystemet',
+    icon: 'document',
+    figure: {
+      label: 'Öppna tillbud',
+      value: '3',
+      comparison: '1 äldre än 14 dagar',
+      tone: 'alert',
+      opens: { capability: 'incidents.deviations', title: 'Avvikelser och tillbud' },
+      observedAt: NOW,
+    },
+    waiting: 1,
+  }),
 ];
 /**
  * The systems behind the areas with their marks' ordinals (D71), in the order an administrator registered them: the
@@ -414,46 +451,6 @@ export const attention: Attention = {
     { kind: 'quiet', at: '17:00', state: 'later' },
   ],
 };
-/** Läget on the overview: the four figures, always the same four. */
-export const figures: Figure[] = [
-  {
-    id: 'korttidsfranvaro',
-    label: 'Korttidsfrånvaro',
-    value: '4,1 %',
-    comparison: '3,2 % samma vecka i fjol',
-    tone: 'warn',
-    source: 'Personalsystemet',
-    observedAt: NOW,
-  },
-  {
-    id: 'budgetavvikelse',
-    label: 'Budgetavvikelse',
-    value: '−1,8 %',
-    comparison: 'prognos −0,9 % i september',
-    tone: 'alert',
-    source: 'Ekonomisystemet',
-    observedAt: NOW,
-  },
-  {
-    id: 'hme',
-    label: 'HME',
-    value: '79',
-    comparison: '76 i fjol, kommunen 77',
-    tone: 'ok',
-    source: 'Medarbetarenkät',
-    observedAt: NOW,
-  },
-  {
-    id: 'utvecklingssamtal',
-    label: 'Utvecklingssamtal',
-    value: '4 av 12 kvar',
-    comparison: '8 bokade, senast 28 nov',
-    tone: 'warn',
-    source: 'Kalendern',
-    observedAt: NOW,
-    progress: { value: 8, max: 12 },
-  },
-];
 /** What the box offers while the person types (D34): the standing actions for the role. The areas under the box (D41) come from `areas`. */
 export const completions: Completions = {
   completions: ['Vad har jag i dag?'],
@@ -791,9 +788,14 @@ export const connectors = (): ConnectorSummary[] => [
 ];
 /**
  * Hello has two views that can be tools in the menu (D40), one it names itself and one under the capability's title; the
- * others have none, so both states of the list are on the page. `menuOn` is what the administrator has chosen.
+ * others have none, so both states of the list are on the page. `menuOn` is what the administrator has chosen, and
+ * `figuresOff` the areas whose figure an administrator switched off on Hem (D54).
  */
-export const connectorDetail = (c: ConnectorSummary, menuOn: string[] = []): ConnectorDetail => ({
+export const connectorDetail = (
+  c: ConnectorSummary,
+  menuOn: string[] = [],
+  figuresOff: string[] = [],
+): ConnectorDetail => ({
   ...c,
   protocol: 1,
   scan: true,
@@ -856,6 +858,7 @@ export const connectorDetail = (c: ConnectorSummary, menuOn: string[] = []): Con
       roles: ['manager', 'employee'],
       standing: [`${c.id}.overview`],
       figure: true,
+      figureShown: !figuresOff.includes(c.id),
       icon: c.id === 'finance' ? 'chart' : 'people',
     },
   ],
