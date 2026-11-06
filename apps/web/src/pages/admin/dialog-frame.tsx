@@ -14,15 +14,52 @@ import { HStack, Layout, LayoutContent, LayoutFooter, ScrollableArea, StackItem,
  * labelled ScrollableArea owns the one viewport, which enters the tab order while it overflows, so a keyboard can
  * scroll it (2.1.1). Content with fields scrolls in LayoutContent; tabbing through the fields scrolls it.
  */
-export function DialogFrame({ header, children, secondary, primary, error, scrollLabel }: { header: ReactNode; children: ReactNode; secondary?: ReactNode; primary?: ReactNode; error: string | null; scrollLabel?: string }) {
-  return <Layout height="fill" padding={4} defaultHasDividers header={header}
-    content={scrollLabel
-      ? <LayoutContent isScrollable={false} padding={0}><ScrollableArea label={scrollLabel} height="100%" padding={4}>{children}</ScrollableArea></LayoutContent>
-      : <LayoutContent>{children}</LayoutContent>}
-    footer={<LayoutFooter><HStack gap={2} vAlign="center" wrap="wrap">
-      {secondary}
-      <StackItem size="fill" />
-      {error && <Text as="p" role="alert" color="accent">{error}</Text>}
-      {primary}
-    </HStack></LayoutFooter>} />;
+export function DialogFrame({
+  header,
+  children,
+  secondary,
+  primary,
+  error,
+  scrollLabel,
+}: {
+  header: ReactNode;
+  children: ReactNode;
+  secondary?: ReactNode;
+  primary?: ReactNode;
+  error: string | null;
+  scrollLabel?: string;
+}) {
+  return (
+    <Layout
+      height="fill"
+      padding={4}
+      defaultHasDividers
+      header={header}
+      content={
+        scrollLabel ? (
+          <LayoutContent isScrollable={false} padding={0}>
+            <ScrollableArea label={scrollLabel} height="100%" padding={4}>
+              {children}
+            </ScrollableArea>
+          </LayoutContent>
+        ) : (
+          <LayoutContent>{children}</LayoutContent>
+        )
+      }
+      footer={
+        <LayoutFooter>
+          <HStack gap={2} vAlign="center" wrap="wrap">
+            {secondary}
+            <StackItem size="fill" />
+            {error && (
+              <Text as="p" role="alert" color="accent">
+                {error}
+              </Text>
+            )}
+            {primary}
+          </HStack>
+        </LayoutFooter>
+      }
+    />
+  );
 }

@@ -7,8 +7,14 @@ import { condition, defineSignal, proxyActivities, setHandler, sleep } from '@te
 import type * as activities from '../../src/temporal/activities';
 import type { ReminderInput } from '../../src/threads/model';
 
-const { surfaceReminder, checkObligation, remindInvitees, returnObligation } = proxyActivities<typeof activities>({ startToCloseTimeout: '1 minute', retry: { maximumAttempts: 5 } });
-const { progressExecution } = proxyActivities<typeof activities>({ startToCloseTimeout: '1 minute', retry: { maximumAttempts: 5 } });
+const { surfaceReminder, checkObligation, remindInvitees, returnObligation } = proxyActivities<typeof activities>({
+  startToCloseTimeout: '1 minute',
+  retry: { maximumAttempts: 5 },
+});
+const { progressExecution } = proxyActivities<typeof activities>({
+  startToCloseTimeout: '1 minute',
+  retry: { maximumAttempts: 5 },
+});
 
 /** Retries re-enter the persisted ledger; a dispatched operation is always investigated before any replay. */
 export async function approvedExecution(id: string): Promise<void> {
@@ -30,12 +36,20 @@ export const cancelObligation = defineSignal('cancel');
  * return the thread to the manager on the Friday review or when every reply is in. The policy lives in the activities'
  * use cases; the workflow only keeps time.
  */
-export async function obligation(input: { threadId: string; personId: string }): Promise<'answered' | 'deadline' | 'cancelled'> {
+export async function obligation(input: {
+  threadId: string;
+  personId: string;
+}): Promise<'answered' | 'deadline' | 'cancelled'> {
   let cancelled = false;
-  setHandler(cancelObligation, () => { cancelled = true; });
+  setHandler(cancelObligation, () => {
+    cancelled = true;
+  });
   for (;;) {
     const step = await checkObligation(input.threadId);
-    if (step.action === 'return') { await returnObligation(input.threadId, step.why === 'deadline' ? 'deadline' : 'answered'); return step.why === 'deadline' ? 'deadline' : 'answered'; }
+    if (step.action === 'return') {
+      await returnObligation(input.threadId, step.why === 'deadline' ? 'deadline' : 'answered');
+      return step.why === 'deadline' ? 'deadline' : 'answered';
+    }
     if (step.action === 'remind') await remindInvitees(input.threadId, step.due);
     await condition(() => cancelled, Math.max(60_000, Date.parse(step.next) - Date.now()));
     if (cancelled) return 'cancelled';
@@ -44,7 +58,9 @@ export async function obligation(input: { threadId: string; personId: string }):
 /** A person's own timer (D17): wait, then bring the card back to the top of the stream. Cancel ends it quietly. */
 export async function reminder(input: ReminderInput): Promise<'fired' | 'cancelled'> {
   let cancelled = false;
-  setHandler(cancelReminder, () => { cancelled = true; });
+  setHandler(cancelReminder, () => {
+    cancelled = true;
+  });
   await condition(() => cancelled, input.seconds * 1000);
   if (cancelled) return 'cancelled';
   await surfaceReminder(input);

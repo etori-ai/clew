@@ -12,9 +12,11 @@ import type { FetchInput, SearchInput } from './contracts';
  */
 export function searchUsecases(deps: SearchDeps) {
   const budget = { ...DEFAULT_BUDGET, ...deps.budget };
-  const withinBudget = <T,>(work: Promise<T>, ms: number): Promise<T | typeof TIMEOUT> => {
+  const withinBudget = <T>(work: Promise<T>, ms: number): Promise<T | typeof TIMEOUT> => {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const late = new Promise<typeof TIMEOUT>(resolve => { timer = setTimeout(() => resolve(TIMEOUT), ms); });
+    const late = new Promise<typeof TIMEOUT>(resolve => {
+      timer = setTimeout(() => resolve(TIMEOUT), ms);
+    });
     return Promise.race([work, late]).finally(() => clearTimeout(timer));
   };
   async function askSource(source: SearchSourceRef, query: string, call: SearchCall): Promise<SourceOutcome> {
@@ -24,7 +26,9 @@ export function searchUsecases(deps: SearchDeps) {
       if (answer === TIMEOUT) return { ...base, status: 'timeout' };
       if (!Value.Check(SearchOutputSchema, answer)) return { ...base, status: 'unavailable' };
       return { ...base, status: 'ok', rows: answer.rows };
-    } catch { return { ...base, status: 'unavailable' }; }
+    } catch {
+      return { ...base, status: 'unavailable' };
+    }
   }
   /** Search as the actor: `call` is the registry handle for this run, so every source's scope applies to the same person. */
   async function search(actor: Actor, input: SearchInput, call: SearchCall): Promise<SearchResult> {
@@ -35,8 +39,13 @@ export function searchUsecases(deps: SearchDeps) {
     let outcomes: SourceOutcome[];
     if (settled === TIMEOUT) {
       // The total budget ended first: take what has answered, call the rest timed out, and let the stragglers finish unobserved.
-      outcomes = await Promise.all(pending.map(p => withinBudget(p, 0).then(o => o === TIMEOUT ? undefined : o)))
-        .then(partial => partial.map((o, i) => o ?? { id: sources[i]!.connectorId, source: sources[i]!.source, status: 'timeout' as const }));
+      outcomes = await Promise.all(
+        pending.map(p => withinBudget(p, 0).then(o => (o === TIMEOUT ? undefined : o))),
+      ).then(partial =>
+        partial.map(
+          (o, i) => o ?? { id: sources[i]!.connectorId, source: sources[i]!.source, status: 'timeout' as const },
+        ),
+      );
     } else outcomes = settled;
     // A hit whose source declares what a row opens carries that view (D38): a person's contact card, drawn by Clew, beside the link out.
     const opens = new Map(sources.filter(s => s.open).map(s => [s.connectorId, s]));
@@ -48,12 +57,19 @@ export function searchUsecases(deps: SearchDeps) {
     return { rows, sources: sourceReport(outcomes) };
   }
   /** One hit back by its ref, from the connector that found it: what a document chip resolves to and what a card's link opens. */
-  async function fetch(actor: Actor, connectorId: string, input: FetchInput, call: SearchCall): Promise<SearchHit | undefined> {
+  async function fetch(
+    actor: Actor,
+    connectorId: string,
+    input: FetchInput,
+    call: SearchCall,
+  ): Promise<SearchHit | undefined> {
     if (!deps.sources(actor).some(s => s.connectorId === connectorId)) return undefined;
     try {
       const answer = await call(connectorId + '.fetch', { ref: input.ref });
       return Value.Check(SearchHitSchema, answer) ? answer : undefined;
-    } catch { return undefined; }
+    } catch {
+      return undefined;
+    }
   }
   return { search, fetch };
 }

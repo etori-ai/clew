@@ -6,8 +6,14 @@ export interface StateStore {
 export function memoryState(): StateStore & { dump(): Record<string, unknown> } {
   const map = new Map<string, unknown>();
   return {
-    async get<T>(module: string, key: string, fallback: T) { return map.has(module + ':' + key) ? map.get(module + ':' + key) as T : fallback; },
-    async set(module, key, value) { map.set(module + ':' + key, value); },
-    dump() { return Object.fromEntries(map); },
+    async get<T>(module: string, key: string, fallback: T) {
+      return map.has(module + ':' + key) ? (map.get(module + ':' + key) as T) : fallback;
+    },
+    async set(module, key, value) {
+      map.set(module + ':' + key, value);
+    },
+    dump() {
+      return Object.fromEntries(map);
+    },
   };
 }

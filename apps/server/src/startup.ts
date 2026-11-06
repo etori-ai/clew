@@ -10,9 +10,22 @@ export function startupReadiness(deps: {
   const start = (): Promise<void> => {
     if (ready) return Promise.resolve();
     if (pending) return pending;
-    pending = Promise.resolve().then(deps.initialize).then(() => { ready = true; deps.onReady(); })
-      .catch(error => { deps.onError(error); if (!ready) deps.retry(() => { void start(); }); })
-      .finally(() => { pending = undefined; });
+    pending = Promise.resolve()
+      .then(deps.initialize)
+      .then(() => {
+        ready = true;
+        deps.onReady();
+      })
+      .catch(error => {
+        deps.onError(error);
+        if (!ready)
+          deps.retry(() => {
+            void start();
+          });
+      })
+      .finally(() => {
+        pending = undefined;
+      });
     return pending;
   };
   return { start, ready: () => ready };

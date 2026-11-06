@@ -4,4 +4,6 @@ import { resolve } from 'node:path';
 try {
   await migrate(database(), { migrationsFolder: resolve(import.meta.dir, '../packages/db/migrations') });
   console.log('Migrations applied.');
-} finally { await closeDatabase(); }
+} finally {
+  await closeDatabase();
+}

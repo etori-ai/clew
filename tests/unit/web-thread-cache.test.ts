@@ -6,14 +6,40 @@ import { applyThread, invalidateStream, pickProposalThread, upsertThread } from 
 
 const NOW = '2026-11-04T08:00:00.000Z';
 const thread = (values: Partial<Thread> & Pick<Thread, 'id'>): Thread => ({
-  title: values.id, kind: 'pushed', topic: values.id, state: 'open', trigger: { reason: 'Test', source: 'Test', at: NOW },
-  createdAt: NOW, updatedAt: NOW, handledAt: null, messages: [], proposals: [], week: null, connector: 'finance', area: 'budget',
-  summary: '', items: [], actions: [], waitingOn: null, deadline: null, receipt: null, remindedAt: null, snoozedUntil: null,
+  title: values.id,
+  kind: 'pushed',
+  topic: values.id,
+  state: 'open',
+  trigger: { reason: 'Test', source: 'Test', at: NOW },
+  createdAt: NOW,
+  updatedAt: NOW,
+  handledAt: null,
+  messages: [],
+  proposals: [],
+  week: null,
+  connector: 'finance',
+  area: 'budget',
+  summary: '',
+  items: [],
+  actions: [],
+  waitingOn: null,
+  deadline: null,
+  receipt: null,
+  remindedAt: null,
+  snoozedUntil: null,
   ...values,
 });
 const proposal = (id: string): Proposal => ({
-  id, threadId: 'samtal', status: 'proposed', start: '2026-11-09T09:00:00.000Z', end: '2026-11-09T09:45:00.000Z',
-  participant: { name: 'Anna', email: 'anna@clew.test' }, eventRef: null, undoUntil: null, reminders: 0, remindedAt: null,
+  id,
+  threadId: 'samtal',
+  status: 'proposed',
+  start: '2026-11-09T09:00:00.000Z',
+  end: '2026-11-09T09:45:00.000Z',
+  participant: { name: 'Anna', email: 'anna@clew.test' },
+  eventRef: null,
+  undoUntil: null,
+  reminders: 0,
+  remindedAt: null,
 });
 const client = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
 const list = (c: QueryClient) => (c.getQueryData(keys.threads) as { threads: Thread[] }).threads;
@@ -21,7 +47,8 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 
 describe('the stream cache (D33)', () => {
   test('a known thread is replaced in place, a new one goes first', () => {
-    const a = thread({ id: 'a' }), b = thread({ id: 'b' });
+    const a = thread({ id: 'a' }),
+      b = thread({ id: 'b' });
     expect(upsertThread([a, b], { ...b, title: 'B2' }).map(t => t.title)).toEqual(['a', 'B2']);
     expect(upsertThread([a, b], thread({ id: 'c' })).map(t => t.id)).toEqual(['c', 'a', 'b']);
   });
@@ -59,7 +86,9 @@ describe('the stream cache (D33)', () => {
     const old = thread({ id: 'a' });
     c.setQueryData(keys.threads, { threads: [old] });
     let answerLate!: (value: { threads: Thread[] }) => void;
-    const late = new Promise<{ threads: Thread[] }>(resolve => { answerLate = resolve; });
+    const late = new Promise<{ threads: Thread[] }>(resolve => {
+      answerLate = resolve;
+    });
     const refetch = c.query({ queryKey: keys.threads, queryFn: () => late, staleTime: 0 });
     await tick();
     expect(c.getQueryState(keys.threads)?.fetchStatus).toBe('fetching');

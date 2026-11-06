@@ -14,23 +14,76 @@ const LIMIT = 12;
  * scope with the context first, then the other cards and rows, today's meetings, and the capabilities the person may
  * call. `visible` marks what is in the context.
  */
-export async function listObjects(deps: AssistantDeps, persona: AuthenticatedContext, q: string, near: string[] = []): Promise<ClewObject[]> {
+export async function listObjects(
+  deps: AssistantDeps,
+  persona: AuthenticatedContext,
+  q: string,
+  near: string[] = [],
+): Promise<ClewObject[]> {
   const needle = q.trim().toLowerCase();
   const context = new Set(near);
-  const threads = (await threadAccess(deps.store, deps.registry).list(persona, deps.clock().toISOString())).filter(t => t.state === 'open' && t.kind === 'pushed');
-  const close = (t: (typeof threads)[number]) => context.has('thread:' + t.id) || t.items.some(i => context.has(i.ref)) || t.proposals.some(p => context.has('proposal:' + p.id));
+  const threads = (await threadAccess(deps.store, deps.registry).list(persona, deps.clock().toISOString())).filter(
+    t => t.state === 'open' && t.kind === 'pushed',
+  );
+  const close = (t: (typeof threads)[number]) =>
+    context.has('thread:' + t.id) ||
+    t.items.some(i => context.has(i.ref)) ||
+    t.proposals.some(p => context.has('proposal:' + p.id));
   const all: ClewObject[] = [];
   for (const t of threads) {
     const visible = close(t);
-    all.push({ ref: 'thread:' + t.id, kind: 'thread', label: t.title, detail: `kort · ${t.trigger.source}`, threadId: t.id, visible });
-    for (const i of t.items) all.push({ ref: i.ref, kind: 'item', label: i.label, detail: `rad i ${t.title} · ${i.detail}`, threadId: t.id, visible });
-    for (const p of t.proposals.filter(p => p.status === 'proposed')) all.push({ ref: 'proposal:' + p.id, kind: 'proposal', label: p.participant.name, detail: `förslag · ${shortDayLabel(displayDate(p.start))} ${timeRange(p.start, p.end)}`, threadId: t.id, visible });
+    all.push({
+      ref: 'thread:' + t.id,
+      kind: 'thread',
+      label: t.title,
+      detail: `kort · ${t.trigger.source}`,
+      threadId: t.id,
+      visible,
+    });
+    for (const i of t.items)
+      all.push({
+        ref: i.ref,
+        kind: 'item',
+        label: i.label,
+        detail: `rad i ${t.title} · ${i.detail}`,
+        threadId: t.id,
+        visible,
+      });
+    for (const p of t.proposals.filter(p => p.status === 'proposed'))
+      all.push({
+        ref: 'proposal:' + p.id,
+        kind: 'proposal',
+        label: p.participant.name,
+        detail: `förslag · ${shortDayLabel(displayDate(p.start))} ${timeRange(p.start, p.end)}`,
+        threadId: t.id,
+        visible,
+      });
   }
-  if (deps.registry.visible(persona, 'calendar')) try { const day = await deps.calendar.readToday(persona); for (const e of day.events) all.push({ ref: 'event:' + e.id, kind: 'event', label: e.title, detail: `i dag · ${e.allDay ? 'heldag' : timeRange(e.start, e.end)}`, visible: context.has('event:' + e.id) }); } catch { /* the calendar is optional here */ }
+  if (deps.registry.visible(persona, 'calendar'))
+    try {
+      const day = await deps.calendar.readToday(persona);
+      for (const e of day.events)
+        all.push({
+          ref: 'event:' + e.id,
+          kind: 'event',
+          label: e.title,
+          detail: `i dag · ${e.allDay ? 'heldag' : timeRange(e.start, e.end)}`,
+          visible: context.has('event:' + e.id),
+        });
+    } catch {
+      /* the calendar is optional here */
+    }
   if (!needle) return all.filter(o => o.visible).slice(0, LIMIT);
   // Only what the person may call (D23): a connector outside their audience has no capabilities to find.
   const actor = actorOf(persona);
-  for (const { connector: m, capability: c } of deps.registry.capabilitiesFor(actor)) all.push({ ref: 'capability:' + c.name, kind: 'capability', label: c.title, detail: `${m.source} · ${c.kind === 'read' ? 'fråga' : 'gör något'}`, visible: false });
+  for (const { connector: m, capability: c } of deps.registry.capabilitiesFor(actor))
+    all.push({
+      ref: 'capability:' + c.name,
+      kind: 'capability',
+      label: c.title,
+      detail: `${m.source} · ${c.kind === 'read' ? 'fråga' : 'gör något'}`,
+      visible: false,
+    });
   const hits = all.filter(o => o.label.toLowerCase().includes(needle) || o.detail.toLowerCase().includes(needle));
   return [...hits.filter(o => o.visible), ...hits.filter(o => !o.visible)].slice(0, LIMIT);
 }

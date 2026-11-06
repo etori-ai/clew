@@ -1,4 +1,12 @@
-import type { AuditEntryView, CapabilityOverride, CheckFinding, CheckReport, ConnectorAudience, ConnectorHealth, ConnectorState } from '@clew/contracts';
+import type {
+  AuditEntryView,
+  CapabilityOverride,
+  CheckFinding,
+  CheckReport,
+  ConnectorAudience,
+  ConnectorHealth,
+  ConnectorState,
+} from '@clew/contracts';
 import type { ConnectorManifest } from '@clew/connectors/protocol';
 
 /**
@@ -8,17 +16,60 @@ import type { ConnectorManifest } from '@clew/connectors/protocol';
  * behaviour by `tests/connector-store-contract.ts`.
  */
 export interface ConnectorRecord {
-  id: string; bundled: boolean; url: string | null;
+  id: string;
+  bundled: boolean;
+  url: string | null;
   /** The sealed envelope, opaque to the use case. Never leaves the server. */
-  secret: string | null; secretChangedAt: string | null;
-  state: ConnectorState; audience: ConnectorAudience; scanEnabled: boolean; toolsEnabled: boolean;
+  secret: string | null;
+  secretChangedAt: string | null;
+  state: ConnectorState;
+  audience: ConnectorAudience;
+  scanEnabled: boolean;
+  toolsEnabled: boolean;
   capabilities: Record<string, CapabilityOverride>;
-  manifest: unknown | null; manifestAt: string | null; health: ConnectorHealth;
-  createdBy: string; updatedBy: string; createdAt: string; updatedAt: string; version: number;
+  manifest: unknown | null;
+  manifestAt: string | null;
+  health: ConnectorHealth;
+  createdBy: string;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
 }
-export interface NewConnector { id: string; bundled: boolean; url: string | null; secret: string | null; state: ConnectorState; manifest: unknown | null; health: ConnectorHealth; createdBy: string; at: string }
-export type ConnectorPatch = Partial<Pick<ConnectorRecord, 'url' | 'secret' | 'secretChangedAt' | 'state' | 'audience' | 'scanEnabled' | 'toolsEnabled' | 'capabilities' | 'manifest' | 'manifestAt' | 'health'>>;
-export interface AuditEntry { actor: string; action: string; subject: string; at: string; details?: Record<string, unknown> }
+export interface NewConnector {
+  id: string;
+  bundled: boolean;
+  url: string | null;
+  secret: string | null;
+  state: ConnectorState;
+  manifest: unknown | null;
+  health: ConnectorHealth;
+  createdBy: string;
+  at: string;
+}
+export type ConnectorPatch = Partial<
+  Pick<
+    ConnectorRecord,
+    | 'url'
+    | 'secret'
+    | 'secretChangedAt'
+    | 'state'
+    | 'audience'
+    | 'scanEnabled'
+    | 'toolsEnabled'
+    | 'capabilities'
+    | 'manifest'
+    | 'manifestAt'
+    | 'health'
+  >
+>;
+export interface AuditEntry {
+  actor: string;
+  action: string;
+  subject: string;
+  at: string;
+  details?: Record<string, unknown>;
+}
 /** Writes inside one transaction: the audit row commits or rolls back with the rest. */
 export interface ConnectorTx {
   /** False when the id is taken. */
@@ -40,11 +91,18 @@ export interface ConnectorStore {
   transaction<T>(fn: (tx: ConnectorTx) => Promise<T>): Promise<T>;
 }
 /** Sealing is the composition root's business (the master key); the use case only hands envelopes around. */
-export interface Secrets { seal(value: string, connectorId: string): string; open(sealed: string, connectorId: string): string }
+export interface Secrets {
+  seal(value: string, connectorId: string): string;
+  open(sealed: string, connectorId: string): string;
+}
 /** The service side: fetching a manifest and running the conformance check, with the secret the use case opened. */
 export interface Transport {
   fetchManifest(url: string, id: string): Promise<ConnectorManifest>;
-  check(input: { url: string; id: string; secret: string }): Promise<CheckReport & { findings: CheckFinding[]; manifest?: ConnectorManifest }>;
+  check(input: {
+    url: string;
+    id: string;
+    secret: string;
+  }): Promise<CheckReport & { findings: CheckFinding[]; manifest?: ConnectorManifest }>;
 }
 /** The live registry's remote side (`remote.ts`): put a connector in with its signer, or take it out. */
 export interface LiveRegistration {
@@ -52,4 +110,6 @@ export interface LiveRegistration {
   unregister(id: string): void;
 }
 /** The organisation's units as the grants know them, for the audience editor. SCIM will own this list (identity.md). */
-export interface Units { list(): Promise<Array<{ id: string; label: string }>> }
+export interface Units {
+  list(): Promise<Array<{ id: string; label: string }>>;
+}

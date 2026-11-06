@@ -10,7 +10,17 @@ import './calendar-theme.css';
 import { Heading } from '@astryxdesign/core/Heading';
 import { Text } from '@astryxdesign/core/Text';
 import { VisuallyHidden } from '@astryxdesign/core/VisuallyHidden';
-import { dates, dayLabel, displayDate, minutesOfDay, monthLabel, occursOn, shortDayLabel, timeZone, weekNumber } from '@clew/calendar/dates';
+import {
+  dates,
+  dayLabel,
+  displayDate,
+  minutesOfDay,
+  monthLabel,
+  occursOn,
+  shortDayLabel,
+  timeZone,
+  weekNumber,
+} from '@clew/calendar/dates';
 import { clewCalendarTheme } from './calendar-theme';
 import type { AgendaItem } from './week-agenda';
 
@@ -46,10 +56,12 @@ const timeFormat = { hour: '2-digit', minute: '2-digit', hour12: false } as cons
 const office = { start: 8 * 60, end: 17 * 60 };
 const businessHours = { daysOfWeek: [1, 2, 3, 4, 5], startTime: '08:00', endTime: '17:00' };
 
-const clock = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+const clock = (minutes: number) =>
+  `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 /** The axis covers office hours (07–18 on the page) and stretches to a whole hour before the earliest and after the latest entry shown. */
 function axis(items: AgendaItem[], base: { start: number; end: number }) {
-  let start = base.start, end = base.end;
+  let start = base.start,
+    end = base.end;
   for (const item of items) {
     if (item.allDay) continue;
     start = Math.min(start, Math.floor(minutesOfDay(item.start) / 60) * 60);
@@ -60,7 +72,7 @@ function axis(items: AgendaItem[], base: { start: number; end: number }) {
 const isDay = (view: CalendarView) => view === 'timeGridDay' || view === 'listDay';
 const isMonth = (view: CalendarView) => view === 'dayGridMonth';
 /** The days a view shows, for the axis and the spoken summary. */
-const shownDays = (view: CalendarView, date: string) => isDay(view) ? [date] : isMonth(view) ? [] : dates(date, 5);
+const shownDays = (view: CalendarView, date: string) => (isDay(view) ? [date] : isMonth(view) ? [] : dates(date, 5));
 
 /**
  * The event calendar: FullCalendar 7 Standard under Clew's theme (D27). The toolbar is the host's, so `headerToolbar`
@@ -69,69 +81,189 @@ const shownDays = (view: CalendarView, date: string) => isDay(view) ? [date] : i
  * not a WAI-ARIA grid. Proposals alone may be dragged; everything else is read-only. The same component, `compact`,
  * is the day strip and the list inside a panel, a dialog or a chat bubble (D32).
  */
-export function EventCalendar({ view, date, items, label, dayHeadingLevel = 2, accessiblePath, selectedId, compact = false, onItemClick, onMoveProposal, onSelectRange }: Props) {
+export function EventCalendar({
+  view,
+  date,
+  items,
+  label,
+  dayHeadingLevel = 2,
+  accessiblePath,
+  selectedId,
+  compact = false,
+  onItemClick,
+  onMoveProposal,
+  onSelectRange,
+}: Props) {
   const ref = useRef<CalendarRef>(null);
   const byId = useMemo(() => new Map(items.map(item => [item.id, item])), [items]);
-  const events = useMemo<EventInput[]>(() => items.map(item => ({
-    id: item.id, title: item.title, start: item.start, end: item.end, allDay: item.allDay,
-    editable: item.kind === 'proposal' && !!onMoveProposal, durationEditable: false,
-    extendedProps: { kind: item.kind, subtitle: item.subtitle, selected: item.id === selectedId },
-  })), [items, onMoveProposal, selectedId]);
-  const shown = useMemo(() => { const days = shownDays(view, date); return days.length ? items.filter(item => days.some(day => occursOn(item, day))) : items; }, [view, date, items]);
-  const { start, end } = useMemo(() => axis(shown, compact ? office : { start: 7 * 60, end: 18 * 60 }), [shown, compact]);
-  useEffect(() => { const api = ref.current?.getApi(); if (api && api.view.type !== view) api.changeView(view, date); }, [view, date]);
-  useEffect(() => { const api = ref.current?.getApi(); if (api && displayDate(api.getDate().toISOString()) !== date) api.gotoDate(date); }, [date]);
-  const summary = useMemo(() => summarise(view, date, items) + (accessiblePath ? ` ${accessiblePath}` : ''), [view, date, items, accessiblePath]);
-  const heading = (day: Date, narrow: boolean, today: boolean, inline = false) => <DayHeading date={day} level={dayHeadingLevel} narrow={narrow} today={today} inline={inline} />;
-  return <div role="group" aria-label={label}>
-    <VisuallyHidden><p>{summary}</p></VisuallyHidden>
-    <Calendar ref={ref} plugins={plugins} initialView={view} initialDate={date}
-      locale={sv} timeZone={timeZone} weekends={false} headerToolbar={false} height="auto"
-      events={events} eventInteractive eventOrder="start,-duration,title" eventTimeFormat={timeFormat}
-      // Five columns leave no room for a range on a short block; the block's height tells the end, and the dialog says it.
-      displayEventEnd={view !== 'timeGridWeek'}
-      slotDuration="00:30" slotHeaderInterval="01:00" slotMinHeight={compact ? 20 : 28} slotHeaderFormat={timeFormat} slotMinTime={start} slotMaxTime={end} scrollTime={start}
-      businessHours={businessHours} nowIndicator allDaySlot dayMaxEvents navLinks={false}
-      selectable={!!onSelectRange} selectMirror selectMinDistance={4} snapDuration="00:15" selectConstraint={businessHours}
-      dayHeaderContent={info => isMonth(view) ? <Text weight="semibold">{info.text}</Text> : heading(info.date, info.isNarrow, info.isToday)}
-      listDayHeaderContent={info => info.level === 0 ? heading(info.date, false, info.isToday, true) : null}
-      noEventsContent={() => <Text type="supporting">{isDay(view) ? 'Inga möten den här dagen.' : 'Inga möten den här veckan.'}</Text>}
-      eventContent={info => {
-        const item = byId.get(info.event.id);
-        const kind = item?.kind ?? 'event';
-        const subtitle = kind !== 'event' ? item?.subtitle : undefined;
-        // A week's five columns leave a short meeting room for its name or its time: the grid's own axis says when, the name is what only the block can say.
-        const time = info.timeText && <Text type="inherit" weight="semibold" hasTabularNumbers>{info.timeText}</Text>;
-        return <>
-          {time && (view === 'timeGridWeek' ? <VisuallyHidden>{time}</VisuallyHidden> : time)}
-          {/* In a week's narrow column who it is gets its own line, so "Utvecklingssamtal · Anna" neither breaks a word nor loses the name. */}
-          {subtitle && view === 'timeGridWeek'
-            ? <><Text type="inherit">{info.event.title}</Text><Text type="inherit">{subtitle}</Text></>
-            : <Text type="inherit">{subtitle ? `${info.event.title} · ${subtitle}` : info.event.title}</Text>}
-          <VisuallyHidden>, {kindLabel[kind]}{item?.id === selectedId ? ', öppet' : ''}</VisuallyHidden>
-        </>;
-      }}
-      eventClick={info => { const item = byId.get(info.event.id); if (item) onItemClick?.(item); }}
-      eventDrop={info => {
-        const item = byId.get(info.event.id);
-        if (!item || item.kind !== 'proposal' || !onMoveProposal || !info.event.start || !info.event.end) { info.revert(); return; }
-        // The move is the host's to write; a refusal puts the block back where it was.
-        Promise.resolve(onMoveProposal(item, info.event.start.toISOString(), info.event.end.toISOString())).catch(() => info.revert());
-      }}
-      select={info => { onSelectRange?.(info.start.toISOString(), info.end.toISOString()); ref.current?.getApi().unselect(); }} />
-  </div>;
+  const events = useMemo<EventInput[]>(
+    () =>
+      items.map(item => ({
+        id: item.id,
+        title: item.title,
+        start: item.start,
+        end: item.end,
+        allDay: item.allDay,
+        editable: item.kind === 'proposal' && !!onMoveProposal,
+        durationEditable: false,
+        extendedProps: { kind: item.kind, subtitle: item.subtitle, selected: item.id === selectedId },
+      })),
+    [items, onMoveProposal, selectedId],
+  );
+  const shown = useMemo(() => {
+    const days = shownDays(view, date);
+    return days.length ? items.filter(item => days.some(day => occursOn(item, day))) : items;
+  }, [view, date, items]);
+  const { start, end } = useMemo(
+    () => axis(shown, compact ? office : { start: 7 * 60, end: 18 * 60 }),
+    [shown, compact],
+  );
+  useEffect(() => {
+    const api = ref.current?.getApi();
+    if (api && api.view.type !== view) api.changeView(view, date);
+  }, [view, date]);
+  useEffect(() => {
+    const api = ref.current?.getApi();
+    if (api && displayDate(api.getDate().toISOString()) !== date) api.gotoDate(date);
+  }, [date]);
+  const summary = useMemo(
+    () => summarise(view, date, items) + (accessiblePath ? ` ${accessiblePath}` : ''),
+    [view, date, items, accessiblePath],
+  );
+  const heading = (day: Date, narrow: boolean, today: boolean, inline = false) => (
+    <DayHeading date={day} level={dayHeadingLevel} narrow={narrow} today={today} inline={inline} />
+  );
+  return (
+    <div role="group" aria-label={label}>
+      <VisuallyHidden>
+        <p>{summary}</p>
+      </VisuallyHidden>
+      <Calendar
+        ref={ref}
+        plugins={plugins}
+        initialView={view}
+        initialDate={date}
+        locale={sv}
+        timeZone={timeZone}
+        weekends={false}
+        headerToolbar={false}
+        height="auto"
+        events={events}
+        eventInteractive
+        eventOrder="start,-duration,title"
+        eventTimeFormat={timeFormat}
+        // Five columns leave no room for a range on a short block; the block's height tells the end, and the dialog says it.
+        displayEventEnd={view !== 'timeGridWeek'}
+        slotDuration="00:30"
+        slotHeaderInterval="01:00"
+        slotMinHeight={compact ? 20 : 28}
+        slotHeaderFormat={timeFormat}
+        slotMinTime={start}
+        slotMaxTime={end}
+        scrollTime={start}
+        businessHours={businessHours}
+        nowIndicator
+        allDaySlot
+        dayMaxEvents
+        navLinks={false}
+        selectable={!!onSelectRange}
+        selectMirror
+        selectMinDistance={4}
+        snapDuration="00:15"
+        selectConstraint={businessHours}
+        dayHeaderContent={info =>
+          isMonth(view) ? <Text weight="semibold">{info.text}</Text> : heading(info.date, info.isNarrow, info.isToday)
+        }
+        listDayHeaderContent={info => (info.level === 0 ? heading(info.date, false, info.isToday, true) : null)}
+        noEventsContent={() => (
+          <Text type="supporting">{isDay(view) ? 'Inga möten den här dagen.' : 'Inga möten den här veckan.'}</Text>
+        )}
+        eventContent={info => {
+          const item = byId.get(info.event.id);
+          const kind = item?.kind ?? 'event';
+          const subtitle = kind !== 'event' ? item?.subtitle : undefined;
+          // A week's five columns leave a short meeting room for its name or its time: the grid's own axis says when, the name is what only the block can say.
+          const time = info.timeText && (
+            <Text type="inherit" weight="semibold" hasTabularNumbers>
+              {info.timeText}
+            </Text>
+          );
+          return (
+            <>
+              {time && (view === 'timeGridWeek' ? <VisuallyHidden>{time}</VisuallyHidden> : time)}
+              {/* In a week's narrow column who it is gets its own line, so "Utvecklingssamtal · Anna" neither breaks a word nor loses the name. */}
+              {subtitle && view === 'timeGridWeek' ? (
+                <>
+                  <Text type="inherit">{info.event.title}</Text>
+                  <Text type="inherit">{subtitle}</Text>
+                </>
+              ) : (
+                <Text type="inherit">{subtitle ? `${info.event.title} · ${subtitle}` : info.event.title}</Text>
+              )}
+              <VisuallyHidden>
+                , {kindLabel[kind]}
+                {item?.id === selectedId ? ', öppet' : ''}
+              </VisuallyHidden>
+            </>
+          );
+        }}
+        eventClick={info => {
+          const item = byId.get(info.event.id);
+          if (item) onItemClick?.(item);
+        }}
+        eventDrop={info => {
+          const item = byId.get(info.event.id);
+          if (!item || item.kind !== 'proposal' || !onMoveProposal || !info.event.start || !info.event.end) {
+            info.revert();
+            return;
+          }
+          // The move is the host's to write; a refusal puts the block back where it was.
+          Promise.resolve(onMoveProposal(item, info.event.start.toISOString(), info.event.end.toISOString())).catch(
+            () => info.revert(),
+          );
+        }}
+        select={info => {
+          onSelectRange?.(info.start.toISOString(), info.end.toISOString());
+          ref.current?.getApi().unselect();
+        }}
+      />
+    </div>
+  );
 }
 
 /** The day header as a heading in the document outline, read as "ons 4 nov." like the agenda; shown as the number over the weekday in a grid and as one line in a list, today in the accent. FullCalendar hands over the real instant, so the Stockholm date is derived, never the UTC one. */
-function DayHeading({ date, level, narrow, today, inline }: { date: Date; level: HeadingLevel; narrow: boolean; today: boolean; inline: boolean }) {
+function DayHeading({
+  date,
+  level,
+  narrow,
+  today,
+  inline,
+}: {
+  date: Date;
+  level: HeadingLevel;
+  narrow: boolean;
+  today: boolean;
+  inline: boolean;
+}) {
   const day = displayDate(date.toISOString());
   const [weekday = '', number = ''] = shortDayLabel(day).split(' ');
-  if (inline) return <Heading level={5} accessibilityLevel={level} weight="semibold" color={today ? 'accent' : undefined}>{shortDayLabel(day)}</Heading>;
-  return <Heading level={5} accessibilityLevel={level} weight="semibold">
-    <span className="clew-cal-day-header-number" aria-hidden="true">{number}</span>
-    <span className="clew-cal-day-header-weekday" aria-hidden="true">{narrow ? weekday.slice(0, 3) : weekday}</span>
-    <VisuallyHidden>{shortDayLabel(day)}</VisuallyHidden>
-  </Heading>;
+  if (inline)
+    return (
+      <Heading level={5} accessibilityLevel={level} weight="semibold" color={today ? 'accent' : undefined}>
+        {shortDayLabel(day)}
+      </Heading>
+    );
+  return (
+    <Heading level={5} accessibilityLevel={level} weight="semibold">
+      <span className="clew-cal-day-header-number" aria-hidden="true">
+        {number}
+      </span>
+      <span className="clew-cal-day-header-weekday" aria-hidden="true">
+        {narrow ? weekday.slice(0, 3) : weekday}
+      </span>
+      <VisuallyHidden>{shortDayLabel(day)}</VisuallyHidden>
+    </Heading>
+  );
 }
 
 /** What a screen reader hears first: the span and, per day, how many meetings and proposals, since the grid is a picture. */
@@ -142,7 +274,9 @@ function summarise(view: CalendarView, date: string, items: AgendaItem[]) {
   const parts = days.map(day => {
     const entries = items.filter(item => occursOn(item, day));
     if (!entries.length) return `${shortDayLabel(day)} ledigt`;
-    const counts = (['event', 'booked', 'proposal'] as const).map(kind => [kind, entries.filter(e => e.kind === kind).length] as const).filter(([, n]) => n > 0);
+    const counts = (['event', 'booked', 'proposal'] as const)
+      .map(kind => [kind, entries.filter(e => e.kind === kind).length] as const)
+      .filter(([, n]) => n > 0);
     return `${shortDayLabel(day)}: ${counts.map(([kind, n]) => `${n} ${kindLabel[kind]}`).join(', ')}`;
   });
   return `${head}. ${parts.join('. ')}.`;

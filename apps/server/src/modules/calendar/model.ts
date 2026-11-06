@@ -8,24 +8,70 @@ import type { CalendarBinding } from '@clew/calendar/accounts';
  * tests, both held to `tests/proposal-store-contract.ts`. Every instant is an ISO string the use case hands in.
  */
 export interface ProposalRecord {
-  id: string; threadId: string; personId: string; status: ProposalStatus;
+  id: string;
+  threadId: string;
+  personId: string;
+  status: ProposalStatus;
   participant: { email: string; name: string };
-  start: string; end: string;
-  eventUid: string | null; eventRef: string | null; eventRevision: string | null;
-  confirmedAt: string | null; undoUntil: string | null;
+  start: string;
+  end: string;
+  eventUid: string | null;
+  eventRef: string | null;
+  eventRevision: string | null;
+  confirmedAt: string | null;
+  undoUntil: string | null;
   /** Follow-ups to the invitee (D30). */
-  reminders: number; remindedAt: string | null;
+  reminders: number;
+  remindedAt: string | null;
 }
-export type ProposalPatch = Partial<Pick<ProposalRecord, 'status' | 'start' | 'end' | 'eventUid' | 'eventRef' | 'eventRevision' | 'confirmedAt' | 'undoUntil' | 'reminders' | 'remindedAt'>>;
+export type ProposalPatch = Partial<
+  Pick<
+    ProposalRecord,
+    | 'status'
+    | 'start'
+    | 'end'
+    | 'eventUid'
+    | 'eventRef'
+    | 'eventRevision'
+    | 'confirmedAt'
+    | 'undoUntil'
+    | 'reminders'
+    | 'remindedAt'
+  >
+>;
 /** The thread as the contract shows it (superseded proposals left out) plus every proposal record the module holds. */
-export interface ProposalThread { thread: Thread; proposals: ProposalRecord[] }
-export interface NewProposalThread {
-  id: string; personId: string; topic: string; title: string; week: string; area: string; summary: string;
-  trigger: Thread['trigger']; createdAt: string; updatedAt: string;
+export interface ProposalThread {
+  thread: Thread;
+  proposals: ProposalRecord[];
 }
-export type ProposalThreadPatch = Partial<Pick<Thread, 'title' | 'week' | 'state' | 'handledAt' | 'updatedAt' | 'summary' | 'deadline' | 'waitingOn'>> & { items?: ThreadItem[] };
-export interface AuditEntry { actor: string; action: string; subject: string; at: string; details?: Record<string, unknown> }
-export interface JobInput { id: string; kind: string; runAt: string; payload?: Record<string, unknown> }
+export interface NewProposalThread {
+  id: string;
+  personId: string;
+  topic: string;
+  title: string;
+  week: string;
+  area: string;
+  summary: string;
+  trigger: Thread['trigger'];
+  createdAt: string;
+  updatedAt: string;
+}
+export type ProposalThreadPatch = Partial<
+  Pick<Thread, 'title' | 'week' | 'state' | 'handledAt' | 'updatedAt' | 'summary' | 'deadline' | 'waitingOn'>
+> & { items?: ThreadItem[] };
+export interface AuditEntry {
+  actor: string;
+  action: string;
+  subject: string;
+  at: string;
+  details?: Record<string, unknown>;
+}
+export interface JobInput {
+  id: string;
+  kind: string;
+  runAt: string;
+  payload?: Record<string, unknown>;
+}
 
 export interface ProposalTx {
   lockThread(personId: string, id: string): Promise<ProposalThread | undefined>;
@@ -53,10 +99,20 @@ export interface ProposalStore {
 /** A person's calendar and unit: the provider (D11) plus the members a manager plans for. The live one caches per authorization version. */
 export type CalendarBinder = (persona: AuthenticatedContext) => CalendarBinding;
 /** A card for someone else's stream (D30): the follow-up an invitee gets. The threads module pushes it; the calendar never imports it. */
-export interface NotifyDraft { topic: string; area: string; title: string; summary: string; reason: string; actions: ThreadAction[]; deadline?: string | null }
+export interface NotifyDraft {
+  topic: string;
+  area: string;
+  title: string;
+  summary: string;
+  reason: string;
+  actions: ThreadAction[];
+  deadline?: string | null;
+}
 export type Notifier = (personId: string, draft: NotifyDraft) => Promise<string | undefined>;
 /** Who a thread belongs to, as a system identity, for the timers that know only the thread. */
-export interface People { personaFor(id: string): Promise<AuthenticatedContext | undefined> }
+export interface People {
+  personaFor(id: string): Promise<AuthenticatedContext | undefined>;
+}
 /** The follow-up workflow per obligation (D30): started at confirm, cancelled by undo. Temporal runs it; the memory adapter records it. */
 export interface ObligationTimers {
   start(input: { threadId: string; personId: string }): Promise<void>;

@@ -17,34 +17,87 @@ import { searchUsecases } from '../../apps/server/src/modules/search/usecases';
  * registry, the memory store, a clock the test owns. What a person does on a card, what the store ends up holding,
  * and what the audit log says about it.
  */
-const persona = (id: string, role: 'manager' | 'employee'): AuthenticatedContext => ({ id, name: id, unitId: 'unit-skola', unitLabel: 'Skönsmons skola', role,
-  organisationId: 'sundsvall', principal: { id: 'person:' + id, kind: 'person' }, capabilities: [], authorizationVersion: 'v1', sessionBinding: 'test', expiresAt: '2099-01-01T00:00:00.000Z', async authorize() { return { version: 'v1' }; } });
-const hillevi = persona('hillevi', 'manager'), hassan = persona('hassan', 'employee');
+const persona = (id: string, role: 'manager' | 'employee'): AuthenticatedContext => ({
+  id,
+  name: id,
+  unitId: 'unit-skola',
+  unitLabel: 'Skönsmons skola',
+  role,
+  organisationId: 'sundsvall',
+  principal: { id: 'person:' + id, kind: 'person' },
+  capabilities: [],
+  authorizationVersion: 'v1',
+  sessionBinding: 'test',
+  expiresAt: '2099-01-01T00:00:00.000Z',
+  async authorize() {
+    return { version: 'v1' };
+  },
+});
+const hillevi = persona('hillevi', 'manager'),
+  hassan = persona('hassan', 'employee');
 const T0 = '2026-11-04T07:00:00.000Z';
 const MINUTE = 60_000;
 function fakeClock(start = T0) {
   let now = Date.parse(start);
   const clock = () => new Date(now);
-  return Object.assign(clock, { advance(ms: number) { now += ms; }, set(iso: string) { now = Date.parse(iso); } });
+  return Object.assign(clock, {
+    advance(ms: number) {
+      now += ms;
+    },
+    set(iso: string) {
+      now = Date.parse(iso);
+    },
+  });
 }
 function world() {
-  const state = memoryState(), registry = new Registry();
+  const state = memoryState(),
+    registry = new Registry();
   registry.register({ id: 'calendar', kind: 'core', source: 'Kalendern', areas: [], capabilities: [] });
-  const store = memoryThreadStore(), clock = fakeClock();
-  for (const m of [hrConnector(state), financeConnector(state), incidentsConnector(state), searchConnector(searchUsecases({ sources: a => registry.searchSources(a), clock }))]) registry.register(m);
+  const store = memoryThreadStore(),
+    clock = fakeClock();
+  for (const m of [
+    hrConnector(state),
+    financeConnector(state),
+    incidentsConnector(state),
+    searchConnector(searchUsecases({ sources: a => registry.searchSources(a), clock })),
+  ])
+    registry.register(m);
   let n = 0;
-  const calendar = { calls: [] as string[], today: [] as Array<{ title: string; end: string }>,
-    async ensureProposalThread() { calendar.calls.push('ensure'); return undefined; },
-    async replan(_p: AuthenticatedContext, threadId: string) { calendar.calls.push('replan'); return (await store.readThreadById(threadId))!; },
-    async dismiss(_p: AuthenticatedContext, threadId: string) { calendar.calls.push('dismiss'); return (await store.readThreadById(threadId))!; },
-    async todayEvents() { return calendar.today; } };
+  const calendar = {
+    calls: [] as string[],
+    today: [] as Array<{ title: string; end: string }>,
+    async ensureProposalThread() {
+      calendar.calls.push('ensure');
+      return undefined;
+    },
+    async replan(_p: AuthenticatedContext, threadId: string) {
+      calendar.calls.push('replan');
+      return (await store.readThreadById(threadId))!;
+    },
+    async dismiss(_p: AuthenticatedContext, threadId: string) {
+      calendar.calls.push('dismiss');
+      return (await store.readThreadById(threadId))!;
+    },
+    async todayEvents() {
+      return calendar.today;
+    },
+  };
   const timers = memoryTimers();
-  const deps: ThreadDeps = { store, registry, run: (p, name, input) => registry.run(actorOf(p), name, input), calendar, timers, clock, ids: () => `thread-${++n}` };
+  const deps: ThreadDeps = {
+    store,
+    registry,
+    run: (p, name, input) => registry.run(actorOf(p), name, input),
+    calendar,
+    timers,
+    clock,
+    ids: () => `thread-${++n}`,
+  };
   const threads = threadUsecases(deps);
   const reminders = reminderUsecases({ store, clock, authorized: async () => true });
   return { state, registry, store, clock, calendar, deps, threads, reminders, timers };
 }
-const actions = (store: ReturnType<typeof memoryThreadStore>, id: string) => store.audit.filter(e => e.subject === 'thread:' + id).map(e => e.action);
+const actions = (store: ReturnType<typeof memoryThreadStore>, id: string) =>
+  store.audit.filter(e => e.subject === 'thread:' + id).map(e => e.action);
 async function invoices(w: ReturnType<typeof world>) {
   await w.threads.ensureThreads(hillevi);
   return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'finance:invoices')!;
@@ -63,9 +116,20 @@ describe('the scan', () => {
     const mine = await w.threads.listThreadsFor(hillevi);
     expect(mine.length).toBeGreaterThan(1);
     const card = mine.find(t => t.topic === 'finance:invoices')!;
-    expect(card).toMatchObject({ kind: 'pushed', state: 'open', connector: 'finance', area: 'budget', createdAt: T0, trigger: { source: 'Ekonomisystemet', at: T0 } });
+    expect(card).toMatchObject({
+      kind: 'pushed',
+      state: 'open',
+      connector: 'finance',
+      area: 'budget',
+      createdAt: T0,
+      trigger: { source: 'Ekonomisystemet', at: T0 },
+    });
     expect(card.messages.map(m => m.body)).toEqual([card.summary]);
-    expect(w.store.audit.filter(e => e.action === 'thread.pushed').map(e => e.details)).toContainEqual({ connector: 'finance', topic: 'finance:invoices', owner: 'hillevi' });
+    expect(w.store.audit.filter(e => e.action === 'thread.pushed').map(e => e.details)).toContainEqual({
+      connector: 'finance',
+      topic: 'finance:invoices',
+      owner: 'hillevi',
+    });
     expect(w.calendar.calls).toEqual(['ensure']);
     await w.threads.ensureThreads(hassan);
     expect((await w.threads.listThreadsFor(hassan)).some(t => t.connector === 'finance')).toBe(false);
@@ -78,12 +142,14 @@ describe('the scan', () => {
     await w.threads.ensureThreads(hillevi);
     expect({ threads: w.store.dump().length, audit: w.store.audit.length }).toEqual(before);
   });
-  test('refreshes an untouched card from its source and keeps the person\'s selection', async () => {
+  test("refreshes an untouched card from its source and keeps the person's selection", async () => {
     const w = world();
     const card = await invoices(w);
     const [first, second] = card.items;
     expect(first!.selected).toBe(true);
-    await w.store.transaction(tx => tx.updateThread(card.id, { items: card.items.map(i => i.ref === first!.ref ? { ...i, selected: false } : i) }));
+    await w.store.transaction(tx =>
+      tx.updateThread(card.id, { items: card.items.map(i => (i.ref === first!.ref ? { ...i, selected: false } : i)) }),
+    );
     // One invoice is approved outside Clew: the next scan drops it from the card.
     await w.registry.run(hillevi, 'finance.approve', { refs: [second!.ref] });
     await w.threads.ensureThreads(hillevi);
@@ -109,11 +175,24 @@ describe('avfärda, inte nu and ångra', () => {
     expect(await w.threads.dismissAny(hillevi, card.id)).toMatchObject({ state: 'dismissed', handledAt: T0 });
     w.clock.advance(10 * MINUTE);
     expect(await w.threads.reopenThread(hillevi, card.id)).toMatchObject({ state: 'open', handledAt: null });
-    expect(await w.threads.snoozeThread(hillevi, card.id)).toMatchObject({ state: 'open', waitingOn: null, snoozedUntil: '2026-11-05T05:00:00.000Z' });
+    expect(await w.threads.snoozeThread(hillevi, card.id)).toMatchObject({
+      state: 'open',
+      waitingOn: null,
+      snoozedUntil: '2026-11-05T05:00:00.000Z',
+    });
     w.clock.advance(5 * 24 * 60 * MINUTE);
     expect(await w.threads.reopenThread(hillevi, card.id)).toMatchObject({ state: 'open', snoozedUntil: null });
-    expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'thread.dismissed', 'thread.reopened', 'thread.snoozed', 'thread.reopened']);
-    expect(w.store.audit.filter(e => e.action === 'thread.reopened').map(e => e.details)).toEqual([{ from: 'dismissed' }, { from: 'snoozed' }]);
+    expect(actions(w.store, card.id)).toEqual([
+      'thread.pushed',
+      'thread.dismissed',
+      'thread.reopened',
+      'thread.snoozed',
+      'thread.reopened',
+    ]);
+    expect(w.store.audit.filter(e => e.action === 'thread.reopened').map(e => e.details)).toEqual([
+      { from: 'dismissed' },
+      { from: 'snoozed' },
+    ]);
     expect(w.calendar.calls).toEqual(['ensure']);
   });
   test('a snoozed card wakes when its time passes, with an audit row saying so', async () => {
@@ -122,9 +201,17 @@ describe('avfärda, inte nu and ångra', () => {
     const snoozed = await w.threads.snoozeThread(hillevi, card.id);
     expect(snoozed.snoozedUntil).toBe('2026-11-05T05:00:00.000Z');
     expect(snoozed.messages.at(-1)!.body).toBe('Inte nu · i morgon 06:00');
-    expect(await w.store.readTimer(`snooze:${card.id}`)).toMatchObject({ generation: 1, state: 'active', dueAt: '2026-11-05T05:00:00.000Z', requestedAt: T0, deliveredGeneration: null });
+    expect(await w.store.readTimer(`snooze:${card.id}`)).toMatchObject({
+      generation: 1,
+      state: 'active',
+      dueAt: '2026-11-05T05:00:00.000Z',
+      requestedAt: T0,
+      deliveredGeneration: null,
+    });
     w.clock.advance(60 * MINUTE);
-    expect((await w.threads.listThreadsFor(hillevi)).find(t => t.id === card.id)?.snoozedUntil).toBe('2026-11-05T05:00:00.000Z');
+    expect((await w.threads.listThreadsFor(hillevi)).find(t => t.id === card.id)?.snoozedUntil).toBe(
+      '2026-11-05T05:00:00.000Z',
+    );
     w.clock.set('2026-11-05T05:00:00.000Z');
     await w.reminders.fire(`snooze:${card.id}`, 1);
     expect((await w.threads.listThreadsFor(hillevi)).find(t => t.id === card.id)?.snoozedUntil).toBeNull();
@@ -147,7 +234,10 @@ describe('avfärda, inte nu and ångra', () => {
   });
   test('the picker (D29): a preset, free text or an instant sets the time; the rows carry their resolved times', async () => {
     const w = world();
-    w.calendar.today = [{ title: 'Ledningsgrupp', end: '2026-11-04T10:30:00.000Z' }, { title: 'Lunch', end: '2026-11-04T11:30:00.000Z' }];
+    w.calendar.today = [
+      { title: 'Ledningsgrupp', end: '2026-11-04T10:30:00.000Z' },
+      { title: 'Lunch', end: '2026-11-04T11:30:00.000Z' },
+    ];
     const card = await invoices(w);
     const presets = await w.threads.snoozeOptions(hillevi);
     expect(presets.map(p => [p.id, p.at, p.detail])).toEqual([
@@ -158,21 +248,44 @@ describe('avfärda, inte nu and ångra', () => {
       ['meeting', '2026-11-04T10:30:00.000Z', '11:30 · från kalendern'],
     ]);
     expect(presets[4]!.label).toBe('När jag är tillbaka från Ledningsgrupp');
-    expect((await w.threads.snoozeThread(hillevi, card.id, { preset: 'lunch' })).snoozedUntil).toBe('2026-11-04T12:00:00.000Z');
-    expect((await w.threads.snoozeThread(hillevi, card.id, { text: 'fredag kl 9' })).snoozedUntil).toBe('2026-11-06T08:00:00.000Z');
-    expect((await w.threads.snoozeThread(hillevi, card.id, { until: '2026-11-04T15:00:00.000Z' })).messages.at(-1)!.body).toBe('Inte nu · kl 16:00');
-    await expect(w.threads.snoozeThread(hillevi, card.id, { text: 'när grisarna flyger' })).rejects.toThrow('Jag förstod inte tiden.');
+    expect((await w.threads.snoozeThread(hillevi, card.id, { preset: 'lunch' })).snoozedUntil).toBe(
+      '2026-11-04T12:00:00.000Z',
+    );
+    expect((await w.threads.snoozeThread(hillevi, card.id, { text: 'fredag kl 9' })).snoozedUntil).toBe(
+      '2026-11-06T08:00:00.000Z',
+    );
+    expect(
+      (await w.threads.snoozeThread(hillevi, card.id, { until: '2026-11-04T15:00:00.000Z' })).messages.at(-1)!.body,
+    ).toBe('Inte nu · kl 16:00');
+    await expect(w.threads.snoozeThread(hillevi, card.id, { text: 'när grisarna flyger' })).rejects.toThrow(
+      'Jag förstod inte tiden.',
+    );
     await expect(w.threads.snoozeThread(hillevi, card.id, { preset: 'aldrig' })).rejects.toThrow('Okänt förval.');
-    await expect(w.threads.snoozeThread(hillevi, card.id, { until: '2026-11-04T06:00:00.000Z' })).rejects.toThrow('Tiden har redan passerat.');
-    await expect(w.threads.snoozeThread(hillevi, card.id, { until: '2026-12-20T06:00:00.000Z' })).rejects.toThrow('Högst 30 dagar framåt.');
+    await expect(w.threads.snoozeThread(hillevi, card.id, { until: '2026-11-04T06:00:00.000Z' })).rejects.toThrow(
+      'Tiden har redan passerat.',
+    );
+    await expect(w.threads.snoozeThread(hillevi, card.id, { until: '2026-12-20T06:00:00.000Z' })).rejects.toThrow(
+      'Högst 30 dagar framåt.',
+    );
     expect(w.store.audit.filter(e => e.action === 'thread.snoozed').map(e => e.details)).toEqual([
-      expect.objectContaining({ preset: 'lunch', delivery: 'queued', generation: 1 }), expect.objectContaining({ text: 'fredag kl 9' }), expect.objectContaining({ until: '2026-11-04T15:00:00.000Z' })]);
+      expect.objectContaining({ preset: 'lunch', delivery: 'queued', generation: 1 }),
+      expect.objectContaining({ text: 'fredag kl 9' }),
+      expect.objectContaining({ until: '2026-11-04T15:00:00.000Z' }),
+    ]);
   });
   test('a snooze comes back the way a reminder does (D49); one that was woken earlier or re-snoozed does nothing', async () => {
     const w = world();
     const card = await invoices(w);
     await w.threads.snoozeThread(hillevi, card.id, { until: '2026-11-04T09:00:00.000Z' });
-    const fired = { personId: 'hillevi', threadId: card.id, title: card.title, area: card.area, seconds: 2 * 3600, requestedAt: T0, silent: true };
+    const fired = {
+      personId: 'hillevi',
+      threadId: card.id,
+      title: card.title,
+      area: card.area,
+      seconds: 2 * 3600,
+      requestedAt: T0,
+      silent: true,
+    };
     w.clock.set('2026-11-04T09:00:00.000Z');
     expect(await w.reminders.fire(`snooze:${card.id}`, 1)).toBe('surfaced');
     const back = (await w.threads.threadFor(hillevi, card.id))!;
@@ -180,7 +293,12 @@ describe('avfärda, inte nu and ångra', () => {
     expect(back.trigger.reason).toBe(`Du bad 08:00 om en påminnelse · ${card.trigger.reason}`);
     expect(back.messages.at(-1)!.body).toBe('Påminnelse: du bad 08:00 om att få det här kortet igen.');
     expect(w.store.deliveries).toEqual([`reminded:${card.id}:1`]);
-    expect(w.store.audit.at(-1)).toMatchObject({ actor: 'assistant:reminder', action: 'thread.woken', subject: 'thread:' + card.id, details: { reason: 'time', snoozedUntil: '2026-11-04T09:00:00.000Z', owner: 'hillevi' } });
+    expect(w.store.audit.at(-1)).toMatchObject({
+      actor: 'assistant:reminder',
+      action: 'thread.woken',
+      subject: 'thread:' + card.id,
+      details: { reason: 'time', snoozedUntil: '2026-11-04T09:00:00.000Z', owner: 'hillevi' },
+    });
     expect(await w.reminders.surface(fired)).toBe('skipped');
     await w.threads.snoozeThread(hillevi, card.id, { until: '2026-11-04T12:00:00.000Z' });
     expect(await w.reminders.surface(fired)).toBe('skipped');
@@ -213,14 +331,24 @@ describe('every mutation and its audit row', () => {
       ['thread.snoozed', () => w.threads.snoozeThread(hillevi, card.id)],
       ['thread.reopened', () => w.threads.reopenThread(hillevi, card.id)],
       ['thread.dismissed', () => w.threads.dismissThread(hillevi, card.id)],
-      ['reminder.set', async () => { await w.threads.reopenThread(hillevi, card.id); return w.reminders.remind(hillevi, card.id, 600); }],
+      [
+        'reminder.set',
+        async () => {
+          await w.threads.reopenThread(hillevi, card.id);
+          return w.reminders.remind(hillevi, card.id, 600);
+        },
+      ],
       ['reminder.cancelled', () => w.reminders.cancelReminder(hillevi, card.id, `reminder:${card.id}:v2:1`)],
     ];
     for (const [action, step] of steps) {
       const before = w.store.audit.length;
       await step();
-      const added = w.store.audit.slice(before).filter(e => e.action !== 'thread.reopened' || action === 'thread.reopened');
-      expect(added.map(e => [e.action, e.actor, e.subject, e.at])).toEqual([[action, 'person:hillevi', 'thread:' + card.id, T0]]);
+      const added = w.store.audit
+        .slice(before)
+        .filter(e => e.action !== 'thread.reopened' || action === 'thread.reopened');
+      expect(added.map(e => [e.action, e.actor, e.subject, e.at])).toEqual([
+        [action, 'person:hillevi', 'thread:' + card.id, T0],
+      ]);
     }
   });
 });
@@ -228,10 +356,18 @@ describe('every mutation and its audit row', () => {
 describe('attention and areas', () => {
   test('a scan outside the review counts as one interruption against the budget, however many cards it brings', async () => {
     const w = world();
-    expect(await w.threads.attentionFor(hillevi)).toMatchObject({ used: 0, budget: ATTENTION_BUDGET, bundledUntil: null });
+    expect(await w.threads.attentionFor(hillevi)).toMatchObject({
+      used: 0,
+      budget: ATTENTION_BUDGET,
+      bundledUntil: null,
+    });
     await w.threads.ensureThreads(hillevi);
     expect((await w.threads.listThreadsFor(hillevi)).filter(t => t.kind === 'pushed').length).toBeGreaterThan(1);
-    expect(await w.threads.attentionFor(hillevi)).toMatchObject({ used: 1, budget: ATTENTION_BUDGET, bundledUntil: null });
+    expect(await w.threads.attentionFor(hillevi)).toMatchObject({
+      used: 1,
+      budget: ATTENTION_BUDGET,
+      bundledUntil: null,
+    });
     w.clock.advance(24 * 60 * MINUTE);
     expect((await w.threads.attentionFor(hillevi)).used).toBe(0);
   });
@@ -251,7 +387,11 @@ describe('attention and areas', () => {
     const budget = (await w.threads.listAreas(hillevi)).find(a => a.id === 'budget')!;
     expect(budget).toMatchObject({ needsYou: 1, waiting: 0, urgency: 'urgent' });
     await w.threads.snoozeThread(hillevi, card.id);
-    expect((await w.threads.listAreas(hillevi)).find(a => a.id === 'budget')).toMatchObject({ needsYou: 0, waiting: 0, urgency: null });
+    expect((await w.threads.listAreas(hillevi)).find(a => a.id === 'budget')).toMatchObject({
+      needsYou: 0,
+      waiting: 0,
+      urgency: null,
+    });
   });
 });
 
@@ -260,8 +400,17 @@ describe('påminn mig', () => {
     const w = world();
     const card = await invoices(w);
     const set = await w.reminders.remind(hillevi, card.id, 600);
-    expect(set).toMatchObject({ id: `reminder:${card.id}:v2:1`, fireAt: new Date(Date.parse(T0) + 10 * MINUTE).toISOString(), thread: { waitingOn: 'påminnelsen 08:10' } });
-    expect(await w.store.readTimer(`reminder:${card.id}`)).toMatchObject({ state: 'active', generation: 1, dueAt: set.fireAt, deliveredGeneration: null });
+    expect(set).toMatchObject({
+      id: `reminder:${card.id}:v2:1`,
+      fireAt: new Date(Date.parse(T0) + 10 * MINUTE).toISOString(),
+      thread: { waitingOn: 'påminnelsen 08:10' },
+    });
+    expect(await w.store.readTimer(`reminder:${card.id}`)).toMatchObject({
+      state: 'active',
+      generation: 1,
+      dueAt: set.fireAt,
+      deliveredGeneration: null,
+    });
     expect(set.thread.messages.at(-1)!.body).toBe('Påminn mig 08:10');
     const cancelled = await w.reminders.cancelReminder(hillevi, card.id, set.id);
     expect(cancelled.waitingOn).toBeNull();
@@ -280,7 +429,10 @@ describe('påminn mig', () => {
     w.clock.advance(10 * MINUTE);
     expect(await w.reminders.fire(`reminder:${card.id}`, 2)).toBe('surfaced');
     const back = (await w.threads.threadFor(hillevi, card.id))!;
-    expect(back).toMatchObject({ waitingOn: null, trigger: { reason: `Du bad 08:00 om en påminnelse · Väntade på skyddsombudet · ${card.trigger.reason}` } });
+    expect(back).toMatchObject({
+      waitingOn: null,
+      trigger: { reason: `Du bad 08:00 om en påminnelse · Väntade på skyddsombudet · ${card.trigger.reason}` },
+    });
     expect(actions(w.store, card.id).at(-1)).toBe('thread.reminded');
     expect(w.store.deliveries).toEqual([`reminded:${card.id}:2`]);
   });
@@ -290,19 +442,43 @@ describe('påminn mig', () => {
     const set = await w.reminders.remind(hillevi, card.id, 600);
     await w.threads.dismissThread(hillevi, card.id);
     w.clock.advance(10 * MINUTE);
-    const fired = { personId: 'hillevi', threadId: card.id, title: card.title, area: card.area, seconds: 600, requestedAt: T0 };
+    const fired = {
+      personId: 'hillevi',
+      threadId: card.id,
+      title: card.title,
+      area: card.area,
+      seconds: 600,
+      requestedAt: T0,
+    };
     expect(await w.reminders.fire(`reminder:${card.id}`, 1)).toBe('surfaced');
     const back = (await w.threads.threadFor(hillevi, card.id))!;
     const at = new Date(Date.parse(T0) + 10 * MINUTE).toISOString();
-    expect(back).toMatchObject({ state: 'open', handledAt: null, waitingOn: null, remindedAt: at, trigger: { reason: `Du bad 08:00 om en påminnelse · ${card.trigger.reason}`, source: card.trigger.source, at } });
+    expect(back).toMatchObject({
+      state: 'open',
+      handledAt: null,
+      waitingOn: null,
+      remindedAt: at,
+      trigger: { reason: `Du bad 08:00 om en påminnelse · ${card.trigger.reason}`, source: card.trigger.source, at },
+    });
     expect(back.messages.at(-1)!.body).toBe('Påminnelse: du bad 08:00 om att få det här kortet igen.');
-    expect(w.store.audit.at(-1)).toMatchObject({ actor: 'assistant:reminder', action: 'thread.reminded', subject: 'thread:' + card.id, at, details: { requestedAt: T0, seconds: 600, wasState: 'dismissed', owner: 'hillevi' } });
+    expect(w.store.audit.at(-1)).toMatchObject({
+      actor: 'assistant:reminder',
+      action: 'thread.reminded',
+      subject: 'thread:' + card.id,
+      at,
+      details: { requestedAt: T0, seconds: 600, wasState: 'dismissed', owner: 'hillevi' },
+    });
     // A retried activity finds remindedAt at the fire time already and does nothing; a stranger's id never matches.
     expect(await w.reminders.surface(fired)).toBe('skipped');
     expect(await w.reminders.surface({ ...fired, personId: 'hassan' })).toBe('skipped');
     expect(w.store.audit.filter(e => e.action === 'thread.reminded')).toHaveLength(1);
     // A card handled with a receipt is left alone: the work is done.
-    await w.store.transaction(tx => tx.updateThread(card.id, { state: 'handled', receipt: { at, headline: 'Klart', rows: [], undoUntil: null, undoCapability: null } }));
+    await w.store.transaction(tx =>
+      tx.updateThread(card.id, {
+        state: 'handled',
+        receipt: { at, headline: 'Klart', rows: [], undoUntil: null, undoCapability: null },
+      }),
+    );
     expect(await w.reminders.surface({ ...fired, requestedAt: at })).toBe('skipped');
     expect((await w.threads.threadFor(hillevi, card.id))!.state).toBe('handled');
     void set;
@@ -315,22 +491,68 @@ describe('påminn mig', () => {
     expect((await w.threads.threadFor(hillevi, card.id))!.waitingOn).toBe('påminnelsen 08:10');
     expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'reminder.set']);
     await expect(w.reminders.remind(hillevi, card.id, 0)).rejects.toThrow('Ogiltig tid för påminnelsen.');
-    await expect(w.reminders.remind(hillevi, card.id, 30 * 24 * 3600 + 1)).rejects.toThrow('Ogiltig tid för påminnelsen.');
+    await expect(w.reminders.remind(hillevi, card.id, 30 * 24 * 3600 + 1)).rejects.toThrow(
+      'Ogiltig tid för påminnelsen.',
+    );
     await expect(w.reminders.cancelReminder(hillevi, card.id, 'reminder:other:1')).rejects.toThrow('Okänd påminnelse.');
   });
 });
 
 describe('a cited answer becomes a card (D26)', () => {
   const sources = [
-    { n: 1, ref: 'document:docs:fall-2', label: 'Rutin vid fall i ordinärt boende', source: 'Intranätet', stale: false, link: 'https://intra/fall', section: 'Vid fall', owner: 'MAS', reviewedAt: '2026-03-12T00:00:00.000Z' },
-    { n: 2, ref: 'document:eneo:lathund', label: 'Lathund: avvikelser', source: 'Eneo', stale: true, reviewedAt: '2024-11-02T00:00:00.000Z' },
+    {
+      n: 1,
+      ref: 'document:docs:fall-2',
+      label: 'Rutin vid fall i ordinärt boende',
+      source: 'Intranätet',
+      stale: false,
+      link: 'https://intra/fall',
+      section: 'Vid fall',
+      owner: 'MAS',
+      reviewedAt: '2026-03-12T00:00:00.000Z',
+    },
+    {
+      n: 2,
+      ref: 'document:eneo:lathund',
+      label: 'Lathund: avvikelser',
+      source: 'Eneo',
+      stale: true,
+      reviewedAt: '2024-11-02T00:00:00.000Z',
+    },
   ];
   async function conversation(w: ReturnType<typeof world>, withSources = true) {
     const at = w.clock().toISOString();
     await w.store.transaction(async tx => {
-      await tx.insertThread({ id: 'q1', personId: 'hassan', kind: 'question', topic: 'question', title: 'Brukaren har ramlat, vad gör jag?', state: 'open', week: null, connector: 'clew', area: 'fragor', summary: 'svar', items: [], actions: [], waitingOn: null, deadline: null, trigger: { reason: 'Du ställde en fråga', source: 'Startsidan', at }, createdAt: at, updatedAt: at });
+      await tx.insertThread({
+        id: 'q1',
+        personId: 'hassan',
+        kind: 'question',
+        topic: 'question',
+        title: 'Brukaren har ramlat, vad gör jag?',
+        state: 'open',
+        week: null,
+        connector: 'clew',
+        area: 'fragor',
+        summary: 'svar',
+        items: [],
+        actions: [],
+        waitingOn: null,
+        deadline: null,
+        trigger: { reason: 'Du ställde en fråga', source: 'Startsidan', at },
+        createdAt: at,
+        updatedAt: at,
+      });
       await tx.addMessage('q1', { role: 'user', body: 'Brukaren har ramlat, vad gör jag?', at });
-      await tx.addMessage('q1', { role: 'assistant', body: '1. Lyft inte själv [1].\n2. Skriv avvikelse [2].', at, meta: { shape: 'steg', access: { connectors: [], capabilities: [], authorizationVersion: hassan.authorizationVersion }, ...(withSources ? { sources } : {}) } });
+      await tx.addMessage('q1', {
+        role: 'assistant',
+        body: '1. Lyft inte själv [1].\n2. Skriv avvikelse [2].',
+        at,
+        meta: {
+          shape: 'steg',
+          access: { connectors: [], capabilities: [], authorizationVersion: hassan.authorizationVersion },
+          ...(withSources ? { sources } : {}),
+        },
+      });
       await tx.writeAudit({ actor: 'person:hassan', action: 'conversation.asked', subject: 'thread:q1', at });
     });
     return (await w.store.readThread('hassan', 'q1'))!;
@@ -341,24 +563,64 @@ describe('a cited answer becomes a card (D26)', () => {
     const answerId = q.messages[1]!.id;
     const { threadId } = await w.threads.cardFromAnswer(hassan, { conversationId: 'q1', messageId: answerId });
     const card = (await w.threads.threadFor(hassan, threadId))!;
-    expect(card).toMatchObject({ kind: 'pushed', state: 'open', connector: 'clew', area: 'fragor', topic: 'answer:' + answerId, title: 'Följ upp: Brukaren har ramlat, vad gör jag?', summary: '1. Lyft inte själv [1].\n2. Skriv avvikelse [2].',
-      trigger: { source: 'Startsidan', reason: 'Du frågade 08:00 och gjorde svaret till ett kort' } });
+    expect(card).toMatchObject({
+      kind: 'pushed',
+      state: 'open',
+      connector: 'clew',
+      area: 'fragor',
+      topic: 'answer:' + answerId,
+      title: 'Följ upp: Brukaren har ramlat, vad gör jag?',
+      summary: '1. Lyft inte själv [1].\n2. Skriv avvikelse [2].',
+      trigger: { source: 'Startsidan', reason: 'Du frågade 08:00 och gjorde svaret till ett kort' },
+    });
     expect(card.items).toEqual([
-      { ref: 'document:docs:fall-2', label: '[1] Rutin vid fall i ordinärt boende · Vid fall', detail: 'MAS · granskad 2026-03-12 · Intranätet', selectable: false, selected: false },
-      { ref: 'document:eneo:lathund', label: '[2] Lathund: avvikelser', detail: 'granskad 2024-11-02 · Eneo', selectable: false, selected: false },
+      {
+        ref: 'document:docs:fall-2',
+        label: '[1] Rutin vid fall i ordinärt boende · Vid fall',
+        detail: 'MAS · granskad 2026-03-12 · Intranätet',
+        selectable: false,
+        selected: false,
+      },
+      {
+        ref: 'document:eneo:lathund',
+        label: '[2] Lathund: avvikelser',
+        detail: 'granskad 2024-11-02 · Eneo',
+        selectable: false,
+        selected: false,
+      },
     ]);
-    expect(card.actions).toEqual([{ id: 'open', label: 'Öppna källan', capability: 'clew.openSource', kind: 'read', role: 'primary', target: 'link', input: { ref: 'docs:fall-2' } }]);
+    expect(card.actions).toEqual([
+      {
+        id: 'open',
+        label: 'Öppna källan',
+        capability: 'clew.openSource',
+        kind: 'read',
+        role: 'primary',
+        target: 'link',
+        input: { ref: 'docs:fall-2' },
+      },
+    ]);
     expect(actions(w.store, threadId)).toEqual(['thread.fromAnswer']);
-    expect(w.store.audit.at(-1)).toMatchObject({ actor: 'person:hassan', action: 'thread.fromAnswer', details: { conversation: 'q1', message: answerId, sources: ['document:docs:fall-2', 'document:eneo:lathund'] } });
+    expect(w.store.audit.at(-1)).toMatchObject({
+      actor: 'person:hassan',
+      action: 'thread.fromAnswer',
+      details: { conversation: 'q1', message: answerId, sources: ['document:docs:fall-2', 'document:eneo:lathund'] },
+    });
     expect(JSON.stringify(w.store.audit)).not.toContain('Lyft inte själv');
     expect(await w.threads.cardFromAnswer(hassan, { conversationId: 'q1', messageId: answerId })).toEqual({ threadId });
     expect((await w.threads.listThreadsFor(hassan)).filter(t => t.topic === 'answer:' + answerId)).toHaveLength(1);
   });
-  test('refuses a conversation that is not the person\'s, a message without sources, and a card for a pushed thread', async () => {
+  test("refuses a conversation that is not the person's, a message without sources, and a card for a pushed thread", async () => {
     const w = world();
     const q = await conversation(w, false);
-    await expect(w.threads.cardFromAnswer(hassan, { conversationId: 'q1', messageId: q.messages[1]!.id })).rejects.toThrow('Svaret har inga källor att göra ett kort av.');
-    await expect(w.threads.cardFromAnswer(hillevi, { conversationId: 'q1', messageId: q.messages[1]!.id })).rejects.toThrow('Samtalet finns inte.');
-    await expect(w.threads.cardFromAnswer(hassan, { conversationId: 'q1', messageId: 'nope' })).rejects.toThrow('Svaret har inga källor att göra ett kort av.');
+    await expect(
+      w.threads.cardFromAnswer(hassan, { conversationId: 'q1', messageId: q.messages[1]!.id }),
+    ).rejects.toThrow('Svaret har inga källor att göra ett kort av.');
+    await expect(
+      w.threads.cardFromAnswer(hillevi, { conversationId: 'q1', messageId: q.messages[1]!.id }),
+    ).rejects.toThrow('Samtalet finns inte.');
+    await expect(w.threads.cardFromAnswer(hassan, { conversationId: 'q1', messageId: 'nope' })).rejects.toThrow(
+      'Svaret har inga källor att göra ett kort av.',
+    );
   });
 });

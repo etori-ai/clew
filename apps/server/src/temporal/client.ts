@@ -10,6 +10,9 @@ let pending: Promise<Client> | undefined;
 export function temporalClient(): Promise<Client> {
   pending ??= Connection.connect({ address: temporalAddress(), connectTimeout: 3000 })
     .then(connection => new Client({ connection, namespace: temporalNamespace() }))
-    .catch(error => { pending = undefined; throw error; });
+    .catch(error => {
+      pending = undefined;
+      throw error;
+    });
   return pending;
 }

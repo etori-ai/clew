@@ -15,10 +15,19 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   forbidOnly: true,
-  reporter: [['list'], ['html', { open: 'never', outputFolder: resolve(import.meta.dirname, '../../playwright-report', profile) }]],
-  use: { baseURL: 'http://localhost:4173', locale: 'sv-SE', timezoneId: 'Europe/Stockholm', trace: 'retain-on-failure' },
+  reporter: [
+    ['list'],
+    ['html', { open: 'never', outputFolder: resolve(import.meta.dirname, '../../playwright-report', profile) }],
+  ],
+  use: {
+    baseURL: 'http://localhost:4173',
+    locale: 'sv-SE',
+    timezoneId: 'Europe/Stockholm',
+    trace: 'retain-on-failure',
+  },
   webServer: {
-    command: 'node_modules/.bin/vite build --config ../../tests/a11y/vite.config.ts --logLevel warn && node_modules/.bin/vite preview --config ../../tests/a11y/vite.config.ts --port 4173 --strictPort',
+    command:
+      'node_modules/.bin/vite build --config ../../tests/a11y/vite.config.ts --logLevel warn && node_modules/.bin/vite preview --config ../../tests/a11y/vite.config.ts --port 4173 --strictPort',
     cwd: '../../apps/web',
     url: 'http://localhost:4173',
     reuseExistingServer: false,

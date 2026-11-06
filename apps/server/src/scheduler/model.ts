@@ -1,7 +1,11 @@
 import type { AuthenticatedContext } from '@clew/contracts';
 
 /** The ports of the Postgres-backed scheduler (D15, D25): a claimable job queue and the people a nightly scan runs for. */
-export interface Job { id: string; kind: string; payload: Record<string, unknown> }
+export interface Job {
+  id: string;
+  kind: string;
+  payload: Record<string, unknown>;
+}
 export interface JobQueue {
   /** One job due at or before `now`, claimed so no other process runs it; undefined when none is due. */
   claim(now: string): Promise<Job | undefined>;

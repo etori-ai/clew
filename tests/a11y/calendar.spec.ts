@@ -1,4 +1,16 @@
-import { announcements, desktop, expect, expectNoAxeViolations, focused, heading, narrow, open, phone, reflowProblems, test } from './support';
+import {
+  announcements,
+  desktop,
+  expect,
+  expectNoAxeViolations,
+  focused,
+  heading,
+  narrow,
+  open,
+  phone,
+  reflowProblems,
+  test,
+} from './support';
 import { NEXT_WEEK } from './data';
 
 /**
@@ -6,20 +18,30 @@ import { NEXT_WEEK } from './data';
  * from the grid, and a proposal moved without a mouse. The grid itself is a picture (FullCalendar's time grid is not a
  * WAI-ARIA grid); every action here goes through a dialog, which is the path these tests take.
  */
-const views = [['the day', '/calendar?view=day'], ['the week', '/calendar?view=week'], ['the month', '/calendar?view=month']] as const;
+const views = [
+  ['the day', '/calendar?view=day'],
+  ['the week', '/calendar?view=week'],
+  ['the month', '/calendar?view=month'],
+] as const;
 
 test.describe('the three views', () => {
-  for (const viewport of [desktop, phone]) for (const [name, path] of views) test(`${name} at ${viewport.width} px has no axe violations`, async ({ page, api: _ }) => {
-    await page.setViewportSize(viewport);
-    await open(page, path);
-    await expectNoAxeViolations(page);
-  });
-  for (const [name, path] of views) test(`${name} reflows at 320 px`, async ({ page, api: _ }) => {
-    await page.setViewportSize(narrow);
-    await open(page, path);
-    expect(await reflowProblems(page)).toEqual([]);
-  });
-  test('the view switch is one choice of three; the title, the address and the spoken page follow it', async ({ page, api: _ }) => {
+  for (const viewport of [desktop, phone])
+    for (const [name, path] of views)
+      test(`${name} at ${viewport.width} px has no axe violations`, async ({ page, api: _ }) => {
+        await page.setViewportSize(viewport);
+        await open(page, path);
+        await expectNoAxeViolations(page);
+      });
+  for (const [name, path] of views)
+    test(`${name} reflows at 320 px`, async ({ page, api: _ }) => {
+      await page.setViewportSize(narrow);
+      await open(page, path);
+      expect(await reflowProblems(page)).toEqual([]);
+    });
+  test('the view switch is one choice of three; the title, the address and the spoken page follow it', async ({
+    page,
+    api: _,
+  }) => {
     await page.setViewportSize(desktop);
     await open(page, '/calendar');
     const group = page.getByRole('radiogroup', { name: 'Vy' });
@@ -32,10 +54,14 @@ test.describe('the three views', () => {
     await expect(page).toHaveTitle('November 2026 · Kalender · Startsidan');
     await expect(heading(page, 1, 'November 2026')).toBeVisible();
   });
-  test('the phone week is a list with a heading per day, and the day view fits one column', async ({ page, api: _ }) => {
+  test('the phone week is a list with a heading per day, and the day view fits one column', async ({
+    page,
+    api: _,
+  }) => {
     await page.setViewportSize(phone);
     await open(page, '/calendar');
-    for (const day of ['mån 2 nov', 'tis 3 nov', 'ons 4 nov', 'tors 5 nov', 'fre 6 nov']) await expect(heading(page, 2, day)).toBeVisible();
+    for (const day of ['mån 2 nov', 'tis 3 nov', 'ons 4 nov', 'tors 5 nov', 'fre 6 nov'])
+      await expect(heading(page, 2, day)).toBeVisible();
     // The view switch is an adaptive menu on a phone (D31 §5).
     await page.getByRole('button', { name: 'Vy: Vecka' }).click();
     await page.getByRole('menuitem', { name: 'Dag' }).click();
@@ -44,8 +70,11 @@ test.describe('the three views', () => {
   });
 });
 
-test.describe('a booking of one\'s own', () => {
-  test('Ny bokning is a form dialog with labelled fields; Escape closes it and focus returns to the button', async ({ page, api: _ }) => {
+test.describe("a booking of one's own", () => {
+  test('Ny bokning is a form dialog with labelled fields; Escape closes it and focus returns to the button', async ({
+    page,
+    api: _,
+  }) => {
     await page.setViewportSize(desktop);
     await open(page, '/calendar');
     await page.getByRole('button', { name: 'Ny bokning' }).focus();
@@ -74,12 +103,17 @@ test.describe('a booking of one\'s own', () => {
     await dialog.getByRole('textbox', { name: /Rubrik/ }).fill('Ledningsgrupp');
     await dialog.getByRole('button', { name: 'Boka' }).click();
     await expect(dialog).toBeHidden();
-    await expect(page.getByRole('region', { name: 'Aviseringar' }).getByText(/^Bokningsbeslutet är sparat/)).toBeVisible();
+    await expect(
+      page.getByRole('region', { name: 'Aviseringar' }).getByText(/^Bokningsbeslutet är sparat/),
+    ).toBeVisible();
   });
 });
 
 test.describe('an entry opened from the grid', () => {
-  test('Enter on a meeting opens its details with the day around it; Escape returns focus to the meeting', async ({ page, api: _ }) => {
+  test('Enter on a meeting opens its details with the day around it; Escape returns focus to the meeting', async ({
+    page,
+    api: _,
+  }) => {
     await page.setViewportSize(desktop);
     await open(page, '/calendar');
     const block = page.locator('.clew-cal-event').first();
@@ -105,7 +139,9 @@ test.describe('an entry opened from the grid', () => {
     await expect(page.getByRole('dialog')).toHaveCount(1);
     await dialog.getByRole('button', { name: 'Ja, ställ in' }).click();
     await expect(dialog).toBeHidden();
-    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Beslutet att ställa in mötet är sparat.'));
+    await expect
+      .poll(() => announcements(page))
+      .toContainEqual(expect.stringContaining('Beslutet att ställa in mötet är sparat.'));
   });
   test('a proposal is moved from the keyboard, never only by drag', async ({ page, api: _ }) => {
     await page.setViewportSize(desktop);

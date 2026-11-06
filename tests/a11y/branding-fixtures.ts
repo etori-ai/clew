@@ -7,8 +7,15 @@ type BrandingFixture = Readonly<{ input: BrandingInput; expected: Branding; acce
 export const brandingFixtures: Readonly<Record<A11yBrandProfile, BrandingFixture>> = {
   sundsvall: {
     input: { profile: 'sundsvall' },
-    expected: { profile: 'sundsvall', colors: { accent: '#005595', accentMuted: '#daeff1' },
-      logo: { src: '/branding/sundsvall-dragon.png', darkSrc: '/branding/sundsvall-dragon-white.png', alt: 'Sundsvalls kommun' } },
+    expected: {
+      profile: 'sundsvall',
+      colors: { accent: '#005595', accentMuted: '#daeff1' },
+      logo: {
+        src: '/branding/sundsvall-dragon.png',
+        darkSrc: '/branding/sundsvall-dragon-white.png',
+        alt: 'Sundsvalls kommun',
+      },
+    },
     accent: '#005595',
   },
   neutral: {
@@ -17,10 +24,18 @@ export const brandingFixtures: Readonly<Record<A11yBrandProfile, BrandingFixture
     accent: '#1b1b1b',
   },
   custom: {
-    input: { profile: 'custom', accent: '#5b1f78', accentMuted: '#d7dbf2',
-      logoSrc: '/branding/test-municipality.svg', logoAlt: 'Exempelkommunen' },
-    expected: { profile: 'custom', colors: { accent: '#5b1f78', accentMuted: '#d7dbf2' },
-      logo: { src: '/branding/test-municipality.svg', alt: 'Exempelkommunen' } },
+    input: {
+      profile: 'custom',
+      accent: '#5b1f78',
+      accentMuted: '#d7dbf2',
+      logoSrc: '/branding/test-municipality.svg',
+      logoAlt: 'Exempelkommunen',
+    },
+    expected: {
+      profile: 'custom',
+      colors: { accent: '#5b1f78', accentMuted: '#d7dbf2' },
+      logo: { src: '/branding/test-municipality.svg', alt: 'Exempelkommunen' },
+    },
     accent: '#5b1f78',
   },
 };

@@ -8,14 +8,20 @@ const out = (name: string) => `test-results/screens/${name}.png`;
 test.describe('screens', () => {
   test.skip(!process.env.CLEW_SCREENS, 'screenshots are taken on demand: CLEW_SCREENS=1');
   // 1440 is where the panel stands beside the column at rest (D53); at 1280 the day ends the page.
-  for (const [size, viewport] of [['1440', { width: 1440, height: 900 }], ['1280', desktop], ['375', phone]] as const) {
+  for (const [size, viewport] of [
+    ['1440', { width: 1440, height: 900 }],
+    ['1280', desktop],
+    ['375', phone],
+  ] as const) {
     test(`landing with nothing above the box ${size}`, async ({ page, api }) => {
       api.threads = [];
-      await page.setViewportSize(viewport); await open(page, '/');
+      await page.setViewportSize(viewport);
+      await open(page, '/');
       await page.screenshot({ path: out(`landing-empty-${size}`) });
     });
     test(`landing with the brief and an area chosen ${size}`, async ({ page, api: _ }) => {
-      await page.setViewportSize(viewport); await open(page, '/');
+      await page.setViewportSize(viewport);
+      await open(page, '/');
       await page.screenshot({ path: out(`landing-brief-${size}`) });
       await page.getByRole('group', { name: 'Områden' }).getByRole('button', { name: 'Budget' }).click();
       await page.getByRole('group', { name: 'Budget', exact: true }).waitFor();

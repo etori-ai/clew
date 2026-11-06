@@ -3,9 +3,14 @@ import { NEXT_WEEK } from './data';
 import { composer, desktop, expect, open, phone, test } from './support';
 
 /** What a person cannot read because it is cut off with an ellipsis. */
-const cutOff = (root: Locator) => root.evaluate(element => [...element.querySelectorAll('*')]
-  .filter(e => getComputedStyle(e).textOverflow === 'ellipsis' && e.clientWidth > 0 && e.scrollWidth > e.clientWidth + 1)
-  .map(e => (e as HTMLElement).innerText));
+const cutOff = (root: Locator) =>
+  root.evaluate(element =>
+    [...element.querySelectorAll('*')]
+      .filter(
+        e => getComputedStyle(e).textOverflow === 'ellipsis' && e.clientWidth > 0 && e.scrollWidth > e.clientWidth + 1,
+      )
+      .map(e => (e as HTMLElement).innerText),
+  );
 
 test.describe('a row shows the next step and keeps the rest behind Fler val', () => {
   test.use({ viewport: desktop });
@@ -18,7 +23,8 @@ test.describe('a row shows the next step and keeps the rest behind Fler val', ()
     await expect(row.getByRole('button', { name: 'Inte nu', exact: true })).toHaveCount(0);
     await row.getByRole('button', { name: 'Fler val' }).focus();
     await page.keyboard.press('Enter');
-    for (const name of ['Se mönstret', 'Lägg till i samtalet', 'Avfärda · inte aktuellt', 'Varför ser jag detta?']) await expect(page.getByRole('menuitem', { name })).toBeVisible();
+    for (const name of ['Se mönstret', 'Lägg till i samtalet', 'Avfärda · inte aktuellt', 'Varför ser jag detta?'])
+      await expect(page.getByRole('menuitem', { name })).toBeVisible();
     await page.getByRole('menuitem', { name: 'Inte nu' }).focus();
     await page.keyboard.press('ArrowRight');
     await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toBeVisible();
@@ -28,7 +34,10 @@ test.describe('a row shows the next step and keeps the rest behind Fler val', ()
     await expect(row.getByRole('button', { name: 'Fler val' })).toBeFocused();
   });
 
-  test('an open card has one time action: Inte nu in view, and no second list under Fler val', async ({ page, api: _ }) => {
+  test('an open card has one time action: Inte nu in view, and no second list under Fler val', async ({
+    page,
+    api: _,
+  }) => {
     // The row opened as a card, in the panel (D50).
     await open(page, '/?card=fakturor');
     const card = page.getByRole('article', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' });
@@ -40,7 +49,9 @@ test.describe('a row shows the next step and keeps the rest behind Fler val', ()
   });
 
   test('a card that waits on someone has one time action too, and says when it will remind', async ({ page, api }) => {
-    api.threads.find(t => t.id === 'tillbud')!.timers = [{ kind: 'reminder', dueAt: '2026-11-05T10:00:00.000Z', state: 'scheduled' }];
+    api.threads.find(t => t.id === 'tillbud')!.timers = [
+      { kind: 'reminder', dueAt: '2026-11-05T10:00:00.000Z', state: 'scheduled' },
+    ];
     await open(page, '/?tab=waiting');
     const card = page.locator('#thread-tillbud');
     await expect(card).toContainText('Väntar på skyddsombudet · påminner dig');
@@ -55,7 +66,10 @@ test.describe('a row shows the next step and keeps the rest behind Fler val', ()
   test('the open proposal has the same picker as every other card', async ({ page, api: _ }) => {
     await open(page, '/?card=samtal');
     await page.getByRole('button', { name: 'Skicka', exact: false }).first().waitFor();
-    const proposal = page.getByRole('article').filter({ has: page.getByRole('button', { name: /^Skicka/ }) }).first();
+    const proposal = page
+      .getByRole('article')
+      .filter({ has: page.getByRole('button', { name: /^Skicka/ }) })
+      .first();
     await proposal.getByRole('button', { name: 'Inte nu', exact: true }).click();
     await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: /^Skriv själv/ })).toBeVisible();
@@ -89,10 +103,16 @@ test.describe('the page says one thing at a time', () => {
   test('the one filled button on the overview is what is due today', async ({ page, api: _ }) => {
     await open(page, '/');
     // Filled means opaque and dark: black in Neutral, the profile's own colour under a municipal one. A secondary button is a translucent tint.
-    const filled = await page.getByRole('main').evaluate(main => [...main.querySelectorAll('button')].filter(button => {
-      const [r = 255, g = 255, b = 255, a = 1] = (getComputedStyle(button).backgroundColor.match(/[\d.]+/g) ?? []).map(Number);
-      return button.checkVisibility() && a > 0.9 && r + g + b < 450;
-    }).map(button => button.textContent?.trim()));
+    const filled = await page.getByRole('main').evaluate(main =>
+      [...main.querySelectorAll('button')]
+        .filter(button => {
+          const [r = 255, g = 255, b = 255, a = 1] = (
+            getComputedStyle(button).backgroundColor.match(/[\d.]+/g) ?? []
+          ).map(Number);
+          return button.checkVisibility() && a > 0.9 && r + g + b < 450;
+        })
+        .map(button => button.textContent?.trim()),
+    );
     // The box's send button is an icon with no text, and rests dimmed until something is written.
     expect(filled.filter(Boolean)).toEqual(['Attestera · 2']);
   });
@@ -109,7 +129,7 @@ test.describe('the page says one thing at a time', () => {
 test.describe('a phone', () => {
   test.use({ viewport: phone });
 
-  test('the day\'s work comes before the figures', async ({ page, api: _ }) => {
+  test("the day's work comes before the figures", async ({ page, api: _ }) => {
     await open(page, '/');
     const work = await page.getByRole('heading', { name: 'Nu · 1' }).boundingBox();
     const figures = await page.getByRole('heading', { name: /^Läget/ }).boundingBox();
@@ -118,7 +138,10 @@ test.describe('a phone', () => {
 
   test('Inte nu opens from the card and shows its rows', async ({ page, api: _ }) => {
     await open(page, '/');
-    await page.getByRole('article', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' }).getByRole('button', { name: 'Inte nu', exact: true }).click();
+    await page
+      .getByRole('article', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' })
+      .getByRole('button', { name: 'Inte nu', exact: true })
+      .click();
     await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: /^Skriv själv/ })).toBeVisible();
   });
@@ -167,7 +190,10 @@ test.describe('a booking', () => {
 test.describe('the calendar on a phone', () => {
   test.use({ viewport: phone });
 
-  test('leaves the screen to the calendar: a head of two rows, with proposals waiting too', async ({ page, api: _ }) => {
+  test('leaves the screen to the calendar: a head of two rows, with proposals waiting too', async ({
+    page,
+    api: _,
+  }) => {
     await open(page, '/calendar');
     await expect(page.getByRole('button', { name: /^Förslag/ })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Förra veckan' })).toBeVisible();
@@ -177,12 +203,15 @@ test.describe('the calendar on a phone', () => {
 });
 
 test.describe('nothing is cut off', () => {
-  for (const width of [1024, 768]) test(`a row and a card keep their words beside the rail at ${width} px`, async ({ page, api: _ }) => {
-    await page.setViewportSize({ width, height: 900 });
-    await open(page, '/');
-    await expect(page.locator('#thread-omtanke').getByRole('button', { name: 'Omtankesamtal med Anna Lindqvist' })).toBeVisible();
-    expect(await cutOff(page.getByRole('main'))).toEqual([]);
-  });
+  for (const width of [1024, 768])
+    test(`a row and a card keep their words beside the rail at ${width} px`, async ({ page, api: _ }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await open(page, '/');
+      await expect(
+        page.locator('#thread-omtanke').getByRole('button', { name: 'Omtankesamtal med Anna Lindqvist' }),
+      ).toBeVisible();
+      expect(await cutOff(page.getByRole('main'))).toEqual([]);
+    });
 
   test('the action on an administration page keeps its whole label beside a long lead', async ({ page, api }) => {
     await page.setViewportSize(desktop);
@@ -207,12 +236,15 @@ test.describe('nothing is cut off', () => {
     const block = page.locator('.clew-cal-event-proposal').first();
     await expect(block).toContainText('Anna');
     const words = await block.evaluate(element => {
-      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT), found: string[] = [];
-      for (let node = walker.nextNode(); node; node = walker.nextNode()) for (const word of node.textContent!.matchAll(/\S+/g)) {
-        const range = document.createRange();
-        range.setStart(node, word.index); range.setEnd(node, word.index + word[0].length);
-        if (new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size > 1) found.push(word[0]);
-      }
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT),
+        found: string[] = [];
+      for (let node = walker.nextNode(); node; node = walker.nextNode())
+        for (const word of node.textContent!.matchAll(/\S+/g)) {
+          const range = document.createRange();
+          range.setStart(node, word.index);
+          range.setEnd(node, word.index + word[0].length);
+          if (new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size > 1) found.push(word[0]);
+        }
       return found;
     });
     expect(words).toEqual([]);
