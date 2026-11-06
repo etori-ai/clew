@@ -201,6 +201,34 @@ test('logout reports failure, then ends the session after a successful retry', a
   await expect(account).toHaveCount(0);
 });
 
+for (const viewport of [desktop, narrow]) test(`a row that opens marks its rows with a line under its icon at ${viewport.width}px`, async ({ page, api }) => {
+  api.admin = true;
+  await page.setViewportSize(viewport);
+  await open(page, '/');
+  const nav = await openNav(page);
+  for (const [name, row] of [['Administration', 'Modeller'], ['Testa Testsson', 'Logga ut']] as const) {
+    const parent = nav.getByRole('button', { name, exact: true });
+    await parent.click();
+    const rows = nav.getByRole('group', { name, exact: true });
+    await expect(rows.getByText(row, { exact: true })).toBeVisible();
+    expect(await reflowProblems(page, rows)).toEqual([]);
+
+    const line = (await rows.locator('[data-orientation="vertical"]').boundingBox())!;
+    const icon = (await parent.locator('svg').first().boundingBox())!;
+    expect(Math.abs(line.x - (icon.x + icon.width / 2))).toBeLessThan(1);
+    expect(line.height).toBe((await rows.boundingBox())!.height);
+
+    const own = (await parent.getByText(name, { exact: true }).boundingBox())!.x;
+    expect((await rows.getByText(row, { exact: true }).boundingBox())!.x).toBeGreaterThan(own + 8);
+    await expect(rows.getByRole('separator')).toHaveCount(0); // The line is a picture of the group the rows already are.
+
+    await parent.focus();
+    await page.keyboard.press('Tab');
+    await expect(rows.locator('a, button').first()).toBeFocused();
+  }
+  await expectNoAxeViolations(page);
+});
+
 test('the account signs out from the phone drawer', async ({ page, api }) => {
   await page.route('**/api/auth/logout', route => {
     api.signedIn = false;

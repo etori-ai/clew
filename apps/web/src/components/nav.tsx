@@ -8,7 +8,7 @@ import { titled } from './conversation-context';
 import { areasQuery, threadsQuery } from '../queries';
 import { groupThreads } from '../stream';
 import { clewIcon } from '../icons';
-import type { ShellNav } from './shell';
+import { SubRows, type ShellNav } from './shell';
 
 /** The administration's two sections, rows under Administration (D45, administration keeps the rail). */
 export type AdminSection = 'anslutningar' | 'modeller';
@@ -94,7 +94,7 @@ export function useRail({ current, admin }: { current: RailCurrent; admin: boole
       <SideNavSection title="Verktyg">
         <SideNavItem label="Kalender" icon="calendar" href="/calendar" isSelected={current.surface === 'kalender'} />
         {menu.slice(0, TOOLS_SHOWN).map(tool)}
-        {more.length > 0 && <SideNavItem label="Fler verktyg" icon="moreHorizontal" collapsible={{ defaultIsCollapsed: !more.some(e => e.capability === current.view) }}>{more.map(tool)}</SideNavItem>}
+        {more.length > 0 && <SideNavItem label="Fler verktyg" icon="moreHorizontal" collapsible={{ defaultIsCollapsed: !more.some(e => e.capability === current.view) }}><SubRows>{more.map(tool)}</SubRows></SideNavItem>}
       </SideNavSection>
       <SideNavSection title="Samtal">
         {recent.map(t => <SideNavItem key={t.id} label={titled(t.title)} href={`/conversations/${t.id}`} isSelected={current.conversationId === t.id}
@@ -103,8 +103,10 @@ export function useRail({ current, admin }: { current: RailCurrent; admin: boole
       </SideNavSection>
     </>,
     footer: admin ? <SideNavItem label="Administration" icon="wrench" collapsible={{ defaultIsCollapsed: current.surface !== 'admin' }}>
-      <SideNavItem label="Anslutna system" href="/admin/connectors" isSelected={current.section === 'anslutningar'} />
-      <SideNavItem label="Modeller" href="/admin/models" isSelected={current.section === 'modeller'} />
+      <SubRows>
+        <SideNavItem label="Anslutna system" href="/admin/connectors" isSelected={current.section === 'anslutningar'} />
+        <SideNavItem label="Modeller" href="/admin/models" isSelected={current.section === 'modeller'} />
+      </SubRows>
     </SideNavItem> : undefined,
   };
 }

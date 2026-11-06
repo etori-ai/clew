@@ -84,6 +84,7 @@ test.describe('Verktyg in the menu', () => {
     await expect(more).toHaveAttribute('aria-expanded', 'true');
     await expect(section.getByRole('link', { name: 'Telefonbok' })).toBeVisible();
     await expect(section.getByRole('link', { name: 'Lokaler' })).toBeVisible();
+    await expect(section.getByRole('group', { name: 'Fler verktyg' }).locator('[data-orientation="vertical"]')).toBeVisible();
     await expectNoAxeViolations(page);
   });
 });

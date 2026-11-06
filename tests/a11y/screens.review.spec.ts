@@ -208,8 +208,8 @@ test.describe('review', () => {
   }, ['375']);
   shot('74-rail-open', async (page, api) => {
     full(api); await open(page, '/');
-    await page.getByRole('button', { name: 'Områden', exact: true }).click();
     await page.getByRole('button', { name: 'Administration', exact: true }).click();
+    await page.getByRole('button', { name: 'Testa Testsson', exact: true }).click();
   }, ['1280', 'tall']);
   shot('75-rail-search', async page => {
     await open(page, '/'); await page.getByRole('combobox', { name: 'Sök i samtal och kort' }).fill('fak');

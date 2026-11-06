@@ -619,6 +619,15 @@
       "status": "proposed",
       "date": "2026-11-06",
       "area": "integrations"
+    },
+    {
+      "key": "D56-the-rows-under-a-rail-row-hang-from-a-line",
+      "number": 56,
+      "path": "docs/decisions/D56-the-rows-under-a-rail-row-hang-from-a-line.md",
+      "title": "D56 · The rows under a rail row hang from a line",
+      "status": "accepted",
+      "date": "2026-11-06",
+      "area": "ui"
     }
   ],
   "documents": [
@@ -1231,6 +1240,12 @@
     {
       "path": "docs/decisions/D55-a-job-is-assembled-from-what-connectors-follow-approved-once-and-run-per-system.md",
       "title": "D55 · A job is assembled from what connectors follow, approved once, and run as one execution or watch per system",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D56-the-rows-under-a-rail-row-hang-from-a-line.md",
+      "title": "D56 · The rows under a rail row hang from a line",
       "category": "decision-history",
       "headings": []
     },

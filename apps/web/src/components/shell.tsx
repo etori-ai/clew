@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { SessionUser } from '@clew/contracts';
-import { AppShell, Button, Dialog, DialogHeader, RadioList, RadioListItem, SideNav, SideNavHeading, SideNavItem, SideNavSection, Text, UserCircleIcon, VStack, signOut, useAppearance, useToast } from '@clew/ui';
+import { AppShell, Button, Dialog, DialogHeader, RadioList, RadioListItem, SideNav, SideNavHeading, SideNavItem, SideNavSection, Text, UserCircleIcon, VStack, signOut, useAppearance, useToast, Divider, HStack, StackItem } from '@clew/ui';
 import { branding } from '../branding';
 import { threadsQuery } from '../queries';
 import { api } from '../api';
@@ -14,6 +14,16 @@ const headerLogo = branding.logo;
 export const mobileQuery = '(max-width: 767px)';
 /** 1.4.10: with 480 px or less in height nothing is pinned; the page scrolls as one. */
 export const shortQuery = '(max-height: 480px)';
+
+/**
+ * The rows under a rail row that opens (D56). Astryx indents them only as far as the parent's label, so they read as its
+ * equals; here they sit further in, with a line down from the parent's icon. The line is drawn only: the rows are already
+ * a group. A vertical Divider takes its height from a parent of known height, which the StackItem gets by stretching.
+ */
+export const SubRows = ({ children }: { children: ReactNode }) => <HStack gap={1} paddingInlineStart={4}>
+  <StackItem aria-hidden><Divider orientation="vertical" variant="strong" /></StackItem>
+  <StackItem size="fill">{children}</StackItem>
+</HStack>;
 
 export type Surface = 'start' | 'kalender' | 'admin';
 /** What a surface puts in the rail: a create button on top, its sections (the places, then the conversations, D50) and the rows that stay at the foot. */
@@ -85,8 +95,10 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
           {nav.footer}
           {/* The last row of the rail, a disclosure like Administration above it. Not in `footerIcons`: Astryx draws those in the phone top bar too (D39). */}
           <SideNavItem label={user.name} icon={UserCircleIcon} collapsible={{ defaultIsCollapsed: true }}>
-            <SideNavItem label="Inställningar" onClick={() => { keepNavigation.current = true; setSettingsOpen(true); }} />
-            <SideNavItem label={signingOut ? 'Loggar ut …' : 'Logga ut'} isDisabled={signingOut} onClick={() => { void logout(); }} />
+            <SubRows>
+              <SideNavItem label="Inställningar" onClick={() => { keepNavigation.current = true; setSettingsOpen(true); }} />
+              <SideNavItem label={signingOut ? 'Loggar ut …' : 'Logga ut'} isDisabled={signingOut} onClick={() => { void logout(); }} />
+            </SubRows>
           </SideNavItem>
         </SideNavSection>}>
         {nav.sections}
