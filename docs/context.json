@@ -1750,23 +1750,6 @@
       ]
     },
     {
-      "path": "docs/reviews/2026-11-06-from-mock-connectors-to-real-test-sources.md",
-      "title": "Review: from mock connectors to real test sources · 2026-11-06",
-      "category": "review-history",
-      "headings": [
-        "Assessment",
-        "Basis and limits",
-        "What depends on the in-process mocks today",
-        "What \"real-mock\" should mean",
-        "Candidates",
-        "The lab repository",
-        "Recommended order of work",
-        "Decision to record",
-        "Addendum, same day: keep it in the repository, and put real products behind the fixtures",
-        "Outcome"
-      ]
-    },
-    {
       "path": "docs/reviews/2026-11-06-laget-figures-review.md",
       "title": "Review: where Läget's figures come from, and who should own them · 2026-11-06",
       "category": "review-history",
