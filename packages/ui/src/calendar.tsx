@@ -239,7 +239,7 @@ export function EventCalendar({
                     {info.timeText}
                   </Text>
                 )}
-                <Text type="supporting" weight="semibold" color="primary">
+                <Text type="supporting" weight="semibold" color="primary" maxLines={1} hasTruncateTooltip={false}>
                   {title}
                 </Text>
                 {hidden}
@@ -249,16 +249,22 @@ export function EventCalendar({
           const { start, end } = info.event;
           const when = !info.event.allDay && start && end ? timeRange(start.toISOString(), end.toISOString()) : '';
           const where = item?.place ?? (kind === 'event' ? undefined : item?.subtitle);
+          // In a week's narrow column each line is one line that ends in an ellipsis, and a block too short for two keeps
+          // its title alone, the time staying in its name. A day has the width: its lines wrap (1.4.10 at 320 px), and a
+          // short block puts the time beside the title.
+          const week = view === 'timeGridWeek';
+          const clip = week ? ({ maxLines: 1, hasTruncateTooltip: false } as const) : {};
+          const line = (when || where) && (
+            <Text type="supporting" hasTabularNumbers {...clip}>
+              {[when, where].filter(Boolean).join(' · ')}
+            </Text>
+          );
           return (
             <>
-              <Text type="supporting" weight="semibold" color="inherit">
+              <Text type="supporting" weight="semibold" color="inherit" {...clip}>
                 {title}
               </Text>
-              {(when || where) && (
-                <Text type="supporting" hasTabularNumbers>
-                  {[when, where].filter(Boolean).join(' · ')}
-                </Text>
-              )}
+              {line && (info.isShort && week ? <VisuallyHidden>{line}</VisuallyHidden> : line)}
               {hidden}
             </>
           );

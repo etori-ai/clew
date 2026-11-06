@@ -1,4 +1,3 @@
-import type { CalendarEvent, Proposal } from '@clew/contracts';
 import { Grid } from '@astryxdesign/core/Grid';
 import { VStack, HStack } from '@astryxdesign/core/Layout';
 import { Text } from '@astryxdesign/core/Text';
@@ -7,29 +6,9 @@ import { ProgressBar } from '@astryxdesign/core/ProgressBar';
 import { VisuallyHidden } from '@astryxdesign/core/VisuallyHidden';
 import { dates, displayDate, occursOn, shortDayLabel, timeLabel, timeRange, today } from '@clew/calendar/dates';
 import { dayLoad } from '@clew/calendar/proposals';
-import { PROPOSAL_MARK } from './agenda-items';
+import { PROPOSAL_MARK, type AgendaItem } from './agenda-items';
 
-/** One entry in a day: an existing meeting, a drawn proposal, a booked samtal, or (in I dag alone) a free gap. */
-export interface AgendaItem {
-  id: string;
-  title: string;
-  start: string;
-  end: string;
-  allDay: boolean;
-  kind: 'event' | 'proposal' | 'booked' | 'gap';
-  subtitle?: string;
-  /** The assistant's mark before a proposal's title (D71): "✦". */
-  marker?: string;
-  /** Where the meeting is, the second half of the grid's time line. */
-  place?: string;
-  /** The row's meta line (D71): the length and the place ("30 min · Personalrummet"), or the longest gap's promise. */
-  meta?: string;
-  /** One or two words for the token on the start-page card; the full title stays in the description. */
-  short?: string;
-  /** What the entry stands for, so a dialog can act on it: the calendar's event or the drawn proposal. */
-  event?: CalendarEvent;
-  proposal?: Proposal;
-}
+export type { AgendaItem };
 type Props = { week: string; days?: number; items: AgendaItem[]; label?: string };
 
 // The proposal is the assistant's blue (D71, artboard 6), the only blue in the calendar; a booked samtal is a status, green.

@@ -90,6 +90,38 @@ the chip without its icon as the swatch (it would repeat the area's word in the 
 and D41: the icon map lives in `packages/ui`. Every `Heading level={3}` with only `accessibilityLevel` varying is
 replaced by the roles above.
 
+**Amended 2026-11-06, the calendar family (artboard 6).** Built on `main` by the session that owns the calendar. The
+calendar is Clew's own, the house; amends D27 §3 (how an entry looks) and keeps D32 (one family, one mapping):
+
+1. **Levels.** The page's title is the week, the day or the month at `Heading level={1}` on every width ("Vecka 45 ·
+   2–6 november 2026"; the phone's "Vecka 45" was level 3 drawn as 1). The panel beside the grid is the proposal card:
+   the mark row (the outlined "Kalender" chip, "Kalendern · vecka 46" in supporting, the one badge "Förslag att
+   bekräfta", or the dot "Hanterad"), the thread's title at level 2, the proposals as rows with the day in the start
+   cell, the person at 14 semibold and the time in supporting. I dag on Hem keeps "I dag" at level 3 with "Hela veckan"
+   at its end; its rows and every list (`EventList`, the phone's week) are the row level: the start tabular semibold in
+   its cell, the title 14 semibold, the meta line with the length and the place ("30 min · Personalrummet").
+2. **The grid is the one place a title is 12 px:** the title in supporting semibold, the time and the place (or who a
+   samtal is with) in supporting under it, each one line ending in an ellipsis. A block in a week's column too short
+   for two lines keeps its title, and the time stays in its accessible name ("Morgonmöte ledningsgrupp 08:15–08:45 ·
+   A12, bokat"). The month is one supporting line: the start, then the title.
+3. **The only blue in the calendar is the assistant's.** A meeting, and a booked samtal, is neutral:
+   `--color-background-surface` with a `--color-border-emphasized` edge, thicker at the start; the past has the quieter
+   `--color-border` edge, never opacity, so its meta line keeps 4.5:1. A drawn proposal carries "✦" before its title on
+   every calendar surface (the grid, the panel's rows, lists, a proposal card's week agenda), seen and not read (the
+   word "förslag" ends its name), on `--color-info-muted` with a dashed `--color-border-info` edge and
+   `--color-on-info-muted` text. No hue and no icon in a cell: the system colours are the cards'. The week agenda on a
+   proposal card draws a proposal as a blue `Token` (purple is a system's hue now) and a booked samtal as a green one,
+   a status.
+4. **`agendaItems()` stays the one mapping (D32)** and now carries the marker, the place and the row's meta line, and
+   takes the day's free gaps as `gap` rows for I dag ("Ledigt till 17:00", the longest with "Längsta luckan · jag
+   bokar inget här utan att fråga"); `EventCalendar` and `WeekAgenda` draw no gap. The adapter (Microsoft 365,
+   CalDAV) is never named on a calendar surface; the source is "Kalendern".
+
+Not as drawn: Astryx's `List` has no dashed divider, so the gap row stands on the list's ordinary divider and is told by
+its secondary text and its words. The artboard's grid line "10:00–11:00 · förslag" names the person instead ("·
+Anna Lindqvist"); the kind is in the name and in the ✦. The panel keeps the sentence on when invitations go and the
+reply field, which the artboard does not draw.
+
 **Amended 2026-11-06, the views, the answers and the small places (artboards 4, 7 and 8).** Built on `main` by the
 session that owns the views and the conversation. Two small, additive protocol changes and three rules:
 

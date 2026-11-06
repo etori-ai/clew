@@ -1,6 +1,27 @@
 import type { CalendarEvent, Proposal } from '@clew/contracts';
 import { timeLabel } from '@clew/calendar/dates';
-import type { AgendaItem } from './week-agenda';
+
+/** One entry in a day: an existing meeting, a drawn proposal, a booked samtal, or (in I dag alone) a free gap. */
+export interface AgendaItem {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  kind: 'event' | 'proposal' | 'booked' | 'gap';
+  subtitle?: string;
+  /** The assistant's mark before a proposal's title (D71): "✦". */
+  marker?: string;
+  /** Where the meeting is, the second half of the grid's time line. */
+  place?: string;
+  /** The row's meta line (D71): the length and the place ("30 min · Personalrummet"), or the longest gap's promise. */
+  meta?: string;
+  /** One or two words for the token on the start-page card; the full title stays in the description. */
+  short?: string;
+  /** What the entry stands for, so a dialog can act on it: the calendar's event or the drawn proposal. */
+  event?: CalendarEvent;
+  proposal?: Proposal;
+}
 
 const SAMTAL = 'Utvecklingssamtal';
 const live = new Set<Proposal['status']>(['proposed', 'confirmed', 'final', 'accepted']);
