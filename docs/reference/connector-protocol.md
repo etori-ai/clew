@@ -49,6 +49,7 @@ A successful execute's `output` has the `ExecuteResult` shape: a headline, per-r
 | Callbacks | `uses: string[]`, `$defs.CallbackRequest`, a separate callback grant; [authorization](../guides/authorization.md). |
 | User delegation | `$defs.Delegation`, `X-Clew-Delegated-Token`; [authorization](../guides/authorization.md). |
 | Writes and recovery | Capability `execution`, `$defs.ExecuteResult`, `X-Clew-Operation-Id`; [actions](../guides/actions-and-receipts.md). |
+| Jobs across systems | Manifest `facts`, capability `follows` and `creates`, `$defs.FactEnvelope`, `$defs.StepDraft`, `$defs.FollowResponse`; a follower's steps name its own connector only, and nothing runs until an administrator binds it and the person approves the job; [creating a connector](../guides/creating-a-connector.md), [D55](../decisions/D55-a-job-is-assembled-from-what-connectors-follow-approved-once-and-run-per-system.md). Proposed; no route or screen yet. |
 
 ## Contract changes
 
