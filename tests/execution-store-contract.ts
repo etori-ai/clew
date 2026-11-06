@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import type { Execution, ExecutionStore, Job } from '../apps/server/src/modules/executions/model';
+import type { Execution, ExecutionStore, Job, WatchIntent } from '../apps/server/src/modules/executions/model';
 export const executionRecord = (personId: string, id: string): Execution => ({ id, personId, decisionId: 'decision:' + personId, principal: 'person:' + personId, unitId: 'test', authorizationVersion: 'v1', connector: 'reference', operation: 'reference.complete', digest: 'input-digest', payload: { ref: 'reference:item:1', revision: 1 }, safety: { strategy: 'deduplicated', retentionSeconds: 86400, lookup: 'reference.lookup' }, state: 'pending', reason: null, result: null, compensates: null, createdAt: '2099-11-05T10:00:00.000Z', updatedAt: '2099-11-05T10:00:00.000Z', expiresAt: '2099-11-06T10:00:00.000Z', dispatchedAt: null, attempt: 0, leaseUntil: null });
 /** A job (D55) over two step executions; the watch step carries the read input a Postgres adapter must seal. */
 export const jobRecord = (personId: string, id: string, steps: Execution[]): Job => ({ id, personId, decisionId: 'job:' + personId, principal: 'person:' + personId, unitId: 'test', authorizationVersion: 'v1', digest: 'job-digest',
   steps: [...steps.map((e, i) => ({ id: 'step-' + (i + 1), kind: 'execute' as const, connector: e.connector, operation: e.operation, executionId: e.id })),
-    { id: 'watch-1', kind: 'watch' as const, connector: 'payroll', operation: 'payroll.absenceStatus', input: { person: 'hr:emp:1004' }, expect: { path: ['status'], equals: 'registered' }, checks: ['2099-11-05T14:00:00.000Z'], expiresAt: '2099-11-06T10:00:00.000Z', state: 'waiting' as const, reason: null, observations: [] }],
+    { id: 'watch-1', kind: 'watch' as const, connector: 'payroll', operation: 'payroll.absenceStatus', input: { person: 'hr:emp:1004' }, expect: { path: ['status'], equals: 'registered' }, checks: ['2099-11-05T14:00:00.000Z'], expiresAt: '2099-11-06T10:00:00.000Z', title: 'Bevakas i lönesystemet', source: 'Lönesystemet', state: 'waiting' as const, reason: null, observations: [] }],
   createdAt: '2099-11-05T10:00:00.000Z', updatedAt: '2099-11-05T10:00:00.000Z' });
+/** The watch step's timer intent (D47) as the approval commits it beside the job. */
+export const watchIntentRecord = (job: Job): WatchIntent => ({ id: `watch:${job.id}:watch-1`, jobId: job.id, stepId: 'watch-1', personId: job.personId, generation: 1, checks: ['2099-11-05T14:00:00.000Z'], expiresAt: '2099-11-06T10:00:00.000Z', attempt: 0, leaseUntil: null, nextAt: job.createdAt, deliveredAt: null, lastError: null });
 export function executionStoreContract(name: string, create: () => Promise<{ store: ExecutionStore; personId: string; auditCount: (action?: string) => Promise<number> }>) {
   describe(name + ' execution store', () => {
     test('concurrent approval identity has one owner, one approval audit and one delivery intent', async () => {
@@ -53,6 +55,23 @@ export function executionStoreContract(name: string, create: () => Promise<{ sto
       expect(await w.store.claimDispatch(x.createdAt, '2099-11-07T00:00:00.000Z')).toBeUndefined();
       await w.store.transaction(async tx => { const j = (await tx.lockJob(x.id))!; await tx.updateJob({ ...j, steps: j.steps.map(s => s.kind === 'watch' ? { ...s, state: 'seen' as const } : s) }); });
       expect((await w.store.readJob(x.id))?.steps.at(-1)).toMatchObject({ kind: 'watch', state: 'seen' });
+    });
+    test('a watch intent commits with its job, is delivered once under a lease, and is gone when the job rolls back', async () => {
+      const w = await create(), e = executionRecord(w.personId, w.personId + '-watch-step'), job = jobRecord(w.personId, w.personId + '-watch-job', [e]), intent = watchIntentRecord(job);
+      await expect(w.store.transaction(async tx => { await tx.insert(e); await tx.insertJob(job); await tx.enqueueWatch(intent); throw new Error('crash'); })).rejects.toThrow('crash');
+      expect(await w.store.claimWatch(job.createdAt, '2099-11-07T00:00:00.000Z')).toBeUndefined();
+      await w.store.transaction(async tx => { await tx.insert(e); await tx.insertJob(job); await tx.enqueueWatch(intent); await tx.enqueueWatch(intent); });
+      expect(await w.store.claimWatch('2099-11-05T09:59:00.000Z', '2099-11-07T00:00:00.000Z')).toBeUndefined();
+      const first = await w.store.claimWatch(job.createdAt, job.createdAt);
+      expect(first).toMatchObject({ id: intent.id, jobId: job.id, stepId: 'watch-1', checks: intent.checks, expiresAt: intent.expiresAt, attempt: 1 });
+      const second = await w.store.claimWatch(job.createdAt, '2099-11-07T00:00:00.000Z');
+      expect(second?.attempt).toBe(2);
+      await w.store.finishWatch(intent.id, first!.attempt, job.createdAt, job.createdAt);
+      expect(await w.store.claimWatch(job.createdAt, '2099-11-07T00:00:00.000Z')).toBeUndefined();
+      await w.store.finishWatch(intent.id, second!.attempt, job.createdAt, job.createdAt, 'retry');
+      expect((await w.store.claimWatch(job.createdAt, '2099-11-07T00:00:00.000Z'))?.attempt).toBe(3);
+      await w.store.finishWatch(intent.id, 3, job.createdAt, job.createdAt);
+      expect(await w.store.claimWatch('2099-11-08T00:00:00.000Z', '2099-11-09T00:00:00.000Z')).toBeUndefined();
     });
     test('rollback leaves no job', async () => {
       const w = await create(), e = executionRecord(w.personId, w.personId + '-job-rollback-step');

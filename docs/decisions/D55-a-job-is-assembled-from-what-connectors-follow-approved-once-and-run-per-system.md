@@ -105,8 +105,12 @@ Weighed and left:
 Proven on 2026-11-06, before any route or screen: `tests/unit/job-executions.test.ts` (twenty cases on the memory adapters:
 assembly, disabled and degraded bindings, off-contract and silent followers, one approval over three systems, a lost reply
 read back on one step with the other untouched, revocation, the watch's committed checks and expiry, undo-all with an
-uncertain compensation, and rollback) and the store contract on the memory and Postgres adapters. Implementation status
-and limits: `docs/reference/status.md`, row "Jobs across systems".
+uncertain compensation, and rollback) and the store contract on the memory and Postgres adapters. Later the same day the
+watch step was wired to Temporal as item 5 says: the approval commits a `watch_intent` row per watch step, the outbox starts
+one `jobWatch` workflow per step, and the workflow calls the fenced `observe` at each committed check and at the window's end,
+where `expired` leaves the person a card through the stream's attention admission (D47); proven on the memory adapters
+(`tests/unit/job-executions.test.ts`), the store contract, the Postgres store test and `apps/server/tests/watch-runtime.test.ts`
+(PostgreSQL, Temporal, Node). Implementation status and limits: `docs/reference/status.md`, row "Jobs across systems".
 
 **Replaces.** Refines [D35](D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md) items 6 and 7: a
 pushed card is still one system's and no connector executes in another, and a job card, which is Clew's, is the one

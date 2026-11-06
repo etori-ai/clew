@@ -4,6 +4,7 @@ import { Registry, openGovernance, type Capability, type Connector, type Execute
 import { FactEnvelopeSchema, FollowResponseSchema } from '../../packages/connectors/src/protocol';
 import { executionUsecases } from '../../apps/server/src/modules/executions/usecases';
 import { memoryExecutionStore } from '../../apps/server/src/modules/executions/adapters/memory';
+import { watchDispatcher } from '../../apps/server/src/modules/executions/dispatch';
 import type { ExecutionSource, WatchSource } from '../../apps/server/src/modules/executions/model';
 import { jobUsecases } from '../../apps/server/src/modules/jobs/usecases';
 import { memoryFollowBindingStore } from '../../apps/server/src/modules/jobs/adapters/memory';
@@ -225,11 +226,44 @@ describe('one approval runs each step as its own execution or watch', () => {
     expect(w.payroll.executes()).toBe(0);
     expect((await w.ledger.readJob(manager, job.id))?.steps[2]).toMatchObject({ state: 'seen', observations: 3 });
   });
+  test('the approval commits one timer intent per watch step with the job; a replay or a crash adds none, and the outbox delivers it once', async () => {
+    const w = world(); await w.bindAll(); const p = await w.jobs.assemble(manager, fact, w.call);
+    const [a] = await Promise.all([w.approve(p), w.approve(p)]);
+    const checks = ['2026-11-05T14:02:00.000Z', '2026-11-05T20:02:00.000Z', '2026-11-06T02:02:00.000Z'];
+    expect(w.store.watches()).toEqual([{ id: `watch:${a.id}:payroll-1`, jobId: a.id, stepId: 'payroll-1', personId: 'hillevi', generation: 1, checks, expiresAt: '2026-11-06T08:02:00.000Z', attempt: 0, leaseUntil: null, nextAt: '2026-11-05T08:02:00.000Z', deliveredAt: null, lastError: null }]);
+    expect(w.store.audit().find(e => e.action === 'job.approved')?.details?.steps).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'payroll-1', kind: 'watch', checks })]));
+    const started: string[] = [];
+    const dispatch = (deliver: (i: { id: string; generation: number }) => Promise<void>) => watchDispatcher({ store: w.store, start: deliver, clock: w.clock })();
+    await dispatch(async () => { throw new Error('Temporal unavailable'); });
+    expect(w.store.watches()[0]).toMatchObject({ attempt: 1, deliveredAt: null, lastError: 'workflow-service-unavailable' });
+    await dispatch(async i => { started.push(`${i.id}:${i.generation}`); });
+    expect(started).toEqual([]); // backoff: not due yet
+    w.advance(5000); await dispatch(async i => { started.push(`${i.id}:${i.generation}`); }); await dispatch(async i => { started.push(`${i.id}:${i.generation}`); });
+    expect(started).toEqual([`watch:${a.id}:payroll-1:1`]); expect(w.store.watches()[0]).toMatchObject({ attempt: 2, deliveredAt: '2026-11-05T08:02:05.000Z', lastError: null });
+    const crashed = world(); await crashed.bindAll(); const q = await crashed.jobs.assemble(manager, fact, crashed.call);
+    const original = crashed.store.transaction;
+    crashed.store.transaction = fn => original(async tx => { await fn(tx); throw new Error('crash before commit'); });
+    await expect(crashed.approve(q)).rejects.toThrow('crash'); expect(crashed.store.watches()).toEqual([]);
+  });
+  test('a watch past its window expires without a read and leaves one card for the person, named after the system and the step', async () => {
+    const w = world(); const { job } = await approved(w);
+    w.advance(6 * H); await w.ledger.observe(job.id, 'payroll-1', 0);
+    w.advance(6 * H); w.payroll.outage(true); await w.ledger.observe(job.id, 'payroll-1', 1); w.payroll.outage(false);
+    w.advance(13 * H);
+    expect(await w.ledger.observe(job.id, 'payroll-1', 2)).toBe('expired'); expect(w.payroll.reads()).toBe(2); // the window's end reads nothing more
+    expect(w.store.audit().filter(e => e.action === 'job.watch_expired')).toHaveLength(1);
+    expect(w.store.cards()).toEqual([{ id: `watch:${job.id}:payroll-1`, personId: 'hillevi', jobId: job.id, stepId: 'payroll-1', connector: 'payroll', topic: `watch-expired:${job.id}:payroll-1`,
+      title: 'Lönesystemet har inte visat det som bevakades', summary: 'Bevakas i lönesystemet: En kontroll fram till 09:02 visade inget och en kontroll nådde inte systemet. Titta i Lönesystemet eller fråga om jobbet.',
+      reason: 'Bevakningen gick ut 10:02 utan att det förväntade syntes', at: '2026-11-06T09:02:00.000Z' }]);
+    expect(await w.ledger.observe(job.id, 'payroll-1', 2)).toBe('expired'); expect(w.store.cards()).toHaveLength(1);
+    expect((await w.ledger.readJob(manager, job.id))?.steps[2]).toMatchObject({ state: 'expired', title: 'Bevakas i lönesystemet', source: 'Lönesystemet' });
+  });
   test('a watch past its window expires without a read, and a job with a watch needs a watch source', async () => {
     const w = world(); const { job } = await approved(w);
     w.advance(25 * H);
     expect(await w.ledger.observe(job.id, 'payroll-1', 0)).toBe('expired'); expect(w.payroll.reads()).toBe(0);
     expect(w.store.audit().filter(e => e.action === 'job.watch_expired')).toHaveLength(1);
+    expect(w.store.cards()).toHaveLength(1); expect(w.store.cards()[0]?.summary).toBe('Bevakas i lönesystemet: Ingen kontroll kunde läsa systemet. Titta i Lönesystemet eller fråga om jobbet.');
     const without = world({ watch: false }); await without.bindAll();
     await expect(without.approve(await without.jobs.assemble(manager, fact, without.call))).rejects.toThrow('Bevakning är inte tillgänglig');
     expect(without.store.jobs()).toEqual([]); expect(without.store.dump()).toEqual([]);

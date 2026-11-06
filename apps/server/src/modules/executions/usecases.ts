@@ -1,7 +1,7 @@
 import type { AuthenticatedContext } from '@clew/contracts';
 import type { ExecuteResult } from '@clew/connectors';
 import { ExecutionError, type Execution, type ExecutionDeps, type ExecutionTx, type Job, type JobInput, type JobStep, type JobStepInput, type WatchObservation, type WatchState } from './model';
-import { executionView, jobView, mayReplay, outcome, sameSafety, seen, undoInputOf, undoable } from './domain';
+import { executionView, jobView, mayReplay, outcome, sameSafety, seen, undoInputOf, undoable, watchExpiredCard, watchIntentOf } from './domain';
 
 const LEASE_MS = 120_000, APPROVAL_MS = 24 * 3600_000, MAX_STEPS = 10, MAX_CHECKS = 3;
 const DECISION = /^[A-Za-z0-9:_.-]{1,200}$/, JOB_DECISION = /^[A-Za-z0-9:_.-]{1,150}$/, STEP_ID = /^[A-Za-z0-9_-]{1,40}$/;
@@ -57,6 +57,7 @@ export function executionUsecases({ store, source, watch, clock, ids, digest }: 
         if (!watch) throw new ExecutionError('Bevakning är inte tillgänglig.');
         const ordered = step.checks.every((c, i) => i === 0 || c > step.checks[i - 1]!);
         if (!step.checks.length || step.checks.length > MAX_CHECKS || !ordered || step.expiresAt <= step.checks[step.checks.length - 1]! || step.expect.path.length > 10) throw new ExecutionError('Ogiltig bevakning.');
+        if (!step.title.trim() || step.title.length > 120 || !step.source.trim() || step.source.length > 80) throw new ExecutionError('Ogiltig bevakning.');
         const access = await watch.authorize(persona, step.operation, step.input);
         prepared.push({ step, connector: access.connector });
       }
@@ -66,11 +67,15 @@ export function executionUsecases({ store, source, watch, clock, ids, digest }: 
       const steps: JobStep[] = [];
       for (const p of prepared) {
         if (p.step.kind === 'execute') { const saved = await commit(tx, persona, p.execution!); steps.push({ id: p.step.id, kind: 'execute', connector: p.connector, operation: p.step.operation, executionId: saved.id }); }
-        else steps.push({ id: p.step.id, kind: 'watch', connector: p.connector, operation: p.step.operation, input: p.step.input, expect: p.step.expect, checks: p.step.checks, expiresAt: p.step.expiresAt, state: 'waiting', reason: null, observations: [] });
+        else steps.push({ id: p.step.id, kind: 'watch', connector: p.connector, operation: p.step.operation, input: p.step.input, expect: p.step.expect, checks: p.step.checks, expiresAt: p.step.expiresAt, title: p.step.title, source: p.step.source, state: 'waiting', reason: null, observations: [] });
       }
       const saved = await tx.insertJob({ ...job, steps });
       if (saved.job.digest !== job.digest) throw new ExecutionError('Beslutet gäller redan ett annat innehåll.');
-      if (saved.inserted) await tx.audit({ actor: persona.principal.id, action: 'job.approved', subject: 'job:' + job.id, at, details: { decisionId: job.decisionId, steps: steps.map(s => ({ id: s.id, kind: s.kind, connector: s.connector, operation: s.operation, ...(s.kind === 'execute' ? { executionId: s.executionId } : {}) })) } });
+      if (saved.inserted) {
+        // The watch's timer is intent in the same commit (D47): the outbox delivers the committed schedule to Temporal, which cannot invent or extend it.
+        for (const s of steps) if (s.kind === 'watch') await tx.enqueueWatch(watchIntentOf(job, s, at));
+        await tx.audit({ actor: persona.principal.id, action: 'job.approved', subject: 'job:' + job.id, at, details: { decisionId: job.decisionId, steps: steps.map(s => ({ id: s.id, kind: s.kind, connector: s.connector, operation: s.operation, ...(s.kind === 'execute' ? { executionId: s.executionId } : { checks: s.checks, expiresAt: s.expiresAt }) })) } });
+      }
       return view(saved.job);
     });
   }
@@ -113,9 +118,10 @@ export function executionUsecases({ store, source, watch, clock, ids, digest }: 
     });
   }
   /**
-   * One check of a watch step (D55), the activity a timer will call with the check's index as its fence: nothing is read
-   * before the check's time or twice for one check, the window's end wins over a late check, authority is current, and the
-   * read is the step's own connector's read, never an execute. A source that does not answer leaves the watch waiting.
+   * One check of a watch step (D55), the activity the `jobWatch` workflow calls with the check's index as its fence: nothing
+   * is read before the check's time or twice for one check, the window's end wins over a late check (any index at or after
+   * `expiresAt` settles `expired` and leaves the card), authority is current, and the read is the step's own connector's
+   * read, never an execute. A source that does not answer leaves the watch waiting. Idempotent, so a retried activity adds nothing.
    */
   async function observe(jobId: string, stepId: string, check: number): Promise<WatchState> {
     const job = await store.readJob(jobId);
@@ -129,9 +135,11 @@ export function executionUsecases({ store, source, watch, clock, ids, digest }: 
       if (!current || !s || s.kind !== 'watch') return 'blocked' as WatchState;
       const before: WatchState = s.state;
       if (before !== 'waiting' || (observation && s.observations.some(o => o.check === observation.check))) return before;
-      const next: JobStep = { ...s, state, reason, observations: observation ? [...s.observations, observation] : s.observations };
+      const next: Extract<JobStep, { kind: 'watch' }> = { ...s, state, reason, observations: observation ? [...s.observations, observation] : s.observations };
       await tx.updateJob({ ...current, steps: current.steps.map(x => x.id === stepId ? next : x), updatedAt: at });
       await tx.audit({ actor: 'system:execution', action: 'job.watch_' + (observation ? 'observed' : state), subject: 'job:' + jobId, at, details: { stepId, state, ...(observation ? { check: observation.check, seen: observation.seen, ...(observation.error ? { error: observation.error } : {}) } : {}) } });
+      // The window ended unseen: the person gets a card (D55 item 5), admitted by the stream in this same commit (D47). Fenced by `before`, so one card per watch.
+      if (state === 'expired') await tx.pushCard(watchExpiredCard(current, next, at));
       return state;
     });
     if (at >= step.expiresAt) return settleWatch('expired', 'expired');

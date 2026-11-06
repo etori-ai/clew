@@ -1,5 +1,5 @@
 import type { ExecuteResult } from '@clew/connectors';
-import type { Execution, ExecutionState, Job, WatchExpect, WriteSafety } from './model';
+import type { Execution, ExecutionState, Job, JobStep, WatchCard, WatchExpect, WatchIntent, WriteSafety } from './model';
 
 export function sameSafety(a: WriteSafety, b: WriteSafety) {
   return a.strategy === b.strategy && (a.strategy === 'manual' || b.strategy !== 'manual' && a.lookup === b.lookup) &&
@@ -49,6 +49,23 @@ export function jobView(job: Job, executions: Record<string, Execution | undefin
     id: job.id, decisionId: job.decisionId, createdAt: job.createdAt, updatedAt: job.updatedAt,
     steps: job.steps.map(s => s.kind === 'execute'
       ? { id: s.id, kind: s.kind, connector: s.connector, operation: s.operation, executionId: s.executionId, state: executions[s.executionId]?.state ?? 'pending', reason: executions[s.executionId]?.reason ?? null, result: executions[s.executionId]?.result ?? null }
-      : { id: s.id, kind: s.kind, connector: s.connector, operation: s.operation, state: s.state, reason: s.reason, checks: s.checks, expiresAt: s.expiresAt, observations: s.observations.length }),
+      : { id: s.id, kind: s.kind, connector: s.connector, operation: s.operation, title: s.title, source: s.source, state: s.state, reason: s.reason, checks: s.checks, expiresAt: s.expiresAt, observations: s.observations.length }),
   };
+}
+const stockholmTime = (at: string) => new Date(at).toLocaleTimeString('sv-SE', { timeZone: 'Europe/Stockholm', timeStyle: 'short' });
+/** One watch intent per watch step, committed with the approval (D47): the step's own absolute times, generation 1, due for delivery at once. */
+export const watchIntentOf = (job: Pick<Job, 'id' | 'personId'>, step: Extract<JobStep, { kind: 'watch' }>, at: string): WatchIntent =>
+  ({ id: `watch:${job.id}:${step.id}`, jobId: job.id, stepId: step.id, personId: job.personId, generation: 1, checks: step.checks, expiresAt: step.expiresAt, attempt: 0, leaseUntil: null, nextAt: at, deliveredAt: null, lastError: null });
+/**
+ * The card a watch leaves when its window ends unseen (D55 item 5, canvas J: "Lönesystemet har inte läst sjukanmälan").
+ * The words name the system and the step as the person approved them and say how many reads found nothing; the card is
+ * Clew's, not the system's (D35), so it carries no action: the person looks in the system or asks about the job.
+ */
+export function watchExpiredCard(job: Pick<Job, 'id' | 'personId'>, step: Extract<JobStep, { kind: 'watch' }>, at: string): WatchCard {
+  const reads = step.observations.filter(o => !o.error).length, failed = step.observations.length - reads;
+  const looked = reads === 0 ? 'Ingen kontroll kunde läsa systemet' : `${reads === 1 ? 'En kontroll' : reads + ' kontroller'} fram till ${stockholmTime(step.expiresAt)} visade inget`;
+  return { id: `watch:${job.id}:${step.id}`, personId: job.personId, jobId: job.id, stepId: step.id, connector: step.connector, topic: `watch-expired:${job.id}:${step.id}`,
+    title: `${step.source} har inte visat det som bevakades`,
+    summary: `${step.title}: ${looked}${failed ? ` och ${failed === 1 ? 'en kontroll' : failed + ' kontroller'} nådde inte systemet` : ''}. Titta i ${step.source} eller fråga om jobbet.`,
+    reason: `Bevakningen gick ut ${stockholmTime(at)} utan att det förväntade syntes`, at };
 }

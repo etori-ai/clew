@@ -2,6 +2,8 @@ import type { ReminderInput } from '../threads/model';
 import { calendar, fireTimer as deliverTimer, fireLegacyReminder } from '../composition';
 import { executions } from '../composition/executions';
 export const progressExecution = (id: string) => executions.progress(id);
+/** One check of a job's watch step (D55): the ledger reads as the person at a committed time, or settles the window's end. */
+export const observeWatch = (jobId: string, stepId: string, check: number) => executions.observe(jobId, stepId, check);
 export { runScheduledJob } from '../composition/jobs';
 
 /**

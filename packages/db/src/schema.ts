@@ -204,6 +204,13 @@ export const dispatchOutbox = pgTable('dispatch_outbox', {
   attempt: integer('attempt').notNull().default(0), nextAt: timestamp('next_at', { withTimezone: true }).notNull(),
   leaseUntil: timestamp('lease_until', { withTimezone: true }), deliveredAt: timestamp('delivered_at', { withTimezone: true }), lastError: text('last_error'),
 }, t => [index('dispatch_outbox_due').on(t.nextAt)]);
+/** A watch step's timer intent (D55 item 5, D47): the step's absolute check times and window's end, committed with the job and delivered once to the `jobWatch` workflow. The times are not approved content, so the row is plain. */
+export const watchIntents = pgTable('watch_intent', {
+  id: text('id').primaryKey(), jobId: text('job_id').notNull().references(() => executionJobs.id), stepId: text('step_id').notNull(), personId: text('person_id').notNull().references(() => people.id),
+  generation: integer('generation').notNull().default(1), checks: jsonb('checks').$type<string[]>().notNull(), expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  attempt: integer('attempt').notNull().default(0), nextAt: timestamp('next_at', { withTimezone: true }).notNull(),
+  leaseUntil: timestamp('lease_until', { withTimezone: true }), deliveredAt: timestamp('delivered_at', { withTimezone: true }), lastError: text('last_error'),
+}, t => [index('watch_intent_due').on(t.nextAt), index('watch_intent_job').on(t.jobId)]);
 
 // Transactional invalidation counters. They carry no source payload and are read by every BFF instance.
 export const personChanges = pgTable('person_change', {
