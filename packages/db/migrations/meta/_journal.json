@@ -225,6 +225,13 @@
       "when": 1793961130578,
       "tag": "0031_fixture_connectors",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1793999920822,
+      "tag": "0032_connector_ordinal",
+      "breakpoints": true
     }
   ]
 }

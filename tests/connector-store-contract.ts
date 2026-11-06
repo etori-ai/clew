@@ -30,6 +30,23 @@ export const remoteRow = (id: string, overrides: Partial<NewConnector> = {}): Ne
 
 export function connectorStoreContract(name: string, make: () => Promise<ConnectorStoreHarness>) {
   describe(`${name} connector store`, () => {
+    test('a remote row takes the lowest free ordinal, a removed one frees it and the others keep theirs; a bundled row has none (D71)', async () => {
+      const { store, fresh } = await make();
+      const [a, b, c, d] = [fresh(), fresh(), fresh(), fresh()];
+      await store.transaction(async tx => {
+        await tx.insert(remoteRow(a));
+        await tx.insert(remoteRow(b));
+        await tx.insert({ ...remoteRow(d), bundled: true, url: null, secret: null });
+      });
+      const first = (await store.read(a))!.ordinal!,
+        second = (await store.read(b))!.ordinal!;
+      expect(second).toBe(first + 1);
+      expect((await store.read(d))!.ordinal).toBeNull();
+      await store.transaction(tx => tx.remove(a));
+      await store.transaction(tx => tx.insert(remoteRow(c)));
+      expect((await store.read(c))!.ordinal).toBe(first);
+      expect((await store.read(b))!.ordinal).toBe(second);
+    });
     test('a row is read back as inserted, with the defaults of a new connector; a second insert of the id is refused', async () => {
       const { store, fresh } = await make();
       const id = fresh();

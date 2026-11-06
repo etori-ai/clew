@@ -13,6 +13,7 @@ import type {
   ReceiptRow,
   SearchKind,
   SessionUser,
+  SystemMark,
   PanelViewSpec,
   ThreadAction,
   ThreadItem,
@@ -207,6 +208,8 @@ export interface Governance {
   scanEnabled: boolean;
   toolsEnabled: boolean;
   capabilities: Record<string, CapabilityOverride>;
+  /** The row's place in the registration order (D71), for the hue of the system's mark; absent for Clew's own. */
+  ordinal?: number;
 }
 export const openGovernance = (): Governance => ({
   state: 'enabled',
@@ -356,6 +359,21 @@ export class Registry {
     if (!found || !this.visible(actor, found.connector.id)) return undefined;
     if (this.governance(found.connector.id).capabilities[name]?.enabled === false) return undefined;
     return inScope(found.capability.scope, actor) ? found : undefined;
+  }
+  /**
+   * A system's place in the registration order (D71), which gives its mark the hue; null for Clew's own: a core
+   * connector, or one whose row carries no ordinal (a bundled row).
+   */
+  ordinal(id: string): number | null {
+    const connector = this.connectors.get(id);
+    if (!connector || connector.kind === 'core') return null;
+    return this.governance(id).ordinal ?? null;
+  }
+  /** The systems a person can see with what their marks need (D71): the source's word and the ordinal, in registration order, Clew's own last. */
+  systems(actor: Actor): SystemMark[] {
+    return this.listFor(actor)
+      .map(c => ({ connector: c.id, source: c.source, ordinal: this.ordinal(c.id) }))
+      .sort((a, b) => (a.ordinal ?? Infinity) - (b.ordinal ?? Infinity) || a.connector.localeCompare(b.connector));
   }
   /** The connectors a person can see, and the capabilities they may call: what `/api/connectors`, search and the typeahead list. */
   listFor(actor: Actor) {

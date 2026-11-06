@@ -42,6 +42,17 @@ const clewBaseTheme = defineTheme({
   },
   components: {
     'chat-layout': { base: { scrollPaddingBottom: '240px' } },
+    // The area mark (D71, `mark.tsx`): gray, the sixth system hue, on Astryx's own gray tokens, which its Badge has no
+    // variant for; and the house, Clew's own systems, outlined with no hue. New `variant:value` keys are Astryx's
+    // documented way to extend a component's variants from the theme.
+    badge: {
+      'variant:gray': { backgroundColor: 'var(--color-background-gray)', color: 'var(--color-text-gray)' },
+      'variant:house': {
+        backgroundColor: 'var(--color-background-card)',
+        color: 'var(--color-text-primary)',
+        boxShadow: 'inset 0 0 0 1px var(--color-border-emphasized)',
+      },
+    },
     'side-nav-heading': { base: { paddingBlock: 'var(--spacing-1)' } },
   },
 });

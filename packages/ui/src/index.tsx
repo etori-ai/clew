@@ -141,6 +141,9 @@ export {
   UsersIcon,
 } from '@heroicons/react/24/outline';
 export { SessionBoundary, sessionFetch, signOut, type BrowserSession } from './session';
+// The area mark (D71): the system's hue in registration order, the area's icon, the word always beside them.
+export { AreaChip, AreaGlyph, SystemSwatch, clewIcon, swatchWords } from './mark';
+export { hueOf, hueWord, ordinalWord, systemHues, type SystemHue } from './system-hues';
 export { WeekAgenda, type AgendaItem } from './week-agenda';
 export { EventCalendar, type CalendarView } from './calendar';
 // The calendar family (D32): the page's grid, the embedded day and list, the date picker, and the one item mapping.

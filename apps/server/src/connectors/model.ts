@@ -35,6 +35,8 @@ export interface ConnectorRecord {
   createdAt: string;
   updatedAt: string;
   version: number;
+  /** The system's place in the registration order (D71), assigned by the store on insert; null on a bundled row. */
+  ordinal: number | null;
 }
 export interface NewConnector {
   id: string;

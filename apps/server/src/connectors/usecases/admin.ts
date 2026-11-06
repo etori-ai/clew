@@ -48,13 +48,15 @@ export interface AdminDeps {
   clock: () => Date;
 }
 export const governanceOf = (
-  r: Pick<ConnectorRecord, 'state' | 'audience' | 'scanEnabled' | 'toolsEnabled' | 'capabilities'>,
+  r: Pick<ConnectorRecord, 'state' | 'audience' | 'scanEnabled' | 'toolsEnabled' | 'capabilities'> &
+    Partial<Pick<ConnectorRecord, 'ordinal'>>,
 ): Governance => ({
   state: r.state,
   audience: r.audience,
   scanEnabled: r.scanEnabled,
   toolsEnabled: r.toolsEnabled,
   capabilities: r.capabilities,
+  ...(r.ordinal ? { ordinal: r.ordinal } : {}),
 });
 const isManifest = (value: unknown): value is ConnectorManifest =>
   !!value && typeof value === 'object' && Array.isArray((value as ConnectorManifest).capabilities);
@@ -151,6 +153,7 @@ export function connectorUsecases(deps: AdminDeps) {
       bundled: row.bundled,
       source: m?.source ?? live?.source ?? row.id,
       kind: live?.kind ?? m?.kind ?? null,
+      ordinal: row.bundled || (live?.kind ?? m?.kind) === 'core' ? null : row.ordinal,
       url: row.url,
       state: row.state,
       health: row.health,

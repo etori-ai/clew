@@ -1,3 +1,4 @@
+import { nextOrdinal } from '@clew/contracts';
 import type { AuditEntry, ConnectorRecord, ConnectorStore, ConnectorTx } from '../model';
 
 /**
@@ -62,6 +63,7 @@ export function memoryConnectorStore(): MemoryConnectorStore {
             createdAt: r.at,
             updatedAt: r.at,
             version: 1,
+            ordinal: r.bundled ? null : nextOrdinal([...rows.values()].filter(x => !x.bundled).map(x => x.ordinal)),
           });
           return true;
         },

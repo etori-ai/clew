@@ -285,6 +285,9 @@ export const connectors = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     version: integer('version').notNull().default(1),
+    // The system's place in the registration order (D71): the lowest one free when the row was added, so its mark keeps
+    // its hue when another system is removed. Null on a bundled row: Clew's own systems are the house and have no hue.
+    ordinal: integer('ordinal'),
   },
   t => [
     check('connector_state', sql`${t.state} IN ('draft', 'enabled', 'disabled')`),

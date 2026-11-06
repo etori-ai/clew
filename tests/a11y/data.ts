@@ -721,6 +721,7 @@ export const conversation = (source: Thread[], text: string, conversationId = 'k
 const summary = (values: Partial<ConnectorSummary> & Pick<ConnectorSummary, 'id' | 'source'>): ConnectorSummary => ({
   bundled: false,
   kind: 'passthrough',
+  ordinal: null,
   url: `http://${values.id}:4010`,
   state: 'enabled',
   health: { status: 'ok', at: NOW },

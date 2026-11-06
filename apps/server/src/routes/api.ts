@@ -265,7 +265,11 @@ api.post('/deliveries/:id/claim', async c =>
 );
 api.get('/areas', async c => {
   const context = c.get('session').context;
-  return c.json({ areas: await listAreas(context), menu: registry.menu(actorOf(context)) });
+  return c.json({
+    areas: await listAreas(context),
+    menu: registry.menu(actorOf(context)),
+    systems: registry.systems(actorOf(context)),
+  });
 });
 /** The registry as data: what the architecture derives everything from. Read-only, and only what the caller can see (D23). */
 api.get('/connectors', c => {

@@ -1,5 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { database, type Transaction } from './index';
+import { nextOrdinal } from '@clew/contracts';
 import { connectors, type ConnectorAudience, type ConnectorHealth } from './schema';
 
 /** Rows of registered connectors (D23). Secrets stay sealed here; the server opens them. */
@@ -18,6 +19,11 @@ export const listConnectorVersions = () =>
 export async function readConnector(id: string) {
   const [row] = await database().select().from(connectors).where(eq(connectors.id, id));
   return row;
+}
+/** The ordinal a new remote row takes (D71), read inside the transaction that inserts it. */
+export async function nextConnectorOrdinal(tx: Transaction) {
+  const rows = await tx.select({ ordinal: connectors.ordinal }).from(connectors).where(eq(connectors.bundled, false));
+  return nextOrdinal(rows.map(r => r.ordinal));
 }
 export async function insertConnector(
   tx: Transaction,
@@ -42,6 +48,7 @@ export async function insertConnector(
     manifest: row.manifest ?? null,
     manifestAt: row.manifest ? new Date() : null,
     ...(row.health ? { health: row.health } : {}),
+    ordinal: await nextConnectorOrdinal(tx),
   });
 }
 export async function updateConnector(

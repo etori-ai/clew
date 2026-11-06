@@ -455,6 +455,26 @@ export const MenuEntrySchema = object({
   icon: MenuIconSchema,
 });
 export type MenuEntry = Static<typeof MenuEntrySchema>;
+/**
+ * A connected system as the browser gets it for its mark (D71): the source's word and its place in the order the
+ * administrator registered the systems, which gives the mark its hue. `ordinal` is null for Clew's own (the house).
+ */
+export const SystemMarkSchema = object({
+  connector: Type.String(),
+  source: Type.String(),
+  ordinal: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
+});
+export type SystemMark = Static<typeof SystemMarkSchema>;
+/**
+ * The ordinal a newly registered system takes (D71): the lowest one no other system holds. A removed system frees its
+ * place and its colour for the next one, and the others keep theirs.
+ */
+export const nextOrdinal = (taken: Iterable<number | null | undefined>) => {
+  const held = new Set(taken);
+  let n = 1;
+  while (held.has(n)) n++;
+  return n;
+};
 
 /** What a search can find (D26): a document or a passage of one, a person, a case, a room. */
 export const SearchKind = Type.Union([
@@ -1105,6 +1125,8 @@ export interface ConnectorSummary {
   bundled: boolean;
   source: string;
   kind: 'core' | 'passthrough' | 'derived' | null;
+  /** The system's place in the registration order, which gives its mark the hue (D71); null for Clew's own. */
+  ordinal: number | null;
   url: string | null;
   state: ConnectorState;
   health: ConnectorHealth;

@@ -1,5 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
+import { nextConnectorOrdinal } from '@clew/db/connectors';
 import type { ConnectorPatch, ConnectorRecord, ConnectorStore, ConnectorTx, NewConnector, Units } from '../model';
 
 /** The connector store the server runs (D23, D25): the port over Drizzle and Postgres. Held to the memory adapter by `tests/connector-store-contract.ts`. */
@@ -24,6 +25,7 @@ export const toRecord = (row: typeof connectors.$inferSelect): ConnectorRecord =
   createdAt: row.createdAt.toISOString(),
   updatedAt: row.updatedAt.toISOString(),
   version: row.version,
+  ordinal: row.bundled ? null : row.ordinal,
 });
 const txOf = (tx: Transaction): ConnectorTx => ({
   async insert(r: NewConnector) {
@@ -43,6 +45,7 @@ const txOf = (tx: Transaction): ConnectorTx => ({
         createdAt: new Date(r.at),
         updatedAt: new Date(r.at),
         secretChangedAt: new Date(r.at),
+        ordinal: r.bundled ? null : await nextConnectorOrdinal(tx),
       })
       .onConflictDoNothing()
       .returning({ id: connectors.id });

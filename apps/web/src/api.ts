@@ -12,6 +12,7 @@ import type {
 } from '@clew/contracts';
 import type {
   MenuEntry,
+  SystemMark,
   PanelViewSpec,
   SnoozeInput,
   SnoozePreset,
@@ -169,7 +170,7 @@ export const api = {
   today: () => call<TodayView>('/api/today'),
   figures: () => call<{ figures: Figure[] }>('/api/figures'),
   attention: () => call<Attention>('/api/attention'),
-  areas: () => call<{ areas: Area[]; menu?: MenuEntry[] }>('/api/areas'),
+  areas: () => call<{ areas: Area[]; menu?: MenuEntry[]; systems?: SystemMark[] }>('/api/areas'),
   connectors: () => call<{ connectors: unknown[]; tools: string[] }>('/api/connectors'),
   act: (id: string, actionId: string, refs?: string[]) =>
     post<{ kind: 'execute'; thread: Thread } | { kind: 'read' | 'propose'; output: unknown; view?: PanelViewSpec }>(
