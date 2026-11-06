@@ -5,7 +5,7 @@ import { memoryState } from '../../packages/connectors/src/memory-state';
 import { hrConnector, rehabCandidates } from '../../packages/connectors/src/mock/hr';
 import { financeConnector } from '../../packages/connectors/src/mock/finance';
 import { incidentsConnector } from '../../packages/connectors/src/mock/incidents';
-import { kommunikationConnector } from '../../packages/connectors/src/mock/kommunikation';
+import { communicationConnector } from '../../packages/connectors/src/mock/communication';
 
 const hillevi: Actor = {
   id: 'hillevi',
@@ -28,7 +28,7 @@ const registry = () => {
     hrConnector(state),
     financeConnector(state),
     incidentsConnector(state),
-    kommunikationConnector(state),
+    communicationConnector(state),
   ])
     r.register(m);
   return { r, state };
@@ -121,9 +121,9 @@ describe('mock scans push threads a person can act on, and the state survives in
   });
   test('a read receipt clears the notice for that person only', async () => {
     const { r } = registry();
-    await r.run(hassan, 'kommunikation.acknowledge', { refs: ['komm:notice:2026-44-1'] });
-    expect((await r.scan(hassan)).some(d => d.topic.startsWith('komm:'))).toBe(false);
-    expect((await r.scan(hillevi)).some(d => d.topic.startsWith('komm:'))).toBe(true);
+    await r.run(hassan, 'communication.acknowledge', { refs: ['communication:notice:2026-44-1'] });
+    expect((await r.scan(hassan)).some(d => d.topic.startsWith('communication:'))).toBe(false);
+    expect((await r.scan(hillevi)).some(d => d.topic.startsWith('communication:'))).toBe(true);
   });
 });
 
@@ -370,7 +370,7 @@ describe("a card is one system's: its actions name the pushing connector's capab
       hrConnector(state),
       financeConnector(state),
       incidentsConnector(state),
-      kommunikationConnector(state),
+      communicationConnector(state),
     ])
       r.register(m);
     const drafts = [...(await r.scan(hillevi)), ...(await r.scan(hassan))];

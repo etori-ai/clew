@@ -9,7 +9,7 @@ import {
   reflowProblems,
   test,
 } from './support';
-import { menuRows } from './telefonbok';
+import { menuRows } from './phonebook';
 
 /**
  * A tool as a page (D42): a view an administrator chose for the menu opens at `/tools/:capability` inside the one
@@ -17,8 +17,8 @@ import { menuRows } from './telefonbok';
  * itself. The page is the declared view under the tool's name; a row's own view, the contact card, opens in the side
  * panel over the page, and the address names both.
  */
-const directory = '/tools/telefonbok.directory';
-const team = '/tools/telefonbok.team';
+const directory = '/tools/phonebook.directory';
+const team = '/tools/phonebook.team';
 const wide = { width: 1440, height: 900 };
 const withInput = (input: object) => `${directory}?input=${encodeURIComponent(JSON.stringify(input))}`;
 const rail = (page: import('@playwright/test').Page) => page.getByRole('navigation', { name: 'Sidonavigering' });
@@ -63,7 +63,7 @@ test.describe('a tool as a page', () => {
     await field.fill('lärare');
     await expect(page.getByRole('row')).toHaveCount(3);
     await expect(field).toBeFocused();
-    await expect(page).toHaveURL(/\/tools\/telefonbok\.directory\?input=.*l%C3%A4rare/);
+    await expect(page).toHaveURL(/\/tools\/phonebook\.directory\?input=.*l%C3%A4rare/);
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('2 rader'));
     await field.fill('');
     await page.getByRole('radio', { name: 'Min enhet' }).click();
@@ -89,7 +89,7 @@ test.describe('a tool as a page', () => {
     await expect(contact.getByRole('link', { name: '0980-319 203' })).toHaveAttribute('href', 'tel:0980319203');
     // The address names the tool, what was asked in it and the card, so a link or a reload lands here.
     await expect(page).toHaveURL(
-      /\/tools\/telefonbok\.directory\?input=.*&open=telefonbok\.person&open-title=Kontaktkort&open-input=/,
+      /\/tools\/phonebook\.directory\?input=.*&open=phonebook\.person&open-title=Kontaktkort&open-input=/,
     );
     await expect(contact.locator(':focus')).toHaveCount(1);
     // The first view in the panel has nothing to go back to: the way out is to close it.
@@ -98,7 +98,7 @@ test.describe('a tool as a page', () => {
     await expectNoAxeViolations(page);
     await page.keyboard.press('Escape');
     await expect(contact).toHaveCount(0);
-    await expect(page).toHaveURL(/\/tools\/telefonbok\.directory\?input=[^&]*$/);
+    await expect(page).toHaveURL(/\/tools\/phonebook\.directory\?input=[^&]*$/);
     await expect(page.getByRole('searchbox')).toHaveValue('lärare');
     await expect(page.getByRole('row')).toHaveCount(3);
     await expect(name).toBeFocused();

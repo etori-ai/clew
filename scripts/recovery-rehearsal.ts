@@ -71,7 +71,7 @@ try {
         sql`insert into auth_person (id, organisation_id, name) values (${marker}, 'test', 'Synthetic recovery fixture')`,
       );
       await db.execute(
-        sql`insert into thread (id, person_id, kind, topic, title, state, connector, area, trigger, created_at, updated_at) values (${marker}, ${marker}, 'pushed', 'synthetic', 'Synthetic recovery fixture', 'handled', 'calendar', 'kalender', '{}'::jsonb, '2026-11-01', '2026-11-01')`,
+        sql`insert into thread (id, person_id, kind, topic, title, state, connector, area, trigger, created_at, updated_at) values (${marker}, ${marker}, 'pushed', 'synthetic', 'Synthetic recovery fixture', 'handled', 'calendar', 'calendar', '{}'::jsonb, '2026-11-01', '2026-11-01')`,
       );
       await db.execute(
         sql`insert into proposal (id, thread_id, person_id, status, participant_email, participant_name, start, "end", confirmed_at, reminders) values (${marker}, ${marker}, ${marker}, 'confirmed', 'fixture@example.test', 'Synthetic invitee', '2026-11-09T09:00:00Z', '2026-11-09T10:00:00Z', '2026-11-01', 1)`,

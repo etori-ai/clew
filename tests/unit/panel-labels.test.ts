@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { fieldLabels, fieldValue, hiddenFields } from '../../apps/web/src/components/panel-labels';
 import { memoryState } from '../../packages/connectors/src/memory-state';
 import { hrConnector } from '../../packages/connectors/src/mock/hr';
-import { kommunikationConnector } from '../../packages/connectors/src/mock/kommunikation';
+import { communicationConnector } from '../../packages/connectors/src/mock/communication';
 import { financeConnector } from '../../packages/connectors/src/mock/finance';
 import { incidentsConnector } from '../../packages/connectors/src/mock/incidents';
 import { payrollConnector } from '../../packages/connectors/src/mock/payroll';
@@ -22,7 +22,7 @@ describe('side panel labels (3.1.2)', () => {
       hrConnector(state),
       financeConnector(state),
       incidentsConnector(state),
-      kommunikationConnector(state),
+      communicationConnector(state),
       payrollConnector(state),
       timesheetConnector(state),
     ];

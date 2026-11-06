@@ -6,7 +6,7 @@ import { actorOf, CapabilityError, Registry } from '@clew/connectors';
 import { hrConnector } from '@clew/connectors/mock/hr';
 import { financeConnector } from '@clew/connectors/mock/finance';
 import { incidentsConnector } from '@clew/connectors/mock/incidents';
-import { kommunikationConnector } from '@clew/connectors/mock/kommunikation';
+import { communicationConnector } from '@clew/connectors/mock/communication';
 import { payrollConnector } from '@clew/connectors/mock/payroll';
 import { timesheetConnector } from '@clew/connectors/mock/timesheet';
 import { InputError } from '../context';
@@ -34,7 +34,7 @@ const bundled = [
   hrConnector(postgresState),
   financeConnector(postgresState),
   incidentsConnector(postgresState),
-  kommunikationConnector(postgresState),
+  communicationConnector(postgresState),
   payrollConnector(postgresState),
   timesheetConnector(postgresState),
   calendarConnector(calendar, events),

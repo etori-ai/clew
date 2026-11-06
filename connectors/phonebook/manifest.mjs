@@ -55,7 +55,7 @@ const personRefInput = {
 
 // Shared presentation: every person row opens the same contact card.
 const openContactCard = {
-  capability: 'telefonbok.person',
+  capability: 'phonebook.person',
   title: 'Kontaktkort',
   params: { ref: 'ref' },
 };
@@ -68,7 +68,7 @@ const contactFields = [
 
 // Directory: choose the table, its columns and its search controls here.
 const directoryCapability = {
-  name: 'telefonbok.directory',
+  name: 'phonebook.directory',
   kind: 'read',
   title: 'Sök i telefonboken',
   model: true,
@@ -124,7 +124,7 @@ const directoryCapability = {
 
 // Team: a list scoped to the verified actor's unit, with no input to fill in.
 const teamCapability = {
-  name: 'telefonbok.team',
+  name: 'phonebook.team',
   kind: 'read',
   title: 'Mitt teams kontaktlista',
   model: true,
@@ -157,7 +157,7 @@ const teamCapability = {
 
 // Contact card: the details opened from a directory row, team row or search hit.
 const personCapability = {
-  name: 'telefonbok.person',
+  name: 'phonebook.person',
   kind: 'read',
   title: 'Kontaktkort',
   model: false,
@@ -182,7 +182,7 @@ const personCapability = {
 
 // Composite search: hits expose name and context, while numbers stay in the contact card.
 const searchCapability = {
-  name: 'telefonbok.search',
+  name: 'phonebook.search',
   kind: 'read',
   title: 'Sök person',
   model: true,
@@ -217,7 +217,7 @@ const searchCapability = {
 };
 
 const fetchCapability = {
-  name: 'telefonbok.fetch',
+  name: 'phonebook.fetch',
   kind: 'read',
   title: 'Hämta person',
   model: false,
@@ -230,7 +230,7 @@ const fetchCapability = {
 // Registration: the connector's identity, area and available operations.
 export const manifest = {
   protocol: 2,
-  id: 'telefonbok',
+  id: 'phonebook',
   kind: 'passthrough',
   source: 'Telefonboken',
   areas: [
@@ -239,7 +239,7 @@ export const manifest = {
       title: 'Kontakter',
       icon: 'phone',
       roles: ['manager', 'employee'],
-      standing: ['telefonbok.team', 'telefonbok.directory'],
+      standing: ['phonebook.team', 'phonebook.directory'],
       schedules: [],
     },
   ],

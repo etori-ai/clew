@@ -256,7 +256,7 @@ export interface Notice {
 }
 export const notices: Notice[] = [
   {
-    ref: 'komm:notice:2026-44-1',
+    ref: 'communication:notice:2026-44-1',
     title: 'Ny rutin vid hot och våld',
     body: 'Från 1 december gäller en ny rutin vid hot och våld i skolan. Läs rutinen och bekräfta att du tagit del av den.',
     publishedAt: '2026-11-03T06:30:00+01:00',
@@ -264,7 +264,7 @@ export const notices: Notice[] = [
     audience: 'all',
   },
   {
-    ref: 'komm:notice:2026-44-2',
+    ref: 'communication:notice:2026-44-2',
     title: 'Enkät om matsalen',
     body: 'Kostenheten vill veta hur matsalen fungerar. Tar tre minuter.',
     publishedAt: '2026-11-02T09:00:00+01:00',

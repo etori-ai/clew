@@ -12,7 +12,7 @@ import { previewManifest } from '../../packages/connectors/src/preview';
 import { ManifestError, manifestProblems, parseManifest } from '../../packages/connectors/src/remote';
 import { protocolRoutes } from '../../apps/server/src/routes/protocol';
 import { manifest as hello } from '../../connectors/hello/connector.mjs';
-import { manifest as telefonbok } from '../../connectors/telefonbok/connector.mjs';
+import { manifest as phonebook } from '../../connectors/phonebook/connector.mjs';
 
 /** The protocol as the instance serves it (D60): one OpenAPI document, one dry run, both from the objects the loader validates with. */
 const ajv = addFormats(new Ajv({ strict: false }));
@@ -72,7 +72,7 @@ describe('the OpenAPI document', () => {
   test('the real manifests validate against the published ConnectorManifest component', () => {
     const validate = ajv.compile(JSON.parse(JSON.stringify(document.components.schemas.ConnectorManifest)));
     expect(validate(hello)).toBe(true);
-    expect(validate(telefonbok)).toBe(true);
+    expect(validate(phonebook)).toBe(true);
   });
   test('the committed OpenAPI document is the one the code generates', async () => {
     const committed = await Bun.file(
@@ -100,7 +100,7 @@ describe('the manifest dry run', () => {
     expect(manifest.areas.map(a => a.id)).toEqual((hello as any).areas.map((a: any) => a.id));
   });
   test('names the rows an administrator could put in the menu (D40), and only views that open without a question', () => {
-    const preview = previewManifest(telefonbok, { id: 'telefonbok' });
+    const preview = previewManifest(phonebook, { id: 'phonebook' });
     expect(preview.ok).toBe(true);
     const menu = preview.manifest!.menu;
     expect(menu.length).toBeGreaterThan(0);
@@ -172,7 +172,7 @@ describe('the manifest dry run', () => {
     );
   });
   test('a real validator decides whether {} is accepted when one is handed in', () => {
-    const strict = edited(telefonbok, m => {
+    const strict = edited(phonebook, m => {
       for (const c of m.capabilities)
         if (!c.input.required?.length) {
           c.input = {
@@ -224,11 +224,11 @@ describe('the served protocol routes', () => {
         headers: { 'content-type': 'application/json' },
         body,
       });
-    const good = await post(JSON.stringify(telefonbok), '?id=telefonbok');
+    const good = await post(JSON.stringify(phonebook), '?id=phonebook');
     expect(good.status).toBe(200);
     expect(good.headers.get('cache-control')).toBe('no-store');
     expect((await good.json()).ok).toBe(true);
-    expect((await (await post(JSON.stringify(telefonbok), '?id=other')).json()).problems[0]).toMatch(
+    expect((await (await post(JSON.stringify(phonebook), '?id=other')).json()).problems[0]).toMatch(
       /does not match the configured id "other"/,
     );
     expect((await post('{not json')).status).toBe(400);

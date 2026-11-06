@@ -4,8 +4,8 @@ import type { SearchResult } from '../../packages/contracts/src/index';
 import { type Actor } from '../../packages/connectors/src/index';
 import { checkConnector } from '../../packages/connectors/src/check';
 import { parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
-import { createConnector, manifest as telefonbokManifest } from '../../connectors/telefonbok/connector.mjs';
-import { createHttpDirectory, toPerson } from '../../connectors/telefonbok/directory.mjs';
+import { createConnector, manifest as phonebookManifest } from '../../connectors/phonebook/connector.mjs';
+import { createHttpDirectory, toPerson } from '../../connectors/phonebook/directory.mjs';
 import { assertionFor, testJwks } from '../connector-authority';
 import { searchConnector } from '../../apps/server/src/modules/search/connector';
 import { searchUsecases } from '../../apps/server/src/modules/search/usecases';
@@ -36,10 +36,10 @@ function stack(options: Parameters<typeof createConnector>[0] = {}) {
   const connectorFetch: FetchLike = (input, init) => service.handle(new Request(input, init));
   const registry = new Registry();
   registry.register(
-    remoteConnector(parseManifest(telefonbokManifest, 'telefonbok'), {
-      url: 'http://telefonbok',
+    remoteConnector(parseManifest(phonebookManifest, 'phonebook'), {
+      url: 'http://phonebook',
       key: secret,
-      assert: assertionFor('telefonbok', secret),
+      assert: assertionFor('phonebook', secret),
       fetch: connectorFetch,
     }),
   );
@@ -56,19 +56,19 @@ function stack(options: Parameters<typeof createConnector>[0] = {}) {
 
 describe('the phone book connector', () => {
   test('the manifest is valid, declares its views, and offers no execute and no scan', () => {
-    const manifest = parseManifest(telefonbokManifest, 'telefonbok');
+    const manifest = parseManifest(phonebookManifest, 'phonebook');
     expect(manifest.capabilities.map(c => c.kind)).toEqual(['read', 'read', 'read', 'read', 'read']);
     expect(manifest.scan).toBe(false);
     expect(manifest.capabilities.filter(c => c.view).map(c => [c.name, c.view!.kind])).toEqual([
-      ['telefonbok.directory', 'table'],
-      ['telefonbok.team', 'list'],
-      ['telefonbok.person', 'detail'],
-      ['telefonbok.search', 'list'],
+      ['phonebook.directory', 'table'],
+      ['phonebook.team', 'list'],
+      ['phonebook.person', 'detail'],
+      ['phonebook.search', 'list'],
     ]);
   });
   test('searches the whole organisation: every word must match, numbers match, and a protected person is never found', async () => {
     const { registry } = stack();
-    const all = await registry.run<{ rows: Row[] }>(hassan, 'telefonbok.directory', { query: 'lärare bergsåker' });
+    const all = await registry.run<{ rows: Row[] }>(hassan, 'phonebook.directory', { query: 'lärare bergsåker' });
     expect(all.rows.map(r => r.name)).toEqual(['Anna Lindqvist', 'Hassan Ali']);
     expect(all.rows[0]).toEqual({
       ref: 'person:p1003',
@@ -79,18 +79,16 @@ describe('the phone book connector', () => {
       email: 'anna.lindqvist@kommun.example',
     });
     expect(
-      (await registry.run<{ rows: Row[] }>(hassan, 'telefonbok.directory', { query: '319 241' })).rows.map(r => r.name),
+      (await registry.run<{ rows: Row[] }>(hassan, 'phonebook.directory', { query: '319 241' })).rows.map(r => r.name),
     ).toEqual(['Mikael Ström']);
-    const everyone = await registry.run<{ rows: Row[] }>(hassan, 'telefonbok.directory', {});
+    const everyone = await registry.run<{ rows: Row[] }>(hassan, 'phonebook.directory', {});
     expect(everyone.rows).toHaveLength(14);
     expect(JSON.stringify(everyone)).not.toMatch(/Skyddad|Hemvägen|19000101/);
-    expect((await registry.run<{ rows: Row[] }>(hassan, 'telefonbok.directory', { query: 'skyddad' })).rows).toEqual(
-      [],
-    );
+    expect((await registry.run<{ rows: Row[] }>(hassan, 'phonebook.directory', { query: 'skyddad' })).rows).toEqual([]);
   });
   test('"my unit" and the team list follow the unit in Clew\'s assertion, through the unit map where the ids differ', async () => {
     const { registry } = stack({ unitMap: { 'enhet-17': 'unit-omsorg' } });
-    const team = await registry.run<{ unit: string; rows: Row[] }>(hassan, 'telefonbok.team', {});
+    const team = await registry.run<{ unit: string; rows: Row[] }>(hassan, 'phonebook.team', {});
     expect(team.unit).toBe('Bergsåkers skola');
     expect(team.rows.map(r => r.name)).toEqual([
       'Anna Lindqvist',
@@ -99,24 +97,24 @@ describe('the phone book connector', () => {
       'Hillevi Berg',
       'Maja Nordin',
     ]);
-    expect((await registry.run<{ rows: Row[] }>(karin, 'telefonbok.team', {})).rows.map(r => r.name)).toEqual([
+    expect((await registry.run<{ rows: Row[] }>(karin, 'phonebook.team', {})).rows.map(r => r.name)).toEqual([
       'Jonas Öberg',
       'Karin Holm',
       'Lena Åkesson',
       'Omar Said',
     ]);
     expect(
-      (await registry.run<{ rows: Row[] }>(karin, 'telefonbok.directory', { query: 'holm', scope: 'unit' })).rows.map(
+      (await registry.run<{ rows: Row[] }>(karin, 'phonebook.directory', { query: 'holm', scope: 'unit' })).rows.map(
         r => r.name,
       ),
     ).toEqual(['Karin Holm']);
     expect(
-      (await registry.run<{ rows: Row[] }>(hassan, 'telefonbok.directory', { query: 'holm', scope: 'unit' })).rows,
+      (await registry.run<{ rows: Row[] }>(hassan, 'phonebook.directory', { query: 'holm', scope: 'unit' })).rows,
     ).toEqual([]);
   });
   test('the contact card holds work details and a link out; an unknown or malformed ref is refused in Swedish', async () => {
     const { registry } = stack();
-    expect(await registry.run(hassan, 'telefonbok.person', { ref: 'person:p1002' })).toEqual({
+    expect(await registry.run(hassan, 'phonebook.person', { ref: 'person:p1002' })).toEqual({
       ref: 'person:p1002',
       name: 'Hassan Ali',
       title: 'Lärare',
@@ -126,28 +124,28 @@ describe('the phone book connector', () => {
       email: 'hassan.ali@kommun.example',
       room: 'B204',
       manager: 'Hillevi Berg',
-      link: 'https://telefonbok.kommun.example/personer/p1002',
+      link: 'https://phonebook.kommun.example/personer/p1002',
     });
-    await expect(registry.run(hassan, 'telefonbok.person', { ref: 'person:p9001' })).rejects.toThrow(
+    await expect(registry.run(hassan, 'phonebook.person', { ref: 'person:p9001' })).rejects.toThrow(
       'Personen finns inte i telefonboken.',
     );
-    await expect(registry.run(hassan, 'telefonbok.person', { ref: 'person:../x' })).rejects.toThrow(
-      'Ogiltig förfrågan till telefonbok.person.',
+    await expect(registry.run(hassan, 'phonebook.person', { ref: 'person:../x' })).rejects.toThrow(
+      'Ogiltig förfrågan till phonebook.person.',
     );
   });
   test('is one source of the composite search: a hit says who and where, never the number, and carries the contact card as its view', async () => {
     const { registry } = stack();
     expect(registry.searchSources(hassan)).toEqual([
       {
-        name: 'telefonbok.search',
-        connectorId: 'telefonbok',
+        name: 'phonebook.search',
+        connectorId: 'phonebook',
         source: 'Telefonboken',
         kinds: ['person'],
-        open: { capability: 'telefonbok.person', title: 'Kontaktkort', params: { ref: 'ref' } },
+        open: { capability: 'phonebook.person', title: 'Kontaktkort', params: { ref: 'ref' } },
       },
     ]);
     // The model sees the composite only (D26), and the two tools whose content it is handed as a summary.
-    expect(registry.tools(hassan).map(t => t.name)).toEqual(['telefonbok.directory', 'telefonbok.team', 'clew.search']);
+    expect(registry.tools(hassan).map(t => t.name)).toEqual(['phonebook.directory', 'phonebook.team', 'clew.search']);
     const found = await registry.run<SearchResult>(hassan, 'clew.search', { query: 'Anna Lindqvist' });
     expect(found.rows).toEqual([
       {
@@ -156,11 +154,11 @@ describe('the phone book connector', () => {
         label: 'Anna Lindqvist',
         snippet: 'Lärare · Bergsåkers skola',
         source: 'Telefonboken',
-        link: 'https://telefonbok.kommun.example/personer/p1003',
+        link: 'https://phonebook.kommun.example/personer/p1003',
         stale: null,
-        connector: 'telefonbok',
+        connector: 'phonebook',
         view: {
-          capability: 'telefonbok.person',
+          capability: 'phonebook.person',
           input: { ref: 'person:p1003' },
           title: 'Kontaktkort',
           source: 'Telefonboken',
@@ -172,64 +170,64 @@ describe('the phone book connector', () => {
     expect((await registry.run<SearchResult>(hassan, 'clew.search', { query: 'hur gör jag vid fall' })).rows).toEqual(
       [],
     );
-    expect(await registry.run(hassan, 'clew.fetchSource', { ref: 'telefonbok:person:p1003' })).toMatchObject({
+    expect(await registry.run(hassan, 'clew.fetchSource', { ref: 'phonebook:person:p1003' })).toMatchObject({
       kind: 'person',
       label: 'Anna Lindqvist',
     });
   });
   test('the browser gets the declaration with the output: whose view it is, what a row opens, and that a row can be chipped', () => {
     const { registry } = stack();
-    const view = registry.viewFor(hassan, 'telefonbok.directory')!;
+    const view = registry.viewFor(hassan, 'phonebook.directory')!;
     expect(view).toMatchObject({
       kind: 'table',
-      capability: 'telefonbok.directory',
-      connector: 'telefonbok',
+      capability: 'phonebook.directory',
+      connector: 'phonebook',
       source: 'Telefonboken',
       chip: true,
       title: 'name',
       modelReads: 'summary',
-      open: { capability: 'telefonbok.person', title: 'Kontaktkort', params: { ref: 'ref' } },
+      open: { capability: 'phonebook.person', title: 'Kontaktkort', params: { ref: 'ref' } },
     });
-    expect(registry.viewFor(hassan, 'telefonbok.person')).toMatchObject({ kind: 'detail', chip: false });
-    expect(registry.viewFor(hassan, 'telefonbok.fetch')).toBeUndefined();
+    expect(registry.viewFor(hassan, 'phonebook.person')).toMatchObject({ kind: 'detail', chip: false });
+    expect(registry.viewFor(hassan, 'phonebook.fetch')).toBeUndefined();
     // Switched off by the administrator, the contact card is no longer something a row opens.
-    registry.govern('telefonbok', {
+    registry.govern('phonebook', {
       state: 'enabled',
       audience: { mode: 'all' },
       scanEnabled: true,
       toolsEnabled: true,
-      capabilities: { 'telefonbok.person': { enabled: false } },
+      capabilities: { 'phonebook.person': { enabled: false } },
     });
-    expect(registry.viewFor(hassan, 'telefonbok.directory')).not.toHaveProperty('open');
+    expect(registry.viewFor(hassan, 'phonebook.directory')).not.toHaveProperty('open');
   });
   test('passes the conformance check and refuses another secret', async () => {
     const { connectorFetch } = stack();
-    const sign = (key: string) => assertionFor('telefonbok', key);
+    const sign = (key: string) => assertionFor('phonebook', key);
     const report = await checkConnector({
       key: secret,
-      url: 'http://telefonbok',
-      id: 'telefonbok',
+      url: 'http://phonebook',
+      id: 'phonebook',
       assert: sign(secret),
       assertForeign: sign('another-secret-entirely'),
       fetch: connectorFetch,
     });
     expect(report.findings.filter(f => f.level !== 'ok')).toEqual([]);
     expect(report.ok).toBe(true);
-    expect(report.findings.map(f => f.text)).toContain('telefonbok.directory: view table drawn from "rows", 6 fields');
+    expect(report.findings.map(f => f.text)).toContain('phonebook.directory: view table drawn from "rows", 6 fields');
     // The admin page's check hands in no validator: the reads that need a reference or a question are left uncalled, not failed.
     expect(report.findings.filter(f => /needs input/.test(f.text)).map(f => f.text.split(':')[0])).toEqual([
-      'telefonbok.person',
-      'telefonbok.search',
-      'telefonbok.fetch',
+      'phonebook.person',
+      'phonebook.search',
+      'phonebook.fetch',
     ]);
   });
   test('the administrator reads one Swedish row per fact, and no answer from the service (D23, D44)', async () => {
     const { connectorFetch } = stack();
-    const sign = (key: string) => assertionFor('telefonbok', key);
+    const sign = (key: string) => assertionFor('phonebook', key);
     const report = await checkConnector({
       key: secret,
-      url: 'http://telefonbok',
-      id: 'telefonbok',
+      url: 'http://phonebook',
+      id: 'phonebook',
       assert: sign(secret),
       assertForeign: sign('another-secret-entirely'),
       fetch: connectorFetch,
@@ -241,12 +239,12 @@ describe('the phone book connector', () => {
     expect(report.items.map(i => [i.group, i.label])).toContainEqual(['connection', 'Fel nyckel nekas']);
     const row = (capability: string) => report.items.find(i => i.capability === capability);
     expect(report.items.filter(i => i.group === 'capabilities')).toHaveLength(5);
-    expect(row('telefonbok.directory')).toMatchObject({
+    expect(row('phonebook.directory')).toMatchObject({
       level: 'ok',
       description: 'Svarar för chef och medarbetare. Visas som tabell med 6 fält.',
     });
-    expect(row('telefonbok.fetch')?.description).toBe('Behöver indata, så kontrollen anropar den inte.');
-    expect(row('telefonbok.search')?.description).toBe(
+    expect(row('phonebook.fetch')?.description).toBe('Behöver indata, så kontrollen anropar den inte.');
+    expect(row('phonebook.search')?.description).toBe(
       'Behöver indata, så kontrollen anropar den inte. Vyn (lista) är inte prövad.',
     );
     expect(report.items.find(i => i.label.startsWith('Området'))?.description).toBe(
@@ -288,7 +286,7 @@ describe('the phone book API behind the port', () => {
     const body = api[url.pathname + url.search];
     return body ? Response.json(body) : new Response('', { status: url.pathname === '/persons/500' ? 500 : 404 });
   };
-  const directory = createHttpDirectory({ url: 'https://telefonbok.example/', apiKey: 'k', fetch: fetchApi });
+  const directory = createHttpDirectory({ url: 'https://phonebook.example/', apiKey: 'k', fetch: fetchApi });
   test('maps a record to work details only, drops hidden records, and sends the integration key', async () => {
     expect(await directory.search('anna')).toEqual([
       {
@@ -298,7 +296,7 @@ describe('the phone book API behind the port', () => {
         unit: 'Skolan',
         unitId: 'u1',
         phone: '0980-319 210',
-        link: 'https://telefonbok.example/personer/17',
+        link: 'https://phonebook.example/personer/17',
       },
     ]);
     expect(calls[0]).toEqual({ url: '/persons?q=anna&limit=50', key: 'k' });
@@ -310,14 +308,14 @@ describe('the phone book API behind the port', () => {
   test('an API that fails is "unavailable" in Swedish, without the system\'s own words', async () => {
     const service = createConnector({ jwks: testJwks, secret, directory });
     const registry = new Registry().register(
-      remoteConnector(parseManifest(telefonbokManifest, 'telefonbok'), {
-        url: 'http://telefonbok',
+      remoteConnector(parseManifest(phonebookManifest, 'phonebook'), {
+        url: 'http://phonebook',
         key: secret,
-        assert: assertionFor('telefonbok', secret),
+        assert: assertionFor('phonebook', secret),
         fetch: (input, init) => service.handle(new Request(input, init)),
       }),
     );
-    await expect(registry.run(hassan, 'telefonbok.person', { ref: 'person:500' })).rejects.toThrow(
+    await expect(registry.run(hassan, 'phonebook.person', { ref: 'person:500' })).rejects.toThrow(
       'Telefonboken svarar inte just nu.',
     );
   });

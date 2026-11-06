@@ -1,5 +1,5 @@
 import { answer, composer, desktop, open, phone, test } from './support';
-import { menuRow, menuRows } from './telefonbok';
+import { menuRow, menuRows } from './phonebook';
 
 /**
  * Not a test: screenshots of the structure D50 gave the product, for the comparison with the canvas "Clew · ett
@@ -50,7 +50,7 @@ test.describe('screens', () => {
   test('4 verktygssida', async ({ page, api }) => {
     api.menu = [menuRow];
     await page.setViewportSize(wide);
-    await open(page, '/tools/telefonbok.directory');
+    await open(page, '/tools/phonebook.directory');
     await page.screenshot({ path: out('4-verktygssida') });
     await page.getByRole('link', { name: 'Anna Lindqvist' }).click();
     await page.getByText('Rum').first().waitFor();

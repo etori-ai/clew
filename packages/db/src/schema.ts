@@ -117,7 +117,7 @@ export const threads = pgTable(
     week: text('week'),
     // Generic cards (D1, D12): the connector, a lead sentence, rows with refs, action slots, waiting state and the receipt.
     connector: text('connector').notNull().default('calendar'),
-    area: text('area').notNull().default('kalender'),
+    area: text('area').notNull().default('calendar'),
     summary: text('summary').notNull().default(''),
     items: jsonb('items').$type<ThreadItem[]>().notNull().default([]),
     actions: jsonb('actions').$type<ThreadAction[]>().notNull().default([]),
@@ -252,7 +252,7 @@ export const jobs = pgTable(
   ],
 );
 
-// State of the mock connectors (hr, finance, incidents, kommunikation). This table *is* the synthetic source
+// State of the mock connectors (hr, finance, incidents, communication). This table *is* the synthetic source
 // system, so that approvals and bookings survive a restart; `module` is the mock's id. Real adapters never write here.
 export const moduleState = pgTable(
   'module_state',

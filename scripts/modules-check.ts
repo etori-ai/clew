@@ -130,7 +130,7 @@ const ok = (cond: unknown, msg: string) => {
   const rehab = open.find((t: any) => t.connector === 'hr' && t.title.includes('omtankesamtal'));
   const snoozed = await api(`/api/threads/${rehab.id}/snooze`, {});
   ok(snoozed.waitingOn === 'i morgon 06:00', 'snooze moves the card to Pågår utan dig until the next bundle');
-  const notice = open.find((t: any) => t.connector === 'kommunikation');
+  const notice = open.find((t: any) => t.connector === 'communication');
   const ack = await api(`/api/threads/${notice.id}/act`, { actionId: 'ack' });
   ok(
     ack.thread.state === 'handled' && ack.thread.receipt.rows[0].outcome === 'done',
@@ -138,7 +138,7 @@ const ok = (cond: unknown, msg: string) => {
   );
   ({ threads } = await api('/api/threads'));
   ok(
-    !threads.some((t: any) => t.state === 'open' && t.connector === 'kommunikation'),
+    !threads.some((t: any) => t.state === 'open' && t.connector === 'communication'),
     'acknowledged notice is not pushed again',
   );
   // Reopen after Inte nu: the Ångra row.

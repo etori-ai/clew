@@ -15,7 +15,7 @@ A running Clew serves the protocol it speaks under `/api/protocol`, public, with
 | `POST /api/protocol/manifest?id=<id>` | A dry run: a manifest document in, a `ManifestPreview` out with every problem the loader would refuse it for, else what Clew would make of it (who may call what, what the model is offered, which views could be menu rows, what the conformance check would exercise). No service, registration or sign-in needed. |
 
 ```sh
-curl -s -X POST "http://localhost:3020/api/protocol/manifest?id=telefonbok" -H 'content-type: application/json' --data @docs/generated/telefonbok.manifest.json
+curl -s -X POST "http://localhost:3020/api/protocol/manifest?id=phonebook" -H 'content-type: application/json' --data @docs/generated/phonebook.manifest.json
 ```
 
 In the development stack the Vite proxy forwards `/api` to the BFF, so `http://localhost:3020/api/protocol` is the address on the host.
@@ -85,6 +85,6 @@ Keep existing capability names and schemas compatible with stored cards and call
 | Scope and governance | [registry](../../packages/connectors/src/index.ts) | [authorization boundaries](../../tests/unit/authorization-boundaries.test.ts) |
 | Signing and callbacks | [authority.ts](../../apps/server/src/connectors/authority.ts), [routes](../../apps/server/src/routes/connectors.ts) | [remote connector tests](../../tests/unit/remote-connector.test.ts) |
 | Source verification | [standalone verifier](../../connectors/hello/verification.mjs) | [executable documentation](../../scripts/docs-smoke.ts) |
-| Conformance | [check.ts](../../packages/connectors/src/check.ts) | [phone book tests](../../tests/unit/telefonbok-connector.test.ts) |
+| Conformance | [check.ts](../../packages/connectors/src/check.ts) | [phone book tests](../../tests/unit/phonebook-connector.test.ts) |
 
 For intent and supersessions, see the [decision log](../decisions/README.md). For availability, see [implementation status](status.md).

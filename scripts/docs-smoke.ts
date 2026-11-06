@@ -7,9 +7,9 @@ import { connectorAuthority } from '../apps/server/src/connectors/authority';
 import { checkConnector } from '../packages/connectors/src/check';
 import { parseManifest, remoteConnector } from '../packages/connectors/src/remote';
 import { Registry, openGovernance, type Actor } from '../packages/connectors/src/index';
-import { createConnector, manifest as document } from '../connectors/telefonbok/connector.mjs';
+import { createConnector, manifest as document } from '../connectors/phonebook/connector.mjs';
 
-const manifest = parseManifest(document, 'telefonbok');
+const manifest = parseManifest(document, 'phonebook');
 const keys = await generateKeyPair('RS256', { extractable: true });
 const authority = await connectorAuthority(await exportPKCS8(keys.privateKey), 'docs-ephemeral');
 const secret = 'documentation-fixture-transport-key';
@@ -45,16 +45,16 @@ registry.register(
   }),
 );
 registry.govern(manifest.id, openGovernance());
-const result = await registry.run<{ rows: Array<{ ref: string; name: string }> }>(actor, 'telefonbok.directory', {});
+const result = await registry.run<{ rows: Array<{ ref: string; name: string }> }>(actor, 'phonebook.directory', {});
 assert.ok(result.rows.length > 0, 'The fixture should contain visible records');
 const first = result.rows[0]!;
-const person = await registry.run<{ ref: string }>(actor, 'telefonbok.person', { ref: first.ref });
+const person = await registry.run<{ ref: string }>(actor, 'phonebook.person', { ref: first.ref });
 assert.equal(person.ref, first.ref);
 
 const token = await authority.assert(manifest.id, actor);
 async function callTeam(bearer: string, key: string, bodyActor: Actor) {
   return connector.handle(
-    new Request('http://fixture/clew/capabilities/telefonbok.team', {
+    new Request('http://fixture/clew/capabilities/phonebook.team', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${bearer}`, 'x-clew-connector-key': key },
       body: JSON.stringify({ actor: bodyActor, input: {} }),

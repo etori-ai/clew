@@ -1,5 +1,5 @@
 import { composer, desktop, open, phone, test } from './support';
-import { menuRows } from './telefonbok';
+import { menuRows } from './phonebook';
 
 /**
  * Not a test: screenshots of the phone book's declared views (D38) in the side panel, under an answer and as a tool's
@@ -10,11 +10,11 @@ import { menuRows } from './telefonbok';
 const out = (name: string) => `test-results/screens/${name}.png`;
 const title = (text: string) => encodeURIComponent(text);
 const views = [
-  ['view-table', `/?open=telefonbok.directory&open-title=${title('Sök i telefonboken')}`],
-  ['view-list', `/?open=telefonbok.team&open-title=${title('Mitt teams kontaktlista')}`],
+  ['view-table', `/?open=phonebook.directory&open-title=${title('Sök i telefonboken')}`],
+  ['view-list', `/?open=phonebook.team&open-title=${title('Mitt teams kontaktlista')}`],
   [
     'view-detail',
-    `/?open=telefonbok.person&open-title=Kontaktkort&via=1&open-input=${encodeURIComponent(JSON.stringify({ ref: 'person:p1002' }))}`,
+    `/?open=phonebook.person&open-title=Kontaktkort&via=1&open-input=${encodeURIComponent(JSON.stringify({ ref: 'person:p1002' }))}`,
   ],
   [
     'view-person-hit',
@@ -57,7 +57,7 @@ test.describe('screens', () => {
     await page.getByRole('heading', { level: 1, name: 'Mitt team' }).waitFor();
     await page.screenshot({ path: out('tool-page-list-1440') });
     await page.setViewportSize(phone);
-    await open(page, '/tools/telefonbok.directory');
+    await open(page, '/tools/phonebook.directory');
     await page.getByRole('list', { name: 'Telefonboken' }).waitFor();
     await page.screenshot({ path: out('tool-page-375') });
   });

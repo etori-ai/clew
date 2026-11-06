@@ -11,9 +11,9 @@ import {
 } from './support';
 
 const title = (text: string) => encodeURIComponent(text);
-const directory = `/?open=telefonbok.directory&open-title=${title('Sök i telefonboken')}`;
-const team = `/?open=telefonbok.team&open-title=${title('Mitt teams kontaktlista')}`;
-const card = `/?open=telefonbok.person&open-title=Kontaktkort&open-input=${encodeURIComponent(JSON.stringify({ ref: 'person:p1003' }))}`;
+const directory = `/?open=phonebook.directory&open-title=${title('Sök i telefonboken')}`;
+const team = `/?open=phonebook.team&open-title=${title('Mitt teams kontaktlista')}`;
+const card = `/?open=phonebook.person&open-title=Kontaktkort&open-input=${encodeURIComponent(JSON.stringify({ ref: 'person:p1003' }))}`;
 
 /**
  * Declared views (D38): a connector says what its output holds and Startsidan draws it. The phone book is the example:

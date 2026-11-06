@@ -16,7 +16,7 @@ export function followupFixture(id: string): FollowupSnapshot {
       kind: 'pushed',
       topic: id,
       connector: 'calendar',
-      area: 'kalender',
+      area: 'calendar',
       title: 'Test',
       state: 'open',
       week: '2026-11-02',

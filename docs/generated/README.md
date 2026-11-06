@@ -9,7 +9,7 @@ The manifest field by field, with examples and the rules between fields, is [man
 ## Complete runnable examples
 
 - [hello manifest](hello.manifest.json), from [connector.mjs](../../connectors/hello/connector.mjs): 5 capabilities; scan enabled.
-- [telefonbok manifest](telefonbok.manifest.json), from [connector.mjs](../../connectors/telefonbok/connector.mjs): 5 capabilities; no scan.
+- [phonebook manifest](phonebook.manifest.json), from [connector.mjs](../../connectors/phonebook/connector.mjs): 5 capabilities; no scan.
 
 These JSON files are complete, generated inputs, not abbreviated pseudocode. They contain no credentials. The [signed walkthrough](../../scripts/docs-smoke.ts) runs the phone book fixture; the [quickstart](../guides/creating-a-connector.md) explains how to adapt it.
 

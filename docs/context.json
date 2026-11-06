@@ -52,15 +52,15 @@
       ]
     },
     {
-      "id": "telefonbok",
-      "source": "connectors/telefonbok/connector.mjs",
-      "manifest": "docs/generated/telefonbok.manifest.json",
+      "id": "phonebook",
+      "source": "connectors/phonebook/connector.mjs",
+      "manifest": "docs/generated/phonebook.manifest.json",
       "capabilities": [
-        "telefonbok.directory",
-        "telefonbok.team",
-        "telefonbok.person",
-        "telefonbok.search",
-        "telefonbok.fetch"
+        "phonebook.directory",
+        "phonebook.team",
+        "phonebook.person",
+        "phonebook.search",
+        "phonebook.fetch"
       ]
     }
   ],
@@ -725,14 +725,8 @@
       ]
     },
     {
-      "path": "connectors/reference/README.md",
-      "title": "Durable synthetic reference source",
-      "category": "integrator-guide",
-      "headings": []
-    },
-    {
-      "path": "connectors/telefonbok/README.md",
-      "title": "telefonbok: the organisation's phone book as a Clew connector",
+      "path": "connectors/phonebook/README.md",
+      "title": "phonebook: the organisation's phone book as a Clew connector",
       "category": "integrator-guide",
       "headings": [
         "What a person gets",
@@ -741,6 +735,12 @@
         "What it never does",
         "Run and check"
       ]
+    },
+    {
+      "path": "connectors/reference/README.md",
+      "title": "Durable synthetic reference source",
+      "category": "integrator-guide",
+      "headings": []
     },
     {
       "path": "docs/README.md",
@@ -1746,6 +1746,23 @@
         "What must not be built",
         "Complexity budget",
         "Recommendation",
+        "Outcome"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-06-from-mock-connectors-to-real-test-sources.md",
+      "title": "Review: from mock connectors to real test sources · 2026-11-06",
+      "category": "review-history",
+      "headings": [
+        "Assessment",
+        "Basis and limits",
+        "What depends on the in-process mocks today",
+        "What \"real-mock\" should mean",
+        "Candidates",
+        "The lab repository",
+        "Recommended order of work",
+        "Decision to record",
+        "Addendum, same day: keep it in the repository, and put real products behind the fixtures",
         "Outcome"
       ]
     },

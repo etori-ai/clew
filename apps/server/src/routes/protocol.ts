@@ -7,7 +7,7 @@ import { openApiDocument, protocolSchema } from '@clew/connectors/protocol';
 import { previewManifest } from '@clew/connectors/preview';
 import { manifestReference } from '@clew/connectors/reference';
 import { manifest as hello } from '../../../../connectors/hello/connector.mjs';
-import { manifest as telefonbok } from '../../../../connectors/telefonbok/connector.mjs';
+import { manifest as phonebook } from '../../../../connectors/phonebook/connector.mjs';
 import { parseManifest } from '@clew/connectors/remote';
 
 /**
@@ -59,7 +59,7 @@ const page = `<!doctype html>
 `;
 
 /** The manifest field by field, with examples from the repository's two example connectors: public data, never a registered connector's. */
-const reference = manifestReference([parseManifest(telefonbok, 'telefonbok'), parseManifest(hello, 'hello')]);
+const reference = manifestReference([parseManifest(phonebook, 'phonebook'), parseManifest(hello, 'hello')]);
 protocolRoutes.get('/', c => c.html(page, 200, cached));
 protocolRoutes.get('/manifest-reference.json', c => c.json(reference, 200, cached));
 // The page itself is the web app's, drawn with Astryx at /protocol/manifest; the same origin serves both (D60).

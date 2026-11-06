@@ -16,10 +16,10 @@ import { manifestProblems, parseManifest, remoteConnector } from '../../packages
 import { Registry } from '../../packages/connectors/src/index';
 import { protocolRoutes } from '../../apps/server/src/routes/protocol';
 import { manifest as hello } from '../../connectors/hello/connector.mjs';
-import { manifest as telefonbok } from '../../connectors/telefonbok/connector.mjs';
+import { manifest as phonebook } from '../../connectors/phonebook/connector.mjs';
 
 /** The manifest field by field (D60, item 5): walked from the schema, exemplified from real manifests, its rules proven against the loader. */
-const examples = [parseManifest(telefonbok, 'telefonbok'), parseManifest(hello, 'hello')];
+const examples = [parseManifest(phonebook, 'phonebook'), parseManifest(hello, 'hello')];
 const reference = manifestReference(examples);
 const paths = reference.fields.map(f => f.path);
 const copy = (m: unknown) => JSON.parse(JSON.stringify(m));
@@ -237,7 +237,7 @@ describe('the field list', () => {
         expect(validate(capability.input)(step.kind === 'execute' ? step.payload : step.input)).toBe(true);
       }
     expect((reference.recipes.find(r => r.id === 'menu-tool')!.example as { name: string }).name).toBe(
-      'telefonbok.directory',
+      'phonebook.directory',
     );
     expect((reference.recipes.find(r => r.id === 'scan-cards')!.example as { scan: boolean }).scan).toBe(true);
   });
@@ -270,34 +270,34 @@ describe('the rules', () => {
       'hello',
     ],
     'view-on-a-read': [
-      broken(telefonbok, m => {
+      broken(phonebook, m => {
         m.capabilities[0].kind = 'propose';
       }),
-      'telefonbok',
+      'phonebook',
     ],
     'view-keys-in-output': [
-      broken(telefonbok, m => {
+      broken(phonebook, m => {
         m.capabilities[0].view.fields[0].key = 'nowhere';
       }),
-      'telefonbok',
+      'phonebook',
     ],
     'view-input-in-input': [
-      broken(telefonbok, m => {
+      broken(phonebook, m => {
         m.capabilities[0].view.input.query.key = 'nowhere';
       }),
-      'telefonbok',
+      'phonebook',
     ],
     'row-opens-own-read': [
-      broken(telefonbok, m => {
+      broken(phonebook, m => {
         m.capabilities[0].view.open.capability = 'hello.greeting';
       }),
-      'telefonbok',
+      'phonebook',
     ],
     'menu-needs-open-view': [
-      broken(telefonbok, m => {
+      broken(phonebook, m => {
         m.capabilities[0].input = { type: 'object', properties: { q: { type: 'string' } }, required: ['q'] };
       }),
-      'telefonbok',
+      'phonebook',
     ],
     'standing-exists': [
       broken(hello, m => {

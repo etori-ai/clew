@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
 import { NEXT_WEEK } from './data';
 import { composer, desktop, type MockApi, open, openNav, phone, test } from './support';
-import { menuRows } from './telefonbok';
+import { menuRows } from './phonebook';
 
 /**
  * Not a test: every surface and state for the UX review (docs/reviews/2026-11-05-ux-review.md). Run on demand with
@@ -298,13 +298,13 @@ test.describe('review', () => {
   // A tool.
   shot('50-tool', async (page, api) => {
     full(api);
-    await open(page, '/tools/telefonbok.directory');
+    await open(page, '/tools/phonebook.directory');
   });
   shot(
     '51-tool-results',
     async (page, api) => {
       full(api);
-      await open(page, '/tools/telefonbok.directory');
+      await open(page, '/tools/phonebook.directory');
       await page
         .getByRole('searchbox')
         .first()

@@ -1,28 +1,28 @@
 # Add search and views: the phone book
 
-The [phone book connector](../../connectors/telefonbok/connector.mjs) is a complete read-only integration: a directory search, the person's team and one contact card. It has no workspace dependency and uses a synthetic organization until a real API is configured. Start with the [quickstart](creating-a-connector.md) to run its signed fixture exchange.
+The [phone book connector](../../connectors/phonebook/connector.mjs) is a complete read-only integration: a directory search, the person's team and one contact card. It has no workspace dependency and uses a synthetic organization until a real API is configured. Start with the [quickstart](creating-a-connector.md) to run its signed fixture exchange.
 
 ## Read the implementation in this order
 
 | Source | What to adapt |
 |---|---|
-| [Generated manifest](../generated/telefonbok.manifest.json) | Complete schemas, capabilities, views and menu hints. Generated from `connector.mjs`. |
-| [manifest.mjs](../../connectors/telefonbok/manifest.mjs) | Shared schemas and one named block per capability: input, output, view and menu hint. `directoryCapability.view.kind` chooses the table and `view.fields` its columns. |
-| [directory.mjs](../../connectors/telefonbok/directory.mjs) | `createFixtureDirectory`, `createHttpDirectory` and `toPerson`: source access and mapping. |
-| [connector.mjs](../../connectors/telefonbok/connector.mjs) | Read operations, verified actor, unit mapping, input checks and response mapping; exports the manifest from `manifest.mjs`. |
-| [verification.mjs](../../connectors/telefonbok/verification.mjs) | Protocol 2 identity and transport checks. |
-| [server.mjs](../../connectors/telefonbok/server.mjs) | HTTP service and environment configuration. |
-| [Connector tests](../../tests/unit/telefonbok-connector.test.ts) | Search, protected records, unit scoping and recorded HTTP responses. |
+| [Generated manifest](../generated/phonebook.manifest.json) | Complete schemas, capabilities, views and menu hints. Generated from `connector.mjs`. |
+| [manifest.mjs](../../connectors/phonebook/manifest.mjs) | Shared schemas and one named block per capability: input, output, view and menu hint. `directoryCapability.view.kind` chooses the table and `view.fields` its columns. |
+| [directory.mjs](../../connectors/phonebook/directory.mjs) | `createFixtureDirectory`, `createHttpDirectory` and `toPerson`: source access and mapping. |
+| [connector.mjs](../../connectors/phonebook/connector.mjs) | Read operations, verified actor, unit mapping, input checks and response mapping; exports the manifest from `manifest.mjs`. |
+| [verification.mjs](../../connectors/phonebook/verification.mjs) | Protocol 2 identity and transport checks. |
+| [server.mjs](../../connectors/phonebook/server.mjs) | HTTP service and environment configuration. |
+| [Connector tests](../../tests/unit/phonebook-connector.test.ts) | Search, protected records, unit scoping and recorded HTTP responses. |
 
 ## The five reads
 
 | Capability | Input | Purpose |
 |---|---|---|
-| `telefonbok.directory` | Optional `query`, optional `scope` (`all` or `unit`) | Table with a query control and an organization/unit choice. |
-| `telefonbok.team` | Empty object | List for the verified actor's unit. |
-| `telefonbok.person` | `ref` | Contact detail, opened from a row. |
-| `telefonbok.search` | `query` | Person hits for Clew's composite search. |
-| `telefonbok.fetch` | `ref` | Resolve a hit again when used as conversation context. |
+| `phonebook.directory` | Optional `query`, optional `scope` (`all` or `unit`) | Table with a query control and an organization/unit choice. |
+| `phonebook.team` | Empty object | List for the verified actor's unit. |
+| `phonebook.person` | `ref` | Contact detail, opened from a row. |
+| `phonebook.search` | `query` | Person hits for Clew's composite search. |
+| `phonebook.fetch` | `ref` | Resolve a hit again when used as conversation context. |
 
 The input/output schemas in the generated manifest are authoritative. The fixture uses `person:<id>` refs. Another connector must define its own stable ref scheme and reject unknown or unauthorized refs on every lookup.
 
@@ -51,24 +51,24 @@ Clew's [search use case](../../apps/server/src/modules/search/usecases.ts) asks 
 With the [local Clew stack](../maintainers/local-development.md) running, use a development-only transport key:
 
 ```sh
-docker exec -w /workspace -e CLEW_CONNECTOR_SECRET=local-docs-only-transport-key -e CLEW_URL=http://127.0.0.1:3000 -e TELEFONBOK_ADAPTER=fixture clew-app-1 node connectors/telefonbok/server.mjs
+docker exec -w /workspace -e CLEW_CONNECTOR_SECRET=local-docs-only-transport-key -e CLEW_URL=http://127.0.0.1:3000 -e PHONEBOOK_ADAPTER=fixture clew-app-1 node connectors/phonebook/server.mjs
 ```
 
 Leave that process running. In another terminal:
 
 ```sh
-docker exec -w /workspace clew-app-1 bun scripts/connector-check.ts http://127.0.0.1:4020 --id telefonbok --secret local-docs-only-transport-key
-docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts telefonbok http://127.0.0.1:4020 --secret local-docs-only-transport-key
+docker exec -w /workspace clew-app-1 bun scripts/connector-check.ts http://127.0.0.1:4020 --id phonebook --secret local-docs-only-transport-key
+docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts phonebook http://127.0.0.1:4020 --secret local-docs-only-transport-key
 ```
 
-The second command creates or updates a **draft** registration. In Administration → Anslutna system, choose its audience, review the check and enable it. Select Telefonbok and/or Mitt team as menu tools. These commands reuse the id `telefonbok`; use a disposable development installation or an intentionally chosen registration.
+The second command creates or updates a **draft** registration. In Administration → Anslutna system, choose its audience, review the check and enable it. Select Telefonbok and/or Mitt team as menu tools. These commands reuse the id `phonebook`; use a disposable development installation or an intentionally chosen registration.
 
-To connect a real source, set `TELEFONBOK_ADAPTER=http`, `TELEFONBOK_URL`, `TELEFONBOK_API_KEY` and, if needed, `TELEFONBOK_UNIT_MAP`. The assumed `/persons` API in the adapter is a demonstration, not a confirmed Metakatalogen API. Update the adapter and recorded response tests before enabling real access.
+To connect a real source, set `PHONEBOOK_ADAPTER=http`, `PHONEBOOK_URL`, `PHONEBOOK_API_KEY` and, if needed, `PHONEBOOK_UNIT_MAP`. The assumed `/persons` API in the adapter is a demonstration, not a confirmed Metakatalogen API. Update the adapter and recorded response tests before enabling real access.
 
 ## Verify the adaptation
 
 ```sh
-docker exec -w /workspace clew-app-1 bun test tests/unit/telefonbok-connector.test.ts tests/unit/views.test.ts tests/unit/search.test.ts
+docker exec -w /workspace clew-app-1 bun test tests/unit/phonebook-connector.test.ts tests/unit/views.test.ts tests/unit/search.test.ts
 ```
 
 Exercise a query with required input, the unit filter, an unknown ref, a protected record and source failure. These supplement the conformance check, which skips reads that require input. [View accessibility tests](../../tests/a11y/views.spec.ts) and [tool-page tests](../../tests/a11y/tools.spec.ts) cover Clew's rendering; new UI behavior follows the [maintainer testing rules](../architecture/testing.md).

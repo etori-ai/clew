@@ -24,7 +24,7 @@ export function calendarConnector(
     source: 'Kalendern',
     areas: [
       {
-        id: 'kalender',
+        id: 'calendar',
         title: 'Kalender',
         icon: 'calendar',
         roles: ['manager', 'employee'],

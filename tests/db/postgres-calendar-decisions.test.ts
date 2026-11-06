@@ -167,7 +167,7 @@ test('partial confirmation persists per-item evidence and policy; reconciliation
       topic: threadId,
       title: 'Samtal',
       week: '2098-11-10',
-      area: 'kalender',
+      area: 'calendar',
       summary: '',
       trigger: { reason: 'Test', source: 'Test', at },
       createdAt: at,

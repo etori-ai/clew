@@ -22,8 +22,8 @@ import { parseManifest, remoteConnector } from '../../packages/connectors/src/re
 import { assertionFor, testJwks, testAuthority } from '../connector-authority';
 import {
   createConnector as createTelefonbok,
-  manifest as telefonbokManifest,
-} from '../../connectors/telefonbok/connector.mjs';
+  manifest as phonebookManifest,
+} from '../../connectors/phonebook/connector.mjs';
 
 /**
  * The conversation end to end (D8, D12, D25): the real router, verbs and prompt over the registry with mock
@@ -759,25 +759,25 @@ describe('a question answered from documents, with the model (D26)', () => {
 });
 
 /** The phone book as the registry runs it: the real connector over the protocol, in process, on its made-up organisation. */
-function telefonbok(): Connector {
+function phonebook(): Connector {
   const secret = 'test-secret-test-secret',
     service = createTelefonbok({ jwks: testJwks, secret });
-  return remoteConnector(parseManifest(telefonbokManifest, 'telefonbok'), {
-    url: 'http://telefonbok',
+  return remoteConnector(parseManifest(phonebookManifest, 'phonebook'), {
+    url: 'http://phonebook',
     key: secret,
-    assert: assertionFor('telefonbok', secret),
+    assert: assertionFor('phonebook', secret),
     fetch: (input, init) => service.handle(new Request(input, init)),
   });
 }
 describe('a declared view is the answer, with and without the model (D38)', () => {
   test("without the model: what was typed after the capability's name is the view's question; the turn stores a count, the view and its audit row, never a row", async () => {
-    const w = world({ extra: [telefonbok()] });
+    const w = world({ extra: [phonebook()] });
     const r = await w.assistant.converse(hassan, { text: 'telefonboken lindqvist' });
     expect(r).toMatchObject({
       assistant: 'router',
       shape: 'vy',
       view: {
-        capability: 'telefonbok.directory',
+        capability: 'phonebook.directory',
         input: { query: 'lindqvist' },
         title: 'Sök i telefonboken',
         source: 'Telefonboken',
@@ -789,7 +789,7 @@ describe('a declared view is the answer, with and without the model (D38)', () =
       actor: 'person:hassan',
       action: 'conversation.asked',
       subject: 'thread:' + r.conversationId,
-      details: { assistant: 'router', tools: ['telefonbok.directory'], view: 'telefonbok.directory' },
+      details: { assistant: 'router', tools: ['phonebook.directory'], view: 'phonebook.directory' },
     });
     // What Clew keeps of the turn: the question, the sentence and where the view is. No name it did not get from the person, no number.
     const kept = JSON.stringify([await w.store.readThread('hassan', r.conversationId), w.store.audit]);
@@ -800,7 +800,7 @@ describe('a declared view is the answer, with and without the model (D38)', () =
     });
     const team = await w.assistant.converse(hassan, { text: 'mitt team' });
     expect(team).toMatchObject({
-      view: { capability: 'telefonbok.team', input: {}, declared: true },
+      view: { capability: 'phonebook.team', input: {}, declared: true },
       answer: { body: 'Mitt teams kontaktlista: 5 rader.' },
     });
   });
@@ -808,17 +808,17 @@ describe('a declared view is the answer, with and without the model (D38)', () =
     const handed: unknown[] = [];
     const generate: ModelGenerate = async ({ system, tools }) => {
       expect(system).toContain('resultatet visas i en vy');
-      expect(Object.keys(tools)).toEqual(expect.arrayContaining(['telefonbok__directory', 'telefonbok__team']));
+      expect(Object.keys(tools)).toEqual(expect.arrayContaining(['phonebook__directory', 'phonebook__team']));
       const output = await (
-        tools['telefonbok__directory'] as { execute: (input: unknown, options: unknown) => Promise<unknown> }
+        tools['phonebook__directory'] as { execute: (input: unknown, options: unknown) => Promise<unknown> }
       ).execute({ query: 'lärare', scope: 'unit' }, {});
       handed.push(output);
       return {
         text: 'Två träffar på din enhet finns i vyn. Telefonboken 08:00.',
-        toolCalls: [{ capability: 'telefonbok.directory', input: { query: 'lärare', scope: 'unit' }, output }],
+        toolCalls: [{ capability: 'phonebook.directory', input: { query: 'lärare', scope: 'unit' }, output }],
       };
     };
-    const w = world({ generate, extra: [telefonbok()] });
+    const w = world({ generate, extra: [phonebook()] });
     const r = await w.assistant.converse(hassan, { text: 'vilka lärare finns på min enhet?' });
     expect(handed).toEqual([
       {
@@ -831,14 +831,14 @@ describe('a declared view is the answer, with and without the model (D38)', () =
     expect(r).toMatchObject({
       assistant: 'model',
       shape: 'vy',
-      view: { capability: 'telefonbok.directory', input: { query: 'lärare', scope: 'unit' }, declared: true },
+      view: { capability: 'phonebook.directory', input: { query: 'lärare', scope: 'unit' }, declared: true },
     });
     expect(r.thread.messages[1]!.meta).toMatchObject({
-      toolCalls: [{ capability: 'telefonbok.directory', input: { query: 'lärare', scope: 'unit' } }],
+      toolCalls: [{ capability: 'phonebook.directory', input: { query: 'lärare', scope: 'unit' } }],
     });
     expect(w.store.audit.at(-1)).toMatchObject({
       action: 'conversation.asked',
-      details: { assistant: 'model', tools: ['telefonbok.directory'], view: 'telefonbok.directory' },
+      details: { assistant: 'model', tools: ['phonebook.directory'], view: 'phonebook.directory' },
     });
     expect(JSON.stringify([await w.store.readThread('hassan', r.conversationId), w.store.audit])).not.toMatch(
       /Anna|Hassan Ali|0980|070-/,

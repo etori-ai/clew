@@ -26,7 +26,7 @@ import { SubRows, type ShellNav } from './shell';
 export type AdminSection = 'anslutningar' | 'modeller';
 /** What the rail marks as current: the place, and within the start page the conversation. */
 export interface RailCurrent {
-  surface: 'start' | 'kalender' | 'verktyg' | 'admin';
+  surface: 'start' | 'calendar' | 'verktyg' | 'admin';
   conversationId?: string | null;
   /** The capability whose tool page is open (D42), so its row under Verktyg is marked. */
   view?: string | null;
@@ -166,7 +166,7 @@ export function useRail({ current, admin }: { current: RailCurrent; admin: boole
           />
         </SideNavSection>
         <SideNavSection title="Verktyg">
-          <SideNavItem label="Kalender" icon="calendar" href="/calendar" isSelected={current.surface === 'kalender'} />
+          <SideNavItem label="Kalender" icon="calendar" href="/calendar" isSelected={current.surface === 'calendar'} />
           {menu.slice(0, TOOLS_SHOWN).map(tool)}
           {more.length > 0 && (
             <SideNavItem

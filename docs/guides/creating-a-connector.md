@@ -21,7 +21,7 @@ It needs no running Clew BFF, database, Keycloak, model or source API. The ephem
 | Need | Start from | Important limit |
 |---|---|---|
 | Understand routes, callbacks, scan and receipts | [hello](../../connectors/hello/) | In-memory demonstration; its mutations do not prove durable recovery or real source scoping. |
-| Read a directory, catalogue or other lookup service | [telefonbok](../../connectors/telefonbok/) | Fixture data by default; adapt the real API mapping and access policy. |
+| Read a directory, catalogue or other lookup service | [phonebook](../../connectors/phonebook/) | Fixture data by default; adapt the real API mapping and access policy. |
 | Learn source-side operation deduplication and lookup | [reference](../../connectors/reference/) | Synthetic SQLite durability fixture; not a selected pilot or production connector. |
 | Retrieve documents with a delegated user token | [eneo](../../connectors/eneo/) | Requires an operator-configured IdP and compatible source API. |
 
@@ -31,7 +31,7 @@ Copy the complete connector directory into your own project, including its verif
 
 Decide who owns each record, who can read or change it, how a Clew person/unit maps to source identities, and how the source authenticates calls. Start with one useful `read`. Name capabilities at task level (`directory`, `openItems`), with precise input and output schemas. Write Swedish titles, descriptions and user-visible errors; keep identifiers English.
 
-Start from the [manifest field reference](../generated/manifest-reference.md): every field with its type, constraints, an example and what it must agree with, plus three recipes; a running Clew draws the same at `/protocol/manifest`. The complete [hello manifest](../generated/hello.manifest.json) and [phone book manifest](../generated/telefonbok.manifest.json) are generated from their actual exports, not abbreviated copy-and-paste samples. The [generated field tables](../generated/README.md) are the short form. The rules in brief:
+Start from the [manifest field reference](../generated/manifest-reference.md): every field with its type, constraints, an example and what it must agree with, plus three recipes; a running Clew draws the same at `/protocol/manifest`. The complete [hello manifest](../generated/hello.manifest.json) and [phone book manifest](../generated/phonebook.manifest.json) are generated from their actual exports, not abbreviated copy-and-paste samples. The [generated field tables](../generated/README.md) are the short form. The rules in brief:
 
 - Use protocol `2`, a stable lowercase connector id, and `<id>.<verb>` capability names.
 - Declare only implemented operations. A `read` may have a view; `execute` must have `model: false`.
@@ -49,7 +49,7 @@ Serve `GET /clew/manifest` and `POST /clew/capabilities/{name}`. Add `/clew/scan
 
 For each POST, verify the transport key and Clew's signed assertion, take the actor from verified claims, validate the input, enforce capability and record-level access, then call the source. Map the source's response to the declared output. Map failures to the protocol error envelope with a safe Swedish message. The body actor is not trusted identity. The full flow is in [authorization](authorization.md).
 
-Keep the source's own vocabulary and credentials in the adapter. The phone book isolates that work in [directory.mjs](../../connectors/telefonbok/directory.mjs): a fixture and an HTTP adapter implement the same two functions. Replace its assumed HTTP shape with your source's documented shape and test recorded responses. Do not ship the fixture's organization-wide access policy without checking the real source's rules.
+Keep the source's own vocabulary and credentials in the adapter. The phone book isolates that work in [directory.mjs](../../connectors/phonebook/directory.mjs): a fixture and an HTTP adapter implement the same two functions. Replace its assumed HTTP shape with your source's documented shape and test recorded responses. Do not ship the fixture's organization-wide access policy without checking the real source's rules.
 
 ## 5. Add one feature at a time
 

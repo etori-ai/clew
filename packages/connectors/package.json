@@ -13,7 +13,7 @@
     "./mock/hr": "./src/mock/hr.ts",
     "./mock/finance": "./src/mock/finance.ts",
     "./mock/incidents": "./src/mock/incidents.ts",
-    "./mock/kommunikation": "./src/mock/kommunikation.ts",
+    "./mock/communication": "./src/mock/communication.ts",
     "./mock/payroll": "./src/mock/payroll.ts",
     "./mock/timesheet": "./src/mock/timesheet.ts",
     "./check": "./src/check.ts"

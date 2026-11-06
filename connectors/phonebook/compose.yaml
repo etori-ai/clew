@@ -1,0 +1,20 @@
+# The phone book connector next to the devcontainer. An administrator registers it in Clew (Administration › Anslutna
+# system, or `bun scripts/connector-add.ts`), so nothing on Clew's container names it (D23).
+#
+#   PHONEBOOK_SECRET=<16+ characters> docker compose -f connectors/phonebook/compose.yaml up phonebook
+# and register it from inside the app container with the same secret:
+#   docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts phonebook http://host.docker.internal:4020 --secret <the secret> --enable
+#
+# Without PHONEBOOK_ADAPTER the connector serves the made-up organisation in directory.mjs. Against the real phone book:
+#   PHONEBOOK_ADAPTER=http PHONEBOOK_URL=https://… PHONEBOOK_API_KEY=… (from the secrets store, never from this file)
+services:
+  phonebook:
+    build: .
+    environment:
+      CLEW_CONNECTOR_SECRET: ${PHONEBOOK_SECRET:?set PHONEBOOK_SECRET to a shared secret of 16+ characters}
+      PHONEBOOK_ADAPTER: ${PHONEBOOK_ADAPTER:-fixture}
+      PHONEBOOK_URL: ${PHONEBOOK_URL:-}
+      PHONEBOOK_API_KEY: ${PHONEBOOK_API_KEY:-}
+      PHONEBOOK_UNIT_MAP: ${PHONEBOOK_UNIT_MAP:-}
+    ports:
+      - "127.0.0.1:4020:4020"

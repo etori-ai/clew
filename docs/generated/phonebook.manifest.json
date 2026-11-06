@@ -1,6 +1,6 @@
 {
   "protocol": 2,
-  "id": "telefonbok",
+  "id": "phonebook",
   "kind": "passthrough",
   "source": "Telefonboken",
   "areas": [
@@ -13,15 +13,15 @@
         "employee"
       ],
       "standing": [
-        "telefonbok.team",
-        "telefonbok.directory"
+        "phonebook.team",
+        "phonebook.directory"
       ],
       "schedules": []
     }
   ],
   "capabilities": [
     {
-      "name": "telefonbok.directory",
+      "name": "phonebook.directory",
       "kind": "read",
       "title": "Sök i telefonboken",
       "model": true,
@@ -96,7 +96,7 @@
         "title": "name",
         "ref": "ref",
         "open": {
-          "capability": "telefonbok.person",
+          "capability": "phonebook.person",
           "title": "Kontaktkort",
           "params": {
             "ref": "ref"
@@ -157,7 +157,7 @@
       }
     },
     {
-      "name": "telefonbok.team",
+      "name": "phonebook.team",
       "kind": "read",
       "title": "Mitt teams kontaktlista",
       "model": true,
@@ -224,7 +224,7 @@
         "title": "name",
         "ref": "ref",
         "open": {
-          "capability": "telefonbok.person",
+          "capability": "phonebook.person",
           "title": "Kontaktkort",
           "params": {
             "ref": "ref"
@@ -260,7 +260,7 @@
       }
     },
     {
-      "name": "telefonbok.person",
+      "name": "phonebook.person",
       "kind": "read",
       "title": "Kontaktkort",
       "model": false,
@@ -365,7 +365,7 @@
       }
     },
     {
-      "name": "telefonbok.search",
+      "name": "phonebook.search",
       "kind": "read",
       "title": "Sök person",
       "model": true,
@@ -434,7 +434,7 @@
         "title": "label",
         "ref": "ref",
         "open": {
-          "capability": "telefonbok.person",
+          "capability": "phonebook.person",
           "title": "Kontaktkort",
           "params": {
             "ref": "ref"
@@ -453,7 +453,7 @@
       }
     },
     {
-      "name": "telefonbok.fetch",
+      "name": "phonebook.fetch",
       "kind": "read",
       "title": "Hämta person",
       "model": false,

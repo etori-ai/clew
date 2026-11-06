@@ -75,7 +75,7 @@ const adapter = (tx: Transaction): FollowupTx => ({
         title,
         state: 'open',
         connector: 'calendar',
-        area: 'kalender',
+        area: 'calendar',
         summary,
         trigger: { reason: `Inbjudan väntar på svar · påminnelse ${ordinal} av 2`, source: 'Kalendern', at },
         createdAt: new Date(at),

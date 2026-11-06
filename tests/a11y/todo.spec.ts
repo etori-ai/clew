@@ -1,5 +1,5 @@
 import { answer, composer, desktop, expect, expectNoAxeViolations, heading, open, phone, test } from './support';
-import { menuRow } from './telefonbok';
+import { menuRow } from './phonebook';
 
 /** Wide enough for the panel to stand beside the page's column (D50); at the suite's desktop width it lies over it. */
 const wide = { width: 1440, height: 900 };
@@ -198,7 +198,7 @@ test.describe('the panel beside the page', () => {
     await expectNoAxeViolations(page);
     await expect(panel.getByRole('link', { name: 'Öppna som sida' })).toHaveAttribute(
       'href',
-      /^\/tools\/telefonbok\.directory\?input=/,
+      /^\/tools\/phonebook\.directory\?input=/,
     );
     // The box is in use while the panel is open, and typing there never loses the panel.
     await composer(page).fill('Vem är på plats?');
@@ -217,22 +217,22 @@ test.describe('the panel beside the page', () => {
     api,
   }) => {
     api.menu = [menuRow];
-    await open(page, `/tools/telefonbok.directory?input=${encodeURIComponent(JSON.stringify({ query: 'lärare' }))}`);
+    await open(page, `/tools/phonebook.directory?input=${encodeURIComponent(JSON.stringify({ query: 'lärare' }))}`);
     await expect(page.getByText('Fråga om Telefonbok …')).toBeVisible();
     await composer(page).fill('Vem är på plats?');
     await composer(page).press('Enter');
     await expect(answer(page)).toBeVisible();
     await expect(page).toHaveURL(
-      /\/conversations\/[^/?]+\?open=telefonbok\.directory&open-title=Telefonbok&open-input=/,
+      /\/conversations\/[^/?]+\?open=phonebook\.directory&open-title=Telefonbok&open-input=/,
     );
     const panel = page.getByRole('complementary', { name: 'Telefonbok' });
     await expect(panel.getByRole('searchbox')).toHaveValue('lärare');
     await expect(composer(page)).toBeFocused();
-    expect(api.asked.at(-1)?.chips?.map(c => c.ref)).toEqual(['capability:telefonbok.directory']);
+    expect(api.asked.at(-1)?.chips?.map(c => c.ref)).toEqual(['capability:phonebook.directory']);
     await expectNoAxeViolations(page);
     // "Öppna som sida" is the way back to the view at full width; "Stäng samtalet" leads to the page it was asked on.
     await page.getByRole('button', { name: 'Stäng samtalet' }).click();
-    await expect(page).toHaveURL(/\/tools\/telefonbok\.directory\?input=/);
+    await expect(page).toHaveURL(/\/tools\/phonebook\.directory\?input=/);
     await expect(page.getByRole('heading', { level: 1, name: 'Telefonbok' })).toBeVisible();
   });
 });
@@ -245,13 +245,13 @@ test.describe('asking from a page on a narrower screen', () => {
     api,
   }) => {
     api.menu = [menuRow];
-    await open(page, '/tools/telefonbok.directory');
+    await open(page, '/tools/phonebook.directory');
     await composer(page).fill('Vem är på plats?');
     await composer(page).press('Enter');
     await expect(answer(page)).toBeVisible();
     await expect(page).toHaveURL(/\/conversations\/[^/?]+$/);
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    expect(api.asked.at(-1)?.chips?.map(c => c.ref)).toEqual(['capability:telefonbok.directory']);
+    expect(api.asked.at(-1)?.chips?.map(c => c.ref)).toEqual(['capability:phonebook.directory']);
   });
 
   test('a question on the landing after a closed conversation starts a new one', async ({ page, api }) => {

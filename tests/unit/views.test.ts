@@ -10,7 +10,7 @@ import {
   type Connector,
 } from '../../packages/connectors/src/index';
 import { ManifestError, parseManifest } from '../../packages/connectors/src/remote';
-import { manifest as telefonbokManifest } from '../../connectors/telefonbok/connector.mjs';
+import { manifest as phonebookManifest } from '../../connectors/phonebook/connector.mjs';
 import { citationsOf } from '../../apps/server/src/assistant/answer';
 import {
   buildTools,
@@ -24,7 +24,7 @@ import { memoryState } from '../../packages/connectors/src/memory-state';
 import { hrConnector } from '../../packages/connectors/src/mock/hr';
 import { financeConnector } from '../../packages/connectors/src/mock/finance';
 import { incidentsConnector } from '../../packages/connectors/src/mock/incidents';
-import { kommunikationConnector } from '../../packages/connectors/src/mock/kommunikation';
+import { communicationConnector } from '../../packages/connectors/src/mock/communication';
 
 /**
  * Declared views (D38): the rules a declaration keeps, in the manifest loader and in the registry; what the model is
@@ -60,8 +60,8 @@ const read = (over: Record<string, unknown> = {}) => ({
 });
 const card = { name: 'x.card', kind: 'read', input: { type: 'object', properties: { ref: {} } }, output: {} };
 const withView = (name: string, view: unknown) => ({
-  ...(telefonbokManifest as { capabilities: Array<{ name: string }> }),
-  capabilities: (telefonbokManifest as { capabilities: Array<{ name: string }> }).capabilities.map(c =>
+  ...(phonebookManifest as { capabilities: Array<{ name: string }> }),
+  capabilities: (phonebookManifest as { capabilities: Array<{ name: string }> }).capabilities.map(c =>
     c.name === name ? { ...c, view } : c,
   ),
 });
@@ -148,18 +148,18 @@ describe('the rules of a declared view', () => {
     ).toMatch(/not a read/);
   });
   test('the manifest loader and the registry refuse a connector whose view breaks a rule; markup is not a thing a view can carry', () => {
-    expect(parseManifest(telefonbokManifest, 'telefonbok').capabilities[0]!.view?.kind).toBe('table');
+    expect(parseManifest(phonebookManifest, 'phonebook').capabilities[0]!.view?.kind).toBe('table');
     expect(() =>
       parseManifest(
-        withView('telefonbok.team', { kind: 'list', title: 'name', fields: [{ key: 'title', label: 'Titel' }] }),
+        withView('phonebook.team', { kind: 'list', title: 'name', fields: [{ key: 'title', label: 'Titel' }] }),
       ),
     ).toThrow(ManifestError);
-    expect(() => parseManifest(withView('telefonbok.team', { kind: 'html', body: '<b>x</b>' }))).toThrow(
+    expect(() => parseManifest(withView('phonebook.team', { kind: 'html', body: '<b>x</b>' }))).toThrow(
       /Invalid connector manifest/,
     );
     expect(() =>
       parseManifest(
-        withView('telefonbok.team', {
+        withView('phonebook.team', {
           kind: 'list',
           title: 'name',
           fields: [{ key: 'name', label: 'Namn', style: 'color: red' }],
@@ -224,7 +224,7 @@ describe('the rules of a declared view', () => {
 
 describe('the model and a view it may not read', () => {
   const tool: ToolSchemaInfo = {
-    name: 'telefonbok.directory',
+    name: 'phonebook.directory',
     title: 'Sök i telefonboken',
     description: 'Söker kollegor på namn, titel eller enhet.',
     kind: 'read',
@@ -272,7 +272,7 @@ describe('the model and a view it may not read', () => {
       toolCalls: [
         { capability: 'clew.search', input: { query: 'anna' }, output: { rows: [], sources: [] } },
         {
-          capability: 'telefonbok.directory',
+          capability: 'phonebook.directory',
           input: { query: 'anna' },
           output: viewSummary(tool.view!, tool.title, output),
         },
@@ -287,7 +287,7 @@ describe('the model and a view it may not read', () => {
       generate,
     });
     expect(answer.view).toEqual({
-      capability: 'telefonbok.directory',
+      capability: 'phonebook.directory',
       input: { query: 'anna' },
       title: 'Sök i telefonboken',
       source: 'Telefonboken',
@@ -295,7 +295,7 @@ describe('the model and a view it may not read', () => {
     });
   });
   test("without a model the same view is reached by typing: the rest of the sentence is the view's question, and the answer counts rows without naming anyone", () => {
-    expect(matchCapability('telefonboken anna lindqvist', [tool])?.name).toBe('telefonbok.directory');
+    expect(matchCapability('telefonboken anna lindqvist', [tool])?.name).toBe('phonebook.directory');
     expect(viewInput('telefonboken anna lindqvist', tool)).toEqual({ query: 'anna lindqvist' });
     expect(viewInput('Sök i telefonboken', tool)).toEqual({});
     expect(viewInput('sök efter rektor på bergsåkers skola i telefonboken', tool)).toEqual({
@@ -305,7 +305,7 @@ describe('the model and a view it may not read', () => {
     const answer = viewAnswer({ ...tool, view: tool.view! }, { query: 'anna' }, output);
     expect(answer.body).toBe('Sök i telefonboken: 2 rader.');
     expect(answer.view).toEqual({
-      capability: 'telefonbok.directory',
+      capability: 'phonebook.directory',
       input: { query: 'anna' },
       title: 'Sök i telefonboken',
       source: 'Telefonboken',
@@ -318,7 +318,7 @@ describe('the model and a view it may not read', () => {
 describe('a person found by the search is counted, never named, in what Clew stores', () => {
   const person = {
     ref: 'person:1',
-    connector: 'telefonbok',
+    connector: 'phonebook',
     kind: 'person' as const,
     label: 'Anna Lindqvist',
     snippet: 'Lärare · Bergsåkers skola',
@@ -334,7 +334,7 @@ describe('a person found by the search is counted, never named, in what Clew sto
     source: 'Intranätet',
     stale: false,
   };
-  const sources: SearchResult['sources'] = [{ id: 'telefonbok', source: 'Telefonboken', status: 'ok' }];
+  const sources: SearchResult['sources'] = [{ id: 'phonebook', source: 'Telefonboken', status: 'ok' }];
   test('the sentence without a model and the citations stored with an answer leave the name in its source', () => {
     expect(searchAnswer({ rows: [person], sources }, now).body).toMatch(
       /^1 person hittades\. Se kontaktuppgifterna i panelen\. Källor: Telefonboken\./,
@@ -358,7 +358,7 @@ describe('a person found by the search is counted, never named, in what Clew sto
 describe('the mocks declare their views', () => {
   const bundled = () => {
     const state = memoryState();
-    return [hrConnector(state), financeConnector(state), incidentsConnector(state), kommunikationConnector(state)];
+    return [hrConnector(state), financeConnector(state), incidentsConnector(state), communicationConnector(state)];
   };
   const declared = [
     'finance.invoices',
@@ -367,7 +367,7 @@ describe('the mocks declare their views', () => {
     'hr.absencePattern',
     'hr.leaveRequests',
     'incidents.deviations',
-    'kommunikation.notices',
+    'communication.notices',
   ];
   test('every read over rows, the budget position and the absence pattern have a view that keeps the rules, and the registry takes them', () => {
     const r = new Registry();

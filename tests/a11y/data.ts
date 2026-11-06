@@ -158,7 +158,7 @@ export const threads = (): Thread[] => [
     title: 'Planera utvecklingssamtal',
     topic: 'utvecklingssamtal',
     connector: 'calendar',
-    area: 'kalender',
+    area: 'calendar',
     deadline: '2026-11-27',
     week: NEXT_WEEK,
     trigger: { reason: 'Samtalen ska vara klara i november', source: 'Kalendern', at: NOW },
@@ -186,7 +186,7 @@ export const threads = (): Thread[] => [
     title: 'Planera utvecklingssamtal vecka 45',
     topic: 'utvecklingssamtal-v45',
     connector: 'calendar',
-    area: 'kalender',
+    area: 'calendar',
     week: WEEK,
     waitingOn: 'svar från 1 medarbetare',
     trigger: { reason: 'Samtalen ska vara klara i november', source: 'Kalendern', at: NOW },
@@ -230,12 +230,12 @@ export const threads = (): Thread[] => [
     id: 'rutin',
     title: 'Ny rutin för läkemedelshantering',
     topic: 'rutin',
-    connector: 'kommunikation',
+    connector: 'communication',
     area: 'viktigt-nu',
     trigger: { reason: 'Nytt meddelande från förvaltningen', source: 'Kommunikation', at: NOW },
     summary: 'Gäller från den 1 december.',
     actions: [
-      { id: 'ack', label: 'Jag har läst', capability: 'kommunikation.acknowledge', kind: 'execute', role: 'primary' },
+      { id: 'ack', label: 'Jag har läst', capability: 'communication.acknowledge', kind: 'execute', role: 'primary' },
     ],
   }),
   thread({
@@ -253,7 +253,7 @@ export const threads = (): Thread[] => [
     id: 'brandskydd',
     title: 'Brandskyddsrond i oktober saknar protokoll',
     topic: 'brandskydd',
-    connector: 'kommunikation',
+    connector: 'communication',
     area: 'kvalitet',
     deadline: '2026-11-30',
     snoozedUntil: '2026-11-05T05:00:00.000Z',
@@ -293,7 +293,7 @@ export const threads = (): Thread[] => [
     topic: 'brand',
     state: 'dismissed',
     handledAt: NOW,
-    connector: 'kommunikation',
+    connector: 'communication',
     area: 'viktigt-nu',
   }),
   thread({
@@ -330,9 +330,9 @@ export const areas: Area[] = [
     source: 'Kommunikation',
     needsYou: 1,
     urgency: 'notice',
-    standing: [{ capability: 'kommunikation.notices', label: 'Viktigt nu', kind: 'read' }],
+    standing: [{ capability: 'communication.notices', label: 'Viktigt nu', kind: 'read' }],
   }),
-  area('kalender', 'Kalender', {
+  area('calendar', 'Kalender', {
     source: 'Kalendern',
     icon: 'calendar',
     needsYou: 1,
@@ -588,7 +588,7 @@ export const conversation = (source: Thread[], text: string, conversationId = 'k
   if (/telefonbok/i.test(text)) {
     const body = 'Sök i telefonboken: 2 rader.';
     const view = {
-      capability: 'telefonbok.directory',
+      capability: 'phonebook.directory',
       input: { query: 'lärare' },
       title: 'Sök i telefonboken',
       source: 'Telefonboken',

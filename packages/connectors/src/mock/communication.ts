@@ -4,14 +4,14 @@ import type { StateStore } from '../memory-state';
 import { notices } from './data';
 
 /** Mock Kommunikation ("Viktigt nu"). A core-like connector: notices with read receipts, outside the attention budget. */
-const CONNECTOR = 'kommunikation';
+const CONNECTOR = 'communication';
 const Empty = Type.Object({}, { additionalProperties: false });
 
-export function kommunikationConnector(state: StateStore): Connector {
+export function communicationConnector(state: StateStore): Connector {
   const acks = () => state.get<Record<string, Record<string, string>>>(CONNECTOR, 'receipts', {});
   const capabilities: Capability<any, any>[] = [
     {
-      name: 'kommunikation.notices',
+      name: 'communication.notices',
       kind: 'read',
       title: 'Viktigt nu',
       model: true,
@@ -55,7 +55,7 @@ export function kommunikationConnector(state: StateStore): Connector {
       },
     },
     {
-      name: 'kommunikation.acknowledge',
+      name: 'communication.acknowledge',
       kind: 'execute',
       title: 'Jag har läst',
       model: false,
@@ -86,7 +86,7 @@ export function kommunikationConnector(state: StateStore): Connector {
     return notices
       .filter(n => n.requiresReceipt && (n.audience === 'all' || actor.role === 'manager') && !a[actor.id]?.[n.ref])
       .map(n => ({
-        topic: `komm:${n.ref}`,
+        topic: `communication:${n.ref}`,
         area: 'viktigt-nu',
         title: n.title,
         summary: n.body,
@@ -96,7 +96,7 @@ export function kommunikationConnector(state: StateStore): Connector {
           {
             id: 'ack',
             label: 'Jag har läst',
-            capability: 'kommunikation.acknowledge',
+            capability: 'communication.acknowledge',
             kind: 'execute',
             role: 'primary',
             usesItems: true,
@@ -114,7 +114,7 @@ export function kommunikationConnector(state: StateStore): Connector {
         title: 'Viktigt nu',
         icon: 'bell',
         roles: ['manager', 'employee'],
-        standing: ['kommunikation.notices'],
+        standing: ['communication.notices'],
         schedules: [{ label: 'Nya meddelanden som kräver läskvitto', when: 'Direkt när de publiceras' }],
       },
     ],

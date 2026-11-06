@@ -20,14 +20,14 @@ A connector is its own repository. Nothing from this one needs to be installed t
 Before anything runs, post the manifest to the instance's dry run ([D60](../decisions/D60-the-instance-serves-its-connector-protocol.md)); it lists every problem the loader would refuse it for, and for a good document says what Clew would offer to whom and which capabilities the conformance check below will and will not call:
 
 ```sh
-curl -s -X POST "http://localhost:3020/api/protocol/manifest?id=telefonbok" -H 'content-type: application/json' --data @docs/generated/telefonbok.manifest.json
+curl -s -X POST "http://localhost:3020/api/protocol/manifest?id=phonebook" -H 'content-type: application/json' --data @docs/generated/phonebook.manifest.json
 ```
 
 Run from the repository root on the host, with the devcontainer and dependencies available:
 
 ```sh
 docker exec -w /workspace clew-app-1 bun run docs:check
-docker exec -w /workspace clew-app-1 bun test tests/unit/remote-connector.test.ts tests/unit/telefonbok-connector.test.ts tests/unit/views.test.ts tests/unit/authorization-boundaries.test.ts
+docker exec -w /workspace clew-app-1 bun test tests/unit/remote-connector.test.ts tests/unit/phonebook-connector.test.ts tests/unit/views.test.ts tests/unit/authorization-boundaries.test.ts
 ```
 
 The documentation check compares generated artifacts to source, checks local documentation links, and runs [the signed fixture walkthrough](../../scripts/docs-smoke.ts). The test suite exercises the transport and contract behavior. Neither needs a database, identity provider or network source.
@@ -39,7 +39,7 @@ For your connector, use its real request handler against a deterministic fixture
 After starting the connector and a configured Clew installation, run:
 
 ```sh
-docker exec -w /workspace clew-app-1 bun scripts/connector-check.ts http://127.0.0.1:4020 --id telefonbok --secret local-docs-only-transport-key
+docker exec -w /workspace clew-app-1 bun scripts/connector-check.ts http://127.0.0.1:4020 --id phonebook --secret local-docs-only-transport-key
 ```
 
 This concrete example uses the [phone book fixture service](example-custom-directory.md). Replace the address, id and development-only secret for your service. The CLI loads the installation's local server configuration and needs its database and master key to obtain the signing authority. The connector must be able to fetch that installation's trusted public keys.
@@ -55,7 +55,7 @@ An administrator with `admin.connectors` can add the URL, id and transport secre
 The CLI is an operator/bootstrap alternative. It creates or updates a draft by default:
 
 ```sh
-docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts telefonbok http://127.0.0.1:4020 --secret local-docs-only-transport-key
+docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts phonebook http://127.0.0.1:4020 --secret local-docs-only-transport-key
 docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts --list
 ```
 

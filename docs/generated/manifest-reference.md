@@ -16,7 +16,7 @@ A `read` with a `view` and an input that accepts `{}` is eligible for the menu u
 
 ```json
 {
-  "name": "telefonbok.directory",
+  "name": "phonebook.directory",
   "kind": "read",
   "title": "Sök i telefonboken",
   "model": true,
@@ -91,7 +91,7 @@ A `read` with a `view` and an input that accepts `{}` is eligible for the menu u
     "title": "name",
     "ref": "ref",
     "open": {
-      "capability": "telefonbok.person",
+      "capability": "phonebook.person",
       "title": "Kontaktkort",
       "params": {
         "ref": "ref"
@@ -159,7 +159,7 @@ The same, authored with TypeBox:
 import { Type } from '@sinclair/typebox';
 
 export const directory = {
-  name: 'telefonbok.directory',
+  name: 'phonebook.directory',
   kind: 'read',
   title: 'Sök i telefonboken',
   model: true,
@@ -189,7 +189,7 @@ export const directory = {
     title: 'name',
     ref: 'ref',
     open: {
-      capability: 'telefonbok.person',
+      capability: 'phonebook.person',
       title: 'Kontaktkort',
       params: {
         ref: 'ref',
@@ -1402,7 +1402,7 @@ Example:
 
 ```json
 {
-  "capability": "telefonbok.person",
+  "capability": "phonebook.person",
   "title": "Kontaktkort",
   "params": {
     "ref": "ref"
@@ -1423,7 +1423,7 @@ A read of the same connector, by full name.
 Example:
 
 ```json
-"telefonbok.person"
+"phonebook.person"
 ```
 
 #### `capabilities[].view.open.title`

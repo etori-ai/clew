@@ -27,4 +27,4 @@ Registration creates or updates a draft. Review its audience and enable it in Ad
 
 Configuration: CLEW_CONNECTOR_SECRET (at least 16 characters), CLEW_URL (the trusted public-key endpoint base and callback destination), PORT (default 4010). The transport key cannot sign an actor; every POST also needs a valid assertion. The callback sends the separate verified callback grant, not that assertion.
 
-Copy the whole directory, including the verifier. For a lookup integration use [telefonbok](../telefonbok/README.md); for source-side deduplication and recovery study the [synthetic reference source](../reference/README.md). The [documentation smoke](../../scripts/docs-smoke.ts) exercises the phone book without any running services.
+Copy the whole directory, including the verifier. For a lookup integration use [phonebook](../phonebook/README.md); for source-side deduplication and recovery study the [synthetic reference source](../reference/README.md). The [documentation smoke](../../scripts/docs-smoke.ts) exercises the phone book without any running services.

@@ -73,7 +73,7 @@ export function createConnector({ jwks, secret, directory = createFixtureDirecto
 
   // Read operations: validate input, ask the source, then map the result.
   const capabilities = {
-    'telefonbok.directory': async (actor, input) => {
+    'phonebook.directory': async (actor, input) => {
       const query = typeof input.query === 'string' ? input.query.trim() : '';
       const invalidScope = input.scope !== undefined && input.scope !== 'all' && input.scope !== 'unit';
       if (query.length > 80 || invalidScope) {
@@ -87,7 +87,7 @@ export function createConnector({ jwks, secret, directory = createFixtureDirecto
       return { rows: people.map(toContactRow) };
     },
 
-    'telefonbok.team': async actor => {
+    'phonebook.team': async actor => {
       const people = await directory.search('', {
         unit: sourceUnitOf(actor),
         limit: DIRECTORY_LIMIT,
@@ -95,7 +95,7 @@ export function createConnector({ jwks, secret, directory = createFixtureDirecto
       return { unit: actor.unitLabel, rows: people.map(toContactRow) };
     },
 
-    'telefonbok.person': async (actor, input) => {
+    'phonebook.person': async (actor, input) => {
       const person = await findPerson(input.ref);
       const card = toContactRow(person);
       if (person.room) card.room = person.room;
@@ -104,7 +104,7 @@ export function createConnector({ jwks, secret, directory = createFixtureDirecto
       return card;
     },
 
-    'telefonbok.search': async (actor, input) => {
+    'phonebook.search': async (actor, input) => {
       const query = typeof input.query === 'string' ? input.query.trim() : '';
       if (!query || query.length > 200) {
         throw new Invalid('Ogiltig sökning.');
@@ -114,7 +114,7 @@ export function createConnector({ jwks, secret, directory = createFixtureDirecto
       return { rows: people.map(toSearchHit) };
     },
 
-    'telefonbok.fetch': async (actor, input) => {
+    'phonebook.fetch': async (actor, input) => {
       const person = await findPerson(input.ref);
       return toSearchHit(person);
     },

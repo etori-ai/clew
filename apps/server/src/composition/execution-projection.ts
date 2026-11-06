@@ -18,7 +18,7 @@ export async function projectExecution(tx: Transaction, e: Execution, stage: 'ap
       title: e.presentation.newTitle,
       state: 'open',
       connector: 'calendar',
-      area: 'kalender',
+      area: 'calendar',
       summary: 'Beslutet är sparat. Väntar på kalenderns besked.',
       trigger: { reason: 'Du godkände en kalenderändring', source: 'Kalendern', at: e.createdAt },
       createdAt: new Date(e.createdAt),

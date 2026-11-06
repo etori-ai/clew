@@ -8,7 +8,7 @@ Clew is a workspace for an employee's tasks across systems. A connector makes a 
 |---|---|---|
 | Understand the platform and what it owns | [Platform overview](overview.md) | [Capability registry](../packages/connectors/src/index.ts) |
 | Build a first connector | [Connector quickstart](guides/creating-a-connector.md) | [Hello](../connectors/hello/connector.mjs) |
-| Connect a directory or other lookup service | [Search and views walkthrough](guides/example-custom-directory.md) | [Phone book](../connectors/telefonbok/connector.mjs) |
+| Connect a directory or other lookup service | [Search and views walkthrough](guides/example-custom-directory.md) | [Phone book](../connectors/phonebook/connector.mjs) |
 | Verify identity and narrow source access | [Authorization](guides/authorization.md) | [Standalone verifier](../connectors/hello/verification.mjs) |
 | Add a scan, action, receipt or recovery | [Actions and receipts](guides/actions-and-receipts.md) | [Durable synthetic source](../connectors/reference/connector.mjs) |
 | Test, register and operate the service | [Testing and deployment](guides/testing-and-deployment.md) | [Conformance checker](../packages/connectors/src/check.ts) |

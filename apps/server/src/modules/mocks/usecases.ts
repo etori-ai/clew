@@ -18,7 +18,7 @@ export function mockUsecases(deps: MockDeps) {
       .list()
       .filter(m => m.kind === 'passthrough' && m.id !== 'calendar')
       .map(m => m.id)
-      .concat('kommunikation');
+      .concat('communication');
     const at = deps.clock().toISOString();
     await deps.store.transaction(async tx => {
       await tx.dismissOpenThreadsOf(mockIds, at);

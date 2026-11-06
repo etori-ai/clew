@@ -1,23 +1,23 @@
 import type { MenuEntry, MenuHint, PanelViewSpec, SearchResult, View } from '@clew/contracts';
-import { createConnector, manifest } from '../../connectors/telefonbok/connector.mjs';
+import { createConnector, manifest } from '../../connectors/phonebook/connector.mjs';
 import { user } from './data';
 import { assertionFor, testAuthority } from '../connector-authority';
 
 /**
- * The phone book connector itself (D38), answering the mocked `/api/cap/telefonbok.*` the way Clew's server would: the
+ * The phone book connector itself (D38), answering the mocked `/api/cap/phonebook.*` the way Clew's server would: the
  * real connector on its made-up organisation is called over the protocol with a signed assertion, and its own manifest
  * supplies the view. So the suite draws what the connector really declares, not a copy of it.
  */
 const secret = 'a11y-secret-a11y-secret';
 const service = createConnector({ secret, jwks: async () => (await testAuthority(secret)).jwks });
 const capabilities = (manifest as { capabilities: Array<{ name: string; view?: View }> }).capabilities;
-const assertion = assertionFor('telefonbok', secret);
-export async function telefonbok(
+const assertion = assertionFor('phonebook', secret);
+export async function phonebook(
   name: string,
   input: unknown,
 ): Promise<{ status: number; body: { output: unknown; view?: PanelViewSpec } | { error: string } }> {
   const response = await service.handle(
-    new Request(`http://telefonbok/clew/capabilities/${name}`, {
+    new Request(`http://phonebook/clew/capabilities/${name}`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -35,7 +35,7 @@ export async function telefonbok(
     ? ({
         ...view,
         capability: name,
-        connector: 'telefonbok',
+        connector: 'phonebook',
         source: 'Telefonboken',
         chip: (view.kind === 'table' || view.kind === 'list') && !!view.ref,
       } as PanelViewSpec)
@@ -48,7 +48,7 @@ export const menuRows: MenuEntry[] = (
 ).capabilities
   .filter(c => c.menu)
   .map(c => ({
-    connector: 'telefonbok',
+    connector: 'phonebook',
     source: 'Telefonboken',
     capability: c.name,
     title: c.title,
@@ -56,26 +56,26 @@ export const menuRows: MenuEntry[] = (
     icon: c.menu!.icon,
   }))
   .sort((a, b) => a.label.localeCompare(b.label, 'sv'));
-export const menuRow = menuRows.find(r => r.capability === 'telefonbok.directory')!;
+export const menuRow = menuRows.find(r => r.capability === 'phonebook.directory')!;
 /** The composite search when a name is typed: one person, with the contact card as the hit's view and no review date to miss. */
 export const personSearch: SearchResult = {
   rows: [
     {
       ref: 'person:p1003',
-      connector: 'telefonbok',
+      connector: 'phonebook',
       kind: 'person',
       label: 'Anna Lindqvist',
       snippet: 'Lärare · Bergsåkers skola',
       source: 'Telefonboken',
-      link: 'https://telefonbok.kommun.example/personer/p1003',
+      link: 'https://phonebook.kommun.example/personer/p1003',
       stale: null,
       view: {
-        capability: 'telefonbok.person',
+        capability: 'phonebook.person',
         input: { ref: 'person:p1003' },
         title: 'Kontaktkort',
         source: 'Telefonboken',
       },
     },
   ],
-  sources: [{ id: 'telefonbok', source: 'Telefonboken', status: 'ok' }],
+  sources: [{ id: 'phonebook', source: 'Telefonboken', status: 'ok' }],
 };

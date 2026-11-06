@@ -52,7 +52,7 @@ followupContract('postgres follow-up', async () => {
       topic: id,
       title: 'Test',
       week: '2026-11-02',
-      area: 'kalender',
+      area: 'calendar',
       summary: '',
       trigger: fixture.thread.trigger,
       createdAt: followupAt,

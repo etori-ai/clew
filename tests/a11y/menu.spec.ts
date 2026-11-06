@@ -1,6 +1,6 @@
 import type { MenuEntry } from '@clew/contracts';
 import { desktop, expect, expectNoAxeViolations, narrow, open, openNav, phone, test } from './support';
-import { menuRow, menuRows } from './telefonbok';
+import { menuRow, menuRows } from './phonebook';
 
 /**
  * Verktyg in the menu (D40): the calendar and the views an administrator chose as tools, one click away on every page.
@@ -29,10 +29,10 @@ test.describe('Verktyg in the menu', () => {
     await open(page, '/');
     const section = rail(page).getByRole('group', { name: 'Verktyg' });
     await expect(section.getByRole('link')).toHaveText(['Kalender', 'Mitt team', 'Telefonbok']);
-    await expect(section.getByRole('link', { name: 'Mitt team' })).toHaveAttribute('href', '/tools/telefonbok.team');
+    await expect(section.getByRole('link', { name: 'Mitt team' })).toHaveAttribute('href', '/tools/phonebook.team');
     await expect(section.getByRole('link', { name: 'Telefonbok' })).toHaveAttribute(
       'href',
-      '/tools/telefonbok.directory',
+      '/tools/phonebook.directory',
     );
     // The areas, the administration and the way out stay below it.
     const order = await rail(page).getByRole('link').allTextContents();
@@ -54,7 +54,7 @@ test.describe('Verktyg in the menu', () => {
     const row = rail(page).getByRole('link', { name: 'Telefonbok' });
     await row.focus();
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(/\/tools\/telefonbok\.directory$/);
+    await expect(page).toHaveURL(/\/tools\/phonebook\.directory$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Telefonbok' })).toBeVisible();
     await expect(page.getByRole('searchbox', { name: 'Sök i telefonboken' })).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -80,7 +80,7 @@ test.describe('Verktyg in the menu', () => {
     const search = rail(page).getByRole('combobox', { name: 'Sök i samtal och kort' });
     await search.fill('telefon');
     await page.getByRole('option', { name: /Telefonbok/ }).click();
-    await expect(page).toHaveURL(/\/tools\/telefonbok\.directory$/);
+    await expect(page).toHaveURL(/\/tools\/phonebook\.directory$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Telefonbok' })).toBeVisible();
   });
 

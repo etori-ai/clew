@@ -53,7 +53,7 @@ export function toPerson(raw, baseUrl = '') {
  * itself). Expects `GET {url}/persons?q=&unit=&limit=` -> `{ persons: [...] }` and `GET {url}/persons/{id}` -> one record.
  */
 export function createHttpDirectory({ url, apiKey, fetch: fetchImpl = globalThis.fetch, timeoutMs = 5000 }) {
-  if (!url) throw new Error('TELEFONBOK_URL is required for the http adapter.');
+  if (!url) throw new Error('PHONEBOOK_URL is required for the http adapter.');
   const base = url.replace(/\/+$/, '');
   async function get(path) {
     let response;
@@ -253,7 +253,7 @@ const fold = s =>
 const digits = s => String(s ?? '').replace(/\D/g, '');
 
 /** The fixture as the same port, filtered the way a phone book API would: every word must be found somewhere on the person. */
-export function createFixtureDirectory(records = FIXTURE, baseUrl = 'https://telefonbok.kommun.example') {
+export function createFixtureDirectory(records = FIXTURE, baseUrl = 'https://phonebook.kommun.example') {
   const people = () =>
     records
       .map(r => toPerson(r, baseUrl))

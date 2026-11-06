@@ -129,7 +129,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   // The same frame as the start page (D31, D34), from the same cache (D33): the rail with the person's time axis.
   const client = useQueryClient();
   const areas = useQuery(areasQuery).data?.areas ?? EMPTY_AREAS;
-  const nav = useRail({ current: { surface: 'kalender' }, admin });
+  const nav = useRail({ current: { surface: 'calendar' }, admin });
   // The proposal thread beside the grid is picked from the stream's own list, so a confirm here and the card on the start page agree.
   const threadsQ = useQuery({ ...threadsQuery, select: selectProposalThread });
   const thread = threadsQ.data ?? null;

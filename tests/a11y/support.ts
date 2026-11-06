@@ -24,14 +24,14 @@ import {
 } from './data';
 import { assistantStatus, modelDetail, modelProviders, models, providerDetail, providerReport } from './data';
 import type { ModelSummary, ProviderSummary } from '@clew/contracts';
-import { personSearch, telefonbok } from './telefonbok';
+import { personSearch, phonebook } from './phonebook';
 import { manifestReference } from '../../packages/connectors/src/reference';
 import { parseManifest } from '../../packages/connectors/src/remote';
 import { manifest as helloManifest } from '../../connectors/hello/connector.mjs';
-import { manifest as telefonbokManifest } from '../../connectors/telefonbok/connector.mjs';
+import { manifest as phonebookManifest } from '../../connectors/phonebook/connector.mjs';
 /** The manifest reference as the server builds it (D60): the real walk over the real schema, so the page is tested on what it will draw. */
 export const reference = manifestReference([
-  parseManifest(telefonbokManifest, 'telefonbok'),
+  parseManifest(phonebookManifest, 'phonebook'),
   parseManifest(helloManifest, 'hello'),
 ]);
 
@@ -242,7 +242,7 @@ export class MockApi {
         id: 'calendar:' + b.decisionId,
         topic: 'calendar:' + b.decisionId,
         connector: 'calendar',
-        area: 'kalender',
+        area: 'calendar',
         title: b.title ?? 'Kalenderändring',
         summary: 'Beslutet är sparat.',
         state: 'open',
@@ -313,8 +313,8 @@ export class MockApi {
     if (path === '/cap/clew.search')
       return json({ output: /lindqvist/i.test(url.searchParams.get('input') ?? '') ? personSearch : searchOutput });
     // The phone book's declared views, answered by the connector itself.
-    if (path.startsWith('/cap/telefonbok.')) {
-      const answer = await telefonbok(path.slice('/cap/'.length), JSON.parse(url.searchParams.get('input') ?? '{}'));
+    if (path.startsWith('/cap/phonebook.')) {
+      const answer = await phonebook(path.slice('/cap/'.length), JSON.parse(url.searchParams.get('input') ?? '{}'));
       return route.fulfill({ status: answer.status, json: answer.body });
     }
     if (path === '/cap/clew.cardFromAnswer' && post) return json({ output: { threadId: 'rutin' } });
