@@ -16,6 +16,48 @@ const json = (body, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const fail = (code, message, status) => json({ error: { code, message } }, status);
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+const escapeXml = s =>
+  String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+/** The invoice as one SVG page (D70): header, parties, lines, VAT and the sum. No script, no external reference. */
+export function invoiceSvg(inv) {
+  const number = inv.ref.slice('finance:inv:'.length);
+  const net = inv.lines.reduce((n, l) => n + l.amount, 0);
+  const vat = inv.amount - net;
+  const rows = [...inv.lines.map(l => [l.text, money(l.amount)]), ['Moms 25 %', money(vat)]];
+  const text = (x, y, s, attrs = '') => `<text x="${x}" y="${y}" ${attrs}>${escapeXml(s)}</text>`;
+  const right = 'text-anchor="end"';
+  const lineRows = rows
+    .map(
+      ([label, amount], i) =>
+        `<line x1="48" y1="${268 + i * 32}" x2="592" y2="${268 + i * 32}" stroke="#e4e4e7"/>` +
+        text(48, 290 + i * 32, label) +
+        text(592, 290 + i * 32, amount, right),
+    )
+    .join('');
+  const sumY = 268 + rows.length * 32;
+  const height = sumY + 120;
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="${height}" viewBox="0 0 640 ${height}" role="img" aria-label="${escapeXml(`Faktura ${number} från ${inv.supplier}, ${money(inv.amount)}`)}">` +
+    `<rect width="640" height="${height}" fill="#ffffff"/>` +
+    `<g font-family="Inter, system-ui, sans-serif" font-size="14" fill="#18181b">` +
+    text(48, 64, inv.supplier, 'font-size="22" font-weight="700"') +
+    text(48, 86, 'Leverantörsfaktura', 'fill="#52525b"') +
+    text(592, 64, `FAKTURA ${number}`, `${right} font-size="18" font-weight="600"`) +
+    text(592, 86, `Fakturadatum ${inv.issued} · Förfaller ${inv.due}`, `${right} fill="#52525b"`) +
+    text(48, 140, 'Mottagare', 'font-size="12" fill="#52525b"') +
+    text(48, 160, `Kostnadsställe ${inv.costCentre} · konto ${inv.account}`) +
+    text(336, 140, 'Referens', 'font-size="12" fill="#52525b"') +
+    text(336, 160, inv.order ? `Beställning ${inv.order}` : 'Ingen beställning angiven') +
+    text(48, 240, 'Specifikation', 'font-size="12" font-weight="600" fill="#52525b"') +
+    text(592, 240, 'Belopp', `${right} font-size="12" font-weight="600" fill="#52525b"`) +
+    lineRows +
+    `<line x1="48" y1="${sumY}" x2="592" y2="${sumY}" stroke="#18181b" stroke-width="2"/>` +
+    text(48, sumY + 30, 'Att betala', 'font-size="16" font-weight="700"') +
+    text(592, sumY + 30, money(inv.amount), `${right} font-size="16" font-weight="700"`) +
+    text(48, sumY + 80, `OCR ${number} · betalningsvillkor 30 dagar`, 'font-size="12" fill="#52525b"') +
+    `</g></svg>`
+  );
+}
 
 export function createConnector({
   secret,
@@ -76,6 +118,16 @@ export function createConnector({
     'finance.open': (_actor, input) => ({
       url: `https://finance.example.invalid/faktura/${encodeURIComponent(input.ref)}`,
     }),
+    // The invoice as the person would see it in the economy system (D70): drawn from its lines, for the person's own cost centre only.
+    'finance.preview': (actor, input) => {
+      const inv = records().invoices.find(i => i.ref === input.ref && i.costCentre === costCentre(actor));
+      if (!inv) throw new Invalid('Fakturan finns inte.');
+      return {
+        title: `Faktura ${inv.ref.slice('finance:inv:'.length)} · ${inv.supplier}`,
+        mediaType: 'image/svg+xml',
+        data: Buffer.from(invoiceSvg(inv)).toString('base64'),
+      };
+    },
     'finance.lookup': (actor, input) => {
       const op = state.get('op:' + input.operationId);
       return op && op.person === personKey(actor) ? { found: true, result: op.result } : { found: false };
@@ -194,6 +246,9 @@ export function createConnector({
           kind: 'execute',
           role: 'primary',
           usesItems: true,
+          // Each invoice is looked at before it is attested (D70): Clew opens the review flow and writes once at its end.
+          review: 'each',
+          preview: 'finance.preview',
         },
         {
           id: 'open',

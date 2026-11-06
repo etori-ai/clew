@@ -40,10 +40,12 @@ import {
   TextInput,
   useAnimatedLayout,
   useAnnounce,
+  useEntryAnimation,
   useMediaQuery,
   useToast,
   VStack,
 } from '@clew/ui';
+import { ReviewDialog } from './review';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { today } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
@@ -63,6 +65,16 @@ const outcomeDot = {
 const shortDate = (d: string) =>
   new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'short' }).format(new Date(d.slice(0, 10) + 'T12:00:00'));
 const clock = (iso: string) => new Date(iso).toLocaleTimeString('sv-SE', { timeStyle: 'short' });
+/** The check a receipt earns (D70): drawn when the receipt arrives, on Astryx's own entry motion (which honours reduced motion), never before the source has read back. */
+export function ReceiptCheck({ size = 'md' }: { size?: 'md' | 'lg' }) {
+  const entry = useEntryAnimation('scaleIn');
+  return <Icon icon="check" color="success" size={size} label="Klart" xstyle={entry ?? undefined} />;
+}
+/** What a decision's row says (D70): the receipt's headline and when the source answered. */
+export const receiptLine = (thread: Thread) =>
+  thread.receipt
+    ? `${thread.receipt.headline.replace(/\.$/, '')} · ${thread.trigger.source.toLowerCase()} svarade ${clock(thread.receipt.at)}`
+    : '';
 export function useCountdown(until: string | null) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -337,13 +349,16 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
   const client = useQueryClient();
   const leave = useLeaveWithUndo(apply);
   const selectable = thread.items.some(i => i.selectable);
-  const perform = async (action: ThreadAction) => {
+  /** The review one row at a time (D70): the dialog's own state, opened from the card's next step. */
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const perform = async (action: ThreadAction, refs?: string[]) => {
     if (busy) return;
     if (action.confirm && !window.confirm(action.confirm)) return;
+    const chosen = selectable ? (refs ?? selected) : undefined;
     if (action.kind === 'read') {
       if (action.target === 'link') {
         await run(async () => {
-          const result = await api.act(thread.id, action.id, selectable ? selected : undefined);
+          const result = await api.act(thread.id, action.id, chosen);
           if (result.kind === 'read' && typeof (result.output as { url?: string }).url === 'string')
             window.open((result.output as { url: string }).url, '_blank', 'noopener');
         });
@@ -357,13 +372,29 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
     setPressed(action.id);
     await run(
       async () => {
-        const result = await api.act(thread.id, action.id, selectable ? selected : undefined);
+        const result = await api.act(thread.id, action.id, chosen);
         if (result.kind !== 'execute') throw new ApiError(500, 'Oväntat svar.');
         return result.thread;
       },
       { settle: true },
     );
   };
+  // A card whose next step is a review (D70): the primary execute opens the dialog, which sends once with the approved refs.
+  const reviewed = thread.actions.find(a => a.role === 'primary' && a.kind === 'execute' && a.review === 'each');
+  const reviewDialog = reviewed ? (
+    <ReviewDialog
+      thread={thread}
+      action={reviewed}
+      isOpen={reviewOpen}
+      onOpenChange={setReviewOpen}
+      onSave={setSelected}
+      onSend={refs => {
+        setReviewOpen(false);
+        setSelected(refs);
+        void perform(reviewed, refs);
+      }}
+    />
+  ) : null;
   // The card leaves at once (D64); the toast with Ångra confirms when the server has it.
   const dismiss = () =>
     run(
@@ -402,6 +433,9 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
     perform,
     dismiss,
     pickRemind,
+    reviewed,
+    reviewDialog,
+    openReview: () => setReviewOpen(true),
   };
 }
 type Actions = ReturnType<typeof useThreadActions>;
@@ -433,6 +467,7 @@ function ActionRow({
   const inConversation = conversation.chipped.includes(chipRef);
   const open = thread.state === 'open';
   const { selected, selectable, settling, pressed, perform, dismiss, run, leave, pickRemind } = actions;
+  const { reviewed, reviewDialog, openReview } = actions;
   const snoozeRows = useSnoozeRows({ thread, run, leave });
   const remindRows = useTimeRows({
     presets: usePresets(),
@@ -451,6 +486,27 @@ function ActionRow({
   const due = level !== 'notice' && streamGroup(thread, today()) === 'nu';
   // Rows take the artboard's 32 px buttons, a card its 36 px ones.
   const size = quiet ? 'md' : 'lg';
+  // The one next step: the execute itself, or "Granska N" when the rows are reviewed one at a time first (D70).
+  const primaryButton = primary ? (
+    reviewed ? (
+      <Button
+        size={size}
+        variant={due ? 'primary' : 'secondary'}
+        label={`Granska ${thread.items.filter(i => i.selectable).length}`}
+        isLoading={settling && pressed === primary.id}
+        onClick={openReview}
+      />
+    ) : (
+      <Button
+        size={size}
+        variant={due ? 'primary' : 'secondary'}
+        label={primaryLabel ?? ''}
+        isDisabled={selectable && count === 0}
+        isLoading={settling && pressed === primary.id}
+        clickAction={() => perform(primary)}
+      />
+    )
+  ) : null;
   const addToConversation = (
     <Button
       size={size}
@@ -538,31 +594,15 @@ function ActionRow({
     return (
       <HStack gap={2} vAlign="center">
         {!compact && addToConversation}
-        {primary && (
-          <Button
-            size={size}
-            variant={due ? 'primary' : 'secondary'}
-            label={primaryLabel ?? ''}
-            isDisabled={selectable && count === 0}
-            isLoading={settling && pressed === primary.id}
-            clickAction={() => perform(primary)}
-          />
-        )}
+        {primaryButton}
+        {reviewDialog}
       </HStack>
     );
   if (open && !thread.waitingOn)
     return (
       <HStack gap={2} vAlign="center" wrap="wrap">
-        {primary && (
-          <Button
-            size={size}
-            variant={due ? 'primary' : 'secondary'}
-            label={primaryLabel ?? ''}
-            isDisabled={selectable && count === 0}
-            isLoading={settling && pressed === primary.id}
-            clickAction={() => perform(primary)}
-          />
-        )}
+        {primaryButton}
+        {reviewDialog}
         {secondary.map(a => (
           <Button
             key={a.id}
@@ -577,6 +617,16 @@ function ActionRow({
         {addToConversation}
         {more({})}
       </HStack>
+    );
+  // The row a receipt has just arrived on (D70): its one control is the way back, while the window is open.
+  if (undoOpen && quiet)
+    return (
+      <Button
+        size={size}
+        variant="destructive"
+        label={`Ångra · ${countdown} kvar`}
+        clickAction={() => run(() => api.undoReceipt(thread.id))}
+      />
     );
   if (undoOpen)
     return (
@@ -679,6 +729,8 @@ type Props = ActionProps & {
   autoFocusTitle?: boolean;
   /** The card in the panel beside its own row (D50): the row keeps the thread's id, so the card takes another; the panel is its border, and its header holds the card's time action (artboard E). */
   beside?: boolean;
+  /** After a receipt (D70): the first card that needs the person, as the way on from the done card. */
+  next?: { title: string; href: string };
 };
 /**
  * A thread open on the page (thread action contract, artboard E): the state line (what is due, the area and the source),
@@ -694,6 +746,7 @@ export function GenericCard({
   headingLevel = 3,
   autoFocusTitle = false,
   beside = false,
+  next,
   onChange,
   onOpenCardView,
 }: Props) {
@@ -733,9 +786,13 @@ export function GenericCard({
           <State thread={thread} />
           <Meta thread={thread} areaTitle={areaTitle} position={position} inConversation={inConversation} />
         </HStack>
-        <Heading ref={title} tabIndex={-1} level={beside ? 2 : 3} accessibilityLevel={headingLevel}>
-          {receipt ? receipt.headline : thread.title}
-        </Heading>
+        {/* The check is drawn once, here, when the receipt has come (D70): the card's heading is then what was done. */}
+        <HStack gap={3} vAlign="center">
+          {receipt && <ReceiptCheck size="lg" />}
+          <Heading ref={title} tabIndex={-1} level={beside ? 2 : 3} accessibilityLevel={headingLevel}>
+            {receipt ? receipt.headline : thread.title}
+          </Heading>
+        </HStack>
         {!receipt && thread.summary && (
           <Text as="p" color="secondary">
             {thread.summary}
@@ -804,6 +861,20 @@ export function GenericCard({
         </Text>
       )}
       <ActionRow thread={thread} level={level} actions={actions} />
+      {/* The way on from a done card (D70, artboard D): the first card that needs the person, never opened on its own. */}
+      {receipt && next && (
+        <Card padding={3} variant="muted">
+          <VStack gap={1.5}>
+            <Text type="supporting" weight="semibold">
+              Nästa som behöver dig
+            </Text>
+            <HStack gap={2} vAlign="center" justify="between" wrap="wrap">
+              <Text weight="semibold">{next.title}</Text>
+              <Button size="sm" variant="secondary" label="Öppna" href={next.href} />
+            </HStack>
+          </VStack>
+        </Card>
+      )}
       {/* What the next step does (artboard E): written to the source and read back, undone within the window, without the model. */}
       {open && !receipt && primary?.kind === 'execute' && (!executionStatus(thread.execution) || actions.settling) && (
         <Text type="supporting" as="p">
@@ -907,7 +978,11 @@ export function ThreadRow({
   const open = thread.state === 'open';
   const draft = thread.messages.at(-1)?.meta?.draft;
   const due = open && !thread.waitingOn && !notice && streamGroup(thread, todayDate) === 'nu';
-  const day = notice ? (
+  // A receipt that has just arrived (D70): the row keeps its place for a moment, the check in its day cell and what was done in its line.
+  const done = thread.state === 'handled' && !!thread.receipt;
+  const day = done ? (
+    <ReceiptCheck />
+  ) : notice ? (
     <Icon icon="info" color="info" />
   ) : due ? (
     <Badge
@@ -924,7 +999,7 @@ export function ThreadRow({
   const reminder = thread.timers?.find(t => t.kind === 'reminder' && t.state === 'scheduled');
   const line = [
     areaTitle,
-    thread.trigger.reason.replace(/\.$/, ''),
+    done ? receiptLine(thread) : thread.trigger.reason.replace(/\.$/, ''),
     thread.waitingOn ? `väntar på ${thread.waitingOn}` : '',
     thread.waitingOn && reminder ? `påminner dig ${snoozeWhen(reminder.dueAt, new Date().toISOString())}` : '',
     inConversation ? 'i samtalet' : '',

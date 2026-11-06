@@ -23,6 +23,12 @@ export function seed(today) {
       order: '2026-0412',
       costCentre: 'KS-4410',
       account: 'Läromedel',
+      issued: d(-13),
+      // The invoice's own lines, drawn by `finance.preview` (D70): net amounts, the VAT line is added when drawn.
+      lines: [
+        { text: 'Läromedel matematik åk 4–6, 24 ex', amount: 6400 },
+        { text: 'Lärarhandledning matematik, 4 ex', amount: 2560 },
+      ],
     },
     {
       ref: 'finance:inv:55121',
@@ -32,6 +38,8 @@ export function seed(today) {
       order: '2026-0412',
       costCentre: 'KS-4410',
       account: 'Läromedel',
+      issued: d(-13),
+      lines: [{ text: 'Skrivmaterial höstterminen', amount: 5760 }],
     },
     {
       ref: 'finance:inv:55140',
@@ -41,6 +49,8 @@ export function seed(today) {
       order: '',
       costCentre: 'KS-4410',
       account: 'Lokaler',
+      issued: d(-6),
+      lines: [{ text: 'El och fjärrvärme, oktober', amount: 14920 }],
     },
   ];
   const budgets = [

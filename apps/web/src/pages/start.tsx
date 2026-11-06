@@ -45,6 +45,8 @@ import { areasQuery, assistantQuery, cardViewQuery, threadsQuery, todayQuery, vi
 import { applyThread } from '../thread-cache';
 import { keys } from '../query-keys';
 import { groupThreads } from '../stream';
+import { useReceiptArrivals } from '../linger';
+import { useThreadAction } from '../mutations';
 import { panelOf, withAction, withCard, withView, withoutPanel } from '../panel-address';
 import { Composer, Suggestions, type ComposerAbout } from '../components/composer';
 import { titled, useConversation, type ConversationState } from '../components/conversation-context';
@@ -193,6 +195,33 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     // A row's focus goes to its title button, the control with the ring; a card is focused as a whole, as before.
     (next?.matches('li') ? (next.querySelector<HTMLElement>('button, a') ?? next) : next)?.focus();
   }, [threads]);
+  // A receipt that has just arrived (D70): the row keeps its place for a moment, and a toast says where the card went,
+  // with the way there and the way back. The toast stays until closed (2.2.1), as the Avfärda toast does.
+  const { run: runUndo } = useThreadAction({ onChange: replace });
+  const lingering = useReceiptArrivals(threads, thread => {
+    const receipt = thread.receipt!;
+    const dismiss = toast({
+      body: `${receipt.headline.replace(/\.$/, '')}. Kortet ligger under Klart.`,
+      isAutoHide: false,
+      uniqueID: 'receipt:' + thread.id,
+      endContent: (
+        <HStack gap={1}>
+          <Button size="sm" variant="ghost" label="Visa" href={homeHref({ tab: 'done' })} />
+          {receipt.undoCapability && (
+            <Button
+              size="sm"
+              variant="ghost"
+              label="Ångra"
+              clickAction={async () => {
+                await runUndo(() => api.undoReceipt(thread.id));
+                dismiss();
+              }}
+            />
+          )}
+        </HStack>
+      ),
+    });
+  });
   // A view is addressable (integrations.md, "Answers and views"): the panel follows `open` or `open-card` in the address.
   const viewInput = search.get('open-input');
   // A declared view with a search field (D38) asks again as the person types: the rows on screen stay until the next ones arrive, so the panel and the field's focus stay put.
@@ -289,8 +318,14 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const now = new Date().toISOString();
   const todayDate = today();
   // The groups (D34): requirements by their day, proposals, events; then what waits on someone else and what is set aside.
-  const g = useMemo(() => groupThreads(threads, now, todayDate, inArea), [threads, now.slice(0, 16), todayDate, area]);
-  const all = useMemo(() => groupThreads(threads, now, todayDate), [threads, now.slice(0, 16), todayDate]);
+  const g = useMemo(
+    () => groupThreads(threads, now, todayDate, inArea, lingering),
+    [threads, now.slice(0, 16), todayDate, area, lingering],
+  );
+  const all = useMemo(
+    () => groupThreads(threads, now, todayDate, undefined, lingering),
+    [threads, now.slice(0, 16), todayDate, lingering],
+  );
   // What closed today (artboard A's "1 klar", the Klart tab's count): cards, not the person's own conversations.
   const closedToday = useMemo(() => all.handledToday.filter(t => t.kind !== 'question'), [all.handledToday]);
   // Whether what the address names stands beside the column (artboard E) rather than over it: then the column is the narrow one.
@@ -327,7 +362,15 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       document.removeEventListener('close', focus, true);
     };
   }, [cardsInline, openId, location.key, threadsQ.data]);
-  const card = (t: Thread, options: { level?: 2 | 3; beside?: boolean; compact?: boolean } = {}) =>
+  /** The way on from a done card (D70): the first other card under Nu, else under Senare. */
+  const nextFor = (t: Thread) => {
+    const next = [...g.nu, ...g.senare].find(x => x.id !== t.id);
+    return next ? { title: next.title, href: cardHref(next.id) } : undefined;
+  };
+  const card = (
+    t: Thread,
+    options: { level?: 2 | 3; beside?: boolean; compact?: boolean; next?: { title: string; href: string } } = {},
+  ) =>
     t.proposals.length ? (
       <ThreadCard
         key={t.id}
@@ -344,6 +387,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         areaTitle={areaTitle(t.area)}
         headingLevel={options.level ?? 3}
         beside={!!options.beside}
+        next={options.next}
         onChange={replace}
         onOpenCardView={openCardView}
       />
@@ -762,7 +806,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           address: here + location.search,
           onClose: closePanel,
           // The card's buttons, Inte nu among them, are the card's own: the header holds what is open and ✕ (D66).
-          body: () => card(panelCard, { beside: true, compact: true, level: 3 }),
+          body: () => card(panelCard, { beside: true, compact: true, level: 3, next: nextFor(panelCard) }),
         }
       : null;
   const slot = usePanel(frame, {
@@ -770,9 +814,19 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     overlayOnly: short,
     // Where the panel fits beside Hem it rests on the day and Sedan i går and can be folded away like an open card.
     rest: talk.open ? undefined : asideContent,
-    // A card stays a tab while it is in the stream (D66): snoozed, dismissed or done, it leaves the row with the pile.
+    // A card stays a tab while it is in the stream (D66): snoozed or dismissed, it leaves the row with the pile. A done
+    // card stays while its receipt can still be undone (D70): the receipt is the person's own result, and Ångra is on it.
     isOpen: id =>
-      !id.startsWith('card:') || threads.some(t => t.id === id.slice(5) && t.state === 'open' && !isSnoozed(t, now)),
+      !id.startsWith('card:') ||
+      threads.some(
+        t =>
+          t.id === id.slice(5) &&
+          ((t.state === 'open' && !isSnoozed(t, now)) ||
+            (t.state === 'handled' &&
+              !!t.receipt?.undoCapability &&
+              !!t.receipt.undoUntil &&
+              t.receipt.undoUntil > now)),
+      ),
   });
   /** What Hem's box asks about: the open card, which the conversation then keeps beside the transcript; "Ny fråga i stället" lets go of it. */
   const about: ComposerAbout | undefined = panelCard

@@ -16,6 +16,8 @@ Source workers refresh asynchronously; the page reads the persisted view. Scan c
 
 Each draft's actions must name capabilities of its own connector and match their declared kinds. The usual card has one primary execute/propose and up to two secondary reads. Clew owns the standard card actions. One connector's card cannot execute another connector's capability. [Hello](../../connectors/hello/connector.mjs) demonstrates a scan; [reference](../../connectors/reference/connector.mjs) includes an approved ref and source revision in its action input.
 
+When each item has a document the person should see before deciding (an invoice, a form), mark the execute action `review: 'each'` and name a `preview` read of your own connector that takes `{ ref }` for one item and answers a `PreviewOutput`: a `title`, a `mediaType` among `image/svg+xml`, `image/png`, `image/jpeg` and `application/pdf`, and the document as base64 `data`. Clew then offers `Granska N` as the card's next step, shows each item's document beside its facts, and runs the execute once with the refs the person approved; nothing is written before that. The action must use the items (`usesItems: true`), and the preview must be a `read` of the same connector, or the draft is refused. [Finance](../../connectors/finance/connector.mjs) draws each invoice as an SVG from its lines.
+
 ## Keep approval separate from execution
 
 A `propose` may prepare a draft but must not perform the proposed source write. An `execute` is always `model: false`. Clew's generic capability route and connector callbacks refuse executes; the person reaches them through a card's human decision flow. The source must still validate the current actor, records and expected revision when executing.

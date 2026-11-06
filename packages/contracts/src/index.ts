@@ -578,8 +578,35 @@ export const ThreadActionSchema = object({
   /** Whether the action takes the selected items as `refs`. */
   usesItems: Type.Optional(Type.Boolean()),
   confirm: Type.Optional(Type.String()),
+  /**
+   * The person reviews the items one at a time before this execute runs (D70): Clew opens the review flow from the
+   * card's next step, and the write happens once, with the refs the person approved. Only on an execute with `usesItems`.
+   */
+  review: Type.Optional(Type.Literal('each')),
+  /** A read capability of the same connector that takes `{ ref }` for one item and answers a `PreviewOutput` (D70). */
+  preview: Type.Optional(Type.String()),
 });
 export type ThreadAction = Static<typeof ThreadActionSchema>;
+/** One item's document, as a review flow shows it beside the decision (D70): an image is drawn, a PDF is offered as a file. */
+export const PreviewMediaType = Type.Union([
+  Type.Literal('image/svg+xml'),
+  Type.Literal('image/png'),
+  Type.Literal('image/jpeg'),
+  Type.Literal('application/pdf'),
+]);
+export const PreviewOutputSchema = object(
+  {
+    title: Type.String({ minLength: 1, maxLength: 200, description: 'Swedish. Names the document.' }),
+    mediaType: PreviewMediaType,
+    data: Type.String({
+      pattern: '^[A-Za-z0-9+/]*={0,2}$',
+      maxLength: 4_000_000,
+      description: 'The document, base64. At most 3 MB decoded.',
+    }),
+  },
+  "What a `preview` read answers for one item (D70): the item's document as base64, with its media type.",
+);
+export type PreviewOutput = Static<typeof PreviewOutputSchema>;
 /** What the source system answered, row by row, read back after an execute. Green only on a read-back. */
 export const ReceiptRowSchema = object({
   ref: Type.String(),

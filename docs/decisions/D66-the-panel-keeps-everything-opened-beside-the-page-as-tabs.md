@@ -69,3 +69,5 @@ violations with the menu closed and open). `keyboard.spec.ts` and `card-actions.
 
 **Replaces.** D50 item 3's one-thing-at-a-time panel (it still shows one thing; the others wait as tabs); D53's and
 D63's "left for later" for the panel's tabs. D50 item 4 (the address) and item 5 (the card goes along) stand.
+
+**Amended 2026-11-06 by [D70](D70-one-press-confirms-on-the-row-and-rows-with-a-document-are-reviewed-one-at-a-time.md).** A done card whose receipt can still be undone stays in the panel, with the receipt, Ångra allt and the way on; the rule that a card leaves with its row now covers Inte nu, Avfärda and a receipt whose window has passed.

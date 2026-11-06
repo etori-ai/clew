@@ -87,3 +87,5 @@ buttons, not the words, were what made every row shout at once).
 "one visible next step, the rest behind Fler val".
 
 **Amended 2026-11-05 by D49.** Inte nu and Påminn mig are no longer two sub-menus. A card has one time action; this decision left that open as a product question, and D49 settled it the same day.
+
+**Extended 2026-11-06 by [D70](D70-one-press-confirms-on-the-row-and-rows-with-a-document-are-reviewed-one-at-a-time.md).** Item 2: on a card whose connector asks for a review one row at a time, the one next step is `Granska N`, which opens the review; the write is the review's last step.

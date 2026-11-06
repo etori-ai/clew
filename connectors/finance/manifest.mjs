@@ -121,6 +121,22 @@ const open = {
   output: object({ url: string }),
 };
 
+// The invoice itself, for the review one at a time (D70): an SVG drawn from the invoice's lines, base64.
+const preview = {
+  name: 'finance.preview',
+  kind: 'read',
+  title: 'Visa fakturan',
+  description: 'Fakturan som bild, för granskning innan attest.',
+  model: false,
+  scope: manager,
+  input: object({ ref: { type: 'string', pattern: '^finance:inv:' } }),
+  output: object({
+    title: string,
+    mediaType: { enum: ['image/svg+xml'] },
+    data: { type: 'string', pattern: '^[A-Za-z0-9+/]*={0,2}$' },
+  }),
+};
+
 const lookup = {
   name: 'finance.lookup',
   kind: 'read',
@@ -153,5 +169,5 @@ export const manifest = {
       figure: true,
     },
   ],
-  capabilities: [invoices, budget, approve, unapprove, open, lookup],
+  capabilities: [invoices, budget, approve, unapprove, open, preview, lookup],
 };

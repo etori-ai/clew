@@ -1469,6 +1469,50 @@
         }
       }
     },
+    "PreviewOutput": {
+      "additionalProperties": false,
+      "description": "What a `preview` read answers for one item (D70): the item's document as base64, with its media type.",
+      "type": "object",
+      "required": [
+        "title",
+        "mediaType",
+        "data"
+      ],
+      "properties": {
+        "title": {
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Swedish. Names the document.",
+          "type": "string"
+        },
+        "mediaType": {
+          "anyOf": [
+            {
+              "const": "image/svg+xml",
+              "type": "string"
+            },
+            {
+              "const": "image/png",
+              "type": "string"
+            },
+            {
+              "const": "image/jpeg",
+              "type": "string"
+            },
+            {
+              "const": "application/pdf",
+              "type": "string"
+            }
+          ]
+        },
+        "data": {
+          "pattern": "^[A-Za-z0-9+/]*={0,2}$",
+          "maxLength": 4000000,
+          "description": "The document, base64. At most 3 MB decoded.",
+          "type": "string"
+        }
+      }
+    },
     "ScanRequest": {
       "additionalProperties": false,
       "type": "object",
@@ -1699,6 +1743,13 @@
                       "type": "boolean"
                     },
                     "confirm": {
+                      "type": "string"
+                    },
+                    "review": {
+                      "const": "each",
+                      "type": "string"
+                    },
+                    "preview": {
                       "type": "string"
                     }
                   }
@@ -1970,6 +2021,13 @@
                 "type": "boolean"
               },
               "confirm": {
+                "type": "string"
+              },
+              "review": {
+                "const": "each",
+                "type": "string"
+              },
+              "preview": {
                 "type": "string"
               }
             }

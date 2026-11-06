@@ -22,6 +22,8 @@ export const keys = {
   viewAll: ['view'] as const,
   view: (capability: string, input: string | null) => ['view', capability, input] as const,
   cardView: (threadId: string, actionId: string) => ['card-view', threadId, actionId] as const,
+  /** One item's document in the review flow (D70), kept for the visit: the source's document does not change under the person. */
+  preview: (threadId: string, ref: string) => ['preview', threadId, ref] as const,
   /** The manifest reference (D60): public, the same for everyone, kept for the visit. */
   manifestReference: ['protocol', 'manifest-reference'] as const,
   admin: {

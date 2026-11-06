@@ -23,8 +23,11 @@ export function groupThreads(
   now: string,
   today: string,
   inScope: (t: Thread) => boolean = () => true,
+  /** Cards whose receipt has just arrived (D70): they keep their place in the stream for a moment before they go to Klart. */
+  linger: ReadonlySet<string> = new Set(),
 ): Groups {
-  const open = threads.filter(t => (t.state === 'open' || unresolvedExecution(t)) && t.kind === 'pushed');
+  const lingers = (t: Thread) => t.state === 'handled' && !!t.receipt && linger.has(t.id);
+  const open = threads.filter(t => (t.state === 'open' || unresolvedExecution(t) || lingers(t)) && t.kind === 'pushed');
   const needsYou = open.filter(t => !t.waitingOn && !isSnoozed(t, now) && inScope(t)).sort(byDeadline);
   const krav = needsYou.filter(t => cardKind(t) === 'krav');
   return {
@@ -36,7 +39,11 @@ export function groupThreads(
     snoozed: open.filter(t => isSnoozed(t, now)),
     handledToday: threads.filter(
       t =>
-        t.state !== 'open' && !unresolvedExecution(t) && t.handledAt && t.handledAt.slice(0, 10) === now.slice(0, 10),
+        t.state !== 'open' &&
+        !unresolvedExecution(t) &&
+        !lingers(t) &&
+        t.handledAt &&
+        t.handledAt.slice(0, 10) === now.slice(0, 10),
     ),
     questions: threads.filter(t => t.kind === 'question').sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
   };

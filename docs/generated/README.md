@@ -11,7 +11,7 @@ The manifest field by field, with examples and the rules between fields, is [man
 - [hello manifest](hello.manifest.json), from [connector.mjs](../../connectors/hello/connector.mjs): 5 capabilities; scan enabled.
 - [phonebook manifest](phonebook.manifest.json), from [connector.mjs](../../connectors/phonebook/connector.mjs): 5 capabilities; no scan.
 - [hr manifest](hr.manifest.json), from [connector.mjs](../../connectors/hr/connector.mjs): 15 capabilities; scan enabled.
-- [finance manifest](finance.manifest.json), from [connector.mjs](../../connectors/finance/connector.mjs): 6 capabilities; scan enabled.
+- [finance manifest](finance.manifest.json), from [connector.mjs](../../connectors/finance/connector.mjs): 7 capabilities; scan enabled.
 - [incidents manifest](incidents.manifest.json), from [connector.mjs](../../connectors/incidents/connector.mjs): 4 capabilities; scan enabled.
 - [communication manifest](communication.manifest.json), from [connector.mjs](../../connectors/communication/connector.mjs): 3 capabilities; scan enabled.
 - [timesheet manifest](timesheet.manifest.json), from [connector.mjs](../../connectors/timesheet/connector.mjs): 5 capabilities; no scan.

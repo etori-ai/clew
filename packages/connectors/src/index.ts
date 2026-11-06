@@ -458,6 +458,17 @@ export class Registry {
         return `action ${a.id} names ${a.capability}, which is not a capability of ${connectorId}`;
       if (found.capability.kind !== a.kind)
         return `action ${a.id} says ${a.kind}, but ${a.capability} is ${found.capability.kind}`;
+      // A review one item at a time (D70) needs items to review and a document to show: a read of the same connector.
+      if (a.review && (a.kind !== 'execute' || !a.usesItems))
+        return `action ${a.id} asks for a review, which only an execute over the items can have`;
+      if (a.preview) {
+        const preview = this.capabilities.get(a.preview);
+        if (!preview || preview.connector.id !== connectorId)
+          return `action ${a.id} names ${a.preview} as preview, which is not a capability of ${connectorId}`;
+        if (preview.capability.kind !== 'read')
+          return `action ${a.id} names ${a.preview} as preview, which is not a read`;
+      }
+      if (a.review && !a.preview) return `action ${a.id} asks for a review but names no preview`;
     }
     return undefined;
   }

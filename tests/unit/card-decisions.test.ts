@@ -5,16 +5,17 @@ import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory
 import { draft } from '../store-contract';
 
 const persona = { id: 'person' } as AuthenticatedContext;
-async function world() {
+async function world(answer: (name: string) => unknown = () => ({ url: 'https://example.invalid' })) {
   const store = memoryThreadStore(),
     t = draft(persona.id),
     approvals: Array<unknown> = [],
     calls: string[] = [];
   await store.transaction(tx => tx.insertThread(t));
+  const reads = ['finance.open', 'finance.preview'];
   const registry = {
     allowed: (_p: unknown, name: string) =>
       name.startsWith('finance.')
-        ? { connector: { id: 'finance' }, capability: { kind: name === 'finance.open' ? 'read' : 'execute' } }
+        ? { connector: { id: 'finance' }, capability: { kind: reads.includes(name) ? 'read' : 'execute' } }
         : undefined,
     viewFor: () => undefined,
   };
@@ -23,7 +24,7 @@ async function world() {
     registry: registry as never,
     run: async (_p, name) => {
       calls.push(name);
-      return { url: 'https://example.invalid' };
+      return answer(name);
     },
     approve: async (_p, input) => {
       approvals.push(input);
@@ -56,6 +57,36 @@ test('foreign actions, stale selections and another owner cannot approve effects
   await expect(w.uc.act(persona, w.t.id, 'approve')).rejects.toThrow('Okänd förmåga.');
   expect(w.approvals).toEqual([]);
   expect(w.calls).toEqual([]);
+});
+test("a preview is a read of the card's own rows through the action's preview capability, checked against the contract (D70)", async () => {
+  const good = {
+    title: 'Faktura 1',
+    mediaType: 'image/svg+xml' as const,
+    data: Buffer.from('<svg/>').toString('base64'),
+  };
+  const w = await world(name => (name === 'finance.preview' ? good : { nonsense: true }));
+  // Without a reviewed action there is nothing to show.
+  await expect(w.uc.preview(persona, w.t.id, 'finance:inv:1')).rejects.toThrow('inget underlag');
+  await w.store.transaction(tx =>
+    tx.updateThread(w.t.id, {
+      actions: w.t.actions.map(a => (a.id === 'approve' ? { ...a, review: 'each', preview: 'finance.preview' } : a)),
+    }),
+  );
+  expect(await w.uc.preview(persona, w.t.id, 'finance:inv:1')).toEqual(good);
+  expect(w.calls).toEqual(['finance.preview']);
+  await expect(w.uc.preview(persona, w.t.id, 'finance:inv:other')).rejects.toThrow('Raden finns inte');
+  await expect(w.uc.preview({ id: 'other' } as AuthenticatedContext, w.t.id, 'finance:inv:1')).rejects.toThrow(
+    'Kortet finns inte.',
+  );
+  // An answer outside the contract never reaches the browser.
+  const bad = await world(() => ({ title: 'x', mediaType: 'text/html', data: '<b>' }));
+  await bad.store.transaction(tx =>
+    tx.updateThread(bad.t.id, {
+      actions: bad.t.actions.map(a => (a.id === 'approve' ? { ...a, review: 'each', preview: 'finance.preview' } : a)),
+    }),
+  );
+  await expect(bad.uc.preview(persona, bad.t.id, 'finance:inv:1')).rejects.toThrow('kunde inte läsas');
+  expect(w.approvals).toEqual([]);
 });
 test('a read action runs directly and an undo preserves the original receipt while approval is pending', async () => {
   const w = await world();

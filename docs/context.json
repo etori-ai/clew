@@ -95,6 +95,7 @@
         "finance.approve",
         "finance.unapprove",
         "finance.open",
+        "finance.preview",
         "finance.lookup"
       ]
     },
@@ -825,6 +826,15 @@
       "status": "accepted, built 2026-11-06, not yet run against a real tenant",
       "date": "2026-11-06",
       "area": "integrations"
+    },
+    {
+      "key": "D70-one-press-confirms-on-the-row-and-rows-with-a-document-are-reviewed-one-at-a-time",
+      "number": 70,
+      "path": "docs/decisions/D70-one-press-confirms-on-the-row-and-rows-with-a-document-are-reviewed-one-at-a-time.md",
+      "title": "D70 · One press confirms on the row, and rows with a document are reviewed one at a time",
+      "status": "accepted, built 2026-11-06 on `main`",
+      "date": "2026-11-06",
+      "area": "ui"
     }
   ],
   "documents": [
@@ -1573,6 +1583,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D70-one-press-confirms-on-the-row-and-rows-with-a-document-are-reviewed-one-at-a-time.md",
+      "title": "D70 · One press confirms on the row, and rows with a document are reviewed one at a time",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -2041,6 +2057,18 @@
         "Against the vision",
         "Recommendation",
         "Verified"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-06-completion-one-press-one-by-one-and-the-receipt.md",
+      "title": "Design exploration: becoming done · one press, one at a time, and the receipt · 2026-11-06",
+      "category": "review-history",
+      "headings": [
+        "What the code does today",
+        "The principle",
+        "The artboards",
+        "Recommendation",
+        "Open"
       ]
     },
     {

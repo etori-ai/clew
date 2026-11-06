@@ -383,7 +383,43 @@ export class MockApi {
     }
     if (path.endsWith('/reopen') && post)
       return json(this.update(id, { state: 'open', handledAt: null, snoozedUntil: null }));
-    if (path.endsWith('/act') && post) return json({ kind: 'read', output: this.output });
+    // One item's document for the review flow (D70): an SVG the way the finance fixture draws one.
+    if (path.endsWith('/preview') && !post) {
+      const ref = url.searchParams.get('ref') ?? '';
+      const item = this.threads.find(t => t.id === id)?.items.find(i => i.ref === ref);
+      if (!item) return route.fulfill({ status: 400, json: { error: 'Raden finns inte på kortet.' } });
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" role="img" aria-label="${item.label}"><rect width="640" height="400" fill="#fff"/><text x="48" y="64" font-size="22" font-weight="700">${item.label}</text><text x="48" y="120" font-size="14">${item.detail}</text></svg>`;
+      return json({
+        title: `Faktura · ${item.label}`,
+        mediaType: 'image/svg+xml',
+        data: Buffer.from(svg).toString('base64'),
+      });
+    }
+    if (path.endsWith('/act') && post) {
+      // An execute answers with the card as the source read it back (D70): here at once, with the refs the person approved.
+      const body = (request.postDataJSON() ?? {}) as { actionId?: string; refs?: string[] };
+      const t = this.threads.find(t => t.id === id);
+      const action = t?.actions.find(a => a.id === body.actionId);
+      if (t && action?.kind === 'execute') {
+        if (this.mutationDelay) await new Promise(resolve => setTimeout(resolve, this.mutationDelay));
+        if (this.mutationFails) return route.fulfill({ status: 503, json: { error: 'Källan svarade inte.' } });
+        const refs = body.refs ?? t.items.filter(i => i.selected).map(i => i.ref);
+        const receipt: Thread['receipt'] = {
+          at: NOW,
+          headline: `${refs.length} ${refs.length === 1 ? 'faktura attesterad' : 'fakturor attesterade'}`,
+          undoUntil: '2026-11-04T08:10:00.000Z',
+          undoCapability: 'finance.unapprove',
+          rows: refs.map(ref => ({
+            ref,
+            label: t.items.find(i => i.ref === ref)?.label ?? ref,
+            outcome: 'done',
+            detail: 'Läst tillbaka från ekonomisystemet',
+          })),
+        };
+        return json({ kind: 'execute', thread: this.update(id, { state: 'handled', handledAt: NOW, receipt }) });
+      }
+      return json({ kind: 'read', output: this.output });
+    }
     if (path.startsWith('/threads/') && !post) return json(this.threads.find(t => t.id === id));
     this.unmocked.push(`${request.method()} ${path}`);
     return route.fulfill({ status: 500, json: { error: 'Inte mockat' } });

@@ -402,6 +402,54 @@
       }
     },
     {
+      "name": "finance.preview",
+      "kind": "read",
+      "title": "Visa fakturan",
+      "description": "Fakturan som bild, för granskning innan attest.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "pattern": "^finance:inv:"
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "mediaType": {
+            "enum": [
+              "image/svg+xml"
+            ]
+          },
+          "data": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9+/]*={0,2}$"
+          }
+        },
+        "required": [
+          "title",
+          "mediaType",
+          "data"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "finance.lookup",
       "kind": "read",
       "title": "Läs tillbaka en åtgärd",

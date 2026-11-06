@@ -24,6 +24,7 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Review: a side question beside the running conversation · 2026-11-06](2026-11-06-a-side-question-beside-the-conversation.md)
 - [Second opinion: architecture, connector authoring and shared fact kinds](2026-11-06-architecture-and-connectors-second-opinion.md)
 - [Review: the calendar and a manager's team · 2026-11-06](2026-11-06-calendar-and-manager-teams.md)
+- [Design exploration: becoming done · one press, one at a time, and the receipt · 2026-11-06](2026-11-06-completion-one-press-one-by-one-and-the-receipt.md)
 - [Stress test: one event, work in several systems](2026-11-06-cross-system-work-stress-test.md)
 - [Fact kinds: who owns them, who defines them, and what breaks when a dependency goes down](2026-11-06-fact-kinds-ownership-and-dependency-visibility.md)
 - [Review: from mock connectors to real test sources · 2026-11-06](2026-11-06-from-mock-connectors-to-real-test-sources.md)

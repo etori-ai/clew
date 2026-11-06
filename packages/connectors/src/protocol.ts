@@ -2,6 +2,7 @@ import { Type, type Static } from '@sinclair/typebox';
 import {
   MenuHintSchema,
   MenuIconSchema,
+  PreviewOutputSchema,
   SearchHitSchema,
   SearchKind,
   SearchOutputSchema,
@@ -426,6 +427,7 @@ export function protocolSchema() {
       CallResponse: CallResponseSchema,
       ProtocolError: ProtocolErrorSchema,
       ExecuteResult: ExecuteResultSchema,
+      PreviewOutput: PreviewOutputSchema,
       ScanRequest: ScanRequestSchema,
       ScanResponse: ScanResponseSchema,
       ThreadDraft: ThreadDraftSchema,

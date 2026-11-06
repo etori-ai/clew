@@ -353,6 +353,32 @@ describe("a card is one system's: its actions name the pushing connector's capab
       'rogue missing: action go names rogue.nothing, which is not a capability of rogue',
     ]);
   });
+  test('a review one row at a time needs an execute over the items and a preview that is a read of the same connector (D70)', () => {
+    const r = new Registry();
+    for (const c of fixtureConnectors({ only: ['finance', 'hr'] }).connectors) r.register(c);
+    const action = (extra: Record<string, unknown>) => ({
+      actions: [
+        {
+          id: 'go',
+          label: 'Attestera',
+          capability: 'finance.approve',
+          kind: 'execute' as const,
+          role: 'primary' as const,
+          usesItems: true,
+          ...extra,
+        },
+      ],
+    });
+    expect(r.draftProblem('finance', action({ review: 'each', preview: 'finance.preview' }))).toBeUndefined();
+    expect(r.draftProblem('finance', action({ review: 'each' }))).toMatch(/names no preview/);
+    expect(r.draftProblem('finance', action({ review: 'each', preview: 'finance.approve' }))).toMatch(/not a read/);
+    expect(r.draftProblem('finance', action({ review: 'each', preview: 'hr.absences' }))).toMatch(
+      /not a capability of finance/,
+    );
+    expect(r.draftProblem('finance', action({ review: 'each', preview: 'finance.preview', usesItems: false }))).toMatch(
+      /only an execute over the items/,
+    );
+  });
   test('every fixture connector keeps the rule', async () => {
     const refused: string[] = [];
     const r = new Registry({ onRefused: (id, topic, problem) => refused.push(`${id} ${topic}: ${problem}`) });

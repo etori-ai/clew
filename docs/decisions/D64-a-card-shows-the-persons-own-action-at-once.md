@@ -47,3 +47,8 @@ leaving before the answer with focus moved on, and a refused request bringing th
 every screen, and a prediction may precede it. Extends
 [D46](D46-browser-updates-use-committed-revisions.md): a notice is applied after the person's own request has settled,
 never dropped.
+
+**Amended 2026-11-06 by [D70](D70-one-press-confirms-on-the-row-and-rows-with-a-document-are-reviewed-one-at-a-time.md).**
+Item 2 holds: nothing is drawn before the source's answer. What follows the answer changed: the row keeps its place for a
+moment in its receipt state, with the check and Ångra, before it goes to Klart, and an execute gets a toast with Visa and
+Ångra, which this decision had left out.

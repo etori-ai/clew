@@ -60,6 +60,7 @@ const {
   ensureThreads,
   listAreas,
   listThreadsFor,
+  preview,
   reopenThread,
   snoozeOptions,
   snoozeThread,
@@ -336,6 +337,12 @@ api.post('/threads/:id/execution/check', async c => {
 api.post('/threads/:id/undo-receipt', async c =>
   c.json(await undoReceipt(c.get('session').context, c.req.param('id'))),
 );
+/** One item's document for the review flow (D70): a read through the card's own preview capability, never a decision. */
+api.get('/threads/:id/preview', async c => {
+  const ref = c.req.query('ref') ?? '';
+  if (!ref || ref.length > 200) throw new InputError('Ogiltig förfrågan.');
+  return c.json(await preview(c.get('session').context, c.req.param('id'), ref));
+});
 /** Inte nu (D29): a preset, free text or an instant in the body; an empty body means the next review. */
 api.post('/threads/:id/snooze', async c =>
   c.json(

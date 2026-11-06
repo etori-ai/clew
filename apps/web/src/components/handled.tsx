@@ -73,6 +73,10 @@ function HandledRow({ thread: t, now, onChange, conversationHref }: RowProps) {
     <Text type="supporting">{t.state === 'dismissed' ? 'Avfärdad' : question ? 'Fråga' : 'Klart'}</Text>
   );
   const at = new Date(when(t)).toLocaleTimeString('sv-SE', { timeStyle: 'short' });
+  // A decision's row carries what was done and what the source answered (D70): the receipt's headline and the time it came.
+  const line = t.receipt
+    ? `${t.receipt.headline.replace(/\.$/, '')} · ${t.trigger.source.toLowerCase()} svarade ${new Date(t.receipt.at).toLocaleTimeString('sv-SE', { timeStyle: 'short' })}`
+    : (last?.body ?? t.trigger.reason);
   // The time leads the line, so the times stand under each other whatever the button at the end of the row is called.
   return (
     <ListItem
@@ -82,7 +86,7 @@ function HandledRow({ thread: t, now, onChange, conversationHref }: RowProps) {
       description={
         <VStack gap={0}>
           <Text type="supporting">
-            {at} · {last?.body ?? t.trigger.reason}
+            {at} · {line}
           </Text>
           {error && (
             <Text as="p" role="alert" color="accent">

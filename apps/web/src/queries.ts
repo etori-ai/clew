@@ -63,6 +63,16 @@ export const viewQuery = (capability: string, inputJson: string | null) =>
  * A card action opened as a view (`open-card` and `open-action` in the address). The call is a POST, so it is de-duplicated, never retried
  * and never refetched on its own: within the session a revisit replays the answer, which is right for a read action.
  */
+/** One item's document for the review flow (D70): read once per visit, never retried on its own (the dialog offers Försök igen). */
+export const previewQuery = (threadId: string, ref: string) =>
+  queryOptions({
+    queryKey: keys.preview(threadId, ref),
+    queryFn: () => api.preview(threadId, ref),
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
+  });
 export const cardViewQuery = (threadId: string, actionId: string) =>
   queryOptions({
     queryKey: keys.cardView(threadId, actionId),

@@ -72,6 +72,9 @@ export const hiddenFields = new Set([
   'undoCapability',
   'undoMinutes',
   'undoInput',
+  // A preview's document (D70) is drawn by the review flow, never listed as fields.
+  'mediaType',
+  'data',
   'link',
   'connector',
   'score',

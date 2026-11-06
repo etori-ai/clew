@@ -113,6 +113,23 @@ describe('the finance fixture connector', () => {
     await registry.run(hillevi, 'finance.unapprove', { refs });
     expect((await registry.scan(hillevi))[0]!.items).toHaveLength(3);
   });
+  test('the card asks for a review one invoice at a time, and the preview draws the invoice for its own cost centre only (D70)', async () => {
+    const { registry } = stack();
+    const [draft] = await registry.scan(hillevi);
+    expect(draft!.actions[0]).toMatchObject({ id: 'approve', review: 'each', preview: 'finance.preview' });
+    const out = await registry.run<{ title: string; mediaType: string; data: string }>(hillevi, 'finance.preview', {
+      ref: 'finance:inv:55120',
+    });
+    expect(out.title).toBe('Faktura 55120 · Skolgrossisten');
+    expect(out.mediaType).toBe('image/svg+xml');
+    const svg = Buffer.from(out.data, 'base64').toString();
+    expect(svg.startsWith('<svg')).toBe(true);
+    expect(svg).toContain('Läromedel matematik åk 4–6, 24 ex');
+    expect(svg).toMatch(/Att betala.*11\s200\skr/s);
+    expect(svg).not.toContain('<script');
+    await expect(registry.run(stranger, 'finance.preview', { ref: 'finance:inv:55120' })).rejects.toThrow(/finns inte/);
+    await expect(registry.run(hassan, 'finance.preview', { ref: 'finance:inv:55120' })).rejects.toThrow(/behörighet/);
+  });
   test('the fault switches: conflict writes nothing, a crash after the commit is found by the lookup', async () => {
     const conflict = await stack({ fault: 'conflict' }).registry.run<Result>(hillevi, 'finance.approve', {
       refs: ['finance:inv:55120'],

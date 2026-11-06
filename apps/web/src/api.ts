@@ -43,6 +43,7 @@ import type {
   Figure,
   TurnEvent,
   ManifestDiff,
+  PreviewOutput,
   Proposal,
   Role,
   Thread,
@@ -176,6 +177,9 @@ export const api = {
       { actionId, refs },
     ),
   undoReceipt: (id: string) => post<Thread>(`/api/threads/${id}/undo-receipt`),
+  /** One item's document for the review flow (D70). */
+  preview: (id: string, ref: string) =>
+    call<PreviewOutput>(`/api/threads/${id}/preview?ref=${encodeURIComponent(ref)}`),
   checkExecution: (id: string) => post<Thread>(`/api/threads/${id}/execution/check`),
   snooze: (id: string, input: SnoozeInput = {}) => post<Thread>(`/api/threads/${id}/snooze`, input),
   snoozePresets: () => call<{ presets: SnoozePreset[] }>('/api/snooze/presets'),

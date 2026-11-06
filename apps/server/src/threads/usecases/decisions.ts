@@ -1,5 +1,6 @@
-import type { AuthenticatedContext, Thread } from '@clew/contracts';
+import { PreviewOutputSchema, type AuthenticatedContext, type PreviewOutput, type Thread } from '@clew/contracts';
 import type { Registry } from '@clew/connectors';
+import { Value } from '@sinclair/typebox/value';
 import { InputError } from '../../context';
 
 export interface CardDecisionsDeps {
@@ -74,5 +75,21 @@ export function cardDecisions({ read, registry, run, approve, clock }: CardDecis
     });
     return required(persona, id);
   }
-  return { act, undoReceipt };
+  /**
+   * One item's document for the review flow (D70): the preview read the card's reviewed action names, run for one of the
+   * card's own items. A read, so no decision; the answer is checked against the contract before the browser draws it.
+   */
+  async function preview(persona: AuthenticatedContext, id: string, ref: string): Promise<PreviewOutput> {
+    const t = await required(persona, id),
+      action = t.actions.find(a => a.review === 'each' && a.preview);
+    if (!action?.preview) throw new InputError('Kortet har inget underlag att visa.');
+    if (!t.items.some(i => i.ref === ref)) throw new InputError('Raden finns inte på kortet.');
+    const found = registry.allowed(persona, action.preview);
+    if (!found || found.connector.id !== t.connector || found.capability.kind !== 'read')
+      throw new InputError('Okänd förmåga.');
+    const output = await run(persona, action.preview, { ref });
+    if (!Value.Check(PreviewOutputSchema, output)) throw new InputError('Underlaget kunde inte läsas.');
+    return output;
+  }
+  return { act, undoReceipt, preview };
 }
