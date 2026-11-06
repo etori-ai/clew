@@ -136,8 +136,10 @@ const card = await until(
   "the expired watch's card",
   async () => {
     const { threads } = await api('/api/threads');
+    // The card's id is the watch's own (watch:<job>:<step>), so an earlier run's card never counts.
     return threads.find(
       (t: any) =>
+        t.id === `watch:${approved.id}:${watch.id}` &&
         t.connector === 'payroll' &&
         t.kind === 'pushed' &&
         t.state === 'open' &&
