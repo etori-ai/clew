@@ -31,7 +31,7 @@ test.describe('screens', () => {
     await page.setViewportSize(board);
     await open(page, '/?card=fakturor');
     await page.getByRole('button', { name: 'Fäll ihop panelen' }).click();
-    await page.getByRole('separator', { name: 'Visa panelen igen' }).waitFor();
+    await page.getByRole('button', { name: 'Visa panelen' }).waitFor();
     await page.screenshot({ path: out('hem-E-collapsed-1440') });
   });
   test('G · a question from Hem', async ({ page, api: _ }) => {

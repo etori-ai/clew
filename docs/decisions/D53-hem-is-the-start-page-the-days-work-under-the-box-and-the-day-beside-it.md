@@ -1,6 +1,6 @@
 # D53 · Hem is the start page: the day's work under the box, and the day beside it
 
-**Status:** accepted, built 2026-11-06 on branch `hem`; not built: the phone's shift strip (artboard D needs a schedule capability no connector declares), the panel's tabs for everything a conversation has opened (artboards F, H, J), a conversation carrying a job across connectors with a step list (artboard J), and the mark on an earlier conversation that something happened since (artboard H); items 2 and 6 and the pixels changed by [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) on 2026-11-06 (the greeting drawn small with the day on its line, the day and Sedan i går as cards in the page's own side column) · **Date:** 2026-11-06 · **Area:** ui
+**Status:** accepted, built 2026-11-06 on branch `hem`; not built: the phone's shift strip (artboard D needs a schedule capability no connector declares), the panel's tabs for everything a conversation has opened (artboards F, H, J) (built 2026-11-06, [D66](D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md)), a conversation carrying a job across connectors with a step list (artboard J), and the mark on an earlier conversation that something happened since (artboard H); items 2 and 6 and the pixels changed by [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) on 2026-11-06 (the greeting drawn small with the day on its line, the day and Sedan i går as cards in the page's own side column) · **Date:** 2026-11-06 · **Area:** ui
 
 **Decision.** The landing and Att göra are one page, **Hem**, at `/`. It answers three questions above the fold at
 1440 px: what needs me, how my day looks, and how my unit stands. Drawn as artboard A of the canvas
@@ -36,7 +36,8 @@ E to K) say what every button on A leads to. Review:
    takes that place and gives it back when closed. Narrower, and on a phone, they end the page after the day's work.
    The old footer line "I dag · 08:30 … · längsta luckan …" is gone; so is the sentence about the longest gap.
 7. **The box asks about the open card.** With a card beside Hem the box says "Om kortet", its placeholder names the
-   card, and "Ny fråga i stället" lets go of it. Sending takes the card along to the conversation (D50 item 5), where it
+   card, and "Ny fråga i stället" or the X on the card's token lets go of it (the token's X since 2026-11-06, D63 item
+   14). Sending takes the card along to the conversation (D50 item 5), where it
    stays beside the transcript, and "Stäng samtalet" leads back to Hem with the card still open.
 
 **Astryx.** `Layout` with `LayoutPanel` in `end` (the resting panel and the open one are the same slot), `LayoutContent`,

@@ -84,20 +84,38 @@ test('reset retires pending work, preserves unknown effects and receipts, blocks
     });
   });
   const receipt = { ...records[2]!.result!, at: records[2]!.createdAt, undoUntil: null, undoCapability: null };
+  // A card the person closed before the reset keeps its state and its time; an open card is closed by the reset.
+  const closedAt = new Date('2099-11-01T10:00:00.000Z');
   await database()
     .insert(schema.threads)
-    .values({
-      id: personId + '-thread',
-      personId,
-      kind: 'pushed',
-      connector: 'hr',
-      area: 'employees',
-      topic: 'hr:leave:test',
-      title: 'Historik',
-      state: 'dismissed',
-      trigger: { reason: 'Test', source: 'HR', at: records[0]!.createdAt },
-      receipt,
-    });
+    .values([
+      {
+        id: personId + '-thread',
+        personId,
+        kind: 'pushed',
+        connector: 'hr',
+        area: 'employees',
+        topic: 'hr:leave:test',
+        title: 'Historik',
+        state: 'dismissed',
+        handledAt: closedAt,
+        updatedAt: closedAt,
+        trigger: { reason: 'Test', source: 'HR', at: records[0]!.createdAt },
+        receipt,
+      },
+      {
+        id: personId + '-open',
+        personId,
+        kind: 'pushed',
+        connector: 'hr',
+        area: 'employees',
+        topic: 'hr:leave:open',
+        title: 'Öppet kort',
+        state: 'open',
+        trigger: { reason: 'Test', source: 'HR', at: records[0]!.createdAt },
+        actions: [{ id: 'approve', label: 'Godkänn', capability: 'hr.decideLeave', kind: 'execute', role: 'primary' }],
+      },
+    ]);
   await database()
     .insert(schema.timerIntents)
     .values({
@@ -114,7 +132,13 @@ test('reset retires pending work, preserves unknown effects and receipts, blocks
       nextAt: new Date(),
     });
   const at = new Date('2099-11-05T11:00:00.000Z');
-  expect(await retireFixtureWork({ personId, at })).toEqual({ retired: 3, blocked: 1, archived: 1, cancelled: 1 });
+  expect(await retireFixtureWork({ personId, at })).toEqual({
+    retired: 3,
+    blocked: 1,
+    archived: 2,
+    closed: 1,
+    cancelled: 1,
+  });
   expect(await store.read(ids[0]!)).toMatchObject({ state: 'failed', reason: 'source-reset' });
   expect(await store.read(ids[1]!)).toMatchObject({ state: 'unknown', reason: 'source-reset' });
   expect(await store.read(ids[2]!)).toMatchObject({
@@ -136,6 +160,13 @@ test('reset retires pending work, preserves unknown effects and receipts, blocks
   expect(thread!.topic).toStartWith('hr:leave:test:fixture-reset:');
   expect(thread!.receipt).toEqual(receipt);
   expect(thread!.actions).toEqual([]);
+  expect(thread).toMatchObject({ state: 'dismissed', handledAt: closedAt, updatedAt: closedAt });
+  const [opened] = await database()
+    .select()
+    .from(schema.threads)
+    .where(eq(schema.threads.id, personId + '-open'));
+  expect(opened!.topic).toStartWith('hr:leave:open:fixture-reset:');
+  expect(opened).toMatchObject({ state: 'handled', handledAt: at, updatedAt: at, actions: [] });
   const [timer] = await database()
     .select()
     .from(schema.timerIntents)
@@ -151,7 +182,13 @@ test('reset retires pending work, preserves unknown effects and receipts, blocks
       ),
     );
   expect(audits.filter(a => a.action === 'execution.source_reset')).toHaveLength(3);
-  expect(await retireFixtureWork({ personId, at })).toEqual({ retired: 0, blocked: 0, archived: 0, cancelled: 0 });
+  expect(await retireFixtureWork({ personId, at })).toEqual({
+    retired: 0,
+    blocked: 0,
+    archived: 0,
+    closed: 0,
+    cancelled: 0,
+  });
 });
 
 test('bootstrap leaves an existing disabled connector and disabled scoped binding unchanged', async () => {

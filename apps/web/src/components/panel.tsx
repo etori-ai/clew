@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useLocation, useNavigate } from 'react-router';
 import type { DayView, PanelViewSpec, SearchResult, TodayView, ViewRef, WeekView } from '@clew/contracts';
 import {
   Badge,
@@ -18,6 +19,8 @@ import {
   List,
   ListItem,
   ResizeHandle,
+  Tab,
+  TabList,
   Text,
   VStack,
   agendaItems,
@@ -299,7 +302,17 @@ export interface PanelFrame {
   wide?: boolean;
   /** A card: its name is the small label over the card, as artboard E draws "KORT"; a view keeps its title as the heading. */
   kind?: 'card' | 'view';
+  /** The thing's own name for its tab when several are open beside the page (D66): a card's title; a view keeps `title`. */
+  tab?: string;
 }
+/** One thing opened beside the page, waiting as a tab while another is current (D66). */
+type OpenTab = { id: string; name: string; search: string };
+/** The one body region every tab controls. */
+const BODY_ID = 'panel-body';
+const searchOf = (address: string) => {
+  const i = address.indexOf('?');
+  return i < 0 ? '' : address.slice(i);
+};
 /** The rail and the panel as the shell draws them; with the page's own least width they decide when the panel fits beside it. */
 const RAIL = 256,
   PANEL = 440;
@@ -314,6 +327,8 @@ type Options = {
   overlayOnly?: boolean;
   /** What stands beside the column while nothing is open in the panel (D53: Hem's day and what happened since yesterday). Only where the panel fits beside the column; elsewhere the page places it itself. */
   rest?: ReactNode;
+  /** Whether a thing may stay open as a tab (D66): a card that left the stream (Inte nu, Avfärda, done) leaves the tabs too. The current one always stays. */
+  isOpen?: (id: string) => boolean;
 };
 /**
  * The panel (D50): the one place beside the page's column for what the person holds next to it, a view, a source or a
@@ -327,22 +342,34 @@ type Options = {
 const TYPING = 'input, textarea, [contenteditable="true"], [role="textbox"], [role="combobox"]';
 export function usePanel(
   panel: PanelFrame | null,
-  { minMain, overlayOnly = false, rest }: Options,
+  { minMain, overlayOnly = false, rest, isOpen }: Options,
 ): {
   end: ReactNode | undefined;
   overlay: ReactNode;
-  /** Beside the page the panel can be folded away (the product owner, 2026-11-06); the page then offers the way back. */
-  collapsed: boolean;
-  expand: () => void;
 } {
   const fits = useMediaQuery(panelBesideQuery(minMain));
   const inline = fits && !overlayOnly;
   const announce = useAnnounce();
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
   const region = useRef<HTMLDivElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
-  const handle = useRef<HTMLDivElement>(null);
-  // Beside the page the panel is Astryx's resizable region: dragged, or folded away with the header's button and brought
-  // back with the page's. The width is remembered per browser; the fold is not, so a card opened later is seen.
+  /** Where focus lands at the panel's start: the heading, or the current tab when several things are open. */
+  const start = () =>
+    heading.current ?? region.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') ?? null;
+  // Everything opened beside the page since the panel was last empty, in the order it came (D66, artboards F, H, J):
+  // the address holds the current one, the others wait as tabs. A ref mirrors the state so a close can tell a
+  // deliberate clearing (the fold) from the current tab leaving.
+  const tabsRef = useRef<OpenTab[]>([]);
+  const [tabs, setTabsState] = useState<OpenTab[]>([]);
+  const setTabs = (next: OpenTab[]) => {
+    tabsRef.current = next;
+    setTabsState(next);
+  };
+  // Beside the page the panel is Astryx's resizable region: dragged by its handle, or folded away and brought back
+  // with the one button that stands on the handle's content side, at the top, so it rides the panel's edge in and
+  // out (the product owner, 2026-11-06: an icon in the top right corner, never a button among the page's own). The
+  // width is remembered per browser; the fold is not, so a card opened later is seen.
   const [collapsed, setCollapsed] = useState(false);
   const resizable = useResizable({
     defaultSize: PANEL,
@@ -357,26 +384,77 @@ export function usePanel(
     resizable.expand();
     setCollapsed(false);
     announce('Panelen visas');
-    requestAnimationFrame(() => heading.current?.focus());
+    requestAnimationFrame(() => start()?.focus());
   };
+  // Folding lets go of everything the panel held (the product owner, 2026-11-06: "closing the sidebar does not clear
+  // the selection"): the tabs are dropped and the card closes as with ✕, so the row stops saying "öppet bredvid" and
+  // the box asks nothing, and the focus goes back to what opened it as on any close. With nothing open the button
+  // keeps the focus: it is the same control, now saying the way back.
   const collapse = () => {
     resizable.collapse();
     setCollapsed(true);
     announce('Panelen är ihopfälld');
-    requestAnimationFrame(() => handle.current?.focus());
+    setTabs([]);
+    panel?.onClose();
   };
+  const toggle = (
+    <VStack paddingBlockStart={6} paddingInlineStart={1} paddingInlineEnd={3}>
+      <IconButton
+        size="sm"
+        variant="ghost"
+        label={collapsed ? 'Visa panelen' : 'Fäll ihop panelen'}
+        tooltip={collapsed ? 'Visa panelen' : 'Fäll ihop panelen'}
+        icon={<Icon icon={collapsed ? 'chevronsLeft' : 'chevronsRight'} />}
+        onClick={collapsed ? expand : collapse}
+      />
+    </VStack>
+  );
   const opener = useRef<HTMLElement | null>(null);
   const shown = useRef<{ id: string; address: string | undefined } | null>(null);
   const id = panel?.id ?? null,
     address = panel?.address,
-    title = panel?.title ?? null;
+    title = panel?.title ?? null,
+    name = panel?.tab ?? title;
   // What the panel holds changed: it is shown again, so the thing just opened is seen.
   useEffect(() => {
     if (id !== null && collapsed) {
       resizable.expand();
       setCollapsed(false);
+      // The heading mounts with the next paint, after the focus rule below has run.
+      requestAnimationFrame(() => start()?.focus());
     }
   }, [id]);
+  // The tabs follow the address (D66): what it names joins the row, or keeps its place with a fresh search; when the
+  // address names nothing the current tab is closed, and the one before it (else the first) takes its place in the
+  // address, so the panel empties only with its last tab.
+  const lastId = useRef<string | null>(null);
+  useEffect(() => {
+    const was = lastId.current;
+    lastId.current = id;
+    if (id !== null) {
+      if (!address || !name) return;
+      const current = tabsRef.current;
+      const search = searchOf(address);
+      const i = current.findIndex(t => t.id === id);
+      if (i < 0) setTabs([...current, { id, name, search }]);
+      else if (current[i]!.search !== search || current[i]!.name !== name)
+        setTabs(current.map(t => (t.id === id ? { id, name, search } : t)));
+      return;
+    }
+    if (was === null) return;
+    const current = tabsRef.current;
+    const i = current.findIndex(t => t.id === was);
+    const rest = current.filter(t => t.id !== was);
+    setTabs(rest);
+    const next = rest[Math.min(Math.max(i - 1, 0), rest.length - 1)];
+    if (next) navigate(pathname + next.search, { replace: true });
+  }, [id, address, name]);
+  // A thing that is no longer open beside the page (the page's word: a card snoozed, dismissed or done) leaves the row.
+  useEffect(() => {
+    if (!isOpen) return;
+    const kept = tabsRef.current.filter(t => t.id === id || isOpen(t.id));
+    if (kept.length !== tabsRef.current.length) setTabs(kept);
+  });
   useEffect(() => {
     const from = shown.current;
     shown.current = id === null ? null : { id, address };
@@ -406,28 +484,44 @@ export function usePanel(
     }
     // One thing took another's place in the open panel (a row's own view, and back): nobody hears that, and focus would
     // stay on a link that is gone. Focus goes to the link that led away when the person comes back to it, else to the
-    // panel's start, and the new name is spoken.
+    // panel's start (its tab, once the row of tabs has been drawn), and the new name is spoken.
     const root: ParentNode | null = inline ? region.current : document.querySelector('dialog[open]');
     const stops = [
       ...(root?.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled])') ?? []),
     ];
     const led = from.address ? stops.find(el => sameAddress(el.getAttribute('href'), from.address!)) : undefined;
-    (led ?? (inline ? heading.current : (stops[1] ?? stops[0])))?.focus();
-    if (title) announce(title);
+    // With several things open the heading gives way to the row of tabs on the next render: the focus waits for the tab.
+    const several = inline && tabsRef.current.length > 1;
+    const target = led ?? (several ? null : inline ? heading.current : (stops[1] ?? stops[0]));
+    if (target) target.focus();
+    else if (inline) requestAnimationFrame(() => start()?.focus());
+    if (name) announce(name);
   }, [id, inline]);
+  /** The row of tabs when more than one thing is open beside the page (artboards F, H, J); a tab leads to its address. */
+  const tabRow =
+    tabs.length > 1 && panel ? (
+      <TabList
+        role="tablist"
+        size="sm"
+        value={panel.id}
+        onChange={v => {
+          const t = tabs.find(t => t.id === v);
+          if (t) navigate(pathname + t.search);
+        }}
+      >
+        {tabs.map(t => (
+          <Tab key={t.id} value={t.id} label={t.name} panelId={BODY_ID} />
+        ))}
+      </TabList>
+    ) : null;
   const close = (open: boolean) => {
     if (!open) panel?.onClose();
   };
   const end =
     inline && panel ? (
       <>
-        <ResizeHandle
-          ref={handle}
-          isReversed
-          hasDivider
-          resizable={resizable.props}
-          label={collapsed ? 'Visa panelen igen' : 'Ändra panelens bredd'}
-        />
+        {toggle}
+        <ResizeHandle isReversed hasDivider resizable={resizable.props} label="Ändra panelens bredd" />
         <LayoutPanel
           resizable={resizable.props}
           hasDivider={false}
@@ -454,29 +548,23 @@ export function usePanel(
               <Layout
                 height="fill"
                 padding={6}
-                /* A heading and two buttons, not a toolbar: the heading takes the focus when the panel opens, and a toolbar would offer its arrow keys there. */
+                /* A heading and a button, not a toolbar: the heading takes the focus when the panel opens, and a toolbar would offer its arrow keys there. With several things open the row of tabs stands where the heading stood (artboards F, H, J). */
                 header={
-                  <LayoutHeader hasDivider={panel.kind !== 'card'}>
+                  <LayoutHeader hasDivider={panel.kind !== 'card' || !!tabRow}>
                     <HStack justify="between" vAlign="center" gap={2}>
-                      <Heading
-                        ref={heading}
-                        tabIndex={-1}
-                        level={panel.kind === 'card' ? 4 : 2}
-                        accessibilityLevel={2}
-                        color={panel.kind === 'card' ? 'secondary' : 'primary'}
-                      >
-                        {panel.title}
-                      </Heading>
+                      {tabRow ?? (
+                        <Heading
+                          ref={heading}
+                          tabIndex={-1}
+                          level={panel.kind === 'card' ? 4 : 2}
+                          accessibilityLevel={2}
+                          color={panel.kind === 'card' ? 'secondary' : 'primary'}
+                        >
+                          {panel.title}
+                        </Heading>
+                      )}
                       <HStack gap={1} vAlign="center">
                         {panel.actions}
-                        <IconButton
-                          size="sm"
-                          variant="ghost"
-                          label="Fäll ihop panelen"
-                          tooltip="Fäll ihop panelen"
-                          icon={<Icon icon="chevronsRight" />}
-                          onClick={collapse}
-                        />
                         <IconButton
                           size="sm"
                           variant="ghost"
@@ -488,7 +576,11 @@ export function usePanel(
                     </HStack>
                   </LayoutHeader>
                 }
-                content={<LayoutContent>{panel.body(true)}</LayoutContent>}
+                content={
+                  <LayoutContent>
+                    <VStack id={BODY_ID}>{panel.body(true)}</VStack>
+                  </LayoutContent>
+                }
               />
             </VStack>
           )}
@@ -497,13 +589,8 @@ export function usePanel(
     ) : inline && rest ? (
       // At rest the panel holds what the page gives it (Hem's day and Sedan i går), and folds the same way (the product owner, 2026-11-06).
       <>
-        <ResizeHandle
-          ref={handle}
-          isReversed
-          hasDivider
-          resizable={resizable.props}
-          label={collapsed ? 'Visa panelen igen' : 'Ändra panelens bredd'}
-        />
+        {toggle}
+        <ResizeHandle isReversed hasDivider resizable={resizable.props} label="Ändra panelens bredd" />
         <LayoutPanel
           resizable={resizable.props}
           hasDivider={false}
@@ -512,27 +599,7 @@ export function usePanel(
           padding={0}
           isScrollable={false}
         >
-          {!collapsed && (
-            <Layout
-              height="fill"
-              padding={6}
-              header={
-                <LayoutHeader hasDivider={false}>
-                  <HStack justify="end">
-                    <IconButton
-                      size="sm"
-                      variant="ghost"
-                      label="Fäll ihop panelen"
-                      tooltip="Fäll ihop panelen"
-                      icon={<Icon icon="chevronsRight" />}
-                      onClick={collapse}
-                    />
-                  </HStack>
-                </LayoutHeader>
-              }
-              content={<LayoutContent>{rest}</LayoutContent>}
-            />
-          )}
+          {!collapsed && <Layout height="fill" padding={6} content={<LayoutContent>{rest}</LayoutContent>} />}
         </LayoutPanel>
       </>
     ) : undefined;
@@ -549,17 +616,18 @@ export function usePanel(
         content={
           <LayoutContent>
             <VStack gap={3}>
+              {tabRow}
               {panel?.actions && (
                 <HStack gap={1} wrap="wrap">
                   {panel.actions}
                 </HStack>
               )}
-              {panel?.body(false)}
+              <VStack id={BODY_ID}>{panel?.body(false)}</VStack>
             </VStack>
           </LayoutContent>
         }
       />
     </Drawer>
   );
-  return { end, overlay, collapsed: inline && (!!panel || !!rest) && collapsed, expand };
+  return { end, overlay };
 }

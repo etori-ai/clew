@@ -74,10 +74,17 @@ and never quietly dropped. The comparison is
     view's controls in the panel too.
 14. **The open panel folds away.** Beside the page the panel (a card, a view, a card's read) is Astryx's resizable
     region: a `ResizeHandle` on its inner edge, `useResizable` with `collapsible`, the width remembered per browser
-    (`clew-panel-width`), the fold not remembered so a thing opened later is seen. "Fäll ihop panelen" in the panel's
-    header folds it, the focus lands on the handle (named "Visa panelen igen"), the page offers "Visa panelen" beside
-    its tabs, in the conversation's toolbar or on the tool page's heading line, and expanding puts the focus on the
-    panel's heading; both moves are spoken. The product owner asked for this on 2026-11-06, first for the open panel
+    (`clew-panel-width`), the fold not remembered so a thing opened later is seen. One icon button folds it and brings
+    it back: it stands in the `end` slot on the handle's content side, at the top (`IconButton` in a `VStack`,
+    chevrons right as "Fäll ihop panelen", chevrons left as "Visa panelen"), so it rides the panel's edge to the
+    window's top right corner when the panel folds and back out with it (the product owner, 2026-11-06 afternoon: "an
+    icon at top right corner … that animates in and out with the sidebar panel as a handle", after a first build had
+    put "Fäll ihop panelen" in the panel's header and "Visa panelen" among the page's own buttons). Folding with a
+    card or a view open lets go of it as ✕ does (the product owner, the same afternoon: "closing the sidebar does not
+    clear the selection"): the row stops saying "öppet bredvid", the box asks nothing, and the focus goes back to what
+    opened it; folding the resting panel keeps the focus on the button, which now says the way back; expanding puts
+    the focus on the panel's heading; every move is spoken. The card's token in the box carries Astryx's `Token` X,
+    which lets go of the card as "Ny fråga i stället" does. The product owner asked for the fold on 2026-11-06, first for the open panel
     alone, then, with a picture of Hem with nothing open and no sidebar to open, for the resting day column too: at
     rest the panel holds I dag and Sedan i går with the same handle and fold button, so at 1440 px the box ends at the
     panel's edge rather than spanning the width as artboard A draws it. Not on the canvas; the departure is this
@@ -105,7 +112,7 @@ and never quietly dropped. The comparison is
 **Asked and answered** (twelve questions put to the product owner on 2026-11-06, listed in the review): Läget left out
 until D54 (item 8); Sedan i går as sentences; no ⋯ on a row; no attention tip; the meeting's link built (item 10); nothing
 at the end of the person's row; one time action in the panel's header (D49); the phone waits for a schedule and a balance
-read and gets no chips; the panel's tabs, the "något hände" divider and dot (H), the job across three connectors (J) and
+read and gets no chips; the panel's tabs (built 2026-11-06 as [D66](D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md)), the "något hände" divider and dot (H), the job across three connectors (J) and
 the phone sheet's tabs (K) left for later; the captions kept; "Vad jag bevakar" left out. "Förberedelsen är klar" on a
 meeting and "Avtalet Skanska 2025 · 2 träffar" on a pushed card have nothing to read from and are not drawn.
 

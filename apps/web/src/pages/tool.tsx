@@ -8,7 +8,6 @@ import {
   EmptyState,
   Heading,
   HStack,
-  Icon,
   Layout,
   LayoutContent,
   LayoutFooter,
@@ -232,15 +231,6 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
                               </Heading>
                               <Text type="supporting">{tool.spec.source}</Text>
                             </VStack>
-                            {slot.collapsed && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                label="Visa panelen"
-                                icon={<Icon icon="chevronsLeft" size="sm" />}
-                                onClick={slot.expand}
-                              />
-                            )}
                           </HStack>
                         }
                         /* The view's controls rewrite the address in place, so a search is addressable and one step back leaves the tool. */

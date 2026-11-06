@@ -152,6 +152,7 @@ export function Composer({
   about?: ComposerAbout | undefined;
 }) {
   const talk = useConversation();
+  const navigate = useNavigate();
   // A page's box hands the conversation what the page shows; the landing's and a conversation's own box have nothing to hand over.
   const from: AskFrom | undefined =
     place === 'page' || about ? { chips: about?.chips ?? [], search: about?.search ?? '' } : undefined;
@@ -242,9 +243,13 @@ export function Composer({
             {...(talk.chips.length > 0 ? { count: talk.chips.length + aboutChips.length } : {})}
             label="Objekt i samtalet"
           >
-            {/* What the page's box asks about (artboard E): the open card as a token, let go of with "Ny fråga i stället". */}
+            {/* What the page's box asks about (artboard E): the open card as a token, let go of with its X or with "Ny fråga i stället" (both close the card). */}
             {aboutChips.map(c => (
-              <Token key={c.ref} label={c.label} />
+              <Token
+                key={c.ref}
+                label={c.label}
+                {...(about?.clearHref ? { onRemove: () => navigate(about.clearHref!) } : {})}
+              />
             ))}
             {talk.chips.map(c => (
               <Token key={c.ref} label={c.label} onRemove={() => talk.removeChip(c.ref)} data-chip-remove="" />

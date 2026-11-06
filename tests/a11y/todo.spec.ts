@@ -110,37 +110,77 @@ test.describe('the panel beside the page', () => {
     await page.getByRole('link', { name: 'Omtankesamtal med Anna Lindqvist', exact: true }).click();
     await expect(panel.locator('#card-omtanke')).toBeVisible();
     await expect(panel.locator('#card-fakturor')).toHaveCount(0);
+    // Both stay open as tabs (D66): the earlier card waits, the new one is current and has the focus, and the row of tabs controls the one body.
+    const tabs = panel.getByRole('tablist');
+    await expect(tabs.getByRole('tab')).toHaveCount(2);
+    await expect(tabs.getByRole('tab', { name: 'Attestera 3 fakturor, 48 200 kr' })).toBeVisible();
+    const omtanke = tabs.getByRole('tab', { name: 'Omtankesamtal med Anna Lindqvist' });
+    await expect(omtanke).toHaveAttribute('aria-selected', 'true');
+    await expect(omtanke).toBeFocused();
+    await expect(omtanke).toHaveAttribute('aria-controls', 'panel-body');
+    await expectNoAxeViolations(page);
+    await tabs.getByRole('tab', { name: 'Attestera 3 fakturor, 48 200 kr' }).click();
+    await expect(page).toHaveURL(/\/\?card=fakturor$/);
+    await expect(panel.locator('#card-fakturor')).toBeVisible();
+    // Esc closes the current tab and the other takes its place; the last Esc empties the panel.
+    await page.keyboard.press('Escape');
+    await expect(page).toHaveURL(/\/\?card=omtanke$/);
+    await expect(panel.locator('#card-omtanke')).toBeVisible();
+    await expect(panel.getByRole('tablist')).toHaveCount(0);
+    await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(panel).toHaveCount(0);
     await expect(page).toHaveURL(/\/$/);
   });
 
-  test("beside the page the panel folds away with its button and comes back with the page's, each move spoken and the focus placed", async ({
+  test('beside the page the panel folds away and comes back with the one button on its edge, each move spoken and the focus placed', async ({
     page,
     api: _,
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await open(page, '/?card=fakturor');
     const panel = page.getByRole('complementary', { name: 'Kort' });
-    await panel.getByRole('button', { name: 'Fäll ihop panelen' }).click();
-    await expect(panel.locator('#card-fakturor')).toHaveCount(0);
-    // The handle keeps the focus and names the way back; the row still says its card is open.
-    await expect(page.getByRole('separator', { name: 'Visa panelen igen' })).toBeFocused();
+    // The button stands on the handle's content side, outside the panel, so it is there when the panel is folded away.
+    const fold = page.getByRole('button', { name: 'Fäll ihop panelen' });
+    expect((await fold.boundingBox())!.x).toBeLessThan((await panel.boundingBox())!.x);
+    await expect(panel.getByRole('button', { name: 'Fäll ihop panelen' })).toHaveCount(0);
+    await fold.click();
+    // Folding lets go of the card: the address, the row and the box no longer hold it, and the focus is back on the row.
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.locator('#thread-fakturor')).not.toContainText('öppet bredvid');
+    await expect(page.getByText('Om kortet')).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Attestera 3 fakturor, 48 200 kr', exact: true })).toBeFocused();
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Panelen är ihopfälld'));
-    await expect(page.locator('#thread-fakturor')).toContainText('öppet bredvid');
-    await page.getByRole('button', { name: 'Visa panelen' }).click();
-    await expect(panel.locator('#card-fakturor').getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
-    await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
+    // The same button now says the way back, at the window's edge, and brings back what rests beside Hem.
+    const show = page.getByRole('button', { name: 'Visa panelen' });
+    expect((await show.boundingBox())!.x + (await show.boundingBox())!.width).toBeGreaterThan(1440 - 40);
+    const rest = page.getByRole('complementary', { name: 'Bredvid' });
+    await expect(rest.getByRole('region', { name: 'I dag' })).toHaveCount(0);
+    await show.click();
+    await expect(rest.getByRole('region', { name: 'I dag' })).toBeVisible();
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Panelen visas'));
     await expectNoAxeViolations(page);
-    // With nothing open the panel rests on the day and Sedan i går, and folds and comes back the same way.
-    await page.keyboard.press('Escape');
-    const rest = page.getByRole('complementary', { name: 'Bredvid' });
-    await expect(rest.getByRole('region', { name: 'I dag' })).toBeVisible();
-    await rest.getByRole('button', { name: 'Fäll ihop panelen' }).click();
+    // With nothing open the fold keeps the focus on its button, which says the way back.
+    await page.getByRole('button', { name: 'Fäll ihop panelen' }).click();
     await expect(rest.getByRole('region', { name: 'I dag' })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Visa panelen' }).click();
-    await expect(rest.getByRole('region', { name: 'I dag' })).toBeVisible();
+    await expect(show).toBeFocused();
+    // A card opened while the panel is folded shows the panel again, with the focus on its heading.
+    await page.getByRole('link', { name: 'Attestera 3 fakturor, 48 200 kr', exact: true }).click();
+    await expect(panel.locator('#card-fakturor').getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
+    await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
+  });
+
+  test("the card's token in the box has an X that lets go of the card, like Ny fråga i stället", async ({
+    page,
+    api: _,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await open(page, '/?card=fakturor');
+    await page.getByRole('button', { name: 'Ta bort Attestera 3 fakturor, 48 200 kr' }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByText('Om kortet')).toHaveCount(0);
+    await expect(page.getByRole('complementary', { name: 'Kort' })).toHaveCount(0);
+    await expect(page.locator('#thread-fakturor')).not.toContainText('öppet bredvid');
   });
 
   test("beside Hem the panel rests on the day and what happened since yesterday; a row's card takes its place, the box asks about the card, and Esc gives it all back", async ({

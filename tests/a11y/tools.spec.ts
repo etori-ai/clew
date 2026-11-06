@@ -116,7 +116,7 @@ test.describe('a tool as a page', () => {
     await expect(page.getByRole('dialog', { name: 'Kontaktkort' })).toBeVisible();
     await page.reload();
     await expect(page.getByRole('dialog', { name: 'Kontaktkort' }).getByText('Anna Lindqvist')).toBeVisible();
-    await expect(page.getByRole('heading', { level: 1, includeHidden: true })).toHaveText('Telefonbok');
+    await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Telefonbok');
     await page.goBack();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.getByRole('row')).toHaveCount(15);

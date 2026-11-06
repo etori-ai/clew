@@ -154,6 +154,43 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expectNoAxeViolations(page);
   });
 
+  test('when many cards closed since the day began, Sedan i går names three and sums the rest in one sentence (D65)', async ({
+    page,
+    api,
+  }) => {
+    // Five more closed today, newest first, two of them the same card closed twice.
+    const done = api.threads.find(t => t.id === 'attest')!;
+    const more = [
+      ['Godkänn en ledighetsansökan', '2026-11-04T09:00:00.000Z'],
+      ['Tillbud 2026-1182', '2026-11-04T08:30:00.000Z'],
+      ['Boka ett omtankesamtal', '2026-11-04T08:20:00.000Z'],
+      ['Lönesystemet har inte visat det som bevakades', '2026-11-04T08:10:00.000Z'],
+      ['Lönesystemet har inte visat det som bevakades', '2026-11-04T08:10:00.000Z'],
+    ] as const;
+    api.threads = [
+      ...api.threads,
+      ...more.map(([title, handledAt], i) => ({
+        ...done,
+        id: `klar-${i}`,
+        topic: `klar-${i}`,
+        title,
+        handledAt,
+        receipt: null,
+      })),
+    ];
+    await open(page, '/');
+    const since = page.getByRole('region', { name: 'Sedan i går' });
+    await expect(
+      since.getByText(
+        '7 klara: godkänn en ledighetsansökan 10:00, tillbud 2026-1182 09:30, boka ett omtankesamtal 09:20 och 4 till.',
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(since.getByRole('link', { name: 'Allt som är klart' })).toHaveAttribute('href', '/?tab=done');
+    await expect(page.getByRole('tab', { name: /^Klart/ })).toContainText('7');
+    await expectNoAxeViolations(page);
+  });
+
   test('typing in the box offers what the router finds without the model, the open card first, and each row is a button', async ({
     page,
     api: _,

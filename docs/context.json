@@ -678,7 +678,7 @@
       "number": 53,
       "path": "docs/decisions/D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md",
       "title": "D53 · Hem is the start page: the day's work under the box, and the day beside it",
-      "status": "accepted, built 2026-11-06 on branch `hem`; not built: the phone's shift strip (artboard D needs a schedule capability no connector declares), the panel's tabs for everything a conversation has opened (artboards F, H, J), a conversation carrying a job across connectors with a step list (artboard J), and the mark on an earlier conversation that something happened since (artboard H); items 2 and 6 and the pixels changed by [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) on 2026-11-06 (the greeting drawn small with the day on its line, the day and Sedan i går as cards in the page's own side column)",
+      "status": "accepted, built 2026-11-06 on branch `hem`; not built: the phone's shift strip (artboard D needs a schedule capability no connector declares), the panel's tabs for everything a conversation has opened (artboards F, H, J) (built 2026-11-06, [D66](D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md)), a conversation carrying a job across connectors with a step list (artboard J), and the mark on an earlier conversation that something happened since (artboard H); items 2 and 6 and the pixels changed by [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) on 2026-11-06 (the greeting drawn small with the day on its line, the day and Sedan i går as cards in the page's own side column)",
       "date": "2026-11-06",
       "area": "ui"
     },
@@ -780,6 +780,24 @@
       "status": "proposed, built 2026-11-06 as an experiment beside the web app; nothing in `apps/web` or the server changed for it",
       "date": "2026-11-06",
       "area": "ui, product"
+    },
+    {
+      "key": "D65-sedan-i-gar-names-a-few-cards-and-sums-the-rest",
+      "number": 65,
+      "path": "docs/decisions/D65-sedan-i-gar-names-a-few-cards-and-sums-the-rest.md",
+      "title": "D65 · \"Sedan i går\" names a few cards and sums the rest",
+      "status": "accepted, built 2026-11-06 on `main`",
+      "date": "2026-11-06",
+      "area": "ui"
+    },
+    {
+      "key": "D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs",
+      "number": 66,
+      "path": "docs/decisions/D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md",
+      "title": "D66 · The panel keeps everything opened beside the page as tabs",
+      "status": "accepted, built 2026-11-06 on `main`",
+      "date": "2026-11-06",
+      "area": "ui"
     },
     {
       "key": "D68-people-are-pushed-into-clew-through-standard-scim",
@@ -1524,6 +1542,18 @@
       "title": "D69 · A local fake of Microsoft Graph tests the Microsoft 365 adapter",
       "category": "decision-history",
       "headings": []
+    {
+      "path": "docs/decisions/D65-sedan-i-gar-names-a-few-cards-and-sums-the-rest.md",
+      "title": "D65 · \"Sedan i går\" names a few cards and sums the rest",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md",
+      "title": "D66 · The panel keeps everything opened beside the page as tabs",
+      "category": "decision-history",
+      "headings": []
+    },
     },
     {
       "path": "docs/decisions/README.md",

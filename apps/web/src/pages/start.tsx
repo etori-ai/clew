@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Area, MenuEntry, SessionUser, Thread, ViewRef, PanelViewSpec } from '@clew/contracts';
+import { isSnoozed } from '@clew/contracts';
 import {
   Badge,
   Banner,
@@ -571,15 +572,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
             </TabList>
           )}
           <HStack gap={1} vAlign="center" wrap="wrap">
-            {slot.collapsed && (
-              <Button
-                size="md"
-                variant="ghost"
-                label="Visa panelen"
-                icon={<Icon icon="chevronsLeft" size="sm" />}
-                onClick={slot.expand}
-              />
-            )}
             {/* The area filter (artboard A): one menu that says which area is chosen; under a finger it opens as a sheet. */}
             {areas.length > 0 && mobile && (
               <DropdownMenu
@@ -762,6 +754,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           id: `card:${panelCard.id}`,
           kind: 'card',
           title: 'Kort',
+          tab: panelCard.title,
           address: here + location.search,
           onClose: closePanel,
           // The card's one time action stands in the panel's header, beside the close button (artboard E).
@@ -774,6 +767,9 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     overlayOnly: short,
     // Where the panel fits beside Hem it rests on the day and Sedan i går and can be folded away like an open card.
     rest: talk.open ? undefined : asideContent,
+    // A card stays a tab while it is in the stream (D66): snoozed, dismissed or done, it leaves the row with the pile.
+    isOpen: id =>
+      !id.startsWith('card:') || threads.some(t => t.id === id.slice(5) && t.state === 'open' && !isSnoozed(t, now)),
   });
   /** What Hem's box asks about: the open card, which the conversation then keeps beside the transcript; "Ny fråga i stället" lets go of it. */
   const about: ComposerAbout | undefined = panelCard
@@ -835,15 +831,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         ) : (
           <HStack gap={2} vAlign="center">
             {started(talk) && <Text type="supporting">Startat av dig {started(talk)}</Text>}
-            {slot.collapsed && (
-              <Button
-                size="sm"
-                variant="ghost"
-                label="Visa panelen"
-                icon={<Icon icon="chevronsLeft" size="sm" />}
-                onClick={slot.expand}
-              />
-            )}
             <Button
               size="sm"
               variant="ghost"

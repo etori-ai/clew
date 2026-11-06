@@ -156,20 +156,23 @@ export async function retireFixtureWork(options: { personId?: string; at?: Date 
       )
       .for('update');
     let archived = 0;
+    let closed = 0;
     let cancelled = 0;
     for (const t of threads) {
       if (t.topic.includes(':fixture-reset:')) continue;
+      // Only an open card is closed by the reset. A card the person already handled or dismissed keeps its state and
+      // its time: stamping it with the reset's time would make the day's log say that everything ever closed on the
+      // fixtures closed at the reset (the 2026-11-06 cutover did that to 218 cards).
+      const open = t.state === 'open';
       await tx
         .update(schema.threads)
         .set({
-          state: 'handled',
           topic: t.topic + ':fixture-reset:' + token,
-          handledAt: at,
-          updatedAt: at,
           actions: [],
-          snoozedUntil: null,
+          ...(open ? { state: 'handled', handledAt: at, updatedAt: at, snoozedUntil: null } : {}),
         })
         .where(eq(schema.threads.id, t.id));
+      if (open) closed++;
       const timers = await tx
         .select()
         .from(schema.timerIntents)
@@ -222,11 +225,12 @@ export async function retireFixtureWork(options: { personId?: string; at?: Date 
         retired,
         blocked,
         archived,
+        closed,
         cancelled,
         ...(options.personId ? { personId: options.personId } : {}),
       },
       createdAt: at,
     });
-    return { retired, blocked, archived, cancelled };
+    return { retired, blocked, archived, closed, cancelled };
   });
 }
