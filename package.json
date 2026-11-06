@@ -26,6 +26,8 @@
     "db:generate": "drizzle-kit generate",
     "auth:setup": "bun scripts/auth-setup.ts",
     "calendar": "sh scripts/calendar.sh",
+    "dev:connectors": "bun scripts/dev-connectors.ts",
+    "fixtures:reset": "sh scripts/fixtures-reset.sh",
     "astryx": "cd packages/ui && node ../../node_modules/@astryxdesign/cli/clients/cli/bin/astryx.mjs",
     "check": "bun run format:check && bun run typecheck && bun run deps && bun run purity && bun run test && bun run test:node && bun run docs:check",
     "docs:generate": "bun scripts/docs.ts",

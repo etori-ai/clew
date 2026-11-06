@@ -13,7 +13,7 @@
   "remoteEnv": {
     "CLEW_HOST_WORKSPACE": "${localWorkspaceFolder}"
   },
-  "postCreateCommand": "bun install --frozen-lockfile && bun run db:init",
+  "postCreateCommand": "bun install --frozen-lockfile && bun run db:init && bun run dev:connectors",
   "customizations": {
     "vscode": {
       "extensions": ["dbaeumer.vscode-eslint", "esbenp.prettier-vscode"]

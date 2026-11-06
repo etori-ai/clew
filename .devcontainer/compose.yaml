@@ -1,4 +1,15 @@
 name: clew
+# What every fixture connector service shares (the six are under services, after the stack). The workspace is mounted
+# read-only: a code change is `restart <service>`, no image build. CLEW_URL names the app container, where the BFF must
+# listen on 0.0.0.0 (HOST below) so the connectors can fetch its public keys and call back.
+x-fixture: &fixture
+  image: node:26.13.0-bookworm-slim
+  init: true
+  command: node server.mjs
+  environment: &fixture-environment
+    CLEW_URL: http://app:3000
+    CLEW_CONNECTOR_SECRET: ${CLEW_DEV_CONNECTOR_SECRET:-clew-dev-only-transport-key}
+    FIXTURE_DB: /state/fixture.sqlite
 services:
   app:
     image: clew-dev:local
@@ -22,6 +33,9 @@ services:
       CALENDAR_URL: http://calendar
       CLEW_POC: "true"
       TEMPORAL_ADDRESS: temporal:7233
+      # The BFF listens on every interface so the fixture connectors can reach it; the published port is still loopback only.
+      HOST: 0.0.0.0
+      CLEW_DEV_CONNECTOR_SECRET: ${CLEW_DEV_CONNECTOR_SECRET:-clew-dev-only-transport-key}
     depends_on:
       postgres:
         condition: service_healthy
@@ -129,8 +143,76 @@ services:
       - /tmp:size=16m
     ports:
       - "127.0.0.1:3022:8025"
+  # The fixture connectors (D61): six generic systems as independent services behind the connector protocol, run from the
+  # workspace with Node's image (MIT), each with its records in SQLite on a volume of its own. They are registered in Clew
+  # by `bun run dev:connectors` like a vendor's connector; nothing in Clew's code names them. `bun run fixtures:reset` seeds
+  # them again from today. FIXTURE_FAULT on one of them (unavailable, slow, unauthorized, conflict, crash-after-commit)
+  # shows what Clew does when a source misbehaves. Published on loopback so `connector-check` reaches them from the host.
+  hr:
+    <<: *fixture
+    working_dir: /workspace/connectors/hr
+    volumes:
+      - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
+      - hr_state:/state
+    environment:
+      <<: *fixture-environment
+      FIXTURE_FEED_KEY: ${CLEW_DEV_FEED_KEY:-clew-dev-only-feed-key}
+    ports:
+      - "127.0.0.1:4040:4040"
+  finance:
+    <<: *fixture
+    working_dir: /workspace/connectors/finance
+    volumes:
+      - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
+      - finance_state:/state
+    ports:
+      - "127.0.0.1:4041:4041"
+  incidents:
+    <<: *fixture
+    working_dir: /workspace/connectors/incidents
+    volumes:
+      - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
+      - incidents_state:/state
+    ports:
+      - "127.0.0.1:4042:4042"
+  communication:
+    <<: *fixture
+    working_dir: /workspace/connectors/communication
+    volumes:
+      - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
+      - communication_state:/state
+    ports:
+      - "127.0.0.1:4043:4043"
+  timesheet:
+    <<: *fixture
+    working_dir: /workspace/connectors/timesheet
+    volumes:
+      - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
+      - timesheet_state:/state
+    ports:
+      - "127.0.0.1:4044:4044"
+  payroll:
+    <<: *fixture
+    working_dir: /workspace/connectors/payroll
+    volumes:
+      - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
+    environment:
+      <<: *fixture-environment
+      HR_FEED_URL: http://hr:4040/fixture/absences
+      FIXTURE_FEED_KEY: ${CLEW_DEV_FEED_KEY:-clew-dev-only-feed-key}
+    depends_on:
+      hr:
+        condition: service_started
+    ports:
+      - "127.0.0.1:4045:4045"
+
 volumes:
   node_modules:
   bun_cache:
   postgres_data:
   calendar_data:
+  hr_state:
+  finance_state:
+  incidents_state:
+  communication_state:
+  timesheet_state:

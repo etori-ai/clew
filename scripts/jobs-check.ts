@@ -1,6 +1,6 @@
 /**
  * Runs on the host against the published dev port: real Keycloak login as the manager, then a job across systems (D55)
- * end to end through the API on the bundled mocks. The bindings must exist first (`bun scripts/job-bind.ts --mocks`,
+ * end to end through the API on the fixture connectors. The bindings must exist first (`bun run dev:connectors`,
  * inside the container). Assembles the job for a sick report, approves it once, waits for the HR system and time
  * reporting to be written and read back, then waits for payroll's watch to expire and the card to reach the stream.
  * Passwords come from .auth-test.env (or the file AUTH_TEST_ENV names). Takes the binding's window plus a minute.
@@ -77,7 +77,7 @@ const today = new Date().toISOString().slice(0, 10),
 const { connectors } = await api('/api/connectors');
 ok(
   ['hr', 'timesheet', 'payroll'].every(id => connectors.some((c: any) => c.id === id)),
-  'the HR, time-reporting and payroll mocks are registered',
+  'the HR, time-reporting and payroll connectors are registered',
 );
 const fact = { kind: 'hr:absence', attributes: { person, from: today, extent: 100 } };
 const proposal = await api('/api/jobs/assemble', { fact });
