@@ -55,3 +55,19 @@ after the receipt, and an execute gets a toast. Amends [D66](D66-the-panel-keeps
 a done card with an open undo window stays in the panel. Extends [D48](D48-one-next-step-the-rest-one-step-away.md)
 item 2: a review is the one next step for a card that declares it. Extends the connector protocol (D21, D22) with
 `review`, `preview` and `PreviewOutput`, an additive change under protocol 2.
+
+**Amended 2026-11-06, the same day.** A decision that leaves the card open and waiting on others follows item 1 the same
+way. Sending the invitations of a proposal card (`calendar.confirmProposals`) keeps the thread `open` with `waitingOn`
+and gives it a receipt with `calendar.undoProposals`; before this amendment the row under Väntar på andra said nothing
+about that decision, no toast was raised, and `Ångra allt` lived on the open card alone, so with the panel closed the
+ten minutes were invisible (the product owner, 2026-11-06, after sending four invitations: nothing on Hem said what was
+done or offered the way back). Now `useReceiptArrivals` (`apps/web/src/linger.ts`) counts any receipt that arrives on
+an open card, `groupThreads` keeps a lingering card in its group for the moment before it lies under Väntar på andra,
+the toast names where the card lies (Klart or Väntar på andra) with Visa to that tab and Ångra, and the row under Väntar
+på andra carries the receipt's line and `Ångra · N kvar` before Påminn mig while the window is open, through the same
+`undo-receipt` endpoint as a done card (`ActionRow` and `ThreadRow` in `apps/web/src/components/card.tsx`). The open
+card itself is unchanged. This is artboard A of the canvas **Clew · det jag gjorde, och ångra**
+(https://claude.ai/artifact/CDDCSdSrDTqUvXWxNb9N6Y) applied to the proposal path; not built from that canvas are the
+decision log Gjort (C), the card's head after the window has passed or after an undo (D), the row's "kan inte ångras"
+state for a sent message or a time with a room (E, state six) and the Nyss strip (B, the alternative). Evidence:
+`tests/unit/web-linger.test.ts`, `tests/a11y/undo.spec.ts`.

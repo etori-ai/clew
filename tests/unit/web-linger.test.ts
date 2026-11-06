@@ -64,6 +64,38 @@ describe('the moment a receipt arrives (D70)', () => {
     const dismissed = thread({ state: 'dismissed', handledAt: NOW });
     expect(groupThreads([dismissed], NOW, '2026-11-06', () => true, new Set(['a'])).nu).toEqual([]);
   });
+  test('a confirmed proposal is an arrival too: the card stays open, waits on the invitees and carries the receipt', () => {
+    const sent: Thread['receipt'] = {
+      ...receipt,
+      headline: '2 av 2 kalenderändringar är bekräftade.',
+      undoCapability: 'calendar.undoProposals',
+    };
+    const before = new Map([['a', thread({ connector: 'calendar', area: 'calendar' })]]);
+    const after = thread({
+      connector: 'calendar',
+      area: 'calendar',
+      waitingOn: 'svar från medarbetarna',
+      receipt: sent,
+    });
+    expect(receiptArrivals(before, [after]).map(t => t.id)).toEqual(['a']);
+    // A card already waiting with its receipt is not an arrival again, and a dismissed card never is.
+    expect(receiptArrivals(new Map([['a', after]]), [after])).toEqual([]);
+    expect(receiptArrivals(before, [thread({ state: 'dismissed', handledAt: NOW, receipt: sent })])).toEqual([]);
+  });
+  test('a lingering card that now waits on others keeps its group for the moment, then lies under Väntar på andra', () => {
+    const waiting = thread({
+      deadline: '2026-11-27',
+      waitingOn: 'svar från medarbetarna',
+      receipt: { ...receipt, undoCapability: 'calendar.undoProposals' },
+    });
+    const kept = groupThreads([waiting], NOW, '2026-11-06', () => true, new Set(['a']));
+    expect(kept.senare.map(t => t.id)).toEqual(['a']);
+    expect(kept.waiting).toEqual([]);
+    const gone = groupThreads([waiting], NOW, '2026-11-06');
+    expect(gone.senare).toEqual([]);
+    expect(gone.waiting.map(t => t.id)).toEqual(['a']);
+    expect(gone.handledToday).toEqual([]);
+  });
   test('the moment is short', () => {
     expect(LINGER_MS).toBeLessThanOrEqual(3_000);
   });

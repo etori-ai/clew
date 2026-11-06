@@ -546,7 +546,8 @@ function ActionRow({
     </>
   );
   const receipt = thread.receipt;
-  const undoOpen = !!receipt && thread.state === 'handled' && !!receipt.undoCapability && !!countdown;
+  // The way back is open while the receipt's window is (D70): on a done card, and on one the decision left waiting on others.
+  const undoOpen = !!receipt && !!receipt.undoCapability && !!countdown;
   const pending = executionStatus(thread.execution);
   // A decision the source has not confirmed is said so, unless it is the person's own and still on its way (D64).
   if (pending && !settling)
@@ -618,6 +619,23 @@ function ActionRow({
         {more({})}
       </HStack>
     );
+  // A card that waits on others after the person's own decision (D70 amended): the way back comes first while the window
+  // is open, with the time left, then the card's own timer. The receipt line beside it says what was done.
+  if (open && thread.waitingOn)
+    return (
+      <HStack gap={2} vAlign="center" wrap="wrap">
+        {undoOpen && (
+          <Button
+            size={size}
+            variant="destructive"
+            label={`Ångra · ${countdown} kvar`}
+            clickAction={() => run(() => api.undoReceipt(thread.id))}
+          />
+        )}
+        <TimePicker label="Påminn mig" rows={remindRows.rows} own={remindRows.own} size="md" />
+        {quiet ? !compact && addToConversation : more({})}
+      </HStack>
+    );
   // The row a receipt has just arrived on (D70): its one control is the way back, while the window is open.
   if (undoOpen && quiet)
     return (
@@ -643,13 +661,6 @@ function ActionRow({
             <Button key={a.id} size={size} label={a.label} clickAction={() => perform(a)} />
           ))}
         <Text type="supporting">Varje rad visar källsystemets svar. Grönt bara när det lästs tillbaka.</Text>
-      </HStack>
-    );
-  if (open && thread.waitingOn)
-    return (
-      <HStack gap={2} vAlign="center" wrap="wrap">
-        <TimePicker label="Påminn mig" rows={remindRows.rows} own={remindRows.own} size="md" />
-        {quiet ? !compact && addToConversation : more({})}
       </HStack>
     );
   return null;
@@ -978,7 +989,8 @@ export function ThreadRow({
   const open = thread.state === 'open';
   const draft = thread.messages.at(-1)?.meta?.draft;
   const due = open && !thread.waitingOn && !notice && streamGroup(thread, todayDate) === 'nu';
-  // A receipt that has just arrived (D70): the row keeps its place for a moment, the check in its day cell and what was done in its line.
+  // A receipt that has just arrived (D70): the row keeps its place for a moment, the check in its day cell and what was done
+  // in its line. A row that waits on others after the decision keeps its day and carries the receipt in its line too.
   const done = thread.state === 'handled' && !!thread.receipt;
   const day = done ? (
     <ReceiptCheck />
@@ -999,7 +1011,7 @@ export function ThreadRow({
   const reminder = thread.timers?.find(t => t.kind === 'reminder' && t.state === 'scheduled');
   const line = [
     areaTitle,
-    done ? receiptLine(thread) : thread.trigger.reason.replace(/\.$/, ''),
+    thread.receipt ? receiptLine(thread) : thread.trigger.reason.replace(/\.$/, ''),
     thread.waitingOn ? `väntar på ${thread.waitingOn}` : '',
     thread.waitingOn && reminder ? `påminner dig ${snoozeWhen(reminder.dueAt, new Date().toISOString())}` : '',
     inConversation ? 'i samtalet' : '',

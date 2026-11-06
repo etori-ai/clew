@@ -200,13 +200,21 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const { run: runUndo } = useThreadAction({ onChange: replace });
   const lingering = useReceiptArrivals(threads, thread => {
     const receipt = thread.receipt!;
+    // Where the card lies now: under Klart when the decision closed it, under Väntar på andra when it left the card
+    // waiting on someone else's answer (a confirmed proposal), else where it was.
+    const where =
+      thread.state === 'handled'
+        ? { tab: 'done' as const, label: 'Klart' }
+        : thread.waitingOn
+          ? { tab: 'waiting' as const, label: 'Väntar på andra' }
+          : { tab: 'needs-you' as const, label: 'Behöver dig' };
     const dismiss = toast({
-      body: `${receipt.headline.replace(/\.$/, '')}. Kortet ligger under Klart.`,
+      body: `${receipt.headline.replace(/\.$/, '')}. Kortet ligger under ${where.label}.`,
       isAutoHide: false,
       uniqueID: 'receipt:' + thread.id,
       endContent: (
         <HStack gap={1}>
-          <Button size="sm" variant="ghost" label="Visa" href={homeHref({ tab: 'done' })} />
+          <Button size="sm" variant="ghost" label="Visa" href={homeHref({ tab: where.tab })} />
           {receipt.undoCapability && (
             <Button
               size="sm"

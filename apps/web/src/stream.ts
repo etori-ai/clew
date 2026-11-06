@@ -23,19 +23,19 @@ export function groupThreads(
   now: string,
   today: string,
   inScope: (t: Thread) => boolean = () => true,
-  /** Cards whose receipt has just arrived (D70): they keep their place in the stream for a moment before they go to Klart. */
+  /** Cards whose receipt has just arrived (D70): they keep their place in the stream for a moment before they go to Klart, or to Väntar på andra when the decision left them waiting on others. */
   linger: ReadonlySet<string> = new Set(),
 ): Groups {
-  const lingers = (t: Thread) => t.state === 'handled' && !!t.receipt && linger.has(t.id);
+  const lingers = (t: Thread) => !!t.receipt && linger.has(t.id);
   const open = threads.filter(t => (t.state === 'open' || unresolvedExecution(t) || lingers(t)) && t.kind === 'pushed');
-  const needsYou = open.filter(t => !t.waitingOn && !isSnoozed(t, now) && inScope(t)).sort(byDeadline);
+  const needsYou = open.filter(t => (!t.waitingOn || lingers(t)) && !isSnoozed(t, now) && inScope(t)).sort(byDeadline);
   const krav = needsYou.filter(t => cardKind(t) === 'krav');
   return {
     nu: krav.filter(t => streamGroup(t, today) === 'nu'),
     senare: krav.filter(t => streamGroup(t, today) !== 'nu'),
     foreslar: needsYou.filter(t => cardKind(t) === 'forslag'),
     kannedom: needsYou.filter(t => cardKind(t) === 'handelse'),
-    waiting: open.filter(t => !!t.waitingOn && !isSnoozed(t, now)),
+    waiting: open.filter(t => !!t.waitingOn && !lingers(t) && !isSnoozed(t, now)),
     snoozed: open.filter(t => isSnoozed(t, now)),
     handledToday: threads.filter(
       t =>

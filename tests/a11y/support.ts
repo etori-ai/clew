@@ -386,6 +386,55 @@ export class MockApi {
     }
     if (path.endsWith('/reopen') && post)
       return json(this.update(id, { state: 'open', handledAt: null, snoozedUntil: null }));
+    // Confirming proposals (D70 amended): the calendar reads the invitations back, the card stays open and waits on the
+    // invitees, and its receipt carries the way back for ten minutes.
+    if (path.endsWith('/confirm') && post) {
+      if (this.mutationDelay) await new Promise(resolve => setTimeout(resolve, this.mutationDelay));
+      if (this.mutationFails) return route.fulfill({ status: 503, json: { error: 'Källan svarade inte.' } });
+      const body = (request.postDataJSON() ?? {}) as { proposalIds?: string[] };
+      const t = this.threads.find(t => t.id === id)!;
+      const ids = body.proposalIds ?? [];
+      const sent = t.proposals.filter(p => ids.includes(p.id));
+      return json(
+        this.update(id, {
+          waitingOn: 'svar från medarbetarna',
+          proposals: t.proposals.map(p =>
+            ids.includes(p.id)
+              ? { ...p, status: 'confirmed', eventRef: `memory:${p.id}`, undoUntil: '2026-11-04T08:10:00.000Z' }
+              : p,
+          ),
+          receipt: {
+            at: NOW,
+            headline: `${sent.length} av ${sent.length} kalenderändringar är bekräftade.`,
+            undoUntil: '2026-11-04T08:10:00.000Z',
+            undoCapability: 'calendar.undoProposals',
+            rows: sent.map(p => ({
+              ref: p.id,
+              label: p.participant.name,
+              outcome: 'done',
+              detail: 'Kontrollerat i kalendern.',
+            })),
+          },
+        }),
+      );
+    }
+    // The receipt's way back (D70): the card is as it was before the decision, its proposals proposed again.
+    if (path.endsWith('/undo-receipt') && post) {
+      if (this.mutationDelay) await new Promise(resolve => setTimeout(resolve, this.mutationDelay));
+      if (this.mutationFails) return route.fulfill({ status: 503, json: { error: 'Källan svarade inte.' } });
+      const t = this.threads.find(t => t.id === id)!;
+      return json(
+        this.update(id, {
+          state: 'open',
+          handledAt: null,
+          waitingOn: null,
+          receipt: null,
+          proposals: t.proposals.map(p =>
+            p.status === 'confirmed' ? { ...p, status: 'proposed', eventRef: null, undoUntil: null } : p,
+          ),
+        }),
+      );
+    }
     // One item's document for the review flow (D70): an SVG the way the finance fixture draws one.
     if (path.endsWith('/preview') && !post) {
       const ref = url.searchParams.get('ref') ?? '';

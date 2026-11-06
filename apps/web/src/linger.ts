@@ -2,17 +2,19 @@ import { useEffect, useRef, useState } from 'react';
 import type { Thread } from '@clew/contracts';
 
 /**
- * The moment a receipt arrives (D70). A card whose execute the source has read back turns from open to handled with a
- * receipt in the cache; the row it was pressed on keeps its place for `LINGER_MS` in its receipt state, with the check
- * and Ångra, before it goes to Klart. Nothing here predicts anything: the transition is seen in the threads the cache holds.
+ * The moment a receipt arrives (D70). A card whose decision the source has read back gets a receipt in the cache: an
+ * execute turns the card from open to handled, and a confirmed proposal leaves it open, waiting on the invitees (D70
+ * amended). Either way the row it was pressed on keeps its place for `LINGER_MS` in its receipt state, with what was
+ * done and Ångra, before it goes to Klart or Väntar på andra. Nothing here predicts anything: the transition is seen in
+ * the threads the cache holds.
  */
 export const LINGER_MS = 2_500;
 
-/** The threads whose receipt arrived between two readings: open without a receipt before, handled with one now. */
+/** The threads whose receipt arrived between two readings: open without a receipt before, with one now, whatever state the decision left them in. */
 export function receiptArrivals(previous: ReadonlyMap<string, Thread>, threads: readonly Thread[]): Thread[] {
   return threads.filter(t => {
     const before = previous.get(t.id);
-    return !!before && before.state === 'open' && !before.receipt && t.state === 'handled' && !!t.receipt;
+    return !!before && before.state === 'open' && !before.receipt && t.state !== 'dismissed' && !!t.receipt;
   });
 }
 
