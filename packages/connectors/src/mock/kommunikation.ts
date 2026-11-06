@@ -14,6 +14,8 @@ export function kommunikationConnector(state: StateStore): Connector {
       name: 'kommunikation.notices', kind: 'read', title: 'Viktigt nu', model: true, description: 'Meddelanden från kommunen som kräver läskvitto, och om den inloggade kvitterat.',
       input: Empty, output: Type.Object({ rows: Type.Array(Type.Object({ ref: Type.String(), title: Type.String(), requiresReceipt: Type.Boolean(), acknowledged: Type.Boolean() })) }),
       scope: () => true,
+      // The view (D38): the notices as a list that says which still need the person's receipt.
+      view: { kind: 'list', title: 'title', ref: 'ref', empty: 'Inga meddelanden just nu.', fields: [{ key: 'title', label: 'Titel' }, { key: 'requiresReceipt', label: 'Kräver läskvitto' }, { key: 'acknowledged', label: 'Läst' }] },
       run: async (actor) => { const a = await acks(); return { rows: notices.filter(n => n.audience === 'all' || actor.role === 'manager').map(n => ({ ref: n.ref, title: n.title, requiresReceipt: n.requiresReceipt, acknowledged: !!a[actor.id]?.[n.ref] })) }; },
     },
     {

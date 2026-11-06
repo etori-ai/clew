@@ -18,11 +18,16 @@ export function financeConnector(state: StateStore): Connector {
       name: 'finance.invoices', kind: 'read', title: 'Fakturor att attestera', model: true, description: 'Fakturor som väntar på attest för chefens kostnadsställe.',
       input: Empty, output: Type.Object({ rows: Type.Array(Type.Object({ ref: Type.String(), supplier: Type.String(), amount: Type.Number(), due: Type.String(), order: Type.String(), account: Type.String() })) }),
       scope: isManagerOf, run: async () => ({ rows: (await pending()).map(i => ({ ref: i.ref, supplier: i.supplier, amount: i.amount, due: i.due, order: i.order, account: i.account })) }),
+      // The view (D38): the invoices as a table, drawn by Clew in an answer, in the panel or as a page; the model reads the rows, which hold no personal data.
+      view: { kind: 'table', title: 'supplier', ref: 'ref', empty: 'Inga fakturor väntar på attest.',
+        fields: [{ key: 'supplier', label: 'Leverantör' }, { key: 'amount', label: 'Belopp', format: 'number' }, { key: 'due', label: 'Förfaller', format: 'date' }, { key: 'order', label: 'Beställning' }, { key: 'account', label: 'Konto' }] },
     },
     {
       name: 'finance.budget', kind: 'read', title: 'Budget mot prognos', model: true, description: 'Budgetavvikelse och prognos för kostnadsstället, med den största drivaren.',
-      input: Empty, output: Type.Object({ deviationPct: Type.Number(), driver: Type.String(), budget: Type.Number(), forecast: Type.Number() }),
-      scope: isManagerOf, run: async () => { const b = budgets.find(b => b.costCentre === costCentreOf[UNIT])!; return { deviationPct: Math.round(1000 * (b.budget - b.forecast) / b.budget) / 10, driver: b.driver, budget: b.budget, forecast: b.forecast }; },
+      input: Empty, output: Type.Object({ label: Type.String(), deviationPct: Type.Number(), driver: Type.String(), budget: Type.Number(), forecast: Type.Number() }),
+      scope: isManagerOf, run: async () => { const b = budgets.find(b => b.costCentre === costCentreOf[UNIT])!; return { label: `Kostnadsställe ${b.costCentre}`, deviationPct: Math.round(1000 * (b.budget - b.forecast) / b.budget) / 10, driver: b.driver, budget: b.budget, forecast: b.forecast }; },
+      // The view (D38): the budget position as a detail, so a question about the budget is answered with the figures and not a sentence about them.
+      view: { kind: 'detail', title: 'label', fields: [{ key: 'deviationPct', label: 'Avvikelse i procent', format: 'number' }, { key: 'forecast', label: 'Prognos', format: 'number' }, { key: 'budget', label: 'Budget', format: 'number' }, { key: 'driver', label: 'Orsak' }] },
     },
     {
       name: 'finance.approve', kind: 'execute', title: 'Attestera', model: false, description: 'Attesterar valda fakturor i ekonomisystemet.',

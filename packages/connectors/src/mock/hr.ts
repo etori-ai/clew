@@ -53,6 +53,9 @@ export function hrConnector(state: StateStore): Connector {
       description: 'Frånvarodagar per medarbetare de senaste sex månaderna, uppdelat på typ. Bara för medarbetarens chef.',
       input: Empty, output: Type.Object({ rows: Type.Array(Type.Object({ ref: Type.String(), name: Type.String(), short: Type.Integer(), vab: Type.Integer(), long: Type.Integer(), periods: Type.Integer() })) }),
       scope: actor => isManagerOf(actor, UNIT),
+      // The view (D38): absence per person as a table whose row opens the person's pattern. Health data: the model is handed only that the rows are shown.
+      view: { kind: 'table', title: 'name', ref: 'ref', modelReads: 'summary', empty: 'Ingen frånvaro de senaste sex månaderna.', open: { capability: 'hr.absencePattern', title: 'Mönster', params: { ref: 'ref' } },
+        fields: [{ key: 'name', label: 'Namn' }, { key: 'short', label: 'Korttidsfrånvaro, dagar', format: 'number' }, { key: 'vab', label: 'Vab, dagar', format: 'number' }, { key: 'long', label: 'Långtidsfrånvaro, dagar', format: 'number' }, { key: 'periods', label: 'Perioder', format: 'number' }] },
       run: async () => {
         const since = new Date(Date.now() - 180 * 86400000).toISOString().slice(0, 10);
         return { rows: employees.filter(e => e.unitId === UNIT).map(e => {
@@ -68,6 +71,7 @@ export function hrConnector(state: StateStore): Connector {
       input: Type.Object({ ref: Type.String() }, { additionalProperties: false }), output: Type.Object({ name: Type.String(), periods: Type.Array(Type.Object({ from: Type.String(), to: Type.String(), kind: Type.String() })), rule: Type.String() }),
       scope: actor => isManagerOf(actor, UNIT),
       run: async (_actor, input: { ref: string }) => ({ name: nameOf(input.ref), periods: absences.filter(a => a.employee === input.ref).map(a => ({ from: a.from, to: a.to, kind: a.kind })), rule: 'Rutin 4.2: samtal inom två veckor efter tredje korta frånvaron på sex månader.' }),
+      view: { kind: 'detail', title: 'name', modelReads: 'summary', fields: [{ key: 'periods', label: 'Perioder' }, { key: 'rule', label: 'Regel' }] },
     },
     {
       name: 'hr.bookTalk', kind: 'execute', title: 'Boka samtalet', model: false,
@@ -94,6 +98,9 @@ export function hrConnector(state: StateStore): Connector {
       description: 'Öppna ledighetsansökningar som väntar på chefens beslut.',
       input: Empty, output: Type.Object({ rows: Type.Array(Type.Object({ ref: Type.String(), name: Type.String(), from: Type.String(), to: Type.String(), days: Type.Integer(), type: Type.String(), clash: Type.Boolean() })) }),
       scope: actor => isManagerOf(actor, UNIT),
+      // The view (D38): the open requests as a table; who asks for leave when is the person's, so the model reads a summary.
+      view: { kind: 'table', title: 'name', ref: 'ref', modelReads: 'summary', empty: 'Inga ledighetsansökningar väntar på beslut.',
+        fields: [{ key: 'name', label: 'Namn' }, { key: 'from', label: 'Från', format: 'date' }, { key: 'to', label: 'Till', format: 'date' }, { key: 'days', label: 'Dagar', format: 'number' }, { key: 'type', label: 'Typ' }, { key: 'clash', label: 'Krock' }] },
       run: async () => {
         const done = await decided();
         return { rows: leaveRequests.filter(r => !done[r.ref]).map(r => ({ ref: r.ref, name: nameOf(r.employee), from: r.from, to: r.to, days: r.days, type: r.type,

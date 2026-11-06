@@ -18,6 +18,8 @@ export function incidentsConnector(state: StateStore): Connector {
       name: 'incidents.deviations', kind: 'read', title: 'Avvikelser och tillbud', model: true, description: 'Öppna avvikelser och tillbud i enheten, med vad de väntar på.',
       input: Empty, output: Type.Object({ rows: Type.Array(Type.Object({ ref: Type.String(), title: Type.String(), state: Type.String(), waitingOn: Type.Optional(Type.String()), dueBy: Type.Optional(Type.String()) })) }),
       scope: actor => isManagerOf(actor) || !!own(actor),
+      // The view (D38): the open deviations as a list with what each waits on; the state is drawn in Swedish by Clew's value rules.
+      view: { kind: 'list', title: 'title', ref: 'ref', empty: 'Inga öppna avvikelser.', fields: [{ key: 'title', label: 'Titel' }, { key: 'state', label: 'Status' }, { key: 'waitingOn', label: 'Väntar på' }, { key: 'dueBy', label: 'Senast', format: 'date' }] },
       run: async (actor) => {
         const filed = await reports();
         const rows = deviations.filter(d => d.unitId === UNIT && d.state !== 'closed' && (isManagerOf(actor) || d.reportedBy === own(actor)?.ref))

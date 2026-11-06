@@ -7,6 +7,11 @@ import { manifest as telefonbokManifest } from '../../connectors/telefonbok/conn
 import { citationsOf } from '../../apps/server/src/assistant/answer';
 import { buildTools, modelAnswer, systemPrompt, toToolName, type ToolSchemaInfo } from '../../apps/server/src/assistant/model';
 import { matchCapability, searchAnswer, viewAnswer, viewInput } from '../../apps/server/src/assistant/router';
+import { memoryState } from '../../packages/connectors/src/memory-state';
+import { hrConnector } from '../../packages/connectors/src/mock/hr';
+import { financeConnector } from '../../packages/connectors/src/mock/finance';
+import { incidentsConnector } from '../../packages/connectors/src/mock/incidents';
+import { kommunikationConnector } from '../../packages/connectors/src/mock/kommunikation';
 
 /**
  * Declared views (D38): the rules a declaration keeps, in the manifest loader and in the registry; what the model is
@@ -104,5 +109,33 @@ describe('a person found by the search is counted, never named, in what Clew sto
     expect(mixed).toContain('1 träff i rutiner och dokument: Rutin vid fall. Dessutom 2 personer.');
     expect(mixed).not.toMatch(/Anna|Hassan/);
     expect(citationsOf({ rows: [person, routine] })).toEqual([{ n: 2, ref: 'document:docs:r1', label: 'Rutin vid fall', source: 'Intranätet', stale: false }]);
+  });
+});
+
+/**
+ * The bundled mocks declare the views a real connector would (D38, 2026-11-06): a question answered by one of these reads
+ * is drawn as the rows or the record, never as a sentence about them, and health data stays out of the model.
+ */
+describe('the mocks declare their views', () => {
+  const bundled = () => { const state = memoryState(); return [hrConnector(state), financeConnector(state), incidentsConnector(state), kommunikationConnector(state)]; };
+  const declared = ['finance.invoices', 'finance.budget', 'hr.absenceOverview', 'hr.absencePattern', 'hr.leaveRequests', 'incidents.deviations', 'kommunikation.notices'];
+  test('every read over rows, the budget position and the absence pattern have a view that keeps the rules, and the registry takes them', () => {
+    const r = new Registry();
+    for (const c of bundled()) r.register(c);
+    const all = bundled().flatMap(c => c.capabilities);
+    for (const name of declared) {
+      const cap = all.find(c => c.name === name)!;
+      expect(cap.view, name).toBeDefined();
+      expect(viewProblem(cap, all.filter(s => s.name.split('.')[0] === name.split('.')[0])), name).toBeUndefined();
+    }
+    for (const cap of all) if (cap.kind === 'read' && (cap.output as { properties?: { rows?: unknown } }).properties?.rows) expect(cap.view, cap.name).toBeDefined();
+  });
+  test('absence per person and leave requests hand the model a summary, the invoices and the budget their output', () => {
+    const all = bundled().flatMap(c => c.capabilities);
+    const reads = (name: string) => all.find(c => c.name === name)!.view?.modelReads ?? 'output';
+    expect(reads('hr.absenceOverview')).toBe('summary');
+    expect(reads('hr.leaveRequests')).toBe('summary');
+    expect(reads('finance.invoices')).toBe('output');
+    expect(reads('finance.budget')).toBe('output');
   });
 });
