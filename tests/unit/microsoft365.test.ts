@@ -154,7 +154,32 @@ test('a booking offers no undo while its room has yet to answer, since the answe
   const waiting = await approved(w, { ...planning, room: room.ref });
   expect(waiting).toMatchObject({ state: 'succeeded' });
   expect(waiting?.result?.undoCapability).toBeUndefined();
+  // The receipt is the read-back: it says why there is no undo (principle 5).
+  expect(waiting?.result?.rows[0]?.detail).toBe(
+    'Kontrollerat i kalendern. Rummet har inte svarat än, så bokningen kan inte ångras härifrån.',
+  );
   expect((await approved(world(), planning))?.result?.undoCapability).toBe('calendar.undoProposals');
+});
+
+test('a room that says no is on the receipt, and the meeting has no room', async () => {
+  const w = world();
+  const room = (await w.hillevi.resources())[0]!;
+  // Anna holds the room at that hour. The dispatch refuses a room it can see is taken, so the case a receipt can
+  // meet is a room that looked free when checked and said no anyway: the check is answered free, the room decides.
+  await w.anna.create('taken', { title: 'Upptaget', start, end, participants: [], room: room.ref });
+  const roomLooksFree = Object.create(w.hillevi, {
+    availability: {
+      value: async (_s: string, _e: string, targets: { ref: string }[]) =>
+        targets.map(t => ({ ref: t.ref, state: 'free' })),
+    },
+  }) as typeof w.hillevi;
+  const refused = await approved({ ...w, hillevi: roomLooksFree }, { ...planning, participants: [], room: room.ref });
+  expect(refused).toMatchObject({ state: 'succeeded', result: { rows: [{ ref: 'event', outcome: 'done' }] } });
+  expect(refused?.result?.rows[0]?.detail).toBe('Kontrollerat i kalendern. Rummet tackade nej, så mötet saknar rum.');
+  // The room has answered, so the revision is settled and the booking can be undone.
+  expect(refused?.result?.undoCapability).toBe('calendar.undoProposals');
+  const booked = (await w.hillevi.list(dayStart, dayEnd)).find(e => e.title === 'Planering');
+  expect(booked).toMatchObject({ room: '', roomResponse: 'declined' });
 });
 
 describe('failures of the source', () => {

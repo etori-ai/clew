@@ -73,3 +73,13 @@ id; Metakatalogen's is not yet confirmed.
 **Replaces.** Changes `docs/architecture/identity.md`, where Keycloak or Entra was the SCIM client and roles were also
 derived from OIDC claims. Extends the vision's list of what Clew holds (subject, name, unit, role) with an e-mail
 address and group memberships. D5 stands: SCIM is provisioning, not identification.
+
+**Relation to D62** (users are core entities, not connected systems; written the same day in another session and
+landing separately), recorded 2026-11-06 when this decision was merged as D68 (it was pushed as D60, a number this
+repository had already used). The two agree: users, login and grants are Clew's core, a provisioner is not a connector
+(item 7 here, the last paragraph there), and the directory stays outside Clew (the vision). They differ on where a
+capability comes from. D62 keeps the locally written grants that `scripts/auth-setup.ts` writes today; item 2 here
+makes group membership the only authority once a provisioner runs. Until this decision is built, D62 governs and the
+local grants stand; when it is built, the `capability:<name>` groups replace them for every provisioned installation,
+and the development stack's synthetic grants become the synthetic provisioner's groups. `docs/architecture/identity.md`
+no longer calls users a core connector.

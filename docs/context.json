@@ -2099,6 +2099,15 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-06-microsoft-365-adapter-against-the-decisions.md",
+      "title": "Review: the Microsoft 365 adapter commit against the decisions · 2026-11-06",
+      "category": "review-history",
+      "headings": [
+        "Findings",
+        "Open, with where each belongs"
+      ]
+    },
+    {
       "path": "docs/reviews/2026-11-06-start-page-directions-and-flows.md",
       "title": "Design exploration: the start page's directions, and every path from it · 2026-11-06",
       "category": "review-history",

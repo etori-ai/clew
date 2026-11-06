@@ -5,6 +5,9 @@
  * reading of the documentation, not that Microsoft behaves this way. A call it does not implement answers 501 on purpose.
  */
 import { sameEmail as same } from './model';
+import { fakeGraphToken } from './accounts';
+
+export { fakeGraphToken };
 
 export interface FakePerson {
   email: string;
@@ -26,7 +29,6 @@ export interface FakeGraph {
   /** The next request, or the next with this method, answers this status without touching state. */
   failNext(status: number, options?: { method?: string; headers?: Record<string, string> }): void;
 }
-export const fakeGraphToken = (email: string) => `fake-graph-token:${email.toLowerCase()}`;
 
 type Response_ = 'none' | 'organizer' | 'tentativelyAccepted' | 'accepted' | 'declined' | 'notResponded';
 interface Attendee extends FakePerson {

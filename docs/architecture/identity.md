@@ -140,8 +140,8 @@ that cannot do better, not alternative identification paths.
 
 ## Users, groups and permissions
 
-- Users and groups are a **core** connector in Clew's Postgres. Each installation runs a provisioner that
-  pushes them through SCIM 2.0 ([D68](../decisions/D68-people-are-pushed-into-clew-through-standard-scim.md)):
+- Users and groups are core entities in Clew's Postgres, not a connected system (D62). Each installation runs a
+  provisioner that pushes them through SCIM 2.0 ([D68](../decisions/D68-people-are-pushed-into-clew-through-standard-scim.md)):
   Clew is the SCIM server, the provisioner is the client, authenticated with a long-lived bearer token
   issued by Clew for that one purpose. SCIM is provisioning, not identification; a provisioned user still
   logs in through OIDC. The provisioner holds all knowledge of its source and maps it to D68's contract.

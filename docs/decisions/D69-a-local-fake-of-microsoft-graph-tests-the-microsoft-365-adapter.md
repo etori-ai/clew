@@ -60,4 +60,15 @@ dispatches and reads back without a session (`needsSession: false`), possibly af
 delegated token must therefore be obtainable in the background, or calendar writes must move to `needsSession: true`,
 which leaves decisions already queued at `source-contract-changed`.
 
+**Amended 2026-11-06**, when the commit was merged as D69 (pushed as D61, a number this repository had already used for
+the fixture connectors) and read against the decisions it rests on
+([review](../reviews/2026-11-06-microsoft-365-adapter-against-the-decisions.md)): the fake is a test double in the
+sense of D61, run in-process by the unit suite and as the `graph` service of the development stack, and the server
+never imports it. The synthetic directory in `accounts.ts` had imported it for the fixture token's convention, which
+put the fake in every deployment's module graph; the convention now lives in `accounts.ts` and the dependency cruiser
+refuses an import of `fake-graph.ts` from `apps/` or `packages/`. The adapter itself stands as built: it sits behind
+the factory of D11, keeps the ledger's rules of D45 and D47 (a reference before the write, a read-back as the receipt,
+no undo without the exact revision), and the room's late answer is the one thing D47's bounded watch could carry when
+rooms are used for real.
+
 **Replaces.** Nothing. It adds a test double and the build status to D11.

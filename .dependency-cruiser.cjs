@@ -72,6 +72,14 @@ module.exports = {
       from: { path: '^tests/unit/' },
       to: { path: store + '|' + timers + '|' + liveAdapters, pathNot: '^packages/db/src/schema\\.ts$' },
     },
+    {
+      name: 'the-fake-graph-stays-out-of-the-server',
+      comment:
+        'The local fake of Microsoft Graph is a test double (D69): the unit suite and the graph service import it, the server and the calendar package never do, so no deployment carries it.',
+      severity: 'error',
+      from: { path: '^apps/|^packages/', pathNot: '^packages/calendar/src/fake-graph\\.ts$' },
+      to: { path: '^packages/calendar/src/fake-graph\\.ts$' },
+    },
     { name: 'packages-do-not-import-apps', severity: 'error', from: { path: '^packages/' }, to: { path: '^apps/' } },
     {
       name: 'contracts-is-a-leaf',

@@ -1,7 +1,6 @@
 import type { AuthenticatedContext } from '@clew/contracts';
 import { CalendarError, type CalendarAccount, type CalendarProvider } from './model';
 import { createCalendarProvider, type CalendarCredential } from './adapters';
-import { fakeGraphToken } from './fake-graph';
 
 /**
  * Synthetic directory for the POC. The real system would resolve a person's calendar account and
@@ -12,6 +11,11 @@ export interface UnitMember extends CalendarAccount {
 }
 const calendarUrl = () => process.env.CALENDAR_URL ?? 'http://calendar';
 const graphUrl = () => process.env.GRAPH_URL ?? 'http://graph:4010/v1.0';
+/**
+ * The bearer the synthetic accounts present to the local fake of Microsoft Graph (D69): a convention the fixture
+ * directory owns, so the fake is imported by the fake's own process and the tests, never by the server (D61).
+ */
+export const fakeGraphToken = (email: string) => `fake-graph-token:${email.toLowerCase()}`;
 /** Each account names its adapter. A real directory would carry the same `kind` per person, so a mixed estate (CalDAV and Microsoft 365) is one lookup away. */
 const credential = (user: string, name = user): CalendarCredential => {
   const email = `${user}@clew.test`;

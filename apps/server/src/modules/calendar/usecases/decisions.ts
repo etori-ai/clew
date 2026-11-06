@@ -355,10 +355,16 @@ export function calendarExecutionSource(bind: CalendarBinder) {
         ...(found && outcome === 'done'
           ? { source: { ref: found.ref, revision: found.revision, uid: found.uid } }
           : {}),
+        // The receipt is the read-back (D45), so it says what the calendar holds about the room too: an answer that is
+        // still to come leaves the booking without an undo (D69), and a no means the meeting has no room.
         detail:
-          outcome === 'done'
-            ? 'Kontrollerat i kalendern.'
-            : 'Kalendern har inte bekräftat resultatet. Kontrollera status innan du försöker igen.',
+          outcome !== 'done'
+            ? 'Kalendern har inte bekräftat resultatet. Kontrollera status innan du försöker igen.'
+            : found?.roomResponse === 'pending'
+              ? 'Kontrollerat i kalendern. Rummet har inte svarat än, så bokningen kan inte ångras härifrån.'
+              : found?.roomResponse === 'declined'
+                ? 'Kontrollerat i kalendern. Rummet tackade nej, så mötet saknar rum.'
+                : 'Kontrollerat i kalendern.',
       });
       // An undo carries this exact revision, and a room that has yet to answer will change it (D69).
       const undoable = found?.roomResponse !== 'pending';
