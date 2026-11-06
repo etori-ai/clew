@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
+import { useQuery } from '@tanstack/react-query';
 import type { DayView, PanelViewSpec, SearchResult, TodayView, ViewRef, WeekView } from '@clew/contracts';
 import {
   AreaLine,
@@ -29,6 +30,7 @@ import {
   useAnnounce,
   useMediaQuery,
   useResizable,
+  worstWord,
   type AgendaItem,
 } from '@clew/ui';
 import { dayLabel, timeRange } from '@clew/calendar/dates';
@@ -37,6 +39,7 @@ import { useConversation } from './conversation-context';
 import { AddToConversation } from './add-to-conversation';
 import { DeclaredView } from './view';
 import { useMarks } from '../marks';
+import { areasQuery } from '../queries';
 
 const plain = (address: string) => {
   try {
@@ -424,10 +427,15 @@ export function usePanel(
   );
   const opener = useRef<HTMLElement | null>(null);
   const shown = useRef<{ id: string; address: string | undefined } | null>(null);
+  // A view whose area has a figure says the figure's word on its tab (D54, artboard 3): "Budget · lugnt".
+  const areas = useQuery(areasQuery).data?.areas;
+  const viewed = panel?.id.startsWith('view:') ? panel.id.slice('view:'.length) : null;
+  const figured = viewed ? areas?.find(a => a.figure && a.standing.some(s => s.capability === viewed)) : undefined;
+  const figureWord = figured ? worstWord([figured.figure])?.word : undefined;
   const id = panel?.id ?? null,
     address = panel?.address,
     title = panel?.title ?? null,
-    name = panel?.tab ?? title;
+    name = panel?.tab ?? (title && figureWord ? `${title} · ${figureWord}` : title);
   // What the panel holds changed: it is shown again, so the thing just opened is seen. Not when a closed tab's
   // neighbour takes its place: nothing was opened, and a folded panel stays folded.
   const revealing = useRef(false);

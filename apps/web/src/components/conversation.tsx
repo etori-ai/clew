@@ -47,6 +47,7 @@ import { DeclaredView } from './view';
 import { useConversation } from './conversation-context';
 import { reviewLabel, staleLabel } from './panel-labels';
 import { useObjectMark } from '../marks';
+import { FigureLines } from './figure-line';
 
 /** The sources an answer cites (D26): `[n]` in the body becomes a numbered citation that opens the document; the first source's owner and review date are named under the answer, in supporting (artboard 7). */
 function Sources({ sources }: { sources: SourceCitation[] }) {
@@ -268,6 +269,13 @@ export function Transcript({
                       <TurnCard key={id} id={id} render={renderCard} />
                     ))}
                     {/* The latest answer's view, read again; an older answer keeps its button, so opening a long conversation reads one view, not all of them. */}
+                    {/* An answer that read an area with a figure says the figure as a line (D54, artboard 3), as the tile on Hem says it. */}
+                    {embedded(i, m) && (
+                      <FigureLines
+                        select={a => a.standing.some(s => s.capability === m.meta!.view!.capability)}
+                        now={m.createdAt}
+                      />
+                    )}
                     {embedded(i, m) && (
                       <ViewEmbed view={m.meta!.view!} hrefFor={viewHref} onShowAll={() => onOpenView(m.meta!.view!)} />
                     )}
