@@ -26,6 +26,8 @@ services:
     ports:
       # Only the Vite dev server is published, on loopback. It proxies /api to the BFF inside the container.
       - "127.0.0.1:3020:5173"
+      # The portal (D67), a second Vite app over the same BFF.
+      - "127.0.0.1:3024:5174"
     extra_hosts:
       - "keycloak.orb.local:host-gateway"
     environment:

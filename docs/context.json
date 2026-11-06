@@ -771,6 +771,15 @@
       "status": "accepted, built 2026-11-06 for the generic card and row; the proposal card in `thread.tsx` and Påminn mig keep the earlier behaviour",
       "date": "2026-11-06",
       "area": "ui"
+    },
+    {
+      "key": "D67-the-portal-is-a-second-web-app-over-the-same-server",
+      "number": 67,
+      "path": "docs/decisions/D67-the-portal-is-a-second-web-app-over-the-same-server.md",
+      "title": "D67 · The portal is a second web app over the same server, drawn as the product owner's proof of concept draws it",
+      "status": "proposed, built 2026-11-06 as an experiment beside the web app; nothing in `apps/web` or the server changed for it",
+      "date": "2026-11-06",
+      "area": "ui, product"
     }
   ],
   "documents": [
@@ -1480,6 +1489,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D67-the-portal-is-a-second-web-app-over-the-same-server.md",
+      "title": "D67 · The portal is a second web app over the same server, drawn as the product owner's proof of concept draws it",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -2002,6 +2017,18 @@
         "The four directions",
         "The flows under A",
         "Outcome"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-06-startsidan-poc-against-clews-core.md",
+      "title": "Review: the product owner's Startsidan proof of concept against Clew's core · 2026-11-06",
+      "category": "review-history",
+      "headings": [
+        "1. What the demo shows, element by element",
+        "2. Where the core logic holds",
+        "3. Where it bends or breaks",
+        "4. A second web app over the same server",
+        "5. Recommendation"
       ]
     },
     {

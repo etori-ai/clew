@@ -28,3 +28,4 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Hem against the canvas, artboard by artboard · 2026-11-06](2026-11-06-hem-against-the-canvas.md)
 - [Review: where Läget's figures come from, and who should own them · 2026-11-06](2026-11-06-laget-figures-review.md)
 - [Design exploration: the start page's directions, and every path from it · 2026-11-06](2026-11-06-start-page-directions-and-flows.md)
+- [Review: the product owner's Startsidan proof of concept against Clew's core · 2026-11-06](2026-11-06-startsidan-poc-against-clews-core.md)

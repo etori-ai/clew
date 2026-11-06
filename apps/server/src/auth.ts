@@ -28,6 +28,7 @@ import {
   tokenDigest,
 } from './auth-crypto';
 import { delegationFor } from './auth-exchange';
+import { frontendOrigins } from './auth-origin';
 
 /** Ported from startsidan `packages/platform/src/auth.ts`: Authorization Code + PKCE, opaque server session cookie, sealed tokens. */
 export class AuthError extends Error {
@@ -65,7 +66,16 @@ export function authSettings() {
     provider.password
   )
     throw new AuthError(503, 'unavailable');
-  return { issuer, clientId, secret, origin: base.origin, local, callback: base.origin + '/api/auth/callback' };
+  return {
+    issuer,
+    clientId,
+    secret,
+    origin: base.origin,
+    // The front ends an operator listed besides the public one (D67 item 6), each checked at start.
+    origins: frontendOrigins(base.origin, process.env.FRONTEND_ORIGINS),
+    local,
+    callback: base.origin + '/api/auth/callback',
+  };
 }
 export function cookieOptions() {
   return { httpOnly: true, secure: !authSettings().local, sameSite: 'Lax' as const, path: '/' };
@@ -292,9 +302,10 @@ export async function authenticate(raw: string | undefined) {
   };
   return { context, csrfToken: row.csrf, sessionKey: digest.slice(0, 24) + version.slice(0, 16), row };
 }
+/** A mutation must come from the public origin or a listed front end (auth-origin.ts) and carry the session's CSRF token. */
 export function verifyMutation(request: Request, csrf: string) {
   if (
-    request.headers.get('origin') !== authSettings().origin ||
+    !authSettings().origins.includes(request.headers.get('origin') ?? '') ||
     !equalToken(request.headers.get('x-csrf-token') ?? '', csrf)
   )
     throw new AuthError(403, 'invalid');
