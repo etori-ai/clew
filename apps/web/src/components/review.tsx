@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Thread, ThreadAction, ThreadItem } from '@clew/contracts';
 import {
+  AreaChip,
   Badge,
   Button,
   Card,
@@ -25,6 +26,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { previewQuery } from '../queries';
 import { errorMessage } from '../query-policy';
+import { useMarks } from '../marks';
 
 type Decision = 'approve' | 'leave';
 const decisionWord: Record<Decision, string> = { approve: 'Godkänd', leave: 'Lämnas kvar' };
@@ -73,6 +75,7 @@ export function ReviewDialog({
   const left = items.filter(i => decisions[i.ref] === 'leave').length;
   const undecided = items.filter(i => !decisions[i.ref]).length;
   const verb = verbOf(action);
+  const mark = useMarks().ofThread(thread);
   const source = thread.trigger.source.toLowerCase();
   const close = () => {
     onSave(approved);
@@ -153,15 +156,14 @@ export function ReviewDialog({
   );
   const decision = item && (
     <VStack gap={3}>
-      <HStack gap={2} vAlign="center" wrap="wrap">
-        <Badge variant="neutral" label={`${step + 1} av ${items.length}`} />
-        {decisions[item.ref] && (
+      {decisions[item.ref] && (
+        <HStack gap={2} vAlign="center" wrap="wrap">
           <Badge
             variant={decisions[item.ref] === 'approve' ? 'success' : 'neutral'}
             label={decisionWord[decisions[item.ref]!]}
           />
-        )}
-      </HStack>
+        </HStack>
+      )}
       <Heading ref={heading} tabIndex={-1} level={2} accessibilityLevel={2}>
         {item.label}
       </Heading>
@@ -236,6 +238,12 @@ export function ReviewDialog({
         content={
           <LayoutContent>
             <VStack gap={5}>
+              {/* The dialog is a card (D71, artboard 8): under its level-2 title the mark row, the chip, the source and the counter as a neutral badge. */}
+              <HStack gap={2} vAlign="center" wrap="wrap">
+                <AreaChip ordinal={mark.ordinal} label={mark.title} {...(mark.icon ? { icon: mark.icon } : {})} />
+                <Text type="supporting">{mark.source}</Text>
+                {item && <Badge variant="neutral" label={`${step + 1} av ${items.length}`} />}
+              </HStack>
               {/* The steps show the way; Ändra in the list under each row is how one goes back, so a step is never a button whose name differs from its text (2.5.3). */}
               <Stepper
                 activeStep={step}

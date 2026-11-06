@@ -489,7 +489,10 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
     run(
       async () => {
         const t = await api.dismiss(thread.id);
-        leave(t, `Avfärdad som inte aktuellt. ${thread.trigger.source} skapar inte kortet igen.`);
+        leave(
+          t,
+          `Avfärdad som inte aktuellt. ${thread.trigger.source} skapar inte kortet igen. Kortet ligger under Redan hanterat.`,
+        );
         return t;
       },
       { optimistic: dismissed(thread, new Date().toISOString()) },

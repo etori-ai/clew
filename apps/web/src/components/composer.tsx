@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ClewObject } from '@clew/contracts';
 import {
+  AreaGlyph,
   Button,
   ChatComposer,
   ChatComposerDrawer,
@@ -31,6 +32,7 @@ import { keys } from '../query-keys';
 import { errorMessage } from '../query-policy';
 import { addDays, displayDate, shortDayLabel, timeLabel, today } from '@clew/calendar/dates';
 import { tokenValue, useConversation, type AskFrom } from './conversation-context';
+import { useObjectMark } from '../marks';
 
 /**
  * The model choice (D24), in the composer's footer slot that Astryx keeps for a model selector: the person's models
@@ -153,6 +155,12 @@ export function Composer({
 }) {
   const talk = useConversation();
   const navigate = useNavigate();
+  // A token and an `@` row carry the glyph of the system the ref belongs to (D71, artboard 8): the glyph beside the word, no hue.
+  const markOf = useObjectMark();
+  const glyph = (ref: string, threadId?: string) => {
+    const icon = markOf(ref, threadId)?.icon;
+    return icon ? <AreaGlyph icon={icon} /> : undefined;
+  };
   // A page's box hands the conversation what the page shows; the landing's and a conversation's own box have nothing to hand over.
   const from: AskFrom | undefined =
     place === 'page' || about ? { chips: about?.chips ?? [], search: about?.search ?? '' } : undefined;
@@ -187,16 +195,17 @@ export function Composer({
         bootstrap: async () => toItems((await api.objects('', context.current)).objects),
         cancel: () => undefined,
       },
-      renderItem: item => (
-        <TypeaheadItem item={item} description={(item as SearchableItem<ClewObject>).auxiliaryData?.detail} />
-      ),
+      renderItem: item => {
+        const o = (item as SearchableItem<ClewObject>).auxiliaryData;
+        return <TypeaheadItem item={item} icon={o ? glyph(o.ref, o.threadId) : undefined} description={o?.detail} />;
+      },
       onSelect: item => {
         const o = (item as SearchableItem<ClewObject>).auxiliaryData!;
         talk.rememberObject(o);
         return { value: tokenValue(o.ref), label: o.label, variant: 'neutral' };
       },
     };
-  }, [talk.rememberObject]);
+  }, [talk.rememberObject, markOf]);
   const placeholder =
     place === 'conversation'
       ? 'Svara, eller @ för att peka på något …'
@@ -248,11 +257,18 @@ export function Composer({
               <Token
                 key={c.ref}
                 label={c.label}
+                icon={glyph(c.ref)}
                 {...(about?.clearHref ? { onRemove: () => navigate(about.clearHref!) } : {})}
               />
             ))}
             {talk.chips.map(c => (
-              <Token key={c.ref} label={c.label} onRemove={() => talk.removeChip(c.ref)} data-chip-remove="" />
+              <Token
+                key={c.ref}
+                label={c.label}
+                icon={glyph(c.ref)}
+                onRemove={() => talk.removeChip(c.ref)}
+                data-chip-remove=""
+              />
             ))}
           </ChatComposerDrawer>
         ) : undefined

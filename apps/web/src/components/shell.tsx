@@ -25,6 +25,7 @@ import {
 } from '@clew/ui';
 import { branding } from '../branding';
 import { threadsQuery } from '../queries';
+import { useSourceBanner } from './source-banner';
 import { api } from '../api';
 import { ReminderBell } from './reminders';
 
@@ -83,6 +84,8 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   const deliveryAttempts = useRef(new Set<string>());
   // The same session-scoped cache as the start page carries reminder cards and pending delivery claims.
   const threadsQ = useQuery(threadsQuery);
+  // A system that does not answer is said at the top of every page (D8, D71 artboard 8), under the page's own banner.
+  const silent = useSourceBanner();
   const deliveryContext = useRef(threadsQ.data),
     deliveryMounted = useRef(false);
   deliveryContext.current = threadsQ.data;
@@ -145,7 +148,14 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
         variant="elevated"
         contentPadding={0}
         mobileNav={{ breakpoint: 'md', isOpen: navigationOpen, onOpenChange: changeNavigation }}
-        banner={banner}
+        banner={
+          banner || silent ? (
+            <VStack gap={0}>
+              {banner}
+              {silent}
+            </VStack>
+          ) : undefined
+        }
         sideNav={
           <SideNav
             header={
