@@ -62,6 +62,84 @@
         "phonebook.search",
         "phonebook.fetch"
       ]
+    },
+    {
+      "id": "hr",
+      "source": "connectors/hr/connector.mjs",
+      "manifest": "docs/generated/hr.manifest.json",
+      "capabilities": [
+        "hr.whoIsOn",
+        "hr.absenceOverview",
+        "hr.absencePattern",
+        "hr.bookTalk",
+        "hr.unbookTalk",
+        "hr.leaveRequests",
+        "hr.decideLeave",
+        "hr.undecideLeave",
+        "hr.proposeAbsence",
+        "hr.reportAbsence",
+        "hr.withdrawAbsence",
+        "hr.myShift",
+        "hr.myBalance",
+        "hr.renewDelegation",
+        "hr.lookup"
+      ]
+    },
+    {
+      "id": "finance",
+      "source": "connectors/finance/connector.mjs",
+      "manifest": "docs/generated/finance.manifest.json",
+      "capabilities": [
+        "finance.invoices",
+        "finance.budget",
+        "finance.approve",
+        "finance.unapprove",
+        "finance.open",
+        "finance.lookup"
+      ]
+    },
+    {
+      "id": "incidents",
+      "source": "connectors/incidents/connector.mjs",
+      "manifest": "docs/generated/incidents.manifest.json",
+      "capabilities": [
+        "incidents.deviations",
+        "incidents.report",
+        "incidents.withdraw",
+        "incidents.lookup"
+      ]
+    },
+    {
+      "id": "communication",
+      "source": "connectors/communication/connector.mjs",
+      "manifest": "docs/generated/communication.manifest.json",
+      "capabilities": [
+        "communication.notices",
+        "communication.acknowledge",
+        "communication.lookup"
+      ]
+    },
+    {
+      "id": "timesheet",
+      "source": "connectors/timesheet/connector.mjs",
+      "manifest": "docs/generated/timesheet.manifest.json",
+      "capabilities": [
+        "timesheet.today",
+        "timesheet.followAbsence",
+        "timesheet.markAbsence",
+        "timesheet.unmarkAbsence",
+        "timesheet.lookup"
+      ]
+    },
+    {
+      "id": "payroll",
+      "source": "connectors/payroll/connector.mjs",
+      "manifest": "docs/generated/payroll.manifest.json",
+      "capabilities": [
+        "payroll.absences",
+        "payroll.absenceStatus",
+        "payroll.followAbsence"
+      ]
     }
   ],
   "duplicateDecisionNumbers": [
@@ -706,6 +784,12 @@
       ]
     },
     {
+      "path": "connectors/communication/README.md",
+      "title": "communication: a generic internal communication system, as a fixture connector",
+      "category": "integrator-guide",
+      "headings": []
+    },
+    {
       "path": "connectors/eneo/README.md",
       "title": "The Eneo connector",
       "category": "integrator-guide",
@@ -717,11 +801,42 @@
       ]
     },
     {
+      "path": "connectors/finance/README.md",
+      "title": "finance: a generic economy system, as a fixture connector",
+      "category": "integrator-guide",
+      "headings": []
+    },
+    {
       "path": "connectors/hello/README.md",
       "title": "Hello: a small connector demonstration",
       "category": "integrator-guide",
       "headings": [
         "Run locally"
+      ]
+    },
+    {
+      "path": "connectors/hr/README.md",
+      "title": "hr: a generic HR and scheduling system, as a fixture connector",
+      "category": "integrator-guide",
+      "headings": [
+        "What it answers",
+        "Running it",
+        "The realism switches",
+        "Checks"
+      ]
+    },
+    {
+      "path": "connectors/incidents/README.md",
+      "title": "incidents: a generic deviation system, as a fixture connector",
+      "category": "integrator-guide",
+      "headings": []
+    },
+    {
+      "path": "connectors/payroll/README.md",
+      "title": "payroll: a generic payroll system, as a fixture connector",
+      "category": "integrator-guide",
+      "headings": [
+        "The import"
       ]
     },
     {
@@ -739,6 +854,12 @@
     {
       "path": "connectors/reference/README.md",
       "title": "Durable synthetic reference source",
+      "category": "integrator-guide",
+      "headings": []
+    },
+    {
+      "path": "connectors/timesheet/README.md",
+      "title": "timesheet: a generic time-reporting system, as a fixture connector",
       "category": "integrator-guide",
       "headings": []
     },

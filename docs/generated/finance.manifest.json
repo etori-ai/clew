@@ -1,0 +1,495 @@
+{
+  "protocol": 2,
+  "id": "finance",
+  "kind": "passthrough",
+  "source": "Ekonomisystemet",
+  "uses": [],
+  "scan": true,
+  "areas": [
+    {
+      "id": "budget",
+      "title": "Budget",
+      "icon": "chart",
+      "roles": [
+        "manager"
+      ],
+      "standing": [
+        "finance.invoices",
+        "finance.budget"
+      ],
+      "schedules": [
+        {
+          "label": "Fakturor som förfaller inom en vecka",
+          "when": "Varje vardag 06:00"
+        },
+        {
+          "label": "Prognosavvikelse",
+          "when": "Månadens första måndag"
+        }
+      ],
+      "figure": true
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "finance.invoices",
+      "kind": "read",
+      "title": "Fakturor att attestera",
+      "description": "Fakturor som väntar på attest för chefens kostnadsställe.",
+      "model": true,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "supplier": {
+                  "type": "string"
+                },
+                "amount": {
+                  "type": "number"
+                },
+                "due": {
+                  "type": "string"
+                },
+                "order": {
+                  "type": "string"
+                },
+                "account": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "supplier",
+                "amount",
+                "due",
+                "order",
+                "account"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "table",
+        "title": "supplier",
+        "ref": "ref",
+        "empty": "Inga fakturor väntar på attest.",
+        "fields": [
+          {
+            "key": "supplier",
+            "label": "Leverantör"
+          },
+          {
+            "key": "amount",
+            "label": "Belopp",
+            "format": "number"
+          },
+          {
+            "key": "due",
+            "label": "Förfaller",
+            "format": "date"
+          },
+          {
+            "key": "order",
+            "label": "Beställning"
+          },
+          {
+            "key": "account",
+            "label": "Konto"
+          }
+        ]
+      }
+    },
+    {
+      "name": "finance.budget",
+      "kind": "read",
+      "title": "Budget mot prognos",
+      "description": "Budgetavvikelse och prognos för kostnadsstället, med den största drivaren.",
+      "model": true,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "deviationPct": {
+            "type": "number"
+          },
+          "driver": {
+            "type": "string"
+          },
+          "budget": {
+            "type": "number"
+          },
+          "forecast": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "label",
+          "deviationPct",
+          "driver",
+          "budget",
+          "forecast"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "detail",
+        "title": "label",
+        "fields": [
+          {
+            "key": "deviationPct",
+            "label": "Avvikelse i procent",
+            "format": "number"
+          },
+          {
+            "key": "forecast",
+            "label": "Prognos",
+            "format": "number"
+          },
+          {
+            "key": "budget",
+            "label": "Budget",
+            "format": "number"
+          },
+          {
+            "key": "driver",
+            "label": "Orsak"
+          }
+        ]
+      }
+    },
+    {
+      "name": "finance.approve",
+      "kind": "execute",
+      "title": "Attestera",
+      "description": "Attesterar valda fakturor i ekonomisystemet.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "execution": {
+        "strategy": "deduplicated",
+        "retentionSeconds": 86400,
+        "lookup": "finance.lookup"
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^finance:inv:"
+            }
+          }
+        },
+        "required": [
+          "refs"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "headline": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "enum": [
+                    "done",
+                    "failed",
+                    "unknown",
+                    "skipped"
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "label",
+                "outcome",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "undoCapability": {
+            "type": "string"
+          },
+          "undoMinutes": {
+            "type": "integer"
+          },
+          "undoInput": {}
+        },
+        "required": [
+          "headline",
+          "rows"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "finance.unapprove",
+      "kind": "execute",
+      "title": "Ångra attest",
+      "description": "Tar tillbaka en attest inom ångerfönstret.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "execution": {
+        "strategy": "deduplicated",
+        "retentionSeconds": 86400,
+        "lookup": "finance.lookup"
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^finance:inv:"
+            }
+          }
+        },
+        "required": [
+          "refs"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "headline": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "enum": [
+                    "done",
+                    "failed",
+                    "unknown",
+                    "skipped"
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "label",
+                "outcome",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "undoCapability": {
+            "type": "string"
+          },
+          "undoMinutes": {
+            "type": "integer"
+          },
+          "undoInput": {}
+        },
+        "required": [
+          "headline",
+          "rows"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "finance.open",
+      "kind": "read",
+      "title": "Öppna i ekonomisystemet",
+      "description": "Länk till fakturan i ekonomisystemet.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "pattern": "^finance:inv:"
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "finance.lookup",
+      "kind": "read",
+      "title": "Läs tillbaka en åtgärd",
+      "description": "Om en åtgärd med ett givet operations-id finns i ekonomisystemets logg, och vad den gav.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "operationId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "found": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "headline": {
+                "type": "string"
+              },
+              "rows": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "ref": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "outcome": {
+                      "enum": [
+                        "done",
+                        "failed",
+                        "unknown",
+                        "skipped"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ref",
+                    "label",
+                    "outcome",
+                    "detail"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "undoCapability": {
+                "type": "string"
+              },
+              "undoMinutes": {
+                "type": "integer"
+              },
+              "undoInput": {}
+            },
+            "required": [
+              "headline",
+              "rows"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "found"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

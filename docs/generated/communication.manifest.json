@@ -1,0 +1,267 @@
+{
+  "protocol": 2,
+  "id": "communication",
+  "kind": "passthrough",
+  "source": "Kommunikation",
+  "uses": [],
+  "scan": true,
+  "areas": [
+    {
+      "id": "important-now",
+      "title": "Viktigt nu",
+      "icon": "bell",
+      "roles": [
+        "manager",
+        "employee"
+      ],
+      "standing": [
+        "communication.notices"
+      ],
+      "schedules": [
+        {
+          "label": "Nya meddelanden som kräver läskvitto",
+          "when": "Direkt när de publiceras"
+        }
+      ]
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "communication.notices",
+      "kind": "read",
+      "title": "Viktigt nu",
+      "description": "Meddelanden från kommunen som kräver läskvitto, och om den inloggade kvitterat.",
+      "model": true,
+      "scope": {},
+      "input": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "requiresReceipt": {
+                  "type": "boolean"
+                },
+                "acknowledged": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "ref",
+                "title",
+                "requiresReceipt",
+                "acknowledged"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "list",
+        "title": "title",
+        "ref": "ref",
+        "empty": "Inga meddelanden just nu.",
+        "fields": [
+          {
+            "key": "title",
+            "label": "Titel"
+          },
+          {
+            "key": "requiresReceipt",
+            "label": "Kräver läskvitto"
+          },
+          {
+            "key": "acknowledged",
+            "label": "Läst"
+          }
+        ]
+      }
+    },
+    {
+      "name": "communication.acknowledge",
+      "kind": "execute",
+      "title": "Jag har läst",
+      "description": "Kvitterar ett meddelande.",
+      "model": false,
+      "scope": {},
+      "execution": {
+        "strategy": "deduplicated",
+        "retentionSeconds": 86400,
+        "lookup": "communication.lookup"
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^communication:notice:"
+            }
+          }
+        },
+        "required": [
+          "refs"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "headline": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "enum": [
+                    "done",
+                    "failed",
+                    "unknown",
+                    "skipped"
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "label",
+                "outcome",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "undoCapability": {
+            "type": "string"
+          },
+          "undoMinutes": {
+            "type": "integer"
+          },
+          "undoInput": {}
+        },
+        "required": [
+          "headline",
+          "rows"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "communication.lookup",
+      "kind": "read",
+      "title": "Läs tillbaka en åtgärd",
+      "description": "Om ett läskvitto med ett givet operations-id finns registrerat, och vad det gav.",
+      "model": false,
+      "scope": {},
+      "input": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "operationId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "found": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "headline": {
+                "type": "string"
+              },
+              "rows": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "ref": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "outcome": {
+                      "enum": [
+                        "done",
+                        "failed",
+                        "unknown",
+                        "skipped"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ref",
+                    "label",
+                    "outcome",
+                    "detail"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "undoCapability": {
+                "type": "string"
+              },
+              "undoMinutes": {
+                "type": "integer"
+              },
+              "undoInput": {}
+            },
+            "required": [
+              "headline",
+              "rows"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "found"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

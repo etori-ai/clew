@@ -1,0 +1,1390 @@
+{
+  "protocol": 2,
+  "id": "hr",
+  "kind": "passthrough",
+  "source": "Personalsystemet",
+  "uses": [],
+  "scan": true,
+  "facts": [
+    {
+      "kind": "hr:absence",
+      "title": "Sjukfrånvaro",
+      "attributes": {
+        "type": "object",
+        "properties": {
+          "person": {
+            "type": "string",
+            "pattern": "^hr:emp:[0-9]+$",
+            "description": "Medarbetarens ref i personalsystemet."
+          },
+          "from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Första frånvarodagen."
+          },
+          "to": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Sista frånvarodagen; samma som from när den saknas."
+          },
+          "extent": {
+            "type": "integer",
+            "minimum": 25,
+            "maximum": 100,
+            "description": "Omfattning i procent; 100 när den saknas."
+          }
+        },
+        "required": [
+          "person",
+          "from"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "areas": [
+    {
+      "id": "employees",
+      "title": "Medarbetare",
+      "icon": "people",
+      "roles": [
+        "manager"
+      ],
+      "standing": [
+        "hr.whoIsOn",
+        "hr.absenceOverview",
+        "hr.leaveRequests"
+      ],
+      "schedules": [
+        {
+          "label": "Frånvaro och mönster enligt rehabrutinen",
+          "when": "Varje vardag 06:00"
+        },
+        {
+          "label": "Ledighetsansökningar",
+          "when": "När en ansökan kommer"
+        }
+      ],
+      "figure": true
+    },
+    {
+      "id": "my-shift",
+      "title": "Mitt pass",
+      "icon": "clock",
+      "roles": [
+        "employee"
+      ],
+      "standing": [
+        "hr.myShift",
+        "hr.whoIsOn",
+        "hr.myBalance"
+      ],
+      "schedules": [
+        {
+          "label": "Delegeringar och utbildningar som går ut",
+          "when": "Månadens första måndag"
+        }
+      ],
+      "figure": true
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "hr.whoIsOn",
+      "kind": "read",
+      "title": "Vem är på plats i dag?",
+      "description": "Vilka i enheten som arbetar i dag enligt schemat, och vilka som är frånvarande.",
+      "model": true,
+      "scope": {},
+      "input": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "onDuty": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "absent": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "kind"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "date",
+          "onDuty",
+          "absent"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "hr.absenceOverview",
+      "kind": "read",
+      "title": "Frånvaro per person",
+      "description": "Frånvarodagar per medarbetare de senaste sex månaderna, uppdelat på typ. Bara för medarbetarens chef.",
+      "model": true,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "short": {
+                  "type": "integer"
+                },
+                "vab": {
+                  "type": "integer"
+                },
+                "long": {
+                  "type": "integer"
+                },
+                "periods": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "ref",
+                "name",
+                "short",
+                "vab",
+                "long",
+                "periods"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "table",
+        "title": "name",
+        "ref": "ref",
+        "modelReads": "summary",
+        "empty": "Ingen frånvaro de senaste sex månaderna.",
+        "open": {
+          "capability": "hr.absencePattern",
+          "title": "Mönster",
+          "params": {
+            "ref": "ref"
+          }
+        },
+        "fields": [
+          {
+            "key": "name",
+            "label": "Namn"
+          },
+          {
+            "key": "short",
+            "label": "Korttidsfrånvaro, dagar",
+            "format": "number"
+          },
+          {
+            "key": "vab",
+            "label": "Vab, dagar",
+            "format": "number"
+          },
+          {
+            "key": "long",
+            "label": "Långtidsfrånvaro, dagar",
+            "format": "number"
+          },
+          {
+            "key": "periods",
+            "label": "Perioder",
+            "format": "number"
+          }
+        ]
+      }
+    },
+    {
+      "name": "hr.absencePattern",
+      "kind": "read",
+      "title": "Se mönstret i personalsystemet",
+      "description": "Frånvaromönster för en medarbetare, för chefen.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "pattern": "^hr:emp:[0-9]+$"
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "periods": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "from",
+                "to",
+                "kind"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "rule": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "periods",
+          "rule"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "detail",
+        "title": "name",
+        "modelReads": "summary",
+        "fields": [
+          {
+            "key": "periods",
+            "label": "Perioder"
+          },
+          {
+            "key": "rule",
+            "label": "Regel"
+          }
+        ]
+      }
+    },
+    {
+      "name": "hr.bookTalk",
+      "kind": "execute",
+      "title": "Boka samtalet",
+      "description": "Registrerar ett omtankesamtal i personalsystemet.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "execution": {
+        "strategy": "deduplicated",
+        "retentionSeconds": 86400,
+        "lookup": "hr.lookup"
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^hr:emp:"
+            }
+          },
+          "when": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "refs"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "headline": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "enum": [
+                    "done",
+                    "failed",
+                    "unknown",
+                    "skipped"
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "label",
+                "outcome",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "undoCapability": {
+            "type": "string"
+          },
+          "undoMinutes": {
+            "type": "integer"
+          },
+          "undoInput": {}
+        },
+        "required": [
+          "headline",
+          "rows"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "hr.unbookTalk",
+      "kind": "execute",
+      "title": "Ångra bokningen",
+      "description": "Tar bort ett registrerat samtal inom ångerfönstret.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "execution": {
+        "strategy": "deduplicated",
+        "retentionSeconds": 86400,
+        "lookup": "hr.lookup"
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^hr:"
+            }
+          }
+        },
+        "required": [
+          "refs"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "headline": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "enum": [
+                    "done",
+                    "failed",
+                    "unknown",
+                    "skipped"
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "label",
+                "outcome",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "undoCapability": {
+            "type": "string"
+          },
+          "undoMinutes": {
+            "type": "integer"
+          },
+          "undoInput": {}
+        },
+        "required": [
+          "headline",
+          "rows"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "hr.leaveRequests",
+      "kind": "read",
+      "title": "Ledighetsansökningar",
+      "description": "Öppna ledighetsansökningar som väntar på chefens beslut.",
+      "model": true,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "days": {
+                  "type": "integer"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "clash": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "ref",
+                "name",
+                "from",
+                "to",
+                "days",
+                "type",
+                "clash"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "table",
+        "title": "name",
+        "ref": "ref",
+        "modelReads": "summary",
+        "empty": "Inga ledighetsansökningar väntar på beslut.",
+        "fields": [
+          {
+            "key": "name",
+            "label": "Namn"
+          },
+          {
+            "key": "from",
+            "label": "Från",
+            "format": "date"
+          },
+          {
+            "key": "to",
+            "label": "Till",
+            "format": "date"
+          },
+          {
+            "key": "days",
+            "label": "Dagar",
+            "format": "number"
+          },
+          {
+            "key": "type",
+            "label": "Typ"
+          },
+          {
+            "key": "clash",
+            "label": "Krock"
+          }
+        ]
+      }
+    },
+    {
+      "name": "hr.decideLeave",
+      "kind": "execute",
+      "title": "Godkänn",
+      "description": "Beslutar en ledighetsansökan i personalsystemet.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "execution": {
+        "strategy": "deduplicated",
+        "retentionSeconds": 86400,
+        "lookup": "hr.lookup"
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^hr:leave:"
+            }
+          },
+          "decision": {
+            "enum": [
+              "approve",
+              "reject"
+            ]
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 400
+          }
+        },
+        "required": [
+          "refs",
+          "decision"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "headline": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "enum": [
+                    "done",
+                    "failed",
+                    "unknown",
+                    "skipped"
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "label",
+                "outcome",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "undoCapability": {
+            "type": "string"
+          },
+          "undoMinutes": {
+            "type": "integer"
+          },
+          "undoInput": {}
+        },
+        "required": [
+          "headline",
+          "rows"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "hr.undecideLeave",
+      "kind": "execute",
+      "title": "Ångra beslutet",
+      "description": "Återställer en ledighetsansökan till väntande inom ångerfönstret.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "execution": {
+        "strategy": "deduplicated",
+        "retentionSeconds": 86400,
+        "lookup": "hr.lookup"
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^hr:"
+            }
+          }
+        },
+        "required": [
+          "refs"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "headline": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "enum": [
+                    "done",
+                    "failed",
+                    "unknown",
+                    "skipped"
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "label",
+                "outcome",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "undoCapability": {
+            "type": "string"
+          },
+          "undoMinutes": {
+            "type": "integer"
+          },
+          "undoInput": {}
+        },
+        "required": [
+          "headline",
+          "rows"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "hr.proposeAbsence",
+      "kind": "propose",
+      "title": "Sjukanmälan",
+      "description": "Vad personalsystemet gör när en medarbetare blir sjuk: registrerar sjukanmälan, om den inte redan finns där.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "follows": [
+        "hr:absence"
+      ],
+      "creates": "hr:absence",
+      "input": {
+        "type": "object",
+        "properties": {
+          "fact": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*:[a-z][a-zA-Z0-9-]*$",
+                "maxLength": 80
+              },
+              "ref": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 400
+              },
+              "attributes": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "kind",
+              "attributes"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "fact"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "steps": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "execute"
+                    },
+                    "operation": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
+                      "maxLength": 80
+                    },
+                    "payload": {},
+                    "title": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "detail": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "operation",
+                    "payload",
+                    "title"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "watch"
+                    },
+                    "operation": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
+                      "maxLength": 80
+                    },
+                    "input": {},
+                    "expect": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80
+                          }
+                        },
+                        "equals": {}
+                      },
+                      "required": [
+                        "path",
+                        "equals"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "within": {
+                      "type": "string",
+                      "pattern": "^P(?!$)(\\d+D)?(T(?=\\d)(\\d+H)?(\\d+M)?)?$"
+                    },
+                    "title": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "detail": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "operation",
+                    "input",
+                    "expect",
+                    "within",
+                    "title"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "steps"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "hr.reportAbsence",
+      "kind": "execute",
+      "title": "Registrera sjukanmälan",
+      "description": "Registrerar en sjukanmälan i personalsystemet.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "execution": {
+        "strategy": "deduplicated",
+        "retentionSeconds": 86400,
+        "lookup": "hr.lookup"
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "person": {
+            "type": "string",
+            "pattern": "^hr:emp:[0-9]+$",
+            "description": "Medarbetarens ref i personalsystemet."
+          },
+          "from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Första frånvarodagen."
+          },
+          "to": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Sista frånvarodagen; samma som from när den saknas."
+          },
+          "extent": {
+            "type": "integer",
+            "minimum": 25,
+            "maximum": 100,
+            "description": "Omfattning i procent; 100 när den saknas."
+          }
+        },
+        "required": [
+          "person",
+          "from"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "headline": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "enum": [
+                    "done",
+                    "failed",
+                    "unknown",
+                    "skipped"
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "label",
+                "outcome",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "undoCapability": {
+            "type": "string"
+          },
+          "undoMinutes": {
+            "type": "integer"
+          },
+          "undoInput": {}
+        },
+        "required": [
+          "headline",
+          "rows"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "hr.withdrawAbsence",
+      "kind": "execute",
+      "title": "Ta bort sjukanmälan",
+      "description": "Tar bort en sjukanmälan som registrerades av misstag, inom ångerfönstret.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "execution": {
+        "strategy": "deduplicated",
+        "retentionSeconds": 86400,
+        "lookup": "hr.lookup"
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^hr:"
+            }
+          }
+        },
+        "required": [
+          "refs"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "headline": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "enum": [
+                    "done",
+                    "failed",
+                    "unknown",
+                    "skipped"
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "label",
+                "outcome",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "undoCapability": {
+            "type": "string"
+          },
+          "undoMinutes": {
+            "type": "integer"
+          },
+          "undoInput": {}
+        },
+        "required": [
+          "headline",
+          "rows"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "hr.myShift",
+      "kind": "read",
+      "title": "Mitt pass",
+      "description": "Dagens och morgondagens pass för den inloggade, och vilka kollegor som jobbar.",
+      "model": true,
+      "scope": {
+        "roles": [
+          "employee"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "today": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "start": {
+                    "type": "string"
+                  },
+                  "end": {
+                    "type": "string"
+                  },
+                  "ward": {
+                    "type": "string"
+                  },
+                  "colleagues": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "start",
+                  "end",
+                  "ward",
+                  "colleagues"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "today"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "hr.myBalance",
+      "kind": "read",
+      "title": "Mitt saldo",
+      "description": "Semesterdagar kvar att ta ut i år.",
+      "model": true,
+      "scope": {
+        "roles": [
+          "employee"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "vacationDaysLeft": {
+            "type": "integer"
+          },
+          "mustUseBy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "vacationDaysLeft",
+          "mustUseBy"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "hr.renewDelegation",
+      "kind": "execute",
+      "title": "Boka förnyelse",
+      "description": "Bokar förnyelse av en delegering med den som utfärdar den.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "employee"
+        ]
+      },
+      "execution": {
+        "strategy": "deduplicated",
+        "retentionSeconds": 86400,
+        "lookup": "hr.lookup"
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^hr:deleg:"
+            }
+          },
+          "when": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "refs"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "headline": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "enum": [
+                    "done",
+                    "failed",
+                    "unknown",
+                    "skipped"
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "label",
+                "outcome",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "undoCapability": {
+            "type": "string"
+          },
+          "undoMinutes": {
+            "type": "integer"
+          },
+          "undoInput": {}
+        },
+        "required": [
+          "headline",
+          "rows"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "hr.lookup",
+      "kind": "read",
+      "title": "Läs tillbaka en åtgärd",
+      "description": "Om en åtgärd med ett givet operations-id finns i personalsystemets logg, och vad den gav.",
+      "model": false,
+      "scope": {},
+      "input": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "operationId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "found": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "headline": {
+                "type": "string"
+              },
+              "rows": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "ref": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "outcome": {
+                      "enum": [
+                        "done",
+                        "failed",
+                        "unknown",
+                        "skipped"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ref",
+                    "label",
+                    "outcome",
+                    "detail"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "undoCapability": {
+                "type": "string"
+              },
+              "undoMinutes": {
+                "type": "integer"
+              },
+              "undoInput": {}
+            },
+            "required": [
+              "headline",
+              "rows"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "found"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

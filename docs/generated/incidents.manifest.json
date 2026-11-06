@@ -1,0 +1,360 @@
+{
+  "protocol": 2,
+  "id": "incidents",
+  "kind": "passthrough",
+  "source": "Avvikelsesystemet",
+  "uses": [],
+  "scan": true,
+  "areas": [
+    {
+      "id": "work-environment",
+      "title": "Arbetsmiljö",
+      "icon": "document",
+      "roles": [
+        "manager"
+      ],
+      "standing": [
+        "incidents.deviations",
+        "incidents.report"
+      ],
+      "schedules": [
+        {
+          "label": "Avvikelser som väntat mer än fem dagar",
+          "when": "Varje vardag 06:00"
+        }
+      ],
+      "figure": true
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "incidents.deviations",
+      "kind": "read",
+      "title": "Avvikelser och tillbud",
+      "description": "Öppna avvikelser och tillbud i enheten, med vad de väntar på.",
+      "model": true,
+      "scope": {},
+      "input": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "waitingOn": {
+                  "type": "string"
+                },
+                "dueBy": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "title",
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "list",
+        "title": "title",
+        "ref": "ref",
+        "empty": "Inga öppna avvikelser.",
+        "fields": [
+          {
+            "key": "title",
+            "label": "Titel"
+          },
+          {
+            "key": "state",
+            "label": "Status"
+          },
+          {
+            "key": "waitingOn",
+            "label": "Väntar på"
+          },
+          {
+            "key": "dueBy",
+            "label": "Senast",
+            "format": "date"
+          }
+        ]
+      }
+    },
+    {
+      "name": "incidents.report",
+      "kind": "execute",
+      "title": "Rapportera avvikelse",
+      "description": "Skapar en avvikelserapport i avvikelsesystemet.",
+      "model": false,
+      "scope": {},
+      "execution": {
+        "strategy": "deduplicated",
+        "retentionSeconds": 86400,
+        "lookup": "incidents.lookup"
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 120
+          },
+          "text": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "title",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "headline": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "enum": [
+                    "done",
+                    "failed",
+                    "unknown",
+                    "skipped"
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "label",
+                "outcome",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "undoCapability": {
+            "type": "string"
+          },
+          "undoMinutes": {
+            "type": "integer"
+          },
+          "undoInput": {}
+        },
+        "required": [
+          "headline",
+          "rows"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "incidents.withdraw",
+      "kind": "execute",
+      "title": "Ta tillbaka",
+      "description": "Tar tillbaka en avvikelserapport inom ångerfönstret.",
+      "model": false,
+      "scope": {},
+      "execution": {
+        "strategy": "deduplicated",
+        "retentionSeconds": 86400,
+        "lookup": "incidents.lookup"
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^incidents:dev:"
+            }
+          }
+        },
+        "required": [
+          "refs"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "headline": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "enum": [
+                    "done",
+                    "failed",
+                    "unknown",
+                    "skipped"
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "label",
+                "outcome",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "undoCapability": {
+            "type": "string"
+          },
+          "undoMinutes": {
+            "type": "integer"
+          },
+          "undoInput": {}
+        },
+        "required": [
+          "headline",
+          "rows"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "incidents.lookup",
+      "kind": "read",
+      "title": "Läs tillbaka en åtgärd",
+      "description": "Om en åtgärd med ett givet operations-id finns i avvikelsesystemets logg, och vad den gav.",
+      "model": false,
+      "scope": {},
+      "input": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "operationId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "found": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "headline": {
+                "type": "string"
+              },
+              "rows": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "ref": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "outcome": {
+                      "enum": [
+                        "done",
+                        "failed",
+                        "unknown",
+                        "skipped"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ref",
+                    "label",
+                    "outcome",
+                    "detail"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "undoCapability": {
+                "type": "string"
+              },
+              "undoMinutes": {
+                "type": "integer"
+              },
+              "undoInput": {}
+            },
+            "required": [
+              "headline",
+              "rows"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "found"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

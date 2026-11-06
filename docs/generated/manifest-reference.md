@@ -960,7 +960,7 @@ Example:
 {
   "strategy": "deduplicated",
   "retentionSeconds": 86400,
-  "lookup": "hr.absenceByOperation"
+  "lookup": "hr.lookup"
 }
 ```
 
@@ -1001,7 +1001,7 @@ This connector's read that takes `{ operationId }` and answers `{ found, result?
 Example:
 
 ```json
-"hr.absenceByOperation"
+"hr.lookup"
 ```
 
 #### `capabilities[].name`
@@ -1711,33 +1711,6 @@ The fact kinds this connector creates (D55), each prefixed with its id.
 - optional
 - Constraints: at most 50 items
 
-Example:
-
-```json
-[
-  {
-    "kind": "hr:absence",
-    "title": "Sjukfrånvaro",
-    "attributes": {
-      "type": "object",
-      "properties": {
-        "from": {
-          "type": "string",
-          "format": "date"
-        },
-        "to": {
-          "type": "string",
-          "format": "date"
-        }
-      },
-      "required": [
-        "from"
-      ]
-    }
-  }
-]
-```
-
 #### `facts[].kind`
 
 `<connector id>:<kind>`, stable: the name is the contract.
@@ -1774,23 +1747,6 @@ JSON Schema of the fact's attributes. A follower receives exactly these; a new o
 
 - Type: object (free keys)
 - required
-
-Example:
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "from": {
-      "type": "string",
-      "format": "date"
-    }
-  },
-  "required": [
-    "from"
-  ]
-}
-```
 
 ### delegation
 

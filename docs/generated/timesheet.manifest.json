@@ -1,0 +1,477 @@
+{
+  "protocol": 2,
+  "id": "timesheet",
+  "kind": "passthrough",
+  "source": "Tidrapporteringen",
+  "uses": [],
+  "scan": false,
+  "areas": [
+    {
+      "id": "staffing",
+      "title": "Bemanning",
+      "icon": "clock",
+      "roles": [
+        "manager"
+      ],
+      "standing": [
+        "timesheet.today"
+      ],
+      "schedules": [
+        {
+          "label": "Pass som saknar bemanning",
+          "when": "Varje vardag 06:00"
+        }
+      ]
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "timesheet.today",
+      "kind": "read",
+      "title": "Dagens pass",
+      "description": "Dagens schemarader för enheten och vilka som är markerade som frånvaro.",
+      "model": true,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "person": {
+                  "type": "string"
+                },
+                "start": {
+                  "type": "string"
+                },
+                "end": {
+                  "type": "string"
+                },
+                "ward": {
+                  "type": "string"
+                },
+                "absent": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "ref",
+                "person",
+                "start",
+                "end",
+                "ward",
+                "absent"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "date",
+          "rows"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "table",
+        "title": "person",
+        "ref": "ref",
+        "modelReads": "summary",
+        "empty": "Inga schemarader i dag.",
+        "fields": [
+          {
+            "key": "person",
+            "label": "Medarbetare"
+          },
+          {
+            "key": "start",
+            "label": "Börjar"
+          },
+          {
+            "key": "end",
+            "label": "Slutar"
+          },
+          {
+            "key": "ward",
+            "label": "Avdelning"
+          },
+          {
+            "key": "absent",
+            "label": "Frånvaro"
+          }
+        ]
+      }
+    },
+    {
+      "name": "timesheet.followAbsence",
+      "kind": "propose",
+      "title": "Markera frånvaro",
+      "description": "Vad tidrapporteringen gör när en medarbetare blir sjuk: markerar dagen som frånvaro.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "follows": [
+        "hr:absence"
+      ],
+      "input": {
+        "type": "object",
+        "properties": {
+          "fact": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*:[a-z][a-zA-Z0-9-]*$",
+                "maxLength": 80
+              },
+              "ref": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 400
+              },
+              "attributes": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "kind",
+              "attributes"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "fact"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "steps": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "execute"
+                },
+                "operation": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
+                  "maxLength": 80
+                },
+                "payload": {},
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "detail": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                }
+              },
+              "required": [
+                "kind",
+                "operation",
+                "payload",
+                "title"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "steps"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "timesheet.markAbsence",
+      "kind": "execute",
+      "title": "Markera frånvaro",
+      "description": "Markerar en dag som frånvaro i tidrapporteringen.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "execution": {
+        "strategy": "deduplicated",
+        "retentionSeconds": 86400,
+        "lookup": "timesheet.lookup"
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "person": {
+            "type": "string",
+            "pattern": "^hr:emp:[0-9]+$"
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          }
+        },
+        "required": [
+          "person",
+          "date"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "headline": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "enum": [
+                    "done",
+                    "failed",
+                    "unknown",
+                    "skipped"
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "label",
+                "outcome",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "undoCapability": {
+            "type": "string"
+          },
+          "undoMinutes": {
+            "type": "integer"
+          },
+          "undoInput": {}
+        },
+        "required": [
+          "headline",
+          "rows"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "timesheet.unmarkAbsence",
+      "kind": "execute",
+      "title": "Ta bort markeringen",
+      "description": "Tar bort en frånvaromarkering inom ångerfönstret.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "execution": {
+        "strategy": "deduplicated",
+        "retentionSeconds": 86400,
+        "lookup": "timesheet.lookup"
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^timesheet:absence:"
+            }
+          }
+        },
+        "required": [
+          "refs"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "headline": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "enum": [
+                    "done",
+                    "failed",
+                    "unknown",
+                    "skipped"
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "label",
+                "outcome",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "undoCapability": {
+            "type": "string"
+          },
+          "undoMinutes": {
+            "type": "integer"
+          },
+          "undoInput": {}
+        },
+        "required": [
+          "headline",
+          "rows"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "timesheet.lookup",
+      "kind": "read",
+      "title": "Läs tillbaka en markering",
+      "description": "Om en åtgärd med ett givet operations-id finns i tidrapporteringens logg, och vad den gav.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "operationId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "found": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "headline": {
+                "type": "string"
+              },
+              "rows": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "ref": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "outcome": {
+                      "enum": [
+                        "done",
+                        "failed",
+                        "unknown",
+                        "skipped"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ref",
+                    "label",
+                    "outcome",
+                    "detail"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "undoCapability": {
+                "type": "string"
+              },
+              "undoMinutes": {
+                "type": "integer"
+              },
+              "undoInput": {}
+            },
+            "required": [
+              "headline",
+              "rows"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "found"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}
