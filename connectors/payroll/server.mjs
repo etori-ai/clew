@@ -1,4 +1,4 @@
-// Serves connector.mjs over HTTP. Environment: PORT (4045), CLEW_CONNECTOR_SECRET, CLEW_URL, HR_FEED_URL and
+// Serves connector.mjs over HTTP. Environment: PORT (4046), CLEW_CONNECTOR_SECRET, CLEW_URL, HR_FEED_URL and
 // FIXTURE_FEED_KEY (the HR fixture's feed payroll imports from), FIXTURE_TODAY, FIXTURE_FAULT, FIXTURE_UNIT_MAP.
 import { createServer } from 'node:http';
 import { createConnector, httpFeed } from './connector.mjs';
@@ -47,7 +47,7 @@ const server = createServer(async (req, res) => {
     res.destroy();
   }
 });
-server.listen(Number(env.PORT ?? 4045), '0.0.0.0', () =>
+server.listen(Number(env.PORT ?? 4046), '0.0.0.0', () =>
   console.log(
     `payroll connector listening on :${server.address().port}${env.FIXTURE_FAULT ? ` (fault: ${env.FIXTURE_FAULT})` : ''}`,
   ),

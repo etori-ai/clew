@@ -191,6 +191,7 @@ services:
       - timesheet_state:/state
     ports:
       - "127.0.0.1:4044:4044"
+  # 4046, not 4045: the fetch standard lists 4045 among the ports a client refuses, and Node's fetch follows it.
   payroll:
     <<: *fixture
     working_dir: /workspace/connectors/payroll
@@ -204,7 +205,7 @@ services:
       hr:
         condition: service_started
     ports:
-      - "127.0.0.1:4045:4045"
+      - "127.0.0.1:4046:4046"
 
 volumes:
   node_modules:

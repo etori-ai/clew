@@ -27,7 +27,7 @@ export const FIXTURES: Array<[id: string, port: number]> = [
   ['incidents', 4042],
   ['communication', 4043],
   ['timesheet', 4044],
-  ['payroll', 4045],
+  ['payroll', 4046],
 ];
 const secret = process.env.CLEW_DEV_CONNECTOR_SECRET;
 if (!secret) {

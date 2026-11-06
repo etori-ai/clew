@@ -4,7 +4,7 @@ The payroll system of a municipality as the development stack and the unit suite
 payroll reads the HR system itself, once a night, so Clew only watches that a sick report shows up and says so when it
 does not (D55 item 8). A kind of system, not a product (D52). An independent Node service behind the connector protocol
 that imports nothing from the rest of the repository (D21); the shape is [hr](../hr/README.md)'s without writes (`PORT`
-is 4045; there is no store to speak of, no scan and no figure).
+is 4046; there is no store to speak of, no scan and no figure).
 
 A manager of the unit gets the area `payroll` with `payroll.absences`, the sick reports the nightly import has brought
 over, as a table. `payroll.absenceStatus` is the read a watch repeats: `registered` once the report for that person and
@@ -22,7 +22,7 @@ reads answer 503 rather than inventing a status.
 | ----------------------- | ---------------------------------------------------------------------------- |
 | `CLEW_CONNECTOR_SECRET` | The transport key shared with Clew, 16 characters or more. Required          |
 | `CLEW_URL`              | The trusted Clew base URL, for the public keys that verify assertions. Required |
-| `PORT`                  | Default 4045                                                                 |
+| `PORT`                  | Default 4046                                                                 |
 | `HR_FEED_URL`           | The HR fixture's feed, `http://hr:4040/fixture/absences` in the stack. Required |
 | `FIXTURE_FEED_KEY`      | The key the HR fixture expects on the feed                                   |
 | `FIXTURE_TODAY`         | A fixed day (`YYYY-MM-DD`) instead of the clock                               |

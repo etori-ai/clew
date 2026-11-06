@@ -81,7 +81,10 @@ ok(
 );
 const fact = { kind: 'hr:absence', attributes: { person, from: today, extent: 100 } };
 const proposal = await api('/api/jobs/assemble', { fact });
-console.log('  sources:', proposal.sources.map((s: any) => `${s.source}:${s.status}`).join(' '));
+console.log(
+  '  sources:',
+  proposal.sources.map((s: any) => `${s.source}:${s.status}${s.reason ? ' (' + s.reason + ')' : ''}`).join(' '),
+);
 console.log(
   '  steps:',
   proposal.steps.map((s: any) => `${s.id} ${s.draft.kind} ${s.draft.operation} "${s.draft.title}"`).join('\n         '),
@@ -150,7 +153,7 @@ const card = await until(
   Date.parse(watch.expiresAt) + 90_000,
 );
 console.log(`  card: "${card.title}" · ${card.summary}`);
-ok(card.area === 'lon', "the card is filed under payroll's area");
+ok(card.area === 'payroll', "the card is filed under payroll's area");
 const final = await api('/api/jobs/' + approved.id);
 const w = final.steps.find((s: any) => s.kind === 'watch');
 ok(w.state === 'expired' && w.observations >= 3, `the watch is expired after ${w.observations} observations`);
