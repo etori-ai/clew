@@ -13,6 +13,7 @@ import {
   type BusyPeriods,
 } from './model';
 import { stamp, validWindow } from './dates';
+import { readLimited } from './http';
 
 const xml = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true, parseTagValue: false, htmlEntities: true });
 type Node = Record<string, unknown>;
@@ -87,22 +88,8 @@ export class NextcloudProvider implements CalendarProvider {
         ...headers,
       },
     });
-    const reader = response.body?.getReader();
-    let raw = '',
-      count = 0;
-    const decoder = new TextDecoder();
-    if (reader)
-      while (true) {
-        const part = await reader.read();
-        if (part.done) break;
-        count += part.value.byteLength;
-        if (count > 512000) {
-          await reader.cancel();
-          throw new CalendarError('För många kalenderuppgifter. Välj en kortare period.');
-        }
-        raw += decoder.decode(part.value, { stream: true });
-      }
-    return { status: response.status, body: raw + decoder.decode(), etag: response.headers.get('etag') ?? '' };
+    const raw = await readLimited(response, 512000);
+    return { status: response.status, body: raw, etag: response.headers.get('etag') ?? '' };
   }
   private async discover() {
     return (this.discovery ??= (async () => {

@@ -4,7 +4,7 @@ import type { AuthenticatedContext } from '../../packages/contracts/src';
 import { fakeGraph, fakeGraphToken, type FakeGraphOptions } from '../../packages/calendar/src/fake-graph';
 import { Microsoft365Provider } from '../../packages/calendar/src/microsoft365';
 import { createCalendarProvider } from '../../packages/calendar/src/adapters';
-import { CalendarError } from '../../packages/calendar/src/model';
+import { CalendarError, type MeetingInput } from '../../packages/calendar/src/model';
 import { calendarExecutionSource } from '../../apps/server/src/modules/calendar/usecases/decisions';
 import { memoryExecutionStore } from '../../apps/server/src/modules/executions/adapters/memory';
 import { executionUsecases } from '../../apps/server/src/modules/executions/usecases';
@@ -97,9 +97,7 @@ describe('a room answers after the booking', () => {
   });
 });
 
-test('the approval flow books a room through the execution ledger and reads the booking back', async () => {
-  const w = world();
-  const room = (await w.hillevi.resources())[0]!;
+async function approved(w: ReturnType<typeof world>, input: MeetingInput) {
   const actor: AuthenticatedContext = {
     id: 'hillevi',
     name: 'Hillevi Berg',
@@ -128,20 +126,35 @@ test('the approval flow books a room through the execution ledger and reads the 
     ids: () => `e${++n}`,
     digest: value => createHash('sha256').update(JSON.stringify(value)).digest('hex'),
   });
-  const input = { title: 'Planering', start, end, participants: ['anna@clew.test'], room: room.ref };
   const execution = await executions.approve(actor, {
     decisionId: 'book',
     operation: 'calendar.createEvent',
     payload: { items: [{ id: 'event', label: 'Planering', action: 'create', input }] },
   });
   await executions.progress(execution.id);
-  expect(await executions.read(actor, execution.id)).toMatchObject({
+  return executions.read(actor, execution.id);
+}
+const planning = { title: 'Planering', start, end, participants: ['anna@clew.test'] };
+
+test('the approval flow books a room through the execution ledger and reads the booking back', async () => {
+  const w = world();
+  const room = (await w.hillevi.resources())[0]!;
+  expect(await approved(w, { ...planning, room: room.ref })).toMatchObject({
     state: 'succeeded',
     result: { rows: [{ ref: 'event', outcome: 'done' }] },
   });
   const [booked] = await w.hillevi.list(dayStart, dayEnd);
   expect(booked).toMatchObject({ title: 'Planering', room: 'Eken', roomResponse: 'accepted' });
   expect(booked!.uid).toStartWith('clew-exec-');
+});
+
+test('a booking offers no undo while its room has yet to answer, since the answer changes the revision', async () => {
+  const w = world({ roomDelayMs: 2000, now: () => 0 });
+  const room = (await w.hillevi.resources())[0]!;
+  const waiting = await approved(w, { ...planning, room: room.ref });
+  expect(waiting).toMatchObject({ state: 'succeeded' });
+  expect(waiting?.result?.undoCapability).toBeUndefined();
+  expect((await approved(world(), planning))?.result?.undoCapability).toBe('calendar.undoProposals');
 });
 
 describe('failures of the source', () => {
@@ -198,6 +211,18 @@ describe('failures of the source', () => {
     await expect(w.hillevi.lookup('nextcloud:abc')).rejects.toThrow('Ogiltig kalenderreferens.');
     await expect(w.hillevi.lookup('microsoft365:id:ab=c')).rejects.toThrow('Ogiltig kalenderreferens.');
   });
+  test('an accepted invitation reads as accepted while Graph has only queued the answer', async () => {
+    const graph = fakeGraph(directory);
+    const url = serve(request =>
+      new URL(request.url).pathname.endsWith('/accept') ? new Response(null, { status: 202 }) : graph.fetch(request),
+    );
+    const hillevi = person(url, 'hillevi@clew.test'),
+      anna = person(url, 'anna@clew.test');
+    await hillevi.create('queued-1', { ...input, participants: ['anna@clew.test'] });
+    const [invitation] = await anna.list(dayStart, dayEnd);
+    const accepted = await anna.accept(invitation!.ref, invitation!.revision);
+    expect(accepted.participants.find(p => p.email === 'anna@clew.test')?.response).toBe('accepted');
+  });
   test('the fake answers a call it does not implement with 501', async () => {
     const w = world();
     const response = await fetch(`${w.url}/me/messages`, {
@@ -244,6 +269,16 @@ describe('the Graph vocabulary, from the documented response shapes', () => {
       ]),
     ).list(dayStart, dayEnd);
     expect(event).toMatchObject({ allDay: true, start: '2030-05-06', end: '2030-05-07' });
+  });
+  test('an all-day time that is not a UTC midnight is refused rather than moved to another day', async () => {
+    const shifted = {
+      ...base,
+      type: 'singleInstance',
+      isAllDay: true,
+      start: { dateTime: '2030-05-05T22:00:00.0000000', timeZone: 'UTC' },
+      end: { dateTime: '2030-05-06T22:00:00.0000000', timeZone: 'UTC' },
+    };
+    await expect(provider(replying([shifted])).list(dayStart, dayEnd)).rejects.toThrow('ogiltiga tider');
   });
   test('a cancelled copy is gone, and a time outside UTC is refused rather than guessed', async () => {
     expect(await provider(replying([{ ...base, isCancelled: true }])).list(dayStart, dayEnd)).toEqual([]);

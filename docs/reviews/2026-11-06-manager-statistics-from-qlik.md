@@ -28,7 +28,7 @@ payroll and finance sources
   → data warehouse on SQL Server (sadb051: DW_MART, EDW)
   → Qlik Sense apps (not traced; see open questions)
   → a Qlik export built by the supplier Mindcamp, daily
-  → \\saas066.personal.sundsvall.se\Kommun\kpidata_{RR,Personal}_förvaltning_YYYY-MM-DD.csv
+  → <internal file share>\kpidata_{RR,Personal}_förvaltning_YYYY-MM-DD.csv
   → CronJob import-ekonomi 07:00, import-sjukfranvaro 07:20, Europe/Stockholm
       python -m app.smb_import --kind … (NTLM service account, SMB3 encryption)
   → POST /api/import/{kind}-filer on the backend with an import token
@@ -50,8 +50,8 @@ architecture document also says that the production extract's R12 basis must sti
 
 ## What runs on the Qlik side
 
-Sundsvall runs **Qlik Sense Enterprise on Windows**, on its own servers: production at `beslutsstod.sundsvall.se`, test
-at `saas713.personal.sundsvall.se`. A read-only test on 2026-08-21 used Windows authentication and met a self-signed
+Sundsvall runs **Qlik Sense Enterprise on Windows**, on its own servers, one for production and one for test.
+A read-only test on 2026-08-21 used Windows authentication and met a self-signed
 certificate. That test belongs to the consultant work for the municipal companies in `bi-qlik-bolagen`, which never
 connects to production. It says nothing about the Kommun apps behind this export.
 

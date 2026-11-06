@@ -1,6 +1,7 @@
 import {
   CalendarError,
   invitedParticipant,
+  sameEmail,
   type Availability,
   type BusyPeriods,
   type CalendarAccount,
@@ -10,8 +11,10 @@ import {
   type Participant,
   type ParticipantResponse,
   type Resource,
+  type RoomResponse,
 } from './model';
 import { validWindow } from './dates';
+import { readLimited } from './http';
 
 /**
  * Microsoft 365 through Microsoft Graph v1.0 (D11). Only `/me` and `/places` are called, so a person reaches nothing
@@ -57,13 +60,19 @@ interface GraphReply {
 const encode = (value: string) => Buffer.from(value).toString('base64url');
 const idRef = (id: string) => `microsoft365:id:${encode(id)}`;
 const uidRef = (uid: string) => `microsoft365:uid:${encode(uid)}`;
-const sameEmail = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const utc = (value: string) => ({ dateTime: new Date(value).toISOString().replace(/Z$/, ''), timeZone: 'UTC' });
 function instant(time: GraphTime | undefined) {
   if (time?.timeZone !== 'UTC' || !time.dateTime) throw new CalendarError('Kalendern svarade med ogiltiga tider.');
   const at = Date.parse(/[zZ]$/.test(time.dateTime) ? time.dateTime : `${time.dateTime}Z`);
   if (Number.isNaN(at)) throw new CalendarError('Kalendern svarade med ogiltiga tider.');
   return new Date(at).toISOString();
+}
+/** The calendar's all-day form is a date with an exclusive end. Anything but a UTC midnight is refused, not guessed (D61). */
+function allDayDate(time: GraphTime | undefined) {
+  const value = time?.dateTime ?? '';
+  if (time?.timeZone !== 'UTC' || !/^\d{4}-\d{2}-\d{2}T00:00:00(\.0+)?$/.test(value))
+    throw new CalendarError('Kalendern svarade med ogiltiga tider.');
+  return value.slice(0, 10);
 }
 /** Graph's response vocabulary to the provider-neutral one. */
 function participantResponse(response: string | undefined): ParticipantResponse {
@@ -83,30 +92,11 @@ function participantResponse(response: string | undefined): ParticipantResponse 
       return 'unknown';
   }
 }
-async function limited(response: Response) {
-  const reader = response.body?.getReader();
-  const decoder = new TextDecoder();
-  let raw = '',
-    count = 0;
-  if (reader)
-    while (true) {
-      const part = await reader.read();
-      if (part.done) break;
-      count += part.value.byteLength;
-      if (count > maxBody) {
-        await reader.cancel();
-        throw new CalendarError('För många kalenderuppgifter. Välj en kortare period.');
-      }
-      raw += decoder.decode(part.value, { stream: true });
-    }
-  return raw + decoder.decode();
-}
 
 export class Microsoft365Provider implements CalendarProvider {
   /** Whether a room refuses a conflict is a setting on its mailbox, which Clew cannot read. */
   capabilities = { create: true, cancel: true, accept: true, recurringRead: true, exclusiveRooms: false };
   account: CalendarAccount;
-  private calendar?: Promise<string>;
   private base: URL;
   constructor(
     private token: () => Promise<string>,
@@ -142,7 +132,7 @@ export class Microsoft365Provider implements CalendarProvider {
           ...headers,
         },
       });
-      const raw = await limited(response);
+      const raw = await readLimited(response, maxBody);
       const wait = Number(response.headers.get('retry-after') ?? Number.NaN);
       // Only a read is repeated: a write that may have landed is settled by reading it back.
       if (reads && attempt < 2 && [429, 503].includes(response.status) && wait <= maxWaitSeconds) {
@@ -190,6 +180,11 @@ export class Microsoft365Provider implements CalendarProvider {
       };
     });
     const room = participants.find(p => p.resource);
+    const roomResponse: RoomResponse = !room
+      ? 'none'
+      : room.response === 'accepted' || room.response === 'declined'
+        ? room.response
+        : 'pending';
     const allDay = Boolean(event.isAllDay);
     return {
       id: ref,
@@ -197,21 +192,17 @@ export class Microsoft365Provider implements CalendarProvider {
       revision: event['@odata.etag'],
       uid: clewUid ?? event.iCalUId ?? event.id,
       title: event.subject || 'Möte',
-      // The calendar's all-day form is a date with an exclusive end, which Graph's midnights already give.
-      start: allDay ? (event.start?.dateTime ?? '').slice(0, 10) : instant(event.start),
-      end: allDay ? (event.end?.dateTime ?? '').slice(0, 10) : instant(event.end),
+      start: allDay ? allDayDate(event.start) : instant(event.start),
+      end: allDay ? allDayDate(event.end) : instant(event.end),
       allDay,
       recurring,
       organizer,
       organizerName: event.organizer?.emailAddress?.name ?? '',
       canCancel: !recurring && sameEmail(organizer, this.account.email),
-      room: room?.name || room?.email || '',
+      // A room that said no is not the meeting's room. On CalDAV the attendee disappears, here it stays on the list.
+      room: roomResponse === 'declined' ? '' : room?.name || room?.email || '',
       participants,
-      roomResponse: !room
-        ? 'none'
-        : room.response === 'accepted' || room.response === 'declined'
-          ? room.response
-          : 'pending',
+      roomResponse,
     };
   }
   /** The event behind a reference, or null when this mailbox has no such event. */
@@ -240,16 +231,10 @@ export class Microsoft365Provider implements CalendarProvider {
     return source && !source.isCancelled ? { id: source.id!, event: this.occurrence(source) } : null;
   }
   async primaryCalendar() {
-    return (this.calendar ??= this.send('/me/calendar', 'GET')
-      .then(reply => {
-        if (reply.status !== 200 || typeof reply.json.id !== 'string')
-          throw new CalendarError('Kalenderkontot är inte tillgängligt.');
-        return reply.json.id;
-      })
-      .catch(error => {
-        this.calendar = undefined;
-        throw error;
-      }));
+    const reply = await this.send('/me/calendar', 'GET');
+    if (reply.status !== 200 || typeof reply.json.id !== 'string')
+      throw new CalendarError('Kalenderkontot är inte tillgängligt.');
+    return reply.json.id;
   }
   async eventRef(uid: string) {
     return uidRef(uid);
@@ -419,9 +404,13 @@ export class Microsoft365Provider implements CalendarProvider {
       throw new CalendarError('Inbjudan har ändrats. Öppna mötet igen innan du svarar.');
     if (saved.status !== 202)
       throw new CalendarError('Svaret kunde inte bekräftas. Kontrollera status innan du försöker igen.');
+    // 202 only queues the answer, so a read-back may still show the old one; the copy returned shows what was sent.
     const accepted = await this.lookup(ref);
-    if (!accepted || invitedParticipant(accepted, this.account)?.response !== 'accepted')
-      throw new CalendarError('Svaret kunde inte bekräftas.');
-    return accepted;
+    if (!accepted) throw new CalendarError('Svaret kunde inte bekräftas.');
+    const own = invitedParticipant(accepted, this.account);
+    return {
+      ...accepted,
+      participants: accepted.participants.map(p => (p === own ? { ...p, response: 'accepted' as const } : p)),
+    };
   }
 }

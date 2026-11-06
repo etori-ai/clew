@@ -15,7 +15,7 @@ export type CalendarCredential =
   /**
    * Microsoft 365 through Microsoft Graph. Exchange Online has no CalDAV endpoint and EWS is retired from
    * October 2026. `token` yields a delegated Graph access token for the account's user; see
-   * `docs/architecture/identity.md` for how the BFF obtains it. `url` points at the local fake in development (D61).
+   * `docs/architecture/identity.md` for how the BFF obtains it. The execution ledger calls it without a session (D61). `url` points at the local fake in development (D61).
    */
   | { kind: 'microsoft365'; token: () => Promise<string>; account: { email: string; name: string }; url?: string };
 

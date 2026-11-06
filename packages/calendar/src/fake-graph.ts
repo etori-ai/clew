@@ -4,6 +4,8 @@
  * `scripts/fake-graph.ts` serves it in the devcontainer. It is a test double: it proves the adapter agrees with our
  * reading of the documentation, not that Microsoft behaves this way. A call it does not implement answers 501 on purpose.
  */
+import { sameEmail as same } from './model';
+
 export interface FakePerson {
   email: string;
   name: string;
@@ -50,7 +52,6 @@ interface Meeting {
 const graphError = (status: number, code: string, message: string, headers?: Record<string, string>) =>
   Response.json({ error: { code, message } }, { status, ...(headers ? { headers } : {}) });
 const notImplemented = (what: string) => graphError(501, 'FakeNotImplemented', `The fake does not implement ${what}.`);
-const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const wire = (at: number) => ({
   dateTime: new Date(at).toISOString().replace(/\.(\d{3})Z$/, '.$10000'),
   timeZone: 'UTC',

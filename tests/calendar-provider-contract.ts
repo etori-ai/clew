@@ -33,6 +33,17 @@ const refused = (work: Promise<unknown>) =>
     () => true,
   );
 
+/** A room answers after the booking, so `create` may still say `pending` (D61). */
+async function answered(provider: CalendarProvider, event: EventOccurrence) {
+  const deadline = Date.now() + 20000;
+  let current = event;
+  while (current.roomResponse === 'pending' && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 250));
+    current = (await provider.lookup(event.ref)) ?? current;
+  }
+  return current;
+}
+
 export function calendarProviderContract(name: string, harness: CalendarHarness, base = '2031-03-03') {
   const hour = () => day(base);
   const meeting = (at: ReturnType<typeof hour>, participants: string[] = [], room?: string) => ({
@@ -123,16 +134,17 @@ export function calendarProviderContract(name: string, harness: CalendarHarness,
       const rooms = await provider.resources();
       const room = rooms.find(r => r.name === 'Eken')!;
       expect(room).toMatchObject({ email: 'eken@clew.test', capacity: 6 });
-      const first = await provider.create(harness.uid(), meeting(at, [], room.ref));
+      const first = await answered(provider, await provider.create(harness.uid(), meeting(at, [], room.ref)));
       expect(first.roomResponse).toBe('accepted');
       expect(['Eken', room.email]).toContain(first.room);
       expect(await provider.availability(at(9), at(10), [room])).toEqual([{ ref: room.ref, state: 'busy' }]);
-      const second = await provider.create(harness.uid(), meeting(at, [], room.ref));
+      const second = await answered(provider, await provider.create(harness.uid(), meeting(at, [], room.ref)));
       expect(second.roomResponse).toBe('declined');
+      expect(second.room).toBe('');
       for (const event of [first, second])
         await provider.cancel(event.ref, (await provider.lookup(event.ref))!.revision);
       expect(await refused(provider.create(harness.uid(), meeting(at, [], 'okänt-rum')))).toBe(true);
-    });
+    }, 45000);
     test('a move needs the current revision and keeps the guests', async () => {
       const provider = harness.organizer(),
         at = hour();

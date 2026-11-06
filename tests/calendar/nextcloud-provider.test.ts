@@ -1,4 +1,3 @@
-import { describe } from 'bun:test';
 import { NextcloudProvider } from '../../packages/calendar/src/nextcloud';
 import { calendarProviderContract } from '../calendar-provider-contract';
 
@@ -13,18 +12,17 @@ const running = await fetch(new URL('/status.php', url), { signal: AbortSignal.t
   response => response.ok,
   () => false,
 );
+if (!running) throw new Error(`Nextcloud does not answer at ${url}. Start it with sh scripts/calendar.sh start.`);
 const run = crypto.randomUUID();
 const base = new Date(Date.UTC(2031, 0, 1) + Math.floor(Math.random() * 3000) * 86400000).toISOString().slice(0, 10);
 let uids = 0;
-describe.skipIf(!running)('Nextcloud', () => {
-  calendarProviderContract(
-    'Nextcloud',
-    {
-      organizer: () => person('hillevi'),
-      guest: () => person('anna'),
-      guestEmail: 'anna@clew.test',
-      uid: () => `clew-contract-${run}-${++uids}`,
-    },
-    base,
-  );
-});
+calendarProviderContract(
+  'Nextcloud',
+  {
+    organizer: () => person('hillevi'),
+    guest: () => person('anna'),
+    guestEmail: 'anna@clew.test',
+    uid: () => `clew-contract-${run}-${++uids}`,
+  },
+  base,
+);

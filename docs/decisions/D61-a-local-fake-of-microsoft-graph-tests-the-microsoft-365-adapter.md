@@ -37,14 +37,27 @@ Microsoft behaves that way. Unverified until a tenant run:
 - `If-Match` on `PATCH`, `DELETE` and `accept` is not documented on those pages, so the adapter also compares the
   revision itself before writing, and it treats both `409` and `412` as a stale revision.
 - That `transactionId` stops a duplicate, and that a filter on an extended property sees a new event at once.
-- How an all-day event's time reads under `Prefer: outlook.timezone="UTC"`, and that an attendee's copy keeps its own
-  answer in `responseStatus` while its `attendees` list goes stale.
+- How an all-day event's time reads under `Prefer: outlook.timezone="UTC"`. The adapter refuses anything but a UTC
+  midnight rather than guess a day, so if Graph converts these times, a calendar holding an all-day event fails to
+  load until the adapter is changed.
+- That an attendee's copy keeps its own answer in `responseStatus` while its `attendees` list goes stale.
+- How soon `accept`'s `202` shows in a read. The adapter returns the event with the answer it sent when the read still
+  shows the old one.
 - Whether Sundsvall's rooms are room mailboxes at all, whether they refuse conflicts and how complete `/places` is.
   `exclusiveRooms` therefore stays `false`.
 
-A room's answer changes the organizer's event, and so its revision. The 10-minute undo stores the revision read at
-dispatch, so an undo after the room answered is refused with "Mötet har ändrats" and must be retried from a fresh read.
-The refusal is safe, and CalDAV has the same effect when a guest replies, but it will be met more often here. The
-token path (HANDOVER item 10) is not settled by this decision.
+A room's answer changes the organizer's event, and so its revision. An undo carries the exact revision read at
+dispatch, and the ledger refuses any other payload, so a stale undo cannot be retried from a fresh read. No undo is
+therefore offered while the room's answer is pending, which on Microsoft 365 will usually mean that a booking or a
+move with a room has no undo and the person changes the meeting instead. A guest's reply has the same effect on both
+adapters: the undo is refused and its row stays `unknown`.
+
+A room's answer can also come after the receipt. A room that declined leaves `room` empty, so the calendar stops
+showing it, but nothing yet tells the person. That has to be built before rooms are used for real.
+
+The token path (HANDOVER item 10) is not settled by this decision, but it has one requirement: the execution ledger
+dispatches and reads back without a session (`needsSession: false`), possibly after the person's session has ended. A
+delegated token must therefore be obtainable in the background, or calendar writes must move to `needsSession: true`,
+which leaves decisions already queued at `source-contract-changed`.
 
 **Replaces.** Nothing. It adds a test double and the build status to D11.
