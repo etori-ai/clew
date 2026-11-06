@@ -160,3 +160,33 @@ execute in the protocol, and an execute outside a card would have no receipt, le
 receipt stays the card's. Astryx draws a table's header cells and a `MetadataList`'s labels in its own type; Clew does
 not restyle them (artboard 7 draws them 12 px supporting). `TypeaheadItem` has no end slot, so the `@` row says what
 a thing is under its word, not at the row's end.
+
+**Amended 2026-11-06, the figure's three forms (artboard 3).** Built on `main` with D54 by the session that owns the
+figures. One mapping, `figureItems()` in `packages/ui/src/figure-items.ts` beside `agenda-items.ts`, takes an area's
+figure and its mark to the three forms, drawn by `FigureTile`, `FigureTileSkeleton` and `FigureLine` in
+`packages/ui/src/figure.tsx`. The tone's words are Clew's and fixed: ok is "Lugnt", warn "Bevaka", alert "Behöver dig";
+none draws nothing.
+
+1. **The tile (Läget on Hem, `apps/web/src/components/lage.tsx`).** After the groups, under "Läget · <unit>" at level 3,
+   one tile per area with a figure in the areas' order, in a `Grid` (180 px least, four at most; two across on a
+   phone). The chip top left and the tone top right in an `HStack` that wraps, so the tone goes under the chip when both
+   do not fit: a `StatusDot` with its word, alert as an error `Badge` "Behöver dig" and the card's outline in error. The
+   label in supporting over the value in `display-3` with tabular numbers; then the comparison in supporting, or a
+   neutral `ProgressBar` in its place when the figure has progress; last the view's title with a chevron when it
+   `opens`, and the whole tile is then a `ClickableCard` (low elevation) linking to the view in the panel (`open=`,
+   D50). Without `opens` it is a `Card` with no chevron and no elevation, a group named like the link. A figure without
+   a value is a sentence and never a link. A silent source is the muted card with the chip, a warning `Badge` "Svarar
+   inte", "<source> svarar inte." and "Senast läst 06:00 · försöker igen 12:00". Loading draws four skeletons in the
+   tile's shape. The tile's name is "<area>: <label> <value>, <tone's word>. Öppnar <view>".
+2. **The line (`FigureLine`, `apps/web/src/components/figure-line.tsx`).** The area's glyph, the label in supporting,
+   the value semibold and tabular at body size, the dot with its word, then "· <comparison> · <source> <time>" in
+   supporting; it wraps as words do. Sedan i går draws the figures whose tone is warn or alert this way; under an answer
+   it is mounted by the session that owns the conversation, for the areas the answer's view names.
+3. **The word.** The rail's Hem badge is the worst tone among the person's figures in lower case ("lugnt", "bevaka",
+   "behöver dig"), success, warning, error. The panel tab's word for a view with a figure is left to the views.
+4. **The red outline is a theme variant.** Astryx's Card has tinted variants but no outlined status; the theme adds
+   `card` `variant:alert` (the card background, an inset `--color-border-error` outline) the way it adds the gray and
+   house badges, with module augmentation of `CardVariantMap` in `figure.tsx`. ClickableCard composes Card, so both take it.
+5. **The bar is neutral.** Artboard 3 draws the bar in the text colour; Astryx's `ProgressBar` has no such variant, and
+   accent is the assistant's blue, so the bar is `neutral`.
+

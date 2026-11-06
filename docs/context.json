@@ -688,7 +688,7 @@
       "number": 54,
       "path": "docs/decisions/D54-figures-come-from-connectors-and-laget-draws-them.md",
       "title": "D54 · Figures come from connectors, and Läget draws them",
-      "status": "proposed 2026-11-06, not built; awaiting the product owner's decision",
+      "status": "accepted 2026-11-06 with the canvas D71 builds, built 2026-11-06 on `main`; amended below where the build differs",
       "date": "2026-11-06",
       "area": "integrations, ui"
     },

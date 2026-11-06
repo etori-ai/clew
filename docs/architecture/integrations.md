@@ -74,7 +74,13 @@ Sorted by who owns the data.
 |---|---|---|---|
 | **Core** | Clew's Postgres | users, groups, permissions, threads, audit, jobs | in-process only; no provider interface, they are the system |
 | **Pass-through** | the external system; Clew stores refs, revisions and audit rows only | calendar, HR, finance | behind a Clew provider interface, in-process first, lifted to an MCP server when needed |
-| **Derived** | a snapshot in Clew's Postgres | "Läget" figures, attention counter | in-process, reads pass-through connectors on a schedule |
+| **Derived** | a snapshot in Clew's Postgres | attention counter | in-process, reads pass-through connectors on a schedule |
+
+Läget's figures are not derived (D54): each is an area's, answered by its connector on `POST /clew/figure` (label,
+tone, and optionally value, comparison, progress and `opens`, a read of the same connector whose view needs no
+input), read through the registry when Hem reads the areas, and drawn by Clew in three forms (D71's amendment). A
+connector that does not answer is the registry's one warning figure (D8); an administrator switches an area's figure
+off per connector on the Områden tab.
 
 Users and permissions are core. SCIM 2.0 provisioning is an **inbound** interface on them: Clew is the SCIM
 server, the IdP (Keycloak or Entra) is the client. SCIM users and groups land in Clew's own tables, Clew

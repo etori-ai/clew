@@ -19,7 +19,7 @@ connector, and imports nothing from the rest of the repository (D21). Start with
 ## What it answers
 
 A manager of the unit (role `manager`, unit `unit-skola` after `FIXTURE_UNIT_MAP`) gets the area `employees`: who is at
-work, absence per person with the rehab pattern, the leave requests waiting, the figure "Frånvaro n %", and the cards
+work, absence per person with the rehab pattern, the leave requests waiting, the figure "Sjukfrånvaro n %" against the target, opening absence per person (D54), and the cards
 the scan pushes (a rehab talk to book, each leave request to decide). An employee the HR system knows (by person id
 after `FIXTURE_PERSON_MAP`) gets `my-shift`: today's shift, the balance, a delegation about to expire, the own leave
 request waiting on the manager. A manager of another unit gets the same reads over an empty unit, never a denial.

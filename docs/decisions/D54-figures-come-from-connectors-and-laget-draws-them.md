@@ -1,6 +1,6 @@
 # D54 · Figures come from connectors, and Läget draws them
 
-**Status:** proposed 2026-11-06, not built; awaiting the product owner's decision · **Date:** 2026-11-06 · **Area:** integrations, ui
+**Status:** accepted 2026-11-06 with the canvas D71 builds, built 2026-11-06 on `main`; amended below where the build differs · **Date:** 2026-11-06 · **Area:** integrations, ui
 
 **Decision.** Läget on Hem shows the figures the person's connectors answer, not a list fixed in Clew's code. The
 figure is the connector's, by area and by role; Clew decides where and how it is drawn, and an administrator decides
@@ -57,9 +57,46 @@ Läget. Weighed and left:
 - **A chart in the tile.** D38 says `series` needs its own decision because Astryx has no chart component; a figure
   with a progress bar is as far as this goes.
 
-**Replaces.** When accepted: the figures module named in [D20](D20-modular-monolith-ports-and-adapters.md) and the
+**Replaces.** The figures module named in [D20](D20-modular-monolith-ports-and-adapters.md) and the
 "derived snapshot" wording for Läget in [D3](D03-three-module-kinds.md) and `docs/architecture/integrations.md`;
 `FigureSchema` in `@clew/contracts`. Builds on [D21](D21-integrations-are-module-services.md),
 [D22](D22-connectors-not-modules.md), [D38](D38-views-are-declared-by-connectors-and-drawn-by-clew.md) (the `figures`
 view kind it lists as not built), [D40](D40-views-can-be-tools-in-the-menu-and-an-administrator-chooses-which.md) and
 [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md), which place Läget on Hem.
+
+**Amended 2026-11-06, as built.** Built with artboard 3 of the canvas (D71's amendment says how the three forms are
+drawn). Where the build differs from the text above or settles what it left open:
+
+1. **The figure's shape.** `FigureSchema` in `packages/connectors/src/protocol.ts` (published in
+   `docs/protocol/connector-protocol.schema.json`): `label` and `tone` as before, optional `value` (one number and its
+   unit, a string the connector formats: "4,2 %", "14 av 23"), `comparison`, `progress { value, max }` and `opens` (a
+   capability name). Without a value the label is the whole figure as a sentence ("Inget nytt sedan i går."), drawn
+   without a tone word unless the tone says one, and never as a link even when it names `opens`. `FigureSchema` in
+   `@clew/contracts` is gone; the browser gets `AreaFigureSchema` on `Area.figure`: the connector's answer with `opens`
+   resolved to `{ capability, title }`, the time Clew read it (`observedAt`, for the line's "Personalsystemet 06:00"),
+   and `unavailable: true` on the warning figure.
+2. **The warning figure is the registry's.** A connector that throws, answers an error or answers outside the shape is
+   one figure, "<source> svarar inte." in warn with `unavailable`, made in `Registry.areas`, for a bundled connector as
+   for a remote one (`remote.ts` now throws instead of building the warning itself). The tile says when the source last
+   answered (the card read's source status) and when Clew tries again (the next review or bundle of the day's rhythm).
+3. **`opens` is checked like a menu row.** It must name a read of the same connector whose view opens without input
+   (`menuEligible`, D40); otherwise the registry drops it, keeps the figure, and reports it through `onRefused` with the
+   topic `figure:<area>`, which the connector check fails on. A view the person may not call is dropped silently, as a
+   row's `open` is (D38).
+4. **The switch is stored per area.** `connector.areas` (jsonb, migration `0033_connector_areas`) holds
+   `{ <area>: { figure: false } }`; narrowing only, absent means shown. `PATCH /api/admin/connectors/:id` takes
+   `figures: { <area>: boolean }` and writes one `connector.figure` audit row per area that changed, with the area's
+   title. The registry reads it from the governance (`Governance.areas`) and asks no figure for an area switched off.
+   It sits on the area's row of the Områden tab, as `Switch` "Visa nyckeltalet".
+5. **The demo's figures.** HME is left out. The calendar's figure moved to its `calendar` area for a manager
+   ("Utvecklingssamtal bokade", "14 av 23" from `samtalStatus`, which now also counts the members due a talk), so the
+   chip reads Kalender as artboard 3 draws it; `utvecklingssamtal` has no figure. The HR, economy, deviation, time and
+   communication fixtures answer the artboard's figures from their records (D52): the period's sick leave against the
+   target, the share of the period's frame spent (the economy seed gained `frame`), open incidents with those older than
+   14 days (the deviation seed gained two under investigation), today's booked substitutes, and what was published today.
+   A development stack seeded before this needs `bun run fixtures:reset` for the economy figure.
+6. **The fixed questions.** The router (D8) answers "hur ligger budgeten?" and the like from the areas' figures through
+   the registry, not from the removed module.
+7. **The rail's word.** The Hem row's badge is the worst tone among the person's figures ("lugnt", "bevaka", "behöver
+   dig"); a person with no figure that has a tone keeps the count of what needs them, without the old fixed "lugnt".
+
