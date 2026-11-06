@@ -10,7 +10,7 @@ import {
   test,
 } from './support';
 
-import { manifest as communication } from '../../connectors/communication/manifest.mjs';
+import { manifest as communication } from '../../connectors/communication/connector.mjs';
 
 const title = (text: string) => encodeURIComponent(text);
 const directory = `/?open=phonebook.directory&open-title=${title('Sök i telefonboken')}`;
