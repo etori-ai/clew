@@ -124,6 +124,7 @@ const absenceOverview = {
     title: 'name',
     ref: 'ref',
     modelReads: 'summary',
+    noun: { one: 'medarbetare', other: 'medarbetare' },
     empty: 'Ingen frånvaro de senaste sex månaderna.',
     open: { capability: 'hr.absencePattern', title: 'Mönster', params: { ref: 'ref' } },
     fields: [
@@ -199,12 +200,13 @@ const leaveRequests = {
     title: 'name',
     ref: 'ref',
     modelReads: 'summary',
+    noun: { one: 'ansökan', other: 'ansökningar' },
     empty: 'Inga ledighetsansökningar väntar på beslut.',
     fields: [
       { key: 'name', label: 'Namn' },
       { key: 'from', label: 'Från', format: 'date' },
       { key: 'to', label: 'Till', format: 'date' },
-      { key: 'days', label: 'Dagar', format: 'number' },
+      { key: 'days', label: 'Dagar', format: 'number', unit: { one: 'dag', other: 'dagar' } },
       { key: 'type', label: 'Typ' },
       { key: 'clash', label: 'Krock' },
     ],

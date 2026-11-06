@@ -97,6 +97,7 @@ const directoryCapability = {
     ref: 'ref',
     open: openContactCard,
     modelReads: 'summary',
+    noun: { one: 'kontakt', other: 'kontakter' },
     empty: 'Inga träffar i telefonboken.',
     fields: [
       { key: 'name', label: 'Namn' },
@@ -150,6 +151,7 @@ const teamCapability = {
     ref: 'ref',
     open: openContactCard,
     modelReads: 'summary',
+    noun: { one: 'kontakt', other: 'kontakter' },
     empty: 'Telefonboken har ingen på din enhet.',
     fields: [{ key: 'name', label: 'Namn' }, { key: 'title', label: 'Titel' }, ...contactFields],
   },

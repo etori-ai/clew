@@ -57,6 +57,7 @@ const deviations = {
     kind: 'list',
     title: 'title',
     ref: 'ref',
+    noun: { one: 'avvikelse', other: 'avvikelser' },
     empty: 'Inga öppna avvikelser.',
     fields: [
       { key: 'title', label: 'Titel' },

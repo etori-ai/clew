@@ -10,10 +10,11 @@ export const roomsView: View = {
   kind: 'table',
   title: 'name',
   ref: 'ref',
+  noun: { one: 'rum', other: 'rum' },
   empty: 'Kalendern känner inga rum.',
   fields: [
     { key: 'name', label: 'Rum' },
-    { key: 'capacity', label: 'Platser', format: 'number' },
+    { key: 'capacity', label: 'Platser', format: 'number', unit: { one: 'plats', other: 'platser' } },
     { key: 'equipment', label: 'Utrustning' },
   ],
 };

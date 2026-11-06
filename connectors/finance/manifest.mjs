@@ -53,10 +53,11 @@ const invoices = {
     kind: 'table',
     title: 'supplier',
     ref: 'ref',
+    noun: { one: 'faktura', other: 'fakturor' },
     empty: 'Inga fakturor väntar på attest.',
     fields: [
       { key: 'supplier', label: 'Leverantör' },
-      { key: 'amount', label: 'Belopp', format: 'number' },
+      { key: 'amount', label: 'Belopp', format: 'number', unit: { one: 'kr', other: 'kr' } },
       { key: 'due', label: 'Förfaller', format: 'date' },
       { key: 'order', label: 'Beställning' },
       { key: 'account', label: 'Konto' },

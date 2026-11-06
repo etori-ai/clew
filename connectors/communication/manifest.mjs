@@ -46,16 +46,17 @@ const notices = {
   output: object({
     rows: array(object({ ref: string, title: string, requiresReceipt: boolean, acknowledged: boolean })),
   }),
-  // The view (D38): the notices as a list that says which still need the person's receipt.
+  // The view (D38): the notices as a list that says which still need the person's receipt: one status badge whose word
+  // is the field's label ("Kvitterad", "Inte kvitterad"), in warning only for the receipt still owed (D71).
   view: {
     kind: 'list',
     title: 'title',
     ref: 'ref',
+    noun: { one: 'meddelande', other: 'meddelanden' },
     empty: 'Inga meddelanden just nu.',
     fields: [
       { key: 'title', label: 'Titel' },
-      { key: 'requiresReceipt', label: 'Kräver läskvitto' },
-      { key: 'acknowledged', label: 'Läst' },
+      { key: 'acknowledged', label: 'Kvitterad', format: 'status', tones: { false: 'warn' } },
     ],
   },
 };

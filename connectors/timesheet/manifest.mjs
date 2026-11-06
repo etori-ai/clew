@@ -82,6 +82,7 @@ const today = {
     title: 'person',
     ref: 'ref',
     modelReads: 'summary',
+    noun: { one: 'pass', other: 'pass' },
     empty: 'Inga schemarader i dag.',
     fields: [
       { key: 'person', label: 'Medarbetare' },

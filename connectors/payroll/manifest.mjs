@@ -70,6 +70,7 @@ const absences = {
     title: 'person',
     ref: 'ref',
     modelReads: 'summary',
+    noun: { one: 'sjukanmälan', other: 'sjukanmälningar' },
     empty: 'Ingen sjukanmälan har nått lönesystemet.',
     fields: [
       { key: 'person', label: 'Medarbetare' },
