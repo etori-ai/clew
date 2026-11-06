@@ -1979,6 +1979,23 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-06-a-side-question-beside-the-conversation.md",
+      "title": "Review: a side question beside the running conversation · 2026-11-06",
+      "category": "review-history",
+      "headings": [
+        "What the Claude Code pattern does",
+        "How Clew's column and panel relate today",
+        "What already covers the need",
+        "What a side question would add",
+        "How it sits with D50",
+        "The canvas",
+        "Astryx",
+        "WCAG 2.2 AA",
+        "Recommendation",
+        "Outcome"
+      ]
+    },
+    {
       "path": "docs/reviews/2026-11-06-architecture-and-connectors-second-opinion.md",
       "title": "Second opinion: architecture, connector authoring and shared fact kinds",
       "category": "review-history",
