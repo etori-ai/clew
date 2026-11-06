@@ -420,7 +420,11 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
     // The line (artboard 3): glyph, label, the value at body size, the dot with its word, the comparison and the source with its time.
     const since = page.getByRole('region', { name: 'Sedan i går' });
     await expect(since.getByText('Sjukfrånvaro', { exact: true })).toBeVisible();
-    await expect(since.getByText('· mål ≤ 4,0 % · +0,3 sedan oktober · Personalsystemet 09:00')).toBeVisible();
+    // The rest of the line never starts with a separator, so a wrapped line does not either.
+    await expect(
+      since.getByText('mål ≤ 4,0 % · +0,3 sedan oktober · Personalsystemet 09:00', { exact: true }),
+    ).toBeVisible();
+    await expect(since.getByText('1 äldre än 14 dagar · Avvikelsesystemet 09:00', { exact: true })).toBeVisible();
     await expect(since.getByText('Öppna tillbud', { exact: true })).toBeVisible();
     await expectNoAxeViolations(page);
   });

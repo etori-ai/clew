@@ -44,7 +44,10 @@ export interface FigureLine {
   label: string;
   value?: string;
   tone: ToneWord | null;
-  /** "· mål ≤ 4,0 % · Personalsystemet 06:00": the comparison and the source with the time it was read. */
+  /**
+   * "mål ≤ 4,0 % · Personalsystemet 06:00": the comparison and the source with the time it was read. It starts with no
+   * separator: it is its own piece of the wrapping line, and a separator must never begin a line (the gap sets it off).
+   */
   rest: string;
 }
 export interface FigureForms {
@@ -90,18 +93,18 @@ export function figureItems(
         comparison,
         name: `${mark.title}: ${mark.source} svarar inte`,
       },
-      line: { icon: mark.icon, label: `${mark.source} svarar inte.`, tone: TONE_WORDS.warn, rest: `· ${retry}` },
+      line: { icon: mark.icon, label: `${mark.source} svarar inte.`, tone: TONE_WORDS.warn, rest: retry },
       word: TONE_WORDS.warn,
     };
   }
   const at = figure.observedAt ? ` ${stockholmClock(figure.observedAt)}` : '';
-  const rest = ['', figure.comparison, `${mark.source}${at}`].filter(s => s !== undefined).join(' · ');
+  const rest = [figure.comparison, `${mark.source}${at}`].filter(s => s !== undefined).join(' · ');
   const line: FigureLine = {
     icon: mark.icon,
     label: figure.label,
     ...(figure.value ? { value: figure.value } : {}),
     tone,
-    rest: rest.trim(),
+    rest,
   };
   if (!figure.value)
     return {

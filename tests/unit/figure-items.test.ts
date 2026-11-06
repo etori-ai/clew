@@ -33,7 +33,7 @@ describe('figureItems (D54, artboard 3)', () => {
       label: 'Sjukfrånvaro',
       value: '4,2 %',
       tone: { variant: 'warning', word: 'Bevaka' },
-      rest: '· mål ≤ 4,0 % · +0,3 sedan oktober · Personalsystemet 06:00',
+      rest: 'mål ≤ 4,0 % · +0,3 sedan oktober · Personalsystemet 06:00',
     });
     expect(word).toEqual({ variant: 'warning', word: 'Bevaka' });
   });

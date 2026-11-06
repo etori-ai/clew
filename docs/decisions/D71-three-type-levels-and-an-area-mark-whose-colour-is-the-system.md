@@ -179,8 +179,8 @@ none draws nothing.
    inte", "<source> svarar inte." and "Senast läst 06:00 · försöker igen 12:00". Loading draws four skeletons in the
    tile's shape. The tile's name is "<area>: <label> <value>, <tone's word>. Öppnar <view>".
 2. **The line (`FigureLine`, `apps/web/src/components/figure-line.tsx`).** The area's glyph, the label in supporting,
-   the value semibold and tabular at body size, the dot with its word, then "· <comparison> · <source> <time>" in
-   supporting; it wraps as words do. Sedan i går draws the figures whose tone is warn or alert this way; under an answer
+   the value semibold and tabular at body size, the dot with its word, then "<comparison> · <source> <time>" in
+   supporting; it wraps as words do, and no piece begins with a separator, so a wrapped line never starts with "·". Sedan i går draws the figures whose tone is warn or alert this way; under an answer
    it is mounted by the session that owns the conversation, for the areas the answer's view names.
 3. **The word.** The rail's Hem badge is the worst tone among the person's figures in lower case ("lugnt", "bevaka",
    "behöver dig"), success, warning, error. The panel tab's word for a view with a figure is left to the views.
