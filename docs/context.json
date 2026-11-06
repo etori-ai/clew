@@ -603,6 +603,15 @@
       "area": "ui"
     },
     {
+      "key": "D54-figures-come-from-connectors-and-laget-draws-them",
+      "number": 54,
+      "path": "docs/decisions/D54-figures-come-from-connectors-and-laget-draws-them.md",
+      "title": "D54 · Figures come from connectors, and Läget draws them",
+      "status": "proposed 2026-11-06, not built; awaiting the product owner's decision",
+      "date": "2026-11-06",
+      "area": "integrations, ui"
+    },
+    {
       "key": "D55-a-job-is-assembled-from-what-connectors-follow-approved-once-and-run-per-system",
       "number": 55,
       "path": "docs/decisions/D55-a-job-is-assembled-from-what-connectors-follow-approved-once-and-run-per-system.md",
@@ -1214,6 +1223,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D54-figures-come-from-connectors-and-laget-draws-them.md",
+      "title": "D54 · Figures come from connectors, and Läget draws them",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/D55-a-job-is-assembled-from-what-connectors-follow-approved-once-and-run-per-system.md",
       "title": "D55 · A job is assembled from what connectors follow, approved once, and run as one execution or watch per system",
       "category": "decision-history",
@@ -1643,6 +1658,18 @@
         "Complexity budget",
         "Recommendation",
         "Outcome"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-06-laget-figures-review.md",
+      "title": "Review: where Läget's figures come from, and who should own them · 2026-11-06",
+      "category": "review-history",
+      "headings": [
+        "What the tiles are today",
+        "What the protocol already offers, unused",
+        "What the decisions say",
+        "Findings",
+        "Recommendation"
       ]
     },
     {

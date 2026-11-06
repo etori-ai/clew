@@ -67,6 +67,7 @@ Historical numbering collisions: **D37, D38, D39, D44, D45, D46** each identify 
 | [D51 · The WCAG suite is CI's gate; a change runs its own specs locally](D51-the-wcag-suite-is-cis-gate.md) | platform | 2026-11-05 | accepted |
 | [D52 · The mocks are generic systems; nothing in the repository names a vendor](D52-the-mocks-are-generic-systems-without-vendor-names.md) | integrations | 2026-11-05 | accepted |
 | [D53 · Hem is the start page: the day's work under the box, and the day beside it](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md) | ui | 2026-11-06 | accepted, built 2026-11-06 on branch `hem`; not built: the phone's shift strip (artboard D needs a schedule capability no connector declares), the panel's tabs for everything a conversation has opened (artboards F, H, J), a conversation carrying a job across connectors with a step list (artboard J), and the mark on an earlier conversation that something happened since (artboard H) |
+| [D54 · Figures come from connectors, and Läget draws them](D54-figures-come-from-connectors-and-laget-draws-them.md) | integrations, ui | 2026-11-06 | proposed 2026-11-06, not built; awaiting the product owner's decision |
 | [D55 · A job is assembled from what connectors follow, approved once, and run as one execution or watch per system](D55-a-job-is-assembled-from-what-connectors-follow-approved-once-and-run-per-system.md) | integrations | 2026-11-06 | proposed |
 
 ## Add a decision
