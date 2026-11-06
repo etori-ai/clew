@@ -601,6 +601,15 @@
       "status": "accepted, built 2026-11-06 on branch `hem`; not built: the phone's shift strip (artboard D needs a schedule capability no connector declares), the panel's tabs for everything a conversation has opened (artboards F, H, J), a conversation carrying a job across connectors with a step list (artboard J), and the mark on an earlier conversation that something happened since (artboard H)",
       "date": "2026-11-06",
       "area": "ui"
+    },
+    {
+      "key": "D54-figures-come-from-connectors-and-laget-draws-them",
+      "number": 54,
+      "path": "docs/decisions/D54-figures-come-from-connectors-and-laget-draws-them.md",
+      "title": "D54 · Figures come from connectors, and Läget draws them",
+      "status": "proposed 2026-11-06, not built; awaiting the product owner's decision",
+      "date": "2026-11-06",
+      "area": "integrations, ui"
     }
   ],
   "documents": [
@@ -1205,6 +1214,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D54-figures-come-from-connectors-and-laget-draws-them.md",
+      "title": "D54 · Figures come from connectors, and Läget draws them",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -1612,6 +1627,18 @@
         "Verification",
         "Decisions amended",
         "Not inspected"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-06-laget-figures-review.md",
+      "title": "Review: where Läget's figures come from, and who should own them · 2026-11-06",
+      "category": "review-history",
+      "headings": [
+        "What the tiles are today",
+        "What the protocol already offers, unused",
+        "What the decisions say",
+        "Findings",
+        "Recommendation"
       ]
     },
     {
