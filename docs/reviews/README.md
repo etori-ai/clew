@@ -35,3 +35,4 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Design exploration: the start page's directions, and every path from it · 2026-11-06](2026-11-06-start-page-directions-and-flows.md)
 - [Review: the product owner's Startsidan proof of concept against Clew's core · 2026-11-06](2026-11-06-startsidan-poc-against-clews-core.md)
 - [Review: users, groups, roles and SCIM · 2026-11-06](2026-11-06-users-groups-roles-and-scim.md)
+- [Design pattern: three levels, one area mark, one figure family · 2026-11-06](2026-11-06-visual-hierarchy-area-marks-and-figures.md)

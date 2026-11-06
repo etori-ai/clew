@@ -2209,6 +2209,18 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-06-visual-hierarchy-area-marks-and-figures.md",
+      "title": "Design pattern: three levels, one area mark, one figure family · 2026-11-06",
+      "category": "review-history",
+      "headings": [
+        "What was wrong, read from the code",
+        "The pattern, artboard by artboard",
+        "The remaining surfaces (artboards 6 to 12, added the same evening)",
+        "What it would take",
+        "Decision needed"
+      ]
+    },
+    {
       "path": "docs/reviews/README.md",
       "title": "Reviews and explorations",
       "category": "review-history",
