@@ -16,7 +16,7 @@
   "postCreateCommand": "bun install --frozen-lockfile && bun run db:init",
   "customizations": {
     "vscode": {
-      "extensions": ["dbaeumer.vscode-eslint"]
+      "extensions": ["dbaeumer.vscode-eslint", "esbenp.prettier-vscode"]
     }
   }
 }

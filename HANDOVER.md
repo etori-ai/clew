@@ -159,6 +159,8 @@ Declared views and the phone book connector 2026-11-05 (D38): no new dependency.
 
 Verktyg in the menu 2026-11-05 (D40): no new dependency. Six more outline icons are re-exported from `packages/ui` out of `@heroicons/react` 2.2.0 (MIT, pinned in session 31): `PhoneIcon`, `UsersIcon`, `BookOpenIcon`, `DocumentTextIcon`, `ChartBarIcon`, `LinkIcon`. Astryx's semantic icon names have none of them; they are passed to `SideNavItem` as SVG components, Astryx's documented way, and the gap is recorded in D40.
 
+Code formatting 2026-11-06 (D57): one new development dependency. `npm view` verified `prettier` 3.9.10 MIT, with no runtime dependencies; pinned exactly at the root. The devcontainer also recommends the editor extension `esbenp.prettier-vscode`, MIT by the GitHub licence API.
+
 ## 4. Open questions
 
 Notification follow-up (D39, 2026-11-05): existing reminders and important links first; separate read/unread semantics, retention and other notification kinds remain open.
@@ -257,6 +259,8 @@ clew/
 No `apps/worker`: the Temporal worker runs inside the BFF process (D17).
 
 ## 9. Session log
+
+Prettier (D57), 2026-11-06: the product owner asked whether the repository had a Prettier configuration; it had no formatter at all, so Prettier 3.9.10 was added with `.prettierrc.json` (single quotes, bare arrow parameters, width 120), `bun run format`, and `bun run format:check` as the first step of `bun run check`. The glob covers TypeScript, JavaScript and CSS; Markdown, JSON, YAML and SQL stay out. The first format took two passes and grew the code files from 27,788 to about 56,000 lines. `connectors/telefonbok/manifest.mjs`, uncommitted work from the note below, was held back at first and formatted last at the product owner's word. Verified after formatting: the whole of `bun run check` (format check, typecheck, dependency rules, purity, 365 unit tests, 4 Node tests, documentation) and `bun run build`, the latter before that last file. The WCAG suite, `test:db` and `test:durability` were not run. Open branches, including the worktrees `neutral-tema` and `ux-granskning`, will conflict with the reformat and need `bun run format` before they merge. The reformat is commit `334f580`, listed in `.git-blame-ignore-revs`.
 
 Phone book readability, 2026-11-06: at the product owner's request, moved the declarative contract from `connectors/telefonbok/connector.mjs` to `manifest.mjs`. Each capability now has a named block with expanded input/output and view declarations; `directoryCapability.view.kind` owns the table choice. `connector.mjs` preserves its public exports, expands the read and HTTP flows, names the output mappings, shares the person lookup and removes unused verifier imports and the stale HS256 comment. The Dockerfile copies the new manifest. README and the integrator walkthrough explain where to change views versus source mapping. No source adapter, protocol, authorization or UI behavior changed. Verified under the global resource supervisor in the devcontainer: 38 existing tests across `telefonbok-connector`, `views` and `conversation`; both changed modules pass Node syntax checks; manifest JSON matches the existing generated contract exactly; `bun scripts/docs.ts --check` and dependency rules scoped to `connectors/telefonbok` pass. No full suite, browser tests, server startup or image build was run. No new dependency.
 

@@ -628,6 +628,15 @@
       "status": "accepted",
       "date": "2026-11-06",
       "area": "ui"
+    },
+    {
+      "key": "D57-prettier-formats-the-code-and-check-enforces-it",
+      "number": 57,
+      "path": "docs/decisions/D57-prettier-formats-the-code-and-check-enforces-it.md",
+      "title": "D57 · Prettier formats the code, and `bun run check` enforces it",
+      "status": "accepted",
+      "date": "2026-11-06",
+      "area": "platform"
     }
   ],
   "documents": [
@@ -1246,6 +1255,12 @@
     {
       "path": "docs/decisions/D56-the-rows-under-a-rail-row-hang-from-a-line.md",
       "title": "D56 · The rows under a rail row hang from a line",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D57-prettier-formats-the-code-and-check-enforces-it.md",
+      "title": "D57 · Prettier formats the code, and `bun run check` enforces it",
       "category": "decision-history",
       "headings": []
     },

@@ -16,6 +16,8 @@
     "test:db": "bun test tests/db",
     "test:durability": "bun run --cwd apps/server test:durability",
     "purity": "bun scripts/purity-check.ts",
+    "format": "prettier --write \"**/*.{ts,tsx,mts,mjs,cjs,css}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,mts,mjs,cjs,css}\"",
     "test:node": "bun run --cwd apps/server test:node",
     "test:a11y": "sh scripts/a11y.sh",
     "deps": "depcruise --config .dependency-cruiser.cjs apps/server/src packages connectors scripts tests/unit",
@@ -25,7 +27,7 @@
     "auth:setup": "bun scripts/auth-setup.ts",
     "calendar": "sh scripts/calendar.sh",
     "astryx": "cd packages/ui && node ../../node_modules/@astryxdesign/cli/clients/cli/bin/astryx.mjs",
-    "check": "bun run typecheck && bun run deps && bun run purity && bun run test && bun run test:node && bun run docs:check",
+    "check": "bun run format:check && bun run typecheck && bun run deps && bun run purity && bun run test && bun run test:node && bun run docs:check",
     "docs:generate": "bun scripts/docs.ts",
     "docs:smoke": "bun scripts/docs-smoke.ts",
     "docs:check": "bun scripts/docs.ts --check && bun run docs:smoke"
@@ -53,6 +55,7 @@
     "drizzle-orm": "0.45.4",
     "fast-check": "4.10.2",
     "jose": "6.2.15",
+    "prettier": "3.9.10",
     "typescript": "7.0.2"
   }
 }

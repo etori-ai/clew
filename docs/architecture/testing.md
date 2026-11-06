@@ -82,7 +82,7 @@ and generated modules are removed, and mutated environment variables are restore
 - `scripts/purity-check.ts` (`bun run purity`): no `Date.now()`, `new Date()`, `process.env`, `randomUUID()` or
   `Math.random()` in domain files and use cases. The clock and the id source are `deps.clock` and
   `deps.ids`; the composition root reads configuration.
-- `bun run check` = typecheck, deps, purity, `bun test tests/unit apps/web/tests`, the Node runtime tests and documentation checks. It must never start to
+- `bun run check` = the Prettier format check (D57), typecheck, deps, purity, `bun test tests/unit apps/web/tests`, the Node runtime tests and documentation checks. It must never start to
   need the stack; `.github/workflows/check.yml` runs it with `--no-deps`.
 - `bun test` does not use `mock.module`. A mocked import hides the dependency the rules are meant to expose; a fake
   behind a port is the same dependency made visible.
