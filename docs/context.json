@@ -1445,7 +1445,9 @@
       "path": "docs/decisions/D61-fixture-sources-are-independent-connectors.md",
       "title": "D61 · Fixture sources are independent connectors in the development stack; Clew bundles only its core",
       "category": "decision-history",
-      "headings": []
+      "headings": [
+        "Cutover and verification amendment, 2026-11-06"
+      ]
     },
     {
       "path": "docs/decisions/README.md",
@@ -1579,6 +1581,7 @@
       "category": "maintainer-guide",
       "headings": [
         "Run it",
+        "Reset fixture data deliberately",
         "Source of runtime versions"
       ]
     },
@@ -1870,6 +1873,22 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-06-architecture-and-connectors-second-opinion.md",
+      "title": "Second opinion: architecture, connector authoring and shared fact kinds",
+      "category": "review-history",
+      "headings": [
+        "Implementation follow-through, 2026-11-06",
+        "Updated assessment: independent fixture connector plan (2026-11-06)",
+        "Original assessment at 598c9f2",
+        "Could the whole architecture be simpler?",
+        "Can an integrator actually build a connector?",
+        "Second opinion on the proposed shared kinds",
+        "Dependency visibility and validation",
+        "Recommended next investment",
+        "Evidence and limits"
+      ]
+    },
+    {
       "path": "docs/reviews/2026-11-06-cross-system-work-stress-test.md",
       "title": "Stress test: one event, work in several systems",
       "category": "review-history",
@@ -1881,6 +1900,19 @@
         "Findings",
         "What must not be built",
         "Complexity budget",
+        "Recommendation",
+        "Outcome"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-06-fact-kinds-ownership-and-dependency-visibility.md",
+      "title": "Fact kinds: who owns them, who defines them, and what breaks when a dependency goes down",
+      "category": "review-history",
+      "headings": [
+        "Assessment",
+        "Basis and limits",
+        "Findings",
+        "What must not be built",
         "Recommendation",
         "Outcome"
       ]

@@ -64,3 +64,18 @@ scope now see the connector's declarative roles plus its own narrowing over the 
 **Replaces.** D52's location of the mocks in `packages/connectors/src/mock/` and its exceptions for the names
 `kommunikation` and `telefonbok`; the "mocks until they are lifted" clauses in D22 and D23's administration design; the
 open item 12 of the session-1 list in `HANDOVER.md`. D52's naming rule stands.
+
+## Cutover and verification amendment, 2026-11-06
+
+Bootstrap and fixture-binding defaults require the explicit nonproduction `CLEW_POC=true` environment. Bootstrap fills
+missing rows and preserves existing administrator configuration; manifest refresh and binding changes are explicit.
+
+A development reset is a source replacement, not recovery. With BFF/worker and source processes stopped, it retires old
+executions, blocks watches, cancels reminders and archives card grouping keys before erasing the five writable source
+volumes. Receipts and uncertain outcomes are retained; `source-reset` prevents replay and undo against fresh source
+records. Existing legacy fixture execution contracts require this explicit cutover. No fixture ids enter the core.
+
+The Node lane now exercises real service processes: a proxy drops the HTTP response after the source commits, the
+source is killed and restarted on its SQLite file, lookup returns the receipt, retry does not repeat the decision,
+and scan/undo agree. A separate scenario verifies HR's authenticated HTTP feed, payroll's next-day visibility, unit
+access and source unavailability. These are protocol/source tests; they do not establish a real vendor integration.

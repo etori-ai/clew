@@ -49,6 +49,7 @@ export function undoable(
 ): boolean {
   return (
     !!original &&
+    original.reason !== 'source-reset' &&
     original.personId === personId &&
     original.connector === connector &&
     ['succeeded', 'partial'].includes(original.state) &&

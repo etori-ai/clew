@@ -20,7 +20,7 @@ The manifest declares `delegation: { audience: "eneo" }`. On every call Clew tra
 bound to the audience `eneo` (RFC 8693 token exchange) and sends it in `X-Clew-Delegated-Token` beside the assertion.
 The connector forwards that token as `Authorization: Bearer` to Eneo and nothing else: no Origin, no cookie, no header
 from the incoming request. Without the header it answers `denied`, which Clew's composite reports as "Eneo svarade inte"
-for that source. The token lives about a minute; the connector never stores it and never retries after a 401.
+for that source. The token lives about a minute; the connector never stores it and never retries after a 401. Each search and document fetch rechecks current source access; source documents and collection lists are not cached across requests. A missing source record is omitted from search, while an authorization failure or source outage fails that source visibly.
 
 ## What Eneo needs
 
@@ -60,6 +60,5 @@ The live checker needs the installation database/master key and expects denied d
 and enables standard token exchange on `clew-web`. `bun scripts/auth-exchange-check.ts` logs in as `hillevi` and
 shows the exchanged token's claims through `eneo.whoami`.
 
-Environment: `CLEW_CONNECTOR_SECRET`, `CLEW_URL` (trusted Clew base URL for public signing keys), `ENEO_URL`, `PORT` (4011), `ENEO_COLLECTIONS_TTL_SECONDS` (300: how long a
-person's collection list and a document's title are remembered). The tests are `tests/unit/eneo-connector.test.ts`,
+Environment: `CLEW_CONNECTOR_SECRET`, `CLEW_URL` (trusted Clew base URL for public signing keys), `ENEO_URL`, `PORT` (4011). The former `ENEO_COLLECTIONS_TTL_SECONDS` setting is no longer used. The tests are `tests/unit/eneo-connector.test.ts`,
 against recorded Eneo answers.

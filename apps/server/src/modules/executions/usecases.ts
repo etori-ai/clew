@@ -401,7 +401,8 @@ export function executionUsecases({ store, source, watch, clock, ids, digest }: 
     const at = clock().toISOString();
     const e = await store.transaction(async tx => {
       const row = await tx.lock(id);
-      if (!row || ['succeeded', 'partial', 'failed'].includes(row.state)) return undefined;
+      if (!row || row.reason === 'source-reset' || ['succeeded', 'partial', 'failed'].includes(row.state))
+        return undefined;
       if (row.state === 'running' && row.leaseUntil && row.leaseUntil > at) return 'busy' as const;
       const next: Execution = {
         ...row,
@@ -495,7 +496,7 @@ export function executionUsecases({ store, source, watch, clock, ids, digest }: 
     const at = clock().toISOString();
     await store.transaction(async tx => {
       const e = await tx.lock(id);
-      if (!e || !['pending', 'unknown'].includes(e.state)) return;
+      if (!e || e.reason === 'source-reset' || !['pending', 'unknown'].includes(e.state)) return;
       await tx.enqueue({
         id: 'reconcile:' + id + ':' + e.attempt,
         executionId: id,

@@ -61,11 +61,11 @@ docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts --list
 
 Use the administration UI to narrow the audience before enabling a real integration. `connector-add.ts <id> --enable` enables an existing registration; the CLI does not run the entire conformance suite. Registration lives in PostgreSQL, with a sealed transport secret and audit; the running server reconciles it without a rebuild or restart. A connector missing governance is not callable.
 
-A connector that follows a fact kind (D55, `follows` on a `propose`) runs nothing until an administrator binds it. Until the administration page has bindings, the CLI is the way: one row per fact kind and follower with its audit row, default deny. The `--mocks` form binds the bundled mocks' followers of `hr:absence` with a short payroll window so a watch can be seen expiring in development; `scripts/jobs-check.ts` on the host then runs the scenario end to end as the manager.
+A connector that follows a fact kind (D55, `follows` on a `propose`) runs nothing until an administrator binds it. Until the administration page has bindings, the CLI is the way: one row per fact kind and follower with its audit row, default deny. The `--fixtures` form binds the development fixture connectors' followers of `hr:absence` with a short payroll window so a watch can be seen expiring in development; `scripts/jobs-check.ts` on the host then runs the scenario end to end as the manager.
 
 ```sh
 docker exec -w /workspace clew-app-1 bun scripts/job-bind.ts hr:absence payroll.followAbsence --within PT4H
-docker exec -w /workspace clew-app-1 bun scripts/job-bind.ts --mocks
+docker exec -w /workspace clew-app-1 bun scripts/job-bind.ts --fixtures
 docker exec -w /workspace clew-app-1 bun scripts/job-bind.ts --list
 bun scripts/jobs-check.ts
 ```

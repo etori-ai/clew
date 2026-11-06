@@ -2,13 +2,15 @@
  * The development chain (D61): registers and enables the six fixture connectors that `.devcontainer/compose.yaml` runs
  * beside Clew, and binds their followers of `hr:absence` (D55), idempotently. Runs inside the app container, where the
  * services are reachable by name; `postCreateCommand` runs it after the migrations, and `bun run dev:connectors` runs it
- * again whenever a manifest changed. The transport secret is the one compose gives the services, CLEW_DEV_CONNECTOR_SECRET.
+ * again to fill missing registrations. Existing configuration is preserved; refresh manifests explicitly in administration. The transport secret is the one compose gives the services, CLEW_DEV_CONNECTOR_SECRET.
  *
  *   bun scripts/dev-connectors.ts [--within PT3M] [--host <name or address, default: the service names>]
  */
+import { requireFixtureDevelopment } from './fixture-development';
+import { assertFixtureCutover } from './fixture-maintenance';
 import { resolve } from 'node:path';
 import { closeDatabase } from '@clew/db';
-import { registerConnector } from './connector-registry';
+import { registerConnector, listConnectors } from './connector-registry';
 import { bindFixtureFollowers, describeBinding } from './job-bindings';
 
 try {
@@ -16,6 +18,7 @@ try {
 } catch {
   /* settings may come from the environment */
 }
+requireFixtureDevelopment();
 const args = process.argv.slice(2);
 const option = (name: string) => {
   const i = args.indexOf('--' + name);
@@ -57,15 +60,18 @@ async function waitForManifest(url: string, seconds = 60) {
 }
 
 try {
+  await assertFixtureCutover();
+  const existingIds = new Set((await listConnectors()).map(row => row.id));
   for (const [id, port] of FIXTURES) {
     const url = urlOf(id, port);
-    await waitForManifest(url);
-    const { manifest, existing, state } = await registerConnector({ id, url, secret, enable: true });
+    if (!existingIds.has(id)) await waitForManifest(url);
+    const { manifest, existing, state } = await registerConnector({ id, url, secret, enable: true, ifMissing: true });
     console.log(
-      `${id.padEnd(14)} ${existing ? 'updated' : 'added'} as ${state}: ${manifest.source}, ${manifest.capabilities.length} capabilities, ${manifest.areas.length} areas`,
+      `${id.padEnd(14)} ${existing ? 'kept' : 'added'} as ${state}: ${manifest.source}, ${manifest.capabilities.length} capabilities, ${manifest.areas.length} areas`,
     );
   }
-  for (const result of await bindFixtureFollowers(option('within') ?? 'PT3M')) console.log(describeBinding(result));
+  for (const result of await bindFixtureFollowers(option('within') ?? 'PT3M', true))
+    console.log(describeBinding(result));
 } finally {
   await closeDatabase();
 }

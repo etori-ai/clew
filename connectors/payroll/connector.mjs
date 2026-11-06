@@ -2,12 +2,14 @@
 // reads the HR system itself, once a night, through the HR fixture's feed (D55 item 8, propagation stays in the
 // systems), so Clew only watches that a sick report shows up and says so when it does not. A report registered in the HR
 // system reaches payroll the day after it was made; nothing a person does in Clew moves it faster.
-import { createHash } from 'node:crypto';
+import { employees } from './fixture.mjs';
 import { createVerifier } from './verification.mjs';
 import { manifest, CONNECTOR } from './manifest.mjs';
 import { memoryState } from './state.mjs';
 
 export { manifest };
+
+class Denied extends Error {}
 
 export const FAULTS = ['', 'unavailable', 'slow', 'unauthorized'];
 const json = (body, status = 200) =>
@@ -46,18 +48,22 @@ export function createConnector({
   const verify = createVerifier({ secret, jwks, clewUrl, fetch: fetchImpl }, CONNECTOR);
   const today = () => dateIn(clock());
   const unitOf = actor => unitMap[actor.unitId] ?? actor.unitId;
-  void state;
+  const staff = actor => employees.filter(e => e.unitId === unitOf(actor));
+  const requirePerson = (actor, person) => {
+    if (!staff(actor).some(e => e.ref === person)) throw new Denied('Du saknar behörighet för medarbetaren.');
+  };
 
   /** What the nightly import has brought over: every report the HR system registered before today. */
-  async function imported() {
+  async function imported(actor) {
     const day = today();
     const rows = await feed();
-    return rows.filter(r => typeof r.at === 'string' && dateIn(new Date(r.at)) < day);
+    const allowed = new Set(staff(actor).map(e => e.ref));
+    return rows.filter(r => allowed.has(r.person) && typeof r.at === 'string' && dateIn(new Date(r.at)) < day);
   }
 
   const reads = {
-    'payroll.absences': async () => ({
-      rows: (await imported()).map(r => ({
+    'payroll.absences': async actor => ({
+      rows: (await imported(actor)).map(r => ({
         ref: r.ref,
         person: r.person,
         from: r.from,
@@ -66,8 +72,11 @@ export function createConnector({
         importedAt: dateIn(new Date(r.at)),
       })),
     }),
-    'payroll.absenceStatus': async (_actor, input) => {
-      const hit = (await imported()).find(r => r.person === input.person && r.from <= input.date && r.to >= input.date);
+    'payroll.absenceStatus': async (actor, input) => {
+      requirePerson(actor, input.person);
+      const hit = (await imported(actor)).find(
+        r => r.person === input.person && r.from <= input.date && r.to >= input.date,
+      );
       return {
         status: hit ? 'registered' : 'pending',
         person: input.person,
@@ -75,9 +84,10 @@ export function createConnector({
         checkedAt: clock().toISOString(),
       };
     },
-    'payroll.followAbsence': async (_actor, input) => {
+    'payroll.followAbsence': async (actor, input) => {
       const a = input.fact.attributes;
       if (typeof a.person !== 'string' || typeof a.from !== 'string') return { steps: [] };
+      requirePerson(actor, a.person);
       return {
         steps: [
           {
@@ -117,11 +127,11 @@ export function createConnector({
     if (!declared || !reads[name]) return fail('not-found', 'Okänd förmåga.', 404);
     if (declared.scope.roles && !declared.scope.roles.includes(actor.role))
       return fail('denied', 'Du saknar behörighet för åtgärden.', 403);
-    void unitOf(actor);
     try {
       const input = body && typeof body.input === 'object' && body.input ? body.input : {};
       return json({ output: await reads[name](actor, input) });
     } catch (error) {
+      if (error instanceof Denied) return fail('denied', error.message, 403);
       // The HR feed is down: payroll cannot say, and says so, rather than inventing a status.
       console.error(error);
       return fail('unavailable', 'Lönesystemet svarar inte just nu.', 503);

@@ -4,6 +4,7 @@
  * instead of adding a twin. The row and its audit row go in one transaction; the job assembler reads the rows on every
  * call, so a binding made here counts from the next job on.
  */
+import { requireFixtureDevelopment } from './fixture-development';
 import { randomUUID } from 'node:crypto';
 import { postgresFollowBindingStore } from '../apps/server/src/modules/jobs/adapters/postgres';
 import type { FollowBinding, FollowBindingInput } from '../apps/server/src/modules/jobs/contracts';
@@ -22,10 +23,11 @@ export function bindingProblem(input: FollowBindingInput): string | undefined {
   return undefined;
 }
 
-export async function bindFollower(input: FollowBindingInput, enabled = true) {
+export async function bindFollower(input: FollowBindingInput, enabled = true, ifMissing = false) {
   const problem = bindingProblem(input);
   if (problem) throw new Error(problem);
   const existing = (await bindingStore.list(input.kind)).find(b => b.capability === input.capability);
+  if (existing && ifMissing) return { binding: existing, existing: true, preserved: true };
   const at = new Date().toISOString();
   const binding: FollowBinding = {
     id: existing?.id ?? randomUUID(),
@@ -57,16 +59,17 @@ export async function bindFollower(input: FollowBindingInput, enabled = true) {
  * The fixture connectors' offer (D55): the HR system registers the report, time reporting marks the shift, payroll is only
  * watched. The window is short in development so a watch can be seen expiring.
  */
-export async function bindFixtureFollowers(within = 'PT3M') {
+export async function bindFixtureFollowers(within = 'PT3M', ifMissing = false) {
+  requireFixtureDevelopment();
   const results = [];
   for (const input of [
     { kind: 'hr:absence', capability: 'hr.proposeAbsence', audience: { mode: 'all' as const } },
     { kind: 'hr:absence', capability: 'timesheet.followAbsence', audience: { mode: 'all' as const } },
     { kind: 'hr:absence', capability: 'payroll.followAbsence', audience: { mode: 'all' as const }, within },
   ])
-    results.push(await bindFollower(input, true));
+    results.push(await bindFollower(input, true, ifMissing));
   return results;
 }
 
-export const describeBinding = ({ binding, existing }: Awaited<ReturnType<typeof bindFollower>>) =>
-  `${existing ? 'Changed' : 'Added'} ${binding.kind} -> ${binding.capability}${binding.within ? ' within ' + binding.within : ''} (${binding.id})${binding.enabled ? '' : ', disabled'}`;
+export const describeBinding = ({ binding, existing, preserved }: Awaited<ReturnType<typeof bindFollower>>) =>
+  `${preserved ? 'Kept' : existing ? 'Changed' : 'Added'} ${binding.kind} -> ${binding.capability}${binding.within ? ' within ' + binding.within : ''} (${binding.id})${binding.enabled ? '' : ', disabled'}`;

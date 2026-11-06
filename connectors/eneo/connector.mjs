@@ -1,7 +1,7 @@
 // The Eneo connector (D14, D26): Eneo's retrieval over the person's knowledge bases as a search source for Clew. One
 // file, no dependencies beyond Node, built the way a third party builds a connector (connectors/hello is the reference).
 // It acts as the person: Clew sends an IdP token bound to the audience "eneo" beside its assertion, and every call to
-// Eneo carries that token and nothing else. Nothing of Eneo's text is kept here; a collection list is cached for a while.
+// Eneo carries that token and nothing else. Nothing of Eneo's text is kept here; a source read checks the person's current access.
 import { createVerifier, callbackFor, b64 } from './verification.mjs';
 
 const CONNECTOR = 'eneo';
@@ -66,7 +66,7 @@ export const manifest = {
   delegation: { audience: 'eneo' },
 };
 
-// --- the assertion Clew sends: HS256 JWT, iss "clew", aud = this connector id, sub = the person id.
+// The verifier checks the installation-signed RS256 assertion; Eneo checks the delegated token independently.
 
 /** The claims of a JWT, read without verification: for `whoami` only, so an operator can see what Eneo is handed. */
 export function decodeClaims(token) {
@@ -84,8 +84,7 @@ const clip = (text, limit) => {
 };
 
 /**
- * Build the service. `eneoUrl` is Eneo's API base (the `/api/v1` prefix is added here), `fetch`, `now` and the cache TTL are
- * injectable for tests. Every request to Eneo is built from scratch: the person's token, `accept`, `content-type`, never an
+ * Build the service. `eneoUrl` is Eneo's API base (the `/api/v1` prefix is added here), `fetch` is injectable for tests. Source responses are not cached across requests. Every request to Eneo is built from scratch: the person's token, `accept`, `content-type`, never an
  * Origin and never a header from the incoming request.
  */
 export function createConnector({
@@ -93,14 +92,10 @@ export function createConnector({
   secret,
   eneoUrl = process.env.ENEO_URL ?? '',
   fetch: fetchImpl = globalThis.fetch,
-  ttlSeconds = Number(process.env.ENEO_COLLECTIONS_TTL_SECONDS ?? 300),
-  now = Date.now,
   perCallMs = 2000,
 } = {}) {
   const verify = createVerifier({ secret, jwks, clewUrl: process.env.CLEW_URL ?? '' }, CONNECTOR);
   const base = eneoUrl.replace(/\/+$/, '') + '/api/v1';
-  const collectionsCache = new Map(); // actor id -> { at, collections }
-  const blobCache = new Map(); // info blob id -> { at, blob }
   const json = (body, status = 200) =>
     new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   const fail = (code, message, status) => json({ error: { code, message } }, status);
@@ -130,6 +125,7 @@ export function createConnector({
       throw unavailable();
     }
     if (r.status === 401 || r.status === 403) throw denied();
+    if (r.status === 404) throw new EneoError('not-found', 'Dokumentet eller samlingen finns inte längre i Eneo.');
     if (!r.ok) throw unavailable();
     try {
       return await r.json();
@@ -138,26 +134,24 @@ export function createConnector({
     }
   }
   const items = page => (Array.isArray(page?.items) ? page.items : []);
-  /** The collections the person may search: every space they are in, with its knowledge. Cached per person for the TTL. */
-  async function collectionsFor(actor, token) {
-    const cached = collectionsCache.get(actor.id);
-    if (cached && now() - cached.at < ttlSeconds * 1000) return cached.collections;
+  /** Resolve current source access on every request, including when permissions changed since the last search. */
+  async function collectionsFor(token) {
     const spaces = items(await eneo(token, '/spaces/?include_personal=true'));
     const knowledge = await Promise.all(
-      spaces.map(s => eneo(token, `/spaces/${encodeURIComponent(s.id)}/knowledge/`).catch(() => null)),
+      spaces.map(s =>
+        eneo(token, `/spaces/${encodeURIComponent(s.id)}/knowledge/`).catch(error => {
+          if (error.code === 'not-found') return null;
+          throw error;
+        }),
+      ),
     );
     const collections = knowledge.flatMap((k, i) =>
       items(k?.groups).map(g => ({ id: g.id, name: g.name, space: spaces[i]?.name ?? '' })),
     );
-    collectionsCache.set(actor.id, { at: now(), collections });
     return collections;
   }
   async function blob(token, id) {
-    const cached = blobCache.get(id);
-    if (cached && now() - cached.at < ttlSeconds * 1000) return cached.blob;
-    const b = await eneo(token, `/info-blobs/${encodeURIComponent(id)}/`);
-    blobCache.set(id, { at: now(), blob: b });
-    return b;
+    return eneo(token, `/info-blobs/${encodeURIComponent(id)}/`);
   }
   const hitOf = (b, text, extra = {}) => ({
     ref: String(b.id),
@@ -173,7 +167,7 @@ export function createConnector({
     /** Eneo searches one collection at a time; every collection the person may see is asked at once and the best chunks win. */
     'eneo.search': async (actor, input, token) => {
       const limit = input.limit ?? 10;
-      const collections = await collectionsFor(actor, token);
+      const collections = await collectionsFor(token);
       const searched = await Promise.all(
         collections.map(c =>
           eneo(token, `/groups/${encodeURIComponent(c.id)}/searches/`, {
@@ -181,7 +175,10 @@ export function createConnector({
             body: JSON.stringify({ search_string: input.query, num_chunks: 5, rerank: false }),
           })
             .then(page => items(page).map(chunk => ({ chunk, collection: c })))
-            .catch(() => []),
+            .catch(error => {
+              if (error.code === 'not-found') return [];
+              throw error;
+            }),
         ),
       );
       const chunks = searched
@@ -193,7 +190,8 @@ export function createConnector({
         [...new Set(chunks.map(x => x.chunk.info_blob_id))].map(async id => {
           try {
             blobs.set(id, await blob(token, id));
-          } catch {
+          } catch (error) {
+            if (error.code !== 'not-found') throw error;
             /* a blob that vanished is left out */
           }
         }),
@@ -240,7 +238,8 @@ export function createConnector({
     try {
       return json({ output: await capability(actor, body.input ?? {}, token) });
     } catch (error) {
-      if (error instanceof EneoError) return fail(error.code, error.message, error.code === 'denied' ? 403 : 503);
+      if (error instanceof EneoError)
+        return fail(error.code, error.message, error.code === 'denied' ? 403 : error.code === 'not-found' ? 404 : 503);
       return fail('unavailable', 'Eneo-anslutningen kunde inte svara.', 503);
     }
   }

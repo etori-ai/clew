@@ -1,11 +1,27 @@
 #!/bin/sh
-# Forget every fixture connector's records and decisions and seed them again from today, then close the cards they had
-# pushed into Clew. Works from the host and from inside the app container (compose.sh finds the daemon either way).
+# Explicit development reset: stop Clew's BFF/worker first. Only fixture source volumes are erased.
 set -eu
 cd "$(dirname "$0")/.."
 SERVICES="hr finance incidents communication timesheet payroll"
+STATEFUL="hr finance incidents communication timesheet"
 PROJECT=${COMPOSE_PROJECT_NAME:-clew}
-sh scripts/compose.sh rm -sf $SERVICES >/dev/null
-for s in $SERVICES; do docker volume rm "${PROJECT}_${s}_state" >/dev/null 2>&1 || true; done
+dev_reset() {
+  if [ -f /.dockerenv ]; then bun scripts/dev-reset.ts "$@";
+  else docker exec -w /workspace clew-app-1 bun scripts/dev-reset.ts "$@"; fi
+}
+# Refuse before stopping or deleting anything unless the development server/worker is stopped.
+dev_reset --check
+# Check Docker access before changing service or ledger state.
+volumes=$(docker volume ls --format '{{.Name}}')
+sh scripts/compose.sh stop $SERVICES
+dev_reset --sources-stopped
+sh scripts/compose.sh rm -f $SERVICES >/dev/null
+for service in $STATEFUL; do
+  volume="${PROJECT}_${service}_state"
+  if printf '%s\n' "$volumes" | grep -Fxq "$volume"; then
+    # A failed removal must fail the reset, not silently retain old records and deduplication results.
+    docker volume rm "$volume" >/dev/null
+  fi
+done
 sh scripts/compose.sh up -d $SERVICES
-if [ -f /.dockerenv ]; then bun scripts/dev-reset.ts; else docker exec -w /workspace clew-app-1 bun scripts/dev-reset.ts; fi
+echo 'Fixture storage is fresh and old work is retired. Start Clew again; existing connector settings are preserved.'

@@ -104,14 +104,11 @@ function stack(options: { token?: string | undefined; fixtures?: Record<string, 
     const hit = fixtures[key];
     return hit ? Response.json(hit) : new Response('', { status: 404 });
   };
-  let now = Date.parse('2026-11-04T10:42:00Z');
   const eneo = createConnector({
     jwks: testJwks,
     secret,
     eneoUrl: 'https://eneo.example/',
     fetch: eneoFetch,
-    now: () => now,
-    ttlSeconds: 300,
   });
   const connectorFetch: FetchLike = (input, init) => eneo.handle(new Request(input, init));
   const registry = new Registry();
@@ -129,9 +126,6 @@ function stack(options: { token?: string | undefined; fixtures?: Record<string, 
     registry,
     calls,
     context,
-    advance: (ms: number) => {
-      now += ms;
-    },
   };
 }
 
@@ -195,23 +189,76 @@ describe('the Eneo connector', () => {
       );
     }
   });
-  test('the collection list and the documents are cached for the TTL, per person', async () => {
-    const { registry, calls, context, advance } = stack();
+  test('rechecks spaces and documents on every search', async () => {
+    const { registry, calls, context } = stack();
     await registry.run(hassan, 'eneo.search', { query: 'fall' }, context);
     const before = calls.length;
     await registry.run(hassan, 'eneo.search', { query: 'avvikelse' }, context);
-    // Only the searches and the vanished blob (a miss is not cached) are asked again; the list and the known document are remembered.
-    expect(
-      calls
-        .slice(before)
-        .map(c => c.key)
-        .filter(k => !k.startsWith('POST')),
-    ).toEqual(['GET /api/v1/info-blobs/blob-gone/']);
-    advance(301_000);
-    const mid = calls.length;
-    await registry.run(hassan, 'eneo.search', { query: 'fall' }, context);
-    expect(calls.slice(mid).map(c => c.key)).toContain('GET /api/v1/spaces/?include_personal=true');
-    expect(calls.slice(mid).map(c => c.key)).toContain('GET /api/v1/info-blobs/blob-fall/');
+    const repeated = calls.slice(before).map(c => c.key);
+    expect(repeated).toContain('GET /api/v1/spaces/?include_personal=true');
+    expect(repeated).toContain('GET /api/v1/info-blobs/blob-fall/');
+  });
+  test('a prior document read grants no access to another user or a user whose access was revoked', async () => {
+    let revoked = false;
+    const calls: string[] = [];
+    const service = createConnector({
+      jwks: testJwks,
+      secret,
+      eneoUrl: 'https://eneo.example',
+      fetch: async (_url: string, init?: RequestInit) => {
+        const token = new Headers(init?.headers).get('authorization')!;
+        calls.push(token);
+        return token === 'Bearer allowed' && !revoked
+          ? Response.json(eneoFixtures['GET /api/v1/info-blobs/blob-fall/'])
+          : new Response('', { status: 403 });
+      },
+    });
+    const call = async (actor: Actor, token: string) =>
+      service.handle(
+        new Request('http://eneo/clew/capabilities/eneo.fetch', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer ' + (await (await testAuthority()).assert('eneo', actor)),
+            'x-clew-connector-key': secret,
+            'x-clew-delegated-token': token,
+          },
+          body: JSON.stringify({ actor, input: { ref: 'blob-fall' } }),
+        }),
+      );
+    expect((await call(hassan, 'allowed')).status).toBe(200);
+    expect((await call({ ...hassan, id: 'other-user' }, 'denied')).status).toBe(403);
+    revoked = true;
+    expect((await call(hassan, 'allowed')).status).toBe(403);
+    expect(calls).toEqual(['Bearer allowed', 'Bearer denied', 'Bearer allowed']);
+  });
+  test('an outage during knowledge, search or document retrieval is unavailable, not an empty success', async () => {
+    for (const failedPath of ['/spaces/sp-1/knowledge/', '/groups/col-rutiner/searches/', '/info-blobs/blob-fall/']) {
+      const service = createConnector({
+        jwks: testJwks,
+        secret,
+        eneoUrl: 'https://eneo.example',
+        fetch: async (url: string, init?: RequestInit) => {
+          const path = new URL(url).pathname + new URL(url).search;
+          if (path.endsWith(failedPath)) return new Response('', { status: 503 });
+          const data = eneoFixtures[(init?.method ?? 'GET') + ' ' + path];
+          return data ? Response.json(data) : new Response('', { status: 404 });
+        },
+      });
+      const response = await service.handle(
+        new Request('http://eneo/clew/capabilities/eneo.search', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer ' + (await (await testAuthority()).assert('eneo', hassan)),
+            'x-clew-connector-key': secret,
+            'x-clew-delegated-token': 'allowed',
+          },
+          body: JSON.stringify({ input: { query: 'fall' } }),
+        }),
+      );
+      expect(response.status).toBe(503);
+    }
   });
   test("fetch returns one document by its ref; whoami shows the token's claims and nothing else", async () => {
     const { registry, context } = stack();

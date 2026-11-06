@@ -30,3 +30,5 @@ reads answer 503 rather than inventing a status.
 | `FIXTURE_UNIT_MAP`      | JSON object, Clew unit id to the payroll system's unit id                      |
 
 `tests/unit/payroll-connector.test.ts` runs it over the protocol with an in-process feed from the HR fixture.
+
+Payroll keeps its own synthetic employee directory in `fixture.mjs`. Reads and watches use the verified actor’s mapped unit; unknown or out-of-unit person refs are refused. Feed rows outside that directory are never returned.

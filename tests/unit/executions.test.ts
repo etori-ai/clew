@@ -191,6 +191,36 @@ describe('approved source execution', () => {
     expect(new Set(calls).size).toBe(1);
     expect(w.store.outbox()[0]?.deliveredAt).not.toBeNull();
   });
+
+  test('source retirement retains an unknown outcome but fences queued progress and reconciliation', async () => {
+    const w = world();
+    const e = await w.approve();
+    w.loseReply();
+    await w.uc.progress(e.id);
+    await w.store.transaction(async tx => {
+      const row = (await tx.lock(e.id))!;
+      await tx.update({ ...row, reason: 'source-reset', expiresAt: w.clock().toISOString(), attempt: row.attempt + 1 });
+    });
+    const deliveries = w.store.outbox().length;
+    expect(await w.uc.progress(e.id)).toBe('done');
+    await w.uc.reconcile(persona, e.id);
+    expect(w.store.outbox()).toHaveLength(deliveries);
+    expect(w.writes()).toBe(1);
+    expect(await w.uc.read(persona, e.id)).toMatchObject({ state: 'unknown', reason: 'source-reset' });
+  });
+  test('source retirement preserves a receipt while making its old compensation unavailable', async () => {
+    const w = world(),
+      e = await w.approve();
+    await w.uc.progress(e.id);
+    const original = (await w.store.read(e.id))!;
+    const { undoable } = await import('../../apps/server/src/modules/executions/domain');
+    const withUndo = { ...original, result: { ...result, undoCapability: 'test.undo', undoMinutes: 10 } };
+    expect(undoable(withUndo, persona.id, 'test.undo', 'test', w.clock().toISOString())).toBe(true);
+    expect(
+      undoable({ ...withUndo, reason: 'source-reset' }, persona.id, 'test.undo', 'test', w.clock().toISOString()),
+    ).toBe(false);
+  });
+
   test('transaction failure rolls back approval, audit and outbox together', async () => {
     const w = world();
     const original = w.store.transaction;

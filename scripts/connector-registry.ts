@@ -7,7 +7,7 @@
 import { database } from '@clew/db';
 import { writeAudit } from '@clew/db/threads';
 import { deleteConnector, insertConnector, listConnectors, readConnector, updateConnector } from '@clew/db/connectors';
-import { fetchManifest } from '../packages/connectors/src/remote';
+import { fetchManifest, parseManifest } from '../packages/connectors/src/remote';
 import { sealSecret } from '../apps/server/src/auth-crypto';
 import { secretPurpose } from '../apps/server/src/connectors/remote';
 
@@ -15,18 +15,28 @@ export { listConnectors };
 const actor = 'bootstrap:connector';
 
 /** Add a connector or update its address and secret; `enable` makes it live, otherwise it is or stays a draft. */
-export async function registerConnector(options: { id: string; url: string; secret: string; enable?: boolean }) {
+export async function registerConnector(options: {
+  id: string;
+  url: string;
+  secret: string;
+  enable?: boolean;
+  ifMissing?: boolean;
+}) {
   const { id, secret } = options;
   const url = options.url.replace(/\/+$/, '');
   if (!/^[a-z][a-z0-9-]*$/.test(id))
     throw new Error(`Invalid connector id ${id}: lowercase letters, digits and hyphens.`);
   if (secret.length < 16) throw new Error('The transport secret must be 16 characters or more.');
+  const existing = await readConnector(id);
+  if (existing?.bundled)
+    throw new Error('Connector ' + id + ' is still bundled. Complete the fixture cutover before registration.');
+  if (existing && options.ifMissing) {
+    if (!existing.manifest) throw new Error('Existing connector ' + id + ' has no manifest; refresh it explicitly.');
+    return { manifest: parseManifest(existing.manifest, id), existing: true, state: existing.state };
+  }
   const manifest = await fetchManifest(url, id);
   const sealed = sealSecret(secret, secretPurpose(id));
   const state = options.enable ? ('enabled' as const) : ('draft' as const);
-  const existing = await readConnector(id);
-  if (existing?.bundled)
-    throw new Error(`Connector ${id} is bundled with this Clew and cannot be registered as a remote one.`);
   await database().transaction(async tx => {
     if (existing)
       await updateConnector(tx, id, actor, {
