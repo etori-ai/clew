@@ -77,7 +77,7 @@ export interface CalendarProvider {
   reschedule(ref: string, revision: string, start: string, end: string): Promise<EventOccurrence>;
   cancel(ref: string, revision: string): Promise<void>;
 }
-const sameEmail = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+export const sameEmail = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 export function invitedParticipant(event: EventOccurrence, account: CalendarAccount) {
   if (event.recurring || !event.organizer || sameEmail(event.organizer, account.email)) return undefined;
   const matches = event.participants.filter(person => !person.resource && sameEmail(person.email, account.email));

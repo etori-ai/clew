@@ -352,9 +352,12 @@ describe('the obligation (D30)', () => {
       t.proposals.map(p => p.id),
     );
     accept(w, 'anna@clew.test', 'declined');
+    // A source's revision changes with the answer, and the replacement cancels the old invitation with the new one.
+    w.calendar.events.find(e => e.participants.some(p => p.email === 'anna@clew.test'))!.revision = 'answered';
     const read = await w.readReplies(t.id);
     expect(read.declined.length).toBe(1);
     const back = (await w.store.readThread('hillevi', t.id))!;
+    expect(back.proposals.find(p => p.status === 'declined-by-invitee')?.eventRevision).toBe('answered');
     expect(back.thread).toMatchObject({ state: 'open', handledAt: null, deadline: '2026-11-04' });
     const alternatives = back.thread.proposals.filter(p => p.status === 'proposed');
     expect(alternatives.map(p => p.participant.email)).toEqual(['anna@clew.test', 'anna@clew.test']);

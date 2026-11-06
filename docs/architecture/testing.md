@@ -20,6 +20,7 @@ or the network, and CI (`.github/workflows/check.yml`) runs it without the stack
 | A use case (`threads/usecases/*`, later `modules/*/usecases`) | A scenario test: real registry, mock connectors, memory store, a clock the test owns; asserts the state the store ends up in and the audit rows written | `tests/unit/threads.test.ts` or a sibling per use case folder | `bun run check` |
 | A store port (`threads/model.ts`, `modules/calendar/model.ts`, `connectors/model.ts`) or a store adapter | Add a case to that store's contract; it must pass on both adapters | `tests/store-contract.ts`, `tests/proposal-store-contract.ts` and `tests/connector-store-contract.ts`, each run by a `tests/unit/*-store.test.ts` and a `tests/db/postgres-*.test.ts` | `bun run check` (memory) and `bun run test:db` (Postgres) |
 | An adapter for an external system (CalDAV, a remote connector's HTTP, Microsoft Graph) | Parse and translate a recorded response; the protocol's edge cases as fixtures | `tests/unit/<adapter>.test.ts` with fixtures in the test file or `tests/fixtures/` | `bun run check` |
+| A calendar adapter, or a change to `CalendarProvider` | A case in the adapter contract; it must pass on every adapter (D61) | `tests/calendar-provider-contract.ts`, run by `tests/unit/microsoft365.test.ts` over the local fake of Graph and by `tests/calendar/nextcloud-provider.test.ts` | `bun run check` (fake) and `bun run test:calendar` (Nextcloud) |
 | A route | Nothing of its own while it stays thin (parse, validate, call one use case, map errors). Hono's `app.request()` serves a route in process if a test is ever needed | `apps/server/tests/runtime.test.ts` shows the pattern | `bun run test:node` |
 | A connector built here (`connectors/<name>`) | Its own tests inside its folder; the conformance checker `bun scripts/connector-check.ts` against it running | `connectors/<name>/` | the connector's own CI |
 | A view, route or state in the web app | An accessibility test (axe, keyboard, reflow, announcements) | `tests/a11y/` | `sh scripts/a11y.sh`, CI `a11y.yml` |
@@ -27,6 +28,24 @@ or the network, and CI (`.github/workflows/check.yml`) runs it without the stack
 | The web build's configuration boundary (D38 branding isolation) | A focused Vite contract that packages only the small browser configuration entry and asserts its exported value under conflicting environment inputs | `apps/web/tests/branding-config.test.ts`, beside the app that owns Vite | `bun run check` |
 | Durable state across the database and worker/source boundary | Real PostgreSQL contracts and Node/Temporal workflows against an independent synthetic fault source; timer cancellation/replay | `tests/db/`, `apps/server/tests/execution-runtime.test.ts`, `apps/server/tests/timer-runtime.test.ts` | `bun run test:db`, `bun run test:durability`, CI `reliability.yml` |
 | Upgrade and restore | Isolated databases starting at migration 0019, conservative upgrade, repeated migration and evidence comparison after pg_dump/pg_restore | `scripts/recovery-rehearsal.ts` | [operations runbook](../maintainers/reliability-operations.md), CI `reliability.yml` |
+
+## Microsoft 365 without Microsoft
+
+`packages/calendar/src/fake-graph.ts` is a fake of the part of Microsoft Graph the `microsoft365` adapter calls (D61).
+To run the app on it, start the fake and give the BFF one variable:
+
+```bash
+sh scripts/graph.sh start
+```
+
+```bash
+docker exec -e CALENDAR_ADAPTER=microsoft365 -w /workspace clew-app-1 bun run dev:server
+```
+
+`sh scripts/graph.sh stop` stops it. State lives in memory, so a restart empties the fake and `start` seeds it again.
+Bookings land in the fake, not in Nextcloud. A call the fake does not implement answers `501`; add it to the fake from
+Microsoft's documentation, with a case in the contract. Passing against the fake is not proof of how a real tenant
+behaves, and D61 lists what is still unverified.
 
 ## The kinds of test
 
