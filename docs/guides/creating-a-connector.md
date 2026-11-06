@@ -4,7 +4,7 @@ For an integrator connecting an existing system to Clew. The deliverable is your
 
 ## 1. Read the protocol from the instance, then run the contract
 
-The Clew you will register with serves its own protocol under `/api/protocol` ([D57](../decisions/D57-the-instance-serves-its-connector-protocol.md)): open `http://<clew>/api/protocol` for the routes on both sides with every schema, fetch `/api/protocol/openapi.json` or `/api/protocol/connector-protocol.schema.json` for your generator, and post a manifest draft to `/api/protocol/manifest?id=<your id>` to read what that instance would refuse it for or make of it, before any service exists. It needs no sign-in. In the development stack the address is `http://localhost:3020/api/protocol`.
+The Clew you will register with serves its own protocol under `/api/protocol` ([D60](../decisions/D60-the-instance-serves-its-connector-protocol.md)): open `http://<clew>/api/protocol` for the routes on both sides with every schema, fetch `/api/protocol/openapi.json` or `/api/protocol/connector-protocol.schema.json` for your generator, and post a manifest draft to `/api/protocol/manifest?id=<your id>` to read what that instance would refuse it for or make of it, before any service exists. It needs no sign-in. In the development stack the address is `http://localhost:3020/api/protocol`; [from your own project](testing-and-deployment.md#from-your-own-project-against-a-test-installation) a test installation is the one to point at.
 
 With the devcontainer running and dependencies installed, run this from the repository root on the host:
 
@@ -31,7 +31,7 @@ Copy the complete connector directory into your own project, including its verif
 
 Decide who owns each record, who can read or change it, how a Clew person/unit maps to source identities, and how the source authenticates calls. Start with one useful `read`. Name capabilities at task level (`directory`, `openItems`), with precise input and output schemas. Write Swedish titles, descriptions and user-visible errors; keep identifiers English.
 
-The complete [hello manifest](../generated/hello.manifest.json) and [phone book manifest](../generated/telefonbok.manifest.json) are generated from their actual exports, not abbreviated copy-and-paste samples. Follow the [generated field reference](../generated/README.md) and these rules:
+Start from the [manifest field reference](../generated/manifest-reference.md): every field with its type, constraints, an example and what it must agree with, plus three recipes; a running Clew draws the same at `/protocol/manifest`. The complete [hello manifest](../generated/hello.manifest.json) and [phone book manifest](../generated/telefonbok.manifest.json) are generated from their actual exports, not abbreviated copy-and-paste samples. The [generated field tables](../generated/README.md) are the short form. The rules in brief:
 
 - Use protocol `2`, a stable lowercase connector id, and `<id>.<verb>` capability names.
 - Declare only implemented operations. A `read` may have a view; `execute` must have `model: false`.

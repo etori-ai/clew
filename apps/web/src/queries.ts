@@ -51,3 +51,5 @@ export const adminQueries = {
   /** What a provider's endpoint lists, for "Lägg till modell": the same check as "Testa", asked once a minute at most and never retried. */
   listed: (id: string) => queryOptions({ queryKey: keys.admin.listed(id), queryFn: () => api.admin.testProvider(id), staleTime: 60_000, retry: false }),
 };
+/** The manifest reference (D60): one document, read once a visit. */
+export const manifestReferenceQuery = queryOptions({ queryKey: keys.manifestReference, queryFn: () => api.manifestReference(), staleTime: Infinity });

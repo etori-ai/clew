@@ -4,6 +4,7 @@ import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openApiDocument, protocolSchema, PROTOCOL_VERSION, ManifestCapabilitySchema, ManifestAreaSchema } from '../packages/connectors/src/protocol';
 import { parseManifest } from '../packages/connectors/src/remote';
+import { manifestReference, referenceMarkdown, shapeOf } from '../packages/connectors/src/reference';
 import { manifest as hello } from '../connectors/hello/connector.mjs';
 import { manifest as telefonbok } from '../connectors/telefonbok/connector.mjs';
 
@@ -37,22 +38,19 @@ generated.set('docs/protocol/connector-protocol.schema.json', json(protocolSchem
 generated.set('docs/protocol/connector-protocol.openapi.json', json(openApiDocument()));
 for (const manifest of manifests) generated.set(`docs/generated/${manifest.id}.manifest.json`, json(manifest));
 
-function shape(schema: Record<string, any>): string {
-  if ('const' in schema) return JSON.stringify(schema.const);
-  if (schema.enum) return schema.enum.map((v: unknown) => JSON.stringify(v)).join(' / ');
-  if (schema.anyOf || schema.oneOf) return (schema.anyOf ?? schema.oneOf).map(shape).join(' / ');
-  if (schema.type === 'array') return `array of ${shape(schema.items ?? {})}`;
-  return schema.type ?? 'JSON value';
-}
+const shape = shapeOf;
 const protocol = protocolSchema();
 const documentedShapes: Record<string, any> = { ...protocol.$defs, ManifestCapability: ManifestCapabilitySchema, ManifestArea: ManifestAreaSchema };
 const fieldTables = ['ConnectorManifest', 'ManifestCapability', 'ManifestArea', 'Actor', 'CallRequest', 'ThreadDraft', 'ExecuteResult', 'CallbackRequest'].map(name => {
   const schema = documentedShapes[name];
   return `## ${name}\n\n| Field | Required | Shape | Description |\n|---|---|---|---|\n` + Object.entries(schema.properties as Record<string, any>).map(([key, value]) => `| \`${key}\` | ${schema.required?.includes(key) ? 'yes' : 'no'} | ${table(shape(value))} | ${table(value.description ?? '')} |`).join('\n');
 });
+const decisionLink = (number: string) => { const hits = decisions.filter(d => `D${d.number}` === number); return hits.length === 1 ? `../decisions/${hits[0]!.path.split('/').at(-1)}` : hits.length ? '../decisions/README.md' : undefined; };
+generated.set('docs/generated/manifest-reference.md', banner + referenceMarkdown(manifestReference(manifests), { decisionLink }));
 generated.set('docs/generated/README.md', banner + '# Generated connector reference\n\n' +
   `Protocol version: **${PROTOCOL_VERSION}**. Generated from [protocol.ts](../../packages/connectors/src/protocol.ts), its imported contracts and the real connector manifest exports. ` +
-  'The tables are field summaries; use the [JSON Schema bundle](../protocol/connector-protocol.schema.json) for nested fields, constraints, required properties and unions, and the [OpenAPI document](../protocol/connector-protocol.openapi.json) for the routes. A running Clew serves both, a viewer and a manifest dry run under `/api/protocol` (D57), generated from the same code as these files. Schema validation does not replace [behavioral validation](../guides/testing-and-deployment.md).\n\n' +
+  'The tables are field summaries; use the [JSON Schema bundle](../protocol/connector-protocol.schema.json) for nested fields, constraints, required properties and unions, and the [OpenAPI document](../protocol/connector-protocol.openapi.json) for the routes. A running Clew serves both, a viewer and a manifest dry run under `/api/protocol` (D60), generated from the same code as these files. Schema validation does not replace [behavioral validation](../guides/testing-and-deployment.md).\n\n' +
+  'The manifest field by field, with examples and the rules between fields, is [manifest-reference.md](manifest-reference.md).\n\n' +
   '## Complete runnable examples\n\n' + manifests.map(m => `- [${m.id} manifest](${m.id}.manifest.json), from [connector.mjs](../../connectors/${m.id}/connector.mjs): ${m.capabilities.length} capabilities; ${m.scan ? 'scan enabled' : 'no scan'}.`).join('\n') +
   '\n\nThese JSON files are complete, generated inputs, not abbreviated pseudocode. They contain no credentials. The [signed walkthrough](../../scripts/docs-smoke.ts) runs the phone book fixture; the [quickstart](../guides/creating-a-connector.md) explains how to adapt it.\n\n' +
   fieldTables.join('\n\n') + '\n');

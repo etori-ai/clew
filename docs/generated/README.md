@@ -2,7 +2,9 @@
 
 # Generated connector reference
 
-Protocol version: **2**. Generated from [protocol.ts](../../packages/connectors/src/protocol.ts), its imported contracts and the real connector manifest exports. The tables are field summaries; use the [JSON Schema bundle](../protocol/connector-protocol.schema.json) for nested fields, constraints, required properties and unions, and the [OpenAPI document](../protocol/connector-protocol.openapi.json) for the routes. A running Clew serves both, a viewer and a manifest dry run under `/api/protocol` (D57), generated from the same code as these files. Schema validation does not replace [behavioral validation](../guides/testing-and-deployment.md).
+Protocol version: **2**. Generated from [protocol.ts](../../packages/connectors/src/protocol.ts), its imported contracts and the real connector manifest exports. The tables are field summaries; use the [JSON Schema bundle](../protocol/connector-protocol.schema.json) for nested fields, constraints, required properties and unions, and the [OpenAPI document](../protocol/connector-protocol.openapi.json) for the routes. A running Clew serves both, a viewer and a manifest dry run under `/api/protocol` (D60), generated from the same code as these files. Schema validation does not replace [behavioral validation](../guides/testing-and-deployment.md).
+
+The manifest field by field, with examples and the rules between fields, is [manifest-reference.md](manifest-reference.md).
 
 ## Complete runnable examples
 
@@ -15,13 +17,13 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 
 | Field | Required | Shape | Description |
 |---|---|---|---|
-| `protocol` | yes | 2 |  |
-| `id` | yes | string | Must match the id Clew was configured with. |
-| `kind` | yes | "passthrough" / "derived" | Core connectors live in Clew itself (D3). |
+| `protocol` | yes | 2 | The version of this contract the manifest is written to, not of the connector (D60). This instance loads 2; an additive change to the protocol keeps the number. |
+| `id` | yes | string | Stable and lowercase. Must match the id Clew was configured with, and prefixes every capability name. |
+| `kind` | yes | "passthrough" / "derived" | Who owns the data (D3): `passthrough` when it lives in the connected system and Clew keeps refs and audit rows only; `derived` when the connector computes it from other sources. `core` is Clew's own and never a remote connector. |
 | `source` | yes | string | Swedish. The system as shown on cards: "Personalsystemet". |
-| `areas` | yes | array of object |  |
-| `capabilities` | yes | array of object |  |
-| `uses` | no | array of string |  |
+| `areas` | yes | array of object | The areas this connector gives a person: each is a button under the box on Hem (D41, D53) with its standing actions, schedules and figure. Empty is allowed for a connector that only answers questions. |
+| `capabilities` | yes | array of object | What the connector can do, one entry per operation. The name is the contract (D37): a break is a new name, never a changed one. |
+| `uses` | no | array of string | The exact capability names of other connectors this one calls back through `POST /api/connectors/call` while serving a request (D37), such as `calendar.today`. A name not listed is refused; an `execute` can never be called back. |
 | `facts` | no | array of object | The fact kinds this connector creates (D55), each prefixed with its id. |
 | `scan` | yes | boolean | Whether Clew should POST /clew/scan for each person nightly and on first visit. |
 | `delegation` | no | object | The connector acts as the person against its system with a token Clew obtains by token exchange. |
@@ -30,17 +32,17 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 
 | Field | Required | Shape | Description |
 |---|---|---|---|
-| `execution` | no | object / object / object |  |
+| `execution` | no | object, one of `strategy`: "manual" / "deduplicated" / "conditional" | How a write may be repeated safely after a lost answer (D45): `manual`, `deduplicated` (operation ids kept for `retentionSeconds`, found by `lookup`) or `conditional` (`lookup` tells whether the effect holds). Omitted means manual. Only meaningful on an `execute`. |
 | `name` | yes | string | `<connector id>.<verb>`, stable. |
-| `kind` | yes | "read" / "propose" / "execute" |  |
+| `kind` | yes | "read" / "propose" / "execute" | `read` answers; `propose` drafts something for a person to decide; `execute` changes the source and runs only after a human decision (D8), never as a tool and never through a callback. |
 | `title` | yes | string | Swedish. A button label. |
 | `description` | yes | string | Swedish. What the model reads when `model` is true. |
-| `input` | yes | object | A JSON Schema (draft 2020-12 or 7) for the value. |
-| `output` | yes | object | A JSON Schema (draft 2020-12 or 7) for the value. |
-| `model` | yes | boolean | Offer it to the model as a tool. Must be false for execute (D8). |
+| `input` | yes | object (free keys) | JSON Schema of the input. Clew validates a call against it before the connector sees it. `required` properties mean the capability needs input, which keeps it out of the menu and out of the conformance check's calls. |
+| `output` | yes | object (free keys) | JSON Schema of the output. Clew validates the answer against it; where it declares `properties`, a view's keys must be among them (D38). |
+| `model` | yes | boolean | Offer it to the model as a tool, once an administrator has enabled tools for the connector. Must be false for execute (D8). |
 | `scope` | yes | object | Who may call the capability at all. Omitted roles means every signed-in person. The connector narrows further in the call. |
 | `kinds` | no | array of "document" / "person" / "case" / "room" | For `<id>.search` (D26): what it can find. Its output is a SearchOutput; `<id>.fetch` takes one of its refs back and returns one SearchHit. |
-| `view` | no | object / object / object / object | How Clew draws the output: `table` and `list` over an array of records (`rows`, default "rows"; `title` names the field that names a row and is one of `fields`; `ref` the field holding the connector's ref), `detail` over one record, `text` over one Markdown string. |
+| `view` | no | object, one of `kind`: "table" / "list" / "detail" / "text" | How Clew draws the output: `table` and `list` over an array of records (`rows`, default "rows"; `title` names the field that names a row and is one of `fields`; `ref` the field holding the connector's ref), `detail` over one record, `text` over one Markdown string. |
 | `menu` | no | object | How this capability's view is named and marked when an administrator puts it in Clew's menu under Verktyg (D40). Only on a read that declares a view and needs no input. |
 | `follows` | no | array of string | For a `propose` (D55): the fact kinds it answers for. Input is a FactEnvelope, output a FollowResponse; steps name this connector only. |
 | `creates` | no | string | The fact kind this `propose` or `execute` brings about (D55); must be one of the manifest's `facts`. |
@@ -49,11 +51,11 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 
 | Field | Required | Shape | Description |
 |---|---|---|---|
-| `id` | yes | string |  |
-| `title` | yes | string | Swedish. The sidebar entry. |
-| `roles` | yes | array of "manager" / "employee" |  |
-| `standing` | yes | array of string | Capability names shown under "Gör själv". |
-| `schedules` | yes | array of object |  |
+| `id` | yes | string | Stable and lowercase. It is the area's address, `/areas/<id>`, and what a scan draft names in `area`. |
+| `title` | yes | string | Swedish. The area's name on its button under the box and in the sidebar. |
+| `roles` | yes | array of "manager" / "employee" | Who sees the area: at least one role. |
+| `standing` | yes | array of string | Capability names shown under "Gör själv": what a person can do here without composing a question. Each must be a capability of this manifest. |
+| `schedules` | yes | array of object | What the connector does for this area on its own and when, as a person reads it under the area. Informational text; the scan itself runs nightly and on first visit. |
 | `figure` | no | boolean | Clew asks POST /clew/figure for a one-line figure for this area. |
 | `icon` | no | "phone" / "people" / "book" / "document" / "chart" / "search" / "clock" / "link" / "calendar" / "bell" | One of Clew's icons. The connector sends a name, never a drawing. |
 
@@ -97,7 +99,7 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 | `rows` | yes | array of object |  |
 | `undoCapability` | no | string |  |
 | `undoMinutes` | no | integer |  |
-| `undoInput` | no | object |  |
+| `undoInput` | no | object (free keys) |  |
 
 ## CallbackRequest
 

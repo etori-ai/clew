@@ -1,3 +1,4 @@
+import type { ManifestReference } from '@clew/contracts';
 import type { AddModelInput, AddProviderInput, ModelDetail, ModelPatchInput, ModelSummary, ProviderDetail, ProviderPatchInput, ProviderSummary, ProviderTestReport } from '@clew/contracts';
 import type { MenuEntry, PanelViewSpec, SnoozeInput, SnoozePreset, AddConnectorInput, Area, AssistantStatus, Attention, AvailabilityInput, AvailabilityResult, CalendarEvent, CalendarMember, CalendarRoom, CancelEventInput, CreateEventInput, DayView, MoveProposalInput, RescheduleEventInput, CheckReport, ClewObject, Completions, ConnectorDetail, ConnectorHealth, ConnectorPatchInput, ConnectorPreview, ConnectorSummary, ConversationEvent, ConversationInput, ConversationResponse, Figure, TurnEvent, ManifestDiff, Proposal, Role, Thread, TodayView, Verb } from '@clew/contracts';
 import { sessionFetch } from '@clew/ui';
@@ -48,6 +49,8 @@ const post = <T,>(path: string, body?: unknown) => call<T>(path, { method: 'POST
 const patch = <T,>(path: string, body: unknown) => call<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
 const del = <T,>(path: string) => call<T>(path, { method: 'DELETE' });
 export const api = {
+  /** The manifest field by field (D60): a public document, read with the plain fetch since no session or token belongs on it. */
+  manifestReference: async () => { const response = await fetch('/api/protocol/manifest-reference.json'); if (!response.ok) throw new ApiError(response.status, 'The reference could not be read.'); return response.json() as Promise<ManifestReference>; },
   threads: () => call<{ threads: Thread[]; sources?: Array<{ connector: string; state: string; lastSuccess: string | null; error: string | null }>; deliveries?: Array<{ id: string; threadId: string; kind: 'automatic' | 'reminder' }> }>('/api/threads'),
   claimDelivery: (id: string) => post<{ claimed: boolean }>(`/api/deliveries/${encodeURIComponent(id)}/claim`, {}),
   ask: (question: string) => post<Thread>('/api/ask', { question }),

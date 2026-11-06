@@ -37,7 +37,7 @@ app.get('/api/health', c => c.json({ ok: true }));
 app.get('/api/ready', c => c.json({ ready: startup.ready() }, startup.ready() ? 200 : 503));
 // Signing in does not expose connector data and must not depend on connector startup.
 app.route('/api/auth', authRoutes);
-// The protocol is a contract, not data: public, and generated from code, so it needs nothing to have started (D57).
+// The protocol is a contract, not data: public, and generated from code, so it needs nothing to have started (D60).
 app.route('/api/protocol', protocolRoutes);
 app.use('/api/*', async (c, next) => { if (!startup.ready()) return c.json({ error: 'Tjänsten startar. Försök igen om en stund.' }, 503); await next(); });
 // Connector callbacks authenticate with Clew's own assertion, not a session, so they are mounted before the session guard.

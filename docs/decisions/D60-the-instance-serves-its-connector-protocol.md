@@ -1,4 +1,4 @@
-# D57 · The instance serves its connector protocol, and a protocol break keeps the number before it
+# D60 · The instance serves its connector protocol, and a protocol break keeps the number before it
 
 **Status:** accepted, built 2026-11-06 · **Date:** 2026-11-06 · **Area:** integrations
 
@@ -53,6 +53,35 @@ against is the instance they will register with.
      installation keys, D44), and it was right; it is now the documented exception rather than the unwritten rule.
    - The served documents carry `x-clew-protocol: { current, accepted, retired }`, so an integrator can see what
      their instance loads without reading the repository.
+5. **The manifest, field by field** (added 2026-11-06, same day). OpenAPI is organised by route, and the manifest is
+   not a route but a configuration document; what an integrator asks of it is "what may go here, and with what". So
+   the web app draws it at `/protocol/manifest`, public like the login, from `GET /api/protocol/manifest-reference.json`
+   (the old `/api/protocol/manifest-reference` address redirects there), and the repository commits
+   `docs/generated/manifest-reference.md`: one entry per field in the style of a `tsconfig` reference, with what the
+   field does in the product, its type, presence and constraints in words, an example cut from the hello or phone
+   book manifest (a handwritten one, loaded by a test, where neither uses the field), and "pairs with", the rules
+   between fields. `manifestReference()` in `packages/connectors/src/reference.ts` walks `ConnectorManifestSchema`,
+   so a field cannot be documented that does not exist and a field without a description fails the unit suite; the
+   rules are prose in `RULES`, each loader rule proven by a test that breaks it and reads the loader's problem, each
+   registry rule by the registry refusing it. Three recipes open the page: a read that can be a menu tool, a scan
+   that becomes cards, and work across connectors (a fact, two followers answering with an execute and a watch, the
+   envelope and the answers, one approval). A recipe that holds a schema has two tabs, JSON and TypeBox: the TypeBox
+   source is generated from the JSON by `typeboxModule()` in `reference.ts`, and a test runs it with TypeBox and
+   compares the schema it emits with the JSON it came from. The page says why: on the wire a schema is JSON Schema,
+   written in a schema library (TypeBox, zod, Pydantic) and emitted, never by hand; a shorter dialect of Clew's own
+   was weighed and left, since it would be a second schema language for every verifier and generator to learn. The descriptions were written into `protocol.ts` and the view
+   schemas in `packages/contracts`, so the OpenAPI document and the dry run's errors improved with them. The page is
+   Astryx, not RapiDoc and not hand-written HTML (the product owner asked for one look across Clew after a first
+   hand-written version cut its own sidebar short): Astryx's `documentation-technical` template, the article in one
+   column with an `Outline` of every heading in a sticky `LayoutPanel` at its start, the left, at a reference's width of 1280 rather than a form's (the product owner's two corrections on the first rendering; the template's own inline panel
+   style, given a `maxHeight` so an outline of seventy entries scrolls on its own) and a `Selector` in its place on a
+   phone; `Heading`, `Markdown`, `MetadataList` and `CodeBlock` draw the entries, and the rules are Markdown lists because a `ListItem` keeps to one line. The outline names a field by
+   its last part, indented by depth, and the heading carries the full path, so nothing is cut off; a `TextInput` above
+   it narrows the outline to the headings whose path or name holds the text, named by path, with the count spoken. It is English, the
+   document's language set while it is shown (3.1.2), and inside the WCAG suite: `tests/a11y/protocol.spec.ts` runs
+   axe on a desktop and at 320 px with the reference the server really builds. Examples come from the repository's
+   two example connectors only, never from a registered connector: the page is public. `Outline` and `CodeBlock` are
+   re-exported from `packages/ui` for it.
 
 **Why.** The product owner asked, on 2026-11-06, for an interface of the OpenAPI kind, something visual an
 integrator can open or point a tool at, that makes the manifest's possible values and combinations graspable while

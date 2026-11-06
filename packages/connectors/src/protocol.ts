@@ -27,13 +27,14 @@ const object = <T extends Record<string, import('@sinclair/typebox').TSchema>>(p
 const swedish = (description: string) => Type.String({ minLength: 1, maxLength: 200, description });
 /** Any JSON Schema document. Clew validates inputs with it before calling the connector. */
 const jsonSchema = Type.Record(Type.String(), Type.Unknown(), { description: 'A JSON Schema (draft 2020-12 or 7) for the value.' });
+const jsonSchemaOf = (description: string) => Type.Record(Type.String(), Type.Unknown(), { description });
 
 export const RoleSchema = Type.Union([Type.Literal('manager'), Type.Literal('employee')]);
 export const ActorSchema = object({
   id: Type.String({ minLength: 1, maxLength: 80 }), name: Type.String(), unitId: Type.String(), unitLabel: Type.String(), role: RoleSchema,
 }, 'The acting person as Clew knows them. Never a token.');
 export type ProtocolActor = Static<typeof ActorSchema>;
-export const ScopeRuleSchema = object({ roles: Type.Optional(Type.Array(RoleSchema, { uniqueItems: true })) },
+export const ScopeRuleSchema = object({ roles: Type.Optional(Type.Array(RoleSchema, { uniqueItems: true, description: '`manager`, `employee` or both. Omitted means both. A role outside the list is refused before the connector is called.' })) },
   'Who may call the capability at all. Omitted roles means every signed-in person. The connector narrows further in the call.');
 /**
  * A fact kind a connector brings about (D55): `<connector id>:<kind>`, such as `hr:absence`. The name is its contract (D37):
@@ -45,7 +46,7 @@ const capabilityName = Type.String({ pattern: '^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-
 export const ManifestFactSchema = object({
   kind: FactKindName,
   title: swedish('Swedish. What the fact is called on a job: "Sjukfrånvaro".'),
-  attributes: jsonSchema,
+  attributes: jsonSchemaOf('JSON Schema of the fact\'s attributes. A follower receives exactly these; a new optional attribute keeps the kind, anything else is a new kind (D37).'),
 }, 'A fact this connector creates, with the JSON Schema of its attributes. Followers receive exactly these attributes.');
 /** What a follower is asked with (D55): the fact, with `ref` when it already exists in its source and absent when the job would create it. */
 export const FactEnvelopeSchema = object({
@@ -66,16 +67,17 @@ export const StepDraftSchema = Type.Union([
 export const FollowResponseSchema = object({ steps: Type.Array(StepDraftSchema, { maxItems: 10 }) }, 'What a `follows` capability returns. Zero steps means nothing to do for this fact.');
 export const ManifestCapabilitySchema = object({
   execution: Type.Optional(Type.Union([
-    object({ strategy: Type.Literal('manual') }),
-    object({ strategy: Type.Literal('deduplicated'), retentionSeconds: Type.Integer({ minimum: 1 }), lookup: Type.String() }),
-    object({ strategy: Type.Literal('conditional'), lookup: Type.String() }),
-  ])),
+    object({ strategy: Type.Literal('manual', { description: 'Clew never repeats a write by itself; a lost answer is an unknown outcome a person resolves.' }) }),
+    object({ strategy: Type.Literal('deduplicated', { description: 'The source keeps the operation id Clew sends in `X-Clew-Operation-Id` and answers a repeat with the original result.' }), retentionSeconds: Type.Integer({ minimum: 1, description: 'How long, in seconds, the source remembers an operation id.' }), lookup: Type.String({ description: 'This connector\'s read that takes `{ operationId }` and answers `{ found, result? }`, so Clew can establish what happened before it decides to replay.' }) }),
+    object({ strategy: Type.Literal('conditional', { description: 'The source writes only when its revision still matches, and `lookup` tells whether the effect already holds.' }), lookup: Type.String({ description: 'This connector\'s read that tells whether the effect already holds.' }) }),
+  ], { description: 'How a write may be repeated safely after a lost answer (D45): `manual`, `deduplicated` (operation ids kept for `retentionSeconds`, found by `lookup`) or `conditional` (`lookup` tells whether the effect holds). Omitted means manual. Only meaningful on an `execute`.' })),
   name: Type.String({ pattern: '^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$', maxLength: 80, description: '`<connector id>.<verb>`, stable.' }),
-  kind: Type.Union([Type.Literal('read'), Type.Literal('propose'), Type.Literal('execute')]),
+  kind: Type.Union([Type.Literal('read'), Type.Literal('propose'), Type.Literal('execute')], { description: '`read` answers; `propose` drafts something for a person to decide; `execute` changes the source and runs only after a human decision (D8), never as a tool and never through a callback.' }),
   title: swedish('Swedish. A button label.'),
   description: swedish('Swedish. What the model reads when `model` is true.'),
-  input: jsonSchema, output: jsonSchema,
-  model: Type.Boolean({ description: 'Offer it to the model as a tool. Must be false for execute (D8).' }),
+  input: jsonSchemaOf('JSON Schema of the input. Clew validates a call against it before the connector sees it. `required` properties mean the capability needs input, which keeps it out of the menu and out of the conformance check\'s calls.'),
+  output: jsonSchemaOf('JSON Schema of the output. Clew validates the answer against it; where it declares `properties`, a view\'s keys must be among them (D38).'),
+  model: Type.Boolean({ description: 'Offer it to the model as a tool, once an administrator has enabled tools for the connector. Must be false for execute (D8).' }),
   scope: ScopeRuleSchema,
   kinds: Type.Optional(Type.Array(SearchKind, { uniqueItems: true, description: 'For `<id>.search` (D26): what it can find. Its output is a SearchOutput; `<id>.fetch` takes one of its refs back and returns one SearchHit.' })),
   view: Type.Optional(ViewSchema),
@@ -84,10 +86,11 @@ export const ManifestCapabilitySchema = object({
   creates: Type.Optional(Type.String({ pattern: FACT_KIND, maxLength: 80, description: 'The fact kind this `propose` or `execute` brings about (D55); must be one of the manifest\'s `facts`.' })),
 });
 export const ManifestAreaSchema = object({
-  id: Type.String({ pattern: '^[a-z][a-z0-9-]*$', maxLength: 40 }), title: swedish('Swedish. The sidebar entry.'),
-  roles: Type.Array(RoleSchema, { minItems: 1, uniqueItems: true }),
-  standing: Type.Array(Type.String(), { description: 'Capability names shown under "Gör själv".' }),
-  schedules: Type.Array(object({ label: Type.String(), when: Type.String() })),
+  id: Type.String({ pattern: '^[a-z][a-z0-9-]*$', maxLength: 40, description: 'Stable and lowercase. It is the area\'s address, `/areas/<id>`, and what a scan draft names in `area`.' }),
+  title: swedish('Swedish. The area\'s name on its button under the box and in the sidebar.'),
+  roles: Type.Array(RoleSchema, { minItems: 1, uniqueItems: true, description: 'Who sees the area: at least one role.' }),
+  standing: Type.Array(Type.String(), { description: 'Capability names shown under "Gör själv": what a person can do here without composing a question. Each must be a capability of this manifest.' }),
+  schedules: Type.Array(object({ label: Type.String({ description: 'Swedish. What happens: "Nya saker att göra".' }), when: Type.String({ description: 'Swedish. When, in words: "Varje vardag 06:00".' }) }), { description: 'What the connector does for this area on its own and when, as a person reads it under the area. Informational text; the scan itself runs nightly and on first visit.' }),
   figure: Type.Optional(Type.Boolean({ description: 'Clew asks POST /clew/figure for a one-line figure for this area.' })),
   icon: Type.Optional(MenuIconSchema),
 });
@@ -100,13 +103,13 @@ export const DelegationSchema = object({
   audience: Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$', description: 'The OAuth audience (an IdP client id) the token must be bound to.' }),
 }, 'The connector acts as the person against its system with a token Clew obtains by token exchange.');
 export const ConnectorManifestSchema = Type.Object({
-  protocol: Type.Literal(PROTOCOL_VERSION),
-  id: Type.String({ pattern: '^[a-z][a-z0-9-]*$', maxLength: 40, description: 'Must match the id Clew was configured with.' }),
-  kind: Type.Union([Type.Literal('passthrough'), Type.Literal('derived')], { description: 'Core connectors live in Clew itself (D3).' }),
+  protocol: Type.Literal(PROTOCOL_VERSION, { description: 'The version of this contract the manifest is written to, not of the connector (D60). This instance loads 2; an additive change to the protocol keeps the number.' }),
+  id: Type.String({ pattern: '^[a-z][a-z0-9-]*$', maxLength: 40, description: 'Stable and lowercase. Must match the id Clew was configured with, and prefixes every capability name.' }),
+  kind: Type.Union([Type.Literal('passthrough'), Type.Literal('derived')], { description: 'Who owns the data (D3): `passthrough` when it lives in the connected system and Clew keeps refs and audit rows only; `derived` when the connector computes it from other sources. `core` is Clew\'s own and never a remote connector.' }),
   source: swedish('Swedish. The system as shown on cards: "Personalsystemet".'),
-  areas: Type.Array(ManifestAreaSchema),
-  capabilities: Type.Array(ManifestCapabilitySchema),
-  uses: Type.Optional(Type.Array(Type.String({ pattern: '^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$' }), { uniqueItems: true, maxItems: 100 })),
+  areas: Type.Array(ManifestAreaSchema, { description: 'The areas this connector gives a person: each is a button under the box on Hem (D41, D53) with its standing actions, schedules and figure. Empty is allowed for a connector that only answers questions.' }),
+  capabilities: Type.Array(ManifestCapabilitySchema, { description: 'What the connector can do, one entry per operation. The name is the contract (D37): a break is a new name, never a changed one.' }),
+  uses: Type.Optional(Type.Array(Type.String({ pattern: '^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$' }), { uniqueItems: true, maxItems: 100, description: 'The exact capability names of other connectors this one calls back through `POST /api/connectors/call` while serving a request (D37), such as `calendar.today`. A name not listed is refused; an `execute` can never be called back.' })),
   facts: Type.Optional(Type.Array(ManifestFactSchema, { maxItems: 50, description: 'The fact kinds this connector creates (D55), each prefixed with its id.' })),
   scan: Type.Boolean({ description: 'Whether Clew should POST /clew/scan for each person nightly and on first visit.' }),
   delegation: Type.Optional(DelegationSchema),
@@ -167,7 +170,7 @@ export function protocolSchema() {
 }
 
 /**
- * Versions (D57). `protocol` is the version of this contract, not of a connector: a connector has no version, a
+ * Versions (D60). `protocol` is the version of this contract, not of a connector: a connector has no version, a
  * capability's name is its contract (D37). An additive change (a new optional field, a looser constraint) keeps the
  * number; views, the menu, delegation and facts all arrived under 2. A break is a new number, and Clew then accepts the
  * new number and the one before it for a stated window, loading a manifest on the older one with a warning in
@@ -180,7 +183,7 @@ export const PROTOCOL_RETIRED: Readonly<Record<number, string>> = {
 };
 
 /**
- * What Clew makes of a manifest document before any service runs (D57): the problems it would refuse it for, else what it
+ * What Clew makes of a manifest document before any service runs (D60): the problems it would refuse it for, else what it
  * would offer to whom. `POST /api/protocol/manifest` answers with it; `previewManifest` in preview.ts computes it.
  */
 const previewRoles = Type.Array(RoleSchema, { description: 'Who may call it: both roles when the capability names none.' });
@@ -214,7 +217,7 @@ export interface OpenApiOptions {
   clewUrl?: string;
 }
 /**
- * The protocol as an OpenAPI 3.1 document (D57), for a viewer, a client or a server-stub generator. Two sides: the routes a
+ * The protocol as an OpenAPI 3.1 document (D60), for a viewer, a client or a server-stub generator. Two sides: the routes a
  * connector serves and Clew calls (tag Connector), and the routes Clew serves and a connector calls (tag Clew). The
  * schemas are the same TypeBox objects the instance validates with, so the document matches the instance by construction.
  */
@@ -240,7 +243,7 @@ export function openApiDocument(options: OpenApiOptions = {}) {
     info: {
       title: 'Clew connector protocol', version: String(PROTOCOL_VERSION),
       summary: 'How a connector service and a Clew installation talk to each other.',
-      description: 'A connector is an HTTP service of your own. It serves the routes tagged **Connector**; Clew loads its manifest and calls it as the acting person, with an RS256 assertion it can verify against the keys at the route tagged **Clew**. Shapes are the same JSON Schemas the instance validates with, published under `components.schemas` and, as one bundle, as `connector-protocol.schema.json` under `/api/protocol/`. Generate server stubs from this document or implement the paths by hand; the examples under `connectors/` in the repository are complete. Try `POST /api/protocol/manifest` with a manifest before any service exists.',
+      description: 'A connector is an HTTP service of your own. It serves the routes tagged **Connector**; Clew loads its manifest and calls it as the acting person, with an RS256 assertion it can verify against the keys at the route tagged **Clew**. Shapes are the same JSON Schemas the instance validates with, published under `components.schemas` and, as one bundle, as `connector-protocol.schema.json` under `/api/protocol/`. Generate server stubs from this document or implement the paths by hand; the examples under `connectors/` in the repository are complete. Try `POST /api/protocol/manifest` with a manifest before any service exists. The manifest field by field, with examples: [manifest reference](/protocol/manifest).',
     },
     'x-clew-protocol': { current: PROTOCOL_VERSION, accepted: [...PROTOCOL_ACCEPTED], retired: PROTOCOL_RETIRED },
     tags: [
@@ -260,6 +263,7 @@ export function openApiDocument(options: OpenApiOptions = {}) {
         responses: { '200': { description: 'The target\'s output.', content: { 'application/json': { schema: { type: 'object', required: ['output'], properties: { output: {} } } } } }, '400': json('CallResponse', 'Invalid request or input.'), '401': json('CallResponse', 'Missing or invalid grant.'), '403': json('CallResponse', 'Denied: the person, the origin or the target is out of scope.'), '404': json('CallResponse', 'Unknown capability.'), '503': json('CallResponse', 'The target is unavailable.') } } },
       '/api/protocol/openapi.json': { servers: clew, get: { tags: ['Clew'], operationId: 'getOpenApi', summary: 'This document, as this instance speaks it', responses: { '200': { description: 'OpenAPI 3.1.', content: { 'application/json': { schema: { type: 'object' } } } } } } },
       '/api/protocol/connector-protocol.schema.json': { servers: clew, get: { tags: ['Clew'], operationId: 'getProtocolSchema', summary: 'The JSON Schema bundle', description: 'Every shape under `$defs`, for a connector written in any language.', responses: { '200': { description: 'JSON Schema 2020-12 with `$defs`.', content: { 'application/json': { schema: { type: 'object' } } } } } } },
+      '/api/protocol/manifest-reference.json': { servers: clew, get: { tags: ['Clew'], operationId: 'getManifestReference', summary: 'The manifest, field by field', description: 'One entry per manifest field: what it does, type, presence, constraints, an example and what it must agree with, plus the rules between fields and three recipes. Generated from the same schema. The page that draws it is `/protocol/manifest` on the same origin.', responses: { '200': { description: 'The reference: `sections`, `fields`, `rules`, `recipes`.', content: { 'application/json': { schema: { type: 'object' } } } } } } },
       '/api/protocol/manifest': { servers: clew, post: { tags: ['Clew'], operationId: 'previewManifest', summary: 'Dry-run a manifest against this instance', description: 'Send a manifest document and read what this instance would refuse it for, else what it would offer to whom. No service, registration or sign-in is needed. Pass `?id=` to check the id against the one you will register.', parameters: [{ name: 'id', in: 'query', required: false, schema: { type: 'string' } }],
         requestBody: body('ConnectorManifest'), responses: { '200': json('ManifestPreview', 'The verdict and, when ok, the manifest as Clew would hold it.'), '400': { description: 'The body is not JSON.' } } } },
     },

@@ -3,7 +3,7 @@ import { manifestProblems } from './remote';
 import { PROTOCOL_ACCEPTED, PROTOCOL_VERSION, type ConnectorManifest, type ManifestPreview } from './protocol';
 
 /**
- * A dry run of a manifest document (D57): the pure part of `POST /api/protocol/manifest`. The same rules the loader
+ * A dry run of a manifest document (D60): the pure part of `POST /api/protocol/manifest`. The same rules the loader
  * applies, with every problem listed rather than the first thrown, and, when the document passes, what Clew would make
  * of it: who may call what, what the model is offered, what could be a row in the menu, and what the conformance check
  * would and would not exercise. No I/O; an integrator gets this before any service exists.

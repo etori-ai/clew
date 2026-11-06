@@ -11,6 +11,7 @@ import { ConversationProvider } from './components/conversation-context';
 import { CalendarPage } from './pages/calendar';
 import { ToolPage } from './pages/tool';
 import { LoginPage } from './pages/login';
+import { ManifestReferencePage } from './pages/protocol';
 import { AdminConnectorsPage } from './pages/admin/connectors';
 import { AdminConnectorPage } from './pages/admin/connector';
 import { AdminModelsPage } from './pages/admin/models';
@@ -100,6 +101,8 @@ function App() {
   const admin = (page: (shell: Shell) => React.ReactNode) => <Protected>{shell => shell.admin ? page(shell) : <NotAdmin />}</Protected>;
   return <Routes>
     <Route path="/login" element={<LoginPage returnTo="/" />} />
+    {/* Integrator documentation, public like the login (D60): the manifest field by field, drawn from the instance's own schema. */}
+    <Route path="/protocol/manifest" element={<ManifestReferencePage />} />
     <Route path="/calendar" element={<Protected>{shell => <CalendarPage user={shell.user} admin={shell.admin} />}</Protected>} />
     <Route path="/tools/:capability" element={<Protected>{shell => <ToolPage user={shell.user} admin={shell.admin} />}</Protected>} />
     <Route path="/admin" element={admin(shell => <AdminConnectorsPage user={shell.user} />)} />

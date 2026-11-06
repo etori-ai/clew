@@ -7,6 +7,7 @@
     "./protocol": "./src/protocol.ts",
     "./remote": "./src/remote.ts",
     "./preview": "./src/preview.ts",
+    "./reference": "./src/reference.ts",
     "./views": "./src/views.ts",
     "./memory-state": "./src/memory-state.ts",
     "./mock/hr": "./src/mock/hr.ts",

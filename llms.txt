@@ -15,7 +15,8 @@
 - [Quickstart](docs/guides/creating-a-connector.md): run the signed fixture exchange, then adapt real code.
 - [Protocol](docs/reference/connector-protocol.md): supported routes and source-of-truth map.
 - [JSON Schema](docs/protocol/connector-protocol.schema.json): generated wire contracts under $defs.
-- [OpenAPI](docs/protocol/connector-protocol.openapi.json): generated routes on both sides; served live with a viewer and a manifest dry run at /api/protocol (D57).
+- [OpenAPI](docs/protocol/connector-protocol.openapi.json): generated routes on both sides; served live with a viewer and a manifest dry run at /api/protocol (D60).
+- [Manifest field reference](docs/generated/manifest-reference.md): generated, every manifest field with type, constraints, example and rules; drawn at /protocol/manifest from /api/protocol/manifest-reference.json.
 - [Example manifests](docs/generated/README.md): generated from the runnable connectors.
 - [Authorization](docs/guides/authorization.md): protocol 2, RS256, pinned public keys, separate callback grants.
 - [Search and views](docs/guides/example-custom-directory.md): phone book implementation.

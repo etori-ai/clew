@@ -80,6 +80,8 @@ export { TimeInput } from '@astryxdesign/core/TimeInput';
 export { DateInput } from '@astryxdesign/core/DateInput';
 export { Calendar } from '@astryxdesign/core/Calendar';
 export { Selector } from '@astryxdesign/core/Selector';
+export { Outline, type OutlineItem } from '@astryxdesign/core/Outline';
+export { CodeBlock } from '@astryxdesign/core/CodeBlock';
 export { Field, FieldStatus } from '@astryxdesign/core/Field';
 export { Popover } from '@astryxdesign/core/Popover';
 export { useAppearance } from './appearance';

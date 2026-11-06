@@ -25,7 +25,7 @@ export class ManifestError extends Error { constructor(message: string) { super(
 
 /**
  * Every problem a manifest document has, in the order Clew finds them; none means Clew would load it. The schema first
- * (every path listed), then the rules between fields. A retired or unknown protocol number is named as such (D57), not
+ * (every path listed), then the rules between fields. A retired or unknown protocol number is named as such (D60), not
  * as a literal mismatch. `previewManifest` shows the whole list; `parseManifest` throws on it.
  */
 export function manifestProblems(document: unknown, expectedId?: string): string[] {

@@ -16,7 +16,7 @@ export interface AuthenticatedContext extends SessionUser {
 }
 export const sessionUser = (c: SessionUser): SessionUser => ({ id: c.id, name: c.name, unitId: c.unitId, unitLabel: c.unitLabel, role: c.role });
 
-const object = <T extends Record<string, import('@sinclair/typebox').TSchema>>(properties: T) => Type.Object(properties, { additionalProperties: false });
+const object = <T extends Record<string, import('@sinclair/typebox').TSchema>>(properties: T, description?: string) => Type.Object(properties, { additionalProperties: false, ...(description ? { description } : {}) });
 const instant = Type.String({ format: 'date-time', maxLength: 40 });
 // TypeBox's own `Value.Check` knows no formats until one is registered; Ajv (the routes) has its own. One definition, here, so every schema with an instant checks the same way.
 if (!FormatRegistry.Has('date-time')) FormatRegistry.Set('date-time', value => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(value) && !Number.isNaN(Date.parse(value)));
@@ -114,41 +114,45 @@ export type ViewRef = Static<typeof ViewRefSchema>;
 const viewKey = Type.String({ pattern: '^[A-Za-z][A-Za-z0-9]*$', maxLength: 40, description: 'A property name in the capability\'s output (or input).' });
 const viewLabel = Type.String({ minLength: 1, maxLength: 60, description: 'Swedish. Shown to the person.' });
 /** How a value is drawn: `phone` and `email` become links that call and write, `link` an http(s) link out, `status` a badge with a tone. */
-export const ViewFormat = Type.Union([Type.Literal('text'), Type.Literal('phone'), Type.Literal('email'), Type.Literal('link'), Type.Literal('date'), Type.Literal('instant'), Type.Literal('number'), Type.Literal('status')]);
+export const ViewFormat = Type.Union([Type.Literal('text'), Type.Literal('phone'), Type.Literal('email'), Type.Literal('link'), Type.Literal('date'), Type.Literal('instant'), Type.Literal('number'), Type.Literal('status')], { description: 'How the value is drawn: `phone` and `email` become links that call and write, `link` an http(s) link out, `date` and `instant` are formatted in Swedish, `number` is aligned as one, `status` is a badge with a tone from `tones`. Default `text`.' });
 export type ViewFormat = Static<typeof ViewFormat>;
 export const ViewTone = Type.Union([Type.Literal('ok'), Type.Literal('warn'), Type.Literal('alert'), Type.Literal('none')]);
 export const ViewFieldSchema = object({
-  key: viewKey, label: viewLabel, format: Type.Optional(ViewFormat),
+  key: { ...viewKey, description: 'The property of a record the field shows.' }, label: { ...viewLabel, description: 'Swedish. The column heading or the field\'s name.' }, format: Type.Optional(ViewFormat),
   tones: Type.Optional(Type.Record(Type.String({ maxLength: 40 }), ViewTone, { description: 'For `status`: the tone per value. A value without one is neutral.' })),
 });
 export type ViewField = Static<typeof ViewFieldSchema>;
 /** What the person may type or choose above the rows: each control is bound to one property of the capability's input, and a change reads the capability again. */
 export const ViewInputSchema = object({
-  query: Type.Optional(object({ key: viewKey, label: viewLabel, placeholder: Type.Optional(Type.String({ maxLength: 80 })) })),
-  filter: Type.Optional(object({ key: viewKey, label: viewLabel, options: Type.Array(object({ value: Type.String({ minLength: 1, maxLength: 40 }), label: viewLabel }), { minItems: 2, maxItems: 6 }) })),
-});
+  query: Type.Optional(object({ key: { ...viewKey, description: 'The input property the typed text is sent as.' }, label: viewLabel, placeholder: Type.Optional(Type.String({ maxLength: 80, description: 'Swedish. Shown in the empty box.' })) }, 'A free-text box above the rows, bound to one property of the capability\'s input; typing reads the capability again.')),
+  filter: Type.Optional(object({ key: { ...viewKey, description: 'The input property the chosen value is sent as.' }, label: viewLabel, options: Type.Array(object({ value: Type.String({ minLength: 1, maxLength: 40, description: 'What is sent.' }), label: { ...viewLabel, description: 'Swedish. What the person reads.' } }), { minItems: 2, maxItems: 6, description: 'Two to six choices.' }) }, 'A choice above the rows, bound to one property of the capability\'s input.')),
+}, 'What the person may type or choose above the rows. Each control binds to one property of the capability\'s input, and a change reads the capability again.');
 export type ViewInput = Static<typeof ViewInputSchema>;
 /** A row opens another read of the same connector as a view: `params` maps that read's input properties to the row's. */
-export const ViewOpenSchema = object({ capability: Type.String({ maxLength: 80 }), title: viewLabel, params: Type.Record(Type.String({ maxLength: 40 }), viewKey) });
+export const ViewOpenSchema = object({
+  capability: Type.String({ maxLength: 80, description: 'A read of the same connector, by full name.' }),
+  title: { ...viewLabel, description: 'Swedish. The heading of what opens.' },
+  params: Type.Record(Type.String({ maxLength: 40 }), { ...viewKey, description: 'The row property the value is taken from.' }, { description: 'The read\'s input property, mapped to the row property it is taken from. A row lacking a value does not open.' }),
+}, 'A row opens another read of the same connector as a view (D35, D38).');
 export type ViewOpen = Static<typeof ViewOpenSchema>;
 /**
  * What the model is handed when it calls the capability as a tool: the output, or only a summary (how many rows are
  * shown, never their content), so names and numbers reach the person through the view and neither the model nor the
  * stored conversation.
  */
-const modelReads = Type.Optional(Type.Union([Type.Literal('output'), Type.Literal('summary')], { description: 'Default `output`.' }));
+const modelReads = Type.Optional(Type.Union([Type.Literal('output'), Type.Literal('summary')], { description: 'What the model is handed when it calls the capability as a tool: the whole `output`, or a `summary` (how many rows are shown, never their content) so names and numbers reach the person through the view and neither the model nor the stored conversation. Default `output`.' }));
 const rowsView = <K extends 'table' | 'list'>(kind: K) => object({
-  kind: Type.Literal(kind),
-  rows: Type.Optional(viewKey), title: viewKey,
-  fields: Type.Array(ViewFieldSchema, { minItems: 1, maxItems: 12 }),
-  ref: Type.Optional(viewKey), open: Type.Optional(ViewOpenSchema), input: Type.Optional(ViewInputSchema),
+  kind: Type.Literal(kind, { description: 'What is drawn: `table` and `list` over an array of records, `detail` over one record, `text` over one Markdown string.' }),
+  rows: Type.Optional({ ...viewKey, description: 'The output property holding the array of records. Default `rows`.' }), title: { ...viewKey, description: 'The field that names a row; one of `fields`. A list shows it first, a detail as its heading.' },
+  fields: Type.Array(ViewFieldSchema, { minItems: 1, maxItems: 12, description: 'The columns of a table or the lines of a list: a record property, its Swedish label and how it is drawn.' }),
+  ref: Type.Optional({ ...viewKey, description: 'The record property holding the connector\'s ref for the row, so a row can be added to the conversation as a chip. Without it rows cannot be chipped.' }), open: Type.Optional(ViewOpenSchema), input: Type.Optional(ViewInputSchema),
   empty: Type.Optional(Type.String({ minLength: 1, maxLength: 120, description: 'Swedish. Shown when there are no rows.' })),
   modelReads,
 });
 export const ViewSchema = Type.Union([
   rowsView('table'), rowsView('list'),
-  object({ kind: Type.Literal('detail'), title: viewKey, fields: Type.Array(ViewFieldSchema, { minItems: 1, maxItems: 24 }), modelReads }),
-  object({ kind: Type.Literal('text'), body: viewKey, modelReads }),
+  object({ kind: Type.Literal('detail', { description: 'One record, drawn as a list of labelled fields.' }), title: { ...viewKey, description: 'The property that names the record; drawn as the heading.' }, fields: Type.Array(ViewFieldSchema, { minItems: 1, maxItems: 24, description: 'The record\'s fields, in this order.' }), modelReads }),
+  object({ kind: Type.Literal('text', { description: 'One Markdown string.' }), body: { ...viewKey, description: 'The output property holding the Markdown.' }, modelReads }),
 ], { description: 'How Clew draws the output: `table` and `list` over an array of records (`rows`, default "rows"; `title` names the field that names a row and is one of `fields`; `ref` the field holding the connector\'s ref), `detail` over one record, `text` over one Markdown string.' });
 export type View = Static<typeof ViewSchema>;
 const isViewRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -737,3 +741,30 @@ export interface TodayView { date: string; events: CalendarEvent[]; gaps: { star
 export interface WeekView { from: string; events: CalendarEvent[]; proposals: Proposal[]; }
 /** One day with the person's live proposals: the side panel's day view and the dialog's day strip (D28). */
 export type DayView = WeekView;
+
+/**
+ * The connector manifest field by field (D60, item 5): what `GET /api/protocol/manifest-reference.json` answers and the
+ * page at `/protocol/manifest` draws. Built from the manifest schema in `@clew/connectors`; the browser only reads it.
+ */
+export interface ReferenceRule {
+  id: string; title: string; text: string;
+  /** The field paths the rule binds together. */
+  fields: string[];
+  decision?: string;
+  /** Where Clew applies it: when the manifest is loaded, when the connector is registered, in the conformance check, or on each call. */
+  enforced: 'loader' | 'registry' | 'check' | 'call';
+}
+export interface ReferenceField {
+  /** The heading's element id. */
+  id: string;
+  /** `capabilities[].view.fields[].key`: a dot per object, `[]` per array. */
+  path: string;
+  depth: number; required: boolean; type: string; description: string; constraints: string[];
+  /** Present only in these variants of a union, such as `table` and `list` of a view. */
+  variants?: string[];
+  example?: unknown;
+  rules: ReferenceRule[];
+}
+export interface ReferenceRecipe { id: string; title: string; text: string; example: unknown; /** The same example authored in TypeScript with TypeBox, generated from `example`, when it holds a schema. */ typebox?: string }
+export interface ReferenceSection { id: string; title: string; paths: string[] }
+export interface ManifestReference { protocol: number; accepted: number[]; sections: ReferenceSection[]; fields: ReferenceField[]; rules: ReferenceRule[]; recipes: ReferenceRecipe[] }

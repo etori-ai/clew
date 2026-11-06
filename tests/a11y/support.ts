@@ -5,6 +5,12 @@ import { NEXT_WEEK, NOW, WEEK, areas, attention, checkReport, completions, conne
 import { assistantStatus, modelDetail, modelProviders, models, providerDetail, providerReport } from './data';
 import type { ModelSummary, ProviderSummary } from '@clew/contracts';
 import { personSearch, telefonbok } from './telefonbok';
+import { manifestReference } from '../../packages/connectors/src/reference';
+import { parseManifest } from '../../packages/connectors/src/remote';
+import { manifest as helloManifest } from '../../connectors/hello/connector.mjs';
+import { manifest as telefonbokManifest } from '../../connectors/telefonbok/connector.mjs';
+/** The manifest reference as the server builds it (D60): the real walk over the real schema, so the page is tested on what it will draw. */
+export const reference = manifestReference([parseManifest(telefonbokManifest, 'telefonbok'), parseManifest(helloManifest, 'hello')]);
 
 export const desktop = { width: 1280, height: 800 };
 export const phone = { width: 375, height: 667 };
@@ -58,6 +64,7 @@ export class MockApi {
     const request = route.request(), url = new URL(request.url()), path = url.pathname.replace('/api', ''), post = request.method() === 'POST';
     const json = (body: unknown) => route.fulfill({ json: body });
     const id = path.split('/')[2] ?? '';
+    if (path === '/protocol/manifest-reference.json') return json(reference);
     if (path === '/changes') return route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'retry: 60000\n\n' });
     if (path === `/threads/${id}/execution/check`) return json(this.threads.find(t => t.id === id));
     if (path === '/auth/session') {

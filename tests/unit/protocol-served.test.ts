@@ -8,7 +8,7 @@ import { protocolRoutes } from '../../apps/server/src/routes/protocol';
 import { manifest as hello } from '../../connectors/hello/connector.mjs';
 import { manifest as telefonbok } from '../../connectors/telefonbok/connector.mjs';
 
-/** The protocol as the instance serves it (D57): one OpenAPI document, one dry run, both from the objects the loader validates with. */
+/** The protocol as the instance serves it (D60): one OpenAPI document, one dry run, both from the objects the loader validates with. */
 const ajv = addFormats(new Ajv({ strict: false }));
 const refs = (value: unknown, found: string[] = []): string[] => {
   if (Array.isArray(value)) value.forEach(v => refs(v, found));

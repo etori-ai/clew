@@ -632,10 +632,10 @@
       "area": "ui"
     },
     {
-      "key": "D57-the-instance-serves-its-connector-protocol",
-      "number": 57,
-      "path": "docs/decisions/D57-the-instance-serves-its-connector-protocol.md",
-      "title": "D57 · The instance serves its connector protocol, and a protocol break keeps the number before it",
+      "key": "D60-the-instance-serves-its-connector-protocol",
+      "number": 60,
+      "path": "docs/decisions/D60-the-instance-serves-its-connector-protocol.md",
+      "title": "D60 · The instance serves its connector protocol, and a protocol break keeps the number before it",
       "status": "accepted, built 2026-11-06",
       "date": "2026-11-06",
       "area": "integrations"
@@ -1261,8 +1261,8 @@
       "headings": []
     },
     {
-      "path": "docs/decisions/D57-the-instance-serves-its-connector-protocol.md",
-      "title": "D57 · The instance serves its connector protocol, and a protocol break keeps the number before it",
+      "path": "docs/decisions/D60-the-instance-serves-its-connector-protocol.md",
+      "title": "D60 · The instance serves its connector protocol, and a protocol break keeps the number before it",
       "category": "decision-history",
       "headings": []
     },
@@ -1294,6 +1294,16 @@
         "ThreadDraft",
         "ExecuteResult",
         "CallbackRequest"
+      ]
+    },
+    {
+      "path": "docs/generated/manifest-reference.md",
+      "title": "Manifest field reference",
+      "category": "generated-reference",
+      "headings": [
+        "Recipes",
+        "Fields",
+        "Every rule"
       ]
     },
     {
@@ -1356,6 +1366,7 @@
       "title": "Test, register and operate a connector",
       "category": "integrator-guide",
       "headings": [
+        "From your own project, against a test installation",
         "Checks without external services",
         "Live conformance",
         "Register a draft, then enable it",
@@ -1690,6 +1701,23 @@
         "What must not be built",
         "Complexity budget",
         "Recommendation",
+        "Outcome"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-06-from-mock-connectors-to-real-test-sources.md",
+      "title": "Review: from mock connectors to real test sources · 2026-11-06",
+      "category": "review-history",
+      "headings": [
+        "Assessment",
+        "Basis and limits",
+        "What depends on the in-process mocks today",
+        "What \"real-mock\" should mean",
+        "Candidates",
+        "The lab repository",
+        "Recommended order of work",
+        "Decision to record",
+        "Addendum, same day: keep it in the repository, and put real products behind the fixtures",
         "Outcome"
       ]
     },
