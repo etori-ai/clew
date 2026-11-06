@@ -254,15 +254,34 @@ export const ViewTone = Type.Union([
   Type.Literal('alert'),
   Type.Literal('none'),
 ]);
+/** A word in its singular and plural (D71 amendment): "plats" and "platser", so one row reads "1 plats" and the rest "12 platser". */
+export const ViewNounSchema = object(
+  {
+    one: Type.String({ minLength: 1, maxLength: 40, description: 'Swedish. The word after 1: "plats".' }),
+    other: Type.String({
+      minLength: 1,
+      maxLength: 40,
+      description: 'Swedish. The word after any other number: "platser".',
+    }),
+  },
+  'A Swedish word in its singular and plural, drawn after a number.',
+);
+export type ViewNoun = Static<typeof ViewNounSchema>;
 export const ViewFieldSchema = object({
   key: { ...viewKey, description: 'The property of a record the field shows.' },
   label: { ...viewLabel, description: "Swedish. The column heading or the field's name." },
   format: Type.Optional(ViewFormat),
   tones: Type.Optional(
     Type.Record(Type.String({ maxLength: 40 }), ViewTone, {
-      description: 'For `status`: the tone per value. A value without one is neutral.',
+      description:
+        'For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.',
     }),
   ),
+  unit: Type.Optional({
+    ...ViewNounSchema,
+    description:
+      'For `number`: the unit drawn after the value, so a row reads "12 platser" and never "Platser: 12". Only where the unit alone says what the number is.',
+  }),
 });
 export type ViewField = Static<typeof ViewFieldSchema>;
 /** What the person may type or choose above the rows: each control is bound to one property of the capability's input, and a change reads the capability again. */
@@ -350,6 +369,11 @@ const rowsView = <K extends 'table' | 'list'>(kind: K) =>
       ...viewKey,
       description:
         "The record property holding the connector's ref for the row, so a row can be added to the conversation as a chip. Without it rows cannot be chipped.",
+    }),
+    noun: Type.Optional({
+      ...ViewNounSchema,
+      description:
+        'What a row is called, for the count in the view\'s header: "3 fakturor", "1 rum". Default "rad", "rader".',
     }),
     open: Type.Optional(ViewOpenSchema),
     input: Type.Optional(ViewInputSchema),

@@ -34,6 +34,8 @@ export function viewProblem(subject: ViewSubject, siblings: ViewSubject[]): stri
   }
   const keys = view.fields.map(f => f.key);
   if (new Set(keys).size !== keys.length) return `${subject.name}: a view field is listed twice`;
+  const unitless = view.fields.find(f => f.unit && f.format !== 'number');
+  if (unitless) return `${subject.name}: view field "${unitless.key}" has a unit but is not a number`;
   let record = props(subject.output);
   if (view.kind !== 'detail') {
     if (!keys.includes(view.title)) return `${subject.name}: view title "${view.title}" must be one of its fields`;

@@ -448,7 +448,7 @@
                               ]
                             },
                             "tones": {
-                              "description": "For `status`: the tone per value. A value without one is neutral.",
+                              "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
                               "type": "object",
                               "patternProperties": {
                                 "^(.*)$": {
@@ -472,6 +472,29 @@
                                   ]
                                 }
                               }
+                            },
+                            "unit": {
+                              "additionalProperties": false,
+                              "description": "For `number`: the unit drawn after the value, so a row reads \"12 platser\" and never \"Platser: 12\". Only where the unit alone says what the number is.",
+                              "type": "object",
+                              "required": [
+                                "one",
+                                "other"
+                              ],
+                              "properties": {
+                                "one": {
+                                  "minLength": 1,
+                                  "maxLength": 40,
+                                  "description": "Swedish. The word after 1: \"plats\".",
+                                  "type": "string"
+                                },
+                                "other": {
+                                  "minLength": 1,
+                                  "maxLength": 40,
+                                  "description": "Swedish. The word after any other number: \"platser\".",
+                                  "type": "string"
+                                }
+                              }
                             }
                           }
                         }
@@ -481,6 +504,29 @@
                         "maxLength": 40,
                         "description": "The record property holding the connector's ref for the row, so a row can be added to the conversation as a chip. Without it rows cannot be chipped.",
                         "type": "string"
+                      },
+                      "noun": {
+                        "additionalProperties": false,
+                        "description": "What a row is called, for the count in the view's header: \"3 fakturor\", \"1 rum\". Default \"rad\", \"rader\".",
+                        "type": "object",
+                        "required": [
+                          "one",
+                          "other"
+                        ],
+                        "properties": {
+                          "one": {
+                            "minLength": 1,
+                            "maxLength": 40,
+                            "description": "Swedish. The word after 1: \"plats\".",
+                            "type": "string"
+                          },
+                          "other": {
+                            "minLength": 1,
+                            "maxLength": 40,
+                            "description": "Swedish. The word after any other number: \"platser\".",
+                            "type": "string"
+                          }
+                        }
                       },
                       "open": {
                         "additionalProperties": false,
@@ -714,7 +760,7 @@
                               ]
                             },
                             "tones": {
-                              "description": "For `status`: the tone per value. A value without one is neutral.",
+                              "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
                               "type": "object",
                               "patternProperties": {
                                 "^(.*)$": {
@@ -738,6 +784,29 @@
                                   ]
                                 }
                               }
+                            },
+                            "unit": {
+                              "additionalProperties": false,
+                              "description": "For `number`: the unit drawn after the value, so a row reads \"12 platser\" and never \"Platser: 12\". Only where the unit alone says what the number is.",
+                              "type": "object",
+                              "required": [
+                                "one",
+                                "other"
+                              ],
+                              "properties": {
+                                "one": {
+                                  "minLength": 1,
+                                  "maxLength": 40,
+                                  "description": "Swedish. The word after 1: \"plats\".",
+                                  "type": "string"
+                                },
+                                "other": {
+                                  "minLength": 1,
+                                  "maxLength": 40,
+                                  "description": "Swedish. The word after any other number: \"platser\".",
+                                  "type": "string"
+                                }
+                              }
                             }
                           }
                         }
@@ -747,6 +816,29 @@
                         "maxLength": 40,
                         "description": "The record property holding the connector's ref for the row, so a row can be added to the conversation as a chip. Without it rows cannot be chipped.",
                         "type": "string"
+                      },
+                      "noun": {
+                        "additionalProperties": false,
+                        "description": "What a row is called, for the count in the view's header: \"3 fakturor\", \"1 rum\". Default \"rad\", \"rader\".",
+                        "type": "object",
+                        "required": [
+                          "one",
+                          "other"
+                        ],
+                        "properties": {
+                          "one": {
+                            "minLength": 1,
+                            "maxLength": 40,
+                            "description": "Swedish. The word after 1: \"plats\".",
+                            "type": "string"
+                          },
+                          "other": {
+                            "minLength": 1,
+                            "maxLength": 40,
+                            "description": "Swedish. The word after any other number: \"platser\".",
+                            "type": "string"
+                          }
+                        }
                       },
                       "open": {
                         "additionalProperties": false,
@@ -974,7 +1066,7 @@
                               ]
                             },
                             "tones": {
-                              "description": "For `status`: the tone per value. A value without one is neutral.",
+                              "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
                               "type": "object",
                               "patternProperties": {
                                 "^(.*)$": {
@@ -996,6 +1088,29 @@
                                       "type": "string"
                                     }
                                   ]
+                                }
+                              }
+                            },
+                            "unit": {
+                              "additionalProperties": false,
+                              "description": "For `number`: the unit drawn after the value, so a row reads \"12 platser\" and never \"Platser: 12\". Only where the unit alone says what the number is.",
+                              "type": "object",
+                              "required": [
+                                "one",
+                                "other"
+                              ],
+                              "properties": {
+                                "one": {
+                                  "minLength": 1,
+                                  "maxLength": 40,
+                                  "description": "Swedish. The word after 1: \"plats\".",
+                                  "type": "string"
+                                },
+                                "other": {
+                                  "minLength": 1,
+                                  "maxLength": 40,
+                                  "description": "Swedish. The word after any other number: \"platser\".",
+                                  "type": "string"
                                 }
                               }
                             }
@@ -2457,7 +2572,7 @@
                     ]
                   },
                   "tones": {
-                    "description": "For `status`: the tone per value. A value without one is neutral.",
+                    "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
                     "type": "object",
                     "patternProperties": {
                       "^(.*)$": {
@@ -2481,6 +2596,29 @@
                         ]
                       }
                     }
+                  },
+                  "unit": {
+                    "additionalProperties": false,
+                    "description": "For `number`: the unit drawn after the value, so a row reads \"12 platser\" and never \"Platser: 12\". Only where the unit alone says what the number is.",
+                    "type": "object",
+                    "required": [
+                      "one",
+                      "other"
+                    ],
+                    "properties": {
+                      "one": {
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "description": "Swedish. The word after 1: \"plats\".",
+                        "type": "string"
+                      },
+                      "other": {
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "description": "Swedish. The word after any other number: \"platser\".",
+                        "type": "string"
+                      }
+                    }
                   }
                 }
               }
@@ -2490,6 +2628,29 @@
               "maxLength": 40,
               "description": "The record property holding the connector's ref for the row, so a row can be added to the conversation as a chip. Without it rows cannot be chipped.",
               "type": "string"
+            },
+            "noun": {
+              "additionalProperties": false,
+              "description": "What a row is called, for the count in the view's header: \"3 fakturor\", \"1 rum\". Default \"rad\", \"rader\".",
+              "type": "object",
+              "required": [
+                "one",
+                "other"
+              ],
+              "properties": {
+                "one": {
+                  "minLength": 1,
+                  "maxLength": 40,
+                  "description": "Swedish. The word after 1: \"plats\".",
+                  "type": "string"
+                },
+                "other": {
+                  "minLength": 1,
+                  "maxLength": 40,
+                  "description": "Swedish. The word after any other number: \"platser\".",
+                  "type": "string"
+                }
+              }
             },
             "open": {
               "additionalProperties": false,
@@ -2723,7 +2884,7 @@
                     ]
                   },
                   "tones": {
-                    "description": "For `status`: the tone per value. A value without one is neutral.",
+                    "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
                     "type": "object",
                     "patternProperties": {
                       "^(.*)$": {
@@ -2747,6 +2908,29 @@
                         ]
                       }
                     }
+                  },
+                  "unit": {
+                    "additionalProperties": false,
+                    "description": "For `number`: the unit drawn after the value, so a row reads \"12 platser\" and never \"Platser: 12\". Only where the unit alone says what the number is.",
+                    "type": "object",
+                    "required": [
+                      "one",
+                      "other"
+                    ],
+                    "properties": {
+                      "one": {
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "description": "Swedish. The word after 1: \"plats\".",
+                        "type": "string"
+                      },
+                      "other": {
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "description": "Swedish. The word after any other number: \"platser\".",
+                        "type": "string"
+                      }
+                    }
                   }
                 }
               }
@@ -2756,6 +2940,29 @@
               "maxLength": 40,
               "description": "The record property holding the connector's ref for the row, so a row can be added to the conversation as a chip. Without it rows cannot be chipped.",
               "type": "string"
+            },
+            "noun": {
+              "additionalProperties": false,
+              "description": "What a row is called, for the count in the view's header: \"3 fakturor\", \"1 rum\". Default \"rad\", \"rader\".",
+              "type": "object",
+              "required": [
+                "one",
+                "other"
+              ],
+              "properties": {
+                "one": {
+                  "minLength": 1,
+                  "maxLength": 40,
+                  "description": "Swedish. The word after 1: \"plats\".",
+                  "type": "string"
+                },
+                "other": {
+                  "minLength": 1,
+                  "maxLength": 40,
+                  "description": "Swedish. The word after any other number: \"platser\".",
+                  "type": "string"
+                }
+              }
             },
             "open": {
               "additionalProperties": false,
@@ -2983,7 +3190,7 @@
                     ]
                   },
                   "tones": {
-                    "description": "For `status`: the tone per value. A value without one is neutral.",
+                    "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
                     "type": "object",
                     "patternProperties": {
                       "^(.*)$": {
@@ -3005,6 +3212,29 @@
                             "type": "string"
                           }
                         ]
+                      }
+                    }
+                  },
+                  "unit": {
+                    "additionalProperties": false,
+                    "description": "For `number`: the unit drawn after the value, so a row reads \"12 platser\" and never \"Platser: 12\". Only where the unit alone says what the number is.",
+                    "type": "object",
+                    "required": [
+                      "one",
+                      "other"
+                    ],
+                    "properties": {
+                      "one": {
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "description": "Swedish. The word after 1: \"plats\".",
+                        "type": "string"
+                      },
+                      "other": {
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "description": "Swedish. The word after any other number: \"platser\".",
+                        "type": "string"
                       }
                     }
                   }

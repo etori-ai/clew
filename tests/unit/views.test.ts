@@ -10,6 +10,7 @@ import {
   type Connector,
 } from '../../packages/connectors/src/index';
 import { ManifestError, parseManifest } from '../../packages/connectors/src/remote';
+import { checkConnector } from '../../packages/connectors/src/check';
 import { manifest as phonebookManifest } from '../../connectors/phonebook/connector.mjs';
 import { citationsOf } from '../../apps/server/src/assistant/answer';
 import {
@@ -202,6 +203,45 @@ describe('the rules of a declared view', () => {
         }),
       ),
     ).toThrow(/D38/);
+  });
+  test('a number may carry its unit and a list its noun (D71); a unit on anything but a number is refused by the loader and the check', async () => {
+    const counted: View = {
+      ...table,
+      noun: { one: 'kontakt', other: 'kontakter' },
+      fields: [
+        { key: 'name', label: 'Namn' },
+        { key: 'phone', label: 'Platser', format: 'number', unit: { one: 'plats', other: 'platser' } },
+      ],
+    };
+    expect(viewProblem(read({ view: counted }), [])).toBeUndefined();
+    const wrong: View = {
+      ...table,
+      fields: [
+        { key: 'name', label: 'Namn' },
+        { key: 'phone', label: 'Telefon', format: 'phone', unit: { one: 'plats', other: 'platser' } },
+      ],
+    };
+    expect(viewProblem(read({ view: wrong }), [])).toMatch(/"phone" has a unit but is not a number/);
+    const directory = 'phonebook.directory';
+    const declared = (
+      phonebookManifest as { capabilities: Array<{ name: string; view?: { fields: unknown[] } }> }
+    ).capabilities.find(c => c.name === directory)!.view!;
+    expect(() =>
+      parseManifest(withView(directory, { ...declared, fields: [{ key: 'name', label: 'Namn', unit: 'st' }] })),
+    ).toThrow(/Invalid connector manifest/);
+    const badUnit = {
+      ...declared,
+      fields: (declared.fields as Array<{ key: string }>).map((f, i) =>
+        i === 0 ? { ...f, unit: { one: 'plats', other: 'platser' } } : f,
+      ),
+    };
+    expect(() => parseManifest(withView(directory, badUnit))).toThrow(/has a unit but is not a number/);
+    const report = await checkConnector({
+      url: 'http://phonebook',
+      fetch: async () => Response.json(withView(directory, badUnit)),
+    });
+    expect(report.ok).toBe(false);
+    expect(report.findings.some(f => f.level === 'fail' && /has a unit but is not a number/.test(f.text))).toBe(true);
   });
   test('rows are read where the view says, and a row opens the declared read with its own values', () => {
     expect(viewRows(table, { rows: [{ name: 'A' }, 'skräp', { name: 'B' }] })).toEqual([{ name: 'A' }, { name: 'B' }]);
