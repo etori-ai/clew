@@ -51,7 +51,7 @@ export function ReminderBell() {
       content={
         <VStack>
           <HStack padding={3}>
-            <Heading level={4} accessibilityLevel={2}>
+            <Heading level={3} accessibilityLevel={2}>
               Påminnelser
             </Heading>
           </HStack>

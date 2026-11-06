@@ -122,9 +122,7 @@ export function AudiencePreview({ connectorId }: { connectorId: string }) {
           chevronPosition="start"
           trigger={
             <Text type="supporting">
-              <Text as="span" weight="semibold">
-                Så här ser det ut för {roleLabel[p.role].toLowerCase()}:
-              </Text>{' '}
+              Så här ser det ut för {roleLabel[p.role].toLowerCase()}:{' '}
               {p.visible
                 ? `${p.areas.length} ${p.areas.length === 1 ? 'område' : 'områden'}, ${p.tools.length} frågor till assistenten`
                 : 'ingenting'}
@@ -135,9 +133,7 @@ export function AudiencePreview({ connectorId }: { connectorId: string }) {
             {!p.visible && <Text type="supporting">Anslutningen finns inte för den här rollen.</Text>}
             {p.areas.map(a => (
               <Text key={a.id} type="supporting">
-                <Text as="span" weight="semibold">
-                  {a.title}
-                </Text>
+                {a.title}
                 {a.standing.length ? ` · Gör själv: ${a.standing.join(', ')}` : ''}
               </Text>
             ))}

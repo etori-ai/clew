@@ -137,7 +137,9 @@ export function Handled({
   return (
     <VStack gap={3} as="section" aria-label="Redan hanterat">
       <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-        <Heading level={2}>Redan hanterat</Heading>
+        <Heading level={3} accessibilityLevel={2}>
+          Redan hanterat
+        </Heading>
         {/* The two choices do not fit a phone side by side and SegmentedControl truncates them; there each is one menu (1.4.10). */}
         {compact ? (
           <HStack gap={2} wrap="wrap">

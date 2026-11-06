@@ -201,13 +201,9 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
                 />
               ) : (
                 <>
-                  {/* The page's heading (artboard I): the view's name drawn at 20 px with its source under it; with a table it stands at the start of the controls' line. */}
+                  {/* The page's heading (artboard I; D71's page title at level 1): the view's name with its source under it; with a table it stands at the start of the controls' line. */}
                   {entry
-                    ? !tool?.spec && (
-                        <Heading level={2} accessibilityLevel={1}>
-                          {entry.label}
-                        </Heading>
-                      )
+                    ? !tool?.spec && <Heading level={1}>{entry.label}</Heading>
                     : !failed && <Skeleton height={28} width={200} />}
                   {failed && (
                     <Banner status="error" title={failed.message}>
@@ -226,9 +222,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
                         header={
                           <HStack gap={3} vAlign="center">
                             <VStack gap={0.5}>
-                              <Heading level={2} accessibilityLevel={1}>
-                                {entry!.label}
-                              </Heading>
+                              <Heading level={1}>{entry!.label}</Heading>
                               <Text type="supporting">{tool.spec.source}</Text>
                             </VStack>
                           </HStack>

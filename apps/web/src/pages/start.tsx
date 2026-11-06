@@ -705,12 +705,12 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   // The box is anchored under the greeting (D53): nothing above it changes, and what grows under it while the person
   // types ("Menar du") pushes the day's work down, never the field they are typing in (D36).
   const landing = () => {
-    // The lead (artboard A): the person by first name as the page's h1, drawn small with the sparkle beside it, and the day, the week and the unit at the end of the line.
+    // The lead (artboard A): the person by first name as the page's h1 at level 1 (D71's page title), the sparkle beside it, and the day, the week and the unit at the end of the line.
     const lead = (
       <HStack justify="between" vAlign="center" gap={4} wrap="wrap">
         <HStack gap={2} vAlign="center">
-          <Icon icon={SparklesIcon} size="sm" color="accent" />
-          <Heading id="hem" tabIndex={-1} level={3} accessibilityLevel={1}>
+          <Icon icon={SparklesIcon} size="md" color="accent" />
+          <Heading id="hem" tabIndex={-1} level={1}>
             Hej {user.name.split(' ')[0]}
           </Heading>
         </HStack>
@@ -849,9 +849,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   /** The transcript's lead on a short screen, where there is no pinned toolbar: the title and the way out, in the flow. */
   const conversationHeader = (
     <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-      <Heading level={3} accessibilityLevel={1}>
-        {titled(talk.conversation?.title ?? talk.pending?.text ?? '')}
-      </Heading>
+      <Heading level={1}>{titled(talk.conversation?.title ?? talk.pending?.text ?? '')}</Heading>
       <HStack gap={1}>
         <Button size="sm" variant="ghost" label="Nytt samtal" onClick={talk.newConversation} />
         <Button size="sm" variant="ghost" label="Stäng samtalet" onClick={talk.close} />
@@ -872,9 +870,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       label="Samtalet"
       size="sm"
       startContent={
-        <Heading level={3} accessibilityLevel={1}>
-          {titled(talk.conversation?.title ?? talk.pending?.text.slice(0, 80) ?? '')}
-        </Heading>
+        <Heading level={1}>{titled(talk.conversation?.title ?? talk.pending?.text.slice(0, 80) ?? '')}</Heading>
       }
       endContent={
         mobile ? (

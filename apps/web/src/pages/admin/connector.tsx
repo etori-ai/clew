@@ -404,7 +404,9 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                 </Collapsible>
                 {report && (
                   <VStack gap={2}>
-                    <Heading level={2}>Senaste kontroll</Heading>
+                    <Heading level={3} accessibilityLevel={2}>
+                      Senaste kontroll
+                    </Heading>
                     <CheckResult report={report} />
                   </VStack>
                 )}

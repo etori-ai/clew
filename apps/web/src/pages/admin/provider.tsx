@@ -137,7 +137,7 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
       >
         <HStack gap={1} vAlign="center" wrap="wrap">
           <StatusDot variant={s.tone} label={s.label} />
-          <Text color="secondary">
+          <Text type="supporting">
             {s.label} · {p.baseUrl}
           </Text>
         </HStack>
@@ -218,7 +218,7 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
       </Card>
       <Card padding={4}>
         <VStack gap={3} as="section" aria-labelledby="provider-models">
-          <Heading level={2} id="provider-models">
+          <Heading level={3} accessibilityLevel={2} id="provider-models">
             Modeller
           </Heading>
           {models.length === 0 ? (
@@ -261,7 +261,7 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
       </Card>
       <Card padding={4}>
         <VStack gap={3} as="section" aria-labelledby="provider-details">
-          <Heading level={2} id="provider-details">
+          <Heading level={3} accessibilityLevel={2} id="provider-details">
             Uppgifter
           </Heading>
           <VStack maxWidth={560} gap={3}>
@@ -307,7 +307,7 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
       </Card>
       <Card padding={4}>
         <VStack gap={3} as="section" aria-labelledby="provider-history">
-          <Heading level={2} id="provider-history">
+          <Heading level={3} accessibilityLevel={2} id="provider-history">
             Historik
           </Heading>
           <History history={p.history} />

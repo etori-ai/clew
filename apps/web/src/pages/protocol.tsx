@@ -242,7 +242,7 @@ function Article({ reference }: { reference: ManifestReference }) {
               )}
             </VStack>
             <VStack gap={4}>
-              <Heading level={2} id="recipes">
+              <Heading level={3} accessibilityLevel={2} id="recipes">
                 Recipes
               </Heading>
               <Text as="p">
@@ -252,7 +252,7 @@ function Article({ reference }: { reference: ManifestReference }) {
               </Text>
               {reference.recipes.map(r => (
                 <VStack key={r.id} gap={2}>
-                  <Heading level={3} id={`recipe-${r.id}`}>
+                  <Heading level={4} accessibilityLevel={3} id={`recipe-${r.id}`}>
                     {r.title}
                   </Heading>
                   <Markdown>{r.text}</Markdown>
@@ -263,12 +263,12 @@ function Article({ reference }: { reference: ManifestReference }) {
             </VStack>
             <Divider />
             <VStack gap={6}>
-              <Heading level={2} id="fields">
+              <Heading level={3} accessibilityLevel={2} id="fields">
                 Fields
               </Heading>
               {reference.sections.map(s => (
                 <VStack key={s.id} gap={4}>
-                  <Heading level={3} id={`section-${s.id}`}>
+                  <Heading level={4} accessibilityLevel={3} id={`section-${s.id}`}>
                     {s.title}
                   </Heading>
                   {s.paths.map(p => (
@@ -279,7 +279,7 @@ function Article({ reference }: { reference: ManifestReference }) {
             </VStack>
             <Divider />
             <VStack gap={3}>
-              <Heading level={2} id="rules">
+              <Heading level={3} accessibilityLevel={2} id="rules">
                 Every rule
               </Heading>
               <Text as="p">

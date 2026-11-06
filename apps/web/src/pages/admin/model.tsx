@@ -181,7 +181,7 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
       >
         <HStack gap={1} vAlign="center" wrap="wrap">
           <StatusDot variant={s.tone} label={s.label} />
-          <Text color="secondary">
+          <Text type="supporting">
             {s.label} ·{' '}
             <Text type="code" color="secondary">
               {m.model}
@@ -264,7 +264,9 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
                   }
                 />
                 <VStack gap={3} as="section" aria-label="Uppgifter">
-                  <Heading level={2}>Uppgifter</Heading>
+                  <Heading level={3} accessibilityLevel={2}>
+                    Uppgifter
+                  </Heading>
                   <VStack maxWidth={560} gap={3}>
                     <FormLayout>
                       <TextInput
