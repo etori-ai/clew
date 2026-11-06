@@ -1,4 +1,10 @@
+-- Drizzle runs every pending migration in one transaction, and the change-signal triggers of 0019 on thread are
+-- deferred: an upgrade from a database with rows (the recovery rehearsal, an installation behind 0020) reaches this
+-- ALTER with trigger events queued by earlier migrations' updates and fails with "pending trigger events". Firing
+-- them here lets the table be altered; the signals are notifications and lose nothing by going out earlier.
+SET CONSTRAINTS ALL IMMEDIATE;--> statement-breakpoint
 ALTER TABLE "thread" ALTER COLUMN "area" SET DEFAULT 'calendar';--> statement-breakpoint
+SET CONSTRAINTS ALL DEFERRED;--> statement-breakpoint
 -- English identifiers (D43): `telefonbok` is `phonebook`, `kommunikation` is `communication`, the calendar area `kalender`
 -- is `calendar`. Data only, in the manner of 0027; audit rows keep history as written. The stored manifest and the
 -- capability keys follow the id, so the registry can still load the row. Swedish labels ("Kommunikation", "Sök i
