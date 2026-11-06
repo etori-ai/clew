@@ -407,50 +407,12 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
 type Actions = ReturnType<typeof useThreadActions>;
 
 /**
- * The card's one time action (D49) on its own, for the panel's header beside the close button (artboard E): Inte nu while
- * the card is the person's, Påminn mig while it waits on someone else.
- */
-export function CardTimeAction({ thread, onChange }: { thread: Thread; onChange: (thread: Thread) => void }) {
-  const { run, apply } = useThreadAction({ onChange });
-  const leave = useLeaveWithUndo(apply);
-  const client = useQueryClient();
-  const snoozeRows = useSnoozeRows({ thread, run, leave });
-  const remindRows = useTimeRows({
-    presets: usePresets(),
-    demo: { label: 'Om 10 sekunder', seconds: 10 },
-    onPick: choice => {
-      const seconds =
-        choice.seconds ?? (choice.until ? Math.max(1, Math.ceil((Date.parse(choice.until) - Date.now()) / 1000)) : 0);
-      if (!seconds) return;
-      void run(async () => {
-        const r = await api.remind(thread.id, seconds);
-        const when = seconds < 60 ? `om ${seconds} sekunder` : snoozeWhen(r.fireAt, new Date().toISOString());
-        leave(r.thread, `Jag påminner dig ${when}.`, () => api.cancelReminder(thread.id, r.id));
-        window.setTimeout(() => invalidateStream(client), seconds * 1000 + 1_500);
-        return r.thread;
-      });
-    },
-  });
-  if (thread.state !== 'open' || isSnoozed(thread, new Date().toISOString()) || executionStatus(thread.execution))
-    return null;
-  return thread.waitingOn ? (
-    <>
-      <TimePicker label="Påminn mig" rows={remindRows.rows} own={remindRows.own} size="md" />
-      {remindRows.dialog}
-    </>
-  ) : (
-    <>
-      <TimePicker label="Inte nu" rows={snoozeRows.rows} own={snoozeRows.own} size="md" />
-      {snoozeRows.dialog}
-    </>
-  );
-}
-
-/**
  * The action row shared by every card and row (artboards A and E): the one next step from the connector, filled only
  * when the thread is due today (D48), with the secondary actions, "Lägg till i samtalet" and the card's one time action
- * (D49) beside it on a card. A row (`quiet`) shows "Lägg till i samtalet" and the next step, nothing more: Inte nu,
- * Avfärda and "Varför nu?" belong to the open card. Beside a panel (`compact`) a row keeps the next step alone.
+ * (D49) beside it on a card, also when the card is open beside the page (the product owner, 2026-11-06: the panel's
+ * header is the panel's, so the picker left it for the card's own buttons, against artboard E). A row (`quiet`) shows
+ * "Lägg till i samtalet" and the next step, nothing more: Inte nu, Avfärda and "Varför nu?" belong to the open card.
+ * Beside a panel (`compact`) a row keeps the next step alone.
  */
 function ActionRow({
   thread,
@@ -458,15 +420,12 @@ function ActionRow({
   actions,
   quiet = false,
   compact = false,
-  timeAction = true,
 }: {
   thread: Thread;
   level: AttentionLevel;
   actions: Actions;
   quiet?: boolean;
   compact?: boolean;
-  /** The card's time action is drawn here unless the panel's header holds it (artboard E). */
-  timeAction?: boolean;
 }) {
   const conversation = useConversation();
   const countdown = useCountdown(thread.receipt?.undoUntil ?? null);
@@ -614,9 +573,7 @@ function ActionRow({
             clickAction={() => perform(a)}
           />
         ))}
-        {timeAction && (
-          <TimePicker label="Inte nu" rows={snoozeRows.rows} own={snoozeRows.own} size={size === 'lg' ? 'md' : size} />
-        )}
+        <TimePicker label="Inte nu" rows={snoozeRows.rows} own={snoozeRows.own} size={size === 'lg' ? 'md' : size} />
         {addToConversation}
         {more({})}
       </HStack>
@@ -641,9 +598,7 @@ function ActionRow({
   if (open && thread.waitingOn)
     return (
       <HStack gap={2} vAlign="center" wrap="wrap">
-        {timeAction && (
-          <TimePicker label="Påminn mig" rows={remindRows.rows} own={remindRows.own} size={quiet ? 'md' : 'md'} />
-        )}
+        <TimePicker label="Påminn mig" rows={remindRows.rows} own={remindRows.own} size="md" />
         {quiet ? !compact && addToConversation : more({})}
       </HStack>
     );
@@ -848,7 +803,7 @@ export function GenericCard({
           {error}
         </Text>
       )}
-      <ActionRow thread={thread} level={level} actions={actions} timeAction={!beside} />
+      <ActionRow thread={thread} level={level} actions={actions} />
       {/* What the next step does (artboard E): written to the source and read back, undone within the window, without the model. */}
       {open && !receipt && primary?.kind === 'execute' && (!executionStatus(thread.execution) || actions.settling) && (
         <Text type="supporting" as="p">

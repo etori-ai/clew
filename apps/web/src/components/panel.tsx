@@ -19,8 +19,8 @@ import {
   List,
   ListItem,
   ResizeHandle,
-  Tab,
   TabList,
+  TabMenu,
   Text,
   VStack,
   agendaItems,
@@ -307,7 +307,7 @@ export interface PanelFrame {
 }
 /** One thing opened beside the page, waiting as a tab while another is current (D66). */
 type OpenTab = { id: string; name: string; search: string };
-/** The one body region every tab controls. */
+/** The one body region, where the current thing is drawn. */
 const BODY_ID = 'panel-body';
 const searchOf = (address: string) => {
   const i = address.indexOf('?');
@@ -354,12 +354,12 @@ export function usePanel(
   const { pathname } = useLocation();
   const region = useRef<HTMLDivElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
-  /** Where focus lands at the panel's start: the heading, or the current tab when several things are open. */
-  const start = () =>
-    heading.current ?? region.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') ?? null;
-  // Everything opened beside the page since the panel was last empty, in the order it came (D66, artboards F, H, J):
-  // the address holds the current one, the others wait as tabs. A ref mirrors the state so a close can tell a
-  // deliberate clearing (the fold) from the current tab leaving.
+  const menu = useRef<HTMLButtonElement>(null);
+  /** Where focus lands at the panel's start: the heading, or the menu of open things, named by the current one, when several are open. */
+  const start = () => heading.current ?? menu.current;
+  // Everything opened beside the page since the panel was last empty, in the order it came (D66): the address holds
+  // the current one, the others wait as tabs behind the menu. A ref mirrors the state so a close can tell a deliberate
+  // clearing (the fold) from the current tab leaving.
   const tabsRef = useRef<OpenTab[]>([]);
   const [tabs, setTabsState] = useState<OpenTab[]>([]);
   const setTabs = (next: OpenTab[]) => {
@@ -484,24 +484,29 @@ export function usePanel(
     }
     // One thing took another's place in the open panel (a row's own view, and back): nobody hears that, and focus would
     // stay on a link that is gone. Focus goes to the link that led away when the person comes back to it, else to the
-    // panel's start (its tab, once the row of tabs has been drawn), and the new name is spoken.
+    // panel's start (the menu of open things, once it has been drawn), and the new name is spoken.
     const root: ParentNode | null = inline ? region.current : document.querySelector('dialog[open]');
     const stops = [
       ...(root?.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled])') ?? []),
     ];
     const led = from.address ? stops.find(el => sameAddress(el.getAttribute('href'), from.address!)) : undefined;
-    // With several things open the heading gives way to the row of tabs on the next render: the focus waits for the tab.
+    // With several things open the heading gives way to the menu on the next render: the focus waits for it.
     const several = inline && tabsRef.current.length > 1;
     const target = led ?? (several ? null : inline ? heading.current : (stops[1] ?? stops[0]));
     if (target) target.focus();
     else if (inline) requestAnimationFrame(() => start()?.focus());
     if (name) announce(name);
   }, [id, inline]);
-  /** The row of tabs when more than one thing is open beside the page (artboards F, H, J); a tab leads to its address. */
+  /**
+   * What is open beside the page when it is more than one thing (D66, revised 2026-11-06): Astryx's tab strip holding
+   * one `TabMenu`, a button that reads the current thing's name and opens the list of the others, each leading to its
+   * address. Not a row of `Tab`s: two card titles already overflow the panel, and a strip that scrolls shows neither
+   * the whole current name nor what else is open. The strip is a nav landmark; the menu says how many are open.
+   */
   const tabRow =
     tabs.length > 1 && panel ? (
       <TabList
-        role="tablist"
+        aria-label="Öppet bredvid"
         size="sm"
         value={panel.id}
         onChange={v => {
@@ -509,11 +514,15 @@ export function usePanel(
           if (t) navigate(pathname + t.search);
         }}
       >
-        {tabs.map(t => (
-          <Tab key={t.id} value={t.id} label={t.name} panelId={BODY_ID} />
-        ))}
+        <TabMenu
+          ref={menu}
+          label={`${tabs.length} öppna bredvid`}
+          options={tabs.map(t => ({ value: t.id, label: t.name }))}
+        />
       </TabList>
     ) : null;
+  /** ✕ closes the current thing: the panel with one open, the current tab among several (D66 item 3). */
+  const closeLabel = tabs.length > 1 && name ? `Stäng ${name}` : 'Stäng panelen';
   const close = (open: boolean) => {
     if (!open) panel?.onClose();
   };
@@ -548,7 +557,7 @@ export function usePanel(
               <Layout
                 height="fill"
                 padding={6}
-                /* A heading and a button, not a toolbar: the heading takes the focus when the panel opens, and a toolbar would offer its arrow keys there. With several things open the row of tabs stands where the heading stood (artboards F, H, J). */
+                /* A heading and a button, not a toolbar: the heading takes the focus when the panel opens, and a toolbar would offer its arrow keys there. With several things open the menu of them stands where the heading stood, and ✕ beside it closes the one it names. */
                 header={
                   <LayoutHeader hasDivider={panel.kind !== 'card' || !!tabRow}>
                     <HStack justify="between" vAlign="center" gap={2}>
@@ -568,7 +577,7 @@ export function usePanel(
                         <IconButton
                           size="sm"
                           variant="ghost"
-                          label="Stäng panelen"
+                          label={closeLabel}
                           icon={<Icon icon="close" />}
                           onClick={panel.onClose}
                         />

@@ -51,7 +51,7 @@ import { titled, useConversation, type ConversationState } from '../components/c
 import { Transcript } from '../components/conversation';
 import { toolHref, useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
-import { CardTimeAction, GenericCard, ThreadRow } from '../components/card';
+import { GenericCard, ThreadRow } from '../components/card';
 import { BriefSkeleton } from '../components/brief';
 import { CONVERSATION_MIN, PanelBody, panelBesideQuery, usePanel, type PanelFrame } from '../components/panel';
 import { EventDialog } from '../components/calendar/event-dialog';
@@ -156,16 +156,20 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   // `replace` is what every card gets as `onChange`: it runs before the cache is written (mutations.ts), so the DOM read here is still the old one.
   const focusAfter = useRef<{ card: string; next: string; at: number } | null>(null);
   const replace = useCallback((thread: Thread) => {
-    // A card in the panel keeps the focus when its own button changed it: the card is still there, in its new state.
-    const beside = document.activeElement?.closest<HTMLElement>('[id^="card-"]');
-    if (beside) {
-      focusAfter.current = { card: beside.id, next: beside.id, at: Date.now() };
-      return;
-    }
     const cards = [...document.querySelectorAll('[id^="thread-"]')].map(el => el.id);
     const at = cards.indexOf('thread-' + thread.id);
-    if (at >= 0)
-      focusAfter.current = { card: cards[at]!, next: cards[at + 1] ?? cards[at - 1] ?? 'behover-dig', at: Date.now() };
+    const after = cards[at + 1] ?? cards[at - 1] ?? 'behover-dig';
+    // A card in the panel keeps the focus when its own button changed it: the card is still there, in its new state.
+    // When the button took the card out of the stream (Inte nu, Avfärda, done) its row is gone, and the focus goes on
+    // to the row after it as from the list, even though the panel still shows the card (D66: Inte nu is among the
+    // card's own buttons, and a snoozed card left in the panel is not where the person's work continues).
+    const beside = document.activeElement?.closest<HTMLElement>('[id^="card-"]');
+    if (beside) {
+      const stays = thread.state === 'open' && !isSnoozed(thread, new Date().toISOString());
+      focusAfter.current = { card: stays || at < 0 ? beside.id : cards[at]!, next: after, at: Date.now() };
+      return;
+    }
+    if (at >= 0) focusAfter.current = { card: cards[at]!, next: after, at: Date.now() };
   }, []);
   // The conversation changes cards too (a draft, a dismissal): it tells this page first, the same way a card's own button does.
   const { setThreadListener } = talk;
@@ -757,8 +761,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           tab: panelCard.title,
           address: here + location.search,
           onClose: closePanel,
-          // The card's one time action stands in the panel's header, beside the close button (artboard E).
-          actions: <CardTimeAction thread={panelCard} onChange={replace} />,
+          // The card's buttons, Inte nu among them, are the card's own: the header holds what is open and ✕ (D66).
           body: () => card(panelCard, { beside: true, compact: true, level: 3 }),
         }
       : null;

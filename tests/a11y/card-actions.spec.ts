@@ -44,7 +44,7 @@ test.describe('a row shows the next step and Lägg till i samtalet; the rest is 
     await expect(card.getByRole('button', { name: 'Inte nu', exact: true })).toBeFocused();
   });
 
-  test('an open card has one time action: Inte nu in its header, and no second list under Fler val', async ({
+  test('an open card has one time action: Inte nu among its buttons, and no second list under Fler val', async ({
     page,
     api: _,
   }) => {

@@ -110,23 +110,33 @@ test.describe('the panel beside the page', () => {
     await page.getByRole('link', { name: 'Omtankesamtal med Anna Lindqvist', exact: true }).click();
     await expect(panel.locator('#card-omtanke')).toBeVisible();
     await expect(panel.locator('#card-fakturor')).toHaveCount(0);
-    // Both stay open as tabs (D66): the earlier card waits, the new one is current and has the focus, and the row of tabs controls the one body.
-    const tabs = panel.getByRole('tablist');
-    await expect(tabs.getByRole('tab')).toHaveCount(2);
-    await expect(tabs.getByRole('tab', { name: 'Attestera 3 fakturor, 48 200 kr' })).toBeVisible();
-    const omtanke = tabs.getByRole('tab', { name: 'Omtankesamtal med Anna Lindqvist' });
-    await expect(omtanke).toHaveAttribute('aria-selected', 'true');
-    await expect(omtanke).toBeFocused();
-    await expect(omtanke).toHaveAttribute('aria-controls', 'panel-body');
+    // Both stay open (D66): the earlier card waits behind a menu that reads the current card's name and has the focus,
+    // ✕ beside it names what it closes, and the card's own buttons, Inte nu among them, stay in the card.
+    const openThings = panel.getByRole('navigation', { name: 'Öppet bredvid' });
+    const current = openThings.getByRole('button', { name: 'Omtankesamtal med Anna Lindqvist' });
+    await expect(current).toHaveAttribute('aria-haspopup', 'menu');
+    await expect(current).toBeFocused();
+    await expect(panel.getByRole('button', { name: 'Stäng Omtankesamtal med Anna Lindqvist' })).toBeVisible();
+    await expect(panel.locator('#card-omtanke').getByRole('button', { name: 'Inte nu', exact: true })).toBeVisible();
     await expectNoAxeViolations(page);
-    await tabs.getByRole('tab', { name: 'Attestera 3 fakturor, 48 200 kr' }).click();
+    await current.click();
+    const list = page.getByRole('menu', { name: '2 öppna bredvid' });
+    await expect(list.getByRole('menuitemradio')).toHaveCount(2);
+    await expect(list.getByRole('menuitemradio', { name: 'Omtankesamtal med Anna Lindqvist' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    await expectNoAxeViolations(page);
+    await list.getByRole('menuitemradio', { name: 'Attestera 3 fakturor, 48 200 kr' }).click();
     await expect(page).toHaveURL(/\/\?card=fakturor$/);
     await expect(panel.locator('#card-fakturor')).toBeVisible();
-    // Esc closes the current tab and the other takes its place; the last Esc empties the panel.
+    await expect(openThings.getByRole('button', { name: 'Attestera 3 fakturor, 48 200 kr' })).toBeVisible();
+    // Esc closes the current card and the other takes its place; with one left the heading is back, and the last Esc empties the panel.
     await page.keyboard.press('Escape');
     await expect(page).toHaveURL(/\/\?card=omtanke$/);
     await expect(panel.locator('#card-omtanke')).toBeVisible();
-    await expect(panel.getByRole('tablist')).toHaveCount(0);
+    await expect(panel.getByRole('navigation', { name: 'Öppet bredvid' })).toHaveCount(0);
+    await expect(panel.getByRole('button', { name: 'Stäng panelen' })).toBeVisible();
     await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(panel).toHaveCount(0);

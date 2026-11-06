@@ -6,7 +6,7 @@ test.use({ viewport: desktop });
 
 /**
  * Inte nu on the first row, from the keyboard (artboards A and E): the row's title opens its card beside the column, where
- * Inte nu stands in the panel's header. At 1440 px the panel fits beside the column.
+ * Inte nu stands among the card's own buttons (D66). At 1440 px the panel fits beside the column.
  */
 async function openSnoozeRows(page: Page) {
   await page.setViewportSize({ width: 1440, height: 900 });

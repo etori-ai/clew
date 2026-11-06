@@ -44,7 +44,9 @@ and never quietly dropped. The comparison is
    to the open card. The open row is the current one, says "öppet bredvid" and offers ✕ "Stäng kortet"; beside the
    panel a row keeps its next step alone.
 7. **The open card** (`GenericCard` with `beside`, artboard E): the panel is its surface, its name "Kort" a small
-   secondary heading, the card's one time action (D49) in the panel's header beside ✕ (`CardTimeAction`). The state
+   secondary heading, the card's one time action (D49) among the card's buttons (first in the panel's header beside
+   ✕ as artboard E draws it; moved into the card by [D66](D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md)
+   item 2 on 2026-11-06, since the header is the panel's). The state
    line (the "i dag" badge, the area and the source), the title at 20 px, the lead sentence, the rows in a bordered card
    with the label in semibold and the detail under it, the buttons at 36 px ("Attestera 2 valda", the secondary
    actions, "Lägg till i samtalet", ⋯ with Avfärda), one line on what the next step does ("… skrivs till

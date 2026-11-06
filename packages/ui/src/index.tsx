@@ -96,7 +96,7 @@ export { Switch } from '@astryxdesign/core/Switch';
 export { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 export { AlertDialog } from '@astryxdesign/core/AlertDialog';
 export { Stepper, Step } from '@astryxdesign/core/Stepper';
-export { TabList, Tab } from '@astryxdesign/core/TabList';
+export { TabList, Tab, TabMenu } from '@astryxdesign/core/TabList';
 export { MetadataList, MetadataListItem } from '@astryxdesign/core/MetadataList';
 export { RadioList, RadioListItem } from '@astryxdesign/core/RadioList';
 export { Breadcrumbs, BreadcrumbItem } from '@astryxdesign/core/Breadcrumbs';
