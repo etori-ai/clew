@@ -42,7 +42,16 @@ foreach ($people as $id => $name) {
 $rooms = OC::$server->get(OCA\RoomVox\Service\RoomService::class);
 $permissions = OC::$server->get(OCA\RoomVox\Service\PermissionService::class);
 $service = OC::$server->get(OCA\RoomVox\Service\CalDAVService::class);
-foreach ([['Eken', 6, 'calendar-staff', ['whiteboard']], ['Tallen', 12, 'calendar-staff', ['whiteboard', 'projector', 'video']]] as [$name, $capacity, $group, $equipment]) {
+// The same rooms as fixtureDirectory() in packages/calendar/src/accounts.ts.
+foreach ([
+    ['Granen', 2, 'calendar-staff', ['skärm']],
+    ['Aspen', 4, 'calendar-staff', ['skärm', 'video']],
+    ['Eken', 6, 'calendar-staff', ['whiteboard']],
+    ['Linden', 8, 'calendar-staff', ['whiteboard', 'video', 'rullstolsanpassat']],
+    ['Tallen', 12, 'calendar-staff', ['whiteboard', 'projektor', 'video']],
+    ['Boken', 20, 'calendar-staff', ['projektor', 'mikrofon', 'hörslinga', 'rullstolsanpassat']],
+    ['Almen', 40, 'calendar-staff', ['projektor', 'mikrofon', 'hörslinga', 'video', 'rullstolsanpassat']],
+] as [$name, $capacity, $group, $equipment]) {
     $matches = array_filter($rooms->getAllRooms(), fn($r) => $r['name'] === $name);
     $room = $matches ? array_values($matches)[0] : $rooms->createRoom([
         'name' => $name, 'capacity' => $capacity, 'email' => strtolower($name) . '@clew.test',

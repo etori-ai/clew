@@ -60,7 +60,22 @@ export const fixtureDirectory = () => ({
       .map(({ email, name }) => ({ email, name })),
   ],
   rooms: [
+    { name: 'Granen', email: 'granen@clew.test', capacity: 2, equipment: ['skärm'] },
+    { name: 'Aspen', email: 'aspen@clew.test', capacity: 4, equipment: ['skärm', 'video'] },
     { name: 'Eken', email: 'eken@clew.test', capacity: 6, equipment: ['whiteboard'] },
-    { name: 'Tallen', email: 'tallen@clew.test', capacity: 12, equipment: ['whiteboard', 'projector', 'video'] },
+    { name: 'Linden', email: 'linden@clew.test', capacity: 8, equipment: ['whiteboard', 'video', 'rullstolsanpassat'] },
+    { name: 'Tallen', email: 'tallen@clew.test', capacity: 12, equipment: ['whiteboard', 'projektor', 'video'] },
+    {
+      name: 'Boken',
+      email: 'boken@clew.test',
+      capacity: 20,
+      equipment: ['projektor', 'mikrofon', 'hörslinga', 'rullstolsanpassat'],
+    },
+    {
+      name: 'Almen',
+      email: 'almen@clew.test',
+      capacity: 40,
+      equipment: ['projektor', 'mikrofon', 'hörslinga', 'video', 'rullstolsanpassat'],
+    },
   ],
 });
