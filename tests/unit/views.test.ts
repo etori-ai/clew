@@ -238,6 +238,9 @@ describe('the rules of a declared view', () => {
     expect(() => parseManifest(withView(directory, badUnit))).toThrow(/has a unit but is not a number/);
     const report = await checkConnector({
       url: 'http://phonebook',
+      // The check stops at the manifest, before it would sign anything.
+      assert: async () => 'unused',
+      assertForeign: async () => 'unused',
       fetch: async () => Response.json(withView(directory, badUnit)),
     });
     expect(report.ok).toBe(false);
