@@ -1,4 +1,4 @@
-# D54 · A job is assembled from what connectors follow, approved once, and run as one execution or watch per system
+# D55 · A job is assembled from what connectors follow, approved once, and run as one execution or watch per system
 
 **Status:** proposed · **Date:** 2026-11-06 · **Area:** integrations
 
@@ -8,7 +8,7 @@ Clew carries that as a **job**: one proposal with one step per system, approved 
 one watch per system through the ledger (D45, D47). Clew writes no code per flow. The steps come from what the
 connectors declare and from what an administrator has bound, assembled the way the search composite assembles its
 sources (D26). Design: `docs/architecture/working-across-connectors.md`; evidence:
-[the cross-system stress test](../reviews/2026-11-05-cross-system-work-stress-test.md) and canvas
+[the cross-system stress test](../reviews/2026-11-06-cross-system-work-stress-test.md) and canvas
 **Clew startsida · dagen i ett svep**, artboard J ("Arbete över tre anslutningar").
 
 1. **Facts and followers in the manifest.** Three optional fields, in the style of D37's `uses`, so the protocol
@@ -101,6 +101,12 @@ Weighed and left:
   the database, audited and default deny, is what D23 already does for the connectors themselves, and the drift
   question (what happens to a binding when a connector changes) is answered by D37's classification, extended to
   fact kinds, instead of by a new mechanism.
+
+Proven on 2026-11-06, before any route or screen: `tests/unit/job-executions.test.ts` (twenty cases on the memory adapters:
+assembly, disabled and degraded bindings, off-contract and silent followers, one approval over three systems, a lost reply
+read back on one step with the other untouched, revocation, the watch's committed checks and expiry, undo-all with an
+uncertain compensation, and rollback) and the store contract on the memory and Postgres adapters. Implementation status
+and limits: `docs/reference/status.md`, row "Jobs across systems".
 
 **Replaces.** Refines [D35](D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md) items 6 and 7: a
 pushed card is still one system's and no connector executes in another, and a job card, which is Clew's, is the one

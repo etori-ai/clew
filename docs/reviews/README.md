@@ -21,4 +21,5 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Reliability implementation checkpoint: verification](2026-11-05-reliability-implementation-verification.md)
 - [Design exploration: one flow between conversations, views and the panel · 2026-11-05](2026-11-05-ux-flow-exploration.md)
 - [UX review of the whole interface](2026-11-05-ux-review.md)
+- [Stress test: one event, work in several systems](2026-11-06-cross-system-work-stress-test.md)
 - [Design exploration: the start page's directions, and every path from it · 2026-11-06](2026-11-06-start-page-directions-and-flows.md)

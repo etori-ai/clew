@@ -601,6 +601,15 @@
       "status": "accepted, built 2026-11-06 on branch `hem`; not built: the phone's shift strip (artboard D needs a schedule capability no connector declares), the panel's tabs for everything a conversation has opened (artboards F, H, J), a conversation carrying a job across connectors with a step list (artboard J), and the mark on an earlier conversation that something happened since (artboard H)",
       "date": "2026-11-06",
       "area": "ui"
+    },
+    {
+      "key": "D55-a-job-is-assembled-from-what-connectors-follow-approved-once-and-run-per-system",
+      "number": 55,
+      "path": "docs/decisions/D55-a-job-is-assembled-from-what-connectors-follow-approved-once-and-run-per-system.md",
+      "title": "D55 · A job is assembled from what connectors follow, approved once, and run as one execution or watch per system",
+      "status": "proposed",
+      "date": "2026-11-06",
+      "area": "integrations"
     }
   ],
   "documents": [
@@ -1205,6 +1214,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D55-a-job-is-assembled-from-what-connectors-follow-approved-once-and-run-per-system.md",
+      "title": "D55 · A job is assembled from what connectors follow, approved once, and run as one execution or watch per system",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -1612,6 +1627,22 @@
         "Verification",
         "Decisions amended",
         "Not inspected"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-06-cross-system-work-stress-test.md",
+      "title": "Stress test: one event, work in several systems",
+      "category": "review-history",
+      "headings": [
+        "Assessment",
+        "Basis and limits",
+        "The scenario",
+        "The trace",
+        "Findings",
+        "What must not be built",
+        "Complexity budget",
+        "Recommendation",
+        "Outcome"
       ]
     },
     {

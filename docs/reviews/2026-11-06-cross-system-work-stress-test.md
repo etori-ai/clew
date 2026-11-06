@@ -8,7 +8,7 @@ Status: review and recommendation; no architectural decision changed
 ## Assessment
 
 The vision promises that "where a workflow today means opening three systems in order, Clew is the order"
-([vision](../vision.md#L44)), and the design canvas **Clew startsida · dagen i ett svep**, artboard **J · Arbete över
+([vision](../vision.md)), and the design canvas **Clew startsida · dagen i ett svep**, artboard **J · Arbete över
 tre anslutningar**, draws what that looks like: one conversation carries a *job*, the assistant lays one proposal with
 one step per system, the person confirms once, and one receipt per source comes back. The product owner added two
 constraints on 2026-11-05: the scenario is artboard J extended with the rehab rule the HR mock already scans for and
@@ -26,8 +26,8 @@ shape, and no place where an administrator can see what follows what.
 None of this calls for a workflow engine. The missing piece is small and generic: connectors declare the facts they
 bring about and the facts they follow, an administrator binds one to the other, Clew fans out once and assembles a job
 proposal the way the search composite assembles hits, the person approves the job once, and the ledger runs one
-execution or one bounded watch per step, independently. That shape is being recorded as the proposed decision on jobs,
-numbered D54 when it lands, and proven in code in a parallel session. This review records the trace, the gaps and the
+execution or one bounded watch per step, independently. That shape is recorded as the proposed decision on jobs, D55
+(D53 is the start page and D54 the Läget figures, both landed meanwhile), and proven in code in the same change. This review records the trace, the gaps and the
 budget it must stay within.
 
 ## Basis and limits
@@ -70,7 +70,7 @@ Each step says whether the architecture as built holds, and where the evidence i
 **1. Trigger.** The employee self-reports in the HR system. Clew learns of it only when a scan runs: the HR mock's
 `scan` draws cards from fixtures on first visit and nightly ([hr.ts](../../packages/connectors/src/mock/hr.ts#L163)),
 and the change-notification contract is proposed, not built ([D19](../decisions/D19-change-notification-is-a-clew-owned-contract.md),
-[status](../reference/status.md#L20)). **Holds as a scan; breaks as an event.** The job can start from the box ("Hassan
+[status](../reference/status.md)). **Holds as a scan; breaks as an event.** The job can start from the box ("Hassan
 är sjuk i dag") or from a pushed card, but nothing in the tree carries "an absence came into being" as a fact Clew can
 act on.
 
@@ -80,7 +80,7 @@ name capabilities of the connector that pushed it: `draftProblem` refuses any ot
 ([decisions.ts](../../apps/server/src/threads/usecases/decisions.ts#L15-L32)). D35 items 6 and 7 are explicit: "a card is
 one system's; no action spans systems". The one composite that combines sources, the utvecklingssamtal planner, is
 hand-written in the calendar module and calls the calendar package directly rather than the registry
-([working across connectors](../architecture/working-across-connectors.md#L90-L94)); the handling of a connector's
+([working across connectors](../architecture/working-across-connectors.md)); the handling of a connector's
 `propose` whose output is a card is listed as not built in D35. **Breaks.** There is no generic way to lay a proposal
 whose rows come from three connectors, and the only precedent is per-flow code, which the product owner has ruled out.
 
@@ -110,12 +110,12 @@ unsafe write" in [executions.test.ts](../../tests/unit/executions.test.ts#L46-L5
 läses tillbaka, skrivs aldrig om" is this state, drawn.
 
 **7. Watch.** Payroll reads the HR system itself; Clew should read payroll at 12:02, 20:02 and 08:02 and say so at the
-end. The status page says it plainly: "General conditional watches are unbuilt" ([status](../reference/status.md#L14)).
+end. The status page says it plainly: "General conditional watches are unbuilt" ([status](../reference/status.md)).
 The only bounded follow-up is the calendar's obligation policy, two reminders per invitation, two working days apart,
 30 days ([followups.ts](../../apps/server/src/modules/calendar/usecases/followups.ts), D47). Even with a watch, the
 20:02 read has nobody to read as: delegated tokens exist only in a session, and the protocol comment says they are
 "absent in scans, figures, callbacks" ([protocol.ts](../../packages/connectors/src/protocol.ts#L65-L66),
-[status](../reference/status.md#L16)). **Breaks twice**: no watch, and no identity for one.
+[status](../reference/status.md)). **Breaks twice**: no watch, and no identity for one.
 
 **8. Next proposal.** The 13:00 talk and the substitute question depend on the absence being a fact. Nothing in the
 tree lets one receipt become the input of the next proposal; D53 itself lists "a conversation carrying a job across
@@ -125,12 +125,12 @@ the next step as a proposal the person approves, not as a chained execution, and
 **9. A connector running steps in another system.** `clew.call` throws "En anslutning kan inte utföra åtgärder i en
 annan anslutning." for any `execute` ([index.ts](../../packages/connectors/src/index.ts#L246)); the callback route
 checks the caller's `uses` and goes through the same handle ([connectors.ts](../../apps/server/src/routes/connectors.ts#L32));
-the backend rule states it ([backend structure](../architecture/backend-structure.md#L87-L88)). **Holds, correctly.**
+the backend rule states it ([backend structure](../architecture/backend-structure.md)). **Holds, correctly.**
 Time reporting must never be told by the HR connector to reopen a shift; the refusal is the right boundary and the
 recommendation keeps it.
 
 **10. Undo.** Compensation is a separately approved execution linked to its original, the original receipt stands until
-the compensation succeeds, and the undo must match the confirmed action exactly ([D45](../decisions/D45-approved-intent-precedes-source-dispatch.md#L11),
+the compensation succeeds, and the undo must match the confirmed action exactly ([D45](../decisions/D45-approved-intent-precedes-source-dispatch.md),
 [usecases.ts](../../apps/server/src/modules/executions/usecases.ts#L12-L17)). **Holds per step.** "Ångra allt" on a
 three-step job is three such compensations under one decision; nothing today groups them.
 
@@ -139,8 +139,8 @@ three-step job is three such compensations under one decision; nothing today gro
 row of its own above these; it does not change them.
 
 **12. Names.** Artboard J reads "Sjukfrånvaro för Hassan i dag". Principle 7 says names of individuals stay in the source
-system, never in a card ([vision](../vision.md#L105)); the product owner decided on 2026-11-03 that the canvas wins for
-card rows ([HANDOVER](../../HANDOVER.md#L39)), and the HR mock still writes "Namnet visas i personalsystemet, inte här"
+system, never in a card ([vision](../vision.md)); the product owner decided on 2026-11-03 that the canvas wins for
+card rows ([HANDOVER](../../HANDOVER.md)), and the HR mock still writes "Namnet visas i personalsystemet, inte här"
 on its rehab card ([hr.ts](../../packages/connectors/src/mock/hr.ts#L172)). **Tension**, recorded as F11 in the
 2026-11-05 architecture review and not decided here.
 
@@ -171,7 +171,7 @@ another connector.
 
 ### G3 · No watch on a system Clew does not write in
 
-"General conditional watches are unbuilt" ([status](../reference/status.md#L14)). The calendar's follow-up policy is
+"General conditional watches are unbuilt" ([status](../reference/status.md)). The calendar's follow-up policy is
 the only bounded repeated check, and it is specific to invitations
 ([followups.ts](../../apps/server/src/modules/calendar/usecases/followups.ts)). Payroll reading the HR system is the
 normal case for a municipality, not an edge case; without a watch, Clew either writes to payroll itself (wrong) or
@@ -203,7 +203,7 @@ job; the single-connector `propose` → card path stays D35's follow-up.
 
 ### G6 · No inbound event
 
-D19's CloudEvents ingest is proposed, not built ([status](../reference/status.md#L20)). The sick report reaches Clew by
+D19's CloudEvents ingest is proposed, not built ([status](../reference/status.md)). The sick report reaches Clew by
 scan or by the person typing it. **Change:** none for the job itself; the assembler must accept both entries, asked
 (the composer picks the creating propose and its fact fans out) and pushed (a scan occurrence or, later, a D19 event
 carries an existing fact ref). D19 stays its own row.
@@ -211,7 +211,7 @@ carries an existing fact ref). D19 stays its own row.
 ### G7 · No background identity for a watch
 
 Delegated tokens come from the session's token exchange and are absent in scans, figures and callbacks
-([protocol.ts](../../packages/connectors/src/protocol.ts#L65-L66), [status](../reference/status.md#L16)). A payroll
+([protocol.ts](../../packages/connectors/src/protocol.ts#L65-L66), [status](../reference/status.md)). A payroll
 read at 20:02 as the person has no credential when payroll declares `delegation`. The ledger already handles the
 analogous case for executes: `needsSession` leaves a visible blocked execution (D45).
 
@@ -222,7 +222,7 @@ reads remains F10's open decision.
 ### G8 · The one composite bypasses the registry
 
 The planner calls the calendar package directly rather than through the registry, so neither scope is re-applied at
-the composition boundary ([working across connectors](../architecture/working-across-connectors.md#L90-L94)). The
+the composition boundary ([working across connectors](../architecture/working-across-connectors.md)). The
 document itself calls routing it through the registry "the target and a small refactor".
 
 **Change:** the job assembler calls followers only through the registry handle, as the actor, so every step draft is
@@ -240,8 +240,8 @@ absence-registering execute on the HR mock are follow-ups, after the decision la
 
 ### G10 · Names in cards
 
-Artboard J names the employee in the proposal; principle 7 forbids it ([vision](../vision.md#L105)) and the 2026-11-03
-decision allows it in card rows ([HANDOVER](../../HANDOVER.md#L39)). The HR mock's own rehab card sides with the
+Artboard J names the employee in the proposal; principle 7 forbids it ([vision](../vision.md)) and the 2026-11-03
+decision allows it in card rows ([HANDOVER](../../HANDOVER.md)). The HR mock's own rehab card sides with the
 principle ([hr.ts](../../packages/connectors/src/mock/hr.ts#L172)). **Change:** none here. F11 in the architecture
 review already asks for one baseline; the job card should follow whatever that decision says, and the step rows
 (which name systems, not people) are unaffected.
@@ -250,7 +250,7 @@ review already asks for one baseline; the job card should follow whatever that d
 
 D37 makes a capability's **name** its contract and classifies manifest changes against the connectors that `use` it
 ([D37](../decisions/D37-connectors-declare-what-they-use-and-a-capability-name-is-its-contract.md)); the status page
-notes no `deprecated` field or semantic classifier exists yet ([status](../reference/status.md#L11)). A follower does
+notes no `deprecated` field or semantic classifier exists yet ([status](../reference/status.md)). A follower does
 not call the creating connector; it receives a fact *from Clew*. If the HR connector renames or reshapes the absence
 fact, nothing today says what happens to time reporting's follow. Silent drift here is the worst case: a job with one
 step fewer and nobody told.
@@ -284,13 +284,13 @@ above.
 
 - **A saga engine or a second workflow engine.** Temporal already runs saved intents and timers (D17, D45, D47). A job
   is a row and N intents, not a state machine with compensating transitions.
-- **A process designer.** No swimlanes, no conditions, no branching, no ordering ([vision](../vision.md#L53),
-  [what Clew is not](../vision.md#L76)). A binding is a flat list; the follower decides from the fact whether it has a
+- **A process designer.** No swimlanes, no conditions, no branching, no ordering ([vision](../vision.md),
+  [what Clew is not](../vision.md)). A binding is a flat list; the follower decides from the fact whether it has a
   step, and zero is an answer.
 - **Cross-step input dependencies.** No step's input depends on another step's output; all are computed from the fact.
   Something that needs another system's *result* is a next job.
 - **Operator-defined joins.** Combinations stay code or declarations with both scopes visible
-  ([working across connectors](../architecture/working-across-connectors.md#L132-L139)).
+  ([working across connectors](../architecture/working-across-connectors.md)).
 - **Clew relaying data between sources.** Payroll reads the HR system itself, or the integration platform carries it;
   Clew watches the result and never becomes the pipe.
 - **Automatic chaining of executions.** The substitute question and the 13:00 talk are proposals the person approves
@@ -315,8 +315,8 @@ The recommendation must fit inside this, or it is the engine the vision rejects.
 
 ## Recommendation
 
-Record the shape below as the proposed decision on jobs, numbered D54 when it lands (D53 is the start page), and prove
-it on the memory and Postgres adapters before any route or screen is built.
+The shape below is recorded as the proposed decision D55 and proven on the memory and Postgres adapters before any route or
+screen is built.
 
 **A job is assembled from what connectors declare, approved once, and run as one execution or watch per system.**
 
@@ -362,5 +362,8 @@ baseline (F11).
 
 ## Outcome
 
-Review saved; the ledger and assembler proof is being built in a parallel session; nothing in this review changes code
-or decisions.
+Review saved. The proof landed in the same change as this review: protocol fields `facts`, `follows` and `creates`,
+`Registry.followers`/`offered`, the jobs module (bindings, assembler), `approveJob`/`undoJob`/`observe` in the executions
+module, tables `execution_job` and `follow_binding`, `tests/unit/job-executions.test.ts` (twenty cases) and two store-contract
+cases on both adapters; `bun run check` and `bun run test:db` were green. No route, card, administration page or Temporal
+timer for watches exists; D55 is proposed, not accepted. Nothing in this review changes an accepted decision.
