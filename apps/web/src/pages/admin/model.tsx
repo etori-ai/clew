@@ -8,7 +8,6 @@ import {
   Banner,
   Button,
   Card,
-  Code,
   DropdownMenu,
   EmptyState,
   FormLayout,
@@ -183,7 +182,11 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
         <HStack gap={1} vAlign="center" wrap="wrap">
           <StatusDot variant={s.tone} label={s.label} />
           <Text color="secondary">
-            {s.label} · <Code color="secondary">{m.model}</Code> hos {m.providerTitle}
+            {s.label} ·{' '}
+            <Text type="code" color="secondary">
+              {m.model}
+            </Text>{' '}
+            hos {m.providerTitle}
           </Text>
         </HStack>
       </PageLead>

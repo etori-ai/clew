@@ -5,7 +5,6 @@ import {
   Badge,
   Button,
   Card,
-  Code,
   EmptyState,
   HStack,
   Link,
@@ -94,7 +93,9 @@ export function AdminModelsPage({ user }: { user: SessionUser }) {
             </Link>
             {r.m.isDefault && <Badge variant="neutral" label="Standard" />}
           </HStack>
-          <Code color="secondary">{r.m.model}</Code>
+          <Text type="code" color="secondary">
+            {r.m.model}
+          </Text>
           {r.m.description && <Text type="supporting">{r.m.description}</Text>}
         </VStack>
       ),
@@ -198,7 +199,9 @@ export function AdminModelsPage({ user }: { user: SessionUser }) {
                       }
                       description={
                         <VStack gap={0} hAlign="start">
-                          <Code color="secondary">{m.model}</Code>
+                          <Text type="code" color="secondary">
+                            {m.model}
+                          </Text>
                           <Text type="supporting">
                             {modelStatusOf(m).label} · {audienceLabel(m.audience)}
                           </Text>

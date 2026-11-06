@@ -6,7 +6,6 @@ import {
   Banner,
   Button,
   Card,
-  Code,
   Collapsible,
   Dialog,
   DialogHeader,
@@ -194,7 +193,9 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
       renderCell: (r: CapRow) => (
         <VStack gap={0}>
           <Text>{r.c.title}</Text>
-          <Code>{r.c.name}</Code>
+          <Text type="code" color="secondary">
+            {r.c.name}
+          </Text>
         </VStack>
       ),
     },
@@ -459,7 +460,9 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                         label={<Text>{r.c.title}</Text>}
                         description={
                           <VStack gap={0}>
-                            <Code>{r.c.name}</Code>
+                            <Text type="code" color="secondary">
+                              {r.c.name}
+                            </Text>
                             <Text type="supporting">{capabilityKindLabel[r.c.kind]}</Text>
                           </VStack>
                         }

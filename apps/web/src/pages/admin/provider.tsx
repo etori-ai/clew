@@ -8,7 +8,6 @@ import {
   Banner,
   Button,
   Card,
-  Code,
   Dialog,
   DialogHeader,
   EmptyState,
@@ -242,7 +241,9 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
                     }
                     description={
                       <VStack gap={0} hAlign="start">
-                        <Code color="secondary">{m.model}</Code>
+                        <Text type="code" color="secondary">
+                          {m.model}
+                        </Text>
                         <HStack gap={1} vAlign="center">
                           <StatusDot variant={ms.tone} label={ms.label} />
                           <Text type="supporting">
