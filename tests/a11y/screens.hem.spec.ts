@@ -27,6 +27,13 @@ test.describe('screens', () => {
     await open(page, '/?card=fakturor');
     await page.screenshot({ path: out('hem-E-1440') });
   });
+  test('E · the panel folded away', async ({ page, api: _ }) => {
+    await page.setViewportSize(board);
+    await open(page, '/?card=fakturor');
+    await page.getByRole('button', { name: 'Fäll ihop panelen' }).click();
+    await page.getByRole('separator', { name: 'Visa panelen igen' }).waitFor();
+    await page.screenshot({ path: out('hem-E-collapsed-1440') });
+  });
   test('G · a question from Hem', async ({ page, api: _ }) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await open(page, '/');

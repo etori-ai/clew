@@ -530,7 +530,8 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
    * in place, so they speak the tabs pattern and point at the panel they fill. There is no heading of its own: Hem's
    * greeting is the page's h1, and the groups are its h2s.
    */
-  const work = (
+  // Drawn when the page is composed, after the panel's slot is known.
+  const work = () => (
     <VStack gap={4}>
       {error && (
         <Text as="p" role="alert" color="accent">
@@ -569,31 +570,42 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
               ))}
             </TabList>
           )}
-          {/* The area filter (artboard A): one menu that says which area is chosen; under a finger it opens as a sheet. */}
-          {areas.length > 0 && mobile && (
-            <DropdownMenu
-              presentation="adaptive"
-              button={{ label: `Område: ${area ? areaTitle(area) : 'Alla'}`, size: 'sm', variant: 'secondary' }}
-              items={[
-                { id: ALL_AREAS, label: 'Alla områden', onClick: () => navigate(homeHref({ area: null })) },
-                ...areas.map(a => ({ id: a.id, label: a.title, onClick: () => navigate(homeHref({ area: a.id })) })),
-              ]}
-            />
-          )}
-          {areas.length > 0 && !mobile && (
-            <DropdownMenu button={{ label: area ? areaTitle(area) : 'Alla områden', size: 'md', variant: 'ghost' }}>
-              <DropdownMenuRadioGroup
-                label="Område"
-                value={area ?? ALL_AREAS}
-                onChange={value => navigate(homeHref({ area: value && value !== ALL_AREAS ? value : null }))}
-              >
-                <DropdownMenuRadioItem value={ALL_AREAS} label="Alla områden" />
-                {areas.map(a => (
-                  <DropdownMenuRadioItem key={a.id} value={a.id} label={a.title} />
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenu>
-          )}
+          <HStack gap={1} vAlign="center" wrap="wrap">
+            {slot.collapsed && (
+              <Button
+                size="md"
+                variant="ghost"
+                label="Visa panelen"
+                icon={<Icon icon="chevronsLeft" size="sm" />}
+                onClick={slot.expand}
+              />
+            )}
+            {/* The area filter (artboard A): one menu that says which area is chosen; under a finger it opens as a sheet. */}
+            {areas.length > 0 && mobile && (
+              <DropdownMenu
+                presentation="adaptive"
+                button={{ label: `Område: ${area ? areaTitle(area) : 'Alla'}`, size: 'sm', variant: 'secondary' }}
+                items={[
+                  { id: ALL_AREAS, label: 'Alla områden', onClick: () => navigate(homeHref({ area: null })) },
+                  ...areas.map(a => ({ id: a.id, label: a.title, onClick: () => navigate(homeHref({ area: a.id })) })),
+                ]}
+              />
+            )}
+            {areas.length > 0 && !mobile && (
+              <DropdownMenu button={{ label: area ? areaTitle(area) : 'Alla områden', size: 'md', variant: 'ghost' }}>
+                <DropdownMenuRadioGroup
+                  label="Område"
+                  value={area ?? ALL_AREAS}
+                  onChange={value => navigate(homeHref({ area: value && value !== ALL_AREAS ? value : null }))}
+                >
+                  <DropdownMenuRadioItem value={ALL_AREAS} label="Alla områden" />
+                  {areas.map(a => (
+                    <DropdownMenuRadioItem key={a.id} value={a.id} label={a.title} />
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenu>
+            )}
+          </HStack>
         </HStack>
         <Divider />
       </VStack>
@@ -658,7 +670,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     );
     const box = <Composer place="landing" near={near} about={about} />;
     const menarDu = <Suggestions viewHref={viewHref} cardHref={cardHref} />;
-    const column = work;
+    const column = work();
     // One flow from the top on every screen: the greeting and the box (docked at the foot on a phone), then the day's work
     // with the day and what happened since yesterday beside it (artboard A's two columns), under it where they do not fit,
     // and gone while a card, a view or a card's read stands in the panel (artboard E).
@@ -816,6 +828,15 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         ) : (
           <HStack gap={2} vAlign="center">
             {started(talk) && <Text type="supporting">Startat av dig {started(talk)}</Text>}
+            {slot.collapsed && (
+              <Button
+                size="sm"
+                variant="ghost"
+                label="Visa panelen"
+                icon={<Icon icon="chevronsLeft" size="sm" />}
+                onClick={slot.expand}
+              />
+            )}
             <Button
               size="sm"
               variant="ghost"

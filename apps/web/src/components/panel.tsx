@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { DayView, PanelViewSpec, SearchResult, TodayView, ViewRef, WeekView } from '@clew/contracts';
 import {
   Badge,
@@ -17,11 +17,13 @@ import {
   LayoutPanel,
   List,
   ListItem,
+  ResizeHandle,
   Text,
   VStack,
   agendaItems,
   useAnnounce,
   useMediaQuery,
+  useResizable,
   type AgendaItem,
 } from '@clew/ui';
 import { dayLabel, timeRange } from '@clew/calendar/dates';
@@ -326,17 +328,55 @@ const TYPING = 'input, textarea, [contenteditable="true"], [role="textbox"], [ro
 export function usePanel(
   panel: PanelFrame | null,
   { minMain, overlayOnly = false, rest }: Options,
-): { end: ReactNode | undefined; overlay: ReactNode } {
+): {
+  end: ReactNode | undefined;
+  overlay: ReactNode;
+  /** Beside the page the panel can be folded away (the product owner, 2026-11-06); the page then offers the way back. */
+  collapsed: boolean;
+  expand: () => void;
+} {
   const fits = useMediaQuery(panelBesideQuery(minMain));
   const inline = fits && !overlayOnly;
   const announce = useAnnounce();
   const region = useRef<HTMLDivElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
+  const handle = useRef<HTMLDivElement>(null);
+  // Beside the page the panel is Astryx's resizable region: dragged, or folded away with the header's button and brought
+  // back with the page's. The width is remembered per browser; the fold is not, so a card opened later is seen.
+  const [collapsed, setCollapsed] = useState(false);
+  const resizable = useResizable({
+    defaultSize: PANEL,
+    minSize: 320,
+    maxSize: 560,
+    collapsible: true,
+    autoSaveId: 'clew-panel-width',
+    isCollapsed: collapsed,
+    onCollapseChange: setCollapsed,
+  });
+  const expand = () => {
+    resizable.expand();
+    setCollapsed(false);
+    announce('Panelen visas');
+    requestAnimationFrame(() => heading.current?.focus());
+  };
+  const collapse = () => {
+    resizable.collapse();
+    setCollapsed(true);
+    announce('Panelen är ihopfälld');
+    requestAnimationFrame(() => handle.current?.focus());
+  };
   const opener = useRef<HTMLElement | null>(null);
   const shown = useRef<{ id: string; address: string | undefined } | null>(null);
   const id = panel?.id ?? null,
     address = panel?.address,
     title = panel?.title ?? null;
+  // What the panel holds changed: it is shown again, so the thing just opened is seen.
+  useEffect(() => {
+    if (id !== null && collapsed) {
+      resizable.expand();
+      setCollapsed(false);
+    }
+  }, [id]);
   useEffect(() => {
     const from = shown.current;
     shown.current = id === null ? null : { id, address };
@@ -380,54 +420,80 @@ export function usePanel(
   };
   const end =
     inline && panel ? (
-      <LayoutPanel width={PANEL} hasDivider role="complementary" label={panel.title} padding={0} isScrollable={false}>
-        <VStack
-          ref={region}
-          height="100%"
-          onKeyDown={e => {
-            // Esc inside a menu, a list or a dialog is theirs; a bare Esc lets go of the panel and never reaches the conversation behind it.
-            if (
-              e.key !== 'Escape' ||
-              (e.target as HTMLElement).closest('[role="menu"], [role="listbox"], [role="dialog"], dialog')
-            )
-              return;
-            e.stopPropagation();
-            panel.onClose();
-          }}
+      <>
+        <ResizeHandle
+          ref={handle}
+          isReversed
+          hasDivider
+          resizable={resizable.props}
+          label={collapsed ? 'Visa panelen igen' : 'Ändra panelens bredd'}
+        />
+        <LayoutPanel
+          resizable={resizable.props}
+          hasDivider={false}
+          role="complementary"
+          label={panel.title}
+          padding={0}
+          isScrollable={false}
         >
-          <Layout
-            height="fill"
-            padding={6}
-            /* A heading and two buttons, not a toolbar: the heading takes the focus when the panel opens, and a toolbar would offer its arrow keys there. */
-            header={
-              <LayoutHeader hasDivider={panel.kind !== 'card'}>
-                <HStack justify="between" vAlign="center" gap={2}>
-                  <Heading
-                    ref={heading}
-                    tabIndex={-1}
-                    level={panel.kind === 'card' ? 4 : 2}
-                    accessibilityLevel={2}
-                    color={panel.kind === 'card' ? 'secondary' : 'primary'}
-                  >
-                    {panel.title}
-                  </Heading>
-                  <HStack gap={1} vAlign="center">
-                    {panel.actions}
-                    <IconButton
-                      size="sm"
-                      variant="ghost"
-                      label="Stäng panelen"
-                      icon={<Icon icon="close" />}
-                      onClick={panel.onClose}
-                    />
-                  </HStack>
-                </HStack>
-              </LayoutHeader>
-            }
-            content={<LayoutContent>{panel.body(true)}</LayoutContent>}
-          />
-        </VStack>
-      </LayoutPanel>
+          {!collapsed && (
+            <VStack
+              ref={region}
+              height="100%"
+              onKeyDown={e => {
+                // Esc inside a menu, a list or a dialog is theirs; a bare Esc lets go of the panel and never reaches the conversation behind it.
+                if (
+                  e.key !== 'Escape' ||
+                  (e.target as HTMLElement).closest('[role="menu"], [role="listbox"], [role="dialog"], dialog')
+                )
+                  return;
+                e.stopPropagation();
+                panel.onClose();
+              }}
+            >
+              <Layout
+                height="fill"
+                padding={6}
+                /* A heading and two buttons, not a toolbar: the heading takes the focus when the panel opens, and a toolbar would offer its arrow keys there. */
+                header={
+                  <LayoutHeader hasDivider={panel.kind !== 'card'}>
+                    <HStack justify="between" vAlign="center" gap={2}>
+                      <Heading
+                        ref={heading}
+                        tabIndex={-1}
+                        level={panel.kind === 'card' ? 4 : 2}
+                        accessibilityLevel={2}
+                        color={panel.kind === 'card' ? 'secondary' : 'primary'}
+                      >
+                        {panel.title}
+                      </Heading>
+                      <HStack gap={1} vAlign="center">
+                        {panel.actions}
+                        <IconButton
+                          size="sm"
+                          variant="ghost"
+                          label="Fäll ihop panelen"
+                          tooltip="Fäll ihop panelen"
+                          icon={<Icon icon="chevronsRight" />}
+                          onClick={collapse}
+                        />
+                        <IconButton
+                          size="sm"
+                          variant="ghost"
+                          label="Stäng panelen"
+                          icon={<Icon icon="close" />}
+                          onClick={panel.onClose}
+                        />
+                      </HStack>
+                    </HStack>
+                  </LayoutHeader>
+                }
+                content={<LayoutContent>{panel.body(true)}</LayoutContent>}
+              />
+            </VStack>
+          )}
+        </LayoutPanel>
+      </>
     ) : inline && rest ? (
       <LayoutPanel width={PANEL} hasDivider role="complementary" label="Vid sidan av" padding={0} isScrollable={false}>
         <Layout height="fill" padding={3} content={<LayoutContent>{rest}</LayoutContent>} />
@@ -458,5 +524,5 @@ export function usePanel(
       />
     </Drawer>
   );
-  return { end, overlay };
+  return { end, overlay, collapsed: inline && !!panel && collapsed, expand };
 }

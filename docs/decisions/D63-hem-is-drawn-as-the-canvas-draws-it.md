@@ -70,7 +70,15 @@ and never quietly dropped. The comparison is
     the view's own search (240 px, its label hidden) and its choice as a `Selector` at the end; the table in a bordered
     `Card`; the page 32 px in from the rail, at the width the rail leaves. The `SegmentedControl` of D38 is gone from the
     view's controls in the panel too.
-14. **The tints** are tokens: `--color-background-red` and `--color-border-red` take the artboard's faint red and
+14. **The open panel folds away.** Beside the page the panel (a card, a view, a card's read) is Astryx's resizable
+    region: a `ResizeHandle` on its inner edge, `useResizable` with `collapsible`, the width remembered per browser
+    (`clew-panel-width`), the fold not remembered so a thing opened later is seen. "Fäll ihop panelen" in the panel's
+    header folds it, the focus lands on the handle (named "Visa panelen igen"), the page offers "Visa panelen" beside
+    its tabs, in the conversation's toolbar or on the tool page's heading line, and expanding puts the focus on the
+    panel's heading; both moves are spoken. The product owner asked for this on 2026-11-06 and chose the open panel
+    alone: the resting day column stays in the page's grid, so the box keeps spanning the width as artboard A draws it.
+    Not on the canvas.
+15. **The tints** are tokens: `--color-background-red` and `--color-border-red` take the artboard's faint red and
     red border, `--color-background-green` and `--color-border-green` its faint green, in the light appearance; the dark
     appearance keeps Neutral's values.
 

@@ -1,4 +1,15 @@
-import { answer, composer, desktop, expect, expectNoAxeViolations, heading, open, phone, test } from './support';
+import {
+  announcements,
+  answer,
+  composer,
+  desktop,
+  expect,
+  expectNoAxeViolations,
+  heading,
+  open,
+  phone,
+  test,
+} from './support';
 import { menuRow } from './phonebook';
 
 /** Wide enough for the panel to stand beside the page's column (D50); at the suite's desktop width it lies over it. */
@@ -102,6 +113,26 @@ test.describe('the panel beside the page', () => {
     await page.keyboard.press('Escape');
     await expect(panel).toHaveCount(0);
     await expect(page).toHaveURL(/\/$/);
+  });
+
+  test("beside the page the panel folds away with its button and comes back with the page's, each move spoken and the focus placed", async ({
+    page,
+    api: _,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await open(page, '/?card=fakturor');
+    const panel = page.getByRole('complementary', { name: 'Kort' });
+    await panel.getByRole('button', { name: 'Fäll ihop panelen' }).click();
+    await expect(panel.locator('#card-fakturor')).toHaveCount(0);
+    // The handle keeps the focus and names the way back; the row still says its card is open.
+    await expect(page.getByRole('separator', { name: 'Visa panelen igen' })).toBeFocused();
+    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Panelen är ihopfälld'));
+    await expect(page.locator('#thread-fakturor')).toContainText('öppet bredvid');
+    await page.getByRole('button', { name: 'Visa panelen' }).click();
+    await expect(panel.locator('#card-fakturor').getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
+    await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
+    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Panelen visas'));
+    await expectNoAxeViolations(page);
   });
 
   test("beside Hem the panel rests on the day and what happened since yesterday; a row's card takes its place, the box asks about the card, and Esc gives it all back", async ({

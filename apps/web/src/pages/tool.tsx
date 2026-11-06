@@ -7,6 +7,8 @@ import {
   Button,
   EmptyState,
   Heading,
+  HStack,
+  Icon,
   Layout,
   LayoutContent,
   LayoutFooter,
@@ -223,12 +225,23 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
                         headingLevel={2}
                         tableQuery={tableQuery}
                         header={
-                          <VStack gap={0.5}>
-                            <Heading level={2} accessibilityLevel={1}>
-                              {entry!.label}
-                            </Heading>
-                            <Text type="supporting">{tool.spec.source}</Text>
-                          </VStack>
+                          <HStack gap={3} vAlign="center">
+                            <VStack gap={0.5}>
+                              <Heading level={2} accessibilityLevel={1}>
+                                {entry!.label}
+                              </Heading>
+                              <Text type="supporting">{tool.spec.source}</Text>
+                            </VStack>
+                            {slot.collapsed && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                label="Visa panelen"
+                                icon={<Icon icon="chevronsLeft" size="sm" />}
+                                onClick={slot.expand}
+                              />
+                            )}
+                          </HStack>
                         }
                         /* The view's controls rewrite the address in place, so a search is addressable and one step back leaves the tool. */
                         onInput={next => navigate(toolHref(capability, next), { replace: true })}
