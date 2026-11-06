@@ -977,12 +977,14 @@ export function ThreadRow({
   ]
     .filter(Boolean)
     .join(' · ');
-  const end =
+  // The open row's one control is the ✕, an icon that fits beside any title: it stays at the end of the row even where
+  // the buttons would go under the line, else it would stand alone and centred under the line (seen 2026-11-06).
+  const close =
     isOpen && onClose ? (
       <IconButton size="md" variant="ghost" label="Stäng kortet" icon={<Icon icon="close" />} onClick={onClose} />
-    ) : (
-      <ActionRow thread={thread} level={level} actions={actions} quiet compact={compact} />
-    );
+    ) : null;
+  const end = close ?? <ActionRow thread={thread} level={level} actions={actions} quiet compact={compact} />;
+  const under = narrow && !close;
   return (
     <ListItem
       id={`thread-${thread.id}`}
@@ -1003,7 +1005,7 @@ export function ThreadRow({
             <Text color="secondary">{line}</Text>
             <Flags thread={thread} />
           </HStack>
-          {narrow && end}
+          {under && end}
           {error && (
             <Text as="p" role="alert" color="accent">
               {error}
@@ -1011,7 +1013,7 @@ export function ThreadRow({
           )}
         </VStack>
       }
-      endContent={narrow ? undefined : end}
+      endContent={under ? undefined : end}
     />
   );
 }
