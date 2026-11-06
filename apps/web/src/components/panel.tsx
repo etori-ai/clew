@@ -8,6 +8,7 @@ import {
   Drawer,
   EventList,
   DrawerHeader,
+  DropdownMenu,
   Heading,
   HStack,
   Icon,
@@ -359,7 +360,7 @@ export function usePanel(
   const start = () => heading.current ?? menu.current;
   // Everything opened beside the page since the panel was last empty, in the order it came (D66): the address holds
   // the current one, the others wait as tabs behind the menu. A ref mirrors the state so a close can tell a deliberate
-  // clearing (the fold) from the current tab leaving.
+  // clearing (Stäng alla) from the current tab leaving.
   const tabsRef = useRef<OpenTab[]>([]);
   const [tabs, setTabsState] = useState<OpenTab[]>([]);
   const setTabs = (next: OpenTab[]) => {
@@ -386,14 +387,17 @@ export function usePanel(
     announce('Panelen visas');
     requestAnimationFrame(() => start()?.focus());
   };
-  // Folding lets go of everything the panel held (the product owner, 2026-11-06: "closing the sidebar does not clear
-  // the selection"): the tabs are dropped and the card closes as with ✕, so the row stops saying "öppet bredvid" and
-  // the box asks nothing, and the focus goes back to what opened it as on any close. With nothing open the button
-  // keeps the focus: it is the same control, now saying the way back.
+  // Folding hides and nothing more (D63 item 14, revised 2026-11-06 evening): the tabs, the current thing and the
+  // address stay, so the row keeps saying "öppet bredvid" and the box keeps its token, and the button keeps the focus,
+  // now saying the way back. Letting go of everything is a decision of its own, Stäng alla in the header. (The
+  // afternoon's fold closed the card with it, which made a layout act the only way to close all.)
   const collapse = () => {
     resizable.collapse();
     setCollapsed(true);
     announce('Panelen är ihopfälld');
+  };
+  /** Stäng alla: every tab dropped and the current thing closed, so the panel empties at once. */
+  const closeAll = () => {
     setTabs([]);
     panel?.onClose();
   };
@@ -415,9 +419,13 @@ export function usePanel(
     address = panel?.address,
     title = panel?.title ?? null,
     name = panel?.tab ?? title;
-  // What the panel holds changed: it is shown again, so the thing just opened is seen.
+  // What the panel holds changed: it is shown again, so the thing just opened is seen. Not when a closed tab's
+  // neighbour takes its place: nothing was opened, and a folded panel stays folded.
+  const revealing = useRef(false);
   useEffect(() => {
-    if (id !== null && collapsed) {
+    const reveal = revealing.current;
+    revealing.current = false;
+    if (id !== null && collapsed && !reveal) {
       resizable.expand();
       setCollapsed(false);
       // The heading mounts with the next paint, after the focus rule below has run.
@@ -447,7 +455,10 @@ export function usePanel(
     const rest = current.filter(t => t.id !== was);
     setTabs(rest);
     const next = rest[Math.min(Math.max(i - 1, 0), rest.length - 1)];
-    if (next) navigate(pathname + next.search, { replace: true });
+    if (next) {
+      revealing.current = true;
+      navigate(pathname + next.search, { replace: true });
+    }
   }, [id, address, name]);
   // A thing that is no longer open beside the page (the page's word: a card snoozed, dismissed or done) leaves the row.
   useEffect(() => {
@@ -523,6 +534,24 @@ export function usePanel(
     ) : null;
   /** ✕ closes the current thing: the panel with one open, the current tab among several (D66 item 3). */
   const closeLabel = tabs.length > 1 && name ? `Stäng ${name}` : 'Stäng panelen';
+  /** From two open, closing all is one choice in a menu beside ✕ (D66 item 3, revised): ✕ keeps closing the one it names. */
+  const more =
+    tabs.length > 1 ? (
+      <DropdownMenu
+        renderTrigger={trigger => (
+          <IconButton
+            {...trigger}
+            size="sm"
+            variant="ghost"
+            label="Fler val för panelen"
+            tooltip="Fler val för panelen"
+            icon={<Icon icon="moreHorizontal" />}
+          />
+        )}
+        alignment="end"
+        items={[{ label: `Stäng alla (${tabs.length})`, onClick: closeAll }]}
+      />
+    ) : null;
   const close = (open: boolean) => {
     if (!open) panel?.onClose();
   };
@@ -574,6 +603,7 @@ export function usePanel(
                       )}
                       <HStack gap={1} vAlign="center">
                         {panel.actions}
+                        {more}
                         <IconButton
                           size="sm"
                           variant="ghost"
@@ -626,9 +656,10 @@ export function usePanel(
           <LayoutContent>
             <VStack gap={3}>
               {tabRow}
-              {panel?.actions && (
-                <HStack gap={1} wrap="wrap">
-                  {panel.actions}
+              {(panel?.actions || more) && (
+                <HStack gap={1} wrap="wrap" vAlign="center">
+                  {panel?.actions}
+                  {more}
                 </HStack>
               )}
               <VStack id={BODY_ID}>{panel?.body(false)}</VStack>

@@ -89,7 +89,14 @@ and never quietly dropped. The comparison is
     which lets go of the card as "Ny fråga i stället" does. The product owner asked for the fold on 2026-11-06, first for the open panel
     alone, then, with a picture of Hem with nothing open and no sidebar to open, for the resting day column too: at
     rest the panel holds I dag and Sedan i går with the same handle and fold button, so at 1440 px the box ends at the
-    panel's edge rather than spanning the width as artboard A draws it. Not on the canvas; the departure is this
+    panel's edge rather than spanning the width as artboard A draws it.
+    **Revised 2026-11-06, the same evening: folding hides and nothing more.** The product owner saw that ✕ closed one
+    thing, that the fold was the only way to close all, and that it threw the open cards away ("if I click the arrow
+    the sidebar resets, is that what you'd expect?"): a layout act carried a state act. The fold now keeps the tabs,
+    the current thing and the address, so the row keeps saying "öppet bredvid" and the box keeps its token; the focus
+    stays on the button, which says the way back, and showing the panel again puts it on the panel's start. A thing
+    opened while the panel is folded still shows it; a closed tab's neighbour taking its place does not. Letting go
+    of everything is [D66](D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md) item 3's Stäng alla. Not on the canvas; the departure is this
     item's.
 15. **The tints** are tokens: `--color-background-red` and `--color-border-red` take the artboard's faint red and
     red border, `--color-background-green` and `--color-border-green` its faint green, in the light appearance; the dark

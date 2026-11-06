@@ -1,6 +1,6 @@
 # D66 · The panel keeps everything opened beside the page as tabs
 
-**Status:** accepted, built 2026-11-06 on `main`, revised the same day (items 2, 4 and 5: a menu, not a row) · **Date:** 2026-11-06 · **Area:** ui
+**Status:** accepted, built 2026-11-06 on `main`, revised the same day (items 2, 4 and 5: a menu, not a row; item 3 the same evening: the fold keeps the tabs, Stäng alla closes all) · **Date:** 2026-11-06 · **Area:** ui
 
 **Decision.** Beside a page the panel ([D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md)
 item 3) no longer replaces what it holds. Each card or view opened joins a row of tabs in the panel's header, in the
@@ -25,9 +25,14 @@ dropdown showing currently selected"). Built in `apps/web/src/components/panel.t
    (the product owner, 2026-11-06, against artboard E and D63 item 7, which had lifted the time action into the header).
 3. **Closing closes the current tab only.** ✕, Esc, the row's "Stäng kortet", "Ny fråga i stället" and the token's X
    all take the current thing out of the address; the tab before it (else the first) then takes its place in the
-   address, and the panel is empty when the last tab goes. Folding the panel drops every tab
-   ([D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) item 14: the fold clears the selection). With several open,
+   address, and the panel is empty when the last tab goes. With several open,
    ✕ is named after what it closes ("Stäng Omtankesamtal med Anna Lindqvist"), never "Stäng panelen", which it is not.
+   Folding the panel keeps every tab ([D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) item 14, revised the same
+   evening; the afternoon's fold dropped them, which made a layout act the only way to close all). From two open,
+   closing all is one choice, "Stäng alla (N)", in an Astryx `DropdownMenu` on a ⋯ icon button "Fler val för panelen"
+   beside ✕ (in the drawer, beside "Öppna som sida" above the body); it drops every tab, closes the current thing and
+   sends the focus back to what opened the panel, as the last ✕ does. The "N öppna bredvid" menu is a `TabMenu`, whose
+   rows are tabs, so Stäng alla does not go among them.
 4. **Focus and speech.** A thing opened beside the page takes the focus at the panel's start as before: the heading
    with one tab, the menu's button with several; when it took another's place its own name is spoken (the card's
    title, not "Kort").
@@ -56,8 +61,8 @@ meant a second card silently replaced the first, which the product owner saw as 
 - **Keeping every open thing in the address** (`card=a&card=b`). Every link on the page builds the address
   (`homeHref`, `withoutPanel`, the rows' `cardHref`), and a reload would reopen a pile the person may have forgotten;
   the address names one thing (D43, D50 item 4) and the others are the page's working state.
-- **✕ closing all.** Artboard J labels it "Stäng panelen", but one Esc dropping three cards is a loss, and the fold
-  already clears everything on purpose.
+- **✕ closing all.** Artboard J labels it "Stäng panelen", but one Esc dropping three cards is a loss. (In the
+  afternoon the fold cleared everything on purpose; since the evening it hides only, and the ⋯ beside ✕ closes all.)
 - **A tab per thing in the row's "öppet bredvid".** The row says its card is open; which other cards are open is the
   panel's business.
 
@@ -65,7 +70,9 @@ meant a second card silently replaced the first, which the product owner saw as 
 the "Öppet bredvid" landmark reads the current one's name and has the focus, ✕ is named after it, Inte nu is in the
 card, the menu lists both with the current one checked and the other leads to its address, Esc closes the current
 card and the other takes its place with the heading and "Stäng panelen" back, the last Esc empties the panel, no axe
-violations with the menu closed and open). `keyboard.spec.ts` and `card-actions.spec.ts` reach Inte nu in the card.
+violations with the menu closed and open; two opened again, "Stäng alla (2)" behind ⋯ empties the panel and gives
+the focus back to the first row; "beside the page the panel folds away …": the fold keeps the card, the row and the
+token, the focus on the button). `keyboard.spec.ts` and `card-actions.spec.ts` reach Inte nu in the card.
 
 **Replaces.** D50 item 3's one-thing-at-a-time panel (it still shows one thing; the others wait as tabs); D53's and
 D63's "left for later" for the panel's tabs. D50 item 4 (the address) and item 5 (the card goes along) stand.

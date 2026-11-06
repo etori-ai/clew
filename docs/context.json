@@ -796,7 +796,7 @@
       "number": 66,
       "path": "docs/decisions/D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md",
       "title": "D66 · The panel keeps everything opened beside the page as tabs",
-      "status": "accepted, built 2026-11-06 on `main`, revised the same day (items 2, 4 and 5: a menu, not a row)",
+      "status": "accepted, built 2026-11-06 on `main`, revised the same day (items 2, 4 and 5: a menu, not a row; item 3 the same evening: the fold keeps the tabs, Stäng alla closes all)",
       "date": "2026-11-06",
       "area": "ui"
     },
