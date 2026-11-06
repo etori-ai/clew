@@ -9,18 +9,31 @@ import { menuRow, menuRows } from './telefonbok';
  * the product only where an administrator chose them.
  */
 const rail = (page: import('@playwright/test').Page) => page.getByRole('navigation', { name: 'Sidonavigering' });
-const tool = (label: string, n: number): MenuEntry => ({ connector: 'verktyg-' + n, source: 'System ' + n, capability: `verktyg-${n}.open`, title: label, label, icon: (['book', 'document', 'chart', 'people', 'clock', 'link', 'search'] as const)[n % 7]! });
+const tool = (label: string, n: number): MenuEntry => ({
+  connector: 'verktyg-' + n,
+  source: 'System ' + n,
+  capability: `verktyg-${n}.open`,
+  title: label,
+  label,
+  icon: (['book', 'document', 'chart', 'people', 'clock', 'link', 'search'] as const)[n % 7]!,
+});
 
 test.describe('Verktyg in the menu', () => {
   test.use({ viewport: desktop });
 
-  test('the section is named, holds the calendar and then the chosen views of a connector in alphabetical order, and has no axe violations', async ({ page, api }) => {
+  test('the section is named, holds the calendar and then the chosen views of a connector in alphabetical order, and has no axe violations', async ({
+    page,
+    api,
+  }) => {
     api.menu = menuRows;
     await open(page, '/');
     const section = rail(page).getByRole('group', { name: 'Verktyg' });
     await expect(section.getByRole('link')).toHaveText(['Kalender', 'Mitt team', 'Telefonbok']);
     await expect(section.getByRole('link', { name: 'Mitt team' })).toHaveAttribute('href', '/tools/telefonbok.team');
-    await expect(section.getByRole('link', { name: 'Telefonbok' })).toHaveAttribute('href', '/tools/telefonbok.directory');
+    await expect(section.getByRole('link', { name: 'Telefonbok' })).toHaveAttribute(
+      'href',
+      '/tools/telefonbok.directory',
+    );
     // The areas, the administration and the way out stay below it.
     const order = await rail(page).getByRole('link').allTextContents();
     expect(order.indexOf('Telefonbok')).toBeGreaterThan(order.indexOf('Kalender'));
@@ -32,7 +45,10 @@ test.describe('Verktyg in the menu', () => {
     await expect(rail(page).getByRole('group', { name: 'Verktyg' }).getByRole('link')).toHaveText(['Kalender']);
   });
 
-  test('the row opens the tool as a page by keyboard, not in the side panel, and is marked as current', async ({ page, api }) => {
+  test('the row opens the tool as a page by keyboard, not in the side panel, and is marked as current', async ({
+    page,
+    api,
+  }) => {
     api.menu = [menuRow];
     await open(page, '/');
     const row = rail(page).getByRole('link', { name: 'Telefonbok' });
@@ -50,7 +66,7 @@ test.describe('Verktyg in the menu', () => {
     await expect(page.locator('nav a[aria-current="page"]')).toHaveText('Kalender');
   });
 
-  test('from the calendar the row leads to the tool\'s page too', async ({ page, api }) => {
+  test("from the calendar the row leads to the tool's page too", async ({ page, api }) => {
     api.menu = [menuRow];
     await open(page, '/calendar');
     await rail(page).getByRole('link', { name: 'Telefonbok' }).click();
@@ -58,7 +74,7 @@ test.describe('Verktyg in the menu', () => {
     await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 
-  test('the menu\'s search finds a tool by its name and opens its page', async ({ page, api }) => {
+  test("the menu's search finds a tool by its name and opens its page", async ({ page, api }) => {
     api.menu = [menuRow];
     await open(page, '/');
     const search = rail(page).getByRole('combobox', { name: 'Sök i samtal och kort' });
@@ -68,8 +84,13 @@ test.describe('Verktyg in the menu', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Telefonbok' })).toBeVisible();
   });
 
-  test('more than four tools: four show and the rest wait under Fler verktyg, a disclosure that says whether it is open', async ({ page, api }) => {
-    api.menu = [menuRow, ...['Avtal', 'Blanketter', 'Diarium', 'Fordon', 'Lokaler'].map(tool)].sort((a, b) => a.label.localeCompare(b.label, 'sv'));
+  test('more than four tools: four show and the rest wait under Fler verktyg, a disclosure that says whether it is open', async ({
+    page,
+    api,
+  }) => {
+    api.menu = [menuRow, ...['Avtal', 'Blanketter', 'Diarium', 'Fordon', 'Lokaler'].map(tool)].sort((a, b) =>
+      a.label.localeCompare(b.label, 'sv'),
+    );
     await open(page, '/');
     const section = rail(page).getByRole('group', { name: 'Verktyg' });
     await expect(section.getByRole('link', { name: 'Fordon' })).toBeVisible();
@@ -77,32 +98,43 @@ test.describe('Verktyg in the menu', () => {
     const more = section.getByRole('button', { name: 'Fler verktyg' });
     await expect(more).toHaveAttribute('aria-expanded', 'false');
     const moreLabel = (await more.getByText('Fler verktyg', { exact: true }).boundingBox())!;
-    const toolLabel = (await section.getByRole('link', { name: 'Fordon' }).getByText('Fordon', { exact: true }).boundingBox())!;
+    const toolLabel = (await section
+      .getByRole('link', { name: 'Fordon' })
+      .getByText('Fordon', { exact: true })
+      .boundingBox())!;
     expect(moreLabel.x).toBe(toolLabel.x);
     await more.focus();
     await page.keyboard.press('Enter');
     await expect(more).toHaveAttribute('aria-expanded', 'true');
     await expect(section.getByRole('link', { name: 'Telefonbok' })).toBeVisible();
     await expect(section.getByRole('link', { name: 'Lokaler' })).toBeVisible();
-    await expect(section.getByRole('group', { name: 'Fler verktyg' }).locator('[data-orientation="vertical"]')).toBeVisible();
+    await expect(
+      section.getByRole('group', { name: 'Fler verktyg' }).locator('[data-orientation="vertical"]'),
+    ).toBeVisible();
     await expectNoAxeViolations(page);
   });
 });
 
 test.describe('Verktyg on a phone', () => {
-  test('the row is in the drawer and opens the tool\'s page, its rows as a list', async ({ page, api }) => {
+  test("the row is in the drawer and opens the tool's page, its rows as a list", async ({ page, api }) => {
     await page.setViewportSize(phone);
     api.menu = [menuRow];
     await open(page, '/');
     const drawer = await openNav(page);
-    await expect(drawer.getByRole('group', { name: 'Verktyg' }).getByRole('link')).toHaveText(['Kalender', 'Telefonbok']);
+    await expect(drawer.getByRole('group', { name: 'Verktyg' }).getByRole('link')).toHaveText([
+      'Kalender',
+      'Telefonbok',
+    ]);
     await expectNoAxeViolations(page);
     await drawer.getByRole('link', { name: 'Telefonbok' }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Telefonbok' })).toBeVisible();
     await expect(page.getByRole('list', { name: 'Telefonboken' })).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
   });
-  test('at 320 px the tool shows its whole name in the drawer and the page does not scroll sideways', async ({ page, api }) => {
+  test('at 320 px the tool shows its whole name in the drawer and the page does not scroll sideways', async ({
+    page,
+    api,
+  }) => {
     await page.setViewportSize(narrow);
     api.menu = [menuRow];
     await open(page, '/');
@@ -125,7 +157,10 @@ test.describe('Verktyg on a phone', () => {
 
 test.describe('the administrator chooses which views are in the menu', () => {
   test.use({ viewport: desktop });
-  test('every view that can be a tool has its own switch under Områden; choosing one is said aloud and shown on the overview', async ({ page, api }) => {
+  test('every view that can be a tool has its own switch under Områden; choosing one is said aloud and shown on the overview', async ({
+    page,
+    api,
+  }) => {
     api.admin = true;
     await open(page, '/admin/connectors/hello');
     await expect(page.getByText('Ingen vy vald')).toBeVisible();
@@ -140,7 +175,9 @@ test.describe('the administrator chooses which views are in the menu', () => {
     await page.keyboard.press('Space');
     await expect(second).toBeChecked();
     await expect(tools.getByRole('switch', { name: 'Visa Hello i menyn' })).not.toBeChecked();
-    await expect(page.getByRole('region', { name: 'Aviseringar' }).getByText('Saker att göra visas i menyn under Verktyg.')).toBeVisible();
+    await expect(
+      page.getByRole('region', { name: 'Aviseringar' }).getByText('Saker att göra visas i menyn under Verktyg.'),
+    ).toBeVisible();
     expect(api.menuOn).toEqual(['hello.openItems']);
     await tools.getByRole('switch', { name: 'Visa Hello i menyn' }).click();
     await expect.poll(() => api.menuOn).toEqual(['hello.openItems', 'hello.overview']);
@@ -160,7 +197,10 @@ test.describe('the administrator chooses which views are in the menu', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
     await expectNoAxeViolations(page);
   });
-  test('a connector with no view that can be a tool says so, and adding a connector does not ask about the menu', async ({ page, api }) => {
+  test('a connector with no view that can be a tool says so, and adding a connector does not ask about the menu', async ({
+    page,
+    api,
+  }) => {
     api.admin = true;
     await open(page, '/admin/connectors/finance');
     await expect(page.getByText('Ingen vy kan ligga i menyn')).toBeVisible();

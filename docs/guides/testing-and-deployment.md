@@ -1,8 +1,23 @@
 # Test, register and operate a connector
 
+## From your own project, against a test installation
+
+A connector is its own repository. Nothing from this one needs to be installed there; the Clew you will register with serves what you build against ([D60](../decisions/D60-the-instance-serves-its-connector-protocol.md)), and a test installation of Clew is the natural target.
+
+1. **Generate from the instance, not from this checkout.** Point `openapi-typescript`, `openapi-generator` or your language's equivalent at `https://<test-clew>/api/protocol/openapi.json` for the four routes you serve and the two you call; feed `/api/protocol/connector-protocol.schema.json` to a JSON Schema tool for the shapes alone. Regenerate when the test installation is upgraded; its `x-clew-protocol` block says which protocol numbers it loads.
+2. **Make the dry run a test in your repository.** Post your manifest to the instance and assert what you intend:
+
+   ```sh
+   curl -s -X POST "https://<test-clew>/api/protocol/manifest?id=<your id>" -H 'content-type: application/json' --data @manifest.json
+   ```
+
+   The answer lists every reason the loader would refuse the document, or, for a good one, which capabilities become model tools, which views can be rows in the menu, which reads the conformance check will skip because they need input, and who may call what. Run it in CI so a drift on either side shows on the next push. It checks the manifest only, and knows nothing of your registration, audience or governance.
+3. **Register a draft on the test installation for the behavioural check.** An administrator with `admin.connectors` adds your connector's URL, id and transport secret under Administration › Anslutna system and presses "Testa anslutning". A draft is visible to no one until it is enabled, so do this early and often. Your service must be reachable from that Clew (a tunnel or a deployment into its network), your verifier must pin that installation's `https://<test-clew>/api/connectors/jwks`, and its base URL is your `CLEW_URL` for callbacks; see [authorization](authorization.md). The CLI below needs the installation's database and master key and is for whoever operates that Clew.
+4. **Without any Clew**, copy the pattern of [the signed walkthrough](../../scripts/docs-smoke.ts): your handler in-process behind an ephemeral signing authority and the shared checker. That is the one step that needs this repository checked out.
+
 ## Checks without external services
 
-Before anything runs, post the manifest to the instance's dry run ([D57](../decisions/D57-the-instance-serves-its-connector-protocol.md)); it lists every problem the loader would refuse it for, and for a good document says what Clew would offer to whom and which capabilities the conformance check below will and will not call:
+Before anything runs, post the manifest to the instance's dry run ([D60](../decisions/D60-the-instance-serves-its-connector-protocol.md)); it lists every problem the loader would refuse it for, and for a good document says what Clew would offer to whom and which capabilities the conformance check below will and will not call:
 
 ```sh
 curl -s -X POST "http://localhost:3020/api/protocol/manifest?id=telefonbok" -H 'content-type: application/json' --data @docs/generated/telefonbok.manifest.json

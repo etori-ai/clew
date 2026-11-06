@@ -4,11 +4,12 @@ This page describes the protocol implemented in this checkout. The version and f
 
 ## Served by the instance
 
-A running Clew serves the protocol it speaks under `/api/protocol`, public, without a session, generated from the same code that validates manifests ([D57](../decisions/D57-the-instance-serves-its-connector-protocol.md)). Build against the instance you will register with, not against this checkout.
+A running Clew serves the protocol it speaks under `/api/protocol`, public, without a session, generated from the same code that validates manifests ([D60](../decisions/D60-the-instance-serves-its-connector-protocol.md)). Build against the instance you will register with, not against this checkout.
 
 | Route | What it answers |
 |---|---|
 | `GET /api/protocol` | A page that draws the OpenAPI document (RapiDoc, served from the image; nothing is fetched outside the installation). |
+| `GET /protocol/manifest` | The manifest field by field: what each field does, type, presence, constraints, an example and the rules between fields, with three recipes. Drawn by the web app from `GET /api/protocol/manifest-reference.json`; committed as [manifest-reference.md](../generated/manifest-reference.md). |
 | `GET /api/protocol/openapi.json` | The OpenAPI 3.1 document: the routes a connector serves (tag Connector) and the routes Clew serves (tag Clew), with `components.schemas` equal to the bundle's `$defs` and `x-clew-protocol` naming the versions this instance loads. |
 | `GET /api/protocol/connector-protocol.schema.json` | The JSON Schema bundle. |
 | `POST /api/protocol/manifest?id=<id>` | A dry run: a manifest document in, a `ManifestPreview` out with every problem the loader would refuse it for, else what Clew would make of it (who may call what, what the model is offered, which views could be menu rows, what the conformance check would exercise). No service, registration or sign-in needed. |
@@ -36,7 +37,7 @@ Clew validates capability input and output against the declaration. Your connect
 
 ## Manifest semantics
 
-The [generated field table and complete examples](../generated/README.md) cover structural fields. Additional rules are enforced by [parseManifest](../../packages/connectors/src/remote.ts), [view validation](../../packages/connectors/src/views.ts) and the [registry](../../packages/connectors/src/index.ts):
+The [manifest field reference](../generated/manifest-reference.md) covers every field with its rules; the [generated field table and complete examples](../generated/README.md) are the short form. The rules are enforced by [parseManifest](../../packages/connectors/src/remote.ts), [view validation](../../packages/connectors/src/views.ts) and the [registry](../../packages/connectors/src/index.ts):
 
 - The id matches the registration. Every capability is prefixed by that id.
 - Remote kinds are `passthrough` or `derived`; `core` is internal to Clew.
@@ -70,7 +71,7 @@ A successful execute's `output` has the `ExecuteResult` shape: a headline, per-r
 
 ## Contract changes
 
-`protocol` in a manifest is the version of this contract, not of the connector ([D57](../decisions/D57-the-instance-serves-its-connector-protocol.md), item 4). An additive change (a new optional field, a looser constraint) keeps the number. A break is a new number, and Clew then loads the new number and the one before it for a stated window, showing a connector on the older one with a warning in administration rather than refusing it. The exception is a security change, which retires the old number at once: protocol 2 rejects protocol 1, because shared-secret identity signing was replaced by installation keys (D44), and there is no fallback. The served documents carry `x-clew-protocol` with the current, accepted and retired numbers, and a refused manifest names the number and the reason. Update the verifier, trusted Clew URL and manifest before refreshing the registration. Keep the transport secret separate from signing authority.
+`protocol` in a manifest is the version of this contract, not of the connector ([D60](../decisions/D60-the-instance-serves-its-connector-protocol.md), item 4). An additive change (a new optional field, a looser constraint) keeps the number. A break is a new number, and Clew then loads the new number and the one before it for a stated window, showing a connector on the older one with a warning in administration rather than refusing it. The exception is a security change, which retires the old number at once: protocol 2 rejects protocol 1, because shared-secret identity signing was replaced by installation keys (D44), and there is no fallback. The served documents carry `x-clew-protocol` with the current, accepted and retired numbers, and a refused manifest names the number and the reason. Update the verifier, trusted Clew URL and manifest before refreshing the registration. Keep the transport secret separate from signing authority.
 
 Keep existing capability names and schemas compatible with stored cards and callers. Use a new capability name for a breaking contract and keep the old behavior while consumers migrate. This is integration guidance, not an automatic compatibility guarantee. The proposed capability deprecation metadata and dependency-aware compatibility UI are not implemented. There is no connector `version` or `deprecated` field in the current manifest. Version your deployment images independently.
 

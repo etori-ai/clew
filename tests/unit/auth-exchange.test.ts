@@ -9,11 +9,28 @@ function world(options: { subject?: string | undefined; expiresIn?: number } = {
   let fail = false;
   const delegation = delegationFor({
     clock: () => now,
-    subjectToken: async digest => { subjects.push(digest); return 'subject' in options ? options.subject : 'subj-' + digest; },
-    exchange: async (subject, audience) => { exchanges.push(subject + '>' + audience); if (fail) throw new Error('invalid_target'); return { access_token: `tok-${audience}-${exchanges.length}`, expires_in: options.expiresIn ?? 60 }; },
+    subjectToken: async digest => {
+      subjects.push(digest);
+      return 'subject' in options ? options.subject : 'subj-' + digest;
+    },
+    exchange: async (subject, audience) => {
+      exchanges.push(subject + '>' + audience);
+      if (fail) throw new Error('invalid_target');
+      return { access_token: `tok-${audience}-${exchanges.length}`, expires_in: options.expiresIn ?? 60 };
+    },
     marginMs: 10_000,
   });
-  return { delegation, exchanges, subjects, advance: (ms: number) => { now += ms; }, setFail: (v: boolean) => { fail = v; } };
+  return {
+    delegation,
+    exchanges,
+    subjects,
+    advance: (ms: number) => {
+      now += ms;
+    },
+    setFail: (v: boolean) => {
+      fail = v;
+    },
+  };
 }
 describe('delegation', () => {
   test('two concurrent calls exchange once; the token is reused until its margin, then exchanged again', async () => {
@@ -41,7 +58,7 @@ describe('delegation', () => {
     f.setFail(false);
     expect(await f.delegation.token('s1', 'eneo')).toBe('tok-eneo-2');
   });
-  test('forget drops one session\'s tokens only; the exchanged life is capped; a bad audience is refused before any call', async () => {
+  test("forget drops one session's tokens only; the exchanged life is capped; a bad audience is refused before any call", async () => {
     const w = world({ expiresIn: 3600 });
     await w.delegation.token('s1', 'eneo');
     await w.delegation.token('s2', 'eneo');

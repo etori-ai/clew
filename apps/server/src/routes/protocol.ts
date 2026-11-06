@@ -5,9 +5,13 @@ import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import { openApiDocument, protocolSchema } from '@clew/connectors/protocol';
 import { previewManifest } from '@clew/connectors/preview';
+import { manifestReference } from '@clew/connectors/reference';
+import { manifest as hello } from '../../../../connectors/hello/connector.mjs';
+import { manifest as telefonbok } from '../../../../connectors/telefonbok/connector.mjs';
+import { parseManifest } from '@clew/connectors/remote';
 
 /**
- * The connector protocol as this instance speaks it (D57): the JSON Schema bundle, an OpenAPI document, a page that
+ * The connector protocol as this instance speaks it (D60): the JSON Schema bundle, an OpenAPI document, a page that
  * draws it, and a dry run of a manifest. Public and without a session: a contract holds no data, and an integrator
  * reads it before anything is registered. Mounted before the readiness guard, so it answers while the database is
  * still coming up. Everything here is generated from the same objects the loader validates with; nothing is a copy.
@@ -54,16 +58,42 @@ const page = `<!doctype html>
 </html>
 `;
 
+/** The manifest field by field, with examples from the repository's two example connectors: public data, never a registered connector's. */
+const reference = manifestReference([parseManifest(telefonbok, 'telefonbok'), parseManifest(hello, 'hello')]);
 protocolRoutes.get('/', c => c.html(page, 200, cached));
-protocolRoutes.get('/viewer.js', async c => c.body(await readFile(viewer), 200, { ...cached, 'Content-Type': 'text/javascript; charset=utf-8' }));
+protocolRoutes.get('/manifest-reference.json', c => c.json(reference, 200, cached));
+// The page itself is the web app's, drawn with Astryx at /protocol/manifest; the same origin serves both (D60).
+protocolRoutes.get('/manifest-reference', c => c.redirect('/protocol/manifest', 302));
+protocolRoutes.get('/viewer.js', async c =>
+  c.body(await readFile(viewer), 200, { ...cached, 'Content-Type': 'text/javascript; charset=utf-8' }),
+);
 protocolRoutes.get('/openapi.json', c => c.json(openApiDocument({ clewUrl: clewUrl(c.req.url) }), 200, cached));
 protocolRoutes.get('/connector-protocol.schema.json', c => c.json(protocolSchema(), 200, cached));
-protocolRoutes.options('/manifest', c => c.body(null, 204, { ...shared, 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' }));
+protocolRoutes.options('/manifest', c =>
+  c.body(null, 204, {
+    ...shared,
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  }),
+);
 protocolRoutes.post('/manifest', async c => {
   const text = await c.req.raw.text();
   if (text.length > 500_000) return c.json({ error: 'The manifest is larger than 500 kB.' }, 413, shared);
   let document: unknown;
-  try { document = JSON.parse(text); } catch { return c.json({ error: 'The body is not JSON.' }, 400, shared); }
-  const acceptsEmptyInput = (schema: object) => { try { return !!ajv.compile(schema)({}); } catch { return false; } };
-  return c.json(previewManifest(document, { id: c.req.query('id'), acceptsEmptyInput }), 200, { ...shared, 'Cache-Control': 'no-store' });
+  try {
+    document = JSON.parse(text);
+  } catch {
+    return c.json({ error: 'The body is not JSON.' }, 400, shared);
+  }
+  const acceptsEmptyInput = (schema: object) => {
+    try {
+      return !!ajv.compile(schema)({});
+    } catch {
+      return false;
+    }
+  };
+  return c.json(previewManifest(document, { id: c.req.query('id'), acceptsEmptyInput }), 200, {
+    ...shared,
+    'Cache-Control': 'no-store',
+  });
 });

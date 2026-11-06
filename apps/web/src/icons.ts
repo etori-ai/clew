@@ -7,4 +7,15 @@ import { BellIcon, BookOpenIcon, ChartBarIcon, DocumentTextIcon, LinkIcon, Phone
  * SVG components, the documented way for an icon outside the semantic list (`astryx docs icons custom-icons`), as
  * `AtSymbolIcon` already is.
  */
-export const clewIcon = { phone: PhoneIcon, people: UsersIcon, book: BookOpenIcon, document: DocumentTextIcon, chart: ChartBarIcon, link: LinkIcon, bell: BellIcon, search: 'search', clock: 'clock', calendar: 'calendar' } as const satisfies Record<MenuIcon, unknown>;
+export const clewIcon = {
+  phone: PhoneIcon,
+  people: UsersIcon,
+  book: BookOpenIcon,
+  document: DocumentTextIcon,
+  chart: ChartBarIcon,
+  link: LinkIcon,
+  bell: BellIcon,
+  search: 'search',
+  clock: 'clock',
+  calendar: 'calendar',
+} as const satisfies Record<MenuIcon, unknown>;

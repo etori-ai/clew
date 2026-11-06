@@ -1,7 +1,14 @@
-@import "@astryxdesign/core/reset.css";
-@import "@astryxdesign/core/astryx.css";
-@import "@astryxdesign/theme-neutral/fonts.css";
+@import '@astryxdesign/core/reset.css';
+@import '@astryxdesign/core/astryx.css';
+@import '@astryxdesign/theme-neutral/fonts.css';
 
 /* Page basics only (D31). The theme's CSS comes from `theme.ts` at runtime; every surface on the page is an Astryx component; nothing else is styled here. */
-html, body, #root { height: 100%; }
-body { margin: 0; background: var(--color-background-body); }
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: var(--color-background-body);
+}

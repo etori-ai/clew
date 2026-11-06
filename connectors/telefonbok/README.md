@@ -7,9 +7,15 @@ the connector says what its output holds and Clew draws it. The walkthrough is
 
 | File | Holds |
 |---|---|
-| `connector.mjs` | The manifest (capabilities, their views, the area), the assertion check and the capability bodies |
+| `manifest.mjs` | The contract: shared schemas, one named block per capability with its input/output and view, and the area |
+| `connector.mjs` | Read operations, response mapping, the assertion check and HTTP error handling; also exports the manifest |
 | `directory.mjs` | The phone book behind a port: the HTTP adapter, the mapping `toPerson`, and a made-up organisation |
 | `server.mjs` | Serves it over HTTP and reads the configuration |
+
+To change how the directory is shown, start with `directoryCapability` in `manifest.mjs`. Its `view.kind: 'table'`
+chooses a table, `view.fields` chooses the columns, and `view.input` declares the search and unit controls. The team
+and contact card have their own blocks (`teamCapability` and `personCapability`). To change source field names,
+adapt `toPerson` in `directory.mjs` instead.
 
 ## What a person gets
 

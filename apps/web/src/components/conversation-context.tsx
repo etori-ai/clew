@@ -1,4 +1,14 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import type { Chip, ClewObject, ConversationResponse, ThreadMessage, TurnStep, Verb, Thread } from '@clew/contracts';
 import { useLocation, useMatch, useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -11,20 +21,38 @@ import { useThreadAction } from '../mutations';
 import { panelSearch } from '../panel-address';
 
 /** A chip as the page hands it to the composer (D12): the object's ref, kind and label, plus its card when it has one. */
-export interface ChipRef { ref: string; kind: Chip['kind']; label: string; threadId?: string; }
+export interface ChipRef {
+  ref: string;
+  kind: Chip['kind'];
+  label: string;
+  threadId?: string;
+}
 export type ClewAction = ConversationResponse['clewActions'][number];
-export interface Conversation { id: string; title: string; messages: ThreadMessage[]; }
+export interface Conversation {
+  id: string;
+  title: string;
+  messages: ThreadMessage[];
+}
 /**
  * Where a question was asked when it was not asked on the landing or in a conversation (D50): what the page was showing,
  * as chips for the question, and as the panel's part of the address the conversation opens at, so what the person was
  * looking at is beside the transcript.
  */
-export interface AskFrom { chips: ChipRef[]; search: string; }
+export interface AskFrom {
+  chips: ChipRef[];
+  search: string;
+}
 /**
  * The turn on its way (D36): the question as sent, drawn at once under the earlier turns, the capabilities the answer
  * reads as they run, and the model's text so far. It gives way to the written turn when the answer is done.
  */
-export interface PendingTurn { text: string; chips: Chip[]; at: string; steps: TurnStep[]; answer: string; }
+export interface PendingTurn {
+  text: string;
+  chips: Chip[];
+  at: string;
+  steps: TurnStep[];
+  answer: string;
+}
 /** The conversation's state and verbs, owned here (D31) and read by the row, the transcript, the page and every card. */
 export interface ConversationState {
   /** The chips in the composer's drawer: what the person pointed at with "Lägg till i samtalet". */
@@ -67,8 +95,33 @@ const noop = () => undefined;
 const never = async () => undefined;
 const EMPTY_VERBS: Verb[] = [];
 export const ConversationContext = createContext<ConversationState>({
-  chips: [], chipped: [], conversation: null, latest: null, pending: null, done: null, busy: false, error: null, open: false, value: '', verbs: [], input: { current: null },
-  setValue: noop, addChip: noop, removeChip: noop, rememberObject: noop, submit: never, ask: noop, stop: noop, performActions: never, cancelActions: noop, makeCard: never, openConversation: never, newConversation: noop, close: noop, focus: noop, setThreadListener: noop,
+  chips: [],
+  chipped: [],
+  conversation: null,
+  latest: null,
+  pending: null,
+  done: null,
+  busy: false,
+  error: null,
+  open: false,
+  value: '',
+  verbs: [],
+  input: { current: null },
+  setValue: noop,
+  addChip: noop,
+  removeChip: noop,
+  rememberObject: noop,
+  submit: never,
+  ask: noop,
+  stop: noop,
+  performActions: never,
+  cancelActions: noop,
+  makeCard: never,
+  openConversation: never,
+  newConversation: noop,
+  close: noop,
+  focus: noop,
+  setThreadListener: noop,
 });
 export const useConversation = () => useContext(ConversationContext);
 /** A conversation's title is the question as it was typed; as a title it starts with a capital. */
@@ -97,13 +150,27 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   where.current = { onRoute: routeId !== null, here };
   // Where "Stäng samtalet" leads: the page the conversation was asked from, else the landing.
   const origin = useRef<string | null>(null);
-  const onConversation = useCallback((id: string | null) => {
-    if (id) navigate(`/conversations/${id}${panelSearch(window.location.search)}`, { replace: window.location.pathname === '/conversations/new' });
-    else if (where.current.onRoute) { const back = origin.current ?? '/'; origin.current = null; navigate(back); }
-  }, [navigate]);
+  const onConversation = useCallback(
+    (id: string | null) => {
+      if (id)
+        navigate(`/conversations/${id}${panelSearch(window.location.search)}`, {
+          replace: window.location.pathname === '/conversations/new',
+        });
+      else if (where.current.onRoute) {
+        const back = origin.current ?? '/';
+        origin.current = null;
+        navigate(back);
+      }
+    },
+    [navigate],
+  );
   const listener = useRef<((thread: Thread) => void) | null>(null);
-  const setThreadListener = useCallback((next: ((thread: Thread) => void) | null) => { listener.current = next; }, []);
-  const onThreadChange = useCallback((thread: Thread) => { listener.current?.(thread); }, []);
+  const setThreadListener = useCallback((next: ((thread: Thread) => void) | null) => {
+    listener.current = next;
+  }, []);
+  const onThreadChange = useCallback((thread: Thread) => {
+    listener.current?.(thread);
+  }, []);
   const input = useRef<ChatComposerInputHandle>(null);
   const announce = useAnnounce();
   const known = useRef(new Map<string, ChipRef>());
@@ -118,7 +185,11 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   // The turn in flight and why it would be aborted: Stoppa and closing put the question back in the box, a new or another conversation does not.
   const inflight = useRef<AbortController | null>(null);
   const abortReason = useRef<'stop' | 'leave'>('stop');
-  const abortTurn = useCallback((reason: 'stop' | 'leave') => { if (!inflight.current) return; abortReason.current = reason; inflight.current.abort(); }, []);
+  const abortTurn = useCallback((reason: 'stop' | 'leave') => {
+    if (!inflight.current) return;
+    abortReason.current = reason;
+    inflight.current.abort();
+  }, []);
   // Leaving the page stops the turn too: an answer must not pull the person back to a conversation they left.
   useEffect(() => () => inflight.current?.abort(), []);
   const [done, setDone] = useState<{ text: string; undo?: () => Promise<void> } | null>(null);
@@ -135,26 +206,70 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   // One chip in the drawer and nothing typed: the verbs about it, from its actions and Clew's standard actions.
   const chipThread = chips.length === 1 && !plain && chips[0]!.threadId ? chips[0]!.threadId : null;
   const verbsQ = useQuery({ ...verbsQuery(chipThread ?? ''), enabled: !!chipThread });
-  const verbs = chipThread ? verbsQ.data?.verbs ?? EMPTY_VERBS : EMPTY_VERBS;
+  const verbs = chipThread ? (verbsQ.data?.verbs ?? EMPTY_VERBS) : EMPTY_VERBS;
 
-  const focus = useCallback(() => { input.current?.focus(); }, []);
+  const focus = useCallback(() => {
+    input.current?.focus();
+  }, []);
   // Esc reaches here after a dialog or a menu has already taken it; with nothing open there is nothing to close and focus stays where it is.
   const shownRef = useRef(false);
   shownRef.current = shown;
-  const close = useCallback(() => { if (!shownRef.current) return; abortTurn('stop'); setShown(false); setError(null); onConversation(null); input.current?.focus(); }, [onConversation, abortTurn]);
-  const rememberObject = useCallback((o: ClewObject) => { known.current.set(o.ref, { ref: o.ref, kind: o.kind, label: o.label, ...(o.threadId ? { threadId: o.threadId } : {}) }); }, []);
-  const addChip = useCallback((chip: ChipRef) => { known.current.set(chip.ref, chip); setChips(list => list.some(c => c.ref === chip.ref) ? list : [...list, chip]); input.current?.focus(); }, []);
+  const close = useCallback(() => {
+    if (!shownRef.current) return;
+    abortTurn('stop');
+    setShown(false);
+    setError(null);
+    onConversation(null);
+    input.current?.focus();
+  }, [onConversation, abortTurn]);
+  const rememberObject = useCallback((o: ClewObject) => {
+    known.current.set(o.ref, {
+      ref: o.ref,
+      kind: o.kind,
+      label: o.label,
+      ...(o.threadId ? { threadId: o.threadId } : {}),
+    });
+  }, []);
+  const addChip = useCallback((chip: ChipRef) => {
+    known.current.set(chip.ref, chip);
+    setChips(list => (list.some(c => c.ref === chip.ref) ? list : [...list, chip]));
+    input.current?.focus();
+  }, []);
   // The removed chip's neighbour takes the focus, or the field when the drawer is empty (2.4.3).
   const removeChip = useCallback((ref: string) => {
     setChips(list => list.filter(c => c.ref !== ref));
-    requestAnimationFrame(() => { const next = document.querySelector<HTMLElement>('[data-chip-remove]'); (next ?? input.current)?.focus(); });
+    requestAnimationFrame(() => {
+      const next = document.querySelector<HTMLElement>('[data-chip-remove]');
+      (next ?? input.current)?.focus();
+    });
   }, []);
-  const newConversation = useCallback(() => { abortTurn('leave'); setConversation(null); setLatest(null); setDone(null); setValue(''); setShown(false); origin.current = null; if (where.current.onRoute) navigate('/'); input.current?.focus(); }, [navigate, abortTurn]);
-  const openConversation = useCallback(async (threadId: string) => {
+  const newConversation = useCallback(() => {
     abortTurn('leave');
-    try { const t = await client.query(threadQuery(threadId)); setConversation({ id: t.id, title: t.title, messages: t.messages }); setLatest(null); setDone(null); setShown(true); input.current?.focus(); }
-    catch (e) { setError(errorMessage(e, 'Samtalet kunde inte öppnas.')); }
-  }, [client, abortTurn]);
+    setConversation(null);
+    setLatest(null);
+    setDone(null);
+    setValue('');
+    setShown(false);
+    origin.current = null;
+    if (where.current.onRoute) navigate('/');
+    input.current?.focus();
+  }, [navigate, abortTurn]);
+  const openConversation = useCallback(
+    async (threadId: string) => {
+      abortTurn('leave');
+      try {
+        const t = await client.query(threadQuery(threadId));
+        setConversation({ id: t.id, title: t.title, messages: t.messages });
+        setLatest(null);
+        setDone(null);
+        setShown(true);
+        input.current?.focus();
+      } catch (e) {
+        setError(errorMessage(e, 'Samtalet kunde inte öppnas.'));
+      }
+    },
+    [client, abortTurn],
+  );
   // The route names the conversation: arriving at /conversations/:id (a link, the back button, a reload) puts the transcript on the page.
   const routeConversation = useRef<string | null>(null);
   useEffect(() => {
@@ -165,15 +280,30 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     routeConversation.current = conversationId;
   }, [conversationId]);
   // Another page takes the column: the turn on its way is stopped, as leaving the page always did, and nothing pulls the person back.
-  useEffect(() => { if (!here && shownRef.current) { abortTurn('leave'); setShown(false); } }, [here, abortTurn]);
+  useEffect(() => {
+    if (!here && shownRef.current) {
+      abortTurn('leave');
+      setShown(false);
+    }
+  }, [here, abortTurn]);
   // `/conversations/new` with nothing on its way (a reload, a stopped first question) is the landing, with the question back in the box.
-  useEffect(() => { if (routeId === 'new' && !pending && !conversation) navigate('/', { replace: true }); }, [routeId, pending, conversation, navigate]);
+  useEffect(() => {
+    if (routeId === 'new' && !pending && !conversation) navigate('/', { replace: true });
+  }, [routeId, pending, conversation, navigate]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // ⌘K is "Nytt samtal" from anywhere (the canvas's H3 item 1): in a conversation it starts a new one, elsewhere it takes the focus to the box.
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); if (shownRef.current) newConversation(); else focus(); }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        if (shownRef.current) newConversation();
+        else focus();
+      }
       // Esc inside a dialog, a menu or the `@` list is theirs (the D29 picker, the pile menu); only a bare Esc closes the conversation.
-      else if (e.key === 'Escape' && !document.activeElement?.closest('[role="dialog"], [role="menu"], [role="listbox"], dialog')) close();
+      else if (
+        e.key === 'Escape' &&
+        !document.activeElement?.closest('[role="dialog"], [role="menu"], [role="listbox"], dialog')
+      )
+        close();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -184,83 +314,207 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
    * Stoppa, and the answer streams in: the capabilities it reads as steps, the model's text as it is written. The written
    * turn replaces the pending one when it is done. Stopped or failed, nothing was saved and the question goes back in the box.
    */
-  const submit = useCallback(async (raw: string, from?: AskFrom) => {
-    const text = raw.replace(TOKEN, '').replace(/\s+/g, ' ').trim();
-    const used = [...new Map([...chips, ...(from?.chips ?? []), ...refsIn(raw).map(r => known.current.get(r)).filter((c): c is ChipRef => !!c)].map(c => [c.ref, c])).values()];
-    if (!text || busy) return;
-    // A question asked where no transcript is on the page starts a conversation of its own (D50): the box on the landing
-    // and on a page is "Nytt samtal". An earlier conversation is continued from its own address, where its transcript is.
-    const current = openRef.current ? conversation : null;
-    if (!current) { setConversation(null); setLatest(null); }
-    const controller = new AbortController();
-    inflight.current = controller;
-    abortReason.current = 'stop';
-    const sent = used.map(c => ({ ref: c.ref, kind: c.kind, label: c.label }) as Chip);
-    setBusy(true); setError(null); setDone(null);
-    setPending({ text, chips: sent, at: new Date().toISOString(), steps: [], answer: '' });
-    setValue('');
-    setShown(true);
-    // Asked about something on a page (D50, D53): the conversation takes the column at once, with what the page showed
-    // beside it, and "Stäng samtalet" leads back to the page as it stood. On Hem the transcript takes the column in place.
-    if (!current && from) { origin.current = window.location.pathname + window.location.search; if (!where.current.here) navigate(`/conversations/new${from.search}`); }
-    announce('Söker svar …');
-    try {
-      const response = await api.converseStream({ text, chips: sent, ...(current ? { conversationId: current.id } : {}) }, event => {
-        if (event.type === 'step') setPending(p => p && { ...p, steps: p.steps.some(s => s.id === event.step.id) ? p.steps.map(s => s.id === event.step.id ? event.step : s) : [...p.steps, event.step] });
-        else setPending(p => p && { ...p, answer: event.reset ? event.delta : p.answer + event.delta });
-      }, controller.signal);
-      // The message list was on the page while the answer was written, so the log speaks it once it is done (4.1.3).
-      setConversation({ id: response.conversationId, title: response.thread.title, messages: response.thread.messages });
-      setLatest(response);
-      setPending(null);
-      if (!current) onConversation(response.conversationId);
-      // The answer's thread is the truth for the log (Frågor); a draft's or a proposal's thread for its card; the verbs about a chip may have changed.
-      apply(response.thread);
-      if (response.draft) apply(response.draft.thread);
-      else if (response.forslag) void client.query({ ...threadQuery(response.forslag.threadId), staleTime: 0 }).then(apply).catch(() => undefined);
-      void client.invalidateQueries({ queryKey: keys.verbsAll });
-    } catch (e) {
-      setPending(null);
-      const stopped = controller.signal.aborted;
-      if (!stopped || abortReason.current === 'stop') setValue(v => v || raw);
-      if (!stopped) setError(errorMessage(e, 'Frågan kunde inte ställas.'));
-      else if (abortReason.current === 'stop') announce('Frågan avbröts. Den ligger kvar i rutan.');
-    } finally {
-      if (inflight.current === controller) inflight.current = null;
-      setBusy(false);
-      input.current?.focus();
-    }
-  }, [chips, busy, conversation, announce, onConversation, apply, client, navigate]);
+  const submit = useCallback(
+    async (raw: string, from?: AskFrom) => {
+      const text = raw.replace(TOKEN, '').replace(/\s+/g, ' ').trim();
+      const used = [
+        ...new Map(
+          [
+            ...chips,
+            ...(from?.chips ?? []),
+            ...refsIn(raw)
+              .map(r => known.current.get(r))
+              .filter((c): c is ChipRef => !!c),
+          ].map(c => [c.ref, c]),
+        ).values(),
+      ];
+      if (!text || busy) return;
+      // A question asked where no transcript is on the page starts a conversation of its own (D50): the box on the landing
+      // and on a page is "Nytt samtal". An earlier conversation is continued from its own address, where its transcript is.
+      const current = openRef.current ? conversation : null;
+      if (!current) {
+        setConversation(null);
+        setLatest(null);
+      }
+      const controller = new AbortController();
+      inflight.current = controller;
+      abortReason.current = 'stop';
+      const sent = used.map(c => ({ ref: c.ref, kind: c.kind, label: c.label }) as Chip);
+      setBusy(true);
+      setError(null);
+      setDone(null);
+      setPending({ text, chips: sent, at: new Date().toISOString(), steps: [], answer: '' });
+      setValue('');
+      setShown(true);
+      // Asked about something on a page (D50, D53): the conversation takes the column at once, with what the page showed
+      // beside it, and "Stäng samtalet" leads back to the page as it stood. On Hem the transcript takes the column in place.
+      if (!current && from) {
+        origin.current = window.location.pathname + window.location.search;
+        if (!where.current.here) navigate(`/conversations/new${from.search}`);
+      }
+      announce('Söker svar …');
+      try {
+        const response = await api.converseStream(
+          { text, chips: sent, ...(current ? { conversationId: current.id } : {}) },
+          event => {
+            if (event.type === 'step')
+              setPending(
+                p =>
+                  p && {
+                    ...p,
+                    steps: p.steps.some(s => s.id === event.step.id)
+                      ? p.steps.map(s => (s.id === event.step.id ? event.step : s))
+                      : [...p.steps, event.step],
+                  },
+              );
+            else setPending(p => p && { ...p, answer: event.reset ? event.delta : p.answer + event.delta });
+          },
+          controller.signal,
+        );
+        // The message list was on the page while the answer was written, so the log speaks it once it is done (4.1.3).
+        setConversation({
+          id: response.conversationId,
+          title: response.thread.title,
+          messages: response.thread.messages,
+        });
+        setLatest(response);
+        setPending(null);
+        if (!current) onConversation(response.conversationId);
+        // The answer's thread is the truth for the log (Frågor); a draft's or a proposal's thread for its card; the verbs about a chip may have changed.
+        apply(response.thread);
+        if (response.draft) apply(response.draft.thread);
+        else if (response.forslag)
+          void client
+            .query({ ...threadQuery(response.forslag.threadId), staleTime: 0 })
+            .then(apply)
+            .catch(() => undefined);
+        void client.invalidateQueries({ queryKey: keys.verbsAll });
+      } catch (e) {
+        setPending(null);
+        const stopped = controller.signal.aborted;
+        if (!stopped || abortReason.current === 'stop') setValue(v => v || raw);
+        if (!stopped) setError(errorMessage(e, 'Frågan kunde inte ställas.'));
+        else if (abortReason.current === 'stop') announce('Frågan avbröts. Den ligger kvar i rutan.');
+      } finally {
+        if (inflight.current === controller) inflight.current = null;
+        setBusy(false);
+        input.current?.focus();
+      }
+    },
+    [chips, busy, conversation, announce, onConversation, apply, client, navigate],
+  );
   const ask = useCallback((text: string, from?: AskFrom) => void submit(text, from), [submit]);
   const stop = useCallback(() => abortTurn('stop'), [abortTurn]);
-  const performActions = useCallback(async (actions: ClewAction[]) => {
-    setBusy(true); setError(null);
-    try {
-      const threads: Thread[] = [];
-      for (const a of actions) threads.push(a.kind === 'dismiss' ? await api.dismiss(a.threadId) : await api.snooze(a.threadId));
-      threads.forEach(apply);
-      setLatest(l => l ? { ...l, clewActions: [] } : l);
-      setDone({ text: actions.length === 1 ? `Klart. ${actions[0]!.kind === 'dismiss' ? 'Kortet är avfärdat och ligger under Redan hanterat.' : 'Kortet tas upp i morgon 06:00.'}` : 'Klart. Båda är gjorda.',
-        undo: async () => { for (const a of actions) apply(await api.reopen(a.threadId)); setDone({ text: 'Ångrat. Kortet är tillbaka under Nu.' }); } });
-    } catch (e) { setError(errorMessage(e, 'Något gick fel.')); }
-    finally { setBusy(false); input.current?.focus(); }
-  }, [apply]);
-  const cancelActions = useCallback(() => setLatest(l => l ? { ...l, clewActions: [] } : l), []);
-  const makeCard = useCallback(async (messageId: string) => {
-    if (!conversation) return;
-    setBusy(true); setError(null);
-    try {
-      const { output } = await api.runCapability('clew.cardFromAnswer', { conversationId: conversation.id, messageId });
-      const thread = await api.thread((output as { threadId: string }).threadId);
-      apply(thread);
-      setDone({ text: `Klart. Kortet "${thread.title}" ligger under Behöver dig. Knappen på kortet öppnar källan.` });
-    } catch (e) { setError(errorMessage(e, 'Kortet kunde inte skapas.')); }
-    finally { setBusy(false); input.current?.focus(); }
-  }, [conversation, apply]);
+  const performActions = useCallback(
+    async (actions: ClewAction[]) => {
+      setBusy(true);
+      setError(null);
+      try {
+        const threads: Thread[] = [];
+        for (const a of actions)
+          threads.push(a.kind === 'dismiss' ? await api.dismiss(a.threadId) : await api.snooze(a.threadId));
+        threads.forEach(apply);
+        setLatest(l => (l ? { ...l, clewActions: [] } : l));
+        setDone({
+          text:
+            actions.length === 1
+              ? `Klart. ${actions[0]!.kind === 'dismiss' ? 'Kortet är avfärdat och ligger under Redan hanterat.' : 'Kortet tas upp i morgon 06:00.'}`
+              : 'Klart. Båda är gjorda.',
+          undo: async () => {
+            for (const a of actions) apply(await api.reopen(a.threadId));
+            setDone({ text: 'Ångrat. Kortet är tillbaka under Nu.' });
+          },
+        });
+      } catch (e) {
+        setError(errorMessage(e, 'Något gick fel.'));
+      } finally {
+        setBusy(false);
+        input.current?.focus();
+      }
+    },
+    [apply],
+  );
+  const cancelActions = useCallback(() => setLatest(l => (l ? { ...l, clewActions: [] } : l)), []);
+  const makeCard = useCallback(
+    async (messageId: string) => {
+      if (!conversation) return;
+      setBusy(true);
+      setError(null);
+      try {
+        const { output } = await api.runCapability('clew.cardFromAnswer', {
+          conversationId: conversation.id,
+          messageId,
+        });
+        const thread = await api.thread((output as { threadId: string }).threadId);
+        apply(thread);
+        setDone({ text: `Klart. Kortet "${thread.title}" ligger under Behöver dig. Knappen på kortet öppnar källan.` });
+      } catch (e) {
+        setError(errorMessage(e, 'Kortet kunde inte skapas.'));
+      } finally {
+        setBusy(false);
+        input.current?.focus();
+      }
+    },
+    [conversation, apply],
+  );
 
-  const state = useMemo<ConversationState>(() => ({
-    chips, chipped, conversation, latest, pending, done, busy, error, open, value, verbs, input,
-    setValue, addChip, removeChip, rememberObject, submit, ask, stop, performActions, cancelActions, makeCard, openConversation, newConversation, close, focus, setThreadListener,
-  }), [chips, chipped, conversation, latest, pending, done, busy, error, open, value, verbs, addChip, removeChip, rememberObject, submit, ask, stop, performActions, cancelActions, makeCard, openConversation, newConversation, close, focus, setThreadListener]);
+  const state = useMemo<ConversationState>(
+    () => ({
+      chips,
+      chipped,
+      conversation,
+      latest,
+      pending,
+      done,
+      busy,
+      error,
+      open,
+      value,
+      verbs,
+      input,
+      setValue,
+      addChip,
+      removeChip,
+      rememberObject,
+      submit,
+      ask,
+      stop,
+      performActions,
+      cancelActions,
+      makeCard,
+      openConversation,
+      newConversation,
+      close,
+      focus,
+      setThreadListener,
+    }),
+    [
+      chips,
+      chipped,
+      conversation,
+      latest,
+      pending,
+      done,
+      busy,
+      error,
+      open,
+      value,
+      verbs,
+      addChip,
+      removeChip,
+      rememberObject,
+      submit,
+      ask,
+      stop,
+      performActions,
+      cancelActions,
+      makeCard,
+      openConversation,
+      newConversation,
+      close,
+      focus,
+      setThreadListener,
+    ],
+  );
   return <ConversationContext.Provider value={state}>{children}</ConversationContext.Provider>;
 }

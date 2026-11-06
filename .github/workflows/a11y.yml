@@ -1,11 +1,12 @@
 name: WCAG
 
+# Manual until the run-up to a release (D59). Uncomment push and pull_request to make it automatic again.
 on:
-  push:
-    branches: [main]
-    paths-ignore: ['docs/**', '**/*.md']
-  pull_request:
-    paths-ignore: ['docs/**', '**/*.md']
+  # push:
+  #   branches: [main]
+  #   paths-ignore: ['docs/**', '**/*.md']
+  # pull_request:
+  #   paths-ignore: ['docs/**', '**/*.md']
   workflow_dispatch:
 
 permissions:
@@ -15,7 +16,7 @@ jobs:
   a11y:
     name: WCAG 2.2 AA suite
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

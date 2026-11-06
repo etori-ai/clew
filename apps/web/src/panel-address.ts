@@ -12,21 +12,48 @@ export type PanelRef =
   | { kind: 'card'; threadId: string };
 
 const VIEW_KEYS = ['open', 'open-title', 'open-input', 'via', 'open-card', 'open-action'];
-const parse = (json: string | null): Record<string, unknown> => { try { const v: unknown = json ? JSON.parse(json) : {}; return v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}; } catch { return {}; } };
-const address = (pathname: string, query: URLSearchParams) => { const q = query.toString(); return q ? `${pathname}?${q}` : pathname; };
-const without = (search: URLSearchParams | string, keys: string[]) => { const q = new URLSearchParams(search); keys.forEach(k => q.delete(k)); return q; };
+const parse = (json: string | null): Record<string, unknown> => {
+  try {
+    const v: unknown = json ? JSON.parse(json) : {};
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+};
+const address = (pathname: string, query: URLSearchParams) => {
+  const q = query.toString();
+  return q ? `${pathname}?${q}` : pathname;
+};
+const without = (search: URLSearchParams | string, keys: string[]) => {
+  const q = new URLSearchParams(search);
+  keys.forEach(k => q.delete(k));
+  return q;
+};
 
 /** What the address says the panel holds; a view first, then a card's read, then the card. */
 export function panelOf(search: URLSearchParams): PanelRef | null {
   const open = search.get('open');
-  if (open) return { kind: 'view', capability: open, title: search.get('open-title') ?? open, input: parse(search.get('open-input')), via: search.get('via') === '1' };
-  const threadId = search.get('open-card'), actionId = search.get('open-action');
+  if (open)
+    return {
+      kind: 'view',
+      capability: open,
+      title: search.get('open-title') ?? open,
+      input: parse(search.get('open-input')),
+      via: search.get('via') === '1',
+    };
+  const threadId = search.get('open-card'),
+    actionId = search.get('open-action');
   if (threadId && actionId) return { kind: 'action', threadId, actionId };
   const card = search.get('card');
   return card ? { kind: 'card', threadId: card } : null;
 }
 /** The same page with a view in the panel. `via` marks a view opened from another one, which then offers the way back. */
-export function withView(pathname: string, search: URLSearchParams | string, view: Pick<ViewRef, 'capability' | 'title'> & { input?: Record<string, unknown> | undefined }, via = false): string {
+export function withView(
+  pathname: string,
+  search: URLSearchParams | string,
+  view: Pick<ViewRef, 'capability' | 'title'> & { input?: Record<string, unknown> | undefined },
+  via = false,
+): string {
   const q = without(search, VIEW_KEYS);
   q.set('open', view.capability);
   q.set('open-title', view.title);
@@ -35,7 +62,12 @@ export function withView(pathname: string, search: URLSearchParams | string, vie
   return address(pathname, q);
 }
 /** The same page with a card's own read in the panel. */
-export function withAction(pathname: string, search: URLSearchParams | string, threadId: string, actionId: string): string {
+export function withAction(
+  pathname: string,
+  search: URLSearchParams | string,
+  threadId: string,
+  actionId: string,
+): string {
   const q = without(search, VIEW_KEYS);
   q.set('open-card', threadId);
   q.set('open-action', actionId);
@@ -50,13 +82,18 @@ export function withCard(pathname: string, search: URLSearchParams | string, thr
 /** The same page with the panel's top layer closed: the view if there is one, else the card. */
 export function withoutPanel(pathname: string, search: URLSearchParams | string): string {
   const q = new URLSearchParams(search);
-  if (VIEW_KEYS.some(k => q.has(k))) VIEW_KEYS.forEach(k => q.delete(k)); else q.delete('card');
+  if (VIEW_KEYS.some(k => q.has(k))) VIEW_KEYS.forEach(k => q.delete(k));
+  else q.delete('card');
   return address(pathname, q);
 }
 /** Only the panel's part of an address, as a query string: what a conversation takes with it from the page it was asked on. */
 export function panelSearch(search: URLSearchParams | string): string {
-  const from = new URLSearchParams(search), q = new URLSearchParams();
-  [...VIEW_KEYS, 'card'].forEach(k => { const v = from.get(k); if (v !== null) q.set(k, v); });
+  const from = new URLSearchParams(search),
+    q = new URLSearchParams();
+  [...VIEW_KEYS, 'card'].forEach(k => {
+    const v = from.get(k);
+    if (v !== null) q.set(k, v);
+  });
   const s = q.toString();
   return s ? `?${s}` : '';
 }

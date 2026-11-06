@@ -15,14 +15,27 @@ export async function startWorker() {
   try {
     const connection = await NativeConnection.connect({ address: temporalAddress() });
     worker = await Worker.create({
-      connection, namespace: temporalNamespace(), taskQueue: TASK_QUEUE, activities,
+      connection,
+      namespace: temporalNamespace(),
+      taskQueue: TASK_QUEUE,
+      activities,
       workflowsPath: fileURLToPath(new URL('./workflows.ts', import.meta.url)),
     });
     console.log(`Temporal worker on ${temporalAddress()} (namespace ${temporalNamespace()}, queue ${TASK_QUEUE})`);
-    worker.run().catch(error => { console.error('temporal worker stopped', error instanceof Error ? error.message : error); worker = undefined; setTimeout(() => void startWorker(), RETRY_MS); });
+    worker.run().catch(error => {
+      console.error('temporal worker stopped', error instanceof Error ? error.message : error);
+      worker = undefined;
+      setTimeout(() => void startWorker(), RETRY_MS);
+    });
   } catch (error) {
-    console.error(`temporal worker unavailable at ${temporalAddress()}, retrying in ${RETRY_MS / 1000} s:`, error instanceof Error ? error.message : error);
+    console.error(
+      `temporal worker unavailable at ${temporalAddress()}, retrying in ${RETRY_MS / 1000} s:`,
+      error instanceof Error ? error.message : error,
+    );
     setTimeout(() => void startWorker(), RETRY_MS);
   }
 }
-export function stopWorker() { worker?.shutdown(); worker = undefined; }
+export function stopWorker() {
+  worker?.shutdown();
+  worker = undefined;
+}

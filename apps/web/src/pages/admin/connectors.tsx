@@ -1,7 +1,29 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ConnectorSummary, SessionUser } from '@clew/contracts';
-import { Button, Card, EmptyState, HStack, Link, List, ListItem, Section, SegmentedControl, SegmentedControlItem, StatusDot, Switch, Table, Text, Timestamp, Toolbar, VStack, pixel, proportional, useMediaQuery, useToast } from '@clew/ui';
+import {
+  Button,
+  Card,
+  EmptyState,
+  HStack,
+  Link,
+  List,
+  ListItem,
+  Section,
+  SegmentedControl,
+  SegmentedControlItem,
+  StatusDot,
+  Switch,
+  Table,
+  Text,
+  Timestamp,
+  Toolbar,
+  VStack,
+  pixel,
+  proportional,
+  useMediaQuery,
+  useToast,
+} from '@clew/ui';
 import { api } from '../../api';
 import { adminQueries } from '../../queries';
 import { keys } from '../../query-keys';
@@ -13,12 +35,27 @@ import { AdminShell, PageLead } from './shell';
 
 /** "Anslutna system" (D23): every connector, bundled and remote, with its status, its audience and an on/off switch. */
 type Filter = 'alla' | 'pa' | 'av' | 'problem';
-const filters: Array<{ value: Filter; label: string }> = [{ value: 'alla', label: 'Alla' }, { value: 'pa', label: 'På' }, { value: 'problem', label: 'Problem' }, { value: 'av', label: 'Av' }];
-const matches = (c: ConnectorSummary, f: Filter) => f === 'alla' || (f === 'pa' ? c.state === 'enabled' : f === 'av' ? c.state !== 'enabled' : c.state === 'enabled' && !c.bundled && c.health.status !== 'ok');
+const filters: Array<{ value: Filter; label: string }> = [
+  { value: 'alla', label: 'Alla' },
+  { value: 'pa', label: 'På' },
+  { value: 'problem', label: 'Problem' },
+  { value: 'av', label: 'Av' },
+];
+const matches = (c: ConnectorSummary, f: Filter) =>
+  f === 'alla' ||
+  (f === 'pa'
+    ? c.state === 'enabled'
+    : f === 'av'
+      ? c.state !== 'enabled'
+      : c.state === 'enabled' && !c.bundled && c.health.status !== 'ok');
 /** How much a system can do, in words: what it can do at all on one line, what of that changes something or reaches the assistant on the other. */
-const functions = (c: ConnectorSummary) => `${c.counts.capabilities} ${c.counts.capabilities === 1 ? 'funktion' : 'funktioner'}`;
+const functions = (c: ConnectorSummary) =>
+  `${c.counts.capabilities} ${c.counts.capabilities === 1 ? 'funktion' : 'funktioner'}`;
 const reach = (c: ConnectorSummary) => `${c.counts.execute} utför · ${c.counts.tools} för assistenten`;
-interface Row extends Record<string, unknown> { id: string; c: ConnectorSummary }
+interface Row extends Record<string, unknown> {
+  id: string;
+  c: ConnectorSummary;
+}
 const EMPTY_UNITS: Array<{ id: string; label: string }> = [];
 const EMPTY_CONNECTORS: ConnectorSummary[] = [];
 
@@ -36,40 +73,189 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
   const error = list.isError && list.data === undefined ? errorMessage(list.error, 'Listan kunde inte läsas.') : null;
   // The switch is the one mutation on this page: on or off, applied live, announced through the toast, then every admin read is fresh again (D33).
   const flip = async (c: ConnectorSummary, on: boolean) => {
-    try { await api.admin.update(c.id, { state: on ? 'enabled' : 'disabled' }); toast({ body: `${c.source} ${on ? 'är på' : 'är avstängd'}.`, uniqueID: 'connector:' + c.id }); }
-    catch (e) { toast({ body: errorMessage(e, 'Något gick fel.'), isAutoHide: false, uniqueID: 'connector:' + c.id }); }
+    try {
+      await api.admin.update(c.id, { state: on ? 'enabled' : 'disabled' });
+      toast({ body: `${c.source} ${on ? 'är på' : 'är avstängd'}.`, uniqueID: 'connector:' + c.id });
+    } catch (e) {
+      toast({ body: errorMessage(e, 'Något gick fel.'), isAutoHide: false, uniqueID: 'connector:' + c.id });
+    }
     await client.invalidateQueries({ queryKey: keys.admin.all });
   };
   const shown = (connectors ?? []).filter(c => matches(c, filter));
-  const status = (c: ConnectorSummary) => { const s = statusOf(c); return <StatusDot variant={s.tone} label={s.label} />; };
-  const statusText = (c: ConnectorSummary) => { const s = statusOf(c); return <VStack gap={0}><HStack gap={1} vAlign="center">{status(c)}<Text>{s.label}</Text></HStack>
-    <Text type="supporting">{c.bundled ? 'I processen' : <Timestamp value={c.health.at} format="auto" />}</Text></VStack>; };
-  const toggle = (c: ConnectorSummary) => <Switch size="sm" label={`${c.source} på`} isLabelHidden value={c.state === 'enabled'} changeAction={on => flip(c, on)} />;
-  const name = (c: ConnectorSummary) => <VStack gap={0}><Text weight="semibold">{c.source}</Text><Text type="supporting">{c.id}{c.bundled ? ' · inbyggd' : ''}{c.kind ? ` · ${kindLabel[c.kind].toLowerCase()}` : ''}</Text></VStack>;
+  const status = (c: ConnectorSummary) => {
+    const s = statusOf(c);
+    return <StatusDot variant={s.tone} label={s.label} />;
+  };
+  const statusText = (c: ConnectorSummary) => {
+    const s = statusOf(c);
+    return (
+      <VStack gap={0}>
+        <HStack gap={1} vAlign="center">
+          {status(c)}
+          <Text>{s.label}</Text>
+        </HStack>
+        <Text type="supporting">{c.bundled ? 'I processen' : <Timestamp value={c.health.at} format="auto" />}</Text>
+      </VStack>
+    );
+  };
+  const toggle = (c: ConnectorSummary) => (
+    <Switch
+      size="sm"
+      label={`${c.source} på`}
+      isLabelHidden
+      value={c.state === 'enabled'}
+      changeAction={on => flip(c, on)}
+    />
+  );
+  const name = (c: ConnectorSummary) => (
+    <VStack gap={0}>
+      <Text weight="semibold">{c.source}</Text>
+      <Text type="supporting">
+        {c.id}
+        {c.bundled ? ' · inbyggd' : ''}
+        {c.kind ? ` · ${kindLabel[c.kind].toLowerCase()}` : ''}
+      </Text>
+    </VStack>
+  );
   const columns = [
-    { key: 'system', header: 'System', width: proportional(1, { minWidth: 200 }), renderCell: (r: Row) => <VStack gap={0}><Link href={`/admin/connectors/${r.c.id}`} weight="semibold">{r.c.source}</Link><Text type="supporting">{r.c.id}{r.c.bundled ? ' · inbyggd' : ''}</Text></VStack> },
+    {
+      key: 'system',
+      header: 'System',
+      width: proportional(1, { minWidth: 200 }),
+      renderCell: (r: Row) => (
+        <VStack gap={0}>
+          <Link href={`/admin/connectors/${r.c.id}`} weight="semibold">
+            {r.c.source}
+          </Link>
+          <Text type="supporting">
+            {r.c.id}
+            {r.c.bundled ? ' · inbyggd' : ''}
+          </Text>
+        </VStack>
+      ),
+    },
     { key: 'status', header: 'Status', width: pixel(150), renderCell: (r: Row) => statusText(r.c) },
-    { key: 'audience', header: 'Vem ser det', width: proportional(1, { minWidth: 120 }), renderCell: (r: Row) => <Text>{audienceLabel(r.c.audience)}</Text> },
-    { key: 'caps', header: 'Funktioner', width: proportional(1, { minWidth: 160 }), renderCell: (r: Row) => <VStack gap={0}><Text>{functions(r.c)}</Text><Text type="supporting">{reach(r.c)}</Text></VStack> },
+    {
+      key: 'audience',
+      header: 'Vem ser det',
+      width: proportional(1, { minWidth: 120 }),
+      renderCell: (r: Row) => <Text>{audienceLabel(r.c.audience)}</Text>,
+    },
+    {
+      key: 'caps',
+      header: 'Funktioner',
+      width: proportional(1, { minWidth: 160 }),
+      renderCell: (r: Row) => (
+        <VStack gap={0}>
+          <Text>{functions(r.c)}</Text>
+          <Text type="supporting">{reach(r.c)}</Text>
+        </VStack>
+      ),
+    },
     { key: 'on', header: 'På', width: pixel(72), renderCell: (r: Row) => toggle(r.c) },
   ];
   const all = connectors ?? [];
-  return <AdminShell user={user} crumbs={[{ label: 'Anslutna system' }]}>
-    <PageLead title="Anslutna system" lead="Systemen Startsidan läser från och agerar i. Här avgör du vem som ser en anslutning; vad var och en får göra avgör systemet självt."
-      actions={<Button variant="primary" label="Anslut system" onClick={() => setAdding(true)} />} />
-    {error && <Text as="p" role="alert" color="accent">{error}</Text>}
-    {connectors === null && <Text type="supporting" role="status">Läser anslutningarna …</Text>}
-    {/* What is on, what has a problem and what is off are the filter's own counts: one row that both says and does. A Section with padding 0 bleeds over the page's gutters (it is edge-to-edge by definition); the bordered box is a Card. */}
-    {connectors !== null && <Card padding={0}>
-      <Toolbar label="Anslutningar" size="sm" dividers={['bottom']} startContent={<SegmentedControl label="Visa" size="sm" value={filter} onChange={v => setFilter(v as Filter)}>{filters.map(f => <SegmentedControlItem key={f.value} value={f.value} label={`${f.label} ${all.filter(c => matches(c, f.value)).length}`} />)}</SegmentedControl>}
-        endContent={<Text type="supporting">{shown.length === all.length ? `${all.length} anslutningar` : `${shown.length} av ${all.length}`}</Text>} />
-      {shown.length === 0 && <Section variant="transparent" padding={6}><EmptyState isCompact title={filter === 'alla' ? 'Inga anslutningar ännu' : 'Inget att visa'} description={filter === 'alla' ? 'Anslut det första systemet så får det en rad här.' : 'Inga anslutningar matchar filtret.'} actions={filter === 'alla' ? <Button label="Anslut system" onClick={() => setAdding(true)} /> : undefined} /></Section>}
-      {shown.length > 0 && (mobile
-        ? <List aria-label="Anslutningar" hasDividers>
-          {shown.map(c => <ListItem key={c.id} href={`/admin/connectors/${c.id}`} label={name(c)} description={<VStack gap={0}><HStack gap={1} vAlign="center">{status(c)}<Text type="supporting">{statusOf(c).label} · {audienceLabel(c.audience)}</Text></HStack><Text type="supporting">{functions(c)} · {reach(c)}</Text></VStack>} endContent={toggle(c)} />)}
-        </List>
-        : <Table<Row> data={shown.map(c => ({ id: c.id, c }))} idKey="id" columns={columns} density="balanced" hasHover />)}
-    </Card>}
-    <AddConnectorDialog isOpen={adding} units={units} onClose={added => { setAdding(false); if (added) void client.invalidateQueries({ queryKey: keys.admin.all }); }} />
-  </AdminShell>;
+  return (
+    <AdminShell user={user} crumbs={[{ label: 'Anslutna system' }]}>
+      <PageLead
+        title="Anslutna system"
+        lead="Systemen Startsidan läser från och agerar i. Här avgör du vem som ser en anslutning; vad var och en får göra avgör systemet självt."
+        actions={<Button variant="primary" label="Anslut system" onClick={() => setAdding(true)} />}
+      />
+      {error && (
+        <Text as="p" role="alert" color="accent">
+          {error}
+        </Text>
+      )}
+      {connectors === null && (
+        <Text type="supporting" role="status">
+          Läser anslutningarna …
+        </Text>
+      )}
+      {/* What is on, what has a problem and what is off are the filter's own counts: one row that both says and does. A Section with padding 0 bleeds over the page's gutters (it is edge-to-edge by definition); the bordered box is a Card. */}
+      {connectors !== null && (
+        <Card padding={0}>
+          <Toolbar
+            label="Anslutningar"
+            size="sm"
+            dividers={['bottom']}
+            startContent={
+              <SegmentedControl label="Visa" size="sm" value={filter} onChange={v => setFilter(v as Filter)}>
+                {filters.map(f => (
+                  <SegmentedControlItem
+                    key={f.value}
+                    value={f.value}
+                    label={`${f.label} ${all.filter(c => matches(c, f.value)).length}`}
+                  />
+                ))}
+              </SegmentedControl>
+            }
+            endContent={
+              <Text type="supporting">
+                {shown.length === all.length ? `${all.length} anslutningar` : `${shown.length} av ${all.length}`}
+              </Text>
+            }
+          />
+          {shown.length === 0 && (
+            <Section variant="transparent" padding={6}>
+              <EmptyState
+                isCompact
+                title={filter === 'alla' ? 'Inga anslutningar ännu' : 'Inget att visa'}
+                description={
+                  filter === 'alla'
+                    ? 'Anslut det första systemet så får det en rad här.'
+                    : 'Inga anslutningar matchar filtret.'
+                }
+                actions={
+                  filter === 'alla' ? <Button label="Anslut system" onClick={() => setAdding(true)} /> : undefined
+                }
+              />
+            </Section>
+          )}
+          {shown.length > 0 &&
+            (mobile ? (
+              <List aria-label="Anslutningar" hasDividers>
+                {shown.map(c => (
+                  <ListItem
+                    key={c.id}
+                    href={`/admin/connectors/${c.id}`}
+                    label={name(c)}
+                    description={
+                      <VStack gap={0}>
+                        <HStack gap={1} vAlign="center">
+                          {status(c)}
+                          <Text type="supporting">
+                            {statusOf(c).label} · {audienceLabel(c.audience)}
+                          </Text>
+                        </HStack>
+                        <Text type="supporting">
+                          {functions(c)} · {reach(c)}
+                        </Text>
+                      </VStack>
+                    }
+                    endContent={toggle(c)}
+                  />
+                ))}
+              </List>
+            ) : (
+              <Table<Row>
+                data={shown.map(c => ({ id: c.id, c }))}
+                idKey="id"
+                columns={columns}
+                density="balanced"
+                hasHover
+              />
+            ))}
+        </Card>
+      )}
+      <AddConnectorDialog
+        isOpen={adding}
+        units={units}
+        onClose={added => {
+          setAdding(false);
+          if (added) void client.invalidateQueries({ queryKey: keys.admin.all });
+        }}
+      />
+    </AdminShell>
+  );
 }

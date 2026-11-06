@@ -1,23 +1,91 @@
 /** Swedish names for what read capabilities return. `tests/unit/panel-labels.test.ts` holds every connector output to this list. */
 export const fieldLabels: Record<string, string> = {
-  absent: 'Frånvarande', account: 'Konto', acknowledged: 'Läst', amount: 'Belopp', at: 'Tid', budget: 'Budget', clash: 'Krock', colleagues: 'Kollegor',
-  date: 'Datum', days: 'Dagar', detail: 'Detalj', deviationPct: 'Avvikelse i procent', driver: 'Orsak', due: 'Förfaller', dueBy: 'Senast', end: 'Slutar',
-  forecast: 'Prognos', from: 'Från', headline: 'Rubrik', kind: 'Typ', label: 'Namn', long: 'Långtidsfrånvaro, dagar', mustUseBy: 'Ska tas ut senast',
-  name: 'Namn', onDuty: 'I tjänst', order: 'Beställning', outcome: 'Utfall', periods: 'Perioder', requiresReceipt: 'Kräver läskvitto', rows: 'Rader',
-  rule: 'Regel', short: 'Korttidsfrånvaro, dagar', start: 'Börjar', state: 'Status', supplier: 'Leverantör', title: 'Titel', to: 'Till', today: 'I dag',
-  type: 'Typ', undoUntil: 'Kan ångras till', vab: 'Vab, dagar', vacationDaysLeft: 'Semesterdagar kvar', waitingOn: 'Väntar på', ward: 'Avdelning',
+  absent: 'Frånvarande',
+  account: 'Konto',
+  acknowledged: 'Läst',
+  amount: 'Belopp',
+  at: 'Tid',
+  budget: 'Budget',
+  clash: 'Krock',
+  colleagues: 'Kollegor',
+  date: 'Datum',
+  days: 'Dagar',
+  detail: 'Detalj',
+  deviationPct: 'Avvikelse i procent',
+  driver: 'Orsak',
+  due: 'Förfaller',
+  dueBy: 'Senast',
+  end: 'Slutar',
+  forecast: 'Prognos',
+  from: 'Från',
+  headline: 'Rubrik',
+  kind: 'Typ',
+  label: 'Namn',
+  long: 'Långtidsfrånvaro, dagar',
+  mustUseBy: 'Ska tas ut senast',
+  name: 'Namn',
+  onDuty: 'I tjänst',
+  order: 'Beställning',
+  outcome: 'Utfall',
+  periods: 'Perioder',
+  requiresReceipt: 'Kräver läskvitto',
+  rows: 'Rader',
+  rule: 'Regel',
+  short: 'Korttidsfrånvaro, dagar',
+  start: 'Börjar',
+  state: 'Status',
+  supplier: 'Leverantör',
+  title: 'Titel',
+  to: 'Till',
+  today: 'I dag',
+  type: 'Typ',
+  undoUntil: 'Kan ångras till',
+  vab: 'Vab, dagar',
+  vacationDaysLeft: 'Semesterdagar kvar',
+  waitingOn: 'Väntar på',
+  ward: 'Avdelning',
   // Found text (D26)
-  owner: 'Ägare', query: 'Fråga', reviewedAt: 'Granskad', reviewIntervalDays: 'Granskas var, dagar', section: 'Avsnitt', snippet: 'Utdrag', source: 'Källa', sources: 'Källor', stale: 'Inaktuell',
-  status: 'Status', updatedAt: 'Ändrad',
+  owner: 'Ägare',
+  query: 'Fråga',
+  reviewedAt: 'Granskad',
+  reviewIntervalDays: 'Granskas var, dagar',
+  section: 'Avsnitt',
+  snippet: 'Utdrag',
+  source: 'Källa',
+  sources: 'Källor',
+  stale: 'Inaktuell',
+  status: 'Status',
+  updatedAt: 'Ändrad',
   // Jobs across systems (D55): the HR, time-reporting and payroll mocks
-  checkedAt: 'Kontrollerad', extent: 'Omfattning, procent', found: 'Finns', importedAt: 'Inläst', person: 'Medarbetare', result: 'Resultat',
+  checkedAt: 'Kontrollerad',
+  extent: 'Omfattning, procent',
+  found: 'Finns',
+  importedAt: 'Inläst',
+  person: 'Medarbetare',
+  result: 'Resultat',
 };
 /** Addresses and references: useful to the code, never to the person reading the panel. */
 /** A follower's step drafts (D55) are Clew's input, drawn as a job, never as panel fields. */
-export const hiddenFields = new Set(['ref', 'url', 'undoCapability', 'link', 'connector', 'score', 'kinds', 'steps', 'operation', 'payload', 'input', 'expect', 'path', 'equals', 'within']);
+export const hiddenFields = new Set([
+  'ref',
+  'url',
+  'undoCapability',
+  'link',
+  'connector',
+  'score',
+  'kinds',
+  'steps',
+  'operation',
+  'payload',
+  'input',
+  'expect',
+  'path',
+  'equals',
+  'within',
+]);
 const dateOnly = new Intl.DateTimeFormat('sv-SE', { dateStyle: 'long' });
 /** "granskad 12 mars 2026", or nothing when the source gives no date. */
-export const reviewLabel = (iso: string | undefined) => iso ? `granskad ${dateOnly.format(new Date(iso))}` : '';
+export const reviewLabel = (iso: string | undefined) => (iso ? `granskad ${dateOnly.format(new Date(iso))}` : '');
 /** The badge beside a hit: how long since the review when it is stale, a note when the source gives no date, nothing when it is current. */
 export function staleLabel(stale: boolean | null | undefined, iso: string | undefined, now = Date.now()): string {
   if (stale === null || stale === undefined) return iso ? '' : 'Granskningsdatum saknas';
@@ -26,8 +94,16 @@ export function staleLabel(stale: boolean | null | undefined, iso: string | unde
   return years >= 1 ? `Granskad för ${years} år sedan` : 'Kan vara inaktuell';
 }
 const values: Record<string, string> = {
-  closed: 'stängd', done: 'klart', failed: 'misslyckades', long: 'sjukskriven', open: 'öppen', short: 'sjuk', skipped: 'inte skickad', unknown: 'okänt',
-  vab: 'vab', 'waiting-safety-rep': 'väntar på skyddsombud',
+  closed: 'stängd',
+  done: 'klart',
+  failed: 'misslyckades',
+  long: 'sjukskriven',
+  open: 'öppen',
+  short: 'sjuk',
+  skipped: 'inte skickad',
+  unknown: 'okänt',
+  vab: 'vab',
+  'waiting-safety-rep': 'väntar på skyddsombud',
 };
 const instant = /^\d{4}-\d{2}-\d{2}T/;
 const day = /^\d{4}-\d{2}-\d{2}$/;
@@ -39,7 +115,15 @@ export function fieldValue(value: unknown): string {
   if (value === null || value === undefined) return '–';
   if (typeof value === 'boolean') return value ? 'Ja' : 'Nej';
   if (typeof value === 'number') return value.toLocaleString('sv-SE');
-  if (typeof value === 'string') return instant.test(value) ? time.format(new Date(value)) : day.test(value) ? dateOnly.format(new Date(`${value}T12:00:00`)) : values[value] ?? value;
+  if (typeof value === 'string')
+    return instant.test(value)
+      ? time.format(new Date(value))
+      : day.test(value)
+        ? dateOnly.format(new Date(`${value}T12:00:00`))
+        : (values[value] ?? value);
   if (Array.isArray(value)) return value.map(fieldValue).join(', ');
-  return Object.entries(value).filter(([key]) => !hiddenFields.has(key)).map(([, v]) => fieldValue(v)).join(' · ');
+  return Object.entries(value)
+    .filter(([key]) => !hiddenFields.has(key))
+    .map(([, v]) => fieldValue(v))
+    .join(' · ');
 }

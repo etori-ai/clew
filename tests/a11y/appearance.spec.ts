@@ -1,10 +1,13 @@
 import { expect, open, openNav, phone, test } from './support';
 import type { Page } from '@playwright/test';
 
-const dark = (page: Page) => page.evaluate(() => {
-  const [r = 255, g = 255, b = 255] = (getComputedStyle(document.body).backgroundColor.match(/[\d.]+/g) ?? []).map(Number);
-  return r + g + b < 150;
-});
+const dark = (page: Page) =>
+  page.evaluate(() => {
+    const [r = 255, g = 255, b = 255] = (getComputedStyle(document.body).backgroundColor.match(/[\d.]+/g) ?? []).map(
+      Number,
+    );
+    return r + g + b < 150;
+  });
 
 test.describe('appearance (D39)', () => {
   test.use({ viewport: phone, colorScheme: 'dark' });

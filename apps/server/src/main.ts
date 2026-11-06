@@ -20,26 +20,52 @@ import { startRefresh } from './composition/refresh';
 import { startJobs } from './composition/jobs';
 
 // Local secrets written by `bun run auth:setup`. Never committed, never read by the browser bundle.
-for (const file of ['.env.local']) { try { process.loadEnvFile(resolve(import.meta.dirname, '..', file)); } catch { /* absent in CI */ } }
+for (const file of ['.env.local']) {
+  try {
+    process.loadEnvFile(resolve(import.meta.dirname, '..', file));
+  } catch {
+    /* absent in CI */
+  }
+}
 
 const app = new Hono();
 const startup = startupReadiness({
-  initialize: async () => { await signingAuthority(); await syncBundledRows(connectorReconcile); await applyAllRows(connectorReconcile); },
+  initialize: async () => {
+    await signingAuthority();
+    await syncBundledRows(connectorReconcile);
+    await applyAllRows(connectorReconcile);
+  },
   onReady: () => {
     watchConnectors(connectorReconcile);
-    startJobs(); startAssistantProbe(); startExecutionDispatch(); startTimerDispatch(); startRefresh(); void startWorker();
-    void loadConnectors(registry).then(() => applyAllRows(connectorReconcile)).catch(error => console.error('connectors', error));
+    startJobs();
+    startAssistantProbe();
+    startExecutionDispatch();
+    startTimerDispatch();
+    startRefresh();
+    void startWorker();
+    void loadConnectors(registry)
+      .then(() => applyAllRows(connectorReconcile))
+      .catch(error => console.error('connectors', error));
   },
-  onError: error => console.error('startup initialization failed; retrying in five seconds', error instanceof Error ? error.message : 'Unknown failure'),
-  retry: run => { setTimeout(run, 5000).unref(); },
+  onError: error =>
+    console.error(
+      'startup initialization failed; retrying in five seconds',
+      error instanceof Error ? error.message : 'Unknown failure',
+    ),
+  retry: run => {
+    setTimeout(run, 5000).unref();
+  },
 });
 app.get('/api/health', c => c.json({ ok: true }));
 app.get('/api/ready', c => c.json({ ready: startup.ready() }, startup.ready() ? 200 : 503));
 // Signing in does not expose connector data and must not depend on connector startup.
 app.route('/api/auth', authRoutes);
-// The protocol is a contract, not data: public, and generated from code, so it needs nothing to have started (D57).
+// The protocol is a contract, not data: public, and generated from code, so it needs nothing to have started (D60).
 app.route('/api/protocol', protocolRoutes);
-app.use('/api/*', async (c, next) => { if (!startup.ready()) return c.json({ error: 'Tjänsten startar. Försök igen om en stund.' }, 503); await next(); });
+app.use('/api/*', async (c, next) => {
+  if (!startup.ready()) return c.json({ error: 'Tjänsten startar. Försök igen om en stund.' }, 503);
+  await next();
+});
 // Connector callbacks authenticate with Clew's own assertion, not a session, so they are mounted before the session guard.
 app.route('/api/connectors', connectorRoutes);
 app.route('/api/admin', adminRoutes);

@@ -30,14 +30,47 @@ export { Timestamp } from '@astryxdesign/core/Timestamp';
 export { BottomSheet } from '@astryxdesign/core/BottomSheet';
 export { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
 export { EmptyState } from '@astryxdesign/core/EmptyState';
-export { Layout, LayoutHeader, LayoutContent, LayoutFooter, LayoutPanel, VStack, HStack, StackItem } from '@astryxdesign/core/Layout';
+export {
+  Layout,
+  LayoutHeader,
+  LayoutContent,
+  LayoutFooter,
+  LayoutPanel,
+  VStack,
+  HStack,
+  StackItem,
+} from '@astryxdesign/core/Layout';
 export { SideNav, SideNavItem, SideNavSection, SideNavHeading } from '@astryxdesign/core/SideNav';
-export { DropdownMenu, DropdownMenuDivider, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSubMenu } from '@astryxdesign/core/DropdownMenu';
+export {
+  DropdownMenu,
+  DropdownMenuDivider,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSubMenu,
+} from '@astryxdesign/core/DropdownMenu';
 export { MoreMenu } from '@astryxdesign/core/MoreMenu';
 export { Banner } from '@astryxdesign/core/Banner';
 export { Drawer, DrawerHeader } from '@astryxdesign/core/Drawer';
 export { Skeleton } from '@astryxdesign/core/Skeleton';
-export { ChatComposer, ChatComposerInput, ChatComposerDrawer, ChatDictationButton, useChatDictation, ChatLayout, ChatMessageList, ChatMessage, ChatMessageBubble, ChatMessageMetadata, ChatSystemMessage, ChatToolCalls, type ChatComposerInputHandle, type ChatComposerTrigger, type ChatComposerToken, type ChatToolCallItem } from '@astryxdesign/core/Chat';
+export {
+  ChatComposer,
+  ChatComposerInput,
+  ChatComposerDrawer,
+  ChatDictationButton,
+  useChatDictation,
+  ChatLayout,
+  ChatMessageList,
+  ChatMessage,
+  ChatMessageBubble,
+  ChatMessageMetadata,
+  ChatSystemMessage,
+  ChatToolCalls,
+  type ChatComposerInputHandle,
+  type ChatComposerTrigger,
+  type ChatComposerToken,
+  type ChatToolCallItem,
+} from '@astryxdesign/core/Chat';
 export { Markdown } from '@astryxdesign/core/Markdown';
 export { Typeahead, TypeaheadItem, createStaticSource } from '@astryxdesign/core/Typeahead';
 export type { SearchSource, SearchableItem } from '@astryxdesign/core/Typeahead';
@@ -47,7 +80,17 @@ export { Kbd } from '@astryxdesign/core/Kbd';
 export { ScrollableArea } from '@astryxdesign/core/ScrollableArea';
 export { useToast } from '@astryxdesign/core/Toast';
 // Administration (D23): tables, switches, dialogs, forms and tabs. Still only re-exports.
-export { Table, TableHeader, TableBody, TableFooter, TableRow, TableCell, TableHeaderCell, pixel, proportional } from '@astryxdesign/core/Table';
+export {
+  Table,
+  TableHeader,
+  TableBody,
+  TableFooter,
+  TableRow,
+  TableCell,
+  TableHeaderCell,
+  pixel,
+  proportional,
+} from '@astryxdesign/core/Table';
 export { Switch } from '@astryxdesign/core/Switch';
 export { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 export { AlertDialog } from '@astryxdesign/core/AlertDialog';
@@ -68,7 +111,26 @@ export { TopNav, TopNavHeading, TopNavItem } from '@astryxdesign/core/TopNav';
 export { Section } from '@astryxdesign/core/Section';
 export { useAnnounce, useMediaQuery, useStreamingText } from '@astryxdesign/core/hooks';
 // Glyphs beyond Astryx's registry come from Heroicons (MIT), the set Astryx's own templates draw with; each is named here once.
-export { ArrowPathIcon, AtSymbolIcon, BellIcon, BookOpenIcon, ChartBarIcon, CheckCircleIcon, DocumentTextIcon, HomeIcon, InboxIcon, LightBulbIcon, LinkIcon, MegaphoneIcon, PauseCircleIcon, PhoneIcon, SparklesIcon, Squares2X2Icon, UserCircleIcon, UsersIcon } from '@heroicons/react/24/outline';
+export {
+  ArrowPathIcon,
+  AtSymbolIcon,
+  BellIcon,
+  BookOpenIcon,
+  ChartBarIcon,
+  CheckCircleIcon,
+  DocumentTextIcon,
+  HomeIcon,
+  InboxIcon,
+  LightBulbIcon,
+  LinkIcon,
+  MegaphoneIcon,
+  PauseCircleIcon,
+  PhoneIcon,
+  SparklesIcon,
+  Squares2X2Icon,
+  UserCircleIcon,
+  UsersIcon,
+} from '@heroicons/react/24/outline';
 export { SessionBoundary, sessionFetch, signOut, type BrowserSession } from './session';
 export { WeekAgenda, type AgendaItem } from './week-agenda';
 export { EventCalendar, type CalendarView } from './calendar';
@@ -80,12 +142,15 @@ export { TimeInput } from '@astryxdesign/core/TimeInput';
 export { DateInput } from '@astryxdesign/core/DateInput';
 export { Calendar } from '@astryxdesign/core/Calendar';
 export { Selector } from '@astryxdesign/core/Selector';
+export { Outline, type OutlineItem } from '@astryxdesign/core/Outline';
+export { CodeBlock } from '@astryxdesign/core/CodeBlock';
 export { Field, FieldStatus } from '@astryxdesign/core/Field';
 export { Popover } from '@astryxdesign/core/Popover';
 export { useAppearance } from './appearance';
 
 // The shipped sv-SE catalog is incomplete. Keys reachable by this POC are covered here.
-export const swedish = { ...sv,
+export const swedish = {
+  ...sv,
   '@astryx.input.readOnly': { defaultMessage: 'Skrivskyddad' },
   '@astryx.chatComposer.placeholder': { defaultMessage: 'Skriv ett meddelande …' },
   '@astryx.chatComposer.send': { defaultMessage: 'Skicka' },
@@ -116,7 +181,11 @@ export const swedish = { ...sv,
  * stack inside these providers: without it Astryx mounts a fallback root that gets neither the Swedish catalog nor the theme.
  */
 export function Providers({ branding, children }: { branding: Branding; children: ReactNode }) {
-  return <InternationalizationProvider locale="sv-SE" messages={{ 'sv-SE': swedish }}>
-    <AppearanceProvider branding={branding}><LayerProvider>{children}</LayerProvider></AppearanceProvider>
-  </InternationalizationProvider>;
+  return (
+    <InternationalizationProvider locale="sv-SE" messages={{ 'sv-SE': swedish }}>
+      <AppearanceProvider branding={branding}>
+        <LayerProvider>{children}</LayerProvider>
+      </AppearanceProvider>
+    </InternationalizationProvider>
+  );
 }

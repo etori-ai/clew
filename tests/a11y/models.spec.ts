@@ -1,4 +1,17 @@
-import { announcements, composer, desktop, expect, expectNoAxeViolations, focused, hiddenFocusStops, narrow, open, phone, reflowProblems, test } from './support';
+import {
+  announcements,
+  composer,
+  desktop,
+  expect,
+  expectNoAxeViolations,
+  focused,
+  hiddenFocusStops,
+  narrow,
+  open,
+  phone,
+  reflowProblems,
+  test,
+} from './support';
 import { modelProviders, providerDetail, providerReport } from './data';
 
 /**
@@ -8,34 +21,49 @@ import { modelProviders, providerDetail, providerReport } from './data';
  */
 async function pickSection(page: import('@playwright/test').Page, name: string) {
   const tab = page.getByRole('tab', { name });
-  if (await tab.count()) { await tab.click(); return page.getByRole('tabpanel', { name }); }
+  if (await tab.count()) {
+    await tab.click();
+    return page.getByRole('tabpanel', { name });
+  }
   await page.getByRole('button', { name: /^Visa: / }).click();
   await page.getByRole('menuitem', { name }).click();
   return page.getByRole('region', { name });
 }
-const routes = [['the models list', '/admin/models'], ['a model', '/admin/models/gpt-oss-120b'], ['a provider that is down', '/admin/models/providers/pilot']] as const;
+const routes = [
+  ['the models list', '/admin/models'],
+  ['a model', '/admin/models/gpt-oss-120b'],
+  ['a provider that is down', '/admin/models/providers/pilot'],
+] as const;
 
 test.describe('model administration', () => {
-  for (const [layout, viewport] of [['desktop', desktop], ['phone', phone]] as const) test.describe(layout, () => {
-    test.use({ viewport });
-    for (const [name, path] of routes) test(`${name} has no axe violations`, async ({ page, api }) => {
-      api.admin = true;
-      await open(page, path);
-      await expectNoAxeViolations(page);
+  for (const [layout, viewport] of [
+    ['desktop', desktop],
+    ['phone', phone],
+  ] as const)
+    test.describe(layout, () => {
+      test.use({ viewport });
+      for (const [name, path] of routes)
+        test(`${name} has no axe violations`, async ({ page, api }) => {
+          api.admin = true;
+          await open(page, path);
+          await expectNoAxeViolations(page);
+        });
+      test('every tab of a model has no axe violations', async ({ page, api }) => {
+        api.admin = true;
+        await open(page, '/admin/models/gpt-oss-20b');
+        for (const tab of ['Vem kan välja den', 'Historik', 'Översikt']) {
+          await expect(await pickSection(page, tab)).toBeVisible();
+          await expectNoAxeViolations(page);
+        }
+      });
     });
-    test('every tab of a model has no axe violations', async ({ page, api }) => {
-      api.admin = true;
-      await open(page, '/admin/models/gpt-oss-20b');
-      for (const tab of ['Vem kan välja den', 'Historik', 'Översikt']) {
-        await expect(await pickSection(page, tab)).toBeVisible();
-        await expectNoAxeViolations(page);
-      }
-    });
-  });
 
   test.describe('desktop', () => {
     test.use({ viewport: desktop });
-    test('the list groups the models by provider, with the health, the default and the audience in words', async ({ page, api }) => {
+    test('the list groups the models by provider, with the health, the default and the audience in words', async ({
+      page,
+      api,
+    }) => {
       api.admin = true;
       await open(page, '/admin/models');
       await expect(page).toHaveTitle('Modeller · Startsidan');
@@ -61,7 +89,10 @@ test.describe('model administration', () => {
       await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Snabb (lokal) är avstängd'));
       expect((await focused(page)).tag).toBe('input');
     });
-    test('adding a provider runs by keyboard: errors named, the step heading takes focus, the listed models are ticked and added', async ({ page, api }) => {
+    test('adding a provider runs by keyboard: errors named, the step heading takes focus, the listed models are ticked and added', async ({
+      page,
+      api,
+    }) => {
       api.admin = true;
       await open(page, '/admin/models');
       await page.getByRole('button', { name: 'Lägg till leverantör' }).click();
@@ -85,11 +116,16 @@ test.describe('model administration', () => {
       await expectNoAxeViolations(page);
       await dialog.getByRole('button', { name: 'Lägg till 1 modell' }).click();
       await expect(dialog).toHaveCount(0);
-      await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('1 modell tillagd och påslagen'));
+      await expect
+        .poll(() => announcements(page))
+        .toContainEqual(expect.stringContaining('1 modell tillagd och påslagen'));
       await expect(page.getByRole('link', { name: 'Egen server' })).toBeVisible();
       await expect(page.getByRole('link', { name: 'llama3.3:70b' })).toBeVisible();
     });
-    test('a model page: the tabs follow the tabs pattern, the default is set with a spoken result, the audience is saved', async ({ page, api }) => {
+    test('a model page: the tabs follow the tabs pattern, the default is set with a spoken result, the audience is saved', async ({
+      page,
+      api,
+    }) => {
       api.admin = true;
       await open(page, '/admin/models/gpt-oss-20b');
       await expect(page).toHaveTitle('Snabb (lokal) · Startsidan');
@@ -106,7 +142,10 @@ test.describe('model administration', () => {
       await panel.getByRole('button', { name: 'Spara' }).click();
       await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Sparat: Alla'));
     });
-    test('a provider page: the health is a sentence, removal waits for the models, the key is replaced or cleared, a test offers what it lists', async ({ page, api }) => {
+    test('a provider page: the health is a sentence, removal waits for the models, the key is replaced or cleared, a test offers what it lists', async ({
+      page,
+      api,
+    }) => {
       api.admin = true;
       await open(page, '/admin/models/providers/pilot');
       await expect(page.getByText('Pilotleverantör svarar inte.')).toBeVisible();
@@ -122,9 +161,17 @@ test.describe('model administration', () => {
       await expect(page.getByText('3 modeller som leverantören listar är inte tillagda.')).toBeVisible();
       await expectNoAxeViolations(page);
       await page.getByRole('button', { name: 'Välj modeller att lägga till' }).click();
-      await expect(page.getByRole('dialog', { name: 'Lägg till modell' }).getByRole('group', { name: 'Modeller att lägga till' }).getByRole('checkbox')).toHaveCount(3);
+      await expect(
+        page
+          .getByRole('dialog', { name: 'Lägg till modell' })
+          .getByRole('group', { name: 'Modeller att lägga till' })
+          .getByRole('checkbox'),
+      ).toHaveCount(3);
     });
-    test('"Lägg till modell" asks the endpoint for its list and offers only what is not added yet, or an id by hand', async ({ page, api }) => {
+    test('"Lägg till modell" asks the endpoint for its list and offers only what is not added yet, or an id by hand', async ({
+      page,
+      api,
+    }) => {
       api.admin = true;
       await open(page, '/admin/models');
       await page.getByRole('button', { name: 'Lägg till modell' }).first().click();
@@ -132,7 +179,9 @@ test.describe('model administration', () => {
       const listed = dialog.getByRole('group', { name: 'Modeller att lägga till' });
       await expect(listed.getByRole('checkbox')).toHaveCount(1);
       await expect(listed.getByRole('checkbox', { name: 'llama3.3:70b' })).toBeVisible();
-      await expect(dialog.getByText('Leverantören listar 3, varav 2 redan är tillagda.', { exact: false })).toBeVisible();
+      await expect(
+        dialog.getByText('Leverantören listar 3, varav 2 redan är tillagda.', { exact: false }),
+      ).toBeVisible();
       await expect(dialog.getByRole('button', { name: 'Lägg till', exact: true })).toBeDisabled();
       await dialog.getByRole('textbox', { name: /^Eller en modell som inte finns i listan/ }).fill('gpt-oss:20b');
       // The field's own status; the dialog's live region repeats the same sentence for a screen reader.
@@ -146,23 +195,36 @@ test.describe('model administration', () => {
       await expectNoAxeViolations(page);
       await add.click();
       await expect(dialog).toHaveCount(0);
-      await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('1 modell tillagd, avstängd tills du slår på den'));
+      await expect
+        .poll(() => announcements(page))
+        .toContainEqual(expect.stringContaining('1 modell tillagd, avstängd tills du slår på den'));
       await expect(page.getByRole('link', { name: 'llama3.3:70b' })).toBeVisible();
     });
-    test('with a long model list on a short screen the list scrolls inside the dialog and its actions stay on screen', async ({ page, api }) => {
+    test('with a long model list on a short screen the list scrolls inside the dialog and its actions stay on screen', async ({
+      page,
+      api,
+    }) => {
       api.admin = true;
       await page.setViewportSize({ width: 1280, height: 600 });
       const many = Array.from({ length: 14 }, (_, i) => `modell-${String(i + 1).padStart(2, '0')}`);
       const manga = { ...modelProviders()[0]!, id: 'manga', title: 'Många', models: 0, enabledModels: 0 };
       // The endpoint lists fourteen models: this route answers the save before the shared fake does, and the fake knows the provider for the add.
-      await page.route('**/api/admin/providers', route => { api.providers = [...api.providers, manga]; return route.fulfill({ status: 201, json: { provider: providerDetail(manga), report: { ...providerReport, models: many } } }); });
+      await page.route('**/api/admin/providers', route => {
+        api.providers = [...api.providers, manga];
+        return route.fulfill({
+          status: 201,
+          json: { provider: providerDetail(manga), report: { ...providerReport, models: many } },
+        });
+      });
       await open(page, '/admin/models');
       await page.getByRole('button', { name: 'Lägg till leverantör' }).click();
       const dialog = page.getByRole('dialog', { name: 'Lägg till leverantör' });
       await dialog.getByRole('textbox', { name: /^Namn/ }).fill('Många');
       await dialog.getByRole('textbox', { name: /^Adress/ }).fill('http://manga.test/v1');
       await dialog.getByRole('button', { name: 'Testa och spara' }).click();
-      await expect(dialog.getByRole('group', { name: 'Modeller att lägga till' }).getByRole('checkbox')).toHaveCount(14);
+      await expect(dialog.getByRole('group', { name: 'Modeller att lägga till' }).getByRole('checkbox')).toHaveCount(
+        14,
+      );
       await expect(dialog.getByRole('button', { name: 'Klar' })).toBeInViewport();
       await dialog.getByRole('checkbox', { name: 'modell-14' }).check();
       const add = dialog.getByRole('button', { name: 'Lägg till 1 modell' });
@@ -189,9 +251,12 @@ test.describe('model administration', () => {
   });
 });
 
-test.describe('the person\'s model in the box', () => {
+test.describe("the person's model in the box", () => {
   test.use({ viewport: desktop });
-  test('with one model the menu is there and names it, so the box always says which model answers (D36)', async ({ page, api: _ }) => {
+  test('with one model the menu is there and names it, so the box always says which model answers (D36)', async ({
+    page,
+    api: _,
+  }) => {
     await open(page, '/');
     await expect(composer(page)).toBeVisible();
     const trigger = page.getByRole('button', { name: 'Modell: Kapabel' });
@@ -199,13 +264,19 @@ test.describe('the person\'s model in the box', () => {
     await trigger.click();
     await expect(page.getByRole('group', { name: 'Modell' }).getByRole('menuitemradio')).toHaveCount(1);
   });
-  test('with two the menu names the current one, lists each with what it is good for, and a choice is spoken and kept', async ({ page, api }) => {
+  test('with two the menu names the current one, lists each with what it is good for, and a choice is spoken and kept', async ({
+    page,
+    api,
+  }) => {
     api.modelChoices = 2;
     await open(page, '/');
     const trigger = page.getByRole('button', { name: 'Modell: Kapabel' });
     await trigger.click();
     const group = page.getByRole('group', { name: 'Modell' });
-    await expect(group.getByRole('menuitemradio', { name: /Kapabel \(standard\)/ })).toHaveAttribute('aria-checked', 'true');
+    await expect(group.getByRole('menuitemradio', { name: /Kapabel \(standard\)/ })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
     await expect(group.getByRole('menuitemradio', { name: /Snabb \(lokal\)/ })).toContainText('Korta frågor om dagen.');
     await expectNoAxeViolations(page);
     // By keyboard from the trigger: Enter opens the menu on the current model, the arrow moves, Enter chooses and closes.
@@ -215,7 +286,9 @@ test.describe('the person\'s model in the box', () => {
     await expect(group.getByRole('menuitemradio', { name: /Kapabel/ })).toBeFocused();
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('Enter');
-    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Nästa fråga besvaras av Snabb (lokal)'));
+    await expect
+      .poll(() => announcements(page))
+      .toContainEqual(expect.stringContaining('Nästa fråga besvaras av Snabb (lokal)'));
     await expect(page.getByRole('button', { name: 'Modell: Snabb (lokal)' })).toBeVisible();
     expect(api.currentModel).toBe('gpt-oss-20b');
   });

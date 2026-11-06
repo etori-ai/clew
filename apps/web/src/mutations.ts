@@ -16,27 +16,60 @@ type QueryKey = readonly unknown[];
  * that holds focus (2.4.3): callers keep that rule. `onChange` runs before the cache write so the page can read the DOM
  * as it is (the focus hand-over); `apply` is the same path for a thread that arrived without a mutation.
  */
-export function useThreadAction({ onChange, fallback = 'Något gick fel.' }: { onChange?: (thread: Thread) => void; fallback?: string } = {}) {
+export function useThreadAction({
+  onChange,
+  fallback = 'Något gick fel.',
+}: { onChange?: (thread: Thread) => void; fallback?: string } = {}) {
   const client = useQueryClient();
   const latest = useRef(onChange);
   latest.current = onChange;
-  const apply = useCallback((thread: Thread) => { latest.current?.(thread); void applyThread(client, thread); }, [client]);
-  const mutation = useMutation<Thread | void, unknown, Action<Thread | void>>({ mutationFn: fn => fn(), onSuccess: thread => { if (thread) apply(thread); } });
+  const apply = useCallback(
+    (thread: Thread) => {
+      latest.current?.(thread);
+      void applyThread(client, thread);
+    },
+    [client],
+  );
+  const mutation = useMutation<Thread | void, unknown, Action<Thread | void>>({
+    mutationFn: fn => fn(),
+    onSuccess: thread => {
+      if (thread) apply(thread);
+    },
+  });
   const inFlight = useRef(false);
   const { mutateAsync } = mutation;
-  const run = useCallback(async (fn: Action<Thread | void>): Promise<void> => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    try { await mutateAsync(fn); } catch { /* the error is in the mutation's state */ } finally { inFlight.current = false; }
-  }, [mutateAsync]);
-  return { run, apply, busy: mutation.isPending, error: mutation.isError ? errorMessage(mutation.error, fallback) : null, reset: mutation.reset };
+  const run = useCallback(
+    async (fn: Action<Thread | void>): Promise<void> => {
+      if (inFlight.current) return;
+      inFlight.current = true;
+      try {
+        await mutateAsync(fn);
+      } catch {
+        /* the error is in the mutation's state */
+      } finally {
+        inFlight.current = false;
+      }
+    },
+    [mutateAsync],
+  );
+  return {
+    run,
+    apply,
+    busy: mutation.isPending,
+    error: mutation.isError ? errorMessage(mutation.error, fallback) : null,
+    reset: mutation.reset,
+  };
 }
 
 /**
  * Run an administration action (D23). On success the given keys are invalidated and awaited, so `busy` holds until the
  * page shows the new state (as the old `load()` did), then the message the action returned is the toast.
  */
-export function useAdminAction({ fallback = 'Något gick fel.', invalidate = [keys.admin.all], toastId }: { fallback?: string; invalidate?: readonly QueryKey[]; toastId?: string } = {}) {
+export function useAdminAction({
+  fallback = 'Något gick fel.',
+  invalidate = [keys.admin.all],
+  toastId,
+}: { fallback?: string; invalidate?: readonly QueryKey[]; toastId?: string } = {}) {
   const client = useQueryClient();
   const toast = useToast();
   const mutation = useMutation<string | void, unknown, Action<string | void>>({
@@ -48,10 +81,24 @@ export function useAdminAction({ fallback = 'Något gick fel.', invalidate = [ke
   });
   const inFlight = useRef(false);
   const { mutateAsync } = mutation;
-  const run = useCallback(async (fn: Action<string | void>): Promise<void> => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    try { await mutateAsync(fn); } catch { /* the error is in the mutation's state */ } finally { inFlight.current = false; }
-  }, [mutateAsync]);
-  return { run, busy: mutation.isPending, error: mutation.isError ? errorMessage(mutation.error, fallback) : null, reset: mutation.reset };
+  const run = useCallback(
+    async (fn: Action<string | void>): Promise<void> => {
+      if (inFlight.current) return;
+      inFlight.current = true;
+      try {
+        await mutateAsync(fn);
+      } catch {
+        /* the error is in the mutation's state */
+      } finally {
+        inFlight.current = false;
+      }
+    },
+    [mutateAsync],
+  );
+  return {
+    run,
+    busy: mutation.isPending,
+    error: mutation.isError ? errorMessage(mutation.error, fallback) : null,
+    reset: mutation.reset,
+  };
 }

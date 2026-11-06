@@ -11,18 +11,43 @@ export const FactSchema = FactEnvelopeSchema.properties.fact;
 export type Fact = Static<typeof FactSchema>;
 export type StepDraft = Static<typeof StepDraftSchema>;
 export const CapabilityName = Type.String({ pattern: '^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$', maxLength: 80 });
-export const FollowBindingInputSchema = Type.Object({
-  kind: FactKindName,
-  capability: CapabilityName,
-  audience: ConnectorAudienceSchema,
-  /** For a watch step: the window the follower's `within` may not exceed; absent means the follower's own. */
-  within: Type.Optional(Type.String({ pattern: '^P(?!$)(\\d+D)?(T(?=\\d)(\\d+H)?(\\d+M)?)?$' })),
-}, { additionalProperties: false });
+export const FollowBindingInputSchema = Type.Object(
+  {
+    kind: FactKindName,
+    capability: CapabilityName,
+    audience: ConnectorAudienceSchema,
+    /** For a watch step: the window the follower's `within` may not exceed; absent means the follower's own. */
+    within: Type.Optional(Type.String({ pattern: '^P(?!$)(\\d+D)?(T(?=\\d)(\\d+H)?(\\d+M)?)?$' })),
+  },
+  { additionalProperties: false },
+);
 export type FollowBindingInput = Static<typeof FollowBindingInputSchema>;
-export interface FollowBinding extends FollowBindingInput { id: string; enabled: boolean; createdAt: string; updatedAt: string }
+export interface FollowBinding extends FollowBindingInput {
+  id: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
 export type JobSourceStatus = 'ok' | 'timeout' | 'unavailable' | 'degraded' | 'disabled';
 /** Every bound follower is reported: a system that did not answer or can no longer follow is named, never silently missing. */
-export interface JobSource { binding: string; connector: string; source: string; capability: string; status: JobSourceStatus; reason?: string }
-export interface JobStepDraft { id: string; connector: string; source: string; draft: StepDraft }
-export interface JobProposal { fact: Fact; steps: JobStepDraft[]; sources: JobSource[]; partial: boolean }
+export interface JobSource {
+  binding: string;
+  connector: string;
+  source: string;
+  capability: string;
+  status: JobSourceStatus;
+  reason?: string;
+}
+export interface JobStepDraft {
+  id: string;
+  connector: string;
+  source: string;
+  draft: StepDraft;
+}
+export interface JobProposal {
+  fact: Fact;
+  steps: JobStepDraft[];
+  sources: JobSource[];
+  partial: boolean;
+}
 export class JobError extends Error {}

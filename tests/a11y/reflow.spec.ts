@@ -1,25 +1,51 @@
-import { composer, desktop, dockOf, expect, heading, hiddenFocusStops, narrow, open, reflowProblems, short, snoozeFirst, test } from './support';
+import {
+  composer,
+  desktop,
+  dockOf,
+  expect,
+  heading,
+  hiddenFocusStops,
+  narrow,
+  open,
+  reflowProblems,
+  short,
+  snoozeFirst,
+  test,
+} from './support';
 
-const routes = [['start', '/'], ['an area', '/?area=personal'], ['the log', '/?tab=done'], ['the calendar page', '/calendar']] as const;
+const routes = [
+  ['start', '/'],
+  ['an area', '/?area=personal'],
+  ['the log', '/?tab=done'],
+  ['the calendar page', '/calendar'],
+] as const;
 
 test.describe('1.4.10 reflow', () => {
-  for (const viewport of [narrow, short]) for (const [name, path] of routes) test(`${name} reflows at ${viewport.width}×${viewport.height}`, async ({ page, api: _ }) => {
-    await page.setViewportSize(viewport);
-    await open(page, path);
-    expect(await reflowProblems(page)).toEqual([]);
-  });
+  for (const viewport of [narrow, short])
+    for (const [name, path] of routes)
+      test(`${name} reflows at ${viewport.width}×${viewport.height}`, async ({ page, api: _ }) => {
+        await page.setViewportSize(viewport);
+        await open(page, path);
+        expect(await reflowProblems(page)).toEqual([]);
+      });
 
-  test('the areas under the box wrap at 320 px, and the chosen area\'s cards are brought into view above the docked box', async ({ page, api: _ }) => {
+  test("the areas under the box wrap at 320 px, and the chosen area's cards are brought into view above the docked box", async ({
+    page,
+    api: _,
+  }) => {
     await page.setViewportSize(narrow);
     await open(page, '/');
     const areas = page.getByRole('group', { name: 'Områden' });
-    const tops = await areas.getByRole('button').evaluateAll(list => list.map(el => Math.round(el.getBoundingClientRect().top)));
+    const tops = await areas
+      .getByRole('button')
+      .evaluateAll(list => list.map(el => Math.round(el.getBoundingClientRect().top)));
     expect(new Set(tops).size).toBeGreaterThan(1);
     await areas.getByRole('button', { name: 'Budget' }).click();
     const cards = page.getByRole('group', { name: 'Budget', exact: true });
     // The card's link is a hidden element over the card; what the person sees is its text.
     await expect(cards.getByText('Attestera fakturor', { exact: true })).toBeInViewport({ ratio: 1 });
-    const box = (await composer(page).boundingBox())!, last = (await cards.boundingBox())!;
+    const box = (await composer(page).boundingBox())!,
+      last = (await cards.boundingBox())!;
     expect(last.y + last.height).toBeLessThanOrEqual(box.y);
     expect(await reflowProblems(page)).toEqual([]);
   });
@@ -38,7 +64,10 @@ test.describe('1.4.10 reflow', () => {
     expect(await reflowProblems(page)).toEqual([]);
   });
 
-  test('the tabs and the area filter of Hem fit a phone: every area is offered and nothing scrolls sideways', async ({ page, api: _ }) => {
+  test('the tabs and the area filter of Hem fit a phone: every area is offered and nothing scrolls sideways', async ({
+    page,
+    api: _,
+  }) => {
     await page.setViewportSize(narrow);
     await open(page, '/');
     // A tab strip that scrolls sideways would hide its last tabs: on a phone the same choice is one menu.
@@ -67,21 +96,27 @@ test.describe('1.4.10 reflow', () => {
 });
 
 test.describe('1.4.12 text spacing', () => {
-  for (const [name, path] of routes) test(`${name} survives the spacing overrides`, async ({ page, api: _ }) => {
-    await page.setViewportSize(narrow);
-    await open(page, path);
-    await page.addStyleTag({ content: '* { line-height: 1.5 !important; letter-spacing: .12em !important; word-spacing: .16em !important; } p { margin-bottom: 2em !important; }' });
-    expect(await reflowProblems(page)).toEqual([]);
-  });
+  for (const [name, path] of routes)
+    test(`${name} survives the spacing overrides`, async ({ page, api: _ }) => {
+      await page.setViewportSize(narrow);
+      await open(page, path);
+      await page.addStyleTag({
+        content:
+          '* { line-height: 1.5 !important; letter-spacing: .12em !important; word-spacing: .16em !important; } p { margin-bottom: 2em !important; }',
+      });
+      expect(await reflowProblems(page)).toEqual([]);
+    });
 });
 
 test.describe('2.4.11 focus not obscured', () => {
-  for (const viewport of [desktop, narrow, short]) for (const path of ['/', '/?card=fakturor']) test(`every stop on ${path} is visible at ${viewport.width}×${viewport.height}`, async ({ page, api: _ }) => {
-    await page.setViewportSize(viewport);
-    await open(page, path);
-    const { hidden } = await hiddenFocusStops(page);
-    expect(hidden).toEqual([]);
-  });
+  for (const viewport of [desktop, narrow, short])
+    for (const path of ['/', '/?card=fakturor'])
+      test(`every stop on ${path} is visible at ${viewport.width}×${viewport.height}`, async ({ page, api: _ }) => {
+        await page.setViewportSize(viewport);
+        await open(page, path);
+        const { hidden } = await hiddenFocusStops(page);
+        expect(hidden).toEqual([]);
+      });
 
   test('a toast covers no focus stop on a phone', async ({ page, api: _ }) => {
     await page.setViewportSize(narrow);

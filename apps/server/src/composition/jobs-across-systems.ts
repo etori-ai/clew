@@ -9,4 +9,11 @@ import { clock, ids } from './ambient';
  * approval. No route yet; the proof is the unit scenario and the store contract. Not the scheduler's job rows (`./jobs.ts`).
  */
 export const followBindings = postgresFollowBindingStore();
-export const jobs = jobUsecases({ bindings: followBindings, followers: (actor, kind) => registry.followers(actor, kind), offered: kind => registry.offered(kind), ledger: executions, clock, ids });
+export const jobs = jobUsecases({
+  bindings: followBindings,
+  followers: (actor, kind) => registry.followers(actor, kind),
+  offered: kind => registry.offered(kind),
+  ledger: executions,
+  clock,
+  ids,
+});

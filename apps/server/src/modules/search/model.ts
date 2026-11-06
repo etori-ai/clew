@@ -7,7 +7,13 @@ import type { SearchKind, ViewOpen } from '@clew/contracts';
  * capability for this run, so scope and, later, the person's delegated token travel with it.
  */
 /** `open` is the read a hit from this source opens as a view (D38), when the source declares one and the person may call it. */
-export interface SearchSourceRef { name: string; connectorId: string; source: string; kinds?: SearchKind[]; open?: ViewOpen }
+export interface SearchSourceRef {
+  name: string;
+  connectorId: string;
+  source: string;
+  kinds?: SearchKind[];
+  open?: ViewOpen;
+}
 export type SearchSources = (actor: Actor) => SearchSourceRef[];
 export type SearchCall = <O = unknown>(name: string, input?: unknown) => Promise<O>;
 export interface SearchBudget {

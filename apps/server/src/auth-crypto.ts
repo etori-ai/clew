@@ -3,7 +3,8 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, 
 export const randomToken = () => randomBytes(32).toString('base64url');
 export const tokenDigest = (value: string) => createHash('sha256').update(value).digest('hex');
 export function equalToken(a: string, b: string) {
-  const x = Buffer.from(a), y = Buffer.from(b);
+  const x = Buffer.from(a),
+    y = Buffer.from(b);
   return x.length === y.length && timingSafeEqual(x, y);
 }
 function masterKey() {
@@ -12,7 +13,8 @@ function masterKey() {
   return key;
 }
 function seal(value: Buffer, key: Buffer, purpose: string) {
-  const iv = randomBytes(12), cipher = createCipheriv('aes-256-gcm', key, iv);
+  const iv = randomBytes(12),
+    cipher = createCipheriv('aes-256-gcm', key, iv);
   cipher.setAAD(Buffer.from(purpose));
   const data = Buffer.concat([cipher.update(value), cipher.final()]);
   return Buffer.concat([iv, cipher.getAuthTag(), data]).toString('base64url');
@@ -20,18 +22,28 @@ function seal(value: Buffer, key: Buffer, purpose: string) {
 function open(value: string, key: Buffer, purpose: string) {
   const bytes = Buffer.from(value, 'base64url');
   const cipher = createDecipheriv('aes-256-gcm', key, bytes.subarray(0, 12));
-  cipher.setAuthTag(bytes.subarray(12, 28)); cipher.setAAD(Buffer.from(purpose));
+  cipher.setAuthTag(bytes.subarray(12, 28));
+  cipher.setAAD(Buffer.from(purpose));
   return Buffer.concat([cipher.update(bytes.subarray(28)), cipher.final()]);
 }
 /** One data key per token set, wrapped by a master key outside Postgres. */
 export function encryptTokens(value: object, session: string) {
   const dek = randomBytes(32);
-  return JSON.stringify({ version: 1, key: seal(dek, masterKey(), 'auth:key:' + session), data: seal(Buffer.from(JSON.stringify(value)), dek, 'auth:tokens:' + session) });
+  return JSON.stringify({
+    version: 1,
+    key: seal(dek, masterKey(), 'auth:key:' + session),
+    data: seal(Buffer.from(JSON.stringify(value)), dek, 'auth:tokens:' + session),
+  });
 }
-export function decryptTokens(value: string, session: string): { access_token: string; refresh_token: string; id_token: string } {
+export function decryptTokens(
+  value: string,
+  session: string,
+): { access_token: string; refresh_token: string; id_token: string } {
   const envelope = JSON.parse(value);
   if (envelope.version !== 1) throw new Error('Invalid envelope');
-  return JSON.parse(open(envelope.data, open(envelope.key, masterKey(), 'auth:key:' + session), 'auth:tokens:' + session).toString());
+  return JSON.parse(
+    open(envelope.data, open(envelope.key, masterKey(), 'auth:key:' + session), 'auth:tokens:' + session).toString(),
+  );
 }
 export function authorizationVersion(value: object) {
   return createHmac('sha256', masterKey()).update(JSON.stringify(value)).digest('hex');
@@ -39,13 +51,18 @@ export function authorizationVersion(value: object) {
 export function localReturnTo(value: string | null) {
   if (!value || !value.startsWith('/') || value.startsWith('//') || /[\\\r\n]/.test(value)) return '/';
   const url = new URL(value, 'https://clew.invalid');
-  if (url.origin !== 'https://clew.invalid' || url.pathname.startsWith('/api/') || url.pathname === '/login') return '/';
+  if (url.origin !== 'https://clew.invalid' || url.pathname.startsWith('/api/') || url.pathname === '/login')
+    return '/';
   return url.pathname + url.search;
 }
 /** A connector's shared secret at rest (D23): the token envelope, purpose-bound to the connector id. Never logged or returned. */
 export function sealSecret(value: string, purpose: string) {
   const dek = randomBytes(32);
-  return JSON.stringify({ version: 1, key: seal(dek, masterKey(), purpose + ':key'), data: seal(Buffer.from(value), dek, purpose + ':data') });
+  return JSON.stringify({
+    version: 1,
+    key: seal(dek, masterKey(), purpose + ':key'),
+    data: seal(Buffer.from(value), dek, purpose + ':data'),
+  });
 }
 export function openSecret(value: string, purpose: string): string {
   const envelope = JSON.parse(value);

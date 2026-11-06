@@ -9,7 +9,14 @@ export { openRef, rowsKey, viewRows };
  */
 type Schema = { properties?: Record<string, Schema>; items?: Schema };
 /** What the rules need to know about a capability: its name, kind, schemas and view. */
-export interface ViewSubject { name: string; kind: string; input: unknown; output: unknown; view?: View; menu?: MenuHint }
+export interface ViewSubject {
+  name: string;
+  kind: string;
+  input: unknown;
+  output: unknown;
+  view?: View;
+  menu?: MenuHint;
+}
 const props = (schema: unknown): Record<string, Schema> | undefined => (schema as Schema | undefined)?.properties;
 
 /**
@@ -21,7 +28,10 @@ export function viewProblem(subject: ViewSubject, siblings: ViewSubject[]): stri
   const view = subject.view;
   if (!view) return undefined;
   if (subject.kind !== 'read') return `${subject.name}: only a read capability can declare a view`;
-  if (view.kind === 'text') { const out = props(subject.output); return out && !out[view.body] ? `${subject.name}: view body "${view.body}" is not in the output schema` : undefined; }
+  if (view.kind === 'text') {
+    const out = props(subject.output);
+    return out && !out[view.body] ? `${subject.name}: view body "${view.body}" is not in the output schema` : undefined;
+  }
   const keys = view.fields.map(f => f.key);
   if (new Set(keys).size !== keys.length) return `${subject.name}: a view field is listed twice`;
   let record = props(subject.output);
@@ -31,31 +41,42 @@ export function viewProblem(subject: ViewSubject, siblings: ViewSubject[]): stri
     if (record && !record[rows]) return `${subject.name}: view rows "${rows}" is not in the output schema`;
     record = record?.[rows]?.items?.properties;
     const input = props(subject.input);
-    for (const control of [view.input?.query, view.input?.filter]) if (control && input && !input[control.key]) return `${subject.name}: view input "${control.key}" is not in the input schema`;
-    if (view.input?.query && view.input.filter && view.input.query.key === view.input.filter.key) return `${subject.name}: the view's query and filter bind the same input`;
+    for (const control of [view.input?.query, view.input?.filter])
+      if (control && input && !input[control.key])
+        return `${subject.name}: view input "${control.key}" is not in the input schema`;
+    if (view.input?.query && view.input.filter && view.input.query.key === view.input.filter.key)
+      return `${subject.name}: the view's query and filter bind the same input`;
     if (view.open) {
       const target = siblings.find(c => c.name === view.open!.capability);
-      if (!target || target.kind !== 'read') return `${subject.name}: a row opens ${view.open.capability}, which is not a read of the same connector`;
+      if (!target || target.kind !== 'read')
+        return `${subject.name}: a row opens ${view.open.capability}, which is not a read of the same connector`;
       const targetInput = props(target.input);
       for (const [param, from] of Object.entries(view.open.params)) {
-        if (targetInput && !targetInput[param]) return `${subject.name}: ${view.open.capability} takes no input "${param}"`;
-        if (record && !record[from]) return `${subject.name}: a row has no "${from}" to open ${view.open.capability} with`;
+        if (targetInput && !targetInput[param])
+          return `${subject.name}: ${view.open.capability} takes no input "${param}"`;
+        if (record && !record[from])
+          return `${subject.name}: a row has no "${from}" to open ${view.open.capability} with`;
       }
     }
-    if (view.ref && record && !record[view.ref]) return `${subject.name}: view ref "${view.ref}" is not in the output schema`;
+    if (view.ref && record && !record[view.ref])
+      return `${subject.name}: view ref "${view.ref}" is not in the output schema`;
   }
-  if (record) for (const key of view.kind === 'detail' ? [view.title, ...keys] : keys) if (!record[key]) return `${subject.name}: view field "${key}" is not in the output schema`;
+  if (record)
+    for (const key of view.kind === 'detail' ? [view.title, ...keys] : keys)
+      if (!record[key]) return `${subject.name}: view field "${key}" is not in the output schema`;
   return undefined;
 }
 
 /** The icon of a menu row whose capability names none. */
 export const MENU_DEFAULT_ICON: MenuIcon = 'document';
-const needsInput = (subject: Pick<ViewSubject, 'input'>) => ((subject.input as { required?: unknown[] } | undefined)?.required ?? []).length > 0;
+const needsInput = (subject: Pick<ViewSubject, 'input'>) =>
+  ((subject.input as { required?: unknown[] } | undefined)?.required ?? []).length > 0;
 /**
  * Whether a capability's view can be a tool in the menu (D40): a row is one click and no question, so it is a read
  * that declares a view and whose input lists nothing as required.
  */
-export const menuEligible = (subject: Pick<ViewSubject, 'kind' | 'input' | 'view'>) => subject.kind === 'read' && !!subject.view && !needsInput(subject);
+export const menuEligible = (subject: Pick<ViewSubject, 'kind' | 'input' | 'view'>) =>
+  subject.kind === 'read' && !!subject.view && !needsInput(subject);
 /** Why a capability may not say how its menu row looks, or undefined when it may: only a view that can be a tool has a row. */
 export function menuProblem(subject: ViewSubject): string | undefined {
   if (!subject.menu || menuEligible(subject)) return undefined;
@@ -64,16 +85,28 @@ export function menuProblem(subject: ViewSubject): string | undefined {
   return `${subject.name}: a menu row opens without a question, and the capability needs input`;
 }
 /** The row a capability's view is in the menu: what the connector says, else the capability's title and a plain icon. Undefined when it cannot be a tool. */
-export const menuRowOf = (subject: Pick<ViewSubject, 'kind' | 'input' | 'view' | 'menu'> & { title: string }): MenuHint | undefined =>
-  menuEligible(subject) ? { label: subject.menu?.label ?? subject.title, icon: subject.menu?.icon ?? MENU_DEFAULT_ICON } : undefined;
+export const menuRowOf = (
+  subject: Pick<ViewSubject, 'kind' | 'input' | 'view' | 'menu'> & { title: string },
+): MenuHint | undefined =>
+  menuEligible(subject)
+    ? { label: subject.menu?.label ?? subject.title, icon: subject.menu?.icon ?? MENU_DEFAULT_ICON }
+    : undefined;
 
 /**
  * What the model reads in place of the output when the view says `modelReads: 'summary'`: that the result is on the
  * person's screen and how much of it there is, never what it holds.
  */
-export function viewSummary(view: View, title: string, output: unknown): { shown: true; view: string; rows?: number; note: string } {
+export function viewSummary(
+  view: View,
+  title: string,
+  output: unknown,
+): { shown: true; view: string; rows?: number; note: string } {
   const rows = viewRows(view, output);
-  return { shown: true, view: title, ...(rows ? { rows: rows.length } : {}),
-    note: 'Resultatet visas för personen i vyn. Innehållet lämnas inte till dig: säg att uppgifterna finns i vyn och återge dem inte.' };
+  return {
+    shown: true,
+    view: title,
+    ...(rows ? { rows: rows.length } : {}),
+    note: 'Resultatet visas för personen i vyn. Innehållet lämnas inte till dig: säg att uppgifterna finns i vyn och återge dem inte.',
+  };
 }
 export const readsSummary = (view: View | undefined) => view?.modelReads === 'summary';

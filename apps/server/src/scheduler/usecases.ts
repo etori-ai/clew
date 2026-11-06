@@ -22,7 +22,7 @@ export const NIGHTLY = 'scan-utvecklingssamtal';
 export function createScheduler(deps: SchedulerDeps) {
   const { jobs, people, threads, calendar, clock, log } = deps;
   let timer: ReturnType<typeof setInterval> | undefined;
-  const threadIdOf = (job: Job) => typeof job.payload.threadId === 'string' ? job.payload.threadId : undefined;
+  const threadIdOf = (job: Job) => (typeof job.payload.threadId === 'string' ? job.payload.threadId : undefined);
   async function run(job: Job) {
     if (job.kind === NIGHTLY) {
       for (const id of await people.granted()) {
@@ -43,15 +43,23 @@ export function createScheduler(deps: SchedulerDeps) {
     const now = Temporal.Instant.fromEpochMilliseconds(clock().getTime()).toZonedDateTimeISO(timeZone);
     const today = now.with({ hour: 6, minute: 0, second: 0, millisecond: 0 });
     const next = today.epochMilliseconds > now.epochMilliseconds ? today : today.add({ days: 1 });
-    await jobs.schedule({ id: `scan:${next.toPlainDate().toString()}`, kind: NIGHTLY, runAt: new Date(next.epochMilliseconds).toISOString() });
+    await jobs.schedule({
+      id: `scan:${next.toPlainDate().toString()}`,
+      kind: NIGHTLY,
+      runAt: new Date(next.epochMilliseconds).toISOString(),
+    });
   }
   /** Run up to ten due jobs; a failing job is finished with its error and never blocks the next. */
   async function tick() {
     for (let i = 0; i < 10; i++) {
       const job = await jobs.claim(clock().toISOString());
       if (!job) return;
-      try { await run(job); await jobs.finish(job.id); }
-      catch (error) { await jobs.finish(job.id, error instanceof Error ? error.message : String(error)); }
+      try {
+        await run(job);
+        await jobs.finish(job.id);
+      } catch (error) {
+        await jobs.finish(job.id, error instanceof Error ? error.message : String(error));
+      }
     }
   }
   function start() {
@@ -59,7 +67,10 @@ export function createScheduler(deps: SchedulerDeps) {
     void tick();
     timer ??= setInterval(() => void tick().catch(error => log('scheduler', error)), deps.pollMs ?? 15_000);
   }
-  function stop() { if (timer) clearInterval(timer); timer = undefined; }
+  function stop() {
+    if (timer) clearInterval(timer);
+    timer = undefined;
+  }
   return { run, scheduleNightly, tick, start, stop };
 }
 export type Scheduler = ReturnType<typeof createScheduler>;

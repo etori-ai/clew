@@ -10,25 +10,33 @@ const wide = { width: 1440, height: 900 };
  * panel, where the day and what happened since yesterday otherwise rest; the box asks about what is open beside it,
  * and the answer opens as a conversation with that beside the transcript.
  */
-test.describe('Hem: the day\'s work', () => {
+test.describe("Hem: the day's work", () => {
   test.use({ viewport: desktop });
 
-  test('a card\'s state is a tab: the tabs speak the tabs pattern, the address names the tab, and each tab has its rows', async ({ page, api: _ }) => {
+  test("a card's state is a tab: the tabs speak the tabs pattern, the address names the tab, and each tab has its rows", async ({
+    page,
+    api: _,
+  }) => {
     await open(page, '/');
     await expect(page.getByRole('tablist').getByRole('tab')).toHaveCount(4);
-    for (const name of ['Behöver dig · 6', 'Väntar på andra · 2', 'Inte nu · 1', 'Klart']) await expect(page.getByRole('tab', { name, exact: true })).toBeVisible();
+    for (const name of ['Behöver dig · 6', 'Väntar på andra · 2', 'Inte nu · 1', 'Klart'])
+      await expect(page.getByRole('tab', { name, exact: true })).toBeVisible();
     await expect(page.getByRole('tab', { name: /^Behöver dig/ })).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByRole('tabpanel', { name: 'Behöver dig' })).toBeVisible();
     await page.getByRole('tab', { name: /^Väntar/ }).focus();
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(/\/\?tab=waiting$/);
     const waiting = page.getByRole('tabpanel', { name: 'Väntar på andra' });
-    await expect(waiting.getByRole('button', { name: 'Tillbud 2026-1182, halkolycka i duschen', exact: true })).toBeVisible();
+    await expect(
+      waiting.getByRole('button', { name: 'Tillbud 2026-1182, halkolycka i duschen', exact: true }),
+    ).toBeVisible();
     await expect(heading(page, 2, 'Väntar på andra · 2')).toBeVisible();
     await page.getByRole('tab', { name: /^Inte nu/ }).click();
     await expect(page).toHaveURL(/\/\?tab=snoozed$/);
     await expect(heading(page, 2, 'Inte nu · 1')).toBeVisible();
-    await expect(page.getByRole('tabpanel', { name: 'Inte nu' }).getByRole('button', { name: 'Ta upp nu' })).toBeVisible();
+    await expect(
+      page.getByRole('tabpanel', { name: 'Inte nu' }).getByRole('button', { name: 'Ta upp nu' }),
+    ).toBeVisible();
     await page.getByRole('tab', { name: 'Klart' }).click();
     await expect(page).toHaveURL(/\/\?tab=done$/);
     await expect(heading(page, 2, 'Redan hanterat')).toBeVisible();
@@ -50,7 +58,10 @@ test.describe('Hem: the day\'s work', () => {
     await expect(page).toHaveURL(/\/\?tab=waiting$/);
   });
 
-  test('on a phone every thread is a card in the list, and the one the address names has the focus', async ({ page, api: _ }) => {
+  test('on a phone every thread is a card in the list, and the one the address names has the focus', async ({
+    page,
+    api: _,
+  }) => {
     await page.setViewportSize(phone);
     await open(page, '/?card=ledighet');
     await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -63,7 +74,10 @@ test.describe('Hem: the day\'s work', () => {
 test.describe('the panel beside the page', () => {
   test.use({ viewport: wide });
 
-  test('a row opens its card beside the list: a named region, not a dialog, with the focus on its heading; Esc gives the focus back', async ({ page, api: _ }) => {
+  test('a row opens its card beside the list: a named region, not a dialog, with the focus on its heading; Esc gives the focus back', async ({
+    page,
+    api: _,
+  }) => {
     await open(page, '/');
     const title = page.getByRole('button', { name: 'Attestera 3 fakturor, 48 200 kr', exact: true });
     await title.focus();
@@ -88,7 +102,10 @@ test.describe('the panel beside the page', () => {
     await expect(page).toHaveURL(/\/$/);
   });
 
-  test('beside Hem the panel rests on the day and what happened since yesterday; a row\'s card takes its place, the box asks about the card, and Esc gives it all back', async ({ page, api: _ }) => {
+  test("beside Hem the panel rests on the day and what happened since yesterday; a row's card takes its place, the box asks about the card, and Esc gives it all back", async ({
+    page,
+    api: _,
+  }) => {
     await open(page, '/');
     const aside = page.getByRole('complementary', { name: 'Vid sidan av' });
     await expect(aside.getByRole('region', { name: 'I dag' }).getByText('09:30–10:30 Rektorsmöte')).toBeVisible();
@@ -119,7 +136,7 @@ test.describe('the panel beside the page', () => {
     await expect(page.getByRole('link', { name: 'Ny fråga i stället' })).toHaveCount(0);
   });
 
-  test('a card\'s own read lies over the card: closing the view leaves the card', async ({ page, api: _ }) => {
+  test("a card's own read lies over the card: closing the view leaves the card", async ({ page, api: _ }) => {
     await open(page, '/?card=omtanke');
     const card = page.getByRole('complementary', { name: 'Kort' });
     await card.getByRole('button', { name: 'Se mönstret' }).click();
@@ -131,7 +148,10 @@ test.describe('the panel beside the page', () => {
     await expect(page).toHaveURL(/\/\?card=omtanke$/);
   });
 
-  test('the box on Hem asks about the open card: the conversation takes the column, the card stays beside it, and closing leads back', async ({ page, api }) => {
+  test('the box on Hem asks about the open card: the conversation takes the column, the card stays beside it, and closing leads back', async ({
+    page,
+    api,
+  }) => {
     await open(page, '/?card=fakturor');
     await expect(page.getByText('Fråga om kortet Attestera 3 fakturor, 48 200 kr …')).toBeVisible();
     api.answerDelay = 300;
@@ -154,7 +174,10 @@ test.describe('the panel beside the page', () => {
     await expect(heading(page, 1, 'Hej, Testa')).toBeVisible();
   });
 
-  test('a view an answer names opens beside the transcript, the conversation stays, and a view that is a tool offers its page', async ({ page, api }) => {
+  test('a view an answer names opens beside the transcript, the conversation stays, and a view that is a tool offers its page', async ({
+    page,
+    api,
+  }) => {
     api.menu = [menuRow];
     await open(page, '/');
     await composer(page).fill('telefonboken lärare');
@@ -173,7 +196,10 @@ test.describe('the panel beside the page', () => {
     await expect(log).toContainText('Sök i telefonboken: 2 rader.');
     await expect(panel.getByRole('heading', { level: 2, name: 'Sök i telefonboken' })).toBeFocused();
     await expectNoAxeViolations(page);
-    await expect(panel.getByRole('link', { name: 'Öppna som sida' })).toHaveAttribute('href', /^\/tools\/telefonbok\.directory\?input=/);
+    await expect(panel.getByRole('link', { name: 'Öppna som sida' })).toHaveAttribute(
+      'href',
+      /^\/tools\/telefonbok\.directory\?input=/,
+    );
     // The box is in use while the panel is open, and typing there never loses the panel.
     await composer(page).fill('Vem är på plats?');
     await composer(page).press('Enter');
@@ -186,14 +212,19 @@ test.describe('the panel beside the page', () => {
     await expect(answer(page)).toBeVisible();
   });
 
-  test('the box on a tool\'s page asks about the page: the conversation opens with the view beside it, searched as it was', async ({ page, api }) => {
+  test("the box on a tool's page asks about the page: the conversation opens with the view beside it, searched as it was", async ({
+    page,
+    api,
+  }) => {
     api.menu = [menuRow];
     await open(page, `/tools/telefonbok.directory?input=${encodeURIComponent(JSON.stringify({ query: 'lärare' }))}`);
     await expect(page.getByText('Fråga om Telefonbok …')).toBeVisible();
     await composer(page).fill('Vem är på plats?');
     await composer(page).press('Enter');
     await expect(answer(page)).toBeVisible();
-    await expect(page).toHaveURL(/\/conversations\/[^/?]+\?open=telefonbok\.directory&open-title=Telefonbok&open-input=/);
+    await expect(page).toHaveURL(
+      /\/conversations\/[^/?]+\?open=telefonbok\.directory&open-title=Telefonbok&open-input=/,
+    );
     const panel = page.getByRole('complementary', { name: 'Telefonbok' });
     await expect(panel.getByRole('searchbox')).toHaveValue('lärare');
     await expect(composer(page)).toBeFocused();
@@ -209,7 +240,10 @@ test.describe('the panel beside the page', () => {
 test.describe('asking from a page on a narrower screen', () => {
   test.use({ viewport: desktop });
 
-  test('the conversation opens alone: nothing is laid over the transcript, and the view went along as a chip', async ({ page, api }) => {
+  test('the conversation opens alone: nothing is laid over the transcript, and the view went along as a chip', async ({
+    page,
+    api,
+  }) => {
     api.menu = [menuRow];
     await open(page, '/tools/telefonbok.directory');
     await composer(page).fill('Vem är på plats?');

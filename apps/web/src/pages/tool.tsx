@@ -2,7 +2,19 @@ import { useMemo, useRef } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import type { PanelViewSpec, SessionUser } from '@clew/contracts';
-import { Banner, Button, EmptyState, Heading, Layout, LayoutContent, LayoutFooter, Skeleton, VisuallyHidden, VStack, useMediaQuery } from '@clew/ui';
+import {
+  Banner,
+  Button,
+  EmptyState,
+  Heading,
+  Layout,
+  LayoutContent,
+  LayoutFooter,
+  Skeleton,
+  VisuallyHidden,
+  VStack,
+  useMediaQuery,
+} from '@clew/ui';
 import { areasQuery, viewQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
@@ -15,21 +27,61 @@ import { Composer, type ComposerAbout } from '../components/composer';
 
 /** The table needs 970 px beside the rail, so a 1280 px laptop gets it, with a scrollbar too; a narrower window draws the same rows as a list. */
 const tableQuery = '(min-width: 1280px)';
-const parse = (json: string | null): Record<string, unknown> => { try { const v: unknown = json ? JSON.parse(json) : {}; return v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}; } catch { return {}; } };
-type Shown = { capability: string; title: string; output: unknown; spec: PanelViewSpec | undefined; input: Record<string, unknown>; via: boolean; address: string };
+const parse = (json: string | null): Record<string, unknown> => {
+  try {
+    const v: unknown = json ? JSON.parse(json) : {};
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+};
+type Shown = {
+  capability: string;
+  title: string;
+  output: unknown;
+  spec: PanelViewSpec | undefined;
+  input: Record<string, unknown>;
+  via: boolean;
+  address: string;
+};
 
 /**
  * One view read for an address. What is on screen stays until the next answer has arrived: typing in a view's own field
  * keeps its rows, and a view that takes another's place does so with its title, in one step.
  */
-function useView(capability: string | null, inputJson: string | null, at: { title: string; via: boolean; address: string }) {
-  const query = useQuery({ ...viewQuery(capability ?? '', inputJson), enabled: !!capability, placeholderData: keepPreviousData });
+function useView(
+  capability: string | null,
+  inputJson: string | null,
+  at: { title: string; via: boolean; address: string },
+) {
+  const query = useQuery({
+    ...viewQuery(capability ?? '', inputJson),
+    enabled: !!capability,
+    placeholderData: keepPreviousData,
+  });
   const input = useMemo(() => parse(inputJson), [inputJson]);
   const shown = useRef<Shown | null>(null);
-  const arrived = query.data && (!query.isPlaceholderData || query.data.view?.capability === capability) ? query.data : undefined;
+  const arrived =
+    query.data && (!query.isPlaceholderData || query.data.view?.capability === capability) ? query.data : undefined;
   if (!capability || query.isError) shown.current = null;
-  else if (arrived) shown.current = { capability, title: at.title, output: arrived.output, spec: arrived.view, input, via: at.via, address: at.address };
-  return { shown: capability ? shown.current : null, isLoading: query.isFetching && query.isPlaceholderData, failed: query.isError ? query.error : null, retry: () => { void query.refetch(); } };
+  else if (arrived)
+    shown.current = {
+      capability,
+      title: at.title,
+      output: arrived.output,
+      spec: arrived.view,
+      input,
+      via: at.via,
+      address: at.address,
+    };
+  return {
+    shown: capability ? shown.current : null,
+    isLoading: query.isFetching && query.isPlaceholderData,
+    failed: query.isError ? query.error : null,
+    retry: () => {
+      void query.refetch();
+    },
+  };
 }
 
 /**
@@ -59,54 +111,134 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   const main = useView(entry ? capability : null, inputJson, { title: entry?.label ?? '', via: false, address });
   const tool = main.shown?.capability === capability ? main.shown : null;
   const opened = entry ? search.get('open') : null;
-  const side = useView(opened, search.get('open-input'), { title: search.get('open-title') ?? opened ?? '', via: search.get('via') === '1', address });
+  const side = useView(opened, search.get('open-input'), {
+    title: search.get('open-title') ?? opened ?? '',
+    via: search.get('via') === '1',
+    address,
+  });
   const detail = side.shown;
   const title = detail?.title ?? entry?.label ?? (missing ? 'Verktyget finns inte' : null);
-  usePageTitle(title, detail ? false : title ?? false);
+  usePageTitle(title, detail ? false : (title ?? false));
   const input = tool?.input ?? {};
-  const failed = areasQ.isError && areasQ.data === undefined ? { message: errorMessage(areasQ.error, 'Sidan kunde inte läsas.'), retry: () => { void areasQ.refetch(); } }
-    : main.failed ? { message: errorMessage(main.failed, 'Kunde inte hämta.'), retry: main.retry }
-    : side.failed ? { message: errorMessage(side.failed, 'Kunde inte hämta.'), retry: side.retry } : null;
-  const frame: PanelFrame | null = detail ? {
-    id: `view:${detail.capability}`, title: detail.title, address: detail.address, wide: detail.spec?.kind === 'table',
-    onClose: () => navigate(toolHref(capability, input)),
-    body: inline => <PanelBody output={detail.output} view={detail.spec} input={detail.input} isLoading={side.isLoading} inline={inline}
-      onInput={detail.capability === opened ? next => navigate(toolHref(capability, input, { capability: detail.capability, title: detail.title, input: next }, detail.via), { replace: true }) : undefined}
-      hrefFor={v => toolHref(capability, input, v, true)} onBack={detail.via ? () => navigate(-1) : undefined} />,
-  } : null;
+  const failed =
+    areasQ.isError && areasQ.data === undefined
+      ? {
+          message: errorMessage(areasQ.error, 'Sidan kunde inte läsas.'),
+          retry: () => {
+            void areasQ.refetch();
+          },
+        }
+      : main.failed
+        ? { message: errorMessage(main.failed, 'Kunde inte hämta.'), retry: main.retry }
+        : side.failed
+          ? { message: errorMessage(side.failed, 'Kunde inte hämta.'), retry: side.retry }
+          : null;
+  const frame: PanelFrame | null = detail
+    ? {
+        id: `view:${detail.capability}`,
+        title: detail.title,
+        address: detail.address,
+        wide: detail.spec?.kind === 'table',
+        onClose: () => navigate(toolHref(capability, input)),
+        body: inline => (
+          <PanelBody
+            output={detail.output}
+            view={detail.spec}
+            input={detail.input}
+            isLoading={side.isLoading}
+            inline={inline}
+            onInput={
+              detail.capability === opened
+                ? next =>
+                    navigate(
+                      toolHref(
+                        capability,
+                        input,
+                        { capability: detail.capability, title: detail.title, input: next },
+                        detail.via,
+                      ),
+                      { replace: true },
+                    )
+                : undefined
+            }
+            hrefFor={v => toolHref(capability, input, v, true)}
+            onBack={detail.via ? () => navigate(-1) : undefined}
+          />
+        ),
+      }
+    : null;
   // A table keeps the width it needs: the panel is beside it only on a screen wide enough for both, else over it as before.
   const slot = usePanel(frame, { minMain: tool?.spec?.kind === 'table' ? 1060 : 600, overlayOnly: short });
   // What the box asks about (D50): this view with its search as it stands, which the conversation keeps beside the
   // transcript where both fit. On a narrower screen the conversation opens alone, and the view goes with it as a chip.
-  const about: ComposerAbout | undefined = entry ? {
-    label: entry.label, search: besideTranscript ? withView('', '', { capability, title: entry.label, input }) : '',
-    chips: [{ ref: `capability:${capability}`, kind: 'capability', label: entry.label }],
-  } : undefined;
+  const about: ComposerAbout | undefined = entry
+    ? {
+        label: entry.label,
+        search: besideTranscript ? withView('', '', { capability, title: entry.label, input }) : '',
+        chips: [{ ref: `capability:${capability}`, kind: 'capability', label: entry.label }],
+      }
+    : undefined;
   const box = !missing && <Composer place="page" about={about} />;
-  return <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
-    {/* `padding={0}` on the content and the padding on the stack is the template's way to keep a table on the heading's line. */}
-    <Layout height={short ? 'auto' : 'fill'} {...(slot.end ? {} : { contentWidth: tool?.spec?.kind === 'table' ? 1180 : 720 })} end={slot.end} footer={box && !short ? <LayoutFooter>{box}</LayoutFooter> : undefined} content={<LayoutContent padding={0}>
-      <VStack padding={mobile ? 3 : 4} gap={6}>
-        {missing
-          ? <EmptyState headingLevel={1} title="Verktyget finns inte" description="Det är inte påslaget för dig, eller så har adressen ändrats." actions={<Button label="Till startsidan" href="/" />} />
-          : <>
-            {entry ? <Heading level={1}>{entry.label}</Heading> : !failed && <Skeleton height={28} width={200} />}
-            {failed && <Banner status="error" title={failed.message}><Button label="Försök igen" size="sm" variant="secondary" onClick={failed.retry} /></Banner>}
-            {tool
-              ? tool.spec
-                ? <DeclaredView view={tool.spec} output={tool.output} input={tool.input} isLoading={main.isLoading} headingLevel={2} tableQuery={tableQuery}
-                  /* The view's controls rewrite the address in place, so a search is addressable and one step back leaves the tool. */
-                  onInput={next => navigate(toolHref(capability, next), { replace: true })}
-                  hrefFor={v => toolHref(capability, tool.input, v)} />
-                : <EmptyState headingLevel={2} title="Inget att visa" />
-              : !failed && <VStack gap={3}>
-                <VisuallyHidden>Hämtar …</VisuallyHidden>
-                {Array.from({ length: 6 }, (_, i) => <Skeleton key={i} height={20} width={i % 2 ? '70%' : '100%'} index={i} />)}
-              </VStack>}
-            {short && box}
-          </>}
-      </VStack>
-    </LayoutContent>} />
-    {slot.overlay}
-  </Shell>;
+  return (
+    <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
+      {/* `padding={0}` on the content and the padding on the stack is the template's way to keep a table on the heading's line. */}
+      <Layout
+        height={short ? 'auto' : 'fill'}
+        {...(slot.end ? {} : { contentWidth: tool?.spec?.kind === 'table' ? 1180 : 720 })}
+        end={slot.end}
+        footer={box && !short ? <LayoutFooter>{box}</LayoutFooter> : undefined}
+        content={
+          <LayoutContent padding={0}>
+            <VStack padding={mobile ? 3 : 4} gap={6}>
+              {missing ? (
+                <EmptyState
+                  headingLevel={1}
+                  title="Verktyget finns inte"
+                  description="Det är inte påslaget för dig, eller så har adressen ändrats."
+                  actions={<Button label="Till startsidan" href="/" />}
+                />
+              ) : (
+                <>
+                  {entry ? <Heading level={1}>{entry.label}</Heading> : !failed && <Skeleton height={28} width={200} />}
+                  {failed && (
+                    <Banner status="error" title={failed.message}>
+                      <Button label="Försök igen" size="sm" variant="secondary" onClick={failed.retry} />
+                    </Banner>
+                  )}
+                  {tool ? (
+                    tool.spec ? (
+                      <DeclaredView
+                        view={tool.spec}
+                        output={tool.output}
+                        input={tool.input}
+                        isLoading={main.isLoading}
+                        headingLevel={2}
+                        tableQuery={tableQuery}
+                        /* The view's controls rewrite the address in place, so a search is addressable and one step back leaves the tool. */
+                        onInput={next => navigate(toolHref(capability, next), { replace: true })}
+                        hrefFor={v => toolHref(capability, tool.input, v)}
+                      />
+                    ) : (
+                      <EmptyState headingLevel={2} title="Inget att visa" />
+                    )
+                  ) : (
+                    !failed && (
+                      <VStack gap={3}>
+                        <VisuallyHidden>Hämtar …</VisuallyHidden>
+                        {Array.from({ length: 6 }, (_, i) => (
+                          <Skeleton key={i} height={20} width={i % 2 ? '70%' : '100%'} index={i} />
+                        ))}
+                      </VStack>
+                    )
+                  )}
+                  {short && box}
+                </>
+              )}
+            </VStack>
+          </LayoutContent>
+        }
+      />
+      {slot.overlay}
+    </Shell>
+  );
 }

@@ -20,9 +20,25 @@ import { applyRow, syncBundledRows, type ReconcileDeps } from '../../apps/server
  * connector, the hello connector running in process behind a fetch, the memory store, a clock the test owns. What the
  * administrator does, what the store holds afterwards, what the audit log says, and what Hassan can see.
  */
-const persona = (id: string, role: 'manager' | 'employee', capabilities: string[] = []): AuthenticatedContext => ({ id, name: id, unitId: id === 'mikael' ? 'unit-it' : 'unit-skola', unitLabel: 'Enheten', role,
-  organisationId: 'sundsvall', principal: { id: 'person:' + id, kind: 'person' }, capabilities, authorizationVersion: 'v1', sessionBinding: 'test', expiresAt: '2099-01-01T00:00:00.000Z', async authorize() { return { version: 'v1' }; } });
-const mikael = persona('mikael', 'employee', ['admin.connectors']), hassan = persona('hassan', 'employee'), hillevi = persona('hillevi', 'manager');
+const persona = (id: string, role: 'manager' | 'employee', capabilities: string[] = []): AuthenticatedContext => ({
+  id,
+  name: id,
+  unitId: id === 'mikael' ? 'unit-it' : 'unit-skola',
+  unitLabel: 'Enheten',
+  role,
+  organisationId: 'sundsvall',
+  principal: { id: 'person:' + id, kind: 'person' },
+  capabilities,
+  authorizationVersion: 'v1',
+  sessionBinding: 'test',
+  expiresAt: '2099-01-01T00:00:00.000Z',
+  async authorize() {
+    return { version: 'v1' };
+  },
+});
+const mikael = persona('mikael', 'employee', ['admin.connectors']),
+  hassan = persona('hassan', 'employee'),
+  hillevi = persona('hillevi', 'manager');
 const SECRET = 'test-secret-test-secret';
 const T0 = '2026-11-04T07:00:00.000Z';
 const sign = (secret: string, aud: string) => assertionFor(aud, secret);
@@ -34,21 +50,77 @@ function world(options: { helloUp?: boolean } = {}) {
   const store = memoryConnectorStore();
   let now = Date.parse(T0);
   const clock = () => new Date(now);
-  const hello = createConnector({ jwks: testJwks, secret: SECRET, clewUrl: 'http://clew', fetch: async () => Response.json({ output: { events: [] } }) });
-  const helloFetch: FetchLike = async (input, init) => { if (options.helloUp === false) throw new Error('ECONNREFUSED'); return hello.handle(new Request(input, init)); };
-  const live = { registered: [] as string[],
-    register(source: { id: string; url: string; secret: string }, manifest: ConnectorManifest) { live.registered.push(source.id); registry.replace(remoteConnector(manifest, { url: source.url, key: source.secret, assert: sign(SECRET, source.id), fetch: helloFetch })); },
-    unregister(id: string) { registry.unregister(id); } };
+  const hello = createConnector({
+    jwks: testJwks,
+    secret: SECRET,
+    clewUrl: 'http://clew',
+    fetch: async () => Response.json({ output: { events: [] } }),
+  });
+  const helloFetch: FetchLike = async (input, init) => {
+    if (options.helloUp === false) throw new Error('ECONNREFUSED');
+    return hello.handle(new Request(input, init));
+  };
+  const live = {
+    registered: [] as string[],
+    register(source: { id: string; url: string; secret: string }, manifest: ConnectorManifest) {
+      live.registered.push(source.id);
+      registry.replace(
+        remoteConnector(manifest, {
+          url: source.url,
+          key: source.secret,
+          assert: sign(SECRET, source.id),
+          fetch: helloFetch,
+        }),
+      );
+    },
+    unregister(id: string) {
+      registry.unregister(id);
+    },
+  };
   const deps: AdminDeps = {
-    store, registry, clock, live, units: { list: async () => [{ id: 'unit-skola', label: 'Bergsåkers skola' }] },
+    store,
+    registry,
+    clock,
+    live,
+    units: { list: async () => [{ id: 'unit-skola', label: 'Bergsåkers skola' }] },
     secrets: { seal: (v, id) => `sealed(${id}):${v}`, open: (s, id) => s.replace(`sealed(${id}):`, '') },
-    transport: { fetchManifest: (url, id) => fetchManifest(url, id, helloFetch), check: ({ url, id, secret }) => checkConnector({ url, id, key: secret, assert: sign(SECRET, id), assertForeign: sign('another-secret-another', id), fetch: helloFetch }) },
+    transport: {
+      fetchManifest: (url, id) => fetchManifest(url, id, helloFetch),
+      check: ({ url, id, secret }) =>
+        checkConnector({
+          url,
+          id,
+          key: secret,
+          assert: sign(SECRET, id),
+          assertForeign: sign('another-secret-another', id),
+          fetch: helloFetch,
+        }),
+    },
   };
   const admin = connectorUsecases(deps);
-  const reconcile: ReconcileDeps = { registry, store, secrets: deps.secrets, live, bundled: ['finance'], clock, log: () => undefined };
-  return { registry, store, admin, clock, live, reconcile, advance: (ms: number) => { now += ms; } };
+  const reconcile: ReconcileDeps = {
+    registry,
+    store,
+    secrets: deps.secrets,
+    live,
+    bundled: ['finance'],
+    clock,
+    log: () => undefined,
+  };
+  return {
+    registry,
+    store,
+    admin,
+    clock,
+    live,
+    reconcile,
+    advance: (ms: number) => {
+      now += ms;
+    },
+  };
 }
-const actions = (store: ReturnType<typeof memoryConnectorStore>, id: string) => store.audit.filter(a => a.subject === 'connector:' + id).map(a => a.action);
+const actions = (store: ReturnType<typeof memoryConnectorStore>, id: string) =>
+  store.audit.filter(a => a.subject === 'connector:' + id).map(a => a.action);
 
 describe('who may administer', () => {
   test('without the grant capability every call is forbidden, reads included', async () => {
@@ -63,12 +135,23 @@ describe('adding and governing a remote connector', () => {
     const { admin, store, registry } = world();
     const { connector, report } = await admin.add(mikael, { id: 'hello', url: 'http://hello/', secret: SECRET });
     expect(report.ok).toBe(true);
-    expect(connector).toMatchObject({ id: 'hello', bundled: false, state: 'draft', source: 'Hello', registered: false, health: { status: 'ok', at: T0 }, url: 'http://hello', counts: { capabilities: 5, execute: 2, tools: 3 } });
+    expect(connector).toMatchObject({
+      id: 'hello',
+      bundled: false,
+      state: 'draft',
+      source: 'Hello',
+      registered: false,
+      health: { status: 'ok', at: T0 },
+      url: 'http://hello',
+      counts: { capabilities: 5, execute: 2, tools: 3 },
+    });
     expect(connector.capabilities.map(c => c.name)).toContain('hello.greeting');
     expect((await store.read('hello'))!.secret).toBe(`sealed(hello):${SECRET}`);
     expect(actions(store, 'hello')).toEqual(['connector.added']);
     expect(registry.connector('hello')).toBeUndefined();
-    await expect(admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET })).rejects.toThrow('finns redan');
+    await expect(admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET })).rejects.toThrow(
+      'finns redan',
+    );
     await expect(admin.add(mikael, { id: 'finance', url: 'http://hello', secret: SECRET })).rejects.toThrow('inbyggd');
   });
   test('a service that is down still gets its draft, with health unreachable and no manifest', async () => {
@@ -82,13 +165,22 @@ describe('adding and governing a remote connector', () => {
   test('enabling registers the connector live; the audience hides it from Hassan while Hillevi sees it; disabling hides it from both', async () => {
     const { admin, store, registry, live } = world();
     await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
-    const enabled = await admin.update(mikael, 'hello', { state: 'enabled', audience: { mode: 'selected', roles: ['manager'] } });
-    expect(enabled).toMatchObject({ state: 'enabled', registered: true, audience: { mode: 'selected', roles: ['manager'] } });
+    const enabled = await admin.update(mikael, 'hello', {
+      state: 'enabled',
+      audience: { mode: 'selected', roles: ['manager'] },
+    });
+    expect(enabled).toMatchObject({
+      state: 'enabled',
+      registered: true,
+      audience: { mode: 'selected', roles: ['manager'] },
+    });
     expect(live.registered).toEqual(['hello']);
     expect(actions(store, 'hello')).toEqual(['connector.added', 'connector.enabled', 'connector.audience']);
     expect(registry.visible(actorOf(hillevi), 'hello')).toBe(true);
     expect(registry.visible(actorOf(hassan), 'hello')).toBe(false);
-    expect(await registry.run(actorOf(hillevi), 'hello.greeting', {})).toMatchObject({ text: expect.stringContaining('hillevi') });
+    expect(await registry.run(actorOf(hillevi), 'hello.greeting', {})).toMatchObject({
+      text: expect.stringContaining('hillevi'),
+    });
     await expect(registry.run(actorOf(hassan), 'hello.greeting', {})).rejects.toThrow('Okänd förmåga.');
     const preview = await admin.preview(mikael, 'hello', { role: 'manager' });
     expect(preview).toMatchObject({ visible: true, areas: [{ id: 'hello', title: 'Hello-anslutningen' }] });
@@ -102,12 +194,16 @@ describe('adding and governing a remote connector', () => {
     await admin.update(mikael, 'hello', { state: 'disabled' });
     expect(store.audit.length).toBe(n);
   });
-  test('capability switches narrow only: an unknown name is refused, a switched-off tool leaves the model\'s list, execute stays off the list', async () => {
+  test("capability switches narrow only: an unknown name is refused, a switched-off tool leaves the model's list, execute stays off the list", async () => {
     const { admin, registry } = world();
     await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
     await admin.update(mikael, 'hello', { state: 'enabled' });
-    await expect(admin.update(mikael, 'hello', { capabilities: { 'hello.nope': { enabled: false } } })).rejects.toThrow('Okänd förmåga: hello.nope');
-    const detail = await admin.update(mikael, 'hello', { capabilities: { 'hello.greeting': { model: false }, 'hello.openItems': { enabled: false } } });
+    await expect(admin.update(mikael, 'hello', { capabilities: { 'hello.nope': { enabled: false } } })).rejects.toThrow(
+      'Okänd förmåga: hello.nope',
+    );
+    const detail = await admin.update(mikael, 'hello', {
+      capabilities: { 'hello.greeting': { model: false }, 'hello.openItems': { enabled: false } },
+    });
     expect(detail.capabilities.find(c => c.name === 'hello.greeting')).toMatchObject({ enabled: true, tool: false });
     expect(detail.capabilities.find(c => c.name === 'hello.openItems')).toMatchObject({ enabled: false, tool: false });
     expect(detail.capabilities.find(c => c.name === 'hello.markDone')).toMatchObject({ kind: 'execute', tool: false });
@@ -134,13 +230,21 @@ describe('adding and governing a remote connector', () => {
     expect((await admin.test(mikael, 'hello')).health.status).toBe('ok');
     const { diff } = await admin.refreshManifest(mikael, 'hello', {});
     expect(diff.same).toBe(true);
-    expect(actions(store, 'hello')).toEqual(['connector.added', 'connector.enabled', 'connector.secret', 'connector.secret']);
+    expect(actions(store, 'hello')).toEqual([
+      'connector.added',
+      'connector.enabled',
+      'connector.secret',
+      'connector.secret',
+    ]);
   });
   test('remove closes the open cards, deletes the row, forgets the connector and audits it; a bundled connector cannot be removed', async () => {
     const { admin, store, registry } = world();
     await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
     await admin.update(mikael, 'hello', { state: 'enabled' });
-    store.threads.push({ id: 'card-1', connector: 'hello', state: 'open', handledAt: null }, { id: 'card-2', connector: 'hello', state: 'handled', handledAt: T0 });
+    store.threads.push(
+      { id: 'card-1', connector: 'hello', state: 'open', handledAt: null },
+      { id: 'card-2', connector: 'hello', state: 'handled', handledAt: T0 },
+    );
     expect(await admin.remove(mikael, 'hello')).toEqual({ closedCards: 1 });
     expect(store.threads.map(t => t.state)).toEqual(['dismissed', 'handled']);
     expect(await store.read('hello')).toBeUndefined();
@@ -157,10 +261,25 @@ describe('bundled connectors are governed by the same rows', () => {
     await syncBundledRows(reconcile);
     const rows = await store.list();
     expect(rows.map(r => r.id)).toEqual(['finance']);
-    expect(rows[0]).toMatchObject({ bundled: true, url: null, secret: null, state: 'enabled', createdBy: 'system:boot' });
-    expect((rows[0]!.manifest as ConnectorManifest).capabilities.map(c => c.name)).toEqual(describeBundled(registry.connector('finance')!).capabilities.map(c => c.name));
+    expect(rows[0]).toMatchObject({
+      bundled: true,
+      url: null,
+      secret: null,
+      state: 'enabled',
+      createdBy: 'system:boot',
+    });
+    expect((rows[0]!.manifest as ConnectorManifest).capabilities.map(c => c.name)).toEqual(
+      describeBundled(registry.connector('finance')!).capabilities.map(c => c.name),
+    );
     const list = await admin.list(mikael);
-    expect(list[0]).toMatchObject({ id: 'finance', bundled: true, kind: 'passthrough', source: 'Ekonomisystemet', registered: true, secretChangedAt: null });
+    expect(list[0]).toMatchObject({
+      id: 'finance',
+      bundled: true,
+      kind: 'passthrough',
+      source: 'Ekonomisystemet',
+      registered: true,
+      secretChangedAt: null,
+    });
     await expect(admin.update(mikael, 'finance', { url: 'http://x' })).rejects.toThrow('inbyggd');
     await expect(admin.rotateSecret(mikael, 'finance', { secret: SECRET })).rejects.toThrow('inbyggd');
     expect((await admin.test(mikael, 'finance')).ok).toBe(true);

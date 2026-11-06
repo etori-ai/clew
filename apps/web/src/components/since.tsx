@@ -23,16 +23,43 @@ const when = (t: Thread) => t.handledAt ?? t.updatedAt;
 export function Since({ handled, waiting, now, cardHref, doneHref }: Props) {
   const done = [...handled].sort((a, b) => when(b).localeCompare(when(a)));
   const review = nextStockholmTime(now, dayRhythm.review);
-  return <VStack gap={2} as="section" aria-label="Sedan i går">
-    <Heading level={2}>Sedan i går</Heading>
-    {done.length === 0 && waiting.length === 0
-      ? <Text type="supporting">Inget är klart och inget väntar på andra.</Text>
-      : <List hasDividers density="compact" listStyle="none">
-        {done.map(t => <ListItem key={t.id} startContent={<Icon icon={t.state === 'dismissed' ? 'close' : 'check'} color={t.state === 'dismissed' ? 'secondary' : 'success'} />}
-          label={<Text weight="semibold">{t.title}</Text>} description={<Text type="supporting" hasTabularNumbers>{t.state === 'dismissed' ? 'Avfärdad' : 'Klart'} {timeLabel(when(t))}</Text>} href={doneHref} />)}
-        {waiting.map(t => <ListItem key={t.id} startContent={<Icon icon="clock" color="secondary" />}
-          label={<Text weight="semibold">{t.title}</Text>} description={<Text type="supporting">Väntar på {t.waitingOn}</Text>} href={cardHref(t.id)} />)}
-      </List>}
-    <Text type="supporting">Nästa genomgång {snoozeWhen(review, now)}.</Text>
-  </VStack>;
+  return (
+    <VStack gap={2} as="section" aria-label="Sedan i går">
+      <Heading level={2}>Sedan i går</Heading>
+      {done.length === 0 && waiting.length === 0 ? (
+        <Text type="supporting">Inget är klart och inget väntar på andra.</Text>
+      ) : (
+        <List hasDividers density="compact" listStyle="none">
+          {done.map(t => (
+            <ListItem
+              key={t.id}
+              startContent={
+                <Icon
+                  icon={t.state === 'dismissed' ? 'close' : 'check'}
+                  color={t.state === 'dismissed' ? 'secondary' : 'success'}
+                />
+              }
+              label={<Text weight="semibold">{t.title}</Text>}
+              description={
+                <Text type="supporting" hasTabularNumbers>
+                  {t.state === 'dismissed' ? 'Avfärdad' : 'Klart'} {timeLabel(when(t))}
+                </Text>
+              }
+              href={doneHref}
+            />
+          ))}
+          {waiting.map(t => (
+            <ListItem
+              key={t.id}
+              startContent={<Icon icon="clock" color="secondary" />}
+              label={<Text weight="semibold">{t.title}</Text>}
+              description={<Text type="supporting">Väntar på {t.waitingOn}</Text>}
+              href={cardHref(t.id)}
+            />
+          ))}
+        </List>
+      )}
+      <Text type="supporting">Nästa genomgång {snoozeWhen(review, now)}.</Text>
+    </VStack>
+  );
 }

@@ -20,17 +20,18 @@
       ],
       "properties": {
         "protocol": {
+          "description": "The version of this contract the manifest is written to, not of the connector (D60). This instance loads 2; an additive change to the protocol keeps the number.",
           "const": 2,
           "type": "number"
         },
         "id": {
           "pattern": "^[a-z][a-z0-9-]*$",
           "maxLength": 40,
-          "description": "Must match the id Clew was configured with.",
+          "description": "Stable and lowercase. Must match the id Clew was configured with, and prefixes every capability name.",
           "type": "string"
         },
         "kind": {
-          "description": "Core connectors live in Clew itself (D3).",
+          "description": "Who owns the data (D3): `passthrough` when it lives in the connected system and Clew keeps refs and audit rows only; `derived` when the connector computes it from other sources. `core` is Clew's own and never a remote connector.",
           "anyOf": [
             {
               "const": "passthrough",
@@ -49,6 +50,7 @@
           "type": "string"
         },
         "areas": {
+          "description": "The areas this connector gives a person: each is a button under the box on Hem (D41, D53) with its standing actions, schedules and figure. Empty is allowed for a connector that only answers questions.",
           "type": "array",
           "items": {
             "additionalProperties": false,
@@ -64,17 +66,19 @@
               "id": {
                 "pattern": "^[a-z][a-z0-9-]*$",
                 "maxLength": 40,
+                "description": "Stable and lowercase. It is the area's address, `/areas/<id>`, and what a scan draft names in `area`.",
                 "type": "string"
               },
               "title": {
                 "minLength": 1,
                 "maxLength": 200,
-                "description": "Swedish. The sidebar entry.",
+                "description": "Swedish. The area's name on its button under the box and in the sidebar.",
                 "type": "string"
               },
               "roles": {
                 "minItems": 1,
                 "uniqueItems": true,
+                "description": "Who sees the area: at least one role.",
                 "type": "array",
                 "items": {
                   "anyOf": [
@@ -90,13 +94,14 @@
                 }
               },
               "standing": {
-                "description": "Capability names shown under \"Gör själv\".",
+                "description": "Capability names shown under \"Gör själv\": what a person can do here without composing a question. Each must be a capability of this manifest.",
                 "type": "array",
                 "items": {
                   "type": "string"
                 }
               },
               "schedules": {
+                "description": "What the connector does for this area on its own and when, as a person reads it under the area. Informational text; the scan itself runs nightly and on first visit.",
                 "type": "array",
                 "items": {
                   "additionalProperties": false,
@@ -107,9 +112,11 @@
                   ],
                   "properties": {
                     "label": {
+                      "description": "Swedish. What happens: \"Nya saker att göra\".",
                       "type": "string"
                     },
                     "when": {
+                      "description": "Swedish. When, in words: \"Varje vardag 06:00\".",
                       "type": "string"
                     }
                   }
@@ -168,6 +175,7 @@
           }
         },
         "capabilities": {
+          "description": "What the connector can do, one entry per operation. The name is the contract (D37): a break is a new name, never a changed one.",
           "type": "array",
           "items": {
             "additionalProperties": false,
@@ -184,6 +192,7 @@
             ],
             "properties": {
               "execution": {
+                "description": "How a write may be repeated safely after a lost answer (D45): `manual`, `deduplicated` (operation ids kept for `retentionSeconds`, found by `lookup`) or `conditional` (`lookup` tells whether the effect holds). Omitted means manual. Only meaningful on an `execute`.",
                 "anyOf": [
                   {
                     "additionalProperties": false,
@@ -193,6 +202,7 @@
                     ],
                     "properties": {
                       "strategy": {
+                        "description": "Clew never repeats a write by itself; a lost answer is an unknown outcome a person resolves.",
                         "const": "manual",
                         "type": "string"
                       }
@@ -208,14 +218,17 @@
                     ],
                     "properties": {
                       "strategy": {
+                        "description": "The source keeps the operation id Clew sends in `X-Clew-Operation-Id` and answers a repeat with the original result.",
                         "const": "deduplicated",
                         "type": "string"
                       },
                       "retentionSeconds": {
                         "minimum": 1,
+                        "description": "How long, in seconds, the source remembers an operation id.",
                         "type": "integer"
                       },
                       "lookup": {
+                        "description": "This connector's read that takes `{ operationId }` and answers `{ found, result? }`, so Clew can establish what happened before it decides to replay.",
                         "type": "string"
                       }
                     }
@@ -229,10 +242,12 @@
                     ],
                     "properties": {
                       "strategy": {
+                        "description": "The source writes only when its revision still matches, and `lookup` tells whether the effect already holds.",
                         "const": "conditional",
                         "type": "string"
                       },
                       "lookup": {
+                        "description": "This connector's read that tells whether the effect already holds.",
                         "type": "string"
                       }
                     }
@@ -246,6 +261,7 @@
                 "type": "string"
               },
               "kind": {
+                "description": "`read` answers; `propose` drafts something for a person to decide; `execute` changes the source and runs only after a human decision (D8), never as a tool and never through a callback.",
                 "anyOf": [
                   {
                     "const": "read",
@@ -274,21 +290,21 @@
                 "type": "string"
               },
               "input": {
-                "description": "A JSON Schema (draft 2020-12 or 7) for the value.",
+                "description": "JSON Schema of the input. Clew validates a call against it before the connector sees it. `required` properties mean the capability needs input, which keeps it out of the menu and out of the conformance check's calls.",
                 "type": "object",
                 "patternProperties": {
                   "^(.*)$": {}
                 }
               },
               "output": {
-                "description": "A JSON Schema (draft 2020-12 or 7) for the value.",
+                "description": "JSON Schema of the output. Clew validates the answer against it; where it declares `properties`, a view's keys must be among them (D38).",
                 "type": "object",
                 "patternProperties": {
                   "^(.*)$": {}
                 }
               },
               "model": {
-                "description": "Offer it to the model as a tool. Must be false for execute (D8).",
+                "description": "Offer it to the model as a tool, once an administrator has enabled tools for the connector. Must be false for execute (D8).",
                 "type": "boolean"
               },
               "scope": {
@@ -298,6 +314,7 @@
                 "properties": {
                   "roles": {
                     "uniqueItems": true,
+                    "description": "`manager`, `employee` or both. Omitted means both. A role outside the list is refused before the connector is called.",
                     "type": "array",
                     "items": {
                       "anyOf": [
@@ -352,24 +369,26 @@
                     ],
                     "properties": {
                       "kind": {
+                        "description": "What is drawn: `table` and `list` over an array of records, `detail` over one record, `text` over one Markdown string.",
                         "const": "table",
                         "type": "string"
                       },
                       "rows": {
                         "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                         "maxLength": 40,
-                        "description": "A property name in the capability's output (or input).",
+                        "description": "The output property holding the array of records. Default `rows`.",
                         "type": "string"
                       },
                       "title": {
                         "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                         "maxLength": 40,
-                        "description": "A property name in the capability's output (or input).",
+                        "description": "The field that names a row; one of `fields`. A list shows it first, a detail as its heading.",
                         "type": "string"
                       },
                       "fields": {
                         "minItems": 1,
                         "maxItems": 12,
+                        "description": "The columns of a table or the lines of a list: a record property, its Swedish label and how it is drawn.",
                         "type": "array",
                         "items": {
                           "additionalProperties": false,
@@ -382,16 +401,17 @@
                             "key": {
                               "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                               "maxLength": 40,
-                              "description": "A property name in the capability's output (or input).",
+                              "description": "The property of a record the field shows.",
                               "type": "string"
                             },
                             "label": {
                               "minLength": 1,
                               "maxLength": 60,
-                              "description": "Swedish. Shown to the person.",
+                              "description": "Swedish. The column heading or the field's name.",
                               "type": "string"
                             },
                             "format": {
+                              "description": "How the value is drawn: `phone` and `email` become links that call and write, `link` an http(s) link out, `date` and `instant` are formatted in Swedish, `number` is aligned as one, `status` is a badge with a tone from `tones`. Default `text`.",
                               "anyOf": [
                                 {
                                   "const": "text",
@@ -459,11 +479,12 @@
                       "ref": {
                         "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                         "maxLength": 40,
-                        "description": "A property name in the capability's output (or input).",
+                        "description": "The record property holding the connector's ref for the row, so a row can be added to the conversation as a chip. Without it rows cannot be chipped.",
                         "type": "string"
                       },
                       "open": {
                         "additionalProperties": false,
+                        "description": "A row opens another read of the same connector as a view (D35, D38).",
                         "type": "object",
                         "required": [
                           "capability",
@@ -473,21 +494,23 @@
                         "properties": {
                           "capability": {
                             "maxLength": 80,
+                            "description": "A read of the same connector, by full name.",
                             "type": "string"
                           },
                           "title": {
                             "minLength": 1,
                             "maxLength": 60,
-                            "description": "Swedish. Shown to the person.",
+                            "description": "Swedish. The heading of what opens.",
                             "type": "string"
                           },
                           "params": {
+                            "description": "The read's input property, mapped to the row property it is taken from. A row lacking a value does not open.",
                             "type": "object",
                             "patternProperties": {
                               "^(.*)$": {
                                 "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                                 "maxLength": 40,
-                                "description": "A property name in the capability's output (or input).",
+                                "description": "The row property the value is taken from.",
                                 "type": "string"
                               }
                             }
@@ -496,10 +519,12 @@
                       },
                       "input": {
                         "additionalProperties": false,
+                        "description": "What the person may type or choose above the rows. Each control binds to one property of the capability's input, and a change reads the capability again.",
                         "type": "object",
                         "properties": {
                           "query": {
                             "additionalProperties": false,
+                            "description": "A free-text box above the rows, bound to one property of the capability's input; typing reads the capability again.",
                             "type": "object",
                             "required": [
                               "key",
@@ -509,7 +534,7 @@
                               "key": {
                                 "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                                 "maxLength": 40,
-                                "description": "A property name in the capability's output (or input).",
+                                "description": "The input property the typed text is sent as.",
                                 "type": "string"
                               },
                               "label": {
@@ -520,12 +545,14 @@
                               },
                               "placeholder": {
                                 "maxLength": 80,
+                                "description": "Swedish. Shown in the empty box.",
                                 "type": "string"
                               }
                             }
                           },
                           "filter": {
                             "additionalProperties": false,
+                            "description": "A choice above the rows, bound to one property of the capability's input.",
                             "type": "object",
                             "required": [
                               "key",
@@ -536,7 +563,7 @@
                               "key": {
                                 "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                                 "maxLength": 40,
-                                "description": "A property name in the capability's output (or input).",
+                                "description": "The input property the chosen value is sent as.",
                                 "type": "string"
                               },
                               "label": {
@@ -548,6 +575,7 @@
                               "options": {
                                 "minItems": 2,
                                 "maxItems": 6,
+                                "description": "Two to six choices.",
                                 "type": "array",
                                 "items": {
                                   "additionalProperties": false,
@@ -560,12 +588,13 @@
                                     "value": {
                                       "minLength": 1,
                                       "maxLength": 40,
+                                      "description": "What is sent.",
                                       "type": "string"
                                     },
                                     "label": {
                                       "minLength": 1,
                                       "maxLength": 60,
-                                      "description": "Swedish. Shown to the person.",
+                                      "description": "Swedish. What the person reads.",
                                       "type": "string"
                                     }
                                   }
@@ -582,7 +611,7 @@
                         "type": "string"
                       },
                       "modelReads": {
-                        "description": "Default `output`.",
+                        "description": "What the model is handed when it calls the capability as a tool: the whole `output`, or a `summary` (how many rows are shown, never their content) so names and numbers reach the person through the view and neither the model nor the stored conversation. Default `output`.",
                         "anyOf": [
                           {
                             "const": "output",
@@ -606,24 +635,26 @@
                     ],
                     "properties": {
                       "kind": {
+                        "description": "What is drawn: `table` and `list` over an array of records, `detail` over one record, `text` over one Markdown string.",
                         "const": "list",
                         "type": "string"
                       },
                       "rows": {
                         "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                         "maxLength": 40,
-                        "description": "A property name in the capability's output (or input).",
+                        "description": "The output property holding the array of records. Default `rows`.",
                         "type": "string"
                       },
                       "title": {
                         "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                         "maxLength": 40,
-                        "description": "A property name in the capability's output (or input).",
+                        "description": "The field that names a row; one of `fields`. A list shows it first, a detail as its heading.",
                         "type": "string"
                       },
                       "fields": {
                         "minItems": 1,
                         "maxItems": 12,
+                        "description": "The columns of a table or the lines of a list: a record property, its Swedish label and how it is drawn.",
                         "type": "array",
                         "items": {
                           "additionalProperties": false,
@@ -636,16 +667,17 @@
                             "key": {
                               "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                               "maxLength": 40,
-                              "description": "A property name in the capability's output (or input).",
+                              "description": "The property of a record the field shows.",
                               "type": "string"
                             },
                             "label": {
                               "minLength": 1,
                               "maxLength": 60,
-                              "description": "Swedish. Shown to the person.",
+                              "description": "Swedish. The column heading or the field's name.",
                               "type": "string"
                             },
                             "format": {
+                              "description": "How the value is drawn: `phone` and `email` become links that call and write, `link` an http(s) link out, `date` and `instant` are formatted in Swedish, `number` is aligned as one, `status` is a badge with a tone from `tones`. Default `text`.",
                               "anyOf": [
                                 {
                                   "const": "text",
@@ -713,11 +745,12 @@
                       "ref": {
                         "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                         "maxLength": 40,
-                        "description": "A property name in the capability's output (or input).",
+                        "description": "The record property holding the connector's ref for the row, so a row can be added to the conversation as a chip. Without it rows cannot be chipped.",
                         "type": "string"
                       },
                       "open": {
                         "additionalProperties": false,
+                        "description": "A row opens another read of the same connector as a view (D35, D38).",
                         "type": "object",
                         "required": [
                           "capability",
@@ -727,21 +760,23 @@
                         "properties": {
                           "capability": {
                             "maxLength": 80,
+                            "description": "A read of the same connector, by full name.",
                             "type": "string"
                           },
                           "title": {
                             "minLength": 1,
                             "maxLength": 60,
-                            "description": "Swedish. Shown to the person.",
+                            "description": "Swedish. The heading of what opens.",
                             "type": "string"
                           },
                           "params": {
+                            "description": "The read's input property, mapped to the row property it is taken from. A row lacking a value does not open.",
                             "type": "object",
                             "patternProperties": {
                               "^(.*)$": {
                                 "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                                 "maxLength": 40,
-                                "description": "A property name in the capability's output (or input).",
+                                "description": "The row property the value is taken from.",
                                 "type": "string"
                               }
                             }
@@ -750,10 +785,12 @@
                       },
                       "input": {
                         "additionalProperties": false,
+                        "description": "What the person may type or choose above the rows. Each control binds to one property of the capability's input, and a change reads the capability again.",
                         "type": "object",
                         "properties": {
                           "query": {
                             "additionalProperties": false,
+                            "description": "A free-text box above the rows, bound to one property of the capability's input; typing reads the capability again.",
                             "type": "object",
                             "required": [
                               "key",
@@ -763,7 +800,7 @@
                               "key": {
                                 "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                                 "maxLength": 40,
-                                "description": "A property name in the capability's output (or input).",
+                                "description": "The input property the typed text is sent as.",
                                 "type": "string"
                               },
                               "label": {
@@ -774,12 +811,14 @@
                               },
                               "placeholder": {
                                 "maxLength": 80,
+                                "description": "Swedish. Shown in the empty box.",
                                 "type": "string"
                               }
                             }
                           },
                           "filter": {
                             "additionalProperties": false,
+                            "description": "A choice above the rows, bound to one property of the capability's input.",
                             "type": "object",
                             "required": [
                               "key",
@@ -790,7 +829,7 @@
                               "key": {
                                 "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                                 "maxLength": 40,
-                                "description": "A property name in the capability's output (or input).",
+                                "description": "The input property the chosen value is sent as.",
                                 "type": "string"
                               },
                               "label": {
@@ -802,6 +841,7 @@
                               "options": {
                                 "minItems": 2,
                                 "maxItems": 6,
+                                "description": "Two to six choices.",
                                 "type": "array",
                                 "items": {
                                   "additionalProperties": false,
@@ -814,12 +854,13 @@
                                     "value": {
                                       "minLength": 1,
                                       "maxLength": 40,
+                                      "description": "What is sent.",
                                       "type": "string"
                                     },
                                     "label": {
                                       "minLength": 1,
                                       "maxLength": 60,
-                                      "description": "Swedish. Shown to the person.",
+                                      "description": "Swedish. What the person reads.",
                                       "type": "string"
                                     }
                                   }
@@ -836,7 +877,7 @@
                         "type": "string"
                       },
                       "modelReads": {
-                        "description": "Default `output`.",
+                        "description": "What the model is handed when it calls the capability as a tool: the whole `output`, or a `summary` (how many rows are shown, never their content) so names and numbers reach the person through the view and neither the model nor the stored conversation. Default `output`.",
                         "anyOf": [
                           {
                             "const": "output",
@@ -860,18 +901,20 @@
                     ],
                     "properties": {
                       "kind": {
+                        "description": "One record, drawn as a list of labelled fields.",
                         "const": "detail",
                         "type": "string"
                       },
                       "title": {
                         "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                         "maxLength": 40,
-                        "description": "A property name in the capability's output (or input).",
+                        "description": "The property that names the record; drawn as the heading.",
                         "type": "string"
                       },
                       "fields": {
                         "minItems": 1,
                         "maxItems": 24,
+                        "description": "The record's fields, in this order.",
                         "type": "array",
                         "items": {
                           "additionalProperties": false,
@@ -884,16 +927,17 @@
                             "key": {
                               "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                               "maxLength": 40,
-                              "description": "A property name in the capability's output (or input).",
+                              "description": "The property of a record the field shows.",
                               "type": "string"
                             },
                             "label": {
                               "minLength": 1,
                               "maxLength": 60,
-                              "description": "Swedish. Shown to the person.",
+                              "description": "Swedish. The column heading or the field's name.",
                               "type": "string"
                             },
                             "format": {
+                              "description": "How the value is drawn: `phone` and `email` become links that call and write, `link` an http(s) link out, `date` and `instant` are formatted in Swedish, `number` is aligned as one, `status` is a badge with a tone from `tones`. Default `text`.",
                               "anyOf": [
                                 {
                                   "const": "text",
@@ -959,7 +1003,7 @@
                         }
                       },
                       "modelReads": {
-                        "description": "Default `output`.",
+                        "description": "What the model is handed when it calls the capability as a tool: the whole `output`, or a `summary` (how many rows are shown, never their content) so names and numbers reach the person through the view and neither the model nor the stored conversation. Default `output`.",
                         "anyOf": [
                           {
                             "const": "output",
@@ -982,17 +1026,18 @@
                     ],
                     "properties": {
                       "kind": {
+                        "description": "One Markdown string.",
                         "const": "text",
                         "type": "string"
                       },
                       "body": {
                         "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                         "maxLength": 40,
-                        "description": "A property name in the capability's output (or input).",
+                        "description": "The output property holding the Markdown.",
                         "type": "string"
                       },
                       "modelReads": {
-                        "description": "Default `output`.",
+                        "description": "What the model is handed when it calls the capability as a tool: the whole `output`, or a `summary` (how many rows are shown, never their content) so names and numbers reach the person through the view and neither the model nor the stored conversation. Default `output`.",
                         "anyOf": [
                           {
                             "const": "output",
@@ -1094,6 +1139,7 @@
         "uses": {
           "uniqueItems": true,
           "maxItems": 100,
+          "description": "The exact capability names of other connectors this one calls back through `POST /api/connectors/call` while serving a request (D37), such as `calendar.today`. A name not listed is refused; an `execute` can never be called back.",
           "type": "array",
           "items": {
             "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
@@ -1127,7 +1173,7 @@
                 "type": "string"
               },
               "attributes": {
-                "description": "A JSON Schema (draft 2020-12 or 7) for the value.",
+                "description": "JSON Schema of the fact's attributes. A follower receives exactly these; a new optional attribute keeps the kind, anything else is a new kind (D37).",
                 "type": "object",
                 "patternProperties": {
                   "^(.*)$": {}
@@ -2274,24 +2320,26 @@
           ],
           "properties": {
             "kind": {
+              "description": "What is drawn: `table` and `list` over an array of records, `detail` over one record, `text` over one Markdown string.",
               "const": "table",
               "type": "string"
             },
             "rows": {
               "pattern": "^[A-Za-z][A-Za-z0-9]*$",
               "maxLength": 40,
-              "description": "A property name in the capability's output (or input).",
+              "description": "The output property holding the array of records. Default `rows`.",
               "type": "string"
             },
             "title": {
               "pattern": "^[A-Za-z][A-Za-z0-9]*$",
               "maxLength": 40,
-              "description": "A property name in the capability's output (or input).",
+              "description": "The field that names a row; one of `fields`. A list shows it first, a detail as its heading.",
               "type": "string"
             },
             "fields": {
               "minItems": 1,
               "maxItems": 12,
+              "description": "The columns of a table or the lines of a list: a record property, its Swedish label and how it is drawn.",
               "type": "array",
               "items": {
                 "additionalProperties": false,
@@ -2304,16 +2352,17 @@
                   "key": {
                     "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                     "maxLength": 40,
-                    "description": "A property name in the capability's output (or input).",
+                    "description": "The property of a record the field shows.",
                     "type": "string"
                   },
                   "label": {
                     "minLength": 1,
                     "maxLength": 60,
-                    "description": "Swedish. Shown to the person.",
+                    "description": "Swedish. The column heading or the field's name.",
                     "type": "string"
                   },
                   "format": {
+                    "description": "How the value is drawn: `phone` and `email` become links that call and write, `link` an http(s) link out, `date` and `instant` are formatted in Swedish, `number` is aligned as one, `status` is a badge with a tone from `tones`. Default `text`.",
                     "anyOf": [
                       {
                         "const": "text",
@@ -2381,11 +2430,12 @@
             "ref": {
               "pattern": "^[A-Za-z][A-Za-z0-9]*$",
               "maxLength": 40,
-              "description": "A property name in the capability's output (or input).",
+              "description": "The record property holding the connector's ref for the row, so a row can be added to the conversation as a chip. Without it rows cannot be chipped.",
               "type": "string"
             },
             "open": {
               "additionalProperties": false,
+              "description": "A row opens another read of the same connector as a view (D35, D38).",
               "type": "object",
               "required": [
                 "capability",
@@ -2395,21 +2445,23 @@
               "properties": {
                 "capability": {
                   "maxLength": 80,
+                  "description": "A read of the same connector, by full name.",
                   "type": "string"
                 },
                 "title": {
                   "minLength": 1,
                   "maxLength": 60,
-                  "description": "Swedish. Shown to the person.",
+                  "description": "Swedish. The heading of what opens.",
                   "type": "string"
                 },
                 "params": {
+                  "description": "The read's input property, mapped to the row property it is taken from. A row lacking a value does not open.",
                   "type": "object",
                   "patternProperties": {
                     "^(.*)$": {
                       "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                       "maxLength": 40,
-                      "description": "A property name in the capability's output (or input).",
+                      "description": "The row property the value is taken from.",
                       "type": "string"
                     }
                   }
@@ -2418,10 +2470,12 @@
             },
             "input": {
               "additionalProperties": false,
+              "description": "What the person may type or choose above the rows. Each control binds to one property of the capability's input, and a change reads the capability again.",
               "type": "object",
               "properties": {
                 "query": {
                   "additionalProperties": false,
+                  "description": "A free-text box above the rows, bound to one property of the capability's input; typing reads the capability again.",
                   "type": "object",
                   "required": [
                     "key",
@@ -2431,7 +2485,7 @@
                     "key": {
                       "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                       "maxLength": 40,
-                      "description": "A property name in the capability's output (or input).",
+                      "description": "The input property the typed text is sent as.",
                       "type": "string"
                     },
                     "label": {
@@ -2442,12 +2496,14 @@
                     },
                     "placeholder": {
                       "maxLength": 80,
+                      "description": "Swedish. Shown in the empty box.",
                       "type": "string"
                     }
                   }
                 },
                 "filter": {
                   "additionalProperties": false,
+                  "description": "A choice above the rows, bound to one property of the capability's input.",
                   "type": "object",
                   "required": [
                     "key",
@@ -2458,7 +2514,7 @@
                     "key": {
                       "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                       "maxLength": 40,
-                      "description": "A property name in the capability's output (or input).",
+                      "description": "The input property the chosen value is sent as.",
                       "type": "string"
                     },
                     "label": {
@@ -2470,6 +2526,7 @@
                     "options": {
                       "minItems": 2,
                       "maxItems": 6,
+                      "description": "Two to six choices.",
                       "type": "array",
                       "items": {
                         "additionalProperties": false,
@@ -2482,12 +2539,13 @@
                           "value": {
                             "minLength": 1,
                             "maxLength": 40,
+                            "description": "What is sent.",
                             "type": "string"
                           },
                           "label": {
                             "minLength": 1,
                             "maxLength": 60,
-                            "description": "Swedish. Shown to the person.",
+                            "description": "Swedish. What the person reads.",
                             "type": "string"
                           }
                         }
@@ -2504,7 +2562,7 @@
               "type": "string"
             },
             "modelReads": {
-              "description": "Default `output`.",
+              "description": "What the model is handed when it calls the capability as a tool: the whole `output`, or a `summary` (how many rows are shown, never their content) so names and numbers reach the person through the view and neither the model nor the stored conversation. Default `output`.",
               "anyOf": [
                 {
                   "const": "output",
@@ -2528,24 +2586,26 @@
           ],
           "properties": {
             "kind": {
+              "description": "What is drawn: `table` and `list` over an array of records, `detail` over one record, `text` over one Markdown string.",
               "const": "list",
               "type": "string"
             },
             "rows": {
               "pattern": "^[A-Za-z][A-Za-z0-9]*$",
               "maxLength": 40,
-              "description": "A property name in the capability's output (or input).",
+              "description": "The output property holding the array of records. Default `rows`.",
               "type": "string"
             },
             "title": {
               "pattern": "^[A-Za-z][A-Za-z0-9]*$",
               "maxLength": 40,
-              "description": "A property name in the capability's output (or input).",
+              "description": "The field that names a row; one of `fields`. A list shows it first, a detail as its heading.",
               "type": "string"
             },
             "fields": {
               "minItems": 1,
               "maxItems": 12,
+              "description": "The columns of a table or the lines of a list: a record property, its Swedish label and how it is drawn.",
               "type": "array",
               "items": {
                 "additionalProperties": false,
@@ -2558,16 +2618,17 @@
                   "key": {
                     "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                     "maxLength": 40,
-                    "description": "A property name in the capability's output (or input).",
+                    "description": "The property of a record the field shows.",
                     "type": "string"
                   },
                   "label": {
                     "minLength": 1,
                     "maxLength": 60,
-                    "description": "Swedish. Shown to the person.",
+                    "description": "Swedish. The column heading or the field's name.",
                     "type": "string"
                   },
                   "format": {
+                    "description": "How the value is drawn: `phone` and `email` become links that call and write, `link` an http(s) link out, `date` and `instant` are formatted in Swedish, `number` is aligned as one, `status` is a badge with a tone from `tones`. Default `text`.",
                     "anyOf": [
                       {
                         "const": "text",
@@ -2635,11 +2696,12 @@
             "ref": {
               "pattern": "^[A-Za-z][A-Za-z0-9]*$",
               "maxLength": 40,
-              "description": "A property name in the capability's output (or input).",
+              "description": "The record property holding the connector's ref for the row, so a row can be added to the conversation as a chip. Without it rows cannot be chipped.",
               "type": "string"
             },
             "open": {
               "additionalProperties": false,
+              "description": "A row opens another read of the same connector as a view (D35, D38).",
               "type": "object",
               "required": [
                 "capability",
@@ -2649,21 +2711,23 @@
               "properties": {
                 "capability": {
                   "maxLength": 80,
+                  "description": "A read of the same connector, by full name.",
                   "type": "string"
                 },
                 "title": {
                   "minLength": 1,
                   "maxLength": 60,
-                  "description": "Swedish. Shown to the person.",
+                  "description": "Swedish. The heading of what opens.",
                   "type": "string"
                 },
                 "params": {
+                  "description": "The read's input property, mapped to the row property it is taken from. A row lacking a value does not open.",
                   "type": "object",
                   "patternProperties": {
                     "^(.*)$": {
                       "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                       "maxLength": 40,
-                      "description": "A property name in the capability's output (or input).",
+                      "description": "The row property the value is taken from.",
                       "type": "string"
                     }
                   }
@@ -2672,10 +2736,12 @@
             },
             "input": {
               "additionalProperties": false,
+              "description": "What the person may type or choose above the rows. Each control binds to one property of the capability's input, and a change reads the capability again.",
               "type": "object",
               "properties": {
                 "query": {
                   "additionalProperties": false,
+                  "description": "A free-text box above the rows, bound to one property of the capability's input; typing reads the capability again.",
                   "type": "object",
                   "required": [
                     "key",
@@ -2685,7 +2751,7 @@
                     "key": {
                       "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                       "maxLength": 40,
-                      "description": "A property name in the capability's output (or input).",
+                      "description": "The input property the typed text is sent as.",
                       "type": "string"
                     },
                     "label": {
@@ -2696,12 +2762,14 @@
                     },
                     "placeholder": {
                       "maxLength": 80,
+                      "description": "Swedish. Shown in the empty box.",
                       "type": "string"
                     }
                   }
                 },
                 "filter": {
                   "additionalProperties": false,
+                  "description": "A choice above the rows, bound to one property of the capability's input.",
                   "type": "object",
                   "required": [
                     "key",
@@ -2712,7 +2780,7 @@
                     "key": {
                       "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                       "maxLength": 40,
-                      "description": "A property name in the capability's output (or input).",
+                      "description": "The input property the chosen value is sent as.",
                       "type": "string"
                     },
                     "label": {
@@ -2724,6 +2792,7 @@
                     "options": {
                       "minItems": 2,
                       "maxItems": 6,
+                      "description": "Two to six choices.",
                       "type": "array",
                       "items": {
                         "additionalProperties": false,
@@ -2736,12 +2805,13 @@
                           "value": {
                             "minLength": 1,
                             "maxLength": 40,
+                            "description": "What is sent.",
                             "type": "string"
                           },
                           "label": {
                             "minLength": 1,
                             "maxLength": 60,
-                            "description": "Swedish. Shown to the person.",
+                            "description": "Swedish. What the person reads.",
                             "type": "string"
                           }
                         }
@@ -2758,7 +2828,7 @@
               "type": "string"
             },
             "modelReads": {
-              "description": "Default `output`.",
+              "description": "What the model is handed when it calls the capability as a tool: the whole `output`, or a `summary` (how many rows are shown, never their content) so names and numbers reach the person through the view and neither the model nor the stored conversation. Default `output`.",
               "anyOf": [
                 {
                   "const": "output",
@@ -2782,18 +2852,20 @@
           ],
           "properties": {
             "kind": {
+              "description": "One record, drawn as a list of labelled fields.",
               "const": "detail",
               "type": "string"
             },
             "title": {
               "pattern": "^[A-Za-z][A-Za-z0-9]*$",
               "maxLength": 40,
-              "description": "A property name in the capability's output (or input).",
+              "description": "The property that names the record; drawn as the heading.",
               "type": "string"
             },
             "fields": {
               "minItems": 1,
               "maxItems": 24,
+              "description": "The record's fields, in this order.",
               "type": "array",
               "items": {
                 "additionalProperties": false,
@@ -2806,16 +2878,17 @@
                   "key": {
                     "pattern": "^[A-Za-z][A-Za-z0-9]*$",
                     "maxLength": 40,
-                    "description": "A property name in the capability's output (or input).",
+                    "description": "The property of a record the field shows.",
                     "type": "string"
                   },
                   "label": {
                     "minLength": 1,
                     "maxLength": 60,
-                    "description": "Swedish. Shown to the person.",
+                    "description": "Swedish. The column heading or the field's name.",
                     "type": "string"
                   },
                   "format": {
+                    "description": "How the value is drawn: `phone` and `email` become links that call and write, `link` an http(s) link out, `date` and `instant` are formatted in Swedish, `number` is aligned as one, `status` is a badge with a tone from `tones`. Default `text`.",
                     "anyOf": [
                       {
                         "const": "text",
@@ -2881,7 +2954,7 @@
               }
             },
             "modelReads": {
-              "description": "Default `output`.",
+              "description": "What the model is handed when it calls the capability as a tool: the whole `output`, or a `summary` (how many rows are shown, never their content) so names and numbers reach the person through the view and neither the model nor the stored conversation. Default `output`.",
               "anyOf": [
                 {
                   "const": "output",
@@ -2904,17 +2977,18 @@
           ],
           "properties": {
             "kind": {
+              "description": "One Markdown string.",
               "const": "text",
               "type": "string"
             },
             "body": {
               "pattern": "^[A-Za-z][A-Za-z0-9]*$",
               "maxLength": 40,
-              "description": "A property name in the capability's output (or input).",
+              "description": "The output property holding the Markdown.",
               "type": "string"
             },
             "modelReads": {
-              "description": "Default `output`.",
+              "description": "What the model is handed when it calls the capability as a tool: the whole `output`, or a `summary` (how many rows are shown, never their content) so names and numbers reach the person through the view and neither the model nor the stored conversation. Default `output`.",
               "anyOf": [
                 {
                   "const": "output",
@@ -3015,7 +3089,7 @@
           "type": "string"
         },
         "attributes": {
-          "description": "A JSON Schema (draft 2020-12 or 7) for the value.",
+          "description": "JSON Schema of the fact's attributes. A follower receives exactly these; a new optional attribute keeps the kind, anything else is a new kind (D37).",
           "type": "object",
           "patternProperties": {
             "^(.*)$": {}

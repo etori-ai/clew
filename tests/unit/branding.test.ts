@@ -9,14 +9,23 @@ describe('installation branding (D37, D38)', () => {
 
   test('the Sundsvall installation uses its local dragon', () => {
     expect(resolveBranding({ profile: 'sundsvall' })).toEqual({
-      profile: 'sundsvall', colors: { accent: '#005595', accentMuted: '#daeff1' },
-      logo: { src: '/branding/sundsvall-dragon.png', darkSrc: '/branding/sundsvall-dragon-white.png', alt: 'Sundsvalls kommun' },
+      profile: 'sundsvall',
+      colors: { accent: '#005595', accentMuted: '#daeff1' },
+      logo: {
+        src: '/branding/sundsvall-dragon.png',
+        darkSrc: '/branding/sundsvall-dragon-white.png',
+        alt: 'Sundsvalls kommun',
+      },
     });
   });
 
   test('another municipality chooses its own image and accessible name', () => {
-    expect(resolveBranding({ profile: 'neutral', logoSrc: ' /branding/other-municipality.svg ', logoAlt: ' Annan kommun ' }).logo).toEqual({
-      src: '/branding/other-municipality.svg', alt: 'Annan kommun',
+    expect(
+      resolveBranding({ profile: 'neutral', logoSrc: ' /branding/other-municipality.svg ', logoAlt: ' Annan kommun ' })
+        .logo,
+    ).toEqual({
+      src: '/branding/other-municipality.svg',
+      alt: 'Annan kommun',
     });
   });
 
@@ -32,23 +41,42 @@ describe('installation branding (D37, D38)', () => {
   });
 
   test('the image is served by the installation itself', () => {
-    for (const src of ['https://example.org/logo.svg', '//example.org/logo.svg', '/\\example.org/logo.svg', '/\t/example.org/logo.svg', 'branding/logo.svg']) {
+    for (const src of [
+      'https://example.org/logo.svg',
+      '//example.org/logo.svg',
+      '/\\example.org/logo.svg',
+      '/\t/example.org/logo.svg',
+      'branding/logo.svg',
+    ]) {
       expect(() => resolveBranding({ logoSrc: src, logoAlt: 'Annan kommun' })).toThrow('same-origin path');
     }
   });
 
   test('a dark logo is explicit, local and belongs to the same organisation', () => {
-    const input = { profile: 'neutral', logoSrc: '/branding/day.svg', logoAlt: 'Annan kommun', logoDarkSrc: ' /branding/night.svg ' };
-    expect(resolveBranding(input).logo).toEqual({ src: '/branding/day.svg', alt: 'Annan kommun', darkSrc: '/branding/night.svg' });
+    const input = {
+      profile: 'neutral',
+      logoSrc: '/branding/day.svg',
+      logoAlt: 'Annan kommun',
+      logoDarkSrc: ' /branding/night.svg ',
+    };
+    expect(resolveBranding(input).logo).toEqual({
+      src: '/branding/day.svg',
+      alt: 'Annan kommun',
+      darkSrc: '/branding/night.svg',
+    });
     expect(() => resolveBranding({ logoDarkSrc: '/branding/night.svg' })).toThrow('Set both');
-    expect(() => resolveBranding({ ...input, logoDarkSrc: 'https://example.org/night.svg' })).toThrow('same-origin path');
+    expect(() => resolveBranding({ ...input, logoDarkSrc: 'https://example.org/night.svg' })).toThrow(
+      'same-origin path',
+    );
     expect(() => resolveBranding({ ...input, logoDarkSrc: '/\\example.org/night.svg' })).toThrow('same-origin path');
   });
 
   test('neutral and custom installations never inherit Sundsvall identity', () => {
     expect(resolveBranding({ profile: 'neutral' })).toEqual({ profile: 'neutral', colors: null, logo: null });
     expect(resolveBranding({ profile: 'custom', accent: ' #5B1F78 ', accentMuted: '#D7DBF2' })).toEqual({
-      profile: 'custom', colors: { accent: '#5b1f78', accentMuted: '#d7dbf2' }, logo: null,
+      profile: 'custom',
+      colors: { accent: '#5b1f78', accentMuted: '#d7dbf2' },
+      logo: null,
     });
   });
 
@@ -67,7 +95,12 @@ describe('installation branding (D37, D38)', () => {
   });
 
   test('inaccessible custom colours fail before the app starts', () => {
-    for (const [accent, accentMuted] of [['#eeeeee', '#ffffff'], ['#005595', '#111111'], ['#666666', '#777777'], ['#005595', '#aaaaaa']]) {
+    for (const [accent, accentMuted] of [
+      ['#eeeeee', '#ffffff'],
+      ['#005595', '#111111'],
+      ['#666666', '#777777'],
+      ['#005595', '#aaaaaa'],
+    ]) {
       expect(() => resolveBranding({ profile: 'custom', accent, accentMuted })).toThrow('contrast');
     }
   });
@@ -102,7 +135,12 @@ describe('Sundsvall colour contracts', () => {
     expect(theme.tokens['--color-text-blue']).toContain('#000000');
     expect(theme.tokens['--color-on-info-muted']).toContain('#000000');
     expect(theme.tokens['--color-text-accent']).toContain('--color-text-primary');
-    for (const [family, pair] of [['blue', sundsvallPalette.vattjom], ['green', sundsvallPalette.gronsta], ['purple', sundsvallPalette.bjornstigen], ['pink', sundsvallPalette.juniskar]] as const) {
+    for (const [family, pair] of [
+      ['blue', sundsvallPalette.vattjom],
+      ['green', sundsvallPalette.gronsta],
+      ['purple', sundsvallPalette.bjornstigen],
+      ['pink', sundsvallPalette.juniskar],
+    ] as const) {
       expect(theme.tokens[`--color-background-${family}`]).toContain(pair.light);
       expect(theme.tokens[`--color-icon-${family}`]).toContain(pair.dark);
     }
@@ -124,7 +162,10 @@ describe('Sundsvall colour contracts', () => {
   });
 
   test('dark mode swaps brand fills and foregrounds with readable published pairs', () => {
-    for (const profile of [resolveBranding({ profile: 'sundsvall' }), resolveBranding({ profile: 'custom', accent: '#5b1f78', accentMuted: '#d7dbf2' })]) {
+    for (const profile of [
+      resolveBranding({ profile: 'sundsvall' }),
+      resolveBranding({ profile: 'custom', accent: '#5b1f78', accentMuted: '#d7dbf2' }),
+    ]) {
       const tokens = createClewTheme(profile).tokens;
       if (!profile.colors) throw new Error('The test requires a branded profile');
       expect(tokens['--color-accent']).toBe(`light-dark(${profile.colors.accent}, ${profile.colors.accentMuted})`);
