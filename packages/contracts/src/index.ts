@@ -110,6 +110,33 @@ export const ProposalSchema = object({
   remindedAt: Type.Union([instant, Type.Null()]),
 });
 export type Proposal = Static<typeof ProposalSchema>;
+
+/** A room the calendar knows (D11): what a booking form offers and what the `calendar.rooms` read draws as a table. */
+export const CalendarRoomSchema = object({
+  ref: Type.String(),
+  name: Type.String(),
+  capacity: Type.Integer(),
+  equipment: Type.Array(Type.String()),
+});
+export type CalendarRoom = Static<typeof CalendarRoomSchema>;
+/** Today (`calendar.today`): the day's events and its free gaps. */
+export const TodayViewSchema = object({
+  date: Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' }),
+  events: Type.Array(CalendarEventSchema),
+  gaps: Type.Array(object({ start: instant, end: instant })),
+});
+export type TodayView = Static<typeof TodayViewSchema>;
+/** A week from a Monday with the person's live proposals; `calendar.week` answers it without the proposals. */
+export const WeekViewSchema = object({
+  from: Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' }),
+  events: Type.Array(CalendarEventSchema),
+  proposals: Type.Array(ProposalSchema),
+});
+export type WeekView = Static<typeof WeekViewSchema>;
+export const WeekEventsSchema = Type.Omit(WeekViewSchema, ['proposals']);
+/** One day with the person's live proposals: the side panel's day view and the dialog's day strip (D28). */
+export const DayViewSchema = WeekViewSchema;
+export type DayView = WeekView;
 /** The four steps of an obligation (D30): drawn, sent, replies coming in, done. */
 export const ObligationStepSchema = Type.Union([
   Type.Literal('forslag'),
@@ -1447,31 +1474,12 @@ export interface CalendarMember {
   name: string;
   email: string;
 }
-export interface CalendarRoom {
-  ref: string;
-  name: string;
-  capacity: number;
-  equipment: string[];
-}
 export type AvailabilityState = 'free' | 'busy' | 'unknown';
 export interface AvailabilityResult {
   mine: AvailabilityState;
   participants: Array<{ email: string; name: string; state: AvailabilityState }>;
   room: { ref: string; name: string; state: AvailabilityState } | null;
 }
-
-export interface TodayView {
-  date: string;
-  events: CalendarEvent[];
-  gaps: { start: string; end: string }[];
-}
-export interface WeekView {
-  from: string;
-  events: CalendarEvent[];
-  proposals: Proposal[];
-}
-/** One day with the person's live proposals: the side panel's day view and the dialog's day strip (D28). */
-export type DayView = WeekView;
 
 /**
  * The connector manifest field by field (D60, item 5): what `GET /api/protocol/manifest-reference.json` answers and the

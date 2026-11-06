@@ -25,6 +25,7 @@ import {
 import { assistantStatus, modelDetail, modelProviders, models, providerDetail, providerReport } from './data';
 import type { ModelSummary, ProviderSummary } from '@clew/contracts';
 import { personSearch, phonebook } from './phonebook';
+import { rooms, roomsSpec } from './rooms';
 import { manifestReference } from '../../packages/connectors/src/reference';
 import { parseManifest } from '../../packages/connectors/src/remote';
 import { manifest as helloManifest } from '../../connectors/hello/connector.mjs';
@@ -285,6 +286,8 @@ export class MockApi {
         output: { from: date, events: events(date).filter(e => e.start.startsWith(date)), proposals: [] },
       });
     }
+    // The calendar's rooms (D69, amended): the one calendar read with a declared view, drawn by the one renderer.
+    if (path === '/cap/calendar.rooms') return json({ output: { rows: rooms }, source: 'Kalendern', view: roomsSpec });
     // `@` as the server answers it: with nothing typed only the context the box sends (`near`), with text everything open, the context first.
     if (path === '/objects') {
       const q = (url.searchParams.get('q') ?? '').toLowerCase(),

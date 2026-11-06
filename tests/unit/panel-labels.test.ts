@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { fieldLabels, fieldValue, hiddenFields } from '../../apps/web/src/components/panel-labels';
+import { calendarConnector } from '../../apps/server/src/modules/calendar/connector';
 import { fixtureConnectors } from '../fixture-connectors';
 
 type Schema = { properties?: Record<string, Schema>; items?: Schema; anyOf?: Schema[]; oneOf?: Schema[] };
@@ -15,6 +16,17 @@ describe('side panel labels (3.1.2)', () => {
     const { connectors } = fixtureConnectors();
     const fields = new Set(connectors.flatMap(m => m.capabilities.flatMap(c => keys(c.output as Schema))));
     expect(fields.size).toBeGreaterThan(20);
+    expect([...fields].filter(key => !fieldLabels[key] && !hiddenFields.has(key))).toEqual([]);
+  });
+  test("every field the calendar's reads return has a Swedish name too (D69, amended)", () => {
+    const never = () => Promise.reject(new Error('not called'));
+    const calendar = calendarConnector(
+      { readToday: never, weekView: never, samtalStatus: never },
+      { dayView: never, listRooms: never },
+    );
+    const fields = new Set(calendar.capabilities.flatMap(c => keys(c.output as Schema)));
+    expect(fields).toContain('gaps');
+    expect(fields).toContain('equipment');
     expect([...fields].filter(key => !fieldLabels[key] && !hiddenFields.has(key))).toEqual([]);
   });
   test('values read as text', () => {

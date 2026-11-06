@@ -18,7 +18,7 @@ Historical numbering collisions: **D37, D38, D39, D44, D45, D46** each identify 
 | [D8 · Every action works without the model](D08-every-action-works-without-the-model.md) | product | 2026-11-03 | accepted |
 | [D9 · The side panel holds conversation, Clew views and MCP App views](D09-side-panel-holds-views-and-apps.md) | ui | 2026-11-03 | accepted, the app half replaced by D38 (2026-11-05): a connector declares its view as data and Clew draws it; nothing is rendered by a connector |
 | [D10 · Integrations fulfil Clew's API; adapters are the fallback](D10-integrations-fulfil-clews-api-first.md) | integrations | 2026-11-03 | accepted |
-| [D11 · One calendar contract, CalDAV and Microsoft 365 as adapters](D11-one-calendar-contract-two-adapters.md) | integrations | 2026-11-03 | accepted, `microsoft365` adapter built against a local fake (D69), not yet run against a tenant |
+| [D11 · One calendar contract, CalDAV and Microsoft 365 as adapters](D11-one-calendar-contract-two-adapters.md) | integrations | 2026-11-03 | accepted, `microsoft365` adapter built against a local fake (D69) and bound to one development persona beside CalDAV (D69, amended), not yet run against a tenant |
 | [D12 · Objects, chips, proposals: the general interaction pattern](D12-objects-chips-proposals.md) | ui | 2026-11-03 | accepted |
 | [D13 · The conversation lives in the composer's drawer; the dim is an Astryx Overlay](D13-conversation-in-the-composer-drawer.md) | ui | 2026-11-03 | superseded by D31 |
 | [D14 · Clew stands alone; Eneo enhances it through an optional module](D14-clew-stands-alone-eneo-enhances.md) | product | 2026-11-04 | accepted |
@@ -82,7 +82,7 @@ Historical numbering collisions: **D37, D38, D39, D44, D45, D46** each identify 
 | [D66 · The panel keeps everything opened beside the page as tabs](D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md) | ui | 2026-11-06 | accepted, built 2026-11-06 on `main`, revised the same day (items 2, 4 and 5: a menu, not a row) |
 | [D67 · The portal is a second web app over the same server, drawn as the product owner's proof of concept draws it](D67-the-portal-is-a-second-web-app-over-the-same-server.md) | ui, product | 2026-11-06 | proposed, built 2026-11-06 as an experiment beside the web app; nothing in `apps/web` or the server changed for it |
 | [D68 · People are pushed into Clew through standard SCIM, and mapping happens outside Clew](D68-people-are-pushed-into-clew-through-standard-scim.md) | identity | 2026-11-06 | accepted, not built yet; the group keys are proposed until a first provisioner has used them |
-| [D69 · A local fake of Microsoft Graph tests the Microsoft 365 adapter](D69-a-local-fake-of-microsoft-graph-tests-the-microsoft-365-adapter.md) | integrations | 2026-11-06 | accepted, built 2026-11-06, not yet run against a real tenant |
+| [D69 · A local fake of Microsoft Graph tests the Microsoft 365 adapter](D69-a-local-fake-of-microsoft-graph-tests-the-microsoft-365-adapter.md) | integrations | 2026-11-06 | accepted, built 2026-11-06, in the development stack for one persona since the same day, not yet run against a real tenant |
 | [D70 · One press confirms on the row, and rows with a document are reviewed one at a time](D70-one-press-confirms-on-the-row-and-rows-with-a-document-are-reviewed-one-at-a-time.md) | ui | 2026-11-06 | accepted, built 2026-11-06 on `main` |
 
 ## Add a decision

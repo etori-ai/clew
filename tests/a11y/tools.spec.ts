@@ -10,6 +10,7 @@ import {
   test,
 } from './support';
 import { menuRows } from './phonebook';
+import { roomsMenuRow } from './rooms';
 
 /**
  * A tool as a page (D42): a view an administrator chose for the menu opens at `/tools/:capability` inside the one
@@ -49,6 +50,22 @@ test.describe('a tool as a page', () => {
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.locator('nav a[aria-current="page"]')).toHaveText('Telefonbok');
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(wide.width);
+    await expectNoAxeViolations(page);
+  });
+
+  test("the calendar's rooms are a tool like any connector's view: a row under Verktyg, a page named by it, and no axe violations", async ({
+    page,
+    api,
+  }) => {
+    api.menu = [...menuRows, roomsMenuRow];
+    await open(page, '/tools/calendar.rooms');
+    await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Mötesrum');
+    await expect(page).toHaveTitle('Mötesrum · Startsidan');
+    await expect(page.getByRole('columnheader')).toHaveText(['Rum', 'Platser', 'Utrustning']);
+    await expect(page.getByRole('row')).toHaveCount(8);
+    await expect(page.getByText('7 rader · Kalendern')).toBeVisible();
+    await expect(rail(page).getByRole('link', { name: 'Mötesrum' })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
     await expectNoAxeViolations(page);
   });
 

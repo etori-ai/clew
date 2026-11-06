@@ -32,20 +32,20 @@ or the network, and CI (`.github/workflows/check.yml`) runs it without the stack
 ## Microsoft 365 without Microsoft
 
 `packages/calendar/src/fake-graph.ts` is a fake of the part of Microsoft Graph the `microsoft365` adapter calls (D69).
-To run the app on it, start the fake and give the BFF one variable:
-
-```bash
-sh scripts/graph.sh start
-```
+It runs as the `graph` service of the base development stack, seeds its own meetings and rooms as it starts, and is
+published on loopback at `127.0.0.1:4047`. The synthetic directory binds Mikael to it and Hillevi and Hassan to
+Nextcloud, so signing in as `mikael` shows the app on Microsoft 365 with nothing else started. To run every account on
+the fake, give the BFF one variable:
 
 ```bash
 docker exec -e CALENDAR_ADAPTER=microsoft365 -w /workspace clew-app-1 bun run dev:server
 ```
 
-`sh scripts/graph.sh stop` stops it. State lives in memory, so a restart empties the fake and `start` seeds it again.
-Bookings land in the fake, not in Nextcloud. A call the fake does not implement answers `501`; add it to the fake from
-Microsoft's documentation, with a case in the contract. Passing against the fake is not proof of how a real tenant
-behaves, and D69 lists what is still unverified.
+`sh scripts/graph.sh seed` restarts the fake for a fresh seed from today, since state lives in memory; `stop` and
+`status` do what they say. `bun run test:calendar` runs the adapter contract against the running fake over the network
+(`tests/calendar/graph-provider.test.ts`) as well as against Nextcloud. A call the fake does not implement answers
+`501`; add it to the fake from Microsoft's documentation, with a case in the contract. Passing against the fake is not
+proof of how a real tenant behaves, and D69 lists what is still unverified.
 
 ## The kinds of test
 

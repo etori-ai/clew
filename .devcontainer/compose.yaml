@@ -133,25 +133,29 @@ services:
       interval: 5s
       timeout: 3s
       retries: 60
-  # The local fake of Microsoft Graph (D69): scripts/fake-graph.ts over the dev image. It needs no account or network.
+  # The local fake of Microsoft Graph (D69): scripts/fake-graph.ts over the dev image. It needs no account or network and
+  # runs in the base stack beside the fixture connectors: Mikael's calendar is Microsoft 365 over it (a mixed estate, D11),
+  # CALENDAR_ADAPTER=microsoft365 on the BFF binds everyone to it. It seeds its own meetings and rooms as it starts, and
+  # state lives in memory, so `restart graph` is a fresh seed from today. Published on loopback for a look with curl.
   graph:
     image: clew-dev:local
-    profiles: ["graph"]
     init: true
     working_dir: /workspace
     command: bun scripts/fake-graph.ts
-    mem_limit: 128m
-    memswap_limit: 128m
+    mem_limit: 256m
+    memswap_limit: 256m
     environment:
       CLEW_POC: "true"
     volumes:
-      - ${CLEW_HOST_WORKSPACE:-..}:/workspace
+      - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
       - node_modules:/workspace/node_modules
+    ports:
+      - "127.0.0.1:4047:4010"
     healthcheck:
       test: ["CMD", "bun", "--eval", "process.exit((await fetch('http://localhost:4010/health')).ok ? 0 : 1)"]
       interval: 3s
       timeout: 3s
-      retries: 20
+      retries: 40
   calendar-mail:
     image: axllent/mailpit:v1.33.0@sha256:9b3a463be15354c0f0eba91697d80e3e0d8a5623ef0e627cacc836bc17fd5231
     profiles: ["calendar"]

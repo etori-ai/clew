@@ -63,12 +63,34 @@ export const fieldLabels: Record<string, string> = {
   importedAt: 'Inläst',
   person: 'Medarbetare',
   result: 'Resultat',
+  // The calendar's reads (D11, D32): today, a week, a day and the rooms
+  allDay: 'Heldag',
+  capacity: 'Platser',
+  equipment: 'Utrustning',
+  events: 'Möten',
+  gaps: 'Luckor',
+  mine: 'Mitt möte',
+  organizer: 'Organisatör',
+  participant: 'Deltagare',
+  participants: 'Deltagare',
+  proposals: 'Förslag',
+  recurring: 'Återkommande',
+  remindedAt: 'Senast påmind',
+  reminders: 'Påminnelser',
+  room: 'Rum',
+  email: 'E-post',
 };
 /** Addresses and references: useful to the code, never to the person reading the panel. */
 /** A follower's step drafts (D55) are Clew's input, drawn as a job, never as panel fields. */
 export const hiddenFields = new Set([
   'ref',
   'url',
+  // A calendar event's handles (D11): the source's id and revision, the thread a proposal belongs to, and what a write may do.
+  'id',
+  'revision',
+  'eventRef',
+  'threadId',
+  'canCancel',
   'undoCapability',
   'undoMinutes',
   'undoInput',

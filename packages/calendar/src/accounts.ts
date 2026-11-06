@@ -1,6 +1,6 @@
 import type { AuthenticatedContext } from '@clew/contracts';
 import { CalendarError, type CalendarAccount, type CalendarProvider } from './model';
-import { createCalendarProvider, type CalendarCredential } from './adapters';
+import { createCalendarProvider, type CalendarAdapterKind, type CalendarCredential } from './adapters';
 
 /**
  * Synthetic directory for the POC. The real system would resolve a person's calendar account and
@@ -16,11 +16,20 @@ const graphUrl = () => process.env.GRAPH_URL ?? 'http://graph:4010/v1.0';
  * directory owns, so the fake is imported by the fake's own process and the tests, never by the server (D61).
  */
 export const fakeGraphToken = (email: string) => `fake-graph-token:${email.toLowerCase()}`;
-/** Each account names its adapter. A real directory would carry the same `kind` per person, so a mixed estate (CalDAV and Microsoft 365) is one lookup away. */
+/**
+ * Each account names its adapter (D11): a real directory would carry the same `kind` per person. The development stack
+ * is a mixed estate (D69, amended): Hillevi and Hassan keep their CalDAV calendars in Nextcloud, Mikael's calendar is in
+ * Microsoft 365 over the local fake of Microsoft Graph, which the stack runs beside the fixture connectors. One adapter
+ * for everyone is a run-time choice: CALENDAR_ADAPTER=microsoft365 binds every account to the fake, =caldav to Nextcloud.
+ */
+const adapterFor = (user: string): CalendarAdapterKind => {
+  const forced = process.env.CALENDAR_ADAPTER;
+  if (forced === 'microsoft365' || forced === 'caldav') return forced;
+  return user === 'mikael' ? 'microsoft365' : 'caldav';
+};
 const credential = (user: string, name = user): CalendarCredential => {
   const email = `${user}@clew.test`;
-  // The local fake of Microsoft Graph (D69), for a BFF started with CALENDAR_ADAPTER=microsoft365.
-  return process.env.CALENDAR_ADAPTER === 'microsoft365'
+  return adapterFor(user) === 'microsoft365'
     ? { kind: 'microsoft365', url: graphUrl(), account: { email, name }, token: async () => fakeGraphToken(email) }
     : { kind: 'caldav', url: calendarUrl(), user, password: `calendar-${user}-local-only` };
 };
@@ -52,8 +61,10 @@ export function bindCalendar(persona: Pick<AuthenticatedContext, 'id' | 'unitId'
 }
 /** Seed-only access to a member's own calendar, for fixtures. Never used by the application. */
 export function fixtureProvider(user: string) {
-  return createCalendarProvider(credential(user));
+  return createCalendarProvider(credential(user, names[user]));
 }
+/** Which adapter the directory binds a user to, for scripts that say where a seed went. */
+export const fixtureAdapter = (user: string) => adapterFor(user);
 export const unitMembers = (unitId: string) => units[unitId] ?? [];
 /** The same synthetic people and rooms as the Nextcloud seed, for the local fake of Microsoft Graph (D69). */
 export const fixtureDirectory = () => ({

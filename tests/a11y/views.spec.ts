@@ -126,6 +126,21 @@ test.describe('a declared view in the side panel', () => {
     );
   });
 
+  test("the calendar's rooms are a table like any connector's: named columns, seats as numbers, and no axe violations", async ({
+    page,
+    api: _,
+  }) => {
+    await open(page, `/?open=calendar.rooms&open-title=${title('Mötesrum')}`);
+    const panel = page.getByRole('dialog', { name: 'Mötesrum' });
+    await expect(panel.getByRole('columnheader')).toHaveText(['Rum', 'Platser', 'Utrustning']);
+    await expect(panel.getByRole('row')).toHaveCount(8);
+    await expect(panel.getByRole('row').filter({ hasText: 'Boken' })).toContainText('projektor, mikrofon, hörslinga');
+    await expect(panel.getByText('7 rader · Kalendern')).toBeVisible();
+    // The calendar is no search source, so a room is not offered to the conversation as a chip.
+    await expect(panel.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+  });
+
   test('a list is a list, and a row goes into the box as any found thing does', async ({ page, api: _ }) => {
     await open(page, team);
     const panel = page.getByRole('dialog', { name: 'Mitt teams kontaktlista' });

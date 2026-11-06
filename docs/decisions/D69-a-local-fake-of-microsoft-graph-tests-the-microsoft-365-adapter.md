@@ -1,6 +1,6 @@
 # D69 · A local fake of Microsoft Graph tests the Microsoft 365 adapter
 
-**Status:** accepted, built 2026-11-06, not yet run against a real tenant · **Date:** 2026-11-06 · **Area:** integrations
+**Status:** accepted, built 2026-11-06, in the development stack for one persona since the same day, not yet run against a real tenant · **Date:** 2026-11-06 · **Area:** integrations
 
 **Decision.** The `microsoft365` adapter from [D11](D11-one-calendar-contract-two-adapters.md) is built in
 `packages/calendar/src/microsoft365.ts` and is tested against `packages/calendar/src/fake-graph.ts`, a fake of the part
@@ -70,5 +70,38 @@ refuses an import of `fake-graph.ts` from `apps/` or `packages/`. The adapter it
 the factory of D11, keeps the ledger's rules of D45 and D47 (a reference before the write, a read-back as the receipt,
 no undo without the exact revision), and the room's late answer is the one thing D47's bounded watch could carry when
 rooms are used for real.
+
+**Amended 2026-11-06, second**, when the product owner asked for the Microsoft 365 adapter to be seeded in the
+development stack and brought to the level the fixture connectors have under D61 and D66. Microsoft 365 is an adapter of
+the core `calendar` connector (D11, D61), not a connector of its own: it is never a row that `dev:connectors` registers,
+and a second, protocol-side calendar would contradict D11. What "on par" means for an adapter is therefore this:
+
+1. **The fake is part of the base stack.** The `graph` service leaves its compose profile and runs beside the six
+   fixture connectors, so "Reopen in Container" brings it up with them. It seeds itself as it starts, as the fixtures
+   do: `scripts/fake-graph.ts` books the synthetic meetings in `scripts/calendar-fixtures.ts` (one list for both
+   development calendars, shared with `calendar-seed.ts`) through the adapter over the network, and `/health` answers
+   503 until the seed is in place, so `--wait` means seeded. State lives in memory, so `sh scripts/graph.sh seed` is a
+   restart and a fresh seed from today. It is published on loopback at 4047 for a look with curl.
+2. **The fixture directory is a mixed estate.** `accounts.ts` binds Mikael to Microsoft 365 over the fake and keeps
+   Hillevi and Hassan on CalDAV in Nextcloud, which exercises D11's selection per account in one BFF with nothing to
+   restart or configure; `CALENDAR_ADAPTER=microsoft365` still binds every account to the fake and `=caldav` every
+   account to Nextcloud. Mikael has no unit, so no slot search crosses the two systems; a manager with a team on one
+   system and rooms on another is the open question the review named, not something this amendment answers.
+3. **The calendar's reads carry their contracts and the rooms declare a view.** `calendar.today`, `calendar.week` and
+   `calendar.day` declare the browser's `TodayView`, `WeekView` and `DayView` schemas as their outputs instead of
+   `Type.Any()`, and `tests/unit/panel-labels.test.ts` holds their fields to the Swedish label list as it holds the
+   fixtures'. They declare no `view` on purpose: the calendar family draws them (D32), and a table would be a second
+   mapping. The one read whose output is rows like any connector's is new: `calendar.rooms`, a `table` of the rooms
+   the person's calendar knows (name, seats, equipment), drawn by the one renderer, a tool "Mötesrum" when an
+   administrator chooses it (D40), and a read the model may answer a room question from.
+4. **What does not apply.** The calendar declares no `scan`, so there are no drafts with `occurrences` and `reason`;
+   its proposals keep their own lifecycle (D47). Its writes are human decisions in `decisions.ts` with receipts that
+   already name a room's pending or declined answer (D45, D47), and no calendar write has a document to review, so
+   `review`/`preview` (D70) do not arise. `scripts/connector-check.ts` checks a connector's protocol and cannot check a
+   calendar adapter; the stack's fake is checked instead by `tests/calendar/graph-provider.test.ts`, which runs the
+   adapter contract against the running service through `bun run test:calendar`, beside the Nextcloud run.
+
+Not run: a signed-in pass as Mikael in the browser on the Microsoft 365 binding. The binding was verified from the
+container (eight meetings, seven rooms, the declined room empty) and the contract passed over the network.
 
 **Replaces.** Nothing. It adds a test double and the build status to D11.

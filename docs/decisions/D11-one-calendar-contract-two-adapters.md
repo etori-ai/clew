@@ -1,6 +1,6 @@
 # D11 · One calendar contract, CalDAV and Microsoft 365 as adapters
 
-**Status:** accepted, `microsoft365` adapter built against a local fake (D69), not yet run against a tenant · **Date:** 2026-11-03 · **Area:** integrations
+**Status:** accepted, `microsoft365` adapter built against a local fake (D69) and bound to one development persona beside CalDAV (D69, amended), not yet run against a tenant · **Date:** 2026-11-03 · **Area:** integrations
 
 **Decision.** `CalendarProvider` in `packages/calendar/src/model.ts` is Clew's calendar contract. Every
 calendar system is an adapter behind it, selected per account by `CalendarCredential.kind` in
