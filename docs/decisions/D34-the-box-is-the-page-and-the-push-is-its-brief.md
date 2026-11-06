@@ -1,6 +1,6 @@
 # D34 · The box is the page; the push is its brief; one rail orders everything by time
 
-**Status:** accepted, implemented 2026-11-04, amended 2026-11-05; the chips under the box and the centred heading replaced by D41; `/overview` and the rail replaced by [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md); the brief above the box and its sentence replaced by [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md) · **Date:** 2026-11-04 · **Area:** ui
+**Status:** accepted, implemented 2026-11-04, amended 2026-11-05; the chips under the box and the centred heading replaced by D41; `/overview` and the rail replaced by [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md); the brief above the box and its sentence replaced by [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md); the groups' order is the artboard's since [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) (Nu, Jag föreslår, Senare, Till kännedom) · **Date:** 2026-11-04 · **Area:** ui
 
 **Decision.** The start page is "Vad vill du göra?" first, as drawn on rows four to six of the canvas
 "Clew startsida · översikt i stället för en lista" (https://claude.ai/artifact/UiCMmm2fmEaq1M7cipBDvQ, review

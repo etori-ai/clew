@@ -89,7 +89,7 @@ test.describe('administration', () => {
       await rail.getByRole('link', { name: 'Anslutna system', exact: true }).click();
       await expect(page).toHaveURL('/admin/connectors');
       await expect(page.getByRole('heading', { level: 1, name: 'Anslutna system' })).toBeVisible();
-      await expect(rail.getByRole('link', { name: 'Nytt samtal', exact: true })).toBeVisible();
+      await expect(rail.getByRole('link', { name: 'Ny fråga', exact: true })).toBeVisible();
       await expect(rail.getByRole('link', { name: 'Kalender', exact: true })).toBeVisible();
       await expect(rail.getByRole('link', { name: 'Anslutna system', exact: true })).toHaveAttribute(
         'aria-current',
@@ -98,7 +98,7 @@ test.describe('administration', () => {
       await rail.getByRole('link', { name: 'Modeller', exact: true }).click();
       await expect(page).toHaveURL('/admin/models');
       await expect(page.getByRole('heading', { level: 1, name: 'Modeller' })).toBeVisible();
-      await expect(rail.getByRole('link', { name: 'Nytt samtal', exact: true })).toBeVisible();
+      await expect(rail.getByRole('link', { name: 'Ny fråga', exact: true })).toBeVisible();
       await expect(rail.getByRole('link', { name: 'Modeller', exact: true })).toHaveAttribute('aria-current', 'page');
       await expectNoAxeViolations(page);
       await administration.focus();

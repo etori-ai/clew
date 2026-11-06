@@ -19,6 +19,7 @@ import {
   MetadataList,
   MetadataListItem,
   Skeleton,
+  SparklesIcon,
   Text,
   Timestamp,
   Token,
@@ -55,9 +56,7 @@ function Sources({ sources }: { sources: SourceCitation[] }) {
 }
 /** Under an answer: where it came from and, when a model wrote it, which one (D24), so a changed model is visible. A cited answer names its source in `Sources`, once. */
 const answerFooter = (meta: MessageMeta | undefined) =>
-  [meta?.sources?.length ? undefined : meta?.source, meta?.model ? `Svar från ${meta.model.title}` : undefined]
-    .filter(Boolean)
-    .join(' · ') || undefined;
+  (meta?.model ? `Svar från ${meta.model.title}` : undefined) || undefined;
 const citationSources = (sources: SourceCitation[]) =>
   Object.fromEntries(sources.map(s => [String(s.n), { title: s.label, ...(s.link ? { url: s.link } : {}) }]));
 
@@ -165,7 +164,24 @@ export function Transcript({
             <ChatMessage
               key={`turn-${i}`}
               sender={m.role}
-              name={<VisuallyHidden>{m.role === 'user' ? 'Du' : 'Assistenten'}</VisuallyHidden>}
+              /* The assistant's turn names itself and what it read (artboard G: "Assistenten · läste Mitt team"); the person's turn is theirs. */
+              name={
+                m.role === 'user' ? (
+                  <VisuallyHidden>Du</VisuallyHidden>
+                ) : (
+                  <HStack gap={1} vAlign="center">
+                    <Icon icon={SparklesIcon} size="sm" color="accent" />
+                    <Text type="supporting">
+                      Assistenten
+                      {m.meta?.view
+                        ? ` · läste ${m.meta.view.title}`
+                        : m.meta?.source && m.meta.source !== 'Assistenten'
+                          ? ` · läste ${m.meta.source}`
+                          : ''}
+                    </Text>
+                  </HStack>
+                )
+              }
             >
               {m.role === 'user' && (m.meta?.chips?.length ?? 0) > 0 && (
                 <HStack gap={1} wrap="wrap">

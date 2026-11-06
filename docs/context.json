@@ -453,7 +453,7 @@
       "number": 34,
       "path": "docs/decisions/D34-the-box-is-the-page-and-the-push-is-its-brief.md",
       "title": "D34 · The box is the page; the push is its brief; one rail orders everything by time",
-      "status": "accepted, implemented 2026-11-04, amended 2026-11-05; the chips under the box and the centred heading replaced by D41; `/overview` and the rail replaced by [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md); the brief above the box and its sentence replaced by [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md)",
+      "status": "accepted, implemented 2026-11-04, amended 2026-11-05; the chips under the box and the centred heading replaced by D41; `/overview` and the rail replaced by [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md); the brief above the box and its sentence replaced by [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md); the groups' order is the artboard's since [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) (Nu, Jag föreslår, Senare, Till kännedom)",
       "date": "2026-11-04",
       "area": "ui"
     },
@@ -543,7 +543,7 @@
       "number": 41,
       "path": "docs/decisions/D41-the-landing-is-the-ai-chat-landing-template-with-the-persons-areas-under-the-box.md",
       "title": "D41 · The landing is Astryx's `ai-chat-landing` template, with the person's areas under the box",
-      "status": "accepted, built 2026-11-05; items 1, 2 and 6 (the greeting and the question, the 720 px column, the brief above the box) replaced by [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md), items 3 to 5 stand after the day's work",
+      "status": "accepted, built 2026-11-05; items 1, 2 and 6 (the greeting and the question, the 720 px column, the brief above the box) replaced by [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md), items 3 to 5 stand after the day's work; since [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) items 3 to 5 apply to the quiet page only, with the first area chosen",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -633,7 +633,7 @@
       "number": 48,
       "path": "docs/decisions/D48-one-next-step-the-rest-one-step-away.md",
       "title": "D48 · One next step on a surface, the rest one step away",
-      "status": "accepted, implemented",
+      "status": "accepted, implemented; items 1, 3, 5, 6 and 7 changed by [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) on 2026-11-06 (base 14, no ⋯ on a row, the artboards' captions, Ny fråga as the primary button, no shortcut in the box)",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -678,7 +678,7 @@
       "number": 53,
       "path": "docs/decisions/D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md",
       "title": "D53 · Hem is the start page: the day's work under the box, and the day beside it",
-      "status": "accepted, built 2026-11-06 on branch `hem`; not built: the phone's shift strip (artboard D needs a schedule capability no connector declares), the panel's tabs for everything a conversation has opened (artboards F, H, J), a conversation carrying a job across connectors with a step list (artboard J), and the mark on an earlier conversation that something happened since (artboard H)",
+      "status": "accepted, built 2026-11-06 on branch `hem`; not built: the phone's shift strip (artboard D needs a schedule capability no connector declares), the panel's tabs for everything a conversation has opened (artboards F, H, J), a conversation carrying a job across connectors with a step list (artboard J), and the mark on an earlier conversation that something happened since (artboard H); items 2 and 6 and the pixels changed by [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) on 2026-11-06 (the greeting drawn small with the day on its line, the day and Sedan i går as cards in the page's own side column)",
       "date": "2026-11-06",
       "area": "ui"
     },
@@ -753,6 +753,15 @@
       "status": "accepted, built 2026-11-06",
       "date": "2026-11-06",
       "area": "integrations, platform"
+    },
+    {
+      "key": "D63-hem-is-drawn-as-the-canvas-draws-it",
+      "number": 63,
+      "path": "docs/decisions/D63-hem-is-drawn-as-the-canvas-draws-it.md",
+      "title": "D63 · Hem is drawn as the canvas draws it, pixel for pixel, with Astryx's own tokens",
+      "status": "accepted, built 2026-11-06 on `main`; the elements the artboards draw without anything behind them are listed under \"Asked, not built\" and wait for the product owner",
+      "date": "2026-11-06",
+      "area": "ui"
     }
   ],
   "documents": [
@@ -1450,6 +1459,12 @@
       ]
     },
     {
+      "path": "docs/decisions/D63-hem-is-drawn-as-the-canvas-draws-it.md",
+      "title": "D63 · Hem is drawn as the canvas draws it, pixel for pixel, with Astryx's own tokens",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -1932,6 +1947,22 @@
         "Decision to record",
         "Addendum, same day: keep it in the repository, and put real products behind the fixtures",
         "Outcome"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-06-hem-against-the-canvas.md",
+      "title": "Hem against the canvas, artboard by artboard · 2026-11-06",
+      "category": "review-history",
+      "headings": [
+        "Method",
+        "A · Hem for a manager (1440 × 1120)",
+        "B · The same page on a quiet day (1440 × 1120)",
+        "E · A card beside the column (1440 × 1120)",
+        "G · A question from Hem (1440 × 1000)",
+        "I · A view as a page (1440 × 1120)",
+        "D and K · The phone (390 × 844)",
+        "What was asked and left out",
+        "What this review does not claim"
       ]
     },
     {

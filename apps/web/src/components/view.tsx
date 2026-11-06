@@ -10,8 +10,8 @@ import {
   Markdown,
   MetadataList,
   MetadataListItem,
-  SegmentedControl,
-  SegmentedControlItem,
+  Card,
+  Selector,
   Table,
   Text,
   TextInput,
@@ -48,6 +48,8 @@ export interface DeclaredViewProps {
   headingLevel?: 2 | 3;
   /** From which window width a table is drawn as a table: a page beside the rail needs more than the panel does. */
   tableQuery?: string;
+  /** A page's heading block (artboard I): drawn at the start of the controls' line, the controls at its end. */
+  header?: ReactNode;
 }
 
 const dateOnly = new Intl.DateTimeFormat('sv-SE', { dateStyle: 'long' });
@@ -166,6 +168,7 @@ function Controls({
           type="search"
           enterKeyHint="search"
           label={query.label}
+          isLabelHidden
           placeholder={query.placeholder}
           value={typed}
           onChange={setTyped}
@@ -173,15 +176,19 @@ function Controls({
           hasClear
           isLoading={isLoading}
           startIcon="search"
-          width="100%"
+          width={240}
         />
       )}
+      {/* The choice as the artboards draw it (H, I): one selector that says what is chosen. */}
       {filter && (
-        <SegmentedControl label={filter.label} size="sm" value={chosen} onChange={choose}>
-          {filter.options.map(o => (
-            <SegmentedControlItem key={o.value} value={o.value} label={o.label} />
-          ))}
-        </SegmentedControl>
+        <Selector
+          label={filter.label}
+          isLabelHidden
+          variant="secondary"
+          value={chosen}
+          onChange={choose}
+          options={filter.options.map(o => ({ value: o.value, label: o.label }))}
+        />
       )}
     </HStack>
   );
@@ -247,14 +254,17 @@ function Rows({
         ? [{ key: 'clew-chip', header: 'Samtal', width: pixel(66), renderCell: (r: TableRow) => chip(r.row) }]
         : []),
     ];
+    // The table in a bordered card, as artboard I draws it.
     return (
-      <Table<TableRow>
-        data={rows.map((row, i) => ({ id: key(row, i), row }))}
-        idKey="id"
-        columns={columns}
-        density="compact"
-        hasHover
-      />
+      <Card padding={0}>
+        <Table<TableRow>
+          data={rows.map((row, i) => ({ id: key(row, i), row }))}
+          idKey="id"
+          columns={columns}
+          density="compact"
+          hasHover
+        />
+      </Card>
     );
   }
   // The list, and a table on a narrow surface: the row is not interactive itself, so its name, its numbers and its `@` are the only stops.
@@ -313,6 +323,7 @@ export function DeclaredView({
   limit,
   headingLevel = 3,
   tableQuery = '(min-width: 1010px)',
+  header,
 }: DeclaredViewProps) {
   const wide = useMediaQuery(tableQuery);
   // A count that changes while someone types is spoken as one message, the latest (4.1.3); the visible line says the same.
@@ -379,7 +390,12 @@ export function DeclaredView({
   const rows = limit ? all!.slice(0, limit) : all!;
   return (
     <VStack gap={3}>
-      {controls && <Controls controls={controls} input={input} onInput={onInput!} isLoading={isLoading} />}
+      {(header || controls) && (
+        <HStack justify="between" vAlign="center" gap={3} wrap="wrap">
+          {header}
+          {controls && <Controls controls={controls} input={input} onInput={onInput!} isLoading={isLoading} />}
+        </HStack>
+      )}
       {rows.length === 0 ? (
         <EmptyState isCompact headingLevel={headingLevel} title={view.empty ?? 'Inget att visa'} />
       ) : (

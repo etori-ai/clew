@@ -8,6 +8,7 @@ import {
   open,
   openNav,
   phone,
+  quietDay,
   test,
 } from './support';
 
@@ -53,10 +54,10 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await open(page, '/');
     const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
     await expect(rail).toHaveCount(1);
-    await expect(rail.getByRole('link', { name: 'Nytt samtal' })).toBeVisible();
+    await expect(rail.getByRole('link', { name: 'Ny fråga' })).toBeVisible();
     // Hem says how much needs the person (D53); a card's state and the areas are its tabs and its filter, not rows here.
     await expect(rail.getByRole('link', { name: /^Hem/ })).toHaveAttribute('href', '/');
-    await expect(rail.getByRole('link', { name: /^Hem/ })).toContainText('6');
+    await expect(rail.getByRole('link', { name: /^Hem/ })).toContainText('1 i dag');
     await expect(rail.getByRole('group', { name: 'Verktyg' }).getByRole('link', { name: 'Kalender' })).toBeVisible();
     await expect(rail.getByRole('link', { name: 'Vem är på plats i dag?' })).toHaveAttribute(
       'href',
@@ -80,17 +81,19 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     api: _,
   }) => {
     await open(page, '/');
-    await expect(heading(page, 1, 'Hej, Testa')).toBeVisible();
+    await expect(heading(page, 1, 'Hej Testa')).toBeVisible();
     await expect(heading(page, 2, 'Nu · 1')).toBeVisible();
+    // A row's title is the link to its card beside the column (artboard A); the open row is the current one.
     const row = page
       .getByRole('listitem')
-      .filter({ has: page.getByRole('button', { name: 'Omtankesamtal med Anna Lindqvist', exact: true }) });
-    await expect(row.getByRole('button', { name: 'Omtankesamtal med Anna Lindqvist', exact: true })).toHaveAttribute(
-      'aria-expanded',
-      'false',
+      .filter({ has: page.getByRole('link', { name: 'Omtankesamtal med Anna Lindqvist', exact: true }) });
+    await expect(row.getByRole('link', { name: 'Omtankesamtal med Anna Lindqvist', exact: true })).toHaveAttribute(
+      'href',
+      '/?card=omtanke',
     );
+    await expect(row).not.toHaveAttribute('aria-current', 'true');
     await open(page, '/?tab=done');
-    await expect(heading(page, 1, 'Hej, Testa')).toBeVisible();
+    await expect(heading(page, 1, 'Hej Testa')).toBeVisible();
     await expect(heading(page, 2, 'Redan hanterat')).toBeVisible();
     await page.getByRole('radio', { name: 'Veckan' }).click();
     await expect(page.getByRole('list', { name: /november/ }).first()).toBeVisible();
@@ -112,10 +115,10 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await open(page, '/');
     // The greeting by first name is the page's one h1 (D53), with the day under it; nothing sums the day up in a sentence.
     const lead = page.getByRole('region', { name: 'Vad vill du göra' });
-    await expect(lead.getByRole('heading', { level: 1, name: 'Hej, Testa' })).toBeVisible();
-    await expect(lead.getByText('onsdag 4 november', { exact: true })).toBeVisible();
+    await expect(lead.locator('[aria-level="1"]').filter({ hasText: 'Hej Testa' })).toBeVisible();
+    await expect(lead.getByText('Onsdag 4 november · vecka 45 · Skönsmons skola', { exact: true })).toBeVisible();
     await expect(page.getByText(/behöver dig i dag/)).toHaveCount(0);
-    const greeting = (await heading(page, 1, 'Hej, Testa').boundingBox())!,
+    const greeting = (await heading(page, 1, 'Hej Testa').boundingBox())!,
       box = (await composer(page).boundingBox())!;
     expect(box.y).toBeGreaterThan(greeting.y);
     // Under the box the day's work: a card's state as four tabs, the groups as the h2s, the figures after them.
@@ -129,29 +132,41 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(page.getByRole('complementary', { name: 'Vid sidan av' })).toHaveCount(0);
     const today = page.getByRole('region', { name: 'I dag' }),
       since = page.getByRole('region', { name: 'Sedan i går' });
-    await expect(today.getByRole('heading', { level: 2, name: 'I dag' })).toBeVisible();
-    await expect(today.getByText('09:30–10:30 Rektorsmöte')).toBeVisible();
+    await expect(today.locator('[aria-level="2"]').filter({ hasText: 'I dag' })).toBeVisible();
+    await expect(today.getByText('Rektorsmöte', { exact: true })).toBeVisible();
+    await expect(today.getByText('A12 · 1 tim')).toBeVisible();
+    await expect(today.getByText('Ledigt till 12:00')).toBeVisible();
     await expect(today.getByRole('link', { name: 'Hela veckan' })).toHaveAttribute('href', '/calendar');
-    await expect(since.getByRole('link', { name: /Attesterade fakturor/ })).toHaveAttribute('href', '/?tab=done');
-    await expect(since.getByRole('link', { name: /Tillbud 2026-1182/ })).toHaveAttribute('href', '/?card=tillbud');
+    // Sedan i går is three sentences (artboard A): what closed with its receipt, what waits with who has answered, the next review.
+    await expect(
+      since.getByText(/^2 klara: attesterade fakturor, kvitto läst från ekonomisystemet 09:00 och påminnelse om/),
+    ).toBeVisible();
+    await expect(
+      since.getByText(/^2 väntar på andra: planera utvecklingssamtal vecka 45 \(1 av 2 har svarat\) och tillbud/),
+    ).toBeVisible();
     await expect(since.getByText(/^Nästa genomgång /)).toBeVisible();
+    await expect(since.getByRole('link', { name: 'Allt som är klart' })).toHaveAttribute('href', '/?tab=done');
     await expectNoAxeViolations(page);
   });
 
-  test('the areas under the box are toggles for the areas that have something to start, and the chosen one shows its standing actions as cards', async ({
+  test('on a quiet day the areas are toggles for the areas that have something to start, the first chosen, and the chosen one shows its standing actions as cards', async ({
     page,
-    api: _,
+    api,
   }) => {
+    // With work on Hem the areas are not drawn (artboard A); on a quiet day they are the main content (artboard B).
+    await open(page, '/');
+    await expect(page.getByRole('group', { name: 'Områden' })).toHaveCount(0);
+    quietDay(api);
     await open(page, '/');
     const areas = page.getByRole('group', { name: 'Områden' });
-    // Only an area with a standing action is offered (not Kvalitet, which has none), in the order the person's areas come; nothing is chosen at first.
+    // Only an area with a standing action is offered (not Kvalitet, which has none), in the order the person's areas come; the first is chosen.
     expect(await areas.getByRole('button').evaluateAll(list => list.map(el => el.getAttribute('aria-label')))).toEqual([
       'Viktigt nu',
       'Kalender',
       'Personal',
       'Budget',
     ]);
-    await expect(areas.getByRole('button', { pressed: true })).toHaveCount(0);
+    await expect(areas.getByRole('button', { pressed: true })).toHaveAccessibleName('Viktigt nu');
     // The icon is the one the connector named for its area; an area that names none is its title alone.
     await expect(areas.getByRole('button', { name: 'Budget' }).locator('svg')).toHaveCount(1);
     await expect(areas.getByRole('button', { name: 'Viktigt nu' }).locator('svg')).toHaveCount(0);
@@ -182,8 +197,9 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
 
   test('a card that reads opens its view in the panel, and the area is still chosen when the panel closes', async ({
     page,
-    api: _,
+    api,
   }) => {
+    quietDay(api);
     await open(page, '/');
     await page.getByRole('group', { name: 'Områden' }).getByRole('button', { name: 'Budget' }).click();
     const cards = page.getByRole('group', { name: 'Budget', exact: true });
@@ -198,8 +214,9 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
 
   test('a card that is not a read asks its question in the box, from the keyboard too, and the answer opens as a conversation', async ({
     page,
-    api: _,
+    api,
   }) => {
+    quietDay(api);
     await open(page, '/');
     const areas = page.getByRole('group', { name: 'Områden' });
     await areas.getByRole('button', { name: 'Budget' }).focus();
@@ -232,8 +249,6 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     api: _,
   }) => {
     await open(page, '/');
-    const rows = page.getByRole('tabpanel', { name: 'Behöver dig' });
-    await expect(rows.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
     await composer(page).pressSequentially('@');
     const menu = page.getByRole('listbox', { name: 'Objekt' });
     await expect(menu.getByRole('option').first()).toBeVisible();
@@ -255,8 +270,8 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     // Under the conversation's h1 the card's title is a level-2 heading (Playwright's role level reads the tag, so the suite reads aria-level).
     await expect(heading(page, 2, 'Attestera 3 fakturor, 48 200 kr')).toBeVisible();
     await expect(card.getByRole('checkbox')).toHaveCount(3);
-    await expect(card.getByRole('button', { name: 'Attestera · 2' })).toBeVisible();
-    await expect(page.getByRole('article', { name: 'Assistenten', exact: true })).toContainText('saknar beställning');
+    await expect(card.getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
+    await expect(page.getByRole('article', { name: /^Assistenten/ })).toContainText('saknar beställning');
   });
 
   test('the rail searches conversations and cards and opens what is picked', async ({ page, api: _ }) => {
@@ -286,16 +301,10 @@ test.describe('3.1.2 language of parts', () => {
     await input.press('Enter');
     await expect(answer(page)).toBeVisible();
     await expect(page.getByRole('article', { name: 'Du', exact: true })).toBeVisible();
-    await expect(page.getByRole('article', { name: 'Assistenten', exact: true })).toBeVisible();
+    await expect(page.getByRole('article', { name: /^Assistenten/ })).toBeVisible();
   });
 
   // On the landing the box has no header and already holds the focus (G); the conversation's scope line carries the shortcut.
-  test('the keyboard shortcut is spoken in Swedish', async ({ page, api: _ }) => {
-    await open(page, '/');
-    await composer(page).fill('Vem är på plats i dag?');
-    await page.keyboard.press('Enter');
-    await expect(page.getByRole('img', { name: 'Kontroll + K' })).toBeVisible();
-  });
 
   test('the side panel shows Swedish labels and readable values', async ({ page, api: _ }) => {
     await open(page, '/?open=hr.whoIsOn&open-title=Bemanning');

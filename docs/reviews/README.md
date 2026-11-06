@@ -25,5 +25,6 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Stress test: one event, work in several systems](2026-11-06-cross-system-work-stress-test.md)
 - [Fact kinds: who owns them, who defines them, and what breaks when a dependency goes down](2026-11-06-fact-kinds-ownership-and-dependency-visibility.md)
 - [Review: from mock connectors to real test sources · 2026-11-06](2026-11-06-from-mock-connectors-to-real-test-sources.md)
+- [Hem against the canvas, artboard by artboard · 2026-11-06](2026-11-06-hem-against-the-canvas.md)
 - [Review: where Läget's figures come from, and who should own them · 2026-11-06](2026-11-06-laget-figures-review.md)
 - [Design exploration: the start page's directions, and every path from it · 2026-11-06](2026-11-06-start-page-directions-and-flows.md)

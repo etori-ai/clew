@@ -1,4 +1,4 @@
-import { desktop, open, phone, test } from './support';
+import { desktop, open, phone, quietDay, test } from './support';
 
 /**
  * Not a test: screenshots of Hem (D53) for the comparison with artboard A of the canvas, and with Astryx's `ai-chat-landing` template (D41). Run on demand
@@ -19,10 +19,12 @@ test.describe('screens', () => {
       await open(page, '/');
       await page.screenshot({ path: out(`landing-empty-${size}`) });
     });
-    test(`landing with the brief and an area chosen ${size}`, async ({ page, api: _ }) => {
+    test(`landing with the brief and an area chosen ${size}`, async ({ page, api }) => {
       await page.setViewportSize(viewport);
       await open(page, '/');
       await page.screenshot({ path: out(`landing-brief-${size}`) });
+      quietDay(api);
+      await open(page, '/');
       await page.getByRole('group', { name: 'Områden' }).getByRole('button', { name: 'Budget' }).click();
       await page.getByRole('group', { name: 'Budget', exact: true }).waitFor();
       await page.screenshot({ path: out(`landing-area-${size}`), fullPage: size === '375' });

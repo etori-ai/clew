@@ -11,6 +11,7 @@ import {
   LayoutContent,
   LayoutFooter,
   Skeleton,
+  Text,
   VisuallyHidden,
   VStack,
   useMediaQuery,
@@ -184,12 +185,12 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
       {/* `padding={0}` on the content and the padding on the stack is the template's way to keep a table on the heading's line. */}
       <Layout
         height={short ? 'auto' : 'fill'}
-        {...(slot.end ? {} : { contentWidth: tool?.spec?.kind === 'table' ? 1180 : 720 })}
+        padding={mobile ? 3 : 8}
         end={slot.end}
         footer={box && !short ? <LayoutFooter>{box}</LayoutFooter> : undefined}
         content={
           <LayoutContent padding={0}>
-            <VStack padding={mobile ? 3 : 4} gap={6}>
+            <VStack paddingInline={mobile ? 3 : 8} paddingBlock={mobile ? 3 : 5} gap={4}>
               {missing ? (
                 <EmptyState
                   headingLevel={1}
@@ -199,7 +200,14 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
                 />
               ) : (
                 <>
-                  {entry ? <Heading level={1}>{entry.label}</Heading> : !failed && <Skeleton height={28} width={200} />}
+                  {/* The page's heading (artboard I): the view's name drawn at 20 px with its source under it; with a table it stands at the start of the controls' line. */}
+                  {entry
+                    ? !tool?.spec && (
+                        <Heading level={2} accessibilityLevel={1}>
+                          {entry.label}
+                        </Heading>
+                      )
+                    : !failed && <Skeleton height={28} width={200} />}
                   {failed && (
                     <Banner status="error" title={failed.message}>
                       <Button label="Försök igen" size="sm" variant="secondary" onClick={failed.retry} />
@@ -214,6 +222,14 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
                         isLoading={main.isLoading}
                         headingLevel={2}
                         tableQuery={tableQuery}
+                        header={
+                          <VStack gap={0.5}>
+                            <Heading level={2} accessibilityLevel={1}>
+                              {entry!.label}
+                            </Heading>
+                            <Text type="supporting">{tool.spec.source}</Text>
+                          </VStack>
+                        }
                         /* The view's controls rewrite the address in place, so a search is addressable and one step back leaves the tool. */
                         onInput={next => navigate(toolHref(capability, next), { replace: true })}
                         hrefFor={v => toolHref(capability, tool.input, v)}

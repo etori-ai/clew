@@ -69,6 +69,6 @@ test.describe('a mouse', () => {
 
   test('keeps the compact controls the screens were drawn with', async ({ page, api: _ }) => {
     await open(page, '/');
-    await expect(page.getByRole('button', { name: 'Fler val' }).first()).toHaveCSS('height', '28px');
+    await expect(page.getByRole('button', { name: 'Lägg till i samtalet' }).first()).toHaveCSS('height', '32px');
   });
 });

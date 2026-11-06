@@ -3,27 +3,32 @@ import { useLocation, useNavigate, useParams, useSearchParams } from 'react-rout
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Area, Figure, MenuEntry, SessionUser, Thread, ViewRef, PanelViewSpec } from '@clew/contracts';
 import {
+  Badge,
   Banner,
   Button,
+  Card,
   ChatLayout,
   ClickableCard,
   Divider,
   DropdownMenu,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   EmptyState,
   Grid,
+  GridSpan,
   Heading,
   HStack,
   Icon,
   IconButton,
-  InfoTip,
   Layout,
   LayoutContent,
   LayoutFooter,
   LayoutHeader,
+  Link,
   List,
   MoreMenu,
-  Selector,
   SparklesIcon,
+  StatusDot,
   Tab,
   TabList,
   Text,
@@ -34,13 +39,12 @@ import {
   useMediaQuery,
   useToast,
 } from '@clew/ui';
-import { addDays, dayLabel, displayDate, shortDayLabel, timeLabel, today } from '@clew/calendar/dates';
+import { addDays, dayLabel, displayDate, shortDayLabel, timeLabel, today, weekNumber } from '@clew/calendar/dates';
 import { api } from '../api';
 import { errorMessage } from '../query-policy';
 import {
   areasQuery,
   assistantQuery,
-  attentionQuery,
   cardViewQuery,
   figuresQuery,
   threadsQuery,
@@ -57,7 +61,7 @@ import { titled, useConversation, type ConversationState } from '../components/c
 import { Transcript } from '../components/conversation';
 import { toolHref, useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
-import { GenericCard, ThreadRow } from '../components/card';
+import { CardTimeAction, GenericCard, ThreadRow } from '../components/card';
 import { BriefSkeleton } from '../components/brief';
 import { CONVERSATION_MIN, PanelBody, panelBesideQuery, usePanel, type PanelFrame } from '../components/panel';
 import { EventDialog } from '../components/calendar/event-dialog';
@@ -82,6 +86,10 @@ const tabTitle: Record<TodoTab, string> = {
 };
 /** The least width Hem's column needs beside the panel: the rows with their day, their line and their one button. */
 const HOME_MIN = 640;
+/** Under this the day and what happened since yesterday fold under the day's work (artboard A's note: the side column folds at 1024). */
+const twoColumnQuery = '(min-width: 1024px)';
+/** The counts in words, as "Alla fyra källor svarade" has them. */
+const capital = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
 const ALL_AREAS = 'all';
 const EMPTY_THREADS: Thread[] = [];
 const EMPTY_AREAS: Area[] = [];
@@ -109,6 +117,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const mobile = useMediaQuery(mobileQuery);
   // 1.4.10: with 480 px or less in height nothing is docked; the row joins the page and the whole page scrolls (D31 item 7).
   const short = useMediaQuery(shortQuery);
+  const twoColumns = useMediaQuery(twoColumnQuery);
   // Where a transcript and the panel fit side by side, a conversation asked on a page brings what the page showed along (D50).
   const besideTranscript = useMediaQuery(panelBesideQuery(CONVERSATION_MIN));
   // Every read is a query (D33): one cache shared by the page, the cards, the rail and the conversation. A mutation writes the thread it returns into it (thread-cache.ts).
@@ -117,10 +126,8 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const areasQ = useQuery(areasQuery);
   const dayQ = useQuery(todayQuery);
   const assistantQ = useQuery(assistantQuery);
-  // Hem's extras: how often the assistant interrupts, behind a tip, and Läget's figures under the day's work.
-  const attentionQ = useQuery(attentionQuery);
+  // Hem's extra: Läget's figures under the day's work. (How often the assistant interrupts is not on artboard A; the box answers it.)
   const figuresQ = useQuery(figuresQuery);
-  const attention = attentionQ.data ?? null;
   const figures = figuresQ.data?.figures ?? EMPTY_FIGURES;
   const threads = threadsQ.data?.threads ?? EMPTY_THREADS;
   // The first read of the cards (D36): until it is here the page draws their shape, never "nothing needs you".
@@ -301,6 +308,11 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const todayDate = today();
   // The groups (D34): requirements by their day, proposals, events; then what waits on someone else and what is set aside.
   const g = useMemo(() => groupThreads(threads, now, todayDate, inArea), [threads, now.slice(0, 16), todayDate, area]);
+  const all = useMemo(() => groupThreads(threads, now, todayDate), [threads, now.slice(0, 16), todayDate]);
+  // What closed today (artboard A's "1 klar", the Klart tab's count): cards, not the person's own conversations.
+  const closedToday = useMemo(() => all.handledToday.filter(t => t.kind !== 'question'), [all.handledToday]);
+  // Whether what the address names stands beside the column (artboard E) rather than over it: then the column is the narrow one.
+  const panelFits = useMediaQuery(panelBesideQuery(HOME_MIN));
   const older = [
     ...threads.filter(t => t.state === 'open' && t.kind === 'question'),
     ...threads.filter(t => t.state !== 'open'),
@@ -310,10 +322,10 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   usePageTitle(pageTitle, view || conversationId ? false : pageTitle);
   const nav = useRail({ current: railCurrent, admin });
 
-  const openCard = (threadId: string) => navigate(withCard(here, search, threadId));
   const openCardView = (threadId: string, actionId: string) => navigate(withAction(here, search, threadId, actionId));
   // On a phone Hem has no panel for a card: every thread is a card in the list, and the one the address names is brought into view.
   const cardsInline = mobile && !talk.open;
+  const besideOpen = !!panel && !(panel.kind === 'card' && cardsInline) && panelFits && !short && !talk.open;
   const focusedCard = useRef<string | null>(null);
   useEffect(() => {
     if (!cardsInline || !openId || !threadsQ.data || focusedCard.current === location.key) return;
@@ -354,91 +366,142 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         onOpenCardView={openCardView}
       />
     );
-  /** A group's threads (D31, D50): rows in one list, the title of each opening its card in the panel; on a phone every thread is a card. */
-  const records = (list: Thread[], options: { notice?: boolean } = {}) =>
-    cardsInline ? (
-      <VStack gap={2}>{list.map(t => card(t))}</VStack>
+  /**
+   * A group's threads (D31, D50, artboard A): rows in one list, the title of each the link to its card beside the column;
+   * on a phone every thread is a card. What is due today stands in a red-tinted card; the other groups are rows fenced
+   * by dividers, their text on the column's content line (edge flush).
+   */
+  const records = (list: Thread[], options: { notice?: boolean; due?: boolean } = {}) => {
+    if (cardsInline) return <VStack gap={2}>{list.map(t => card(t))}</VStack>;
+    const rows = (
+      <List hasDividers density="balanced" edge="flush">
+        {list.map(t => (
+          <ThreadRow
+            key={t.id}
+            thread={t}
+            areaTitle={areaTitle(t.area)}
+            notice={options.notice}
+            href={cardHref(t.id)}
+            isOpen={openId === t.id}
+            onClose={closePanel}
+            compact={besideOpen}
+            onChange={replace}
+            onOpenCardView={openCardView}
+          />
+        ))}
+      </List>
+    );
+    return options.due ? (
+      <Card variant="red" padding={3}>
+        {rows}
+      </Card>
     ) : (
-      // A run of rows is one list fenced by dividers (the structure guide: rows with dividers, no card), its text on the column's content line (edge flush).
       <VStack gap={0}>
         <Divider />
-        <List hasDividers density="balanced" edge="flush">
-          {list.map(t => (
-            <ThreadRow
-              key={t.id}
-              thread={t}
-              areaTitle={areaTitle(t.area)}
-              notice={options.notice}
-              isOpen={openId === t.id}
-              onChange={replace}
-              onOpenCardView={openCardView}
-              onExpand={openCard}
-            />
-          ))}
-        </List>
+        {rows}
         <Divider />
       </VStack>
     );
+  };
   const assistantDown = !!assistant && assistant.configured && !assistant.available;
   const needsYou = g.nu.length + g.senare.length + g.foreslar.length + g.kannedom.length;
+  const sources = threadsQ.data?.sources;
+  const sourcesWaiting = !!sources?.some(s => !s.lastSuccess || s.error);
+  /** Nothing needs the person (artboard B): the quiet page, with what the person can start as its main content. */
+  const quiet = !loadingThreads && needsYou === 0;
+  /** A group's heading row (artboard A): the heading with its count, and the artboard's caption at the end of the line. */
+  const groupHeading = (id: string, title: string, caption: string) => (
+    <HStack justify="between" vAlign="center" gap={3} wrap="wrap">
+      <Heading id={id} tabIndex={-1} level={3} accessibilityLevel={2}>
+        {title}
+      </Heading>
+      {!besideOpen && !mobile && <Text type="supporting">{caption}</Text>}
+    </HStack>
+  );
+  /** Lugnt läge (artboard B): a card with the sources, what waits and when the assistant next goes through everything, with the way to each. */
+  const calm = (
+    <Card variant="green" padding={5}>
+      <HStack gap={4} vAlign="start">
+        <Icon icon="check" size="lg" color="success" />
+        <VStack gap={1.5}>
+          <Heading id="behover-dig" tabIndex={-1} level={3} accessibilityLevel={2}>
+            {sourcesWaiting ? 'Inväntar källornas besked' : 'Lugnt läge'}
+          </Heading>
+          <Text as="p" color="secondary">
+            {sources?.length
+              ? sourcesWaiting
+                ? 'Någon källa kunde inte kontrolleras. Sparade uppgifter visas och kontrolleras igen. '
+                : `Alla ${sources.length <= 12 ? ['', 'en', 'två', 'tre', 'fyra', 'fem', 'sex', 'sju', 'åtta', 'nio', 'tio', 'elva', 'tolv'][sources.length] : sources.length} källor svarade i natt 06:00. `
+              : ''}
+            {all.waiting.length > 0
+              ? `${capital(all.waiting.length === 1 ? 'en sak' : `${all.waiting.length} saker`)} väntar på andra och kommer tillbaka när de svarar. `
+              : 'Inget väntar på andra. '}
+            Nästa genomgång i morgon 06:00, eller tidigare om något händer.
+          </Text>
+          <HStack gap={4} wrap="wrap">
+            <Text type="supporting" weight="medium">
+              <Link href={homeHref({ tab: 'waiting' })} color="primary" hasUnderline>
+                {all.waiting.length} väntar på andra
+              </Link>
+            </Text>
+            <Text type="supporting" weight="medium">
+              <Link href={homeHref({ tab: 'done' })} color="primary" hasUnderline>
+                {closedToday.length} {closedToday.length === 1 ? 'klar' : 'klara'} i dag
+              </Link>
+            </Text>
+          </HStack>
+        </VStack>
+      </HStack>
+    </Card>
+  );
 
-  /** Behöver dig (D34): the groups ranked by weight at one size, in the page's outline as level 2. The heading says what the group is; why it exists is ours to know, not the reader's. */
+  /** Behöver dig (D34, artboard A): the groups in the artboard's order, each an h2 with the artboard's caption. */
   const needs = (
     <VStack gap={5}>
-      <VStack gap={2} as="section" aria-label="Nu">
-        <Heading id="behover-dig" tabIndex={-1} level={2}>
-          {loadingThreads ? 'Nu' : g.nu.length === 0 ? 'Inget brådskar just nu' : `Nu · ${g.nu.length}`}
-        </Heading>
-        {loadingThreads && <BriefSkeleton compact={mobile} />}
-        {threadsQ.data?.sources?.some(s => !s.lastSuccess || s.error) && (
-          <Text as="p" role="status">
-            {threadsQ.data.sources.some(s => s.error)
-              ? 'Någon källa kunde inte kontrolleras. Sparade uppgifter visas och kontrolleras igen.'
-              : 'Källorna kontrolleras. Sparade uppgifter visas under tiden.'}
-          </Text>
-        )}
-        {!loadingThreads && needsYou === 0 && (
-          <EmptyState
-            title={
-              threadsQ.data?.sources?.some(s => !s.lastSuccess || s.error) ? 'Inväntar källornas besked' : 'Lugnt läge'
-            }
-            description="Assistenten hör av sig när något behöver dig."
-            isCompact
-            headingLevel={3}
-          />
-        )}
-        {g.nu.length > 0 && records(g.nu)}
-      </VStack>
-      {g.senare.length > 0 && (
-        <VStack gap={2} as="section" aria-label="Senare">
-          <Heading id="senare" tabIndex={-1} level={2}>
-            Senare · {g.senare.length}
-          </Heading>
-          {records(g.senare)}
+      {(loadingThreads || g.nu.length > 0 || quiet) && (
+        <VStack gap={1.5} as="section" aria-label="Nu">
+          {quiet
+            ? calm
+            : groupHeading(
+                'behover-dig',
+                loadingThreads ? 'Nu' : `Nu · ${g.nu.length}`,
+                'Deadline i dag, eller något du bad om',
+              )}
+          {loadingThreads && <BriefSkeleton compact={mobile} />}
+          {!quiet && sourcesWaiting && (
+            <Text as="p" role="status">
+              {sources?.some(s => s.error)
+                ? 'Någon källa kunde inte kontrolleras. Sparade uppgifter visas och kontrolleras igen.'
+                : 'Källorna kontrolleras. Sparade uppgifter visas under tiden.'}
+            </Text>
+          )}
+          {g.nu.length > 0 && records(g.nu, { due: true })}
         </VStack>
       )}
       {g.foreslar.length > 0 && (
-        <VStack gap={2} as="section" aria-label="Jag föreslår">
-          <Heading id="proposals" tabIndex={-1} level={2}>
-            Jag föreslår · {g.foreslar.length}
-          </Heading>
+        <VStack gap={1.5} as="section" aria-label="Jag föreslår">
+          {groupHeading('proposals', `Jag föreslår · ${g.foreslar.length}`, 'Ingen deadline, nej tack är ett svar')}
           {records(g.foreslar)}
         </VStack>
       )}
+      {g.senare.length > 0 && (
+        <VStack gap={1.5} as="section" aria-label="Senare">
+          {groupHeading('senare', `Senare · ${g.senare.length}`, 'Bara det som har en dag får en dag')}
+          {records(g.senare)}
+        </VStack>
+      )}
       {g.kannedom.length > 0 && (
-        <VStack gap={2} as="section" aria-label="Till kännedom">
-          <Heading id="notices" tabIndex={-1} level={2}>
-            Till kännedom · {g.kannedom.length}
-          </Heading>
+        <VStack gap={1.5} as="section" aria-label="Till kännedom">
+          {groupHeading('notices', `Till kännedom · ${g.kannedom.length}`, 'Inget att göra, bara att veta')}
           {records(g.kannedom, { notice: true })}
         </VStack>
       )}
       {/* The day's work comes first, on every screen (D48); the figures follow it, for every area at once. */}
-      {!area && figures.length > 0 && (
+      {!area && !quiet && figures.length > 0 && (
         <Lage
           figures={figures}
           unitLabel={user.unitLabel}
-          compact={mobile}
+          compact={mobile || besideOpen}
           onOpen={f => talk.ask(figureQuestion[f.id], { chips: [], search: '' })}
         />
       )}
@@ -446,8 +509,8 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   );
   /** Väntar på andra and Inte nu (D28; the name is D53's): what waits on someone else, and what the person set aside. The tab's panel is the named region. */
   const pile = (list: Thread[], title: string, empty: string) => (
-    <VStack gap={2}>
-      <Heading level={2}>
+    <VStack gap={1.5}>
+      <Heading level={3} accessibilityLevel={2}>
         {title} · {list.length}
       </Heading>
       {list.length === 0 ? (
@@ -480,14 +543,19 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     ) : (
       needs
     );
-  const tabLabel = (t: TodoTab) =>
+  /** A tab's count (artboard A): a neutral badge after the name; Behöver dig always, the others when they hold something. */
+  const tabCount = (t: TodoTab) =>
     t === 'needs-you'
-      ? `Behöver dig · ${needsYou}`
+      ? needsYou
       : t === 'waiting'
-        ? `Väntar på andra · ${g.waiting.length}`
+        ? g.waiting.length
         : t === 'snoozed'
-          ? `Inte nu · ${g.snoozed.length}`
-          : 'Klart';
+          ? g.snoozed.length
+          : closedToday.length;
+  const tabLabel = (t: TodoTab) => {
+    const n = tabCount(t);
+    return n || t === 'needs-you' ? `${tabTitle[t]} · ${n}` : tabTitle[t];
+  };
   /**
    * The day's work (D50 and D53, after the `table-inbox` template: a status control over a queue of rows, and the chosen
    * row's detail beside it): the tabs with the area filter on their line, then the tab's rows. The tabs switch the rows
@@ -519,48 +587,45 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           ) : (
             <TabList value={tab} onChange={next => navigate(homeHref({ tab: tabOf(next) }))} role="tablist">
               {todoTabs.map(t => (
-                <Tab key={t} value={t} label={tabLabel(t)} panelId="att-gora-lista" />
+                <Tab
+                  key={t}
+                  value={t}
+                  label={tabTitle[t]}
+                  panelId="att-gora-lista"
+                  endContent={
+                    tabCount(t) || t === 'needs-you' ? (
+                      <Badge variant="neutral" label={String(tabCount(t))} />
+                    ) : undefined
+                  }
+                />
               ))}
             </TabList>
           )}
-          <HStack gap={1} vAlign="center" wrap="wrap">
-            {/* How often the assistant interrupts is help, not a thing to do, so it sits behind the tip (D48). */}
-            {attention && (
-              <InfoTip
-                label="Så här hör jag av mig"
-                content={`Jag stör högst ${attention.budget} gånger mellan sammanfattningarna, bara för deadline samma dag eller något du själv bad om. Allt annat samlas.`}
-              />
-            )}
-            {/* Under a finger a choice is a button that opens a sheet, as the log's filter and the calendar's views are; with a mouse it is a selector. */}
-            {areas.length > 0 &&
-              (mobile ? (
-                <DropdownMenu
-                  presentation="adaptive"
-                  button={{ label: `Område: ${area ? areaTitle(area) : 'Alla'}`, size: 'sm', variant: 'secondary' }}
-                  items={[
-                    { id: ALL_AREAS, label: 'Alla områden', onClick: () => navigate(homeHref({ area: null })) },
-                    ...areas.map(a => ({
-                      id: a.id,
-                      label: a.title,
-                      onClick: () => navigate(homeHref({ area: a.id })),
-                    })),
-                  ]}
-                />
-              ) : (
-                <Selector
-                  label="Område"
-                  isLabelHidden
-                  size="sm"
-                  variant="secondary"
-                  value={area ?? ALL_AREAS}
-                  options={[
-                    { value: ALL_AREAS, label: 'Alla områden' },
-                    ...areas.map(a => ({ value: a.id, label: a.title })),
-                  ]}
-                  onChange={value => navigate(homeHref({ area: value && value !== ALL_AREAS ? value : null }))}
-                />
-              ))}
-          </HStack>
+          {/* The area filter (artboard A): one menu that says which area is chosen; under a finger it opens as a sheet. */}
+          {areas.length > 0 && mobile && (
+            <DropdownMenu
+              presentation="adaptive"
+              button={{ label: `Område: ${area ? areaTitle(area) : 'Alla'}`, size: 'sm', variant: 'secondary' }}
+              items={[
+                { id: ALL_AREAS, label: 'Alla områden', onClick: () => navigate(homeHref({ area: null })) },
+                ...areas.map(a => ({ id: a.id, label: a.title, onClick: () => navigate(homeHref({ area: a.id })) })),
+              ]}
+            />
+          )}
+          {areas.length > 0 && !mobile && (
+            <DropdownMenu button={{ label: area ? areaTitle(area) : 'Alla områden', size: 'md', variant: 'ghost' }}>
+              <DropdownMenuRadioGroup
+                label="Område"
+                value={area ?? ALL_AREAS}
+                onChange={value => navigate(homeHref({ area: value && value !== ALL_AREAS ? value : null }))}
+              >
+                <DropdownMenuRadioItem value={ALL_AREAS} label="Alla områden" />
+                {areas.map(a => (
+                  <DropdownMenuRadioItem key={a.id} value={a.id} label={a.title} />
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenu>
+          )}
         </HStack>
         <Divider />
       </VStack>
@@ -581,11 +646,11 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
    */
   const offers = useMemo(() => areas.filter(a => a.standing.length > 0), [areas]);
   const [chosen, setChosen] = useState<string | null>(null);
-  const offer = offers.find(a => a.id === chosen) ?? null;
+  // On the quiet page the first area stands chosen, as artboard B draws it; otherwise nothing is chosen until the person chooses.
+  const offer = chosen === '' ? null : (offers.find(a => a.id === chosen) ?? (quiet ? (offers[0] ?? null) : null));
   useEffect(() => {
     if (chosen) document.getElementById('omradets-kort')?.scrollIntoView({ block: 'nearest' });
   }, [chosen]);
-  const all = useMemo(() => groupThreads(threads, now, todayDate), [threads, now.slice(0, 16), todayDate]);
   // The box's context for `@`: the cards in view, in the tab and the area the address names.
   const near = (
     tab === 'waiting'
@@ -604,14 +669,14 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
    * panel does not fit, and on a phone, it ends the page, after the day's work (D48).
    */
   const aside = (
-    <VStack gap={6}>
-      {day && <Today view={day} compact />}
+    <VStack gap={4} as="aside" aria-label="Bredvid">
+      {day && <Today view={day} />}
       {!loadingThreads && (
         <Since
-          handled={all.handledToday}
+          handled={closedToday}
           waiting={all.waiting}
+          sources={sources}
           now={now}
-          cardHref={cardHref}
           doneHref={homeHref({ tab: 'done' })}
         />
       )}
@@ -620,52 +685,61 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   // The box is anchored under the greeting (D53): nothing above it changes, and what grows under it while the person
   // types ("Menar du") pushes the day's work down, never the field they are typing in (D36).
   const landing = () => {
-    // The lead: the person by first name as the page's h1, with the sparkle the `ai-chat-landing` template puts beside its greeting, and the day under it.
+    // The lead (artboard A): the person by first name as the page's h1, drawn small with the sparkle beside it, and the day, the week and the unit at the end of the line.
     const lead = (
-      <VStack gap={1}>
+      <HStack justify="between" vAlign="center" gap={4} wrap="wrap">
         <HStack gap={2} vAlign="center">
-          <Icon icon={SparklesIcon} size="md" color="accent" />
-          <Heading id="hem" tabIndex={-1} level={1} type={mobile ? undefined : 'display-2'}>
-            Hej, {user.name.split(' ')[0]}
+          <Icon icon={SparklesIcon} size="sm" color="accent" />
+          <Heading id="hem" tabIndex={-1} level={3} accessibilityLevel={1}>
+            Hej {user.name.split(' ')[0]}
           </Heading>
         </HStack>
-        <Text type="supporting" as="p">
-          {dayLabel(todayDate)}
+        <Text type={mobile ? 'supporting' : 'body'} color="secondary" as="p">
+          {mobile
+            ? `${capital(shortDayLabel(todayDate))} · v. ${weekNumber(todayDate)}`
+            : `${capital(dayLabel(todayDate))} · vecka ${weekNumber(todayDate)} · ${user.unitLabel}`}
         </Text>
-      </VStack>
+      </HStack>
     );
-    const box = <Composer place="landing" roomy near={near} about={about} />;
+    const box = <Composer place="landing" near={near} about={about} />;
     const menarDu = <Suggestions viewHref={viewHref} cardHref={cardHref} />;
+    // Det du kan göra (D41, artboard B): the person's areas with what each can start, the main content under the box when nothing needs them.
     // A card is one standing action: a read is a link to its view, anything else is asked in the box, as "Menar du" does it.
-    const offered = offers.length > 0 && (
-      <VStack gap={6} as="section" aria-label="Det du kan göra">
+    const offered = quiet && offers.length > 0 && (
+      <VStack gap={3} as="section" aria-label="Det du kan göra">
+        <HStack justify="between" vAlign="center" gap={3} wrap="wrap">
+          <Heading level={3} accessibilityLevel={2}>
+            Det du kan göra
+          </Heading>
+          {!mobile && <Text type="supporting">Dina områden · varje kort fungerar utan modellen</Text>}
+        </HStack>
         {/* The template's row is a ToggleButtonGroup, which keeps its buttons on one line whatever the width. A person's areas
           are as many as their connectors give them, so the same toggles stand in a wrapping HStack (D41, the gap noted there). */}
-        <HStack gap={1} wrap="wrap" role="group" aria-label="Områden">
+        <HStack gap={2} wrap="wrap" role="group" aria-label="Områden">
           {offers.map(a => (
             <ToggleButton
               key={a.id}
               size="lg"
               label={a.title}
               isPressed={a.id === offer?.id}
-              onPressedChange={pressed => setChosen(pressed ? a.id : null)}
+              onPressedChange={pressed => setChosen(pressed ? a.id : '')}
               icon={a.icon ? <Icon icon={clewIcon[a.icon]} size="sm" /> : undefined}
             />
           ))}
         </HStack>
         {offer && (
-          <Grid id="omradets-kort" columns={{ minWidth: 280 }} gap={3} role="group" aria-label={offer.title}>
+          <Grid id="omradets-kort" columns={{ minWidth: 200, max: 3 }} gap={3} role="group" aria-label={offer.title}>
             {offer.standing.map(s => (
               <ClickableCard
                 key={s.capability}
                 label={s.label}
                 variant="muted"
-                padding={3}
+                padding={4}
                 {...(s.kind === 'read'
                   ? { href: viewHref(s.capability, s.label) }
                   : { onClick: () => talk.ask(s.label) })}
               >
-                <VStack gap={0.5}>
+                <VStack gap={1}>
                   <Text weight="semibold">{s.label}</Text>
                   <Text type="supporting">
                     {offer.source} · {s.kind === 'read' ? 'öppnar vyn' : 'öppnar kortet'}
@@ -677,11 +751,18 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         )}
       </VStack>
     );
-    // One flow from the top on every screen: the greeting and the box (docked at the foot on a phone), the day's work, what
-    // the person can start, and where the panel does not stand beside the column, the day and what happened since yesterday.
+    const column = (
+      <VStack gap={5}>
+        {work}
+        {offered}
+      </VStack>
+    );
+    // One flow from the top on every screen: the greeting and the box (docked at the foot on a phone), then the day's work
+    // with the day and what happened since yesterday beside it (artboard A's two columns), under it where they do not fit,
+    // and gone while a card, a view or a card's read stands in the panel (artboard E).
     return (
-      <VStack gap={8}>
-        <VStack gap={mobile ? 4 : 6} as="section" aria-label="Vad vill du göra">
+      <VStack gap={6}>
+        <VStack gap={mobile ? 3 : 6} as="section" aria-label="Vad vill du göra">
           {lead}
           {!docked && (
             <VStack gap={2}>
@@ -690,9 +771,19 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
             </VStack>
           )}
         </VStack>
-        {work}
-        {offered}
-        {!slot.end && aside}
+        {slot.end ? (
+          column
+        ) : twoColumns && !mobile ? (
+          <Grid columns={3} gap={8} align="start">
+            <GridSpan columns={2}>{column}</GridSpan>
+            {aside}
+          </Grid>
+        ) : (
+          <VStack gap={6}>
+            {column}
+            {aside}
+          </VStack>
+        )}
       </VStack>
     );
   };
@@ -750,19 +841,19 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     : panelCard
       ? {
           id: `card:${panelCard.id}`,
+          kind: 'card',
           title: 'Kort',
           address: here + location.search,
           onClose: closePanel,
+          // The card's one time action stands in the panel's header, beside the close button (artboard E).
+          actions: <CardTimeAction thread={panelCard} onChange={replace} />,
           body: () => card(panelCard, { beside: true, compact: true, level: 3 }),
         }
       : null;
   const slot = usePanel(frame, {
     minMain: talk.open ? CONVERSATION_MIN : HOME_MIN,
     overlayOnly: short,
-    rest: talk.open ? undefined : aside,
   });
-  // A column alone is centred at its own width; with the panel beside it the column takes what the panel leaves (the `ai-chat` template's split).
-  const width = (alone: number) => (slot.end ? {} : { contentWidth: alone });
   /** What Hem's box asks about: the open card, which the conversation then keeps beside the transcript; "Ny fråga i stället" lets go of it. */
   const about: ComposerAbout | undefined = panelCard
     ? {
@@ -827,7 +918,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
               size="sm"
               variant="ghost"
               label="Stäng samtalet"
-              icon={<Icon icon="close" size="sm" />}
+              endContent={<Icon icon="close" size="sm" />}
               onClick={talk.close}
             />
           </HStack>
@@ -856,16 +947,19 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       ) : (
         <Layout
           height="fill"
-          {...width(800)}
           padding={mobile ? 3 : 4}
           defaultHasDividers
-          header={<LayoutHeader>{conversationToolbar}</LayoutHeader>}
+          header={
+            <LayoutHeader>
+              <VStack paddingInline={mobile ? 0 : 6}>{conversationToolbar}</VStack>
+            </LayoutHeader>
+          }
           end={slot.end}
           content={
             <LayoutContent isScrollable={false} padding={0}>
-              {/* The ChatLayout spans the content area full bleed and owns the scroll, so its scrollbar sits at the column's edge like a page's; the spacious density centres its stream and dock to one 800 px column. */}
-              <VStack height="100%">
-                <ChatLayout density="spacious" composer={<Composer place="conversation" />}>
+              {/* The ChatLayout spans the content area full bleed and owns the scroll, so its scrollbar sits at the column's edge like a page's. The transcript and the dock take the width Hem's content has, 40 px in from the rail (the product owner, 2026-11-06: the same width as the start page), not a centred column. */}
+              <VStack height="100%" paddingInline={mobile ? 0 : 6}>
+                <ChatLayout density="balanced" composer={<Composer place="conversation" />}>
                   {transcript}
                 </ChatLayout>
               </VStack>
@@ -873,8 +967,8 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           }
         />
       );
-    // Hem (D53): a 960 px column alone, the column and the panel side by side where both fit, the box in the page flow
-    // under the greeting; on a phone the box is docked at the foot, and on a short screen nothing is docked.
+    // Hem (D53, artboard A): the content takes the width the rail leaves, the panel beside it when something is open,
+    // the box in the page flow under the greeting; on a phone the box is docked at the foot, and on a short screen nothing is docked.
     return short ? (
       <VStack gap={4} padding={3}>
         {landing()}
@@ -882,10 +976,19 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     ) : (
       <Layout
         height="fill"
-        {...width(960)}
-        padding={mobile ? 3 : 4}
+        padding={0}
         end={slot.end}
-        content={<LayoutContent isScrollable>{landing()}</LayoutContent>}
+        content={
+          <LayoutContent isScrollable padding={0}>
+            <VStack
+              paddingInline={mobile ? 3 : 10}
+              paddingBlockStart={mobile ? 3 : 6}
+              paddingBlockEnd={mobile ? 3 : 10}
+            >
+              {landing()}
+            </VStack>
+          </LayoutContent>
+        }
         footer={
           docked ? (
             <LayoutFooter>

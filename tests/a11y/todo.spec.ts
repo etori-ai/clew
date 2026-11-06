@@ -19,8 +19,9 @@ test.describe("Hem: the day's work", () => {
   }) => {
     await open(page, '/');
     await expect(page.getByRole('tablist').getByRole('tab')).toHaveCount(4);
-    for (const name of ['Behöver dig · 6', 'Väntar på andra · 2', 'Inte nu · 1', 'Klart'])
-      await expect(page.getByRole('tab', { name, exact: true })).toBeVisible();
+    // A tab's count is a badge after its name (artboard A): "Behöver dig 6"; Klart counts what closed today.
+    for (const name of [/^Behöver dig 6$/, /^Väntar på andra 2$/, /^Inte nu 1$/, /^Klart 2$/])
+      await expect(page.getByRole('tab', { name })).toBeVisible();
     await expect(page.getByRole('tab', { name: /^Behöver dig/ })).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByRole('tabpanel', { name: 'Behöver dig' })).toBeVisible();
     await page.getByRole('tab', { name: /^Väntar/ }).focus();
@@ -28,7 +29,7 @@ test.describe("Hem: the day's work", () => {
     await expect(page).toHaveURL(/\/\?tab=waiting$/);
     const waiting = page.getByRole('tabpanel', { name: 'Väntar på andra' });
     await expect(
-      waiting.getByRole('button', { name: 'Tillbud 2026-1182, halkolycka i duschen', exact: true }),
+      waiting.getByRole('link', { name: 'Tillbud 2026-1182, halkolycka i duschen', exact: true }),
     ).toBeVisible();
     await expect(heading(page, 2, 'Väntar på andra · 2')).toBeVisible();
     await page.getByRole('tab', { name: /^Inte nu/ }).click();
@@ -47,14 +48,15 @@ test.describe("Hem: the day's work", () => {
 
   test('the area filter narrows every tab and stays in the address', async ({ page, api: _ }) => {
     await open(page, '/?area=personal');
-    await expect(page.getByRole('combobox', { name: 'Område' })).toContainText('Personal');
+    // The filter is one menu whose button says the chosen area (artboard A: "Alla områden").
+    await expect(page.getByRole('button', { name: 'Personal', exact: true })).toBeVisible();
     const rows = page.getByRole('tabpanel', { name: 'Behöver dig' });
-    await expect(rows.getByRole('button', { name: 'Omtankesamtal med Anna Lindqvist', exact: true })).toBeVisible();
-    await expect(rows.getByRole('button', { name: 'Attestera 3 fakturor, 48 200 kr', exact: true })).toHaveCount(0);
+    await expect(rows.getByRole('link', { name: 'Omtankesamtal med Anna Lindqvist', exact: true })).toBeVisible();
+    await expect(rows.getByRole('link', { name: 'Attestera 3 fakturor, 48 200 kr', exact: true })).toHaveCount(0);
     await page.getByRole('tab', { name: /^Väntar/ }).click();
     await expect(page).toHaveURL(/\/\?area=personal&tab=waiting$/);
-    await page.getByRole('combobox', { name: 'Område' }).click();
-    await page.getByRole('option', { name: 'Alla områden' }).click();
+    await page.getByRole('button', { name: 'Personal', exact: true }).click();
+    await page.getByRole('menuitemradio', { name: 'Alla områden' }).click();
     await expect(page).toHaveURL(/\/\?tab=waiting$/);
   });
 
@@ -79,22 +81,22 @@ test.describe('the panel beside the page', () => {
     api: _,
   }) => {
     await open(page, '/');
-    const title = page.getByRole('button', { name: 'Attestera 3 fakturor, 48 200 kr', exact: true });
+    const title = page.getByRole('link', { name: 'Attestera 3 fakturor, 48 200 kr', exact: true });
     await title.focus();
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(/\/\?card=fakturor$/);
     const panel = page.getByRole('complementary', { name: 'Kort' });
     await expect(panel).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(panel.getByRole('heading', { level: 2, name: 'Kort' })).toBeFocused();
+    await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
     // The row is marked as the one whose card is open, and its card has the card's own controls.
-    await expect(title).toHaveAttribute('aria-expanded', 'true');
     await expect(page.locator('#thread-fakturor')).toHaveAttribute('aria-current', 'true');
+    await expect(page.locator('#thread-fakturor')).toContainText('öppet bredvid');
     await expect(panel.locator('#card-fakturor').getByRole('checkbox')).toHaveCount(3);
-    await expect(panel.locator('#card-fakturor').getByRole('button', { name: 'Attestera · 2' })).toBeVisible();
+    await expect(panel.locator('#card-fakturor').getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
     await expectNoAxeViolations(page);
     // The list is still in use beside it: another row takes the panel, and the new card is named by its own title.
-    await page.getByRole('button', { name: 'Omtankesamtal med Anna Lindqvist', exact: true }).click();
+    await page.getByRole('link', { name: 'Omtankesamtal med Anna Lindqvist', exact: true }).click();
     await expect(panel.locator('#card-omtanke')).toBeVisible();
     await expect(panel.locator('#card-fakturor')).toHaveCount(0);
     await page.keyboard.press('Escape');
@@ -107,23 +109,24 @@ test.describe('the panel beside the page', () => {
     api: _,
   }) => {
     await open(page, '/');
-    const aside = page.getByRole('complementary', { name: 'Vid sidan av' });
-    await expect(aside.getByRole('region', { name: 'I dag' }).getByText('09:30–10:30 Rektorsmöte')).toBeVisible();
+    // Beside the day's work (artboard A): the day as a card and what happened since yesterday as a muted card.
+    const aside = page.getByRole('complementary', { name: 'Bredvid' });
+    await expect(aside.getByRole('region', { name: 'I dag' }).getByText('Rektorsmöte', { exact: true })).toBeVisible();
     const since = aside.getByRole('region', { name: 'Sedan i går' });
-    await expect(since.getByRole('link', { name: /Attesterade fakturor/ })).toHaveAttribute('href', '/?tab=done');
-    await expect(since.getByRole('link', { name: /Tillbud 2026-1182/ })).toHaveAttribute('href', '/?card=tillbud');
+    await expect(since.getByText(/^2 klara: attesterade fakturor/)).toBeVisible();
+    await expect(since.getByRole('link', { name: 'Allt som är klart' })).toHaveAttribute('href', '/?tab=done');
     // Nothing in the column repeats what stands beside it.
     await expect(page.getByRole('region', { name: 'I dag' })).toHaveCount(1);
-    const title = page.getByRole('button', { name: 'Attestera 3 fakturor, 48 200 kr', exact: true });
+    const title = page.getByRole('link', { name: 'Attestera 3 fakturor, 48 200 kr', exact: true });
     await title.focus();
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(/\/\?card=fakturor$/);
     const panel = page.getByRole('complementary', { name: 'Kort' });
-    await expect(panel.locator('#card-fakturor').getByRole('button', { name: 'Attestera · 2' })).toBeVisible();
-    await expect(panel.getByRole('heading', { level: 2, name: 'Kort' })).toBeFocused();
+    await expect(panel.locator('#card-fakturor').getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
+    await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
     await expect(aside).toHaveCount(0);
     // Hem is still the column, and its box now asks about the card, with the way to a new question beside it (artboard E).
-    await expect(heading(page, 1, 'Hej, Testa')).toBeVisible();
+    await expect(heading(page, 1, 'Hej Testa')).toBeVisible();
     await expect(page.getByText('Fråga om kortet Attestera 3 fakturor, 48 200 kr …')).toBeVisible();
     await expect(page.getByText('Om kortet', { exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Ny fråga i stället' })).toHaveAttribute('href', '/');
@@ -171,7 +174,7 @@ test.describe('the panel beside the page', () => {
     expect(api.asked.at(-1)?.chips?.map(c => c.ref)).toEqual(['thread:fakturor']);
     await page.getByRole('button', { name: 'Stäng samtalet' }).click();
     await expect(page).toHaveURL(/\/\?card=fakturor$/);
-    await expect(heading(page, 1, 'Hej, Testa')).toBeVisible();
+    await expect(heading(page, 1, 'Hej Testa')).toBeVisible();
   });
 
   test('a view an answer names opens beside the transcript, the conversation stays, and a view that is a tool offers its page', async ({
@@ -233,7 +236,7 @@ test.describe('the panel beside the page', () => {
     // "Öppna som sida" is the way back to the view at full width; "Stäng samtalet" leads to the page it was asked on.
     await page.getByRole('button', { name: 'Stäng samtalet' }).click();
     await expect(page).toHaveURL(/\/tools\/phonebook\.directory\?input=/);
-    await expect(page.getByRole('heading', { level: 1, name: 'Telefonbok' })).toBeVisible();
+    await expect(heading(page, 1, 'Telefonbok')).toBeVisible();
   });
 });
 

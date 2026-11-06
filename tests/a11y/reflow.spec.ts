@@ -9,6 +9,7 @@ import {
   open,
   reflowProblems,
   short,
+  quietDay,
   snoozeFirst,
   test,
 } from './support';
@@ -29,10 +30,11 @@ test.describe('1.4.10 reflow', () => {
         expect(await reflowProblems(page)).toEqual([]);
       });
 
-  test("the areas under the box wrap at 320 px, and the chosen area's cards are brought into view above the docked box", async ({
+  test("on a quiet day the areas under the box wrap at 320 px, and the chosen area's cards are brought into view above the docked box", async ({
     page,
-    api: _,
+    api,
   }) => {
+    quietDay(api);
     await page.setViewportSize(narrow);
     await open(page, '/');
     const areas = page.getByRole('group', { name: 'Områden' });

@@ -109,7 +109,8 @@ export { MultiSelector } from '@astryxdesign/core/MultiSelector';
 export { AppShell } from '@astryxdesign/core/AppShell';
 export { TopNav, TopNavHeading, TopNavItem } from '@astryxdesign/core/TopNav';
 export { Section } from '@astryxdesign/core/Section';
-export { useAnnounce, useMediaQuery, useStreamingText } from '@astryxdesign/core/hooks';
+export { useAnimatedLayout, useAnnounce, useMediaQuery, useStreamingText } from '@astryxdesign/core/hooks';
+export type { AnimatedLayout } from '@astryxdesign/core/hooks';
 // Glyphs beyond Astryx's registry come from Heroicons (MIT), the set Astryx's own templates draw with; each is named here once.
 export {
   ArrowPathIcon,

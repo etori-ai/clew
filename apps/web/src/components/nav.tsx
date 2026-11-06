@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { Fragment, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { Area, MenuEntry, Thread, ViewRef } from '@clew/contracts';
@@ -6,6 +6,7 @@ import {
   Badge,
   Button,
   HomeIcon,
+  HStack,
   SideNavItem,
   SideNavSection,
   Text,
@@ -15,7 +16,7 @@ import {
   createStaticSource,
   type SearchableItem,
 } from '@clew/ui';
-import { addDays, displayDate, shortDayLabel, timeLabel, today } from '@clew/calendar/dates';
+import { addDays, displayDate, shortDayLabel, today } from '@clew/calendar/dates';
 import { titled } from './conversation-context';
 import { areasQuery, threadsQuery } from '../queries';
 import { groupThreads } from '../stream';
@@ -90,8 +91,9 @@ export function useRail({ current, admin }: { current: RailCurrent; admin: boole
   const recent = g.questions.slice(0, 5);
   const said = (t: Thread) => {
     const day = displayDate(t.updatedAt);
-    return day === todayDate ? timeLabel(t.updatedAt) : day === yesterday ? 'i går' : shortDayLabel(day);
+    return day === todayDate ? 'i dag' : day === yesterday ? 'i går' : shortDayLabel(day);
   };
+  const capital = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
   const needsYou = g.nu.length + g.senare.length + g.foreslar.length + g.kannedom.length;
   // The search finds conversations, open cards, the areas and the tools from what the page already has: the same things the box's router finds without the model.
   const source = useMemo(() => {
@@ -133,7 +135,7 @@ export function useRail({ current, admin }: { current: RailCurrent; admin: boole
   return {
     top: (
       <VStack gap={2}>
-        <Button variant="secondary" label="Nytt samtal" href="/" width="100%" />
+        <Button variant="primary" label="Ny fråga" href="/" width="100%" />
         <Typeahead<SearchableItem<Found>>
           label="Sök i samtal och kort"
           isLabelHidden
@@ -162,7 +164,15 @@ export function useRail({ current, admin }: { current: RailCurrent; admin: boole
             icon={HomeIcon}
             href="/"
             isSelected={current.surface === 'start' && !current.conversationId}
-            endContent={g.nu.length ? <Badge variant="error" label={String(needsYou)} /> : count(needsYou)}
+            endContent={
+              g.nu.length ? (
+                <Badge variant="error" label={`${g.nu.length} i dag`} />
+              ) : needsYou ? (
+                count(needsYou)
+              ) : (
+                <Badge variant="success" label="lugnt" />
+              )
+            }
           />
         </SideNavSection>
         <SideNavSection title="Verktyg">
@@ -179,18 +189,20 @@ export function useRail({ current, admin }: { current: RailCurrent; admin: boole
           )}
         </SideNavSection>
         <SideNavSection title="Samtal">
-          {recent.map(t => (
-            <SideNavItem
-              key={t.id}
-              label={titled(t.title)}
-              href={`/conversations/${t.id}`}
-              isSelected={current.conversationId === t.id}
-              endContent={
-                <Text type="supporting" hasTabularNumbers>
-                  {said(t)}
-                </Text>
-              }
-            />
+          {/* The latest conversations under the day each was (artboard A: "I dag", "I går"), one line per conversation. */}
+          {recent.map((t, i) => (
+            <Fragment key={t.id}>
+              {(i === 0 || said(recent[i - 1]!) !== said(t)) && (
+                <HStack paddingInlineStart={2} paddingBlockStart={1}>
+                  <Text type="supporting">{capital(said(t))}</Text>
+                </HStack>
+              )}
+              <SideNavItem
+                label={titled(t.title)}
+                href={`/conversations/${t.id}`}
+                isSelected={current.conversationId === t.id}
+              />
+            </Fragment>
           ))}
           {allConversations}
         </SideNavSection>

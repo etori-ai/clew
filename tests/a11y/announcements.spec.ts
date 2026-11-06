@@ -25,8 +25,8 @@ test.describe('4.1.3 status messages', () => {
     await open(page, '/calendar');
     await page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: /^Hem/ }).click();
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Hem'));
-    await page.getByRole('combobox', { name: 'Område' }).click();
-    await page.getByRole('option', { name: 'Personal' }).click();
+    await page.getByRole('button', { name: 'Alla områden' }).click();
+    await page.getByRole('menuitemradio', { name: 'Personal' }).click();
     await expect(page).toHaveURL(/\/\?area=personal$/);
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Visar området Personal'));
   });

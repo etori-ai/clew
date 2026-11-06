@@ -53,7 +53,7 @@ test.describe('the answer on its way', () => {
     await input.press('Enter');
     await page.getByRole('button', { name: 'Stoppa' }).click();
     await expect(page.getByRole('log')).toHaveCount(0);
-    await expect(page.getByRole('heading', { level: 1, name: 'Hej, Testa' })).toBeVisible();
+    await expect(heading(page, 1, 'Hej Testa')).toBeVisible();
     await expect(composer(page)).toHaveText('Vem är på plats?');
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Frågan avbröts'));
     await page.waitForTimeout(api.answerDelay + 500);
@@ -83,10 +83,10 @@ test.describe('the answer on its way', () => {
     api.threads = [];
     await open(page, '/');
     const input = composer(page);
-    const greeting = (await page.getByRole('heading', { level: 1, name: 'Hej, Testa' }).boundingBox())!;
+    const greeting = (await heading(page, 1, 'Hej Testa').boundingBox())!;
     const top = (await input.boundingBox())!.y;
     expect(top).toBeGreaterThan(greeting.y);
-    await expect(page.getByRole('heading', { level: 3, name: 'Lugnt läge' })).toBeVisible();
+    await expect(heading(page, 2, 'Lugnt läge')).toBeVisible();
     await expect(page.getByRole('region', { name: 'I dag' })).toBeVisible();
     await expect(
       page.getByRole('region', { name: 'Sedan i går' }).getByText('Inget är klart och inget väntar på andra.'),

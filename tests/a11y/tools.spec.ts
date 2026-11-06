@@ -32,7 +32,7 @@ test.describe('a tool as a page', () => {
   }) => {
     api.menu = menuRows;
     await open(page, directory);
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Telefonbok');
+    await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Telefonbok');
     await expect(page).toHaveTitle('Telefonbok · Startsidan');
     await expect(page.getByRole('columnheader')).toHaveText([
       'Namn',
@@ -66,7 +66,8 @@ test.describe('a tool as a page', () => {
     await expect(page).toHaveURL(/\/tools\/phonebook\.directory\?input=.*l%C3%A4rare/);
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('2 rader'));
     await field.fill('');
-    await page.getByRole('radio', { name: 'Min enhet' }).click();
+    await page.getByRole('combobox', { name: 'Sök i', exact: true }).click();
+    await page.getByRole('option', { name: 'Min enhet' }).click();
     await expect(page.getByRole('row')).toHaveCount(6);
     await field.fill('xyzzy');
     await expect(page.getByRole('heading', { level: 2, name: 'Inga träffar i telefonboken.' })).toBeVisible();
@@ -129,7 +130,7 @@ test.describe('a tool as a page', () => {
     await open(page, directory);
     await expect(page.getByRole('row')).toHaveCount(15);
     await rail(page).getByRole('link', { name: 'Mitt team' }).click();
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Mitt team');
+    await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Mitt team');
     await expect(page.getByRole('list', { name: 'Telefonboken' }).getByRole('listitem')).toHaveCount(5);
     await expect(page.getByRole('table')).toHaveCount(0);
     await expect(page.getByRole('searchbox', { name: 'Sök i telefonboken' })).toHaveCount(0);
@@ -143,7 +144,7 @@ test.describe('a tool as a page', () => {
     api: _,
   }) => {
     await open(page, directory);
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Verktyget finns inte');
+    await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Verktyget finns inte');
     await expect(page).toHaveTitle('Verktyget finns inte · Startsidan');
     await expect(page.getByRole('table')).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Till startsidan' })).toHaveAttribute('href', '/');
@@ -181,7 +182,7 @@ test.describe("a tool's page on a smaller screen", () => {
     await page.setViewportSize(desktop);
     api.menu = menuRows;
     await open(page, directory);
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Telefonbok');
+    await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Telefonbok');
     const rows = page.getByRole('table').getByRole('row');
     await expect(rows).toHaveCount(15);
     expect((await rows.nth(1).boundingBox())!.height).toBeLessThan(60);
@@ -217,7 +218,7 @@ test.describe("a tool's page on a smaller screen", () => {
     await page.setViewportSize(phone);
     api.menu = menuRows;
     await open(page, directory);
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Telefonbok');
+    await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Telefonbok');
     await expectNoAxeViolations(page);
     await page.getByRole('link', { name: 'Hassan Ali' }).click();
     const contact = page.getByRole('dialog', { name: 'Kontaktkort' });

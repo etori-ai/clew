@@ -63,7 +63,8 @@ test.describe('a declared view in the side panel', () => {
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('2 rader'));
     // The choice is the capability's own input too: "Min enhet" narrows to the unit Startsidan knows the person by.
     await field.fill('');
-    await panel.getByRole('radio', { name: 'Min enhet' }).click();
+    await panel.getByRole('combobox', { name: 'Sök i', exact: true }).click();
+    await page.getByRole('option', { name: 'Min enhet' }).click();
     await expect(panel.getByRole('row')).toHaveCount(6);
     await expect(page).toHaveURL(/scope/);
     await field.fill('xyzzy');

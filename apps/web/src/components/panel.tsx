@@ -295,6 +295,8 @@ export interface PanelFrame {
   actions?: ReactNode;
   /** A table: over the page it gets a wide drawer. */
   wide?: boolean;
+  /** A card: its name is the small label over the card, as artboard E draws "KORT"; a view keeps its title as the heading. */
+  kind?: 'card' | 'view';
 }
 /** The rail and the panel as the shell draws them; with the page's own least width they decide when the panel fits beside it. */
 const RAIL = 256,
@@ -339,10 +341,19 @@ export function usePanel(
     const from = shown.current;
     shown.current = id === null ? null : { id, address };
     if (id === null) {
-      // Closed: focus goes back to what opened the panel, when that is still on the page.
+      // Closed: focus goes back to what opened the panel, when that is still on the page; a row's title drawn again
+      // while its card was open (it says "öppet bredvid") is found by the address it leads to.
       const back = opener.current;
       opener.current = null;
-      if (from && inline && back?.isConnected) back.focus();
+      if (!from || !inline) return;
+      const target = back?.isConnected
+        ? back
+        : from.address
+          ? [...document.querySelectorAll<HTMLElement>('a[href]')].find(el =>
+              sameAddress(el.getAttribute('href'), from.address!),
+            )
+          : undefined;
+      target?.focus();
       return;
     }
     if (from?.id === id) return;
@@ -386,12 +397,18 @@ export function usePanel(
         >
           <Layout
             height="fill"
-            padding={3}
+            padding={6}
             /* A heading and two buttons, not a toolbar: the heading takes the focus when the panel opens, and a toolbar would offer its arrow keys there. */
             header={
-              <LayoutHeader hasDivider>
+              <LayoutHeader hasDivider={panel.kind !== 'card'}>
                 <HStack justify="between" vAlign="center" gap={2}>
-                  <Heading ref={heading} tabIndex={-1} level={2}>
+                  <Heading
+                    ref={heading}
+                    tabIndex={-1}
+                    level={panel.kind === 'card' ? 4 : 2}
+                    accessibilityLevel={2}
+                    color={panel.kind === 'card' ? 'secondary' : 'primary'}
+                  >
                     {panel.title}
                   </Heading>
                   <HStack gap={1} vAlign="center">

@@ -12,35 +12,45 @@ const cutOff = (root: Locator) =>
       .map(e => (e as HTMLElement).innerText),
   );
 
-test.describe('a row shows the next step and keeps the rest behind Fler val', () => {
+test.describe('a row shows the next step and Lägg till i samtalet; the rest is on the open card', () => {
   test.use({ viewport: desktop });
 
-  test('the keyboard reaches every action a row tucks away, its time picker included', async ({ page, api: _ }) => {
-    await open(page, '/');
-    const row = page.locator('#thread-omtanke');
-    await expect(row.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
-    await expect(row.getByRole('button', { name: 'Se mönstret' })).toHaveCount(0);
-    await expect(row.getByRole('button', { name: 'Inte nu', exact: true })).toHaveCount(0);
-    await row.getByRole('button', { name: 'Fler val' }).focus();
-    await page.keyboard.press('Enter');
-    for (const name of ['Se mönstret', 'Lägg till i samtalet', 'Avfärda · inte aktuellt', 'Varför ser jag detta?'])
-      await expect(page.getByRole('menuitem', { name })).toBeVisible();
-    await page.getByRole('menuitem', { name: 'Inte nu' }).focus();
-    await page.keyboard.press('ArrowRight');
-    await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toBeVisible();
-    await page.keyboard.press('Escape');
-    await page.keyboard.press('Escape');
-    await expect(page.getByRole('menuitem', { name: 'Inte nu' })).toHaveCount(0);
-    await expect(row.getByRole('button', { name: 'Fler val' })).toBeFocused();
-  });
-
-  test('an open card has one time action: Inte nu in view, and no second list under Fler val', async ({
+  test('a row has its two buttons, and the keyboard reaches everything else on its card, the time picker included', async ({
     page,
     api: _,
   }) => {
-    // The row opened as a card, in the panel (D50).
+    await open(page, '/');
+    const row = page.locator('#thread-omtanke');
+    await expect(row.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
+    await expect(row.getByRole('button', { name: 'Lägg till i samtalet' })).toBeVisible();
+    await expect(row.getByRole('button', { name: 'Se mönstret' })).toHaveCount(0);
+    await expect(row.getByRole('button', { name: 'Inte nu', exact: true })).toHaveCount(0);
+    await expect(row.getByRole('button', { name: 'Fler val' })).toHaveCount(0);
+    // The title is the way to the card (artboard E), where the rest stands: at this width the card is over the page.
+    await row.getByRole('link', { name: 'Omtankesamtal med Anna Lindqvist', exact: true }).focus();
+    await page.keyboard.press('Enter');
+    const card = page.getByRole('dialog', { name: 'Kort', exact: true });
+    await expect(card.getByRole('button', { name: 'Se mönstret' })).toBeVisible();
+    await expect(card.getByRole('button', { name: 'Lägg till i samtalet' })).toBeVisible();
+    await card.getByRole('button', { name: 'Fler val' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('menuitem', { name: 'Avfärda · inte aktuellt' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await card.getByRole('button', { name: 'Inte nu', exact: true }).focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toHaveCount(0);
+    await expect(card.getByRole('button', { name: 'Inte nu', exact: true })).toBeFocused();
+  });
+
+  test('an open card has one time action: Inte nu in its header, and no second list under Fler val', async ({
+    page,
+    api: _,
+  }) => {
+    // The row opened as a card, in the panel (D50); over the page here, where the panel's header is the drawer's top.
     await open(page, '/?card=fakturor');
-    const card = page.getByRole('article', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' });
+    const card = page.getByRole('dialog', { name: 'Kort', exact: true });
     await expect(card.getByRole('button', { name: 'Inte nu', exact: true })).toBeVisible();
     await expect(card.getByRole('button', { name: 'Påminn mig' })).toHaveCount(0);
     await card.getByRole('button', { name: 'Fler val' }).click();
@@ -54,13 +64,12 @@ test.describe('a row shows the next step and keeps the rest behind Fler val', ()
     ];
     await open(page, '/?tab=waiting');
     const card = page.locator('#thread-tillbud');
-    await expect(card).toContainText('Väntar på skyddsombudet · påminner dig');
+    await expect(card).toContainText('väntar på skyddsombudet · påminner dig');
     await expect(card.getByRole('button', { name: 'Inte nu', exact: true })).toHaveCount(0);
     await card.getByRole('button', { name: 'Påminn mig' }).click();
     await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toBeVisible();
     await page.keyboard.press('Escape');
-    await card.getByRole('button', { name: 'Fler val' }).click();
-    await expect(page.getByRole('menuitem', { name: /Påminn mig|Inte nu/ })).toHaveCount(0);
+    await expect(card.getByRole('button', { name: 'Fler val' })).toHaveCount(0);
   });
 
   test('the open proposal has the same picker as every other card', async ({ page, api: _ }) => {
@@ -75,25 +84,22 @@ test.describe('a row shows the next step and keeps the rest behind Fler val', ()
     await expect(page.getByRole('menuitem', { name: /^Skriv själv/ })).toBeVisible();
   });
 
-  test('Skriv själv opens its dialog from the sub-menu and the focus lands in the field', async ({ page, api: _ }) => {
-    await open(page, '/');
-    await page.locator('#thread-omtanke').getByRole('button', { name: 'Fler val' }).click();
-    await page.getByRole('menuitem', { name: 'Inte nu' }).click();
+  test('Skriv själv opens its dialog from the picker and the focus lands in the field', async ({ page, api: _ }) => {
+    await open(page, '/?card=omtanke');
+    await page.getByRole('button', { name: 'Inte nu', exact: true }).first().click();
     await page.getByRole('menuitem', { name: /^Skriv själv/ }).click();
     const dialog = page.getByRole('dialog', { name: 'När ska jag ta upp det igen?' });
     await expect(dialog.getByRole('textbox', { name: 'När?' })).toBeVisible();
     await expect.poll(() => dialog.evaluate(d => d.contains(document.activeElement))).toBe(true);
   });
 
-  test('a card put in the box says so in the menu and on its line', async ({ page, api: _ }) => {
+  test('a card put in the box says so on its button and on its line', async ({ page, api: _ }) => {
     await open(page, '/');
     const row = page.locator('#thread-omtanke');
-    await row.getByRole('button', { name: 'Fler val' }).click();
-    await page.getByRole('menuitem', { name: 'Lägg till i samtalet' }).click();
-    await expect(row).toContainText('I samtalet');
+    await row.getByRole('button', { name: 'Lägg till i samtalet' }).click();
+    await expect(row).toContainText('i samtalet');
     await expect(composer(page)).toBeVisible();
-    await row.getByRole('button', { name: 'Fler val' }).click();
-    await expect(page.getByRole('menuitem', { name: 'I samtalet' })).toHaveAttribute('aria-disabled', 'true');
+    await expect(row.getByRole('button', { name: 'I samtalet' })).toBeDisabled();
   });
 });
 
@@ -114,15 +120,7 @@ test.describe('the page says one thing at a time', () => {
         .map(button => button.textContent?.trim()),
     );
     // The box's send button is an icon with no text, and rests dimmed until something is written.
-    expect(filled.filter(Boolean)).toEqual(['Attestera · 2']);
-  });
-
-  test('how often the assistant interrupts is one press away, from the keyboard too', async ({ page, api: _ }) => {
-    await open(page, '/');
-    await page.getByRole('button', { name: 'Så här hör jag av mig' }).focus();
-    await expect(page.getByRole('tooltip')).toContainText('Jag stör högst');
-    await page.keyboard.press('Tab');
-    await expect(page.getByRole('tooltip')).toHaveCount(0);
+    expect(filled.filter(Boolean)).toEqual(['Attestera 2']);
   });
 });
 
@@ -208,7 +206,7 @@ test.describe('nothing is cut off', () => {
       await page.setViewportSize({ width, height: 900 });
       await open(page, '/');
       await expect(
-        page.locator('#thread-omtanke').getByRole('button', { name: 'Omtankesamtal med Anna Lindqvist' }),
+        page.locator('#thread-omtanke').getByRole('link', { name: 'Omtankesamtal med Anna Lindqvist' }),
       ).toBeVisible();
       expect(await cutOff(page.getByRole('main'))).toEqual([]);
     });

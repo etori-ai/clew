@@ -1,19 +1,32 @@
 import type { Page } from '@playwright/test';
-import { answer, composer, desktop, expect, focused, hiddenFocusStops, open, snoozeFirst, test } from './support';
+import {
+  answer,
+  composer,
+  desktop,
+  expect,
+  focused,
+  hiddenFocusStops,
+  open,
+  quietDay,
+  snoozeFirst,
+  test,
+} from './support';
 
 test.use({ viewport: desktop });
 
 /**
- * Inte nu on the first row, from the keyboard (D48): Fler val, then the arrow into the row's sub-menu. The menu opens
- * with a transition, so the arrow is pressed until the sub-menu's rows are there.
+ * Inte nu on the first row, from the keyboard (artboards A and E): the row's title opens its card beside the column, where
+ * Inte nu stands in the panel's header. At 1440 px the panel fits beside the column.
  */
 async function openSnoozeRows(page: Page) {
-  await page.getByRole('main').getByRole('button', { name: 'Fler val' }).first().focus();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole('main').getByRole('listitem').getByRole('link').first().focus();
   await page.keyboard.press('Enter');
-  await expect(async () => {
-    await page.getByRole('menuitem', { name: 'Inte nu' }).press('ArrowRight');
-    await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toBeVisible({ timeout: 1_000 });
-  }).toPass();
+  const panel = page.getByRole('complementary', { name: 'Kort' });
+  await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
+  await panel.getByRole('button', { name: 'Inte nu', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toBeVisible();
 }
 
 test.describe('2.4.7 focus visible', () => {
@@ -29,10 +42,8 @@ test.describe('2.4.7 focus visible', () => {
     await openSnoozeRows(page);
     await page.getByRole('menuitem', { name: /^I morgon/ }).focus();
     await page.keyboard.press('Enter');
-    // The next thread is a row (D31): its title button takes the focus, and the ring is on the button.
-    const title = page
-      .locator('#thread-omtanke')
-      .getByRole('button', { name: 'Omtankesamtal med Anna Lindqvist', exact: true });
+    // The next thread is a row (D31): its title link takes the focus, and the ring is on the link.
+    const title = page.locator('#thread-samtal').getByRole('link', { name: 'Planera utvecklingssamtal', exact: true });
     await expect(title).toBeFocused();
     expect(
       await title.evaluate(
@@ -45,22 +56,22 @@ test.describe('2.4.7 focus visible', () => {
 test.describe('2.4.3 focus order', () => {
   test('regaining the window keeps focus where it was', async ({ page, api }) => {
     await open(page, '/');
-    const button = page.getByRole('main').getByRole('button', { name: 'Fler val' }).first();
+    const button = page.getByRole('main').getByRole('button', { name: 'Lägg till i samtalet' }).first();
     await button.focus();
     api.sessionDelay = 200;
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
     await page.waitForTimeout(350);
-    expect((await focused(page)).text).toBe('Fler val');
+    expect((await focused(page)).text).toBe('Lägg till i samtalet');
   });
 
-  test('a row says its card is closed, opens it in the panel, and gets the focus back when the panel closes', async ({
+  test('a row leads to its card in the panel, and gets the focus back when the panel closes', async ({
     page,
     api: _,
   }) => {
     await open(page, '/');
     const title = 'Omtankesamtal med Anna Lindqvist';
-    const expand = page.getByRole('button', { name: title, exact: true });
-    await expect(expand).toHaveAttribute('aria-expanded', 'false');
+    const expand = page.getByRole('link', { name: title, exact: true });
+    await expect(page.locator('#thread-omtanke')).not.toHaveAttribute('aria-current', 'true');
     await expand.focus();
     await page.keyboard.press('Enter');
     // At this width the panel is over the page: a dialog named for what it holds, with the focus in it.
@@ -71,7 +82,7 @@ test.describe('2.4.3 focus order', () => {
     await page.keyboard.press('Escape');
     await expect(panel).toBeHidden();
     await expect(expand).toBeFocused();
-    await expect(expand).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('#thread-omtanke')).not.toHaveAttribute('aria-current', 'true');
   });
 
   test('Inte nu moves focus to the next card instead of losing it', async ({ page, api: _ }) => {
@@ -81,12 +92,14 @@ test.describe('2.4.3 focus order', () => {
     await page.keyboard.press('Enter');
     await expect(page.getByRole('region', { name: 'Aviseringar' })).toBeVisible();
     await expect(
-      page.locator('#thread-omtanke').getByRole('button', { name: 'Omtankesamtal med Anna Lindqvist', exact: true }),
+      page.locator('#thread-samtal').getByRole('link', { name: 'Planera utvecklingssamtal', exact: true }),
     ).toBeFocused();
   });
 
   test('Ångra in the toast stays available and reachable by keyboard', async ({ page, api: _ }) => {
     await page.clock.install({ time: new Date('2026-11-04T08:00:00.000Z') });
+    // At 1440 px the card stands beside the column, so the whole page stays reachable after Inte nu.
+    await page.setViewportSize({ width: 1440, height: 900 });
     await open(page, '/');
     await snoozeFirst(page);
     const undo = page.getByRole('button', { name: 'Ångra' });
@@ -100,10 +113,12 @@ test.describe('2.4.3 focus order', () => {
     ).toBe(true);
     await undo.focus();
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('button', { name: 'Attestera · 2' })).toBeVisible();
+    // The card is back beside the column, where its next step is drawn in full.
+    await expect(page.getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
   });
 
-  test('the side panel can be closed with a button and hands focus back', async ({ page, api: _ }) => {
+  test('the side panel can be closed with a button and hands focus back', async ({ page, api }) => {
+    quietDay(api);
     await open(page, '/');
     await page.getByRole('group', { name: 'Områden' }).getByRole('button', { name: 'Personal' }).click();
     const trigger = page
@@ -159,12 +174,9 @@ test.describe('D29 the Inte nu picker', () => {
     page,
     api: _,
   }) => {
-    // The open card keeps Inte nu in view; in a row it is behind Fler val.
+    // The open card's one time action stands in the panel's header (artboard E); a row has only its next step.
     await open(page, '/?card=fakturor');
-    await page
-      .getByRole('article', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' })
-      .getByRole('button', { name: 'Inte nu', exact: true })
-      .click();
+    await page.getByRole('button', { name: 'Inte nu', exact: true }).first().click();
     const menu = page.getByRole('menu');
     await expect(menu).toBeVisible();
     for (const row of [

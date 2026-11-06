@@ -6,43 +6,57 @@ const dot = {
   warn: { variant: 'warning', label: 'Bevaka' },
   alert: { variant: 'error', label: 'Behöver åtgärd' },
 } as const;
-type Props = { figures: Figure[]; unitLabel: string; compact?: boolean; onOpen: (figure: Figure) => void };
+type Props = {
+  figures: Figure[];
+  unitLabel: string;
+  /** Two tiles a row: a phone, or the column beside an open panel (artboard E). */
+  compact?: boolean;
+  onOpen: (figure: Figure) => void;
+};
 
-/** "Läget": always the same four figures, every tile a button that opens the thread behind it. Status is a dot with its word beside it, as StatusDot asks: never a colour alone (1.4.1). */
+/**
+ * "Läget" (artboard A): always the same four figures, every tile a button that asks about the figure. The tile is the
+ * label with its status dot at the end of the line, the value, and one line with the status word and the comparison,
+ * or a bar where the figure is a count towards a target. The dot carries its word for a reader; the line carries it
+ * for the eye, so a colour is never alone (1.4.1).
+ */
 export function Lage({ figures, unitLabel, compact = false, onOpen }: Props) {
   return (
     <VStack gap={2} as="section" aria-label="Läget i din verksamhet">
-      <Heading level={2}>Läget · {unitLabel}</Heading>
-      <Grid columns={compact ? { minWidth: 120, max: 2 } : { minWidth: 160, max: 4 }} gap={2}>
+      <HStack justify="between" vAlign="center" gap={3} wrap="wrap">
+        <Heading level={3} accessibilityLevel={2}>
+          Läget · {unitLabel}
+        </Heading>
+        {!compact && <Text type="supporting">Alltid samma fyra · varje ruta öppnar sin tråd</Text>}
+      </HStack>
+      <Grid columns={compact ? { minWidth: 140, max: 2 } : { minWidth: 160, max: 4 }} gap={3}>
         {figures.map(f => (
           <ClickableCard
             key={f.id}
             label={`${f.label}: ${f.value}, ${f.comparison}. ${dot[f.tone].label}`}
             onClick={() => onOpen(f)}
-            padding={3}
+            padding={4}
           >
-            <VStack gap={1}>
+            <VStack gap={1.5}>
               <HStack gap={2} justify="between" vAlign="center">
                 <Text type="supporting">{f.label}</Text>
+                <StatusDot variant={dot[f.tone].variant} label={dot[f.tone].label} />
               </HStack>
-              <Text type="large" weight="semibold" hasTabularNumbers>
+              <Text size="2xl" weight="semibold" hasTabularNumbers>
                 {f.value}
               </Text>
-              <HStack gap={1} vAlign="center">
-                <StatusDot variant={dot[f.tone].variant} label={dot[f.tone].label} />
-                <Text type="supporting" aria-hidden="true">
-                  {dot[f.tone].label}
-                </Text>
-              </HStack>
-              {!compact && <Text type="supporting">{f.comparison}</Text>}
-              {!compact && f.progress && (
+              {f.progress ? (
                 <ProgressBar
                   label={`${f.label}: ${f.progress.value} av ${f.progress.max}`}
                   isLabelHidden
                   value={f.progress.value}
                   max={f.progress.max}
-                  variant={f.tone === 'ok' ? 'success' : 'accent'}
+                  variant="accent"
                 />
+              ) : (
+                <Text type="supporting" aria-hidden="true">
+                  {dot[f.tone].label} · {f.comparison}
+                </Text>
               )}
             </VStack>
           </ClickableCard>

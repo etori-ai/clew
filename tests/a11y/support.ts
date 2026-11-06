@@ -513,15 +513,25 @@ export const composer = (page: Page) => page.getByRole('combobox', { name: /^(Va
 /** A heading by the level assistive technology gets: `aria-level` when Astryx separates it from the visual level. */
 /** "Inte nu" on the first card, the way a person does it (D29): open the picker, choose "I morgon". */
 export async function snoozeFirst(page: Page) {
-  // A card keeps Inte nu in view (a phone draws cards); a row keeps it behind Fler val (D48), and Att göra's list is rows (D50).
+  // A card keeps Inte nu in view (a phone draws cards); a row has only its next step (artboard A), so its card is opened beside the column first, where Inte nu stands in the panel's header (artboard E).
   const button = page.getByRole('main').getByRole('button', { name: 'Inte nu', exact: true }).first();
   if (await button.isVisible()) await button.click();
   else {
-    await page.getByRole('main').getByRole('button', { name: 'Fler val' }).first().click();
-    await page.getByRole('menuitem', { name: 'Inte nu' }).click();
+    await page.getByRole('main').getByRole('listitem').getByRole('link').first().click();
+    await page.getByRole('button', { name: 'Inte nu', exact: true }).first().click();
   }
   await page.getByRole('menuitem', { name: /^I morgon/ }).click();
+  // Over the page the card is a drawer: it is let go of, so the toast and the page are reachable again.
+  const drawer = page.getByRole('dialog', { name: 'Kort', exact: true });
+  if (await drawer.isVisible()) {
+    await drawer.getByRole('button', { name: 'Stäng', exact: true }).click();
+    await expect(drawer).toBeHidden();
+  }
 }
+/** The quiet day (artboard B): nothing needs the person, so the areas with what they can start are the main content. */
+export const quietDay = (api: MockApi) => {
+  api.threads = api.threads.filter(t => t.waitingOn || t.state !== 'open' || t.snoozedUntil);
+};
 export const heading = (page: Page, level: number, name: string) =>
   page.locator(`h${level}:not([aria-level]), [aria-level="${level}"]`).filter({ hasText: name });
 export const announcements = (page: Page) =>

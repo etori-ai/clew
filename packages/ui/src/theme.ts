@@ -12,9 +12,17 @@ import { sundsvallPalette as palette, type Branding } from './branding';
 const clewBaseTheme = defineTheme({
   name: 'clew-neutral',
   extends: neutralTheme,
-  typography: { scale: { base: 15, ratio: 1.2 } },
-  // The side panel opens over a page that is still its context: half of Astryx's scrim, which keeps a dialog set apart without blacking the page out.
-  tokens: { '--color-overlay': ['#01122833', '#1111124D'] },
+  // The canvas's artboards are drawn at 14 px body text (D62): Astryx's own scale setting, base 14, ratio 1.2.
+  typography: { scale: { base: 14, ratio: 1.2 } },
+  tokens: {
+    // The side panel opens over a page that is still its context: half of Astryx's scrim, which keeps a dialog set apart without blacking the page out.
+    '--color-overlay': ['#01122833', '#1111124D'],
+    // The tinted cards of the canvas (D62): what is due today on a faint red with a red border, Lugnt läge on a faint green. Astryx's own tints are a strong wash; in the dark they keep Neutral's values.
+    '--color-background-red': ['#fffafa', '#5b2b28'],
+    '--color-border-red': ['#fca5a5', '#fa6762'],
+    '--color-background-green': ['#f6fbf8', '#2b422b'],
+    '--color-border-green': ['#bfe5cf', '#6ab26b'],
+  },
   // Astryx's own control sizes are drawn for a mouse. Under a finger every size reaches HANDOVER §6's 44 px (WCAG 2.5.5).
   // By the pointer, not the width: a narrow window on a computer keeps its compact controls, a tablet does not.
   adaptations: {

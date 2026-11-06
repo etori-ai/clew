@@ -12,7 +12,6 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   HStack,
-  Kbd,
   Link,
   List,
   ListItem,
@@ -206,9 +205,8 @@ export function Composer({
           ? 'Nytt samtal: skriv eller säg vad du vill göra …'
           : 'Skriv eller säg vad du vill göra …';
   const plain = talk.value.replace(/@\[[^\]]+\]/g, '').trim();
+  const aboutChips = (about?.chips ?? []).filter(c => !talk.chips.some(t => t.ref === c.ref));
   const mobile = useMediaQuery(mobileQuery);
-  const pointer = useMediaQuery('(pointer: fine)');
-  const shortcut = !mobile && pointer ? <Kbd keys="mod+k" /> : null;
   // The scope line (H3.3): in a conversation the conversation; on Hem with a card open beside it, the card (D53, artboard E).
   const scope =
     place === 'conversation' ? (
@@ -239,8 +237,15 @@ export function Composer({
       density={place === 'landing' ? 'balanced' : 'compact'}
       placeholder={placeholder}
       drawer={
-        talk.chips.length > 0 ? (
-          <ChatComposerDrawer count={talk.chips.length} label="Objekt i samtalet">
+        talk.chips.length > 0 || aboutChips.length > 0 ? (
+          <ChatComposerDrawer
+            {...(talk.chips.length > 0 ? { count: talk.chips.length + aboutChips.length } : {})}
+            label="Objekt i samtalet"
+          >
+            {/* What the page's box asks about (artboard E): the open card as a token, let go of with "Ny fråga i stället". */}
+            {aboutChips.map(c => (
+              <Token key={c.ref} label={c.label} />
+            ))}
             {talk.chips.map(c => (
               <Token key={c.ref} label={c.label} onRemove={() => talk.removeChip(c.ref)} data-chip-remove="" />
             ))}
@@ -264,18 +269,15 @@ export function Composer({
       headerActions={scope}
       headerContext={
         place === 'conversation' ? (
-          <HStack gap={2} vAlign="center">
-            <Link
-              href="/"
-              onClick={e => {
-                e.preventDefault();
-                talk.newConversation();
-              }}
-            >
-              Nytt samtal i stället
-            </Link>
-            {shortcut}
-          </HStack>
+          <Link
+            href="/"
+            onClick={e => {
+              e.preventDefault();
+              talk.newConversation();
+            }}
+          >
+            Ny fråga i stället
+          </Link>
         ) : place === 'landing' && about?.clearHref ? (
           <Link href={about.clearHref}>Ny fråga i stället</Link>
         ) : undefined
