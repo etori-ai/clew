@@ -3,9 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { SignJWT } from 'jose';
 import { assertionFor, testJwks } from '../connector-authority';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
-import { actorOf, type Actor } from '../../packages/connectors/src/index';
-import { memoryState } from '../../packages/connectors/src/memory-state';
-import { financeConnector } from '../../packages/connectors/src/mock/finance';
+import { actorOf, type Actor, type Connector } from '../../packages/connectors/src/index';
 import { checkConnector } from '../../packages/connectors/src/check';
 import { fetchManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import type { ConnectorManifest } from '../../packages/connectors/src/protocol';
@@ -43,10 +41,30 @@ const SECRET = 'test-secret-test-secret';
 const T0 = '2026-11-04T07:00:00.000Z';
 const sign = (secret: string, aud: string) => assertionFor(aud, secret);
 
+/** A bundled connector of this Clew, the economy system's shape in miniature: the governance rows treat it as they treat the core. */
+const bundledFinance = (): Connector => ({
+  id: 'finance',
+  kind: 'passthrough',
+  source: 'Ekonomisystemet',
+  areas: [{ id: 'budget', title: 'Budget', roles: ['manager'], standing: ['finance.invoices'], schedules: [] }],
+  capabilities: [
+    {
+      name: 'finance.invoices',
+      kind: 'read',
+      title: 'Fakturor att attestera',
+      description: 'Fakturor som väntar på attest.',
+      model: true,
+      input: { type: 'object', properties: {}, additionalProperties: false } as never,
+      output: { type: 'object' } as never,
+      scope: actor => actor.role === 'manager' && actor.id === 'hillevi',
+      run: async () => ({ rows: [] }),
+    },
+  ],
+});
+
 function world(options: { helloUp?: boolean } = {}) {
   const registry = new Registry();
-  const state = memoryState();
-  registry.register(financeConnector(state));
+  registry.register(bundledFinance());
   const store = memoryConnectorStore();
   let now = Date.parse(T0);
   const clock = () => new Date(now);

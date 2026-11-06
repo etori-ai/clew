@@ -252,22 +252,9 @@ export const jobs = pgTable(
   ],
 );
 
-// State of the mock connectors (hr, finance, incidents, communication). This table *is* the synthetic source
-// system, so that approvals and bookings survive a restart; `module` is the mock's id. Real adapters never write here.
-export const moduleState = pgTable(
-  'module_state',
-  {
-    module: text('module').notNull(),
-    key: text('key').notNull(),
-    value: jsonb('value').$type<unknown>().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  t => [primaryKey({ columns: [t.module, t.key] })],
-);
-
 // Connectors registered by an administrator (D23). One row per connector service; the secret is a sealed envelope
 // (auth-crypto, purpose `connector:secret:<id>`), the manifest is the last valid one so the page works while the
-// service is down. A bundled connector (Clew's own process: people, the calendar, the mocks until they are lifted) gets a
+// service is down. A bundled connector (Clew's own process: people, the calendar, search; D61) gets a
 // row at boot with `bundled` true and no url or secret, so an audience and the switches govern it the same way.
 export type { ConnectorAudience, ConnectorHealth };
 export const connectors = pgTable(

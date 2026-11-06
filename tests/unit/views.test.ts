@@ -20,11 +20,7 @@ import {
   type ToolSchemaInfo,
 } from '../../apps/server/src/assistant/model';
 import { matchCapability, searchAnswer, viewAnswer, viewInput } from '../../apps/server/src/assistant/router';
-import { memoryState } from '../../packages/connectors/src/memory-state';
-import { hrConnector } from '../../packages/connectors/src/mock/hr';
-import { financeConnector } from '../../packages/connectors/src/mock/finance';
-import { incidentsConnector } from '../../packages/connectors/src/mock/incidents';
-import { communicationConnector } from '../../packages/connectors/src/mock/communication';
+import { fixtureConnectors } from '../fixture-connectors';
 
 /**
  * Declared views (D38): the rules a declaration keeps, in the manifest loader and in the registry; what the model is
@@ -352,14 +348,11 @@ describe('a person found by the search is counted, never named, in what Clew sto
 });
 
 /**
- * The bundled mocks declare the views a real connector would (D38, 2026-11-06): a question answered by one of these reads
+ * The fixture connectors declare their views (D38): a question answered by one of these reads
  * is drawn as the rows or the record, never as a sentence about them, and health data stays out of the model.
  */
-describe('the mocks declare their views', () => {
-  const bundled = () => {
-    const state = memoryState();
-    return [hrConnector(state), financeConnector(state), incidentsConnector(state), communicationConnector(state)];
-  };
+describe('the fixture connectors declare their views', () => {
+  const bundled = () => fixtureConnectors({ only: ['hr', 'finance', 'incidents', 'communication'] }).connectors;
   const declared = [
     'finance.invoices',
     'finance.budget',

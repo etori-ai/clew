@@ -2,7 +2,7 @@ import type { Connector } from '@clew/connectors';
 import type { ConnectorManifest } from '@clew/connectors/protocol';
 
 /**
- * A bundled connector (people, the calendar, the mocks) described in the manifest's shape, so the administration page
+ * A bundled connector (people, the calendar, search) described in the manifest's shape, so the administration page
  * shows it the way it shows a remote one (D23). Schemas and function scopes do not serialise; the manifest form carries
  * `{}` and an empty scope for them, and the page says "varierar" where a scope is code.
  */

@@ -70,6 +70,8 @@ export const hiddenFields = new Set([
   'ref',
   'url',
   'undoCapability',
+  'undoMinutes',
+  'undoInput',
   'link',
   'connector',
   'score',

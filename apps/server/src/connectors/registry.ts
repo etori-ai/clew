@@ -1,14 +1,7 @@
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import type { AuthenticatedContext } from '@clew/contracts';
-import { postgresState } from '@clew/db/state';
 import { actorOf, CapabilityError, Registry } from '@clew/connectors';
-import { hrConnector } from '@clew/connectors/mock/hr';
-import { financeConnector } from '@clew/connectors/mock/finance';
-import { incidentsConnector } from '@clew/connectors/mock/incidents';
-import { communicationConnector } from '@clew/connectors/mock/communication';
-import { payrollConnector } from '@clew/connectors/mock/payroll';
-import { timesheetConnector } from '@clew/connectors/mock/timesheet';
 import { InputError } from '../context';
 import { calendarConnector } from '../modules/calendar/connector';
 import { calendar, events } from '../composition/calendar';
@@ -30,17 +23,8 @@ export const registry = new Registry({
 const search = searchUsecases({ sources: actor => registry.searchSources(actor), clock });
 /** The card an answer becomes is the stream's use case; the composition root fills this slot once the stream is built over the registry. */
 export const answerCards: AnswerCards = {};
-const bundled = [
-  hrConnector(postgresState),
-  financeConnector(postgresState),
-  incidentsConnector(postgresState),
-  communicationConnector(postgresState),
-  payrollConnector(postgresState),
-  timesheetConnector(postgresState),
-  calendarConnector(calendar, events),
-  peopleConnector(),
-  searchConnector(search, answerCards),
-];
+// Clew's core only (D61): every other system, the development fixtures included, is a connector row (D21, D23).
+const bundled = [calendarConnector(calendar, events), peopleConnector(), searchConnector(search, answerCards)];
 for (const m of bundled) registry.register({ ...m, uses: ['*'] });
 /** The connectors that live in this process: they get a `connector` row at boot so an administrator can govern them too (D23). */
 export const bundledIds = bundled.map(m => m.id);

@@ -2,10 +2,7 @@ import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext, Thread } from '../../packages/contracts/src/index';
 import { actorOf, type Connector } from '../../packages/connectors/src/index';
-import { memoryState } from '../../packages/connectors/src/memory-state';
-import { hrConnector } from '../../packages/connectors/src/mock/hr';
-import { financeConnector } from '../../packages/connectors/src/mock/finance';
-import { incidentsConnector } from '../../packages/connectors/src/mock/incidents';
+import { fixtureConnectors } from '../fixture-connectors';
 import { memoryThreadStore, memoryTimers } from '../../apps/server/src/threads/adapters/memory';
 import { ATTENTION_BUDGET, threadUsecases, type ThreadDeps } from '../../apps/server/src/threads/usecases/cards';
 import { reminderUsecases } from '../../apps/server/src/threads/usecases/reminders';
@@ -13,8 +10,8 @@ import { searchConnector } from '../../apps/server/src/modules/search/connector'
 import { searchUsecases } from '../../apps/server/src/modules/search/usecases';
 
 /**
- * The stream end to end without a server, a database or a timer service (D25): real mock connectors behind the real
- * registry, the memory store, a clock the test owns. What a person does on a card, what the store ends up holding,
+ * The stream end to end without a server, a database or a timer service (D25): the fixture connectors over the
+ * protocol behind the real registry, the memory store, a clock the test owns. What a person does on a card, what the store ends up holding,
  * and what the audit log says about it.
  */
 const persona = (id: string, role: 'manager' | 'employee'): AuthenticatedContext => ({
@@ -50,15 +47,12 @@ function fakeClock(start = T0) {
   });
 }
 function world() {
-  const state = memoryState(),
-    registry = new Registry();
+  const registry = new Registry();
   registry.register({ id: 'calendar', kind: 'core', source: 'Kalendern', areas: [], capabilities: [] });
   const store = memoryThreadStore(),
     clock = fakeClock();
   for (const m of [
-    hrConnector(state),
-    financeConnector(state),
-    incidentsConnector(state),
+    ...fixtureConnectors({ only: ['hr', 'finance', 'incidents'], clock }).connectors,
     searchConnector(searchUsecases({ sources: a => registry.searchSources(a), clock })),
   ])
     registry.register(m);
@@ -94,7 +88,7 @@ function world() {
   };
   const threads = threadUsecases(deps);
   const reminders = reminderUsecases({ store, clock, authorized: async () => true });
-  return { state, registry, store, clock, calendar, deps, threads, reminders, timers };
+  return { registry, store, clock, calendar, deps, threads, reminders, timers };
 }
 const actions = (store: ReturnType<typeof memoryThreadStore>, id: string) =>
   store.audit.filter(e => e.subject === 'thread:' + id).map(e => e.action);

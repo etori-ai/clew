@@ -2,10 +2,7 @@ import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import type { Thread } from '../../packages/contracts/src/index';
 import { type Actor } from '../../packages/connectors/src/index';
-import { memoryState } from '../../packages/connectors/src/memory-state';
-import { hrConnector } from '../../packages/connectors/src/mock/hr';
-import { financeConnector } from '../../packages/connectors/src/mock/finance';
-import { incidentsConnector } from '../../packages/connectors/src/mock/incidents';
+import { fixtureConnectors } from '../fixture-connectors';
 import { draftSelection, parseVerb, verbsFor } from '../../apps/server/src/assistant/verbs';
 import { matchCapability, nearest, templatedAnswer } from '../../apps/server/src/assistant/router';
 import {
@@ -37,9 +34,8 @@ const hassan: Actor = {
   role: 'employee',
 };
 const registry = () => {
-  const state = memoryState();
   const r = new Registry();
-  for (const m of [hrConnector(state), financeConnector(state), incidentsConnector(state)]) r.register(m);
+  for (const m of fixtureConnectors({ only: ['hr', 'finance', 'incidents'] }).connectors) r.register(m);
   return r;
 };
 const now = '2026-11-03T07:40:00.000Z';

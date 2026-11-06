@@ -1,11 +1,7 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import { receipt, type Actor } from '../../packages/connectors/src/index';
-import { memoryState } from '../../packages/connectors/src/memory-state';
-import { hrConnector, rehabCandidates } from '../../packages/connectors/src/mock/hr';
-import { financeConnector } from '../../packages/connectors/src/mock/finance';
-import { incidentsConnector } from '../../packages/connectors/src/mock/incidents';
-import { communicationConnector } from '../../packages/connectors/src/mock/communication';
+import { fixtureConnectors } from '../fixture-connectors';
 
 const hillevi: Actor = {
   id: 'hillevi',
@@ -21,17 +17,12 @@ const hassan: Actor = {
   unitLabel: 'Skönsmons skola',
   role: 'employee',
 };
+/** The four fixture connectors of the first scenarios, over the protocol on their memory stores. */
 const registry = () => {
-  const state = memoryState();
+  const { connectors, states } = fixtureConnectors({ only: ['hr', 'finance', 'incidents', 'communication'] });
   const r = new Registry();
-  for (const m of [
-    hrConnector(state),
-    financeConnector(state),
-    incidentsConnector(state),
-    communicationConnector(state),
-  ])
-    r.register(m);
-  return { r, state };
+  for (const m of connectors) r.register(m);
+  return { r, states };
 };
 
 describe('registry', () => {
@@ -75,17 +66,16 @@ describe('registry', () => {
     const { r } = registry();
     const manager = await r.areas(hillevi),
       employee = await r.areas(hassan);
-    expect(manager.map(a => a.id)).toEqual(['medarbetare', 'budget', 'arbetsmiljo', 'viktigt-nu']);
-    expect(employee.map(a => a.id)).toEqual(['mitt-pass', 'viktigt-nu']);
+    expect(manager.map(a => a.id)).toEqual(['employees', 'budget', 'work-environment', 'important-now']);
+    expect(employee.map(a => a.id)).toEqual(['my-shift', 'important-now']);
     expect(manager[0]!.figure?.label).toMatch(/Frånvaro/);
     expect(manager[0]!.standing.map(s => s.capability)).toContain('hr.whoIsOn');
     // The icon a connector names for its area (D41) comes with the area, for the button under the box.
     expect(manager.map(a => a.icon)).toEqual(['people', 'chart', 'document', 'bell']);
   });
 });
-describe('mock scans push threads a person can act on, and the state survives in the store', () => {
+describe('the fixture connectors push cards a person can act on, and the state survives in the source', () => {
   test('hr finds the rehab candidate and the pending leave requests', async () => {
-    expect(rehabCandidates('unit-skola', '2026-11-03').map(c => c.employee.name)).toEqual(['Anna Lindqvist']);
     const { r } = registry();
     const drafts = await r.scan(hillevi);
     const topics = drafts.map(d => d.topic);
@@ -97,7 +87,7 @@ describe('mock scans push threads a person can act on, and the state survives in
     expect(drafts.filter(d => d.actions.filter(a => a.role === 'primary').length > 1)).toHaveLength(0);
   });
   test('approving invoices answers row by row, with one unknown, and is undoable', async () => {
-    const { r, state } = registry();
+    const { r, states } = registry();
     const [draft] = (await r.scan(hillevi)).filter(d => d.topic.startsWith('finance:'));
     const refs = draft!.items!.map(i => i.ref);
     const result = await r.run<{ rows: { outcome: string }[]; undoCapability?: string }>(hillevi, 'finance.approve', {
@@ -108,12 +98,12 @@ describe('mock scans push threads a person can act on, and the state survives in
     expect((await r.scan(hillevi)).filter(d => d.topic.startsWith('finance:'))[0]!.items).toHaveLength(1);
     await r.run(hillevi, 'finance.unapprove', { refs });
     expect((await r.scan(hillevi)).filter(d => d.topic.startsWith('finance:'))[0]!.items).toHaveLength(3);
-    expect(Object.keys(state.dump())).toContain('finance:approved');
+    expect(states.finance!.keys('approved')).toEqual(['approved']);
   });
   test('an employee sees the delegation and the waiting leave, never the manager cards', async () => {
     const { r } = registry();
     const drafts = await r.scan(hassan);
-    expect(drafts.map(d => d.area)).not.toContain('medarbetare');
+    expect(drafts.map(d => d.area)).not.toContain('employees');
     expect(drafts.find(d => d.topic.startsWith('hr:delegation:'))?.actions[0]?.capability).toBe('hr.renewDelegation');
     expect(drafts.find(d => d.topic.startsWith('hr:leave-waiting:'))?.waitingOn).toBe('din chef');
     await r.run(hassan, 'hr.renewDelegation', { refs: ['hr:deleg:301'] });
@@ -352,7 +342,8 @@ describe("a card is one system's: its actions name the pushing connector's capab
   test("the scan keeps a draft whose actions are the connector's own and refuses the rest, saying why", async () => {
     const refused: string[] = [];
     const r = new Registry({ onRefused: (id, topic, problem) => refused.push(`${id} ${topic}: ${problem}`) });
-    r.register(financeConnector(memoryState())).register(rogue);
+    for (const c of fixtureConnectors({ only: ['finance'] }).connectors) r.register(c);
+    r.register(rogue);
     const drafts = await r.scan(hillevi);
     expect(drafts.filter(d => d.connector === 'rogue').map(d => d.topic)).toEqual(['own']);
     expect(drafts.some(d => d.connector === 'finance')).toBe(true);
@@ -362,16 +353,10 @@ describe("a card is one system's: its actions name the pushing connector's capab
       'rogue missing: action go names rogue.nothing, which is not a capability of rogue',
     ]);
   });
-  test('every bundled mock connector already keeps the rule', async () => {
+  test('every fixture connector keeps the rule', async () => {
     const refused: string[] = [];
-    const state = memoryState(),
-      r = new Registry({ onRefused: (id, topic, problem) => refused.push(`${id} ${topic}: ${problem}`) });
-    for (const m of [
-      hrConnector(state),
-      financeConnector(state),
-      incidentsConnector(state),
-      communicationConnector(state),
-    ])
+    const r = new Registry({ onRefused: (id, topic, problem) => refused.push(`${id} ${topic}: ${problem}`) });
+    for (const m of fixtureConnectors({ only: ['hr', 'finance', 'incidents', 'communication'] }).connectors)
       r.register(m);
     const drafts = [...(await r.scan(hillevi)), ...(await r.scan(hassan))];
     expect(drafts.length).toBeGreaterThan(0);

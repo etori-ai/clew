@@ -68,7 +68,7 @@ step list in the panel, and the substitute question as the next proposal.
 Each step says whether the architecture as built holds, and where the evidence is.
 
 **1. Trigger.** The employee self-reports in the HR system. Clew learns of it only when a scan runs: the HR mock's
-`scan` draws cards from fixtures on first visit and nightly ([hr.ts](../../packages/connectors/src/mock/hr.ts#L163)),
+`scan` draws cards from fixtures on first visit and nightly ([hr.ts](../../connectors/hr/connector.mjs)),
 and the change-notification contract is proposed, not built ([D19](../decisions/D19-change-notification-is-a-clew-owned-contract.md),
 [status](../reference/status.md)). **Holds as a scan; breaks as an event.** The job can start from the box ("Hassan
 är sjuk i dag") or from a pushed card, but nothing in the tree carries "an absence came into being" as a fact Clew can
@@ -141,7 +141,7 @@ row of its own above these; it does not change them.
 **12. Names.** Artboard J reads "Sjukfrånvaro för Hassan i dag". Principle 7 says names of individuals stay in the source
 system, never in a card ([vision](../vision.md)); the product owner decided on 2026-11-03 that the canvas wins for
 card rows ([HANDOVER](../../HANDOVER.md)), and the HR mock still writes "Namnet visas i personalsystemet, inte här"
-on its rehab card ([hr.ts](../../packages/connectors/src/mock/hr.ts#L172)). **Tension**, recorded as F11 in the
+on its rehab card ([hr.ts](../../connectors/hr/connector.mjs)). **Tension**, recorded as F11 in the
 2026-11-05 architecture review and not decided here.
 
 ## Findings
@@ -231,8 +231,8 @@ produced under both scopes; the planner's refactor stays a separate follow-up.
 ### G9 · The mocks have no time-reporting or payroll system, and the HR mock has no absence write
 
 The bundled mocks are the HR system, finance, incidents and communication
-([mock/](../../packages/connectors/src/mock/), D52). The HR mock reads absences and writes talks, leave decisions and
-delegation renewals ([hr.ts](../../packages/connectors/src/mock/hr.ts#L39-L160)); it has no execute that registers an
+([mock/](../../connectors/), D52). The HR mock reads absences and writes talks, leave decisions and
+delegation renewals ([hr.ts](../../connectors/hr/connector.mjs)); it has no execute that registers an
 absence. Artboard J cannot be demonstrated end to end on the shipped fixtures.
 
 **Change:** the proof runs on a fake registry of four systems in the scenario test; a `tidrapportering` mock and an
@@ -242,7 +242,7 @@ absence-registering execute on the HR mock are follow-ups, after the decision la
 
 Artboard J names the employee in the proposal; principle 7 forbids it ([vision](../vision.md)) and the 2026-11-03
 decision allows it in card rows ([HANDOVER](../../HANDOVER.md)). The HR mock's own rehab card sides with the
-principle ([hr.ts](../../packages/connectors/src/mock/hr.ts#L172)). **Change:** none here. F11 in the architecture
+principle ([hr.ts](../../connectors/hr/connector.mjs)). **Change:** none here. F11 in the architecture
 review already asks for one baseline; the job card should follow whatever that decision says, and the step rows
 (which name systems, not people) are unaffected.
 

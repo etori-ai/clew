@@ -17,7 +17,7 @@ or the network, and CI (`.github/workflows/check.yml`) runs it without the stack
 | What changed | Test kind | Where | Runs in |
 |---|---|---|---|
 | A pure function (`domain.ts`, `packages/calendar/src/proposals.ts`, `dates.ts`, attention levels, the assistant router) | Example tests, and a property test when the function has an invariant worth stating ("never collides", "always within office hours") | `tests/unit/<topic>.test.ts`, `tests/unit/<topic>.property.test.ts` | `bun run check` |
-| A use case (`threads/usecases/*`, later `modules/*/usecases`) | A scenario test: real registry, mock connectors, memory store, a clock the test owns; asserts the state the store ends up in and the audit rows written | `tests/unit/threads.test.ts` or a sibling per use case folder | `bun run check` |
+| A use case (`threads/usecases/*`, later `modules/*/usecases`) | A scenario test: real registry, the fixture connectors over the protocol (`tests/fixture-connectors.ts`), memory store, a clock the test owns; asserts the state the store ends up in and the audit rows written | `tests/unit/threads.test.ts` or a sibling per use case folder | `bun run check` |
 | A store port (`threads/model.ts`, `modules/calendar/model.ts`, `connectors/model.ts`) or a store adapter | Add a case to that store's contract; it must pass on both adapters | `tests/store-contract.ts`, `tests/proposal-store-contract.ts` and `tests/connector-store-contract.ts`, each run by a `tests/unit/*-store.test.ts` and a `tests/db/postgres-*.test.ts` | `bun run check` (memory) and `bun run test:db` (Postgres) |
 | An adapter for an external system (CalDAV, a remote connector's HTTP, Microsoft Graph) | Parse and translate a recorded response; the protocol's edge cases as fixtures | `tests/unit/<adapter>.test.ts` with fixtures in the test file or `tests/fixtures/` | `bun run check` |
 | A route | Nothing of its own while it stays thin (parse, validate, call one use case, map errors). Hono's `app.request()` serves a route in process if a test is ever needed | `apps/server/tests/runtime.test.ts` shows the pattern | `bun run test:node` |
@@ -41,7 +41,8 @@ has a rule that holds for every input; write examples when the interesting cases
 prints the smallest input that breaks it; add that input as an example before fixing.
 
 **Scenario tests of use cases.** The `world()` helper in `tests/unit/threads.test.ts` is the pattern: a
-`Registry` with the mock connectors over `memoryState()`, `memoryThreadStore()`, `memoryTimers()`, a `fakeClock()`
+`Registry` with the fixture connectors (`fixtureConnectors()` in `tests/fixture-connectors.ts`: the six services of
+`connectors/` in-process on their memory stores, D61), `memoryThreadStore()`, `memoryTimers()`, a `fakeClock()`
 that the test moves, and sequential ids. `tests/unit/samtal.test.ts` does the same for the calendar with
 `memoryCalendar()` (`@clew/calendar/memory`, the `CalendarProvider` port in memory: seed events, busy time per
 member, a `failCreate` switch) and `memoryProposalStore()`, from the nightly draw through confirm, undo and the timer. The use cases under test are the production functions built by
@@ -124,7 +125,6 @@ or `provider.ts` where a service is involved) beside `adapters/memory.ts`, wired
 |---|---|---|---|
 | `threads/usecases/` | `threadUsecases`, `reminderUsecases` (including `surface`, the Temporal activity's body) | `ThreadStore`, `ThreadTx` (with `lockThread`), `ReminderTimers` | `tests/unit/threads.test.ts` |
 | `modules/calendar/usecases/` | `calendarUsecases` | `ProposalStore`, `CalendarBinder`, `CalendarProvider` (D11) | `tests/unit/samtal.test.ts` |
-| `modules/mocks/` | `mockUsecases` | `MockResetStore` | (dev reset, covered by the smoke script) |
 | `scheduler/` | `createScheduler` | `JobQueue`, `People` | `tests/unit/scheduler.test.ts` |
 | `assistant/` | `assistantUsecases` | `ThreadStore`, `ModelProvider` | `tests/unit/conversation.test.ts` |
 
@@ -137,4 +137,4 @@ connector loading, platform code over `@clew/db` directly) and the connector des
 
 The shared follow-up contract (`tests/followup-contract.ts`) runs on memory and PostgreSQL. Calendar execution projection, refresh/attention and ownership have PostgreSQL scenarios in addition to pure/use-case tests. Runtime tests are required for boundaries memory cannot prove: real transactions, process/protocol response loss and Temporal history replay. Keep these in the separate reliability lane, not the fast suite.
 
-The older `scripts/modules-check.ts` and `scripts/auth-dev-check.ts` assume synchronous decisions and refresh. They are historical development smoke scripts, not current acceptance gates for the asynchronous lifecycle; do not use their results to claim this roadmap is verified. Use the maintained suites above and the [acceptance matrix](../reference/reliability-acceptance.md). A live login/calendar run still needs an updated scenario, authorized synthetic records and explicit source assertions.
+The older `scripts/auth-dev-check.ts` assumes synchronous decisions and refresh. It is a historical development smoke script, not a current acceptance gate for the asynchronous lifecycle; do not use its results to claim this roadmap is verified. `scripts/jobs-check.ts` runs the job across systems on the fixture connectors of the development stack (D61). Use the maintained suites above and the [acceptance matrix](../reference/reliability-acceptance.md). A live login/calendar run still needs an updated scenario, authorized synthetic records and explicit source assertions.

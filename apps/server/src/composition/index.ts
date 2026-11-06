@@ -15,8 +15,6 @@ import { memoryModelHealth } from '../assistant/adapters/memory';
 import { modelUsecases } from '../assistant/usecases/models';
 import type { KeySealer } from '../assistant/ports';
 import { assistantUsecases } from '../assistant';
-import { postgresMockResetStore } from '../modules/mocks/adapters/postgres';
-import { mockUsecases } from '../modules/mocks/usecases';
 import { postgresJobQueue, postgresPeople } from '../scheduler/adapters/postgres';
 import { createScheduler } from '../scheduler/usecases';
 import { postgresThreadStore } from '../threads/adapters/postgres';
@@ -145,12 +143,6 @@ answerCards.create = async (actorId, input) => {
 // The obligation's follow-up cards (D30) land in the invitee's stream like any pushed card.
 notifier.push = (personId, draft) =>
   threads.pushDraft({ id: personId }, { ...draft, connector: 'calendar' }, 'assistant:obligation');
-export const mocks = mockUsecases({
-  store: postgresMockResetStore(),
-  registry,
-  clock,
-  enabled: process.env.CLEW_POC === 'true',
-});
 /**
  * The models behind the box (D24): providers and models in Postgres, keys sealed with the master key under
  * `provider:key:<id>`, the OpenAI-compatible wire, and which endpoints answer kept in this process (it is in-process by

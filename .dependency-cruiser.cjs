@@ -46,12 +46,6 @@ module.exports = {
       to: { path: '^apps/server/src/modules/(?!$1/)[^/]+/' },
     },
     {
-      name: 'mock-connectors-do-not-import-each-other',
-      severity: 'error',
-      from: { path: '^packages/connectors/src/mock/([^/]+)\\.ts$' },
-      to: { path: '^packages/connectors/src/mock/(?!$1\\.ts$|data\\.ts$)' },
-    },
-    {
       name: 'modules-do-not-import-the-platform',
       comment:
         'A module knows its contract, the registry handle and its adapter, never routes, the stream or the assistant. The connector registry is platform code and is kept out of modules/ for that reason.',
@@ -91,6 +85,14 @@ module.exports = {
       severity: 'error',
       from: { path: '^packages/connectors/' },
       to: { path: '^packages/db/|node_modules/(drizzle-orm|postgres)/' },
+    },
+    {
+      name: 'clew-does-not-import-connectors',
+      comment:
+        "Clew bundles only its core (D61): nothing in apps/ or packages/ imports a connector under connectors/, the fixtures included; the served protocol's documentation examples (D60) are the one exception.",
+      severity: 'error',
+      from: { path: '^(apps|packages)/', pathNot: '^apps/server/src/routes/protocol\\.ts$' },
+      to: { path: '^connectors/' },
     },
     {
       name: 'connectors-stand-alone',

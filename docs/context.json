@@ -744,6 +744,15 @@
       "status": "accepted, built 2026-11-06",
       "date": "2026-11-06",
       "area": "integrations"
+    },
+    {
+      "key": "D61-fixture-sources-are-independent-connectors",
+      "number": 61,
+      "path": "docs/decisions/D61-fixture-sources-are-independent-connectors.md",
+      "title": "D61 · Fixture sources are independent connectors in the development stack; Clew bundles only its core",
+      "status": "accepted, built 2026-11-06",
+      "date": "2026-11-06",
+      "area": "integrations, platform"
     }
   ],
   "documents": [
@@ -1429,6 +1438,12 @@
     {
       "path": "docs/decisions/D60-the-instance-serves-its-connector-protocol.md",
       "title": "D60 · The instance serves its connector protocol, and a protocol break keeps the number before it",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D61-fixture-sources-are-independent-connectors.md",
+      "title": "D61 · Fixture sources are independent connectors in the development stack; Clew bundles only its core",
       "category": "decision-history",
       "headings": []
     },

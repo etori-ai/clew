@@ -74,7 +74,8 @@ Historical numbering collisions: **D37, D38, D39, D44, D45, D46** each identify 
 | [D58 · A click on the calendar's grid starts a booking](D58-a-click-on-the-calendar-grid-starts-a-booking.md) | ui | 2026-11-06 | accepted |
 | [D59 · The WCAG suite runs by hand until the run-up to a release](D59-the-wcag-suite-runs-by-hand-until-the-run-up-to-a-release.md) | platform | 2026-11-06 | accepted |
 | [D60 · The instance serves its connector protocol, and a protocol break keeps the number before it](D60-the-instance-serves-its-connector-protocol.md) | integrations | 2026-11-06 | accepted, built 2026-11-06 |
+| [D61 · Fixture sources are independent connectors in the development stack; Clew bundles only its core](D61-fixture-sources-are-independent-connectors.md) | integrations, platform | 2026-11-06 | accepted, built 2026-11-06 |
 
 ## Add a decision
 
-Use [TEMPLATE.md](TEMPLATE.md) and a new unused number (currently D61). Include status, date, area, decision, rationale and what it replaces. Preserve earlier decision bodies; record supersession explicitly. Refer to the full filename when a number is ambiguous. Update the implementation-status guide when delivery changes, add a session note to [HANDOVER.md](../../HANDOVER.md), and run `bun run docs:generate` followed by `bun run docs:check`. The generated context map includes every record.
+Use [TEMPLATE.md](TEMPLATE.md) and a new unused number (currently D62). Include status, date, area, decision, rationale and what it replaces. Preserve earlier decision bodies; record supersession explicitly. Refer to the full filename when a number is ambiguous. Update the implementation-status guide when delivery changes, add a session note to [HANDOVER.md](../../HANDOVER.md), and run `bun run docs:generate` followed by `bun run docs:check`. The generated context map includes every record.

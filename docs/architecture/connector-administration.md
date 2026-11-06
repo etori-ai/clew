@@ -14,9 +14,9 @@ The canvas row for the screens is still to be drawn and compared against (`CLAUD
 ## The model
 
 One row per connector in Postgres, one `Connector` in the live registry per enabled row. Bundled connectors (people, the
-calendar, the mocks until they are lifted) get a row at boot with `bundled` true and no url or secret, so the same
+calendar, search; D61) get a row at boot with `bundled` true and no url or secret, so the same
 audience and switches govern them; they cannot be removed or re-addressed, only switched off. Decided 2026-11-04 so
-the Hassan demo works with today's mocks.
+the core is governed the way a registered connector is.
 
 ```
 connector
@@ -47,7 +47,7 @@ place (`inScope` grows a sibling `inAudience`), so REST, cards, tools, search, s
 callback route cannot disagree. Out of audience answers as unknown ("Okänd förmåga.", 404), never as
 denied, so existence is not revealed.
 
-Core connectors that live in Clew's process (people, calendar, the four mocks for now) appear in the same
+Core connectors that live in Clew's process (people, calendar, search) appear in the same
 list with their kind, cannot be removed or re-addressed, but can be limited to an audience the same way;
 the calendar for everyone, the finance connector for chefer and ekonomer.
 
@@ -279,13 +279,13 @@ after a removal (the pattern the stream uses when a card leaves).
   "Okänd förmåga." for a hidden connector, and `areas`, `scan`, `tools`, the search objects, the typeahead and
   `GET /api/connectors` all go through it. The stream hides open cards from a hidden connector while handled ones
   stay (`threads/usecases/cards.ts`).
-- The structural preview cannot satisfy a scope written as code (the mocks narrow by identity), so it lists areas
+- The structural preview cannot satisfy a scope written as code (a bundled connector may narrow by identity), so it lists areas
   and only the tools a declarative scope allows; the page says so.
 - Screens: `apps/web/src/pages/admin/` (`shell.tsx`, `connectors.tsx`, `add.tsx`, `connector.tsx`, `audience.tsx`,
   `labels.ts`), routes `/admin`, `/admin/connectors`, `/admin/connectors/:id`, the entry "Administration" in
   the start page header for an administrator, `NotAdmin` for anyone else. Tests: `tests/a11y/admin.spec.ts`,
   `tests/unit/connector-admin.test.ts`, `tests/unit/connectors.test.ts` (governance), the connector store contract
-  on both adapters, and the administration flow in `scripts/modules-check.ts`.
+  on both adapters, and the administration flow in `scripts/modules-check.ts` (removed with D61).
 
 ## Order of work
 
@@ -301,7 +301,7 @@ adapter, the admin permission and the page shell are shared.
    run, objects, threads and `GET /api/connectors`; unit tests that Hassan outside an audience gets 404 and
    no area, tool, object or card.
 4. Admin use cases and routes with audit; the shared checker in `packages/connectors/check.ts`.
-5. Screens 1 to 3 in `apps/web/src/pages/admin/`, after a canvas row; a11y tests; `scripts/modules-check.ts`
+5. Screens 1 to 3 in `apps/web/src/pages/admin/`, after a canvas row; a11y tests; `scripts/modules-check.ts` (removed with D61)
    gains the admin flow (add hello, limit to managers, verify as Hassan, remove).
 6. Models (D24): `model_provider` and `model` tables with the sealed key; `assistant/model.ts` reads the registry
    of models instead of `AI_*`; per-person preference; `AssistantStatus` as a list; the admin routes; the

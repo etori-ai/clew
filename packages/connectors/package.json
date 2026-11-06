@@ -9,13 +9,6 @@
     "./preview": "./src/preview.ts",
     "./reference": "./src/reference.ts",
     "./views": "./src/views.ts",
-    "./memory-state": "./src/memory-state.ts",
-    "./mock/hr": "./src/mock/hr.ts",
-    "./mock/finance": "./src/mock/finance.ts",
-    "./mock/incidents": "./src/mock/incidents.ts",
-    "./mock/communication": "./src/mock/communication.ts",
-    "./mock/payroll": "./src/mock/payroll.ts",
-    "./mock/timesheet": "./src/mock/timesheet.ts",
     "./check": "./src/check.ts"
   },
   "dependencies": {

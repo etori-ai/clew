@@ -4,9 +4,7 @@ import type { AuthenticatedContext, Thread, TurnEvent } from '../../packages/con
 import { actorOf, type Connector } from '../../packages/connectors/src/index';
 import { searchConnector } from '../../apps/server/src/modules/search/connector';
 import { searchUsecases } from '../../apps/server/src/modules/search/usecases';
-import { memoryState } from '../../packages/connectors/src/memory-state';
-import { hrConnector } from '../../packages/connectors/src/mock/hr';
-import { financeConnector } from '../../packages/connectors/src/mock/finance';
+import { fixtureConnectors } from '../fixture-connectors';
 import { memoryCalendar, occurrence } from '../../packages/calendar/src/memory';
 import { localInstant } from '../../packages/calendar/src/dates';
 import { memoryThreadStore, memoryTimers } from '../../apps/server/src/threads/adapters/memory';
@@ -26,7 +24,7 @@ import {
 } from '../../connectors/phonebook/connector.mjs';
 
 /**
- * The conversation end to end (D8, D12, D25): the real router, verbs and prompt over the registry with mock
+ * The conversation end to end (D8, D12, D25): the real router, verbs and prompt over the registry with the fixture
  * connectors, the stream and the calendar over memory stores, and a model the test plays. Every turn ends in a
  * question thread with its audit row.
  */
@@ -55,10 +53,10 @@ const members = ['Anna Lindqvist', 'Erik Sandström'].map(name => {
   return { personId: first, ref: 'memory:account:' + first, email: first + '@clew.test', name };
 });
 function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) {
-  const state = memoryState(),
-    registry = new Registry();
+  const registry = new Registry();
   registry.register({ id: 'calendar', kind: 'core', source: 'Kalendern', areas: [], capabilities: [] });
-  for (const m of [hrConnector(state), financeConnector(state), ...(options.extra ?? [])]) registry.register(m);
+  const fixtures = fixtureConnectors({ only: ['hr', 'finance'], clock: () => new Date(T0) }).connectors;
+  for (const m of [...fixtures, ...(options.extra ?? [])]) registry.register(m);
   const store = memoryThreadStore(),
     proposals = memoryProposalStore(),
     cal = memoryCalendar(account);

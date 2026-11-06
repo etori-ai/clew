@@ -38,7 +38,6 @@ import {
   assistant,
   calendar,
   events,
-  mocks,
   models,
   reminders,
   threads,
@@ -69,7 +68,6 @@ const {
 } = threads;
 const { cancelReminder, remind } = reminders;
 const { confirm, readToday, replan, samtalStatus, undo, weekOverview } = calendar;
-const { resetMocks } = mocks;
 const { ask, completionsFor, converse, listObjects, reply } = assistant;
 const ajv = addFormats(new Ajv({ allErrors: false }));
 const approval = ajv.compile(
@@ -334,10 +332,6 @@ api.post('/threads/:id/execution/check', async c => {
   if (thread.execution && (thread.execution.state === 'unknown' || thread.execution.reason))
     await executions.reconcile(persona, thread.execution.id);
   return c.json(await threadFor(persona, id));
-});
-api.post('/mocks/reset', async c => {
-  await resetMocks(c.get('session').context);
-  return c.json({ ok: true });
 });
 api.post('/threads/:id/undo-receipt', async c =>
   c.json(await undoReceipt(c.get('session').context, c.req.param('id'))),

@@ -234,4 +234,8 @@ being up.
 
 ## Outcome
 
-Pending the product owner's decision on the in-repo layout above and on the first two products.
+Decided and built the same day as [D61](../decisions/D61-fixture-sources-are-independent-connectors.md): the six fixtures
+are independent connector services under `connectors/`, the development stack runs and registers them, the unit suites run
+them in-process over the protocol, and the in-process mocks, `module_state` and the reset route are gone. The first
+products behind the fixtures (Odoo, Zammad, WireMock on SupportManagement's contract, lldap) and Eneo for real are the next
+steps; the connectors' adapter port is where they plug in.

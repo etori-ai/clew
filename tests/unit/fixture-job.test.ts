@@ -2,11 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
 import { Registry, actorOf, openGovernance, type ExecuteResult } from '../../packages/connectors/src/index';
 import { manifestProblems } from '../../packages/connectors/src/remote';
-import { memoryState } from '../../packages/connectors/src/memory-state';
-import { hrConnector, reportedAbsences } from '../../packages/connectors/src/mock/hr';
-import { payrollConnector } from '../../packages/connectors/src/mock/payroll';
-import { timesheetConnector } from '../../packages/connectors/src/mock/timesheet';
-import { describeBundled } from '../../apps/server/src/connectors/describe';
+import { fixtureConnectors } from '../fixture-connectors';
+import { manifest as hrManifest } from '../../connectors/hr/connector.mjs';
+import { manifest as payrollManifest } from '../../connectors/payroll/connector.mjs';
+import { manifest as timesheetManifest } from '../../connectors/timesheet/connector.mjs';
 import { executionUsecases } from '../../apps/server/src/modules/executions/usecases';
 import { memoryExecutionStore } from '../../apps/server/src/modules/executions/adapters/memory';
 import { ExecutionError, type ExecutionSource, type WatchSource } from '../../apps/server/src/modules/executions/model';
@@ -14,10 +13,10 @@ import { jobUsecases } from '../../apps/server/src/modules/jobs/usecases';
 import { memoryFollowBindingStore } from '../../apps/server/src/modules/jobs/adapters/memory';
 
 /**
- * The D55 scenario on the bundled mocks themselves, no fixture connectors: the HR mock declares `hr:absence` and follows it
- * with its own write, time reporting follows it with a write of its own, payroll follows it with a watch and is never
- * written. An administrator binds the three, Clew assembles, the manager approves once, the ledger runs each step as its
- * own execution or watch. This is what `scripts/job-bind.ts --mocks` and `scripts/jobs-check.ts` exercise on the real stack.
+ * The D55 scenario on the fixture connectors, run in-process over the protocol: the HR fixture declares `hr:absence` and
+ * follows it with its own write, time reporting follows it with a write of its own, payroll follows it with a watch and is
+ * never written. An administrator binds the three, Clew assembles, the manager approves once, the ledger runs each step as
+ * its own execution or watch. This is what `bun run dev:connectors` and `scripts/jobs-check.ts` exercise on the real stack.
  */
 const manager: AuthenticatedContext = {
   id: 'hillevi',
@@ -44,15 +43,16 @@ const today = new Date().toISOString().slice(0, 10);
 const fact = { kind: 'hr:absence', attributes: { person: 'hr:emp:1004', from: today, extent: 100 } };
 
 function world() {
-  const state = memoryState(),
-    registry = new Registry();
-  const connectors = [hrConnector(state), timesheetConnector(state), payrollConnector(state)];
-  for (const c of connectors) registry.register(c).govern(c.id, openGovernance());
-  const store = memoryExecutionStore(),
-    bindings = memoryFollowBindingStore();
+  const registry = new Registry();
   let now = Date.parse(today + 'T08:00:00Z'),
     n = 0;
   const clock = () => new Date(now);
+  const { connectors, states } = fixtureConnectors({ only: ['hr', 'timesheet', 'payroll'], clock });
+  for (const c of connectors) registry.register(c).govern(c.id, openGovernance());
+  const state = states.hr!;
+  const reportedAbsences = () => state.get<Record<string, { ref: string; at: string }>>('reported-absences', {});
+  const store = memoryExecutionStore(),
+    bindings = memoryFollowBindingStore();
   // The same pairing as `composition/executions.ts`, over the memory store: an execute is a registry run with the approved operation id, a lookup is the capability's own read-back, a watch is a read as the person.
   const source: ExecutionSource = {
     async authorize(persona, operation, input) {
@@ -112,6 +112,7 @@ function world() {
   };
   return {
     state,
+    reportedAbsences,
     registry,
     connectors,
     store,
@@ -131,18 +132,23 @@ const settle = async (w: ReturnType<typeof world>, jobId: string) => {
   return (await w.ledger.readJob(manager, jobId))!;
 };
 
-describe('the bundled mocks declare a fact, its followers and a watch (D55)', () => {
-  test('the HR mock creates hr:absence, time reporting and payroll follow it, and every described manifest is on the protocol', () => {
+describe('the fixture connectors declare a fact, its followers and a watch (D55)', () => {
+  test('the HR fixture creates hr:absence, time reporting and payroll follow it, and every manifest is on the protocol', () => {
     const w = world();
-    for (const c of w.connectors) expect(manifestProblems(describeBundled(c), c.id)).toEqual([]);
-    const hr = describeBundled(w.registry.connector('hr')!);
-    expect(hr.facts).toEqual([{ kind: 'hr:absence', title: 'Sjukfrånvaro', attributes: {} }]);
+    for (const [manifest, id] of [
+      [hrManifest, 'hr'],
+      [timesheetManifest, 'timesheet'],
+      [payrollManifest, 'payroll'],
+    ] as const)
+      expect(manifestProblems(manifest, id)).toEqual([]);
+    const hr = w.registry.connector('hr')!;
+    expect(hr.facts?.map(f => [f.kind, f.title])).toEqual([['hr:absence', 'Sjukfrånvaro']]);
     expect(hr.capabilities.find(c => c.name === 'hr.proposeAbsence')).toMatchObject({
       kind: 'propose',
       follows: ['hr:absence'],
       creates: 'hr:absence',
     });
-    expect(describeBundled(w.registry.connector('payroll')!).capabilities.map(c => c.kind)).not.toContain('execute');
+    expect(w.registry.connector('payroll')!.capabilities.map(c => c.kind)).not.toContain('execute');
     expect(w.registry.offered('hr:absence')).toBe(true);
     expect(w.registry.followers(actorOf(manager), 'hr:absence').map(f => [f.name, f.source, f.available])).toEqual([
       ['hr.proposeAbsence', 'Personalsystemet', true],
@@ -150,7 +156,7 @@ describe('the bundled mocks declare a fact, its followers and a watch (D55)', ()
       ['payroll.followAbsence', 'Lönesystemet', true],
     ]);
   });
-  test('a sick report assembles into one proposal with a step per system, from the mocks alone, and nothing is written', async () => {
+  test('a sick report assembles into one proposal with a step per system, from the connectors alone, and nothing is written', async () => {
     const w = world();
     await w.bindAll();
     const p = await w.jobs.assemble(actorOf(manager), fact, w.call);
@@ -170,7 +176,7 @@ describe('the bundled mocks declare a fact, its followers and a watch (D55)', ()
       expect: { path: ['status'], equals: 'registered' },
       within: 'P1D',
     });
-    expect(await reportedAbsences(w.state)).toEqual({});
+    expect(w.reportedAbsences()).toEqual({});
     // The employee reported it themselves: the HR system has nothing to write, the other two still follow.
     const existing = await w.jobs.assemble(actorOf(manager), { ...fact, ref: 'hr:absence:1004:' + today }, w.call);
     expect(existing.steps.map(s => s.connector)).toEqual(['timesheet', 'payroll']);
@@ -195,10 +201,10 @@ describe('the bundled mocks declare a fact, its followers and a watch (D55)', ()
     expect(ts.kind === 'execute' && ts.result?.rows[0]?.detail).toBe(
       `${new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'short' }).format(new Date(today + 'T12:00:00'))}, markerad i tidrapporteringen`,
     );
-    // The write's identity is Clew's execution id: the mock keyed the record by it, so a retried write finds it instead of writing twice.
-    const reported = await reportedAbsences(w.state);
+    // The write's identity is Clew's execution id: the source keyed the record by it, so a retried write finds it instead of writing twice.
+    const reported = w.reportedAbsences();
     expect(Object.keys(reported)).toEqual([hr.kind === 'execute' ? hr.executionId : '']);
-    expect(await w.call('hr.absenceLookup', { operationId: Object.keys(reported)[0] })).toMatchObject({ found: true });
+    expect(await w.call('hr.lookup', { operationId: Object.keys(reported)[0] })).toMatchObject({ found: true });
     expect((await w.call<{ rows: unknown[] }>('timesheet.today')).rows.length).toBeGreaterThanOrEqual(0);
     // Payroll reads the HR system once a night: today's report is pending, so the first check (45 s into the 3-minute window) leaves the watch waiting.
     w.advance(50_000);
@@ -209,7 +215,7 @@ describe('the bundled mocks declare a fact, its followers and a watch (D55)', ()
     });
     // The night passes in the HR system (the report is older than today): the next check sees it and the watch ends.
     for (const row of Object.values(reported)) row.at = '2000-01-01T00:00:00.000Z';
-    await w.state.set('hr', 'reported-absences', reported);
+    w.state.set('reported-absences', reported);
     w.advance(50_000);
     expect(await w.ledger.observe(job.id, 'payroll-1', 1)).toBe('seen');
     expect((await w.call<{ rows: Array<{ ref: string }> }>('payroll.absences')).rows.map(r => r.ref)).toEqual([
@@ -243,7 +249,7 @@ describe('the bundled mocks declare a fact, its followers and a watch (D55)', ()
     ]);
     expect(w.store.cards()[0]!.summary).toContain('Bevakas i lönesystemet: 3 kontroller fram till');
   });
-  test("undo all withdraws the report and the mark through the mocks' own undo capabilities; payroll has nothing to undo", async () => {
+  test("undo all withdraws the report and the mark through the connectors' own undo capabilities; payroll has nothing to undo", async () => {
     const w = world();
     await w.bindAll();
     const p = await w.jobs.assemble(actorOf(manager), fact, w.call);
@@ -256,7 +262,7 @@ describe('the bundled mocks declare a fact, its followers and a watch (D55)', ()
     expect(undo.compensations.map(c => c.stepId)).toEqual(['hr-1', 'timesheet-1']);
     expect(undo.skipped).toEqual([]);
     for (const c of undo.compensations) expect(await w.ledger.progress(c.compensationId)).toBe('done');
-    expect(await reportedAbsences(w.state)).toEqual({});
+    expect(w.reportedAbsences()).toEqual({});
     expect((await w.call<{ rows: Array<{ absent: boolean }> }>('timesheet.today')).rows.every(r => !r.absent)).toBe(
       true,
     );
