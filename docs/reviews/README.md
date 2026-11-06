@@ -21,6 +21,7 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Reliability implementation checkpoint: verification](2026-11-05-reliability-implementation-verification.md)
 - [Design exploration: one flow between conversations, views and the panel · 2026-11-05](2026-11-05-ux-flow-exploration.md)
 - [UX review of the whole interface](2026-11-05-ux-review.md)
+- [Review: a side question beside the running conversation · 2026-11-06](2026-11-06-a-side-question-beside-the-conversation.md)
 - [Second opinion: architecture, connector authoring and shared fact kinds](2026-11-06-architecture-and-connectors-second-opinion.md)
 - [Review: the calendar and a manager's team · 2026-11-06](2026-11-06-calendar-and-manager-teams.md)
 - [Stress test: one event, work in several systems](2026-11-06-cross-system-work-stress-test.md)
