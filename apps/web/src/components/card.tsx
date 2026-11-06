@@ -921,6 +921,13 @@ type RowProps = ActionProps & {
  * the end "Lägg till i samtalet" and the one next step. The row keeps the card's id so focus and the toasts find it.
  */
 const rowNarrowQuery = '(max-width: 1200px)';
+/** The day cell is one word (artboard A: "fre"): tomorrow is its weekday, since "i morgon" is two. */
+const dayCell = (date: string, now: string) => {
+  const word = dayWord(date, now);
+  return word === 'i morgon'
+    ? new Intl.DateTimeFormat('sv-SE', { weekday: 'short' }).format(new Date(date + 'T12:00:00Z')).replace(/\.$/, '')
+    : word;
+};
 
 export function ThreadRow({
   thread,
@@ -955,8 +962,8 @@ export function ThreadRow({
   ) : cardKind(thread) === 'forslag' ? (
     <Badge variant="info" label={draft ? '✦ utkast' : '✦ klart'} />
   ) : thread.deadline ? (
-    <Text weight="semibold" hasTabularNumbers>
-      {dayWord(thread.deadline.slice(0, 10), todayDate)}
+    <Text weight="semibold" hasTabularNumbers textWrap="nowrap">
+      {dayCell(thread.deadline.slice(0, 10), todayDate)}
     </Text>
   ) : null;
   const reminder = thread.timers?.find(t => t.kind === 'reminder' && t.state === 'scheduled');

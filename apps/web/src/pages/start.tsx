@@ -635,8 +635,8 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
    * fits beside the column this is the panel at rest, and a card, a view or a card's read takes its place; where the
    * panel does not fit, and on a phone, it ends the page, after the day's work (D48).
    */
-  const aside = (
-    <VStack gap={4} as="aside" aria-label="Bredvid">
+  const asideContent = (
+    <VStack gap={4}>
       {day && <Today view={day} threads={threads} cardHref={cardHref} />}
       {!loadingThreads && (
         <Since
@@ -647,6 +647,11 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           doneHref={homeHref({ tab: 'done' })}
         />
       )}
+    </VStack>
+  );
+  const aside = (
+    <VStack as="aside" aria-label="Bredvid">
+      {asideContent}
     </VStack>
   );
   // The box is anchored under the greeting (D53): nothing above it changes, and what grows under it while the person
@@ -767,6 +772,8 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const slot = usePanel(frame, {
     minMain: talk.open ? CONVERSATION_MIN : HOME_MIN,
     overlayOnly: short,
+    // Where the panel fits beside Hem it rests on the day and Sedan i går and can be folded away like an open card.
+    rest: talk.open ? undefined : asideContent,
   });
   /** What Hem's box asks about: the open card, which the conversation then keeps beside the transcript; "Ny fråga i stället" lets go of it. */
   const about: ComposerAbout | undefined = panelCard

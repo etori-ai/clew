@@ -133,6 +133,14 @@ test.describe('the panel beside the page', () => {
     await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Panelen visas'));
     await expectNoAxeViolations(page);
+    // With nothing open the panel rests on the day and Sedan i går, and folds and comes back the same way.
+    await page.keyboard.press('Escape');
+    const rest = page.getByRole('complementary', { name: 'Bredvid' });
+    await expect(rest.getByRole('region', { name: 'I dag' })).toBeVisible();
+    await rest.getByRole('button', { name: 'Fäll ihop panelen' }).click();
+    await expect(rest.getByRole('region', { name: 'I dag' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Visa panelen' }).click();
+    await expect(rest.getByRole('region', { name: 'I dag' })).toBeVisible();
   });
 
   test("beside Hem the panel rests on the day and what happened since yesterday; a row's card takes its place, the box asks about the card, and Esc gives it all back", async ({

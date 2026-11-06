@@ -495,9 +495,46 @@ export function usePanel(
         </LayoutPanel>
       </>
     ) : inline && rest ? (
-      <LayoutPanel width={PANEL} hasDivider role="complementary" label="Vid sidan av" padding={0} isScrollable={false}>
-        <Layout height="fill" padding={3} content={<LayoutContent>{rest}</LayoutContent>} />
-      </LayoutPanel>
+      // At rest the panel holds what the page gives it (Hem's day and Sedan i går), and folds the same way (the product owner, 2026-11-06).
+      <>
+        <ResizeHandle
+          ref={handle}
+          isReversed
+          hasDivider
+          resizable={resizable.props}
+          label={collapsed ? 'Visa panelen igen' : 'Ändra panelens bredd'}
+        />
+        <LayoutPanel
+          resizable={resizable.props}
+          hasDivider={false}
+          role="complementary"
+          label="Bredvid"
+          padding={0}
+          isScrollable={false}
+        >
+          {!collapsed && (
+            <Layout
+              height="fill"
+              padding={6}
+              header={
+                <LayoutHeader hasDivider={false}>
+                  <HStack justify="end">
+                    <IconButton
+                      size="sm"
+                      variant="ghost"
+                      label="Fäll ihop panelen"
+                      tooltip="Fäll ihop panelen"
+                      icon={<Icon icon="chevronsRight" />}
+                      onClick={collapse}
+                    />
+                  </HStack>
+                </LayoutHeader>
+              }
+              content={<LayoutContent>{rest}</LayoutContent>}
+            />
+          )}
+        </LayoutPanel>
+      </>
     ) : undefined;
   const overlay = inline ? null : (
     <Drawer
@@ -524,5 +561,5 @@ export function usePanel(
       />
     </Drawer>
   );
-  return { end, overlay, collapsed: inline && !!panel && collapsed, expand };
+  return { end, overlay, collapsed: inline && (!!panel || !!rest) && collapsed, expand };
 }

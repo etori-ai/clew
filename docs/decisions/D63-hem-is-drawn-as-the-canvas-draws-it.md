@@ -19,8 +19,10 @@ and never quietly dropped. The comparison is
    `Text size="2xl"` (24.2 px against 26), the panel's card title `Heading level={2}` (20.2 against 20).
 2. **The lead.** "Hej Hillevi" with the sparkle, small, and the day, the week and the unit at the end of the same line
    ("Onsdag 5 november · vecka 45 · Skolan"). The box is one line tall from the start and spans the whole content width.
-3. **Two columns under the box** (`Grid columns={3}` with the day's work in a `GridSpan` of two and the side column in
-   the third track, 32 px apart; a `VStack` under 1024 px and on a phone). Beside the column stand two cards: **I dag**,
+3. **The day beside the day's work.** Where the panel fits beside the column (1336 px and up) the day and Sedan i går
+   are the resting panel, a `LayoutPanel` that folds (item 14), and the box spans the column alone; between 1024 and
+   1336 px they are the third track of a `Grid columns={3}` under the box, 32 px from the day's work, as artboard A
+   draws them; under 1024 px and on a phone a `VStack` after the day's work. Beside the column stand two cards: **I dag**,
    the meetings with their time, name, room and length and the free gaps as "Ledigt till …" rows, the longest saying
    "Längsta luckan · jag bokar inget här utan att fråga", with "Hela veckan"; and **Sedan i går**, a muted card with
    three sentences in the artboard's words (what closed with its receipt's time, what waits with how many have
@@ -75,9 +77,11 @@ and never quietly dropped. The comparison is
     (`clew-panel-width`), the fold not remembered so a thing opened later is seen. "Fäll ihop panelen" in the panel's
     header folds it, the focus lands on the handle (named "Visa panelen igen"), the page offers "Visa panelen" beside
     its tabs, in the conversation's toolbar or on the tool page's heading line, and expanding puts the focus on the
-    panel's heading; both moves are spoken. The product owner asked for this on 2026-11-06 and chose the open panel
-    alone: the resting day column stays in the page's grid, so the box keeps spanning the width as artboard A draws it.
-    Not on the canvas.
+    panel's heading; both moves are spoken. The product owner asked for this on 2026-11-06, first for the open panel
+    alone, then, with a picture of Hem with nothing open and no sidebar to open, for the resting day column too: at
+    rest the panel holds I dag and Sedan i går with the same handle and fold button, so at 1440 px the box ends at the
+    panel's edge rather than spanning the width as artboard A draws it. Not on the canvas; the departure is this
+    item's.
 15. **The tints** are tokens: `--color-background-red` and `--color-border-red` take the artboard's faint red and
     red border, `--color-background-green` and `--color-border-green` its faint green, in the light appearance; the dark
     appearance keeps Neutral's values.
