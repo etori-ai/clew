@@ -657,10 +657,28 @@
       "area": "platform"
     },
     {
+      "key": "D60-the-dev-identity-provider-address-is-configured-and-local-means-a-loopback-name",
+      "number": 60,
+      "path": "docs/decisions/D60-the-dev-identity-provider-address-is-configured-and-local-means-a-loopback-name.md",
+      "title": "D60 · The dev identity provider's address is configured, and \"local\" means a loopback name",
+      "status": "accepted, item 3 replaced by [D62](D62-the-dev-keycloak-runs-in-the-app-containers-network.md) the same day",
+      "date": "2026-11-06",
+      "area": "identity"
+    },
+    {
       "key": "D61-text-files-are-checked-out-with-lf-on-every-platform",
       "number": 61,
       "path": "docs/decisions/D61-text-files-are-checked-out-with-lf-on-every-platform.md",
       "title": "D61 · Text files are checked out with LF on every platform",
+      "status": "accepted",
+      "date": "2026-11-06",
+      "area": "platform"
+    },
+    {
+      "key": "D62-the-dev-keycloak-runs-in-the-app-containers-network",
+      "number": 62,
+      "path": "docs/decisions/D62-the-dev-keycloak-runs-in-the-app-containers-network.md",
+      "title": "D62 · The development Keycloak runs in the app container's network, as a compose profile",
       "status": "accepted",
       "date": "2026-11-06",
       "area": "platform"
@@ -1304,8 +1322,20 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D60-the-dev-identity-provider-address-is-configured-and-local-means-a-loopback-name.md",
+      "title": "D60 · The dev identity provider's address is configured, and \"local\" means a loopback name",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/D61-text-files-are-checked-out-with-lf-on-every-platform.md",
       "title": "D61 · Text files are checked out with LF on every platform",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D62-the-dev-keycloak-runs-in-the-app-containers-network.md",
+      "title": "D62 · The development Keycloak runs in the app container's network, as a compose profile",
       "category": "decision-history",
       "headings": []
     },

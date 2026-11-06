@@ -73,8 +73,10 @@ Historical numbering collisions: **D37, D38, D39, D44, D45, D46** each identify 
 | [D57 · Prettier formats the code, and `bun run check` enforces it](D57-prettier-formats-the-code-and-check-enforces-it.md) | platform | 2026-11-06 | accepted |
 | [D58 · A click on the calendar's grid starts a booking](D58-a-click-on-the-calendar-grid-starts-a-booking.md) | ui | 2026-11-06 | accepted |
 | [D59 · The WCAG suite runs by hand until the run-up to a release](D59-the-wcag-suite-runs-by-hand-until-the-run-up-to-a-release.md) | platform | 2026-11-06 | accepted |
+| [D60 · The dev identity provider's address is configured, and "local" means a loopback name](D60-the-dev-identity-provider-address-is-configured-and-local-means-a-loopback-name.md) | identity | 2026-11-06 | accepted, item 3 replaced by [D62](D62-the-dev-keycloak-runs-in-the-app-containers-network.md) the same day |
 | [D61 · Text files are checked out with LF on every platform](D61-text-files-are-checked-out-with-lf-on-every-platform.md) | platform | 2026-11-06 | accepted |
+| [D62 · The development Keycloak runs in the app container's network, as a compose profile](D62-the-dev-keycloak-runs-in-the-app-containers-network.md) | platform | 2026-11-06 | accepted |
 
 ## Add a decision
 
-Use [TEMPLATE.md](TEMPLATE.md) and a new unused number (currently D62). Include status, date, area, decision, rationale and what it replaces. Preserve earlier decision bodies; record supersession explicitly. Refer to the full filename when a number is ambiguous. Update the implementation-status guide when delivery changes, add a session note to [HANDOVER.md](../../HANDOVER.md), and run `bun run docs:generate` followed by `bun run docs:check`. The generated context map includes every record.
+Use [TEMPLATE.md](TEMPLATE.md) and a new unused number (currently D63). Include status, date, area, decision, rationale and what it replaces. Preserve earlier decision bodies; record supersession explicitly. Refer to the full filename when a number is ambiguous. Update the implementation-status guide when delivery changes, add a session note to [HANDOVER.md](../../HANDOVER.md), and run `bun run docs:generate` followed by `bun run docs:check`. The generated context map includes every record.

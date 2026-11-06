@@ -1,4 +1,8 @@
-/** Run inside the app container. Admin credentials come from env or piped Docker env JSON; never printed. */
+/**
+ * Run inside the app container. Admin credentials come from env or piped Docker env JSON; never printed.
+ * KEYCLOAK_PUBLIC_URL is the Keycloak address people's browsers use (D60); KEYCLOAK_ADMIN_URL is where this script reaches it.
+ * For the compose profile `keycloak` (D62): KEYCLOAK_PUBLIC_URL=http://keycloak.localhost:3024, credentials from its container env.
+ */
 import { randomBytes } from 'node:crypto';
 import { rename, writeFile } from 'node:fs/promises';
 import { and, eq } from 'drizzle-orm';
@@ -15,10 +19,27 @@ import {
 import { insertConnector, readConnector } from '@clew/db/connectors';
 import { writeAudit } from '@clew/db/threads';
 import { sealSecret } from '../apps/server/src/auth-crypto';
+import { isLocalIssuerHost } from '../apps/server/src/auth-local';
 const realm = 'clew',
-  issuer = 'http://keycloak.orb.local:8090/realms/' + realm;
-const base = process.env.KEYCLOAK_ADMIN_URL ?? 'http://host.docker.internal:8090';
+  localFile = 'apps/server/.env.local',
+  testFile = '.auth-test.env';
 const publicUrl = process.env.PUBLIC_URL ?? 'http://localhost:3020';
+const existing = await envFile(localFile),
+  previousTest = await envFile(testFile);
+// D60: kept from the last run unless KEYCLOAK_PUBLIC_URL names another address; refused before Keycloak is touched if the BFF would refuse it.
+const keycloakPublicUrl = new URL(
+  process.env.KEYCLOAK_PUBLIC_URL || existing.OIDC_ISSUER || 'http://keycloak.orb.local:8090',
+);
+if (keycloakPublicUrl.protocol !== 'https:' && !isLocalIssuerHost(keycloakPublicUrl.hostname))
+  throw new Error('KEYCLOAK_PUBLIC_URL must use https or a local host name such as keycloak.localhost (D60)');
+const issuer = keycloakPublicUrl.origin + '/realms/' + realm;
+// D62: a Keycloak on a loopback name runs in the app container's network, so this script and Keycloak's logout callback
+// reach their peer on loopback. The shared Keycloak on macOS, and one on HTTPS, are reached through the host as before.
+const inAppNetwork = keycloakPublicUrl.protocol === 'http:' && keycloakPublicUrl.hostname !== 'keycloak.orb.local';
+const base =
+  process.env.KEYCLOAK_ADMIN_URL || (inAppNetwork ? keycloakPublicUrl.origin : 'http://host.docker.internal:8090');
+const backchannelLogoutUrl =
+  (inAppNetwork ? 'http://127.0.0.1:3000' : 'http://host.docker.internal:3020') + '/api/auth/backchannel-logout';
 let credentials = { ...process.env };
 if (!process.stdin.isTTY && !credentials.KEYCLOAK_ADMIN_PASSWORD) {
   const values: unknown = JSON.parse(await Bun.stdin.text());
@@ -66,8 +87,6 @@ if ((await admin(root)).status === 404)
   });
 await admin(root, 'PUT', { ssoSessionIdleTimeout: IDLE_MS / 1000, ssoSessionMaxLifespan: ABSOLUTE_MS / 1000 });
 // Only this dedicated realm is modified. Never delete users or reset an existing password.
-const localFile = 'apps/server/.env.local',
-  testFile = '.auth-test.env';
 async function envFile(path: string) {
   if (!(await Bun.file(path).exists())) return {};
   return Object.fromEntries(
@@ -96,8 +115,6 @@ async function writeSettings(path: string, settings: Record<string, string>) {
   await writeFile(temporary, lines.join('\n') + '\n', { mode: 0o600, flag: 'wx' });
   await rename(temporary, path);
 }
-const existing = await envFile(localFile),
-  previousTest = await envFile(testFile);
 async function client(id: string, origins: string[], backchannel: string) {
   const list = await objects(root + '/clients?clientId=' + id);
   const found = list.find(c => c.clientId === id);
@@ -127,11 +144,7 @@ async function client(id: string, origins: string[], backchannel: string) {
   const secret = (await (await admin(root + '/clients/' + current.id + '/client-secret')).json()) as { value: string };
   return secret.value;
 }
-const clientSecret = await client(
-  'clew-web',
-  [publicUrl],
-  'http://host.docker.internal:3020/api/auth/backchannel-logout',
-);
+const clientSecret = await client('clew-web', [publicUrl], backchannelLogoutUrl);
 /**
  * Delegation (D26): clew-web may trade the person's token for one bound to a connector's audience (standard token exchange,
  * RFC 8693, Keycloak 26.2). Each audience is a client of its own that nothing logs in as, plus a client scope carrying the

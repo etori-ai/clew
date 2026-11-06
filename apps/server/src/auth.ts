@@ -28,6 +28,7 @@ import {
   tokenDigest,
 } from './auth-crypto';
 import { delegationFor } from './auth-exchange';
+import { isLocalIssuerHost } from './auth-local';
 
 /** Ported from startsidan `packages/platform/src/auth.ts`: Authorization Code + PKCE, opaque server session cookie, sealed tokens. */
 export class AuthError extends Error {
@@ -53,7 +54,7 @@ export function authSettings() {
   const local =
     process.env.AUTH_LOCAL_HTTP === 'true' &&
     ['localhost', '127.0.0.1'].includes(base.hostname) &&
-    provider.hostname === 'keycloak.orb.local';
+    isLocalIssuerHost(provider.hostname);
   if (
     (!local && (base.protocol !== 'https:' || provider.protocol !== 'https:')) ||
     base.pathname !== '/' ||
