@@ -651,16 +651,19 @@ export function usePanel(
         </LayoutPanel>
       </>
     ) : undefined;
+  // The drawer keeps the last name while it slides away, so its heading is never empty (axe: empty-heading).
+  const lastTitle = useRef<string | null>(null);
+  if (panel) lastTitle.current = panel.title;
   const overlay = inline ? null : (
     <Drawer
       isOpen={panel !== null}
       onOpenChange={close}
       side="end"
       width={panel?.wide ? 'min(1100px, 100vw)' : PANEL}
-      label={panel?.title ?? 'Vy'}
+      label={lastTitle.current ?? 'Vy'}
     >
       <Layout
-        header={<DrawerHeader title={panel?.title ?? null} onOpenChange={close} />}
+        header={<DrawerHeader title={lastTitle.current ?? 'Vy'} onOpenChange={close} />}
         content={
           <LayoutContent>
             <VStack gap={3}>

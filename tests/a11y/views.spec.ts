@@ -10,6 +10,8 @@ import {
   test,
 } from './support';
 
+import { manifest as communication } from '../../connectors/communication/manifest.mjs';
+
 const title = (text: string) => encodeURIComponent(text);
 const directory = `/?open=phonebook.directory&open-title=${title('Sök i telefonboken')}`;
 const team = `/?open=phonebook.team&open-title=${title('Mitt teams kontaktlista')}`;
@@ -60,7 +62,7 @@ test.describe('a declared view in the side panel', () => {
     await expect(panel.getByRole('row')).toHaveCount(3);
     await expect(field).toBeFocused();
     await expect(page).toHaveURL(/input=.*l%C3%A4rare/);
-    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('2 rader'));
+    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('2 kontakter'));
     // The choice is the capability's own input too: "Min enhet" narrows to the unit Startsidan knows the person by.
     await field.fill('');
     await panel.getByRole('combobox', { name: 'Sök i', exact: true }).click();
@@ -225,6 +227,99 @@ test.describe('a declared view under an answer', () => {
     await expectNoAxeViolations(page);
     await log.getByRole('button', { name: 'Visa allt' }).click();
     await expect(page.getByRole('dialog', { name: 'Sök i telefonboken' }).getByRole('searchbox')).toHaveValue('lärare');
+  });
+});
+
+/** Viktigt nu as the communication connector really declares it (D71): one status field whose word is its label. */
+const notices = (communication as { capabilities: Array<{ name: string; view?: object }> }).capabilities.find(
+  c => c.name === 'communication.notices',
+)!.view!;
+test.describe("the view's header and its values (D71, artboards 4 and 7)", () => {
+  test.use({ viewport: desktop });
+
+  test('the header names the area, the source and the count on one line, and a seat count reads with its unit', async ({
+    page,
+    api: _,
+  }) => {
+    await open(page, `/?open=calendar.rooms&open-title=${title('Mötesrum')}`);
+    const panel = page.getByRole('dialog', { name: 'Mötesrum' });
+    // The calendar is Clew's own: the house chip, the room's word from the menu, the system and the count in rooms.
+    await expect(panel.getByText('Kalendern · 7 rum')).toBeVisible();
+    await expect(panel.getByText('Mötesrum', { exact: true }).last()).toBeVisible();
+    await expect(panel.getByRole('row').filter({ hasText: 'Tallen' }).getByRole('cell').nth(1)).toHaveText(
+      '12 platser',
+    );
+    await expect(panel.getByText(/Platser: /)).toHaveCount(0);
+    await expectNoAxeViolations(page);
+  });
+
+  test('a yes or no status reads as one labelled badge, in warning only for the receipt still owed, never "Ja · Ja"', async ({
+    page,
+    api: _,
+  }) => {
+    await open(page, '/');
+    await page.route('**/api/cap/communication.notices*', route =>
+      route.fulfill({
+        json: {
+          source: 'Kommunikation',
+          view: {
+            ...notices,
+            capability: 'communication.notices',
+            connector: 'communication',
+            source: 'Kommunikation',
+            chip: true,
+          },
+          output: {
+            rows: [
+              {
+                ref: 'communication:notice:1',
+                title: 'Ny rutin vid hot och våld',
+                requiresReceipt: true,
+                acknowledged: true,
+              },
+              {
+                ref: 'communication:notice:2',
+                title: 'Enkät om matsalen',
+                requiresReceipt: false,
+                acknowledged: false,
+              },
+            ],
+          },
+        },
+      }),
+    );
+    await open(page, `/?open=communication.notices&open-title=${title('Viktigt nu')}`);
+    const panel = page.getByRole('dialog', { name: 'Viktigt nu' });
+    await expect(panel.getByText('Kommunikation · 2 meddelanden')).toBeVisible();
+    const rows = panel.getByRole('listitem');
+    await expect(rows.filter({ hasText: 'Ny rutin vid hot och våld' })).toContainText('Kvitterad');
+    await expect(rows.filter({ hasText: 'Enkät om matsalen' })).toContainText('Inte kvitterad');
+    await expect(panel.getByText(/\bJa\b|\bNej\b/)).toHaveCount(0);
+    await expectNoAxeViolations(page);
+  });
+
+  test('a system that does not answer is a warning banner at the top of the page, and it is spoken once', async ({
+    page,
+    api,
+  }) => {
+    api.sources = [
+      { connector: 'finance', state: 'idle', lastSuccess: '2026-11-04T05:00:00.000Z', error: 'unavailable' },
+    ];
+    await open(page, '/');
+    await expect(page.getByText('Ekonomisystemet svarar inte sedan 06:00', { exact: true })).toBeVisible();
+    await expect(
+      page.getByText(
+        'Korten under Budget kan vara gamla. Det du skickar köas och läses tillbaka när systemet svarar.',
+        {
+          exact: true,
+        },
+      ),
+    ).toBeVisible();
+    await expect
+      .poll(() => announcements(page))
+      .toContainEqual(expect.stringContaining('Ekonomisystemet svarar inte sedan 06:00'));
+    await expect(page.getByRole('button', { name: 'Försök igen' })).toBeVisible();
+    await expectNoAxeViolations(page);
   });
 });
 

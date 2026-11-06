@@ -81,7 +81,7 @@ test.describe('a tool as a page', () => {
     await expect(page.getByRole('row')).toHaveCount(3);
     await expect(field).toBeFocused();
     await expect(page).toHaveURL(/\/tools\/phonebook\.directory\?input=.*l%C3%A4rare/);
-    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('2 rader'));
+    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('2 kontakter'));
     await field.fill('');
     await page.getByRole('combobox', { name: 'Sök i', exact: true }).click();
     await page.getByRole('option', { name: 'Min enhet' }).click();
