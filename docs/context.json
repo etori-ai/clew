@@ -762,6 +762,15 @@
       "status": "accepted, built 2026-11-06 on `main`; the elements the artboards draw without anything behind them are listed under \"Asked, not built\" and wait for the product owner",
       "date": "2026-11-06",
       "area": "ui"
+    },
+    {
+      "key": "D64-a-card-shows-the-persons-own-action-at-once",
+      "number": 64,
+      "path": "docs/decisions/D64-a-card-shows-the-persons-own-action-at-once.md",
+      "title": "D64 · A card shows the person's own action at once, and keeps it on its way until the source has answered",
+      "status": "accepted, built 2026-11-06 for the generic card and row; the proposal card in `thread.tsx` and Påminn mig keep the earlier behaviour",
+      "date": "2026-11-06",
+      "area": "ui"
     }
   ],
   "documents": [
@@ -1461,6 +1470,12 @@
     {
       "path": "docs/decisions/D63-hem-is-drawn-as-the-canvas-draws-it.md",
       "title": "D63 · Hem is drawn as the canvas draws it, pixel for pixel, with Astryx's own tokens",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D64-a-card-shows-the-persons-own-action-at-once.md",
+      "title": "D64 · A card shows the person's own action at once, and keeps it on its way until the source has answered",
       "category": "decision-history",
       "headings": []
     },

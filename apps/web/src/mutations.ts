@@ -1,26 +1,73 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useSyncExternalStore } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Thread } from '@clew/contracts';
 import { useToast } from '@clew/ui';
-import { applyThread } from './thread-cache';
+import { applyThread, previewThread } from './thread-cache';
+import { atRest } from './optimistic';
 import { errorMessage } from './query-policy';
 import { keys } from './query-keys';
 
 type Action<T> = () => Promise<T>;
 type QueryKey = readonly unknown[];
 
+export type RunOptions = {
+  /** The thread as the person's action leaves it, drawn before the server answers (D64); the answer replaces it and a failed request restores the card. */
+  optimistic?: Thread;
+  /** The answer may not be at rest (a decision the source has not confirmed, a timer not yet taken): the card keeps showing the action as on its way for a moment (D64). */
+  settle?: boolean;
+};
+export type RunAction = (fn: Action<Thread | void>, options?: RunOptions) => Promise<void>;
+type Vars = RunOptions & { fn: Action<Thread | void> };
+
+/**
+ * How long a card keeps showing the person's action as on its way after an answer that is not at rest. The change stream
+ * (D46) is polled every two seconds on the server, so the resting state normally arrives within that; a source that
+ * takes longer is shown as what it is, with Kontrollera status.
+ */
+export const SETTLE_MS = 4_000;
+const holds = new Map<string, number>();
+const listeners = new Set<() => void>();
+const notify = () => listeners.forEach(listener => listener());
+const subscribe = (listener: () => void) => {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+};
+/** The card is held in its in-progress look until `until`, shared by every component that draws the thread. */
+export function holdSettling(id: string, until: number): void {
+  holds.set(id, until);
+  notify();
+  setTimeout(
+    () => {
+      if (holds.get(id) !== until) return;
+      holds.delete(id);
+      notify();
+    },
+    Math.max(0, until - Date.now()),
+  );
+}
+export const settlingUntil = (id: string): number => holds.get(id) ?? 0;
+/** Whether the card still shows the person's action as on its way: held after an answer that was not at rest, until the state rests or the window ends. */
+export function useSettling(thread: Pick<Thread, 'id' | 'execution' | 'timers'>): boolean {
+  const until = useSyncExternalStore(subscribe, () => holds.get(thread.id) ?? 0);
+  return until > 0 && !atRest(thread);
+}
+
 /**
  * Run a user action whose answer is a thread (D33). `run(fn)` returns a promise that always settles, so an Astryx
  * `clickAction` shows its pending state and never sees a rejection; the error is read from `error` as a Swedish string.
  * The in-flight flag is the re-entry guard (`isPending` flips only after the next render). Busy never disables the button
  * that holds focus (2.4.3): callers keep that rule. `onChange` runs before the cache write so the page can read the DOM
- * as it is (the focus hand-over); `apply` is the same path for a thread that arrived without a mutation.
+ * as it is (the focus hand-over); `apply` is the same path for a thread that arrived without a mutation. With
+ * `optimistic` the predicted thread is written first (D64) and `onChange` runs for it, not again for the answer.
  */
 export function useThreadAction({
   onChange,
   fallback = 'Något gick fel.',
 }: { onChange?: (thread: Thread) => void; fallback?: string } = {}) {
   const client = useQueryClient();
+  const toast = useToast();
   const latest = useRef(onChange);
   latest.current = onChange;
   const apply = useCallback(
@@ -30,27 +77,39 @@ export function useThreadAction({
     },
     [client],
   );
-  const mutation = useMutation<Thread | void, unknown, Action<Thread | void>>({
-    mutationFn: fn => fn(),
-    onSuccess: thread => {
-      if (thread) apply(thread);
+  const mutation = useMutation<Thread | void, unknown, Vars>({
+    mutationFn: vars => vars.fn(),
+    onSuccess: (thread, vars) => {
+      if (!thread) return;
+      if (!vars.optimistic) latest.current?.(thread);
+      void applyThread(client, thread);
+      if (vars.settle && !atRest(thread)) holdSettling(thread.id, Date.now() + SETTLE_MS);
     },
   });
   const inFlight = useRef(false);
   const { mutateAsync } = mutation;
-  const run = useCallback(
-    async (fn: Action<Thread | void>): Promise<void> => {
+  const run = useCallback<RunAction>(
+    async (fn, options = {}) => {
       if (inFlight.current) return;
       inFlight.current = true;
+      let restore: (() => void) | undefined;
       try {
-        await mutateAsync(fn);
-      } catch {
-        /* the error is in the mutation's state */
+        if (options.optimistic) {
+          latest.current?.(options.optimistic);
+          restore = await previewThread(client, options.optimistic);
+        }
+        await mutateAsync({ fn, ...options });
+      } catch (error) {
+        // The error is in the mutation's state. A card drawn as gone has left the page with that state, so the preview goes
+        // back where it still stands and the reason is a toast, which outlives the card's component.
+        restore?.();
+        if (options.optimistic)
+          toast({ type: 'error', body: errorMessage(error, fallback), uniqueID: 'failed:' + options.optimistic.id });
       } finally {
         inFlight.current = false;
       }
     },
-    [mutateAsync],
+    [client, mutateAsync, toast, fallback],
   );
   return {
     run,

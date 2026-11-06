@@ -4,6 +4,7 @@ import { BrowserRouter, Link, Routes, Route, useLocation } from 'react-router';
 import { QueryClientProvider } from '@tanstack/react-query';
 import '@clew/ui/styles.css';
 import { createQueryClient } from './query-client';
+import { changeNotices } from './thread-cache';
 import { LinkProvider, Providers, SessionBoundary, type BrowserSession } from '@clew/ui';
 import type { SessionUser } from '@clew/contracts';
 import { StartPage } from './pages/start';
@@ -61,6 +62,8 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
     if (shell === 'loading' || shell === 'anonymous') return;
     let source: EventSource | undefined,
       stopped = false;
+    // A notice that arrives while the person's own request is on its way waits for its answer (D64).
+    const notices = changeNotices(client);
     const connect = () => {
       source?.close();
       if (document.visibilityState === 'hidden' || stopped) return;
@@ -102,7 +105,7 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
               });
             })
             .catch(() => setShell('anonymous'));
-        } else void client.invalidateQueries();
+        } else notices.arrived();
       };
     };
     connect();
@@ -110,6 +113,7 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
     window.addEventListener('online', connect);
     return () => {
       stopped = true;
+      notices.stop();
       source?.close();
       document.removeEventListener('visibilitychange', connect);
       window.removeEventListener('online', connect);

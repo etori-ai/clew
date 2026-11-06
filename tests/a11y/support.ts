@@ -57,6 +57,9 @@ export class MockApi {
   asked: { text: string; conversationId?: string; chips?: { ref: string }[] }[] = [];
   /** How long the first read of the cards takes, so a test can see the page while they load (D36). */
   threadsDelay = 0;
+  /** How long Avfärda, Inte nu and Ta upp nu take to answer, and whether the server refuses, so a test can see the card as the person's action leaves it (D64). */
+  mutationDelay = 0;
+  mutationFails = false;
   sessionDelay = 0;
   signedIn = true;
   /** The session says the person may administer connectors (D23). Off by default so the other suites see the ordinary page. */
@@ -358,6 +361,10 @@ export class MockApi {
     }
     if (path.endsWith('/verbs')) return json({ verbs: [] });
     if (path === '/snooze/presets') return json({ presets: snoozePresets });
+    if (post && /^\/threads\/[^/]+\/(dismiss|snooze|reopen)$/.test(path)) {
+      if (this.mutationDelay) await new Promise(resolve => setTimeout(resolve, this.mutationDelay));
+      if (this.mutationFails) return route.fulfill({ status: 503, json: { error: 'Källan svarade inte.' } });
+    }
     if (path.endsWith('/snooze') && post) {
       const body = (request.postDataJSON() ?? {}) as { preset?: string; until?: string; text?: string };
       const until = body.until ?? snoozePresets.find(p => p.id === body.preset)?.at ?? '2026-11-05T05:00:00.000Z';

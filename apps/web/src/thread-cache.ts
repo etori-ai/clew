@@ -8,6 +8,20 @@ type ThreadList = { threads: Thread[] };
 export const upsertThread = (list: Thread[], thread: Thread): Thread[] =>
   list.some(t => t.id === thread.id) ? list.map(t => (t.id === thread.id ? thread : t)) : [thread, ...list];
 
+/** A refetch of a key that already has data is cancelled, so an older answer cannot land after the write; a first load is left alone. */
+const settleFetches = async (client: QueryClient, id: string) => {
+  if (client.getQueryState(keys.threads)?.data !== undefined)
+    await client.cancelQueries({ queryKey: keys.threads, exact: true });
+  if (client.getQueryState(keys.thread(id))?.data !== undefined)
+    await client.cancelQueries({ queryKey: keys.thread(id), exact: true });
+};
+const writeThread = (client: QueryClient, thread: Thread) => {
+  client.setQueryData(keys.thread(thread.id), thread);
+  client.setQueryData<ThreadList>(keys.threads, current =>
+    current ? { threads: upsertThread(current.threads, thread) } : current,
+  );
+};
+
 /**
  * A mutation returned a thread (D33): it is the truth for every screen that shows it. The list and the single-thread entry
  * are written in place; the counts beside them (areas, attention) are re-read; the loaded weeks are re-read only when the
@@ -15,15 +29,59 @@ export const upsertThread = (list: Thread[], thread: Thread): Thread[] =>
  * cancelled first, so an older answer cannot land afterwards and put the old thread back.
  */
 export async function applyThread(client: QueryClient, thread: Thread): Promise<void> {
-  if (client.getQueryState(keys.threads)?.data !== undefined)
-    await client.cancelQueries({ queryKey: keys.threads, exact: true });
-  client.setQueryData(keys.thread(thread.id), thread);
-  client.setQueryData<ThreadList>(keys.threads, current =>
-    current ? { threads: upsertThread(current.threads, thread) } : current,
-  );
+  await settleFetches(client, thread.id);
+  writeThread(client, thread);
   void client.invalidateQueries({ queryKey: keys.areas });
   void client.invalidateQueries({ queryKey: keys.attention });
   if (thread.proposals.length > 0) void client.invalidateQueries({ queryKey: keys.calendarAll });
+}
+
+/**
+ * The person's action drawn before the server has answered (D64): the predicted thread goes into the list and the
+ * single entry the way an answer does, but nothing beside them is re-read, since nothing is known yet. The function
+ * returned puts the previous state back after a failed request, and only where the preview still stands: an answer
+ * that landed meanwhile is newer and stays.
+ */
+export async function previewThread(client: QueryClient, thread: Thread): Promise<() => void> {
+  await settleFetches(client, thread.id);
+  const one = keys.thread(thread.id);
+  const before = { list: client.getQueryData<ThreadList>(keys.threads), one: client.getQueryData<Thread>(one) };
+  writeThread(client, thread);
+  const written = {
+    list: client.getQueryState(keys.threads)?.dataUpdatedAt,
+    one: client.getQueryState(one)?.dataUpdatedAt,
+  };
+  return () => {
+    if (client.getQueryState(one)?.dataUpdatedAt === written.one) {
+      if (before.one) client.setQueryData(one, before.one);
+      else client.removeQueries({ queryKey: one, exact: true });
+    }
+    if (before.list && client.getQueryState(keys.threads)?.dataUpdatedAt === written.list)
+      client.setQueryData(keys.threads, before.list);
+  };
+}
+
+/**
+ * The change stream's notices (D46) against the person's own requests (D64). A notice says that something of the
+ * person's has a new committed revision; while one of this client's mutations is in flight that is usually the
+ * request itself, and a refetch now would draw the committed intermediate state over the preview or the answer. The
+ * notice waits until the mutation cache is idle, then every read is invalidated as it would have been.
+ */
+export function changeNotices(client: QueryClient): { arrived(): void; stop(): void } {
+  let held = false;
+  const flush = () => {
+    if (!held || client.isMutating()) return;
+    held = false;
+    void client.invalidateQueries();
+  };
+  const unsubscribe = client.getMutationCache().subscribe(flush);
+  return {
+    arrived() {
+      if (client.isMutating()) held = true;
+      else void client.invalidateQueries();
+    },
+    stop: unsubscribe,
+  };
 }
 
 /** Something happened to the stream outside a mutation the page made (a reminder fired): read it and the counter again. */

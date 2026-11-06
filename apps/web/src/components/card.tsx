@@ -48,7 +48,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { today } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
 import { snoozePresetsQuery } from '../queries';
-import { useThreadAction } from '../mutations';
+import { useSettling, useThreadAction, type RunAction } from '../mutations';
+import { dismissed, reopened, snoozed } from '../optimistic';
 import { invalidateStream } from '../thread-cache';
 import { useConversation } from './conversation-context';
 import { executionStatus } from '../execution-status';
@@ -257,20 +258,24 @@ export function useSnoozeRows({
   leave,
 }: {
   thread: Thread;
-  run: (fn: () => Promise<Thread>) => Promise<void>;
+  run: RunAction;
   leave: ReturnType<typeof useLeaveWithUndo>;
 }) {
   return useTimeRows({
     presets: usePresets(),
+    // The card leaves for the chosen time at once (D64); the toast confirms when the server has it.
     onPick: ({ seconds: _s, ...input }) =>
-      void run(async () => {
-        const t = await api.snooze(thread.id, input);
-        leave(
-          t,
-          `Jag påminner dig ${t.snoozedUntil ? snoozeWhen(t.snoozedUntil, new Date().toISOString()) : 'i morgon 06:00'}. Kortet ligger under Inte nu tills dess.`,
-        );
-        return t;
-      }),
+      void run(
+        async () => {
+          const t = await api.snooze(thread.id, input);
+          leave(
+            t,
+            `Jag påminner dig ${t.snoozedUntil ? snoozeWhen(t.snoozedUntil, new Date().toISOString()) : 'i morgon 06:00'}. Kortet ligger under Inte nu tills dess.`,
+          );
+          return t;
+        },
+        input.until ? { optimistic: snoozed(thread, input.until) } : {},
+      ),
   });
 }
 /** The picker as its own button: an Astryx DropdownMenu, a bottom sheet on a phone, the rows with the time as description. */
@@ -309,22 +314,26 @@ type ActionProps = {
 };
 /** Everything a card can do, shared by the card and the row: run an action, snooze, dismiss, explain, and keep the selection. */
 function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
+  // Busy never disables the buttons: a disabled button drops the focus it holds (2.4.3). Action-buttons wait on their own promise.
+  // The thread an action returns goes into the cache for every screen (D33); `onChange` lets the page move focus first.
+  const { run, apply, busy, error } = useThreadAction({ onChange });
+  // The person's own action is on its way (D64): the card keeps the look it had, with the pressed button loading, and the
+  // status is read out once the card has come to rest or the window has ended, not for every committed step in between.
+  const held = useSettling(thread);
+  const settling = busy || held;
+  const [pressed, setPressed] = useState<string | null>(null);
   const status = executionStatus(thread.execution);
   const lastStatus = useRef(status),
     announce = useAnnounce({ hasReplace: true });
   useEffect(() => {
-    if (status !== lastStatus.current) {
-      lastStatus.current = status;
-      announce(status ?? thread.receipt?.headline ?? 'Åtgärden är kontrollerad.');
-    }
-  }, [status, announce, thread.receipt?.headline]);
+    if (settling || status === lastStatus.current) return;
+    lastStatus.current = status;
+    announce(status ?? thread.receipt?.headline ?? 'Åtgärden är kontrollerad.');
+  }, [status, settling, announce, thread.receipt?.headline]);
   const [selected, setSelected] = useState<string[]>(() => thread.items.filter(i => i.selected).map(i => i.ref));
   useEffect(() => {
     setSelected(thread.items.filter(i => i.selected).map(i => i.ref));
   }, [thread.updatedAt]);
-  // Busy never disables the buttons: a disabled button drops the focus it holds (2.4.3). Action-buttons wait on their own promise.
-  // The thread an action returns goes into the cache for every screen (D33); `onChange` lets the page move focus first.
-  const { run, apply, busy, error } = useThreadAction({ onChange });
   const client = useQueryClient();
   const leave = useLeaveWithUndo(apply);
   const selectable = thread.items.some(i => i.selectable);
@@ -344,18 +353,27 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
       onOpenCardView(thread.id, action.id);
       return;
     }
-    await run(async () => {
-      const result = await api.act(thread.id, action.id, selectable ? selected : undefined);
-      if (result.kind !== 'execute') throw new ApiError(500, 'Oväntat svar.');
-      return result.thread;
-    });
+    // The outcome is the source's (D45): nothing is predicted, the button stays loading until the answer has come to rest.
+    setPressed(action.id);
+    await run(
+      async () => {
+        const result = await api.act(thread.id, action.id, selectable ? selected : undefined);
+        if (result.kind !== 'execute') throw new ApiError(500, 'Oväntat svar.');
+        return result.thread;
+      },
+      { settle: true },
+    );
   };
+  // The card leaves at once (D64); the toast with Ångra confirms when the server has it.
   const dismiss = () =>
-    run(async () => {
-      const t = await api.dismiss(thread.id);
-      leave(t, `Avfärdad som inte aktuellt. ${thread.trigger.source} skapar inte kortet igen.`);
-      return t;
-    });
+    run(
+      async () => {
+        const t = await api.dismiss(thread.id);
+        leave(t, `Avfärdad som inte aktuellt. ${thread.trigger.source} skapar inte kortet igen.`);
+        return t;
+      },
+      { optimistic: dismissed(thread, new Date().toISOString()) },
+    );
   /** A person's own timer on a card that waits on someone else (D17, D49): the card stays where it is until the timer brings it back; Ångra cancels the timer. When it fires, the stream is read again. */
   const remind = (seconds: number) =>
     run(async () => {
@@ -371,7 +389,20 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
       choice.seconds ?? (choice.until ? Math.max(1, Math.ceil((Date.parse(choice.until) - Date.now()) / 1000)) : 0);
     if (seconds) void remind(seconds);
   };
-  return { selected, setSelected, selectable, busy, error, run, leave, perform, dismiss, pickRemind };
+  return {
+    selected,
+    setSelected,
+    selectable,
+    busy,
+    settling,
+    pressed,
+    error,
+    run,
+    leave,
+    perform,
+    dismiss,
+    pickRemind,
+  };
 }
 type Actions = ReturnType<typeof useThreadActions>;
 
@@ -442,7 +473,7 @@ function ActionRow({
   const chipRef = 'thread:' + thread.id;
   const inConversation = conversation.chipped.includes(chipRef);
   const open = thread.state === 'open';
-  const { selected, selectable, perform, dismiss, run, leave, pickRemind } = actions;
+  const { selected, selectable, settling, pressed, perform, dismiss, run, leave, pickRemind } = actions;
   const snoozeRows = useSnoozeRows({ thread, run, leave });
   const remindRows = useTimeRows({
     presets: usePresets(),
@@ -502,7 +533,8 @@ function ActionRow({
   const receipt = thread.receipt;
   const undoOpen = !!receipt && thread.state === 'handled' && !!receipt.undoCapability && !!countdown;
   const pending = executionStatus(thread.execution);
-  if (pending)
+  // A decision the source has not confirmed is said so, unless it is the person's own and still on its way (D64).
+  if (pending && !settling)
     return (
       <HStack gap={2} vAlign="center" wrap="wrap">
         <Button size={size} label="Kontrollera status" clickAction={() => run(() => api.checkExecution(thread.id))} />
@@ -538,7 +570,7 @@ function ActionRow({
           size={size}
           variant="secondary"
           label="Ta upp nu"
-          clickAction={() => run(() => api.reopen(thread.id))}
+          clickAction={() => run(() => api.reopen(thread.id), { optimistic: reopened(thread) })}
         />
         {quiet ? !compact && addToConversation : more({})}
       </HStack>
@@ -553,6 +585,7 @@ function ActionRow({
             variant={due ? 'primary' : 'secondary'}
             label={primaryLabel ?? ''}
             isDisabled={selectable && count === 0}
+            isLoading={settling && pressed === primary.id}
             clickAction={() => perform(primary)}
           />
         )}
@@ -567,11 +600,19 @@ function ActionRow({
             variant={due ? 'primary' : 'secondary'}
             label={primaryLabel ?? ''}
             isDisabled={selectable && count === 0}
+            isLoading={settling && pressed === primary.id}
             clickAction={() => perform(primary)}
           />
         )}
         {secondary.map(a => (
-          <Button key={a.id} size={size} variant="secondary" label={a.label} clickAction={() => perform(a)} />
+          <Button
+            key={a.id}
+            size={size}
+            variant="secondary"
+            label={a.label}
+            isLoading={settling && pressed === a.id}
+            clickAction={() => perform(a)}
+          />
         ))}
         {timeAction && (
           <TimePicker label="Inte nu" rows={snoozeRows.rows} own={snoozeRows.own} size={size === 'lg' ? 'md' : size} />
@@ -809,7 +850,7 @@ export function GenericCard({
       )}
       <ActionRow thread={thread} level={level} actions={actions} timeAction={!beside} />
       {/* What the next step does (artboard E): written to the source and read back, undone within the window, without the model. */}
-      {open && !receipt && primary?.kind === 'execute' && !executionStatus(thread.execution) && (
+      {open && !receipt && primary?.kind === 'execute' && (!executionStatus(thread.execution) || actions.settling) && (
         <Text type="supporting" as="p">
           {primary.label} skrivs till {thread.trigger.source.toLowerCase()} och läses tillbaka som kvitto. Ångra i 10
           minuter. Fungerar utan modellen.
@@ -900,7 +941,7 @@ export function ThreadRow({
   const todayDate = today();
   // A button's label does not wrap, so where the column beside the day is narrow the step goes under the line and the title keeps its words.
   // A decision on its way says so in a sentence, which takes the room the title needs: then too the step goes under the line.
-  const narrow = useMediaQuery(rowNarrowQuery) || !!executionStatus(thread.execution);
+  const narrow = useMediaQuery(rowNarrowQuery) || (!!executionStatus(thread.execution) && !actions.settling);
   const open = thread.state === 'open';
   const draft = thread.messages.at(-1)?.meta?.draft;
   const due = open && !thread.waitingOn && !notice && streamGroup(thread, todayDate) === 'nu';

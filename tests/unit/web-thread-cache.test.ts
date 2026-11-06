@@ -2,7 +2,14 @@ import { describe, expect, test } from 'bun:test';
 import { QueryClient } from '@tanstack/query-core';
 import type { Proposal, Thread } from '@clew/contracts';
 import { keys } from '../../apps/web/src/query-keys';
-import { applyThread, invalidateStream, pickProposalThread, upsertThread } from '../../apps/web/src/thread-cache';
+import {
+  applyThread,
+  changeNotices,
+  invalidateStream,
+  pickProposalThread,
+  previewThread,
+  upsertThread,
+} from '../../apps/web/src/thread-cache';
 
 const NOW = '2026-11-04T08:00:00.000Z';
 const thread = (values: Partial<Thread> & Pick<Thread, 'id'>): Thread => ({
@@ -110,6 +117,54 @@ describe('the stream cache (D33)', () => {
     expect(c.getQueryState(keys.threads)?.isInvalidated).toBe(true);
     expect(c.getQueryState(keys.attention)?.isInvalidated).toBe(true);
     expect(c.getQueryState(keys.areas)?.isInvalidated).toBe(false);
+  });
+  test('a preview is drawn without re-reading anything, and a failed request puts the old thread back', async () => {
+    const c = client();
+    const a = thread({ id: 'a' });
+    c.setQueryData(keys.threads, { threads: [a] });
+    c.setQueryData(keys.areas, { areas: [] });
+    const restore = await previewThread(c, { ...a, state: 'dismissed' });
+    expect(list(c)[0]?.state).toBe('dismissed');
+    expect((c.getQueryData(keys.thread('a')) as Thread).state).toBe('dismissed');
+    expect(c.getQueryState(keys.areas)?.isInvalidated).toBe(false);
+    restore();
+    expect(list(c)[0]?.state).toBe('open');
+    // The single entry did not exist before the preview, so it is gone again rather than left as the preview.
+    expect(c.getQueryData(keys.thread('a'))).toBeUndefined();
+  });
+  test('an answer that landed on top of a preview stays when the preview is taken back', async () => {
+    const c = client();
+    const a = thread({ id: 'a' });
+    c.setQueryData(keys.threads, { threads: [a] });
+    const restore = await previewThread(c, { ...a, state: 'dismissed' });
+    await tick();
+    await applyThread(c, { ...a, state: 'handled' });
+    restore();
+    expect(list(c)[0]?.state).toBe('handled');
+    expect((c.getQueryData(keys.thread('a')) as Thread).state).toBe('handled');
+  });
+  test('a change notice waits for the mutation in flight and invalidates once it has settled', async () => {
+    const c = client();
+    c.setQueryData(keys.threads, { threads: [] });
+    c.setQueryData(keys.areas, { areas: [] });
+    const notices = changeNotices(c);
+    notices.arrived();
+    expect(c.getQueryState(keys.threads)?.isInvalidated).toBe(true);
+    c.setQueryData(keys.threads, { threads: [] });
+    let answer!: () => void;
+    const pending = c
+      .getMutationCache()
+      .build(c, { mutationFn: () => new Promise<void>(resolve => (answer = resolve)) })
+      .execute(undefined);
+    await tick();
+    notices.arrived();
+    expect(c.getQueryState(keys.threads)?.isInvalidated).toBe(false);
+    answer();
+    await pending;
+    await tick();
+    expect(c.getQueryState(keys.threads)?.isInvalidated).toBe(true);
+    expect(c.getQueryState(keys.areas)?.isInvalidated).toBe(true);
+    notices.stop();
   });
   test('the calendar page picks the open proposal thread, else the latest one, else none', () => {
     const handled = thread({ id: 'old', topic: 'utvecklingssamtal', state: 'handled' });
