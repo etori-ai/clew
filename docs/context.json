@@ -580,7 +580,7 @@
       "number": 51,
       "path": "docs/decisions/D51-the-wcag-suite-is-cis-gate.md",
       "title": "D51 · The WCAG suite is CI's gate; a change runs its own specs locally",
-      "status": "accepted",
+      "status": "accepted, the automatic run and the rule to read it paused by [D59](D59-the-wcag-suite-runs-by-hand-until-the-run-up-to-a-release.md) until the run-up to a release",
       "date": "2026-11-05",
       "area": "platform"
     },
@@ -646,6 +646,15 @@
       "status": "accepted",
       "date": "2026-11-06",
       "area": "ui"
+    },
+    {
+      "key": "D59-the-wcag-suite-runs-by-hand-until-the-run-up-to-a-release",
+      "number": 59,
+      "path": "docs/decisions/D59-the-wcag-suite-runs-by-hand-until-the-run-up-to-a-release.md",
+      "title": "D59 · The WCAG suite runs by hand until the run-up to a release",
+      "status": "accepted",
+      "date": "2026-11-06",
+      "area": "platform"
     }
   ],
   "documents": [
@@ -1276,6 +1285,12 @@
     {
       "path": "docs/decisions/D58-a-click-on-the-calendar-grid-starts-a-booking.md",
       "title": "D58 · A click on the calendar's grid starts a booking",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D59-the-wcag-suite-runs-by-hand-until-the-run-up-to-a-release.md",
+      "title": "D59 · The WCAG suite runs by hand until the run-up to a release",
       "category": "decision-history",
       "headings": []
     },

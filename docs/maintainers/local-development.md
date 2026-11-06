@@ -27,8 +27,8 @@ docker exec -w /workspace clew-app-1 bun run check      # tsc + dependency rules
 docker exec -w /workspace clew-app-1 bun run test:node  # current server runtime, without external services
 docker exec -w /workspace clew-app-1 bun run test:db    # PostgreSQL contracts
 docker exec -w /workspace clew-app-1 bun run test:durability # PostgreSQL/Temporal/Node synthetic reliability scenarios
-sh scripts/a11y.sh menu.spec.ts --timeout 15000         # on the host: the WCAG specs a change touches, failing fast; the full suite is CI's gate (D51)
-sh scripts/a11y.sh                                      # the whole WCAG 2.2 AA suite, as CI runs it: about eight minutes, not a per-edit check
+sh scripts/a11y.sh menu.spec.ts --timeout 15000         # on the host: the WCAG specs a change touches, failing fast (D51); the full suite runs by hand until the run-up to a release (D59)
+sh scripts/a11y.sh                                      # the whole WCAG 2.2 AA suite, as the workflow runs it: about eight minutes, not a per-edit check
 ```
 
 Ports on loopback: 3020 web, 3021 Nextcloud (`calendar-admin`), 3022 Mailpit, 3023 Temporal UI.
