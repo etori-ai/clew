@@ -14,6 +14,7 @@ import {
   dates,
   dayLabel,
   displayDate,
+  localInstant,
   minutesOfDay,
   monthLabel,
   occursOn,
@@ -46,7 +47,7 @@ type Props = {
   onItemClick?: (item: AgendaItem) => void;
   /** Called when a proposal was dragged to a new time; only proposals are draggable (D27). A rejected promise puts it back. */
   onMoveProposal?: (item: AgendaItem, start: string, end: string) => Promise<unknown> | void;
-  /** A span selected with the pointer on the grid, for "Ny bokning" with the time filled in. The button is the keyboard path. */
+  /** A span picked on the grid, for "Ny bokning" with the time filled in: dragged, or clicked, which gives an hour (D58). The button is the keyboard path. */
   onSelectRange?: (start: string, end: string) => void;
 };
 
@@ -55,6 +56,8 @@ const plugins = [clewCalendarTheme, timeGridPlugin, dayGridPlugin, listPlugin, i
 const timeFormat = { hour: '2-digit', minute: '2-digit', hour12: false } as const;
 const office = { start: 8 * 60, end: 17 * 60 };
 const businessHours = { daysOfWeek: [1, 2, 3, 4, 5], startTime: '08:00', endTime: '17:00' };
+const rowMs = 30 * 60_000;
+const hourMs = 60 * 60_000;
 
 const clock = (minutes: number) =>
   `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
@@ -68,6 +71,11 @@ function axis(items: AgendaItem[], base: { start: number; end: number }) {
     end = Math.max(end, Math.min(24 * 60, Math.ceil(minutesOfDay(item.end) / 60) * 60));
   }
   return { start: clock(start), end: end === 24 * 60 ? '24:00' : clock(end) };
+}
+/** What a click books (D58): the hour "Ny bokning" starts with, from the row clicked rather than the quarter under the pointer. A day has no clock of its own, so the month and the all-day row start at nine. */
+function clickedHour({ allDay, date, dateStr }: { allDay: boolean; date: Date; dateStr: string }) {
+  const start = allDay ? Date.parse(localInstant(`${dateStr}T09:00`)) : date.getTime() - (date.getTime() % rowMs);
+  return { start: new Date(start).toISOString(), end: new Date(start + hourMs).toISOString() };
 }
 const isDay = (view: CalendarView) => view === 'timeGridDay' || view === 'listDay';
 const isMonth = (view: CalendarView) => view === 'dayGridMonth';
@@ -171,6 +179,13 @@ export function EventCalendar({
         selectMinDistance={4}
         snapDuration="00:15"
         selectConstraint={businessHours}
+        dateClick={
+          onSelectRange &&
+          (info => {
+            const { start, end } = clickedHour(info);
+            onSelectRange(start, end);
+          })
+        }
         dayHeaderContent={info =>
           isMonth(view) ? <Text weight="semibold">{info.text}</Text> : heading(info.date, info.isNarrow, info.isToday)
         }

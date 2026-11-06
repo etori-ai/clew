@@ -35,7 +35,7 @@ const EMPTY_ROOMS: CalendarRoom[] = [];
 
 type Props = {
   isOpen: boolean;
-  /** The time to start from: a span selected on the grid, or the next whole hour. ISO instants. */
+  /** The time to start from: a span dragged or a row clicked on the grid, or the next whole hour. ISO instants. */
   initial: { start: string; end: string };
   onClose: (created: boolean) => void;
 };
@@ -45,8 +45,8 @@ const hhmm = (instant: string) => localClock(instant).slice(11, 16);
 
 /**
  * "Ny bokning" (D32, after startsidan's meeting form): a title, a start, an end, guests from the unit and a room, with a
- * free-busy check before the person books. The form is the keyboard path to a booking; a span dragged on the grid only
- * fills it in. Modelled on Astryx's form-wizard-dialog: a form dialog that keeps its content when clicked outside.
+ * free-busy check before the person books. The form is the keyboard path to a booking; a span dragged or a row clicked
+ * on the grid only fills it in. Modelled on Astryx's form-wizard-dialog: a form dialog that keeps its content when clicked outside.
  */
 export function BookingDialog({ isOpen, initial, onClose }: Props) {
   const mobile = useMediaQuery(mobileQuery);

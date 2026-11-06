@@ -637,6 +637,15 @@
       "status": "accepted",
       "date": "2026-11-06",
       "area": "platform"
+    },
+    {
+      "key": "D58-a-click-on-the-calendar-grid-starts-a-booking",
+      "number": 58,
+      "path": "docs/decisions/D58-a-click-on-the-calendar-grid-starts-a-booking.md",
+      "title": "D58 · A click on the calendar's grid starts a booking",
+      "status": "accepted",
+      "date": "2026-11-06",
+      "area": "ui"
     }
   ],
   "documents": [
@@ -1261,6 +1270,12 @@
     {
       "path": "docs/decisions/D57-prettier-formats-the-code-and-check-enforces-it.md",
       "title": "D57 · Prettier formats the code, and `bun run check` enforces it",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D58-a-click-on-the-calendar-grid-starts-a-booking.md",
+      "title": "D58 · A click on the calendar's grid starts a booking",
       "category": "decision-history",
       "headings": []
     },

@@ -11,6 +11,7 @@ import {
   reflowProblems,
   test,
 } from './support';
+import type { Page } from '@playwright/test';
 import { NEXT_WEEK } from './data';
 
 /**
@@ -106,6 +107,102 @@ test.describe("a booking of one's own", () => {
     await expect(
       page.getByRole('region', { name: 'Aviseringar' }).getByText(/^Bokningsbeslutet är sparat/),
     ).toBeVisible();
+  });
+});
+
+test.describe('a booking started on the grid (D58)', () => {
+  /** The grid has no cells to name (see the head of this file), so a place on it is a day's column and a row's top. */
+  const point = async (page: Page, day: string, time: string, down = 4) => {
+    const column = await page.locator(`.clew-cal-day-lane[data-date="${day}"]`).boundingBox();
+    const row = await page.locator(`.clew-cal-slot-lane[data-time="${time}:00"]`).boundingBox();
+    return { x: column!.x + column!.width / 2, y: row!.y + down };
+  };
+  const booking = async (page: Page, day: string, start: string, end: string) => {
+    const dialog = page.getByRole('dialog', { name: 'Ny bokning' });
+    await expect(dialog).toBeVisible();
+    // The input under a label: a touch screen draws the two times as comboboxes, with more under the same name.
+    const field = (name: string) => dialog.getByLabel(name, { exact: true }).and(page.locator('input'));
+    await expect(field('Börjar')).toHaveValue(day);
+    await expect(field('Börjar tid')).toHaveValue(start);
+    await expect(field('Slutar')).toHaveValue(end);
+    return dialog;
+  };
+
+  test('a click in the week starts an hour on the row clicked, and the dialog takes focus', async ({
+    page,
+    api: _,
+  }) => {
+    await page.setViewportSize(desktop);
+    await open(page, '/calendar');
+    const { x, y } = await point(page, '2026-11-06', '10:00', 21);
+    await page.mouse.click(x, y);
+    const dialog = await booking(page, '6 november 2026', '10:00', '11:00');
+    await expect(dialog.getByRole('heading', { name: 'Ny bokning' })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+  });
+  test('a click outside office hours is heard too', async ({ page, api: _ }) => {
+    await page.setViewportSize(desktop);
+    await open(page, '/calendar');
+    const { x, y } = await point(page, '2026-11-06', '17:30');
+    await page.mouse.click(x, y);
+    await booking(page, '6 november 2026', '17:30', '18:30');
+  });
+  test('a press that moves a little is still a click', async ({ page, api: _ }) => {
+    await page.setViewportSize(desktop);
+    await open(page, '/calendar');
+    const { x, y } = await point(page, '2026-11-06', '10:00');
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + 3, y + 6, { steps: 3 });
+    await page.mouse.up();
+    await booking(page, '6 november 2026', '10:00', '11:00');
+  });
+  test('a drag keeps the span it drew', async ({ page, api: _ }) => {
+    await page.setViewportSize(desktop);
+    await open(page, '/calendar');
+    const from = await point(page, '2026-11-06', '10:00');
+    const to = await point(page, '2026-11-06', '11:00', 20);
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 8 });
+    await page.mouse.up();
+    await booking(page, '6 november 2026', '10:00', '11:30');
+  });
+  test('a click on a day in the month starts at nine that day', async ({ page, api: _ }) => {
+    await page.setViewportSize(desktop);
+    await open(page, '/calendar?view=month');
+    const cell = await page.locator('.clew-cal-day-cell[data-date="2026-11-18"]').boundingBox();
+    await page.mouse.click(cell!.x + cell!.width / 2, cell!.y + cell!.height - 6);
+    await booking(page, '18 november 2026', '09:00', '10:00');
+  });
+  test('a drag across days in the month opens nothing: a booking has a clock', async ({ page, api: _ }) => {
+    await page.setViewportSize(desktop);
+    await open(page, '/calendar?view=month');
+    const from = await page.locator('.clew-cal-day-cell[data-date="2026-11-18"]').boundingBox();
+    const to = await page.locator('.clew-cal-day-cell[data-date="2026-11-20"]').boundingBox();
+    await page.mouse.move(from!.x + from!.width / 2, from!.y + from!.height - 6);
+    await page.mouse.down();
+    await page.mouse.move(to!.x + to!.width / 2, to!.y + to!.height - 6, { steps: 8 });
+    await page.mouse.up();
+    await expect(page.getByRole('dialog', { name: 'Ny bokning' })).toBeHidden();
+  });
+  test('a click on a meeting opens the meeting, not a booking', async ({ page, api: _ }) => {
+    await page.setViewportSize(desktop);
+    await open(page, '/calendar');
+    await page.locator('.clew-cal-event').first().click();
+    await expect(page.getByRole('dialog', { name: 'Morgonmöte ledningsgrupp' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Ny bokning' })).toBeHidden();
+  });
+  test.describe('on a touch screen wide enough for the grid', () => {
+    test.use({ hasTouch: true });
+    test('a tap is a click', async ({ page, api: _ }) => {
+      await page.setViewportSize(desktop);
+      await open(page, '/calendar');
+      const { x, y } = await point(page, '2026-11-06', '10:00');
+      await page.touchscreen.tap(x, y);
+      await booking(page, '6 november 2026', '10:00', '11:00');
+    });
   });
 });
 
