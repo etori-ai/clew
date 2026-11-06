@@ -7,8 +7,9 @@ The [phone book connector](../../connectors/telefonbok/connector.mjs) is a compl
 | Source | What to adapt |
 |---|---|
 | [Generated manifest](../generated/telefonbok.manifest.json) | Complete schemas, capabilities, views and menu hints. Generated from `connector.mjs`. |
+| [manifest.mjs](../../connectors/telefonbok/manifest.mjs) | Shared schemas and one named block per capability: input, output, view and menu hint. `directoryCapability.view.kind` chooses the table and `view.fields` its columns. |
 | [directory.mjs](../../connectors/telefonbok/directory.mjs) | `createFixtureDirectory`, `createHttpDirectory` and `toPerson`: source access and mapping. |
-| [connector.mjs](../../connectors/telefonbok/connector.mjs) | Manifest, verified actor, unit mapping, input checks and response mapping. |
+| [connector.mjs](../../connectors/telefonbok/connector.mjs) | Read operations, verified actor, unit mapping, input checks and response mapping; exports the manifest from `manifest.mjs`. |
 | [verification.mjs](../../connectors/telefonbok/verification.mjs) | Protocol 2 identity and transport checks. |
 | [server.mjs](../../connectors/telefonbok/server.mjs) | HTTP service and environment configuration. |
 | [Connector tests](../../tests/unit/telefonbok-connector.test.ts) | Search, protected records, unit scoping and recorded HTTP responses. |
