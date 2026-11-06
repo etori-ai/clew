@@ -79,7 +79,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
   const source = manifest.source;
   const capabilities: Capability<any, any>[] = manifest.capabilities.map(c => ({
     name: c.name, kind: c.kind, title: c.title, description: c.description, input: c.input as never, output: c.output as never, model: c.model, scope: c.scope,
-    ...(c.execution ? { execution: c.execution } : {}), ...(c.kinds ? { kinds: c.kinds } : {}), ...(c.view ? { view: c.view } : {}), ...(c.menu ? { menu: c.menu } : {}),
+    ...(c.execution ? { execution: c.execution } : {}), ...(c.kinds ? { kinds: c.kinds } : {}), ...(c.follows ? { follows: c.follows } : {}), ...(c.creates ? { creates: c.creates } : {}), ...(c.view ? { view: c.view } : {}), ...(c.menu ? { menu: c.menu } : {}),
     run: async (actor, input, clew) => {
       const { status, json } = await post(transport, source, '/clew/capabilities/' + encodeURIComponent(c.name), actor, { actor, input }, await delegated(manifest, clew, source), clew.chain, clew.operationId);
       if (status >= 500 || !Value.Check(CallResponseSchema, json)) throw unavailable(source);
@@ -88,7 +88,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
     },
   }));
   return {
-    id: manifest.id, kind: manifest.kind, source, uses: manifest.uses ?? [], ...(manifest.delegation ? { delegation: manifest.delegation } : {}),
+    id: manifest.id, kind: manifest.kind, source, uses: manifest.uses ?? [], ...(manifest.facts ? { facts: manifest.facts } : {}), ...(manifest.delegation ? { delegation: manifest.delegation } : {}),
     areas: manifest.areas.map(a => ({
       id: a.id, title: a.title, roles: a.roles, standing: a.standing, schedules: a.schedules, ...(a.icon ? { icon: a.icon } : {}),
       ...(a.figure ? { figure: async (actor: Actor) => {

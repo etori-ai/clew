@@ -1069,6 +1069,24 @@
                     ]
                   }
                 }
+              },
+              "follows": {
+                "uniqueItems": true,
+                "maxItems": 20,
+                "description": "For a `propose` (D54): the fact kinds it answers for. Input is a FactEnvelope, output a FollowResponse; steps name this connector only.",
+                "type": "array",
+                "items": {
+                  "pattern": "^[a-z][a-z0-9-]*:[a-z][a-zA-Z0-9-]*$",
+                  "maxLength": 80,
+                  "description": "`<connector id>:<kind>`, stable: the name is the contract.",
+                  "type": "string"
+                }
+              },
+              "creates": {
+                "pattern": "^[a-z][a-z0-9-]*:[a-z][a-zA-Z0-9-]*$",
+                "maxLength": 80,
+                "description": "The fact kind this `propose` or `execute` brings about (D54); must be one of the manifest's `facts`.",
+                "type": "string"
               }
             }
           }
@@ -1080,6 +1098,42 @@
           "items": {
             "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
             "type": "string"
+          }
+        },
+        "facts": {
+          "maxItems": 50,
+          "description": "The fact kinds this connector creates (D54), each prefixed with its id.",
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "description": "A fact this connector creates, with the JSON Schema of its attributes. Followers receive exactly these attributes.",
+            "type": "object",
+            "required": [
+              "kind",
+              "title",
+              "attributes"
+            ],
+            "properties": {
+              "kind": {
+                "pattern": "^[a-z][a-z0-9-]*:[a-z][a-zA-Z0-9-]*$",
+                "maxLength": 80,
+                "description": "`<connector id>:<kind>`, stable: the name is the contract.",
+                "type": "string"
+              },
+              "title": {
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Swedish. What the fact is called on a job: \"Sjukfrånvaro\".",
+                "type": "string"
+              },
+              "attributes": {
+                "description": "A JSON Schema (draft 2020-12 or 7) for the value.",
+                "type": "object",
+                "patternProperties": {
+                  "^(.*)$": {}
+                }
+              }
+            }
           }
         },
         "scan": {
@@ -2935,6 +2989,288 @@
               "type": "string"
             }
           ]
+        }
+      }
+    },
+    "ManifestFact": {
+      "additionalProperties": false,
+      "description": "A fact this connector creates, with the JSON Schema of its attributes. Followers receive exactly these attributes.",
+      "type": "object",
+      "required": [
+        "kind",
+        "title",
+        "attributes"
+      ],
+      "properties": {
+        "kind": {
+          "pattern": "^[a-z][a-z0-9-]*:[a-z][a-zA-Z0-9-]*$",
+          "maxLength": 80,
+          "description": "`<connector id>:<kind>`, stable: the name is the contract.",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Swedish. What the fact is called on a job: \"Sjukfrånvaro\".",
+          "type": "string"
+        },
+        "attributes": {
+          "description": "A JSON Schema (draft 2020-12 or 7) for the value.",
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {}
+          }
+        }
+      }
+    },
+    "FactEnvelope": {
+      "additionalProperties": false,
+      "description": "The input of every `follows` capability.",
+      "type": "object",
+      "required": [
+        "fact"
+      ],
+      "properties": {
+        "fact": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "kind",
+            "attributes"
+          ],
+          "properties": {
+            "kind": {
+              "pattern": "^[a-z][a-z0-9-]*:[a-z][a-zA-Z0-9-]*$",
+              "maxLength": 80,
+              "description": "`<connector id>:<kind>`, stable: the name is the contract.",
+              "type": "string"
+            },
+            "ref": {
+              "minLength": 1,
+              "maxLength": 400,
+              "type": "string"
+            },
+            "attributes": {
+              "type": "object",
+              "patternProperties": {
+                "^(.*)$": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "StepDraft": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "kind",
+            "operation",
+            "payload",
+            "title"
+          ],
+          "properties": {
+            "kind": {
+              "const": "execute",
+              "type": "string"
+            },
+            "operation": {
+              "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
+              "maxLength": 80,
+              "type": "string"
+            },
+            "payload": {},
+            "title": {
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Swedish. The step on the job card.",
+              "type": "string"
+            },
+            "detail": {
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Swedish. One line under the title.",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "kind",
+            "operation",
+            "input",
+            "expect",
+            "within",
+            "title"
+          ],
+          "properties": {
+            "kind": {
+              "const": "watch",
+              "type": "string"
+            },
+            "operation": {
+              "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
+              "maxLength": 80,
+              "type": "string"
+            },
+            "input": {},
+            "expect": {
+              "additionalProperties": false,
+              "description": "The value at `path` in the read's output must equal `equals` for the fact to count as seen.",
+              "type": "object",
+              "required": [
+                "path",
+                "equals"
+              ],
+              "properties": {
+                "path": {
+                  "maxItems": 10,
+                  "type": "array",
+                  "items": {
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "type": "string"
+                  }
+                },
+                "equals": {}
+              }
+            },
+            "within": {
+              "pattern": "^P(?!$)(\\d+D)?(T(?=\\d)(\\d+H)?(\\d+M)?)?$",
+              "description": "ISO 8601 duration (days, hours, minutes) the watch lasts, e.g. `P1D`, `PT4H`.",
+              "type": "string"
+            },
+            "title": {
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Swedish. The step on the job card.",
+              "type": "string"
+            },
+            "detail": {
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Swedish. One line under the title.",
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "FollowResponse": {
+      "additionalProperties": false,
+      "description": "What a `follows` capability returns. Zero steps means nothing to do for this fact.",
+      "type": "object",
+      "required": [
+        "steps"
+      ],
+      "properties": {
+        "steps": {
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "kind",
+                  "operation",
+                  "payload",
+                  "title"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "execute",
+                    "type": "string"
+                  },
+                  "operation": {
+                    "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
+                    "maxLength": 80,
+                    "type": "string"
+                  },
+                  "payload": {},
+                  "title": {
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Swedish. The step on the job card.",
+                    "type": "string"
+                  },
+                  "detail": {
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Swedish. One line under the title.",
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "kind",
+                  "operation",
+                  "input",
+                  "expect",
+                  "within",
+                  "title"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "watch",
+                    "type": "string"
+                  },
+                  "operation": {
+                    "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
+                    "maxLength": 80,
+                    "type": "string"
+                  },
+                  "input": {},
+                  "expect": {
+                    "additionalProperties": false,
+                    "description": "The value at `path` in the read's output must equal `equals` for the fact to count as seen.",
+                    "type": "object",
+                    "required": [
+                      "path",
+                      "equals"
+                    ],
+                    "properties": {
+                      "path": {
+                        "maxItems": 10,
+                        "type": "array",
+                        "items": {
+                          "minLength": 1,
+                          "maxLength": 80,
+                          "type": "string"
+                        }
+                      },
+                      "equals": {}
+                    }
+                  },
+                  "within": {
+                    "pattern": "^P(?!$)(\\d+D)?(T(?=\\d)(\\d+H)?(\\d+M)?)?$",
+                    "description": "ISO 8601 duration (days, hours, minutes) the watch lasts, e.g. `P1D`, `PT4H`.",
+                    "type": "string"
+                  },
+                  "title": {
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Swedish. The step on the job card.",
+                    "type": "string"
+                  },
+                  "detail": {
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Swedish. One line under the title.",
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          }
         }
       }
     }

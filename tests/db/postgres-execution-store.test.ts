@@ -4,7 +4,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { database, schema } from '../../packages/db/src/index';
 import { postgresExecutionStore } from '../../apps/server/src/modules/executions/adapters/postgres';
 import { sealSecret, openSecret } from '../../apps/server/src/auth-crypto';
-import { executionRecord, executionStoreContract } from '../execution-store-contract';
+import { executionRecord, executionStoreContract, jobRecord } from '../execution-store-contract';
 import { projectExecution } from '../../apps/server/src/composition/execution-projection';
 import { executionUsecases } from '../../apps/server/src/modules/executions/usecases';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
@@ -14,7 +14,7 @@ const make = async () => {
   const personId = 'exec-test-' + randomUUID(); people.push(personId);
   await database().insert(schema.people).values({ id: personId, organisationId: 'test', name: 'Synthetic execution test' });
   const store = postgresExecutionStore({ seal: sealSecret, open: openSecret });
-  return { personId, store, auditCount: async () => (await database().select().from(schema.audit).where(and(eq(schema.audit.actor, 'person:' + personId), eq(schema.audit.action, 'execution.approved')))).length };
+  return { personId, store, auditCount: async (action = 'execution.approved') => (await database().select().from(schema.audit).where(and(eq(schema.audit.actor, 'person:' + personId), eq(schema.audit.action, action)))).length };
 };
 executionStoreContract('postgres', make);
 test('approved input and source evidence are sealed and survive a new adapter instance', async () => {
@@ -25,6 +25,13 @@ test('approved input and source evidence are sealed and survive a new adapter in
   expect(raw!.payload).not.toContain('reference:item:1'); expect(raw!.result).not.toContain('Sensitive');
   const restarted = postgresExecutionStore({ seal: sealSecret, open: openSecret });
   expect(await restarted.read(e.id)).toEqual(e);
+});
+test('a job\'s steps are sealed and survive a new adapter instance', async () => {
+  const w = await make(), e = executionRecord(w.personId, w.personId + '-job-step'), job = jobRecord(w.personId, w.personId + '-sealed-job', [e]);
+  await w.store.transaction(async tx => { await tx.insert(e); await tx.insertJob(job); });
+  const [raw] = await database().select().from(schema.executionJobs).where(eq(schema.executionJobs.id, job.id));
+  expect(raw!.steps).not.toContain('hr:emp:1004'); expect(raw!.steps).not.toContain('registered');
+  expect(await postgresExecutionStore({ seal: sealSecret, open: openSecret }).readJob(job.id)).toEqual(job);
 });
 test('approval, card state and outcome are atomic; an uncertain undo preserves the original receipt', async () => {
   const w = await make(), at = '2099-11-05T10:00:00.000Z', threadId = w.personId + '-card';
@@ -60,6 +67,8 @@ afterAll(async () => {
     await database().delete(schema.audit).where(inArray(schema.audit.subject, ids.map(id => 'execution:' + id)));
     await database().delete(schema.executions).where(inArray(schema.executions.id, ids));
   }
+  await database().delete(schema.audit).where(inArray(schema.audit.subject, (await database().select().from(schema.executionJobs).where(inArray(schema.executionJobs.personId, people))).map(j => 'job:' + j.id)));
+  await database().delete(schema.executionJobs).where(inArray(schema.executionJobs.personId, people));
   await database().delete(schema.threads).where(inArray(schema.threads.personId, people));
   await database().delete(schema.people).where(inArray(schema.people.id, people));
 });

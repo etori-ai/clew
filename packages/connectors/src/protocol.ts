@@ -35,6 +35,35 @@ export const ActorSchema = object({
 export type ProtocolActor = Static<typeof ActorSchema>;
 export const ScopeRuleSchema = object({ roles: Type.Optional(Type.Array(RoleSchema, { uniqueItems: true })) },
   'Who may call the capability at all. Omitted roles means every signed-in person. The connector narrows further in the call.');
+/**
+ * A fact kind a connector brings about (D54): `<connector id>:<kind>`, such as `hr:absence`. The name is its contract (D37):
+ * a new optional attribute or a looser constraint keeps the name; anything else is a new kind, the old one deprecated.
+ */
+const FACT_KIND = '^[a-z][a-z0-9-]*:[a-z][a-zA-Z0-9-]*$';
+export const FactKindName = Type.String({ pattern: FACT_KIND, maxLength: 80, description: '`<connector id>:<kind>`, stable: the name is the contract.' });
+const capabilityName = Type.String({ pattern: '^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$', maxLength: 80 });
+export const ManifestFactSchema = object({
+  kind: FactKindName,
+  title: swedish('Swedish. What the fact is called on a job: "Sjukfrånvaro".'),
+  attributes: jsonSchema,
+}, 'A fact this connector creates, with the JSON Schema of its attributes. Followers receive exactly these attributes.');
+/** What a follower is asked with (D54): the fact, with `ref` when it already exists in its source and absent when the job would create it. */
+export const FactEnvelopeSchema = object({
+  fact: object({ kind: FactKindName, ref: Type.Optional(Type.String({ minLength: 1, maxLength: 400 })), attributes: Type.Record(Type.String(), Type.Unknown()) }),
+}, 'The input of every `follows` capability.');
+/**
+ * One step a follower proposes for a job (D54). It names a capability of the follower's own connector only: an `execute`
+ * with its approved payload, or a `watch`, a read Clew repeats within a bounded window until `expect` holds. A follower
+ * never writes; the person approves the job once and Clew runs each step as its own execution or watch.
+ */
+export const StepDraftSchema = Type.Union([
+  object({ kind: Type.Literal('execute'), operation: capabilityName, payload: Type.Unknown(), title: swedish('Swedish. The step on the job card.'), detail: Type.Optional(swedish('Swedish. One line under the title.')) }),
+  object({ kind: Type.Literal('watch'), operation: capabilityName, input: Type.Unknown(),
+    expect: object({ path: Type.Array(Type.String({ minLength: 1, maxLength: 80 }), { maxItems: 10 }), equals: Type.Unknown() }, 'The value at `path` in the read\'s output must equal `equals` for the fact to count as seen.'),
+    within: Type.String({ pattern: '^P(?!$)(\\d+D)?(T(?=\\d)(\\d+H)?(\\d+M)?)?$', description: 'ISO 8601 duration (days, hours, minutes) the watch lasts, e.g. `P1D`, `PT4H`.' }),
+    title: swedish('Swedish. The step on the job card.'), detail: Type.Optional(swedish('Swedish. One line under the title.')) }),
+]);
+export const FollowResponseSchema = object({ steps: Type.Array(StepDraftSchema, { maxItems: 10 }) }, 'What a `follows` capability returns. Zero steps means nothing to do for this fact.');
 export const ManifestCapabilitySchema = object({
   execution: Type.Optional(Type.Union([
     object({ strategy: Type.Literal('manual') }),
@@ -51,6 +80,8 @@ export const ManifestCapabilitySchema = object({
   kinds: Type.Optional(Type.Array(SearchKind, { uniqueItems: true, description: 'For `<id>.search` (D26): what it can find. Its output is a SearchOutput; `<id>.fetch` takes one of its refs back and returns one SearchHit.' })),
   view: Type.Optional(ViewSchema),
   menu: Type.Optional(MenuHintSchema),
+  follows: Type.Optional(Type.Array(FactKindName, { uniqueItems: true, maxItems: 20, description: 'For a `propose` (D54): the fact kinds it answers for. Input is a FactEnvelope, output a FollowResponse; steps name this connector only.' })),
+  creates: Type.Optional(Type.String({ pattern: FACT_KIND, maxLength: 80, description: 'The fact kind this `propose` or `execute` brings about (D54); must be one of the manifest\'s `facts`.' })),
 });
 export const ManifestAreaSchema = object({
   id: Type.String({ pattern: '^[a-z][a-z0-9-]*$', maxLength: 40 }), title: swedish('Swedish. The sidebar entry.'),
@@ -76,6 +107,7 @@ export const ConnectorManifestSchema = Type.Object({
   areas: Type.Array(ManifestAreaSchema),
   capabilities: Type.Array(ManifestCapabilitySchema),
   uses: Type.Optional(Type.Array(Type.String({ pattern: '^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$' }), { uniqueItems: true, maxItems: 100 })),
+  facts: Type.Optional(Type.Array(ManifestFactSchema, { maxItems: 50, description: 'The fact kinds this connector creates (D54), each prefixed with its id.' })),
   scan: Type.Boolean({ description: 'Whether Clew should POST /clew/scan for each person nightly and on first visit.' }),
   delegation: Type.Optional(DelegationSchema),
 }, { additionalProperties: false, $id: 'https://clew.dev/protocol/2/connector-manifest.schema.json', title: 'Clew connector manifest' });
@@ -129,6 +161,7 @@ export function protocolSchema() {
       ProtocolError: ProtocolErrorSchema, ExecuteResult: ExecuteResultSchema, ScanRequest: ScanRequestSchema, ScanResponse: ScanResponseSchema,
       ThreadDraft: ThreadDraftSchema, FigureRequest: FigureRequestSchema, FigureResponse: FigureResponseSchema, CallbackRequest: CallbackRequestSchema,
       SearchHit: SearchHitSchema, SearchOutput: SearchOutputSchema, Delegation: DelegationSchema, View: ViewSchema, Menu: MenuHintSchema,
+      ManifestFact: ManifestFactSchema, FactEnvelope: FactEnvelopeSchema, StepDraft: StepDraftSchema, FollowResponse: FollowResponseSchema,
     },
   };
 }

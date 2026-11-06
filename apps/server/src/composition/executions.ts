@@ -7,7 +7,7 @@ import { systemContext } from '../system-context';
 import { sealSecret, openSecret } from '../auth-crypto';
 import { postgresExecutionStore } from '../modules/executions/adapters/postgres';
 import { executionUsecases } from '../modules/executions/usecases';
-import { ExecutionError, type ExecutionSource } from '../modules/executions/model';
+import { ExecutionError, type ExecutionSource, type WatchSource } from '../modules/executions/model';
 import { executionDispatcher } from '../modules/executions/dispatch';
 import { startExecutionWorkflow } from '../temporal/executions';
 import { clock } from './ambient';
@@ -52,7 +52,16 @@ const source: ExecutionSource = {
     return response.result;
   },
 };
-export const executions = executionUsecases({ store: executionStore, source, clock, ids: randomUUID, digest: input => createHash('sha256').update(JSON.stringify(canonical(input))).digest('hex') });
+/** A watch step's read (D54): a `read` the person may call, run as the person; never an execute. */
+const watch: WatchSource = {
+  async authorize(persona, operation, input) {
+    const found = await registry.validate(actorOf(persona), operation, input);
+    if (found.capability.kind !== 'read') throw new ExecutionError('En bevakning måste vara en läsning.');
+    return { connector: found.connector.id };
+  },
+  read: (persona, operation, input) => registry.run(actorOf(persona), operation, input),
+};
+export const executions = executionUsecases({ store: executionStore, source, watch, clock, ids: randomUUID, digest: input => createHash('sha256').update(JSON.stringify(canonical(input))).digest('hex') });
 calendarApproval.approve = executions.approve;
 calendarApproval.previous = async (p, id) => {
   const e = await executionStore.readDecision(p.id, id);

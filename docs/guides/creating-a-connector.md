@@ -37,6 +37,7 @@ The complete [hello manifest](../generated/hello.manifest.json) and [phone book 
 - Declare exact callback targets in `uses`, an array of strings such as `calendar.today`.
 - Keep refs stable and validate them when they come back. Refs are opaque within the owner's contract: hello uses `hello:item:1`, while the phone book uses `person:<id>`. They do not grant access.
 - Choose `scan: false` unless you can define a deterministic occurrence and its stable topic.
+- To take part in work that spans systems (D55), declare the fact kinds your connector creates in `facts` (`<id>:<kind>` with the attributes' JSON Schema) and mark the capability that brings one about with `creates`. A `propose` that answers for another system's fact declares `follows`: its input is a `FactEnvelope`, its output a `FollowResponse` whose steps name your own connector only, as an execute with its payload or a watch (one of your reads, an expectation and a window). Nothing runs until an administrator binds your follower to the kind and the person approves the job; Clew runs each step as its own execution.
 
 Do not add fields from a proposed decision unless they exist in the schema. For example, `deprecated` is not a supported manifest field today. See [status](../reference/status.md).
 

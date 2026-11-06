@@ -1,35 +1,153 @@
 import type { AuthenticatedContext } from '@clew/contracts';
 import type { ExecuteResult } from '@clew/connectors';
-import { ExecutionError, type Execution, type ExecutionDeps } from './model';
-import { executionView, mayReplay, outcome, sameSafety } from './domain';
+import { ExecutionError, type Execution, type ExecutionDeps, type ExecutionTx, type Job, type JobInput, type JobStep, type JobStepInput, type WatchObservation, type WatchState } from './model';
+import { executionView, jobView, mayReplay, outcome, sameSafety, seen, undoInputOf, undoable } from './domain';
 
-const LEASE_MS = 120_000, APPROVAL_MS = 24 * 3600_000;
-export function executionUsecases({ store, source, clock, ids, digest }: ExecutionDeps) {
-  async function approve(persona: AuthenticatedContext, input: { decisionId: string; operation: string; payload: unknown; compensates?: string; presentation?: Execution['presentation'] }) {
-    await persona.authorize();
-    if (!/^[A-Za-z0-9:_.-]{1,200}$/.test(input.decisionId)) throw new ExecutionError('Ogiltigt beslut.');
+const LEASE_MS = 120_000, APPROVAL_MS = 24 * 3600_000, MAX_STEPS = 10, MAX_CHECKS = 3;
+const DECISION = /^[A-Za-z0-9:_.-]{1,200}$/, JOB_DECISION = /^[A-Za-z0-9:_.-]{1,150}$/, STEP_ID = /^[A-Za-z0-9_-]{1,40}$/;
+type ApproveInput = { decisionId: string; operation: string; payload: unknown; compensates?: string; presentation?: Execution['presentation'] };
+export function executionUsecases({ store, source, watch, clock, ids, digest }: ExecutionDeps) {
+  /** Everything an approval needs before its transaction: authority, the source's write safety and, for an undo, the compensation rule. No I/O on the store beyond reading the original. */
+  async function prepare(persona: AuthenticatedContext, input: ApproveInput, at: string): Promise<Execution> {
+    if (!DECISION.test(input.decisionId)) throw new ExecutionError('Ogiltigt beslut.');
     const access = await source.authorize(persona, input.operation, input.payload);
     if (input.compensates) {
       const original = await store.read(input.compensates);
-      if (!original || original.personId !== persona.id || original.connector !== access.connector || !['succeeded', 'partial'].includes(original.state) || original.result?.undoCapability !== input.operation || clock().getTime() > Date.parse(original.dispatchedAt ?? original.createdAt) + (original.result.undoMinutes ?? 10) * 60_000)
-        throw new ExecutionError('Åtgärden kan inte ångras.');
-      const approvedUndo = original.result.undoInput ?? { refs: original.result.rows.filter(r => r.outcome === 'done').map(r => r.ref).sort() };
-      if (digest(input.payload) !== digest(approvedUndo)) throw new ExecutionError('Ångra måste gälla exakt den bekräftade åtgärden.');
+      if (!undoable(original, persona.id, input.operation, access.connector, at)) throw new ExecutionError('Åtgärden kan inte ångras.');
+      if (digest(input.payload) !== digest(undoInputOf(original!))) throw new ExecutionError('Ångra måste gälla exakt den bekräftade åtgärden.');
     }
-    const at = clock().toISOString();
-    const execution: Execution = { id: ids(), decisionId: input.decisionId, personId: persona.id, principal: persona.principal.id, unitId: persona.unitId, authorizationVersion: persona.authorizationVersion,
+    return { id: ids(), decisionId: input.decisionId, personId: persona.id, principal: persona.principal.id, unitId: persona.unitId, authorizationVersion: persona.authorizationVersion,
       connector: access.connector, operation: input.operation, payload: input.payload, digest: digest({ operation: input.operation, payload: input.payload, compensates: input.compensates ?? null, threadId: input.presentation?.threadId ?? null, actionId: input.presentation?.actionId ?? null }), safety: access.safety, ...(input.presentation ? { presentation: input.presentation } : {}),
       state: 'pending', reason: access.needsSession ? 'needs-session' : null, result: null, compensates: input.compensates ?? null,
       createdAt: at, updatedAt: at, expiresAt: new Date(Date.parse(at) + APPROVAL_MS).toISOString(), dispatchedAt: null, attempt: 0, leaseUntil: null };
-    return store.transaction(async tx => {
-      const saved = await tx.insert(execution);
-      if (saved.execution.digest !== execution.digest) throw new ExecutionError('Beslutet gäller redan ett annat innehåll.');
-      if (saved.inserted) {
-        await tx.audit({ actor: persona.principal.id, action: 'execution.approved', subject: 'execution:' + execution.id, at, details: { connector: execution.connector, operation: execution.operation, digest: execution.digest, compensates: execution.compensates } });
-        await tx.enqueue({ id: 'execution:' + execution.id, executionId: execution.id, attempt: 0, leaseUntil: null, nextAt: at, deliveredAt: null, lastError: null });
+  }
+  /** One approved intent into the ledger: the row, its audit and its outbox intent, or the existing row for the same decision. Composable, so a job commits its steps in one transaction. */
+  async function commit(tx: ExecutionTx, persona: AuthenticatedContext, execution: Execution): Promise<Execution> {
+    const saved = await tx.insert(execution);
+    if (saved.execution.digest !== execution.digest) throw new ExecutionError('Beslutet gäller redan ett annat innehåll.');
+    if (saved.inserted) {
+      await tx.audit({ actor: persona.principal.id, action: 'execution.approved', subject: 'execution:' + execution.id, at: execution.createdAt, details: { connector: execution.connector, operation: execution.operation, digest: execution.digest, compensates: execution.compensates } });
+      await tx.enqueue({ id: 'execution:' + execution.id, executionId: execution.id, attempt: 0, leaseUntil: null, nextAt: execution.createdAt, deliveredAt: null, lastError: null });
+    }
+    return saved.execution;
+  }
+  async function approve(persona: AuthenticatedContext, input: ApproveInput) {
+    await persona.authorize();
+    const execution = await prepare(persona, input, clock().toISOString());
+    return store.transaction(async tx => executionView(await commit(tx, persona, execution)));
+  }
+  /**
+   * One approval over several steps (D54). Every execute step is prepared and authorized on its own connector first, so a
+   * refused step persists nothing; then the steps and the job row commit together. A repeated identical approval returns
+   * the same job and the same executions; a changed step is refused. Steps are independent: no step reads another's result.
+   */
+  async function approveJob(persona: AuthenticatedContext, input: JobInput) {
+    await persona.authorize();
+    if (!JOB_DECISION.test(input.decisionId)) throw new ExecutionError('Ogiltigt beslut.');
+    if (!input.steps.length || input.steps.length > MAX_STEPS) throw new ExecutionError('Ett jobb har mellan ett och tio steg.');
+    const stepIds = new Set<string>();
+    for (const step of input.steps) { if (!STEP_ID.test(step.id) || stepIds.has(step.id)) throw new ExecutionError('Ogiltigt steg.'); stepIds.add(step.id); }
+    const at = clock().toISOString();
+    const prepared: Array<{ step: JobStepInput; connector: string; execution?: Execution }> = [];
+    for (const step of input.steps) {
+      if (step.kind === 'execute') {
+        const execution = await prepare(persona, { decisionId: input.decisionId + ':' + step.id, operation: step.operation, payload: step.payload }, at);
+        prepared.push({ step, connector: execution.connector, execution });
+      } else {
+        if (!watch) throw new ExecutionError('Bevakning är inte tillgänglig.');
+        const ordered = step.checks.every((c, i) => i === 0 || c > step.checks[i - 1]!);
+        if (!step.checks.length || step.checks.length > MAX_CHECKS || !ordered || step.expiresAt <= step.checks[step.checks.length - 1]! || step.expect.path.length > 10) throw new ExecutionError('Ogiltig bevakning.');
+        const access = await watch.authorize(persona, step.operation, step.input);
+        prepared.push({ step, connector: access.connector });
       }
-      return executionView(saved.execution);
+    }
+    const job: Omit<Job, 'steps'> = { id: ids(), decisionId: input.decisionId, personId: persona.id, principal: persona.principal.id, unitId: persona.unitId, authorizationVersion: persona.authorizationVersion, digest: digest({ steps: input.steps }), createdAt: at, updatedAt: at };
+    return store.transaction(async tx => {
+      const steps: JobStep[] = [];
+      for (const p of prepared) {
+        if (p.step.kind === 'execute') { const saved = await commit(tx, persona, p.execution!); steps.push({ id: p.step.id, kind: 'execute', connector: p.connector, operation: p.step.operation, executionId: saved.id }); }
+        else steps.push({ id: p.step.id, kind: 'watch', connector: p.connector, operation: p.step.operation, input: p.step.input, expect: p.step.expect, checks: p.step.checks, expiresAt: p.step.expiresAt, state: 'waiting', reason: null, observations: [] });
+      }
+      const saved = await tx.insertJob({ ...job, steps });
+      if (saved.job.digest !== job.digest) throw new ExecutionError('Beslutet gäller redan ett annat innehåll.');
+      if (saved.inserted) await tx.audit({ actor: persona.principal.id, action: 'job.approved', subject: 'job:' + job.id, at, details: { decisionId: job.decisionId, steps: steps.map(s => ({ id: s.id, kind: s.kind, connector: s.connector, operation: s.operation, ...(s.kind === 'execute' ? { executionId: s.executionId } : {}) })) } });
+      return view(saved.job);
     });
+  }
+  async function view(job: Job) {
+    const executions: Record<string, Execution | undefined> = {};
+    for (const s of job.steps) if (s.kind === 'execute') executions[s.executionId] = await store.read(s.executionId);
+    return jobView(job, executions);
+  }
+  async function readJob(persona: AuthenticatedContext, id: string) {
+    const job = await store.readJob(id);
+    if (!job || job.personId !== persona.id) return undefined;
+    await persona.authorize();
+    return view(job);
+  }
+  /**
+   * "Ångra allt": one linked compensation per step whose confirmed effect can still be undone, approved in one decision and
+   * dispatched and judged alone (D45). A step without an inverse, not yet done or past its window is reported, not forced.
+   */
+  async function undoJob(persona: AuthenticatedContext, jobId: string) {
+    const job = await store.readJob(jobId);
+    if (!job || job.personId !== persona.id) throw new ExecutionError('Jobbet finns inte.');
+    await persona.authorize();
+    const at = clock().toISOString();
+    const compensations: Array<{ stepId: string; original: Execution; execution: Execution }> = [], skipped: Array<{ stepId: string; reason: string }> = [];
+    for (const step of job.steps) {
+      if (step.kind !== 'execute') continue;
+      const original = await store.read(step.executionId);
+      const operation = original?.result?.undoCapability;
+      if (!original || !operation) { skipped.push({ stepId: step.id, reason: ['succeeded', 'partial'].includes(original?.state ?? '') ? 'no-undo' : 'not-done' }); continue; }
+      if (!undoable(original, persona.id, operation, original.connector, at)) { skipped.push({ stepId: step.id, reason: ['succeeded', 'partial'].includes(original.state) ? 'window-closed' : 'not-done' }); continue; }
+      compensations.push({ stepId: step.id, original, execution: await prepare(persona, { decisionId: 'undo:' + original.id, operation, payload: undoInputOf(original), compensates: original.id }, at) });
+    }
+    if (!compensations.length) throw new ExecutionError('Inget att ångra.');
+    return store.transaction(async tx => {
+      const saved: Array<{ stepId: string; executionId: string; compensationId: string }> = [];
+      let fresh = false;
+      for (const c of compensations) { const row = await commit(tx, persona, c.execution); fresh ||= row.id === c.execution.id; saved.push({ stepId: c.stepId, executionId: c.original.id, compensationId: row.id }); }
+      if (fresh) await tx.audit({ actor: persona.principal.id, action: 'job.undo_approved', subject: 'job:' + job.id, at, details: { compensations: saved, skipped } });
+      return { jobId: job.id, compensations: saved, skipped };
+    });
+  }
+  /**
+   * One check of a watch step (D54), the activity a timer will call with the check's index as its fence: nothing is read
+   * before the check's time or twice for one check, the window's end wins over a late check, authority is current, and the
+   * read is the step's own connector's read, never an execute. A source that does not answer leaves the watch waiting.
+   */
+  async function observe(jobId: string, stepId: string, check: number): Promise<WatchState> {
+    const job = await store.readJob(jobId);
+    const step = job?.steps.find(s => s.id === stepId);
+    if (!job || !step || step.kind !== 'watch') throw new ExecutionError('Bevakningen finns inte.');
+    if (step.state !== 'waiting') return step.state;
+    const at = clock().toISOString();
+    const settleWatch = (state: WatchState, reason: string | null, observation?: WatchObservation) => store.transaction(async tx => {
+      const current = await tx.lockJob(jobId);
+      const s = current?.steps.find(x => x.id === stepId);
+      if (!current || !s || s.kind !== 'watch') return 'blocked' as WatchState;
+      const before: WatchState = s.state;
+      if (before !== 'waiting' || (observation && s.observations.some(o => o.check === observation.check))) return before;
+      const next: JobStep = { ...s, state, reason, observations: observation ? [...s.observations, observation] : s.observations };
+      await tx.updateJob({ ...current, steps: current.steps.map(x => x.id === stepId ? next : x), updatedAt: at });
+      await tx.audit({ actor: 'system:execution', action: 'job.watch_' + (observation ? 'observed' : state), subject: 'job:' + jobId, at, details: { stepId, state, ...(observation ? { check: observation.check, seen: observation.seen, ...(observation.error ? { error: observation.error } : {}) } : {}) } });
+      return state;
+    });
+    if (at >= step.expiresAt) return settleWatch('expired', 'expired');
+    if (!watch || !Number.isInteger(check) || check < 0 || check >= step.checks.length || at < step.checks[check]! || step.observations.some(o => o.check === check)) return 'waiting';
+    let persona: AuthenticatedContext | undefined;
+    try {
+      persona = await source.current(job.personId);
+      if (!persona || persona.unitId !== job.unitId || persona.authorizationVersion !== job.authorizationVersion) throw new Error('revoked');
+      await persona.authorize();
+      if ((await watch.authorize(persona, step.operation, step.input)).connector !== step.connector) throw new Error('moved');
+    } catch { return settleWatch('blocked', 'authority-revoked'); }
+    let output: unknown;
+    try { output = await watch.read(persona, step.operation, step.input); }
+    catch { return settleWatch('waiting', null, { check, at, seen: false, error: 'source-unavailable' }); }
+    const matched = seen(output, step.expect, digest);
+    return settleWatch(matched ? 'seen' : 'waiting', null, { check, at, seen: matched });
   }
   async function read(persona: AuthenticatedContext, id: string) {
     const e = await store.read(id);
@@ -111,5 +229,5 @@ export function executionUsecases({ store, source, clock, ids, digest }: Executi
     });
     return read(persona, id);
   }
-  return { approve, read, progress, reconcile };
+  return { approve, approveJob, undoJob, observe, readJob, read, progress, reconcile };
 }

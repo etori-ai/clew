@@ -107,6 +107,33 @@ Clew does not join the second connector into the view. The ref renders as an obj
 owning connector's `read` in the side panel (D9), for example the directory contact card. The row is fetched
 when asked, as the user, and never copied into the first connector's output.
 
+### 6. Jobs: facts, followers and one approval (built in the ledger, no UI)
+
+One event, work in several systems: an employee's sick report means a write in the HR system, a changed shift in time
+reporting and a check that payroll picked it up. Clew writes no code per such flow. Instead (D55, the stress test in
+`docs/reviews/2026-11-06-cross-system-work-stress-test.md`):
+
+- A connector declares the **facts** it creates (`facts: [{ kind: 'hr:absence', title, attributes }]`) and marks the
+  capability that brings one about with `creates`. The kind's name is its contract (D37): a breaking change is a new kind.
+- A `propose` that answers for a fact kind declares `follows: ['hr:absence']`. Its input is Clew's one envelope,
+  `{ fact: { kind, ref?, attributes } }`; its output is `{ steps }`, each step an `execute` of **its own connector** with
+  the approved payload, or a `watch`: one of its own reads, an expectation and a window. Zero steps is an answer. A
+  follower never writes and never names another system.
+- An administrator **binds** followers to a kind in the database (Administration › Anslutna system, D23): default deny,
+  a flat list per kind, audience per binding, a cap on a watch's window. No conditions, branching or ordering.
+- Clew **assembles** the job for one fact like the search composite: every bound follower is asked at once under a budget,
+  as the person; the proposal lists every bound system with `ok`, `timeout`, `unavailable`, `degraded` (the kind is no
+  longer created, the follower is gone or not callable) or `disabled`, and is marked partial when a system is missing.
+- The person **approves once**. The ledger writes the job row, one execution per execute step (own connector, decision
+  key `<job>:<step>`, own write safety and read-back), one watch per watch step with absolute check times, audit and
+  outbox in one transaction (D45). Steps are independent: no step reads another's result. Anything that needs a result
+  is the next job, from a fact on the receipt. "Ångra allt" is one linked compensation per step, each judged alone.
+
+Status: `apps/server/src/modules/jobs/` (bindings, assembler), `modules/executions` (`approveJob`, `undoJob`, `observe`),
+tables `execution_job` and `follow_binding`, the scenario `tests/unit/job-executions.test.ts` and the store contract.
+Not built: the route and card, the administration page for bindings, the Temporal timer that fires `observe`, and the
+event ingest (D19) that would start a job from a fact the source reports itself.
+
 ## Combinations by connector kind
 
 | Combination | How | What Clew stores | Example |
