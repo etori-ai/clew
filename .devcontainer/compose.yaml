@@ -133,6 +133,25 @@ services:
       interval: 5s
       timeout: 3s
       retries: 60
+  # The local fake of Microsoft Graph (D69): scripts/fake-graph.ts over the dev image. It needs no account or network.
+  graph:
+    image: clew-dev:local
+    profiles: ["graph"]
+    init: true
+    working_dir: /workspace
+    command: bun scripts/fake-graph.ts
+    mem_limit: 128m
+    memswap_limit: 128m
+    environment:
+      CLEW_POC: "true"
+    volumes:
+      - ${CLEW_HOST_WORKSPACE:-..}:/workspace
+      - node_modules:/workspace/node_modules
+    healthcheck:
+      test: ["CMD", "bun", "--eval", "process.exit((await fetch('http://localhost:4010/health')).ok ? 0 : 1)"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
   calendar-mail:
     image: axllent/mailpit:v1.33.0@sha256:9b3a463be15354c0f0eba91697d80e3e0d8a5623ef0e627cacc836bc17fd5231
     profiles: ["calendar"]

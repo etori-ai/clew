@@ -246,7 +246,7 @@
       "number": 11,
       "path": "docs/decisions/D11-one-calendar-contract-two-adapters.md",
       "title": "D11 · One calendar contract, CalDAV and Microsoft 365 as adapters",
-      "status": "accepted, `microsoft365` adapter not built yet",
+      "status": "accepted, `microsoft365` adapter built against a local fake (D69), not yet run against a tenant",
       "date": "2026-11-03",
       "area": "integrations"
     },
@@ -780,6 +780,24 @@
       "status": "proposed, built 2026-11-06 as an experiment beside the web app; nothing in `apps/web` or the server changed for it",
       "date": "2026-11-06",
       "area": "ui, product"
+    },
+    {
+      "key": "D68-people-are-pushed-into-clew-through-standard-scim",
+      "number": 68,
+      "path": "docs/decisions/D68-people-are-pushed-into-clew-through-standard-scim.md",
+      "title": "D68 · People are pushed into Clew through standard SCIM, and mapping happens outside Clew",
+      "status": "accepted, not built yet; the group keys are proposed until a first provisioner has used them",
+      "date": "2026-11-06",
+      "area": "identity"
+    },
+    {
+      "key": "D69-a-local-fake-of-microsoft-graph-tests-the-microsoft-365-adapter",
+      "number": 69,
+      "path": "docs/decisions/D69-a-local-fake-of-microsoft-graph-tests-the-microsoft-365-adapter.md",
+      "title": "D69 · A local fake of Microsoft Graph tests the Microsoft 365 adapter",
+      "status": "accepted, built 2026-11-06, not yet run against a real tenant",
+      "date": "2026-11-06",
+      "area": "integrations"
     }
   ],
   "documents": [
@@ -1049,6 +1067,7 @@
       "headings": [
         "The shape in one paragraph",
         "Where a new test goes",
+        "Microsoft 365 without Microsoft",
         "The kinds of test",
         "Rules the tools enforce",
         "Commands",
@@ -1495,6 +1514,18 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D68-people-are-pushed-into-clew-through-standard-scim.md",
+      "title": "D68 · People are pushed into Clew through standard SCIM, and mapping happens outside Clew",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D69-a-local-fake-of-microsoft-graph-tests-the-microsoft-365-adapter.md",
+      "title": "D69 · A local fake of Microsoft Graph tests the Microsoft 365 adapter",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -1934,6 +1965,21 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-06-calendar-and-manager-teams.md",
+      "title": "Review: the calendar and a manager's team · 2026-11-06",
+      "category": "review-history",
+      "headings": [
+        "Question",
+        "Assessment",
+        "What exists",
+        "How the team is modelled",
+        "Findings",
+        "Against the vision",
+        "Recommendation",
+        "Verified"
+      ]
+    },
+    {
       "path": "docs/reviews/2026-11-06-cross-system-work-stress-test.md",
       "title": "Stress test: one event, work in several systems",
       "category": "review-history",
@@ -2008,6 +2054,21 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-06-manager-statistics-from-qlik.md",
+      "title": "Review: manager statistics and reading Qlik directly · 2026-11-06",
+      "category": "review-history",
+      "headings": [
+        "Question",
+        "Assessment",
+        "How it works today",
+        "What runs on the Qlik side",
+        "Options",
+        "In Clew",
+        "Open questions",
+        "Not verified"
+      ]
+    },
+    {
       "path": "docs/reviews/2026-11-06-start-page-directions-and-flows.md",
       "title": "Design exploration: the start page's directions, and every path from it · 2026-11-06",
       "category": "review-history",
@@ -2029,6 +2090,21 @@
         "3. Where it bends or breaks",
         "4. A second web app over the same server",
         "5. Recommendation"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-06-users-groups-roles-and-scim.md",
+      "title": "Review: users, groups, roles and SCIM · 2026-11-06",
+      "category": "review-history",
+      "headings": [
+        "Question",
+        "Assessment",
+        "What exists",
+        "Findings",
+        "Recommendation",
+        "Decisions needed",
+        "Verified",
+        "Outcome"
       ]
     },
     {

@@ -343,6 +343,8 @@ export function calendarUsecases(deps: CalendarDeps) {
     const { current, persona, binding } = found;
     const accepted: ProposalRecord[] = [],
       declined: ProposalRecord[] = [];
+    // The answer itself changes the event, and the replacement cancels it with the revision that holds the answer.
+    const revisions = new Map<string, string>();
     for (const p of current.proposals.filter(waitingOnInvitee)) {
       try {
         const ref = p.eventRef ?? (p.eventUid ? await binding.provider.eventRef(p.eventUid) : null);
@@ -350,7 +352,10 @@ export function calendarUsecases(deps: CalendarDeps) {
         const invitee = event?.participants.find(x => x.email.toLowerCase() === p.participant.email.toLowerCase());
         const status = responseOf(invitee?.response);
         if (status === 'accepted') accepted.push(p);
-        else if (status === 'declined-by-invitee') declined.push(p);
+        else if (status === 'declined-by-invitee') {
+          declined.push(p);
+          if (event) revisions.set(p.id, event.revision);
+        }
       } catch {
         /* a calendar that cannot answer now is asked again at the next check */
       }
@@ -419,11 +424,11 @@ export function calendarUsecases(deps: CalendarDeps) {
           accepted.map(p => p.id),
           { status: 'accepted' },
         );
-      if (declined.length)
-        await tx.updateProposals(
-          declined.map(p => p.id),
-          { status: 'declined-by-invitee' },
-        );
+      for (const p of declined)
+        await tx.updateProposals([p.id], {
+          status: 'declined-by-invitee',
+          eventRevision: revisions.get(p.id) ?? p.eventRevision,
+        });
       if (alternatives.length) await tx.insertProposals(alternatives);
       const sum = replySummary([
         ...current.proposals

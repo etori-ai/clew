@@ -360,17 +360,20 @@ export function calendarExecutionSource(bind: CalendarBinder) {
             ? 'Kontrollerat i kalendern.'
             : 'Kalendern har inte bekräftat resultatet. Kontrollera status innan du försöker igen.',
       });
+      // An undo carries this exact revision, and a room that has yet to answer will change it (D69).
+      const undoable = found?.roomResponse !== 'pending';
       if (outcome === 'done' && item.action === 'create' && found) {
         established.add(item.label);
-        undo.push({
-          id: item.id,
-          ...(item.proposalId ? { proposalId: item.proposalId } : {}),
-          label: item.label,
-          action: 'cancel',
-          ref: found.ref,
-          revision: found.revision,
-        });
-      } else if (outcome === 'done' && item.action === 'move' && found)
+        if (undoable)
+          undo.push({
+            id: item.id,
+            ...(item.proposalId ? { proposalId: item.proposalId } : {}),
+            label: item.label,
+            action: 'cancel',
+            ref: found.ref,
+            revision: found.revision,
+          });
+      } else if (outcome === 'done' && item.action === 'move' && found && undoable)
         undo.push({
           ...item,
           revision: found.revision,

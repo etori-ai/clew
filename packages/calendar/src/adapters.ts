@@ -1,4 +1,5 @@
 import type { CalendarProvider } from './model';
+import { Microsoft365Provider } from './microsoft365';
 import { NextcloudProvider } from './nextcloud';
 
 /**
@@ -14,15 +15,15 @@ export type CalendarCredential =
   /**
    * Microsoft 365 through Microsoft Graph. Exchange Online has no CalDAV endpoint and EWS is retired from
    * October 2026. `token` yields a delegated Graph access token for the account's user; see
-   * `docs/architecture/identity.md` for how the BFF obtains it.
+   * `docs/architecture/identity.md` for how the BFF obtains it. The execution ledger calls it without a session (D69). `url` points at the local fake in development (D69).
    */
-  | { kind: 'microsoft365'; token: () => Promise<string> };
+  | { kind: 'microsoft365'; token: () => Promise<string>; account: { email: string; name: string }; url?: string };
 
 export function createCalendarProvider(credential: CalendarCredential): CalendarProvider {
   switch (credential.kind) {
     case 'caldav':
       return new NextcloudProvider(credential.user, credential.password, credential.url);
     case 'microsoft365':
-      throw new Error('Calendar adapter "microsoft365" is decided (D11) but not implemented yet; use kind "caldav".');
+      return new Microsoft365Provider(credential.token, credential.account, credential.url);
   }
 }

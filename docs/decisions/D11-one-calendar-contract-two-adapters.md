@@ -1,6 +1,6 @@
 # D11 · One calendar contract, CalDAV and Microsoft 365 as adapters
 
-**Status:** accepted, `microsoft365` adapter not built yet · **Date:** 2026-11-03 · **Area:** integrations
+**Status:** accepted, `microsoft365` adapter built against a local fake (D69), not yet run against a tenant · **Date:** 2026-11-03 · **Area:** integrations
 
 **Decision.** `CalendarProvider` in `packages/calendar/src/model.ts` is Clew's calendar contract. Every
 calendar system is an adapter behind it, selected per account by `CalendarCredential.kind` in
@@ -15,9 +15,10 @@ makes the Graph adapter a package-local piece of work. Per-account selection rat
 because other municipalities and non-municipal users (persona Petra) may run either.
 
 **Status.** The `caldav` adapter is the ported provider and is verified end to end. The `microsoft365`
-adapter is a typed, unimplemented branch that throws a configuration error. Building it needs an Entra
-tenant and settles how a delegated Graph token reaches the BFF (Keycloak as broker with stored external
-tokens, or OIDC directly against Entra in production); that question is item 10 in HANDOVER.
+adapter was a typed, unimplemented branch until [D69](D69-a-local-fake-of-microsoft-graph-tests-the-microsoft-365-adapter.md)
+built it against a local fake. Running it for real needs an Entra tenant and settles how a delegated Graph
+token reaches the BFF (Keycloak as broker with stored external tokens, or OIDC directly against Entra in
+production); that question is item 10 in HANDOVER.
 
 **Replaces.** The session-1 note "calendar as MCP, in-process first" is unchanged; D11 adds the adapter
 axis under the same interface.
