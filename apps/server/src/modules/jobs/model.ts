@@ -16,7 +16,7 @@ export interface FollowBindingStore {
 /** What the ledger takes for one approval over several steps; structurally the executions module's `JobInput`, paired in composition. */
 export type LedgerStep =
   | { id: string; kind: 'execute'; operation: string; payload: unknown }
-  | { id: string; kind: 'watch'; operation: string; input: unknown; expect: { path: string[]; equals: unknown }; checks: string[]; expiresAt: string };
+  | { id: string; kind: 'watch'; operation: string; input: unknown; expect: { path: string[]; equals: unknown }; checks: string[]; expiresAt: string; title: string; source: string };
 export interface JobLedger { approveJob(persona: AuthenticatedContext, input: { decisionId: string; steps: LedgerStep[] }): Promise<unknown> }
 export interface JobBudget { perSourceMs: number; totalMs: number }
 export interface JobDeps { bindings: FollowBindingStore; followers: Followers; offered: Offered; ledger: JobLedger; clock: () => Date; ids: () => string; budget?: Partial<JobBudget> }

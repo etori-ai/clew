@@ -40,7 +40,7 @@ export function ledgerSteps(steps: JobStepDraft[], withinCeiling: Record<string,
     if (s.draft.kind === 'execute') return { id: s.id, kind: 'execute', operation: s.draft.operation, payload: s.draft.payload };
     const own = durationMs(s.draft.within) ?? 0, ceiling = withinCeiling[s.connector] ? durationMs(withinCeiling[s.connector]!) : undefined;
     const within = ceiling ? Math.min(own, ceiling) : own;
-    return { id: s.id, kind: 'watch', operation: s.draft.operation, input: s.draft.input, expect: s.draft.expect, ...watchSchedule(now, within) };
+    return { id: s.id, kind: 'watch', operation: s.draft.operation, input: s.draft.input, expect: s.draft.expect, title: s.draft.title, source: s.source, ...watchSchedule(now, within) };
   });
 }
 export const partial = (sources: JobSource[]) => sources.some(s => s.status === 'timeout' || s.status === 'unavailable' || s.status === 'degraded');

@@ -8,16 +8,19 @@ import { sealSecret, openSecret } from '../auth-crypto';
 import { postgresExecutionStore } from '../modules/executions/adapters/postgres';
 import { executionUsecases } from '../modules/executions/usecases';
 import { ExecutionError, type ExecutionSource, type WatchSource } from '../modules/executions/model';
-import { executionDispatcher } from '../modules/executions/dispatch';
-import { startExecutionWorkflow } from '../temporal/executions';
+import { executionDispatcher, watchDispatcher } from '../modules/executions/dispatch';
+import { startExecutionWorkflow, startWatchWorkflow } from '../temporal/executions';
 import { clock } from './ambient';
 import { projectExecution } from './execution-projection';
+import { watchCardSink } from './watch-card';
 import { calendarApproval, calendarSource } from './calendar';
 import { calendarOperations, type CalendarCommand } from '../modules/calendar/usecases/decisions';
 
 /** Object key order is not approved business content. Arrays preserve the approved order. */
 const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, canonical(v)])) : value;
-export const executionStore = postgresExecutionStore({ seal: sealSecret, open: openSecret }, projectExecution);
+// An expired watch's card is filed under its system's label and first area (D55 item 5); the registry is read at settlement, as `pushDraft` reads it for a scan's card.
+const place = (connector: string) => { const c = registry.connector(connector); return { source: c?.source ?? connector, area: c?.areas[0]?.id ?? connector }; };
+export const executionStore = postgresExecutionStore({ seal: sealSecret, open: openSecret }, { project: projectExecution, pushCard: watchCardSink(place) });
 const source: ExecutionSource = {
   async authorize(persona, operation, input) {
     if (calendarOperations.includes(operation as typeof calendarOperations[number])) {
@@ -70,9 +73,11 @@ calendarApproval.previous = async (p, id) => {
   return { operation: e.operation, payload: e.payload as CalendarCommand };
 };
 export const dispatchExecutions = executionDispatcher({ store: executionStore, start: startExecutionWorkflow, clock });
+/** A job's watch steps (D55) reach their `jobWatch` workflows through the same kind of outbox, on the same tick. */
+export const dispatchWatches = watchDispatcher({ store: executionStore, start: startWatchWorkflow, clock });
 export function startExecutionDispatch() {
   let busy = false;
-  const tick = async () => { if (busy) return; busy = true; try { await dispatchExecutions(); } catch { console.error('execution outbox unavailable'); } finally { busy = false; } };
+  const tick = async () => { if (busy) return; busy = true; try { await dispatchExecutions(); await dispatchWatches(); } catch { console.error('execution outbox unavailable'); } finally { busy = false; } };
   void tick(); const timer = setInterval(() => void tick(), 2000); timer.unref();
   return () => clearInterval(timer);
 }

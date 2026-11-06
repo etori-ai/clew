@@ -7,7 +7,7 @@ import type * as activities from './activities';
 import type { ReminderInput } from '../threads/model';
 
 const { surfaceReminder, checkObligation, remindInvitees, returnObligation } = proxyActivities<typeof activities>({ startToCloseTimeout: '1 minute', retry: { maximumAttempts: 5 } });
-const { progressExecution } = proxyActivities<typeof activities>({ startToCloseTimeout: '1 minute', retry: { maximumAttempts: 5 } });
+const { progressExecution, observeWatch } = proxyActivities<typeof activities>({ startToCloseTimeout: '1 minute', retry: { maximumAttempts: 5 } });
 const { fireTimer } = proxyActivities<typeof activities>({ startToCloseTimeout: '1 minute' });
 const { runScheduledJob } = proxyActivities<typeof activities>({ startToCloseTimeout: '1 minute' });
 export async function scheduledJob(input: { id: string; dueAt: string }): Promise<void> {
@@ -30,6 +30,28 @@ export async function approvedExecution(id: string): Promise<void> {
     const state = await progressExecution(id);
     if (state === 'done') return;
     await sleep(state === 'busy' ? '30 seconds' : '2 seconds');
+  }
+}
+
+/**
+ * A job's watch step (D55 item 5, D47): wait until each committed absolute check, ask the ledger to observe it, stop
+ * when the step has settled; at the window's end ask once more, which is what settles `expired` and leaves the card. The
+ * policy (authority, read, expectation, expiry) lives in `observe`; the workflow only keeps time and never computes a
+ * schedule of its own. A check reached late is observed late, never repeated, and the window is never extended.
+ */
+export async function jobWatch(input: { jobId: string; stepId: string; generation: number; checks: string[]; expiresAt: string }): Promise<'seen' | 'expired' | 'blocked' | 'waiting'> {
+  const until = async (at: string) => { const wait = Date.parse(at) - Date.now(); if (wait > 0) await sleep(wait); };
+  for (let check = 0; check < input.checks.length; check++) {
+    await until(input.checks[check]!);
+    const state = await observeWatch(input.jobId, input.stepId, check);
+    if (state !== 'waiting') return state;
+  }
+  await until(input.expiresAt);
+  for (;;) {
+    // The ledger's own clock decides that the window has ended; a worker a few seconds behind asks again shortly.
+    const state = await observeWatch(input.jobId, input.stepId, input.checks.length);
+    if (state !== 'waiting') return state;
+    await sleep('10 seconds');
   }
 }
 

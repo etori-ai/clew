@@ -4,8 +4,9 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { database, schema } from '../../packages/db/src/index';
 import { postgresExecutionStore } from '../../apps/server/src/modules/executions/adapters/postgres';
 import { sealSecret, openSecret } from '../../apps/server/src/auth-crypto';
-import { executionRecord, executionStoreContract, jobRecord } from '../execution-store-contract';
+import { executionRecord, executionStoreContract, jobRecord, watchIntentRecord } from '../execution-store-contract';
 import { projectExecution } from '../../apps/server/src/composition/execution-projection';
+import { watchCardSink } from '../../apps/server/src/composition/watch-card';
 import { executionUsecases } from '../../apps/server/src/modules/executions/usecases';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
 process.env.MASTER_KEY ??= randomBytes(32).toString('base64');
@@ -59,6 +60,35 @@ test('approval, card state and outcome are atomic; an uncertain undo preserves t
   await database().delete(schema.audit).where(eq(schema.audit.subject, 'thread:' + threadId));
   await database().delete(schema.threads).where(eq(schema.threads.id, threadId));
 });
+test('a watch step that ends unseen leaves one card, one admitted delivery and its audit in the same commit as the settlement', async () => {
+  const w = await make(), e = executionRecord(w.personId, w.personId + '-expired-step'), job = jobRecord(w.personId, w.personId + '-expired-job', [e]);
+  const store = postgresExecutionStore({ seal: sealSecret, open: openSecret }, { pushCard: watchCardSink(() => ({ source: 'Lönesystemet', area: 'lon' })) });
+  await store.transaction(async tx => { await tx.insert(e); await tx.insertJob(job); await tx.enqueueWatch(watchIntentRecord(job)); });
+  const persona: AuthenticatedContext = { id: w.personId, name: 'Test', unitId: 'test', unitLabel: 'Test', role: 'manager', organisationId: 'test', principal: { id: 'person:' + w.personId, kind: 'person' }, capabilities: [], authorizationVersion: 'v1', sessionBinding: 'test', expiresAt: '2100-01-01', authorize: async () => ({ version: 'v1' }) };
+  let reads = 0;
+  const uc = executionUsecases({ store, clock: () => new Date('2099-11-06T10:00:00.000Z'), ids: randomUUID, digest: JSON.stringify,
+    source: { authorize: async () => ({ connector: 'reference', safety: { strategy: 'manual' }, needsSession: false }), current: async () => persona, execute: async () => { throw new Error('never'); }, lookup: async () => undefined },
+    watch: { authorize: async () => ({ connector: 'payroll' }), read: async () => { reads++; return { status: 'pending' }; } } });
+  expect(await uc.observe(job.id, 'watch-1', 0)).toBe('expired'); expect(reads).toBe(0);
+  const threadId = `watch:${job.id}:watch-1`;
+  const [card] = await database().select().from(schema.threads).where(eq(schema.threads.id, threadId));
+  expect(card).toMatchObject({ personId: w.personId, kind: 'pushed', connector: 'payroll', area: 'lon', title: 'Lönesystemet har inte visat det som bevakades', state: 'open' });
+  expect(card!.trigger.source).toBe('Lönesystemet');
+  expect((await database().select().from(schema.deliveries).where(eq(schema.deliveries.threadId, threadId))).length).toBe(1);
+  expect((await database().select().from(schema.threadMessages).where(eq(schema.threadMessages.threadId, threadId))).length).toBe(1);
+  expect((await database().select().from(schema.audit).where(and(eq(schema.audit.subject, 'thread:' + threadId), eq(schema.audit.action, 'thread.pushed')))).length).toBe(1);
+  expect((await database().select().from(schema.audit).where(and(eq(schema.audit.subject, 'job:' + job.id), eq(schema.audit.action, 'job.watch_expired')))).length).toBe(1);
+  expect(await uc.observe(job.id, 'watch-1', 1)).toBe('expired');
+  expect((await database().select().from(schema.threads).where(eq(schema.threads.id, threadId))).length).toBe(1);
+  expect((await database().select().from(schema.audit).where(and(eq(schema.audit.subject, 'job:' + job.id), eq(schema.audit.action, 'job.watch_expired')))).length).toBe(1);
+  // A store the composition root has not given a card sink refuses to settle silently; the step stays waiting for a retry.
+  const silent = postgresExecutionStore({ seal: sealSecret, open: openSecret }), w2 = await make(), e2 = executionRecord(w2.personId, w2.personId + '-silent-step');
+  const other = jobRecord(w2.personId, w2.personId + '-silent-job', [e2]);
+  await silent.transaction(async tx => { await tx.insert(e2); await tx.insertJob(other); });
+  await expect(executionUsecases({ store: silent, clock: () => new Date('2099-11-06T10:00:00.000Z'), ids: randomUUID, digest: JSON.stringify, source: { authorize: async () => ({ connector: 'reference', safety: { strategy: 'manual' }, needsSession: false }), current: async () => ({ ...persona, id: w2.personId }), execute: async () => { throw new Error('never'); }, lookup: async () => undefined } }).observe(other.id, 'watch-1', 0)).rejects.toThrow('No card sink');
+  expect((await silent.readJob(other.id))?.steps.at(-1)).toMatchObject({ kind: 'watch', state: 'waiting' });
+  await database().delete(schema.audit).where(eq(schema.audit.subject, 'thread:' + threadId));
+});
 afterAll(async () => {
   const records = await database().select().from(schema.executions).where(inArray(schema.executions.personId, people));
   const ids = records.map(e => e.id);
@@ -68,6 +98,7 @@ afterAll(async () => {
     await database().delete(schema.executions).where(inArray(schema.executions.id, ids));
   }
   await database().delete(schema.audit).where(inArray(schema.audit.subject, (await database().select().from(schema.executionJobs).where(inArray(schema.executionJobs.personId, people))).map(j => 'job:' + j.id)));
+  await database().delete(schema.watchIntents).where(inArray(schema.watchIntents.personId, people));
   await database().delete(schema.executionJobs).where(inArray(schema.executionJobs.personId, people));
   await database().delete(schema.threads).where(inArray(schema.threads.personId, people));
   await database().delete(schema.people).where(inArray(schema.people.id, people));
