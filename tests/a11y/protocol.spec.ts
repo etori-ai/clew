@@ -8,7 +8,10 @@ import { desktop, expect, expectNoAxeViolations, narrow, open, reference, reflow
 const page_ = '/protocol/manifest';
 
 test.describe('the manifest reference', () => {
-  test('on a desktop: the title, an outline to every field, one heading per field, and no axe violations', async ({ page, api }) => {
+  test('on a desktop: the title, an outline to every field, one heading per field, and no axe violations', async ({
+    page,
+    api,
+  }) => {
     void api; // The mock installs with the fixture; the page reads the reference through it.
     await page.setViewportSize(desktop);
     await open(page, page_);
@@ -17,21 +20,38 @@ test.describe('the manifest reference', () => {
     expect(await page.evaluate(() => document.documentElement.lang)).toBe('en');
     const outline = page.getByRole('navigation', { name: 'On this page' });
     await expect(outline).toBeVisible();
-    await expect(outline.getByRole('link')).toHaveCount(reference.fields.length + reference.sections.length + reference.recipes.length + 3);
+    await expect(outline.getByRole('link')).toHaveCount(
+      reference.fields.length + reference.sections.length + reference.recipes.length + 3,
+    );
     await expect(page.getByRole('heading', { level: 4 })).toHaveCount(reference.fields.length);
     // A field's heading is its full path; the outline names it by its last part, indented, so nothing is cut off.
-    await expect(page.getByRole('heading', { level: 4, name: 'capabilities[].view.input.filter.options[].label' })).toBeVisible();
-    await expect(outline.getByRole('link', { name: 'label', exact: true })).toHaveCount(reference.fields.filter(f => f.path.endsWith('.label')).length);
+    await expect(
+      page.getByRole('heading', { level: 4, name: 'capabilities[].view.input.filter.options[].label' }),
+    ).toBeVisible();
+    await expect(outline.getByRole('link', { name: 'label', exact: true })).toHaveCount(
+      reference.fields.filter(f => f.path.endsWith('.label')).length,
+    );
     // The filter narrows the outline to what holds the text, named by path; clearing it brings everything back.
     const filter = page.getByRole('searchbox', { name: 'Filter the outline' });
     await filter.fill('menu');
-    const matches = reference.fields.filter(f => f.path.toLowerCase().includes('menu')).length + reference.recipes.filter(r => r.title.toLowerCase().includes('menu')).length;
+    const matches =
+      reference.fields.filter(f => f.path.toLowerCase().includes('menu')).length +
+      reference.recipes.filter(r => r.title.toLowerCase().includes('menu')).length;
     await expect(outline.getByRole('link')).toHaveCount(matches);
     await expect(outline.getByRole('link', { name: 'capabilities[].menu.icon' })).toBeVisible();
     // The field has a status region of its own; the count is the one that says so.
-    await expect(page.getByRole('complementary', { name: 'On this page' }).getByRole('status').filter({ hasText: /headings? of/ })).toHaveText(`${matches} headings of ${reference.fields.length + reference.sections.length + reference.recipes.length + 3}`);
+    await expect(
+      page
+        .getByRole('complementary', { name: 'On this page' })
+        .getByRole('status')
+        .filter({ hasText: /headings? of/ }),
+    ).toHaveText(
+      `${matches} headings of ${reference.fields.length + reference.sections.length + reference.recipes.length + 3}`,
+    );
     await filter.fill('');
-    await expect(outline.getByRole('link')).toHaveCount(reference.fields.length + reference.sections.length + reference.recipes.length + 3);
+    await expect(outline.getByRole('link')).toHaveCount(
+      reference.fields.length + reference.sections.length + reference.recipes.length + 3,
+    );
     // A recipe with a schema has two tabs; the TypeBox one shows the same manifest authored in TypeScript.
     const tabs = page.getByRole('tablist').first();
     await tabs.getByRole('tab', { name: 'TypeBox' }).click();
@@ -43,7 +63,10 @@ test.describe('the manifest reference', () => {
     await expectNoAxeViolations(page);
   });
 
-  test('on a phone: the outline becomes a choice, nothing is cut off at 320 px, and no axe violations', async ({ page, api }) => {
+  test('on a phone: the outline becomes a choice, nothing is cut off at 320 px, and no axe violations', async ({
+    page,
+    api,
+  }) => {
     void api;
     await page.setViewportSize(narrow);
     await open(page, page_);

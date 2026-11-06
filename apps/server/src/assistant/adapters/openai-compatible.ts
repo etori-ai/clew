@@ -7,30 +7,71 @@ import { WireError, type Endpoint, type ModelWire } from '../ports';
  * one tiny chat completion proves a model id and a key, and the AI SDK's OpenAI-compatible provider runs a turn.
  * Every failure becomes a `WireError`: no answer (network, timeout, 5xx), a refused key (401, 403), or anything else.
  */
-const headers = (e: Endpoint): Record<string, string> => ({ 'content-type': 'application/json', ...(e.apiKey ? { authorization: `Bearer ${e.apiKey}` } : {}) });
-async function call(e: Endpoint, path: string, init: RequestInit, timeoutMs: number, fetchImpl: typeof fetch): Promise<unknown> {
+const headers = (e: Endpoint): Record<string, string> => ({
+  'content-type': 'application/json',
+  ...(e.apiKey ? { authorization: `Bearer ${e.apiKey}` } : {}),
+});
+async function call(
+  e: Endpoint,
+  path: string,
+  init: RequestInit,
+  timeoutMs: number,
+  fetchImpl: typeof fetch,
+): Promise<unknown> {
   let response: Response;
-  try { response = await fetchImpl(e.baseUrl.replace(/\/+$/, '') + path, { ...init, headers: headers(e), signal: AbortSignal.timeout(timeoutMs) }); }
-  catch (error) { throw new WireError('unreachable', error instanceof Error ? error.message : String(error)); }
-  if (response.status === 401 || response.status === 403) throw new WireError('key-rejected', `HTTP ${response.status}`);
+  try {
+    response = await fetchImpl(e.baseUrl.replace(/\/+$/, '') + path, {
+      ...init,
+      headers: headers(e),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    throw new WireError('unreachable', error instanceof Error ? error.message : String(error));
+  }
+  if (response.status === 401 || response.status === 403)
+    throw new WireError('key-rejected', `HTTP ${response.status}`);
   if (response.status >= 500) throw new WireError('unreachable', `HTTP ${response.status}`);
   const text = await response.text();
   if (!response.ok) {
     let detail = `HTTP ${response.status}`;
-    try { const body = JSON.parse(text) as { error?: { message?: string } | string }; const message = typeof body.error === 'string' ? body.error : body.error?.message; if (message) detail += `: ${message.slice(0, 200)}`; } catch { /* not JSON */ }
+    try {
+      const body = JSON.parse(text) as { error?: { message?: string } | string };
+      const message = typeof body.error === 'string' ? body.error : body.error?.message;
+      if (message) detail += `: ${message.slice(0, 200)}`;
+    } catch {
+      /* not JSON */
+    }
     throw new WireError('unsupported', detail);
   }
-  try { return JSON.parse(text); } catch { throw new WireError('unsupported', 'svaret är inte JSON'); }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new WireError('unsupported', 'svaret är inte JSON');
+  }
 }
 export function openAICompatibleWire(fetchImpl: typeof fetch = fetch): ModelWire {
   return {
     async listModels(e) {
-      const body = await call(e, '/models', { method: 'GET' }, 5_000, fetchImpl) as { data?: Array<{ id?: unknown }> };
+      const body = (await call(e, '/models', { method: 'GET' }, 5_000, fetchImpl)) as {
+        data?: Array<{ id?: unknown }>;
+      };
       if (!Array.isArray(body?.data)) throw new WireError('unsupported', 'svaret har ingen modellista');
-      return body.data.map(m => m.id).filter((id): id is string => typeof id === 'string').sort();
+      return body.data
+        .map(m => m.id)
+        .filter((id): id is string => typeof id === 'string')
+        .sort();
     },
     async ping(e, model) {
-      await call(e, '/chat/completions', { method: 'POST', body: JSON.stringify({ model, max_tokens: 4, messages: [{ role: 'user', content: 'Svara med ordet ok.' }] }) }, 20_000, fetchImpl);
+      await call(
+        e,
+        '/chat/completions',
+        {
+          method: 'POST',
+          body: JSON.stringify({ model, max_tokens: 4, messages: [{ role: 'user', content: 'Svara med ordet ok.' }] }),
+        },
+        20_000,
+        fetchImpl,
+      );
     },
     generator: (e, model) => createGenerator(e, model, fetchImpl),
   };

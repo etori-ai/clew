@@ -82,7 +82,7 @@ and generated modules are removed, and mutated environment variables are restore
 - `scripts/purity-check.ts` (`bun run purity`): no `Date.now()`, `new Date()`, `process.env`, `randomUUID()` or
   `Math.random()` in domain files and use cases. The clock and the id source are `deps.clock` and
   `deps.ids`; the composition root reads configuration.
-- `bun run check` = typecheck, deps, purity, `bun test tests/unit apps/web/tests`, the Node runtime tests and documentation checks. It must never start to
+- `bun run check` = the Prettier format check (D57), typecheck, deps, purity, `bun test tests/unit apps/web/tests`, the Node runtime tests and documentation checks. It must never start to
   need the stack; `.github/workflows/check.yml` runs it with `--no-deps`.
 - `bun test` does not use `mock.module`. A mocked import hides the dependency the rules are meant to expose; a fake
   behind a port is the same dependency made visible.
@@ -101,13 +101,16 @@ sh scripts/a11y.sh                                           # the WCAG suite
 
 `sh scripts/a11y.sh` builds the web app once, then runs the suite in the pinned Playwright image; everything after the
 script name goes to `playwright test`. The full suite is 287 tests on one worker, about eight minutes when green and
-much longer when red, so it is CI's gate and not the per-edit check ([D51](../decisions/D51-the-wcag-suite-is-cis-gate.md)):
+much longer when red, so it is not the per-edit check ([D51](../decisions/D51-the-wcag-suite-is-cis-gate.md)):
 
 - Per change, run the spec files the change touches: `sh scripts/a11y.sh menu.spec.ts shell.spec.ts`. Add
   `--timeout 15000` so a red run fails in seconds instead of waiting out 30 s per test.
-- The whole suite runs in `.github/workflows/a11y.yml` on every code push and pull request. The GitHub plan cannot
-  block a merge on a red run, so read the WCAG check of the previous landing before landing on `main` again, and fix a
-  red check before new work lands; a red `main` costs every branch a baseline run to tell its own failures apart.
+- During the lab phase the whole suite runs by hand: `gh workflow run a11y.yml`, or `sh scripts/a11y.sh`
+  ([D59](../decisions/D59-the-wcag-suite-runs-by-hand-until-the-run-up-to-a-release.md)). Nothing waits for it before
+  landing on `main`. In the run-up to a release the `push` and `pull_request` triggers in
+  `.github/workflows/a11y.yml` come back, and with them D51's gate: the GitHub plan cannot block a merge on a red run,
+  so read the WCAG check of the previous landing before landing on `main` again, and fix a red check before new work
+  lands.
 - A test that passes alone and fails on a slower runner is holding a timer it should hold a promise for (see
   `api.holdAnswer()` and HANDOVER session 41).
 - Two runs in the same checkout empty each other's `test-results`; give the second `--output=test-results/<name>`.

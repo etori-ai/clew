@@ -25,12 +25,20 @@ export function AppearanceProvider({ branding, children }: { branding: Branding;
   });
   const setMode = (mode: ColorMode) => {
     let isPersistent = true;
-    try { localStorage.setItem(preferenceKey, mode); } catch { isPersistent = false; }
+    try {
+      localStorage.setItem(preferenceKey, mode);
+    } catch {
+      isPersistent = false;
+    }
     setPreference({ mode, isPersistent });
   };
-  return <AppearanceContext value={{ ...preference, setMode }}>
-    <Theme theme={theme} mode={preference.mode}>{children}</Theme>
-  </AppearanceContext>;
+  return (
+    <AppearanceContext value={{ ...preference, setMode }}>
+      <Theme theme={theme} mode={preference.mode}>
+        {children}
+      </Theme>
+    </AppearanceContext>
+  );
 }
 
 export function useAppearance() {

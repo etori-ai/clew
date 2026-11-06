@@ -64,15 +64,36 @@ protocolRoutes.get('/', c => c.html(page, 200, cached));
 protocolRoutes.get('/manifest-reference.json', c => c.json(reference, 200, cached));
 // The page itself is the web app's, drawn with Astryx at /protocol/manifest; the same origin serves both (D60).
 protocolRoutes.get('/manifest-reference', c => c.redirect('/protocol/manifest', 302));
-protocolRoutes.get('/viewer.js', async c => c.body(await readFile(viewer), 200, { ...cached, 'Content-Type': 'text/javascript; charset=utf-8' }));
+protocolRoutes.get('/viewer.js', async c =>
+  c.body(await readFile(viewer), 200, { ...cached, 'Content-Type': 'text/javascript; charset=utf-8' }),
+);
 protocolRoutes.get('/openapi.json', c => c.json(openApiDocument({ clewUrl: clewUrl(c.req.url) }), 200, cached));
 protocolRoutes.get('/connector-protocol.schema.json', c => c.json(protocolSchema(), 200, cached));
-protocolRoutes.options('/manifest', c => c.body(null, 204, { ...shared, 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' }));
+protocolRoutes.options('/manifest', c =>
+  c.body(null, 204, {
+    ...shared,
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  }),
+);
 protocolRoutes.post('/manifest', async c => {
   const text = await c.req.raw.text();
   if (text.length > 500_000) return c.json({ error: 'The manifest is larger than 500 kB.' }, 413, shared);
   let document: unknown;
-  try { document = JSON.parse(text); } catch { return c.json({ error: 'The body is not JSON.' }, 400, shared); }
-  const acceptsEmptyInput = (schema: object) => { try { return !!ajv.compile(schema)({}); } catch { return false; } };
-  return c.json(previewManifest(document, { id: c.req.query('id'), acceptsEmptyInput }), 200, { ...shared, 'Cache-Control': 'no-store' });
+  try {
+    document = JSON.parse(text);
+  } catch {
+    return c.json({ error: 'The body is not JSON.' }, 400, shared);
+  }
+  const acceptsEmptyInput = (schema: object) => {
+    try {
+      return !!ajv.compile(schema)({});
+    } catch {
+      return false;
+    }
+  };
+  return c.json(previewManifest(document, { id: c.req.query('id'), acceptsEmptyInput }), 200, {
+    ...shared,
+    'Cache-Control': 'no-store',
+  });
 });

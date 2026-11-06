@@ -1,6 +1,6 @@
 # D51 · The WCAG suite is CI's gate; a change runs its own specs locally
 
-**Status:** accepted · **Date:** 2026-11-05 · **Area:** platform
+**Status:** accepted, the automatic run and the rule to read it paused by [D59](D59-the-wcag-suite-runs-by-hand-until-the-run-up-to-a-release.md) until the run-up to a release · **Date:** 2026-11-05 · **Area:** platform
 
 **Decision.** The full WCAG 2.2 AA suite (`tests/a11y`, `sh scripts/a11y.sh`) is not run locally per edit. A change
 runs the spec files it touches, `sh scripts/a11y.sh <spec>… --timeout 15000`, so a red run fails in seconds. The whole

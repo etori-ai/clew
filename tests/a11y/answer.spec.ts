@@ -7,7 +7,10 @@ test.use({ viewport: desktop });
  * busy until the answer is written, the box rests with Stoppa, and the page never jumps under the person's cursor.
  */
 test.describe('the answer on its way', () => {
-  test('the question is drawn at once, the log is busy while the answer is written, the box keeps the focus with Stoppa, and the answer takes its place', async ({ page, api }) => {
+  test('the question is drawn at once, the log is busy while the answer is written, the box keeps the focus with Stoppa, and the answer takes its place', async ({
+    page,
+    api,
+  }) => {
     await open(page, '/');
     // Held, not timed: the axe scan below takes over a second here and longer in CI, and an answer that comes first would let Enter send the next question.
     const release = api.holdAnswer();
@@ -33,11 +36,16 @@ test.describe('the answer on its way', () => {
     await expect(page.getByRole('button', { name: 'Stoppa' })).toHaveCount(0);
     await expect(composer(page)).toBeFocused();
     await expect(composer(page)).toHaveText('Och i morgon?');
-    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Tio personer är på plats i dag.'));
+    await expect
+      .poll(() => announcements(page))
+      .toContainEqual(expect.stringContaining('Tio personer är på plats i dag.'));
   });
 
   // That a stopped turn writes nothing is the server's promise, tested in tests/unit/conversation.test.ts; here the page lets go of it.
-  test('Stoppa puts the question back in the box, says so, and an answer that arrives later is not drawn', async ({ page, api }) => {
+  test('Stoppa puts the question back in the box, says so, and an answer that arrives later is not drawn', async ({
+    page,
+    api,
+  }) => {
     await open(page, '/');
     api.answerDelay = 2_000;
     const input = composer(page);
@@ -68,7 +76,10 @@ test.describe('the answer on its way', () => {
     expect(await top()).toBe(before);
   });
 
-  test('with nothing pushed the page says so under the box, which stays under the greeting, and "Menar du" under it does not move it', async ({ page, api }) => {
+  test('with nothing pushed the page says so under the box, which stays under the greeting, and "Menar du" under it does not move it', async ({
+    page,
+    api,
+  }) => {
     api.threads = [];
     await open(page, '/');
     const input = composer(page);
@@ -77,14 +88,19 @@ test.describe('the answer on its way', () => {
     expect(top).toBeGreaterThan(greeting.y);
     await expect(page.getByRole('heading', { level: 3, name: 'Lugnt läge' })).toBeVisible();
     await expect(page.getByRole('region', { name: 'I dag' })).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Sedan i går' }).getByText('Inget är klart och inget väntar på andra.')).toBeVisible();
+    await expect(
+      page.getByRole('region', { name: 'Sedan i går' }).getByText('Inget är klart och inget väntar på andra.'),
+    ).toBeVisible();
     await input.fill('attestera');
     await expect(page.getByRole('list', { name: 'Menar du' })).toBeVisible();
     expect((await input.boundingBox())!.y).toBe(top);
     await expectNoAxeViolations(page);
   });
 
-  test('while the cards load the rows are drawn as their shape and the page never says that nothing needs you', async ({ page, api }) => {
+  test('while the cards load the rows are drawn as their shape and the page never says that nothing needs you', async ({
+    page,
+    api,
+  }) => {
     api.threadsDelay = 1_500;
     await page.goto('/');
     await expect(page.getByText('Hämtar det som behöver dig …')).toBeAttached();

@@ -1,10 +1,24 @@
 import { describe, expect, test } from 'bun:test';
-import { attentionLevel, attentionLevels, cardKind, dayWord, isSnoozed, nextStockholmTime, parseSwedishTime, snoozeWhen, stockholmInstant, streamGroup, worstLevel } from '../../packages/contracts/src/index';
+import {
+  attentionLevel,
+  attentionLevels,
+  cardKind,
+  dayWord,
+  isSnoozed,
+  nextStockholmTime,
+  parseSwedishTime,
+  snoozeWhen,
+  stockholmInstant,
+  streamGroup,
+  worstLevel,
+} from '../../packages/contracts/src/index';
 import { rhythmFor } from '../../apps/server/src/threads/domain';
 
 describe('attention level', () => {
   test('a reminder today sorts first, a reminder yesterday does not count', () => {
-    expect(attentionLevel({ deadline: '2026-12-24', remindedAt: '2026-11-04T09:00:00.000Z' }, '2026-11-04')).toBe('now');
+    expect(attentionLevel({ deadline: '2026-12-24', remindedAt: '2026-11-04T09:00:00.000Z' }, '2026-11-04')).toBe(
+      'now',
+    );
     expect(attentionLevel({ deadline: null, remindedAt: '2026-11-03T22:59:00.000Z' }, '2026-11-04')).toBe('notice');
     expect(attentionLevel({ deadline: '2026-11-05', remindedAt: null }, '2026-11-04')).toBe('urgent');
   });
@@ -17,7 +31,7 @@ describe('attention level', () => {
   });
 });
 
-describe('the stream\'s two groups (D28)', () => {
+describe("the stream's two groups (D28)", () => {
   test('nu is due today, overdue or reminded today; senare has a deadline ahead; notice has none', () => {
     expect(streamGroup({ deadline: '2026-11-04' }, '2026-11-04')).toBe('nu');
     expect(streamGroup({ deadline: '2026-11-01' }, '2026-11-04')).toBe('nu');
@@ -73,8 +87,10 @@ describe('the day as one track (D28)', () => {
   });
   test('cards pushed within the grace of the review or a bundle belong to it, and runs apart are separate interruptions', () => {
     const rhythm = rhythmFor('2026-11-04T14:00:00.000Z', [
-      { at: '2026-11-04T05:00:20.000Z', title: 'Genomgångens första' }, { at: '2026-11-04T05:09:00.000Z', title: 'Genomgångens andra' },
-      { at: '2026-11-04T08:00:00.000Z', title: 'Tillbudet' }, { at: '2026-11-04T08:20:00.000Z', title: 'Fakturan' },
+      { at: '2026-11-04T05:00:20.000Z', title: 'Genomgångens första' },
+      { at: '2026-11-04T05:09:00.000Z', title: 'Genomgångens andra' },
+      { at: '2026-11-04T08:00:00.000Z', title: 'Tillbudet' },
+      { at: '2026-11-04T08:20:00.000Z', title: 'Fakturan' },
       { at: '2026-11-04T11:03:00.000Z', title: 'Samlingens' },
     ]);
     expect(rhythm).toEqual([
@@ -94,14 +110,32 @@ describe('the day as one track (D28)', () => {
 describe('the Swedish time grammar (D29)', () => {
   const now = '2026-11-04T07:00:00.000Z'; // Wednesday 08:00 in Stockholm
   const cases: Array<[string, string | null]> = [
-    ['om 20 min', '2026-11-04T07:20:00.000Z'], ['om en timme', '2026-11-04T08:00:00.000Z'], ['om 2 timmar', '2026-11-04T09:00:00.000Z'], ['om tre dagar', '2026-11-07T07:00:00.000Z'],
-    ['efter lunch', '2026-11-04T12:00:00.000Z'], ['i kväll', '2026-11-04T16:00:00.000Z'], ['nästa vecka', '2026-11-09T05:00:00.000Z'],
-    ['i morgon', '2026-11-05T05:00:00.000Z'], ['imorgon kl 9', '2026-11-05T08:00:00.000Z'], ['i morgon kl 14.30', '2026-11-05T13:30:00.000Z'],
-    ['fredag kl 9', '2026-11-06T08:00:00.000Z'], ['på måndag', '2026-11-09T05:00:00.000Z'], ['onsdag kl 10', '2026-11-04T09:00:00.000Z'], ['onsdag kl 7', '2026-11-11T06:00:00.000Z'],
-    ['kl 14', '2026-11-04T13:00:00.000Z'], ['14:30', '2026-11-04T13:30:00.000Z'], ['kl 7', '2026-11-05T06:00:00.000Z'],
-    ['när grisarna flyger', null], ['om noll min', null], ['kl 25', null], ['', null],
+    ['om 20 min', '2026-11-04T07:20:00.000Z'],
+    ['om en timme', '2026-11-04T08:00:00.000Z'],
+    ['om 2 timmar', '2026-11-04T09:00:00.000Z'],
+    ['om tre dagar', '2026-11-07T07:00:00.000Z'],
+    ['efter lunch', '2026-11-04T12:00:00.000Z'],
+    ['i kväll', '2026-11-04T16:00:00.000Z'],
+    ['nästa vecka', '2026-11-09T05:00:00.000Z'],
+    ['i morgon', '2026-11-05T05:00:00.000Z'],
+    ['imorgon kl 9', '2026-11-05T08:00:00.000Z'],
+    ['i morgon kl 14.30', '2026-11-05T13:30:00.000Z'],
+    ['fredag kl 9', '2026-11-06T08:00:00.000Z'],
+    ['på måndag', '2026-11-09T05:00:00.000Z'],
+    ['onsdag kl 10', '2026-11-04T09:00:00.000Z'],
+    ['onsdag kl 7', '2026-11-11T06:00:00.000Z'],
+    ['kl 14', '2026-11-04T13:00:00.000Z'],
+    ['14:30', '2026-11-04T13:30:00.000Z'],
+    ['kl 7', '2026-11-05T06:00:00.000Z'],
+    ['när grisarna flyger', null],
+    ['om noll min', null],
+    ['kl 25', null],
+    ['', null],
   ];
-  for (const [text, expected] of cases) test(`"${text}" → ${expected ?? 'nothing'}`, () => { expect(parseSwedishTime(text, now)).toBe(expected); });
+  for (const [text, expected] of cases)
+    test(`"${text}" → ${expected ?? 'nothing'}`, () => {
+      expect(parseSwedishTime(text, now)).toBe(expected);
+    });
   test('the words for when a card comes back', () => {
     expect(snoozeWhen('2026-11-04T12:00:00.000Z', now)).toBe('kl 13:00');
     expect(snoozeWhen('2026-11-05T05:00:00.000Z', now)).toBe('i morgon 06:00');

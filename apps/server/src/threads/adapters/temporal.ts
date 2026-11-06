@@ -11,8 +11,12 @@ export function temporalTimers(): ReminderTimers {
       await client.workflow.start('reminder', { taskQueue: TASK_QUEUE, workflowId, args: [args] });
     },
     async cancel(workflowId) {
-      try { const client = await temporalClient(); await client.workflow.getHandle(workflowId).signal('cancel'); }
-      catch { /* already fired or gone: the caller corrects the card state regardless */ }
+      try {
+        const client = await temporalClient();
+        await client.workflow.getHandle(workflowId).signal('cancel');
+      } catch {
+        /* already fired or gone: the caller corrects the card state regardless */
+      }
     },
   };
 }

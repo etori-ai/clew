@@ -101,7 +101,7 @@ Outside the modules:
 
 ```sh
 docker exec -w /workspace clew-app-1 bun run deps     # dependency rules only
-docker exec -w /workspace clew-app-1 bun run check    # tsc, deps, purity, bun test, node tests
+docker exec -w /workspace clew-app-1 bun run check    # prettier, tsc, deps, purity, bun test, node tests
 docker exec -w /workspace clew-app-1 bun run test:db  # the store contract against Postgres (not in check)
 ```
 

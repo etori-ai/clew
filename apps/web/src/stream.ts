@@ -16,8 +16,14 @@ export interface Groups {
   /** The person's own conversations, newest first. */
   questions: Thread[];
 }
-const byDeadline = (a: Thread, b: Thread) => (a.deadline ?? '9999').localeCompare(b.deadline ?? '9999') || a.createdAt.localeCompare(b.createdAt);
-export function groupThreads(threads: Thread[], now: string, today: string, inScope: (t: Thread) => boolean = () => true): Groups {
+const byDeadline = (a: Thread, b: Thread) =>
+  (a.deadline ?? '9999').localeCompare(b.deadline ?? '9999') || a.createdAt.localeCompare(b.createdAt);
+export function groupThreads(
+  threads: Thread[],
+  now: string,
+  today: string,
+  inScope: (t: Thread) => boolean = () => true,
+): Groups {
   const open = threads.filter(t => (t.state === 'open' || unresolvedExecution(t)) && t.kind === 'pushed');
   const needsYou = open.filter(t => !t.waitingOn && !isSnoozed(t, now) && inScope(t)).sort(byDeadline);
   const krav = needsYou.filter(t => cardKind(t) === 'krav');
@@ -28,7 +34,10 @@ export function groupThreads(threads: Thread[], now: string, today: string, inSc
     kannedom: needsYou.filter(t => cardKind(t) === 'handelse'),
     waiting: open.filter(t => !!t.waitingOn && !isSnoozed(t, now)),
     snoozed: open.filter(t => isSnoozed(t, now)),
-    handledToday: threads.filter(t => t.state !== 'open' && !unresolvedExecution(t) && t.handledAt && t.handledAt.slice(0, 10) === now.slice(0, 10)),
+    handledToday: threads.filter(
+      t =>
+        t.state !== 'open' && !unresolvedExecution(t) && t.handledAt && t.handledAt.slice(0, 10) === now.slice(0, 10),
+    ),
     questions: threads.filter(t => t.kind === 'question').sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
   };
 }

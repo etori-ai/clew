@@ -8,16 +8,31 @@ import { createConnector } from './connector.mjs';
 import { createFixtureDirectory, createHttpDirectory } from './directory.mjs';
 
 const adapter = process.env.TELEFONBOK_ADAPTER ?? 'fixture';
-if (adapter !== 'fixture' && adapter !== 'http') throw new Error(`Unknown TELEFONBOK_ADAPTER "${adapter}". Known: fixture, http.`);
-const directory = adapter === 'http' ? createHttpDirectory({ url: process.env.TELEFONBOK_URL, apiKey: process.env.TELEFONBOK_API_KEY }) : createFixtureDirectory();
+if (adapter !== 'fixture' && adapter !== 'http')
+  throw new Error(`Unknown TELEFONBOK_ADAPTER "${adapter}". Known: fixture, http.`);
+const directory =
+  adapter === 'http'
+    ? createHttpDirectory({ url: process.env.TELEFONBOK_URL, apiKey: process.env.TELEFONBOK_API_KEY })
+    : createFixtureDirectory();
 let unitMap = {};
-if (process.env.TELEFONBOK_UNIT_MAP) { try { unitMap = JSON.parse(process.env.TELEFONBOK_UNIT_MAP); } catch { throw new Error('TELEFONBOK_UNIT_MAP must be a JSON object.'); } }
+if (process.env.TELEFONBOK_UNIT_MAP) {
+  try {
+    unitMap = JSON.parse(process.env.TELEFONBOK_UNIT_MAP);
+  } catch {
+    throw new Error('TELEFONBOK_UNIT_MAP must be a JSON object.');
+  }
+}
 
 const { handle } = createConnector({ secret: process.env.CLEW_CONNECTOR_SECRET, directory, unitMap });
 const port = Number(process.env.PORT ?? 4020);
 createServer(async (req, res) => {
-  const chunks = []; for await (const chunk of req) chunks.push(chunk);
-  const request = new Request(`http://${req.headers.host ?? 'connector'}${req.url}`, { method: req.method, headers: req.headers, body: chunks.length ? Buffer.concat(chunks) : undefined });
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const request = new Request(`http://${req.headers.host ?? 'connector'}${req.url}`, {
+    method: req.method,
+    headers: req.headers,
+    body: chunks.length ? Buffer.concat(chunks) : undefined,
+  });
   const response = await handle(request);
   res.writeHead(response.status, Object.fromEntries(response.headers));
   res.end(Buffer.from(await response.arrayBuffer()));

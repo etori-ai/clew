@@ -16,7 +16,9 @@ describe('the browser cache policy (D33)', () => {
     expect(retryPolicy(0, undefined)).toBe(false);
   });
   test('the person reads the server message when there is one, the fallback otherwise', () => {
-    expect(errorMessage(new ApiError(400, 'Veckan är redan planerad.'), 'Något gick fel.')).toBe('Veckan är redan planerad.');
+    expect(errorMessage(new ApiError(400, 'Veckan är redan planerad.'), 'Något gick fel.')).toBe(
+      'Veckan är redan planerad.',
+    );
     expect(errorMessage(new Error('boom'), 'Något gick fel.')).toBe('Något gick fel.');
     expect(errorMessage('boom', 'Sidan kunde inte läsas.')).toBe('Sidan kunde inte läsas.');
   });

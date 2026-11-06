@@ -7,9 +7,16 @@ import { retryPolicy } from './query-policy';
  * again or the network returns; nothing polls. Mutations never retry: confirm sends invitations, act executes in a source
  * system, remind starts a workflow.
  */
-export const createQueryClient = () => new QueryClient({
-  defaultOptions: {
-    queries: { staleTime: 15_000, retry: retryPolicy, retryDelay: 1_000, refetchOnWindowFocus: true, refetchOnReconnect: true },
-    mutations: { retry: false },
-  },
-});
+export const createQueryClient = () =>
+  new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 15_000,
+        retry: retryPolicy,
+        retryDelay: 1_000,
+        refetchOnWindowFocus: true,
+        refetchOnReconnect: true,
+      },
+      mutations: { retry: false },
+    },
+  });

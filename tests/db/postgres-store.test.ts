@@ -10,15 +10,33 @@ import { storeContract } from '../store-contract';
  * DATABASE_URL and the migrations applied, which is why it is not part of `bun run check`. Every test gets two
  * people of its own, as the memory adapter gets a fresh store, and everything they owned is removed at the end.
  */
-if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
+if (!process.env.DATABASE_URL)
+  throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
 const created: string[] = [];
 afterAll(async () => {
   if (created.length) {
-    const owned = await database().select({ id: schema.threads.id }).from(schema.threads).where(inArray(schema.threads.personId, created));
+    const owned = await database()
+      .select({ id: schema.threads.id })
+      .from(schema.threads)
+      .where(inArray(schema.threads.personId, created));
     const ids = owned.map(r => r.id);
     if (ids.length) {
-      await database().delete(schema.audit).where(inArray(schema.audit.subject, ids.map(id => 'thread:' + id)));
-      await database().delete(schema.jobs).where(inArray(schema.jobs.id, ids.flatMap(id => ['job:' + id, 'job:lost:' + id])));
+      await database()
+        .delete(schema.audit)
+        .where(
+          inArray(
+            schema.audit.subject,
+            ids.map(id => 'thread:' + id),
+          ),
+        );
+      await database()
+        .delete(schema.jobs)
+        .where(
+          inArray(
+            schema.jobs.id,
+            ids.flatMap(id => ['job:' + id, 'job:lost:' + id]),
+          ),
+        );
       await database().delete(schema.threads).where(inArray(schema.threads.id, ids));
     }
     await database().delete(schema.people).where(inArray(schema.people.id, created));
@@ -28,11 +46,22 @@ afterAll(async () => {
 storeContract('postgres', async () => {
   const run = Math.random().toString(36).slice(2, 8);
   const people: [string, string] = [`test-${run}-a`, `test-${run}-b`];
-  await database().insert(schema.people).values(people.map(id => ({ id, organisationId: 'test', name: id })));
+  await database()
+    .insert(schema.people)
+    .values(people.map(id => ({ id, organisationId: 'test', name: id })));
   created.push(...people);
   return {
-    store: postgresThreadStore(), people,
-    auditFor: async subject => (await readAudit(subject)).map(r => ({ actor: r.actor, action: r.action, subject: r.subject, at: r.createdAt.toISOString(), details: r.details })),
-    hasJob: async id => (await database().select({ id: schema.jobs.id }).from(schema.jobs).where(eq(schema.jobs.id, id))).length > 0,
+    store: postgresThreadStore(),
+    people,
+    auditFor: async subject =>
+      (await readAudit(subject)).map(r => ({
+        actor: r.actor,
+        action: r.action,
+        subject: r.subject,
+        at: r.createdAt.toISOString(),
+        details: r.details,
+      })),
+    hasJob: async id =>
+      (await database().select({ id: schema.jobs.id }).from(schema.jobs).where(eq(schema.jobs.id, id))).length > 0,
   };
 });

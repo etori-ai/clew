@@ -1,4 +1,10 @@
-import type { AuditEntryView, AuthenticatedContext, ConnectorAudience, ModelState, ProviderHealth } from '@clew/contracts';
+import type {
+  AuditEntryView,
+  AuthenticatedContext,
+  ConnectorAudience,
+  ModelState,
+  ProviderHealth,
+} from '@clew/contracts';
 import type { Registry } from '@clew/connectors';
 import type { CalendarUsecases } from '../modules/calendar/usecases/samtal';
 import type { ThreadStore } from '../threads/model';
@@ -12,22 +18,66 @@ import type { ModelGenerate } from './model';
  * `adapters/postgres.ts` and `adapters/provider.ts` are what the server runs; `adapters/memory.ts` is what the tests run.
  */
 export interface ProviderRecord {
-  id: string; title: string; baseUrl: string;
+  id: string;
+  title: string;
+  baseUrl: string;
   /** The sealed envelope, or null for an endpoint without a key. Opaque to the use case; never leaves the server. */
-  apiKey: string | null; keyChangedAt: string | null; health: ProviderHealth;
-  createdBy: string; updatedBy: string; createdAt: string; updatedAt: string; version: number;
+  apiKey: string | null;
+  keyChangedAt: string | null;
+  health: ProviderHealth;
+  createdBy: string;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
 }
-export interface NewProvider { id: string; title: string; baseUrl: string; apiKey: string | null; health: ProviderHealth; createdBy: string; at: string }
+export interface NewProvider {
+  id: string;
+  title: string;
+  baseUrl: string;
+  apiKey: string | null;
+  health: ProviderHealth;
+  createdBy: string;
+  at: string;
+}
 export type ProviderPatch = Partial<Pick<ProviderRecord, 'title' | 'baseUrl' | 'apiKey' | 'keyChangedAt' | 'health'>>;
 export interface ModelRecord {
-  id: string; providerId: string; model: string; title: string; description: string;
-  state: ModelState; audience: ConnectorAudience; isDefault: boolean; tools: boolean;
-  createdBy: string; updatedBy: string; createdAt: string; updatedAt: string; version: number;
+  id: string;
+  providerId: string;
+  model: string;
+  title: string;
+  description: string;
+  state: ModelState;
+  audience: ConnectorAudience;
+  isDefault: boolean;
+  tools: boolean;
+  createdBy: string;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
 }
 /** A new model is off, for everyone, not the default: an administrator switches it on (nothing is live by accident). */
-export interface NewModel { id: string; providerId: string; model: string; title: string; description: string; tools: boolean; createdBy: string; at: string }
-export type ModelPatch = Partial<Pick<ModelRecord, 'model' | 'title' | 'description' | 'state' | 'audience' | 'isDefault' | 'tools'>>;
-export interface AuditEntry { actor: string; action: string; subject: string; at: string; details?: Record<string, unknown> }
+export interface NewModel {
+  id: string;
+  providerId: string;
+  model: string;
+  title: string;
+  description: string;
+  tools: boolean;
+  createdBy: string;
+  at: string;
+}
+export type ModelPatch = Partial<
+  Pick<ModelRecord, 'model' | 'title' | 'description' | 'state' | 'audience' | 'isDefault' | 'tools'>
+>;
+export interface AuditEntry {
+  actor: string;
+  action: string;
+  subject: string;
+  at: string;
+  details?: Record<string, unknown>;
+}
 /** Writes inside one transaction: the audit row commits or rolls back with the rest. */
 export interface ModelTx {
   /** False when the id is taken. */
@@ -57,11 +107,23 @@ export interface ModelStore {
   transaction<T>(fn: (tx: ModelTx) => Promise<T>): Promise<T>;
 }
 /** Sealing is the composition root's business (the master key); the use case only hands envelopes around. */
-export interface KeySealer { seal(value: string, providerId: string): string; open(sealed: string, providerId: string): string }
-export interface Endpoint { baseUrl: string; apiKey?: string }
+export interface KeySealer {
+  seal(value: string, providerId: string): string;
+  open(sealed: string, providerId: string): string;
+}
+export interface Endpoint {
+  baseUrl: string;
+  apiKey?: string;
+}
 /** How a call to an endpoint failed: no answer (network, timeout, 5xx), the key refused (401, 403), or an answer that is not what was asked for. */
 export class WireError extends Error {
-  constructor(readonly kind: 'unreachable' | 'key-rejected' | 'unsupported', message: string) { super(message); this.name = 'WireError'; }
+  constructor(
+    readonly kind: 'unreachable' | 'key-rejected' | 'unsupported',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'WireError';
+  }
 }
 /** The OpenAI-compatible protocol, the only one (D24, CLAUDE.md). Every failure is a `WireError`. */
 export interface ModelWire {
@@ -76,9 +138,19 @@ export interface ModelWire {
  * Which endpoints answer, per provider, in this process. A failed generation marks the provider down and the router
  * answers until a probe or a test brings it back (D8). A provider nobody has checked yet counts as worth trying.
  */
-export interface ModelHealth { available(providerId: string): boolean; checkedAt(providerId: string): string | null; mark(providerId: string, ok: boolean, at: string): void }
+export interface ModelHealth {
+  available(providerId: string): boolean;
+  checkedAt(providerId: string): string | null;
+  mark(providerId: string, ok: boolean, at: string): void;
+}
 /** The model one turn uses, resolved for the person on the server (D24). */
-export interface ResolvedModel { id: string; title: string; providerId: string; tools: boolean; generate: ModelGenerate }
+export interface ResolvedModel {
+  id: string;
+  title: string;
+  providerId: string;
+  tools: boolean;
+  generate: ModelGenerate;
+}
 export interface ModelResolver {
   /** The person's model for this turn: their pick, else the default, else the first they may use; none means the router (D8). */
   resolve(persona: AuthenticatedContext): Promise<ResolvedModel | undefined>;

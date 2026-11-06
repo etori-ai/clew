@@ -21,171 +21,699 @@
   border-style: var(--clew-cal-border-style);
   border-width: 0;
 }
-.clew-cal-view-top { border-top-width: var(--border-width, 1px); border-top-left-radius: var(--radius-container); border-top-right-radius: var(--radius-container); }
-.clew-cal-view-bottom { border-bottom-width: var(--border-width, 1px); border-bottom-left-radius: var(--radius-container); border-bottom-right-radius: var(--radius-container); }
-.clew-cal-view-x { border-left-width: var(--border-width, 1px); border-right-width: var(--border-width, 1px); }
-.clew-cal-view-fixed { overflow: hidden; }
-.clew-cal-table-header { background-color: var(--color-background-surface); }
-.clew-cal-filler { background-color: var(--color-background-surface); border-color: var(--clew-cal-line); border-style: var(--clew-cal-border-style); border-width: 1px; opacity: 0.5; }
-.clew-cal-divider { border-bottom: 1px var(--clew-cal-border-style) var(--clew-cal-line); }
+.clew-cal-view-top {
+  border-top-width: var(--border-width, 1px);
+  border-top-left-radius: var(--radius-container);
+  border-top-right-radius: var(--radius-container);
+}
+.clew-cal-view-bottom {
+  border-bottom-width: var(--border-width, 1px);
+  border-bottom-left-radius: var(--radius-container);
+  border-bottom-right-radius: var(--radius-container);
+}
+.clew-cal-view-x {
+  border-left-width: var(--border-width, 1px);
+  border-right-width: var(--border-width, 1px);
+}
+.clew-cal-view-fixed {
+  overflow: hidden;
+}
+.clew-cal-table-header {
+  background-color: var(--color-background-surface);
+}
+.clew-cal-filler {
+  background-color: var(--color-background-surface);
+  border-color: var(--clew-cal-line);
+  border-style: var(--clew-cal-border-style);
+  border-width: 1px;
+  opacity: 0.5;
+}
+.clew-cal-divider {
+  border-bottom: 1px var(--clew-cal-border-style) var(--clew-cal-line);
+}
 
 /* Pressable and focusable surfaces share Astryx's hover, pressed and focus tokens */
-.clew-cal-pressable { cursor: pointer; }
-@media (hover: hover) { .clew-cal-pressable:hover { background-color: var(--color-overlay-hover); } }
-.clew-cal-pressable:active { background-color: var(--color-overlay-pressed); }
-.clew-cal-focusable:focus-visible { outline: var(--focus-outline-width) var(--focus-outline-style) var(--focus-outline-color); outline-offset: calc(var(--focus-outline-offset) * -1); }
+.clew-cal-pressable {
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .clew-cal-pressable:hover {
+    background-color: var(--color-overlay-hover);
+  }
+}
+.clew-cal-pressable:active {
+  background-color: var(--color-overlay-pressed);
+}
+.clew-cal-focusable:focus-visible {
+  outline: var(--focus-outline-width) var(--focus-outline-style) var(--focus-outline-color);
+  outline-offset: calc(var(--focus-outline-offset) * -1);
+}
 
 /* Toolbar, only when FullCalendar's own toolbar is on */
-.clew-cal-toolbar { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--spacing-3); padding: var(--spacing-3) var(--spacing-4); }
-.clew-cal-toolbar-section { display: flex; flex-direction: row; align-items: center; gap: var(--spacing-2); }
-.clew-cal-toolbar-title { font-size: var(--text-heading-3-size); font-weight: var(--text-heading-3-weight); line-height: var(--text-heading-3-leading); }
-.clew-cal-button-group { display: flex; flex-direction: row; border-radius: var(--radius-full); }
-.clew-cal-button { appearance: none; font: inherit; color: var(--color-text-primary); background: transparent; border: 1px var(--clew-cal-border-style) var(--clew-cal-line-strong); border-radius: var(--radius-full); padding: var(--spacing-1-5) var(--spacing-3); margin: 0; }
-.clew-cal-button-selected, .clew-cal-button-primary { background-color: var(--color-background-inverted); color: var(--color-on-dark); border-color: transparent; }
-.clew-cal-button-icon { padding-inline: var(--spacing-2); }
+.clew-cal-toolbar {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+  padding: var(--spacing-3) var(--spacing-4);
+}
+.clew-cal-toolbar-section {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+.clew-cal-toolbar-title {
+  font-size: var(--text-heading-3-size);
+  font-weight: var(--text-heading-3-weight);
+  line-height: var(--text-heading-3-leading);
+}
+.clew-cal-button-group {
+  display: flex;
+  flex-direction: row;
+  border-radius: var(--radius-full);
+}
+.clew-cal-button {
+  appearance: none;
+  font: inherit;
+  color: var(--color-text-primary);
+  background: transparent;
+  border: 1px var(--clew-cal-border-style) var(--clew-cal-line-strong);
+  border-radius: var(--radius-full);
+  padding: var(--spacing-1-5) var(--spacing-3);
+  margin: 0;
+}
+.clew-cal-button-selected,
+.clew-cal-button-primary {
+  background-color: var(--color-background-inverted);
+  color: var(--color-on-dark);
+  border-color: transparent;
+}
+.clew-cal-button-icon {
+  padding-inline: var(--spacing-2);
+}
 
 /* Day headers: weekday small and secondary, the day number as the heading; today in the accent */
-.clew-cal-day-header-row { border-bottom: 1px var(--clew-cal-border-style) var(--clew-cal-line); }
-.clew-cal-day-header { border-color: var(--clew-cal-line); border-style: var(--clew-cal-border-style); border-width: 0 0 0 1px; }
-.clew-cal-day-header.clew-cal-major { border-left-color: var(--clew-cal-line-strong); }
-.clew-cal-day-header.clew-cal-disabled { background-color: var(--color-background-muted); }
-.clew-cal-day-header-inner { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--spacing-0-5); padding: var(--spacing-2) var(--spacing-1); min-height: 44px; outline: none !important; }
-.clew-cal-day-header-inner > * { display: flex; flex-direction: column; align-items: center; gap: var(--spacing-0-5); }
-.clew-cal-day-header-weekday { font-size: var(--font-size-sm); line-height: var(--text-supporting-leading, 1.5); color: var(--color-text-secondary); }
-.clew-cal-day-header-number { display: inline-flex; align-items: center; justify-content: center; min-width: var(--spacing-8); height: var(--spacing-8); padding-inline: var(--spacing-1-5); border-radius: var(--radius-full); font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); line-height: 1; }
-.clew-cal-today .clew-cal-day-header-number { background-color: var(--color-accent); color: var(--color-on-accent); }
+.clew-cal-day-header-row {
+  border-bottom: 1px var(--clew-cal-border-style) var(--clew-cal-line);
+}
+.clew-cal-day-header {
+  border-color: var(--clew-cal-line);
+  border-style: var(--clew-cal-border-style);
+  border-width: 0 0 0 1px;
+}
+.clew-cal-day-header.clew-cal-major {
+  border-left-color: var(--clew-cal-line-strong);
+}
+.clew-cal-day-header.clew-cal-disabled {
+  background-color: var(--color-background-muted);
+}
+.clew-cal-day-header-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-0-5);
+  padding: var(--spacing-2) var(--spacing-1);
+  min-height: 44px;
+  outline: none !important;
+}
+.clew-cal-day-header-inner > * {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-0-5);
+}
+.clew-cal-day-header-weekday {
+  font-size: var(--font-size-sm);
+  line-height: var(--text-supporting-leading, 1.5);
+  color: var(--color-text-secondary);
+}
+.clew-cal-day-header-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--spacing-8);
+  height: var(--spacing-8);
+  padding-inline: var(--spacing-1-5);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1;
+}
+.clew-cal-today .clew-cal-day-header-number {
+  background-color: var(--color-accent);
+  color: var(--color-on-accent);
+}
 
 /* Week number and all-day headers in the axis column */
-.clew-cal-week-number-header { display: flex; align-items: center; justify-content: flex-end; }
-.clew-cal-week-number-header-inner { margin: var(--spacing-2); padding: var(--spacing-0-5) var(--spacing-1-5); border-radius: var(--radius-full); background-color: var(--color-background-muted); color: var(--color-text-secondary); font-size: var(--font-size-sm); }
-.clew-cal-all-day-header { display: flex; align-items: center; justify-content: flex-end; }
-.clew-cal-all-day-header-inner { margin: var(--spacing-2); color: var(--color-text-secondary); font-size: var(--font-size-sm); text-align: end; }
+.clew-cal-week-number-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.clew-cal-week-number-header-inner {
+  margin: var(--spacing-2);
+  padding: var(--spacing-0-5) var(--spacing-1-5);
+  border-radius: var(--radius-full);
+  background-color: var(--color-background-muted);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+.clew-cal-all-day-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.clew-cal-all-day-header-inner {
+  margin: var(--spacing-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  text-align: end;
+}
 
 /* Hour axis */
-.clew-cal-slot-header { display: flex; align-items: flex-start; justify-content: flex-end; border-color: var(--clew-cal-line); border-style: var(--clew-cal-border-style); border-width: 1px 0 0 0; }
-.clew-cal-slot-header.clew-cal-minor { border-top-style: dotted; }
-.clew-cal-slot-header-inner { position: relative; top: calc(var(--spacing-2) * -1); margin: 0 var(--spacing-2) 0 var(--spacing-2); background-color: var(--color-background-surface); padding-inline: var(--spacing-0-5); white-space: nowrap; color: var(--color-text-secondary); font-size: var(--font-size-sm); font-variant-numeric: tabular-nums; }
-.clew-cal-slot-header-divider { border-inline-end: 1px var(--clew-cal-border-style) var(--clew-cal-line); }
+.clew-cal-slot-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  border-color: var(--clew-cal-line);
+  border-style: var(--clew-cal-border-style);
+  border-width: 1px 0 0 0;
+}
+.clew-cal-slot-header.clew-cal-minor {
+  border-top-style: dotted;
+}
+.clew-cal-slot-header-inner {
+  position: relative;
+  top: calc(var(--spacing-2) * -1);
+  margin: 0 var(--spacing-2) 0 var(--spacing-2);
+  background-color: var(--color-background-surface);
+  padding-inline: var(--spacing-0-5);
+  white-space: nowrap;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+.clew-cal-slot-header-divider {
+  border-inline-end: 1px var(--clew-cal-border-style) var(--clew-cal-line);
+}
 
 /* Lanes: one column per day, one row per slot */
-.clew-cal-day-lane { border-color: var(--clew-cal-line); border-style: var(--clew-cal-border-style); border-width: 0 0 0 1px; }
-.clew-cal-day-lane.clew-cal-major { border-left-color: var(--clew-cal-line-strong); }
-.clew-cal-day-lane.clew-cal-disabled { background-color: var(--color-background-muted); }
-.clew-cal-day-lane-inner { margin-inline: var(--spacing-0-5) 2.5%; }
-.clew-cal-day-lane-inner.clew-cal-stack { margin: var(--spacing-1); }
-.clew-cal-slot-lane { border-color: var(--clew-cal-line); border-style: var(--clew-cal-border-style); border-width: 1px 0 0 0; }
-.clew-cal-slot-lane.clew-cal-minor { border-top-style: dotted; }
-.clew-cal-non-business { background-color: var(--color-background-muted); }
-.clew-cal-highlight { background-color: var(--color-accent-muted); }
+.clew-cal-day-lane {
+  border-color: var(--clew-cal-line);
+  border-style: var(--clew-cal-border-style);
+  border-width: 0 0 0 1px;
+}
+.clew-cal-day-lane.clew-cal-major {
+  border-left-color: var(--clew-cal-line-strong);
+}
+.clew-cal-day-lane.clew-cal-disabled {
+  background-color: var(--color-background-muted);
+}
+.clew-cal-day-lane-inner {
+  margin-inline: var(--spacing-0-5) 2.5%;
+}
+.clew-cal-day-lane-inner.clew-cal-stack {
+  margin: var(--spacing-1);
+}
+.clew-cal-slot-lane {
+  border-color: var(--clew-cal-line);
+  border-style: var(--clew-cal-border-style);
+  border-width: 1px 0 0 0;
+}
+.clew-cal-slot-lane.clew-cal-minor {
+  border-top-style: dotted;
+}
+.clew-cal-non-business {
+  background-color: var(--color-background-muted);
+}
+.clew-cal-highlight {
+  background-color: var(--color-accent-muted);
+}
 
 /* Now: a thin accent line with a dot on the axis */
-.clew-cal-now-line { border-top: 2px solid var(--color-accent); margin-top: -1px; }
-.clew-cal-now-dot { width: 0; height: 0; margin: -5px; border: 5px solid var(--color-accent); border-radius: var(--radius-full); }
+.clew-cal-now-line {
+  border-top: 2px solid var(--color-accent);
+  margin-top: -1px;
+}
+.clew-cal-now-dot {
+  width: 0;
+  height: 0;
+  margin: -5px;
+  border: 5px solid var(--color-accent);
+  border-radius: var(--radius-full);
+}
 
 /* Events. --fc-event-color is set by FullCalendar from the kind-independent eventColor; the kind classes override it. */
-.clew-cal-event { --clew-cal-event-bg: var(--fc-event-color); --clew-cal-event-fg: var(--fc-event-contrast-color); --clew-cal-event-border: transparent; }
-.clew-cal-event-event { --clew-cal-event-bg: var(--color-background-gray); --clew-cal-event-fg: var(--color-text-gray); }
-.clew-cal-event-proposal { --clew-cal-event-bg: var(--color-background-surface); --clew-cal-event-fg: var(--color-text-purple); --clew-cal-event-border: var(--color-border-purple); }
-.clew-cal-event-booked { --clew-cal-event-bg: var(--color-background-green); --clew-cal-event-fg: var(--color-text-green); }
-.clew-cal-event.clew-cal-past { opacity: 0.7; }
-.clew-cal-event.clew-cal-dragging { box-shadow: var(--shadow-high); }
-.clew-cal-event.clew-cal-mirror { opacity: 0.75; }
-.clew-cal-event.clew-cal-selected { box-shadow: var(--shadow-med); }
-
-.clew-cal-block-event { position: relative; border-radius: var(--radius-inner); background-color: var(--clew-cal-event-bg); color: var(--clew-cal-event-fg); border: 2px var(--clew-cal-border-style) var(--clew-cal-event-border); overflow: hidden; }
-.clew-cal-block-event-inner { color: inherit; }
-.clew-cal-block-event-time, .clew-cal-block-event-title { white-space: nowrap; overflow: hidden; }
-
-.clew-cal-column-event { margin-bottom: 1px; box-shadow: 0 0 0 1px var(--color-background-surface); }
-.clew-cal-column-event-start { margin-top: 1px; }
-.clew-cal-column-event-inner { display: flex; flex-direction: column; padding: var(--spacing-1) var(--spacing-2); font-size: var(--font-size-sm); line-height: 1.3; }
-/* A word too long for the column ends in an ellipsis; it never breaks in the middle. */
-.clew-cal-column-event-inner > * { min-width: 0; overflow: hidden; overflow-wrap: normal; word-break: normal; text-overflow: ellipsis; }
-.clew-cal-column-event-inner.clew-cal-short { flex-direction: row; align-items: center; gap: var(--spacing-1); padding-block: 0; }
-@media (min-width: 768px) {
-  .clew-cal-column-event-inner.clew-cal-short > * { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clew-cal-event {
+  --clew-cal-event-bg: var(--fc-event-color);
+  --clew-cal-event-fg: var(--fc-event-contrast-color);
+  --clew-cal-event-border: transparent;
 }
-.clew-cal-column-event-inner.clew-cal-narrow { padding-inline: var(--spacing-1); }
-.clew-cal-column-event-time { font-weight: var(--font-weight-semibold); font-variant-numeric: tabular-nums; flex-shrink: 0; white-space: nowrap; }
-.clew-cal-column-event-title { flex-shrink: 1; }
-.clew-cal-resizer { position: absolute; inset-inline: 0; height: var(--spacing-2); cursor: ns-resize; }
-.clew-cal-resizer-top { top: -4px; }
-.clew-cal-resizer-bottom { bottom: -4px; }
+.clew-cal-event-event {
+  --clew-cal-event-bg: var(--color-background-gray);
+  --clew-cal-event-fg: var(--color-text-gray);
+}
+.clew-cal-event-proposal {
+  --clew-cal-event-bg: var(--color-background-surface);
+  --clew-cal-event-fg: var(--color-text-purple);
+  --clew-cal-event-border: var(--color-border-purple);
+}
+.clew-cal-event-booked {
+  --clew-cal-event-bg: var(--color-background-green);
+  --clew-cal-event-fg: var(--color-text-green);
+}
+.clew-cal-event.clew-cal-past {
+  opacity: 0.7;
+}
+.clew-cal-event.clew-cal-dragging {
+  box-shadow: var(--shadow-high);
+}
+.clew-cal-event.clew-cal-mirror {
+  opacity: 0.75;
+}
+.clew-cal-event.clew-cal-selected {
+  box-shadow: var(--shadow-med);
+}
 
-.clew-cal-row-event { margin-bottom: 1px; border-width: 2px; border-style: var(--clew-cal-border-style); }
-.clew-cal-row-event-start { margin-inline-start: 1px; border-start-start-radius: var(--radius-element); border-end-start-radius: var(--radius-element); }
-.clew-cal-row-event-end { margin-inline-end: 1px; border-start-end-radius: var(--radius-element); border-end-end-radius: var(--radius-element); }
-.clew-cal-row-event-inner { display: flex; flex-direction: row; align-items: center; gap: var(--spacing-1); padding: var(--spacing-0-5) var(--spacing-1-5); font-size: var(--font-size-sm); }
-.clew-cal-row-event.clew-cal-narrow .clew-cal-row-event-inner { padding-inline: var(--spacing-1); font-size: var(--font-size-sm); }
-.clew-cal-row-event-time { font-weight: var(--font-weight-semibold); flex-shrink: 1; white-space: nowrap; }
-.clew-cal-row-event-title { flex-shrink: 100; white-space: nowrap; overflow: hidden; }
+.clew-cal-block-event {
+  position: relative;
+  border-radius: var(--radius-inner);
+  background-color: var(--clew-cal-event-bg);
+  color: var(--clew-cal-event-fg);
+  border: 2px var(--clew-cal-border-style) var(--clew-cal-event-border);
+  overflow: hidden;
+}
+.clew-cal-block-event-inner {
+  color: inherit;
+}
+.clew-cal-block-event-time,
+.clew-cal-block-event-title {
+  white-space: nowrap;
+  overflow: hidden;
+}
 
-.clew-cal-dot-event { display: flex; flex-direction: row; align-items: center; gap: var(--spacing-1); margin-bottom: 1px; margin-inline: var(--spacing-0-5); padding: var(--spacing-0-5) var(--spacing-1); border-radius: var(--radius-inner); }
-.clew-cal-dot-event-dot { flex-shrink: 0; width: var(--spacing-2); height: var(--spacing-2); border-radius: var(--radius-full); background-color: var(--clew-cal-event-bg); border: 2px solid var(--clew-cal-event-border); box-sizing: border-box; }
-.clew-cal-event-event .clew-cal-dot-event-dot { background-color: var(--color-icon-gray); }
-.clew-cal-event-booked .clew-cal-dot-event-dot { background-color: var(--color-icon-green); }
-.clew-cal-dot-event-inner { display: flex; flex-direction: row; align-items: center; gap: var(--spacing-1); min-width: 0; font-size: var(--font-size-sm); }
-.clew-cal-dot-event-time { white-space: nowrap; font-weight: var(--font-weight-semibold); }
-.clew-cal-dot-event-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clew-cal-column-event {
+  margin-bottom: 1px;
+  box-shadow: 0 0 0 1px var(--color-background-surface);
+}
+.clew-cal-column-event-start {
+  margin-top: 1px;
+}
+.clew-cal-column-event-inner {
+  display: flex;
+  flex-direction: column;
+  padding: var(--spacing-1) var(--spacing-2);
+  font-size: var(--font-size-sm);
+  line-height: 1.3;
+}
+/* A word too long for the column ends in an ellipsis; it never breaks in the middle. */
+.clew-cal-column-event-inner > * {
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: normal;
+  word-break: normal;
+  text-overflow: ellipsis;
+}
+.clew-cal-column-event-inner.clew-cal-short {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding-block: 0;
+}
+@media (min-width: 768px) {
+  .clew-cal-column-event-inner.clew-cal-short > * {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+.clew-cal-column-event-inner.clew-cal-narrow {
+  padding-inline: var(--spacing-1);
+}
+.clew-cal-column-event-time {
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.clew-cal-column-event-title {
+  flex-shrink: 1;
+}
+.clew-cal-resizer {
+  position: absolute;
+  inset-inline: 0;
+  height: var(--spacing-2);
+  cursor: ns-resize;
+}
+.clew-cal-resizer-top {
+  top: -4px;
+}
+.clew-cal-resizer-bottom {
+  bottom: -4px;
+}
+
+.clew-cal-row-event {
+  margin-bottom: 1px;
+  border-width: 2px;
+  border-style: var(--clew-cal-border-style);
+}
+.clew-cal-row-event-start {
+  margin-inline-start: 1px;
+  border-start-start-radius: var(--radius-element);
+  border-end-start-radius: var(--radius-element);
+}
+.clew-cal-row-event-end {
+  margin-inline-end: 1px;
+  border-start-end-radius: var(--radius-element);
+  border-end-end-radius: var(--radius-element);
+}
+.clew-cal-row-event-inner {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding: var(--spacing-0-5) var(--spacing-1-5);
+  font-size: var(--font-size-sm);
+}
+.clew-cal-row-event.clew-cal-narrow .clew-cal-row-event-inner {
+  padding-inline: var(--spacing-1);
+  font-size: var(--font-size-sm);
+}
+.clew-cal-row-event-time {
+  font-weight: var(--font-weight-semibold);
+  flex-shrink: 1;
+  white-space: nowrap;
+}
+.clew-cal-row-event-title {
+  flex-shrink: 100;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.clew-cal-dot-event {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--spacing-1);
+  margin-bottom: 1px;
+  margin-inline: var(--spacing-0-5);
+  padding: var(--spacing-0-5) var(--spacing-1);
+  border-radius: var(--radius-inner);
+}
+.clew-cal-dot-event-dot {
+  flex-shrink: 0;
+  width: var(--spacing-2);
+  height: var(--spacing-2);
+  border-radius: var(--radius-full);
+  background-color: var(--clew-cal-event-bg);
+  border: 2px solid var(--clew-cal-event-border);
+  box-sizing: border-box;
+}
+.clew-cal-event-event .clew-cal-dot-event-dot {
+  background-color: var(--color-icon-gray);
+}
+.clew-cal-event-booked .clew-cal-dot-event-dot {
+  background-color: var(--color-icon-green);
+}
+.clew-cal-dot-event-inner {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--spacing-1);
+  min-width: 0;
+  font-size: var(--font-size-sm);
+}
+.clew-cal-dot-event-time {
+  white-space: nowrap;
+  font-weight: var(--font-weight-semibold);
+}
+.clew-cal-dot-event-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* "+2 till" */
-.clew-cal-more-link-inner { white-space: nowrap; }
-.clew-cal-column-more-link { margin-bottom: 1px; padding: var(--spacing-0-5) var(--spacing-1-5); border-radius: var(--radius-inner); background-color: var(--color-background-muted); color: var(--color-text-accent); font-size: var(--font-size-sm); box-shadow: 0 0 0 1px var(--color-background-surface); }
-.clew-cal-row-more-link { margin: 0 var(--spacing-0-5) 1px; padding: var(--spacing-0-5) var(--spacing-1); border-radius: var(--radius-inner); color: var(--color-text-accent); font-size: var(--font-size-sm); }
-.clew-cal-popover { min-width: 240px; background-color: var(--color-background-popover); color: var(--color-text-primary); border: 1px var(--clew-cal-border-style) var(--clew-cal-line); border-radius: var(--radius-container); box-shadow: var(--shadow-high); overflow: hidden; }
-.clew-cal-popover-close { position: absolute; top: var(--spacing-2); inset-inline-end: var(--spacing-2); display: flex; align-items: center; justify-content: center; width: var(--spacing-8); height: var(--spacing-8); border-radius: var(--radius-full); color: var(--color-icon-secondary); }
+.clew-cal-more-link-inner {
+  white-space: nowrap;
+}
+.clew-cal-column-more-link {
+  margin-bottom: 1px;
+  padding: var(--spacing-0-5) var(--spacing-1-5);
+  border-radius: var(--radius-inner);
+  background-color: var(--color-background-muted);
+  color: var(--color-text-accent);
+  font-size: var(--font-size-sm);
+  box-shadow: 0 0 0 1px var(--color-background-surface);
+}
+.clew-cal-row-more-link {
+  margin: 0 var(--spacing-0-5) 1px;
+  padding: var(--spacing-0-5) var(--spacing-1);
+  border-radius: var(--radius-inner);
+  color: var(--color-text-accent);
+  font-size: var(--font-size-sm);
+}
+.clew-cal-popover {
+  min-width: 240px;
+  background-color: var(--color-background-popover);
+  color: var(--color-text-primary);
+  border: 1px var(--clew-cal-border-style) var(--clew-cal-line);
+  border-radius: var(--radius-container);
+  box-shadow: var(--shadow-high);
+  overflow: hidden;
+}
+.clew-cal-popover-close {
+  position: absolute;
+  top: var(--spacing-2);
+  inset-inline-end: var(--spacing-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--spacing-8);
+  height: var(--spacing-8);
+  border-radius: var(--radius-full);
+  color: var(--color-icon-secondary);
+}
 
 /* Month grid */
-.clew-cal-day-row { border-bottom: 1px var(--clew-cal-border-style) var(--clew-cal-line); }
-.clew-cal-day-cell { border-color: var(--clew-cal-line); border-style: var(--clew-cal-border-style); border-width: 0 0 0 1px; }
-.clew-cal-day-cell.clew-cal-major { border-left-color: var(--clew-cal-line-strong); }
-.clew-cal-day-cell.clew-cal-disabled { background-color: var(--color-background-muted); }
-.clew-cal-day-cell-top { display: flex; flex-direction: row; justify-content: flex-end; min-height: 2px; }
-.clew-cal-day-number { display: inline-flex; align-items: center; justify-content: center; min-width: var(--spacing-6); height: var(--spacing-6); margin: var(--spacing-1-5); padding-inline: var(--spacing-1); border-radius: var(--radius-full); font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); }
-.clew-cal-day-number.clew-cal-today { background-color: var(--color-accent); color: var(--color-on-accent); }
-.clew-cal-day-number.clew-cal-other { color: var(--color-text-disabled); }
-.clew-cal-day-number.clew-cal-narrow { margin: var(--spacing-0-5); font-size: var(--font-size-sm); }
-.clew-cal-day-cell-popover { padding: var(--spacing-2); }
-.clew-cal-day-cell-bottom { min-height: var(--spacing-1); }
-.clew-cal-inline-week-number { position: absolute; top: var(--spacing-1-5); inset-inline-start: var(--spacing-1); padding: var(--spacing-0-5) var(--spacing-1-5); border-radius: var(--radius-full); background-color: var(--color-background-muted); color: var(--color-text-secondary); font-size: var(--font-size-xs); }
-.clew-cal-single-month { margin: var(--spacing-4); }
-.clew-cal-single-month-header { display: flex; align-items: center; padding-bottom: var(--spacing-2); }
-.clew-cal-single-month-header-inner { padding: var(--spacing-1) var(--spacing-3); font-weight: var(--font-weight-semibold); }
+.clew-cal-day-row {
+  border-bottom: 1px var(--clew-cal-border-style) var(--clew-cal-line);
+}
+.clew-cal-day-cell {
+  border-color: var(--clew-cal-line);
+  border-style: var(--clew-cal-border-style);
+  border-width: 0 0 0 1px;
+}
+.clew-cal-day-cell.clew-cal-major {
+  border-left-color: var(--clew-cal-line-strong);
+}
+.clew-cal-day-cell.clew-cal-disabled {
+  background-color: var(--color-background-muted);
+}
+.clew-cal-day-cell-top {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-end;
+  min-height: 2px;
+}
+.clew-cal-day-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--spacing-6);
+  height: var(--spacing-6);
+  margin: var(--spacing-1-5);
+  padding-inline: var(--spacing-1);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+.clew-cal-day-number.clew-cal-today {
+  background-color: var(--color-accent);
+  color: var(--color-on-accent);
+}
+.clew-cal-day-number.clew-cal-other {
+  color: var(--color-text-disabled);
+}
+.clew-cal-day-number.clew-cal-narrow {
+  margin: var(--spacing-0-5);
+  font-size: var(--font-size-sm);
+}
+.clew-cal-day-cell-popover {
+  padding: var(--spacing-2);
+}
+.clew-cal-day-cell-bottom {
+  min-height: var(--spacing-1);
+}
+.clew-cal-inline-week-number {
+  position: absolute;
+  top: var(--spacing-1-5);
+  inset-inline-start: var(--spacing-1);
+  padding: var(--spacing-0-5) var(--spacing-1-5);
+  border-radius: var(--radius-full);
+  background-color: var(--color-background-muted);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+.clew-cal-single-month {
+  margin: var(--spacing-4);
+}
+.clew-cal-single-month-header {
+  display: flex;
+  align-items: center;
+  padding-bottom: var(--spacing-2);
+}
+.clew-cal-single-month-header-inner {
+  padding: var(--spacing-1) var(--spacing-3);
+  font-weight: var(--font-weight-semibold);
+}
 
 /* List view */
-.clew-cal-list-day { display: flex; flex-direction: row; align-items: flex-start; }
-.clew-cal-list-day-header { flex-shrink: 0; width: 33.3333%; max-width: 176px; min-height: 36px; display: flex; flex-direction: row; align-items: center; gap: var(--spacing-2); padding: var(--spacing-2); }
+.clew-cal-list-day {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+}
+.clew-cal-list-day-header {
+  flex-shrink: 0;
+  width: 33.3333%;
+  max-width: 176px;
+  min-height: 36px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2);
+}
 /* The list's day header is one heading line; today is told by the heading's accent colour, never by a filled pill the text would have to contrast against */
-.clew-cal-list-day-header-main { display: flex; align-items: center; min-height: var(--spacing-9); }
-.clew-cal-list-day-header-alt { font-size: var(--font-size-sm); color: var(--color-text-secondary); text-transform: uppercase; }
-.clew-cal-list-day-body { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--spacing-1); padding-block: var(--spacing-2); }
-.clew-cal-list-event { display: flex; flex-direction: row; align-items: center; gap: var(--spacing-2); padding: var(--spacing-2); border-radius: var(--radius-element); }
-.clew-cal-list-event-dot { flex-shrink: 0; width: var(--spacing-2-5, 0.625rem); height: var(--spacing-2-5, 0.625rem); border-radius: var(--radius-full); background-color: var(--clew-cal-event-bg); border: 2px solid var(--clew-cal-event-border); box-sizing: border-box; }
-.clew-cal-event-event .clew-cal-list-event-dot { background-color: var(--color-icon-gray); }
-.clew-cal-event-booked .clew-cal-list-event-dot { background-color: var(--color-icon-green); }
-.clew-cal-list-event-inner { display: flex; flex-direction: row; align-items: center; gap: var(--spacing-2); min-width: 0; }
-.clew-cal-list-event-time { flex-shrink: 0; width: 50%; max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.clew-cal-list-event-title { flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clew-cal-list-day-header-main {
+  display: flex;
+  align-items: center;
+  min-height: var(--spacing-9);
+}
+.clew-cal-list-day-header-alt {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+}
+.clew-cal-list-day-body {
+  flex-grow: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  padding-block: var(--spacing-2);
+}
+.clew-cal-list-event {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2);
+  border-radius: var(--radius-element);
+}
+.clew-cal-list-event-dot {
+  flex-shrink: 0;
+  width: var(--spacing-2-5, 0.625rem);
+  height: var(--spacing-2-5, 0.625rem);
+  border-radius: var(--radius-full);
+  background-color: var(--clew-cal-event-bg);
+  border: 2px solid var(--clew-cal-event-border);
+  box-sizing: border-box;
+}
+.clew-cal-event-event .clew-cal-list-event-dot {
+  background-color: var(--color-icon-gray);
+}
+.clew-cal-event-booked .clew-cal-list-event-dot {
+  background-color: var(--color-icon-green);
+}
+.clew-cal-list-event-inner {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--spacing-2);
+  min-width: 0;
+}
+.clew-cal-list-event-time {
+  flex-shrink: 0;
+  width: 50%;
+  max-width: 160px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.clew-cal-list-event-title {
+  flex-grow: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 @media (max-width: 767px) {
-  .clew-cal-list-day { flex-direction: column; }
-  .clew-cal-list-day-header { width: auto; max-width: none; min-height: 0; padding-block: var(--spacing-1) 0; }
-  .clew-cal-list-day-body { width: 100%; padding-block: var(--spacing-1); }
-  .clew-cal-list-event-inner { flex-wrap: wrap; row-gap: 0; }
-  .clew-cal-list-event-time { width: auto; max-width: none; }
-  .clew-cal-list-event-title { white-space: normal; }
+  .clew-cal-list-day {
+    flex-direction: column;
+  }
+  .clew-cal-list-day-header {
+    width: auto;
+    max-width: none;
+    min-height: 0;
+    padding-block: var(--spacing-1) 0;
+  }
+  .clew-cal-list-day-body {
+    width: 100%;
+    padding-block: var(--spacing-1);
+  }
+  .clew-cal-list-event-inner {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+  .clew-cal-list-event-time {
+    width: auto;
+    max-width: none;
+  }
+  .clew-cal-list-event-title {
+    white-space: normal;
+  }
 }
 /* Under a finger a list row is as tall as a control (HANDOVER §6): the same token Astryx's own controls take from the theme's adaptation. */
 @media (pointer: coarse) {
-  .clew-cal-list-event { min-height: var(--size-element-sm); }
-  .clew-cal-list-event-inner { min-height: var(--size-element-sm); }
+  .clew-cal-list-event {
+    min-height: var(--size-element-sm);
+  }
+  .clew-cal-list-event-inner {
+    min-height: var(--size-element-sm);
+  }
 }
-.clew-cal-no-events { flex-grow: 1; display: flex; align-items: center; justify-content: center; }
-.clew-cal-no-events-inner { padding-block: var(--spacing-12); color: var(--color-text-secondary); }
+.clew-cal-no-events {
+  flex-grow: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.clew-cal-no-events-inner {
+  padding-block: var(--spacing-12);
+  color: var(--color-text-secondary);
+}
 
 /* Background events (business hours style blocks) */
-.clew-cal-background-event { background-color: var(--color-background-muted); }
-.clew-cal-background-event-title { padding: var(--spacing-1) var(--spacing-2); font-size: var(--font-size-sm); font-style: italic; color: var(--color-text-secondary); opacity: 0.8; }
+.clew-cal-background-event {
+  background-color: var(--color-background-muted);
+}
+.clew-cal-background-event-title {
+  padding: var(--spacing-1) var(--spacing-2);
+  font-size: var(--font-size-sm);
+  font-style: italic;
+  color: var(--color-text-secondary);
+  opacity: 0.8;
+}
 
 @media print {
-  .clew-cal-block-event { border-color: var(--clew-cal-event-fg); }
+  .clew-cal-block-event {
+    border-color: var(--clew-cal-event-fg);
+  }
 }

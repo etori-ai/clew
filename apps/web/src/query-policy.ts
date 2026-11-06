@@ -10,4 +10,5 @@ export function retryPolicy(failureCount: number, error: unknown): boolean {
 }
 
 /** The message a person reads: the server's Swedish one when there is one, the caller's fallback otherwise. */
-export const errorMessage = (error: unknown, fallback: string) => error instanceof ApiError ? error.message : fallback;
+export const errorMessage = (error: unknown, fallback: string) =>
+  error instanceof ApiError ? error.message : fallback;

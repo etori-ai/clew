@@ -14,7 +14,8 @@ export interface PreviewOptions {
   /** Validates `{}` against an input schema with a real validator. Absent, a schema that lists `required` properties is taken to need input. */
   acceptsEmptyInput?: (schema: object) => boolean;
 }
-const listsNothingRequired = (schema: object) => !((schema as { required?: unknown }).required as unknown[] | undefined)?.length;
+const listsNothingRequired = (schema: object) =>
+  !((schema as { required?: unknown }).required as unknown[] | undefined)?.length;
 const BOTH: Array<'manager' | 'employee'> = ['manager', 'employee'];
 
 export function previewManifest(document: unknown, options: PreviewOptions = {}): ManifestPreview {
@@ -26,23 +27,48 @@ export function previewManifest(document: unknown, options: PreviewOptions = {})
   const capabilities = manifest.capabilities.map(c => {
     const roles = c.scope.roles ?? BOTH;
     const needsInput = !accepts(c.input as object);
-    const check = c.kind === 'execute' ? 'Not called: an execute runs only after a human decision.'
-      : needsInput ? 'Not called: it needs input. Test it against your own fixture.'
-      : `Called with {} as ${roles.join(' and ')}${roles.length < 2 ? `; the other role must be refused by scope` : ''}${c.view ? `; the ${c.view.kind} view is checked against the answer` : ''}.`;
+    const check =
+      c.kind === 'execute'
+        ? 'Not called: an execute runs only after a human decision.'
+        : needsInput
+          ? 'Not called: it needs input. Test it against your own fixture.'
+          : `Called with {} as ${roles.join(' and ')}${roles.length < 2 ? `; the other role must be refused by scope` : ''}${c.view ? `; the ${c.view.kind} view is checked against the answer` : ''}.`;
     return {
-      name: c.name, kind: c.kind, title: c.title, roles, tool: c.model && c.kind !== 'execute', needsInput,
-      view: c.view?.kind ?? null, menu: menuRowOf(c) ?? null, check,
-      ...(c.follows ? { follows: c.follows } : {}), ...(c.creates ? { creates: c.creates } : {}),
+      name: c.name,
+      kind: c.kind,
+      title: c.title,
+      roles,
+      tool: c.model && c.kind !== 'execute',
+      needsInput,
+      view: c.view?.kind ?? null,
+      menu: menuRowOf(c) ?? null,
+      check,
+      ...(c.follows ? { follows: c.follows } : {}),
+      ...(c.creates ? { creates: c.creates } : {}),
     };
   });
   return {
-    ok: true, protocol, problems: [],
+    ok: true,
+    protocol,
+    problems: [],
     manifest: {
-      id: manifest.id, source: manifest.source, kind: manifest.kind, scan: manifest.scan,
-      delegation: manifest.delegation?.audience ?? null, uses: manifest.uses ?? [], facts: (manifest.facts ?? []).map(f => f.kind),
+      id: manifest.id,
+      source: manifest.source,
+      kind: manifest.kind,
+      scan: manifest.scan,
+      delegation: manifest.delegation?.audience ?? null,
+      uses: manifest.uses ?? [],
+      facts: (manifest.facts ?? []).map(f => f.kind),
       capabilities,
-      areas: manifest.areas.map(a => ({ id: a.id, title: a.title, roles: a.roles, standing: a.standing, figure: !!a.figure, icon: a.icon ?? null })),
-      menu: capabilities.flatMap(c => c.menu ? [{ capability: c.name, label: c.menu.label, icon: c.menu.icon }] : []),
+      areas: manifest.areas.map(a => ({
+        id: a.id,
+        title: a.title,
+        roles: a.roles,
+        standing: a.standing,
+        figure: !!a.figure,
+        icon: a.icon ?? null,
+      })),
+      menu: capabilities.flatMap(c => (c.menu ? [{ capability: c.name, label: c.menu.label, icon: c.menu.icon }] : [])),
     },
   };
 }

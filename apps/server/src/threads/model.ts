@@ -9,32 +9,98 @@ import type { MessageMeta, Thread } from '@clew/contracts';
  */
 
 /** A thread as a use case creates it. The store adds nothing: timestamps and ids come from the caller. */
-export interface NewThread extends Omit<Thread, 'messages' | 'proposals' | 'receipt' | 'handledAt' | 'remindedAt' | 'snoozedUntil'> { personId: string }
-export type ThreadPatch = Partial<Pick<Thread, 'state' | 'title' | 'summary' | 'items' | 'actions' | 'deadline' | 'waitingOn' | 'receipt' | 'handledAt' | 'updatedAt' | 'trigger' | 'remindedAt' | 'snoozedUntil'>>;
-export interface NewMessage { role: 'assistant' | 'user'; body: string; at: string; meta?: MessageMeta }
-export interface AuditEntry { actor: string; action: string; subject: string; at: string; details?: Record<string, unknown> }
-export interface JobInput { id: string; kind: string; runAt: string; payload?: Record<string, unknown> }
+export interface NewThread extends Omit<
+  Thread,
+  'messages' | 'proposals' | 'receipt' | 'handledAt' | 'remindedAt' | 'snoozedUntil'
+> {
+  personId: string;
+}
+export type ThreadPatch = Partial<
+  Pick<
+    Thread,
+    | 'state'
+    | 'title'
+    | 'summary'
+    | 'items'
+    | 'actions'
+    | 'deadline'
+    | 'waitingOn'
+    | 'receipt'
+    | 'handledAt'
+    | 'updatedAt'
+    | 'trigger'
+    | 'remindedAt'
+    | 'snoozedUntil'
+  >
+>;
+export interface NewMessage {
+  role: 'assistant' | 'user';
+  body: string;
+  at: string;
+  meta?: MessageMeta;
+}
+export interface AuditEntry {
+  actor: string;
+  action: string;
+  subject: string;
+  at: string;
+  details?: Record<string, unknown>;
+}
+export interface JobInput {
+  id: string;
+  kind: string;
+  runAt: string;
+  payload?: Record<string, unknown>;
+}
 
 /** One current desired timer per purpose and thread. Generation fences every old workflow. */
 export interface TimerIntent {
-  id: string; personId: string; threadId: string; kind: 'reminder' | 'snooze' | 'obligation'; generation: number;
-  unitId: string; authorizationVersion: string; dueAt: string; requestedAt: string;
-  state: 'active' | 'cancelled' | 'fired' | 'blocked'; reason: string | null;
-  deliveredGeneration: number | null; deliveredState: string | null;
-  attempt: number; nextAt: string; leaseUntil: string | null;
+  id: string;
+  personId: string;
+  threadId: string;
+  kind: 'reminder' | 'snooze' | 'obligation';
+  generation: number;
+  unitId: string;
+  authorizationVersion: string;
+  dueAt: string;
+  requestedAt: string;
+  state: 'active' | 'cancelled' | 'fired' | 'blocked';
+  reason: string | null;
+  deliveredGeneration: number | null;
+  deliveredState: string | null;
+  attempt: number;
+  nextAt: string;
+  leaseUntil: string | null;
 }
-export type NewTimerIntent = Pick<TimerIntent, 'id' | 'personId' | 'threadId' | 'kind' | 'unitId' | 'authorizationVersion' | 'dueAt' | 'requestedAt'>;
+export type NewTimerIntent = Pick<
+  TimerIntent,
+  'id' | 'personId' | 'threadId' | 'kind' | 'unitId' | 'authorizationVersion' | 'dueAt' | 'requestedAt'
+>;
 export interface TimerDelivery {
   claimTimer(now: string, until: string): Promise<TimerIntent | undefined>;
   finishTimer(timer: TimerIntent, retryAt: string, error?: string): Promise<void>;
 }
 
 /** What a reminder timer carries back when it fires (D17). Declared here so the workflow, the activity and the use case share one shape. */
-export interface ReminderInput { personId: string; threadId: string; title: string; area: string; seconds: number; requestedAt: string; /** This timer belongs to a snooze (D29). The name stays for the workflows already running; since D49 it no longer means a quiet return. */ silent?: boolean }
+export interface ReminderInput {
+  personId: string;
+  threadId: string;
+  title: string;
+  area: string;
+  seconds: number;
+  requestedAt: string;
+  /** This timer belongs to a snooze (D29). The name stays for the workflows already running; since D49 it no longer means a quiet return. */ silent?: boolean;
+}
 
 /** Writes inside one transaction. The audit row of a mutation is written through the same `tx`, so it commits or rolls back with the rest. */
 export interface ThreadTx {
-  admitDelivery(input: { id: string; personId: string; threadId: string; kind: 'automatic' | 'reminder'; at: string }): Promise<void>;
+  admitDelivery(input: {
+    id: string;
+    personId: string;
+    threadId: string;
+    kind: 'automatic' | 'reminder';
+    at: string;
+  }): Promise<void>;
   /** The person's thread, held against concurrent writers until the transaction ends (a row lock in Postgres). */
   lockThreadById(id: string): Promise<Thread | undefined>;
   lockThread(personId: string, id: string): Promise<Thread | undefined>;
@@ -68,7 +134,16 @@ export interface ThreadStore {
 /** The timers behind "Inte nu" and "Påminn mig" (D17, D49). Temporal runs them; the memory adapter records them. */
 export interface ReminderTimers {
   /** Rejects when the timer service cannot be reached. */
-  start(input: { workflowId: string; personId: string; threadId: string; title: string; area: string; seconds: number; requestedAt: string; silent?: boolean }): Promise<void>;
+  start(input: {
+    workflowId: string;
+    personId: string;
+    threadId: string;
+    title: string;
+    area: string;
+    seconds: number;
+    requestedAt: string;
+    silent?: boolean;
+  }): Promise<void>;
   /** Best effort: a timer that already fired or is gone is not an error. */
   cancel(workflowId: string): Promise<void>;
 }

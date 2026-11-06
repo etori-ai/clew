@@ -7,11 +7,15 @@ const issuers = new Map<string, Promise<ConnectorAuthority>>();
 export function testAuthority(label = 'test-secret-test-secret') {
   let issuer = issuers.get(label);
   if (!issuer) {
-    issuer = generateKeyPair('RS256', { extractable: true }).then(async keys => connectorAuthority(await exportPKCS8(keys.privateKey), label));
+    issuer = generateKeyPair('RS256', { extractable: true }).then(async keys =>
+      connectorAuthority(await exportPKCS8(keys.privateKey), label),
+    );
     issuers.set(label, issuer);
   }
   return issuer;
 }
 export const testJwks = async () => (await testAuthority()).jwks;
-export const assertionFor = (id: string, label: string) => async (actor: Actor, chain: string[] = []) =>
-  (await testAuthority(label)).assert(id, actor, id === 'hello' ? ['calendar.today'] : [], chain);
+export const assertionFor =
+  (id: string, label: string) =>
+  async (actor: Actor, chain: string[] = []) =>
+    (await testAuthority(label)).assert(id, actor, id === 'hello' ? ['calendar.today'] : [], chain);

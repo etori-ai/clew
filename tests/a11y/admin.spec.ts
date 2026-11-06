@@ -1,4 +1,16 @@
-import { announcements, desktop, expect, expectNoAxeViolations, focused, hiddenFocusStops, narrow, open, phone, reflowProblems, test } from './support';
+import {
+  announcements,
+  desktop,
+  expect,
+  expectNoAxeViolations,
+  focused,
+  hiddenFocusStops,
+  narrow,
+  open,
+  phone,
+  reflowProblems,
+  test,
+} from './support';
 import { connectorDetail } from './data';
 
 /**
@@ -8,36 +20,50 @@ import { connectorDetail } from './data';
 /** A section of a connector: a tab on desktop, an item in the "Visa" menu on a phone, the same panel either way. */
 async function pickSection(page: import('@playwright/test').Page, name: string) {
   const tab = page.getByRole('tab', { name });
-  if (await tab.count()) { await tab.click(); return page.getByRole('tabpanel', { name }); }
+  if (await tab.count()) {
+    await tab.click();
+    return page.getByRole('tabpanel', { name });
+  }
   await page.getByRole('button', { name: /^Visa: / }).click();
   await page.getByRole('menuitem', { name }).click();
   return page.getByRole('region', { name });
 }
-const routes = [['the connectors list', '/admin/connectors'], ['a bundled connector', '/admin/connectors/finance'], ['a remote connector that is down', '/admin/connectors/hello']] as const;
+const routes = [
+  ['the connectors list', '/admin/connectors'],
+  ['a bundled connector', '/admin/connectors/finance'],
+  ['a remote connector that is down', '/admin/connectors/hello'],
+] as const;
 
 test.describe('administration', () => {
-  for (const [layout, viewport] of [['desktop', desktop], ['phone', phone]] as const) test.describe(layout, () => {
-    test.use({ viewport });
-    for (const [name, path] of routes) test(`${name} has no axe violations`, async ({ page, api }) => {
-      api.admin = true;
-      await open(page, path);
-      await expectNoAxeViolations(page);
+  for (const [layout, viewport] of [
+    ['desktop', desktop],
+    ['phone', phone],
+  ] as const)
+    test.describe(layout, () => {
+      test.use({ viewport });
+      for (const [name, path] of routes)
+        test(`${name} has no axe violations`, async ({ page, api }) => {
+          api.admin = true;
+          await open(page, path);
+          await expectNoAxeViolations(page);
+        });
+      test('every tab of a connector has no axe violations', async ({ page, api }) => {
+        api.admin = true;
+        await open(page, '/admin/connectors/finance');
+        for (const tab of ['Funktioner', 'Områden', 'Vem ser det', 'Historik']) {
+          await expect(await pickSection(page, tab)).toBeVisible();
+          await expectNoAxeViolations(page);
+        }
+      });
     });
-    test('every tab of a connector has no axe violations', async ({ page, api }) => {
-      api.admin = true;
-      await open(page, '/admin/connectors/finance');
-      for (const tab of ['Funktioner', 'Områden', 'Vem ser det', 'Historik']) {
-        await expect(await pickSection(page, tab)).toBeVisible();
-        await expectNoAxeViolations(page);
-      }
-    });
-  });
 
   test.describe('desktop', () => {
     test.use({ viewport: desktop });
     test('a person without the grant sees no data and one way back', async ({ page, api: _ }) => {
       await page.goto('/admin/connectors');
-      await expect(page.getByRole('heading', { level: 1, name: 'Du saknar behörighet till administrationen' })).toBeVisible();
+      await expect(
+        page.getByRole('heading', { level: 1, name: 'Du saknar behörighet till administrationen' }),
+      ).toBeVisible();
       await expect(page.getByRole('link', { name: 'Till startsidan' })).toBeVisible();
       await expectNoAxeViolations(page);
     });
@@ -48,7 +74,10 @@ test.describe('administration', () => {
       await open(page, '/');
       await expect(page.getByRole('button', { name: 'Administration' })).toBeVisible();
     });
-    test('Administration opens and closes like Områden, and its rows change the page and keep the rail', async ({ page, api }) => {
+    test('Administration opens and closes like Områden, and its rows change the page and keep the rail', async ({
+      page,
+      api,
+    }) => {
       api.admin = true;
       await open(page, '/');
       const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
@@ -62,7 +91,10 @@ test.describe('administration', () => {
       await expect(page.getByRole('heading', { level: 1, name: 'Anslutna system' })).toBeVisible();
       await expect(rail.getByRole('link', { name: 'Nytt samtal', exact: true })).toBeVisible();
       await expect(rail.getByRole('link', { name: 'Kalender', exact: true })).toBeVisible();
-      await expect(rail.getByRole('link', { name: 'Anslutna system', exact: true })).toHaveAttribute('aria-current', 'page');
+      await expect(rail.getByRole('link', { name: 'Anslutna system', exact: true })).toHaveAttribute(
+        'aria-current',
+        'page',
+      );
       await rail.getByRole('link', { name: 'Modeller', exact: true }).click();
       await expect(page).toHaveURL('/admin/models');
       await expect(page.getByRole('heading', { level: 1, name: 'Modeller' })).toBeVisible();
@@ -96,7 +128,9 @@ test.describe('administration', () => {
       await toggle.focus();
       await page.keyboard.press('Space');
       await expect(toggle).not.toBeChecked();
-      await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Personalsystemet är avstängd'));
+      await expect
+        .poll(() => announcements(page))
+        .toContainEqual(expect.stringContaining('Personalsystemet är avstängd'));
       expect((await focused(page)).tag).toBe('input');
       await expect(page.getByRole('table').getByText('Avstängd')).toBeVisible();
     });
@@ -107,7 +141,9 @@ test.describe('administration', () => {
       const dialog = page.getByRole('dialog', { name: 'Anslut system' });
       await expect(dialog.getByRole('heading', { level: 3, name: 'Adress och nyckel' })).toBeVisible();
       await dialog.getByRole('button', { name: 'Kontrollera' }).click();
-      await expect(dialog.getByText('Små bokstäver, siffror och bindestreck; börjar med en bokstav.', { exact: true })).toBeVisible();
+      await expect(
+        dialog.getByText('Små bokstäver, siffror och bindestreck; börjar med en bokstav.', { exact: true }),
+      ).toBeVisible();
       await dialog.getByRole('textbox', { name: /^Id/ }).fill('nytt');
       await dialog.getByRole('textbox', { name: /^Adress/ }).fill('http://nytt:4010');
       await dialog.getByLabel(/Delad nyckel/).fill('en-tillräckligt-lång-nyckel');
@@ -156,13 +192,28 @@ test.describe('administration', () => {
       await expect(dialog.getByRole('switch', { name: 'Erbjud assistenten' })).toBeInViewport();
       await expect(dialog.getByRole('button', { name: 'Nästa' })).toBeInViewport();
     });
-    test('a manifest with many changes scrolls in its dialog, the two choices stay on screen, and using it is spoken', async ({ page, api }) => {
+    test('a manifest with many changes scrolls in its dialog, the two choices stay on screen, and using it is spoken', async ({
+      page,
+      api,
+    }) => {
       api.admin = true;
       await page.setViewportSize({ width: 1280, height: 560 });
       const names = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => `hello.${prefix}${i + 1}`);
-      await page.route('**/api/admin/connectors/hello/refresh', route => route.fulfill({ json: {
-        diff: { added: names('ny', 12), removed: names('gammal', 8), changed: names('andrad', 4), areasAdded: [], areasRemoved: [], same: false },
-        connector: connectorDetail(api.connectors.find(c => c.id === 'hello')!) } }));
+      await page.route('**/api/admin/connectors/hello/refresh', route =>
+        route.fulfill({
+          json: {
+            diff: {
+              added: names('ny', 12),
+              removed: names('gammal', 8),
+              changed: names('andrad', 4),
+              areasAdded: [],
+              areasRemoved: [],
+              same: false,
+            },
+            connector: connectorDetail(api.connectors.find(c => c.id === 'hello')!),
+          },
+        }),
+      );
       await open(page, '/admin/connectors/hello');
       await page.getByRole('button', { name: 'Läs in igen från systemet' }).click();
       // Named by its title (4.1.2): the Dialog takes its name from a DialogHeader present when it mounts.
@@ -183,7 +234,10 @@ test.describe('administration', () => {
       await expect(dialog).toHaveCount(0);
       await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Uppdaterat från systemet'));
     });
-    test('a connector page is titled, the health is a sentence, and the tabs follow the tabs pattern', async ({ page, api }) => {
+    test('a connector page is titled, the health is a sentence, and the tabs follow the tabs pattern', async ({
+      page,
+      api,
+    }) => {
       api.admin = true;
       await open(page, '/admin/connectors/hello');
       await expect(page).toHaveTitle('Hello · Startsidan');
@@ -196,13 +250,18 @@ test.describe('administration', () => {
       await expect(page.getByRole('tabpanel', { name: 'Funktioner' })).toBeVisible();
       await expect(page.getByRole('switch', { name: 'Godkänn valda till assistenten' })).toBeDisabled();
     });
-    test('a check that found problems opens their groups, shuts the rest and says the verdict in words', async ({ page, api }) => {
+    test('a check that found problems opens their groups, shuts the rest and says the verdict in words', async ({
+      page,
+      api,
+    }) => {
       api.admin = true;
       await open(page, '/admin/connectors/hello');
       await page.getByRole('button', { name: 'Testa anslutning' }).click();
       await expect(page.getByRole('heading', { level: 2, name: 'Senaste kontroll' })).toBeVisible();
       await expect(page.getByText('Kontrollen hittade 1 fel.', { exact: true })).toBeVisible();
-      await expect(page.getByRole('list', { name: 'Anslutning' }).getByRole('listitem').first()).toContainText('Fel nyckel släpps igenom');
+      await expect(page.getByRole('list', { name: 'Anslutning' }).getByRole('listitem').first()).toContainText(
+        'Fel nyckel släpps igenom',
+      );
       await expect(page.getByRole('list', { name: 'Funktioner' })).toContainText('hello.dayWithMeetings');
       const passed = page.getByRole('button', { name: /I Startsidan.*1 godkänd/ });
       await expect(passed).toHaveAttribute('aria-expanded', 'false');
@@ -211,7 +270,10 @@ test.describe('administration', () => {
       await expect(page.getByRole('list', { name: 'I Startsidan' })).toBeVisible();
       await expectNoAxeViolations(page);
     });
-    test('removing asks first, then returns to the list with focus on its heading and a spoken result', async ({ page, api }) => {
+    test('removing asks first, then returns to the list with focus on its heading and a spoken result', async ({
+      page,
+      api,
+    }) => {
       api.admin = true;
       await open(page, '/admin/connectors/hello');
       await page.getByRole('button', { name: 'Ta bort' }).click();
