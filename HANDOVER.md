@@ -458,3 +458,5 @@ checks green. Regenerated the context index after the final review update and re
 Live limits: dev:connectors found six legacy fixture executions and refused cutover; reset --check refused the running
 BFF. Live data was preserved. Eneo container inspected read-only: API stopped, OIDC resource-server disabled, accepted
 issuer/audience unset. Await the intended test tenant/collection/users before the live source pilot. No files in the Eneo repository changed.
+
+Cutover done, 2026-11-06 12:25 UTC, main checkout: the follow-through landed as `8ba4562`, the dev server was stopped, `bun run fixtures:reset` ran from the host (audit `fixtures.reset`; the eleven legacy fixture executions, all succeeded, are marked `source-reset`; the five named volumes were recreated), the server restarted and `dev:connectors` kept all six registrations and the three `hr:absence` bindings. The stored `hello` connector still declares protocol 1 and logs a rejection on every registry load; it is noise, not a fault.
