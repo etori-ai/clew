@@ -835,6 +835,15 @@
       "status": "accepted, built 2026-11-06 on `main`",
       "date": "2026-11-06",
       "area": "ui"
+    },
+    {
+      "key": "D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system",
+      "number": 71,
+      "path": "docs/decisions/D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md",
+      "title": "D71 · Three type levels on every surface, and an area mark whose colour is the system's",
+      "status": "accepted, built 2026-11-06 on `main` (the foundation, the row and the card, a card across systems,",
+      "date": "2026-11-06",
+      "area": "ui"
     }
   ],
   "documents": [
@@ -1585,6 +1594,12 @@
     {
       "path": "docs/decisions/D70-one-press-confirms-on-the-row-and-rows-with-a-document-are-reviewed-one-at-a-time.md",
       "title": "D70 · One press confirms on the row, and rows with a document are reviewed one at a time",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md",
+      "title": "D71 · Three type levels on every surface, and an area mark whose colour is the system's",
       "category": "decision-history",
       "headings": []
     },
