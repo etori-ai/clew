@@ -773,15 +773,6 @@
       "area": "ui"
     },
     {
-      "key": "D67-the-portal-is-a-second-web-app-over-the-same-server",
-      "number": 67,
-      "path": "docs/decisions/D67-the-portal-is-a-second-web-app-over-the-same-server.md",
-      "title": "D67 · The portal is a second web app over the same server, drawn as the product owner's proof of concept draws it",
-      "status": "proposed, built 2026-11-06 as an experiment beside the web app; nothing in `apps/web` or the server changed for it",
-      "date": "2026-11-06",
-      "area": "ui, product"
-    },
-    {
       "key": "D65-sedan-i-gar-names-a-few-cards-and-sums-the-rest",
       "number": 65,
       "path": "docs/decisions/D65-sedan-i-gar-names-a-few-cards-and-sums-the-rest.md",
@@ -798,6 +789,15 @@
       "status": "accepted, built 2026-11-06 on `main`",
       "date": "2026-11-06",
       "area": "ui"
+    },
+    {
+      "key": "D67-the-portal-is-a-second-web-app-over-the-same-server",
+      "number": 67,
+      "path": "docs/decisions/D67-the-portal-is-a-second-web-app-over-the-same-server.md",
+      "title": "D67 · The portal is a second web app over the same server, drawn as the product owner's proof of concept draws it",
+      "status": "proposed, built 2026-11-06 as an experiment beside the web app; nothing in `apps/web` or the server changed for it",
+      "date": "2026-11-06",
+      "area": "ui, product"
     },
     {
       "key": "D68-people-are-pushed-into-clew-through-standard-scim",
@@ -1526,6 +1526,18 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D65-sedan-i-gar-names-a-few-cards-and-sums-the-rest.md",
+      "title": "D65 · \"Sedan i går\" names a few cards and sums the rest",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md",
+      "title": "D66 · The panel keeps everything opened beside the page as tabs",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/D67-the-portal-is-a-second-web-app-over-the-same-server.md",
       "title": "D67 · The portal is a second web app over the same server, drawn as the product owner's proof of concept draws it",
       "category": "decision-history",
@@ -1542,18 +1554,6 @@
       "title": "D69 · A local fake of Microsoft Graph tests the Microsoft 365 adapter",
       "category": "decision-history",
       "headings": []
-    {
-      "path": "docs/decisions/D65-sedan-i-gar-names-a-few-cards-and-sums-the-rest.md",
-      "title": "D65 · \"Sedan i går\" names a few cards and sums the rest",
-      "category": "decision-history",
-      "headings": []
-    },
-    {
-      "path": "docs/decisions/D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md",
-      "title": "D66 · The panel keeps everything opened beside the page as tabs",
-      "category": "decision-history",
-      "headings": []
-    },
     },
     {
       "path": "docs/decisions/README.md",
