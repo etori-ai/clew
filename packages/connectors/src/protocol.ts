@@ -165,3 +165,111 @@ export function protocolSchema() {
     },
   };
 }
+
+/**
+ * Versions (D57). `protocol` is the version of this contract, not of a connector: a connector has no version, a
+ * capability's name is its contract (D37). An additive change (a new optional field, a looser constraint) keeps the
+ * number; views, the menu, delegation and facts all arrived under 2. A break is a new number, and Clew then accepts the
+ * new number and the one before it for a stated window, loading a manifest on the older one with a warning in
+ * administration rather than refusing it. The one exception is a security change, which retires the old number at
+ * once with its reason recorded here; that is what happened to 1.
+ */
+export const PROTOCOL_ACCEPTED: readonly number[] = [PROTOCOL_VERSION];
+export const PROTOCOL_RETIRED: Readonly<Record<number, string>> = {
+  1: 'retired 2026-11-05: shared-secret (HS256) identity signing was replaced by RS256 installation keys (D44). Move the verifier to the installation\'s public keys and declare protocol 2.',
+};
+
+/**
+ * What Clew makes of a manifest document before any service runs (D57): the problems it would refuse it for, else what it
+ * would offer to whom. `POST /api/protocol/manifest` answers with it; `previewManifest` in preview.ts computes it.
+ */
+const previewRoles = Type.Array(RoleSchema, { description: 'Who may call it: both roles when the capability names none.' });
+export const ManifestPreviewCapabilitySchema = object({
+  name: Type.String(), kind: Type.Union([Type.Literal('read'), Type.Literal('propose'), Type.Literal('execute')]), title: Type.String(),
+  roles: previewRoles,
+  tool: Type.Boolean({ description: 'Offered to the model as a tool once an administrator enables tools for the connector.' }),
+  needsInput: Type.Boolean({ description: 'Its input schema does not accept `{}`, so neither the conformance check nor a menu row can open it without a question.' }),
+  view: Type.Union([Type.Literal('table'), Type.Literal('list'), Type.Literal('detail'), Type.Literal('text'), Type.Null()], { description: 'How Clew draws its output, or null for the generic rules.' }),
+  menu: Type.Union([MenuHintSchema, Type.Null()], { description: 'The row an administrator could put in the menu under Verktyg (D40), or null when the capability cannot be one.' }),
+  check: Type.String({ description: 'What the conformance check (`Testa anslutning`, `connector-check.ts`) does with it.' }),
+  follows: Type.Optional(Type.Array(FactKindName)), creates: Type.Optional(FactKindName),
+});
+export const ManifestPreviewSchema = object({
+  ok: Type.Boolean({ description: 'Whether Clew would load the document.' }),
+  protocol: object({ current: Type.Integer(), accepted: Type.Array(Type.Integer()) }, 'The protocol version this instance speaks and the versions it loads.'),
+  problems: Type.Array(Type.String(), { description: 'Every reason the document would be refused, in the order Clew finds them. Empty when ok.' }),
+  manifest: Type.Optional(object({
+    id: Type.String(), source: Type.String(), kind: Type.Union([Type.Literal('passthrough'), Type.Literal('derived')]), scan: Type.Boolean(),
+    delegation: Type.Union([Type.String(), Type.Null()], { description: 'The audience Clew would obtain the person\'s token for, or null.' }),
+    uses: Type.Array(Type.String()), facts: Type.Array(FactKindName),
+    capabilities: Type.Array(ManifestPreviewCapabilitySchema),
+    areas: Type.Array(object({ id: Type.String(), title: Type.String(), roles: Type.Array(RoleSchema), standing: Type.Array(Type.String()), figure: Type.Boolean(), icon: Type.Union([MenuIconSchema, Type.Null()]) })),
+    menu: Type.Array(object({ capability: Type.String(), label: Type.String(), icon: MenuIconSchema }), { description: 'The rows an administrator could put in the menu.' }),
+  }, 'Present when ok: the manifest as Clew would hold it.')),
+}, 'A dry run of a manifest document against this instance\'s rules.');
+export type ManifestPreview = Static<typeof ManifestPreviewSchema>;
+
+export interface OpenApiOptions {
+  /** The installation's public base URL. Absent, the document carries a server variable for it. */
+  clewUrl?: string;
+}
+/**
+ * The protocol as an OpenAPI 3.1 document (D57), for a viewer, a client or a server-stub generator. Two sides: the routes a
+ * connector serves and Clew calls (tag Connector), and the routes Clew serves and a connector calls (tag Clew). The
+ * schemas are the same TypeBox objects the instance validates with, so the document matches the instance by construction.
+ */
+export function openApiDocument(options: OpenApiOptions = {}) {
+  const defs: Record<string, unknown> = { ...protocolSchema().$defs, ManifestPreview: ManifestPreviewSchema };
+  const schemas = Object.fromEntries(Object.entries(defs).map(([name, schema]) => { const { $id: _id, ...rest } = schema as Record<string, unknown>; return [name, rest]; }));
+  const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
+  const json = (name: string, description: string) => ({ description, content: { 'application/json': { schema: ref(name) } } });
+  const body = (name: string) => ({ required: true, content: { 'application/json': { schema: ref(name) } } });
+  const connector = [{ url: '{connector}', description: 'The base URL the connector is registered with in Clew. Every path below is relative to it.', variables: { connector: { default: 'http://127.0.0.1:4020' } } }];
+  const clew = [options.clewUrl ? { url: options.clewUrl, description: 'This Clew installation.' } : { url: '{clew}', description: 'The Clew installation (the CLEW_URL a connector is configured with).', variables: { clew: { default: 'http://localhost:3020' } } }];
+  const signed = [{ clewAssertion: [], connectorKey: [] }];
+  const text = (description: string) => ({ type: 'string', description });
+  const refused = {
+    '401': { description: 'The transport key or the assertion was rejected. Required: an invalid credential is never answered with data; the conformance check probes this.' },
+    '403': json('CallResponse', 'Denied: `error.code` is `denied`, `error.message` is Swedish and shown to the person.'),
+    '503': json('CallResponse', 'The source is unavailable: `error.code` is `unavailable`. For a write this does not say whether the effect happened.'),
+  };
+  const operationId = { name: 'X-Clew-Operation-Id', in: 'header', required: false, schema: text('The durable operation id of an approved write (D45). Deduplicate on it; the same id means the same approved operation.') };
+  const delegated = { name: 'X-Clew-Delegated-Token', in: 'header', required: false, schema: text('The person\'s own token for the connector\'s system (D26), present only when the manifest declares `delegation` and a session is behind the call.') };
+  return {
+    openapi: '3.1.0',
+    info: {
+      title: 'Clew connector protocol', version: String(PROTOCOL_VERSION),
+      summary: 'How a connector service and a Clew installation talk to each other.',
+      description: 'A connector is an HTTP service of your own. It serves the routes tagged **Connector**; Clew loads its manifest and calls it as the acting person, with an RS256 assertion it can verify against the keys at the route tagged **Clew**. Shapes are the same JSON Schemas the instance validates with, published under `components.schemas` and, as one bundle, as `connector-protocol.schema.json` under `/api/protocol/`. Generate server stubs from this document or implement the paths by hand; the examples under `connectors/` in the repository are complete. Try `POST /api/protocol/manifest` with a manifest before any service exists.',
+    },
+    'x-clew-protocol': { current: PROTOCOL_VERSION, accepted: [...PROTOCOL_ACCEPTED], retired: PROTOCOL_RETIRED },
+    tags: [
+      { name: 'Connector', description: 'Routes the connector serves and Clew calls. All JSON, all under the registered base URL. Every POST carries `Authorization: Bearer <assertion>` and `X-Clew-Connector-Key`; take the actor from the verified assertion, never from the body.' },
+      { name: 'Clew', description: 'Routes Clew serves and a connector calls: its public keys, the callback for declared dependencies, and this protocol.' },
+    ],
+    paths: {
+      '/clew/manifest': { servers: connector, get: { tags: ['Connector'], operationId: 'getManifest', summary: 'The manifest', description: 'Clew loads it at registration, on "Hämta manifest igen" and on a schedule. No assertion is sent. Keep credentials and source data out of it.', responses: { '200': json('ConnectorManifest', 'The manifest. Clew validates it against `ConnectorManifest` and the rules `POST /api/protocol/manifest` applies.') } } },
+      '/clew/capabilities/{name}': { servers: connector, post: { tags: ['Connector'], operationId: 'callCapability', summary: 'Run a capability as the person', security: signed,
+        parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string', pattern: '^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$' }, description: 'The full capability name from the manifest, `<id>.<verb>`.' }, operationId, delegated],
+        requestBody: body('CallRequest'),
+        responses: { '200': json('CallResponse', 'The output, validated against the capability\'s declared output schema. An execute answers with an `ExecuteResult`.'), '400': json('CallResponse', 'Invalid input: `error.code` is `invalid`.'), ...refused, '404': json('CallResponse', 'An unknown ref or capability: `error.code` is `not-found`.') } } },
+      '/clew/scan': { servers: connector, post: { tags: ['Connector'], operationId: 'scan', summary: 'Drafts for the person\'s cards', description: 'Only when the manifest says `scan: true`. Called nightly and on first visit per person; must be idempotent: the same occurrence gives the same topic.', security: signed, requestBody: body('ScanRequest'), responses: { '200': json('ScanResponse', 'Drafts and, optionally, what was observed.'), ...refused } } },
+      '/clew/figure': { servers: connector, post: { tags: ['Connector'], operationId: 'figure', summary: 'One line for an area', description: 'Only for an area declaring `figure: true`.', security: signed, requestBody: body('FigureRequest'), responses: { '200': json('FigureResponse', 'The figure or null.'), ...refused } } },
+      '/api/connectors/jwks': { servers: clew, get: { tags: ['Clew'], operationId: 'getJwks', summary: 'The installation\'s public signing keys', description: 'Pin this URL in deployment configuration and verify every assertion against it (`alg` RS256, `iss` clew, `aud` your connector id, a known `kid`, a bounded lifetime). Never follow a key URL from a token.', responses: { '200': { description: 'A JWK Set.', content: { 'application/json': { schema: { type: 'object', required: ['keys'], properties: { keys: { type: 'array', items: { type: 'object' } } } } } } } } } },
+      '/api/connectors/call': { servers: clew, post: { tags: ['Clew'], operationId: 'callback', summary: 'Run another connector\'s read or propose as the person', description: 'The bearer is the `callback` grant from the verified request assertion, never the assertion itself. Only targets declared in the manifest\'s `uses`; identity is rebuilt from the person\'s current grant; `execute` is refused.', security: [{ callbackGrant: [] }], requestBody: body('CallbackRequest'),
+        responses: { '200': { description: 'The target\'s output.', content: { 'application/json': { schema: { type: 'object', required: ['output'], properties: { output: {} } } } } }, '400': json('CallResponse', 'Invalid request or input.'), '401': json('CallResponse', 'Missing or invalid grant.'), '403': json('CallResponse', 'Denied: the person, the origin or the target is out of scope.'), '404': json('CallResponse', 'Unknown capability.'), '503': json('CallResponse', 'The target is unavailable.') } } },
+      '/api/protocol/openapi.json': { servers: clew, get: { tags: ['Clew'], operationId: 'getOpenApi', summary: 'This document, as this instance speaks it', responses: { '200': { description: 'OpenAPI 3.1.', content: { 'application/json': { schema: { type: 'object' } } } } } } },
+      '/api/protocol/connector-protocol.schema.json': { servers: clew, get: { tags: ['Clew'], operationId: 'getProtocolSchema', summary: 'The JSON Schema bundle', description: 'Every shape under `$defs`, for a connector written in any language.', responses: { '200': { description: 'JSON Schema 2020-12 with `$defs`.', content: { 'application/json': { schema: { type: 'object' } } } } } } },
+      '/api/protocol/manifest': { servers: clew, post: { tags: ['Clew'], operationId: 'previewManifest', summary: 'Dry-run a manifest against this instance', description: 'Send a manifest document and read what this instance would refuse it for, else what it would offer to whom. No service, registration or sign-in is needed. Pass `?id=` to check the id against the one you will register.', parameters: [{ name: 'id', in: 'query', required: false, schema: { type: 'string' } }],
+        requestBody: body('ConnectorManifest'), responses: { '200': json('ManifestPreview', 'The verdict and, when ok, the manifest as Clew would hold it.'), '400': { description: 'The body is not JSON.' } } } },
+    },
+    components: {
+      schemas,
+      securitySchemes: {
+        clewAssertion: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT', description: 'RS256 assertion signed by the installation: who is acting, for which connector, for at most two minutes. Verify against `/api/connectors/jwks`.' },
+        connectorKey: { type: 'apiKey', in: 'header', name: 'X-Clew-Connector-Key', description: 'The transport secret from the registration. Transport authentication only; it never asserts a person.' },
+        callbackGrant: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT', description: 'The `callback` claim of a verified request assertion, audience `clew:connector-callback`.' },
+      },
+    },
+  };
+}

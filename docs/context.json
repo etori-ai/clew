@@ -27,6 +27,8 @@
     "standaloneVerifier": "connectors/hello/verification.mjs",
     "callbacks": "apps/server/src/routes/connectors.ts",
     "conformance": "packages/connectors/src/check.ts",
+    "manifestPreview": "packages/connectors/src/preview.ts",
+    "servedProtocol": "apps/server/src/routes/protocol.ts",
     "executableWalkthrough": "scripts/docs-smoke.ts",
     "supportStatus": "docs/reference/status.md"
   },
@@ -628,6 +630,15 @@
       "status": "accepted",
       "date": "2026-11-06",
       "area": "ui"
+    },
+    {
+      "key": "D57-the-instance-serves-its-connector-protocol",
+      "number": 57,
+      "path": "docs/decisions/D57-the-instance-serves-its-connector-protocol.md",
+      "title": "D57 · The instance serves its connector protocol, and a protocol break keeps the number before it",
+      "status": "accepted, built 2026-11-06",
+      "date": "2026-11-06",
+      "area": "integrations"
     }
   ],
   "documents": [
@@ -1250,6 +1261,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D57-the-instance-serves-its-connector-protocol.md",
+      "title": "D57 · The instance serves its connector protocol, and a protocol break keeps the number before it",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -1313,7 +1330,7 @@
       "title": "Create a connector",
       "category": "integrator-guide",
       "headings": [
-        "1. Run the contract before editing it",
+        "1. Read the protocol from the instance, then run the contract",
         "2. Choose working code",
         "3. Define the smallest contract",
         "4. Implement the request boundary and source adapter",
@@ -1418,6 +1435,7 @@
       "title": "Connector protocol reference",
       "category": "integrator-guide",
       "headings": [
+        "Served by the instance",
         "HTTP routes",
         "Manifest semantics",
         "Scan observations",

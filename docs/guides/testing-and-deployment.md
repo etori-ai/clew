@@ -2,6 +2,12 @@
 
 ## Checks without external services
 
+Before anything runs, post the manifest to the instance's dry run ([D57](../decisions/D57-the-instance-serves-its-connector-protocol.md)); it lists every problem the loader would refuse it for, and for a good document says what Clew would offer to whom and which capabilities the conformance check below will and will not call:
+
+```sh
+curl -s -X POST "http://localhost:3020/api/protocol/manifest?id=telefonbok" -H 'content-type: application/json' --data @docs/generated/telefonbok.manifest.json
+```
+
 Run from the repository root on the host, with the devcontainer and dependencies available:
 
 ```sh
@@ -52,7 +58,7 @@ On manifest changes, restart/deploy the connector and use Hämta manifest igen i
 
 | Symptom | Check |
 |---|---|
-| Manifest rejected | Protocol is 2; configured id matches; no unsupported fields; schemas, views and standing names agree. |
+| Manifest rejected | Post the document to `/api/protocol/manifest?id=<id>`: it lists every problem. Protocol is 2; configured id matches; no unsupported fields; schemas, views and standing names agree. |
 | HTTP 401 on every POST | Transport key, pinned Clew URL, public-key reachability, `kid`, audience and clocks. Never fix this by trusting the body actor. |
 | Connector absent for a person | Enabled state, audience, capability toggles, scope and current local grants. |
 | Callback denied | Separate callback grant, exact `uses` target, actor's current assignment and target scope; no executes or cycles. |

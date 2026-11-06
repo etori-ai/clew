@@ -2,7 +2,9 @@
 
 For an integrator connecting an existing system to Clew. The deliverable is your own HTTP service, with a manifest and a source adapter. No Clew SDK, frontend plugin or change to Clew's image is required.
 
-## 1. Run the contract before editing it
+## 1. Read the protocol from the instance, then run the contract
+
+The Clew you will register with serves its own protocol under `/api/protocol` ([D57](../decisions/D57-the-instance-serves-its-connector-protocol.md)): open `http://<clew>/api/protocol` for the routes on both sides with every schema, fetch `/api/protocol/openapi.json` or `/api/protocol/connector-protocol.schema.json` for your generator, and post a manifest draft to `/api/protocol/manifest?id=<your id>` to read what that instance would refuse it for or make of it, before any service exists. It needs no sign-in. In the development stack the address is `http://localhost:3020/api/protocol`.
 
 With the devcontainer running and dependencies installed, run this from the repository root on the host:
 
@@ -39,7 +41,7 @@ The complete [hello manifest](../generated/hello.manifest.json) and [phone book 
 - Choose `scan: false` unless you can define a deterministic occurrence and its stable topic.
 - To take part in work that spans systems (D55), declare the fact kinds your connector creates in `facts` (`<id>:<kind>` with the attributes' JSON Schema) and mark the capability that brings one about with `creates`. A `propose` that answers for another system's fact declares `follows`: its input is a `FactEnvelope`, its output a `FollowResponse` whose steps name your own connector only, as an execute with its payload or a watch (one of your reads, an expectation and a window). Nothing runs until an administrator binds your follower to the kind and the person approves the job; Clew runs each step as its own execution.
 
-Do not add fields from a proposed decision unless they exist in the schema. For example, `deprecated` is not a supported manifest field today. See [status](../reference/status.md).
+Do not add fields from a proposed decision unless they exist in the schema. For example, `deprecated` is not a supported manifest field today; the dry run at `/api/protocol/manifest` names such a field as a problem. See [status](../reference/status.md).
 
 ## 4. Implement the request boundary and source adapter
 

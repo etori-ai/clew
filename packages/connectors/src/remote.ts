@@ -1,7 +1,7 @@
 import { Value } from '@sinclair/typebox/value';
 import { CapabilityError, type Actor, type Capability, type Clew, type Connector } from './index';
 import { menuProblem, viewProblem } from './views';
-import { CallResponseSchema, FigureResponseSchema, ConnectorManifestSchema, ScanResponseSchema, type ConnectorManifest } from './protocol';
+import { CallResponseSchema, FigureResponseSchema, ConnectorManifestSchema, PROTOCOL_ACCEPTED, PROTOCOL_RETIRED, ScanResponseSchema, type ConnectorManifest } from './protocol';
 
 /**
  * The transport adapter for a connector that runs as its own service (D21). Turns a manifest into a `Connector`
@@ -23,22 +23,38 @@ export interface RemoteTransport {
 }
 export class ManifestError extends Error { constructor(message: string) { super(message); this.name = 'ManifestError'; } }
 
-/** Validate a manifest document; returns the typed manifest or throws with every problem listed. */
-export function parseManifest(document: unknown, expectedId?: string): ConnectorManifest {
-  const problems = [...Value.Errors(ConnectorManifestSchema, document)].map(e => `${e.path || '/'}: ${e.message}`);
-  if (problems.length) throw new ManifestError('Invalid connector manifest: ' + problems.join('; '));
-  const manifest = document as ConnectorManifest;
-  if (expectedId && manifest.id !== expectedId) throw new ManifestError(`Manifest id "${manifest.id}" does not match the configured id "${expectedId}".`);
-  for (const c of manifest.capabilities) {
-    if (!c.name.startsWith(manifest.id + '.')) throw new ManifestError(`Capability ${c.name} must be prefixed with ${manifest.id}.`);
-    if (c.kind === 'execute' && c.model) throw new ManifestError(`Capability ${c.name}: execute capabilities are never tools (D8).`);
-    const problem = viewProblem(c, manifest.capabilities);
-    if (problem) throw new ManifestError(`Capability ${problem} (D38).`);
-    const menu = menuProblem(c);
-    if (menu) throw new ManifestError(`Capability ${menu} (D40).`);
+/**
+ * Every problem a manifest document has, in the order Clew finds them; none means Clew would load it. The schema first
+ * (every path listed), then the rules between fields. A retired or unknown protocol number is named as such (D57), not
+ * as a literal mismatch. `previewManifest` shows the whole list; `parseManifest` throws on it.
+ */
+export function manifestProblems(document: unknown, expectedId?: string): string[] {
+  const errors = [...Value.Errors(ConnectorManifestSchema, document)];
+  if (errors.length) {
+    const protocol = (document as { protocol?: unknown } | null)?.protocol;
+    return errors.map(e => e.path === '/protocol' && typeof protocol === 'number' && !PROTOCOL_ACCEPTED.includes(protocol)
+      ? `/protocol: ${protocol} is not accepted by this Clew, which loads ${PROTOCOL_ACCEPTED.join(' and ')}${PROTOCOL_RETIRED[protocol] ? `; ${PROTOCOL_RETIRED[protocol]}` : ''}`
+      : `${e.path || '/'}: ${e.message}`);
   }
-  for (const a of manifest.areas) for (const s of a.standing) if (!manifest.capabilities.some(c => c.name === s)) throw new ManifestError(`Area ${a.id} lists unknown standing capability ${s}.`);
-  return manifest;
+  const manifest = document as ConnectorManifest;
+  const problems: string[] = [];
+  if (expectedId && manifest.id !== expectedId) problems.push(`Manifest id "${manifest.id}" does not match the configured id "${expectedId}".`);
+  for (const c of manifest.capabilities) {
+    if (!c.name.startsWith(manifest.id + '.')) problems.push(`Capability ${c.name} must be prefixed with ${manifest.id}.`);
+    if (c.kind === 'execute' && c.model) problems.push(`Capability ${c.name}: execute capabilities are never tools (D8).`);
+    const problem = viewProblem(c, manifest.capabilities);
+    if (problem) problems.push(`Capability ${problem} (D38).`);
+    const menu = menuProblem(c);
+    if (menu) problems.push(`Capability ${menu} (D40).`);
+  }
+  for (const a of manifest.areas) for (const s of a.standing) if (!manifest.capabilities.some(c => c.name === s)) problems.push(`Area ${a.id} lists unknown standing capability ${s}.`);
+  return problems;
+}
+/** Validate a manifest document; returns the typed manifest or throws with the schema problems listed, else the first rule it breaks. */
+export function parseManifest(document: unknown, expectedId?: string): ConnectorManifest {
+  const problems = manifestProblems(document, expectedId);
+  if (!problems.length) return document as ConnectorManifest;
+  throw new ManifestError(Value.Check(ConnectorManifestSchema, document) ? problems[0]! : 'Invalid connector manifest: ' + problems.join('; '));
 }
 export async function fetchManifest(url: string, expectedId?: string, fetchImpl: FetchLike = fetch): Promise<ConnectorManifest> {
   const response = await fetchImpl(url + '/clew/manifest', { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(5000) });

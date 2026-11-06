@@ -17,6 +17,7 @@ Clew is a workspace for an employee's tasks across systems. A connector makes a 
 
 - [Protocol reference](reference/connector-protocol.md): routes, envelopes, manifest fields and source links.
 - [Generated JSON Schema](protocol/connector-protocol.schema.json): language-neutral wire shapes under `$defs`.
+- [Generated OpenAPI](protocol/connector-protocol.openapi.json): the routes on both sides; a running Clew serves it, a viewer and a manifest dry run under `/api/protocol`.
 - [Generated examples](generated/README.md): complete manifests imported from the runnable connectors.
 - [Implementation status](reference/status.md): available behavior, fixtures, partial implementations and unimplemented designs.
 - [Reliability acceptance](reference/reliability-acceptance.md): implemented mechanisms, tested scenarios and remaining real-source and operational release gates.

@@ -1,0 +1,4343 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Clew connector protocol",
+    "version": "2",
+    "summary": "How a connector service and a Clew installation talk to each other.",
+    "description": "A connector is an HTTP service of your own. It serves the routes tagged **Connector**; Clew loads its manifest and calls it as the acting person, with an RS256 assertion it can verify against the keys at the route tagged **Clew**. Shapes are the same JSON Schemas the instance validates with, published under `components.schemas` and, as one bundle, as `connector-protocol.schema.json` under `/api/protocol/`. Generate server stubs from this document or implement the paths by hand; the examples under `connectors/` in the repository are complete. Try `POST /api/protocol/manifest` with a manifest before any service exists."
+  },
+  "x-clew-protocol": {
+    "current": 2,
+    "accepted": [
+      2
+    ],
+    "retired": {
+      "1": "retired 2026-11-05: shared-secret (HS256) identity signing was replaced by RS256 installation keys (D44). Move the verifier to the installation's public keys and declare protocol 2."
+    }
+  },
+  "tags": [
+    {
+      "name": "Connector",
+      "description": "Routes the connector serves and Clew calls. All JSON, all under the registered base URL. Every POST carries `Authorization: Bearer <assertion>` and `X-Clew-Connector-Key`; take the actor from the verified assertion, never from the body."
+    },
+    {
+      "name": "Clew",
+      "description": "Routes Clew serves and a connector calls: its public keys, the callback for declared dependencies, and this protocol."
+    }
+  ],
+  "paths": {
+    "/clew/manifest": {
+      "servers": [
+        {
+          "url": "{connector}",
+          "description": "The base URL the connector is registered with in Clew. Every path below is relative to it.",
+          "variables": {
+            "connector": {
+              "default": "http://127.0.0.1:4020"
+            }
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Connector"
+        ],
+        "operationId": "getManifest",
+        "summary": "The manifest",
+        "description": "Clew loads it at registration, on \"Hämta manifest igen\" and on a schedule. No assertion is sent. Keep credentials and source data out of it.",
+        "responses": {
+          "200": {
+            "description": "The manifest. Clew validates it against `ConnectorManifest` and the rules `POST /api/protocol/manifest` applies.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorManifest"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/clew/capabilities/{name}": {
+      "servers": [
+        {
+          "url": "{connector}",
+          "description": "The base URL the connector is registered with in Clew. Every path below is relative to it.",
+          "variables": {
+            "connector": {
+              "default": "http://127.0.0.1:4020"
+            }
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Connector"
+        ],
+        "operationId": "callCapability",
+        "summary": "Run a capability as the person",
+        "security": [
+          {
+            "clewAssertion": [],
+            "connectorKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$"
+            },
+            "description": "The full capability name from the manifest, `<id>.<verb>`."
+          },
+          {
+            "name": "X-Clew-Operation-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "The durable operation id of an approved write (D45). Deduplicate on it; the same id means the same approved operation."
+            }
+          },
+          {
+            "name": "X-Clew-Delegated-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "The person's own token for the connector's system (D26), present only when the manifest declares `delegation` and a session is behind the call."
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The output, validated against the capability's declared output schema. An execute answers with an `ExecuteResult`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input: `error.code` is `invalid`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The transport key or the assertion was rejected. Required: an invalid credential is never answered with data; the conformance check probes this."
+          },
+          "403": {
+            "description": "Denied: `error.code` is `denied`, `error.message` is Swedish and shown to the person.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "An unknown ref or capability: `error.code` is `not-found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The source is unavailable: `error.code` is `unavailable`. For a write this does not say whether the effect happened.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/clew/scan": {
+      "servers": [
+        {
+          "url": "{connector}",
+          "description": "The base URL the connector is registered with in Clew. Every path below is relative to it.",
+          "variables": {
+            "connector": {
+              "default": "http://127.0.0.1:4020"
+            }
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Connector"
+        ],
+        "operationId": "scan",
+        "summary": "Drafts for the person's cards",
+        "description": "Only when the manifest says `scan: true`. Called nightly and on first visit per person; must be idempotent: the same occurrence gives the same topic.",
+        "security": [
+          {
+            "clewAssertion": [],
+            "connectorKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Drafts and, optionally, what was observed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The transport key or the assertion was rejected. Required: an invalid credential is never answered with data; the conformance check probes this."
+          },
+          "403": {
+            "description": "Denied: `error.code` is `denied`, `error.message` is Swedish and shown to the person.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The source is unavailable: `error.code` is `unavailable`. For a write this does not say whether the effect happened.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/clew/figure": {
+      "servers": [
+        {
+          "url": "{connector}",
+          "description": "The base URL the connector is registered with in Clew. Every path below is relative to it.",
+          "variables": {
+            "connector": {
+              "default": "http://127.0.0.1:4020"
+            }
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Connector"
+        ],
+        "operationId": "figure",
+        "summary": "One line for an area",
+        "description": "Only for an area declaring `figure: true`.",
+        "security": [
+          {
+            "clewAssertion": [],
+            "connectorKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FigureRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The figure or null.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FigureResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The transport key or the assertion was rejected. Required: an invalid credential is never answered with data; the conformance check probes this."
+          },
+          "403": {
+            "description": "Denied: `error.code` is `denied`, `error.message` is Swedish and shown to the person.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The source is unavailable: `error.code` is `unavailable`. For a write this does not say whether the effect happened.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/jwks": {
+      "servers": [
+        {
+          "url": "{clew}",
+          "description": "The Clew installation (the CLEW_URL a connector is configured with).",
+          "variables": {
+            "clew": {
+              "default": "http://localhost:3020"
+            }
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Clew"
+        ],
+        "operationId": "getJwks",
+        "summary": "The installation's public signing keys",
+        "description": "Pin this URL in deployment configuration and verify every assertion against it (`alg` RS256, `iss` clew, `aud` your connector id, a known `kid`, a bounded lifetime). Never follow a key URL from a token.",
+        "responses": {
+          "200": {
+            "description": "A JWK Set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "keys"
+                  ],
+                  "properties": {
+                    "keys": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/call": {
+      "servers": [
+        {
+          "url": "{clew}",
+          "description": "The Clew installation (the CLEW_URL a connector is configured with).",
+          "variables": {
+            "clew": {
+              "default": "http://localhost:3020"
+            }
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Clew"
+        ],
+        "operationId": "callback",
+        "summary": "Run another connector's read or propose as the person",
+        "description": "The bearer is the `callback` grant from the verified request assertion, never the assertion itself. Only targets declared in the manifest's `uses`; identity is rebuilt from the person's current grant; `execute` is refused.",
+        "security": [
+          {
+            "callbackGrant": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallbackRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The target's output.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "output"
+                  ],
+                  "properties": {
+                    "output": {}
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or input.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid grant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Denied: the person, the origin or the target is out of scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown capability.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The target is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/protocol/openapi.json": {
+      "servers": [
+        {
+          "url": "{clew}",
+          "description": "The Clew installation (the CLEW_URL a connector is configured with).",
+          "variables": {
+            "clew": {
+              "default": "http://localhost:3020"
+            }
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Clew"
+        ],
+        "operationId": "getOpenApi",
+        "summary": "This document, as this instance speaks it",
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.1.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/protocol/connector-protocol.schema.json": {
+      "servers": [
+        {
+          "url": "{clew}",
+          "description": "The Clew installation (the CLEW_URL a connector is configured with).",
+          "variables": {
+            "clew": {
+              "default": "http://localhost:3020"
+            }
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Clew"
+        ],
+        "operationId": "getProtocolSchema",
+        "summary": "The JSON Schema bundle",
+        "description": "Every shape under `$defs`, for a connector written in any language.",
+        "responses": {
+          "200": {
+            "description": "JSON Schema 2020-12 with `$defs`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/protocol/manifest": {
+      "servers": [
+        {
+          "url": "{clew}",
+          "description": "The Clew installation (the CLEW_URL a connector is configured with).",
+          "variables": {
+            "clew": {
+              "default": "http://localhost:3020"
+            }
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Clew"
+        ],
+        "operationId": "previewManifest",
+        "summary": "Dry-run a manifest against this instance",
+        "description": "Send a manifest document and read what this instance would refuse it for, else what it would offer to whom. No service, registration or sign-in is needed. Pass `?id=` to check the id against the one you will register.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorManifest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The verdict and, when ok, the manifest as Clew would hold it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManifestPreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not JSON."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ConnectorManifest": {
+        "additionalProperties": false,
+        "title": "Clew connector manifest",
+        "type": "object",
+        "required": [
+          "protocol",
+          "id",
+          "kind",
+          "source",
+          "areas",
+          "capabilities",
+          "scan"
+        ],
+        "properties": {
+          "protocol": {
+            "const": 2,
+            "type": "number"
+          },
+          "id": {
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "maxLength": 40,
+            "description": "Must match the id Clew was configured with.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Core connectors live in Clew itself (D3).",
+            "anyOf": [
+              {
+                "const": "passthrough",
+                "type": "string"
+              },
+              {
+                "const": "derived",
+                "type": "string"
+              }
+            ]
+          },
+          "source": {
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Swedish. The system as shown on cards: \"Personalsystemet\".",
+            "type": "string"
+          },
+          "areas": {
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "id",
+                "title",
+                "roles",
+                "standing",
+                "schedules"
+              ],
+              "properties": {
+                "id": {
+                  "pattern": "^[a-z][a-z0-9-]*$",
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                "title": {
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "Swedish. The sidebar entry.",
+                  "type": "string"
+                },
+                "roles": {
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "const": "manager",
+                        "type": "string"
+                      },
+                      {
+                        "const": "employee",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "standing": {
+                  "description": "Capability names shown under \"Gör själv\".",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "schedules": {
+                  "type": "array",
+                  "items": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "label",
+                      "when"
+                    ],
+                    "properties": {
+                      "label": {
+                        "type": "string"
+                      },
+                      "when": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "figure": {
+                  "description": "Clew asks POST /clew/figure for a one-line figure for this area.",
+                  "type": "boolean"
+                },
+                "icon": {
+                  "description": "One of Clew's icons. The connector sends a name, never a drawing.",
+                  "anyOf": [
+                    {
+                      "const": "phone",
+                      "type": "string"
+                    },
+                    {
+                      "const": "people",
+                      "type": "string"
+                    },
+                    {
+                      "const": "book",
+                      "type": "string"
+                    },
+                    {
+                      "const": "document",
+                      "type": "string"
+                    },
+                    {
+                      "const": "chart",
+                      "type": "string"
+                    },
+                    {
+                      "const": "search",
+                      "type": "string"
+                    },
+                    {
+                      "const": "clock",
+                      "type": "string"
+                    },
+                    {
+                      "const": "link",
+                      "type": "string"
+                    },
+                    {
+                      "const": "calendar",
+                      "type": "string"
+                    },
+                    {
+                      "const": "bell",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "name",
+                "kind",
+                "title",
+                "description",
+                "input",
+                "output",
+                "model",
+                "scope"
+              ],
+              "properties": {
+                "execution": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "strategy"
+                      ],
+                      "properties": {
+                        "strategy": {
+                          "const": "manual",
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "strategy",
+                        "retentionSeconds",
+                        "lookup"
+                      ],
+                      "properties": {
+                        "strategy": {
+                          "const": "deduplicated",
+                          "type": "string"
+                        },
+                        "retentionSeconds": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "lookup": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "strategy",
+                        "lookup"
+                      ],
+                      "properties": {
+                        "strategy": {
+                          "const": "conditional",
+                          "type": "string"
+                        },
+                        "lookup": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "name": {
+                  "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
+                  "maxLength": 80,
+                  "description": "`<connector id>.<verb>`, stable.",
+                  "type": "string"
+                },
+                "kind": {
+                  "anyOf": [
+                    {
+                      "const": "read",
+                      "type": "string"
+                    },
+                    {
+                      "const": "propose",
+                      "type": "string"
+                    },
+                    {
+                      "const": "execute",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "title": {
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "Swedish. A button label.",
+                  "type": "string"
+                },
+                "description": {
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "Swedish. What the model reads when `model` is true.",
+                  "type": "string"
+                },
+                "input": {
+                  "description": "A JSON Schema (draft 2020-12 or 7) for the value.",
+                  "type": "object",
+                  "patternProperties": {
+                    "^(.*)$": {}
+                  }
+                },
+                "output": {
+                  "description": "A JSON Schema (draft 2020-12 or 7) for the value.",
+                  "type": "object",
+                  "patternProperties": {
+                    "^(.*)$": {}
+                  }
+                },
+                "model": {
+                  "description": "Offer it to the model as a tool. Must be false for execute (D8).",
+                  "type": "boolean"
+                },
+                "scope": {
+                  "additionalProperties": false,
+                  "description": "Who may call the capability at all. Omitted roles means every signed-in person. The connector narrows further in the call.",
+                  "type": "object",
+                  "properties": {
+                    "roles": {
+                      "uniqueItems": true,
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "const": "manager",
+                            "type": "string"
+                          },
+                          {
+                            "const": "employee",
+                            "type": "string"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "kinds": {
+                  "uniqueItems": true,
+                  "description": "For `<id>.search` (D26): what it can find. Its output is a SearchOutput; `<id>.fetch` takes one of its refs back and returns one SearchHit.",
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "const": "document",
+                        "type": "string"
+                      },
+                      {
+                        "const": "person",
+                        "type": "string"
+                      },
+                      {
+                        "const": "case",
+                        "type": "string"
+                      },
+                      {
+                        "const": "room",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "view": {
+                  "description": "How Clew draws the output: `table` and `list` over an array of records (`rows`, default \"rows\"; `title` names the field that names a row and is one of `fields`; `ref` the field holding the connector's ref), `detail` over one record, `text` over one Markdown string.",
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "title",
+                        "fields"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "const": "table",
+                          "type": "string"
+                        },
+                        "rows": {
+                          "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                          "maxLength": 40,
+                          "description": "A property name in the capability's output (or input).",
+                          "type": "string"
+                        },
+                        "title": {
+                          "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                          "maxLength": 40,
+                          "description": "A property name in the capability's output (or input).",
+                          "type": "string"
+                        },
+                        "fields": {
+                          "minItems": 1,
+                          "maxItems": 12,
+                          "type": "array",
+                          "items": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "key",
+                              "label"
+                            ],
+                            "properties": {
+                              "key": {
+                                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                                "maxLength": 40,
+                                "description": "A property name in the capability's output (or input).",
+                                "type": "string"
+                              },
+                              "label": {
+                                "minLength": 1,
+                                "maxLength": 60,
+                                "description": "Swedish. Shown to the person.",
+                                "type": "string"
+                              },
+                              "format": {
+                                "anyOf": [
+                                  {
+                                    "const": "text",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "phone",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "email",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "link",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "date",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "instant",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "number",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "status",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "tones": {
+                                "description": "For `status`: the tone per value. A value without one is neutral.",
+                                "type": "object",
+                                "patternProperties": {
+                                  "^(.*)$": {
+                                    "anyOf": [
+                                      {
+                                        "const": "ok",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "warn",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "alert",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "none",
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "ref": {
+                          "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                          "maxLength": 40,
+                          "description": "A property name in the capability's output (or input).",
+                          "type": "string"
+                        },
+                        "open": {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "capability",
+                            "title",
+                            "params"
+                          ],
+                          "properties": {
+                            "capability": {
+                              "maxLength": 80,
+                              "type": "string"
+                            },
+                            "title": {
+                              "minLength": 1,
+                              "maxLength": 60,
+                              "description": "Swedish. Shown to the person.",
+                              "type": "string"
+                            },
+                            "params": {
+                              "type": "object",
+                              "patternProperties": {
+                                "^(.*)$": {
+                                  "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                                  "maxLength": 40,
+                                  "description": "A property name in the capability's output (or input).",
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "input": {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "properties": {
+                            "query": {
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "key",
+                                "label"
+                              ],
+                              "properties": {
+                                "key": {
+                                  "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                                  "maxLength": 40,
+                                  "description": "A property name in the capability's output (or input).",
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "minLength": 1,
+                                  "maxLength": 60,
+                                  "description": "Swedish. Shown to the person.",
+                                  "type": "string"
+                                },
+                                "placeholder": {
+                                  "maxLength": 80,
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "filter": {
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "key",
+                                "label",
+                                "options"
+                              ],
+                              "properties": {
+                                "key": {
+                                  "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                                  "maxLength": 40,
+                                  "description": "A property name in the capability's output (or input).",
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "minLength": 1,
+                                  "maxLength": 60,
+                                  "description": "Swedish. Shown to the person.",
+                                  "type": "string"
+                                },
+                                "options": {
+                                  "minItems": 2,
+                                  "maxItems": 6,
+                                  "type": "array",
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "type": "object",
+                                    "required": [
+                                      "value",
+                                      "label"
+                                    ],
+                                    "properties": {
+                                      "value": {
+                                        "minLength": 1,
+                                        "maxLength": 40,
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "minLength": 1,
+                                        "maxLength": 60,
+                                        "description": "Swedish. Shown to the person.",
+                                        "type": "string"
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "empty": {
+                          "minLength": 1,
+                          "maxLength": 120,
+                          "description": "Swedish. Shown when there are no rows.",
+                          "type": "string"
+                        },
+                        "modelReads": {
+                          "description": "Default `output`.",
+                          "anyOf": [
+                            {
+                              "const": "output",
+                              "type": "string"
+                            },
+                            {
+                              "const": "summary",
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "title",
+                        "fields"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "const": "list",
+                          "type": "string"
+                        },
+                        "rows": {
+                          "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                          "maxLength": 40,
+                          "description": "A property name in the capability's output (or input).",
+                          "type": "string"
+                        },
+                        "title": {
+                          "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                          "maxLength": 40,
+                          "description": "A property name in the capability's output (or input).",
+                          "type": "string"
+                        },
+                        "fields": {
+                          "minItems": 1,
+                          "maxItems": 12,
+                          "type": "array",
+                          "items": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "key",
+                              "label"
+                            ],
+                            "properties": {
+                              "key": {
+                                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                                "maxLength": 40,
+                                "description": "A property name in the capability's output (or input).",
+                                "type": "string"
+                              },
+                              "label": {
+                                "minLength": 1,
+                                "maxLength": 60,
+                                "description": "Swedish. Shown to the person.",
+                                "type": "string"
+                              },
+                              "format": {
+                                "anyOf": [
+                                  {
+                                    "const": "text",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "phone",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "email",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "link",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "date",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "instant",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "number",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "status",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "tones": {
+                                "description": "For `status`: the tone per value. A value without one is neutral.",
+                                "type": "object",
+                                "patternProperties": {
+                                  "^(.*)$": {
+                                    "anyOf": [
+                                      {
+                                        "const": "ok",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "warn",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "alert",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "none",
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "ref": {
+                          "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                          "maxLength": 40,
+                          "description": "A property name in the capability's output (or input).",
+                          "type": "string"
+                        },
+                        "open": {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "capability",
+                            "title",
+                            "params"
+                          ],
+                          "properties": {
+                            "capability": {
+                              "maxLength": 80,
+                              "type": "string"
+                            },
+                            "title": {
+                              "minLength": 1,
+                              "maxLength": 60,
+                              "description": "Swedish. Shown to the person.",
+                              "type": "string"
+                            },
+                            "params": {
+                              "type": "object",
+                              "patternProperties": {
+                                "^(.*)$": {
+                                  "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                                  "maxLength": 40,
+                                  "description": "A property name in the capability's output (or input).",
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "input": {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "properties": {
+                            "query": {
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "key",
+                                "label"
+                              ],
+                              "properties": {
+                                "key": {
+                                  "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                                  "maxLength": 40,
+                                  "description": "A property name in the capability's output (or input).",
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "minLength": 1,
+                                  "maxLength": 60,
+                                  "description": "Swedish. Shown to the person.",
+                                  "type": "string"
+                                },
+                                "placeholder": {
+                                  "maxLength": 80,
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "filter": {
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "key",
+                                "label",
+                                "options"
+                              ],
+                              "properties": {
+                                "key": {
+                                  "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                                  "maxLength": 40,
+                                  "description": "A property name in the capability's output (or input).",
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "minLength": 1,
+                                  "maxLength": 60,
+                                  "description": "Swedish. Shown to the person.",
+                                  "type": "string"
+                                },
+                                "options": {
+                                  "minItems": 2,
+                                  "maxItems": 6,
+                                  "type": "array",
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "type": "object",
+                                    "required": [
+                                      "value",
+                                      "label"
+                                    ],
+                                    "properties": {
+                                      "value": {
+                                        "minLength": 1,
+                                        "maxLength": 40,
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "minLength": 1,
+                                        "maxLength": 60,
+                                        "description": "Swedish. Shown to the person.",
+                                        "type": "string"
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "empty": {
+                          "minLength": 1,
+                          "maxLength": 120,
+                          "description": "Swedish. Shown when there are no rows.",
+                          "type": "string"
+                        },
+                        "modelReads": {
+                          "description": "Default `output`.",
+                          "anyOf": [
+                            {
+                              "const": "output",
+                              "type": "string"
+                            },
+                            {
+                              "const": "summary",
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "title",
+                        "fields"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "const": "detail",
+                          "type": "string"
+                        },
+                        "title": {
+                          "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                          "maxLength": 40,
+                          "description": "A property name in the capability's output (or input).",
+                          "type": "string"
+                        },
+                        "fields": {
+                          "minItems": 1,
+                          "maxItems": 24,
+                          "type": "array",
+                          "items": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "key",
+                              "label"
+                            ],
+                            "properties": {
+                              "key": {
+                                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                                "maxLength": 40,
+                                "description": "A property name in the capability's output (or input).",
+                                "type": "string"
+                              },
+                              "label": {
+                                "minLength": 1,
+                                "maxLength": 60,
+                                "description": "Swedish. Shown to the person.",
+                                "type": "string"
+                              },
+                              "format": {
+                                "anyOf": [
+                                  {
+                                    "const": "text",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "phone",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "email",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "link",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "date",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "instant",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "number",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "status",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "tones": {
+                                "description": "For `status`: the tone per value. A value without one is neutral.",
+                                "type": "object",
+                                "patternProperties": {
+                                  "^(.*)$": {
+                                    "anyOf": [
+                                      {
+                                        "const": "ok",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "warn",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "alert",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "none",
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "modelReads": {
+                          "description": "Default `output`.",
+                          "anyOf": [
+                            {
+                              "const": "output",
+                              "type": "string"
+                            },
+                            {
+                              "const": "summary",
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "body"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "const": "text",
+                          "type": "string"
+                        },
+                        "body": {
+                          "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                          "maxLength": 40,
+                          "description": "A property name in the capability's output (or input).",
+                          "type": "string"
+                        },
+                        "modelReads": {
+                          "description": "Default `output`.",
+                          "anyOf": [
+                            {
+                              "const": "output",
+                              "type": "string"
+                            },
+                            {
+                              "const": "summary",
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "menu": {
+                  "additionalProperties": false,
+                  "description": "How this capability's view is named and marked when an administrator puts it in Clew's menu under Verktyg (D40). Only on a read that declares a view and needs no input.",
+                  "type": "object",
+                  "required": [
+                    "label",
+                    "icon"
+                  ],
+                  "properties": {
+                    "label": {
+                      "minLength": 1,
+                      "maxLength": 24,
+                      "description": "Swedish. The row in the menu, the name of the tool: \"Telefonbok\".",
+                      "type": "string"
+                    },
+                    "icon": {
+                      "description": "One of Clew's icons. The connector sends a name, never a drawing.",
+                      "anyOf": [
+                        {
+                          "const": "phone",
+                          "type": "string"
+                        },
+                        {
+                          "const": "people",
+                          "type": "string"
+                        },
+                        {
+                          "const": "book",
+                          "type": "string"
+                        },
+                        {
+                          "const": "document",
+                          "type": "string"
+                        },
+                        {
+                          "const": "chart",
+                          "type": "string"
+                        },
+                        {
+                          "const": "search",
+                          "type": "string"
+                        },
+                        {
+                          "const": "clock",
+                          "type": "string"
+                        },
+                        {
+                          "const": "link",
+                          "type": "string"
+                        },
+                        {
+                          "const": "calendar",
+                          "type": "string"
+                        },
+                        {
+                          "const": "bell",
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "follows": {
+                  "uniqueItems": true,
+                  "maxItems": 20,
+                  "description": "For a `propose` (D55): the fact kinds it answers for. Input is a FactEnvelope, output a FollowResponse; steps name this connector only.",
+                  "type": "array",
+                  "items": {
+                    "pattern": "^[a-z][a-z0-9-]*:[a-z][a-zA-Z0-9-]*$",
+                    "maxLength": 80,
+                    "description": "`<connector id>:<kind>`, stable: the name is the contract.",
+                    "type": "string"
+                  }
+                },
+                "creates": {
+                  "pattern": "^[a-z][a-z0-9-]*:[a-z][a-zA-Z0-9-]*$",
+                  "maxLength": 80,
+                  "description": "The fact kind this `propose` or `execute` brings about (D55); must be one of the manifest's `facts`.",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "uses": {
+            "uniqueItems": true,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
+              "type": "string"
+            }
+          },
+          "facts": {
+            "maxItems": 50,
+            "description": "The fact kinds this connector creates (D55), each prefixed with its id.",
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "description": "A fact this connector creates, with the JSON Schema of its attributes. Followers receive exactly these attributes.",
+              "type": "object",
+              "required": [
+                "kind",
+                "title",
+                "attributes"
+              ],
+              "properties": {
+                "kind": {
+                  "pattern": "^[a-z][a-z0-9-]*:[a-z][a-zA-Z0-9-]*$",
+                  "maxLength": 80,
+                  "description": "`<connector id>:<kind>`, stable: the name is the contract.",
+                  "type": "string"
+                },
+                "title": {
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "Swedish. What the fact is called on a job: \"Sjukfrånvaro\".",
+                  "type": "string"
+                },
+                "attributes": {
+                  "description": "A JSON Schema (draft 2020-12 or 7) for the value.",
+                  "type": "object",
+                  "patternProperties": {
+                    "^(.*)$": {}
+                  }
+                }
+              }
+            }
+          },
+          "scan": {
+            "description": "Whether Clew should POST /clew/scan for each person nightly and on first visit.",
+            "type": "boolean"
+          },
+          "delegation": {
+            "additionalProperties": false,
+            "description": "The connector acts as the person against its system with a token Clew obtains by token exchange.",
+            "type": "object",
+            "required": [
+              "audience"
+            ],
+            "properties": {
+              "audience": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$",
+                "description": "The OAuth audience (an IdP client id) the token must be bound to.",
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "Actor": {
+        "additionalProperties": false,
+        "description": "The acting person as Clew knows them. Never a token.",
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "unitId",
+          "unitLabel",
+          "role"
+        ],
+        "properties": {
+          "id": {
+            "minLength": 1,
+            "maxLength": 80,
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "unitId": {
+            "type": "string"
+          },
+          "unitLabel": {
+            "type": "string"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "const": "manager",
+                "type": "string"
+              },
+              {
+                "const": "employee",
+                "type": "string"
+              }
+            ]
+          }
+        }
+      },
+      "CallRequest": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "actor",
+          "input"
+        ],
+        "properties": {
+          "actor": {
+            "additionalProperties": false,
+            "description": "The acting person as Clew knows them. Never a token.",
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "unitId",
+              "unitLabel",
+              "role"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 80,
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "unitId": {
+                "type": "string"
+              },
+              "unitLabel": {
+                "type": "string"
+              },
+              "role": {
+                "anyOf": [
+                  {
+                    "const": "manager",
+                    "type": "string"
+                  },
+                  {
+                    "const": "employee",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          },
+          "input": {}
+        }
+      },
+      "CallResponse": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "output"
+            ],
+            "properties": {
+              "output": {}
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "anyOf": [
+                      {
+                        "const": "invalid",
+                        "type": "string"
+                      },
+                      {
+                        "const": "denied",
+                        "type": "string"
+                      },
+                      {
+                        "const": "not-found",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unknown",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "message": {
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Swedish. Shown to the person.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ProtocolError": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "const": "invalid",
+                "type": "string"
+              },
+              {
+                "const": "denied",
+                "type": "string"
+              },
+              {
+                "const": "not-found",
+                "type": "string"
+              },
+              {
+                "const": "unavailable",
+                "type": "string"
+              },
+              {
+                "const": "unknown",
+                "type": "string"
+              }
+            ]
+          },
+          "message": {
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Swedish. Shown to the person.",
+            "type": "string"
+          }
+        }
+      },
+      "ExecuteResult": {
+        "additionalProperties": false,
+        "description": "What an execute capability returns: one outcome per ref, read back from the source.",
+        "type": "object",
+        "required": [
+          "headline",
+          "rows"
+        ],
+        "properties": {
+          "headline": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "ref",
+                "label",
+                "outcome",
+                "detail"
+              ],
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "anyOf": [
+                    {
+                      "const": "done",
+                      "type": "string"
+                    },
+                    {
+                      "const": "unknown",
+                      "type": "string"
+                    },
+                    {
+                      "const": "failed",
+                      "type": "string"
+                    },
+                    {
+                      "const": "skipped",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "undoCapability": {
+            "type": "string"
+          },
+          "undoMinutes": {
+            "minimum": 1,
+            "maximum": 1440,
+            "type": "integer"
+          },
+          "undoInput": {
+            "type": "object",
+            "patternProperties": {
+              "^(.*)$": {}
+            }
+          }
+        }
+      },
+      "ScanRequest": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "actor"
+        ],
+        "properties": {
+          "actor": {
+            "additionalProperties": false,
+            "description": "The acting person as Clew knows them. Never a token.",
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "unitId",
+              "unitLabel",
+              "role"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 80,
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "unitId": {
+                "type": "string"
+              },
+              "unitLabel": {
+                "type": "string"
+              },
+              "role": {
+                "anyOf": [
+                  {
+                    "const": "manager",
+                    "type": "string"
+                  },
+                  {
+                    "const": "employee",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "ScanResponse": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "drafts"
+        ],
+        "properties": {
+          "drafts": {
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "topic",
+                "area",
+                "title",
+                "summary",
+                "reason",
+                "actions"
+              ],
+              "properties": {
+                "occurrences": {
+                  "minItems": 1,
+                  "maxItems": 100,
+                  "type": "array",
+                  "items": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "key",
+                      "revision",
+                      "period"
+                    ],
+                    "properties": {
+                      "key": {
+                        "minLength": 1,
+                        "maxLength": 400,
+                        "type": "string"
+                      },
+                      "revision": {
+                        "maxLength": 400,
+                        "type": "string"
+                      },
+                      "period": {
+                        "minLength": 1,
+                        "maxLength": 100,
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "topic": {
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "description": "Idempotency key per person: the same occurrence gives the same topic.",
+                  "type": "string"
+                },
+                "area": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "reason": {
+                  "description": "Swedish. Shown under \"Varför ser jag detta?\".",
+                  "type": "string"
+                },
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "ref",
+                      "label",
+                      "detail",
+                      "selectable",
+                      "selected"
+                    ],
+                    "properties": {
+                      "ref": {
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "detail": {
+                        "type": "string"
+                      },
+                      "selectable": {
+                        "type": "boolean"
+                      },
+                      "selected": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                },
+                "actions": {
+                  "type": "array",
+                  "items": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "label",
+                      "capability",
+                      "kind",
+                      "role"
+                    ],
+                    "properties": {
+                      "id": {
+                        "minLength": 1,
+                        "maxLength": 80,
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "capability": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "anyOf": [
+                          {
+                            "const": "read",
+                            "type": "string"
+                          },
+                          {
+                            "const": "propose",
+                            "type": "string"
+                          },
+                          {
+                            "const": "execute",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "role": {
+                        "anyOf": [
+                          {
+                            "const": "primary",
+                            "type": "string"
+                          },
+                          {
+                            "const": "secondary",
+                            "type": "string"
+                          },
+                          {
+                            "const": "overflow",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "target": {
+                        "anyOf": [
+                          {
+                            "const": "panel",
+                            "type": "string"
+                          },
+                          {
+                            "const": "link",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "input": {
+                        "type": "object",
+                        "patternProperties": {
+                          "^(.*)$": {}
+                        }
+                      },
+                      "usesItems": {
+                        "type": "boolean"
+                      },
+                      "confirm": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "waitingOn": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "deadline": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "observation": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "scope",
+              "observedAt",
+              "version",
+              "exhausted",
+              "completeness"
+            ],
+            "properties": {
+              "scope": {
+                "type": "string"
+              },
+              "observedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              },
+              "exhausted": {
+                "type": "boolean"
+              },
+              "completeness": {
+                "anyOf": [
+                  {
+                    "const": "complete",
+                    "type": "string"
+                  },
+                  {
+                    "const": "delta",
+                    "type": "string"
+                  },
+                  {
+                    "const": "partial",
+                    "type": "string"
+                  },
+                  {
+                    "const": "unavailable",
+                    "type": "string"
+                  },
+                  {
+                    "const": "authorization-required",
+                    "type": "string"
+                  }
+                ]
+              },
+              "tombstones": {
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "key",
+                    "period"
+                  ],
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "period": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "ThreadDraft": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "topic",
+          "area",
+          "title",
+          "summary",
+          "reason",
+          "actions"
+        ],
+        "properties": {
+          "occurrences": {
+            "minItems": 1,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "key",
+                "revision",
+                "period"
+              ],
+              "properties": {
+                "key": {
+                  "minLength": 1,
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "revision": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "period": {
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "topic": {
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "Idempotency key per person: the same occurrence gives the same topic.",
+            "type": "string"
+          },
+          "area": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "reason": {
+            "description": "Swedish. Shown under \"Varför ser jag detta?\".",
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "ref",
+                "label",
+                "detail",
+                "selectable",
+                "selected"
+              ],
+              "properties": {
+                "ref": {
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string"
+                },
+                "selectable": {
+                  "type": "boolean"
+                },
+                "selected": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "id",
+                "label",
+                "capability",
+                "kind",
+                "role"
+              ],
+              "properties": {
+                "id": {
+                  "minLength": 1,
+                  "maxLength": 80,
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "capability": {
+                  "type": "string"
+                },
+                "kind": {
+                  "anyOf": [
+                    {
+                      "const": "read",
+                      "type": "string"
+                    },
+                    {
+                      "const": "propose",
+                      "type": "string"
+                    },
+                    {
+                      "const": "execute",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "role": {
+                  "anyOf": [
+                    {
+                      "const": "primary",
+                      "type": "string"
+                    },
+                    {
+                      "const": "secondary",
+                      "type": "string"
+                    },
+                    {
+                      "const": "overflow",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "target": {
+                  "anyOf": [
+                    {
+                      "const": "panel",
+                      "type": "string"
+                    },
+                    {
+                      "const": "link",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "input": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^(.*)$": {}
+                  }
+                },
+                "usesItems": {
+                  "type": "boolean"
+                },
+                "confirm": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "waitingOn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deadline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "FigureRequest": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "actor",
+          "area"
+        ],
+        "properties": {
+          "actor": {
+            "additionalProperties": false,
+            "description": "The acting person as Clew knows them. Never a token.",
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "unitId",
+              "unitLabel",
+              "role"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 80,
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "unitId": {
+                "type": "string"
+              },
+              "unitLabel": {
+                "type": "string"
+              },
+              "role": {
+                "anyOf": [
+                  {
+                    "const": "manager",
+                    "type": "string"
+                  },
+                  {
+                    "const": "employee",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          },
+          "area": {
+            "type": "string"
+          }
+        }
+      },
+      "FigureResponse": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "figure"
+        ],
+        "properties": {
+          "figure": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "label",
+                  "tone"
+                ],
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "tone": {
+                    "anyOf": [
+                      {
+                        "const": "ok",
+                        "type": "string"
+                      },
+                      {
+                        "const": "warn",
+                        "type": "string"
+                      },
+                      {
+                        "const": "alert",
+                        "type": "string"
+                      },
+                      {
+                        "const": "none",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "CallbackRequest": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "maxLength": 80,
+            "type": "string"
+          },
+          "input": {}
+        }
+      },
+      "SearchHit": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "ref",
+          "kind",
+          "label",
+          "snippet",
+          "source"
+        ],
+        "properties": {
+          "ref": {
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9:_.@-]+$",
+            "type": "string"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "const": "document",
+                "type": "string"
+              },
+              {
+                "const": "person",
+                "type": "string"
+              },
+              {
+                "const": "case",
+                "type": "string"
+              },
+              {
+                "const": "room",
+                "type": "string"
+              }
+            ]
+          },
+          "label": {
+            "minLength": 1,
+            "maxLength": 200,
+            "type": "string"
+          },
+          "snippet": {
+            "maxLength": 1200,
+            "type": "string"
+          },
+          "link": {
+            "maxLength": 1000,
+            "type": "string"
+          },
+          "source": {
+            "minLength": 1,
+            "maxLength": 80,
+            "type": "string"
+          },
+          "section": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "owner": {
+            "maxLength": 120,
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "reviewedAt": {
+            "format": "date-time",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "reviewIntervalDays": {
+            "minimum": 1,
+            "maximum": 3650,
+            "type": "integer"
+          },
+          "score": {
+            "type": "number"
+          }
+        }
+      },
+      "SearchOutput": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rows"
+        ],
+        "properties": {
+          "rows": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "ref",
+                "kind",
+                "label",
+                "snippet",
+                "source"
+              ],
+              "properties": {
+                "ref": {
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "^[A-Za-z0-9:_.@-]+$",
+                  "type": "string"
+                },
+                "kind": {
+                  "anyOf": [
+                    {
+                      "const": "document",
+                      "type": "string"
+                    },
+                    {
+                      "const": "person",
+                      "type": "string"
+                    },
+                    {
+                      "const": "case",
+                      "type": "string"
+                    },
+                    {
+                      "const": "room",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "label": {
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                "snippet": {
+                  "maxLength": 1200,
+                  "type": "string"
+                },
+                "link": {
+                  "maxLength": 1000,
+                  "type": "string"
+                },
+                "source": {
+                  "minLength": 1,
+                  "maxLength": 80,
+                  "type": "string"
+                },
+                "section": {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                "owner": {
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                "reviewedAt": {
+                  "format": "date-time",
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                "reviewIntervalDays": {
+                  "minimum": 1,
+                  "maximum": 3650,
+                  "type": "integer"
+                },
+                "score": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Delegation": {
+        "additionalProperties": false,
+        "description": "The connector acts as the person against its system with a token Clew obtains by token exchange.",
+        "type": "object",
+        "required": [
+          "audience"
+        ],
+        "properties": {
+          "audience": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$",
+            "description": "The OAuth audience (an IdP client id) the token must be bound to.",
+            "type": "string"
+          }
+        }
+      },
+      "View": {
+        "description": "How Clew draws the output: `table` and `list` over an array of records (`rows`, default \"rows\"; `title` names the field that names a row and is one of `fields`; `ref` the field holding the connector's ref), `detail` over one record, `text` over one Markdown string.",
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "kind",
+              "title",
+              "fields"
+            ],
+            "properties": {
+              "kind": {
+                "const": "table",
+                "type": "string"
+              },
+              "rows": {
+                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                "maxLength": 40,
+                "description": "A property name in the capability's output (or input).",
+                "type": "string"
+              },
+              "title": {
+                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                "maxLength": 40,
+                "description": "A property name in the capability's output (or input).",
+                "type": "string"
+              },
+              "fields": {
+                "minItems": 1,
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "key",
+                    "label"
+                  ],
+                  "properties": {
+                    "key": {
+                      "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                      "maxLength": 40,
+                      "description": "A property name in the capability's output (or input).",
+                      "type": "string"
+                    },
+                    "label": {
+                      "minLength": 1,
+                      "maxLength": 60,
+                      "description": "Swedish. Shown to the person.",
+                      "type": "string"
+                    },
+                    "format": {
+                      "anyOf": [
+                        {
+                          "const": "text",
+                          "type": "string"
+                        },
+                        {
+                          "const": "phone",
+                          "type": "string"
+                        },
+                        {
+                          "const": "email",
+                          "type": "string"
+                        },
+                        {
+                          "const": "link",
+                          "type": "string"
+                        },
+                        {
+                          "const": "date",
+                          "type": "string"
+                        },
+                        {
+                          "const": "instant",
+                          "type": "string"
+                        },
+                        {
+                          "const": "number",
+                          "type": "string"
+                        },
+                        {
+                          "const": "status",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "tones": {
+                      "description": "For `status`: the tone per value. A value without one is neutral.",
+                      "type": "object",
+                      "patternProperties": {
+                        "^(.*)$": {
+                          "anyOf": [
+                            {
+                              "const": "ok",
+                              "type": "string"
+                            },
+                            {
+                              "const": "warn",
+                              "type": "string"
+                            },
+                            {
+                              "const": "alert",
+                              "type": "string"
+                            },
+                            {
+                              "const": "none",
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "ref": {
+                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                "maxLength": 40,
+                "description": "A property name in the capability's output (or input).",
+                "type": "string"
+              },
+              "open": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "capability",
+                  "title",
+                  "params"
+                ],
+                "properties": {
+                  "capability": {
+                    "maxLength": 80,
+                    "type": "string"
+                  },
+                  "title": {
+                    "minLength": 1,
+                    "maxLength": 60,
+                    "description": "Swedish. Shown to the person.",
+                    "type": "string"
+                  },
+                  "params": {
+                    "type": "object",
+                    "patternProperties": {
+                      "^(.*)$": {
+                        "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                        "maxLength": 40,
+                        "description": "A property name in the capability's output (or input).",
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              },
+              "input": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "query": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "key",
+                      "label"
+                    ],
+                    "properties": {
+                      "key": {
+                        "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                        "maxLength": 40,
+                        "description": "A property name in the capability's output (or input).",
+                        "type": "string"
+                      },
+                      "label": {
+                        "minLength": 1,
+                        "maxLength": 60,
+                        "description": "Swedish. Shown to the person.",
+                        "type": "string"
+                      },
+                      "placeholder": {
+                        "maxLength": 80,
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "filter": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "key",
+                      "label",
+                      "options"
+                    ],
+                    "properties": {
+                      "key": {
+                        "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                        "maxLength": 40,
+                        "description": "A property name in the capability's output (or input).",
+                        "type": "string"
+                      },
+                      "label": {
+                        "minLength": 1,
+                        "maxLength": 60,
+                        "description": "Swedish. Shown to the person.",
+                        "type": "string"
+                      },
+                      "options": {
+                        "minItems": 2,
+                        "maxItems": 6,
+                        "type": "array",
+                        "items": {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "value",
+                            "label"
+                          ],
+                          "properties": {
+                            "value": {
+                              "minLength": 1,
+                              "maxLength": 40,
+                              "type": "string"
+                            },
+                            "label": {
+                              "minLength": 1,
+                              "maxLength": 60,
+                              "description": "Swedish. Shown to the person.",
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "empty": {
+                "minLength": 1,
+                "maxLength": 120,
+                "description": "Swedish. Shown when there are no rows.",
+                "type": "string"
+              },
+              "modelReads": {
+                "description": "Default `output`.",
+                "anyOf": [
+                  {
+                    "const": "output",
+                    "type": "string"
+                  },
+                  {
+                    "const": "summary",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "kind",
+              "title",
+              "fields"
+            ],
+            "properties": {
+              "kind": {
+                "const": "list",
+                "type": "string"
+              },
+              "rows": {
+                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                "maxLength": 40,
+                "description": "A property name in the capability's output (or input).",
+                "type": "string"
+              },
+              "title": {
+                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                "maxLength": 40,
+                "description": "A property name in the capability's output (or input).",
+                "type": "string"
+              },
+              "fields": {
+                "minItems": 1,
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "key",
+                    "label"
+                  ],
+                  "properties": {
+                    "key": {
+                      "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                      "maxLength": 40,
+                      "description": "A property name in the capability's output (or input).",
+                      "type": "string"
+                    },
+                    "label": {
+                      "minLength": 1,
+                      "maxLength": 60,
+                      "description": "Swedish. Shown to the person.",
+                      "type": "string"
+                    },
+                    "format": {
+                      "anyOf": [
+                        {
+                          "const": "text",
+                          "type": "string"
+                        },
+                        {
+                          "const": "phone",
+                          "type": "string"
+                        },
+                        {
+                          "const": "email",
+                          "type": "string"
+                        },
+                        {
+                          "const": "link",
+                          "type": "string"
+                        },
+                        {
+                          "const": "date",
+                          "type": "string"
+                        },
+                        {
+                          "const": "instant",
+                          "type": "string"
+                        },
+                        {
+                          "const": "number",
+                          "type": "string"
+                        },
+                        {
+                          "const": "status",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "tones": {
+                      "description": "For `status`: the tone per value. A value without one is neutral.",
+                      "type": "object",
+                      "patternProperties": {
+                        "^(.*)$": {
+                          "anyOf": [
+                            {
+                              "const": "ok",
+                              "type": "string"
+                            },
+                            {
+                              "const": "warn",
+                              "type": "string"
+                            },
+                            {
+                              "const": "alert",
+                              "type": "string"
+                            },
+                            {
+                              "const": "none",
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "ref": {
+                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                "maxLength": 40,
+                "description": "A property name in the capability's output (or input).",
+                "type": "string"
+              },
+              "open": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "capability",
+                  "title",
+                  "params"
+                ],
+                "properties": {
+                  "capability": {
+                    "maxLength": 80,
+                    "type": "string"
+                  },
+                  "title": {
+                    "minLength": 1,
+                    "maxLength": 60,
+                    "description": "Swedish. Shown to the person.",
+                    "type": "string"
+                  },
+                  "params": {
+                    "type": "object",
+                    "patternProperties": {
+                      "^(.*)$": {
+                        "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                        "maxLength": 40,
+                        "description": "A property name in the capability's output (or input).",
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              },
+              "input": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "query": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "key",
+                      "label"
+                    ],
+                    "properties": {
+                      "key": {
+                        "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                        "maxLength": 40,
+                        "description": "A property name in the capability's output (or input).",
+                        "type": "string"
+                      },
+                      "label": {
+                        "minLength": 1,
+                        "maxLength": 60,
+                        "description": "Swedish. Shown to the person.",
+                        "type": "string"
+                      },
+                      "placeholder": {
+                        "maxLength": 80,
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "filter": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "key",
+                      "label",
+                      "options"
+                    ],
+                    "properties": {
+                      "key": {
+                        "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                        "maxLength": 40,
+                        "description": "A property name in the capability's output (or input).",
+                        "type": "string"
+                      },
+                      "label": {
+                        "minLength": 1,
+                        "maxLength": 60,
+                        "description": "Swedish. Shown to the person.",
+                        "type": "string"
+                      },
+                      "options": {
+                        "minItems": 2,
+                        "maxItems": 6,
+                        "type": "array",
+                        "items": {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "value",
+                            "label"
+                          ],
+                          "properties": {
+                            "value": {
+                              "minLength": 1,
+                              "maxLength": 40,
+                              "type": "string"
+                            },
+                            "label": {
+                              "minLength": 1,
+                              "maxLength": 60,
+                              "description": "Swedish. Shown to the person.",
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "empty": {
+                "minLength": 1,
+                "maxLength": 120,
+                "description": "Swedish. Shown when there are no rows.",
+                "type": "string"
+              },
+              "modelReads": {
+                "description": "Default `output`.",
+                "anyOf": [
+                  {
+                    "const": "output",
+                    "type": "string"
+                  },
+                  {
+                    "const": "summary",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "kind",
+              "title",
+              "fields"
+            ],
+            "properties": {
+              "kind": {
+                "const": "detail",
+                "type": "string"
+              },
+              "title": {
+                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                "maxLength": 40,
+                "description": "A property name in the capability's output (or input).",
+                "type": "string"
+              },
+              "fields": {
+                "minItems": 1,
+                "maxItems": 24,
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "key",
+                    "label"
+                  ],
+                  "properties": {
+                    "key": {
+                      "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                      "maxLength": 40,
+                      "description": "A property name in the capability's output (or input).",
+                      "type": "string"
+                    },
+                    "label": {
+                      "minLength": 1,
+                      "maxLength": 60,
+                      "description": "Swedish. Shown to the person.",
+                      "type": "string"
+                    },
+                    "format": {
+                      "anyOf": [
+                        {
+                          "const": "text",
+                          "type": "string"
+                        },
+                        {
+                          "const": "phone",
+                          "type": "string"
+                        },
+                        {
+                          "const": "email",
+                          "type": "string"
+                        },
+                        {
+                          "const": "link",
+                          "type": "string"
+                        },
+                        {
+                          "const": "date",
+                          "type": "string"
+                        },
+                        {
+                          "const": "instant",
+                          "type": "string"
+                        },
+                        {
+                          "const": "number",
+                          "type": "string"
+                        },
+                        {
+                          "const": "status",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "tones": {
+                      "description": "For `status`: the tone per value. A value without one is neutral.",
+                      "type": "object",
+                      "patternProperties": {
+                        "^(.*)$": {
+                          "anyOf": [
+                            {
+                              "const": "ok",
+                              "type": "string"
+                            },
+                            {
+                              "const": "warn",
+                              "type": "string"
+                            },
+                            {
+                              "const": "alert",
+                              "type": "string"
+                            },
+                            {
+                              "const": "none",
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "modelReads": {
+                "description": "Default `output`.",
+                "anyOf": [
+                  {
+                    "const": "output",
+                    "type": "string"
+                  },
+                  {
+                    "const": "summary",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "kind",
+              "body"
+            ],
+            "properties": {
+              "kind": {
+                "const": "text",
+                "type": "string"
+              },
+              "body": {
+                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                "maxLength": 40,
+                "description": "A property name in the capability's output (or input).",
+                "type": "string"
+              },
+              "modelReads": {
+                "description": "Default `output`.",
+                "anyOf": [
+                  {
+                    "const": "output",
+                    "type": "string"
+                  },
+                  {
+                    "const": "summary",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "Menu": {
+        "additionalProperties": false,
+        "description": "How this capability's view is named and marked when an administrator puts it in Clew's menu under Verktyg (D40). Only on a read that declares a view and needs no input.",
+        "type": "object",
+        "required": [
+          "label",
+          "icon"
+        ],
+        "properties": {
+          "label": {
+            "minLength": 1,
+            "maxLength": 24,
+            "description": "Swedish. The row in the menu, the name of the tool: \"Telefonbok\".",
+            "type": "string"
+          },
+          "icon": {
+            "description": "One of Clew's icons. The connector sends a name, never a drawing.",
+            "anyOf": [
+              {
+                "const": "phone",
+                "type": "string"
+              },
+              {
+                "const": "people",
+                "type": "string"
+              },
+              {
+                "const": "book",
+                "type": "string"
+              },
+              {
+                "const": "document",
+                "type": "string"
+              },
+              {
+                "const": "chart",
+                "type": "string"
+              },
+              {
+                "const": "search",
+                "type": "string"
+              },
+              {
+                "const": "clock",
+                "type": "string"
+              },
+              {
+                "const": "link",
+                "type": "string"
+              },
+              {
+                "const": "calendar",
+                "type": "string"
+              },
+              {
+                "const": "bell",
+                "type": "string"
+              }
+            ]
+          }
+        }
+      },
+      "ManifestFact": {
+        "additionalProperties": false,
+        "description": "A fact this connector creates, with the JSON Schema of its attributes. Followers receive exactly these attributes.",
+        "type": "object",
+        "required": [
+          "kind",
+          "title",
+          "attributes"
+        ],
+        "properties": {
+          "kind": {
+            "pattern": "^[a-z][a-z0-9-]*:[a-z][a-zA-Z0-9-]*$",
+            "maxLength": 80,
+            "description": "`<connector id>:<kind>`, stable: the name is the contract.",
+            "type": "string"
+          },
+          "title": {
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Swedish. What the fact is called on a job: \"Sjukfrånvaro\".",
+            "type": "string"
+          },
+          "attributes": {
+            "description": "A JSON Schema (draft 2020-12 or 7) for the value.",
+            "type": "object",
+            "patternProperties": {
+              "^(.*)$": {}
+            }
+          }
+        }
+      },
+      "FactEnvelope": {
+        "additionalProperties": false,
+        "description": "The input of every `follows` capability.",
+        "type": "object",
+        "required": [
+          "fact"
+        ],
+        "properties": {
+          "fact": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "kind",
+              "attributes"
+            ],
+            "properties": {
+              "kind": {
+                "pattern": "^[a-z][a-z0-9-]*:[a-z][a-zA-Z0-9-]*$",
+                "maxLength": 80,
+                "description": "`<connector id>:<kind>`, stable: the name is the contract.",
+                "type": "string"
+              },
+              "ref": {
+                "minLength": 1,
+                "maxLength": 400,
+                "type": "string"
+              },
+              "attributes": {
+                "type": "object",
+                "patternProperties": {
+                  "^(.*)$": {}
+                }
+              }
+            }
+          }
+        }
+      },
+      "StepDraft": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "kind",
+              "operation",
+              "payload",
+              "title"
+            ],
+            "properties": {
+              "kind": {
+                "const": "execute",
+                "type": "string"
+              },
+              "operation": {
+                "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
+                "maxLength": 80,
+                "type": "string"
+              },
+              "payload": {},
+              "title": {
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Swedish. The step on the job card.",
+                "type": "string"
+              },
+              "detail": {
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Swedish. One line under the title.",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "kind",
+              "operation",
+              "input",
+              "expect",
+              "within",
+              "title"
+            ],
+            "properties": {
+              "kind": {
+                "const": "watch",
+                "type": "string"
+              },
+              "operation": {
+                "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
+                "maxLength": 80,
+                "type": "string"
+              },
+              "input": {},
+              "expect": {
+                "additionalProperties": false,
+                "description": "The value at `path` in the read's output must equal `equals` for the fact to count as seen.",
+                "type": "object",
+                "required": [
+                  "path",
+                  "equals"
+                ],
+                "properties": {
+                  "path": {
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "minLength": 1,
+                      "maxLength": 80,
+                      "type": "string"
+                    }
+                  },
+                  "equals": {}
+                }
+              },
+              "within": {
+                "pattern": "^P(?!$)(\\d+D)?(T(?=\\d)(\\d+H)?(\\d+M)?)?$",
+                "description": "ISO 8601 duration (days, hours, minutes) the watch lasts, e.g. `P1D`, `PT4H`.",
+                "type": "string"
+              },
+              "title": {
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Swedish. The step on the job card.",
+                "type": "string"
+              },
+              "detail": {
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Swedish. One line under the title.",
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "FollowResponse": {
+        "additionalProperties": false,
+        "description": "What a `follows` capability returns. Zero steps means nothing to do for this fact.",
+        "type": "object",
+        "required": [
+          "steps"
+        ],
+        "properties": {
+          "steps": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "operation",
+                    "payload",
+                    "title"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "const": "execute",
+                      "type": "string"
+                    },
+                    "operation": {
+                      "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
+                      "maxLength": 80,
+                      "type": "string"
+                    },
+                    "payload": {},
+                    "title": {
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "description": "Swedish. The step on the job card.",
+                      "type": "string"
+                    },
+                    "detail": {
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "description": "Swedish. One line under the title.",
+                      "type": "string"
+                    }
+                  }
+                },
+                {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "operation",
+                    "input",
+                    "expect",
+                    "within",
+                    "title"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "const": "watch",
+                      "type": "string"
+                    },
+                    "operation": {
+                      "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
+                      "maxLength": 80,
+                      "type": "string"
+                    },
+                    "input": {},
+                    "expect": {
+                      "additionalProperties": false,
+                      "description": "The value at `path` in the read's output must equal `equals` for the fact to count as seen.",
+                      "type": "object",
+                      "required": [
+                        "path",
+                        "equals"
+                      ],
+                      "properties": {
+                        "path": {
+                          "maxItems": 10,
+                          "type": "array",
+                          "items": {
+                            "minLength": 1,
+                            "maxLength": 80,
+                            "type": "string"
+                          }
+                        },
+                        "equals": {}
+                      }
+                    },
+                    "within": {
+                      "pattern": "^P(?!$)(\\d+D)?(T(?=\\d)(\\d+H)?(\\d+M)?)?$",
+                      "description": "ISO 8601 duration (days, hours, minutes) the watch lasts, e.g. `P1D`, `PT4H`.",
+                      "type": "string"
+                    },
+                    "title": {
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "description": "Swedish. The step on the job card.",
+                      "type": "string"
+                    },
+                    "detail": {
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "description": "Swedish. One line under the title.",
+                      "type": "string"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "ManifestPreview": {
+        "additionalProperties": false,
+        "description": "A dry run of a manifest document against this instance's rules.",
+        "type": "object",
+        "required": [
+          "ok",
+          "protocol",
+          "problems"
+        ],
+        "properties": {
+          "ok": {
+            "description": "Whether Clew would load the document.",
+            "type": "boolean"
+          },
+          "protocol": {
+            "additionalProperties": false,
+            "description": "The protocol version this instance speaks and the versions it loads.",
+            "type": "object",
+            "required": [
+              "current",
+              "accepted"
+            ],
+            "properties": {
+              "current": {
+                "type": "integer"
+              },
+              "accepted": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "problems": {
+            "description": "Every reason the document would be refused, in the order Clew finds them. Empty when ok.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "manifest": {
+            "additionalProperties": false,
+            "description": "Present when ok: the manifest as Clew would hold it.",
+            "type": "object",
+            "required": [
+              "id",
+              "source",
+              "kind",
+              "scan",
+              "delegation",
+              "uses",
+              "facts",
+              "capabilities",
+              "areas",
+              "menu"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "kind": {
+                "anyOf": [
+                  {
+                    "const": "passthrough",
+                    "type": "string"
+                  },
+                  {
+                    "const": "derived",
+                    "type": "string"
+                  }
+                ]
+              },
+              "scan": {
+                "type": "boolean"
+              },
+              "delegation": {
+                "description": "The audience Clew would obtain the person's token for, or null.",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "uses": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "facts": {
+                "type": "array",
+                "items": {
+                  "pattern": "^[a-z][a-z0-9-]*:[a-z][a-zA-Z0-9-]*$",
+                  "maxLength": 80,
+                  "description": "`<connector id>:<kind>`, stable: the name is the contract.",
+                  "type": "string"
+                }
+              },
+              "capabilities": {
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "kind",
+                    "title",
+                    "roles",
+                    "tool",
+                    "needsInput",
+                    "view",
+                    "menu",
+                    "check"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "anyOf": [
+                        {
+                          "const": "read",
+                          "type": "string"
+                        },
+                        {
+                          "const": "propose",
+                          "type": "string"
+                        },
+                        {
+                          "const": "execute",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "roles": {
+                      "description": "Who may call it: both roles when the capability names none.",
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "const": "manager",
+                            "type": "string"
+                          },
+                          {
+                            "const": "employee",
+                            "type": "string"
+                          }
+                        ]
+                      }
+                    },
+                    "tool": {
+                      "description": "Offered to the model as a tool once an administrator enables tools for the connector.",
+                      "type": "boolean"
+                    },
+                    "needsInput": {
+                      "description": "Its input schema does not accept `{}`, so neither the conformance check nor a menu row can open it without a question.",
+                      "type": "boolean"
+                    },
+                    "view": {
+                      "description": "How Clew draws its output, or null for the generic rules.",
+                      "anyOf": [
+                        {
+                          "const": "table",
+                          "type": "string"
+                        },
+                        {
+                          "const": "list",
+                          "type": "string"
+                        },
+                        {
+                          "const": "detail",
+                          "type": "string"
+                        },
+                        {
+                          "const": "text",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "menu": {
+                      "description": "The row an administrator could put in the menu under Verktyg (D40), or null when the capability cannot be one.",
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "description": "How this capability's view is named and marked when an administrator puts it in Clew's menu under Verktyg (D40). Only on a read that declares a view and needs no input.",
+                          "type": "object",
+                          "required": [
+                            "label",
+                            "icon"
+                          ],
+                          "properties": {
+                            "label": {
+                              "minLength": 1,
+                              "maxLength": 24,
+                              "description": "Swedish. The row in the menu, the name of the tool: \"Telefonbok\".",
+                              "type": "string"
+                            },
+                            "icon": {
+                              "description": "One of Clew's icons. The connector sends a name, never a drawing.",
+                              "anyOf": [
+                                {
+                                  "const": "phone",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "people",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "book",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "document",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "chart",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "search",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "clock",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "link",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "calendar",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "bell",
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "check": {
+                      "description": "What the conformance check (`Testa anslutning`, `connector-check.ts`) does with it.",
+                      "type": "string"
+                    },
+                    "follows": {
+                      "type": "array",
+                      "items": {
+                        "pattern": "^[a-z][a-z0-9-]*:[a-z][a-zA-Z0-9-]*$",
+                        "maxLength": 80,
+                        "description": "`<connector id>:<kind>`, stable: the name is the contract.",
+                        "type": "string"
+                      }
+                    },
+                    "creates": {
+                      "pattern": "^[a-z][a-z0-9-]*:[a-z][a-zA-Z0-9-]*$",
+                      "maxLength": 80,
+                      "description": "`<connector id>:<kind>`, stable: the name is the contract.",
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "areas": {
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "title",
+                    "roles",
+                    "standing",
+                    "figure",
+                    "icon"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "roles": {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "const": "manager",
+                            "type": "string"
+                          },
+                          {
+                            "const": "employee",
+                            "type": "string"
+                          }
+                        ]
+                      }
+                    },
+                    "standing": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "figure": {
+                      "type": "boolean"
+                    },
+                    "icon": {
+                      "anyOf": [
+                        {
+                          "description": "One of Clew's icons. The connector sends a name, never a drawing.",
+                          "anyOf": [
+                            {
+                              "const": "phone",
+                              "type": "string"
+                            },
+                            {
+                              "const": "people",
+                              "type": "string"
+                            },
+                            {
+                              "const": "book",
+                              "type": "string"
+                            },
+                            {
+                              "const": "document",
+                              "type": "string"
+                            },
+                            {
+                              "const": "chart",
+                              "type": "string"
+                            },
+                            {
+                              "const": "search",
+                              "type": "string"
+                            },
+                            {
+                              "const": "clock",
+                              "type": "string"
+                            },
+                            {
+                              "const": "link",
+                              "type": "string"
+                            },
+                            {
+                              "const": "calendar",
+                              "type": "string"
+                            },
+                            {
+                              "const": "bell",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "menu": {
+                "description": "The rows an administrator could put in the menu.",
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "capability",
+                    "label",
+                    "icon"
+                  ],
+                  "properties": {
+                    "capability": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "icon": {
+                      "description": "One of Clew's icons. The connector sends a name, never a drawing.",
+                      "anyOf": [
+                        {
+                          "const": "phone",
+                          "type": "string"
+                        },
+                        {
+                          "const": "people",
+                          "type": "string"
+                        },
+                        {
+                          "const": "book",
+                          "type": "string"
+                        },
+                        {
+                          "const": "document",
+                          "type": "string"
+                        },
+                        {
+                          "const": "chart",
+                          "type": "string"
+                        },
+                        {
+                          "const": "search",
+                          "type": "string"
+                        },
+                        {
+                          "const": "clock",
+                          "type": "string"
+                        },
+                        {
+                          "const": "link",
+                          "type": "string"
+                        },
+                        {
+                          "const": "calendar",
+                          "type": "string"
+                        },
+                        {
+                          "const": "bell",
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "clewAssertion": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "RS256 assertion signed by the installation: who is acting, for which connector, for at most two minutes. Verify against `/api/connectors/jwks`."
+      },
+      "connectorKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Clew-Connector-Key",
+        "description": "The transport secret from the registration. Transport authentication only; it never asserts a person."
+      },
+      "callbackGrant": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "The `callback` claim of a verified request assertion, audience `clew:connector-callback`."
+      }
+    }
+  }
+}

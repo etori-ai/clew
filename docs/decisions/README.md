@@ -70,7 +70,8 @@ Historical numbering collisions: **D37, D38, D39, D44, D45, D46** each identify 
 | [D54 · Figures come from connectors, and Läget draws them](D54-figures-come-from-connectors-and-laget-draws-them.md) | integrations, ui | 2026-11-06 | proposed 2026-11-06, not built; awaiting the product owner's decision |
 | [D55 · A job is assembled from what connectors follow, approved once, and run as one execution or watch per system](D55-a-job-is-assembled-from-what-connectors-follow-approved-once-and-run-per-system.md) | integrations | 2026-11-06 | proposed |
 | [D56 · The rows under a rail row hang from a line](D56-the-rows-under-a-rail-row-hang-from-a-line.md) | ui | 2026-11-06 | accepted |
+| [D57 · The instance serves its connector protocol, and a protocol break keeps the number before it](D57-the-instance-serves-its-connector-protocol.md) | integrations | 2026-11-06 | accepted, built 2026-11-06 |
 
 ## Add a decision
 
-Use [TEMPLATE.md](TEMPLATE.md) and a new unused number (currently D57). Include status, date, area, decision, rationale and what it replaces. Preserve earlier decision bodies; record supersession explicitly. Refer to the full filename when a number is ambiguous. Update the implementation-status guide when delivery changes, add a session note to [HANDOVER.md](../../HANDOVER.md), and run `bun run docs:generate` followed by `bun run docs:check`. The generated context map includes every record.
+Use [TEMPLATE.md](TEMPLATE.md) and a new unused number (currently D58). Include status, date, area, decision, rationale and what it replaces. Preserve earlier decision bodies; record supersession explicitly. Refer to the full filename when a number is ambiguous. Update the implementation-status guide when delivery changes, add a session note to [HANDOVER.md](../../HANDOVER.md), and run `bun run docs:generate` followed by `bun run docs:check`. The generated context map includes every record.

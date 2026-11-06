@@ -2,7 +2,7 @@
 
 # Generated connector reference
 
-Protocol version: **2**. Generated from [protocol.ts](../../packages/connectors/src/protocol.ts), its imported contracts and the real connector manifest exports. The tables are field summaries; use the [JSON Schema bundle](../protocol/connector-protocol.schema.json) for nested fields, constraints, required properties and unions. Schema validation does not replace [behavioral validation](../guides/testing-and-deployment.md).
+Protocol version: **2**. Generated from [protocol.ts](../../packages/connectors/src/protocol.ts), its imported contracts and the real connector manifest exports. The tables are field summaries; use the [JSON Schema bundle](../protocol/connector-protocol.schema.json) for nested fields, constraints, required properties and unions, and the [OpenAPI document](../protocol/connector-protocol.openapi.json) for the routes. A running Clew serves both, a viewer and a manifest dry run under `/api/protocol` (D57), generated from the same code as these files. Schema validation does not replace [behavioral validation](../guides/testing-and-deployment.md).
 
 ## Complete runnable examples
 
