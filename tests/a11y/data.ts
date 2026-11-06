@@ -306,7 +306,13 @@ export const threads = (): Thread[] => [
     connector: 'clew',
     area: 'fragor',
     messages: [
-      { id: 'q1', role: 'user', body: 'Vem är på plats i dag?', createdAt: NOW },
+      {
+        id: 'q1',
+        role: 'user',
+        body: 'Vem är på plats i dag?',
+        createdAt: NOW,
+        meta: { chips: [{ ref: 'event:e1', kind: 'event', label: 'Rektorsmöte' }] },
+      },
       { id: 'q2', role: 'assistant', body: 'Tio personer är på plats.', createdAt: NOW },
     ],
   }),

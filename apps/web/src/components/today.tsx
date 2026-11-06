@@ -1,4 +1,4 @@
-import type { TodayView } from '@clew/contracts';
+import type { Thread, TodayView } from '@clew/contracts';
 import { Card, Heading, HStack, Link, List, ListItem, Text, VStack } from '@clew/ui';
 import { timeLabel } from '@clew/calendar/dates';
 
@@ -12,15 +12,45 @@ const duration = (m: number) =>
  * length, and the free gaps as their own rows ("Ledigt till …"); the longest gap says that the assistant books nothing
  * there without asking. The week is one link away. No sentence sums the day up: the rows do.
  */
-export function Today({ view }: { view: TodayView }) {
+type Props = {
+  view: TodayView;
+  /** Every thread the page has: a card whose confirmed proposal made the meeting, a conversation whose chips name it. */
+  threads?: Thread[];
+  cardHref?: (threadId: string) => string;
+};
+export function Today({ view, threads = [], cardHref }: Props) {
+  // What a meeting came from (D63, the product owner's choice): the card whose confirmed time it is, and the
+  // conversation the meeting was pointed at in ("underlaget ligger i samtalet"), each one link from its row.
+  const madeBy = (e: TodayView['events'][number]) =>
+    threads.find(t => t.kind === 'pushed' && t.proposals.some(p => p.eventRef === e.ref));
+  const talkedIn = (e: TodayView['events'][number]) =>
+    threads.find(
+      t => t.kind === 'question' && t.messages.some(m => m.meta?.chips?.some(c => c.ref === 'event:' + e.id)),
+    );
   const timed = view.events.filter(e => !e.allDay);
   const longest = view.gaps.reduce<(typeof view.gaps)[number] | null>(
     (best, g) => (best && minutes(best) >= minutes(g) ? best : g),
     null,
   );
   const rows = [
-    ...timed.map(e => ({ kind: 'event' as const, start: e.start, end: e.end, title: e.title, room: e.room })),
-    ...view.gaps.map(g => ({ kind: 'gap' as const, start: g.start, end: g.end, title: '', room: '' })),
+    ...timed.map(e => ({
+      kind: 'event' as const,
+      start: e.start,
+      end: e.end,
+      title: e.title,
+      room: e.room,
+      card: madeBy(e),
+      talk: talkedIn(e),
+    })),
+    ...view.gaps.map(g => ({
+      kind: 'gap' as const,
+      start: g.start,
+      end: g.end,
+      title: '',
+      room: '',
+      card: undefined,
+      talk: undefined,
+    })),
   ].sort((a, b) => a.start.localeCompare(b.start));
   return (
     <Card padding={4}>
@@ -50,7 +80,25 @@ export function Today({ view }: { view: TodayView }) {
                 }
                 label={<Text weight="semibold">{row.title}</Text>}
                 description={
-                  <Text type="supporting">{[row.room, duration(minutes(row))].filter(Boolean).join(' · ')}</Text>
+                  <Text type="supporting">
+                    {[row.room, duration(minutes(row))].filter(Boolean).join(' · ')}
+                    {row.talk && (
+                      <>
+                        {' · '}
+                        <Link href={`/conversations/${row.talk.id}`} color="secondary" hasUnderline>
+                          underlaget ligger i samtalet
+                        </Link>
+                      </>
+                    )}
+                    {row.card && cardHref && (
+                      <>
+                        {' · '}
+                        <Link href={cardHref(row.card.id)} color="secondary" hasUnderline>
+                          från kortet {row.card.title}
+                        </Link>
+                      </>
+                    )}
+                  </Text>
                 }
               />
             ) : (

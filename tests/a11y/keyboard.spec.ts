@@ -1,16 +1,6 @@
 import type { Page } from '@playwright/test';
-import {
-  answer,
-  composer,
-  desktop,
-  expect,
-  focused,
-  hiddenFocusStops,
-  open,
-  quietDay,
-  snoozeFirst,
-  test,
-} from './support';
+import { menuRows } from './phonebook';
+import { answer, composer, desktop, expect, focused, hiddenFocusStops, open, snoozeFirst, test } from './support';
 
 test.use({ viewport: desktop });
 
@@ -118,17 +108,15 @@ test.describe('2.4.3 focus order', () => {
   });
 
   test('the side panel can be closed with a button and hands focus back', async ({ page, api }) => {
-    quietDay(api);
-    await open(page, '/');
-    await page.getByRole('group', { name: 'Områden' }).getByRole('button', { name: 'Personal' }).click();
-    const trigger = page
-      .getByRole('group', { name: 'Personal', exact: true })
-      .getByRole('link', { name: 'Vem är på plats?' });
+    // A row on a tool's page opens its own view over the page at this width (D50); closing it gives the row's link back.
+    api.menu = menuRows;
+    await open(page, '/tools/phonebook.directory');
+    const trigger = page.getByRole('link', { name: 'Anna Lindqvist' });
     await trigger.focus();
     await page.keyboard.press('Enter');
     const panel = page.getByRole('dialog');
     await expect(panel).toBeVisible();
-    await panel.getByRole('button', { name: 'Stäng' }).click();
+    await panel.getByRole('button', { name: 'Stäng', exact: true }).click();
     await expect(panel).toBeHidden();
     await expect(trigger).toBeFocused();
   });

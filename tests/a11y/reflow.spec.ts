@@ -9,7 +9,6 @@ import {
   open,
   reflowProblems,
   short,
-  quietDay,
   snoozeFirst,
   test,
 } from './support';
@@ -29,28 +28,6 @@ test.describe('1.4.10 reflow', () => {
         await open(page, path);
         expect(await reflowProblems(page)).toEqual([]);
       });
-
-  test("on a quiet day the areas under the box wrap at 320 px, and the chosen area's cards are brought into view above the docked box", async ({
-    page,
-    api,
-  }) => {
-    quietDay(api);
-    await page.setViewportSize(narrow);
-    await open(page, '/');
-    const areas = page.getByRole('group', { name: 'Områden' });
-    const tops = await areas
-      .getByRole('button')
-      .evaluateAll(list => list.map(el => Math.round(el.getBoundingClientRect().top)));
-    expect(new Set(tops).size).toBeGreaterThan(1);
-    await areas.getByRole('button', { name: 'Budget' }).click();
-    const cards = page.getByRole('group', { name: 'Budget', exact: true });
-    // The card's link is a hidden element over the card; what the person sees is its text.
-    await expect(cards.getByText('Attestera fakturor', { exact: true })).toBeInViewport({ ratio: 1 });
-    const box = (await composer(page).boundingBox())!,
-      last = (await cards.boundingBox())!;
-    expect(last.y + last.height).toBeLessThanOrEqual(box.y);
-    expect(await reflowProblems(page)).toEqual([]);
-  });
 
   test('the side panel reflows at 320×640', async ({ page, api: _ }) => {
     await page.setViewportSize(narrow);

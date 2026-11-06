@@ -48,24 +48,29 @@ and never quietly dropped. The comparison is
    actions, "Lägg till i samtalet", ⋯ with Avfärda), one line on what the next step does ("… skrivs till
    ekonomisystemet och läses tillbaka som kvitto. Ångra i 10 minuter. Fungerar utan modellen."), and "Varför nu?" and
    "Historik" as `Collapsible`s in cards, gliding with Astryx's `useAnimatedLayout`.
-8. **Läget**: the label with its `StatusDot` at the end of the line, the figure, and one line with the status word and
-   the comparison, or the bar where the figure is a count. Two tiles a row beside the panel and on a phone.
+8. **Läget is not on Hem.** The artboard draws four tiles; the server's figures are a fixed synthetic list and D54,
+   which would take them from the connectors, is not decided. The product owner chose on 2026-11-06 to leave Läget out
+   until it is; `lage.tsx` is gone with it and comes back with D54's figures.
 9. **The quiet page** (artboard B): a green-tinted card, "Lugnt läge", one sentence with the sources, what waits and the
-   next review, and the links "2 väntar på andra" and "1 klar i dag"; under it **Det du kan göra** with its caption, the
-   areas as toggles with the first chosen, and the chosen area's standing actions as muted cards in three columns. With
-   work on Hem the areas are not drawn (the product owner, 2026-11-06: "the design doesn't have these").
-10. **The rail**: "Ny fråga" as the primary button, the Hem row's badge "2 i dag" when something is due, a plain count
+   next review, and the links "2 väntar på andra" and "1 klar i dag". **Det du kan göra** (D41's areas with their standing
+   actions) is not drawn at all, on the quiet page either: the product owner saw the toggles on the dev stack and asked
+   for them to go ("seeing multiple of these, maybe remove entirely", 2026-11-06); what an area can start is reached
+   through the box and "Menar du" (D36).
+10. **I dag names what a meeting came from.** A meeting whose `event:` chip the person pointed at in a conversation says
+    "underlaget ligger i samtalet", a link to that conversation; a meeting a card's confirmed proposal created says
+    "från kortet <title>", a link to the card (the product owner chose to build the link, 2026-11-06).
+11. **The rail**: "Ny fråga" as the primary button, the Hem row's badge "2 i dag" when something is due, a plain count
     otherwise and "lugnt" when nothing needs the person, the conversations under "I dag" and "I går" without times.
-11. **The conversation** (artboard G): the assistant's turn names itself and what it read ("Assistenten · läste Mitt
+12. **The conversation** (artboard G): the assistant's turn names itself and what it read ("Assistenten · läste Mitt
     team") with the sparkle; "Stäng samtalet" carries its ✕ after the words; the box says "Det här samtalet · Ny fråga i
     stället", without the keyboard shortcut. The transcript, its header and the box take the width Hem's content has,
     40 px in from the rail, not the 800 px centred column of D31 (the product owner, 2026-11-06, with the two pages
     side by side: "The chat content is narrower than startpage. This need to be the same").
-12. **A view as a page** (artboard I): the view's name at 20 px with its source under it at the start of the line and
+13. **A view as a page** (artboard I): the view's name at 20 px with its source under it at the start of the line and
     the view's own search (240 px, its label hidden) and its choice as a `Selector` at the end; the table in a bordered
     `Card`; the page 32 px in from the rail, at the width the rail leaves. The `SegmentedControl` of D38 is gone from the
     view's controls in the panel too.
-13. **The tints** are tokens: `--color-background-red` and `--color-border-red` take the artboard's faint red and
+14. **The tints** are tokens: `--color-background-red` and `--color-border-red` take the artboard's faint red and
     red border, `--color-background-green` and `--color-border-green` its faint green, in the light appearance; the dark
     appearance keeps Neutral's values.
 
@@ -85,11 +90,12 @@ and never quietly dropped. The comparison is
 - `useAnimatedLayout` reaches `Collapsible`, `TreeList` and a `Table`'s row expansion only; the tabs' rows, the panel
   taking the side column's place and "Menar du" growing under the box change at once.
 
-**Asked, not built** (each put to the product owner on 2026-11-06, listed in the review): Läget's tiles from the
-connectors (D54), "underlaget ligger i samtalet" and "förberedelsen är klar" on a meeting, the green dot on an older
-conversation and the "något hände" divider (H), the panel's tabs (F, H, J, K), the job across three connectors (J), the
-phone's shift strip, balance card and chips (D), "Avtalet Skanska 2025 · 2 träffar" on a pushed card (E), "Vad jag
-bevakar" (B), and a role word on the person's row.
+**Asked and answered** (twelve questions put to the product owner on 2026-11-06, listed in the review): Läget left out
+until D54 (item 8); Sedan i går as sentences; no ⋯ on a row; no attention tip; the meeting's link built (item 10); nothing
+at the end of the person's row; one time action in the panel's header (D49); the phone waits for a schedule and a balance
+read and gets no chips; the panel's tabs, the "något hände" divider and dot (H), the job across three connectors (J) and
+the phone sheet's tabs (K) left for later; the captions kept; "Vad jag bevakar" left out. "Förberedelsen är klar" on a
+meeting and "Avtalet Skanska 2025 · 2 träffar" on a pushed card have nothing to read from and are not drawn.
 
 **Why.** The product owner reviewed Hem as built under D53 and found the structure right and the pixels not. The canvas
 is the reference for every screen (CLAUDE.md); a drawing the product owner chose is the specification, and a built page
@@ -103,5 +109,5 @@ it), item 5's captions (the artboards draw them) and item 6's secondary "Nytt sa
 [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md) item 2 (the display heading and
 the day under it), item 6 (the resting panel: the day and Sedan i går are cards in the page's own side column, and
 their rows are the artboard's sentences), and the Astryx note on the tab strip, which stands. [D41](D41-the-landing-is-the-ai-chat-landing-template-with-the-persons-areas-under-the-box.md)
-items 3 to 5 now apply to the quiet page only, with the first area chosen. [D34](D34-the-box-is-the-page-and-the-push-is-its-brief.md)'s
+items 3 to 5 (the areas as toggles with their standing actions as cards) are gone from the page. [D34](D34-the-box-is-the-page-and-the-push-is-its-brief.md)'s
 group order (Senare before Jag föreslår). D49, D50 and D54 stand.

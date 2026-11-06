@@ -127,11 +127,11 @@ test.describe('the page says one thing at a time', () => {
 test.describe('a phone', () => {
   test.use({ viewport: phone });
 
-  test("the day's work comes before the figures", async ({ page, api: _ }) => {
+  test("the day's work comes before the day", async ({ page, api: _ }) => {
     await open(page, '/');
     const work = await page.getByRole('heading', { name: 'Nu · 1' }).boundingBox();
-    const figures = await page.getByRole('heading', { name: /^Läget/ }).boundingBox();
-    expect(work!.y).toBeLessThan(figures!.y);
+    const day = await page.getByRole('region', { name: 'I dag' }).boundingBox();
+    expect(work!.y).toBeLessThan(day!.y);
   });
 
   test('Inte nu opens from the card and shows its rows', async ({ page, api: _ }) => {

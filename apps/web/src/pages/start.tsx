@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Area, Figure, MenuEntry, SessionUser, Thread, ViewRef, PanelViewSpec } from '@clew/contracts';
+import type { Area, MenuEntry, SessionUser, Thread, ViewRef, PanelViewSpec } from '@clew/contracts';
 import {
   Badge,
   Banner,
   Button,
   Card,
   ChatLayout,
-  ClickableCard,
   Divider,
   DropdownMenu,
   DropdownMenuRadioGroup,
@@ -32,7 +31,6 @@ import {
   Tab,
   TabList,
   Text,
-  ToggleButton,
   Toolbar,
   VStack,
   useAnnounce,
@@ -42,19 +40,10 @@ import {
 import { addDays, dayLabel, displayDate, shortDayLabel, timeLabel, today, weekNumber } from '@clew/calendar/dates';
 import { api } from '../api';
 import { errorMessage } from '../query-policy';
-import {
-  areasQuery,
-  assistantQuery,
-  cardViewQuery,
-  figuresQuery,
-  threadsQuery,
-  todayQuery,
-  viewQuery,
-} from '../queries';
+import { areasQuery, assistantQuery, cardViewQuery, threadsQuery, todayQuery, viewQuery } from '../queries';
 import { applyThread } from '../thread-cache';
 import { keys } from '../query-keys';
 import { groupThreads } from '../stream';
-import { clewIcon } from '../icons';
 import { panelOf, withAction, withCard, withView, withoutPanel } from '../panel-address';
 import { Composer, Suggestions, type ComposerAbout } from '../components/composer';
 import { titled, useConversation, type ConversationState } from '../components/conversation-context';
@@ -68,7 +57,6 @@ import { EventDialog } from '../components/calendar/event-dialog';
 import type { AgendaItem } from '@clew/ui';
 import { ThreadCard } from '../components/thread';
 import { Handled } from '../components/handled';
-import { Lage } from '../components/lage';
 import { Today } from '../components/today';
 import { Since } from '../components/since';
 import { usePageTitle } from '../page-title';
@@ -94,19 +82,11 @@ const ALL_AREAS = 'all';
 const EMPTY_THREADS: Thread[] = [];
 const EMPTY_AREAS: Area[] = [];
 const EMPTY_MENU: MenuEntry[] = [];
-const EMPTY_FIGURES: Figure[] = [];
-/** A figure's tile asks the question the router answers without the model (D8): the figures are read, never a thread. */
-const figureQuestion: Record<Figure['id'], string> = {
-  korttidsfranvaro: 'Hur ser korttidsfrånvaron ut?',
-  budgetavvikelse: 'Hur ligger budgeten?',
-  hme: 'Vad säger HME?',
-  utvecklingssamtal: 'Hur ligger vi till med utvecklingssamtalen?',
-};
 
 /**
  * The start page (D34, D50, D53). The column is where the person is and the panel is what they hold beside it. At `/`
  * the column is Hem: the greeting with the day, the box, and under it everything the assistant has pushed, with a
- * card's state as the tabs (Behöver dig, Väntar på andra, Inte nu, Klart), the areas as a filter, Läget's figures and
+ * card's state as the tabs (Behöver dig, Väntar på andra, Inte nu, Klart), the areas as a filter, and on a quiet day
  * the person's areas with what they can start. The day and what happened since yesterday stand beside the column, and
  * give way to the panel when a card, a view or a card's read is opened there; the box then asks about the open card.
  * A conversation takes the column at `/conversations/:id` (D31), with what it is about in the panel: the view an answer
@@ -126,9 +106,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const areasQ = useQuery(areasQuery);
   const dayQ = useQuery(todayQuery);
   const assistantQ = useQuery(assistantQuery);
-  // Hem's extra: Läget's figures under the day's work. (How often the assistant interrupts is not on artboard A; the box answers it.)
-  const figuresQ = useQuery(figuresQuery);
-  const figures = figuresQ.data?.figures ?? EMPTY_FIGURES;
   const threads = threadsQ.data?.threads ?? EMPTY_THREADS;
   // The first read of the cards (D36): until it is here the page draws their shape, never "nothing needs you".
   const loadingThreads = threadsQ.isPending;
@@ -496,15 +473,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           {records(g.kannedom, { notice: true })}
         </VStack>
       )}
-      {/* The day's work comes first, on every screen (D48); the figures follow it, for every area at once. */}
-      {!area && !quiet && figures.length > 0 && (
-        <Lage
-          figures={figures}
-          unitLabel={user.unitLabel}
-          compact={mobile || besideOpen}
-          onOpen={f => talk.ask(figureQuestion[f.id], { chips: [], search: '' })}
-        />
-      )}
     </VStack>
   );
   /** Väntar på andra and Inte nu (D28; the name is D53's): what waits on someone else, and what the person set aside. The tab's panel is the named region. */
@@ -638,19 +606,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     </VStack>
   );
 
-  /**
-   * What the box offers under it (D41, the template's categories): the person's own areas that have something to start,
-   * each a toggle; the chosen one shows its connector's standing actions for the role as cards. Nothing is chosen at
-   * first, as in the template, and choosing never moves the box: the cards come under it. Where they open under the
-   * fold (a phone, a low window) they are brought into view, without animation.
-   */
-  const offers = useMemo(() => areas.filter(a => a.standing.length > 0), [areas]);
-  const [chosen, setChosen] = useState<string | null>(null);
-  // On the quiet page the first area stands chosen, as artboard B draws it; otherwise nothing is chosen until the person chooses.
-  const offer = chosen === '' ? null : (offers.find(a => a.id === chosen) ?? (quiet ? (offers[0] ?? null) : null));
-  useEffect(() => {
-    if (chosen) document.getElementById('omradets-kort')?.scrollIntoView({ block: 'nearest' });
-  }, [chosen]);
   // The box's context for `@`: the cards in view, in the tab and the area the address names.
   const near = (
     tab === 'waiting'
@@ -670,7 +625,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
    */
   const aside = (
     <VStack gap={4} as="aside" aria-label="Bredvid">
-      {day && <Today view={day} />}
+      {day && <Today view={day} threads={threads} cardHref={cardHref} />}
       {!loadingThreads && (
         <Since
           handled={closedToday}
@@ -703,60 +658,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     );
     const box = <Composer place="landing" near={near} about={about} />;
     const menarDu = <Suggestions viewHref={viewHref} cardHref={cardHref} />;
-    // Det du kan göra (D41, artboard B): the person's areas with what each can start, the main content under the box when nothing needs them.
-    // A card is one standing action: a read is a link to its view, anything else is asked in the box, as "Menar du" does it.
-    const offered = quiet && offers.length > 0 && (
-      <VStack gap={3} as="section" aria-label="Det du kan göra">
-        <HStack justify="between" vAlign="center" gap={3} wrap="wrap">
-          <Heading level={3} accessibilityLevel={2}>
-            Det du kan göra
-          </Heading>
-          {!mobile && <Text type="supporting">Dina områden · varje kort fungerar utan modellen</Text>}
-        </HStack>
-        {/* The template's row is a ToggleButtonGroup, which keeps its buttons on one line whatever the width. A person's areas
-          are as many as their connectors give them, so the same toggles stand in a wrapping HStack (D41, the gap noted there). */}
-        <HStack gap={2} wrap="wrap" role="group" aria-label="Områden">
-          {offers.map(a => (
-            <ToggleButton
-              key={a.id}
-              size="lg"
-              label={a.title}
-              isPressed={a.id === offer?.id}
-              onPressedChange={pressed => setChosen(pressed ? a.id : '')}
-              icon={a.icon ? <Icon icon={clewIcon[a.icon]} size="sm" /> : undefined}
-            />
-          ))}
-        </HStack>
-        {offer && (
-          <Grid id="omradets-kort" columns={{ minWidth: 200, max: 3 }} gap={3} role="group" aria-label={offer.title}>
-            {offer.standing.map(s => (
-              <ClickableCard
-                key={s.capability}
-                label={s.label}
-                variant="muted"
-                padding={4}
-                {...(s.kind === 'read'
-                  ? { href: viewHref(s.capability, s.label) }
-                  : { onClick: () => talk.ask(s.label) })}
-              >
-                <VStack gap={1}>
-                  <Text weight="semibold">{s.label}</Text>
-                  <Text type="supporting">
-                    {offer.source} · {s.kind === 'read' ? 'öppnar vyn' : 'öppnar kortet'}
-                  </Text>
-                </VStack>
-              </ClickableCard>
-            ))}
-          </Grid>
-        )}
-      </VStack>
-    );
-    const column = (
-      <VStack gap={5}>
-        {work}
-        {offered}
-      </VStack>
-    );
+    const column = work;
     // One flow from the top on every screen: the greeting and the box (docked at the foot on a phone), then the day's work
     // with the day and what happened since yesterday beside it (artboard A's two columns), under it where they do not fit,
     // and gone while a card, a view or a card's read stands in the panel (artboard E).

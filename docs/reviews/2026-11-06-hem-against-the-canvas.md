@@ -32,8 +32,8 @@ every artboard that was built, at the artboard's own size, element by element.
 | Nu | a card with a red border on a faint red ground, rows with a 56 px day cell holding the red "i dag", the title in semibold, the line "Ekonomi · förfaller i dag · …", "Lägg till i samtalet" ghost and the black "Granska 3" | `Card variant="red"` with the tokens of D63 item 12, `List edge="flush"`, the day cell as `VStack width={56}` with `Badge variant="error"` "i dag", `Link` title, the line "Budget · Fakturorna förfaller i veckan", ghost and primary `Button size="md"` "Attestera 2" | Matches |
 | Jag föreslår | "✦ klart" / "✦ utkast" info pills in the day cell, secondary "Visa förslaget" | `Badge variant="info"` "✦ klart" on the proposal, "✦ utkast" on a draft, the connector's secondary next step | Matches |
 | Senare | "fre" in the day cell, rows fenced by lines, secondary "Granska" | the day word from `dayWord` ("13 nov", "20 nov", "20 dec" on the fixtures), lines, the next step | Matches |
-| Läget | heading "Läget · Skolan" with the caption; four tiles, 16 px padding, label 12 px with a 10 px dot at the line's end, the figure 26/600, one 12 px line "Bevaka · mål ≤ 4,0 % · +0,3 sedan okt", or a 6 px bar | the heading and caption; `Grid` of four `ClickableCard padding={4}`; `Text type="supporting"` label with `StatusDot`; `Text size="2xl"` figure (24.2 px); "Bevaka · 3,2 % samma vecka i fjol", or `ProgressBar` | Matches (24.2 against 26 px; the bar is Astryx's height; the fixtures' figures are D54's fixed four, asked) |
-| I dag | a card, "I dag" 16/600 with "Hela veckan" 12/500 underlined; rows with a 52 px time, the name in semibold and "Personalrummet · 30 min"; gaps as "Ledigt till 12:30" with "Längsta luckan · jag bokar inget här utan att fråga", dashed line above | `Card padding={4}`, the heading and `Link hasUnderline`; `List edge="flush"` rows with the time cell, "Rektorsmöte", "A12 · 1 tim"; "Ledigt till 12:00" with the longest-gap line | Matches except the dashed line (Astryx gap) and the two drawn phrases "underlaget ligger i samtalet" and "förberedelsen är klar" (asked, left out) |
+| Läget | heading "Läget · Skolan" with the caption; four tiles with a dot, a figure and a line or a bar | not drawn: the product owner chose to leave Läget out until D54 decides where the figures come from | Left out on the product owner's word |
+| I dag | a card, "I dag" 16/600 with "Hela veckan" 12/500 underlined; rows with a 52 px time, the name in semibold and "Personalrummet · 30 min · underlaget ligger i samtalet"; gaps as "Ledigt till 12:30" with "Längsta luckan · jag bokar inget här utan att fråga", dashed line above | `Card padding={4}`, the heading and `Link hasUnderline`; `List edge="flush"` rows with the time cell, "Rektorsmöte", "A12 · 1 tim · underlaget ligger i samtalet" as a link to the conversation that pointed at the meeting, "från kortet …" to the card whose confirmed proposal made it; "Ledigt till 12:00" with the longest-gap line | Matches except the dashed line (Astryx gap); "förberedelsen är klar" has nothing to read from |
 | Sedan i går | a muted card, a green dot before "Sedan i går", three sentences in the secondary colour, "Allt som är klart" underlined | `Card variant="muted"`, `StatusDot` and the heading, the sentences from the cards, their receipts and the sources ("2 klara: attesterade fakturor, kvitto läst från ekonomisystemet 09:00 och …", "2 väntar på andra: … (1 av 2 har svarat) och …", "Nästa genomgång i morgon 06:00."), `Link hasUnderline` | Matches (the sources sentence appears only when the read reports its sources, which the fixtures do not) |
 | Under Läget | nothing | nothing: the areas of D41 are not drawn with work on Hem | Matches (the product owner, 2026-11-06) |
 
@@ -46,7 +46,7 @@ padding 24 against 28 px; body 14 px and supporting 11.7 against 12 px; headings
 |---|---|---|---|
 | Hem badge | green "lugnt" | `Badge variant="success"` "lugnt" | Matches |
 | Lugnt läge | a card on a faint green with a green border, a 40 px circled check, "Lugnt läge" 18/600, one sentence ("Alla fyra källor svarade i natt 06:00. Två saker väntar på andra och kommer tillbaka när de svarar. Nästa genomgång i morgon 06:00, eller tidigare om något händer."), links "2 väntar på andra · 1 klar i dag · Vad jag bevakar" | `Card variant="green"` with D63's tokens, `Icon size="lg"` check, `Heading level={3} accessibilityLevel={2}` (16.8 px), the sentence from the sources' status, the waiting count and the review, the two count links | Matches except the circle (gap), 16.8 against 18 px, and "Vad jag bevakar" (asked, left out) |
-| Det du kan göra | heading with "Dina områden · varje kort fungerar utan modellen"; toggles with the first pressed; six muted cards in three columns, 14/16 px padding, title semibold, "Clew · öppnar vyn · 4 av 4 friska" | the heading and caption; `ToggleButton size="lg"` with the first chosen; `ClickableCard variant="muted" padding={4}` in a `Grid` of three; "Kommunikation · öppnar vyn" | Matches (the fixtures' first area has one standing action, so one card) |
+| Det du kan göra | heading with "Dina områden · varje kort fungerar utan modellen"; toggles with the first pressed; six muted cards in three columns | not drawn: the product owner saw the toggles on the dev stack and asked for the section to go | Left out on the product owner's word |
 | I dag, Sedan i går | as A, with "i morgon" as a last row | as A; tomorrow's meetings are not in the day's read | Matches except the "i morgon" row (no read; listed) |
 
 ## E · A card beside the column (1440 × 1120)
@@ -91,8 +91,9 @@ padding 24 against 28 px; body 14 px and supporting 11.7 against 12 px; headings
 
 ## What was asked and left out
 
-The twelve questions put to the product owner on 2026-11-06, with the default each was built on, are in D63 under
-"Asked, not built". Answered so far: the areas under Läget on A are gone ("the design doesnt have these").
+The twelve questions put to the product owner on 2026-11-06 are answered in D63 under "Asked and answered". Two
+changed what was built: Läget is off Hem until D54, and a meeting's row links to the conversation or the card behind it.
+"Det du kan göra" went entirely on a later word.
 
 ## What this review does not claim
 

@@ -543,7 +543,7 @@
       "number": 41,
       "path": "docs/decisions/D41-the-landing-is-the-ai-chat-landing-template-with-the-persons-areas-under-the-box.md",
       "title": "D41 · The landing is Astryx's `ai-chat-landing` template, with the person's areas under the box",
-      "status": "accepted, built 2026-11-05; items 1, 2 and 6 (the greeting and the question, the 720 px column, the brief above the box) replaced by [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md), items 3 to 5 stand after the day's work; since [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) items 3 to 5 apply to the quiet page only, with the first area chosen",
+      "status": "accepted, built 2026-11-05; items 1, 2 and 6 (the greeting and the question, the 720 px column, the brief above the box) replaced by [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md), items 3 to 5 stand after the day's work; items 3 to 5 (the areas as toggles with their standing actions as cards) removed from the page by [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) on the product owner's word, 2026-11-06",
       "date": "2026-11-05",
       "area": "ui"
     },

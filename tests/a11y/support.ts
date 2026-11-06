@@ -528,10 +528,6 @@ export async function snoozeFirst(page: Page) {
     await expect(drawer).toBeHidden();
   }
 }
-/** The quiet day (artboard B): nothing needs the person, so the areas with what they can start are the main content. */
-export const quietDay = (api: MockApi) => {
-  api.threads = api.threads.filter(t => t.waitingOn || t.state !== 'open' || t.snoozedUntil);
-};
 export const heading = (page: Page, level: number, name: string) =>
   page.locator(`h${level}:not([aria-level]), [aria-level="${level}"]`).filter({ hasText: name });
 export const announcements = (page: Page) =>

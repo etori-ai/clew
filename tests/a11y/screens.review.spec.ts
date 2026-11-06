@@ -129,11 +129,6 @@ test.describe('review', () => {
     api.threads = [];
     await open(page, '/');
   });
-  shot('03-landing-area', async page => {
-    await open(page, '/');
-    await page.getByRole('group', { name: 'Områden' }).getByRole('button', { name: 'Budget' }).click();
-    await page.getByRole('group', { name: 'Budget', exact: true }).waitFor();
-  });
   shot('04-landing-typing', async page => {
     await open(page, '/');
     await composer(page).fill('attestera');
