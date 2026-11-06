@@ -7,12 +7,10 @@ import {
   Button,
   EmptyState,
   Heading,
-  HStack,
   Layout,
   LayoutContent,
   LayoutFooter,
   Skeleton,
-  Text,
   VisuallyHidden,
   VStack,
   useMediaQuery,
@@ -88,8 +86,9 @@ function useView(
 
 /**
  * A tool as a page (D42): a view an administrator has chosen for the menu (D40) is opened at `/tools/:capability`,
- * inside the one shell, as Kalender is. The page follows Astryx's `table-page` template: the name as the heading, the
- * view's own search field and choice, then the rows, all in one scrolling column. The view is drawn by the one renderer
+ * inside the one shell, as Kalender is. The page follows Astryx's `table-page` template and artboard 7: the view's mark
+ * row (chip, source, count, its own search field and choice), the name as the heading, then the rows, all in one
+ * scrolling column. The view is drawn by the one renderer
  * (D38). A row's own view, a contact card, opens in the panel: beside the page where there is room for both, over it
  * where there is not (D50); the address names both, so a reload, a link and the back button land where the person was.
  * The box at the foot asks about the page: the answer opens as a conversation with this view beside it.
@@ -201,7 +200,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
                 />
               ) : (
                 <>
-                  {/* The page's heading (artboard I; D71's page title at level 1): the view's name with its source under it; with a table it stands at the start of the controls' line. */}
+                  {/* The page's heading (D71's page title at level 1): with a declared view the view draws it, under its mark row (artboard 7). */}
                   {entry
                     ? !tool?.spec && <Heading level={1}>{entry.label}</Heading>
                     : !failed && <Skeleton height={28} width={200} />}
@@ -219,14 +218,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
                         isLoading={main.isLoading}
                         headingLevel={2}
                         tableQuery={tableQuery}
-                        header={
-                          <HStack gap={3} vAlign="center">
-                            <VStack gap={0.5}>
-                              <Heading level={1}>{entry!.label}</Heading>
-                              <Text type="supporting">{tool.spec.source}</Text>
-                            </VStack>
-                          </HStack>
-                        }
+                        title={entry!.label}
                         /* The view's controls rewrite the address in place, so a search is addressable and one step back leaves the tool. */
                         onInput={next => navigate(toolHref(capability, next), { replace: true })}
                         hrefFor={v => toolHref(capability, tool.input, v)}

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { fieldLabels, fieldValue, hiddenFields } from '../../apps/web/src/components/panel-labels';
+import { counted, fieldLabels, fieldValue, hiddenFields, statusWord } from '../../apps/web/src/components/panel-labels';
 import { calendarConnector } from '../../apps/server/src/modules/calendar/connector';
 import { fixtureConnectors } from '../fixture-connectors';
 
@@ -28,6 +28,19 @@ describe('side panel labels (3.1.2)', () => {
     expect(fields).toContain('gaps');
     expect(fields).toContain('equipment');
     expect([...fields].filter(key => !fieldLabels[key] && !hiddenFields.has(key))).toEqual([]);
+  });
+  test('a status field is one word: a bare yes or no takes the label, never "Ja · Ja" (D71)', () => {
+    expect(statusWord('Kvitterad', true)).toBe('Kvitterad');
+    expect(statusWord('Kvitterad', false)).toBe('Inte kvitterad');
+    expect(statusWord('Status', 'waiting-safety-rep')).toBe('väntar på skyddsombud');
+    expect(statusWord('Status', 'Att attestera')).toBe('Att attestera');
+  });
+  test("a count takes the view's noun, else rader; a unit follows its number (D71)", () => {
+    expect(counted(3, { one: 'faktura', other: 'fakturor' })).toBe('3 fakturor');
+    expect(counted(1, { one: 'faktura', other: 'fakturor' })).toBe('1 faktura');
+    expect(counted(1)).toBe('1 rad');
+    expect(counted(7)).toBe('7 rader');
+    expect(counted(1200, { one: 'kr', other: 'kr' })).toBe('1\u00a0200 kr');
   });
   test('values read as text', () => {
     expect(fieldValue(true)).toBe('Ja');

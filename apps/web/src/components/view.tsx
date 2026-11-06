@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { openRef, viewRows, type PanelViewSpec, type ViewField, type ViewInput, type ViewRef } from '@clew/contracts';
 import {
+  AreaChip,
   Badge,
+  Button,
   EmptyState,
+  Heading,
   HStack,
+  Icon,
   Link,
   List,
   ListItem,
@@ -21,15 +25,18 @@ import {
   useAnnounce,
   useMediaQuery,
 } from '@clew/ui';
-import { fieldValue } from './panel-labels';
+import { counted, fieldValue, statusWord } from './panel-labels';
+import { useMarks } from '../marks';
 import { useConversation } from './conversation-context';
 import { AddToConversation } from './add-to-conversation';
 
 /**
  * A declared view (D38): the connector says what the output holds (a table, a list, one record, a text, and which
  * fields with which Swedish labels) and this file draws it, with Astryx components only. It is the one renderer for
- * every placement: the side panel, and the compact embed under an answer. A connector never sends markup, so a view
- * looks, reads and tabs the same whichever system it comes from.
+ * every placement: the side panel, a tool's page and the compact embed under an answer, and every kind gets the one
+ * header (D71, artboards 4 and 7): the area's chip, the source and the count in supporting, the view's own controls or
+ * "Visa allt" at the end of the same line. A connector never sends markup, so a view looks, reads and tabs the same
+ * whichever system it comes from.
  */
 type Row = Record<string, unknown>;
 type RowsView = Extract<PanelViewSpec, { kind: 'table' | 'list' }>;
@@ -44,16 +51,63 @@ export interface DeclaredViewProps {
   isLoading?: boolean;
   /** Draw at most this many rows and say how many there are (the embed under an answer). */
   limit?: number;
-  /** The level of a heading inside the view: 3 in the panel and under an answer, 2 on a tool's page, under its h1. */
+  /** The outline level of a heading inside the view: 3 in the panel and under an answer, 2 on a tool's page, under its h1. */
   headingLevel?: 2 | 3;
   /** From which window width a table is drawn as a table: a page beside the rail needs more than the panel does. */
   tableQuery?: string;
-  /** A page's heading block (artboard I): drawn at the start of the controls' line, the controls at its end. */
-  header?: ReactNode;
+  /** A tool page's title (D71): the page's heading at level 1, drawn under the header's line. */
+  title?: string;
+  /** Under an answer (artboard 4): "Visa allt" at the end of the header opens the whole view. */
+  onShowAll?: () => void;
 }
 
 const dateOnly = new Intl.DateTimeFormat('sv-SE', { dateStyle: 'long' });
 const tone = { ok: 'success', warn: 'warning', alert: 'error', none: 'neutral' } as const;
+const toneOf = (field: ViewField, value: unknown) => field.tones?.[String(value)] ?? 'none';
+/** A number as Swedish digits, its unit after it when the field declares one: "12 platser", "11 200 kr". */
+const amount = (field: ViewField, value: unknown) =>
+  typeof value === 'number'
+    ? field.unit
+      ? counted(value, field.unit)
+      : value.toLocaleString('sv-SE')
+    : `${String(value)}${field.unit ? ` ${field.unit.other}` : ''}`;
+/**
+ * A status is a badge only where it is a state with a word of its own (D71): a bare yes or no, which takes the field's
+ * label as its word, or a value the view gives a tone because it needs the person. Any other status is supporting text.
+ */
+const badged = (field: ViewField, value: unknown) => typeof value === 'boolean' || toneOf(field, value) !== 'none';
+/** The one word in its tone: only the state that needs the person has a status colour, the other is neutral, and a yes carries its check. */
+function StatusBadge({ field, value }: { field: ViewField; value: unknown }) {
+  return (
+    <Badge
+      variant={tone[toneOf(field, value)]}
+      label={statusWord(field.label, value)}
+      {...(value === true && toneOf(field, value) === 'none' ? { icon: <Icon icon="check" size="sm" /> } : {})}
+    />
+  );
+}
+/**
+ * The header every view kind shares (D71, artboards 4 and 7): the chip of the area that offers the capability, in the
+ * system's hue, then the source and the count in supporting, and the controls or "Visa allt" at the end of the same line.
+ */
+function ViewHeader({ view, count, end }: { view: PanelViewSpec; count: number | null; end?: ReactNode }) {
+  const mark = useMarks().ofCapability(view.capability, view.connector, view.source);
+  const noun = view.kind === 'table' || view.kind === 'list' ? view.noun : undefined;
+  return (
+    <HStack justify="between" vAlign="center" gap={3} wrap="wrap">
+      <HStack gap={2} vAlign="center" wrap="wrap">
+        <AreaChip ordinal={mark.ordinal} label={mark.title} {...(mark.icon ? { icon: mark.icon } : {})} />
+        <Text type="supporting">
+          {/* A view with no area of its own has the system's word on its chip, and it is not said twice. */}
+          {[mark.title === mark.source ? '' : mark.source, count === null ? '' : counted(count, noun)]
+            .filter(Boolean)
+            .join(' · ')}
+        </Text>
+      </HStack>
+      {end}
+    </HStack>
+  );
+}
 const empty = (value: unknown) => value === undefined || value === null || value === '';
 /** A number as something a phone can dial: digits and a leading plus. Too short to be a number is drawn as text. */
 const dial = (value: string) => {
@@ -100,9 +154,13 @@ function Value({ field, value }: { field: ViewField; value: unknown }): ReactNod
       return <Text>{Number.isNaN(at) ? text : dateOnly.format(at)}</Text>;
     }
     case 'number':
-      return <Text hasTabularNumbers>{typeof value === 'number' ? value.toLocaleString('sv-SE') : text}</Text>;
+      return <Text hasTabularNumbers>{amount(field, value)}</Text>;
     case 'status':
-      return <Badge variant={tone[field.tones?.[text] ?? 'none']} label={text} />;
+      return badged(field, value) ? (
+        <StatusBadge field={field} value={value} />
+      ) : (
+        <Text type="supporting">{statusWord(field.label, value)}</Text>
+      );
     default:
       return <Text>{fieldValue(value)}</Text>;
   }
@@ -248,6 +306,8 @@ function Rows({
         key: f.key,
         header: f.label,
         width: f.format === 'phone' ? pixel(118) : share(f.format === 'email' ? 248 : 145),
+        // Numbers are tabular and end-aligned, so the digits stand under each other (artboard 7).
+        ...(f.format === 'number' ? { align: 'end' as const } : {}),
         renderCell: (r: TableRow) => <Value field={f} value={r.row[f.key]} />,
       })),
       ...(view.chip && view.ref
@@ -272,28 +332,42 @@ function Rows({
     <List hasDividers density="compact" aria-label={view.source}>
       {rows.map((row, i) => {
         const shown = others.filter(f => !empty(row[f.key]));
-        const words = shown.filter(f => !linked(f) && f.format !== 'status'),
-          marks = shown.filter(f => f.format === 'status'),
-          links = shown.filter(linked);
-        const word = (f: ViewField) =>
-          `${f.format && f.format !== 'text' ? `${f.label}: ` : ''}${f.format === 'date' && !Number.isNaN(Date.parse(String(row[f.key]))) ? dateOnly.format(Date.parse(String(row[f.key]))) : fieldValue(row[f.key])}`;
+        // The meta line holds the words, the badges stand at the row's end, the links under the line (D71: the row level).
+        const marks = shown.filter(f => f.format === 'status' && badged(f, row[f.key])),
+          links = shown.filter(linked),
+          words = shown.filter(f => !linked(f) && !marks.includes(f));
+        const word = (f: ViewField) => {
+          const value = row[f.key];
+          if (f.format === 'status') return statusWord(f.label, value);
+          // A number with its unit says what it is ("40 platser"); one without keeps its label ("Perioder: 3").
+          if (f.format === 'number') return f.unit ? amount(f, value) : `${f.label}: ${amount(f, value)}`;
+          if (f.format === 'date' && !Number.isNaN(Date.parse(String(value))))
+            return `${f.label}: ${dateOnly.format(Date.parse(String(value)))}`;
+          // A bare yes or no is said with its label, never as "Ja · Ja".
+          const labelled = (f.format && f.format !== 'text') || typeof value === 'boolean';
+          return labelled ? `${f.label}: ${fieldValue(value)}` : fieldValue(value);
+        };
         // The numbers and the address share a line and wrap where they must, so a long address never pushes the row sideways (1.4.10) and a person takes three lines, not five.
         return (
           <ListItem
             key={key(row, i)}
             align="start"
             label={name(row)}
-            endContent={chip(row)}
+            endContent={
+              marks.length > 0 ? (
+                <HStack gap={2} vAlign="center" wrap="wrap" justify="end">
+                  {marks.map(f => (
+                    <StatusBadge key={f.key} field={f} value={row[f.key]} />
+                  ))}
+                  {chip(row)}
+                </HStack>
+              ) : (
+                chip(row)
+              )
+            }
             description={
               <VStack gap={1}>
                 {words.length > 0 && <Text type="supporting">{words.map(word).join(' · ')}</Text>}
-                {marks.length > 0 && (
-                  <HStack gap={1} wrap="wrap">
-                    {marks.map(f => (
-                      <Value key={f.key} field={f} value={row[f.key]} />
-                    ))}
-                  </HStack>
-                )}
                 {links.length > 0 && (
                   <HStack gap={3} wrap="wrap">
                     {links.map(f => (
@@ -323,33 +397,55 @@ export function DeclaredView({
   limit,
   headingLevel = 3,
   tableQuery = '(min-width: 1010px)',
-  header,
+  title,
+  onShowAll,
 }: DeclaredViewProps) {
   const wide = useMediaQuery(tableQuery);
   // A count that changes while someone types is spoken as one message, the latest (4.1.3); the visible line says the same.
   const announce = useAnnounce({ hasReplace: true });
   const all = view.kind === 'table' || view.kind === 'list' ? (viewRows(view, output) ?? []) : null;
   const count = all?.length ?? null;
-  const counted = useRef<number | null>(null);
+  const said = useRef<number | null>(null);
   const controls = (view.kind === 'table' || view.kind === 'list') && onInput ? view.input : undefined;
   useEffect(() => {
     if (count === null || isLoading) return;
-    if (counted.current !== null && counted.current !== count && controls)
+    if (said.current !== null && said.current !== count && controls)
       announce(
         count === 0
           ? (view.kind !== 'detail' && view.kind !== 'text' && view.empty) || 'Inga rader'
-          : `${count} ${count === 1 ? 'rad' : 'rader'}`,
+          : counted(count, view.kind === 'table' || view.kind === 'list' ? view.noun : undefined),
       );
-    counted.current = count;
+    said.current = count;
   }, [count, isLoading, controls, announce, view]);
+  const header = (
+    <ViewHeader
+      view={view}
+      count={count}
+      end={
+        controls ? (
+          <Controls controls={controls} input={input} onInput={onInput!} isLoading={isLoading} />
+        ) : onShowAll ? (
+          <Button size="sm" variant="secondary" label="Visa allt" onClick={onShowAll} />
+        ) : undefined
+      }
+    />
+  );
+  const heading = title ? <Heading level={1}>{title}</Heading> : null;
   if (view.kind === 'text') {
     const body = (output as Row | null)?.[view.body];
-    return typeof body === 'string' && body.trim() ? (
-      <Markdown density="compact" headingLevelStart={headingLevel}>
-        {body}
-      </Markdown>
-    ) : (
-      <Text type="supporting">Inget att visa.</Text>
+    return (
+      <VStack gap={3}>
+        {header}
+        {heading}
+        {/* The text's headings start one level under the surface's title (artboard 7): h3 in the panel, h2 on a page. */}
+        {typeof body === 'string' && body.trim() ? (
+          <Markdown density="compact" headingLevelStart={headingLevel}>
+            {body}
+          </Markdown>
+        ) : (
+          <Text type="supporting">Inget att visa.</Text>
+        )}
+      </VStack>
     );
   }
   if (view.kind === 'detail') {
@@ -361,10 +457,13 @@ export function DeclaredView({
       out = shown.filter(f => f.format === 'link');
     return (
       <VStack gap={3}>
+        {header}
+        {heading}
+        {/* The record's title is the open card's level (D71: level 2), under the surface's own heading in the outline. */}
         {!empty(record[view.title]) && (
-          <Text type="large" weight="semibold">
+          <Heading level={2} accessibilityLevel={headingLevel}>
             {String(record[view.title])}
-          </Text>
+          </Heading>
         )}
         {facts.length > 0 && (
           <MetadataList>
@@ -390,23 +489,19 @@ export function DeclaredView({
   const rows = limit ? all!.slice(0, limit) : all!;
   return (
     <VStack gap={3}>
-      {(header || controls) && (
-        <HStack justify="between" vAlign="center" gap={3} wrap="wrap">
-          {header}
-          {controls && <Controls controls={controls} input={input} onInput={onInput!} isLoading={isLoading} />}
-        </HStack>
-      )}
+      {header}
+      {heading}
       {rows.length === 0 ? (
         <EmptyState isCompact headingLevel={headingLevel} title={view.empty ?? 'Inget att visa'} />
       ) : (
         <Rows view={view} rows={rows} hrefFor={hrefFor} wide={wide && !limit} />
       )}
-      {/* Under an answer the count and the source are already in the answer's sentence and line; a cut list and the promise are what is left to say. */}
+      {/* Under an answer a cut list says how much is left out (artboard 4); the rows keep the order the source gave, which is the answer's. */}
       {rows.length > 0 && (
         <Text type="supporting">
-          {limit
-            ? `${all!.length > rows.length ? `${rows.length} av ${all!.length} rader. ` : ''}Inget av det sparas på Startsidan.`
-            : `${rows.length} ${rows.length === 1 ? 'rad' : 'rader'} · ${view.source}. Inget av det sparas på Startsidan.`}
+          {all!.length > rows.length
+            ? `${rows.length} av ${all!.length} rader. Inget av det sparas på Startsidan.`
+            : `${counted(rows.length)} · ${view.source}. Inget av det sparas på Startsidan.`}
         </Text>
       )}
     </VStack>

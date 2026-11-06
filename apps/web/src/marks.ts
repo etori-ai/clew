@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { Area, MenuIcon, SystemMark, Thread } from '@clew/contracts';
-import { areasQuery } from './queries';
+import type { Area, MenuEntry, MenuIcon, SystemMark, Thread } from '@clew/contracts';
+import { areasQuery, threadsQuery } from './queries';
 
 /** What a mark draws (D71): the area's word and icon, the system's word, and the ordinal that gives the chip its hue. */
 export interface Mark {
@@ -16,6 +16,7 @@ export interface Mark {
 }
 const EMPTY_AREAS: Area[] = [];
 const EMPTY_SYSTEMS: SystemMark[] = [];
+const EMPTY_MENU: MenuEntry[] = [];
 
 /**
  * The one lookup from a card, an area or a ref to its mark (D71), over what `/api/areas` gives the person: the areas
@@ -26,6 +27,7 @@ export function useMarks() {
   const data = useQuery(areasQuery).data;
   const areas = data?.areas ?? EMPTY_AREAS;
   const systems = data?.systems ?? EMPTY_SYSTEMS;
+  const menu = data?.menu ?? EMPTY_MENU;
   return useMemo(() => {
     const system = (connector: string) => systems.find(s => s.connector === connector);
     const area = (id: string) => areas.find(a => a.id === id);
@@ -67,7 +69,62 @@ export function useMarks() {
         area: !!only,
       };
     };
-    return { system, area, areaTitle, ofArea, ofThread, ofRef, systems };
-  }, [areas, systems]);
+    /**
+     * A declared view's mark (D71, artboards 4 and 7): the area that offers the capability, else its row in the menu
+     * ("Mötesrum"), else the system's one area, else the system's word alone. The hue is always the system's.
+     */
+    const ofCapability = (capability: string, connector: string, source: string): Mark => {
+      const offering = areas.find(a => a.connector === connector && a.standing.some(s => s.capability === capability));
+      if (offering) return ofArea(offering.id, connector);
+      const s = system(connector);
+      const entry = menu.find(e => e.capability === capability);
+      const own = areas.filter(a => a.connector === connector);
+      if (!entry && own.length === 1) return ofArea(own[0]!.id, connector);
+      return {
+        title: entry?.label ?? s?.source ?? source,
+        ...(entry?.icon ? { icon: entry.icon } : {}),
+        source: s?.source ?? source,
+        connector,
+        ordinal: s?.ordinal ?? null,
+      };
+    };
+    /**
+     * The system a chip, a token or an `@` row belongs to (D71, artboard 8), from its ref: a capability's connector is
+     * the name's first part, a document's the ref's second segment, a meeting and a proposal are the calendar's, a row's
+     * the ref's first segment (D55). A card is the caller's to resolve: its ref names no system.
+     */
+    const ofObject = (ref: string) => {
+      const [head = '', second = ''] = ref.split(':');
+      if (head === 'thread') return undefined;
+      const connector =
+        head === 'capability'
+          ? (second.split('.')[0] ?? '')
+          : head === 'document'
+            ? second
+            : head === 'event' || head === 'proposal'
+              ? 'calendar'
+              : head;
+      return ofRef(`${connector}:`);
+    };
+    return { system, area, areaTitle, ofArea, ofThread, ofRef, ofCapability, ofObject, systems };
+  }, [areas, systems, menu]);
 }
 export type Marks = ReturnType<typeof useMarks>;
+
+/**
+ * The mark of a chip, a composer token or an `@` row (D71, artboard 8): a card's own mark; any other ref the system it
+ * names, falling back to its card's when that system has several areas and the ref alone cannot say which.
+ */
+export function useObjectMark() {
+  const marks = useMarks();
+  const threads = useQuery(threadsQuery).data?.threads;
+  return useCallback(
+    (ref: string, threadId?: string): Mark | undefined => {
+      const id = ref.startsWith('thread:') ? ref.slice('thread:'.length) : threadId;
+      const thread = id ? threads?.find(t => t.id === id) : undefined;
+      const own = ref.startsWith('thread:') ? undefined : marks.ofObject(ref);
+      return own?.icon ? own : thread ? marks.ofThread(thread) : own;
+    },
+    [marks, threads],
+  );
+}

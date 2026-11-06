@@ -1,3 +1,4 @@
+import type { ViewNoun } from '@clew/contracts';
 /** Swedish names for what read capabilities return. `tests/unit/panel-labels.test.ts` holds every connector output to this list. */
 export const fieldLabels: Record<string, string> = {
   absent: 'Frånvarande',
@@ -113,12 +114,16 @@ export const hiddenFields = new Set([
 const dateOnly = new Intl.DateTimeFormat('sv-SE', { dateStyle: 'long' });
 /** "granskad 12 mars 2026", or nothing when the source gives no date. */
 export const reviewLabel = (iso: string | undefined) => (iso ? `granskad ${dateOnly.format(new Date(iso))}` : '');
-/** The badge beside a hit: how long since the review when it is stale, a note when the source gives no date, nothing when it is current. */
+/**
+ * The badge beside a hit (artboard 7): how long since the review when it is stale ("14 månader sedan", "2 år sedan"),
+ * a note when the source gives no date, nothing when it is current. The meta line beside it already says the date.
+ */
 export function staleLabel(stale: boolean | null | undefined, iso: string | undefined, now = Date.now()): string {
   if (stale === null || stale === undefined) return iso ? '' : 'Granskningsdatum saknas';
   if (!stale) return '';
-  const years = iso ? Math.floor((now - Date.parse(iso)) / (365.25 * 86_400_000)) : 0;
-  return years >= 1 ? `Granskad för ${years} år sedan` : 'Kan vara inaktuell';
+  const months = iso ? Math.floor((now - Date.parse(iso)) / (30.44 * 86_400_000)) : 0;
+  if (months >= 24) return `${Math.floor(months / 12)} år sedan`;
+  return months >= 1 ? `${months} ${months === 1 ? 'månad' : 'månader'} sedan` : 'Kan vara inaktuell';
 }
 const values: Record<string, string> = {
   closed: 'stängd',
@@ -153,4 +158,16 @@ export function fieldValue(value: unknown): string {
     .filter(([key]) => !hiddenFields.has(key))
     .map(([, v]) => fieldValue(v))
     .join(' · ');
+}
+/** A number and its word (D71): "3 fakturor", "1 rum", "12 platser"; without a declared word a row is a "rad". */
+export function counted(n: number, noun: ViewNoun = { one: 'rad', other: 'rader' }): string {
+  return `${n.toLocaleString('sv-SE')} ${n === 1 ? noun.one : noun.other}`;
+}
+/**
+ * A status field's one word (D71, artboard 4): a bare yes or no takes the field's label as its word ("Kvitterad",
+ * "Inte kvitterad"), so two fields never read "Ja · Ja"; any other value is the source's word in Swedish.
+ */
+export function statusWord(label: string, value: unknown): string {
+  if (typeof value !== 'boolean') return fieldValue(value);
+  return value ? label : `Inte ${label.charAt(0).toLowerCase()}${label.slice(1)}`;
 }

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import type { SessionUser } from '@clew/contracts';
-import { Banner, Button, EmptyState, Heading, Skeleton, Text, VStack } from '@clew/ui';
+import { Banner, Button, EmptyState, Heading, Skeleton, VStack } from '@clew/ui';
 import { areasQuery, viewQuery } from '../../../web/src/queries';
 import { errorMessage } from '../../../web/src/query-policy';
 import { DeclaredView } from '../../../web/src/components/view';
@@ -62,14 +62,7 @@ export function ViewPage({ user }: { user: SessionUser }) {
               isLoading={query.isFetching && query.isPlaceholderData}
               headingLevel={2}
               tableQuery={tableQuery}
-              header={
-                <VStack gap={0.5}>
-                  <Heading level={2} accessibilityLevel={1}>
-                    {title}
-                  </Heading>
-                  <Text type="supporting">{query.data.view.source}</Text>
-                </VStack>
-              }
+              title={title}
               onInput={next => navigate(viewHref({ capability, title, input: next }), { replace: true })}
               hrefFor={v => viewHref(v)}
             />
