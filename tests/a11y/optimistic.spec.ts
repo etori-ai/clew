@@ -1,9 +1,11 @@
 import type { Locator, Page } from '@playwright/test';
 import { desktop, expect, open, test } from './support';
 
-/** Avfärda from the row's Fler val, the way a person does it. */
+/** Avfärda the way a person does it (D48, artboard E): from Fler val on the open card, reached from the row's title. */
 async function dismiss(page: Page, row: Locator) {
-  await row.getByRole('button', { name: 'Fler val' }).click();
+  await row.getByRole('link', { name: 'Omtankesamtal med Anna Lindqvist', exact: true }).click();
+  const card = page.getByRole('dialog', { name: 'Kort', exact: true });
+  await card.getByRole('button', { name: 'Fler val' }).click();
   await page.getByRole('menuitem', { name: 'Avfärda · inte aktuellt' }).click();
 }
 
@@ -38,8 +40,8 @@ test.describe("a card shows the person's own action at once (D64)", () => {
     await expect(row).toBeVisible();
     const toasts = page.getByRole('region', { name: 'Aviseringar' });
     await expect(toasts.getByText('Källan svarade inte.')).toBeVisible();
-    // The reason is announced at once, as an error should be (4.1.3).
-    await expect(page.getByRole('alert').filter({ hasText: 'Källan svarade inte.' })).toHaveCount(1);
+    // The reason is announced at once, as an error should be (4.1.3); the open card says it too, in its own alert.
+    await expect(page.getByRole('alert').filter({ hasText: 'Källan svarade inte.' }).first()).toBeVisible();
     await expect(toasts.getByRole('button', { name: 'Ångra' })).toHaveCount(0);
   });
 });
