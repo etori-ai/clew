@@ -1,9 +1,19 @@
 import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { CalendarEvent, MessageMeta, SourceCitation, Thread, TurnStep, ViewRef } from '@clew/contracts';
+import type {
+  CalendarEvent,
+  MessageMeta,
+  SourceCitation,
+  Thread,
+  ThreadMessage,
+  TurnStep,
+  ViewRef,
+} from '@clew/contracts';
 import {
+  AreaGlyph,
   Badge,
   Button,
+  Card,
   ChatMessage,
   ChatMessageBubble,
   ChatMessageList,
@@ -36,21 +46,36 @@ import { calendarWeekQuery, threadQuery, viewQuery } from '../queries';
 import { DeclaredView } from './view';
 import { useConversation } from './conversation-context';
 import { reviewLabel, staleLabel } from './panel-labels';
+import { useObjectMark } from '../marks';
 
-/** The sources an answer cites (D26): `[n]` in the body becomes a numbered citation that opens the document; the first source's owner and review date are named under the answer. */
+/** The sources an answer cites (D26): `[n]` in the body becomes a numbered citation that opens the document; the first source's owner and review date are named under the answer, in supporting (artboard 7). */
 function Sources({ sources }: { sources: SourceCitation[] }) {
   const first = sources[0]!;
   const stale = sources.find(s => s.stale);
   return (
     <MetadataList orientation="horizontal" title={<VisuallyHidden>Om källan</VisuallyHidden>}>
       <MetadataListItem label="Källa">
-        {sources.length === 1 ? first.label : `${first.label} och ${sources.length - 1} till`}
+        <Text type="supporting">
+          {sources.length === 1 ? first.label : `${first.label} och ${sources.length - 1} till`}
+        </Text>
       </MetadataListItem>
-      {first.owner && <MetadataListItem label="Ägare">{first.owner}</MetadataListItem>}
-      {first.reviewedAt && (
-        <MetadataListItem label="Granskad">{reviewLabel(first.reviewedAt).replace(/^granskad /, '')}</MetadataListItem>
+      {first.owner && (
+        <MetadataListItem label="Ägare">
+          <Text type="supporting">{first.owner}</Text>
+        </MetadataListItem>
       )}
-      {stale && <MetadataListItem label="Obs">{staleLabel(true, stale.reviewedAt)}</MetadataListItem>}
+      {first.reviewedAt && (
+        <MetadataListItem label="Granskad">
+          <Text type="supporting">{reviewLabel(first.reviewedAt).replace(/^granskad /, '')}</Text>
+        </MetadataListItem>
+      )}
+      {stale && (
+        <MetadataListItem label="Obs">
+          <Text type="supporting">
+            {stale.reviewedAt ? `Granskad för ${staleLabel(true, stale.reviewedAt)}` : staleLabel(true, undefined)}
+          </Text>
+        </MetadataListItem>
+      )}
     </MetadataList>
   );
 }
@@ -116,23 +141,42 @@ function TurnCard({ id, render }: { id: string; render: (thread: Thread) => Reac
  */
 /**
  * A declared view under the answer it belongs to (D38): the capability is read again as the person and drawn by the one
- * view renderer, a few rows of it, without its controls. The rows come from the source, never from the model's text or
- * the stored conversation; "Visa …" opens the whole view in the panel.
+ * view renderer, a few rows of it, without its controls, in a card whose header is the view's own (artboard 4: chip,
+ * source, count, "Visa allt" at its end). The rows come from the source in the order it gives them, which is the order
+ * the answer's sentence implies; the web never sorts them again. They never come from the model's text or the stored
+ * conversation. A read that fails leaves the button alone, so the whole view can still be opened.
  */
-const EMBED_ROWS = 5;
-function ViewEmbed({ view, hrefFor }: { view: ViewRef; hrefFor?: ((view: ViewRef) => string) | undefined }) {
+const EMBED_ROWS = 3;
+function ViewEmbed({
+  view,
+  hrefFor,
+  onShowAll,
+}: {
+  view: ViewRef;
+  hrefFor?: ((view: ViewRef) => string) | undefined;
+  onShowAll: () => void;
+}) {
   const read = useQuery({
     ...viewQuery(view.capability, Object.keys(view.input).length ? JSON.stringify(view.input) : null),
     retry: false,
   });
-  if (!read.data?.view) return null;
+  if (read.isPending) return null;
+  if (!read.data?.view)
+    return (
+      <HStack>
+        <Button size="sm" label="Visa allt" onClick={onShowAll} />
+      </HStack>
+    );
   return (
-    <DeclaredView
-      view={read.data.view}
-      output={read.data.output}
-      limit={EMBED_ROWS}
-      {...(hrefFor ? { hrefFor } : {})}
-    />
+    <Card>
+      <DeclaredView
+        view={read.data.view}
+        output={read.data.output}
+        limit={EMBED_ROWS}
+        onShowAll={onShowAll}
+        {...(hrefFor ? { hrefFor } : {})}
+      />
+    </Card>
   );
 }
 export function Transcript({
@@ -146,6 +190,12 @@ export function Transcript({
 }) {
   const talk = useConversation();
   const mobile = useMediaQuery(mobileQuery);
+  const markOf = useObjectMark();
+  /** A chip above the person's bubble carries its system's glyph (D71, artboard 8). */
+  const glyph = (ref: string) => {
+    const icon = markOf(ref)?.icon;
+    return icon ? <AreaGlyph icon={icon} /> : undefined;
+  };
   const { conversation, latest, done, busy, pending } = talk;
   // A proposal answer names its thread; the draft carries it. Either way the week is drawn under the answer. The named thread comes from the cache the answer wrote it into.
   const forslagId = latest?.forslag?.threadId ?? null;
@@ -156,6 +206,8 @@ export function Transcript({
   // Rows are keyed by position, so the pending question and answer become the written ones in place: the log (aria-busy
   // while the answer is written) speaks the answer once, and never the question twice (D36, 4.1.3).
   const n = messages.length;
+  // The latest answer's declared view is drawn under it, with "Visa allt" in its header; an older answer keeps the button.
+  const embedded = (i: number, m: ThreadMessage) => i === n - 1 && !pending && !!m.meta?.view?.declared;
   return (
     <VStack gap={3}>
       <ChatMessageList density="balanced" align="bottom" isStreaming={busy}>
@@ -186,7 +238,7 @@ export function Transcript({
               {m.role === 'user' && (m.meta?.chips?.length ?? 0) > 0 && (
                 <HStack gap={1} wrap="wrap">
                   {m.meta!.chips!.map(c => (
-                    <Token key={c.ref} size="sm" label={c.label} />
+                    <Token key={c.ref} size="sm" label={c.label} icon={glyph(c.ref)} />
                   ))}
                 </HStack>
               )}
@@ -215,13 +267,13 @@ export function Transcript({
                     {m.meta?.cards?.map(id => (
                       <TurnCard key={id} id={id} render={renderCard} />
                     ))}
-                    {/* The latest answer's declared view is drawn under it; an older answer keeps its button, so opening a long conversation reads one view, not all of them. */}
-                    {i === n - 1 && !pending && m.meta?.view?.declared && (
-                      <ViewEmbed view={m.meta.view} hrefFor={viewHref} />
+                    {/* The latest answer's view, read again; an older answer keeps its button, so opening a long conversation reads one view, not all of them. */}
+                    {embedded(i, m) && (
+                      <ViewEmbed view={m.meta!.view!} hrefFor={viewHref} onShowAll={() => onOpenView(m.meta!.view!)} />
                     )}
-                    {(m.meta?.view || m.meta?.sources?.length) && (
+                    {((m.meta?.view && !embedded(i, m)) || m.meta?.sources?.length) && (
                       <HStack gap={2} wrap="wrap">
-                        {m.meta?.view && (
+                        {m.meta?.view && !embedded(i, m) && (
                           <Button
                             size="sm"
                             label={m.meta.view.declared ? 'Visa allt' : `Visa ${m.meta.view.title.toLowerCase()}`}
@@ -258,7 +310,7 @@ export function Transcript({
                   {pending.chips.length > 0 && (
                     <HStack gap={1} wrap="wrap">
                       {pending.chips.map(c => (
-                        <Token key={c.ref} size="sm" label={c.label} />
+                        <Token key={c.ref} size="sm" label={c.label} icon={glyph(c.ref)} />
                       ))}
                     </HStack>
                   )}

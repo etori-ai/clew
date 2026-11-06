@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import type { DayView, PanelViewSpec, SearchResult, TodayView, ViewRef, WeekView } from '@clew/contracts';
 import {
+  AreaLine,
   Badge,
   Button,
   DayStrip,
@@ -35,6 +36,7 @@ import { fieldLabel, fieldValue, hiddenFields, reviewLabel, staleLabel } from '.
 import { useConversation } from './conversation-context';
 import { AddToConversation } from './add-to-conversation';
 import { DeclaredView } from './view';
+import { useMarks } from '../marks';
 
 const plain = (address: string) => {
   try {
@@ -88,6 +90,7 @@ const NEVER = 'not all';
  */
 function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((view: ViewRef) => string) | undefined }) {
   const talk = useConversation();
+  const marks = useMarks();
   const missed = result.sources.filter(s => s.status !== 'ok');
   return (
     <VStack gap={3}>
@@ -97,8 +100,11 @@ function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((vie
           {result.rows.map((r, i) => {
             const ref = `document:${r.connector}:${r.ref}`;
             const inConversation = talk.chipped.includes(ref);
-            // A review date is a document's business: a person or a room has none to miss.
-            const stale = r.kind === 'document' ? staleLabel(r.stale, r.reviewedAt ?? r.updatedAt) : '';
+            // A review date is a document's business: a person or a room has none to miss. Only an old one is a badge;
+            // a missing date is a word in the meta line (artboard 7).
+            const reviewed = r.reviewedAt ?? r.updatedAt;
+            const note = r.kind === 'document' ? staleLabel(r.stale, reviewed) : '';
+            const mark = marks.ofObject(`document:${r.connector}:`);
             return (
               <ListItem
                 key={ref}
@@ -113,11 +119,14 @@ function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((vie
                 description={
                   <VStack gap={1}>
                     <Text type="supporting">{r.snippet}</Text>
+                    {/* The meta line starts with the source's glyph and word, so an answer from three systems shows where each hit came from. */}
                     <HStack gap={2} vAlign="center" wrap="wrap">
-                      <Text type="supporting">
-                        {[r.owner, reviewLabel(r.reviewedAt ?? r.updatedAt), r.source].filter(Boolean).join(' · ')}
-                      </Text>
-                      {stale && <Badge variant={r.stale ? 'warning' : 'neutral'} label={stale} />}
+                      <AreaLine {...(mark?.icon ? { icon: mark.icon } : {})}>
+                        {[r.source, r.owner, reviewLabel(reviewed), r.stale ? '' : note.toLowerCase()]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </AreaLine>
+                      {r.stale && note && <Badge variant="warning" label={note} />}
                     </HStack>
                     <HStack gap={1} wrap="wrap">
                       {/* A hit whose source declares its view (D38) opens here, drawn by Startsidan; the link still leads to the source. */}
