@@ -103,6 +103,10 @@
           }
         },
         "modelReads": "summary",
+        "noun": {
+          "one": "kontakt",
+          "other": "kontakter"
+        },
         "empty": "Inga träffar i telefonboken.",
         "fields": [
           {
@@ -231,6 +235,10 @@
           }
         },
         "modelReads": "summary",
+        "noun": {
+          "one": "kontakt",
+          "other": "kontakter"
+        },
         "empty": "Telefonboken har ingen på din enhet.",
         "fields": [
           {

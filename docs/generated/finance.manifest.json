@@ -96,6 +96,10 @@
         "kind": "table",
         "title": "supplier",
         "ref": "ref",
+        "noun": {
+          "one": "faktura",
+          "other": "fakturor"
+        },
         "empty": "Inga fakturor väntar på attest.",
         "fields": [
           {
@@ -105,7 +109,11 @@
           {
             "key": "amount",
             "label": "Belopp",
-            "format": "number"
+            "format": "number",
+            "unit": {
+              "one": "kr",
+              "other": "kr"
+            }
           },
           {
             "key": "due",

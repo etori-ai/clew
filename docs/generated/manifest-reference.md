@@ -98,6 +98,10 @@ A `read` with a `view` and an input that accepts `{}` is eligible for the menu u
       }
     },
     "modelReads": "summary",
+    "noun": {
+      "one": "kontakt",
+      "other": "kontakter"
+    },
     "empty": "Inga träffar i telefonboken.",
     "fields": [
       {
@@ -196,6 +200,10 @@ export const directory = {
       },
     },
     modelReads: 'summary',
+    noun: {
+      one: 'kontakt',
+      other: 'kontakter',
+    },
     empty: 'Inga träffar i telefonboken.',
     fields: [
       {
@@ -1361,7 +1369,7 @@ Example:
 
 #### `capabilities[].view.fields[].tones`
 
-For `status`: the tone per value. A value without one is neutral.
+For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.
 
 - Type: map of string to "ok" / "warn" / "alert" / "none"
 - optional
@@ -1370,9 +1378,52 @@ Example:
 
 ```json
 {
-  "open": "warn",
-  "closed": "ok"
+  "false": "warn"
 }
+```
+
+#### `capabilities[].view.fields[].unit`
+
+For `number`: the unit drawn after the value, so a row reads "12 platser" and never "Platser: 12". Only where the unit alone says what the number is.
+
+- Type: object
+- optional
+
+Example:
+
+```json
+{
+  "one": "dag",
+  "other": "dagar"
+}
+```
+
+#### `capabilities[].view.fields[].unit.one`
+
+Swedish. The word after 1: "plats".
+
+- Type: string
+- required
+- Constraints: 1 to 40 characters
+
+Example:
+
+```json
+"dag"
+```
+
+#### `capabilities[].view.fields[].unit.other`
+
+Swedish. The word after any other number: "platser".
+
+- Type: string
+- required
+- Constraints: 1 to 40 characters
+
+Example:
+
+```json
+"dagar"
 ```
 
 #### `capabilities[].view.ref`
@@ -1389,6 +1440,50 @@ Example:
 
 ```json
 "ref"
+```
+
+#### `capabilities[].view.noun`
+
+What a row is called, for the count in the view's header: "3 fakturor", "1 rum". Default "rad", "rader".
+
+- Type: object
+- optional (table, list only)
+
+Example:
+
+```json
+{
+  "one": "kontakt",
+  "other": "kontakter"
+}
+```
+
+#### `capabilities[].view.noun.one`
+
+Swedish. The word after 1: "plats".
+
+- Type: string
+- required
+- Constraints: 1 to 40 characters
+
+Example:
+
+```json
+"kontakt"
+```
+
+#### `capabilities[].view.noun.other`
+
+Swedish. The word after any other number: "platser".
+
+- Type: string
+- required
+- Constraints: 1 to 40 characters
+
+Example:
+
+```json
+"kontakter"
 ```
 
 #### `capabilities[].view.open`

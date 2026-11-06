@@ -208,6 +208,10 @@
         "title": "name",
         "ref": "ref",
         "modelReads": "summary",
+        "noun": {
+          "one": "medarbetare",
+          "other": "medarbetare"
+        },
         "empty": "Ingen frånvaro de senaste sex månaderna.",
         "open": {
           "capability": "hr.absencePattern",
@@ -567,6 +571,10 @@
         "title": "name",
         "ref": "ref",
         "modelReads": "summary",
+        "noun": {
+          "one": "ansökan",
+          "other": "ansökningar"
+        },
         "empty": "Inga ledighetsansökningar väntar på beslut.",
         "fields": [
           {
@@ -586,7 +594,11 @@
           {
             "key": "days",
             "label": "Dagar",
-            "format": "number"
+            "format": "number",
+            "unit": {
+              "one": "dag",
+              "other": "dagar"
+            }
           },
           {
             "key": "type",

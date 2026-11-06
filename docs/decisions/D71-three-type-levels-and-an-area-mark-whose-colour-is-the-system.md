@@ -89,3 +89,42 @@ the chip without its icon as the swatch (it would repeat the area's word in the 
 **Replaces.** The phone's "every thread is a card in the list" (D50, D53 item 2): rows and the sheet now. Amends D40
 and D41: the icon map lives in `packages/ui`. Every `Heading level={3}` with only `accessibilityLevel` varying is
 replaced by the roles above.
+
+**Amended 2026-11-06, the views, the answers and the small places (artboards 4, 7 and 8).** Built on `main` by the
+session that owns the views and the conversation. Two small, additive protocol changes and three rules:
+
+1. **A unit and a noun (protocol, additive).** A view field may carry `unit: { one, other }` and only on a `number`
+   (`viewProblem` refuses it elsewhere, so the manifest loader and `connector-check` fail a connector that puts one on
+   another format); a row then reads "12 platser", "1 plats", "11 200 kr", never "Platser: 12", and a table
+   end-aligns it. A `table` or `list` may carry `noun: { one, other }` for the count in its header ("Ekonomisystemet · 3
+   fakturor", "Kalendern · 7 rum"); without one a row is a "rad". Both are optional, so every protocol-2 connector
+   stays valid; the published schema is regenerated. Swedish needs the two forms (plats/platser, faktura/fakturor),
+   which is why neither is a single string. The calendar's rooms and the fixture views declare them where the unit
+   alone says what the number is (seats, an amount, leave days); a table with several numbers of one unit (absence
+   days per kind) keeps its labels.
+2. **A status is one badge with one word.** A bare yes/no status takes the field's label as its word ("Kvitterad",
+   "Inte kvitterad"), so two fields never read "Ja · Ja"; the view's `tones` (D38, keyed `true`/`false` for a yes/no)
+   give a status colour only to the state that needs the person, the other is neutral (a yes carries a check). A
+   status value that is a word and has no tone is supporting text, not a badge (artboard 7: "Att attestera" beside
+   "Förfaller i dag"). In a list the badges stand at the row's end with its `@`. Viktigt nu now declares one field,
+   `acknowledged` as "Kvitterad" with `false` in warning, in place of the two yes/no fields.
+3. **One header for every view kind, drawn by `DeclaredView`.** The chip of the area whose `standing` offers the
+   capability (else the capability's menu row, "Mötesrum"; else the system's one area; else the system's word alone,
+   then not repeated), the source and the count in supporting, the view's controls or, under an answer, "Visa allt" at
+   the end of the line. A tool page draws its title at level 1 under that line; a record's title is level 2 (its
+   outline level under the surface's title); a text's Markdown headings start one level under the surface's title.
+   Under the latest answer the view is a `Card` with that header and three rows ("3 av 7 rader. Inget av det sparas på
+   Startsidan."), in the order the capability returned them: the answer sorts, the view follows, the web never sorts.
+4. **The small places.** Composer tokens, the person's chips above their bubble and `@` rows carry the glyph of the
+   system the ref names (`useObjectMark`), never a hue; the review dialog has the mark row under its title with the
+   counter "1 av 3" as a neutral badge; search hits start their meta line with the source's glyph and word, and only an
+   old review date is a warning badge ("14 månader sedan"). The D8 banner names a silent system in words at the top of
+   every page (Shell, from the source statuses on `GET /api/threads`): "Ekonomisystemet svarar inte sedan 06:00", which
+   cards may be old, that what is sent is queued and read back, and "Försök igen"; it is spoken once. A toast names the
+   system and where the card lies, without a glyph.
+
+Not built: a text view's own execute as its button ("Jag har läst" under the text, artboard 7). A view has no
+execute in the protocol, and an execute outside a card would have no receipt, ledger row or undo (D45, D47); the
+receipt stays the card's. Astryx draws a table's header cells and a `MetadataList`'s labels in its own type; Clew does
+not restyle them (artboard 7 draws them 12 px supporting). `TypeaheadItem` has no end slot, so the `@` row says what
+a thing is under its word, not at the row's end.

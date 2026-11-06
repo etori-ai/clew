@@ -79,6 +79,10 @@
         "kind": "list",
         "title": "title",
         "ref": "ref",
+        "noun": {
+          "one": "meddelande",
+          "other": "meddelanden"
+        },
         "empty": "Inga meddelanden just nu.",
         "fields": [
           {
@@ -86,12 +90,12 @@
             "label": "Titel"
           },
           {
-            "key": "requiresReceipt",
-            "label": "Kräver läskvitto"
-          },
-          {
             "key": "acknowledged",
-            "label": "Läst"
+            "label": "Kvitterad",
+            "format": "status",
+            "tones": {
+              "false": "warn"
+            }
           }
         ]
       }
