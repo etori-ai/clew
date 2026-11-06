@@ -1,0 +1,4 @@
+# Every text file is checked out with LF on every platform, whatever core.autocrlf says (D61): the shell scripts run in
+# Linux containers, and CRLF breaks them. Git detects binary files itself and leaves them alone. A file that needs CRLF
+# gets its own line below, e.g. `*.ps1 text eol=crlf`.
+* text=auto eol=lf

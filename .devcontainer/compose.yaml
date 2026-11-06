@@ -13,10 +13,15 @@ services:
       - node_modules:/workspace/node_modules
       - bun_cache:/root/.bun/install/cache
     ports:
-      # Only the Vite dev server is published, on loopback. It proxies /api to the BFF inside the container.
+      # The Vite dev server, on loopback. It proxies /api to the BFF inside the container.
       - "127.0.0.1:3020:5173"
+      # The `keycloak` profile's Keycloak, which shares this container's network (D62). Nothing answers without it.
+      - "127.0.0.1:3024:3024"
+    # The dev Keycloak by the name the browser uses too (D60, D62): the shared container on the macOS host as
+    # keycloak.orb.local, or the `keycloak` profile in this container's own network as keycloak.localhost.
     extra_hosts:
       - "keycloak.orb.local:host-gateway"
+      - "keycloak.localhost:127.0.0.1"
     environment:
       DATABASE_URL: postgres://clew:clew-local@postgres:5432/clew
       CALENDAR_URL: http://calendar
@@ -26,6 +31,31 @@ services:
       postgres:
         condition: service_healthy
       temporal:
+        condition: service_started
+  # The development identity provider, opt in (D62): `sh scripts/compose.sh --profile keycloak up -d --wait`.
+  # Keycloak (Apache-2.0) runs in the app container's network, so http://keycloak.localhost:3024 is loopback for the
+  # browser on the host (the app service publishes the port) and for Node, Bun and curl in the container alike.
+  # Local-only admin account, like Postgres and Nextcloud here; realm, client and people come from `bun run auth:setup`.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2.5@sha256:4883630ef9db14031cde3e60700c9a9a8eaf1b5c24db1589d6a2d43de38ba2a9
+    profiles: [keycloak]
+    network_mode: "service:app"
+    command: ["start-dev", "--http-port=3024"]
+    mem_limit: 1g
+    memswap_limit: 1g
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: keycloak-admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: keycloak-admin-local-only
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+    depends_on:
+      app:
         condition: service_started
   # The WCAG 2.2 AA suite (tests/a11y, scripts/a11y.sh). Playwright is Apache-2.0, axe-core MPL-2.0.
   # The API is mocked in the browser, so this service needs nothing else from the stack.
@@ -134,3 +164,4 @@ volumes:
   bun_cache:
   postgres_data:
   calendar_data:
+  keycloak_data:

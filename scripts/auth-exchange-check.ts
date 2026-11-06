@@ -5,6 +5,9 @@
  * through the BFF, which needs the Eneo connector registered and running.
  *
  *   docker exec -w /workspace clew-app-1 bun scripts/auth-exchange-check.ts [hillevi|hassan] [--connector]
+ *
+ * The exchange runs in this Bun process, which resolves every `*.localhost` name to loopback, so an issuer at
+ * keycloak.localhost works with the compose profile `keycloak`, whose Keycloak shares the app container's network (D62).
  */
 import { resolve } from 'node:path';
 try {
@@ -52,7 +55,9 @@ async function go(url: string, init: RequestInit = {}): Promise<Response> {
 const form = await go(base + '/api/auth/login?returnTo=/');
 const html = await form.text();
 const action = /action="([^"]+)"/.exec(html)?.[1]?.replace(/&amp;/g, '&');
-if (!action || !form.url.includes('keycloak.orb.local')) throw new Error('Keycloak login form not found');
+if (!process.env.OIDC_ISSUER) throw new Error('OIDC_ISSUER missing: run bun run auth:setup first');
+if (!action || !form.url.startsWith(new URL(process.env.OIDC_ISSUER).origin + '/'))
+  throw new Error('Keycloak login form not found');
 const done = await go(action, {
   method: 'POST',
   headers: { 'content-type': 'application/x-www-form-urlencoded' },

@@ -36,7 +36,9 @@ async function go(url: string, init: RequestInit = {}): Promise<Response> {
 const form = await go(base + '/api/auth/login?returnTo=/');
 const html = await form.text();
 const action = /action="([^"]+)"/.exec(html)?.[1]?.replace(/&amp;/g, '&');
-if (!action || !form.url.includes('keycloak.orb.local')) throw new Error('Keycloak login form not found');
+const issuer = process.env.OIDC_ISSUER ?? env.OIDC_ISSUER;
+if (!issuer) throw new Error('OIDC_ISSUER missing in .auth-test.env');
+if (!action || !form.url.startsWith(new URL(issuer).origin + '/')) throw new Error('Keycloak login form not found');
 const done = await go(action, {
   method: 'POST',
   headers: { 'content-type': 'application/x-www-form-urlencoded' },
