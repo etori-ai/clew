@@ -37,6 +37,8 @@ import type {
  */
 export const ADMIN_CAPABILITY = 'admin.connectors';
 export interface AdminDeps {
+  /** Core capability providers are not connected systems (D62). */
+  internal?: readonly string[];
   store: ConnectorStore;
   registry: Pick<Registry, 'connector' | 'list' | 'govern' | 'governance' | 'visible' | 'areas' | 'tools' | 'menu'>;
   secrets: Secrets;
@@ -67,6 +69,10 @@ const previewActor = (role: Role, unitId: string | null): Actor => ({
 
 export function connectorUsecases(deps: AdminDeps) {
   const { store, registry, secrets, transport, live, units, clock } = deps;
+  const internal = new Set(deps.internal);
+  const requireConnector = (id: string) => {
+    if (internal.has(id)) throw new InputError('Funktionen ingår i Clew och är inte ett anslutet system.');
+  };
   const requireAdmin = (persona: AuthenticatedContext) => {
     if (!persona.capabilities.includes(ADMIN_CAPABILITY)) throw new ForbiddenError();
   };
@@ -76,6 +82,7 @@ export function connectorUsecases(deps: AdminDeps) {
     return { by: persona.principal.id, at: clock().toISOString() };
   };
   const must = async (id: string) => {
+    requireConnector(id);
     const row = await store.read(id);
     if (!row) throw new InputError('Anslutningen finns inte.');
     return row;
@@ -192,10 +199,10 @@ export function connectorUsecases(deps: AdminDeps) {
     };
   }
 
-  /** Every connector, bundled and remote, as the list shows them. */
+  /** Managed connectors only; internal user capabilities are not connected systems (D62). */
   async function list(persona: AuthenticatedContext): Promise<ConnectorSummary[]> {
     requireAdmin(persona);
-    return (await store.list()).map(summary);
+    return (await store.list()).filter(row => !internal.has(row.id)).map(summary);
   }
   async function read(persona: AuthenticatedContext, id: string) {
     requireAdmin(persona);
@@ -207,6 +214,7 @@ export function connectorUsecases(deps: AdminDeps) {
     input: AddConnectorInput,
   ): Promise<{ connector: ConnectorDetail; report: CheckReport }> {
     const { by, at } = await mutating(persona);
+    requireConnector(input.id);
     if (await store.read(input.id)) throw new InputError('Anslutningen finns redan.');
     if (registry.connector(input.id)) throw new InputError('Namnet används av en inbyggd anslutning.');
     const url = input.url.replace(/\/+$/, '');

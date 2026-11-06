@@ -35,6 +35,8 @@ Your connector runs as its own service, in any language and deployment environme
 
 ## What belongs where
 
+**Users are core entities.** Local users and access grants are always part of Clew. The internal user-information reads share capability dispatch but do not appear under connected systems or have an on/off control. External directory/provisioning integrations remain separate ([D62](decisions/D62-users-are-core-entities-not-connected-systems.md)).
+
 **Clew owns coordination.** It holds local identity/grants, connector governance, threads, decisions, audit and execution/follow-up state. Its core modules are part of Clew itself. A connector must not assume that storing a ref grants indefinite access to the corresponding content: reads recheck current access.
 
 **Your source owns its records.** A `passthrough` connector reads the source and maps its responses. A `derived` connector supplies a computed result or snapshot with a defined purpose. Avoid copying source records into Clew or logging request bodies. Card text and persisted answers need deliberate data minimization; use a live view for sensitive detail and `modelReads: "summary"` where the model should receive only a count. That flag does not redact other capabilities or user-entered text.

@@ -11,7 +11,12 @@ import { createConnector } from '../../connectors/hello/connector.mjs';
 import { memoryConnectorStore } from '../../apps/server/src/connectors/adapters/memory';
 import { connectorUsecases, type AdminDeps } from '../../apps/server/src/connectors/usecases/admin';
 import { describeBundled } from '../../apps/server/src/connectors/describe';
-import { applyRow, syncBundledRows, type ReconcileDeps } from '../../apps/server/src/connectors/reconcile';
+import {
+  applyAllRows,
+  applyRow,
+  syncBundledRows,
+  type ReconcileDeps,
+} from '../../apps/server/src/connectors/reconcile';
 
 /**
  * Connector administration end to end without a server or a database (D23, D25): the real registry with a bundled mock
@@ -62,9 +67,31 @@ const bundledFinance = (): Connector => ({
   ],
 });
 
-function world(options: { helloUp?: boolean } = {}) {
+const users = (): Connector => ({
+  id: 'people',
+  kind: 'core',
+  source: 'Användare',
+  areas: [],
+  capabilities: [
+    {
+      name: 'people.me',
+      kind: 'read',
+      title: 'Vem är jag?',
+      description: 'Den inloggade användaren.',
+      model: true,
+      input: { type: 'object' } as never,
+      output: { type: 'object' } as never,
+      scope: actor => !!actor.unitId,
+      run: async actor => ({ id: actor.id }),
+    },
+  ],
+});
+
+function world(options: { helloUp?: boolean; users?: boolean } = {}) {
   const registry = new Registry();
   registry.register(bundledFinance());
+  if (options.users) registry.register(users());
+  const internal = options.users ? ['people'] : [];
   const store = memoryConnectorStore();
   let now = Date.parse(T0);
   const clock = () => new Date(now);
@@ -96,6 +123,7 @@ function world(options: { helloUp?: boolean } = {}) {
     },
   };
   const deps: AdminDeps = {
+    internal,
     store,
     registry,
     clock,
@@ -122,6 +150,7 @@ function world(options: { helloUp?: boolean } = {}) {
     secrets: deps.secrets,
     live,
     bundled: ['finance'],
+    internal,
     clock,
     log: () => undefined,
   };
@@ -319,5 +348,106 @@ describe('bundled connectors are governed by the same rows', () => {
     await store.transaction(tx => tx.update('finance', { audience: { mode: 'all' } }, 'bootstrap:connector', T0));
     applyRow(reconcile, (await store.read('finance'))!);
     expect(registry.visible(actorOf(hassan), 'finance')).toBe(true);
+  });
+});
+
+describe('users are core entities, not connected systems (D62)', () => {
+  test('fresh startup needs no users connector row, and keeps the scoped read available', async () => {
+    const { registry, store, reconcile, admin } = world({ users: true });
+    // Even an older bundled list must not create the internal provider's row.
+    await syncBundledRows({ ...reconcile, bundled: ['finance', 'people'] });
+    await applyAllRows(reconcile);
+    expect((await store.list()).map(r => r.id)).toEqual(['finance']);
+    expect((await admin.list(mikael)).map(r => r.id)).toEqual(['finance']);
+    expect(await registry.run(actorOf(hassan), 'people.me', {})).toEqual({ id: 'hassan' });
+    expect(registry.tools(actorOf(hassan)).find(t => t.name === 'people.me')?.source).toBe('Användare');
+    expect(registry.allowed({ ...actorOf(hassan), unitId: '' }, 'people.me')).toBeUndefined();
+    // Removing a managed row still fails closed; only the explicit internal provider is independent.
+    await store.transaction(tx => tx.remove('finance'));
+    await applyAllRows(reconcile);
+    expect(registry.visible(actorOf(hassan), 'finance')).toBe(false);
+    expect(registry.visible(actorOf(hassan), 'people')).toBe(true);
+  });
+
+  test('a disabled legacy row cannot turn users off or re-enable assistant access', async () => {
+    const { registry, store, reconcile, admin } = world({ users: true });
+    await store.transaction(tx =>
+      tx.insert({
+        id: 'people',
+        bundled: true,
+        url: null,
+        secret: null,
+        state: 'disabled',
+        manifest: { ...describeBundled(users()), source: 'Startsidan' },
+        health: { status: 'ok', at: T0 },
+        createdBy: 'old:boot',
+        at: T0,
+      }),
+    );
+    const before = await store.read('people');
+    await applyAllRows(reconcile);
+    expect(registry.governance('people').state).toBe('enabled');
+    expect(await registry.run(actorOf(hassan), 'people.me', {})).toEqual({ id: 'hassan' });
+    expect(registry.tools(actorOf(hassan)).some(t => t.name === 'people.me')).toBe(false);
+    expect(await admin.list(mikael)).toEqual([]);
+    const rejected = [
+      () => admin.read(mikael, 'people'),
+      () => admin.update(mikael, 'people', { state: 'disabled' }),
+      () => admin.update(mikael, 'people', { audience: { mode: 'selected' } }),
+      () => admin.remove(mikael, 'people'),
+      () => admin.test(mikael, 'people'),
+      () => admin.refreshManifest(mikael, 'people', { apply: true }),
+      () => admin.rotateSecret(mikael, 'people', { secret: SECRET }),
+      () => admin.preview(mikael, 'people', { role: 'employee' }),
+      () => admin.add(mikael, { id: 'people', url: 'http://hello', secret: SECRET }),
+    ];
+    for (const call of rejected) await expect(call()).rejects.toThrow('inte ett anslutet system');
+    expect(await store.read('people')).toEqual(before);
+    expect(store.audit).toEqual([]);
+    await applyAllRows(reconcile);
+    expect(registry.governance('people').state).toBe('enabled');
+  });
+
+  test('existing read restrictions survive reload while connector administration stays unavailable', async () => {
+    const { registry, store, reconcile, admin } = world({ users: true });
+    await store.transaction(async tx => {
+      await tx.insert({
+        id: 'people',
+        bundled: true,
+        url: null,
+        secret: null,
+        state: 'enabled',
+        manifest: describeBundled(users()),
+        health: { status: 'ok', at: T0 },
+        createdBy: 'old:boot',
+        at: T0,
+      });
+      await tx.update(
+        'people',
+        {
+          audience: { mode: 'selected', roles: ['manager'] },
+          capabilities: { 'people.me': { model: false } },
+        },
+        'old:admin',
+        T0,
+      );
+    });
+    await applyAllRows(reconcile);
+    expect(registry.visible(actorOf(hassan), 'people')).toBe(false);
+    expect(await registry.run(actorOf(hillevi), 'people.me', {})).toEqual({ id: 'hillevi' });
+    expect(registry.tools(actorOf(hillevi)).some(t => t.name === 'people.me')).toBe(false);
+    expect(await admin.list(mikael)).toEqual([]);
+    await store.transaction(tx =>
+      tx.update(
+        'people',
+        {
+          capabilities: { 'people.me': { enabled: false } },
+        },
+        'old:admin',
+        T0,
+      ),
+    );
+    applyRow(reconcile, (await store.read('people'))!);
+    expect(registry.allowed(actorOf(hillevi), 'people.me')).toBeUndefined();
   });
 });

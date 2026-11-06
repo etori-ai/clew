@@ -6,12 +6,22 @@
  */
 import { database } from '@clew/db';
 import { writeAudit } from '@clew/db/threads';
-import { deleteConnector, insertConnector, listConnectors, readConnector, updateConnector } from '@clew/db/connectors';
+import {
+  deleteConnector,
+  insertConnector,
+  listConnectors as storedConnectors,
+  readConnector,
+  updateConnector,
+} from '@clew/db/connectors';
 import { fetchManifest, parseManifest } from '../packages/connectors/src/remote';
 import { sealSecret } from '../apps/server/src/auth-crypto';
 import { secretPurpose } from '../apps/server/src/connectors/remote';
+import { internalIds } from '../apps/server/src/connectors/registry';
 
-export { listConnectors };
+const requireManaged = (id: string) => {
+  if (internalIds.includes(id)) throw new Error('Users are part of Clew core, not a managed connector.');
+};
+export const listConnectors = async () => (await storedConnectors()).filter(row => !internalIds.includes(row.id));
 const actor = 'bootstrap:connector';
 
 /** Add a connector or update its address and secret; `enable` makes it live, otherwise it is or stays a draft. */
@@ -23,6 +33,7 @@ export async function registerConnector(options: {
   ifMissing?: boolean;
 }) {
   const { id, secret } = options;
+  requireManaged(id);
   const url = options.url.replace(/\/+$/, '');
   if (!/^[a-z][a-z0-9-]*$/.test(id))
     throw new Error(`Invalid connector id ${id}: lowercase letters, digits and hyphens.`);
@@ -71,6 +82,7 @@ export async function registerConnector(options: {
 
 /** Enable or disable a registered connector. Answers false when there is no such row. */
 export async function setConnectorState(id: string, state: 'enabled' | 'disabled') {
+  requireManaged(id);
   return database().transaction(async tx => {
     const done = await updateConnector(tx, id, actor, { state });
     if (done) await writeAudit(tx, { actor, action: 'connector.' + state, subject: 'connector:' + id });
@@ -79,6 +91,7 @@ export async function setConnectorState(id: string, state: 'enabled' | 'disabled
 }
 
 export async function removeConnector(id: string) {
+  requireManaged(id);
   await database().transaction(async tx => {
     await deleteConnector(tx, id);
     await writeAudit(tx, { actor, action: 'connector.removed', subject: 'connector:' + id });

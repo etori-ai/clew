@@ -11,7 +11,7 @@ import {
   type FetchLike,
 } from '../../packages/connectors/src/remote';
 import { createConnector, manifest as helloManifest } from '../../connectors/hello/connector.mjs';
-import { loadConnectors } from '../../apps/server/src/connectors/remote';
+import { loadConnectors, registerConnector } from '../../apps/server/src/connectors/remote';
 import { assertionFor, testJwks, testAuthority } from '../connector-authority';
 import { decodeJwt } from 'jose';
 import { checkConnector } from '../../packages/connectors/src/check';
@@ -459,4 +459,24 @@ describe('connector-check holds a scan to the card-action rule (D35)', () => {
         'Kortet hello:open-items avvisades: action done names finance.approve, which is not a capability of hello',
     });
   });
+});
+
+test('remote registration cannot replace core user capabilities', () => {
+  const registry = new Registry();
+  const core = { id: 'people', kind: 'core' as const, source: 'Användare', areas: [], capabilities: [] };
+  registry.register(core);
+  const manifest = { ...parseManifest(helloManifest, 'hello'), id: 'people' };
+  expect(() =>
+    registerConnector(
+      registry,
+      {
+        id: 'people',
+        url: 'http://external',
+        secret,
+        manifest,
+      },
+      manifest,
+    ),
+  ).toThrow('cannot replace Clew core');
+  expect(registry.connector('people')?.source).toBe('Användare');
 });

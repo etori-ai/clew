@@ -6,7 +6,8 @@ import { InputError } from '../context';
 import { calendarConnector } from '../modules/calendar/connector';
 import { calendar, events } from '../composition/calendar';
 import { clock } from '../composition/ambient';
-import { peopleConnector } from '../modules/people/connector';
+import { userCapabilities } from '../modules/people/capabilities';
+import { userReads } from '../composition/people';
 import { searchConnector, type AnswerCards } from '../modules/search/connector';
 import { searchUsecases } from '../modules/search/usecases';
 
@@ -24,8 +25,11 @@ const search = searchUsecases({ sources: actor => registry.searchSources(actor),
 /** The card an answer becomes is the stream's use case; the composition root fills this slot once the stream is built over the registry. */
 export const answerCards: AnswerCards = {};
 // Clew's core only (D61): every other system, the development fixtures included, is a connector row (D21, D23).
-const bundled = [calendarConnector(calendar, events), peopleConnector(), searchConnector(search, answerCards)];
-for (const m of bundled) registry.register({ ...m, uses: ['*'] });
+// Users are core entities, not installed systems. Their read capabilities share dispatch only (D62).
+const internal = [userCapabilities(userReads)];
+const bundled = [calendarConnector(calendar, events), searchConnector(search, answerCards)];
+for (const m of [...internal, ...bundled]) registry.register({ ...m, uses: ['*'] });
+export const internalIds = internal.map(m => m.id);
 /** The connectors that live in this process: they get a `connector` row at boot so an administrator can govern them too (D23). */
 export const bundledIds = bundled.map(m => m.id);
 export { actorOf };

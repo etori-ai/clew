@@ -755,6 +755,15 @@
       "area": "integrations, platform"
     },
     {
+      "key": "D62-users-are-core-entities-not-connected-systems",
+      "number": 62,
+      "path": "docs/decisions/D62-users-are-core-entities-not-connected-systems.md",
+      "title": "D62 · Users are core entities, not connected systems",
+      "status": "accepted, built 2026-11-06",
+      "date": "2026-11-06",
+      "area": "identity, integrations"
+    },
+    {
       "key": "D63-hem-is-drawn-as-the-canvas-draws-it",
       "number": 63,
       "path": "docs/decisions/D63-hem-is-drawn-as-the-canvas-draws-it.md",
@@ -1241,7 +1250,9 @@
       "path": "docs/decisions/D23-connectors-are-managed-in-the-database.md",
       "title": "D23 · Connectors are registered and governed in the database by an administrator, not by environment variables",
       "category": "decision-history",
-      "headings": []
+      "headings": [
+        "Users amendment, 2026-11-06"
+      ]
     },
     {
       "path": "docs/decisions/D24-model-endpoints-are-administered-in-the-product.md",
@@ -1512,6 +1523,12 @@
       "headings": [
         "Cutover and verification amendment, 2026-11-06"
       ]
+    },
+    {
+      "path": "docs/decisions/D62-users-are-core-entities-not-connected-systems.md",
+      "title": "D62 · Users are core entities, not connected systems",
+      "category": "decision-history",
+      "headings": []
     },
     {
       "path": "docs/decisions/D63-hem-is-drawn-as-the-canvas-draws-it.md",

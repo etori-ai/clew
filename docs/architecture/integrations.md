@@ -191,7 +191,7 @@ every thread created while it is down.
 
 `packages/connectors` holds the descriptor types and the `Registry`; the four mock integrations under
 `mock/` implement the pass-through kind against synthetic records with state in `module_state`; the core
-kind is `people` in `apps/server/src/modules/people/connector.ts` (Clew's own users and permissions, no adapter, no
+kind was `people` (now internal reads in `apps/server/src/modules/people/capabilities.ts`, outside connector administration under D62; no adapter, no
 scan) and the calendar is wrapped in `apps/server/src/modules/calendar/connector.ts`. The BFF derives
 `/api/areas`, `/api/cap/:name` and the card actions from the registry; `/api/connectors` shows the registry as
 data. Tool derivation exists (`registry.tools`) but is not wired to a model yet.

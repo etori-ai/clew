@@ -13,8 +13,10 @@ The canvas row for the screens is still to be drawn and compared against (`CLAUD
 
 ## The model
 
-One row per connector in Postgres, one `Connector` in the live registry per enabled row. Bundled connectors (people, the
-calendar, search; D61) get a row at boot with `bundled` true and no url or secret, so the same
+Users and permissions are core entities, labelled **Användare**, not connected systems ([D62](../decisions/D62-users-are-core-entities-not-connected-systems.md)). Their internal `people.*` reads reuse dispatch but have no connector administration entry or lifecycle controls. Legacy read restrictions are preserved separately from core identity; no users administration screen is implemented by this change.
+
+One row per managed connector in Postgres, one `Connector` in the live registry per enabled row. Bundled connectors (the
+calendar and search; D61/D62) get a row at boot with `bundled` true and no url or secret, so the same
 audience and switches govern them; they cannot be removed or re-addressed, only switched off. Decided 2026-11-04 so
 the core is governed the way a registered connector is.
 
@@ -47,7 +49,7 @@ place (`inScope` grows a sibling `inAudience`), so REST, cards, tools, search, s
 callback route cannot disagree. Out of audience answers as unknown ("Okänd förmåga.", 404), never as
 denied, so existence is not revealed.
 
-Core connectors that live in Clew's process (people, calendar, search) appear in the same
+Managed connectors that live in Clew's process (calendar, search) appear in the same
 list with their kind, cannot be removed or re-addressed, but can be limited to an audience the same way;
 the calendar for everyone, the finance connector for chefer and ekonomer.
 

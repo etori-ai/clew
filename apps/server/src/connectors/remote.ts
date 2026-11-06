@@ -51,6 +51,8 @@ export function registerConnector(
   fetchImpl?: FetchLike,
   authority?: ConnectorAuthority,
 ) {
+  if (registry.connector(source.id)?.kind === 'core')
+    throw new Error('A remote connector cannot replace Clew core capabilities.');
   registry.replace(
     remoteConnector(manifest, {
       url: source.url,

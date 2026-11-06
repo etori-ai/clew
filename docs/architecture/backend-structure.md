@@ -38,7 +38,7 @@ apps/server/src/
     reconcile.ts     bundled rows at boot, governance applied, the watcher that applies row changes without a restart
   modules/
     calendar/        connector.ts, model.ts (ProposalStore, CalendarBinder), usecases/samtal.ts (factory), usecases/reads.ts (pure projections), adapters/{postgres,memory}.ts
-    people/          connector.ts
+    people/          capabilities.ts (internal user reads; not a managed connector, D62)
     figures/         domain.ts
     mocks/           model.ts, usecases.ts (dev reset, factory), adapters/postgres.ts
 packages/

@@ -70,3 +70,7 @@ one line; finer rules belong in the manifest's scope and in the source.
 **Replaces.** The configuration section of D21 and of `connector-protocol.md` (`CLEW_CONNECTORS`,
 `CLEW_CONNECTOR_SECRET_<ID>`, "removing a connector is removing its line"). The protocol itself, the assertion and
 the callback are unchanged. `connectors/hello/compose.yaml` and `apps/server/.env.example` lose their variables.
+
+## Users amendment, 2026-11-06
+
+[D62](D62-users-are-core-entities-not-connected-systems.md) replaces this decision only for users: the internal `people.*` reads are outside connector administration. Users and permissions are core entities, not an optional connected system. Managed calendar, search and external connectors keep the governance described here.

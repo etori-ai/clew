@@ -1,4 +1,11 @@
-import { acceptsEmptyInput, answerCards, bundledIds, registry, runCapability } from '../connectors/registry';
+import {
+  acceptsEmptyInput,
+  answerCards,
+  bundledIds,
+  internalIds,
+  registry,
+  runCapability,
+} from '../connectors/registry';
 import { assertionFor, registerConnector, secretPurpose, unregisterConnector } from '../connectors/remote';
 import { postgresConnectorStore, postgresUnits } from '../connectors/adapters/postgres';
 import { connectorUsecases } from '../connectors/usecases/admin';
@@ -199,6 +206,7 @@ const sign = (secret: string, audience: string) => (actor: { id: string }) =>
     .sign(new TextEncoder().encode(secret));
 const connectorStore = postgresConnectorStore();
 export const connectorAdmin = connectorUsecases({
+  internal: internalIds,
   store: connectorStore,
   registry,
   secrets: connectorSecrets,
@@ -226,6 +234,7 @@ export const connectorReconcile: ConnectorReconcileDeps = {
   secrets: connectorSecrets,
   live: connectorLive,
   bundled: bundledIds,
+  internal: internalIds,
   clock,
   log: console.log,
 };

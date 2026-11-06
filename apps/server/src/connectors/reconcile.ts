@@ -1,4 +1,4 @@
-import { deniedGovernance, type Registry } from '@clew/connectors';
+import { deniedGovernance, openGovernance, type Registry } from '@clew/connectors';
 import type { ConnectorManifest } from '@clew/connectors/protocol';
 import { parseManifest } from '@clew/connectors/remote';
 import { listConnectorVersions } from '@clew/db/connectors';
@@ -18,6 +18,8 @@ export interface ReconcileDeps {
   secrets: Secrets;
   live: LiveRegistration;
   bundled: string[];
+  /** Internal capability providers have no connector lifecycle (D62). */
+  internal?: readonly string[];
   clock: () => Date;
   log?: (message: string) => void;
 }
@@ -25,11 +27,11 @@ const isManifest = (value: unknown): value is ConnectorManifest =>
   !!value && typeof value === 'object' && Array.isArray((value as ConnectorManifest).capabilities);
 
 /** A row for every bundled connector, inserted only when missing: enabled for everyone until an administrator says otherwise. */
-export async function syncBundledRows({ registry, store, bundled, clock }: ReconcileDeps) {
+export async function syncBundledRows({ registry, store, bundled, internal = [], clock }: ReconcileDeps) {
   const at = clock().toISOString();
   for (const id of bundled) {
     const connector = registry.connector(id);
-    if (!connector) continue;
+    if (!connector || internal.includes(id)) continue;
     await store.transaction(tx =>
       tx.insert({
         id,
@@ -45,9 +47,26 @@ export async function syncBundledRows({ registry, store, bundled, clock }: Recon
     );
   }
 }
+/**
+ * Internal user reads have no on/off lifecycle. Preserve old audience, capability and assistant restrictions
+ * without letting a legacy row disable core availability. A previously disabled row never re-enables model tools.
+ * The legacy row is retained as read policy only; new installs do not create one (D62).
+ */
+function applyInternal(deps: ReconcileDeps, id: string, row?: ConnectorRecord) {
+  const policy = row ? governanceOf(row) : openGovernance();
+  deps.registry.govern(id, {
+    ...policy,
+    state: 'enabled',
+    toolsEnabled: policy.state === 'enabled' && policy.toolsEnabled,
+  });
+}
 /** Apply one row to the live registry: register or unregister a remote connector, then its governance. */
 export function applyRow(deps: ReconcileDeps, row: ConnectorRecord) {
   const { registry, secrets, live, log = console.log } = deps;
+  if (deps.internal?.includes(row.id)) {
+    applyInternal(deps, row.id, row);
+    return;
+  }
   if (!row.bundled) {
     if (row.state === 'draft') {
       live.unregister(row.id);
@@ -70,7 +89,10 @@ export async function applyAllRows(deps: ReconcileDeps) {
   const rows = await deps.store.list();
   const present = new Set(rows.map(row => row.id));
   for (const connector of deps.registry.list())
-    if (!present.has(connector.id)) deps.registry.govern(connector.id, deniedGovernance());
+    if (!present.has(connector.id)) {
+      if (deps.internal?.includes(connector.id)) applyInternal(deps, connector.id);
+      else deps.registry.govern(connector.id, deniedGovernance());
+    }
   for (const row of rows) applyRow(deps, row);
 }
 /** Poll the rows' versions; apply changed rows, forget deleted ones. Returns a stop function. */
@@ -86,7 +108,8 @@ export function watchConnectors(deps: ReconcileDeps, intervalMs = 5000) {
       for (const id of seen.keys())
         if (!present.has(id)) {
           seen.delete(id);
-          deps.live.unregister(id);
+          if (deps.internal?.includes(id)) applyInternal(deps, id);
+          else deps.live.unregister(id);
         }
       for (const v of versions) {
         if (seen.get(v.id) === v.version) continue;
