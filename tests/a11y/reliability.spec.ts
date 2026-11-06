@@ -25,13 +25,13 @@ test('two tabs and a reconnect announce a persisted reminder once; Visa opens it
   const thread = api.threads.find(t => t.id === 'ledighet')!;
   api.deliveries = [{ id: 'reminder-ledighet-v2-1', threadId: thread.id, kind: 'reminder' }];
   try {
-    await Promise.all([open(page, '/calendar'), open(second, '/todo')]);
+    await Promise.all([open(page, '/calendar'), open(second, '/')]);
     await expect.poll(() => api.deliveryClaims.length).toBe(1);
     const body = 'Påminnelse: ' + thread.title;
     await expect.poll(async () => (await page.getByRole('region', { name: 'Aviseringar' }).getByText(body, { exact: true }).count()) + (await second.getByRole('region', { name: 'Aviseringar' }).getByText(body, { exact: true }).count())).toBe(1);
     const winner = await page.getByRole('region', { name: 'Aviseringar' }).getByText(body, { exact: true }).count() ? page : second;
     await winner.getByRole('region', { name: 'Aviseringar' }).getByRole('button', { name: 'Visa', exact: true }).click();
-    await expect(winner).toHaveURL('/todo?card=ledighet');
+    await expect(winner).toHaveURL('/?card=ledighet');
     await expect(winner.getByRole('article', { name: 'Kort: ' + thread.title })).toBeVisible();
     await Promise.all([page.reload(), second.reload()]);
     await expect(page.getByRole('region', { name: 'Aviseringar' }).getByText(body)).toHaveCount(0);
@@ -42,12 +42,12 @@ test('two tabs and a reconnect announce a persisted reminder once; Visa opens it
 for (const state of ['queued', 'blocked'] as const) test(`a ${state} timer is visible at 320 px without claiming delivery`, async ({ page, api }) => {
   const card = api.threads.find(t => t.id === 'ledighet')!;
   card.timers = [{ kind: 'reminder', dueAt: '2026-11-05T10:00:00.000Z', state }]; api.threads = [card];
-  await page.setViewportSize(narrow); await open(page, '/todo');
+  await page.setViewportSize(narrow); await open(page, '/');
   await expect(page.getByText(state === 'queued' ? 'Påminnelsen är sparad och väntar på schemaläggning.' : /Påminnelsen stoppades eftersom/)).toBeVisible();
   await expectNoAxeViolations(page); expect(await reflowProblems(page)).toEqual([]);
 });
 test('an empty local view with an unavailable source says it is awaiting evidence', async ({ page, api }) => {
   api.threads = []; api.sources = [{ connector: 'reference', lastSuccess: null, state: 'failed', error: 'unavailable' }];
-  await open(page, '/todo'); await expect(page.getByRole('heading', { name: 'Inväntar källornas besked' })).toBeVisible();
+  await open(page, '/'); await expect(page.getByRole('heading', { name: 'Inväntar källornas besked' })).toBeVisible();
   await expect(page.getByText('Lugnt läge', { exact: true })).toHaveCount(0); await expectNoAxeViolations(page);
 });

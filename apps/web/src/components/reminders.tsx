@@ -32,9 +32,9 @@ export function ReminderBell() {
         : <List density="spacious" aria-label="Aktuella påminnelser">{reminders.map(thread => <ListItem key={thread.id}
           label={<Text weight="semibold" maxLines={2}>{thread.title}</Text>}
           description={<Text type="supporting">{thread.trigger.source} · <Timestamp value={thread.trigger.at} format="relative" hasTooltip={false} /></Text>}
-          href={`/todo?card=${encodeURIComponent(thread.id)}`} />)}</List>)}
+          href={`/?card=${encodeURIComponent(thread.id)}`} />)}</List>)}
       <Divider />
-      <HStack padding={3}><Link href="/todo" hasUnderline>Öppna Att göra</Link></HStack>
+      <HStack padding={3}><Link href="/" hasUnderline>Öppna Hem</Link></HStack>
     </VStack>}>
     <Button label={reminders.length ? String(reminders.length) : name} aria-label={name} isIconOnly={reminders.length === 0}
       icon={<Icon icon={BellIcon} size="sm" />} variant="ghost" size="sm" tooltip="Påminnelser" />

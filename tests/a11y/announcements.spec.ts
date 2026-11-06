@@ -19,18 +19,18 @@ test.describe('4.1.3 status messages', () => {
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Tio personer är på plats i dag.'));
   });
 
-  test('moving between pages is spoken, and so is the area Att göra is narrowed to', async ({ page, api: _ }) => {
-    await open(page, '/');
-    await page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: /^Att göra/ }).click();
-    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Att göra'));
+  test('moving between pages is spoken, and so is the area Hem is narrowed to', async ({ page, api: _ }) => {
+    await open(page, '/calendar');
+    await page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: /^Hem/ }).click();
+    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Hem'));
     await page.getByRole('combobox', { name: 'Område' }).click();
     await page.getByRole('option', { name: 'Personal' }).click();
-    await expect(page).toHaveURL(/\/todo\?area=personal$/);
+    await expect(page).toHaveURL(/\/\?area=personal$/);
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Visar området Personal'));
   });
 
   test('a card leaving the stream is spoken with its way back', async ({ page, api: _ }) => {
-    await open(page, '/todo');
+    await open(page, '/');
     await snoozeFirst(page);
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Jag påminner dig i morgon 06:00.'));
   });

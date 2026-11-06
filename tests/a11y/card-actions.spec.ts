@@ -11,7 +11,7 @@ test.describe('a row shows the next step and keeps the rest behind Fler val', ()
   test.use({ viewport: desktop });
 
   test('the keyboard reaches every action a row tucks away, its time picker included', async ({ page, api: _ }) => {
-    await open(page, '/todo');
+    await open(page, '/');
     const row = page.locator('#thread-omtanke');
     await expect(row.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
     await expect(row.getByRole('button', { name: 'Se mönstret' })).toHaveCount(0);
@@ -30,7 +30,7 @@ test.describe('a row shows the next step and keeps the rest behind Fler val', ()
 
   test('an open card has one time action: Inte nu in view, and no second list under Fler val', async ({ page, api: _ }) => {
     // The row opened as a card, in the panel (D50).
-    await open(page, '/todo?card=fakturor');
+    await open(page, '/?card=fakturor');
     const card = page.getByRole('article', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' });
     await expect(card.getByRole('button', { name: 'Inte nu', exact: true })).toBeVisible();
     await expect(card.getByRole('button', { name: 'Påminn mig' })).toHaveCount(0);
@@ -41,7 +41,7 @@ test.describe('a row shows the next step and keeps the rest behind Fler val', ()
 
   test('a card that waits on someone has one time action too, and says when it will remind', async ({ page, api }) => {
     api.threads.find(t => t.id === 'tillbud')!.timers = [{ kind: 'reminder', dueAt: '2026-11-05T10:00:00.000Z', state: 'scheduled' }];
-    await open(page, '/todo?tab=waiting');
+    await open(page, '/?tab=waiting');
     const card = page.locator('#thread-tillbud');
     await expect(card).toContainText('Väntar på skyddsombudet · påminner dig');
     await expect(card.getByRole('button', { name: 'Inte nu', exact: true })).toHaveCount(0);
@@ -53,7 +53,7 @@ test.describe('a row shows the next step and keeps the rest behind Fler val', ()
   });
 
   test('the open proposal has the same picker as every other card', async ({ page, api: _ }) => {
-    await open(page, '/todo?card=samtal');
+    await open(page, '/?card=samtal');
     await page.getByRole('button', { name: 'Skicka', exact: false }).first().waitFor();
     const proposal = page.getByRole('article').filter({ has: page.getByRole('button', { name: /^Skicka/ }) }).first();
     await proposal.getByRole('button', { name: 'Inte nu', exact: true }).click();
@@ -62,7 +62,7 @@ test.describe('a row shows the next step and keeps the rest behind Fler val', ()
   });
 
   test('Skriv själv opens its dialog from the sub-menu and the focus lands in the field', async ({ page, api: _ }) => {
-    await open(page, '/todo');
+    await open(page, '/');
     await page.locator('#thread-omtanke').getByRole('button', { name: 'Fler val' }).click();
     await page.getByRole('menuitem', { name: 'Inte nu' }).click();
     await page.getByRole('menuitem', { name: /^Skriv själv/ }).click();
@@ -72,7 +72,7 @@ test.describe('a row shows the next step and keeps the rest behind Fler val', ()
   });
 
   test('a card put in the box says so in the menu and on its line', async ({ page, api: _ }) => {
-    await open(page, '/todo');
+    await open(page, '/');
     const row = page.locator('#thread-omtanke');
     await row.getByRole('button', { name: 'Fler val' }).click();
     await page.getByRole('menuitem', { name: 'Lägg till i samtalet' }).click();
@@ -87,7 +87,7 @@ test.describe('the page says one thing at a time', () => {
   test.use({ viewport: desktop });
 
   test('the one filled button on the overview is what is due today', async ({ page, api: _ }) => {
-    await open(page, '/todo');
+    await open(page, '/');
     // Filled means opaque and dark: black in Neutral, the profile's own colour under a municipal one. A secondary button is a translucent tint.
     const filled = await page.getByRole('main').evaluate(main => [...main.querySelectorAll('button')].filter(button => {
       const [r = 255, g = 255, b = 255, a = 1] = (getComputedStyle(button).backgroundColor.match(/[\d.]+/g) ?? []).map(Number);
@@ -98,7 +98,7 @@ test.describe('the page says one thing at a time', () => {
   });
 
   test('how often the assistant interrupts is one press away, from the keyboard too', async ({ page, api: _ }) => {
-    await open(page, '/todo');
+    await open(page, '/');
     await page.getByRole('button', { name: 'Så här hör jag av mig' }).focus();
     await expect(page.getByRole('tooltip')).toContainText('Jag stör högst');
     await page.keyboard.press('Tab');
@@ -110,14 +110,14 @@ test.describe('a phone', () => {
   test.use({ viewport: phone });
 
   test('the day\'s work comes before the figures', async ({ page, api: _ }) => {
-    await open(page, '/todo');
+    await open(page, '/');
     const work = await page.getByRole('heading', { name: 'Nu · 1' }).boundingBox();
     const figures = await page.getByRole('heading', { name: /^Läget/ }).boundingBox();
     expect(work!.y).toBeLessThan(figures!.y);
   });
 
   test('Inte nu opens from the card and shows its rows', async ({ page, api: _ }) => {
-    await open(page, '/todo');
+    await open(page, '/');
     await page.getByRole('article', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' }).getByRole('button', { name: 'Inte nu', exact: true }).click();
     await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: /^Skriv själv/ })).toBeVisible();
@@ -140,7 +140,7 @@ test.describe('Redan hanterat', () => {
   test.use({ viewport: desktop });
 
   test('when and what are two choices, and the times stand under each other', async ({ page, api: _ }) => {
-    await open(page, '/todo?tab=done');
+    await open(page, '/?tab=done');
     await expect(page.getByRole('radiogroup', { name: 'Tid' }).getByRole('radio', { name: 'I dag' })).toBeChecked();
     await page.getByRole('radiogroup', { name: 'Typ' }).getByRole('radio', { name: 'Frågor' }).click();
     const region = page.getByRole('region', { name: 'Redan hanterat' });
@@ -179,7 +179,7 @@ test.describe('the calendar on a phone', () => {
 test.describe('nothing is cut off', () => {
   for (const width of [1024, 768]) test(`a row and a card keep their words beside the rail at ${width} px`, async ({ page, api: _ }) => {
     await page.setViewportSize({ width, height: 900 });
-    await open(page, '/todo');
+    await open(page, '/');
     await expect(page.locator('#thread-omtanke').getByRole('button', { name: 'Omtankesamtal med Anna Lindqvist' })).toBeVisible();
     expect(await cutOff(page.getByRole('main'))).toEqual([]);
   });

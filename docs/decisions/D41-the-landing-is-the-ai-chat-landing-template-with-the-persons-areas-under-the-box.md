@@ -1,6 +1,6 @@
 # D41 · The landing is Astryx's `ai-chat-landing` template, with the person's areas under the box
 
-**Status:** accepted, built 2026-11-05 · **Date:** 2026-11-05 · **Area:** ui
+**Status:** accepted, built 2026-11-05; items 1, 2 and 6 (the greeting and the question, the 720 px column, the brief above the box) replaced by [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md), items 3 to 5 stand after the day's work · **Date:** 2026-11-05 · **Area:** ui
 
 **Decision.** The landing (`/`, `apps/web/src/pages/start.tsx`) is drawn as Astryx's `ai-chat-landing` template
 (`bun run astryx template ai-chat-landing`): the greeting, the question, the box, a row of categories and the chosen

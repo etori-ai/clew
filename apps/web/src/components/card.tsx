@@ -352,17 +352,3 @@ export function ThreadRow({ thread, areaTitle, notice = false, isOpen = false, o
     endContent={narrow ? undefined : end} />;
 }
 
-/**
- * The next step alone (D34): the thread's primary action as one button, for the brief on the landing. Black where the day
- * is today, soft otherwise; the count follows the selection the connector wrote. The full action row is on the card.
- */
-export function PrimaryAction({ thread, onChange, onOpenCardView }: ActionProps) {
-  const actions = useThreadActions({ thread, onChange, onOpenCardView });
-  const primary = thread.actions.find(a => a.role === 'primary');
-  if (!primary || thread.state !== 'open') return null;
-  const label = actions.selectable ? `${primary.label} · ${actions.selected.length}` : primary.label;
-  return <VStack gap={1}>
-    <Button size="sm" variant={thread.deadline && streamGroup(thread, today()) === 'nu' ? 'primary' : 'secondary'} label={label} isDisabled={actions.selectable && actions.selected.length === 0} clickAction={() => actions.perform(primary)} />
-    {actions.error && <Text as="p" role="alert" color="accent">{actions.error}</Text>}
-  </VStack>;
-}

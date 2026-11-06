@@ -133,10 +133,12 @@ type Options = {
   minMain: number;
   /** Nothing is pinned on a short screen (1.4.10): the panel is always a drawer there. */
   overlayOnly?: boolean;
+  /** What stands beside the column while nothing is open in the panel (D53: Hem's day and what happened since yesterday). Only where the panel fits beside the column; elsewhere the page places it itself. */
+  rest?: ReactNode;
 };
 /**
  * The panel (D50): the one place beside the page's column for what the person holds next to it, a view, a source or a
- * card. Where it fits it is a `LayoutPanel` in the page's `end` slot, non-modal, so the column stays in use (the
+ * card; at rest, where the page gives it something to rest on, it holds that (D53). Where it fits it is a `LayoutPanel` in the page's `end` slot, non-modal, so the column stays in use (the
  * `ai-chat` template's artifact beside the transcript, composed as the calendar page composes its own panel); where it
  * does not fit, and on a phone, it is the drawer it always was. Beside the page it is a named complementary region:
  * opening it moves focus to its heading (never away from a field the person is typing in: the box keeps the focus
@@ -144,7 +146,7 @@ type Options = {
  * thing taking another's place is named aloud (2.4.3, 4.1.3). A drawer does all of that itself.
  */
 const TYPING = 'input, textarea, [contenteditable="true"], [role="textbox"], [role="combobox"]';
-export function usePanel(panel: PanelFrame | null, { minMain, overlayOnly = false }: Options): { end: ReactNode | undefined; overlay: ReactNode } {
+export function usePanel(panel: PanelFrame | null, { minMain, overlayOnly = false, rest }: Options): { end: ReactNode | undefined; overlay: ReactNode } {
   const fits = useMediaQuery(panelBesideQuery(minMain));
   const inline = fits && !overlayOnly;
   const announce = useAnnounce();
@@ -196,6 +198,8 @@ export function usePanel(panel: PanelFrame | null, { minMain, overlayOnly = fals
         </HStack></LayoutHeader>}
         content={<LayoutContent>{panel.body(true)}</LayoutContent>} />
     </VStack>
+  </LayoutPanel> : inline && rest ? <LayoutPanel width={PANEL} hasDivider role="complementary" label="Vid sidan av" padding={0} isScrollable={false}>
+    <Layout height="fill" padding={3} content={<LayoutContent>{rest}</LayoutContent>} />
   </LayoutPanel> : undefined;
   const overlay = inline ? null : <Drawer isOpen={panel !== null} onOpenChange={close} side="end" width={panel?.wide ? 'min(1100px, 100vw)' : PANEL} label={panel?.title ?? 'Vy'}>
     <Layout header={<DrawerHeader title={panel?.title ?? null} onOpenChange={close} />} content={<LayoutContent>

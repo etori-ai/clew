@@ -1,6 +1,6 @@
 # D39 · The landing's box rests on the column's centre line when what is above it fits
 
-**Status:** accepted, built 2026-11-05; what stands under the box is D41's areas and cards, on a 720 px column · **Date:** 2026-11-05 · **Area:** ui
+**Status:** accepted, built 2026-11-05; replaced by [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md) on 2026-11-06: the brief is gone and the box is anchored under the greeting · **Date:** 2026-11-05 · **Area:** ui
 
 **Decision.** On the landing (`/`, `apps/web/src/pages/start.tsx`) the box is centred vertically whenever that is
 possible, and it still never moves while the person types (D36).

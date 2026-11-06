@@ -10,7 +10,7 @@ test.describe('appearance (D39)', () => {
   test.use({ viewport: phone, colorScheme: 'dark' });
 
   test('follows the computer until the person chooses, and the choice is kept', async ({ page, api: _ }) => {
-    await open(page, '/todo');
+    await open(page, '/');
     await expect.poll(() => dark(page)).toBe(true);
     const nav = await openNav(page);
     await nav.getByRole('button', { name: 'Testa Testsson', exact: true }).click();

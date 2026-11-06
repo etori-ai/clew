@@ -1,7 +1,7 @@
 import { answer, composer, desktop, expect, expectNoAxeViolations, open, phone, snoozeFirst, test } from './support';
 
 /** axe over every route and over the states a route can reach, at both layouts. */
-const routes = [['start', '/'], ['the overview', '/todo'], ['an area', '/todo?area=personal'], ['the calendar lens', '/todo?area=kalender'], ['the log', '/todo?tab=done'], ['the calendar page', '/calendar']] as const;
+const routes = [['start', '/'], ['an area', '/?area=personal'], ['the calendar lens', '/?area=kalender'], ['the log', '/?tab=done'], ['the calendar page', '/calendar']] as const;
 
 for (const [layout, viewport] of [['desktop', desktop], ['phone', phone]] as const) test.describe(layout, () => {
   test.use({ viewport });
@@ -65,20 +65,20 @@ for (const [layout, viewport] of [['desktop', desktop], ['phone', phone]] as con
   });
 
   test('a toast has no axe violations', async ({ page, api: _ }) => {
-    await open(page, '/todo');
+    await open(page, '/');
     await snoozeFirst(page);
     await expect(page.getByRole('region', { name: 'Aviseringar' })).toBeVisible();
     await expectNoAxeViolations(page);
   });
 
   test('every card opened has no axe violations', async ({ page, api: _ }) => {
-    // A card's state is a tab on Att göra (D50): Pågår lists what waits on someone else.
-    await open(page, '/todo?tab=waiting');
-    await expect(page.locator('#att-gora-lista')).toHaveAccessibleName('Pågår utan dig');
+    // A card's state is a tab on Hem (D50, D53): Väntar på andra lists what waits on someone else.
+    await open(page, '/?tab=waiting');
+    await expect(page.locator('#att-gora-lista')).toHaveAccessibleName('Väntar på andra');
     await expectNoAxeViolations(page);
     // A card open from its row: in the panel on a desktop, in the list on a phone. One of each kind of card.
     for (const id of ['omtanke', 'samtal']) {
-      await open(page, `/todo?card=${id}`);
+      await open(page, `/?card=${id}`);
       await expect(page.locator(`#card-${id}, #thread-${id}[aria-label]`).first()).toBeVisible();
       await expectNoAxeViolations(page);
     }

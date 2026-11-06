@@ -25,9 +25,9 @@ test.describe('screens', () => {
     await page.screenshot({ path: out('2-samtal-med-panel') });
   });
   test('3 att göra', async ({ page, api: _ }) => {
-    await page.setViewportSize(wide); await open(page, '/todo');
+    await page.setViewportSize(wide); await open(page, '/');
     await page.screenshot({ path: out('3-att-gora') });
-    await open(page, '/todo?card=fakturor');
+    await open(page, '/?card=fakturor');
     await page.getByRole('complementary', { name: 'Kort' }).waitFor();
     await page.screenshot({ path: out('3-att-gora-kort') });
     await page.setViewportSize(desktop);
@@ -35,7 +35,7 @@ test.describe('screens', () => {
     await page.screenshot({ path: out('3-att-gora-kort-1280') });
   });
   test('3 samtal om kortet', async ({ page, api: _ }) => {
-    await page.setViewportSize(wide); await open(page, '/todo?card=fakturor');
+    await page.setViewportSize(wide); await open(page, '/?card=fakturor');
     await composer(page).fill('Vem är på plats?');
     await composer(page).press('Enter');
     await answer(page).waitFor();
@@ -50,7 +50,7 @@ test.describe('screens', () => {
     await page.screenshot({ path: out('4-verktygssida-rad') });
   });
   test('5 telefon', async ({ page, api: _ }) => {
-    await page.setViewportSize(phone); await open(page, '/todo');
+    await page.setViewportSize(phone); await open(page, '/');
     await page.screenshot({ path: out('5-telefon-att-gora') });
     await open(page, '/');
     await composer(page).fill('telefonboken lärare');

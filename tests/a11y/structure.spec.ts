@@ -4,10 +4,9 @@ test.use({ viewport: desktop });
 
 test.describe('2.4.2 page titled', () => {
   const titles = [
-    ['/', 'Vad vill du göra · Startsidan'],
-    ['/todo', 'Att göra · Startsidan'],
-    ['/todo?area=personal', 'Att göra · Startsidan'],
-    ['/todo?tab=done', 'Att göra · Startsidan'],
+    ['/', 'Hem · Startsidan'],
+    ['/?area=personal', 'Hem · Startsidan'],
+    ['/?tab=done', 'Hem · Startsidan'],
     ['/calendar', 'Vecka 45 · Kalender · Startsidan'],
     ['/?open=hr.whoIsOn&open-title=Bemanning', 'Bemanning · Startsidan'],
   ] as const;
@@ -24,7 +23,7 @@ test.describe('2.4.2 page titled', () => {
 
 test.describe('1.3.1 and 2.4.6 structure', () => {
   // No TopNav (the canvas's H1 and H4, the `shell-side-nav` template): the rail is the page's one navigation and carries the product and the person.
-  for (const path of ['/', '/todo', '/todo?area=personal', '/todo?tab=done', '/calendar']) test(`${path} has one h1, one main and one rail`, async ({ page, api: _ }) => {
+  for (const path of ['/', '/?area=personal', '/?tab=done', '/calendar']) test(`${path} has one h1, one main and one rail`, async ({ page, api: _ }) => {
     await open(page, path);
     await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveCount(1);
     await expect(page.getByRole('main')).toHaveCount(1);
@@ -37,54 +36,68 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
     await expect(rail).toHaveCount(1);
     await expect(rail.getByRole('link', { name: 'Nytt samtal' })).toBeVisible();
-    // Att göra says how much needs the person; a card's state and the areas are its tabs and its filter, not rows here.
-    await expect(rail.getByRole('link', { name: /^Att göra/ })).toHaveAttribute('href', '/todo');
-    await expect(rail.getByRole('link', { name: /^Att göra/ })).toContainText('6');
+    // Hem says how much needs the person (D53); a card's state and the areas are its tabs and its filter, not rows here.
+    await expect(rail.getByRole('link', { name: /^Hem/ })).toHaveAttribute('href', '/');
+    await expect(rail.getByRole('link', { name: /^Hem/ })).toContainText('6');
     await expect(rail.getByRole('group', { name: 'Verktyg' }).getByRole('link', { name: 'Kalender' })).toBeVisible();
     await expect(rail.getByRole('link', { name: 'Vem är på plats i dag?' })).toHaveAttribute('href', '/conversations/fraga');
-    await expect(rail.getByRole('link', { name: 'Alla samtal' })).toHaveAttribute('href', '/todo?tab=done');
+    await expect(rail.getByRole('link', { name: 'Alla samtal' })).toHaveAttribute('href', '/?tab=done');
     for (const gone of ['Behöver dig', 'Jag föreslår', 'Till kännedom', 'Inte nu']) await expect(rail.getByRole('link', { name: gone })).toHaveCount(0);
     await expect(rail.getByRole('button', { name: 'Områden' })).toHaveCount(0);
-    await rail.getByRole('link', { name: /^Att göra/ }).click();
-    await expect(page.locator('nav a[aria-current="page"]')).toHaveText(/^Att göra/);
+    await rail.getByRole('link', { name: /^Hem/ }).click();
+    await expect(page.locator('nav a[aria-current="page"]')).toHaveText(/^Hem/);
     await page.setViewportSize(phone);
     await expect(page.getByRole('navigation', { name: 'Sidonavigering' })).toHaveCount(0);
     const nav = await openNav(page);
     await expect(nav).toHaveCount(1);
-    await expect(nav.getByRole('link', { name: /^Att göra/ })).toBeVisible();
+    await expect(nav.getByRole('link', { name: /^Hem/ })).toBeVisible();
   });
 
-  test('Att göra is one heading over its groups, a row is a button that says whether its card is open, the log groups its days', async ({ page, api: _ }) => {
-    await open(page, '/todo');
-    await expect(heading(page, 1, 'Att göra')).toBeVisible();
+  test('Hem is one greeting over its groups, a row is a button that says whether its card is open, the log groups its days', async ({ page, api: _ }) => {
+    await open(page, '/');
+    await expect(heading(page, 1, 'Hej, Testa')).toBeVisible();
     await expect(heading(page, 2, 'Nu · 1')).toBeVisible();
     const row = page.getByRole('listitem').filter({ has: page.getByRole('button', { name: 'Omtankesamtal med Anna Lindqvist', exact: true }) });
     await expect(row.getByRole('button', { name: 'Omtankesamtal med Anna Lindqvist', exact: true })).toHaveAttribute('aria-expanded', 'false');
-    await open(page, '/todo?tab=done');
-    await expect(heading(page, 1, 'Att göra')).toBeVisible();
+    await open(page, '/?tab=done');
+    await expect(heading(page, 1, 'Hej, Testa')).toBeVisible();
     await expect(heading(page, 2, 'Redan hanterat')).toBeVisible();
     await page.getByRole('radio', { name: 'Veckan' }).click();
     await expect(page.getByRole('list', { name: /november/ }).first()).toBeVisible();
   });
 
-  for (const path of ['/', '/todo']) test(`sections on ${path} have distinct names`, async ({ page, api: _ }) => {
+  for (const path of ['/', '/?card=fakturor']) test(`sections on ${path} have distinct names`, async ({ page, api: _ }) => {
     await open(page, path);
     const names = await page.locator('section[aria-label]').evaluateAll(list => list.map(el => el.getAttribute('aria-label')));
     expect(new Set(names).size).toBe(names.length);
   });
 
-  test('the box is the page: the greeting and the question over it, and the brief above has at most three rows, each with its next step', async ({ page, api: _ }) => {
+  test('Hem is the greeting with the day over the box, and the day\'s work under the box: the tabs, the groups, Läget, then the day and what happened since yesterday', async ({ page, api: _ }) => {
     await open(page, '/');
-    await expect(heading(page, 1, 'Vad vill du göra?')).toBeVisible();
-    // The greeting is a line of text by first name, not a heading: the question is the page's one h1.
-    await expect(page.getByRole('region', { name: 'Vad vill du göra' }).getByText('Hej, Testa', { exact: true })).toBeVisible();
-    const brief = page.getByRole('list', { name: 'Det som behöver dig' });
-    await expect(brief.getByRole('listitem')).toHaveCount(3);
-    // A card that needs a choice first gets "Granska", which opens it beside the landing; never a button that starts disabled.
-    await expect(brief.getByRole('link', { name: 'Granska 3' })).toHaveAttribute('href', '/?card=fakturor');
-    await expect(brief.getByRole('link', { name: 'Attestera 3 fakturor, 48 200 kr' })).toHaveAttribute('href', '/?card=fakturor');
-    await page.getByRole('link', { name: 'Allt i Att göra' }).click();
-    await expect(heading(page, 2, 'Nu · 1')).toBeVisible();
+    // The greeting by first name is the page's one h1 (D53), with the day under it; nothing sums the day up in a sentence.
+    const lead = page.getByRole('region', { name: 'Vad vill du göra' });
+    await expect(lead.getByRole('heading', { level: 1, name: 'Hej, Testa' })).toBeVisible();
+    await expect(lead.getByText('onsdag 4 november', { exact: true })).toBeVisible();
+    await expect(page.getByText(/behöver dig i dag/)).toHaveCount(0);
+    const greeting = (await heading(page, 1, 'Hej, Testa').boundingBox())!, box = (await composer(page).boundingBox())!;
+    expect(box.y).toBeGreaterThan(greeting.y);
+    // Under the box the day's work: a card's state as four tabs, the groups as the h2s, the figures after them.
+    await expect(page.getByRole('tablist').getByRole('tab')).toHaveCount(4);
+    const first = heading(page, 2, 'Nu · 1');
+    await expect(first).toBeVisible();
+    expect((await first.boundingBox())!.y).toBeGreaterThan(box.y + box.height);
+    await expect(heading(page, 2, 'Läget · Skönsmons skola')).toBeVisible();
+    await expect(page.getByRole('list', { name: 'Det som behöver dig' })).toHaveCount(0);
+    // At this width the panel does not fit beside the column, so the day and what happened since yesterday end the page.
+    await expect(page.getByRole('complementary', { name: 'Vid sidan av' })).toHaveCount(0);
+    const today = page.getByRole('region', { name: 'I dag' }), since = page.getByRole('region', { name: 'Sedan i går' });
+    await expect(today.getByRole('heading', { level: 2, name: 'I dag' })).toBeVisible();
+    await expect(today.getByText('09:30–10:30 Rektorsmöte')).toBeVisible();
+    await expect(today.getByRole('link', { name: 'Hela veckan' })).toHaveAttribute('href', '/calendar');
+    await expect(since.getByRole('link', { name: /Attesterade fakturor/ })).toHaveAttribute('href', '/?tab=done');
+    await expect(since.getByRole('link', { name: /Tillbud 2026-1182/ })).toHaveAttribute('href', '/?card=tillbud');
+    await expect(since.getByText(/^Nästa genomgång /)).toBeVisible();
+    await expectNoAxeViolations(page);
   });
 
   test('the areas under the box are toggles for the areas that have something to start, and the chosen one shows its standing actions as cards', async ({ page, api: _ }) => {
@@ -96,7 +109,6 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     // The icon is the one the connector named for its area; an area that names none is its title alone.
     await expect(areas.getByRole('button', { name: 'Budget' }).locator('svg')).toHaveCount(1);
     await expect(areas.getByRole('button', { name: 'Viktigt nu' }).locator('svg')).toHaveCount(0);
-    const top = (await composer(page).boundingBox())!.y;
     await areas.getByRole('button', { name: 'Budget' }).click();
     await expect(areas.getByRole('button', { name: 'Budget' })).toHaveAttribute('aria-pressed', 'true');
     const cards = page.getByRole('group', { name: 'Budget', exact: true });
@@ -104,8 +116,8 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(cards.getByRole('link', { name: 'Budget mot prognos' })).toHaveAttribute('href', /^\/\?open=finance\.budget&open-title=/);
     await expect(cards.getByText('Ekonomisystemet · öppnar vyn')).toBeVisible();
     await expect(cards.getByRole('button', { name: 'Attestera fakturor' })).toBeVisible();
-    // The cards come under the box: choosing an area never moves the field (D36).
-    expect((await composer(page).boundingBox())!.y).toBe(top);
+    // The cards come under the toggles and are brought into view (D41 item 4): the areas stand after the day's work (D53), so the box above is not what the person is looking at.
+    await expect(cards.getByText('Attestera fakturor', { exact: true })).toBeInViewport();
     await expectNoAxeViolations(page);
     // Another area takes its place; the chosen one pressed again closes the cards.
     await areas.getByRole('button', { name: 'Personal' }).click();
@@ -155,16 +167,16 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(page).toHaveURL(/^[^?]*\/\?card=fakturor$/);
   });
 
-  test('a brief row reaches the box by @, which with nothing typed offers only what the page shows', async ({ page, api: _ }) => {
+  test('a row reaches the box by @, which with nothing typed offers only what the page shows', async ({ page, api: _ }) => {
     await open(page, '/');
-    const brief = page.getByRole('list', { name: 'Det som behöver dig' });
-    await expect(brief.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
-    const titles = await brief.getByRole('listitem').getByRole('link').filter({ hasNotText: /^Granska/ }).allTextContents();
+    const rows = page.getByRole('tabpanel', { name: 'Behöver dig' });
+    await expect(rows.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
     await composer(page).pressSequentially('@');
     const menu = page.getByRole('listbox', { name: 'Objekt' });
     await expect(menu.getByRole('option').first()).toBeVisible();
     const offered = await menu.getByRole('option').allTextContents();
-    expect(offered.some(o => o.includes(titles[0]!))).toBe(true);
+    // The cards in the tab on screen are offered; a card set aside (Inte nu) is not.
+    expect(offered.some(o => o.includes('Attestera 3 fakturor, 48 200 kr'))).toBe(true);
     expect(offered.some(o => o.includes('Brandskyddsrond i oktober saknar protokoll'))).toBe(false);
   });
 
@@ -186,7 +198,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     const search = page.getByRole('combobox', { name: 'Sök i samtal och kort' });
     await search.fill('fakturor');
     await page.getByRole('option', { name: /Attestera 3 fakturor/ }).click();
-    await expect(page).toHaveURL(/\/todo\?card=fakturor$/);
+    await expect(page).toHaveURL(/\/\?card=fakturor$/);
   });
 
   test('the calendar names its days as headings', async ({ page, api: _ }) => {
@@ -269,7 +281,7 @@ test.describe('D26 questions answered from documents', () => {
 test.describe('D30 the obligation', () => {
   test('the card carries its steps, its judgement calls and its day loads with names', async ({ page, api: _ }) => {
     // The row keeps the thread's id; its card, open in the panel, has its own (D50).
-    await open(page, '/todo?card=samtal');
+    await open(page, '/?card=samtal');
     const card = page.locator('#card-samtal');
     await expect(card.getByRole('list', { name: 'Steg' })).toBeVisible();
     await expect(card.getByRole('list', { name: 'Steg' }).getByRole('listitem')).toHaveCount(4);
@@ -280,7 +292,7 @@ test.describe('D30 the obligation', () => {
     await expect(heading(page, 2, 'ons 4 nov')).toBeVisible();
   });
   test('the waiting obligation shows the sum and lets the manager remind from the keyboard', async ({ page, api: _ }) => {
-    await open(page, '/todo?tab=waiting&card=samtal-svar');
+    await open(page, '/?tab=waiting&card=samtal-svar');
     const card = page.locator('#card-samtal-svar');
     await expect(card).toContainText('1 av 2 svarat');
     await expect(card.getByRole('progressbar')).toHaveCount(0);

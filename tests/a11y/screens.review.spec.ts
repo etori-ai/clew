@@ -106,20 +106,20 @@ test.describe('review', () => {
   }, ['1280']);
 
   // The overview and its piles.
-  shot('10-overview', async (page, api) => { full(api); await open(page, '/todo'); }, ['1280', '1600', '375', 'tall'], true);
-  shot('11-overview-card', async page => { await open(page, '/todo?card=fakturor'); }, ['1280', '375']);
+  shot('10-overview', async (page, api) => { full(api); await open(page, '/'); }, ['1280', '1600', '375', 'tall'], true);
+  shot('11-overview-card', async page => { await open(page, '/?card=fakturor'); }, ['1280', '375']);
   shot('12-overview-snooze', async page => {
-    await open(page, '/todo');
+    await open(page, '/');
     await page.getByRole('button', { name: 'Inte nu', exact: true }).first().click();
   }, ['1280', '375']);
   shot('13-overview-more', async page => {
-    await open(page, '/todo');
+    await open(page, '/');
     await page.getByRole('button', { name: 'Fler val' }).first().click();
   }, ['1280']);
-  shot('14-area', async page => { await open(page, '/todo?area=personal'); });
-  shot('15-waiting', async page => { await open(page, '/todo?tab=waiting'); });
-  shot('16-snoozed', async page => { await open(page, '/todo?tab=snoozed'); });
-  shot('17-handled', async page => { await open(page, '/todo?tab=done'); }, ['1280', '375', 'tall']);
+  shot('14-area', async page => { await open(page, '/?area=personal'); });
+  shot('15-waiting', async page => { await open(page, '/?tab=waiting'); });
+  shot('16-snoozed', async page => { await open(page, '/?tab=snoozed'); });
+  shot('17-handled', async page => { await open(page, '/?tab=done'); }, ['1280', '375', 'tall']);
 
   // The conversation.
   shot('20-conversation', async page => { await open(page, '/conversations/fraga'); }, ['1280', '375'], true);
@@ -138,7 +138,7 @@ test.describe('review', () => {
   // The side panel.
   shot('30-panel-view', async page => { await open(page, '/?open=hr.whoIsOn&open-title=Bemanning'); });
   shot('31-panel-sources', async page => { await open(page, '/?open=clew.search&open-title=K%C3%A4llor&open-input=%7B%22query%22%3A%22fall%22%7D'); });
-  shot('32-panel-card', async page => { await open(page, '/todo?open-card=omtanke&open-action=pattern'); }, ['1280']);
+  shot('32-panel-card', async page => { await open(page, '/?open-card=omtanke&open-action=pattern'); }, ['1280']);
 
   // The calendar.
   shot('40-calendar-week', async page => { await open(page, '/calendar'); }, ['1280', '1600', '375'], true);
@@ -207,7 +207,7 @@ test.describe('review', () => {
     full(api); await open(page, '/'); await page.getByRole('button', { name: 'Öppna navigering' }).click();
   }, ['375']);
   shot('74-rail-open', async (page, api) => {
-    full(api); await open(page, '/todo');
+    full(api); await open(page, '/');
     await page.getByRole('button', { name: 'Områden', exact: true }).click();
     await page.getByRole('button', { name: 'Administration', exact: true }).click();
   }, ['1280', 'tall']);
@@ -215,16 +215,16 @@ test.describe('review', () => {
     await open(page, '/'); await page.getByRole('combobox', { name: 'Sök i samtal och kort' }).fill('fak');
   }, ['1280']);
   shot('76-signed-out', async (page, api) => { api.signedIn = false; await page.goto('/'); await page.waitForTimeout(800); });
-  shot('77-not-found-card', async page => { await open(page, '/todo?card=finns-inte'); }, ['1280']);
+  shot('77-not-found-card', async page => { await open(page, '/?card=finns-inte'); }, ['1280']);
   // Where the layouts fold: a small laptop or 125 % zoom, and a tablet.
   shot('80-fold-landing', async (page, api) => { full(api); await open(page, '/'); }, ['1024', '768']);
-  shot('81-fold-overview', async (page, api) => { full(api); await open(page, '/todo'); }, ['1024', '768']);
+  shot('81-fold-overview', async (page, api) => { full(api); await open(page, '/'); }, ['1024', '768']);
   shot('82-fold-calendar', async page => { await open(page, '/calendar'); }, ['1024', '768']);
   shot('83-fold-admin', async (page, api) => { api.admin = true; await open(page, '/admin/connectors'); }, ['1024', '768']);
   shot('84-fold-conversation', ask('Vad gör jag om någon ramlat?'), ['1024']);
 
   // Dark, the screens not yet seen in it.
-  shot('85-dark-overview-card', async page => { await open(page, '/todo'); }, ['tall'], true);
+  shot('85-dark-overview-card', async page => { await open(page, '/'); }, ['tall'], true);
 
   // The first Tab stops, in order, as a keyboard person meets the landing.
   test('tab order', async ({ page, api }) => {
@@ -266,8 +266,8 @@ test.describe('review', () => {
     });
     writeFileSync(`${dir}/metrics/audit-${name}.json`, JSON.stringify(report, null, 1));
   });
-  audit('overview', '/todo', '1280', full);
-  audit('overview-phone', '/todo', '375', full);
+  audit('overview', '/', '1280', full);
+  audit('overview-phone', '/', '375', full);
   audit('calendar', '/calendar', '1280');
   audit('calendar-phone', '/calendar', '375');
   audit('admin', '/admin/connectors', '1280', api => { api.admin = true; });

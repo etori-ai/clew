@@ -1,6 +1,6 @@
 import { composer, desktop, dockOf, expect, heading, hiddenFocusStops, narrow, open, reflowProblems, short, snoozeFirst, test } from './support';
 
-const routes = [['start', '/'], ['the overview', '/todo'], ['an area', '/todo?area=personal'], ['the log', '/todo?tab=done'], ['the calendar page', '/calendar']] as const;
+const routes = [['start', '/'], ['an area', '/?area=personal'], ['the log', '/?tab=done'], ['the calendar page', '/calendar']] as const;
 
 test.describe('1.4.10 reflow', () => {
   for (const viewport of [narrow, short]) for (const [name, path] of routes) test(`${name} reflows at ${viewport.width}×${viewport.height}`, async ({ page, api: _ }) => {
@@ -38,22 +38,22 @@ test.describe('1.4.10 reflow', () => {
     expect(await reflowProblems(page)).toEqual([]);
   });
 
-  test('the tabs and the area filter of Att göra fit a phone: every area is offered and nothing scrolls sideways', async ({ page, api: _ }) => {
+  test('the tabs and the area filter of Hem fit a phone: every area is offered and nothing scrolls sideways', async ({ page, api: _ }) => {
     await page.setViewportSize(narrow);
-    await open(page, '/todo');
+    await open(page, '/');
     // A tab strip that scrolls sideways would hide its last tabs: on a phone the same choice is one menu.
     await expect(page.getByRole('tab')).toHaveCount(0);
     await page.getByRole('button', { name: /^Visa: Behöver dig/ }).click();
     await expect(page.getByRole('menuitem')).toHaveCount(4);
-    await page.getByRole('menuitem', { name: /^Pågår/ }).click();
-    await expect(page).toHaveURL(/\/todo\?tab=waiting$/);
-    await expect(page.getByRole('region', { name: 'Pågår utan dig' })).toBeVisible();
+    await page.getByRole('menuitem', { name: /^Väntar/ }).click();
+    await expect(page).toHaveURL(/\/\?tab=waiting$/);
+    await expect(page.getByRole('region', { name: 'Väntar på andra' })).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
     await page.getByRole('button', { name: 'Område: Alla' }).click();
     expect(await page.getByRole('menuitem').count()).toBeGreaterThanOrEqual(6);
     expect(await reflowProblems(page)).toEqual([]);
     await page.getByRole('menuitem', { name: 'Personal' }).click();
-    await expect(page).toHaveURL(/\/todo\?tab=waiting&area=personal$/);
+    await expect(page).toHaveURL(/\/\?tab=waiting&area=personal$/);
     expect(await reflowProblems(page)).toEqual([]);
   });
 
@@ -76,7 +76,7 @@ test.describe('1.4.12 text spacing', () => {
 });
 
 test.describe('2.4.11 focus not obscured', () => {
-  for (const viewport of [desktop, narrow, short]) for (const path of ['/', '/todo']) test(`every stop on ${path} is visible at ${viewport.width}×${viewport.height}`, async ({ page, api: _ }) => {
+  for (const viewport of [desktop, narrow, short]) for (const path of ['/', '/?card=fakturor']) test(`every stop on ${path} is visible at ${viewport.width}×${viewport.height}`, async ({ page, api: _ }) => {
     await page.setViewportSize(viewport);
     await open(page, path);
     const { hidden } = await hiddenFocusStops(page);
@@ -85,7 +85,7 @@ test.describe('2.4.11 focus not obscured', () => {
 
   test('a toast covers no focus stop on a phone', async ({ page, api: _ }) => {
     await page.setViewportSize(narrow);
-    await open(page, '/todo');
+    await open(page, '/');
     await snoozeFirst(page);
     await expect(page.getByRole('region', { name: 'Aviseringar' })).toBeVisible();
     const { hidden } = await hiddenFocusStops(page);
@@ -94,7 +94,7 @@ test.describe('2.4.11 focus not obscured', () => {
 
   test('the row keeps the stream readable on a short screen', async ({ page, api: _ }) => {
     await page.setViewportSize(short);
-    await open(page, '/todo');
+    await open(page, '/');
     const title = heading(page, 2, 'Nu · ');
     await title.evaluate(el => el.scrollIntoView({ block: 'start' }));
     // With 256 px of height nothing is docked (D31 item 7): the row is in the page flow and the stream has the screen.

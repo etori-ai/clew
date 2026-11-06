@@ -200,8 +200,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     setPending({ text, chips: sent, at: new Date().toISOString(), steps: [], answer: '' });
     setValue('');
     setShown(true);
-    // Asked on a page (D50): the conversation takes the column at once, with what the page showed beside it.
-    if (!current && from && !where.current.here) { origin.current = window.location.pathname + window.location.search; navigate(`/conversations/new${from.search}`); }
+    // Asked about something on a page (D50, D53): the conversation takes the column at once, with what the page showed
+    // beside it, and "Stäng samtalet" leads back to the page as it stood. On Hem the transcript takes the column in place.
+    if (!current && from) { origin.current = window.location.pathname + window.location.search; if (!where.current.here) navigate(`/conversations/new${from.search}`); }
     announce('Söker svar …');
     try {
       const response = await api.converseStream({ text, chips: sent, ...(current ? { conversationId: current.id } : {}) }, event => {

@@ -68,7 +68,7 @@ export { TopNav, TopNavHeading, TopNavItem } from '@astryxdesign/core/TopNav';
 export { Section } from '@astryxdesign/core/Section';
 export { useAnnounce, useMediaQuery, useStreamingText } from '@astryxdesign/core/hooks';
 // Glyphs beyond Astryx's registry come from Heroicons (MIT), the set Astryx's own templates draw with; each is named here once.
-export { ArrowPathIcon, AtSymbolIcon, BellIcon, BookOpenIcon, ChartBarIcon, CheckCircleIcon, DocumentTextIcon, InboxIcon, LightBulbIcon, LinkIcon, MegaphoneIcon, PauseCircleIcon, PhoneIcon, SparklesIcon, Squares2X2Icon, UserCircleIcon, UsersIcon } from '@heroicons/react/24/outline';
+export { ArrowPathIcon, AtSymbolIcon, BellIcon, BookOpenIcon, ChartBarIcon, CheckCircleIcon, DocumentTextIcon, HomeIcon, InboxIcon, LightBulbIcon, LinkIcon, MegaphoneIcon, PauseCircleIcon, PhoneIcon, SparklesIcon, Squares2X2Icon, UserCircleIcon, UsersIcon } from '@heroicons/react/24/outline';
 export { SessionBoundary, sessionFetch, signOut, type BrowserSession } from './session';
 export { WeekAgenda, type AgendaItem } from './week-agenda';
 export { EventCalendar, type CalendarView } from './calendar';

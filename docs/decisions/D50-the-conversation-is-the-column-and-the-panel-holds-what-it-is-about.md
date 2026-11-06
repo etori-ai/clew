@@ -1,6 +1,6 @@
 # D50 · The conversation is the column, and the panel holds what it is about
 
-**Status:** accepted, built 2026-11-05, amended the same day (a brief row opens its card beside the landing); the panel's tabs for what a conversation has opened, the box on the calendar page, a conversation's origin shown on a card and on a tool's page, a resizable panel, the day beside Att göra, and a manual screen-reader pass are not built · **Date:** 2026-11-05 · **Area:** ui
+**Status:** accepted, built 2026-11-05, amended the same day (a brief row opens its card beside the landing); the panel's tabs for what a conversation has opened, the box on the calendar page, a conversation's origin shown on a card and on a tool's page, a resizable panel, and a manual screen-reader pass are not built; item 2's page is `/` and the day stands beside it since [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md) · **Date:** 2026-11-05 · **Area:** ui
 
 **Decision.** Every surface has one job. The rail holds places and earlier conversations. The column shows where the
 person is: a page, or a conversation. The panel holds the one thing they keep beside the column: a view, a source or a

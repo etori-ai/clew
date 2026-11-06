@@ -319,7 +319,7 @@
       "number": 28,
       "path": "docs/decisions/D28-the-stream-has-two-groups-and-three-piles.md",
       "title": "D28 · The stream has two groups and three piles, and the day is drawn as one track",
-      "status": "accepted, implementation in progress; the three piles are tabs on Att göra and their routes are gone since [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md)",
+      "status": "accepted, implementation in progress; the three piles are tabs on Att göra and their routes are gone since [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md); the tabs are on Hem and the first pile is named Väntar på andra since [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md)",
       "date": "2026-11-04",
       "area": "ui"
     },
@@ -373,7 +373,7 @@
       "number": 34,
       "path": "docs/decisions/D34-the-box-is-the-page-and-the-push-is-its-brief.md",
       "title": "D34 · The box is the page; the push is its brief; one rail orders everything by time",
-      "status": "accepted, implemented 2026-11-04, amended 2026-11-05; the chips under the box and the centred heading replaced by D41; `/overview` and the rail replaced by [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md)",
+      "status": "accepted, implemented 2026-11-04, amended 2026-11-05; the chips under the box and the centred heading replaced by D41; `/overview` and the rail replaced by [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md); the brief above the box and its sentence replaced by [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md)",
       "date": "2026-11-04",
       "area": "ui"
     },
@@ -445,7 +445,7 @@
       "number": 39,
       "path": "docs/decisions/D39-the-landings-box-rests-on-the-columns-centre-line.md",
       "title": "D39 · The landing's box rests on the column's centre line when what is above it fits",
-      "status": "accepted, built 2026-11-05; what stands under the box is D41's areas and cards, on a 720 px column",
+      "status": "accepted, built 2026-11-05; replaced by [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md) on 2026-11-06: the brief is gone and the box is anchored under the greeting",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -463,7 +463,7 @@
       "number": 41,
       "path": "docs/decisions/D41-the-landing-is-the-ai-chat-landing-template-with-the-persons-areas-under-the-box.md",
       "title": "D41 · The landing is Astryx's `ai-chat-landing` template, with the person's areas under the box",
-      "status": "accepted, built 2026-11-05",
+      "status": "accepted, built 2026-11-05; items 1, 2 and 6 (the greeting and the question, the 720 px column, the brief above the box) replaced by [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md), items 3 to 5 stand after the day's work",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -571,7 +571,7 @@
       "number": 50,
       "path": "docs/decisions/D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md",
       "title": "D50 · The conversation is the column, and the panel holds what it is about",
-      "status": "accepted, built 2026-11-05, amended the same day (a brief row opens its card beside the landing); the panel's tabs for what a conversation has opened, the box on the calendar page, a conversation's origin shown on a card and on a tool's page, a resizable panel, the day beside Att göra, and a manual screen-reader pass are not built",
+      "status": "accepted, built 2026-11-05, amended the same day (a brief row opens its card beside the landing); the panel's tabs for what a conversation has opened, the box on the calendar page, a conversation's origin shown on a card and on a tool's page, a resizable panel, and a manual screen-reader pass are not built; item 2's page is `/` and the day stands beside it since [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md)",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -592,6 +592,15 @@
       "status": "accepted",
       "date": "2026-11-05",
       "area": "integrations"
+    },
+    {
+      "key": "D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it",
+      "number": 53,
+      "path": "docs/decisions/D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md",
+      "title": "D53 · Hem is the start page: the day's work under the box, and the day beside it",
+      "status": "accepted, built 2026-11-06 on branch `hem`; not built: the phone's shift strip (artboard D needs a schedule capability no connector declares), the panel's tabs for everything a conversation has opened (artboards F, H, J), a conversation carrying a job across connectors with a step list (artboard J), and the mark on an earlier conversation that something happened since (artboard H)",
+      "date": "2026-11-06",
+      "area": "ui"
     }
   ],
   "documents": [
@@ -1190,6 +1199,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md",
+      "title": "D53 · Hem is the start page: the day's work under the box, and the day beside it",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -1597,6 +1612,18 @@
         "Verification",
         "Decisions amended",
         "Not inspected"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-06-start-page-directions-and-flows.md",
+      "title": "Design exploration: the start page's directions, and every path from it · 2026-11-06",
+      "category": "review-history",
+      "headings": [
+        "What was wrong",
+        "What each persona wants on opening",
+        "The four directions",
+        "The flows under A",
+        "Outcome"
       ]
     },
     {

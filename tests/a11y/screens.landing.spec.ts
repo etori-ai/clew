@@ -1,13 +1,14 @@
 import { desktop, open, phone, test } from './support';
 
 /**
- * Not a test: screenshots of the landing (D41) for the comparison with Astryx's `ai-chat-landing` template. Run on demand
+ * Not a test: screenshots of Hem (D53) for the comparison with artboard A of the canvas, and with Astryx's `ai-chat-landing` template (D41). Run on demand
  * with `CLEW_SCREENS=1 … playwright test -c tests/a11y screens.landing`; the images land in test-results/screens/.
  */
 const out = (name: string) => `test-results/screens/${name}.png`;
 test.describe('screens', () => {
   test.skip(!process.env.CLEW_SCREENS, 'screenshots are taken on demand: CLEW_SCREENS=1');
-  for (const [size, viewport] of [['1280', desktop], ['375', phone]] as const) {
+  // 1440 is where the panel stands beside the column at rest (D53); at 1280 the day ends the page.
+  for (const [size, viewport] of [['1440', { width: 1440, height: 900 }], ['1280', desktop], ['375', phone]] as const) {
     test(`landing with nothing above the box ${size}`, async ({ page, api }) => {
       api.threads = [];
       await page.setViewportSize(viewport); await open(page, '/');

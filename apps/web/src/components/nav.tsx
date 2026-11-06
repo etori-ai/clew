@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { Area, MenuEntry, Thread, ViewRef } from '@clew/contracts';
-import { Badge, Button, InboxIcon, SideNavItem, SideNavSection, Text, Typeahead, TypeaheadItem, VStack, createStaticSource, type SearchableItem } from '@clew/ui';
+import { Badge, Button, HomeIcon, SideNavItem, SideNavSection, Text, Typeahead, TypeaheadItem, VStack, createStaticSource, type SearchableItem } from '@clew/ui';
 import { addDays, displayDate, shortDayLabel, timeLabel, today } from '@clew/calendar/dates';
 import { titled } from './conversation-context';
 import { areasQuery, threadsQuery } from '../queries';
@@ -14,7 +14,7 @@ import type { ShellNav } from './shell';
 export type AdminSection = 'anslutningar' | 'modeller';
 /** What the rail marks as current: the place, and within the start page the conversation. */
 export interface RailCurrent {
-  surface: 'start' | 'todo' | 'kalender' | 'verktyg' | 'admin';
+  surface: 'start' | 'kalender' | 'verktyg' | 'admin';
   conversationId?: string | null;
   /** The capability whose tool page is open (D42), so its row under Verktyg is marked. */
   view?: string | null;
@@ -44,11 +44,11 @@ export const toolHref = (capability: string, input?: Record<string, unknown>, op
 type Found = { href: string; detail: string };
 
 /**
- * The rail (D50, after the `shell-side-nav` template): places first, then where the person has been. On top Nytt samtal and
- * the search; then Att göra, the one page for everything the assistant has pushed, with how much of it needs the person;
+ * The rail (D50, D53, after the `shell-side-nav` template): places first, then where the person has been. On top Nytt samtal and
+ * the search; then Hem, the one page with everything the assistant has pushed, with how much of it needs the person;
  * Verktyg (Kalender and the views connectors offer as tools, D40, each a page of its own, D42); then Samtal, the
- * person's latest conversations, each saying when. A card's state (pågår, inte nu, klart) and the areas are not places: they are the
- * tabs and the filter on Att göra. At the foot Administration with its two sections, collapsed until one of them is
+ * person's latest conversations, each saying when. A card's state (väntar, inte nu, klart) and the areas are not places: they are the
+ * tabs and the filter on Hem. At the foot Administration with its two sections, collapsed until one of them is
  * open. Every row is a link to a route, so the back button and a reload land in the same place. Returned as the shell's slots so the shell keeps the heading and the way out.
  */
 export function useRail({ current, admin }: { current: RailCurrent; admin: boolean }): ShellNav {
@@ -69,15 +69,15 @@ export function useRail({ current, admin }: { current: RailCurrent; admin: boole
   const source = useMemo(() => {
     const items: SearchableItem<Found>[] = [
       ...g.questions.map(t => ({ id: 'samtal:' + t.id, label: t.title, auxiliaryData: { href: `/conversations/${t.id}`, detail: 'Samtal' } })),
-      ...[...g.nu, ...g.senare, ...g.foreslar, ...g.kannedom, ...g.waiting, ...g.snoozed].map(t => ({ id: 'kort:' + t.id, label: t.title, auxiliaryData: { href: `/todo?card=${encodeURIComponent(t.id)}`, detail: `Kort · ${t.trigger.source}` } })),
-      ...areas.map(a => ({ id: 'omrade:' + a.id, label: a.title, auxiliaryData: { href: `/todo?area=${encodeURIComponent(a.id)}`, detail: 'Område' } })),
+      ...[...g.nu, ...g.senare, ...g.foreslar, ...g.kannedom, ...g.waiting, ...g.snoozed].map(t => ({ id: 'kort:' + t.id, label: t.title, auxiliaryData: { href: `/?card=${encodeURIComponent(t.id)}`, detail: `Kort · ${t.trigger.source}` } })),
+      ...areas.map(a => ({ id: 'omrade:' + a.id, label: a.title, auxiliaryData: { href: `/?area=${encodeURIComponent(a.id)}`, detail: 'Område' } })),
       ...menu.map(e => ({ id: 'verktyg:' + e.capability, label: e.label, auxiliaryData: { href: toolHref(e.capability), detail: `Verktyg · ${e.source}` } })),
     ];
     return createStaticSource(items);
   }, [threads, areas, menu]);
   const tool = (e: MenuEntry) => <SideNavItem key={e.capability} label={e.label} icon={clewIcon[e.icon]} href={toolHref(e.capability)} isSelected={current.surface === 'verktyg' && current.view === e.capability} />;
   const more = menu.slice(TOOLS_SHOWN);
-  const allConversations = <SideNavItem label="Alla samtal" href="/todo?tab=done" isSelected={false} />;
+  const allConversations = <SideNavItem label="Alla samtal" href="/?tab=done" isSelected={false} />;
   return {
     top: <VStack gap={2}>
       <Button variant="secondary" label="Nytt samtal" href="/" width="100%" />
@@ -88,7 +88,7 @@ export function useRail({ current, admin }: { current: RailCurrent; admin: boole
     </VStack>,
     sections: <>
       <SideNavSection title="Från mig" isHeaderHidden>
-        <SideNavItem label="Att göra" icon={InboxIcon} href="/todo" isSelected={current.surface === 'todo'}
+        <SideNavItem label="Hem" icon={HomeIcon} href="/" isSelected={current.surface === 'start' && !current.conversationId}
           endContent={g.nu.length ? <Badge variant="error" label={String(needsYou)} /> : count(needsYou)} />
       </SideNavSection>
       <SideNavSection title="Verktyg">

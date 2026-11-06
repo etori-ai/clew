@@ -6,7 +6,7 @@ import '@clew/ui/styles.css';
 import { createQueryClient } from './query-client';
 import { LinkProvider, Providers, SessionBoundary, type BrowserSession } from '@clew/ui';
 import type { SessionUser } from '@clew/contracts';
-import { StartPage, type Mode } from './pages/start';
+import { StartPage } from './pages/start';
 import { ConversationProvider } from './components/conversation-context';
 import { CalendarPage } from './pages/calendar';
 import { ToolPage } from './pages/tool';
@@ -87,13 +87,13 @@ const RouterLink = forwardRef<HTMLAnchorElement, { href?: string; to?: string } 
   return <Link ref={ref} to={target} {...rest} />;
 });
 /**
- * Routes (D34, D50): `/` is the box with the brief, `/conversations/:id` a conversation in the same column
- * (`/conversations/new` while a question asked on another page is being answered), `/todo` is Att göra with a card's
- * state as `tab` and the areas as `area`. What the panel holds is in the query of whichever page it is beside
+ * Routes (D34, D50, D53): `/` is Hem, the box with everything the assistant has pushed, a card's state as `tab` and
+ * the areas as `area`; `/conversations/:id` a conversation in the same column (`/conversations/new` while a question
+ * asked on another page is being answered). What the panel holds is in the query of whichever page it is beside
  * (`panel-address.ts`). `/calendar` and `/tools/:capability` are the tools, each a page of its own in the same shell (D42).
  */
 function App() {
-  // One element for every start route: a route change between the box, a conversation and Att göra re-renders the page
+  // One element for every start route: a route change between Hem and a conversation re-renders the page
   // and never remounts it, so focus, the cache's observers and the composer's draft survive the change.
   const start = <Protected>{shell => <StartRoute user={shell.user} admin={shell.admin} />}</Protected>;
   // Administration (D23): the entry point shows only to an administrator, and every call is checked again on the server.
@@ -110,17 +110,11 @@ function App() {
     <Route path="/admin/models/:id" element={admin(shell => <AdminModelPage user={shell.user} />)} />
     <Route path="/" element={start} />
     <Route path="/conversations/:conversationId" element={start} />
-    <Route path="/todo" element={start} />
     <Route path="*" element={start} />
   </Routes>;
 }
-/** Which face of the start page an address shows: Att göra, or the box. */
-export function modeOf(pathname: string): Mode {
-  return pathname === '/todo' ? 'todo' : 'fraga';
-}
 function StartRoute({ user, admin }: { user: SessionUser; admin: boolean }) {
-  const location = useLocation();
-  return <StartPage user={user} admin={admin} mode={modeOf(location.pathname)} />;
+  return <StartPage user={user} admin={admin} />;
 }
 createRoot(document.getElementById('root')!).render(<StrictMode>
   <Providers branding={branding}>

@@ -17,14 +17,14 @@ async function openSnoozeRows(page: Page) {
 }
 
 test.describe('2.4.7 focus visible', () => {
-  for (const path of ['/', '/todo', '/todo?tab=done', '/calendar']) test(`every stop on ${path} shows a focus ring`, async ({ page, api: _ }) => {
+  for (const path of ['/', '/?tab=done', '/calendar']) test(`every stop on ${path} shows a focus ring`, async ({ page, api: _ }) => {
     await open(page, path);
     const { unmarked } = await hiddenFocusStops(page);
     expect(unmarked).toEqual([]);
   });
 
   test('a card that receives focus from the page shows it', async ({ page, api: _ }) => {
-    await open(page, '/todo');
+    await open(page, '/');
     await openSnoozeRows(page);
     await page.getByRole('menuitem', { name: /^I morgon/ }).focus();
     await page.keyboard.press('Enter');
@@ -37,7 +37,7 @@ test.describe('2.4.7 focus visible', () => {
 
 test.describe('2.4.3 focus order', () => {
   test('regaining the window keeps focus where it was', async ({ page, api }) => {
-    await open(page, '/todo');
+    await open(page, '/');
     const button = page.getByRole('main').getByRole('button', { name: 'Fler val' }).first();
     await button.focus();
     api.sessionDelay = 200;
@@ -47,7 +47,7 @@ test.describe('2.4.3 focus order', () => {
   });
 
   test('a row says its card is closed, opens it in the panel, and gets the focus back when the panel closes', async ({ page, api: _ }) => {
-    await open(page, '/todo');
+    await open(page, '/');
     const title = 'Omtankesamtal med Anna Lindqvist';
     const expand = page.getByRole('button', { name: title, exact: true });
     await expect(expand).toHaveAttribute('aria-expanded', 'false');
@@ -57,7 +57,7 @@ test.describe('2.4.3 focus order', () => {
     const panel = page.getByRole('dialog', { name: 'Kort', exact: true });
     await expect(panel.getByRole('heading', { name: title })).toBeVisible();
     await expect.poll(() => panel.evaluate(el => el.contains(document.activeElement))).toBe(true);
-    await expect(page).toHaveURL(/\/todo\?card=omtanke$/);
+    await expect(page).toHaveURL(/\/\?card=omtanke$/);
     await page.keyboard.press('Escape');
     await expect(panel).toBeHidden();
     await expect(expand).toBeFocused();
@@ -65,7 +65,7 @@ test.describe('2.4.3 focus order', () => {
   });
 
   test('Inte nu moves focus to the next card instead of losing it', async ({ page, api: _ }) => {
-    await open(page, '/todo');
+    await open(page, '/');
     await openSnoozeRows(page);
     await page.getByRole('menuitem', { name: /^I morgon/ }).focus();
     await page.keyboard.press('Enter');
@@ -75,7 +75,7 @@ test.describe('2.4.3 focus order', () => {
 
   test('Ångra in the toast stays available and reachable by keyboard', async ({ page, api: _ }) => {
     await page.clock.install({ time: new Date('2026-11-04T08:00:00.000Z') });
-    await open(page, '/todo');
+    await open(page, '/');
     await snoozeFirst(page);
     const undo = page.getByRole('button', { name: 'Ångra' });
     await expect(undo).toBeVisible();
@@ -129,7 +129,7 @@ test.describe('D26 a source becomes a chip', () => {
 test.describe('D29 the Inte nu picker', () => {
   test('every row says when the card comes back, and the free text has a label and a live answer', async ({ page, api: _ }) => {
     // The open card keeps Inte nu in view; in a row it is behind Fler val.
-    await open(page, '/todo?card=fakturor');
+    await open(page, '/?card=fakturor');
     await page.getByRole('article', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' }).getByRole('button', { name: 'Inte nu', exact: true }).click();
     const menu = page.getByRole('menu');
     await expect(menu).toBeVisible();

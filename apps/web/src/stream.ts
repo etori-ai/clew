@@ -1,6 +1,6 @@
 import { cardKind, isSnoozed, stockholmDate, streamGroup, unresolvedExecution, type Thread } from '@clew/contracts';
 
-/** The page's groups (D34), computed once and read by the landing, the overview and the rail. */
+/** The page's groups (D34), computed once and read by Hem and the rail. */
 export interface Groups {
   /** Requirements due today, overdue or reminded today. */
   nu: Thread[];
@@ -31,14 +31,6 @@ export function groupThreads(threads: Thread[], now: string, today: string, inSc
     handledToday: threads.filter(t => t.state !== 'open' && !unresolvedExecution(t) && t.handledAt && t.handledAt.slice(0, 10) === now.slice(0, 10)),
     questions: threads.filter(t => t.kind === 'question').sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
   };
-}
-/** The greeting's sentence: what needs the person today, what has time, what the assistant proposes. */
-export function digestSentence(g: Groups): string {
-  if (g.nu.length === 0 && g.senare.length === 0 && g.foreslar.length === 0) return 'Inget behöver dig just nu.';
-  const parts = [g.nu.length === 0 ? 'Inget behöver dig i dag' : g.nu.length === 1 ? 'En sak behöver dig i dag' : `${g.nu.length} saker behöver dig i dag`];
-  if (g.senare.length) parts.push(g.senare.length === 1 ? 'en har tid på sig' : `${g.senare.length} har tid på sig`);
-  if (g.foreslar.length) parts.push(g.foreslar.length === 1 ? 'jag har ett förslag' : `jag har ${g.foreslar.length} förslag`);
-  return parts.length === 1 ? `${parts[0]}.` : `${parts.slice(0, -1).join(', ')} och ${parts.at(-1)}.`;
 }
 
 /** A view of existing reminders, with the stream's scope/lifecycle selection (D39). */

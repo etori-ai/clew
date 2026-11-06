@@ -59,8 +59,8 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
       deliveryAttempts.current.add(delivery.id);
       void api.claimDelivery(delivery.id).then(({ claimed }) => {
         if (!claimed || !deliveryMounted.current || !deliveryContext.current?.threads.some(t => t.id === thread.id)) return;
-        const dismiss = toast({ body: delivery.kind === 'reminder' ? 'Påminnelse: ' + thread.title : 'Nya uppgifter finns i översikten.', isAutoHide: false, uniqueID: delivery.id,
-          endContent: <Button size="sm" variant="ghost" label="Visa" onClick={() => { navigate('/todo?card=' + encodeURIComponent(thread.id)); dismiss(); }} /> });
+        const dismiss = toast({ body: delivery.kind === 'reminder' ? 'Påminnelse: ' + thread.title : 'Nya uppgifter finns på Hem.', isAutoHide: false, uniqueID: delivery.id,
+          endContent: <Button size="sm" variant="ghost" label="Visa" onClick={() => { navigate('/?card=' + encodeURIComponent(thread.id)); dismiss(); }} /> });
       }).catch(() => { deliveryAttempts.current.delete(delivery.id); });
     }
   }, [threadsQ.data, toast, navigate]);
