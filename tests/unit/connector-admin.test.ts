@@ -331,6 +331,24 @@ describe('bundled connectors are governed by the same rows', () => {
     await expect(admin.rotateSecret(mikael, 'finance', { secret: SECRET })).rejects.toThrow('inbyggd');
     expect((await admin.test(mikael, 'finance')).ok).toBe(true);
   });
+  test("a bundled row takes the code's description at the next boot when the code has changed, without an audit row or a version bump", async () => {
+    const { store, registry, reconcile } = world();
+    await syncBundledRows(reconcile);
+    const described = describeBundled(registry.connector('finance')!);
+    const before = (await store.read('finance'))!;
+    // An older build described the connector with one capability fewer; the row still carries that description.
+    await store.recordHealth('finance', before.health, { ...described, capabilities: [] }, T0);
+    expect((await store.read('finance'))!.manifest).toMatchObject({ capabilities: [] });
+    await syncBundledRows(reconcile);
+    const after = (await store.read('finance'))!;
+    expect((after.manifest as ConnectorManifest).capabilities.map(c => c.name)).toEqual(['finance.invoices']);
+    expect(after.version).toBe(before.version);
+    expect(store.audit).toEqual([]);
+    // The same description in another key order is not a change.
+    await store.recordHealth('finance', after.health, JSON.parse(JSON.stringify(described)), T0);
+    await syncBundledRows(reconcile);
+    expect((await store.read('finance'))!.manifestAt).toBe(T0);
+  });
   test('Hassan loses the finance connector when the administrator limits it to managers, and gets it back; a row changed elsewhere is applied by the watcher', async () => {
     const { store, registry, reconcile, admin } = world();
     await syncBundledRows(reconcile);

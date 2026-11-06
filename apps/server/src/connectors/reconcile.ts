@@ -26,25 +26,44 @@ export interface ReconcileDeps {
 const isManifest = (value: unknown): value is ConnectorManifest =>
   !!value && typeof value === 'object' && Array.isArray((value as ConnectorManifest).capabilities);
 
-/** A row for every bundled connector, inserted only when missing: enabled for everyone until an administrator says otherwise. */
+/** The same document whatever order its keys come back in from the store, so a jsonb round trip is not a change. */
+const canonical = (value: unknown): string =>
+  JSON.stringify(value, (_key, v) =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(
+          Object.entries(v as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+        )
+      : v,
+  );
+/**
+ * A row for every bundled connector: inserted when missing, enabled for everyone until an administrator says otherwise.
+ * A bundled connector's description is its code, and the code moves with every build, so an existing row takes the
+ * current description when it differs, the way a remote row takes a refetched manifest: no audit, no version bump,
+ * and the administrator's governance of the row untouched.
+ */
 export async function syncBundledRows({ registry, store, bundled, internal = [], clock }: ReconcileDeps) {
   const at = clock().toISOString();
   for (const id of bundled) {
     const connector = registry.connector(id);
     if (!connector || internal.includes(id)) continue;
-    await store.transaction(tx =>
+    const manifest = describeBundled(connector);
+    const inserted = await store.transaction(tx =>
       tx.insert({
         id,
         bundled: true,
         url: null,
         secret: null,
         state: 'enabled',
-        manifest: describeBundled(connector),
+        manifest,
         health: { status: 'ok', at },
         createdBy: 'system:boot',
         at,
       }),
     );
+    if (inserted) continue;
+    const row = await store.read(id);
+    if (row?.bundled && canonical(row.manifest) !== canonical(manifest))
+      await store.recordHealth(id, row.health, manifest, at);
   }
 }
 /**

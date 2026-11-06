@@ -101,6 +101,13 @@ and a second, protocol-side calendar would contradict D11. What "on par" means f
    calendar adapter; the stack's fake is checked instead by `tests/calendar/graph-provider.test.ts`, which runs the
    adapter contract against the running service through `bun run test:calendar`, beside the Nextcloud run.
 
+5. **A bundled row follows its code.** The administration page draws a connector from its stored row, and a bundled
+   connector's row was written once, at the first boot, so the Kalendern page showed the description of 2026-11-04 and
+   neither `calendar.day` nor the rooms. `syncBundledRows` now writes the current description over an existing bundled
+   row when it differs (keys compared in canonical order, so a jsonb round trip is not a change), through the health
+   path: no audit row, no version bump, the administrator's governance untouched, as a remote row takes a refetched
+   manifest.
+
 Not run: a signed-in pass as Mikael in the browser on the Microsoft 365 binding. The binding was verified from the
 container (eight meetings, seven rooms, the declined room empty) and the contract passed over the network.
 
