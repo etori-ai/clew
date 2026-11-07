@@ -1103,6 +1103,9 @@ type RowProps = ActionProps & {
  * "Lägg till i samtalet" and the one next step. The row keeps the card's id so focus and the toasts find it.
  */
 const rowNarrowQuery = '(max-width: 1200px)';
+/** A row's head: the title's line and the meta line's first, from the type scale's own sizes and leadings (D62). */
+const rowHead =
+  'calc(var(--text-body-size) * var(--text-body-leading) + var(--text-supporting-size) * var(--text-supporting-leading))';
 /** The day cell is one word (artboard A: "fre"): tomorrow is its weekday, since "i morgon" is two. */
 const dayCell = (date: string, now: string) => {
   const word = dayWord(date, now);
@@ -1183,10 +1186,22 @@ export function ThreadRow({
     <ListItem
       id={`thread-${thread.id}`}
       tabIndex={-1}
-      align={phone ? 'start' : 'center'}
+      // The day cell and the buttons belong to the row's head, the title and the first meta line, not to the middle of a
+      // row that runs to three or four lines (a receipt's badge, "Kontrollera status" under the line; seen 2026-11-07).
+      // So the slots stand at the top, each centred in a box as tall as the head: a two-line row looks as it did when
+      // the slots were centred on it, and a taller row keeps them beside its title.
+      align="start"
       isSelected={isOpen}
       // The day cell is one width so the titles line up; on a phone it takes what it needs, as artboard 11 draws it.
-      startContent={phone ? day : <VStack width={56}>{day}</VStack>}
+      startContent={
+        phone ? (
+          day
+        ) : (
+          <VStack width={56} minHeight={rowHead} vAlign="center">
+            {day}
+          </VStack>
+        )
+      }
       label={
         <Text weight="semibold">
           <Link href={href} color="primary" weight="semibold">
@@ -1196,6 +1211,9 @@ export function ThreadRow({
       }
       description={
         <VStack gap={phone ? 2 : 1}>
+          {/* A status badge follows the words on their line when the two fit there, and folds under them when not. Not
+              inline in the words' flow: a Badge with an icon takes its baseline from the icon and stood 4.5 px above
+              the words (tried 2026-11-07). */}
           <HStack gap={2} vAlign="center" wrap="wrap">
             <AreaLine icon={mark.icon}>{line}</AreaLine>
             <ReceiptFlag thread={thread} quiet />
@@ -1209,7 +1227,15 @@ export function ThreadRow({
           )}
         </VStack>
       }
-      endContent={under ? undefined : end}
+      endContent={
+        under ? undefined : phone ? (
+          end
+        ) : (
+          <VStack minHeight={rowHead} vAlign="center" hAlign="end">
+            {end}
+          </VStack>
+        )
+      }
     />
   );
 }

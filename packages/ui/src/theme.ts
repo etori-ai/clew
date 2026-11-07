@@ -1,6 +1,8 @@
 import { defineTheme } from '@astryxdesign/core/theme';
-import { neutralTheme } from '@astryxdesign/theme-neutral';
+import { neutralPalettes, neutralTheme } from '@astryxdesign/theme-neutral';
 import { sundsvallPalette as palette, type Branding } from './branding';
+
+const { red, green, white } = neutralPalettes;
 
 /**
  * Every brand inherits Astryx Neutral with shared component overrides (D31 item 8, D39): ChatLayout docks the composer on a sticky
@@ -17,11 +19,21 @@ const clewBaseTheme = defineTheme({
   tokens: {
     // The side panel opens over a page that is still its context: half of Astryx's scrim, which keeps a dialog set apart without blacking the page out.
     '--color-overlay': ['#01122833', '#1111124D'],
-    // The tinted cards of the canvas (D62): what is due today on a faint red with a red border, Lugnt läge on a faint green. Astryx's own tints are a strong wash; in the dark they keep Neutral's values.
-    '--color-background-red': ['#fffafa', '#5b2b28'],
-    '--color-border-red': ['#fca5a5', '#fa6762'],
-    '--color-background-green': ['#f6fbf8', '#2b422b'],
-    '--color-border-green': ['#bfe5cf', '#6ab26b'],
+    // The tinted cards of the canvas (D62): what is due today on a faint red with a red border, Lugnt läge on a faint green.
+    // Astryx's own tints are a strong wash. In the dark the same quiet tint comes from Neutral's own dark palette, step 15
+    // for the ground and 40 for the border (D63 item 15, amended 2026-11-07): Neutral's step 25 read as brown and held the
+    // meta line's secondary text at 4.3:1 on red and 4.1:1 on green, under WCAG's 4.5:1; on step 15 it is 5.8 and 5.6.
+    '--color-background-red': ['#fffafa', red.dark[15]],
+    '--color-border-red': ['#fca5a5', red.dark[40]],
+    '--color-background-green': ['#f6fbf8', green.dark[15]],
+    '--color-border-green': ['#bfe5cf', green.dark[40]],
+    // The red badge ("i dag", "Påminnelse", "behöver dig"): Neutral's dark error is a salmon as light as its info blue
+    // (relative luminance 0.34 both), so the two differed by hue alone. Step 50 of its dark red with white text, as the
+    // light appearance has, is darker than info and warning (0.17 against 0.34 and 0.66), keeps 4.8:1 for the badge's
+    // words and at least 3.1:1 as a mark on the dark grounds (D63 item 15, amended 2026-11-07). The light half repeats
+    // Neutral's own light error, a hand-picked value outside its palette, since a token is set for both appearances.
+    '--color-error': ['#c9303a', red.dark[50]],
+    '--color-on-error': white,
   },
   // Astryx's own control sizes are drawn for a mouse. Under a finger every size reaches HANDOVER §6's 44 px (WCAG 2.5.5).
   // By the pointer, not the width: a narrow window on a computer keeps its compact controls, a tablet does not.

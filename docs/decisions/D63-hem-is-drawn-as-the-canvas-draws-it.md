@@ -144,3 +144,13 @@ group order (Senare before Jag föreslår). D49, D50 and D54 stand.
 panel is gone: I dag and Sedan i går are Hem's own at every width, the third track under the box from 1024 px while
 nothing is open, and the panel exists only while a card, a view or a card's read is open. Item 14's fold at rest goes
 with it; the fold of the open panel stands.
+
+**Amended 2026-11-07: the dark tints.** Item 15's dark half no longer keeps Neutral's values. Neutral's dark tints
+(step 25 of its dark red and green) read as brown and green-brown on the dark ground, and held the meta line's secondary
+text at 4.3:1 on the red card and 4.1:1 on the green, under WCAG's 4.5:1. The dark appearance now takes the quiet tint
+from Neutral's own dark palette (`neutralPalettes` in `packages/ui/src/theme.ts`): step 15 for the ground (`#3d1917`
+red, `#192b19` green; the secondary text 5.8:1 and 5.6:1) and step 40 for the border (`#92423e`, `#436a43`). The red
+badge ("i dag", "försenad", "Påminnelse", "behöver dig") had Neutral's dark error, a salmon with dark text as light as
+the info blue (relative luminance 0.34 both), so the two told apart by hue alone; the dark `--color-error` is now step 50
+of Neutral's dark red (`#be4e49`) with white text as in the light appearance (4.8:1; luminance 0.17 against info 0.34
+and warning 0.66; at least 3.1:1 as a mark on the dark grounds). The light appearance is unchanged.
