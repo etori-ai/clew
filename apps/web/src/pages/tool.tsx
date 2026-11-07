@@ -6,7 +6,6 @@ import {
   Banner,
   Button,
   EmptyState,
-  Heading,
   Layout,
   LayoutContent,
   LayoutFooter,
@@ -24,6 +23,7 @@ import { toolHref, useRail } from '../components/nav';
 import { DeclaredView } from '../components/view';
 import { CONVERSATION_MIN, PanelBody, panelBesideQuery, usePanel, type PanelFrame } from '../components/panel';
 import { Composer, type ComposerAbout } from '../components/composer';
+import { PageHeader } from '../components/page-header';
 
 /** The table needs 970 px beside the rail, so a 1280 px laptop gets it, with a scrollbar too; a narrower window draws the same rows as a list. */
 const tableQuery = '(min-width: 1280px)';
@@ -86,9 +86,9 @@ function useView(
 
 /**
  * A tool as a page (D42): a view an administrator has chosen for the menu (D40) is opened at `/tools/:capability`,
- * inside the one shell, as Kalender is. The page follows Astryx's `table-page` template and artboard 7: the view's mark
- * row (chip, source, count, its own search field and choice), the name as the heading, then the rows, all in one
- * scrolling column. The view is drawn by the one renderer
+ * inside the one shell, as Kalender is. The page follows Astryx's `table-page` template and the one page header (D74):
+ * the name as the heading with the view's own search field and choice at the end of its line, the mark row (chip,
+ * source, count) under it, then the rows, all in one scrolling column. The view is drawn by the one renderer
  * (D38). A row's own view, a contact card, opens in the panel: beside the page where there is room for both, over it
  * where there is not (D50); the address names both, so a reload, a link and the back button land where the person was.
  * The box at the foot asks about the page: the answer opens as a conversation with this view beside it.
@@ -182,7 +182,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   const box = !missing && <Composer place="page" about={about} />;
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
-      {/* `padding={0}` on the content and the padding on the stack is the template's way to keep a table on the heading's line. */}
+      {/* `padding={0}` on the content and the padding on the stack is the template's way to keep a table on the heading's line. The title stands 32 px in from the rail and 32 px down, as on every page (D74). */}
       <Layout
         height={short ? 'auto' : 'fill'}
         padding={mobile ? 3 : 8}
@@ -190,7 +190,12 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
         footer={box && !short ? <LayoutFooter>{box}</LayoutFooter> : undefined}
         content={
           <LayoutContent padding={0}>
-            <VStack paddingInline={mobile ? 3 : 8} paddingBlock={mobile ? 3 : 5} gap={4}>
+            <VStack
+              paddingInline={mobile ? 3 : 8}
+              paddingBlockStart={mobile ? 3 : 8}
+              paddingBlockEnd={mobile ? 3 : 5}
+              gap={4}
+            >
               {missing ? (
                 <EmptyState
                   headingLevel={1}
@@ -200,10 +205,10 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
                 />
               ) : (
                 <>
-                  {/* The page's heading (D71's page title at level 1): with a declared view the view draws it, under its mark row (artboard 7). */}
+                  {/* The one page header (D74): with a declared view the view draws it, with its controls at the end of the title's line and its mark row under it; before the view has arrived the title stands alone in the same place. The skeleton is the heading's line, 32 px. */}
                   {entry
-                    ? !tool?.spec && <Heading level={1}>{entry.label}</Heading>
-                    : !failed && <Skeleton height={28} width={200} />}
+                    ? !tool?.spec && <PageHeader title={entry.label} />
+                    : !failed && <Skeleton height={32} width={200} />}
                   {failed && (
                     <Banner status="error" title={failed.message}>
                       <Button label="Försök igen" size="sm" variant="secondary" onClick={failed.retry} />

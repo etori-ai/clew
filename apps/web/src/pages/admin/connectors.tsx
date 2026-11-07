@@ -32,7 +32,8 @@ import { errorMessage } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
 import { AddConnectorDialog } from './add';
 import { audienceLabel, kindLabel, statusOf } from './labels';
-import { AdminShell, PageLead } from './shell';
+import { AdminShell } from './shell';
+import { PageHeader } from '../../components/page-header';
 
 /**
  * "Anslutna system" (D23): every connector, bundled and remote, with its status, its audience and an on/off switch, in
@@ -169,10 +170,15 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
   const all = connectors ?? [];
   return (
     <AdminShell user={user} crumbs={[{ label: 'Anslutna system' }]}>
-      <PageLead
+      <PageHeader
         title="Anslutna system"
-        lead="Systemen Startsidan läser från och agerar i. Här avgör du vem som ser en anslutning; vad var och en får göra avgör systemet självt."
-        actions={<Button variant="primary" label="Anslut system" onClick={() => setAdding(true)} />}
+        end={<Button variant="primary" label="Anslut system" onClick={() => setAdding(true)} />}
+        meta={
+          <Text as="p" color="secondary">
+            Systemen Startsidan läser från och agerar i. Här avgör du vem som ser en anslutning; vad var och en får göra
+            avgör systemet självt.
+          </Text>
+        }
       />
       {error && (
         <Text as="p" role="alert" color="accent">

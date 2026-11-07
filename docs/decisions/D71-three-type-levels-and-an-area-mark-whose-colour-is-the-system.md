@@ -190,3 +190,6 @@ none draws nothing.
 5. **The bar is neutral.** Artboard 3 draws the bar in the text colour; Astryx's `ProgressBar` has no such variant, and
    accent is the assistant's blue, so the bar is `neutral`.
 
+
+**Amended 2026-11-07 by [D74](D74-one-page-header-for-every-surface.md).** A tool page's title comes first, with the
+view's controls at the end of its line and the mark row under it.

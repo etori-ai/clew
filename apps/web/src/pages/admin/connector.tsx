@@ -56,7 +56,8 @@ import {
   roleLabel,
   statusOf,
 } from './labels';
-import { AdminShell, PageLead } from './shell';
+import { AdminShell } from './shell';
+import { PageHeader } from '../../components/page-header';
 import { DialogFrame } from './dialog-frame';
 
 /** One connector (D23): overview and actions, capabilities with their switches, areas, who sees it, and its history. */
@@ -275,26 +276,11 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
   const remove = <Button variant="destructive" label="Ta bort" isDisabled={busy} onClick={() => setRemoveOpen(true)} />;
   return (
     <AdminShell user={user} crumbs={[{ label: 'Anslutna system', href: '/admin/connectors' }, { label: c.source }]}>
-      <PageLead
-        title={
-          <VStack gap={1}>
-            {/* The system's colour beside its name, and its place in the order under it (artboard 9, D71). */}
-            <HStack gap={2} vAlign="center">
-              <SystemSwatch ordinal={c.ordinal} />
-              <Heading level={1}>{c.source}</Heading>
-            </HStack>
-            <Text type="supporting">
-              {[
-                swatchWords(c.ordinal),
-                c.kind ? kindLabel[c.kind].toLowerCase() : null,
-                c.protocol ? `protokoll ${c.protocol}` : null,
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </Text>
-          </VStack>
-        }
-        actions={
+      {/* The system's colour beside its name, and its place in the order under it (artboard 9, D71), in the one page header (D74). */}
+      <PageHeader
+        title={c.source}
+        icon={<SystemSwatch ordinal={c.ordinal} />}
+        end={
           <Switch
             label={c.state === 'enabled' ? 'På' : 'Av'}
             labelPosition="start"
@@ -309,15 +295,27 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
             }
           />
         }
-      >
-        <HStack gap={1} vAlign="center" wrap="wrap">
-          <StatusDot variant={s.tone} label={s.label} />
-          <Text color="secondary">
-            {s.label}
-            {c.bundled ? ' · körs i Startsidan' : c.url ? ` · ${c.url}` : ''}
-          </Text>
-        </HStack>
-      </PageLead>
+        meta={
+          <VStack gap={1}>
+            <Text type="supporting">
+              {[
+                swatchWords(c.ordinal),
+                c.kind ? kindLabel[c.kind].toLowerCase() : null,
+                c.protocol ? `protokoll ${c.protocol}` : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </Text>
+            <HStack gap={1} vAlign="center" wrap="wrap">
+              <StatusDot variant={s.tone} label={s.label} />
+              <Text color="secondary">
+                {s.label}
+                {c.bundled ? ' · körs i Startsidan' : c.url ? ` · ${c.url}` : ''}
+              </Text>
+            </HStack>
+          </VStack>
+        }
+      />
       {unhealthy && (
         <Banner
           status={c.health.status === 'unreachable' ? 'warning' : 'error'}

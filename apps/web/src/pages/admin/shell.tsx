@@ -1,18 +1,6 @@
 import type { ReactNode } from 'react';
 import type { SessionUser } from '@clew/contracts';
-import {
-  BreadcrumbItem,
-  Breadcrumbs,
-  Button,
-  EmptyState,
-  HStack,
-  Heading,
-  Layout,
-  LayoutContent,
-  StackItem,
-  Text,
-  VStack,
-} from '@clew/ui';
+import { BreadcrumbItem, Breadcrumbs, Button, EmptyState, Layout, LayoutContent, VStack } from '@clew/ui';
 import { useRail, type AdminSection } from '../../components/nav';
 import { Shell, mobileQuery } from '../../components/shell';
 import { useMediaQuery } from '@clew/ui';
@@ -20,7 +8,8 @@ import { useMediaQuery } from '@clew/ui';
 /**
  * The administration surface (D23, D24) on the shared shell (D31) with the same rail as every other page (D45): Anslutna
  * system and Modeller are rows under Administration. The page sits in a Layout whose contentWidth bounds and centres it,
- * so a table does not run to the edge of a wide screen and the page lines up with the start page's column. Only Astryx.
+ * so a table does not run to the edge of a wide screen and the page lines up with the start page's column. Each page
+ * opens with the one page header (D74, `components/page-header.tsx`) under the trail. Only Astryx.
  */
 export type Crumb = { label: string; href?: string };
 export function AdminShell({
@@ -40,11 +29,12 @@ export function AdminShell({
   return (
     <Shell user={user} nav={nav}>
       {/* Layout's contentWidth bounds the page and centres it in the content area, the same mechanism as the start page's
-        column; the Layout owns its gutters through `padding`, and grows with the page so the shell keeps the scroll. */}
+        column; the Layout owns its gutters through `padding`, 32 px as on every page (D74), and grows with the page so
+        the shell keeps the scroll. The trail stands above the page header, where Astryx places Breadcrumbs. */}
       <Layout
         height="auto"
         contentWidth={1216}
-        padding={mobile ? 3 : 6}
+        padding={mobile ? 3 : 8}
         content={
           <LayoutContent isScrollable={false}>
             <VStack gap={5}>
@@ -82,36 +72,5 @@ export function NotAdmin() {
         </LayoutContent>
       }
     />
-  );
-}
-/** The page's lead: the h1, one sentence that says what the page is for, and the primary action beside them. */
-export function PageLead({
-  title,
-  lead,
-  children,
-  actions,
-}: {
-  title: ReactNode;
-  lead?: string;
-  children?: ReactNode;
-  actions?: ReactNode;
-}) {
-  const phone = useMediaQuery('(max-width: 720px)');
-  return (
-    <HStack justify="between" vAlign="start" gap={3} wrap={phone ? 'wrap' : undefined}>
-      {/* The words take what is left, so a long lead wraps and the action keeps its whole label. */}
-      <StackItem size="fill">
-        <VStack gap={1}>
-          {typeof title === 'string' ? <Heading level={1}>{title}</Heading> : title}
-          {lead && (
-            <Text as="p" color="secondary">
-              {lead}
-            </Text>
-          )}
-          {children}
-        </VStack>
-      </StackItem>
-      {actions && <StackItem>{actions}</StackItem>}
-    </HStack>
   );
 }

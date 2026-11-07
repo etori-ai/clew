@@ -27,7 +27,6 @@ import {
   SegmentedControlItem,
   StatusDot,
   Text,
-  Toolbar,
   VStack,
   PROPOSAL_MARK,
   agendaItems,
@@ -59,6 +58,7 @@ import { Shell, mobileQuery } from '../components/shell';
 import { useRail } from '../components/nav';
 import { EventDialog } from '../components/calendar/event-dialog';
 import { BookingDialog } from '../components/calendar/booking-dialog';
+import { PageHeader } from '../components/page-header';
 
 /** The three views as the URL names them, so a view is addressable and the back button works. */
 type View = 'day' | 'week' | 'month';
@@ -357,7 +357,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
         size="sm"
         onClick={() => step(1)}
       />
-      <DatePicker value={anchor} onChange={d => go({ date: d })} />
+      <DatePicker size="sm" value={anchor} onChange={d => go({ date: d })} />
     </HStack>
   );
   const proposalsButton = narrow && thread && (
@@ -371,62 +371,58 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const bookButton = (
     <Button variant="primary" size="sm" label="Ny bokning" onClick={() => setBooking(nextWholeHour(new Date()))} />
   );
-  // A phone has two rows: the title with what can be done, and where in time with how it is shown. A Toolbar's two clusters stack to a third of the screen there, and these two rows hold 44 px controls under a finger too.
-  const toolbar = mobile ? (
-    <VStack gap={2} as="section" aria-label="Kalender">
-      <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-        <Heading level={1}>{short}</Heading>
-        <HStack gap={2} vAlign="center">
-          {proposalsButton}
-          {bookButton}
-        </HStack>
-      </HStack>
-      <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-        {steps}
-        {/* Three labels do not fit 320 px with text spacing (1.4.12), so a phone gets an adaptive menu, as the piles do (D31 §5). */}
-        <DropdownMenu
-          presentation="adaptive"
-          button={{ label: `Vy: ${viewLabels[view]}`, size: 'sm', variant: 'secondary' }}
-          items={views.map(v => ({ id: v, label: viewLabels[v], onClick: () => go({ view: v }) }))}
-        />
-      </HStack>
+  // The one page header (D74): the title first, what can be done at the end of its line. A phone has two rows: the
+  // title with what can be done, and under it where in time with how it is shown, 44 px controls under a finger. The
+  // controls are Astryx's `sm`, as the toolbar that held them made them (28 px, under the heading's 32 px line).
+  const header = mobile ? (
+    <VStack as="section" aria-label="Kalender">
+      <PageHeader
+        title={short}
+        end={
+          <HStack gap={2} vAlign="center">
+            {proposalsButton}
+            {bookButton}
+          </HStack>
+        }
+        meta={
+          <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
+            {steps}
+            {/* Three labels do not fit 320 px with text spacing (1.4.12), so a phone gets an adaptive menu, as the piles do (D31 §5). */}
+            <DropdownMenu
+              presentation="adaptive"
+              button={{ label: `Vy: ${viewLabels[view]}`, size: 'sm', variant: 'secondary' }}
+              items={views.map(v => ({ id: v, label: viewLabels[v], onClick: () => go({ view: v }) }))}
+            />
+          </HStack>
+        }
+      />
     </VStack>
   ) : (
-    <Toolbar
-      label="Kalender"
-      size="sm"
-      startContent={
+    <PageHeader
+      title={title.charAt(0).toUpperCase() + title.slice(1)}
+      end={
         <HStack gap={3} vAlign="center" wrap="wrap">
-          <Heading level={1}>{title.charAt(0).toUpperCase() + title.slice(1)}</Heading>
           {steps}
-        </HStack>
-      }
-      endContent={
-        <HStack gap={2} vAlign="center" wrap="wrap">
           <SegmentedControl label="Vy" size="sm" value={view} onChange={v => go({ view: v as View })}>
             <SegmentedControlItem value="day" label="Dag" />
             <SegmentedControlItem value="week" label="Vecka" />
             <SegmentedControlItem value="month" label="Månad" />
           </SegmentedControl>
-          {proposalsButton}
-          {bookButton}
+          <HStack gap={2} vAlign="center">
+            {proposalsButton}
+            {bookButton}
+          </HStack>
         </HStack>
       }
     />
   );
   return (
     <Shell user={user} nav={nav}>
-      {/* The same gutter as a tool's page (D63 item 13, `tool.tsx`): 32 px in from the rail on a desktop, 12 on a phone; the product owner saw the calendar hug the rail while Hem and the tool pages did not (2026-11-07). A Toolbar bleeds out of the header to the edge and pads 12 px of its own, so the desktop one is set 20 px in and 24 px down, which puts the title 32 px from both edges as the review page has it; the conversation's toolbar on Hem is wrapped the same way. */}
+      {/* The same gutter as every page (D74, D63 item 13): the Layout's padding reaches the header, so the title stands 32 px in from the rail and 32 px down on a desktop, 12 on a phone. */}
       <Layout
         height="fill"
         padding={mobile ? 3 : 8}
-        header={
-          <LayoutHeader hasDivider>
-            <VStack paddingInline={mobile ? 0 : 5} paddingBlockStart={mobile ? 0 : 6}>
-              {toolbar}
-            </VStack>
-          </LayoutHeader>
-        }
+        header={<LayoutHeader hasDivider>{header}</LayoutHeader>}
         end={
           !narrow && thread ? (
             <LayoutPanel width={340} hasDivider role="complementary" label="Förslag" padding={0} isScrollable={false}>

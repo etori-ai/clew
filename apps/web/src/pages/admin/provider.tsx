@@ -35,7 +35,8 @@ import { usePageTitle } from '../../page-title';
 import { AddModelDialog, Findings } from './add-model';
 import { History } from './model';
 import { actorLabel, audienceLabel, modelStatusOf, providerHealthLabel, providerStatusOf } from './labels';
-import { AdminShell, PageLead } from './shell';
+import { AdminShell } from './shell';
+import { PageHeader } from '../../components/page-header';
 
 /**
  * One provider (D24): its endpoint's health, the key (rotated, never shown), the name and the address, the models under
@@ -131,17 +132,18 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
   );
   return (
     <AdminShell user={user} section="modeller" crumbs={crumbs(p.title)}>
-      <PageLead
+      <PageHeader
         title={p.title}
-        actions={<Button variant="primary" label="Lägg till modell" onClick={() => setAdding(true)} />}
-      >
-        <HStack gap={1} vAlign="center" wrap="wrap">
-          <StatusDot variant={s.tone} label={s.label} />
-          <Text type="supporting">
-            {s.label} · {p.baseUrl}
-          </Text>
-        </HStack>
-      </PageLead>
+        end={<Button variant="primary" label="Lägg till modell" onClick={() => setAdding(true)} />}
+        meta={
+          <HStack gap={1} vAlign="center" wrap="wrap">
+            <StatusDot variant={s.tone} label={s.label} />
+            <Text type="supporting">
+              {s.label} · {p.baseUrl}
+            </Text>
+          </HStack>
+        }
+      />
       {(p.health.status === 'unreachable' || p.health.status === 'key-rejected') && (
         <Banner
           status={p.health.status === 'unreachable' ? 'warning' : 'error'}

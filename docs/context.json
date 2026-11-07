@@ -862,6 +862,15 @@
       "status": "accepted, built 2026-11-07 on `main`",
       "date": "2026-11-07",
       "area": "ui"
+    },
+    {
+      "key": "D74-one-page-header-for-every-surface",
+      "number": 74,
+      "path": "docs/decisions/D74-one-page-header-for-every-surface.md",
+      "title": "D74 · One page header for every surface",
+      "status": "accepted, built 2026-11-07 on `main` (a tool page, the calendar, the admin pages); Hem, a conversation and",
+      "date": "2026-11-07",
+      "area": "ui"
     }
   ],
   "documents": [
@@ -1634,6 +1643,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D74-one-page-header-for-every-surface.md",
+      "title": "D74 · One page header for every surface",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -2263,6 +2278,18 @@
         "The remaining surfaces (artboards 6 to 12, added the same evening)",
         "What it would take",
         "Decision needed"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-07-page-headers.md",
+      "title": "Page headers across every surface",
+      "category": "review-history",
+      "headings": [
+        "The problem",
+        "The surfaces as they were",
+        "What is uniform and what is not",
+        "The shape unified on",
+        "After"
       ]
     },
     {

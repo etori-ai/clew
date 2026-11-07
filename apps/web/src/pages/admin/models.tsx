@@ -29,7 +29,8 @@ import { errorMessage } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
 import { AddModelDialog, AddProviderDialog } from './add-model';
 import { audienceLabel, modelStatusOf, providerStatusOf } from './labels';
-import { AdminShell, PageLead } from './shell';
+import { AdminShell } from './shell';
+import { PageHeader } from '../../components/page-header';
 
 /**
  * "Modeller" (D24): every provider with the models under it. A provider is a Card with its name, its health and "Lägg
@@ -120,19 +121,25 @@ export function AdminModelsPage({ user }: { user: SessionUser }) {
   const fallback = models.find(m => m.isDefault && m.state === 'enabled') ?? models.find(m => m.state === 'enabled');
   return (
     <AdminShell user={user} section="modeller" crumbs={[{ label: 'Modeller' }]}>
-      <PageLead
+      <PageHeader
         title="Modeller"
-        lead="Modellerna som svarar i frågerutan. Du avgör vilka som är på, vem som kan välja dem och vilken som är standard."
-        actions={<Button variant="primary" label="Lägg till leverantör" onClick={() => setAddingProvider(true)} />}
-      >
-        {data && models.length > 0 && (
-          <Text color="secondary">
-            {fallback
-              ? `Den som inte valt själv får ${fallback.title}${fallback.isDefault ? ' (standard)' : ', eftersom ingen modell är standard'}.`
-              : 'Ingen modell är på: rutan hittar bara exakta saker.'}
-          </Text>
-        )}
-      </PageLead>
+        end={<Button variant="primary" label="Lägg till leverantör" onClick={() => setAddingProvider(true)} />}
+        meta={
+          <VStack gap={1}>
+            <Text as="p" color="secondary">
+              Modellerna som svarar i frågerutan. Du avgör vilka som är på, vem som kan välja dem och vilken som är
+              standard.
+            </Text>
+            {data && models.length > 0 && (
+              <Text color="secondary">
+                {fallback
+                  ? `Den som inte valt själv får ${fallback.title}${fallback.isDefault ? ' (standard)' : ', eftersom ingen modell är standard'}.`
+                  : 'Ingen modell är på: rutan hittar bara exakta saker.'}
+              </Text>
+            )}
+          </VStack>
+        }
+      />
       {error && (
         <Text as="p" role="alert" color="accent">
           {error}

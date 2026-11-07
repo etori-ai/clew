@@ -39,7 +39,8 @@ import { usePageTitle } from '../../page-title';
 import { Findings } from './add-model';
 import { AudienceEditor } from './audience';
 import { actionLabel, actorLabel, audienceLabel, modelStatusOf, providerHealthLabel } from './labels';
-import { AdminShell, PageLead } from './shell';
+import { AdminShell } from './shell';
+import { PageHeader } from '../../components/page-header';
 
 /** One model (D24): what it is and how it answers, who can pick it in the box, and its history. */
 type TabId = 'oversikt' | 'publik' | 'historik';
@@ -157,14 +158,9 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
   const remove = <Button variant="destructive" label="Ta bort" isDisabled={busy} onClick={() => setRemoveOpen(true)} />;
   return (
     <AdminShell user={user} section="modeller" crumbs={crumbs(m.title)}>
-      <PageLead
-        title={
-          <HStack gap={2} vAlign="end" wrap="wrap">
-            <Heading level={1}>{m.title}</Heading>
-            {m.isDefault && <Badge variant="neutral" label="Standard" />}
-          </HStack>
-        }
-        actions={
+      <PageHeader
+        title={m.title}
+        end={
           <Switch
             label={m.state === 'enabled' ? 'På' : 'Av'}
             labelPosition="start"
@@ -178,18 +174,21 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
             }
           />
         }
-      >
-        <HStack gap={1} vAlign="center" wrap="wrap">
-          <StatusDot variant={s.tone} label={s.label} />
-          <Text type="supporting">
-            {s.label} ·{' '}
-            <Text type="code" color="secondary">
-              {m.model}
-            </Text>{' '}
-            hos {m.providerTitle}
-          </Text>
-        </HStack>
-      </PageLead>
+        meta={
+          /* The title's line holds the title and the switch alone (D74); "Standard" is a state of the model, so it stands in the line under it. */
+          <HStack gap={1} vAlign="center" wrap="wrap">
+            <StatusDot variant={s.tone} label={s.label} />
+            <Text type="supporting">
+              {s.label} ·{' '}
+              <Text type="code" color="secondary">
+                {m.model}
+              </Text>{' '}
+              hos {m.providerTitle}
+            </Text>
+            {m.isDefault && <Badge variant="neutral" label="Standard" />}
+          </HStack>
+        }
+      />
       {down && (
         <Banner
           status={m.health.status === 'unreachable' ? 'warning' : 'error'}

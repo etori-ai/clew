@@ -29,13 +29,15 @@ import { counted, fieldValue, statusWord } from './panel-labels';
 import { useMarks } from '../marks';
 import { useConversation } from './conversation-context';
 import { AddToConversation } from './add-to-conversation';
+import { PageHeader } from './page-header';
 
 /**
  * A declared view (D38): the connector says what the output holds (a table, a list, one record, a text, and which
  * fields with which Swedish labels) and this file draws it, with Astryx components only. It is the one renderer for
  * every placement: the side panel, a tool's page and the compact embed under an answer, and every kind gets the one
  * header (D71, artboards 4 and 7): the area's chip, the source and the count in supporting, the view's own controls or
- * "Visa allt" at the end of the same line. A connector never sends markup, so a view looks, reads and tabs the same
+ * "Visa allt" at the end of the same line. On a tool's page the title comes first, with the controls at the end of its
+ * line and the mark row under it, as on every other page (D74). A connector never sends markup, so a view looks, reads and tabs the same
  * whichever system it comes from.
  */
 type Row = Record<string, unknown>;
@@ -55,7 +57,7 @@ export interface DeclaredViewProps {
   headingLevel?: 2 | 3;
   /** From which window width a table is drawn as a table: a page beside the rail needs more than the panel does. */
   tableQuery?: string;
-  /** A tool page's title (D71): the page's heading at level 1, drawn under the header's line. */
+  /** A tool page's title: the page's heading at level 1, the controls at the end of its line and the mark row under it (D74). */
   title?: string;
   /** Under an answer (artboard 4): "Visa allt" at the end of the header opens the whole view. */
   onShowAll?: () => void;
@@ -87,23 +89,33 @@ function StatusBadge({ field, value }: { field: ViewField; value: unknown }) {
   );
 }
 /**
- * The header every view kind shares (D71, artboards 4 and 7): the chip of the area that offers the capability, in the
- * system's hue, then the source and the count in supporting, and the controls or "Visa allt" at the end of the same line.
+ * The mark row every view kind shares (D71, artboards 4 and 7): the chip of the area that offers the capability, in the
+ * system's hue, then the source and the count in supporting.
  */
-function ViewHeader({ view, count, end }: { view: PanelViewSpec; count: number | null; end?: ReactNode }) {
+function MarkRow({ view, count }: { view: PanelViewSpec; count: number | null }) {
   const mark = useMarks().ofCapability(view.capability, view.connector, view.source);
   const noun = view.kind === 'table' || view.kind === 'list' ? view.noun : undefined;
   return (
+    <HStack gap={2} vAlign="center" wrap="wrap">
+      <AreaChip ordinal={mark.ordinal} label={mark.title} {...(mark.icon ? { icon: mark.icon } : {})} />
+      <Text type="supporting">
+        {/* A view with no area of its own has the system's word on its chip, and it is not said twice. */}
+        {[mark.title === mark.source ? '' : mark.source, count === null ? '' : counted(count, noun)]
+          .filter(Boolean)
+          .join(' · ')}
+      </Text>
+    </HStack>
+  );
+}
+/**
+ * The header of a view in the panel and under an answer (D71): the mark row with the controls or "Visa allt" at the end
+ * of the same line. On a tool's page the view has the page's title, and the header is the one page header instead
+ * (D74): the title with the controls at the end of its line, the mark row under it.
+ */
+function ViewHeader({ view, count, end }: { view: PanelViewSpec; count: number | null; end?: ReactNode }) {
+  return (
     <HStack justify="between" vAlign="center" gap={3} wrap="wrap">
-      <HStack gap={2} vAlign="center" wrap="wrap">
-        <AreaChip ordinal={mark.ordinal} label={mark.title} {...(mark.icon ? { icon: mark.icon } : {})} />
-        <Text type="supporting">
-          {/* A view with no area of its own has the system's word on its chip, and it is not said twice. */}
-          {[mark.title === mark.source ? '' : mark.source, count === null ? '' : counted(count, noun)]
-            .filter(Boolean)
-            .join(' · ')}
-        </Text>
-      </HStack>
+      <MarkRow view={view} count={count} />
       {end}
     </HStack>
   );
@@ -417,26 +429,21 @@ export function DeclaredView({
       );
     said.current = count;
   }, [count, isLoading, controls, announce, view]);
-  const header = (
-    <ViewHeader
-      view={view}
-      count={count}
-      end={
-        controls ? (
-          <Controls controls={controls} input={input} onInput={onInput!} isLoading={isLoading} />
-        ) : onShowAll ? (
-          <Button size="sm" variant="secondary" label="Visa allt" onClick={onShowAll} />
-        ) : undefined
-      }
-    />
+  const end = controls ? (
+    <Controls controls={controls} input={input} onInput={onInput!} isLoading={isLoading} />
+  ) : onShowAll ? (
+    <Button size="sm" variant="secondary" label="Visa allt" onClick={onShowAll} />
+  ) : undefined;
+  const header = title ? (
+    <PageHeader title={title} end={end} meta={<MarkRow view={view} count={count} />} />
+  ) : (
+    <ViewHeader view={view} count={count} end={end} />
   );
-  const heading = title ? <Heading level={1}>{title}</Heading> : null;
   if (view.kind === 'text') {
     const body = (output as Row | null)?.[view.body];
     return (
       <VStack gap={3}>
         {header}
-        {heading}
         {/* The text's headings start one level under the surface's title (artboard 7): h3 in the panel, h2 on a page. */}
         {typeof body === 'string' && body.trim() ? (
           <Markdown density="compact" headingLevelStart={headingLevel}>
@@ -458,7 +465,6 @@ export function DeclaredView({
     return (
       <VStack gap={3}>
         {header}
-        {heading}
         {/* The record's title is the open card's level (D71: level 2), under the surface's own heading in the outline. */}
         {!empty(record[view.title]) && (
           <Heading level={2} accessibilityLevel={headingLevel}>
@@ -490,7 +496,6 @@ export function DeclaredView({
   return (
     <VStack gap={3}>
       {header}
-      {heading}
       {rows.length === 0 ? (
         <EmptyState isCompact headingLevel={headingLevel} title={view.empty ?? 'Inget att visa'} />
       ) : (
