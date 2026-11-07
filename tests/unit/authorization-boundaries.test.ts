@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { Registry, openGovernance, type Actor, type Connector } from '../../packages/connectors/src/index';
+import { Registry, openGovernance, type Actor, type Connector, actorOf } from '../../packages/connectors/src/index';
 import { threadAccess } from '../../apps/server/src/threads/access';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { testAuthority } from '../connector-authority';
@@ -7,7 +7,14 @@ import { decodeJwt, generateKeyPair, exportPKCS8 } from 'jose';
 import { connectorAuthority } from '../../apps/server/src/connectors/authority';
 import { verifyAssertion } from '../../connectors/hello/verification.mjs';
 
-const actor: Actor = { id: 'person', name: 'Person', role: 'manager', unitId: 'unit', unitLabel: 'Unit' };
+const actor: Actor & { authorizationVersion: string } = {
+  authorizationVersion: 'v1',
+  id: 'person',
+  name: 'Person',
+  role: 'manager',
+  unitId: 'unit',
+  unitLabel: 'Unit',
+};
 const shape = (properties: Record<string, object>) =>
   ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false }) as never;
 const connector = (id = 'source', run: () => Promise<unknown> = async () => ({ count: 1 })): Connector => ({
@@ -44,9 +51,9 @@ describe('authorization and invocation boundaries', () => {
     const keys = await generateKeyPair('RS256', { extractable: true });
     const next = await connectorAuthority(await exportPKCS8(keys.privateKey), 'rotated', old.jwks.keys);
     const previousRequest = await old.assert('hello', actor, ['source.count']);
-    expect(await next.verify(decodeJwt(previousRequest).callback as string)).toMatchObject({ actor });
+    expect(await next.verify(decodeJwt(previousRequest).callback as string)).toMatchObject({ actor: actorOf(actor) });
     const request = await next.assert('hello', actor);
-    expect(verifyAssertion(request, next.jwks, 'hello')).toEqual(actor);
+    expect(verifyAssertion(request, next.jwks, 'hello')).toEqual(actorOf(actor));
     expect(verifyAssertion(request, old.jwks, 'hello')).toBeNull();
     expect(JSON.stringify(next.jwks)).not.toContain('"d":');
   });
@@ -75,6 +82,16 @@ describe('authorization and invocation boundaries', () => {
     await expect(registry.run(actor, 'source.count', {})).rejects.toThrow('Källans svar kunde inte verifieras.');
     const next = connector();
     next.capabilities[0]!.input = shape({ key: { type: 'string' } });
+    registry.replace(next);
+    await expect(registry.run(actor, 'source.count', {})).rejects.toThrow('Ogiltig förfrågan');
+    expect(await registry.run(actor, 'source.count', { key: 'x' })).toEqual({ count: 1 });
+  });
+  test('a replacement may reuse schema ids without retaining the old validator', async () => {
+    const first = connector();
+    first.capabilities[0]!.input = Object.assign(shape({}), { $id: 'urn:source:input' });
+    const registry = new Registry().register(first).govern('source', openGovernance());
+    const next = connector();
+    next.capabilities[0]!.input = Object.assign(shape({ key: { type: 'string' } }), { $id: 'urn:source:input' });
     registry.replace(next);
     await expect(registry.run(actor, 'source.count', {})).rejects.toThrow('Ogiltig förfrågan');
     expect(await registry.run(actor, 'source.count', { key: 'x' })).toEqual({ count: 1 });
@@ -116,6 +133,7 @@ describe('authorization and invocation boundaries', () => {
         await tx.insertThread({
           id: kind,
           personId: actor.id,
+          sourceAuthorization: actor.authorizationVersion,
           kind,
           topic: kind,
           title: 'Restricted',
@@ -136,7 +154,13 @@ describe('authorization and invocation boundaries', () => {
           role: 'assistant',
           body: 'Restricted',
           at,
-          meta: { access: { connectors: ['source'], capabilities: ['source.count'] } },
+          meta: {
+            access: {
+              connectors: ['source'],
+              capabilities: ['source.count'],
+              authorizationVersion: actor.authorizationVersion,
+            },
+          },
         });
       }
     });
@@ -151,7 +175,7 @@ describe('authorization and invocation boundaries', () => {
   test('public keys verify requests but cannot turn request tokens into callback grants', async () => {
     const authority = await testAuthority();
     const request = await authority.assert('hello', actor, ['source.count']);
-    expect(verifyAssertion(request, authority.jwks, 'hello')).toEqual(actor);
+    expect(verifyAssertion(request, authority.jwks, 'hello')).toEqual(actorOf(actor));
     expect(verifyAssertion(request, authority.jwks, 'other')).toBeNull();
     expect(verifyAssertion(request, authority.jwks, 'hello', Date.now() + 121_000)).toBeNull();
     await expect(authority.verify(request)).rejects.toThrow();
@@ -163,6 +187,6 @@ describe('authorization and invocation boundaries', () => {
       sessionBinding: 'must-not-leave-clew',
       authorize: async () => ({ version: 'v1' }),
     };
-    expect(decodeJwt(await authority.assert('hello', withSessionFields)).actor).toEqual(actor);
+    expect(decodeJwt(await authority.assert('hello', withSessionFields)).actor).toEqual(actorOf(actor));
   });
 });

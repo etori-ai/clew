@@ -1,5 +1,5 @@
 {
-  "id": "55d13b39-72a8-4345-9f12-4f1dcc4906d2",
+  "id": "4a3e9fdc-d8cc-4741-9cb1-9a92fcbcc146",
   "prevId": "92d26bc7-2ca1-498e-8ae7-228157d86078",
   "version": "7",
   "dialect": "postgresql",
@@ -1676,13 +1676,6 @@
           "notNull": true,
           "default": true
         },
-        "reasoning": {
-          "name": "reasoning",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'provider-default'"
-        },
         "created_by": {
           "name": "created_by",
           "type": "text",
@@ -1776,10 +1769,6 @@
         "model_state": {
           "name": "model_state",
           "value": "\"model\".\"state\" IN ('enabled', 'disabled')"
-        },
-        "model_reasoning": {
-          "name": "model_reasoning",
-          "value": "\"model\".\"reasoning\" IN ('provider-default', 'none')"
         }
       },
       "isRLSEnabled": false
@@ -2410,6 +2399,12 @@
       "name": "thread",
       "schema": "",
       "columns": {
+        "source_authorization": {
+          "name": "source_authorization",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "execution": {
           "name": "execution",
           "type": "jsonb",

@@ -1,3 +1,6 @@
+import { Registry, openGovernance } from '../../packages/connectors/src';
+import { threadAccess } from '../../apps/server/src/threads/access';
+import { draft as storedDraft } from '../store-contract';
 import { expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import type { AuthenticatedContext } from '../../packages/contracts/src';
@@ -174,4 +177,153 @@ test('source reads are independent of requesting refresh and a revoked actor nev
   await uc.tick();
   expect(scanned).toBe(0);
   expect((await w.store.statuses(actor.id))[0]?.error).toBe('authorization-required');
+});
+
+test('source snapshots keep their original authority across transfers, role changes and history reads', async () => {
+  const store = memoryRefreshStore();
+  const registry = new Registry()
+    .register({ id: 'source', kind: 'passthrough', source: 'Source', areas: [], capabilities: [] })
+    .govern('source', openGovernance());
+  let current = { ...actor },
+    time = Date.parse('2026-11-07T12:00:00Z'),
+    n = 0,
+    empty = false;
+  const uc = refreshUsecases({
+    store,
+    clock: () => new Date(time),
+    ids: () => `authority-${++n}`,
+    key: value => createHash('sha256').update(JSON.stringify(value)).digest('hex'),
+    current: async () => current,
+    sources: async () => ['source'],
+    system: () => 'Source',
+    scan: async p => ({
+      drafts: empty
+        ? []
+        : [{ ...draft(), title: `Work for ${p.unitId}`, summary: `Content for ${p.authorizationVersion}` }],
+      observation: {
+        scope: p.unitId + ':' + p.role,
+        observedAt: new Date(time).toISOString(),
+        version: String(time),
+        completeness: 'complete',
+        exhausted: true,
+      },
+    }),
+  });
+  const access = threadAccess(store.threads, registry);
+  await uc.request(current);
+  await uc.tick();
+  const original = (await access.list(current, new Date(time).toISOString()))[0]!;
+  expect(original.sourceAuthorization).toBe('v1');
+  current = { ...current, unitId: 'other-unit', authorizationVersion: 'v2' };
+  empty = true;
+  time++;
+  await uc.request(current);
+  await uc.tick();
+  expect(await access.list(current, new Date(time).toISOString())).toEqual([]);
+  expect(await access.read(current, original.id)).toBeUndefined();
+  // A new positive observation creates new history; it never adopts the old projection.
+  empty = false;
+  time += 60_001;
+  await uc.request(current);
+  await uc.tick();
+  await uc.tick();
+  const transferred = (await access.list(current, new Date(time).toISOString()))[0]!;
+  expect(transferred.id).not.toBe(original.id);
+  expect(transferred.sourceAuthorization).toBe('v2');
+  expect(JSON.stringify(transferred)).not.toContain('Content for v1');
+  // Same assignment with a new grant version is also a new authorization boundary.
+  current = { ...current, authorizationVersion: 'v3' };
+  time++;
+  expect(await access.read(current, transferred.id)).toBeUndefined();
+  await uc.request(current);
+  await uc.tick();
+  const renewed = (await access.list(current, new Date(time).toISOString()))[0]!;
+  expect(renewed.id).not.toBe(transferred.id);
+  expect(renewed.sourceAuthorization).toBe('v3');
+  await store.threads.transaction(tx => tx.updateThread(renewed.id, { state: 'handled' }));
+  current = { ...current, role: 'employee', authorizationVersion: 'v4' };
+  expect(await access.list(current, new Date(time).toISOString())).toEqual([]);
+  expect(await access.read(current, renewed.id)).toBeUndefined();
+  expect(await store.threads.readThread(current.id, original.id)).toBeDefined();
+});
+
+test('legacy source cards fail closed and a fresh scan cannot adopt their old messages', async () => {
+  const w = world();
+  const old = storedDraft(actor.id, {
+    id: 'legacy',
+    connector: 'source',
+    topic: 'cases',
+    sourceAuthorization: undefined,
+  });
+  await w.store.threads.transaction(async tx => {
+    await tx.insertThread(old);
+    await tx.addMessage(old.id, {
+      role: 'assistant',
+      body: 'Unverified old source content',
+      at: w.clock().toISOString(),
+    });
+  });
+  const registry = new Registry()
+    .register({ id: 'source', kind: 'passthrough', source: 'Source', areas: [], capabilities: [] })
+    .govern('source', openGovernance());
+  const access = threadAccess(w.store.threads, registry);
+  expect(await access.read(actor, old.id)).toBeUndefined();
+  w.set([draft()]);
+  await w.uc.request(actor);
+  await w.uc.tick();
+  const visible = await access.list(actor, w.clock().toISOString());
+  expect(visible).toHaveLength(1);
+  expect(visible[0]!.id).not.toBe(old.id);
+  expect(JSON.stringify(visible)).not.toContain('Unverified old source content');
+});
+
+test('a changed authority cannot create another approval for an occurrence with an unknown execution', async () => {
+  const w = world();
+  w.set([draft()]);
+  await w.uc.request(actor);
+  await w.uc.tick();
+  const old = w.store.threads.dump()[0]!.thread;
+  await w.store.threads.transaction(tx =>
+    tx.updateThread(old.id, { execution: { id: 'uncertain', state: 'unknown' } } as never),
+  );
+  const renewed = { ...actor, authorizationVersion: 'v2' };
+  const uc = refreshUsecases({ ...w.deps, current: async () => renewed });
+  await uc.request(renewed);
+  await uc.tick();
+  expect(w.store.threads.dump()).toHaveLength(1);
+  expect(w.store.threads.dump()[0]!.thread.execution?.id).toBe('uncertain');
+});
+
+test('legacy cards with an uncertain action are retained without creating a second approval', async () => {
+  const w = world();
+  const old = storedDraft(actor.id, {
+    id: 'legacy-uncertain',
+    connector: 'source',
+    topic: 'cases',
+    sourceAuthorization: undefined,
+  });
+  await w.store.threads.transaction(async tx => {
+    await tx.insertThread(old);
+    await tx.updateThread(old.id, { execution: { id: 'uncertain', state: 'unknown' } } as never);
+  });
+  w.set([draft()]);
+  await w.uc.request(actor);
+  await w.uc.tick();
+  expect(w.store.threads.dump()).toHaveLength(1);
+  expect(w.store.threads.dump()[0]!.thread.execution?.id).toBe('uncertain');
+});
+
+test('renewed authority preserves dismissal of an unchanged source occurrence', async () => {
+  const w = world();
+  w.set([draft()]);
+  await w.uc.request(actor);
+  await w.uc.tick();
+  const old = w.store.threads.dump()[0]!.thread;
+  await w.store.threads.transaction(tx => tx.updateThread(old.id, { state: 'dismissed' }));
+  const renewed = { ...actor, authorizationVersion: 'v2' };
+  const uc = refreshUsecases({ ...w.deps, current: async () => renewed });
+  await uc.request(renewed);
+  await uc.tick();
+  expect(w.store.threads.dump()).toHaveLength(1);
+  expect(w.store.threads.dump()[0]!.thread.state).toBe('dismissed');
 });

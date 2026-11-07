@@ -49,3 +49,12 @@ For delegation, Clew exchanges a session token for the declared audience through
 Clew holds the private signing key, sealed in its database; connectors get public keys only. [connector-key-rotate.ts](../../scripts/connector-key-rotate.ts) rotates the installation key with audit. Previous public keys overlap for three minutes, while assertions last at most two. The sample verifier refreshes its pinned key set on expiry or an unknown key id, with bounded refresh frequency.
 
 Clew rechecks current connector governance when invoking and when reading source-derived work. Your source is still responsible for enforcing its current permissions. Do not treat a previously seen card, actor or ref as permanent access. Use the [authorization boundary tests](../../tests/unit/authorization-boundaries.test.ts) for Clew-side cases, and add equivalent source-side tests for your integration.
+
+
+## Persisted cards and permission changes
+
+Clew records the current person/grant version on a newly scanned source card and checks it on every shared read. A unit transfer, changed role or changed Clew grant makes the old snapshot unavailable, including its history, chips and model context. New authorized observations create fresh cards without copying the old messages. Confirmed, dismissed or uncertain occurrences are not blindly offered as new approvals. See [D75](../decisions/D75-source-snapshots-retain-the-authority-that-produced-them.md).
+
+Migration `0034_source_authorization` does not guess the permissions of legacy cards. External-source cards lacking provenance are hidden; a fresh scan may replace them while their original records and receipts remain stored. Apply migrations before starting the updated server. This is a conservative visibility change, not deletion or a retention policy.
+
+Source-only ACL changes need an explicit revocation path into Clew's grant or connector access. Persisted snapshots cannot discover independently changed source entitlements just by comparing a Clew version. Keep scanning disabled until that path is established; live reads must still enforce current source permissions. Figure responses recheck current Clew authority after their bounded read batch, but are subject to the same source-side responsibility.

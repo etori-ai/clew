@@ -1,3 +1,5 @@
+import { Registry } from '../../packages/connectors/src/index';
+import { remoteConnector } from '../../packages/connectors/src/remote';
 import { describe, expect, test } from 'bun:test';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
@@ -252,4 +254,33 @@ describe('the served protocol routes', () => {
     expect(script.headers.get('content-type')).toContain('javascript');
     expect((await script.text()).length).toBeGreaterThan(100_000);
   });
+});
+
+test('preview, parsing and registry registration share all manifest-local rules', () => {
+  const mutations: Array<(m: any) => void> = [
+    m => m.capabilities.push(structuredClone(m.capabilities[0])),
+    m => (m.facts = [{ kind: 'other:fact', title: 'Fact', attributes: { type: 'object' } }]),
+    m => (m.capabilities.find((c: any) => c.kind === 'read').follows = ['other:fact']),
+    m => (m.capabilities[0].creates = 'hello:undeclared'),
+    m => (m.capabilities[0].input = { type: 'not-a-schema-type' }),
+    m => (m.capabilities[0].output = { $ref: '#/$defs/missing' }),
+    m => (m.facts = [{ kind: 'hello:fact', title: 'Fact', attributes: { type: 'invalid' } }]),
+    m => m.areas[0].standing.push('hello.missing'),
+  ];
+  for (const change of mutations) {
+    const document = edited(hello, change);
+    const preview = previewManifest(document);
+    expect(preview.ok).toBe(false);
+    expect(preview.problems.length).toBeGreaterThan(0);
+    expect(() => parseManifest(document)).toThrow(preview.problems[0]!);
+    const registry = new Registry();
+    expect(() => registry.register(remoteConnector(document, { url: 'http://test', assert: async () => '' }))).toThrow(
+      preview.problems[0]!,
+    );
+    expect(registry.list()).toEqual([]);
+  }
+  expect(previewManifest(hello).ok).toBe(true);
+  expect(() =>
+    new Registry().register(remoteConnector(parseManifest(hello), { url: 'http://test', assert: async () => '' })),
+  ).not.toThrow();
 });

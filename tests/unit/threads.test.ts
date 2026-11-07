@@ -624,3 +624,17 @@ describe('a cited answer becomes a card (D26)', () => {
     );
   });
 });
+
+test('area reads check the person again after figures complete', async () => {
+  const w = world();
+  let checks = 0;
+  const p = {
+    ...hillevi,
+    authorize: async () => {
+      if (++checks === 2) throw new Error('person revoked');
+      return { version: 'v1' };
+    },
+  };
+  await expect(w.threads.listAreas(p)).rejects.toThrow('person revoked');
+  expect(checks).toBe(2);
+});

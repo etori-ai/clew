@@ -104,6 +104,7 @@ export const logoutReceipts = pgTable(
 export const threads = pgTable(
   'thread',
   {
+    sourceAuthorization: text('source_authorization'),
     execution: jsonb('execution').$type<ExecutionSummary | null>(),
     id: text('id').primaryKey(),
     personId: text('person_id')

@@ -16,6 +16,7 @@ export function watchCardSink(place: (connector: string) => { source: string; ar
       .values({
         id: card.id,
         personId: card.personId,
+        sourceAuthorization: card.sourceAuthorization,
         kind: 'pushed',
         topic: card.topic,
         title: card.title,

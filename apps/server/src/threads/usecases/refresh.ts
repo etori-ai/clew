@@ -104,9 +104,8 @@ export function refreshUsecases({ store, clock, ids, key, current, sources, syst
           };
         });
         const oldThreadId = occurrences.find(o => o.old?.threadId)?.old?.threadId;
-        const topic = d.occurrences?.length
-          ? `${d.topic}:${key([...new Set(identities.map(o => o.period))].sort())}`
-          : d.topic;
+        // Different authority means a fresh projection and history, even for the same source occurrence.
+        const topic = `${d.topic}:${key([job.assignment, job.authorizationVersion, [...new Set(identities.map(o => o.period))].sort()])}`;
         let thread = oldThreadId
           ? await tx.lockThread(job.personId, oldThreadId)
           : await tx.findTopic(job.personId, job.connector, topic);
@@ -115,6 +114,12 @@ export function refreshUsecases({ store, clock, ids, key, current, sources, syst
           if (legacy && !existing.some(o => o.threadId === legacy.id)) thread = legacy;
         }
         const changed = occurrences.some(o => (o.old ? o.old.revision !== o.value.revision : !!oldThreadId));
+        if (thread && thread.sourceAuthorization !== job.authorizationVersion) {
+          // Changing authority must not create another approval for an unresolved or already-confirmed occurrence.
+          if (thread.execution && ['pending', 'running', 'unknown'].includes(thread.execution.state)) continue;
+          if ((thread.receipt || thread.state === 'dismissed') && !changed) continue;
+          thread = undefined;
+        }
         // An action accepted during this scan wins. A newer observation may try again on the next refresh.
         if (
           thread &&
@@ -141,6 +146,7 @@ export function refreshUsecases({ store, clock, ids, key, current, sources, syst
             !(await tx.insertThread({
               id,
               personId: job.personId,
+              sourceAuthorization: job.authorizationVersion,
               kind: 'pushed',
               topic,
               connector: job.connector,

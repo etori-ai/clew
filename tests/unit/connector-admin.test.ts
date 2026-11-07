@@ -498,3 +498,83 @@ describe('users are core entities, not connected systems (D62)', () => {
     expect(registry.allowed(actorOf(hillevi), 'people.me')).toBeUndefined();
   });
 });
+
+describe('authoritative refresh without rebuilding unchanged connectors', () => {
+  test('unchanged rows and governance changes preserve the descriptor; manifests, credentials and deletion do not', async () => {
+    const w = world();
+    await w.admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    await w.admin.update(mikael, 'hello', { state: 'enabled' });
+    await applyAllRows(w.reconcile);
+    const original = w.registry.connector('hello'),
+      count = w.live.registered.length;
+    for (let i = 0; i < 10; i++) await applyAllRows(w.reconcile);
+    expect(w.registry.connector('hello')).toBe(original);
+    expect(w.live.registered).toHaveLength(count);
+    await w.store.transaction(tx => tx.update('hello', { state: 'disabled' }, 'test', T0));
+    await applyAllRows(w.reconcile);
+    expect(w.registry.connector('hello')).toBe(original);
+    expect(w.registry.visible(hillevi, 'hello')).toBe(false);
+    const row = (await w.store.read('hello'))!;
+    const manifest = structuredClone(row.manifest) as ConnectorManifest;
+    manifest.source = 'Changed source';
+    await w.store.recordHealth('hello', row.health, manifest, T0);
+    expect((await w.store.read('hello'))!.version).toBe(row.version);
+    await applyAllRows(w.reconcile);
+    expect(w.registry.connector('hello')).not.toBe(original);
+    expect(w.registry.connector('hello')!.source).toBe('Changed source');
+    const changed = w.registry.connector('hello');
+    await w.store.transaction(tx =>
+      tx.update(
+        'hello',
+        { url: 'http://changed', secret: w.reconcile.secrets.seal('changed-secret', 'hello') },
+        'test',
+        T0,
+      ),
+    );
+    await applyAllRows(w.reconcile);
+    expect(w.registry.connector('hello')).not.toBe(changed);
+    await w.store.transaction(tx => tx.remove('hello'));
+    await applyAllRows(w.reconcile);
+    expect(w.registry.connector('hello')).toBeUndefined();
+  });
+  test('concurrent callers coalesce, but a check arriving during an older read waits for a fresh snapshot', async () => {
+    const w = world();
+    await w.admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
+    await w.admin.update(mikael, 'hello', { state: 'enabled' });
+    const list = w.store.list.bind(w.store);
+    let calls = 0,
+      release!: () => void,
+      entered!: () => void;
+    const gate = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    const started = new Promise<void>(resolve => {
+      entered = resolve;
+    });
+    w.store.list = async () => {
+      calls++;
+      const rows = await list();
+      if (calls === 1) {
+        entered();
+        await gate;
+      }
+      return rows;
+    };
+    const early = Array.from({ length: 8 }, () => applyAllRows(w.reconcile));
+    await started;
+    expect(calls).toBe(1);
+    await w.store.transaction(tx => tx.update('hello', { state: 'disabled' }, 'test', T0));
+    const late = Array.from({ length: 8 }, () => applyAllRows(w.reconcile));
+    release();
+    await Promise.all([...early, ...late]);
+    expect(calls).toBe(2);
+    expect(w.registry.visible(hillevi, 'hello')).toBe(false);
+    w.store.list = async () => {
+      throw new Error('store unavailable');
+    };
+    await expect(applyAllRows(w.reconcile)).rejects.toThrow('store unavailable');
+    w.store.list = list;
+    await applyAllRows(w.reconcile);
+    expect(w.registry.visible(hillevi, 'hello')).toBe(false);
+  });
+});

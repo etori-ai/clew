@@ -131,7 +131,7 @@ export class WireError extends Error {
 export interface ModelWire {
   /** `GET {base}/models`: the ids the endpoint lists. */
   listModels(endpoint: Endpoint): Promise<string[]>;
-  /** One tiny completion shaped like a real turn: proves the model id, the key and that the model takes the call (D75). */
+  /** One tiny completion shaped like a real turn: proves the model id, the key and that the model takes the call (D76). */
   ping(endpoint: Endpoint, model: string, call: Pick<ModelRecord, 'tools' | 'reasoning'>): Promise<void>;
   /** What the assistant calls for one turn with this model. */
   generator(endpoint: Endpoint, model: string, reasoning: ModelReasoning): ModelGenerate;
@@ -160,7 +160,10 @@ export interface ModelResolver {
 }
 export interface AssistantDeps {
   store: ThreadStore;
-  registry: Pick<Registry, 'tools' | 'areas' | 'list' | 'find' | 'allowed' | 'visible' | 'capabilitiesFor'>;
+  registry: Pick<
+    Registry,
+    'tools' | 'areas' | 'list' | 'find' | 'allowed' | 'visible' | 'capabilitiesFor' | 'connector'
+  >;
   run: <O = unknown>(persona: AuthenticatedContext, name: string, input: unknown) => Promise<O>;
   calendar: Pick<CalendarUsecases, 'listWeek' | 'readToday' | 'samtalStatus' | 'ensureProposalThread' | 'replan'>;
   models: ModelResolver;

@@ -1,6 +1,6 @@
 import { Value } from '@sinclair/typebox/value';
 import { CapabilityError, type Actor, type Capability, type Clew, type Connector } from './index';
-import { menuProblem, viewProblem } from './views';
+import { connectorProblems } from './validation';
 import {
   CallResponseSchema,
   FigureResponseSchema,
@@ -55,20 +55,7 @@ export function manifestProblems(document: unknown, expectedId?: string): string
   const problems: string[] = [];
   if (expectedId && manifest.id !== expectedId)
     problems.push(`Manifest id "${manifest.id}" does not match the configured id "${expectedId}".`);
-  for (const c of manifest.capabilities) {
-    if (!c.name.startsWith(manifest.id + '.'))
-      problems.push(`Capability ${c.name} must be prefixed with ${manifest.id}.`);
-    if (c.kind === 'execute' && c.model)
-      problems.push(`Capability ${c.name}: execute capabilities are never tools (D8).`);
-    const problem = viewProblem(c, manifest.capabilities);
-    if (problem) problems.push(`Capability ${problem} (D38).`);
-    const menu = menuProblem(c);
-    if (menu) problems.push(`Capability ${menu} (D40).`);
-  }
-  for (const a of manifest.areas)
-    for (const s of a.standing)
-      if (!manifest.capabilities.some(c => c.name === s))
-        problems.push(`Area ${a.id} lists unknown standing capability ${s}.`);
+  problems.push(...connectorProblems(manifest));
   return problems;
 }
 /** Validate a manifest document; returns the typed manifest or throws with the schema problems listed, else the first rule it breaks. */
@@ -120,6 +107,7 @@ async function post(
   token?: string,
   chain?: string[],
   operationId?: string,
+  signal?: AbortSignal,
 ) {
   const fetchImpl = transport.fetch ?? fetch;
   let response: Response;
@@ -135,7 +123,7 @@ async function post(
         ...(token ? { [DELEGATED_TOKEN_HEADER]: token } : {}),
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(transport.timeoutMs ?? 10_000),
+      signal: AbortSignal.any([AbortSignal.timeout(transport.timeoutMs ?? 10_000), ...(signal ? [signal] : [])]),
     });
   } catch {
     throw unavailable(source);
@@ -183,6 +171,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
         await delegated(manifest, clew, source),
         clew.chain,
         clew.operationId,
+        clew.signal,
       );
       if (status >= 500 || !Value.Check(CallResponseSchema, json)) throw unavailable(source);
       if ('error' in json) failWith(json, source);
@@ -206,8 +195,18 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
       ...(a.figure
         ? {
             // A figure that does not come back, or not in the protocol's shape, throws: the registry makes it the warning figure (D8).
-            figure: async (actor: Actor) => {
-              const { status, json } = await post(transport, source, '/clew/figure', actor, { actor, area: a.id });
+            figure: async (actor: Actor, clew: Clew) => {
+              const { status, json } = await post(
+                transport,
+                source,
+                '/clew/figure',
+                actor,
+                { actor, area: a.id },
+                undefined,
+                clew.chain,
+                undefined,
+                clew.signal,
+              );
               if (status >= 400 || !Value.Check(FigureResponseSchema, json)) throw unavailable(source);
               return json.figure;
             },

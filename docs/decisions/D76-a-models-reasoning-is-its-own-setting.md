@@ -1,4 +1,4 @@
-# D75 · A model's reasoning is its own setting, and "Testa" tries a real turn's shape
+# D76 · A model's reasoning is its own setting, and "Testa" tries a real turn's shape
 
 **Status:** accepted, built 2026-11-07 · **Date:** 2026-11-07 · **Area:** product
 
@@ -29,7 +29,7 @@ tools, so the administrator had a green result and a failing composer.
 - Retrying a refused call without the field. It hides the setting, doubles the refused calls and leaves the audit
   without a record of what was sent.
 
-**Consequences.** Migration `0034_model_reasoning` adds the column with the default, so existing models send what they
+**Consequences.** Migration `0035_model_reasoning` adds the column with the default, so existing models send what they
 sent before. A test of a model with tools on can fail where it passed before: that model would have failed its first
 turn, so the failure moved to where the administrator can act on it, and the finding carries the provider's own words.
 The minute probe still reads `GET /models` only: it proves the endpoint answers, and a model's refusal surfaces at

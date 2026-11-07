@@ -83,17 +83,21 @@ export function threadUsecases(deps: ThreadDeps) {
     const drafts = await registry.scan(actorOf(persona));
     const now = clock();
     for (const d of drafts) {
-      const existing = await store.openThread(persona.id, d.topic);
-      if (!existing) {
-        await pushDraft(persona, d, 'assistant:scan', now);
+      const scopedTopic = `${d.topic}:authority:${persona.authorizationVersion}`;
+      const existing =
+        (await store.openThread(persona.id, scopedTopic)) ?? (await store.openThread(persona.id, d.topic));
+      // Changed authority must not manufacture a second decision while the old one may have reached the source.
+      if (
+        existing &&
+        (existing.receipt ||
+          (existing.execution && ['pending', 'running', 'unknown'].includes(existing.execution.state)))
+      )
+        continue;
+      if (!existing || existing.sourceAuthorization !== persona.authorizationVersion) {
+        await pushDraft(persona, existing ? { ...d, topic: scopedTopic } : d, 'assistant:scan', now);
         continue;
       }
       // An untouched open card follows its source: rows, title and deadline refresh, the person's selection survives.
-      if (
-        existing.receipt ||
-        (existing.execution && ['pending', 'running', 'unknown'].includes(existing.execution.state))
-      )
-        continue;
       const items = (d.items ?? []).map(i => ({
         ...i,
         selected: existing.items.find(x => x.ref === i.ref)?.selected ?? i.selected,
@@ -167,7 +171,7 @@ export function threadUsecases(deps: ThreadDeps) {
   }
   /** Push one card for a person. Idempotent by (person, topic): the store refuses a second open card on the topic, across processes. */
   async function pushDraft(
-    persona: Pick<AuthenticatedContext, 'id'>,
+    persona: Pick<AuthenticatedContext, 'id'> & Partial<Pick<AuthenticatedContext, 'authorizationVersion'>>,
     d: ThreadDraft & { connector: string },
     actor: string,
     now = clock(),
@@ -178,6 +182,7 @@ export function threadUsecases(deps: ThreadDeps) {
       const inserted = await tx.insertThread({
         id,
         personId: persona.id,
+        ...(persona.authorizationVersion ? { sourceAuthorization: persona.authorizationVersion } : {}),
         kind: 'pushed',
         topic: d.topic,
         title: d.title,
@@ -208,11 +213,10 @@ export function threadUsecases(deps: ThreadDeps) {
   }
   /** Areas with live counts for the sidebar, and each figure with the time Clew read it (D54: "Personalsystemet 06:00"). */
   async function listAreas(persona: AuthenticatedContext): Promise<Area[]> {
+    await persona.authorize();
     const now = clock();
-    const [areas, threads] = await Promise.all([
-      registry.areas(actorOf(persona)),
-      access.list(persona, now.toISOString()),
-    ]);
+    const threads = await access.list(persona, now.toISOString());
+    const areas = await registry.areas(actorOf(persona), { authorize: () => persona.authorize() });
     const open = threads.filter(t => (t.state === 'open' || unresolvedExecution(t)) && t.kind === 'pushed');
     const today = stockholmDate(now.toISOString());
     return areas.map(a => {

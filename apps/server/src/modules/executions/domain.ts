@@ -158,7 +158,7 @@ export const watchIntentOf = (
  * Clew's, not the system's (D35), so it carries no action: the person looks in the system or asks about the job.
  */
 export function watchExpiredCard(
-  job: Pick<Job, 'id' | 'personId'>,
+  job: Pick<Job, 'id' | 'personId' | 'authorizationVersion'>,
   step: Extract<JobStep, { kind: 'watch' }>,
   at: string,
 ): WatchCard {
@@ -170,6 +170,7 @@ export function watchExpiredCard(
       : `${reads === 1 ? 'En kontroll' : reads + ' kontroller'} fram till ${stockholmTime(step.expiresAt)} visade inget`;
   return {
     id: `watch:${job.id}:${step.id}`,
+    sourceAuthorization: job.authorizationVersion,
     personId: job.personId,
     jobId: job.id,
     stepId: step.id,

@@ -129,6 +129,7 @@ export interface WatchIntent {
 }
 /** The card a watch leaves when its window ends unseen (D55 item 5): the stream admits it like any pushed card (D47), in the same transaction as the step's settlement. */
 export interface WatchCard {
+  sourceAuthorization: string;
   id: string;
   personId: string;
   jobId: string;

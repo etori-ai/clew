@@ -698,6 +698,8 @@ export const ExecutionSummarySchema = object({
 export type ExecutionSummary = Static<typeof ExecutionSummarySchema>;
 /** Every thread answers "varför ser jag detta?" with trigger, source and time. */
 export const ThreadSchema = object({
+  /** Clew authority under which source content was projected; absent legacy snapshots are not trusted. */
+  sourceAuthorization: Type.Optional(Type.String()),
   id: id,
   kind: ThreadKind,
   topic: Type.String(),
@@ -1208,7 +1210,7 @@ export type ProviderHealth = Static<typeof ProviderHealthSchema>;
 export const ModelStateSchema = Type.Union([Type.Literal('enabled'), Type.Literal('disabled')]);
 export type ModelState = Static<typeof ModelStateSchema>;
 /**
- * What a call says about reasoning (D75). `provider-default` says nothing, so an endpoint that does not know the field
+ * What a call says about reasoning (D76). `provider-default` says nothing, so an endpoint that does not know the field
  * never sees it; `none` asks the model not to reason, for a model that refuses tools while it does.
  */
 export const ModelReasoningSchema = Type.Union([Type.Literal('provider-default'), Type.Literal('none')]);

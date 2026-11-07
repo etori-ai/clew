@@ -187,7 +187,7 @@ model
   audience             same shape as a connector's
   is_default           at most one row (partial unique index model_one_default), always a switched-on model
   tools                boolean: offer capabilities as tools; off for a model that does not call tools reliably
-  reasoning            'provider-default' (sends nothing) | 'none' (sends reasoning_effort: none, D75)
+  reasoning            'provider-default' (sends nothing) | 'none' (sends reasoning_effort: none, D76)
   created_by, updated_by, created_at, updated_at, version
 
 model_choice
@@ -200,7 +200,7 @@ model_choice
 `KeySealer`, `ModelWire`, `ModelHealth`, `ModelResolver`), the pure rules in `domain.ts` (`slugFor`, `choicesFor`,
 `pickModel`), the use cases in `usecases/models.ts` (`modelUsecases(deps)`), and the adapters: `adapters/postgres.ts`
 (the store), `adapters/memory.ts` (the store, a played endpoint and the in-process health), and
-`adapters/openai-compatible.ts` (the wire: `GET /models`, one tiny chat completion shaped like a turn for "Testa", D75, the AI SDK for a turn;
+`adapters/openai-compatible.ts` (the wire: `GET /models`, one tiny chat completion shaped like a turn for "Testa", D76, the AI SDK for a turn;
 every failure is a `WireError` of kind `unreachable`, `key-rejected` or `unsupported`). The composition root seals with
 the master key under `provider:key:<id>` and starts the minute probe beside the server.
 
