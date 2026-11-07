@@ -5,7 +5,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import '@clew/ui/styles.css';
 import { createQueryClient } from './query-client';
 import { changeNotices } from './thread-cache';
-import { LinkProvider, Providers, SessionBoundary, type BrowserSession } from '@clew/ui';
+import { Center, LinkProvider, Providers, SessionBoundary, Spinner, type BrowserSession } from '@clew/ui';
 import type { SessionUser } from '@clew/contracts';
 import { StartPage } from './pages/start';
 import { ConversationProvider } from './components/conversation-context';
@@ -119,7 +119,12 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
       window.removeEventListener('online', connect);
     };
   }, [client, shell]);
-  if (shell === 'loading') return null;
+  if (shell === 'loading')
+    return (
+      <Center height="100%" role="main">
+        <Spinner label="Hämtar sidan …" />
+      </Center>
+    );
   if (shell === 'anonymous') return <LoginPage returnTo={location.pathname} />;
   return (
     <SessionBoundary session={shell.session} onEnded={() => client.clear()}>

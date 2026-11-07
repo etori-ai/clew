@@ -82,7 +82,7 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
     );
   if (!p || !draft)
     return (
-      <AdminShell user={user} section="modeller" crumbs={crumbs(id)}>
+      <AdminShell pending={!error} user={user} section="modeller" crumbs={crumbs(id)}>
         {error ? (
           <Text as="p" role="alert" color="accent">
             {error}

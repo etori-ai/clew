@@ -169,7 +169,7 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
   ];
   const all = connectors ?? [];
   return (
-    <AdminShell user={user} crumbs={[{ label: 'Anslutna system' }]}>
+    <AdminShell user={user} crumbs={[{ label: 'Anslutna system' }]} pending={list.isPending}>
       <PageHeader
         title="Anslutna system"
         end={<Button variant="primary" label="Anslut system" onClick={() => setAdding(true)} />}

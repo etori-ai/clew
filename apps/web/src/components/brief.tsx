@@ -7,7 +7,7 @@ import { Card, Divider, HStack, Skeleton, VisuallyHidden, VStack } from '@clew/u
 export function BriefSkeleton({ rows = 3, compact = false }: { rows?: number; compact?: boolean }) {
   return (
     <Card padding={2}>
-      <VisuallyHidden>Hämtar det som behöver dig …</VisuallyHidden>
+      <VisuallyHidden role="status">Hämtar det som behöver dig …</VisuallyHidden>
       <VStack gap={0}>
         {Array.from({ length: rows }, (_, i) => (
           <VStack key={i} gap={0}>

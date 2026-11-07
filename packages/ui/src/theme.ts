@@ -68,6 +68,8 @@ const clewBaseTheme = defineTheme({
     // A figure that needs the person (D54, `figure.tsx`): the card's own background with an error-coloured outline,
     // the same documented extension as the badges above. Astryx's Card has tinted variants but no outlined status.
     card: {
+      // Neutral's skeleton and muted card share a light colour. Keep the pending lines visible on that surface (D76).
+      'variant:muted': { '--color-skeleton': 'var(--color-border-emphasized)' },
       'variant:alert': {
         backgroundColor: 'var(--color-background-card)',
         boxShadow: 'inset 0 0 0 1px var(--color-border-error)',

@@ -95,7 +95,7 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
     );
   if (!m || !draft)
     return (
-      <AdminShell user={user} section="modeller" crumbs={crumbs(id)}>
+      <AdminShell pending={!error} user={user} section="modeller" crumbs={crumbs(id)}>
         {error ? (
           <Text as="p" role="alert" color="accent">
             {error}

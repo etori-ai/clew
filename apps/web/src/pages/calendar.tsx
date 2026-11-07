@@ -59,6 +59,7 @@ import { useRail } from '../components/nav';
 import { EventDialog } from '../components/calendar/event-dialog';
 import { BookingDialog } from '../components/calendar/booking-dialog';
 import { PageHeader } from '../components/page-header';
+import { AsyncContent, ContentSkeleton } from '../components/loading';
 
 /** The three views as the URL names them, so a view is addressable and the back button works. */
 type View = 'day' | 'week' | 'month';
@@ -103,6 +104,7 @@ const combineWeeks = (results: UseQueryResult<Week>[]) => {
         return true;
       }),
     proposals: parts[0]?.proposals ?? EMPTY_PROPOSALS,
+    pending: results.some(r => r.isPending),
     failed: results.find(r => r.isError && r.data === undefined)?.error,
   };
 };
@@ -163,7 +165,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   /** The weeks the view needs: one for a day or a week, every week the month grid shows. */
   const weeks = useMemo(() => (view === 'month' ? weeksOfMonth(anchor) : [weekStart(anchor)]), [view, anchor]);
   // Each week is one query, shared with the cards on the start page; the previous answer stays on the grid while the next week loads, and answers can no longer land out of order.
-  const { events, proposals, failed } = useQueries({
+  const { events, proposals, failed, pending } = useQueries({
     queries: weeks.map(w => ({ ...calendarWeekQuery(w), placeholderData: keepPreviousData })),
     combine: combineWeeks,
   });
@@ -438,22 +440,27 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
                   {error}
                 </Text>
               )}
-              <EventCalendar
-                view={calendarView}
-                date={anchor}
-                items={items}
-                label={title.charAt(0).toUpperCase() + title.slice(1)}
-                dayHeadingLevel={2}
-                accessiblePath={
-                  thread
-                    ? 'Listan under Förslag är vägen till varje förslag; Retur på en post öppnar den.'
-                    : 'Retur på en post öppnar den.'
-                }
-                selectedId={openItem?.id}
-                onItemClick={setOpenItem}
-                onMoveProposal={open ? moveProposal : undefined}
-                onSelectRange={mobile ? undefined : (start, end) => setBooking({ start, end })}
-              />
+              <AsyncContent
+                pending={pending}
+                fallback={<ContentSkeleton label="Hämtar kalendern …" rows={7} heading={false} />}
+              >
+                <EventCalendar
+                  view={calendarView}
+                  date={anchor}
+                  items={items}
+                  label={title.charAt(0).toUpperCase() + title.slice(1)}
+                  dayHeadingLevel={2}
+                  accessiblePath={
+                    thread
+                      ? 'Listan under Förslag är vägen till varje förslag; Retur på en post öppnar den.'
+                      : 'Retur på en post öppnar den.'
+                  }
+                  selectedId={openItem?.id}
+                  onItemClick={setOpenItem}
+                  onMoveProposal={open ? moveProposal : undefined}
+                  onSelectRange={mobile ? undefined : (start, end) => setBooking({ start, end })}
+                />
+              </AsyncContent>
             </VStack>
           </LayoutContent>
         }

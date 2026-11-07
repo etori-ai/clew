@@ -880,6 +880,15 @@
       "status": "accepted, built 2026-11-07",
       "date": "2026-11-07",
       "area": "identity"
+    },
+    {
+      "key": "D76-loading-sections-reserve-their-place-and-enter-together",
+      "number": 76,
+      "path": "docs/decisions/D76-loading-sections-reserve-their-place-and-enter-together.md",
+      "title": "D76 · Loading sections reserve their place and enter together",
+      "status": "accepted, built 2026-11-07",
+      "date": "2026-11-07",
+      "area": "ui"
     }
   ],
   "documents": [
@@ -1660,6 +1669,12 @@
     {
       "path": "docs/decisions/D75-source-snapshots-retain-the-authority-that-produced-them.md",
       "title": "D75 · Source snapshots retain the authority that produced them",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D76-loading-sections-reserve-their-place-and-enter-together.md",
+      "title": "D76 · Loading sections reserve their place and enter together",
       "category": "decision-history",
       "headings": []
     },

@@ -4,6 +4,7 @@ import { BreadcrumbItem, Breadcrumbs, Button, EmptyState, Layout, LayoutContent,
 import { useRail, type AdminSection } from '../../components/nav';
 import { Shell, mobileQuery } from '../../components/shell';
 import { useMediaQuery } from '@clew/ui';
+import { AsyncContent, ContentSkeleton } from '../../components/loading';
 
 /**
  * The administration surface (D23, D24) on the shared shell (D31) with the same rail as every other page (D45): Anslutna
@@ -17,11 +18,13 @@ export function AdminShell({
   crumbs,
   children,
   section = 'anslutningar',
+  pending = false,
 }: {
   user: SessionUser;
   crumbs: Crumb[];
   children: ReactNode;
   section?: AdminSection;
+  pending?: boolean;
 }) {
   const mobile = useMediaQuery(mobileQuery);
   // Only an administrator reaches this shell: `main.tsx` draws NotAdmin for anyone else.
@@ -47,7 +50,9 @@ export function AdminShell({
                   </BreadcrumbItem>
                 ))}
               </Breadcrumbs>
-              {children}
+              <AsyncContent pending={pending} fallback={<ContentSkeleton />} gap={5}>
+                {children}
+              </AsyncContent>
             </VStack>
           </LayoutContent>
         }

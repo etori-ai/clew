@@ -10,7 +10,6 @@ import {
   LayoutContent,
   LayoutFooter,
   Skeleton,
-  VisuallyHidden,
   VStack,
   useMediaQuery,
 } from '@clew/ui';
@@ -24,6 +23,7 @@ import { DeclaredView } from '../components/view';
 import { CONVERSATION_MIN, PanelBody, panelBesideQuery, usePanel, type PanelFrame } from '../components/panel';
 import { Composer, type ComposerAbout } from '../components/composer';
 import { PageHeader } from '../components/page-header';
+import { ContentArrival, ContentSkeleton } from '../components/loading';
 
 /** The table needs 970 px beside the rail, so a 1280 px laptop gets it, with a scrollbar too; a narrower window draws the same rows as a list. */
 const tableQuery = '(min-width: 1280px)';
@@ -215,31 +215,26 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
                     </Banner>
                   )}
                   {tool ? (
-                    tool.spec ? (
-                      <DeclaredView
-                        view={tool.spec}
-                        output={tool.output}
-                        input={tool.input}
-                        isLoading={main.isLoading}
-                        headingLevel={2}
-                        tableQuery={tableQuery}
-                        title={entry!.label}
-                        /* The view's controls rewrite the address in place, so a search is addressable and one step back leaves the tool. */
-                        onInput={next => navigate(toolHref(capability, next), { replace: true })}
-                        hrefFor={v => toolHref(capability, tool.input, v)}
-                      />
-                    ) : (
-                      <EmptyState headingLevel={2} title="Inget att visa" />
-                    )
+                    <ContentArrival>
+                      {tool.spec ? (
+                        <DeclaredView
+                          view={tool.spec}
+                          output={tool.output}
+                          input={tool.input}
+                          isLoading={main.isLoading}
+                          headingLevel={2}
+                          tableQuery={tableQuery}
+                          title={entry!.label}
+                          /* The view's controls rewrite the address in place, so a search is addressable and one step back leaves the tool. */
+                          onInput={next => navigate(toolHref(capability, next), { replace: true })}
+                          hrefFor={v => toolHref(capability, tool.input, v)}
+                        />
+                      ) : (
+                        <EmptyState headingLevel={2} title="Inget att visa" />
+                      )}
+                    </ContentArrival>
                   ) : (
-                    !failed && (
-                      <VStack gap={3}>
-                        <VisuallyHidden>Hämtar …</VisuallyHidden>
-                        {Array.from({ length: 6 }, (_, i) => (
-                          <Skeleton key={i} height={20} width={i % 2 ? '70%' : '100%'} index={i} />
-                        ))}
-                      </VStack>
-                    )
+                    !failed && <ContentSkeleton heading={false} />
                   )}
                   {short && box}
                 </>
