@@ -33,7 +33,6 @@ import {
   Tab,
   TabList,
   Text,
-  Toolbar,
   VStack,
   useAnnounce,
   useMediaQuery,
@@ -51,6 +50,7 @@ import { useThreadAction } from '../mutations';
 import { panelOf, withAction, withCard, withView, withoutPanel } from '../panel-address';
 import { reviewOf } from '../review-address';
 import { Composer, Suggestions, type ComposerAbout } from '../components/composer';
+import { PageHeader } from '../components/page-header';
 import { titled, useConversation, type ConversationState } from '../components/conversation-context';
 import { Transcript } from '../components/conversation';
 import { toolHref, useRail, type RailCurrent } from '../components/nav';
@@ -93,15 +93,19 @@ const HOME_MIN = 640;
 const twoColumnQuery = '(min-width: 1024px)';
 /** The side column's least width: the earlier canvas drew it as `minmax(320px, 1fr)`. */
 const ASIDE = 320;
-/** The grid's gap under the box (`gap={8}`) and the page's inline padding on each side (`paddingInline={10}`), in px on Astryx's 4 px step. */
+/**
+ * The grid's gap under the box (`gap={8}`) and the page's inline padding on each side (`paddingInline={8}`), in px on
+ * Astryx's 4 px step. The padding is every surface's gutter (D74 item 3): Hem's title stands 32 px in from the rail, as
+ * a tool page's, the calendar's and a conversation's do.
+ */
 const GRID_GAP = 32,
-  PAGE_INLINE = 40;
+  PAGE_INLINE = 32;
 /**
  * Where the day stays beside the day's work with the panel open too (D72, artboard A3). `Grid columns={3}` draws three
  * equal tracks, the work spanning two and the gap between them, the day one: a track needs
  * max(ASIDE, (HOME_MIN - GRID_GAP) / 2) = max(320, 304) = 320 px, the grid three tracks and two gaps (1024 px), the page
- * its padding on both sides (1104 px). Beside it stand the rail (256), the fold button and the handle on the panel's
- * edge (PANEL_EDGE, 45) and the panel at its default width (440): RAIL + 1104 + PANEL_EDGE + PANEL = 1845 px. A panel
+ * its padding on both sides (1088 px). Beside it stand the rail (256), the fold button and the handle on the panel's
+ * edge (PANEL_EDGE, 45) and the panel at its default width (440): RAIL + 1088 + PANEL_EDGE + PANEL = 1829 px. A panel
  * dragged wider than its default squeezes the tracks rather than moving the breakpoint, as for `panelBesideQuery` itself.
  */
 const TRACK = Math.max(ASIDE, (HOME_MIN - GRID_GAP) / 2);
@@ -753,31 +757,35 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   // The box is anchored under the greeting (D53): nothing above it changes, and what grows under it while the person
   // types ("Menar du") pushes the day's work down, never the field they are typing in (D36).
   const landing = () => {
-    // The lead (artboard A): the person by first name as the page's h1 at level 1 (D71's page title), the sparkle beside it, and the day, the week and the unit at the end of the line.
-    const greeting = (
-      <HStack gap={2} vAlign="center">
-        <Icon icon={SparklesIcon} size="md" color="accent" />
-        <Heading id="hem" tabIndex={-1} level={1}>
-          Hej {user.name.split(' ')[0]}
-        </Heading>
-      </HStack>
-    );
+    // The lead (artboard A) is the page header every surface opens with (D74): the person by first name as the page's h1
+    // (D71's page title), with the id the focus is sent back to, the sparkle before it, and the day, the week and the
+    // unit at the end of the line. On a phone the day stands under the title in supporting, where it can wrap (artboard
+    // 11, D63 item 2).
+    const title = 'Hej ' + user.name.split(' ')[0];
+    const sparkle = <Icon icon={SparklesIcon} size="md" color="accent" />;
     const date = `${capital(dayLabel(todayDate))} · vecka ${weekNumber(todayDate)} · ${user.unitLabel}`;
-    // On a phone the day stands under the greeting in supporting, where it can wrap (artboard 11).
     const lead = mobile ? (
-      <VStack gap={0.5}>
-        {greeting}
-        <Text type="supporting" as="p">
-          {date}
-        </Text>
-      </VStack>
+      <PageHeader
+        title={title}
+        titleId="hem"
+        icon={sparkle}
+        meta={
+          <Text type="supporting" as="p">
+            {date}
+          </Text>
+        }
+      />
     ) : (
-      <HStack justify="between" vAlign="center" gap={4} wrap="wrap">
-        {greeting}
-        <Text color="secondary" as="p">
-          {date}
-        </Text>
-      </HStack>
+      <PageHeader
+        title={title}
+        titleId="hem"
+        icon={sparkle}
+        end={
+          <Text color="secondary" as="p">
+            {date}
+          </Text>
+        }
+      />
     );
     const box = <Composer place="landing" near={near} about={about} />;
     const menarDu = <Suggestions viewHref={viewHref} cardHref={cardHref} />;
@@ -930,16 +938,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       }
     : undefined;
 
-  /** The transcript's lead on a short screen, where there is no pinned toolbar: the title and the way out, in the flow. */
-  const conversationHeader = (
-    <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-      <Heading level={1}>{titled(talk.conversation?.title ?? talk.pending?.text ?? '')}</Heading>
-      <HStack gap={1}>
-        <Button size="sm" variant="ghost" label="Nytt samtal" onClick={talk.newConversation} />
-        <Button size="sm" variant="ghost" label="Stäng samtalet" onClick={talk.close} />
-      </HStack>
-    </HStack>
-  );
   /** When the person asked the conversation's first question: H1's line beside the title. "Nytt samtal i stället" sits in the box's scope line. */
   const started = (state: ConversationState) => {
     const first = state.conversation?.messages.find(m => m.role === 'user');
@@ -949,14 +947,15 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       ? timeLabel(first.createdAt)
       : `${at === addDays(todayDate, -1) ? 'i går' : shortDayLabel(at)} ${timeLabel(first.createdAt)}`;
   };
-  const conversationToolbar = (
-    <Toolbar
-      label="Samtalet"
-      size="sm"
-      startContent={
-        <Heading level={1}>{titled(talk.conversation?.title ?? talk.pending?.text.slice(0, 80) ?? '')}</Heading>
-      }
-      endContent={
+  /**
+   * The conversation's page header (D74): its title as the page's h1 and, at the end of the line, when it was started
+   * and the way out; on a phone the close button and the more menu with Nytt samtal. Pinned in the `LayoutHeader`, and in
+   * the flow on a short screen, where nothing is pinned.
+   */
+  const conversationHeader = (
+    <PageHeader
+      title={titled(talk.conversation?.title ?? talk.pending?.text.slice(0, 80) ?? '')}
+      end={
         mobile ? (
           <HStack gap={1} vAlign="center">
             <IconButton
@@ -1007,20 +1006,18 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           <Composer place="conversation" />
         </VStack>
       ) : (
+        // The same gutter as every page (D74 item 3): the Layout's padding reaches the header, so the title stands 32 px in
+        // from the rail and 32 px down on a desktop, 12 on a phone.
         <Layout
           height="fill"
-          padding={mobile ? 3 : 4}
+          padding={mobile ? 3 : 8}
           defaultHasDividers
-          header={
-            <LayoutHeader>
-              <VStack paddingInline={mobile ? 0 : 6}>{conversationToolbar}</VStack>
-            </LayoutHeader>
-          }
+          header={<LayoutHeader>{conversationHeader}</LayoutHeader>}
           end={slot.end}
           content={
             <LayoutContent isScrollable={false} padding={0}>
-              {/* The ChatLayout spans the content area full bleed and owns the scroll, so its scrollbar sits at the column's edge like a page's. The transcript and the dock take the width Hem's content has, 40 px in from the rail (the product owner, 2026-11-06: the same width as the start page), not a centred column. */}
-              <VStack height="100%" paddingInline={mobile ? 0 : 6}>
+              {/* The ChatLayout spans the content area full bleed and owns the scroll, so its scrollbar sits at the column's edge like a page's. The transcript and the dock take the width Hem's content has, 32 px in from the rail like the title (the product owner, 2026-11-06: the same width as the start page; D74), not a centred column. */}
+              <VStack height="100%" paddingInline={mobile ? 0 : 8}>
                 <ChatLayout density="balanced" composer={<Composer place="conversation" />}>
                   {transcript}
                 </ChatLayout>
@@ -1042,11 +1039,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         end={slot.end}
         content={
           <LayoutContent isScrollable padding={0}>
-            <VStack
-              paddingInline={mobile ? 3 : 10}
-              paddingBlockStart={mobile ? 3 : 6}
-              paddingBlockEnd={mobile ? 3 : 10}
-            >
+            <VStack paddingInline={mobile ? 3 : 8} paddingBlockStart={mobile ? 3 : 8} paddingBlockEnd={mobile ? 3 : 10}>
               {landing()}
             </VStack>
           </LayoutContent>

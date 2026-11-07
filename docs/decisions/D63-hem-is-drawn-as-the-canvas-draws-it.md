@@ -154,3 +154,8 @@ badge ("i dag", "försenad", "Påminnelse", "behöver dig") had Neutral's dark e
 the info blue (relative luminance 0.34 both), so the two told apart by hue alone; the dark `--color-error` is now step 50
 of Neutral's dark red (`#be4e49`) with white text as in the light appearance (4.8:1; luminance 0.17 against info 0.34
 and warning 0.66; at least 3.1:1 as a mark on the dark grounds). The light appearance is unchanged.
+
+**Amended 2026-11-07 by [D74](D74-one-page-header-for-every-surface.md).** Item 2's lead is the page header every
+surface opens with, `PageHeader`: the sparkle before "Hej Hillevi" and the day, the week and the unit at the end of its
+line (under it in supporting on a phone). The 40 px of items 2 and 12 are now 32: Hem's title, a conversation's title,
+its transcript and its box stand 32 px in from the rail and the title 32 px down, like every other surface.

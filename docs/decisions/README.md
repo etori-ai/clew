@@ -87,7 +87,7 @@ Historical numbering collisions: **D37, D38, D39, D44, D45, D46** each identify 
 | [D71 · Three type levels on every surface, and an area mark whose colour is the system's](D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md) | ui | 2026-11-06 | accepted, built 2026-11-06 on `main` (the foundation, the row and the card, a card across systems, |
 | [D72 · The day is the page's, and the panel holds only what was opened](D72-the-day-is-the-pages-and-the-panel-holds-only-what-was-opened.md) | ui | 2026-11-07 | accepted, built 2026-11-07 on `main` |
 | [D73 · The review is a page in the shell, with an address](D73-the-review-is-a-page-in-the-shell-with-an-address.md) | ui | 2026-11-07 | accepted, built 2026-11-07 on `main` as a page, rebuilt the same day as a drawer (see the amendment) |
-| [D74 · One page header for every surface](D74-one-page-header-for-every-surface.md) | ui | 2026-11-07 | accepted, built 2026-11-07 on `main` (a tool page, the calendar, the admin pages); Hem, a conversation and |
+| [D74 · One page header for every surface](D74-one-page-header-for-every-surface.md) | ui | 2026-11-07 | accepted, built 2026-11-07 on `main` (a tool page, the calendar, the admin pages, then Hem and a |
 
 ## Add a decision
 

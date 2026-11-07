@@ -1,7 +1,7 @@
 # D74 · One page header for every surface
 
-**Status:** accepted, built 2026-11-07 on `main` (a tool page, the calendar, the admin pages); Hem, a conversation and
-the review follow in the sessions that own `start.tsx` and `review.tsx` · **Date:** 2026-11-07 · **Area:** ui
+**Status:** accepted, built 2026-11-07 on `main` (a tool page, the calendar, the admin pages, then Hem and a
+conversation the same day) · **Date:** 2026-11-07 · **Area:** ui
 
 **Decision.** Every surface in the shell opens with the same header, drawn by one composition,
 `PageHeader` in `apps/web/src/components/page-header.tsx`. The product owner asked for it on 2026-11-07 ("All views
@@ -36,7 +36,10 @@ review to make sure all headers are uniform."); the review is
    `LayoutHeader`; on a phone the title with Förslag and Ny bokning, and the steps with the view menu as the second line
    (in the `section` named "Kalender" the phone's header already had). The admin pages: the title with the primary
    action or the on/off switch at the end, the lead sentence or the status line under it; the model's "Standard" badge
-   moves from beside the name to the status line. Hem, a conversation and the review are listed under "Not built here".
+   moves from beside the name to the status line. Hem: "Hej" and the first name with the sparkle before it, the day,
+   the week and the unit at the end (under the title on a phone). A conversation: its title with when it was started
+   and "Stäng samtalet" at the end (on a phone the close button and the more menu), pinned in the `LayoutHeader` and in
+   the flow on a short screen.
 
 **Astryx.** `bunx astryx search "page header title actions"`, `bunx astryx template --list` and
 `bunx astryx component PageHeader` (no such component; the CLI offers `LayoutHeader` as "another name for it") were run
@@ -83,25 +86,18 @@ title comes first and the mark row is under it, with the view's controls at the 
 header for a view in the panel and under an answer is unchanged. D71 item 7's swatch beside the connector's name stands
 (it is the header's `icon`). The calendar's `Toolbar` header and its wrapper (the gutter comment in `calendar.tsx`,
 2026-11-07 morning) go. The admin pages' `PageLead` goes. The admin gutter of 24 px becomes 32. Hem's and a
-conversation's 40 px (D63 item 12, D72's `PAGE_INLINE`) become 32 when the start session builds this; D72's
-three-track breakpoint is then recomputed with `PAGE_INLINE = 32` (256 + 64 + 1024 + 45 + 440 = 1829 px).
+conversation's 40 px (D63 items 2 and 12, D72's `PAGE_INLINE`) become 32, and D72's three-track breakpoint is
+recomputed with `PAGE_INLINE = 32` (256 + 64 + 1024 + 45 + 440 = 1829 px). Hem's lead (`greeting` and `lead` in
+`start.tsx`) and the conversation's `Toolbar` with its wrapper go.
 
-**Not built here.** `start.tsx` and `review.tsx` are being changed by other sessions on 2026-11-07, so they follow:
-
-- **Hem:** `PageHeader` with `title={'Hej ' + firstName}`, `titleId="hem"`, `icon` the sparkle
-  (`<Icon icon={SparklesIcon} size="md" color="accent" />`), `end` the day, the week and the unit as now
-  (`Text color="secondary"`) on a desktop and `meta` the same words in `Text type="supporting"` on a phone, in place of
-  `greeting` and `lead`; the landing stack's padding `paddingInline={mobile ? 3 : 8}` and
-  `paddingBlockStart={mobile ? 3 : 8}`, and `PAGE_INLINE` 32.
-- **A conversation:** `PageHeader` with the conversation's title and, at the end, what the `Toolbar`'s `endContent`
-  holds now ("Startat av dig …" and "Stäng samtalet"; on a phone the close button and the more menu), directly in the
-  `LayoutHeader` without the wrapping `VStack`; the `Layout`'s `padding={mobile ? 3 : 8}` and the transcript's
-  `paddingInline={mobile ? 0 : 8}`, so the title and the transcript are 32 px in. The short screen's
-  `conversationHeader` becomes the same `PageHeader` in the flow.
-- **The review:** `top` becomes `PageHeader` with `title={'Granska ' + n + ' rader'}`, `end` the ghost "Spara och
-  stäng", and `meta` one mark row: the `AreaChip`, then `Text type="supporting"` with "<source> · <card's title> ·
-  inget skrivs förrän du skickar", then the counter `Badge` "1 av 3"; the `Stepper` stays under the header in the
-  pinned `LayoutHeader`. Its gutter is already 32 × 32.
+**Built the same day for Hem and the conversation.** `apps/web/src/pages/start.tsx`: Hem's lead is `PageHeader` with
+`titleId="hem"` (the focus still goes back to it), the sparkle as `icon`, the day as `end` on a desktop and as `meta` in
+supporting on a phone; the landing stack's padding is 32 px in and 32 px down (`paddingInline={8}`,
+`paddingBlockStart={8}`) and `PAGE_INLINE` is 32, so D72's three-track breakpoint is 1829 px. A conversation's header is
+`PageHeader` directly in the `LayoutHeader` (the `Toolbar` named "Samtalet" and its `VStack` wrapper are gone), the
+`Layout`'s padding 32 on a desktop, the transcript's `paddingInline={8}`; the short screen draws the same header in the
+flow, so a wide short screen no longer has its own "Nytt samtal" button (the box's "Ny fråga i stället" and the rail's
+"Ny fråga" start one, and a phone keeps "Nytt samtal" in the more menu). The review's header (D73) is not changed here.
 
 **Tests.** No new route, view or state: the specs that touch these pages run as they are (`tools.spec.ts`,
 `calendar.spec.ts`, `admin.spec.ts`, `structure.spec.ts`); they find each page's title by its role and level 1, the

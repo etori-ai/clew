@@ -868,7 +868,7 @@
       "number": 74,
       "path": "docs/decisions/D74-one-page-header-for-every-surface.md",
       "title": "D74 · One page header for every surface",
-      "status": "accepted, built 2026-11-07 on `main` (a tool page, the calendar, the admin pages); Hem, a conversation and",
+      "status": "accepted, built 2026-11-07 on `main` (a tool page, the calendar, the admin pages, then Hem and a",
       "date": "2026-11-07",
       "area": "ui"
     }

@@ -71,9 +71,9 @@ Hem's work and day are one `Grid` whose tracks change with what is open (`column
 work otherwise), so opening or closing a card never remounts the row that opened it and the focus can go back to it;
 under 1024 px and on a phone the `VStack` as before. The three-track breakpoint is
 `panelBesideQuery(2 * PAGE_INLINE + 3 * TRACK + 2 * GRID_GAP + PANEL_EDGE)` with
-`TRACK = max(ASIDE, (HOME_MIN - GRID_GAP) / 2) = max(320, 304) = 320`, `GRID_GAP = 32`, `PAGE_INLINE = 40`: RAIL 256 +
-80 + 1024 + 45 + PANEL 440 = 1845 px; `Grid columns={3}` draws equal tracks, so the side column's 320 px, not the
-work's 640, decides it. The rail Astryx draws is 260 px, not the 256 `RAIL` says, so at 1845 to 1848 px the side
-column is a pixel or two under 320; `RAIL` is left as it is because `panelBesideQuery` (D50's 1336 px) uses it too.
+`TRACK = max(ASIDE, (HOME_MIN - GRID_GAP) / 2) = max(320, 304) = 320`, `GRID_GAP = 32`, `PAGE_INLINE = 32` (40 until
+D74 put Hem on every surface's 32 px gutter, the same day): RAIL 256 + 64 + 1024 + 45 + PANEL 440 = 1829 px (1845 with
+40); `Grid columns={3}` draws equal tracks, so the side column's 320 px, not the work's 640, decides it. The rail Astryx
+draws is 260 px, not the 256 `RAIL` says, so at 1829 to 1832 px the side column is a pixel or two under 320; `RAIL` is left as it is because `panelBesideQuery` (D50's 1336 px) uses it too.
 `tests/a11y/todo.spec.ts` covers the rest, the open panel, the fold and the last close as the Tests paragraph says;
 `tests/a11y/screens.hem.spec.ts` gains a screenshot at 1900 px with a card open (A3).
