@@ -120,7 +120,7 @@ export function AdminModelsPage({ user }: { user: SessionUser }) {
   const models = data?.models ?? [];
   const fallback = models.find(m => m.isDefault && m.state === 'enabled') ?? models.find(m => m.state === 'enabled');
   return (
-    <AdminShell user={user} section="modeller" crumbs={[{ label: 'Modeller' }]}>
+    <AdminShell user={user} section="modeller" crumbs={[{ label: 'Modeller' }]} pending={list.isPending}>
       <PageHeader
         title="Modeller"
         end={<Button variant="primary" label="Lägg till leverantör" onClick={() => setAddingProvider(true)} />}

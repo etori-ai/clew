@@ -57,6 +57,7 @@ import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { GenericCard, ThreadRow } from '../components/card';
 import { ReviewOverlay } from '../components/review-overlay';
 import { BriefSkeleton } from '../components/brief';
+import { AsideSkeleton, AsyncContent } from '../components/loading';
 import {
   CONVERSATION_MIN,
   PANEL_EDGE,
@@ -143,7 +144,11 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const assistantQ = useQuery(assistantQuery);
   const threads = threadsQ.data?.threads ?? EMPTY_THREADS;
   // The first read of the cards (D36): until it is here the page draws their shape, never "nothing needs you".
-  const loadingThreads = threadsQ.isPending;
+  const loadingThreads = threadsQ.isPending && !threadsQ.isFetched;
+  const loadingAreas = areasQ.isPending && !areasQ.isFetched;
+  // The work and its figures arrive together, so late figures do not rearrange already readable rows.
+  // Nested mark readers can retry a failed first read on mount. Once it has settled, keep the content mounted.
+  const loadingWork = loadingThreads || loadingAreas;
   const areas = areasQ.data?.areas ?? EMPTY_AREAS;
   const menu = areasQ.data?.menu ?? EMPTY_MENU;
   const day = dayQ.data ?? null;
@@ -471,7 +476,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const sources = threadsQ.data?.sources;
   const sourcesWaiting = !!sources?.some(s => !s.lastSuccess || s.error);
   /** Nothing needs the person (artboard B): the quiet page, with what the person can start as its main content. */
-  const quiet = !loadingThreads && needsYou === 0;
+  const quiet = threadsQ.isSuccess && needsYou === 0;
   /** A group's heading row (artboard A): the heading with its count, and the artboard's caption at the end of the line. */
   const groupHeading = (id: string, title: string, caption: string) => (
     <HStack justify="between" vAlign="center" gap={3} wrap="wrap">
@@ -563,7 +568,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       {!area && (
         <Lage
           areas={areas}
-          loading={areasQ.isPending}
+          loading={loadingAreas}
           sources={sources}
           now={now}
           unitLabel={user.unitLabel}
@@ -620,6 +625,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           : closedToday.length;
   const tabLabel = (t: TodoTab) => {
     const n = tabCount(t);
+    if (loadingWork) return tabTitle[t];
     return n || t === 'needs-you' ? `${tabTitle[t]} · ${n}` : tabTitle[t];
   };
   /**
@@ -660,7 +666,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
                   label={tabTitle[t]}
                   panelId="att-gora-lista"
                   endContent={
-                    tabCount(t) || t === 'needs-you' ? (
+                    !loadingWork && (tabCount(t) || t === 'needs-you') ? (
                       <Badge variant="neutral" label={String(tabCount(t))} />
                     ) : undefined
                   }
@@ -702,7 +708,24 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         <Banner status="info" title="Kortet finns inte längre." description="Det kan ha tagits bort i källsystemet." />
       )}
       <VStack id="att-gora-lista" role={mobile ? 'region' : 'tabpanel'} aria-label={tabTitle[tab]} gap={5}>
-        {tabContent}
+        <AsyncContent
+          pending={loadingWork}
+          fallback={
+            <VStack gap={5}>
+              <VStack gap={1.5}>
+                <Heading level={3} accessibilityLevel={2}>
+                  {tab === 'needs-you' ? 'Nu' : tabTitle[tab]}
+                </Heading>
+                <BriefSkeleton compact={mobile} />
+              </VStack>
+              {tab === 'needs-you' && !area && (
+                <Lage areas={[]} loading now={now} unitLabel={user.unitLabel} viewHref={() => ''} twoAcross={mobile} />
+              )}
+            </VStack>
+          }
+        >
+          {tabContent}
+        </AsyncContent>
       </VStack>
     </VStack>
   );
@@ -726,15 +749,22 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
    * the panel open (`across`) side by side, and on a narrow window or a phone (`stack`) one after the other as before.
    */
   const aside = (place: 'track' | 'across' | 'stack') => {
-    const today = day && <Today view={day} threads={threads} cardHref={cardHref} />;
-    const since = !loadingThreads && (
-      <Since
-        handled={closedToday}
-        waiting={all.waiting}
-        sources={sources}
-        now={now}
-        doneHref={homeHref({ tab: 'done' })}
-      />
+    const loadingAside = loadingWork || dayQ.isPending;
+    const today = (dayQ.isPending || day) && (
+      <AsyncContent pending={loadingAside} fallback={<AsideSkeleton kind="today" />}>
+        {day && <Today view={day} threads={threads} cardHref={cardHref} />}
+      </AsyncContent>
+    );
+    const since = (
+      <AsyncContent pending={loadingAside} fallback={<AsideSkeleton kind="since" />}>
+        <Since
+          handled={closedToday}
+          waiting={all.waiting}
+          sources={sources}
+          now={now}
+          doneHref={homeHref({ tab: 'done' })}
+        />
+      </AsyncContent>
     );
     return (
       <VStack as="aside" aria-label="Bredvid">

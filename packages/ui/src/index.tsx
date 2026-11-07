@@ -54,6 +54,7 @@ export { MoreMenu } from '@astryxdesign/core/MoreMenu';
 export { Banner } from '@astryxdesign/core/Banner';
 export { Drawer, DrawerHeader } from '@astryxdesign/core/Drawer';
 export { Skeleton } from '@astryxdesign/core/Skeleton';
+export { Center } from '@astryxdesign/core/Center';
 export {
   ChatComposer,
   ChatComposerInput,

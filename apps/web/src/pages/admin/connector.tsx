@@ -163,7 +163,11 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
     );
   if (!c)
     return (
-      <AdminShell user={user} crumbs={[{ label: 'Anslutna system', href: '/admin/connectors' }, { label: id }]}>
+      <AdminShell
+        pending={!error}
+        user={user}
+        crumbs={[{ label: 'Anslutna system', href: '/admin/connectors' }, { label: id }]}
+      >
         {error ? (
           <Text as="p" role="alert" color="accent">
             {error}

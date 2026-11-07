@@ -311,6 +311,7 @@ test.describe("the person's model in the box", () => {
     await input.fill('Hur många semesterdagar har jag?');
     await input.press('Enter');
     await expect(page.getByRole('paragraph').filter({ hasText: 'Du har 18 semesterdagar kvar i år.' })).toBeVisible();
-    await expect(page.getByText('Personalsystemet · Svar från Kapabel')).toBeVisible();
+    const answer = page.getByRole('article', { name: 'Assistenten · läste Personalsystemet', exact: true });
+    await expect(answer.getByText('Svar från Kapabel')).toBeVisible();
   });
 });

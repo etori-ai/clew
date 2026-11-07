@@ -549,7 +549,7 @@ describe('the model path only reads, and falls back when the provider fails', ()
     expect(seen).toContain('finance__invoices');
     expect(seen.some(n => n.includes('approve'))).toBe(false);
   });
-  test('a turn says nothing about reasoning unless the model is set to none (D76)', async () => {
+  test('a turn says nothing about reasoning unless the model is set to none (D77)', async () => {
     const bodies: Record<string, unknown>[] = [];
     const fakeFetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
       bodies.push(JSON.parse(String(init?.body)));
@@ -654,7 +654,7 @@ describe('the model path only reads, and falls back when the provider fails', ()
     expect(
       await kind(openAICompatibleWire(endpoint(200, { choices: [] })).ping({ baseUrl: 'http://llm.test' }, 'x', plain)),
     ).toBe('ok');
-    // The test is shaped like the turn the model will get (D76).
+    // The test is shaped like the turn the model will get (D77).
     const bodies: Record<string, unknown>[] = [];
     const recording = (async (_input: RequestInfo | URL, init?: RequestInit) => {
       bodies.push(JSON.parse(String(init?.body)));
