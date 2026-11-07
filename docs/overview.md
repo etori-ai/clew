@@ -20,6 +20,16 @@ The [finance fixture](../connectors/finance/README.md) demonstrates this journey
 
 Not every interaction needs a card or a write. Looking up a phone number is a live read. A directory can offer a searchable table and contact details without implementing scans, actions or timers.
 
+## One task, several systems
+
+Coordinating work across connectors is a central part of Clew. A person's task may need more than one system to change.
+
+For example, an absence report can require an entry in HR, a change in time reporting and a check that payroll picked it up. Each connector declares the steps it can offer for that kind of fact; an administrator chooses which offers participate. Clew assembles them into one job proposal, the person approves once, and Clew tracks each system's execution or watch and its outcome.
+
+The plan also covers dependent work: once a result is confirmed, it can supply a fact for the next proposal, such as arranging cover or moving an affected meeting. The person reviews and approves that next job. This lets Clew carry a task through several stages while each connector remains responsible for its own system.
+
+The job API, per-system execution ledger and bounded watches are implemented and exercised with synthetic HR, time-reporting and payroll connectors. The complete job interface, administration screens for bindings and receipt-driven next proposals remain planned. See [working across connectors](architecture/working-across-connectors.md) for the design and current limits.
+
 ## What the employee sees
 
 | Surface | Purpose |
@@ -75,7 +85,9 @@ A view's `modelReads: "summary"` keeps that view's rows out of the model respons
 
 ## Product boundaries
 
-Clew coordinates a person's work. Source systems continue to define their own business processes and records. Clew's cross-system jobs contain independently executed steps; they do not provide a general workflow designer, ordered dependencies or an atomic transaction across systems.
+Clew orchestrates a person's tasks across systems, including work that needs multiple writes and later follow-up. Its composition model uses connector-declared facts, offered steps and administrator bindings. A general workflow designer would let an operator draw arbitrary process graphs, branches and execution rules; that editor is outside the current design, while cross-connector task orchestration is central to it.
+
+Within one approved job, steps currently run independently from the same fact. The planned chain of confirmed results and subsequent approvals handles work that depends on an earlier outcome. There is no atomic transaction across the source systems: Clew keeps each outcome visible rather than treating a partial result as all done.
 
 Clew searches through connectors rather than building a cross-source content index. It is not an intranet authoring system, document store, data warehouse, query engine or page builder. New integrations implement Clew's HTTP contract; they do not require a vendor-specific change to the browser.
 

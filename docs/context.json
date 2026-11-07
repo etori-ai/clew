@@ -1127,6 +1127,7 @@
         "A live read",
         "Discovering work without slowing the page",
         "An approved write",
+        "One task across several connectors",
         "Timers, follow-up and browser updates",
         "Data ownership and persistence",
         "Code boundaries and verification"
@@ -1181,9 +1182,11 @@
       "title": "Working across connectors",
       "category": "architecture-guide",
       "headings": [
+        "Example: one absence report",
         "Identity and refs",
         "Compose reads and proposals",
         "Jobs: facts, followers and one approval",
+        "Planned continuation after a result",
         "Current job support",
         "Data and failure boundaries"
       ]
@@ -1848,6 +1851,7 @@
       "category": "integrator-guide",
       "headings": [
         "A journey through Clew",
+        "One task, several systems",
         "What the employee sees",
         "Who owns what",
         "The concepts, in order",
@@ -2335,7 +2339,8 @@
       "category": "review-history",
       "headings": [
         "Findings and changes",
-        "Verification"
+        "Verification",
+        "Follow-up: orchestration scope and diagram rendering"
       ]
     },
     {

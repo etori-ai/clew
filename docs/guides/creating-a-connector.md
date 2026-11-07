@@ -179,7 +179,9 @@ The [testing and deployment guide](testing-and-deployment.md) covers this from a
 | Model tools | The read/proposal is suitable for model use under the person's access | [Capability surfaces](../architecture/capability-surfaces.md) |
 | Scans and figures | The source can report outstanding occurrences or a meaningful area figure | [Actions](actions-and-receipts.md), [protocol](../reference/connector-protocol.md) |
 | Writes and undo | Source permissions, preconditions, evidence and recovery are established | [Actions and receipts](actions-and-receipts.md) |
-| Callbacks and jobs | An explicit use case needs another system | [Working across connectors](../architecture/working-across-connectors.md) |
+| Callbacks and jobs | A read needs another source, or one task needs changes/follow-up in several systems | [Working across connectors](../architecture/working-across-connectors.md) |
+
+For a connector that participates in multi-system tasks, declare the fact kinds it creates and the facts its proposal capabilities follow. Clew assembles those offered steps into a job for one approval after an administrator binds them. Each connector supplies only its own writes or watches; Clew coordinates their progress. [The job design](../architecture/working-across-connectors.md#jobs-facts-followers-and-one-approval) also explains the planned next proposal after a confirmed result.
 
 A delegated interactive read does not establish background authorization. Scans/figures/callbacks do not get session tokens, and generic durable remote actions can remain pending with `needs-session`. Resolve that source constraint before adding them.
 
