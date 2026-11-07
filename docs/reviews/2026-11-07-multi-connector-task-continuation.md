@@ -119,4 +119,3 @@ The first increment precedes generic continuation. External event ingest, arbitr
 - Three isolated experiments derived from the fixture setup, with an injected clock and in-memory stores, reproduced the findings above. No development or production database was mutated.
 - Documentation generation/checks, local links and the signed connector smoke passed. All five repository Mermaid diagrams passed syntax validation; required formatting and whitespace checks passed.
 - This review does not implement continuation, repair the findings, validate a real vendor integration or settle a new architecture policy.
-
