@@ -8,7 +8,8 @@ import { postgresAttention } from '../../apps/server/src/threads/adapters/attent
 import { refreshUsecases } from '../../apps/server/src/threads/usecases/refresh';
 import { durableJobs } from '../../apps/server/src/scheduler/adapters/durable-postgres';
 import type { AuthenticatedContext } from '../../packages/contracts/src';
-import type { ScanObservation } from '../../packages/connectors/src';
+import { Registry, openGovernance, type ScanObservation } from '../../packages/connectors/src';
+import { threadAccess } from '../../apps/server/src/threads/access';
 import { draft } from '../store-contract';
 
 const people: string[] = [],
@@ -219,4 +220,68 @@ test('new jobs cannot be claimed by the legacy owner and stale acknowledgements 
   await durableJobs.completed(id, claim.attempt, '2098-11-05T09:00:01.000Z');
   await durableJobs.delivered(id, 0, '2098-11-05T09:00:02.000Z');
   expect((await database().select().from(schema.jobs).where(eq(schema.jobs.id, id)))[0]?.status).toBe('done');
+});
+
+test('postgres source snapshots reject transferred and renewed authority without retagging history', async () => {
+  let current = await person(),
+    time = Date.parse('2098-11-05T09:00:00.000Z');
+  const clock = () => new Date(time),
+    store = postgresRefreshStore(current.id),
+    threads = postgresThreadStore();
+  const registry = new Registry()
+    .register({ id: 'reference', kind: 'passthrough', source: 'Reference', areas: [], capabilities: [] })
+    .govern('reference', openGovernance());
+  const uc = refreshUsecases({
+    store,
+    clock,
+    key: value => createHash('sha256').update(JSON.stringify(value)).digest('hex'),
+    ids: () => crypto.randomUUID(),
+    current: async () => current,
+    sources: async () => ['reference'],
+    system: () => 'Reference',
+    scan: async actor => ({
+      drafts: [
+        {
+          topic: 'work',
+          title: 'Current work',
+          summary: `Source content for ${actor.authorizationVersion}`,
+          area: 'test',
+          reason: 'Source',
+          actions: [],
+          occurrences: [{ key: 'case', period: 'once', revision: '1' }],
+        },
+      ],
+      observation: {
+        scope: actor.unitId + ':' + actor.role,
+        observedAt: clock().toISOString(),
+        version: String(time),
+        completeness: 'complete',
+        exhausted: true,
+      },
+    }),
+  });
+  const access = threadAccess(threads, registry),
+    previous: string[] = [];
+  for (const [unitId, authorizationVersion] of [
+    ['test', 'v1'],
+    ['other', 'v2'],
+    ['other', 'v3'],
+  ] as const) {
+    current = { ...current, unitId, authorizationVersion, authorize: async () => ({ version: authorizationVersion }) };
+    for (const id of previous) expect(await access.read(current, id)).toBeUndefined();
+    await uc.request(current);
+    subjects.push(...(await store.statuses(current.id)).map(r => 'refresh:' + r.id));
+    await uc.tick();
+    const cards = await access.list(current, clock().toISOString());
+    expect(cards).toHaveLength(1);
+    const card = cards[0]!;
+    subjects.push('thread:' + card.id);
+    expect(card.sourceAuthorization).toBe(authorizationVersion);
+    expect(card.messages.map(m => m.body)).toEqual([`Source content for ${authorizationVersion}`]);
+    expect(previous).not.toContain(card.id);
+    previous.push(card.id);
+    time++;
+  }
+  expect((await threads.readThread(current.id, previous[0]!))?.sourceAuthorization).toBe('v1');
+  expect(await threads.listThreads(current.id, clock().toISOString())).toHaveLength(3);
 });

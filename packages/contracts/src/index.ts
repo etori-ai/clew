@@ -698,6 +698,8 @@ export const ExecutionSummarySchema = object({
 export type ExecutionSummary = Static<typeof ExecutionSummarySchema>;
 /** Every thread answers "varför ser jag detta?" with trigger, source and time. */
 export const ThreadSchema = object({
+  /** Clew authority under which source content was projected; absent legacy snapshots are not trusted. */
+  sourceAuthorization: Type.Optional(Type.String()),
   id: id,
   kind: ThreadKind,
   topic: Type.String(),

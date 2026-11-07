@@ -845,3 +845,38 @@ describe('a declared view is the answer, with and without the model (D38)', () =
     );
   });
 });
+
+test('a transferred person cannot use old source cards through chips, object suggestions or model context', async () => {
+  let prompt = '';
+  const w = world({
+    generate: async req => {
+      prompt = JSON.stringify(req);
+      return { text: 'Här är svaret.', toolCalls: [] };
+    },
+  });
+  await w.threads.ensureThreads(hillevi);
+  const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.connector === 'finance')!;
+  const transferred = {
+    ...hillevi,
+    unitId: 'other-unit',
+    authorizationVersion: 'v2',
+    authorize: async () => ({ version: 'v2' }),
+  };
+  expect(await w.assistant.listObjects(transferred, '', ['thread:' + card.id])).toEqual([]);
+  await expect(
+    w.assistant.converse(transferred, {
+      text: 'varför ser jag detta?',
+      chips: [{ ref: 'thread:' + card.id, kind: 'thread', label: 'Old card' }],
+    }),
+  ).rejects.toThrow('Något du pekade på finns inte längre.');
+  await expect(
+    w.assistant.converse(transferred, {
+      text: 'varför ser jag detta?',
+      chips: [{ ref: card.items[0]!.ref, kind: 'item', label: 'Old item' }],
+    }),
+  ).rejects.toThrow('Något du pekade på finns inte längre.');
+  await w.assistant.converse(transferred, { text: 'Berätta något om hösten' });
+  expect(prompt).not.toBe('');
+  expect(prompt).not.toContain(card.summary);
+  expect(prompt).not.toContain(card.items[0]!.ref);
+});

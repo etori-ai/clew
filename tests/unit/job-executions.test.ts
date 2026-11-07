@@ -710,6 +710,7 @@ describe('one approval runs each step as its own execution or watch', () => {
     expect(w.store.cards()).toEqual([
       {
         id: `watch:${job.id}:payroll-1`,
+        sourceAuthorization: manager.authorizationVersion,
         personId: 'hillevi',
         jobId: job.id,
         stepId: 'payroll-1',

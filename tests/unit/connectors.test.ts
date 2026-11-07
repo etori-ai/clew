@@ -177,10 +177,9 @@ describe("an area's figure (D54)", () => {
     // The structural preview asks no figure at all.
     expect((await r.areas(hillevi, { figures: false })).every(a => a.figure === null)).toBe(true);
   });
-  test('a connector replaced while the figures are read is listed once, as the scan reads it once', async () => {
-    // Every run, call and scan first re-applies the connector rows, and a remote row is put back with `replace`, which
-    // moves it to the end of the registry. A concurrent request, or a figure that calls another capability, does that
-    // while this call waits on a figure; the connectors already listed must not come round again.
+  test('a descriptor replaced during figure reads is omitted until the next read, and scans never repeat it', async () => {
+    // A manifest edit during an awaited source read can replace a connector and move its Map entry.
+    // The old figure is discarded, and the snapshot prevents a second scan in the same pass.
     const { r } = world();
     const scanned: string[] = [];
     const replaceV = () =>
@@ -203,7 +202,8 @@ describe("an area's figure (D54)", () => {
     });
     for (let i = 0; i < 2; i++) {
       const ids = (await r.areas(hillevi)).map(a => a.id);
-      expect(ids.filter(id => id === 'other')).toHaveLength(1);
+      expect(ids.filter(id => id === 'other')).toHaveLength(0);
+      expect(ids.filter(id => id === 'third')).toHaveLength(1);
       expect(new Set(ids).size).toBe(ids.length);
     }
     await r.scan(hillevi);

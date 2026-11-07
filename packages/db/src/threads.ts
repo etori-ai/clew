@@ -45,6 +45,7 @@ export function toThread(
     }));
   return {
     id: row.id,
+    ...(row.sourceAuthorization ? { sourceAuthorization: row.sourceAuthorization } : {}),
     kind: row.kind,
     topic: row.topic,
     title: row.title,

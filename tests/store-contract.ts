@@ -28,6 +28,7 @@ export const draft = (personId: string, overrides: Partial<NewThread> = {}): New
     state: 'open',
     week: null,
     connector: 'finance',
+    sourceAuthorization: 'v1',
     area: 'budget',
     summary: 'Tre fakturor väntar.',
     items: [{ ref: 'finance:inv:1', label: 'Skolgrossisten', detail: '6451', selectable: true, selected: true }],
@@ -94,7 +95,7 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       });
       expect(await store.readTimer(id)).toMatchObject({ state: 'cancelled', generation: 2 });
     });
-    test('a thread is read back as the contract describes it, only by its owner', async () => {
+    test('a thread and its source authority are read back as stored, only by its owner', async () => {
       const {
         store,
         people: [a, b],

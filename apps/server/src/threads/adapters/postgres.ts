@@ -72,6 +72,7 @@ export const threadTx = (tx: Transaction): ThreadTx => ({
         deadline: t.deadline,
         trigger: t.trigger,
         execution: t.execution ?? null,
+        sourceAuthorization: t.sourceAuthorization ?? null,
         createdAt: new Date(t.createdAt),
         updatedAt: new Date(t.updatedAt),
       })

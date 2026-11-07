@@ -23,7 +23,8 @@ import type {
   ViewOpen,
 } from '@clew/contracts';
 import type { Figure } from './protocol';
-import { menuEligible, menuProblem, menuRowOf, viewProblem } from './views';
+import { menuEligible, menuRowOf } from './views';
+import { connectorProblems } from './validation';
 export {
   MENU_DEFAULT_ICON,
   menuEligible,
@@ -72,6 +73,7 @@ export const inScope = (scope: Scope, actor: Actor) =>
 
 /** What a capability gets besides the actor and the input: the rest of Clew, as capabilities, for that actor. */
 export interface Clew {
+  signal?: AbortSignal;
   chain?: string[];
   /** Stable approved intent key for a direct source write; never propagated through nested calls. */
   operationId?: string;
@@ -86,6 +88,7 @@ export interface Clew {
 }
 /** What a caller with a session adds to a run. The registry carries it into every nested `clew.call`. */
 export interface RunContext {
+  signal?: AbortSignal;
   delegate?: Clew['delegate'];
   chain?: string[];
   operationId?: string;
@@ -250,6 +253,8 @@ export const inAudience = (audience: ConnectorAudience, actor: Actor) =>
 export const UNKNOWN = 'Okänd förmåga.';
 
 export interface RegistryOptions {
+  /** Bounded figure fan-out. One total budget includes queued sources; order remains the manifest order. */
+  figures?: { concurrency?: number; totalMs?: number };
   /**
    * A draft the scan refused (D35), or a figure's `opens` the registry dropped (D54, topic `figure:<area>`): the server
    * logs it, the connector check fails on it. The other drafts still become cards, the figure is drawn without its link.
@@ -258,41 +263,31 @@ export interface RegistryOptions {
 }
 
 export class Registry {
-  private readonly ajv = addFormats(new Ajv({ allErrors: false, strict: false }));
+  private readonly ajv = addFormats(new Ajv({ allErrors: false, strict: false, addUsedSchema: false }));
   private validators = new WeakMap<object, ReturnType<Ajv['compile']>>();
   private refresh: () => Promise<void> = async () => {};
   private connectors = new Map<string, Connector>();
   private capabilities = new Map<string, { connector: Connector; capability: Capability<any, any> }>();
   private governed = new Map<string, Governance>();
   constructor(private readonly options: RegistryOptions = {}) {}
-  register(connector: Connector) {
-    if (this.connectors.has(connector.id)) throw new Error(`Connector ${connector.id} is already registered.`);
-    const names = new Set<string>();
+  private check(connector: Connector) {
+    const problems = connectorProblems(connector, schema => this.validator(schema));
+    if (problems.length) throw new Error(problems[0]);
     for (const c of connector.capabilities) {
-      if (!c.name.startsWith(connector.id + '.'))
-        throw new Error(`Capability ${c.name} must be prefixed with ${connector.id}.`);
-      if (c.kind === 'execute' && c.model)
-        throw new Error(`Capability ${c.name}: execute capabilities are never tools (D8).`);
-      if (names.has(c.name) || this.capabilities.has(c.name))
+      const existing = this.capabilities.get(c.name);
+      if (existing && existing.connector.id !== connector.id)
         throw new Error(`Capability ${c.name} is already registered.`);
-      names.add(c.name);
-      const problem = viewProblem(c, connector.capabilities);
-      if (problem) throw new Error(`Capability ${problem} (D38).`);
-      const menu = menuProblem(c);
-      if (menu) throw new Error(`Capability ${menu} (D40).`);
-      if (c.follows && c.kind !== 'propose')
-        throw new Error(`Capability ${c.name}: only a propose can follow a fact (D55).`);
-      if (c.creates && !connector.facts?.some(f => f.kind === c.creates))
-        throw new Error(`Capability ${c.name} creates ${c.creates}, which ${connector.id} does not declare (D55).`);
-      this.validator(c.input);
-      this.validator(c.output);
     }
-    for (const f of connector.facts ?? [])
-      if (!f.kind.startsWith(connector.id + ':'))
-        throw new Error(`Fact ${f.kind} must be prefixed with ${connector.id}: (D55).`);
+  }
+  private install(connector: Connector) {
     for (const c of connector.capabilities) this.capabilities.set(c.name, { connector, capability: c });
     this.connectors.set(connector.id, connector);
     return this;
+  }
+  register(connector: Connector) {
+    if (this.connectors.has(connector.id)) throw new Error(`Connector ${connector.id} is already registered.`);
+    this.check(connector);
+    return this.install(connector);
   }
   /** Remove a connector and its capabilities; cards it pushed stay in the database. Its governance is forgotten too. */
   unregister(id: string) {
@@ -306,10 +301,10 @@ export class Registry {
   /** Register, replacing an earlier registration with the same id (a refetched manifest, a changed secret). Governance survives. */
   replace(connector: Connector) {
     // Validate the entire replacement before removing the working registration.
-    new Registry().register(connector);
+    this.check(connector);
     const governance = this.governed.get(connector.id);
     this.unregister(connector.id);
-    this.register(connector);
+    this.install(connector);
     if (governance) this.governed.set(connector.id, governance);
     return this;
   }
@@ -395,6 +390,7 @@ export class Registry {
   clewFor(actor: Actor, context: RunContext = {}, origin?: string): Clew {
     return {
       chain: context.chain ?? [],
+      ...(context.signal ? { signal: context.signal } : {}),
       ...(context.operationId ? { operationId: context.operationId } : {}),
       call: async <O>(name: string, input: unknown = {}) => {
         await this.refresh();
@@ -406,7 +402,11 @@ export class Registry {
           throw new CapabilityError('Anropet innehåller en cirkulär förfrågan.');
         if (found?.capability.kind === 'execute')
           throw new CapabilityError('En anslutning kan inte utföra åtgärder i en annan anslutning.');
-        return this.run<O>(actor, name, input, { delegate: context.delegate, chain: context.chain });
+        return this.run<O>(actor, name, input, {
+          delegate: context.delegate,
+          chain: context.chain,
+          signal: context.signal,
+        });
       },
       ...(context.delegate ? { delegate: context.delegate } : {}),
     };
@@ -446,37 +446,79 @@ export class Registry {
    */
   async areas(
     actor: Actor,
-    options: { figures?: boolean; connector?: string } = {},
+    options: { figures?: boolean; connector?: string; authorize?: () => Promise<unknown> } = {},
   ): Promise<Omit<Area, 'needsYou' | 'waiting' | 'urgency'>[]> {
-    const out: Omit<Area, 'needsYou' | 'waiting' | 'urgency'>[] = [];
-    // The connectors as they are now: a refresh during a figure's await re-adds replaced connectors at the Map's end,
-    // and a live iterator would list them again (one tile per area, D54).
-    for (const m of [...this.connectors.values()]) {
-      const clew = this.clewFor(actor, {}, m.id);
-      if (options.connector && m.id !== options.connector) continue;
-      if (!this.visible(actor, m.id)) continue;
-      for (const a of m.areas) {
-        if (!a.roles.includes(actor.role)) continue;
-        const standing = a.standing
-          .map(n => this.allowed(actor, n))
-          .filter((c): c is NonNullable<typeof c> => !!c)
-          .map(c => ({ capability: c.capability.name, label: c.capability.title, kind: c.capability.kind }));
-        out.push({
-          id: a.id,
-          title: a.title,
-          connector: m.id,
-          source: m.source,
-          ...(a.icon ? { icon: a.icon } : {}),
-          figure:
-            a.figure && options.figures !== false && this.governance(m.id).areas?.[a.id]?.figure !== false
-              ? await this.figureOf(actor, m, a.id, () => a.figure!(actor, clew))
-              : null,
-          standing,
-          schedules: a.schedules,
-        });
+    await this.refresh();
+    const entries = [...this.connectors.values()].flatMap(connector =>
+      (!options.connector || connector.id === options.connector) && this.visible(actor, connector.id)
+        ? connector.areas.filter(area => area.roles.includes(actor.role)).map(area => ({ connector, area }))
+        : [],
+    );
+    const wantsFigure = ({ connector, area }: (typeof entries)[number]) =>
+      !!area.figure && options.figures !== false && this.governance(connector.id).areas?.[area.id]?.figure !== false;
+    const figures: Array<AreaFigure | null> = entries.map(entry =>
+      wantsFigure(entry) ? this.unavailableFigure(entry.connector) : null,
+    );
+    const queue = entries.map((entry, i) => ({ ...entry, i })).filter(wantsFigure);
+    if (queue.length) {
+      const controller = new AbortController();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const expired = new Promise<undefined>(resolve => {
+        timer = setTimeout(() => {
+          controller.abort();
+          resolve(undefined);
+        }, this.options.figures?.totalMs ?? 2000);
+      });
+      let next = 0;
+      const worker = async () => {
+        while (!controller.signal.aborted && next < queue.length) {
+          const { connector, area, i } = queue[next++]!;
+          const clew = this.clewFor(actor, { signal: controller.signal }, connector.id);
+          const answer = await Promise.race([
+            this.figureOf(actor, connector, area.id, () => area.figure!(actor, clew)),
+            expired,
+          ]);
+          if (!controller.signal.aborted && answer !== undefined) figures[i] = answer;
+        }
+      };
+      try {
+        const concurrency = Math.max(1, Math.floor(this.options.figures?.concurrency ?? 4));
+        await Promise.all(Array.from({ length: Math.min(concurrency, queue.length) }, worker));
+      } finally {
+        clearTimeout(timer);
       }
     }
-    return out;
+    // Recheck the person and every result AFTER the whole batch, including figures that answered early.
+    await options.authorize?.();
+    await this.refresh();
+    return entries.flatMap(({ connector, area }, i) => {
+      if (
+        this.connectors.get(connector.id) !== connector ||
+        !this.visible(actor, connector.id) ||
+        !area.roles.includes(actor.role)
+      )
+        return [];
+      const figure = wantsFigure({ connector, area }) ? figures[i]! : null;
+      return [
+        {
+          id: area.id,
+          title: area.title,
+          connector: connector.id,
+          source: connector.source,
+          ...(area.icon ? { icon: area.icon } : {}),
+          figure:
+            figure?.opens && !this.allowed(actor, figure.opens.capability) ? { ...figure, opens: undefined } : figure,
+          standing: area.standing.flatMap(name => {
+            const found = this.allowed(actor, name);
+            return found ? [{ capability: name, label: found.capability.title, kind: found.capability.kind }] : [];
+          }),
+          schedules: area.schedules,
+        },
+      ];
+    });
+  }
+  private unavailableFigure(connector: Connector): AreaFigure {
+    return { label: `${connector.source} svarar inte.`, tone: 'warn', unavailable: true };
   }
   /**
    * Why a figure's `opens` may not be a link, or undefined when it may (D54): it names a read of the same connector whose
@@ -504,7 +546,7 @@ export class Registry {
     try {
       answer = await read();
     } catch {
-      return { label: `${connector.source} svarar inte.`, tone: 'warn', unavailable: true };
+      return this.unavailableFigure(connector);
     }
     if (!answer) return null;
     const { opens, ...figure } = answer;

@@ -1,15 +1,15 @@
-import { deniedGovernance, openGovernance, type Registry } from '@clew/connectors';
+import { deniedGovernance, openGovernance, type Connector, type Registry } from '@clew/connectors';
 import type { ConnectorManifest } from '@clew/connectors/protocol';
 import { parseManifest } from '@clew/connectors/remote';
-import { listConnectorVersions } from '@clew/db/connectors';
 import { describeBundled } from './describe';
 import type { ConnectorRecord, ConnectorStore, LiveRegistration, Secrets } from './model';
 import { governanceOf } from './usecases/admin';
 
 /**
  * Keeps the live registry equal to the `connector` rows (D23). At boot: every bundled connector gets its row if it has
- * none, and every row's governance is applied. Then a watcher polls the rows' versions and applies what changed, so an
+ * none, and every row's governance is applied. A watcher and protected reads reconcile the current rows, so an
  * administrator's change on another instance, or `scripts/connector-add.ts`, reaches this process without a restart.
+ * Unchanged descriptors are reused; governance is always reapplied.
  * Platform code beside the loader in `remote.ts`: it may read the store directly.
  */
 export interface ReconcileDeps {
@@ -22,6 +22,17 @@ export interface ReconcileDeps {
   internal?: readonly string[];
   clock: () => Date;
   log?: (message: string) => void;
+}
+interface ReconcileState {
+  descriptors: Map<string, { fingerprint: string; connector: Connector }>;
+  running?: Promise<void>;
+  queued?: Promise<void>;
+}
+const states = new WeakMap<ReconcileDeps, ReconcileState>();
+function stateFor(deps: ReconcileDeps) {
+  let state = states.get(deps);
+  if (!state) states.set(deps, (state = { descriptors: new Map() }));
+  return state;
 }
 const isManifest = (value: unknown): value is ConnectorManifest =>
   !!value && typeof value === 'object' && Array.isArray((value as ConnectorManifest).capabilities);
@@ -89,57 +100,75 @@ export function applyRow(deps: ReconcileDeps, row: ConnectorRecord) {
   if (!row.bundled) {
     if (row.state === 'draft') {
       live.unregister(row.id);
+      stateFor(deps).descriptors.delete(row.id);
       return;
     }
     if (isManifest(row.manifest) && row.url && row.secret) {
       try {
-        const manifest = parseManifest(row.manifest, row.id);
-        live.register({ id: row.id, url: row.url, secret: secrets.open(row.secret, row.id), manifest }, manifest);
+        const cache = stateFor(deps).descriptors;
+        // Health/manifest updates need not bump the governance version. Compare the descriptor itself.
+        const fingerprint = canonical({ manifest: row.manifest, url: row.url, secret: row.secret });
+        const previous = cache.get(row.id);
+        if (previous?.fingerprint !== fingerprint || previous.connector !== registry.connector(row.id)) {
+          const manifest = parseManifest(row.manifest, row.id);
+          live.register({ id: row.id, url: row.url, secret: secrets.open(row.secret, row.id), manifest }, manifest);
+          const connector = registry.connector(row.id);
+          if (connector) cache.set(row.id, { fingerprint, connector });
+        }
       } catch (error) {
         registry.govern(row.id, deniedGovernance());
         log(`Connector "${row.id}": stored manifest not usable: ${(error as Error).message}`);
         return;
       }
+    } else {
+      registry.govern(row.id, deniedGovernance());
+      stateFor(deps).descriptors.delete(row.id);
+      return;
     }
   }
   if (registry.connector(row.id)) registry.govern(row.id, governanceOf(row));
 }
-export async function applyAllRows(deps: ReconcileDeps) {
+async function refreshRows(deps: ReconcileDeps) {
   const rows = await deps.store.list();
   const present = new Set(rows.map(row => row.id));
+  const cache = stateFor(deps).descriptors;
+  for (const id of cache.keys()) if (!present.has(id)) cache.delete(id);
   for (const connector of deps.registry.list())
     if (!present.has(connector.id)) {
       if (deps.internal?.includes(connector.id)) applyInternal(deps, connector.id);
-      else deps.registry.govern(connector.id, deniedGovernance());
+      else if (deps.bundled.includes(connector.id)) deps.registry.govern(connector.id, deniedGovernance());
+      else deps.live.unregister(connector.id);
     }
   for (const row of rows) applyRow(deps, row);
 }
-/** Poll the rows' versions; apply changed rows, forget deleted ones. Returns a stop function. */
-export function watchConnectors(deps: ReconcileDeps, intervalMs = 5000) {
-  const seen = new Map<string, number>();
-  let running = false;
-  const tick = async () => {
-    if (running) return;
-    running = true;
+/**
+ * Coalesce callers waiting for the same fresh read. A caller arriving after a read starts joins the NEXT batch,
+ * so a post-source permission check never reuses a snapshot requested before that source answered.
+ * Reads are serialized: an older snapshot cannot overwrite a newer one. Failures reject every caller in the batch.
+ */
+export function applyAllRows(deps: ReconcileDeps): Promise<void> {
+  const state = stateFor(deps);
+  if (state.queued) return state.queued;
+  const previous = state.running?.catch(() => {});
+  const queued = Promise.resolve(previous).then(async () => {
+    state.queued = undefined;
+    state.running = queued;
     try {
-      const versions = await listConnectorVersions();
-      const present = new Set(versions.map(v => v.id));
-      for (const id of seen.keys())
-        if (!present.has(id)) {
-          seen.delete(id);
-          if (deps.internal?.includes(id)) applyInternal(deps, id);
-          else deps.live.unregister(id);
-        }
-      for (const v of versions) {
-        if (seen.get(v.id) === v.version) continue;
-        const row = await deps.store.read(v.id);
-        if (row) applyRow(deps, row);
-        seen.set(v.id, v.version);
-      }
+      await refreshRows(deps);
+    } finally {
+      if (state.running === queued) state.running = undefined;
+    }
+  });
+  state.queued = queued;
+  return queued;
+}
+/** The watcher and protected reads share one reconciliation path, including manifest changes without a version bump. */
+export function watchConnectors(deps: ReconcileDeps, intervalMs = 5000) {
+  const tick = async () => {
+    try {
+      await applyAllRows(deps);
     } catch (error) {
       (deps.log ?? console.log)('connectors: watch failed: ' + (error as Error).message);
-    } finally {
-      running = false;
     }
   };
   const timer = setInterval(() => void tick(), intervalMs);

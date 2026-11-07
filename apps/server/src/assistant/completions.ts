@@ -19,7 +19,7 @@ export async function completionsFor(deps: AssistantDeps, persona: Authenticated
     .tools(actor)
     .filter(t => t.kind === 'read')
     .map(t => ({ text: t.title, capability: t.name, source: t.source }));
-  const areas = await deps.registry.areas(actor);
+  const areas = await deps.registry.areas(actor, { figures: false, authorize: () => persona.authorize() });
   const standing = new Set(areas.flatMap(a => a.standing.map(s => s.capability)));
   const doList = deps.registry
     .capabilitiesFor(actor)

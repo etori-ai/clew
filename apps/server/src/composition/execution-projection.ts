@@ -13,6 +13,7 @@ export async function projectExecution(tx: Transaction, e: Execution, stage: 'ap
     await tx.insert(schema.threads).values({
       id: e.presentation.threadId,
       personId: e.personId,
+      sourceAuthorization: e.authorizationVersion,
       kind: 'pushed',
       topic: `calendar-decision:${e.decisionId}`,
       title: e.presentation.newTitle,

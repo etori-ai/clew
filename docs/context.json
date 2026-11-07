@@ -871,6 +871,15 @@
       "status": "accepted, built 2026-11-07 on `main` (a tool page, the calendar, the admin pages, then Hem and a",
       "date": "2026-11-07",
       "area": "ui"
+    },
+    {
+      "key": "D75-source-snapshots-retain-the-authority-that-produced-them",
+      "number": 75,
+      "path": "docs/decisions/D75-source-snapshots-retain-the-authority-that-produced-them.md",
+      "title": "D75 · Source snapshots retain the authority that produced them",
+      "status": "accepted, built 2026-11-07",
+      "date": "2026-11-07",
+      "area": "identity"
     }
   ],
   "documents": [
@@ -1649,6 +1658,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D75-source-snapshots-retain-the-authority-that-produced-them.md",
+      "title": "D75 · Source snapshots retain the authority that produced them",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -1714,7 +1729,8 @@
         "Inbound requests",
         "Call another connector",
         "Authenticate to the source",
-        "Rotation and revocation"
+        "Rotation and revocation",
+        "Persisted cards and permission changes"
       ]
     },
     {
@@ -2290,6 +2306,20 @@
         "What is uniform and what is not",
         "The shape unified on",
         "After"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-07-system-foundation-and-connector-review.md",
+      "title": "Clew system foundation and connector review",
+      "category": "review-history",
+      "headings": [
+        "What is solid",
+        "Findings to address",
+        "Is the connector paradigm a good choice",
+        "Simplifications worth making",
+        "Recommended sequence",
+        "Verification and limits",
+        "Implementation outcome · 2026-11-07"
       ]
     },
     {

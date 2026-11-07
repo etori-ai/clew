@@ -299,6 +299,18 @@ describe('the rules', () => {
       }),
       'phonebook',
     ],
+    'follows-on-a-propose': [
+      broken(hello, m => {
+        m.capabilities[0].follows = ['hr:absence'];
+      }),
+      'hello',
+    ],
+    'creates-declared': [
+      broken(hello, m => {
+        m.capabilities[3].creates = 'hello:done';
+      }),
+      'hello',
+    ],
     'standing-exists': [
       broken(hello, m => {
         m.areas[0].standing.push('hello.nothing');
@@ -318,27 +330,6 @@ describe('the rules', () => {
         problems: expect.arrayContaining([expect.any(String)]),
       });
     for (const m of examples) expect(manifestProblems(m, m.id)).toEqual([]);
-  });
-  test('the registry rules refuse what they say', () => {
-    const follows = parseManifest(
-      broken(hello, m => {
-        m.capabilities[0].follows = ['hr:absence'];
-      }),
-      'hello',
-    );
-    expect(() => new Registry().register(remoteConnector(follows, transport))).toThrow(/only a propose can follow/);
-    const creates = parseManifest(
-      broken(hello, m => {
-        m.capabilities[3].creates = 'hello:done';
-      }),
-      'hello',
-    );
-    expect(() => new Registry().register(remoteConnector(creates, transport))).toThrow(/does not declare/);
-    expect(
-      RULES.filter(r => r.enforced === 'registry')
-        .map(r => r.id)
-        .sort(),
-    ).toEqual(['creates-declared', 'follows-on-a-propose']);
   });
 });
 

@@ -1,0 +1,19 @@
+# D75 · Source snapshots retain the authority that produced them
+
+**Status:** accepted, built 2026-11-07 · **Date:** 2026-11-07 · **Area:** identity
+
+**Decision.** Every newly projected source card records `sourceAuthorization`, the authenticated context's authorization version at observation or approval. That version already binds the person and grant, including unit and role. The shared reader in `apps/server/src/threads/access.ts` requires both current connector visibility and an exact version match before disclosing a source card through the stream, history, chips, object suggestions or model context.
+
+A fresh authorized observation creates a separate projection when authority changes. Old content and messages are never retagged as newly authorized. Occurrence identity remains independent of the authorization version: an uncertain execution cannot manufacture another approval, and unchanged confirmed or dismissed work stays suppressed. The execution ledger, receipts and audit evidence remain stored. Core-owned cards without source provenance retain their existing access rules.
+
+Migration `0034_source_authorization` adds a nullable column. It deliberately does not backfill unprovable authority: legacy external-source cards become unreadable through user-facing readers. A fresh successful scan may create an authorized replacement; incomplete or unavailable scans cannot restore old content. Unknown executions remain preserved for reconciliation and operator recovery, without making their protected content visible to the new authority.
+
+Figures are ephemeral source reads. Their batch checks current person authority, connector visibility, descriptor identity, figure switches and permitted links before releasing results. The default source budget is two seconds with at most four concurrent figure calls, including queued calls in that budget. Failed or unfinished reads use the existing unavailable figure; remote requests receive cancellation. Structural previews and completions do not fetch figures.
+
+**Source permission boundary.** This is a Clew-grant snapshot policy, not continuous record-level authorization at the source. If source-only entitlement changes do not alter Clew's grant, this version cannot detect them. Before enabling persisted cards for such a source, the integration must establish a revocation path that updates the relevant Clew grant or withdraws connector access. Otherwise use live authorized reads and keep scanning disabled. No implicit retention expiry or source ACL synchronization is claimed.
+
+**Why.** The [foundation review](../reviews/2026-11-07-system-foundation-and-connector-review.md) reproduced disclosure after a unit transfer and figure disclosure after in-flight revocation. Connector visibility alone cannot prove that a historical snapshot belongs to the person's current assignment. Retagging old content on a new scan would authorize history that the new scan never returned. A separate projection preserves both privacy and original evidence.
+
+**Replaces.** Extends [D44 · Authorized reads](D44-authorized-reads-and-clew-signed-connector-authority.md) and [D47 · Occurrences](D47-occurrences-timers-and-attention-have-durable-identities.md). It replaces the implicit assumption that connector visibility alone authorizes persisted source-card content; neither earlier decision is superseded.
+
+**Evidence.** Transfer, renewed-grant, role-change, legacy-card and uncertain-execution cases in [refresh tests](../../tests/unit/refresh.test.ts); chip/object/model-context cases in [conversation tests](../../tests/unit/conversation.test.ts); persisted authority and fresh projections in [PostgreSQL tests](../../tests/db/postgres-refresh-attention.test.ts); revocation, bounded concurrency, deadline and HTTP cancellation in [figure tests](../../tests/unit/figure-boundaries.test.ts). Real-source entitlement propagation remains a pilot gate.
