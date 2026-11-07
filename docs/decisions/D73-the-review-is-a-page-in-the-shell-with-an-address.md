@@ -71,3 +71,28 @@ the `form-wizard` template (title, mark row, Stepper) is pinned on a desktop onl
 scrolls with the step, so the document is not left a strip under it. The template's footer zones with an inline
 `flexBasis` were not copied; the footer is the dialog's `HStack` with `justify="between"`. Evidence:
 `tests/a11y/review.spec.ts` (6 cases), `screens.pattern.spec.ts` with `CLEW_SCREENS=1`, `bun run check`.
+
+**Amended 2026-11-07, the same day: an overlay over Hem, not a page of its own.** The product owner saw the page on the
+dev stack and preferred an overlay ("Clicking close is weird on a page. Maybe it can be a right sidebar overlay or from
+the left/bottom"), with the close as an ✕ icon rather than the words "Spara och stäng". The address and everything
+about what is written and when stand; only the surface changes:
+
+1. **The review is an Astryx `Drawer` from the end edge over Hem**, wide enough for the document beside the decision
+   (a desktop width budget of about 1040 px, the shell's rail and the column's edge still in sight behind the scrim),
+   composed as the `Drawer` docs say: a `Layout` with `DrawerHeader` (its title "Granska N rader", its subtitle the card's
+   title and "inget skrivs förrän du skickar", `onOpenChange` so it draws the one ✕ close button, named "Stäng, Esc"),
+   the mark row, the `Stepper`, the document beside the decision in `LayoutContent`, and Föregående and Nästa in the
+   `LayoutFooter` with the sentence "Esc sparar och stänger …" that says closing keeps the decisions. Under 640 px the
+   drawer keeps Astryx's page reveal; no `BottomSheet`, since the steps need the height.
+2. **The address is the same**: `/cards/:threadId/review?step=<n>` is the route, and it draws Hem with the card beside
+   the column (as `/?card=<threadId>` does) and the drawer open over it, so the row says "öppet bredvid" under the
+   scrim, a link or a reload lands in the review, and the step still rewrites `step` with `replace`.
+3. **Closing** (✕, Esc, the scrim) leads to `/?card=<threadId>` with the decisions as the card's selection and the focus
+   on "Granska N", as the page did; Skicka waits for the source's answer and then leads there too. "Spara och stäng" as
+   words is gone: the ✕ is the close, and the footer's sentence says what closing does.
+4. **D70 item 2's phone note stands withdrawn**; the drawer is the same on a phone.
+
+The page of items 1 and 2 above was built and replaced within the day; its route, address rules and tests carry over to
+the drawer. Weighed and left: a centred `Dialog` (the document wants the height and the width of a side overlay, and a
+fullscreen one hides the shell the owner asked to keep), a `BottomSheet` (block-axis sheets are for touch, and the
+steps need the height), the page (replaced by this amendment).
