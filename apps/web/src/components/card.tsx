@@ -47,8 +47,8 @@ import {
   useToast,
   VStack,
 } from '@clew/ui';
-import { ReviewDialog } from './review';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useLocation } from 'react-router';
 import { displayDate, today } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
 import { snoozePresetsQuery } from '../queries';
@@ -59,6 +59,7 @@ import { useConversation } from './conversation-context';
 import { executionStatus } from '../execution-status';
 import { useMarks, type Mark, type Marks } from '../marks';
 import { AddToConversation } from './add-to-conversation';
+import { returnedSelection, reviewHref } from '../review-address';
 
 const outcomeDot = {
   done: { variant: 'success', label: 'Klart' },
@@ -413,37 +414,29 @@ type ActionProps = {
   onChange: (thread: Thread) => void;
   onOpenCardView: (threadId: string, actionId: string) => void;
 };
-/** Everything a card can do, shared by the card and the row: run an action, snooze, dismiss, explain, and keep the selection. */
-function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
-  // Busy never disables the buttons: a disabled button drops the focus it holds (2.4.3). Action-buttons wait on their own promise.
-  // The thread an action returns goes into the cache for every screen (D33); `onChange` lets the page move focus first.
+/**
+ * Running one of a card's actions, shared by the card, the row and the review's page (D73), so a decision sent from the
+ * review goes through the same confirm, the same decision endpoint (D45/D47), the same wait for the source and the same
+ * error as from the card. Busy never disables the buttons: a disabled button drops the focus it holds (2.4.3).
+ * Action-buttons wait on their own promise. The thread an action returns goes into the cache for every screen (D33);
+ * `onChange` lets the page move focus first. `perform` says whether it ran: a confirm the person declined runs nothing.
+ */
+export function useCardAction({
+  thread,
+  onChange,
+  onOpenCardView,
+}: Pick<ActionProps, 'thread'> & Partial<Omit<ActionProps, 'thread'>>) {
   const { run, apply, busy, error } = useThreadAction({ onChange });
   // The person's own action is on its way (D64): the card keeps the look it had, with the pressed button loading, and the
   // status is read out once the card has come to rest or the window has ended, not for every committed step in between.
   const held = useSettling(thread);
   const settling = busy || held;
   const [pressed, setPressed] = useState<string | null>(null);
-  const status = executionStatus(thread.execution);
-  const lastStatus = useRef(status),
-    announce = useAnnounce({ hasReplace: true });
-  useEffect(() => {
-    if (settling || status === lastStatus.current) return;
-    lastStatus.current = status;
-    announce(status ?? thread.receipt?.headline ?? 'Åtgärden är kontrollerad.');
-  }, [status, settling, announce, thread.receipt?.headline]);
-  const [selected, setSelected] = useState<string[]>(() => thread.items.filter(i => i.selected).map(i => i.ref));
-  useEffect(() => {
-    setSelected(thread.items.filter(i => i.selected).map(i => i.ref));
-  }, [thread.updatedAt]);
-  const client = useQueryClient();
-  const leave = useLeaveWithUndo(apply);
   const selectable = thread.items.some(i => i.selectable);
-  /** The review one row at a time (D70): the dialog's own state, opened from the card's next step. */
-  const [reviewOpen, setReviewOpen] = useState(false);
-  const perform = async (action: ThreadAction, refs?: string[]) => {
-    if (busy) return;
-    if (action.confirm && !window.confirm(action.confirm)) return;
-    const chosen = selectable ? (refs ?? selected) : undefined;
+  const perform = async (action: ThreadAction, refs?: string[]): Promise<boolean> => {
+    if (busy) return false;
+    if (action.confirm && !window.confirm(action.confirm)) return false;
+    const chosen = selectable ? refs : undefined;
     if (action.kind === 'read') {
       if (action.target === 'link') {
         await run(async () => {
@@ -451,11 +444,11 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
           if (result.kind === 'read' && typeof (result.output as { url?: string }).url === 'string')
             window.open((result.output as { url: string }).url, '_blank', 'noopener');
         });
-        return;
+        return true;
       }
       // A panel view has an address (`open-card` and `open-action`), so it survives reload and the back button closes it.
-      onOpenCardView(thread.id, action.id);
-      return;
+      onOpenCardView?.(thread.id, action.id);
+      return true;
     }
     // The outcome is the source's (D45): nothing is predicted, the button stays loading until the answer has come to rest.
     setPressed(action.id);
@@ -467,23 +460,58 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
       },
       { settle: true },
     );
+    return true;
   };
-  // A card whose next step is a review (D70): the primary execute opens the dialog, which sends once with the approved refs.
-  const reviewed = thread.actions.find(a => a.role === 'primary' && a.kind === 'execute' && a.review === 'each');
-  const reviewDialog = reviewed ? (
-    <ReviewDialog
-      thread={thread}
-      action={reviewed}
-      isOpen={reviewOpen}
-      onOpenChange={setReviewOpen}
-      onSave={setSelected}
-      onSend={refs => {
-        setReviewOpen(false);
-        setSelected(refs);
-        void perform(reviewed, refs);
-      }}
-    />
-  ) : null;
+  return { run, apply, busy, settling, pressed, error, selectable, perform };
+}
+/** The execute a card reviews one row at a time before it sends (D70): its next step is then "Granska N", which leads to the review's page (D73). */
+export const reviewedAction = (thread: Thread) =>
+  thread.actions.find(a => a.role === 'primary' && a.kind === 'execute' && a.review === 'each');
+
+/** Everything a card can do, shared by the card and the row: run an action, snooze, dismiss, explain, and keep the selection. */
+function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
+  const {
+    run,
+    apply,
+    busy,
+    settling,
+    pressed,
+    error,
+    selectable,
+    perform: performRefs,
+  } = useCardAction({
+    thread,
+    onChange,
+    onOpenCardView,
+  });
+  const status = executionStatus(thread.execution);
+  const lastStatus = useRef(status),
+    announce = useAnnounce({ hasReplace: true });
+  useEffect(() => {
+    if (settling || status === lastStatus.current) return;
+    lastStatus.current = status;
+    announce(status ?? thread.receipt?.headline ?? 'Åtgärden är kontrollerad.');
+  }, [status, settling, announce, thread.receipt?.headline]);
+  // Back from the review's page with Spara och stäng or Esc (D73), the card starts from the rows the review approved;
+  // otherwise from what the connector marked. A change to the thread starts it over from the connector's marks.
+  const { state } = useLocation();
+  const returned = returnedSelection(state, thread.id);
+  const [selected, setSelected] = useState<string[]>(
+    () => returned ?? thread.items.filter(i => i.selected).map(i => i.ref),
+  );
+  const seededAt = useRef(thread.updatedAt);
+  useEffect(() => {
+    if (seededAt.current === thread.updatedAt) return;
+    seededAt.current = thread.updatedAt;
+    setSelected(thread.items.filter(i => i.selected).map(i => i.ref));
+  }, [thread.updatedAt]);
+  const client = useQueryClient();
+  const leave = useLeaveWithUndo(apply);
+  const perform = async (action: ThreadAction, refs?: string[]) => {
+    await performRefs(action, refs ?? selected);
+  };
+  // A card whose next step is a review (D70): "Granska N" leads to the review's page, which sends once with the approved refs (D73).
+  const reviewed = reviewedAction(thread);
   // The card leaves at once (D64); the toast with Ångra confirms when the server has it.
   const dismiss = () =>
     run(
@@ -526,8 +554,7 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
     dismiss,
     pickRemind,
     reviewed,
-    reviewDialog,
-    openReview: () => setReviewOpen(true),
+    returned: returned !== null,
   };
 }
 type Actions = ReturnType<typeof useThreadActions>;
@@ -565,7 +592,7 @@ function ActionRow({
   const inConversation = conversation.chipped.includes(chipRef);
   const open = thread.state === 'open';
   const { selected, selectable, settling, pressed, perform, dismiss, run, leave, pickRemind } = actions;
-  const { reviewed, reviewDialog, openReview } = actions;
+  const { reviewed, returned } = actions;
   const snoozeRows = useSnoozeRows({ thread, run, leave });
   const remindRows = useTimeRows({
     presets: usePresets(),
@@ -586,16 +613,27 @@ function ActionRow({
   const size = quiet ? 'md' : 'lg';
   // A row's step fills the phone's line, and the sheet's steps stand full width (artboards 11 and 12).
   const width = phone || stacked ? '100%' : undefined;
-  // The one next step: the execute itself, or "Granska N" when the rows are reviewed one at a time first (D70).
+  // Back from the review's page with Spara och stäng or Esc (D73), the focus is on "Granska N" again, as it was when the
+  // review was a dialog that closed. On the card, not the row: the card is what the address opens beside Hem or in the
+  // sheet. The panel puts the focus on its heading when it opens with Hem (usePanel's effect runs after the card's), so
+  // this waits a frame.
+  const review = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!returned || quiet) return;
+    const frame = requestAnimationFrame(() => review.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, []);
+  // The one next step: the execute itself, or "Granska N" when the rows are reviewed one at a time first (D70), a link
+  // to the review's page (D73).
   const primaryButton = primary ? (
     reviewed ? (
       <Button
+        ref={review}
         size={size}
         variant={due ? 'primary' : 'secondary'}
         label={`Granska ${thread.items.filter(i => i.selectable).length}`}
-        isLoading={settling && pressed === primary.id}
         width={width}
-        onClick={openReview}
+        href={reviewHref(thread.id)}
       />
     ) : (
       <Button
@@ -701,7 +739,6 @@ function ActionRow({
     return (
       <HStack gap={2} vAlign="center">
         {primaryButton}
-        {reviewDialog}
         {addToConversation}
       </HStack>
     );
@@ -710,7 +747,6 @@ function ActionRow({
       <HStack gap={2} vAlign="center">
         {!compact && addToConversation}
         {primaryButton}
-        {reviewDialog}
       </HStack>
     );
   if (open && !thread.waitingOn) {
@@ -735,7 +771,6 @@ function ActionRow({
     return stacked ? (
       <VStack gap={2}>
         {primaryButton}
-        {reviewDialog}
         {secondaryButtons}
         <HStack gap={1} vAlign="center" wrap="wrap">
           {rest}
@@ -744,7 +779,6 @@ function ActionRow({
     ) : (
       <HStack gap={2} vAlign="center" wrap="wrap">
         {primaryButton}
-        {reviewDialog}
         {secondaryButtons}
         {rest}
       </HStack>

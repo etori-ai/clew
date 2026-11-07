@@ -20,6 +20,7 @@ headings, messages, page titles.
 | `/admin/anslutningar`, `/admin/anslutningar/:id` | `/admin/connectors`, `/admin/connectors/:id` |
 | `/admin/modeller`, `/admin/modeller/:id`, `/admin/modeller/leverantorer/:id` | `/admin/models`, `/admin/models/:id`, `/admin/models/providers/:id` |
 | (new in D42) | `/tools/:capability?input=&open=&open-title=&open-input=&via=` |
+| (new in D73) | `/cards/:threadId/review?step=` |
 
 `/`, `/login` and `/admin` are unchanged. A collection is plural (`/conversations/:id`, `/areas/:area`, `/views/…`,
 `/tools/…`); a pile is named by the state its threads are in (`waiting`, `snoozed`, `handled`), the words the code

@@ -71,3 +71,8 @@ card itself is unchanged. This is artboard A of the canvas **Clew · det jag gjo
 decision log Gjort (C), the card's head after the window has passed or after an undo (D), the row's "kan inte ångras"
 state for a sent message or a time with a room (E, state six) and the Nyss strip (B, the alternative). Evidence:
 `tests/unit/web-linger.test.ts`, `tests/a11y/undo.spec.ts`.
+
+**Amended 2026-11-07 by [D73](D73-the-review-is-a-page-in-the-shell-with-an-address.md).** Item 2's fullscreen `Dialog`
+is now the page `/cards/:threadId/review` in the shell, with the step in `?step=`; "Granska N" is a link to it, and
+`ReviewDialog` and the card's own state for it are gone. The phone's `BottomSheet` note is withdrawn. Items 1, 3 and 4
+stand.

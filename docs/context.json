@@ -853,6 +853,15 @@
       "status": "accepted, built 2026-11-07 on `main`",
       "date": "2026-11-07",
       "area": "ui"
+    },
+    {
+      "key": "D73-the-review-is-a-page-in-the-shell-with-an-address",
+      "number": 73,
+      "path": "docs/decisions/D73-the-review-is-a-page-in-the-shell-with-an-address.md",
+      "title": "D73 · The review is a page in the shell, with an address",
+      "status": "accepted, built 2026-11-07 on `main`",
+      "date": "2026-11-07",
+      "area": "ui"
     }
   ],
   "documents": [
@@ -1615,6 +1624,12 @@
     {
       "path": "docs/decisions/D72-the-day-is-the-pages-and-the-panel-holds-only-what-was-opened.md",
       "title": "D72 · The day is the page's, and the panel holds only what was opened",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D73-the-review-is-a-page-in-the-shell-with-an-address.md",
+      "title": "D73 · The review is a page in the shell, with an address",
       "category": "decision-history",
       "headings": []
     },
