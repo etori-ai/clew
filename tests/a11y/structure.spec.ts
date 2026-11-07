@@ -428,6 +428,42 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
     await expect(since.getByText('Öppna tillbud', { exact: true })).toBeVisible();
     await expectNoAxeViolations(page);
   });
+  test('an area is one tile and one line however often the page reads again, though it has cards, standing reads and a menu row', async ({
+    page,
+    api,
+  }) => {
+    // Every change notice invalidates every read (D46), so a live Hem reads the areas again and again.
+    let notices = 0;
+    await page.route('**/api/changes', route =>
+      route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `retry: 200\nid: ${++notices}\ndata: {}\n\n`,
+      }),
+    );
+    // Budget has a card that needs the person, two standing reads and a menu row; its figure is a sentence that needs them.
+    api.areas = api.areas.map(a =>
+      a.id === 'budget' ? { ...a, figure: { label: 'Prognosen ligger under budget.', tone: 'alert' } } : a,
+    );
+    api.menu = [
+      {
+        connector: 'finance',
+        source: 'Ekonomisystemet',
+        capability: 'finance.budget',
+        title: 'Budget mot prognos',
+        label: 'Budget',
+        icon: 'chart',
+      },
+    ];
+    await open(page, '/');
+    await expect.poll(() => notices, { timeout: 10_000 }).toBeGreaterThan(5);
+    const since = page.getByRole('region', { name: 'Sedan i går' });
+    await expect(lage(page).getByText('Prognosen ligger under budget.')).toHaveCount(1);
+    await expect(since.getByText('Prognosen ligger under budget.')).toHaveCount(1);
+    await expect(since.getByText('Sjukfrånvaro', { exact: true })).toHaveCount(1);
+    await expect(since.getByText('Öppna tillbud', { exact: true })).toHaveCount(1);
+    await expect(lage(page).locator('a, [role="group"]')).toHaveCount(5);
+  });
   test('while the areas are read the tiles keep their shape', async ({ page, api }) => {
     api.areasDelay = 1500;
     await page.goto('/');
