@@ -31,7 +31,7 @@ is a button under the box on the start page and both actions are cards under it 
 connector's audience. Both views open without input, so an administrator can put either or both in Clew's menu under Verktyg (D40; the
 connector's page, Områden, "Verktyg i menyn"). The manifest names their rows: "Telefonbok" for the search and "Mitt
 team" for the team list. Everything works without a model. With a model, the views say
-`modelReads: "summary"`: the model is told how many rows are shown to the person, never who or which number.
+`modelReads: "summary"` on the directory/team/contact views: the model receives a summary/count for those views. Search hits and fetch results can still include names and context; this is not a global redaction rule.
 
 ## Configuration
 

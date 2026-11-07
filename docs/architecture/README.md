@@ -1,18 +1,28 @@
-# Architecture and design background
+# Architecture
 
-For connector implementation use the [current protocol](../reference/connector-protocol.md), [guides](../guides/README.md) and [support matrix](../reference/status.md). These pages retain internal architecture and design reasoning. Several date from before connector services, declared views and protocol 2; their examples are not current implementation instructions.
+Start with [How Clew works](overview.md): the components, ownership boundaries and end-to-end read, discovery and approval flows. It builds on the [product overview](../overview.md) and describes the current implementation.
 
-| Page | How to use it |
+## Explore the system
+
+| Page | Question it answers |
 |---|---|
-| [Backend structure](backend-structure.md) | Maintainer code organization, dependency direction and ports. |
-| [Testing](testing.md) | Maintainer test layers and commands. |
-| [Connector administration](connector-administration.md) | Administration design and as-built notes; verify current behavior in the admin use cases. |
-| [Reliability and authorization plan](reliability-and-authorization-plan.md) | Phased delivery plan; distinguish the plan from the implementations now present. |
-| [Integration principles](integrations.md) | Early design background; in-process integration and MCP-hosting examples were replaced by connector services. |
-| [Integration paths](integration-paths.md) | Historical landscape and candidate source systems; current availability is in the support matrix. |
-| [Capability surfaces](capability-surfaces.md) | Design of REST, model and possible MCP surfaces; a designed MCP surface is not a supported endpoint. |
-| [Working across connectors](working-across-connectors.md) | Identity/ref composition rationale; current callback authorization is in the integrator guide. |
-| [Identity](identity.md) | Original OIDC/OAuth, MCP and SCIM design; current connector requests use the distinct protocol 2 authority. |
-| [Scheduled work](scheduled-work.md) | Current PostgreSQL intent, Temporal ownership, bounded follow-up and delivery behavior. |
+| [Architecture overview](overview.md) | What runs where, who owns the data, and how does work move through Clew? |
+| [Backend structure](backend-structure.md) | Where is the code, and which dependencies are allowed? |
+| [Integration architecture](integrations.md) | Why does Clew use independent connectors and its own contract? |
+| [Integration paths](integration-paths.md) | Which integration mechanism fits this source and which paths are available? |
+| [Capability surfaces](capability-surfaces.md) | How do buttons, the model, callbacks and approved executions reach operations? |
+| [Identity](identity.md) | How are login, local grants, connector authority and source credentials separated? |
+| [Working across connectors](working-across-connectors.md) | How do reads and jobs span systems without a query or process engine? |
+| [Connector administration](connector-administration.md) | How are registration, governance, model providers and changes managed? |
+| [Scheduled work](scheduled-work.md) | What belongs in PostgreSQL and what does Temporal execute? |
+| [Testing](testing.md) | Which tests establish behavior at each boundary? |
 
-Decision records are indexed [separately](../decisions/README.md). Read the linked implementation when a design says “today” or “not built”: those words describe the revision reviewed, not every later checkout.
+## Implement an integration
+
+Use the [connector guides](../guides/README.md) and the [current protocol reference](../reference/connector-protocol.md). The [protocol page at the old path](connector-protocol.md) remains a navigation alias, not a second contract.
+
+## Plans, evidence and history
+
+The [reliability and authorization plan](reliability-and-authorization-plan.md) retains phased acceptance criteria; its implementation checkpoint does not close unrun release gates. Use [implementation status](../reference/status.md) and [reliability acceptance](../reference/reliability-acceptance.md) to distinguish current mechanisms from real-source evidence.
+
+[Decision records](../decisions/README.md) and [dated reviews](../reviews/README.md) preserve the earlier designs and their rationale. Historical references to in-process vendor integrations, MCP hosts or connector-rendered apps are not instructions for a new connector.

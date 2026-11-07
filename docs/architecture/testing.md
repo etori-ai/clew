@@ -5,7 +5,7 @@ nothing but the repository. Implements D25; builds on D20's four kinds of file. 
 
 ## The shape in one paragraph
 
-Almost everything is a unit test in `tests/unit`, run by `bun test` in well under a second, against pure domain
+Almost everything is a unit test in `tests/unit`, run by `bun test` without external services, against pure domain
 functions and use cases built over memory adapters. The one slow test per store is a contract that proves the
 memory adapter behaves like the real one; it runs in the devcontainer, not in `bun run check`. Adapters for
 external systems are tested against recorded fixtures. The accessibility suite drives a built web app in
@@ -17,16 +17,16 @@ or the network, and CI (`.github/workflows/check.yml`) runs it without the stack
 | What changed | Test kind | Where | Runs in |
 |---|---|---|---|
 | A pure function (`domain.ts`, `packages/calendar/src/proposals.ts`, `dates.ts`, attention levels, the assistant router) | Example tests, and a property test when the function has an invariant worth stating ("never collides", "always within office hours") | `tests/unit/<topic>.test.ts`, `tests/unit/<topic>.property.test.ts` | `bun run check` |
-| A use case (`threads/usecases/*`, later `modules/*/usecases`) | A scenario test: real registry, the fixture connectors over the protocol (`tests/fixture-connectors.ts`), memory store, a clock the test owns; asserts the state the store ends up in and the audit rows written | `tests/unit/threads.test.ts` or a sibling per use case folder | `bun run check` |
+| A use case (`threads/usecases/*`, `modules/*/usecases`) | A scenario test: real registry, the fixture connectors over the protocol (`tests/fixture-connectors.ts`), memory store, a clock the test owns; asserts the state the store ends up in and the audit rows written | `tests/unit/threads.test.ts` or a sibling per use case folder | `bun run check` |
 | A store port (`threads/model.ts`, `modules/calendar/model.ts`, `connectors/model.ts`) or a store adapter | Add a case to that store's contract; it must pass on both adapters | `tests/store-contract.ts`, `tests/proposal-store-contract.ts` and `tests/connector-store-contract.ts`, each run by a `tests/unit/*-store.test.ts` and a `tests/db/postgres-*.test.ts` | `bun run check` (memory) and `bun run test:db` (Postgres) |
 | An adapter for an external system (CalDAV, a remote connector's HTTP, Microsoft Graph) | Parse and translate a recorded response; the protocol's edge cases as fixtures | `tests/unit/<adapter>.test.ts` with fixtures in the test file or `tests/fixtures/` | `bun run check` |
 | A calendar adapter, or a change to `CalendarProvider` | A case in the adapter contract; it must pass on every adapter (D69) | `tests/calendar-provider-contract.ts`, run by `tests/unit/microsoft365.test.ts` over the local fake of Graph and by `tests/calendar/nextcloud-provider.test.ts` | `bun run check` (fake) and `bun run test:calendar` (Nextcloud) |
 | A route | Nothing of its own while it stays thin (parse, validate, call one use case, map errors). Hono's `app.request()` serves a route in process if a test is ever needed | `apps/server/tests/runtime.test.ts` shows the pattern | `bun run test:node` |
-| A connector built here (`connectors/<name>`) | Its own tests inside its folder; the conformance checker `bun scripts/connector-check.ts` against it running | `connectors/<name>/` | the connector's own CI |
+| A connector built here (`connectors/<name>`) | Real handler over the remote protocol with deterministic source fixtures; shared conformance probes | `tests/unit/<name>-connector.test.ts`, with HTTP process scenarios in `apps/server/tests/` when needed | `bun run check`; relevant runtime lane |
 | A view, route or state in the web app | An accessibility test (axe, keyboard, reflow, announcements) | `tests/a11y/` | `sh scripts/a11y.sh`, CI `a11y.yml` |
 | A browser cache helper (`apps/web/src/thread-cache.ts`, `query-policy.ts`, D33) | Example tests against a real `QueryClient` from `@tanstack/query-core`: what is written, what is invalidated, what is retried. No DOM, no React | `tests/unit/web-*.test.ts` | `bun run check` |
 | The web build's configuration boundary (D38 branding isolation) | A focused Vite contract that packages only the small browser configuration entry and asserts its exported value under conflicting environment inputs | `apps/web/tests/branding-config.test.ts`, beside the app that owns Vite | `bun run check` |
-| Durable state across the database and worker/source boundary | Real PostgreSQL contracts and Node/Temporal workflows against an independent synthetic fault source; timer cancellation/replay; a job's watch steps through the outbox; `scripts/jobs-check.ts` runs a job on the bundled mocks against the dev stack | `tests/db/`, `apps/server/tests/execution-runtime.test.ts`, `apps/server/tests/timer-runtime.test.ts`, `apps/server/tests/watch-runtime.test.ts` | `bun run test:db`, `bun run test:durability`, CI `reliability.yml` |
+| Durable state across the database and worker/source boundary | Real PostgreSQL contracts and Node/Temporal workflows against an independent synthetic fault source; timer cancellation/replay; a job's watch steps through the outbox; `scripts/jobs-check.ts` runs a job on the independent fixture connectors against the dev stack | `tests/db/`, `apps/server/tests/execution-runtime.test.ts`, `apps/server/tests/timer-runtime.test.ts`, `apps/server/tests/watch-runtime.test.ts` | `bun run test:db`, `bun run test:durability`, CI `reliability.yml` |
 | Upgrade and restore | Isolated databases starting at migration 0019, conservative upgrade, repeated migration and evidence comparison after pg_dump/pg_restore | `scripts/recovery-rehearsal.ts` | [operations runbook](../maintainers/reliability-operations.md), CI `reliability.yml` |
 
 ## Microsoft 365 without Microsoft
@@ -86,8 +86,8 @@ script or a manual pass.
 view or state gets a test there (`CLAUDE.md`).
 
 The browser suite has an explicit ESM boundary and an isolated Vite configuration. Typed municipal
-fixtures replace all branding inputs and disable installation environment files. CI runs Sundsvall
-first, then Neutral/custom branding cases sequentially, with one worker. Reports and bundles have
+fixtures replace all branding inputs and disable installation environment files. CI runs the Neutral default
+suite, then Sundsvall/custom branding cases sequentially, with one worker. Reports and bundles have
 separate profile directories. `apps/web/tests` proves the configuration boundary with small in-memory
 Vite bundles; it never builds the whole application or starts a server/browser. Temporary env files
 and generated modules are removed, and mutated environment variables are restored.
@@ -120,8 +120,7 @@ sh scripts/a11y.sh                                           # the WCAG suite
 ### Running the WCAG suite
 
 `sh scripts/a11y.sh` builds the web app once, then runs the suite in the pinned Playwright image; everything after the
-script name goes to `playwright test`. The full suite is 287 tests on one worker, about eight minutes when green and
-much longer when red, so it is not the per-edit check ([D51](../decisions/D51-the-wcag-suite-is-cis-gate.md)):
+script name goes to `playwright test`. The full suite runs on one worker and takes several minutes, so it is not the per-edit check ([D51](../decisions/D51-the-wcag-suite-is-cis-gate.md)):
 
 - Per change, run the spec files the change touches: `sh scripts/a11y.sh menu.spec.ts shell.spec.ts`. Add
   `--timeout 15000` so a red run fails in seconds instead of waiting out 30 s per test.
@@ -137,12 +136,11 @@ much longer when red, so it is not the per-edit check ([D51](../decisions/D51-th
 
 ## What is ported
 
-Everything in the server that holds logic is over ports (D25), each with `adapters/postgres.ts` (plus `temporal.ts`
-or `provider.ts` where a service is involved) beside `adapters/memory.ts`, wired in `apps/server/src/composition/`:
+Business use cases are built over ports (D25), with live and memory adapters wired in `apps/server/src/composition/`. The following are examples; the [backend map](backend-structure.md) includes execution, refresh, jobs, administration and user reads:
 
 | Folder | Factory | Ports (`model.ts` or `ports.ts`) | Scenario tests |
 |---|---|---|---|
-| `threads/usecases/` | `threadUsecases`, `reminderUsecases` (including `surface`, the Temporal activity's body) | `ThreadStore`, `ThreadTx` (with `lockThread`), `ReminderTimers` | `tests/unit/threads.test.ts` |
+| `threads/usecases/` | `threadUsecases`, `reminderUsecases` (timer delivery and legacy `surface`) | `ThreadStore`, `ThreadTx` (with `lockThread`), `ReminderTimers` | `tests/unit/threads.test.ts` |
 | `modules/calendar/usecases/` | `calendarUsecases` | `ProposalStore`, `CalendarBinder`, `CalendarProvider` (D11) | `tests/unit/samtal.test.ts` |
 | `scheduler/` | `createScheduler` | `JobQueue`, `People` | `tests/unit/scheduler.test.ts` |
 | `assistant/` | `assistantUsecases` | `ThreadStore`, `ModelProvider` | `tests/unit/conversation.test.ts` |
@@ -152,7 +150,7 @@ the server derives the date from `clock()` and the purity guard refuses them.
 
 Still outside the pattern, on purpose: `auth.ts`, `system-context.ts` and `connectors/remote.ts` (identity and
 connector loading, platform code over `@clew/db` directly) and the connector descriptors `modules/*/connector.ts`
-(`people` reads the grant tables; it is Clew's own core record and has no port yet).
+that describe built-in capabilities. Internal `people.*` reads now use a `UserReads` port, composed with a PostgreSQL adapter.
 
 The shared follow-up contract (`tests/followup-contract.ts`) runs on memory and PostgreSQL. Calendar execution projection, refresh/attention and ownership have PostgreSQL scenarios in addition to pure/use-case tests. Runtime tests are required for boundaries memory cannot prove: real transactions, process/protocol response loss and Temporal history replay. Keep these in the separate reliability lane, not the fast suite.
 

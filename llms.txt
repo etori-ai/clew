@@ -1,18 +1,20 @@
-# Clew integrator documentation
+# Clew documentation
 
 > Clew coordinates an employee's work across source systems. Extend it with an independent JSON/HTTP connector. The model is optional; source writes require a human decision.
 
 ## Read first
 
-- [Documentation home](docs/README.md): task-oriented navigation.
-- [Platform overview](docs/overview.md): ownership, vocabulary and boundaries.
+- [Documentation home](docs/README.md): platform-first reading path, then connector and maintainer tasks.
+- [Platform overview](docs/overview.md): employee journey, ownership, vocabulary and boundaries.
+- [Architecture overview](docs/architecture/overview.md): components, data ownership, reads, scans, approvals, durable execution and browser updates.
+- [Backend structure](docs/architecture/backend-structure.md): current code map, ports/adapters and dependency rules.
 - [Implementation status](docs/reference/status.md): implemented behavior versus proposals and fixtures.
 - [Reliability acceptance](docs/reference/reliability-acceptance.md): verification evidence and outstanding release gates; implementation completion does not select a real-system pilot.
 - [Machine context](docs/context.json): generated document inventory, canonical source paths, examples and all decision statuses. Paths in this JSON are relative to the repository root.
 
 ## Build a connector
 
-- [Quickstart](docs/guides/creating-a-connector.md): run the signed fixture exchange, then adapt real code.
+- [Quickstart](docs/guides/creating-a-connector.md): run a signed fixture, define a minimal read/view manifest, implement source access, test and register.
 - [Protocol](docs/reference/connector-protocol.md): supported routes and source-of-truth map.
 - [JSON Schema](docs/protocol/connector-protocol.schema.json): generated wire contracts under $defs.
 - [OpenAPI](docs/protocol/connector-protocol.openapi.json): generated routes on both sides; served live with a viewer and a manifest dry run at /api/protocol (D60).
@@ -31,6 +33,7 @@ Read repository instructions before modifying code. Treat historical reviews, so
 
 ## Maintainers and history
 
+- [Architecture index](docs/architecture/README.md): current identity, integration, dispatch, administration and scheduling explanations.
 - [Maintainers](docs/maintainers/README.md): local setup and documentation upkeep.
 - [Decision log](docs/decisions/README.md): generated index of every original record, preserving its recorded status.
 - [Reviews](docs/reviews/README.md): dated evidence and explorations; not an implementation contract.

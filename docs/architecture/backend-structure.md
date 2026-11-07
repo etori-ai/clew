@@ -1,121 +1,107 @@
 # Backend structure
 
-How `apps/server` and the packages are laid out, what goes in which file, and the rules `bun run deps`
-enforces. Implements D20. For how a module reaches the outside world and other modules, see
-`connector-protocol.md` (D21, D22) and `working-across-connectors.md`. "Module" here is D20's code word, a bounded
-context in this process; the integration unit a person, an operator or a vendor meets is a **connector** (D22).
+Clew's server is a modular monolith: one Node application, organised by responsibility, with ports and adapters at the edges. External integrations are independent connector services. Start with the [architecture overview](overview.md) for the running system; this page maps it to code.
 
-## The shape in one paragraph
+A **module** is a bounded responsibility inside the server. A **connector** is an integration contract and deployment unit an operator or source developer meets. A **capability** is an operation exposed through the registry. These are related concepts, not interchangeable names.
 
-A modular monolith: one Node process, organised by module, with ports and adapters at the edge. Inside a
-module the code is functional TypeScript in four kinds of file. Routes are thin and sit outside the modules.
-A module never imports another module; it calls the other module's capabilities through the registry as the
-acting person. It is the strategic half of domain-driven design (a module is a bounded context; the
-contracts are its language) without the tactical half (no aggregates, entities, repositories or domain
-events), because most records live in other systems and Clew holds refs and audit rows.
+## Repository map
 
-## Layout
-
-```
-apps/server/src/
-  main.ts  context.ts  auth.ts  auth-crypto.ts  system-context.ts  scheduler.ts     platform
-  composition/       the composition root (D25): calendar, executions/projection, follow-up store, refresh, jobs, operations, threads and assistant over ports
-  scheduler/         scheduled housekeeping use cases; durable-postgres.ts owns Temporal delivery/execution leases (D47), not a second polling runner
-  routes/            auth.ts, api.ts, connectors.ts, admin.ts   HTTP only: parse, validate, call one use case, map errors
-  threads/           the stream (Clew core)
-    model.ts         its ports: ThreadStore, ThreadTx, ReminderTimers (D25)
-    usecases/        cards.ts, reminders.ts: scan into cards, act, undo, snooze, dismiss, reminders, attention; factories over the ports
-    adapters/        postgres.ts and temporal.ts (live), memory.ts (tests); ThreadTx.lockThread holds a row while a reminder surfaces
-  assistant/         index.ts (assistantUsecases), ports.ts (ModelProvider, AssistantDeps), router, model, verbs, chips, objects, fixed, completions; adapters/provider.ts (the model from the environment), adapters/memory.ts
-  temporal/          worker, workflows, activities      approved executions, generation-fenced timers, follow-up and scheduled jobs (D17/D45/D47)
-  connectors/        platform: the connector registry, the remote transport and connector administration (D23)
-    registry.ts      the registry the BFF runs with: bundled connectors + remote connectors; runCapability, callFromConnector, bundledIds
-    remote.ts        assertions, the boot loader of enabled rows (D21, D23)
-    model.ts         ports: ConnectorStore, ConnectorTx, Secrets, Transport, LiveRegistration, Units
-    usecases/        admin.ts: connectorUsecases (factory over the ports)
-    adapters/        postgres.ts (live), memory.ts (tests)
-    describe.ts      a bundled connector in the manifest's shape
-    reconcile.ts     bundled rows at boot, governance applied, the watcher that applies row changes without a restart
-  modules/
-    calendar/        connector.ts, model.ts (ProposalStore, CalendarBinder), usecases/samtal.ts (factory), usecases/reads.ts (pure projections), adapters/{postgres,memory}.ts
-    people/          capabilities.ts (internal user reads; not a managed connector, D62)
-    figures/         domain.ts
-    mocks/           model.ts, usecases.ts (dev reset, factory), adapters/postgres.ts
+```text
+apps/
+  server/src/       Node/Hono backend and embedded Temporal worker
+  web/src/          Startsidan React frontend
+  portal/src/       experimental second frontend over the same server
 packages/
-  contracts/         TypeBox schemas and types shared by server, web and connectors. Imports nothing of ours.
-  connectors/        the capability layer: Connector, Capability, Registry; protocol.ts; remote.ts; mock/ (bundled mock connectors)
-  db/                Drizzle schema, migrations and queries: an adapter
-  calendar/          the calendar domain: model.ts (port), dates and proposals (domain), nextcloud.ts and adapters.ts (adapters), memory.ts (the port in memory, for tests)
+  contracts/src/   shared TypeBox schemas and types
+  connectors/src/  capability registry, protocol, transport and validation
+  db/src/          PostgreSQL schema, migrations and database adapters/helpers
+  calendar/src/    calendar domain, provider port, CalDAV and Microsoft 365 adapters
+  ui/src/          shared Astryx-based UI, branding and calendar rendering
 connectors/
-  hello/             a connector: built the way a third party builds one, depends on nothing above (D21)
+  hello/           small protocol demonstration; in-memory writes
+  phonebook/       read/search/view example with fixture and HTTP adapters
+  reference/       synthetic durable source for execution recovery
+  eneo/            optional delegated document-retrieval connector
+  hr/ finance/ incidents/ communication/ timesheet/ payroll/
+                   independent synthetic sources in the development stack
+tests/             unit, shared store/provider contracts, database and browser suites
+scripts/           development, conformance, migration and documentation commands
 ```
 
-## The four kinds of file
+Connectors under `connectors/` import no Clew application or workspace package. Neither `apps/` nor `packages/` imports their runtime implementation; the served protocol's documentation examples are the explicit exception. Tests can run their handlers in-process while still exercising the remote protocol. See [D61](../decisions/D61-fixture-sources-are-independent-connectors.md).
 
-| Kind | File name | May import | Holds | Tested how |
-|---|---|---|---|---|
-| contracts | `packages/contracts`, or `model.ts` in a domain package | TypeBox only | Schemas, types, error classes, the port (provider interface) | By the schema tests of its users |
-| domain | `domain.ts` or `domain/` | contracts, other domain files | Pure functions: planning, date arithmetic, attention levels, figures. No database, no network, no runtime library, no Node built-in | `bun test`, no database, no fakes needed |
-| usecases | `usecases.ts`, or `usecases/<topic>.ts` when one file gets long | contracts, domain, ports (`model.ts`), the registry's types | One exported function per user action, built by a factory over a `deps` object (store, timers, registry, `clock`, `ids`), never over an imported adapter, clock or `process.env` (D25). Takes the actor (`AuthenticatedContext`) first, never a request. Owns the scope check, the transaction and the audit row in that transaction | `bun test` over the memory adapters (`tests/unit/threads.test.ts`); see `testing.md` |
-| adapters | `adapters/<kind>.ts`, `nextcloud.ts`, `packages/db`, `temporal/activities.ts` | contracts, the port, protocol libraries | One system's protocol, translated to the port. Stores nothing, logs no rows. A memory adapter beside each live one is what the unit tests run on | A store adapter by the store contract on both adapters (`tests/store-contract.ts`, Postgres via `bun run test:db`); a protocol adapter against a recorded fixture |
+## Server map
 
-Outside the modules:
+| Folder/file | Responsibility |
+|---|---|
+| [main.ts](../../apps/server/src/main.ts), [startup.ts](../../apps/server/src/startup.ts) | HTTP app, readiness, registration initialization and starting dispatchers/worker. |
+| [auth.ts](../../apps/server/src/auth.ts), [system-context.ts](../../apps/server/src/system-context.ts) | Session-backed identity and current-grant identity for background work. |
+| [routes/](../../apps/server/src/routes/) | Auth, business API, connector callbacks/public keys, administration and served protocol. |
+| [composition/](../../apps/server/src/composition/) | Wires ports to live stores, calendar providers, model endpoints, clocks, ids and workflow delivery. |
+| [connectors/](../../apps/server/src/connectors/) | Live registry, signed authority, remote registration, reconciliation and administration. |
+| [threads/](../../apps/server/src/threads/) | Authorized card/history reads, occurrence refresh, decisions, reminders, timers and attention. |
+| [assistant/](../../apps/server/src/assistant/) | Conversation/router, model tools, answer context, provider/model administration and adapters. |
+| [modules/calendar/](../../apps/server/src/modules/calendar/) | Calendar capabilities, planning, reads, approval, execution and bounded follow-up. |
+| [modules/people/](../../apps/server/src/modules/people/) | Internal user reads over a `UserReads` port; no managed connector lifecycle. |
+| [modules/search/](../../apps/server/src/modules/search/) | Composite search, source budgets, result contracts and answer-card capability. |
+| [modules/executions/](../../apps/server/src/modules/executions/) | Approval ledger, source progress/reconciliation, compensation, job/watch state and outbox dispatch. |
+| [modules/jobs/](../../apps/server/src/modules/jobs/) | Fact/follower binding and cross-system proposal assembly. |
+| [modules/operations/](../../apps/server/src/modules/operations/) | Reliability diagnostics over ports. |
+| [scheduler/](../../apps/server/src/scheduler/) | Scheduled job use cases, queue and durable ownership adapters. |
+| [temporal/](../../apps/server/src/temporal/) | Workflow definitions, activities, worker and delivery adapters. |
 
-- **Routes** (`routes/`): parse and validate the body against a contract, call one use case, turn errors into
-  Swedish JSON. Never `@clew/db`, never an adapter, never business logic. A route that grows a second
-  statement of logic is a use case that has not been written yet.
-- **The composition root** (`composition/`): the only place that pairs a use case with a live adapter, the clock
-  and the id source (D25). A route, the scheduler, the assistant or the registry imports `threads`, `reminders`,
-  `calendar` and `mocks` from here.
-- **The registry** (`connectors/registry.ts`): the only place that names connectors. Everything else, routes,
-  cards, tools, the composer, derives from it. It is platform code, outside `modules/`.
-- **`connector.ts`**: the registry descriptor for a bundled module (capabilities, areas, scan) built on the
-  module's use cases. A remote connector has the same content as a manifest instead.
+There is no bundled `packages/connectors/src/mock` implementation or separate `modules/figures` module. Figures come from connectors through the registry. Model providers are administered in the database, not selected by an `adapters/provider.ts` environment adapter.
 
-## Rules
+## Dependency direction
 
-1. One folder per module. Core modules under `apps/server/src/modules/<name>/`; a domain with a port and
-   adapters as `packages/<name>/`; a connector built here under `connectors/<name>/`. Nothing module-specific at the
-   server root.
-2. Imports flow one way: routes, then usecases, then domain, then contracts, with adapters only reached
-   through a port from a use case. The table above is exhaustive; a file that does not fit one kind is two files.
-3. A use case takes the actor first and never receives a request object. Scope is enforced there or in the
-   registry, never in a route and never from the browser.
-4. Ports are interfaces in the domain's package; adapters are chosen by a factory from configuration
-   (`packages/calendar/src/adapters.ts` is the pattern). A use case never imports an adapter by name.
-5. A module never imports another module. In process it calls `clew.call(name, input)`, the handle every
-   `run`, `scan` and `figure` receives; from a connector it posts to `/api/connectors/call`. Both re-check
-   the other module's scope for the same actor and refuse `execute`. The stream (`threads/`) and the
-   assistant are platform code and may call a module's use cases directly; the proposal path of the
-   calendar (`ensureProposalThread`, `replan`, `confirm`) is the one such coupling today and is recorded as
-   debt below.
-6. The direction is checked by `dependency-cruiser` (`.dependency-cruiser.cjs`) in `bun run check`, so a
-   pull request that breaks it fails CI. Change the rules file together with the decision that changes the rule.
-7. Every module ships its unit tests for domain and use cases and runs without its external system: a mock
-   adapter for a bundled module, a fixture mode for a connector (D8).
-8. A use case gets its adapters, clock and ids through `deps` from `composition/`, never by import (D25).
-   `usecases-reach-stores-through-ports` and `unit-tests-stay-fast` in `.dependency-cruiser.cjs` and
-   `scripts/purity-check.ts` check it; `testing.md` says where a test goes.
+```mermaid
+flowchart LR
+  Routes[Routes] --> Composition[Composition root]
+  Composition --> UseCases[Use cases]
+  Composition --> Adapters[Live adapters]
+  UseCases --> Ports[Ports and contracts]
+  UseCases --> Domain[Pure domain functions]
+  Adapters --> Ports
+  Domain --> Contracts[Contracts]
+```
 
-## Checking it
+Ports are interfaces describing what a use case needs, such as a store, clock or source operation. An adapter implements a port using PostgreSQL, a network protocol or memory. A test supplies memory adapters to the same use case factory that production uses.
+
+| Kind | Typical location | Rules |
+|---|---|---|
+| Contracts and ports | `packages/contracts`, module `model.ts`, `ports.ts` or `contracts.ts` | Schemas, types, errors and interfaces. No business I/O. |
+| Domain | `domain.ts` or domain helpers | Pure computation. No database, network, clock, runtime framework or Node built-in. |
+| Use cases | `usecases.ts` or `usecases/` | User operations receive the actor, not an HTTP request. Own access checks and transactional state/audit through ports. Time and ids are supplied dependencies. |
+| Adapters | `adapters/`, calendar provider files, database package | Translate a port into a real system's protocol or persistence, including transactional evidence. Memory versions support tests. |
+| Routes | `routes/` | Parse, validate, call the application layer, map errors to safe Swedish responses. No direct database or adapter imports. |
+| Composition | `composition/` | Selects and wires live dependencies. Application entry points use the composed functions. |
+
+Modules do not import other modules or the routes, threads, assistant or workflow layer. When one capability needs another, use the registry's `clew.call` handle, or the signed callback route from a remote connector. Both preserve the actor and refuse executes. Platform composition can coordinate several modules through their ports.
+
+The [dependency rules](../../.dependency-cruiser.cjs) enforce these boundaries. The [purity check](../../scripts/purity-check.ts) rejects clocks, environment reads and random identifiers in use cases/domain code. Change the rules only with the architectural decision that changes the boundary.
+
+## Follow one path through the code
+
+| Behavior | Start here | Then follow |
+|---|---|---|
+| Read a declared view | [Capability routes](../../apps/server/src/routes/api.ts) | [Server registry](../../apps/server/src/connectors/registry.ts) → [capability registry](../../packages/connectors/src/index.ts) → [remote transport](../../packages/connectors/src/remote.ts) |
+| Discover source work | [Refresh composition](../../apps/server/src/composition/refresh.ts) | [Refresh use cases](../../apps/server/src/threads/usecases/refresh.ts) → store/registry ports |
+| Approve a card action | [Card decisions](../../apps/server/src/threads/usecases/decisions.ts) | [Execution composition](../../apps/server/src/composition/executions.ts) → [execution use cases](../../apps/server/src/modules/executions/usecases.ts) → outbox/workflow |
+| Configure a connector | [Administration routes](../../apps/server/src/routes/admin.ts) | [Connector use cases](../../apps/server/src/connectors/usecases/admin.ts) → store and [reconciliation](../../apps/server/src/connectors/reconcile.ts) |
+| Read Clew's users | [Internal capabilities](../../apps/server/src/modules/people/capabilities.ts) | [UserReads port](../../apps/server/src/modules/people/ports.ts) → [composition](../../apps/server/src/composition/people.ts) |
+
+## Existing special cases
+
+The architecture is a boundary to preserve, not a claim that every historical path is already identical. Calendar has dedicated API/UI paths and is wired directly into parts of the thread and assistant composition. Its source writes nevertheless converge on the execution ledger. The live thread composition replaces the older synchronous `ensureThreads` path with `refresh.request`; some unit scenarios still exercise the older helper.
+
+Authentication and connector loading are platform code with direct database access. Temporal activities call composed use cases. Old workflow functions remain for history compatibility; removing them requires replay/retirement evidence. These are different concerns from permitting a new vendor integration inside the monolith.
+
+## Verify a change
 
 ```sh
-docker exec -w /workspace clew-app-1 bun run deps     # dependency rules only
-docker exec -w /workspace clew-app-1 bun run check    # prettier, tsc, deps, purity, bun test, node tests
-docker exec -w /workspace clew-app-1 bun run test:db  # the store contract against Postgres (not in check)
+docker exec -w /workspace clew-app-1 bun run deps
+docker exec -w /workspace clew-app-1 bun run purity
+docker exec -w /workspace clew-app-1 bun run check
 ```
 
-A violation prints the rule name, the file and the import. The rule names are the comments in
-`.dependency-cruiser.cjs`.
-
-## Debt recorded at D20
-
-- `threads/usecases/cards.ts` takes the calendar's proposal use cases as `deps.calendar` from `composition.ts`
-  (D25 moved the import there); the target is still a `calendar.proposeWeek` propose capability so the stream
-  only knows the registry.
-- `temporal/activities.ts` writes threads directly (allowed for an adapter, untested); `testing.md` has the order.
-- `routes/api.ts` still has `/today`, `/calendar` and `/figures`, which predate capabilities; the target is
-  that the web reads them through `/api/cap/calendar.today` and a `figures.read` capability.
-- `assistant/` calls calendar use cases directly for chips and fixed answers; same target.
-- The bundled mock connectors (`packages/connectors/src/mock`) are in-process; they become connectors
-  under `connectors/` when the dev compose can run them (D21).
+The full check includes formatting, types, dependency/purity rules, fast tests, Node runtime tests and documentation checks. It needs installed dependencies but no running external services. Store changes also need PostgreSQL contracts; workflow/source-effect changes need the relevant runtime scenarios. [Testing](testing.md) describes those separate lanes.

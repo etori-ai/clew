@@ -1,29 +1,56 @@
 # Clew
 
-Clew brings an employee's work across systems into one place: find information, see what needs attention, review a proposal, and act with a receipt from the source. It is built for the public sector; the Swedish interface is called **Startsidan**.
+Clew is an open-source workspace for an employee's work across systems. It brings together what needs attention, the information needed to decide, and actions with receipts from the source. It is built for the public sector; its Swedish employee interface is called **Startsidan**.
 
-Source systems keep their records. Clew coordinates the person's work, permissions, decisions and follow-up. A model can help find and explain things, but reads and actions also have deterministic paths. Source writes require a human decision.
+An employee can find a colleague, check their calendar, review an invoice or follow up a task without first choosing which system to open. Source systems keep their business records. Clew owns the coordination: who may see the work, what the person approved, what happened afterwards and when to bring it back.
 
-## Build an integration
+## How it fits together
 
-A **connector** is an independently deployed HTTP service, in any language, that implements Clew's JSON contract. Its manifest declares capabilities and views; Clew supplies the interface, scoped invocation and model tools. An administrator connects the service without rebuilding Clew.
+Clew has a web application, a modular backend and independently deployed connectors. A **connector** translates a source system into named operations and data that Clew understands. Its manifest describes those operations and how read results can be displayed. Clew supplies the interface and checks access on every invocation.
 
-1. [Understand the platform](docs/overview.md).
-2. [Run and adapt a connector](docs/guides/creating-a-connector.md).
-3. [Read the protocol](docs/reference/connector-protocol.md) and [authorization requirements](docs/guides/authorization.md).
-4. [Add search and views](docs/guides/example-custom-directory.md), or [human-approved writes](docs/guides/actions-and-receipts.md).
-5. [Validate and register it](docs/guides/testing-and-deployment.md).
+```mermaid
+flowchart LR
+  Person[Employee] --> Web[Startsidan web app]
+  Web --> Server[Clew server]
+  Server --> DB[(PostgreSQL: coordination and evidence)]
+  Server <--> Temporal[Temporal: durable work and timers]
+  Server --> Connector[Connector service]
+  Connector --> Source[Source system]
+  Server -. optional inference .-> Model[Model endpoint]
+```
 
-The [documentation home](docs/README.md) includes the current support matrix and all references. Start a coding agent with [llms.txt](llms.txt); the [machine-readable context map](docs/context.json) links the contracts, examples and every decision record.
+A connector can be written in any language. An administrator registers its URL, transport secret and audience without rebuilding Clew. The browser calls Clew; the connector calls the source. The optional assistant uses the person's allowed reads and proposals; source writes pass through a separate human approval flow.
 
-## Code is the reference
+PostgreSQL records approved intent before dispatch. Temporal runs the durable work and waits. The connector reports what the source actually did; an uncertain outcome remains visible until it can be resolved.
 
-The [protocol source](packages/connectors/src/protocol.ts) generates the [JSON Schema](docs/protocol/connector-protocol.schema.json). Complete [example manifests](docs/generated/README.md) come from real connectors. Documentation checks reject stale generated content and broken local links, then run a signed fixture exchange:
+## Understand the platform
+
+1. [What Clew is](docs/overview.md): the employee experience, ownership and key concepts.
+2. [How Clew works](docs/architecture/overview.md): components, data, reads, decisions and follow-up.
+3. [What is implemented](docs/reference/status.md): working paths, fixture evidence and remaining limits.
+
+The [documentation home](docs/README.md) is the full reading map. [Vision](docs/vision.md) describes product direction; [decisions](docs/decisions/README.md) and [reviews](docs/reviews/README.md) preserve the reasoning.
+
+## Build a custom connector
+
+Start with one useful read, then add only the features the integration needs.
+
+1. [Create a connector](docs/guides/creating-a-connector.md): run an example, define a manifest and implement the request boundary.
+2. [Adapt the directory example](docs/guides/example-custom-directory.md): connect a real API, add search and declare views.
+3. [Authorize requests](docs/guides/authorization.md): verify Clew's actor and enforce source access.
+4. [Add actions and receipts](docs/guides/actions-and-receipts.md) when the source supports approved writes.
+5. [Test, register and deploy](docs/guides/testing-and-deployment.md).
+
+The [protocol reference](docs/reference/connector-protocol.md), [JSON Schema](docs/protocol/connector-protocol.schema.json) and [complete example manifests](docs/generated/README.md) define the integration contract. A running Clew also serves its own protocol and manifest validator under `/api/protocol`.
+
+## Run and contribute
+
+[Local development](docs/maintainers/local-development.md) starts the application and synthetic source services. [Maintainer documentation](docs/maintainers/README.md) covers tests, operations, branding and documentation upkeep. Application commands run in the devcontainer; for example:
 
 ```sh
 docker exec -w /workspace clew-app-1 bun run docs:check
 ```
 
-This check needs the devcontainer and installed dependencies, but no running database, identity provider, model or source system. [Local development](docs/maintainers/local-development.md) explains how to start the full stack. [Maintainer documentation](docs/maintainers/README.md) covers architecture, tests, installation branding and documentation upkeep.
+That check validates generated references and local links, then runs a signed connector exchange without a database, identity provider, model or source system. Coding agents should start with [llms.txt](llms.txt) and the generated [context map](docs/context.json).
 
-This repository is a developing proof of concept. A working fixture does not establish readiness for a real-system pilot. Consult the [implementation status](docs/reference/status.md) before committing to an integration path. Design history is in the [decision log](docs/decisions/README.md); session notes remain in [HANDOVER.md](HANDOVER.md).
+Clew is a developing proof of concept. The development connectors use synthetic data, and a passing fixture does not establish readiness for a real-system pilot. The [support matrix](docs/reference/status.md) and [reliability acceptance](docs/reference/reliability-acceptance.md) state the limits.

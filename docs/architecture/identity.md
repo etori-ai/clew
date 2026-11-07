@@ -1,170 +1,62 @@
 # Identity and authorization
 
-> **Reading status:** Original identity design. OIDC login and session-backed token exchange are implemented. Connector requests now use protocol 2 Clew-signed RS256 assertions, a transport key and separate callback grants. The MCP/ID-JAG, SCIM and dev-login sections below describe unimplemented designs. See [implementation status](../reference/status.md) and the [current protocol](../reference/connector-protocol.md).
+Clew separates **login identity**, **local permission**, **connector authority** and **source credentials**. Passing one boundary does not bypass the next. This page describes the current implementation; exact connector claims and verification instructions are in [Authorization](../guides/authorization.md).
 
+## Browser to Clew
 
-Decided 2026-11-03. The decision log is in `docs/decisions/`.
+The [authentication implementation](../../apps/server/src/auth.ts) uses OIDC Authorization Code with PKCE. Development uses Keycloak. The server keeps tokens sealed in its database; the browser receives an opaque, HttpOnly session cookie and the session's CSRF token for mutations.
 
-## Principle
+Login validates state/nonce and resolves the verified issuer and subject through an existing local identity binding. The person must be enabled and have a local access grant. A matching display name or email is not a substitute for that binding. Login does not create a user on demand.
 
-**OIDC for people, OAuth 2.1 with JWT access tokens for everything that calls on their behalf.** Keycloak is
-the only identity provider and the only authorization server. There is one identification path: a person
-logs in through OIDC. Every other credential in the system (BFF to MCP server, Clew to an external system,
-a tool call made by the model) is an OAuth 2.1 access token derived from that login, bound to a user and an
-audience. No path identifies a person by anything else, and no component acts as "Clew" without a user
-behind it. Users never see a per-server consent popup: token exchange inside our own trust domain,
-and the MCP Enterprise-Managed Authorization extension (ID-JAG) across trust domains, make every
-downstream grant a policy decision in the IdP instead of a click. The only exception is the dev login described at the end, which exists for local development
-and refuses to start anywhere else.
+The current session policy has eight-hour idle and absolute limits. Mutation requests check the allowed origin and CSRF token; back-channel logout validates the identity provider's signature. The authoritative behavior is in [auth.ts](../../apps/server/src/auth.ts), [auth-origin.ts](../../apps/server/src/auth-origin.ts) and [database authentication helpers](../../packages/db/src/auth.ts).
 
-## Browser to BFF: OIDC
+## Clew's local authority
 
-What runs today, ported from startsidan (`apps/server/src/auth.ts`):
+An authenticated context carries the person, organisation, current unit/role, grant capabilities, authorization version and session binding. Its `authorize()` rechecks the current grant/session rather than trusting an earlier UI response.
 
-- Authorization Code flow with PKCE against the Keycloak realm `clew`, client `clew-web`.
-- The BFF holds the tokens. The browser gets an opaque session cookie (`clew-session`, `HttpOnly`,
-  `SameSite=Lax`, 8 h idle and absolute). No token, claim or trusted identity context reaches the browser
-  bundle.
-- Login transactions (state, nonce, PKCE verifier) are stored server-side and consumed once.
-- Back-channel logout from Keycloak is verified against the realm JWKS.
-- Mutations carry a CSRF token checked by `verifyMutation`.
+The current data model has one grant per person, one unit and two broad roles, `manager` and `employee`. Administrative capability `admin.connectors` is separate from the role name. Connector governance further narrows access by enabled state, audience, capability switches and tool/scan/figure settings.
 
-The session resolves to an `AuthenticatedContext` (`packages/contracts`): person, organisation, principal,
-capabilities, authorization version and session binding. Every route and every capability call receives
-this context. Visibility never grants access; the server decides.
+Users and grants are core entities. Their internal `people.*` reads share dispatch but cannot be disabled as a connected system. They describe Clew's users, not the full employee directory.
 
-## Model and MCP: OAuth 2.1 per the MCP authorization specification
+## Clew to a connector
 
-Clew follows the MCP authorization specification (revision 2026-07-28, OAuth 2.1 profile) for every MCP
-hop in both directions, plus the **Enterprise-Managed Authorization** extension
-(`io.modelcontextprotocol/enterprise-managed-authorization`, stable in the same revision) so that no user
-ever sees a per-server consent popup. References:
+Protocol 2 requires both:
 
-- Tutorial: https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/authorization
-- Spec: https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization
-- Extension: https://modelcontextprotocol.io/extensions/auth/enterprise-managed-authorization
-- ID-JAG: `draft-ietf-oauth-identity-assertion-authz-grant` (Identity Assertion JWT Authorization Grant)
-- Client identity: `draft-ietf-oauth-client-id-metadata-document` (CIMD)
+1. `X-Clew-Connector-Key`: the per-registration transport secret.
+2. `Authorization: Bearer ...`: a short-lived RS256 assertion signed by Clew, bound to the connector's audience and the acting person.
 
-### The base protocol (every MCP server)
+Only Clew holds the signing private key. The connector pins its trusted Clew base URL and fetches public keys from `/api/connectors/jwks`. It takes the actor from verified claims, never from an unverified body. The transport secret cannot sign identity.
 
-**Clew as MCP server** (an `apps/mcp-<name>` host, see `docs/architecture/integrations.md`):
+The connector still maps that actor to the source's person/unit and enforces record-level access. Clew's `manager` role is not permission to read every source unit. A ref is not an access token.
 
-- The server is an OAuth 2.1 **resource server**. It answers unauthenticated requests with `401` and a
-  `WWW-Authenticate` header pointing at its Protected Resource Metadata (RFC 9728), which names Keycloak
-  as the authorization server. Keycloak publishes Authorization Server Metadata (RFC 8414).
-- Clients must use PKCE and resource indicators (RFC 8707), so every access token is audience-bound to one
-  server. A token for the calendar server is useless against the HR system's server.
-- Access tokens are JWTs. The server validates signature (realm JWKS via `jose`), issuer, audience, expiry
-  and the scopes the capability requires. It never accepts a token it was not issued for, and never
-  forwards a token it received to another system (no token passthrough).
-- The validated token's subject is the user. The server builds the same `AuthenticatedContext` shape the
-  BFF uses and applies the capability's `scope` rule. A request without a user subject is rejected.
-- Scopes are per capability group, not catch-all: `calendar:read`, `calendar:propose`, never `mcp:tools`.
+See [the verifier](../../connectors/hello/verification.mjs), [signing authority](../../apps/server/src/connectors/authority.ts) and [authorization guide](../guides/authorization.md) for key rotation and exact claims.
 
-**Clew as MCP client** (the BFF, or a Clew MCP server, calling another MCP server):
+## Connector callbacks
 
-- Clew identifies itself with a **Client ID Metadata Document**: a JSON document at a URL Clew controls,
-  with name, redirect URIs and a public key for `private_key_jwt`. Dynamic Client Registration (RFC 7591)
-  is the fallback when a server's authorization server does not support CIMD; manual registration is the
-  last resort.
-- Tokens Clew holds for downstream servers are sealed at rest with the same master key as the OIDC tokens,
-  are short-lived, and are deleted on logout and on SCIM deprovisioning.
+A connector declares exact target capabilities in `uses`. Clew can include a separate callback grant in the verified assertion. The connector sends that grant, not the original assertion, to `POST /api/connectors/call`.
 
-**The model itself has no identity.** A tool call from the model runs inside the request of the user who
-asked, with that user's context and that user's downstream tokens. The model cannot obtain, see or choose
-a token.
+Clew reconstructs current person/assignment access, checks origin and target governance and declared dependencies, and refuses executes, cycles and chains beyond the supported bound. A callback grant is short-lived request authority, not a credential for a later background job.
 
-### No consent popup per server
+## Source authentication and background work
 
-Which mechanism removes the popup depends on whether the MCP server's authorization server is the
-same trust domain as the user's IdP.
+A source can use a service credential narrowed to the actor, a bound personal credential or an audience-bound delegated token. The Clew assertion does not itself authenticate to the source.
 
-**Same trust domain: Clew's own MCP servers behind Keycloak.** The BFF already holds the user's tokens
-from the OIDC login. It obtains a token for the target server through **token exchange** (RFC 8693) at
-Keycloak: subject token = the user's token, `resource` = the MCP server, audience-bound result carrying
-the user's subject and only the scopes that server needs. No browser, no consent. This is the ordinary
-case for every `apps/mcp-<name>` host and needs no extension.
+For interactive calls, a connector declaring `delegation` can receive `X-Clew-Delegated-Token` after session-backed IdP token exchange. The source must accept that issuer/audience and enforce its own permissions.
 
-**Different trust domain: a vendor's or another municipality's MCP server.** Here the server's
-authorization server is not our Keycloak, and the base protocol would send the user to that server's
-authorize endpoint once per server. The Enterprise-Managed Authorization extension replaces that with an
-ID-JAG flow, driven entirely by the BFF:
+Background work uses [systemContext](../../apps/server/src/system-context.ts), built from the person's current local grant. It carries no session tokens. Scans, figures and callbacks do not receive a delegated token. Generic durable execution records a connector declaring delegation as needing a session and can remain pending with `needs-session`; there is no complete sign-in-and-resume action path.
 
-1. The BFF keeps the **ID token** from the user's OIDC login (the "identity assertion").
-2. The BFF asks the IdP's token endpoint for an ID-JAG by token exchange (RFC 8693):
-   `requested_token_type=urn:ietf:params:oauth:token-type:id-jag`, `subject_token` = the ID token,
-   `audience` = the external authorization server's issuer, `resource` = the MCP server, `scope` = what
-   the capability needs. The IdP evaluates **policy** (groups, roles, conditional access, which clients
-   may reach which servers) and issues a short-lived signed JWT with `typ: oauth-id-jag+jwt`.
-3. The BFF presents the ID-JAG at the external authorization server's token endpoint with the JWT bearer
-   grant (RFC 7523) and its CIMD client id. That server validates signature, issuer trust, `aud`,
-   `client_id` and maps `sub` to a local account, then returns an access token for the MCP server.
-   No refresh token is returned; step 2 is repeated when needed.
-4. The BFF calls the MCP server with that token.
+A valid delegated search therefore does not prove the source can support unattended scans, watches or actions. Establish and test the source's background authorization arrangement before enabling those features.
 
-The BFF declares the extension in `_meta` under `io.modelcontextprotocol/clientCapabilities.extensions`,
-tries it first, and falls back to the `authorization_code` grant when the server's authorization server
-does not list `urn:ietf:params:oauth:grant-profile:id-jag` in `authorization_grant_profiles_supported`.
-The fallback is the one case where a user sees a consent screen, and it is logged as such.
+## Retained data and revocation
 
-Policy therefore lives in the IdP, where IT already manages it: which groups may use Clew against which
-MCP servers, revocation in one place, an audit trail of every grant. Clew does not duplicate that policy;
-it only applies the capability `scope` rule on top.
+Clew rechecks authority before releasing protected results. Persisted source cards/messages retain the authority that produced them; a new unit assignment or renewed grant does not make the old snapshot readable. Legacy snapshots without provenance are hidden, and fresh scans create new authorized projections.
 
-**Clew's servers for foreign clients.** When another organisation's assistant, or a desktop client inside
-the municipality, wants to use a Clew MCP server, the same extension runs in reverse: Keycloak as Clew's
-authorization server accepts ID-JAGs from a trusted external IdP, maps `sub` (and `email` for pre-existing
-accounts) to a provisioned Clew user, and issues an audience-bound token. Only provisioned users get in;
-there is no just-in-time account creation on this path either.
+Source-only permission changes still need an explicit revocation path into Clew's grant or connector access before persisted scans are enabled. Live source reads must enforce current source permissions too. The browser clears retained state on authorization changes, but data already delivered cannot be recalled.
 
-### Product reality, checked 2026-11-03
+See [D75](../decisions/D75-source-snapshots-retain-the-authority-that-produced-them.md), [shared authorized reads](../../apps/server/src/threads/access.ts) and [authorization tests](../../tests/unit/authorization-boundaries.test.ts).
 
-- Keycloak **accepts** ID-JAGs from 26.7.0, experimental, behind the `identity-assertion-jwt` feature
-  flag, targeting draft revision 01. The local dev Keycloak is 26.2; upgrade before building the
-  "foreign clients" path. Keycloak **issuing** ID-JAGs is not documented yet, so step 2 above depends on
-  the production IdP (Keycloak or whatever the municipality federates through) gaining that role, or on a
-  separate open-source issuer in front of it (Janssen, ThunderID, Athenz and AuthPlane all document both
-  roles). Clew ships open source only, so the proprietary IdPs in the extension's support table are not
-  options for the Clew side.
-- Nothing in this section is built. The base protocol is needed as soon as the first `apps/mcp-<name>`
-  host exists; the extension is needed when the first foreign-trust-domain MCP server is connected.
+## Identity designs not yet implemented
 
-## Pass-through systems without OAuth
+[SCIM provisioning](../decisions/D68-people-are-pushed-into-clew-through-standard-scim.md) is the intended inbound user/group path. It is not an available endpoint, and current grants are not derived from a running SCIM group feed. Development setup seeds synthetic users, bindings and grants.
 
-Not every municipal system will speak OAuth 2.1. The adapter auth modes in `docs/architecture/integrations.md`
-cover this: `bound-credential` (a per-user credential sealed in Clew's DB, what the Nextcloud calendar uses
-today) and `service` (one integration account, every call narrowed by the `scope` rule before it leaves the
-process). Both still require an authenticated Clew user on the inbound side. They are bridges for systems
-that cannot do better, not alternative identification paths.
-
-## Users, groups and permissions
-
-- Users and groups are core entities in Clew's Postgres, not a connected system (D62). Each installation runs a
-  provisioner that pushes them through SCIM 2.0 ([D68](../decisions/D68-people-are-pushed-into-clew-through-standard-scim.md)):
-  Clew is the SCIM server, the provisioner is the client, authenticated with a long-lived bearer token
-  issued by Clew for that one purpose. SCIM is provisioning, not identification; a provisioned user still
-  logs in through OIDC. The provisioner holds all knowledge of its source and maps it to D68's contract.
-- On first login the OIDC subject is bound to the provisioned user whose `userName` matches a configured
-  claim. A subject without a provisioned user is not logged in (no just-in-time user creation in v1).
-- Clew roles (`manager`, `employee`, later finer scopes) are derived from SCIM group membership alone, in
-  Clew. The `capabilities` list and `authorizationVersion` on the context come from this derivation, so a
-  group change invalidates cached authorization on the next request.
-
-## Dev login (local only)
-
-A username and password form for local development, so the stack runs without the shared Keycloak
-container and a persona can be switched in seconds.
-
-- Enabled only when `AUTH_DEV_LOGIN=true` **and** `NODE_ENV` is not `production`. If `AUTH_DEV_LOGIN` is set
-  in production the server refuses to start; it does not silently ignore the flag.
-- The form posts to the BFF, which checks the credentials against a seed file of synthetic personas (the
-  same `hillevi` and `hassan` the Keycloak setup creates) and mints a **normal session**: same cookie,
-  same `AuthenticatedContext` shape, same authorization derivation. Nothing downstream can tell the
-  difference, which is the point: it exercises the real code paths.
-- The session records `auth: 'dev'` so audit rows show it. Dev sessions get no downstream OAuth tokens;
-  adapters in `user-delegated` mode return `unknown` under a dev session instead of failing.
-- The dev-login route, the seed file and the flag live in `apps/server` only. Nothing about it reaches
-  `apps/web` except the form, which renders only when the BFF reports the flag.
-
-Status: decided, not yet built. HANDOVER lists it as a next step.
+Multiple simultaneous assignments, a dedicated users administration UI, local dev-login without the IdP, a public MCP OAuth surface and cross-domain ID-JAG exchange are not implemented. Their early rationale remains in [identity decisions](../decisions/D05-oidc-and-oauth-only-identification-path.md) and [reviews](../reviews/2026-11-06-users-groups-roles-and-scim.md); use the [status matrix](../reference/status.md) for support.

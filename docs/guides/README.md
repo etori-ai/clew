@@ -1,11 +1,22 @@
 # Connector guides
 
-Read the [platform overview](../overview.md), then follow the path that matches your integration.
+First read [What Clew is](../overview.md) and the [architecture overview](../architecture/overview.md). A connector extends that system through an independently deployed HTTP service.
 
-1. [Create a connector](creating-a-connector.md): exercise the fixture, choose a starting point and implement your source adapter.
-2. [Verify authorization](authorization.md): transport key, signed actor, source scope, callbacks and delegation.
-3. [Add search and views](example-custom-directory.md): adapt the phone book's real code.
-4. [Add actions and receipts](actions-and-receipts.md): deterministic scans, human decisions, source evidence and safe recovery.
-5. [Test and deploy](testing-and-deployment.md): fixture tests, live conformance, registration and troubleshooting.
+## Your first integration
 
-Use the [protocol reference](../reference/connector-protocol.md) for exact shapes and the [support matrix](../reference/status.md) for implementation limits. Full application setup is in [local development](../maintainers/local-development.md).
+1. [Create a custom connector](creating-a-connector.md): run a fixture, define one read and view, implement the verified request boundary and register it.
+2. [Authorize every request](authorization.md): transport secret, signed actor, source permissions and credential choices.
+3. [Test and deploy](testing-and-deployment.md): handler tests, conformance, draft registration, audience and operations.
+
+The first useful result is one authorized read shown in Clew. No scan, write, model, callback or cross-system job is required.
+
+## Extend it when needed
+
+| Need | Guide |
+|---|---|
+| Map a directory API, add a searchable table and contact details | [Search and views](example-custom-directory.md) |
+| Discover outstanding work and perform approved changes | [Actions and receipts](actions-and-receipts.md) |
+| Call another connector or participate in a cross-system job | [Working across connectors](../architecture/working-across-connectors.md) |
+| Look up exact fields, routes or compatibility rules | [Protocol reference](../reference/connector-protocol.md), [manifest reference](../generated/manifest-reference.md) |
+
+Use the [support matrix](../reference/status.md) to distinguish available behavior from designs. Full application setup is in [local development](../maintainers/local-development.md).

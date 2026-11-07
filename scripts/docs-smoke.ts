@@ -1,5 +1,6 @@
 /** Runnable documentation: a real connector handler, ephemeral RS256 authority, no live services or network. */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import { generateKeyPair, exportPKCS8 } from 'jose';
@@ -17,6 +18,18 @@ const connector = createConnector({ secret, jwks: authority.jwks });
 // This transport runs the same handler as server.mjs, without binding a port or contacting a source.
 const fetchConnector = (url: string, init?: RequestInit) => connector.handle(new Request(url, init));
 const ajv = addFormats(new Ajv({ strict: false }));
+// The quickstart's copyable manifest and response must keep matching the real contract.
+const quickstart = readFileSync(new URL('../docs/guides/creating-a-connector.md', import.meta.url), 'utf8');
+function quickstartJson(marker: string) {
+  const section = quickstart.split('<!-- ' + marker + ' -->')[1];
+  const block = section?.match(/^\s*```json\n([\s\S]*?)\n```/);
+  assert.ok(block, 'Missing quickstart JSON example: ' + marker);
+  return JSON.parse(block[1]!);
+}
+const minimal = parseManifest(quickstartJson('minimal-connector-manifest'), 'directory');
+const minimalResponse = quickstartJson('minimal-connector-response');
+const validateMinimalOutput = ajv.compile(minimal.capabilities[0]!.output);
+assert.ok(validateMinimalOutput(minimalResponse.output), JSON.stringify(validateMinimalOutput.errors));
 const report = await checkConnector({
   url: 'http://fixture',
   id: manifest.id,

@@ -33,10 +33,10 @@ does not exist yet, none when it does.
 ## Running it
 
 In the development stack it is one of the services in `.devcontainer/compose.yaml` and `bun run dev:connectors`
-registers it. On its own:
+registers it. To run a separate instance inside the app container (the key and SQLite file below are for local development only):
 
 ```sh
-CLEW_CONNECTOR_SECRET=<16+ characters> CLEW_URL=http://127.0.0.1:3000 FIXTURE_DB=./hr.sqlite node connectors/hr/server.mjs
+docker exec -w /workspace -e CLEW_CONNECTOR_SECRET=local-docs-only-transport-key -e CLEW_URL=http://127.0.0.1:3000 -e FIXTURE_DB=/tmp/hr-standalone.sqlite clew-app-1 node connectors/hr/server.mjs
 ```
 
 | Variable             | Meaning                                                                                                      |
@@ -72,5 +72,5 @@ suites run it the same way as the HR system of their scenarios. The Node lane bo
 file and finds a write again after a restart. From a running stack:
 
 ```sh
-docker exec -w /workspace clew-app-1 bun scripts/connector-check.ts http://hr:4040 --id hr --secret <the dev secret>
+docker exec -w /workspace clew-app-1 bun scripts/connector-check.ts http://hr:4040 --id hr --secret 'replace-with-configured-dev-secret'
 ```
