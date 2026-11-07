@@ -139,3 +139,8 @@ the day under it), item 6 (the resting panel: the day and Sedan i går are cards
 their rows are the artboard's sentences), and the Astryx note on the tab strip, which stands. [D41](D41-the-landing-is-the-ai-chat-landing-template-with-the-persons-areas-under-the-box.md)
 items 3 to 5 (the areas as toggles with their standing actions as cards) are gone from the page. [D34](D34-the-box-is-the-page-and-the-push-is-its-brief.md)'s
 group order (Senare before Jag föreslår). D49, D50 and D54 stand.
+
+**Amended 2026-11-07 by [D72](D72-the-day-is-the-pages-and-the-panel-holds-only-what-was-opened.md).** Item 3's resting
+panel is gone: I dag and Sedan i går are Hem's own at every width, the third track under the box from 1024 px while
+nothing is open, and the panel exists only while a card, a view or a card's read is open. Item 14's fold at rest goes
+with it; the fold of the open panel stands.

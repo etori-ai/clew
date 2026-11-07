@@ -844,6 +844,15 @@
       "status": "accepted, built 2026-11-06 on `main` (the foundation, the row and the card, a card across systems,",
       "date": "2026-11-06",
       "area": "ui"
+    },
+    {
+      "key": "D72-the-day-is-the-pages-and-the-panel-holds-only-what-was-opened",
+      "number": 72,
+      "path": "docs/decisions/D72-the-day-is-the-pages-and-the-panel-holds-only-what-was-opened.md",
+      "title": "D72 · The day is the page's, and the panel holds only what was opened",
+      "status": "accepted, built 2026-11-07 on `main`",
+      "date": "2026-11-07",
+      "area": "ui"
     }
   ],
   "documents": [
@@ -1604,6 +1613,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D72-the-day-is-the-pages-and-the-panel-holds-only-what-was-opened.md",
+      "title": "D72 · The day is the page's, and the panel holds only what was opened",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -2233,6 +2248,16 @@
         "The remaining surfaces (artboards 6 to 12, added the same evening)",
         "What it would take",
         "Decision needed"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-07-the-day-beside-or-in-the-column.md",
+      "title": "The day beside, or in the column",
+      "category": "review-history",
+      "headings": [
+        "The problem",
+        "The four directions drawn",
+        "Choice"
       ]
     },
     {

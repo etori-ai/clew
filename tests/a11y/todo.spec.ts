@@ -18,8 +18,8 @@ const wide = { width: 1440, height: 900 };
 /**
  * D50: the column is where the person is, the panel is what they hold beside it, and the conversation is never in the
  * panel. Hem (D53) is the one page with a card's state as tabs and the areas as a filter; a row opens its card in the
- * panel, where the day and what happened since yesterday otherwise rest; the box asks about what is open beside it,
- * and the answer opens as a conversation with that beside the transcript.
+ * panel, which holds only what was opened, while the day and what happened since yesterday stay the page's own (D72);
+ * the box asks about what is open beside it, and the answer opens as a conversation with that beside the transcript.
  */
 test.describe("Hem: the day's work", () => {
   test.use({ viewport: desktop });
@@ -173,13 +173,32 @@ test.describe('the panel beside the page', () => {
     await expect(first).toBeFocused();
   });
 
-  test('beside the page the panel folds away and comes back with the one button on its edge, each move spoken and the focus placed', async ({
+  test('beside the page the panel comes with what was opened and folds away and back with the one button on its edge; at rest there is no panel and the day stands beside the work', async ({
     page,
     api: _,
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await open(page, '/?card=fakturor');
+    await open(page, '/');
     const panel = page.getByRole('complementary', { name: 'Kort' });
+    const aside = page.getByRole('complementary', { name: 'Bredvid' });
+    const work = page.getByRole('tab', { name: /^Behöver dig/ });
+    // At rest Hem has no panel (D72): no region for what was opened, no fold, and the day beside the day's work.
+    await expect(panel).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Fäll ihop panelen' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Visa panelen' })).toHaveCount(0);
+    await expect(aside.getByRole('region', { name: 'I dag' })).toBeVisible();
+    const besideWork = async () => {
+      const w = (await work.boundingBox())!,
+        a = (await aside.boundingBox())!;
+      return a.x >= w.x + w.width;
+    };
+    expect(await besideWork()).toBe(true);
+    // A card opened brings the panel with it alone; the day stays on the page, under the day's work at this width (A2).
+    await page.getByRole('link', { name: 'Attestera 3 fakturor, 48 200 kr', exact: true }).click();
+    await expect(panel.locator('#card-fakturor').getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
+    await expect(aside.getByRole('region', { name: 'I dag' })).toBeVisible();
+    await expect(aside.getByRole('region', { name: 'Sedan i går' })).toBeVisible();
+    expect(await besideWork()).toBe(false);
     // The button stands on the handle's content side, outside the panel, so it is there when the panel is folded away.
     const fold = page.getByRole('button', { name: 'Fäll ihop panelen' });
     expect((await fold.boundingBox())!.x).toBeLessThan((await panel.boundingBox())!.x);
@@ -201,18 +220,20 @@ test.describe('the panel beside the page', () => {
     await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Panelen visas'));
     await expectNoAxeViolations(page);
-    // Esc lets go of the card; what rests beside Hem comes back and folds the same way, the focus kept on the button.
-    await page.keyboard.press('Escape');
-    await expect(page).toHaveURL(/\/$/);
-    const rest = page.getByRole('complementary', { name: 'Bredvid' });
-    await expect(rest.getByRole('region', { name: 'I dag' })).toBeVisible();
-    await page.getByRole('button', { name: 'Fäll ihop panelen' }).click();
-    await expect(rest.getByRole('region', { name: 'I dag' })).toHaveCount(0);
+    // A card opened while the panel is folded shows the panel again, with the new card in it.
+    await fold.click();
     await expect(show).toBeFocused();
-    // A card opened while the panel is folded shows the panel again, with the focus on its heading.
-    await page.getByRole('link', { name: 'Attestera 3 fakturor, 48 200 kr', exact: true }).click();
-    await expect(panel.locator('#card-fakturor').getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
-    await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
+    await page.getByRole('link', { name: 'Omtankesamtal med Anna Lindqvist', exact: true }).click();
+    await expect(panel.locator('#card-omtanke')).toBeVisible();
+    // Closing the last thing removes the panel, and the day steps back up beside the work (D72 item 3).
+    await panel.getByRole('button', { name: 'Fler val för panelen' }).click();
+    await page.getByRole('menuitem', { name: 'Stäng alla (2)' }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(panel).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Fäll ihop panelen' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Visa panelen' })).toHaveCount(0);
+    await expect(aside.getByRole('region', { name: 'I dag' })).toBeVisible();
+    await expect.poll(besideWork).toBe(true);
   });
 
   test("the card's token in the box has an X that lets go of the card, like Ny fråga i stället", async ({
@@ -228,7 +249,7 @@ test.describe('the panel beside the page', () => {
     await expect(page.locator('#thread-fakturor')).not.toContainText('öppet bredvid');
   });
 
-  test("beside Hem the panel rests on the day and what happened since yesterday; a row's card takes its place, the box asks about the card, and Esc gives it all back", async ({
+  test("beside Hem the day and what happened since yesterday are the page's own; a row's card opens in the panel without taking their place, the box asks about the card, and Esc gives it all back", async ({
     page,
     api: _,
   }) => {
@@ -248,7 +269,9 @@ test.describe('the panel beside the page', () => {
     const panel = page.getByRole('complementary', { name: 'Kort' });
     await expect(panel.locator('#card-fakturor').getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
     await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
-    await expect(aside).toHaveCount(0);
+    // The day is not the panel's to give way (D72): it stays on the page, one landmark wherever it stands.
+    await expect(aside.getByRole('region', { name: 'I dag' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'I dag' })).toHaveCount(1);
     // Hem is still the column, and its box now asks about the card, with the way to a new question beside it (artboard E).
     await expect(heading(page, 1, 'Hej Testa')).toBeVisible();
     await expect(page.getByText('Fråga om kortet Attestera 3 fakturor, 48 200 kr …')).toBeVisible();

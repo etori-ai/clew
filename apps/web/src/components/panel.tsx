@@ -327,8 +327,13 @@ const searchOf = (address: string) => {
   return i < 0 ? '' : address.slice(i);
 };
 /** The rail and the panel as the shell draws them; with the page's own least width they decide when the panel fits beside it. */
-const RAIL = 256,
+export const RAIL = 256,
   PANEL = 440;
+/**
+ * What stands on the panel's inner edge beside its width: the fold button's column (`paddingInlineStart={1}`, a 28 px
+ * `sm` IconButton, `paddingInlineEnd={3}`: 4 + 28 + 12) and the 1 px resize handle, as measured in the browser.
+ */
+export const PANEL_EDGE = 45;
 /** The window width from which the panel fits beside a column that needs `minMain` px. */
 export const panelBesideQuery = (minMain: number) => `(min-width: ${RAIL + minMain + PANEL}px)`;
 /** What a transcript needs beside the panel: a conversation asked on a page brings the page along only where both fit (D50). */
@@ -338,14 +343,13 @@ type Options = {
   minMain: number;
   /** Nothing is pinned on a short screen (1.4.10): the panel is always a drawer there. */
   overlayOnly?: boolean;
-  /** What stands beside the column while nothing is open in the panel (D53: Hem's day and what happened since yesterday). Only where the panel fits beside the column; elsewhere the page places it itself. */
-  rest?: ReactNode;
   /** Whether a thing may stay open as a tab (D66): a card that left the stream (Inte nu, Avfärda, done) leaves the tabs too. The current one always stays. */
   isOpen?: (id: string) => boolean;
 };
 /**
  * The panel (D50): the one place beside the page's column for what the person holds next to it, a view, a source or a
- * card; at rest, where the page gives it something to rest on, it holds that (D53). Where it fits it is a `LayoutPanel` in the page's `end` slot, non-modal, so the column stays in use (the
+ * card, and nothing else: with nothing open there is no panel, and a page's own content (Hem's day) stays the page's
+ * (D72). Where it fits it is a `LayoutPanel` in the page's `end` slot, non-modal, so the column stays in use (the
  * `ai-chat` template's artifact beside the transcript, composed as the calendar page composes its own panel); where it
  * does not fit, and on a phone, it is the drawer it always was. Beside the page it is a named complementary region:
  * opening it moves focus to its heading (never away from a field the person is typing in: the box keeps the focus
@@ -355,7 +359,7 @@ type Options = {
 const TYPING = 'input, textarea, [contenteditable="true"], [role="textbox"], [role="combobox"]';
 export function usePanel(
   panel: PanelFrame | null,
-  { minMain, overlayOnly = false, rest, isOpen }: Options,
+  { minMain, overlayOnly = false, isOpen }: Options,
 ): {
   end: ReactNode | undefined;
   overlay: ReactNode;
@@ -640,22 +644,6 @@ export function usePanel(
               />
             </VStack>
           )}
-        </LayoutPanel>
-      </>
-    ) : inline && rest ? (
-      // At rest the panel holds what the page gives it (Hem's day and Sedan i går), and folds the same way (the product owner, 2026-11-06).
-      <>
-        {toggle}
-        <ResizeHandle isReversed hasDivider resizable={resizable.props} label="Ändra panelens bredd" />
-        <LayoutPanel
-          resizable={resizable.props}
-          hasDivider={false}
-          role="complementary"
-          label="Bredvid"
-          padding={0}
-          isScrollable={false}
-        >
-          {!collapsed && <Layout height="fill" padding={6} content={<LayoutContent>{rest}</LayoutContent>} />}
         </LayoutPanel>
       </>
     ) : undefined;

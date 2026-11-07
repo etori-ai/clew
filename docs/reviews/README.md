@@ -36,3 +36,4 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Review: the product owner's Startsidan proof of concept against Clew's core · 2026-11-06](2026-11-06-startsidan-poc-against-clews-core.md)
 - [Review: users, groups, roles and SCIM · 2026-11-06](2026-11-06-users-groups-roles-and-scim.md)
 - [Design pattern: three levels, one area mark, one figure family · 2026-11-06](2026-11-06-visual-hierarchy-area-marks-and-figures.md)
+- [The day beside, or in the column](2026-11-07-the-day-beside-or-in-the-column.md)

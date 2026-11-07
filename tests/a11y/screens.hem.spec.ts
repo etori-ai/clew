@@ -34,6 +34,11 @@ test.describe('screens', () => {
     await page.getByRole('button', { name: 'Visa panelen' }).waitFor();
     await page.screenshot({ path: out('hem-E-collapsed-1440') });
   });
+  test('A3 · a card beside the day where all three fit (D72)', async ({ page, api: _ }) => {
+    await page.setViewportSize({ width: 1900, height: 1120 });
+    await open(page, '/?card=fakturor');
+    await page.screenshot({ path: out('hem-A3-1900') });
+  });
   test('G · a question from Hem', async ({ page, api: _ }) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await open(page, '/');

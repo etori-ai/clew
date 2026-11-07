@@ -56,7 +56,14 @@ import { toolHref, useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { GenericCard, ThreadRow } from '../components/card';
 import { BriefSkeleton } from '../components/brief';
-import { CONVERSATION_MIN, PanelBody, panelBesideQuery, usePanel, type PanelFrame } from '../components/panel';
+import {
+  CONVERSATION_MIN,
+  PANEL_EDGE,
+  PanelBody,
+  panelBesideQuery,
+  usePanel,
+  type PanelFrame,
+} from '../components/panel';
 import { EventDialog } from '../components/calendar/event-dialog';
 import type { AgendaItem } from '@clew/ui';
 import { ThreadCard } from '../components/thread';
@@ -82,6 +89,21 @@ const tabTitle: Record<TodoTab, string> = {
 const HOME_MIN = 640;
 /** Under this the day and what happened since yesterday fold under the day's work (artboard A's note: the side column folds at 1024). */
 const twoColumnQuery = '(min-width: 1024px)';
+/** The side column's least width: the earlier canvas drew it as `minmax(320px, 1fr)`. */
+const ASIDE = 320;
+/** The grid's gap under the box (`gap={8}`) and the page's inline padding on each side (`paddingInline={10}`), in px on Astryx's 4 px step. */
+const GRID_GAP = 32,
+  PAGE_INLINE = 40;
+/**
+ * Where the day stays beside the day's work with the panel open too (D72, artboard A3). `Grid columns={3}` draws three
+ * equal tracks, the work spanning two and the gap between them, the day one: a track needs
+ * max(ASIDE, (HOME_MIN - GRID_GAP) / 2) = max(320, 304) = 320 px, the grid three tracks and two gaps (1024 px), the page
+ * its padding on both sides (1104 px). Beside it stand the rail (256), the fold button and the handle on the panel's
+ * edge (PANEL_EDGE, 45) and the panel at its default width (440): RAIL + 1104 + PANEL_EDGE + PANEL = 1845 px. A panel
+ * dragged wider than its default squeezes the tracks rather than moving the breakpoint, as for `panelBesideQuery` itself.
+ */
+const TRACK = Math.max(ASIDE, (HOME_MIN - GRID_GAP) / 2);
+const threeTrackQuery = panelBesideQuery(2 * PAGE_INLINE + 3 * TRACK + 2 * GRID_GAP + PANEL_EDGE);
 /** The counts in words, as "Alla fyra källor svarade" has them. */
 const capital = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
 const ALL_AREAS = 'all';
@@ -93,8 +115,9 @@ const EMPTY_MENU: MenuEntry[] = [];
  * The start page (D34, D50, D53). The column is where the person is and the panel is what they hold beside it. At `/`
  * the column is Hem: the greeting with the day, the box, and under it everything the assistant has pushed, with a
  * card's state as the tabs (Behöver dig, Väntar på andra, Inte nu, Klart), the areas as a filter, and on a quiet day
- * the person's areas with what they can start. The day and what happened since yesterday stand beside the column, and
- * give way to the panel when a card, a view or a card's read is opened there; the box then asks about the open card.
+ * the person's areas with what they can start. The day and what happened since yesterday are the page's own, beside the
+ * day's work, and the panel exists only while a card, a view or a card's read is open in it (D72); the box then asks
+ * about the open card.
  * A conversation takes the column at `/conversations/:id` (D31), with what it is about in the panel: the view an answer
  * names, the card or the page it was asked on. The address is the state throughout (`panel-address.ts`). Every card
  * comes from a connector through the registry; the calendar's proposal card keeps its specialised rendering.
@@ -104,6 +127,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   // 1.4.10: with 480 px or less in height nothing is docked; the row joins the page and the whole page scrolls (D31 item 7).
   const short = useMediaQuery(shortQuery);
   const twoColumns = useMediaQuery(twoColumnQuery);
+  const threeTracks = useMediaQuery(threeTrackQuery);
   // Where a transcript and the panel fit side by side, a conversation asked on a page brings what the page showed along (D50).
   const besideTranscript = useMediaQuery(panelBesideQuery(CONVERSATION_MIN));
   // Every read is a query (D33): one cache shared by the page, the cards, the rail and the conversation. A mutation writes the thread it returns into it (thread-cache.ts).
@@ -681,29 +705,39 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   // On a phone the box is docked at the foot (G on the phone): the greeting sits right above it.
   const docked = mobile && !short;
   /**
-   * Beside the column (D53, artboard A): the day with its free gaps, and what happened since yesterday. Where the panel
-   * fits beside the column this is the panel at rest, and a card, a view or a card's read takes its place; where the
-   * panel does not fit, and on a phone, it ends the page, after the day's work (D48).
+   * Beside the column (D53, artboard A): the day with its free gaps, and what happened since yesterday. They are the
+   * page's own and never the panel's (D72): one aside named "Bredvid" wherever the layout places it, so a screen reader
+   * and the specs find the day in one place. Beside the work (`track`) the two stand one above the other, under it with
+   * the panel open (`across`) side by side, and on a narrow window or a phone (`stack`) one after the other as before.
    */
-  const asideContent = (
-    <VStack gap={4}>
-      {day && <Today view={day} threads={threads} cardHref={cardHref} />}
-      {!loadingThreads && (
-        <Since
-          handled={closedToday}
-          waiting={all.waiting}
-          sources={sources}
-          now={now}
-          doneHref={homeHref({ tab: 'done' })}
-        />
-      )}
-    </VStack>
-  );
-  const aside = (
-    <VStack as="aside" aria-label="Bredvid">
-      {asideContent}
-    </VStack>
-  );
+  const aside = (place: 'track' | 'across' | 'stack') => {
+    const today = day && <Today view={day} threads={threads} cardHref={cardHref} />;
+    const since = !loadingThreads && (
+      <Since
+        handled={closedToday}
+        waiting={all.waiting}
+        sources={sources}
+        now={now}
+        doneHref={homeHref({ tab: 'done' })}
+      />
+    );
+    return (
+      <VStack as="aside" aria-label="Bredvid">
+        {place !== 'stack' ? (
+          // One Grid for both wide layouts, so opening or closing a card changes its tracks and never remounts the day.
+          <Grid columns={place === 'across' ? 2 : 1} gap={place === 'across' ? 8 : 4} align="start">
+            {today}
+            {since}
+          </Grid>
+        ) : (
+          <VStack gap={4}>
+            {today}
+            {since}
+          </VStack>
+        )}
+      </VStack>
+    );
+  };
   // The box is anchored under the greeting (D53): nothing above it changes, and what grows under it while the person
   // types ("Menar du") pushes the day's work down, never the field they are typing in (D36).
   const landing = () => {
@@ -737,8 +771,12 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     const menarDu = <Suggestions viewHref={viewHref} cardHref={cardHref} />;
     const column = work();
     // One flow from the top on every screen: the greeting and the box (docked at the foot on a phone), then the day's work
-    // with the day and what happened since yesterday beside it (artboard A's two columns), under it where they do not fit,
-    // and gone while a card, a view or a card's read stands in the panel (artboard E).
+    // with the day and what happened since yesterday beside it (artboard A's two columns) from 1024 px while nothing is
+    // open (D72, A1). With the panel open beside the page they stay beside the work where all three fit (A3), else they
+    // fold under it with I dag and Sedan i går side by side (A2); under 1024 px and on a phone they end the page.
+    // From 1024 px it is one Grid whatever is open, so the day's work keeps its place in the tree and a row that opened
+    // a card is still the same element to give the focus back to when the card closes (2.4.3).
+    const beside = !slot.end || threeTracks;
     return (
       <VStack gap={6}>
         <VStack gap={mobile ? 3 : 6} as="section" aria-label="Vad vill du göra">
@@ -750,17 +788,15 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
             </VStack>
           )}
         </VStack>
-        {slot.end ? (
-          column
-        ) : twoColumns && !mobile ? (
-          <Grid columns={3} gap={8} align="start">
-            <GridSpan columns={2}>{column}</GridSpan>
-            {aside}
+        {twoColumns && !mobile ? (
+          <Grid columns={beside ? 3 : 1} gap={beside ? 8 : 6} align="start">
+            <GridSpan columns={beside ? 2 : 'full'}>{column}</GridSpan>
+            {aside(beside ? 'track' : 'across')}
           </Grid>
         ) : (
           <VStack gap={6}>
             {column}
-            {aside}
+            {aside('stack')}
           </VStack>
         )}
       </VStack>
@@ -770,8 +806,8 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   /**
    * The panel (D50): the view the address names, a card's own read, or a card. A view that is also a tool in the
    * person's menu (D40) offers its page. In a conversation the card beside the transcript is the one the question was
-   * asked about; on a phone Hem draws its cards in the list, so a card has no panel there. With nothing open, the
-   * panel beside Hem rests on the day and what happened since yesterday (D53).
+   * asked about; on a phone Hem draws its cards in the list, so a card has no panel there. With nothing open there is no
+   * panel: the day and what happened since yesterday are Hem's own (D72).
    */
   // A card stays a tab while it is in the stream (D66): snoozed or dismissed, it leaves the row with the pile. A done
   // card stays while its receipt can still be undone (D70): the receipt is the person's own result, and Ångra is on it.
@@ -841,8 +877,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const slot = usePanel(frame, {
     minMain: talk.open ? CONVERSATION_MIN : HOME_MIN,
     overlayOnly: short,
-    // Where the panel fits beside Hem it rests on the day and Sedan i går and can be folded away like an open card.
-    rest: talk.open ? undefined : asideContent,
     isOpen: id => !id.startsWith('card:') || inStream(id.slice(5)),
   });
   /**
@@ -983,7 +1017,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           }
         />
       );
-    // Hem (D53, artboard A): the content takes the width the rail leaves, the panel beside it when something is open,
+    // Hem (D53, artboard A): the content takes the width the rail leaves, the panel beside it only while something is open (D72),
     // the box in the page flow under the greeting; on a phone the box is docked at the foot, and on a short screen nothing is docked.
     return short ? (
       <VStack gap={4} padding={3}>
