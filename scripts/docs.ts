@@ -183,9 +183,11 @@ const canonical = {
   supportStatus: 'docs/reference/status.md',
 };
 const entrypoints = [
+  'docs/README.md',
   'docs/overview.md',
-  'docs/guides/creating-a-connector.md',
+  'docs/architecture/overview.md',
   'docs/reference/status.md',
+  'docs/guides/creating-a-connector.md',
   'docs/reference/connector-protocol.md',
   'docs/guides/authorization.md',
 ];
@@ -211,13 +213,15 @@ const category = (path: string) =>
         ? 'decision-history'
         : path.startsWith('docs/reviews/')
           ? 'review-history'
-          : path.startsWith('docs/architecture/')
-            ? 'maintainer-design'
-            : path.startsWith('docs/maintainers/')
-              ? 'maintainer-guide'
-              : path.startsWith('docs/generated/')
-                ? 'generated-reference'
-                : 'integrator-guide';
+          : path === 'docs/architecture/reliability-and-authorization-plan.md'
+            ? 'implementation-plan'
+            : path.startsWith('docs/architecture/')
+              ? 'architecture-guide'
+              : path.startsWith('docs/maintainers/')
+                ? 'maintainer-guide'
+                : path.startsWith('docs/generated/')
+                  ? 'generated-reference'
+                  : 'integrator-guide';
 generated.set(
   'docs/context.json',
   json({

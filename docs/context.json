@@ -11,9 +11,11 @@
     "historical-reviews-and-session-notes"
   ],
   "entrypoints": [
+    "docs/README.md",
     "docs/overview.md",
-    "docs/guides/creating-a-connector.md",
+    "docs/architecture/overview.md",
     "docs/reference/status.md",
+    "docs/guides/creating-a-connector.md",
     "docs/reference/connector-protocol.md",
     "docs/guides/authorization.md"
   ],
@@ -924,8 +926,10 @@
       "title": "Clew",
       "category": "integrator-guide",
       "headings": [
-        "Build an integration",
-        "Code is the reference"
+        "How it fits together",
+        "Understand the platform",
+        "Build a custom connector",
+        "Run and contribute"
       ]
     },
     {
@@ -1010,121 +1014,128 @@
     },
     {
       "path": "docs/README.md",
-      "title": "Integrating with Clew",
+      "title": "Clew documentation",
       "category": "integrator-guide",
       "headings": [
-        "Start here",
-        "Contract and support",
-        "For coding agents",
-        "Maintaining Clew"
+        "Understand Clew first",
+        "Build a custom connector",
+        "Develop and operate Clew",
+        "Look up the contract",
+        "Current documentation and history"
       ]
     },
     {
       "path": "docs/architecture/README.md",
-      "title": "Architecture and design background",
-      "category": "maintainer-design",
-      "headings": []
+      "title": "Architecture",
+      "category": "architecture-guide",
+      "headings": [
+        "Explore the system",
+        "Implement an integration",
+        "Plans, evidence and history"
+      ]
     },
     {
       "path": "docs/architecture/backend-structure.md",
       "title": "Backend structure",
-      "category": "maintainer-design",
+      "category": "architecture-guide",
       "headings": [
-        "The shape in one paragraph",
-        "Layout",
-        "The four kinds of file",
-        "Rules",
-        "Checking it",
-        "Debt recorded at D20"
+        "Repository map",
+        "Server map",
+        "Dependency direction",
+        "Follow one path through the code",
+        "Existing special cases",
+        "Verify a change"
       ]
     },
     {
       "path": "docs/architecture/capability-surfaces.md",
-      "title": "How a capability is exposed: REST, model tools and MCP",
-      "category": "maintainer-design",
+      "title": "How capabilities are called",
+      "category": "architecture-guide",
       "headings": [
-        "One descriptor, three surfaces",
-        "1. Deterministic REST: always there, never needs the model",
-        "2. Model tools: the same capabilities, filtered",
-        "3. MCP: two different things with one name",
-        "What each surface may do, by kind",
-        "A worked example",
-        "Questions colleagues ask"
+        "Current surfaces",
+        "A connector author implements two required routes",
+        "What the registry does",
+        "Models and declared views",
+        "MCP is a separate design",
+        "Trace the behavior"
       ]
     },
     {
       "path": "docs/architecture/connector-administration.md",
-      "title": "Connector administration",
-      "category": "maintainer-design",
+      "title": "Connector and model administration",
+      "category": "architecture-guide",
       "headings": [
-        "The model",
-        "Server",
-        "Screens",
-        "Modeller: providers and models (D24)",
-        "What the person sees",
-        "Accessibility",
-        "Built, and what to know",
-        "Order of work"
+        "Managed systems and core users",
+        "Governance narrows a manifest",
+        "Registration and changes",
+        "Server and UI map",
+        "Model providers and models",
+        "Compatibility and operations"
       ]
     },
     {
       "path": "docs/architecture/connector-protocol.md",
       "title": "Connector protocol: current reference",
-      "category": "maintainer-design",
+      "category": "architecture-guide",
       "headings": []
     },
     {
       "path": "docs/architecture/identity.md",
       "title": "Identity and authorization",
-      "category": "maintainer-design",
+      "category": "architecture-guide",
       "headings": [
-        "Principle",
-        "Browser to BFF: OIDC",
-        "Model and MCP: OAuth 2.1 per the MCP authorization specification",
-        "Pass-through systems without OAuth",
-        "Users, groups and permissions",
-        "Dev login (local only)"
+        "Browser to Clew",
+        "Clew's local authority",
+        "Clew to a connector",
+        "Connector callbacks",
+        "Source authentication and background work",
+        "Retained data and revocation",
+        "Identity designs not yet implemented"
       ]
     },
     {
       "path": "docs/architecture/integration-paths.md",
-      "title": "Integration paths",
-      "category": "maintainer-design",
+      "title": "Choose an integration path",
+      "category": "architecture-guide",
       "headings": [
-        "How to choose",
-        "Paths into Clew: reading and being told",
-        "Paths out of Clew: acting on systems",
-        "Transports and hosting shapes",
-        "Auth modes, once more",
-        "Paths for the model and for other agents",
-        "What Clew stores, by connector kind",
-        "Sundsvall's landscape mapped onto the paths (2026-11-03)",
-        "Startsidan concepts that do not carry over"
+        "Add only what the task needs",
+        "Choose source authentication separately",
+        "Examples and their evidence",
+        "Designed paths that are not available"
       ]
     },
     {
       "path": "docs/architecture/integrations.md",
       "title": "Integration architecture",
-      "category": "maintainer-design",
+      "category": "architecture-guide",
       "headings": [
-        "Principle",
-        "One capability layer, two faces",
-        "Three kinds of connector",
-        "When a pass-through connector becomes an MCP server",
-        "Consuming someone else's MCP server",
-        "Identity through adapters",
-        "Thread action contract",
-        "Answers and views",
-        "Without the model (D8)",
-        "Implemented (2026-11-03)",
-        "Packages",
-        "First step"
+        "Why independent connectors",
+        "Capabilities describe useful work",
+        "Ownership is distinct from transport",
+        "Presentation belongs to Clew",
+        "Keep the trust boundaries explicit",
+        "Relationship to MCP and Eneo"
+      ]
+    },
+    {
+      "path": "docs/architecture/overview.md",
+      "title": "How Clew works",
+      "category": "architecture-guide",
+      "headings": [
+        "Running components",
+        "The central boundary: capabilities",
+        "A live read",
+        "Discovering work without slowing the page",
+        "An approved write",
+        "Timers, follow-up and browser updates",
+        "Data ownership and persistence",
+        "Code boundaries and verification"
       ]
     },
     {
       "path": "docs/architecture/reliability-and-authorization-plan.md",
       "title": "Reliability and authorization implementation plan",
-      "category": "maintainer-design",
+      "category": "implementation-plan",
       "headings": [
         "Implementation checkpoint — 2026-11-05",
         "Objective and scope",
@@ -1143,7 +1154,7 @@
     {
       "path": "docs/architecture/scheduled-work.md",
       "title": "Scheduled work",
-      "category": "maintainer-design",
+      "category": "architecture-guide",
       "headings": [
         "Ownership and flow",
         "Follow-up and old work",
@@ -1154,7 +1165,7 @@
     {
       "path": "docs/architecture/testing.md",
       "title": "Testing",
-      "category": "maintainer-design",
+      "category": "architecture-guide",
       "headings": [
         "The shape in one paragraph",
         "Where a new test goes",
@@ -1168,14 +1179,13 @@
     {
       "path": "docs/architecture/working-across-connectors.md",
       "title": "Working across connectors",
-      "category": "maintainer-design",
+      "category": "architecture-guide",
       "headings": [
-        "The short answer",
-        "The three join keys",
-        "Five ways work crosses connectors",
-        "Combinations by connector kind",
-        "What a connector author does",
-        "What is deliberately left out"
+        "Identity and refs",
+        "Compose reads and proposals",
+        "Jobs: facts, followers and one approval",
+        "Current job support",
+        "Data and failure boundaries"
       ]
     },
     {
@@ -1722,13 +1732,17 @@
       "path": "docs/guides/README.md",
       "title": "Connector guides",
       "category": "integrator-guide",
-      "headings": []
+      "headings": [
+        "Your first integration",
+        "Extend it when needed"
+      ]
     },
     {
       "path": "docs/guides/actions-and-receipts.md",
       "title": "Add actions and trustworthy receipts",
       "category": "integrator-guide",
       "headings": [
+        "Establish background source access",
         "Scan an occurrence into a card",
         "Keep approval separate from execution",
         "Bind an operation to its approved input",
@@ -1750,14 +1764,16 @@
     },
     {
       "path": "docs/guides/creating-a-connector.md",
-      "title": "Create a connector",
+      "title": "Create a custom connector",
       "category": "integrator-guide",
       "headings": [
-        "1. Read the protocol from the instance, then run the contract",
-        "2. Choose working code",
-        "3. Define the smallest contract",
-        "4. Implement the request boundary and source adapter",
-        "5. Add one feature at a time"
+        "1. Choose how to develop",
+        "2. Copy a complete working example",
+        "3. Define one useful read",
+        "4. Implement the HTTP boundary",
+        "5. Adapt the example to your system",
+        "6. Test and register your connector",
+        "7. Add optional features deliberately"
       ]
     },
     {
@@ -1828,13 +1844,15 @@
     },
     {
       "path": "docs/overview.md",
-      "title": "What Clew does",
+      "title": "What Clew is",
       "category": "integrator-guide",
       "headings": [
-        "The integration boundary",
-        "The vocabulary",
-        "What belongs where",
-        "Choose the smallest useful connector"
+        "A journey through Clew",
+        "What the employee sees",
+        "Who owns what",
+        "The concepts, in order",
+        "The assistant is optional",
+        "Product boundaries"
       ]
     },
     {
@@ -1881,7 +1899,7 @@
     },
     {
       "path": "docs/reference/status.md",
-      "title": "Implementation status for integrators",
+      "title": "Implementation status",
       "category": "integrator-guide",
       "headings": [
         "How to read the decision history"
@@ -2312,6 +2330,15 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-07-documentation-product-architecture-and-connectors.md",
+      "title": "Documentation review: explain Clew before its connectors",
+      "category": "review-history",
+      "headings": [
+        "Findings and changes",
+        "Verification"
+      ]
+    },
+    {
       "path": "docs/reviews/2026-11-07-page-headers.md",
       "title": "Page headers across every surface",
       "category": "review-history",
@@ -2368,7 +2395,7 @@
     },
     {
       "path": "llms.txt",
-      "title": "Clew integrator documentation",
+      "title": "Clew documentation",
       "category": "integrator-guide",
       "headings": [
         "Read first",

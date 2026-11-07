@@ -72,7 +72,7 @@ bun scripts/jobs-check.ts
 
 ## Deploy the service
 
-Ship an independently runnable image with documented configuration and a health/operations procedure appropriate to the source. Keep the source credential in that service; Clew needs its registration transport secret, not the source's service-account password. Configure `CLEW_URL` as the trusted, reachable Clew base URL, and use HTTPS for nonlocal traffic. A container's loopback address is not another container's address. The development BFF normally listens on loopback; a separate service needs a reachable listener and network route.
+Ship an independently runnable image with documented configuration and a health/operations procedure appropriate to the source. Keep the source credential in that service; Clew needs its registration transport secret, not the source's service-account password. Configure `CLEW_URL` as the trusted, reachable Clew base URL, and use HTTPS for nonlocal traffic. A container's loopback address is not another container's address. The server defaults to loopback outside compose. The development compose sets `HOST=0.0.0.0` so source services can reach `http://app:3000`; its published web port is still host-loopback only. Use a reachable listener and network route for a separately deployed connector.
 
 Pin the deployed image version, keep secrets outside the image and test source connectivity and identity mappings before enabling access. The examples' Dockerfiles are starting points. The repository's current development compose stack is not a published production installation recipe.
 

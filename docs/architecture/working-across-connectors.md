@@ -1,166 +1,65 @@
 # Working across connectors
 
-> **Reading status:** Composition rationale. Current cross-connector calls require explicit uses strings and a separately signed callback grant, with current-access checks. Historical identity provisioning and callback examples below are not the current wire contract. See [implementation status](../reference/status.md) and the [current protocol](../reference/connector-protocol.md).
+Clew combines work through explicit capabilities, shared actor identity and source-owned refs. It does not provide a cross-source query language or an operator-defined join engine. Start with the [architecture overview](overview.md); a single-source connector can ignore this page until it needs another system.
 
+## Identity and refs
 
-How a person's work spans several connectors, and how Clew combines data from more than one source without a
-query engine. Startsidan explored the general problem (docs 03, 24, 25, 26, 27: semantic types, a
-catalogue, a validated query plan, DuckDB joins). Clew keeps the lessons and drops the engine. Written
-2026-11-04 against the code as it is; each mechanism says whether it is built.
+The verified actor carries Clew's person and unit ids. Each adapter maps them to its source's ids using trusted integration configuration. A matching name or email at query time is not an identity proof.
 
-## The short answer
+A ref identifies an object within its owning capability contract. Formats vary: hello uses `hello:item:1`, the phone book uses `person:<id>`. A ref does not grant access and need not encode a universal namespace. Resolve it through its owner under current authorization.
 
-Clew joins on **identity** and on **refs**, inside a capability, at request time, for one use case at a
-time. There is no cross-source query language, no catalogue of joinable fields and no engine that
-executes a plan. Three things make that enough:
+The development mappings are synthetic, in connector fixtures/configuration and [calendar accounts](../../packages/calendar/src/accounts.ts). There is no general identity-mapping service or implemented SCIM feed. Do not design a real integration around fixture ids.
 
-1. **Clew owns the keys.** The person id and the unit id are Clew's (core connector `people`, provisioned
-   by SCIM). Every connector maps its records onto them. So "my", "my unit's" and "this colleague" mean the
-   same thing in every connector without a join table in a query.
-2. **Refs travel, rows do not.** Every object has a ref (`hr:emp:1001`, `event:…`,
-   `directory:person:42`). A card, a chip or a capability input can carry refs from several connectors at
-   once; the owning connector is asked for the rows when they are needed, as the user.
-3. **Composition is a capability.** When a use case needs two sources, a `read` or `propose` capability
-   in code calls the other connectors' reads through the registry and combines them. The planner that draws
-   utvecklingssamtal proposals is the first one: who needs a talk (HR), which talks are held and where
-   the gaps are (calendar), what to propose.
+## Compose reads and proposals
 
-That trades generality for three guarantees startsidan had to engineer: each source's scope is applied
-before anything is combined, nothing combined is stored except refs and the decision, and a composite that
-loses a source says so instead of presenting a complete-looking result.
+An in-process capability receives a `clew.call(name, input)` handle. A remote connector instead:
 
-## The three join keys
+1. Declares each exact dependency in manifest `uses`, for example `["calendar.today"]`.
+2. Verifies the incoming assertion and extracts its separate callback grant.
+3. Calls `POST {CLEW_URL}/api/connectors/call` with that grant and `{ name, input }`.
+4. Combines authorized results in its own read/proposal response.
 
-| Key | Owner | Comes from | Used for | Status |
-|---|---|---|---|---|
-| Person id (`actor.id`) | Clew core | SCIM; the OIDC subject binding at login | "Mine" in every connector; the calendar account, the HR employee, the finance attester are all mapped to it | built (the mappings are fixtures today, see below) |
-| Unit id (`actor.unitId`) | Clew core | SCIM groups and the role derivation | "My unit's" in every connector; the scope rule for managers | built |
-| Object ref | The owning connector | The connector's own stable ids, prefixed with the connector | Linking a card row, a chip, a proposal or a Clew record to the thing in the source; asking the owner for the row later | built |
+Clew checks the originating connector, target, current actor and dependency declaration. Callbacks cannot execute writes. Cycles and chains beyond eight are refused. Do not persist the callback grant for later work.
 
-**Identity mapping.** Startsidan's conclusion stands: renaming a field to `personId` does not establish
-that two records are the same person, and a matching id does not establish authorization. In Clew the
-mapping from a source's own id to Clew's person id is the adapter's job and comes from the directory or
-the IdP, never from matching names or e-mail addresses at query time. Today the mapping is a fixture:
-`packages/connectors/src/mock/data.ts` and `packages/calendar/src/accounts.ts` carry `personId` on each
-record. The target is one mapping table in Clew's core (person id, connector, source ref, valid from and
-to), filled by SCIM and the directory connector, read by adapters. Designed, not built.
+[Hello's day-with-meetings read](../../connectors/hello/connector.mjs) is a working example. [Authorization](../guides/authorization.md) gives the exact credential boundary. A composite should identify missing sources and return an explicitly partial result rather than a complete-looking total.
 
-## Five ways work crosses connectors
+Composite search is a platform example: [search use cases](../../apps/server/src/modules/search/usecases.ts) ask eligible `<id>.search` capabilities concurrently under a budget, validate results and report unavailable sources. Each source retains its search engine and access policy.
 
-### 1. The actor is the first join (built)
+Declared views have a narrower rule: a row's `open` names a read of the **same connector**. Arbitrary cross-connector view enrichment is not a supported view feature.
 
-Every capability receives the actor (id, name, unit, role) and nothing else about identity. A connector's
-`scope` and `run` narrow to that actor. So a question that spans connectors, "vad behöver jag göra i dag?",
-is answered by each connector for the same person, and the stream is the union. No join happens; the key is
-the caller.
+## Jobs: facts, followers and one approval
 
-### 2. Refs in cards and chips (built)
+A job prepares independent steps across several systems. The current example is an absence report involving HR, time reporting and a payroll watch.
 
-A card's items carry refs, and so do chips in the conversation (D12). "Boka ett möte med @Anna Lindqvist
-om @fakturan 4711" puts a directory ref and a finance ref into one sentence. The model or the router
-picks a `propose` capability whose input accepts those refs; that capability asks the directory for Anna's
-calendar account and finance for the invoice's label, and drafts a calendar card. Nothing from either
-source is stored; the card holds the refs and the draft.
+| Term | Meaning |
+|---|---|
+| Fact kind | A namespaced business contract such as `hr:absence`, declared in manifest `facts` with an attributes schema. |
+| Creator | A capability whose `creates` names a fact kind declared by its own connector. |
+| Follower | A `propose` capability with `follows`, taking a `FactEnvelope` and returning a `FollowResponse`. |
+| Binding | Administrator configuration permitting a particular follower for a fact kind and audience, with an optional watch-window cap. Default is deny. |
+| Step | An execute with approved input or a bounded watch over a read. It names the follower's own connector only. |
 
-A capability declares which foreign refs it accepts in its input schema (a `pattern` on the ref string),
-so the registry can validate before `run`, and the composer can offer only chips that fit.
+Assembly asks bound followers concurrently as the person. Each answers with zero or more steps; Clew reports every bound system's outcome and marks partial proposals. Preparing the proposal performs no source writes.
 
-### 3. Composite capabilities (built once, rule not enforced yet)
+Approval commits the job, execution rows, watch intent, audit and outbox in one transaction. Each execute then uses its own operation identity, source guarantees and receipt. Each watch has committed check times and a deadline; Temporal calls the authorized read and settles it as seen, blocked or expired. An expired watch can create a card for the person. Undo records separate compensations for supported steps.
 
-A `read` or `propose` that needs more than one connector is written in the connector that owns the verb, and
-calls the other connectors through the registry as the actor:
+**Steps are independent.** There is no enforced order, branching or transaction across systems. If payroll must wait for an HR result, that dependency is not made safe by placing both writes in one job. Keep dependent processing in its owning system or design a subsequent approval based on confirmed evidence.
 
-```
-hr.scan ──► who needs an utvecklingssamtal before 28 Nov        (HR, scoped to the unit)
-calendar.read ──► held talks, free/busy for manager and employees   (calendar, as the manager and each account)
-planner ──► proposals that collide with nothing                     (deterministic code)
-```
+## Current job support
 
-Rules for a composite:
+Implemented:
 
-- It calls other connectors only through the registry, never by importing their adapter or data. Both scopes
-  apply: the composite cannot widen what either connector would show the actor on its own.
-- It combines in memory within the request and returns rows or a draft. It stores nothing but refs and,
-  when the person decides, the decision and the receipt.
-- It reports its sources. If one failed, the output says which, and the card shows a partial result as
-  partial, never as a complete total.
-- One-to-one and many-to-one only. A many-to-many combination across sources is not done in Clew; the
-  source pre-aggregates, or the use case is split.
+- `POST /api/jobs/assemble`, `POST /api/jobs` and `GET /api/jobs/:id`.
+- Fact/follower validation, database bindings, proposal assembly and the execution/job ledger.
+- Outbox-driven Temporal watch workflows, bounded checks and expiry cards.
+- CLI binding management through [job-bind.ts](../../scripts/job-bind.ts).
 
-Status: since D20 every `run`, `scan` and `figure` receives a `clew.call` handle and a connector posts to
-`/api/connectors/call`; both re-check scope and refuse `execute`, and `dependency-cruiser` fails the build on a
-connector importing another. The planner (`apps/server/src/modules/calendar/usecases/samtal.ts`) is a composite but calls the calendar package directly
-rather than through the registry, and the HR connector's part is the `scan-utvecklingssamtal` job. Routing
-composites through the registry is the target and a small refactor.
+Not implemented: a job card/step-list UI, administration screens for bindings, cancellation of a running watch, source event ingest that starts jobs, or a general dependency/workflow engine. `creates` metadata does not automatically start a job.
 
-### 4. Derived connectors (built with synthetic data)
+The [deployment guide](../guides/testing-and-deployment.md) gives binding commands. The [jobs module](../../apps/server/src/modules/jobs/), [execution use cases](../../apps/server/src/modules/executions/usecases.ts), [fixture scenario](../../tests/unit/fixture-job.test.ts) and [watch runtime tests](../../apps/server/tests/watch-runtime.test.ts) are the implementation and evidence. [D55](../decisions/D55-a-job-is-assembled-from-what-connectors-follow-approved-once-and-run-per-system.md) records the design.
 
-Figures that span sources, the "Läget" row, are derived connectors: a scheduled job reads each source or a
-reviewed aggregate feed and stores a snapshot with period, source and checked-at time. Aggregates over
-personal data are produced inside the source trust boundary (startsidan's edge aggregates), never by Clew
-joining rows with a service account. Today the figures are synthetic (`apps/server/src/figures.ts`).
+## Data and failure boundaries
 
-### 5. Enrichment on demand (partly built)
+Combining results does not remove the original access rules. Every source is read as the person, and the composite must not broaden source scope. Minimize the returned data: a result used in a persisted answer or card can outlive the request, subject to Clew's snapshot authorization.
 
-A view from one connector may show a ref from another: a calendar event's participant, an invoice's project.
-Clew does not join the second connector into the view. The ref renders as an object; clicking it opens the
-owning connector's `read` in the side panel (D9), for example the directory contact card. The row is fetched
-when asked, as the user, and never copied into the first connector's output.
-
-### 6. Jobs: facts, followers and one approval (built in the ledger, no UI)
-
-One event, work in several systems: an employee's sick report means a write in the HR system, a changed shift in time
-reporting and a check that payroll picked it up. Clew writes no code per such flow. Instead (D55, the stress test in
-`docs/reviews/2026-11-06-cross-system-work-stress-test.md`):
-
-- A connector declares the **facts** it creates (`facts: [{ kind: 'hr:absence', title, attributes }]`) and marks the
-  capability that brings one about with `creates`. The kind's name is its contract (D37): a breaking change is a new kind.
-- A `propose` that answers for a fact kind declares `follows: ['hr:absence']`. Its input is Clew's one envelope,
-  `{ fact: { kind, ref?, attributes } }`; its output is `{ steps }`, each step an `execute` of **its own connector** with
-  the approved payload, or a `watch`: one of its own reads, an expectation and a window. Zero steps is an answer. A
-  follower never writes and never names another system.
-- An administrator **binds** followers to a kind in the database (Administration › Anslutna system, D23): default deny,
-  a flat list per kind, audience per binding, a cap on a watch's window. No conditions, branching or ordering.
-- Clew **assembles** the job for one fact like the search composite: every bound follower is asked at once under a budget,
-  as the person; the proposal lists every bound system with `ok`, `timeout`, `unavailable`, `degraded` (the kind is no
-  longer created, the follower is gone or not callable) or `disabled`, and is marked partial when a system is missing.
-- The person **approves once**. The ledger writes the job row, one execution per execute step (own connector, decision
-  key `<job>:<step>`, own write safety and read-back), one watch per watch step with absolute check times, audit and
-  outbox in one transaction (D45). Steps are independent: no step reads another's result. Anything that needs a result
-  is the next job, from a fact on the receipt. "Ångra allt" is one linked compensation per step, each judged alone.
-
-Status: `apps/server/src/modules/jobs/` (bindings, assembler), `modules/executions` (`approveJob`, `undoJob`, `observe`),
-tables `execution_job` and `follow_binding`, the scenario `tests/unit/job-executions.test.ts` and the store contract.
-Not built: the route and card, the administration page for bindings, the Temporal timer that fires `observe`, and the
-event ingest (D19) that would start a job from a fact the source reports itself.
-
-## Combinations by connector kind
-
-| Combination | How | What Clew stores | Example |
-|---|---|---|---|
-| Pass-through × pass-through | A composite capability at request time | Refs and the decision | HR absences plus calendar free/busy drawn as rehab-talk proposals |
-| Core × pass-through | The core record holds the external ref; the source is read back on display and on execute | The core row, the ref, the receipt | A Clew-owned utvecklingssamtal record (future core connector) holding the calendar event's ref; "held" is read back from the calendar |
-| Derived from several | A scheduled snapshot per figure | The snapshot | Läget: absence from the data warehouse reader, budget from finance, talks from Clew's own record |
-| Core × core | Plain SQL in Clew's Postgres | Everything | A thread and its audit rows; a person and their grants |
-| Anything × directory | Enrichment on demand | Nothing | A participant's phone number from Metakatalogen |
-
-## What a connector author does
-
-- Map every record to Clew's person and unit ids in the adapter, from the directory or the IdP, and expose
-  the source id only inside the ref.
-- Accept foreign refs in a capability's input schema explicitly, by pattern, and resolve them through the
-  owning connector's `read` via the registry.
-- Never import another connector's adapter, data or state. If the registry does not offer what you need,
-  the other connector gets a `read` capability for it.
-- Say which sources an output came from, and mark a partial result.
-- Do not reconstruct the general case. If a third use case needs the same two sources combined the same
-  way, that is the moment to extract a shared composite, not before.
-
-## What is deliberately left out
-
-- Semantic types, dataset manifests and the view DSL. A connector's output schema is its vocabulary; the
-  only shared vocabulary is person id, unit id and the ref format. If a shared vocabulary across connectors
-  is ever needed, start from startsidan doc 26.
-- A query engine (DuckDB, Cube) and a catalogue the model writes plans against. The model calls
-  capabilities; capabilities compose in code.
-- Operator-defined joins. Combinations are code, reviewed, with both scopes visible.
+A source outage is a partial result or unresolved effect, not permission to use a broader credential. Keep source evidence distinct from the person's approval and from delivery attempts. See [actions and receipts](../guides/actions-and-receipts.md) and [the persistence map](overview.md#data-ownership-and-persistence).

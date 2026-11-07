@@ -1,6 +1,6 @@
 # Local development
 
-For contributors running the full Clew application. Connector authors can start with the [connector quickstart](../guides/creating-a-connector.md), whose first check needs no running services.
+For contributors running the full Clew application. Connector authors can start with the [connector quickstart](../guides/creating-a-connector.md), whose signed fixture check needs no running services. Read the [architecture overview](../architecture/overview.md) to understand the components started here.
 
 Host commands below start Docker infrastructure; application commands run inside `clew-app-1` at `/workspace`. These instructions use the shared local Keycloak container and are not a production deployment recipe.
 

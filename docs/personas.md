@@ -7,8 +7,7 @@ design canvas and in `docs/decisions/`.
 
 ## How the personas map to Clew
 
-Clew's synthetic accounts are `hillevi` (rektor, manager) and `hassan` (undersköterska, employee), chosen
-for the school use case. They are the same archetypes as startsidan's Kim and Fatima:
+Clew's synthetic accounts are `hillevi` (rektor, manager), `hassan` (undersköterska, employee) and `mikael` (systemförvaltare, administrator). Their relationship to the original startsidan personas is:
 
 | Clew account | Startsidan persona | Use cases to validate against |
 |---|---|---|
@@ -16,11 +15,12 @@ for the school use case. They are the same archetypes as startsidan's Kim and Fa
 | `hassan`, undersköterska | **Fatima**, undersköterska: own shift, leave, phone first | UC-FATIMA-1 to UC-FATIMA-5 |
 | not provisioned | **Johan**, förvaltningschef; **Eva**, kommundirektör: aggregates, never individuals | UC-JOHAN-1 to 3, UC-EVA-1 to 3 |
 | not provisioned | **Lena**, HR-partner: several units by assignment, nobody's manager | UC-LENA-1, UC-LENA-2 |
-| not provisioned | **Omar**, new employee; **Mikael**, operator; **Petra**, non-municipal manager | UC-OMAR-1, UC-MIKAEL-1 to 5, UC-PETRA-1 to 2 |
+| `mikael`, systemförvaltare | **Mikael**, operator; current connector/model administration, not the historical page-builder proposal | UC-MIKAEL-1 to 5 |
+| not provisioned | **Omar**, new employee; **Petra**, non-municipal manager | UC-OMAR-1, UC-PETRA-1 to 2 |
 
 Every design artboard on the canvas should say which use cases it covers and which it does not. The
-mission-control row (2026-11-03) is validated in its orange sticky note; the open gaps are UC-KIM-5 (acting
-manager), the aggregated views for Johan and Eva, and the operator view for Mikael.
+mission-control row (2026-11-03) is validated in its orange sticky note; the open gaps include UC-KIM-5 (acting
+manager) and the aggregated views for Johan and Eva. The historical operator use cases extend beyond the connector/model administration now present. Use the [support matrix](reference/status.md) for delivered behavior; the preserved use cases below are design input.
 
 ---
 

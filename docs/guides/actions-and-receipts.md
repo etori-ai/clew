@@ -4,6 +4,10 @@ Start with a source read that works under the person's access. A write adds thre
 
 The relevant code is the [card decision use case](../../apps/server/src/threads/usecases/decisions.ts), [execution use cases](../../apps/server/src/modules/executions/usecases.ts), [wire schemas](../../packages/connectors/src/protocol.ts) and [durable synthetic source](../../connectors/reference/connector.mjs). Calendar source writes also use this lifecycle. See [implementation status](../reference/status.md) and the [acceptance matrix](../reference/reliability-acceptance.md) for evidence and limits.
 
+## Establish background source access
+
+Scans and durable execution do not run inside the person's interactive session. They recheck the current local grant, but do not receive a delegated user token. A generic remote execute on a connector declaring delegation can remain pending with `needs-session`; a working delegated read is not evidence of supported durable actions. Establish source credentials and actor-level access for background work first; see [authorization](authorization.md).
+
 ## Scan an occurrence into a card
 
 Set `scan: true` and implement `/clew/scan` as a deterministic source read for the verified actor. Return `ThreadDraft` objects with an area, a stable topic, a title/summary, a reason, optional items/deadline and actions. The reason explains why the person sees this work. Keep pushed text free of unnecessary sensitive detail; a read view can show the details live.

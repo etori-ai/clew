@@ -44,6 +44,8 @@ The Clew assertion identifies the actor to your connector. It is not automatical
 
 For delegation, Clew exchanges a session token for the declared audience through the configured IdP. The connector forwards the resulting token to the source as intended, without storing or logging it. The ordinary Clew assertion remains in `Authorization` on the incoming connector call. Scans, figures, connector callbacks and sessions without suitable IdP credentials do not provide a delegated token. A connector requiring one must deny the operation when it is absent. The [Eneo connector README](../../connectors/eneo/README.md) documents its specific deployment requirements.
 
+Generic durable remote executions also lack that session token. Clew records a connector declaring delegation as needing a session and can leave its approved execution pending with `needs-session` before dispatch; reconciliation does not supply the missing credential. There is no complete sign-in-and-resume action flow. Prove the source's background authorization path before promising scans, watches or durable writes. See [execution composition](../../apps/server/src/composition/executions.ts).
+
 ## Rotation and revocation
 
 Clew holds the private signing key, sealed in its database; connectors get public keys only. [connector-key-rotate.ts](../../scripts/connector-key-rotate.ts) rotates the installation key with audit. Previous public keys overlap for three minutes, while assertions last at most two. The sample verifier refreshes its pinned key set on expiry or an unknown key id, with bounded refresh frequency.
