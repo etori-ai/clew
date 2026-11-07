@@ -37,6 +37,7 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Review: users, groups, roles and SCIM · 2026-11-06](2026-11-06-users-groups-roles-and-scim.md)
 - [Design pattern: three levels, one area mark, one figure family · 2026-11-06](2026-11-06-visual-hierarchy-area-marks-and-figures.md)
 - [Documentation review: explain Clew before its connectors](2026-11-07-documentation-product-architecture-and-connectors.md)
+- [Exploration: carrying one task across connectors and approvals](2026-11-07-multi-connector-task-continuation.md)
 - [Page headers across every surface](2026-11-07-page-headers.md)
 - [Clew system foundation and connector review](2026-11-07-system-foundation-and-connector-review.md)
 - [The day beside, or in the column](2026-11-07-the-day-beside-or-in-the-column.md)

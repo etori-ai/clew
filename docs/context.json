@@ -2344,6 +2344,22 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-07-multi-connector-task-continuation.md",
+      "title": "Exploration: carrying one task across connectors and approvals",
+      "category": "review-history",
+      "headings": [
+        "Recommendation",
+        "Which work belongs together?",
+        "A complete absence journey",
+        "What exists, and what is missing",
+        "Three reproduced gaps to fix first",
+        "Minimum additional state",
+        "Decisions at the boundaries",
+        "Deliver in three increments",
+        "Verification and limits"
+      ]
+    },
+    {
       "path": "docs/reviews/2026-11-07-page-headers.md",
       "title": "Page headers across every surface",
       "category": "review-history",

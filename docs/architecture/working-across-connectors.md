@@ -67,6 +67,8 @@ That continuation is part of Clew's intended orchestration role. It is not autom
 
 Propagation already owned by source systems remains there: payroll importing HR records is a source integration, while Clew watches whether the result arrived. When a person's next action depends on a confirmed result, the plan is for Clew to carry it into the next proposal.
 
+The [task-continuation exploration](../reviews/2026-11-07-multi-connector-task-continuation.md) develops this into one visible task with reviewed stages: independent writes together, dependent writes in a later proposal, and source-owned propagation observed through watches. It describes the missing evidence/proposal records, failure handling and three recommended delivery increments; it is a recommendation, not an implemented contract.
+
 ## Current job support
 
 Implemented:
@@ -77,6 +79,8 @@ Implemented:
 - CLI binding management through [job-bind.ts](../../scripts/job-bind.ts).
 
 Planned but not implemented: a job card/step-list UI, administration screens for bindings, the full composer/pushed entry paths, and receipt-driven facts assembling the next proposal. Source event ingest is also proposed. Running watches currently have no cancellation path. `creates` metadata does not automatically start a job.
+
+Before expanding this path, address the [three reproduced approval/read gaps](../reviews/2026-11-07-multi-connector-task-continuation.md#three-reproduced-gaps-to-fix-first): approval replay recalculates watch times, old proposals can retain a disabled binding, and job reads do not fence receipts by the producing unit/authorization version. These findings remain open.
 
 A general process-graph editor with arbitrary branches and cross-step dataflow is outside D55's design. That boundary does not exclude tasks requiring changes in multiple connectors; those are the purpose of the job and its planned continuation.
 
