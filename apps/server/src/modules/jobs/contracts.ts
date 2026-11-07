@@ -32,6 +32,7 @@ export type JobSourceStatus = 'ok' | 'timeout' | 'unavailable' | 'degraded' | 'd
 /** Every bound follower is reported: a system that did not answer or can no longer follow is named, never silently missing. */
 export interface JobSource {
   binding: string;
+  bindingRevision: string;
   connector: string;
   source: string;
   capability: string;
@@ -40,6 +41,7 @@ export interface JobSource {
 }
 export interface JobStepDraft {
   id: string;
+  binding: string;
   connector: string;
   source: string;
   draft: StepDraft;

@@ -2,7 +2,7 @@
 
 Clew is an open-source workspace for an employee's work across systems. It brings together what needs attention, the information needed to decide, and actions with receipts from the source. It is built for the public sector; its Swedish employee interface is called **Startsidan**.
 
-An employee can find a colleague, check their calendar, review an invoice or follow up a task without first choosing which system to open. Source systems keep their business records. Clew owns the coordination: who may see the work, what the person approved, what happened afterwards and when to bring it back.
+An employee can find a colleague, check their calendar, review an invoice or follow up a task without first choosing which system to open. Source systems keep their business records. Clew owns the coordination: who may see the work, what the person approved, what happened afterwards and when to bring it back. This includes tasks that need changes in several systems, assembled into one proposal with one approval and a separate outcome for each system.
 
 ## How it fits together
 
@@ -22,6 +22,8 @@ flowchart LR
 A connector can be written in any language. An administrator registers its URL, transport secret and audience without rebuilding Clew. The browser calls Clew; the connector calls the source. The optional assistant uses the person's allowed reads and proposals; source writes pass through a separate human approval flow.
 
 PostgreSQL records approved intent before dispatch. Temporal runs the durable work and waits. The connector reports what the source actually did; an uncertain outcome remains visible until it can be resolved.
+
+[Work across connectors](docs/architecture/working-across-connectors.md) explains how connectors declare facts and follow-up steps, how Clew assembles a job for one approval, and how dependent work is planned to become a later proposal. The job API and execution/watch machinery exist; the complete employee and administrator interfaces and receipt-driven continuation are still planned.
 
 ## Understand the platform
 

@@ -58,3 +58,9 @@ An execute returns `ExecuteResult` inside `{ output }`:
 Exercise success, denied access, stale revision, unknown ref, duplicate operation, changed input under the same key, lost response after commit, lookup after restart and undo. Also test revocation between proposal and execution. The [reference README](../../connectors/reference/README.md) describes its fault modes; [execution tests](../../tests/unit/executions.test.ts) describe Clew's recovery decisions.
 
 The generic connector checker deliberately does not execute capabilities. Passing it does not prove safe writes. Keep source-effect tests in a disposable fixture and run the runtime/durability suites described in [testing and deployment](testing-and-deployment.md).
+
+## Reading retained receipts
+
+Job and execution receipts retain the person, unit and authorization version that produced them. A new unit or grant cannot read or reuse that historical evidence through approval replay, reconciliation or compensation. Clew also checks current capability access; a job is withheld if any participating execute/watch capability is unavailable. The records remain stored for recovery and audit.
+
+[D77](../decisions/D77-job-approvals-preserve-intent-bindings-and-receipt-authority.md) specifies these checks and stable job-approval retries. They enforce Clew's authority snapshot; source-only permission changes still need a revocation path into Clew's grant or connector governance, as described in [authorization](authorization.md).

@@ -8,6 +8,8 @@ import { executionRecord, executionStoreContract, jobRecord, watchIntentRecord }
 import { projectExecution } from '../../apps/server/src/composition/execution-projection';
 import { watchCardSink } from '../../apps/server/src/composition/watch-card';
 import { executionUsecases } from '../../apps/server/src/modules/executions/usecases';
+import { jobUsecases } from '../../apps/server/src/modules/jobs/usecases';
+import { postgresFollowBindingStore } from '../../apps/server/src/modules/jobs/adapters/postgres';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
 process.env.MASTER_KEY ??= randomBytes(32).toString('base64');
 const people: string[] = [];
@@ -271,6 +273,148 @@ test('a watch step that ends unseen leaves one card, one admitted delivery and i
     .delete(schema.audit)
     .where(eq(schema.audit.subject, 'thread:' + threadId));
 });
+
+test('job approval retries survive adapter restart with one schedule, and receipts retain their producing authority', async () => {
+  const w = await make();
+  let now = Date.parse('2099-11-05T10:00:00.000Z'),
+    writes = 0;
+  const persona: AuthenticatedContext = {
+    id: w.personId,
+    name: 'Test',
+    unitId: 'test',
+    unitLabel: 'Test',
+    role: 'manager',
+    organisationId: 'test',
+    principal: { id: 'person:' + w.personId, kind: 'person' },
+    capabilities: ['admin.connectors'],
+    authorizationVersion: 'v1',
+    sessionBinding: 'test',
+    expiresAt: '2100-01-01',
+    authorize: async () => ({ version: 'v1' }),
+  };
+  const fact = { kind: 'reference:job-' + randomUUID(), attributes: { ref: 'synthetic:item' } };
+  const stack = () => {
+    const store = postgresExecutionStore({ seal: sealSecret, open: openSecret });
+    const clock = () => new Date(now);
+    const ledger = executionUsecases({
+      store,
+      clock,
+      ids: randomUUID,
+      digest: JSON.stringify,
+      source: {
+        authorize: async () => ({ connector: 'reference', safety: { strategy: 'manual' }, needsSession: false }),
+        current: async () => persona,
+        execute: async () => {
+          writes++;
+          return {
+            headline: 'Confirmed',
+            rows: [{ ref: 'synthetic:item', label: 'Item', detail: 'Read back', outcome: 'done' }],
+          };
+        },
+        lookup: async () => undefined,
+      },
+      watch: { authorize: async () => ({ connector: 'reference' }), read: async () => ({ status: 'pending' }) },
+    });
+    const jobs = jobUsecases({
+      bindings: postgresFollowBindingStore(),
+      clock,
+      ids: randomUUID,
+      digest: JSON.stringify,
+      refresh: async () => {},
+      offered: () => true,
+      followers: () => [
+        {
+          name: 'reference.follow',
+          connectorId: 'reference',
+          source: 'Testsystemet',
+          follows: [fact.kind],
+          available: true,
+        },
+      ],
+      ledger,
+    });
+    return { store, ledger, jobs };
+  };
+  const first = stack();
+  const binding = await first.jobs.bind(persona, {
+    kind: fact.kind,
+    capability: 'reference.follow',
+    audience: { mode: 'all' },
+    within: 'PT1H',
+  });
+  try {
+    const proposal = await first.jobs.assemble(
+      persona,
+      fact,
+      async <O>() =>
+        ({
+          steps: [
+            {
+              kind: 'execute',
+              operation: 'reference.complete',
+              payload: { ref: 'synthetic:item', revision: 'r1' },
+              title: 'Registrera',
+            },
+            {
+              kind: 'watch',
+              operation: 'reference.status',
+              input: { ref: 'synthetic:item' },
+              expect: { path: ['status'], equals: 'done' },
+              within: 'P1D',
+              title: 'Bevaka',
+            },
+          ],
+        }) as O,
+    );
+    const input = { decisionId: 'restart-job', proposal };
+    const approved = (await first.jobs.approve(persona, input)) as Awaited<ReturnType<typeof first.ledger.approveJob>>;
+    const before = (await first.store.readJob(approved.id))!;
+    const execution = approved.steps.find(s => s.kind === 'execute')!;
+    await first.ledger.progress(execution.executionId);
+    now += 5000;
+    const restarted = stack();
+    const replay = (await restarted.jobs.approve(persona, input)) as typeof approved;
+    expect(replay.id).toBe(approved.id);
+    expect(replay.steps.find(s => s.kind === 'execute')).toMatchObject({
+      state: 'succeeded',
+      result: { headline: 'Confirmed' },
+    });
+    expect((await restarted.store.readJob(approved.id))!.steps).toEqual(before.steps);
+    expect(await w.auditCount('job.approved')).toBe(1);
+    expect(await w.auditCount('execution.approved')).toBe(1);
+    expect(
+      await database().select().from(schema.watchIntents).where(eq(schema.watchIntents.jobId, approved.id)),
+    ).toHaveLength(1);
+    expect(writes).toBe(1);
+    const changed = {
+      ...persona,
+      unitId: 'another-unit',
+      authorizationVersion: 'v2',
+      authorize: async () => ({ version: 'v2' }),
+    };
+    expect(await restarted.ledger.readJob(changed, approved.id)).toBeUndefined();
+    expect(await restarted.ledger.read(changed, execution.executionId)).toBeUndefined();
+    await expect(restarted.jobs.approve(changed, input)).rejects.toThrow('finns inte');
+    const altered = structuredClone(proposal);
+    const step = altered.steps.find(s => s.draft.kind === 'execute')!;
+    if (step.draft.kind === 'execute') step.draft.payload = { ref: 'synthetic:item', revision: 'r2' };
+    await expect(restarted.jobs.approve(persona, { ...input, proposal: altered })).rejects.toThrow('annat innehåll');
+    await restarted.jobs.bind(persona, { ...binding, enabled: false });
+    await expect(restarted.jobs.approve(persona, { ...input, decisionId: 'after-disable' })).rejects.toThrow(
+      'Förslaget har ändrats',
+    );
+    expect(
+      await database().select().from(schema.executionJobs).where(eq(schema.executionJobs.personId, w.personId)),
+    ).toHaveLength(1);
+    expect(await w.auditCount('job.approved')).toBe(1);
+  } finally {
+    await database().delete(schema.followBindings).where(eq(schema.followBindings.id, binding.id));
+    await database()
+      .delete(schema.audit)
+      .where(eq(schema.audit.subject, 'binding:' + binding.id));
+  }
+});
+
 afterAll(async () => {
   const records = await database().select().from(schema.executions).where(inArray(schema.executions.personId, people));
   const ids = records.map(e => e.id);

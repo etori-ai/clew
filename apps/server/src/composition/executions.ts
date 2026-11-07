@@ -6,6 +6,7 @@ import { registry } from '../connectors/registry';
 import { systemContext } from '../system-context';
 import { sealSecret, openSecret } from '../auth-crypto';
 import { postgresExecutionStore } from '../modules/executions/adapters/postgres';
+import { retainsAuthority } from '../modules/executions/domain';
 import { executionUsecases } from '../modules/executions/usecases';
 import { ExecutionError, type ExecutionSource, type WatchSource } from '../modules/executions/model';
 import { executionDispatcher, watchDispatcher } from '../modules/executions/dispatch';
@@ -101,6 +102,7 @@ calendarApproval.approve = executions.approve;
 calendarApproval.previous = async (p, id) => {
   const e = await executionStore.readDecision(p.id, id);
   if (!e) return undefined;
+  if (!retainsAuthority(p, e)) throw new ExecutionError('Åtgärden finns inte.');
   await p.authorize();
   await source.authorize(p, e.operation, e.payload);
   return { operation: e.operation, payload: e.payload as CalendarCommand };

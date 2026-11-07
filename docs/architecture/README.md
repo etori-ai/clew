@@ -12,7 +12,7 @@ Start with [How Clew works](overview.md): the components, ownership boundaries a
 | [Integration paths](integration-paths.md) | Which integration mechanism fits this source and which paths are available? |
 | [Capability surfaces](capability-surfaces.md) | How do buttons, the model, callbacks and approved executions reach operations? |
 | [Identity](identity.md) | How are login, local grants, connector authority and source credentials separated? |
-| [Working across connectors](working-across-connectors.md) | How do reads and jobs span systems without a query or process engine? |
+| [Working across connectors](working-across-connectors.md) | How does Clew coordinate changes and follow-up across several systems? |
 | [Connector administration](connector-administration.md) | How are registration, governance, model providers and changes managed? |
 | [Scheduled work](scheduled-work.md) | What belongs in PostgreSQL and what does Temporal execute? |
 | [Testing](testing.md) | Which tests establish behavior at each boundary? |

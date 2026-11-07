@@ -1,4 +1,4 @@
-# D77 · A model's reasoning is its own setting, and "Testa" tries a real turn's shape
+# D78 · A model's reasoning is its own setting, and "Testa" tries a real turn's shape
 
 **Status:** accepted, built 2026-11-07 · **Date:** 2026-11-07 · **Area:** product
 

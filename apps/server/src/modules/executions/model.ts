@@ -104,6 +104,8 @@ export interface Job {
   updatedAt: string;
 }
 export interface JobInput {
+  /** Internal origin of relative watch schedules, never supplied by the approval HTTP body. */
+  scheduleOrigin?: string;
   decisionId: string;
   steps: JobStepInput[];
 }

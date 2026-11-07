@@ -2,6 +2,8 @@
 
 Clew is a **modular monolith with independent connector services**. Its backend keeps coordination in one application, with explicit modules and replaceable adapters. External integrations run as separate HTTP services so a source owner can use its own language, network and release cycle.
 
+A central responsibility of that backend is carrying one person's task across several systems: collect the required changes into a proposal, record one approval, execute each connector's part, watch for results and bring dependent work back for review. The fact-and-follower model below separates the implemented job machinery from the planned continuation and interfaces.
+
 This is the current architecture, checked against the repository on 2026-11-07. Read [What Clew is](../overview.md) for the product concepts and [implementation status](../reference/status.md) for feature-specific limits.
 
 ## Running components
@@ -89,7 +91,7 @@ sequenceDiagram
   Connector-->>Server: Per-item evidence
   Server->>DB: Commit result and receipt projection
   DB-->>Server: Committed revision
-  Server-->>Web: Change notification; reread authorized state
+  Server-->>Web: Change notification and authorized reread
 ```
 
 An **outbox** is a database record saying committed work still needs delivery. Committing it with the approval closes the gap between saving the person's decision and starting a workflow. Temporal handles delivery and waiting; PostgreSQL remains the authority for what was approved and what outcome is known.
@@ -98,13 +100,31 @@ There is no transaction spanning Clew and an arbitrary source. A source can comm
 
 Session-backed token delegation currently supports interactive reads. Generic durable remote execution does not obtain that session token: connectors declaring delegation can remain pending with `needs-session`. Establish a supported background authorization path before promising scans or durable actions. See [authorization](../guides/authorization.md) and [actions and receipts](../guides/actions-and-receipts.md).
 
+## One task across several connectors
+
+A **job** groups the work several systems need to do for one fact. For example, a reported absence can require two writes and a watch:
+
+| Connector | Its part of the job | What Clew tracks |
+|---|---|---|
+| HR | Register the absence, if it is not already recorded | An approved execution and the source's receipt. |
+| Time reporting | Mark the affected shift as absence | A separate approved execution and receipt. |
+| Payroll | Read whether its own import has picked up the report | A bounded watch; Clew does not write the payroll record. |
+
+Connectors declare the fact kinds they create and the kinds they can follow. A follower is a `propose` capability that offers steps for its own system. An administrator binds the participants; Clew asks them for proposals under the person's access and assembles one job. Missing systems remain visible in a partial proposal.
+
+One approval commits all the job's execution/watch intents. Each write then follows the lifecycle in the diagram above, with its own operation identity, authorization, receipt and possible compensation. One failed or uncertain step does not erase another system's confirmed result.
+
+The plan in [D55](../decisions/D55-a-job-is-assembled-from-what-connectors-follow-approved-once-and-run-per-system.md) also carries work between stages: a confirmed receipt can supply a new fact, which followers turn into the **next proposal** for the person's approval. An absence may lead to a proposal to move a meeting; an unstaffed-shift result may lead to arranging cover. This is task orchestration across connectors without requiring an operator to design a process graph.
+
+The current API, bindings, ledger and Temporal watches support the initial job. Steps within that job are computed from the same fact and run independently; dispatch order does not express a dependency. Receipt-driven continuation, the complete job card/step-list interface and binding administration screens remain planned. [Working across connectors](working-across-connectors.md) details both the implemented path and that intended continuation.
+
 ## Timers, follow-up and browser updates
 
 Reminder and snooze changes commit absolute due times and generation numbers. A cancelled or superseded generation cannot resurface work. Temporal waits; the activity rechecks current authority and the committed state before acting.
 
 Bounded calendar follow-up and cross-system watch steps use the same separation between durable intent and delivery. Attention records control when discovered work is announced and prevent repeated announcements across tabs. The server sends committed revisions over authenticated server-sent events (SSE); the browser invalidates its TanStack Query cache and rereads authorized state. A change notice is not evidence that the person saw a card.
 
-Cross-system jobs assemble proposals from administrator-bound followers and record one execution or bounded watch per approved step. Steps are independent; there is no ordering or all-or-nothing transaction across systems. The API and ledger exist, but job cards and a binding administration UI remain unimplemented. See [working across connectors](working-across-connectors.md).
+A job's watch is how Clew follows a result in a system it does not write to. It reads under the person's current authority until the expectation is seen or the approved window ends; an expired watch brings the unresolved work back to the person. See [working across connectors](working-across-connectors.md) and [scheduled work](scheduled-work.md).
 
 ## Data ownership and persistence
 

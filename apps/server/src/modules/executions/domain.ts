@@ -1,3 +1,4 @@
+import type { AuthenticatedContext } from '@clew/contracts';
 import type { ExecuteResult } from '@clew/connectors';
 import type {
   Execution,
@@ -9,6 +10,19 @@ import type {
   WatchIntent,
   WriteSafety,
 } from './model';
+
+/** Stored source evidence is readable only under the authority that produced it (D75). */
+export function retainsAuthority(
+  persona: Pick<AuthenticatedContext, 'id' | 'unitId' | 'authorizationVersion'>,
+  snapshot: Pick<Execution, 'personId' | 'unitId' | 'authorizationVersion'>,
+) {
+  return (
+    !!snapshot.authorizationVersion &&
+    snapshot.personId === persona.id &&
+    snapshot.unitId === persona.unitId &&
+    snapshot.authorizationVersion === persona.authorizationVersion
+  );
+}
 
 export function sameSafety(a: WriteSafety, b: WriteSafety) {
   return (
