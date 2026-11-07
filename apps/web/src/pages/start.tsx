@@ -23,7 +23,6 @@ import {
   IconButton,
   Layout,
   LayoutContent,
-  LayoutFooter,
   LayoutHeader,
   Link,
   List,
@@ -1038,21 +1037,37 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         padding={0}
         end={slot.end}
         content={
-          <LayoutContent isScrollable padding={0}>
-            <VStack paddingInline={mobile ? 3 : 8} paddingBlockStart={mobile ? 3 : 8} paddingBlockEnd={mobile ? 3 : 10}>
-              {landing()}
-            </VStack>
-          </LayoutContent>
-        }
-        footer={
           docked ? (
-            <LayoutFooter>
-              <VStack gap={2}>
-                <Suggestions viewHref={viewHref} cardHref={cardHref} />
-                <Composer place="landing" near={near} about={about} />
+            // On a phone the box floats over the content (the product owner, 2026-11-07): ChatLayout docks it in the
+            // frosted-glass layer the page scrolls under, as the conversation already has it, instead of a LayoutFooter
+            // whose solid ground cut the day and Sedan i går off at the foot. ChatLayout owns the scroll here, with no
+            // scroll-to-bottom button: Hem is read from the top.
+            <LayoutContent isScrollable={false} padding={0}>
+              {/* The bounded height is what makes ChatLayout the scroll container, as the conversation composes it. */}
+              <VStack height="100%">
+                <ChatLayout
+                  density="balanced"
+                  scrollButton={null}
+                  composer={
+                    <VStack gap={2}>
+                      <Suggestions viewHref={viewHref} cardHref={cardHref} />
+                      <Composer place="landing" near={near} about={about} />
+                    </VStack>
+                  }
+                >
+                  <VStack paddingBlockStart={3} paddingBlockEnd={3}>
+                    {landing()}
+                  </VStack>
+                </ChatLayout>
               </VStack>
-            </LayoutFooter>
-          ) : undefined
+            </LayoutContent>
+          ) : (
+            <LayoutContent isScrollable padding={0}>
+              <VStack paddingInline={8} paddingBlockStart={8} paddingBlockEnd={10}>
+                {landing()}
+              </VStack>
+            </LayoutContent>
+          )
         }
       />
     );

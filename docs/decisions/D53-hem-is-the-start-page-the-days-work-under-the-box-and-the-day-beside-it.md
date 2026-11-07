@@ -91,3 +91,11 @@ address: Att göra's page is `/`; its tabs, filter, panel and box are as D50 has
 which D50 lists as not built, is item 6 here. [D34](D34-the-box-is-the-page-and-the-push-is-its-brief.md): the brief of
 at most three rows above the box and its sentence; the four kinds of card and the groups stand.
 [D28](D28-the-stream-has-two-groups-and-three-piles.md) item 2's name "Pågår utan dig". D36 and D48 stand.
+
+**Amended 2026-11-07: the phone's box floats.** The docked box on a phone is no longer a `LayoutFooter`, whose solid
+ground cut the day and Sedan i går off at the foot of the page (the product owner, 2026-11-07: "the input container
+shouldn't need a background, could be floating on top of content"). Hem on a phone is composed as the conversation is:
+`ChatLayout` with the landing as its content and the box (with "Menar du") as its composer, docked in Astryx's
+frosted-glass layer the page scrolls under, with no scroll-to-bottom button since Hem is read from the top, inside a
+`VStack height="100%"` so the layout owns the scroll. The focus checks of `tests/a11y/reflow.spec.ts` (2.4.11) hold:
+every stop scrolls into view above the dock.
