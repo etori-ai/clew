@@ -19,6 +19,7 @@ export const refresh = refreshUsecases({
       .filter(c => (c.scan || c.id === 'calendar') && registry.governance(c.id).scanEnabled)
       .map(c => c.id);
   },
+  system: id => registry.connector(id)?.source ?? id,
   scan: async (p, id) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {

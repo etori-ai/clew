@@ -64,6 +64,7 @@ test('postgres refresh coalesces, preserves dismissal, fences stale scans and on
     ids: () => crypto.randomUUID(),
     current: async () => actor,
     sources: async () => ['reference'],
+    system: () => 'Referenssystemet',
     scan: async () => ({ drafts: [] }),
   });
   await Promise.all([uc.request(actor), uc.request(actor)]);

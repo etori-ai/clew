@@ -4,7 +4,7 @@ import { projectionVersion, type Occurrence, type RefreshDeps, type RefreshReque
 
 const assignment = (p: AuthenticatedContext) => p.unitId + ':' + p.role;
 /** Reads request work and return immediately; only leased workers wait for a source. */
-export function refreshUsecases({ store, clock, ids, key, current, sources, scan }: RefreshDeps) {
+export function refreshUsecases({ store, clock, ids, key, current, sources, system, scan }: RefreshDeps) {
   async function request(persona: AuthenticatedContext) {
     await persona.authorize();
     const at = clock().toISOString(),
@@ -153,7 +153,7 @@ export function refreshUsecases({ store, clock, ids, key, current, sources, scan
               items: d.items ?? [],
               waitingOn: d.waitingOn ?? null,
               deadline: d.deadline ?? null,
-              trigger: { reason: d.reason, source: job.connector, at },
+              trigger: { reason: d.reason, source: system(job.connector), at },
               createdAt: at,
               updatedAt: at,
             }))

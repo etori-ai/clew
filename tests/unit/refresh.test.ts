@@ -36,6 +36,7 @@ function world() {
     ids: () => `thread${++n}`,
     current: async () => (allowed ? actor : undefined),
     sources: async () => ['source'],
+    system: (id: string) => (id === 'source' ? 'Ärendesystemet' : id),
     scan: async () => observation,
   };
   const uc = refreshUsecases(deps);
@@ -64,6 +65,22 @@ function world() {
     },
   };
 }
+test("a scanned card's trigger names the system in words, the id stays on the thread and in the audit row", async () => {
+  const w = world();
+  w.set([draft()]);
+  await w.uc.request(actor);
+  await w.uc.tick();
+  const thread = w.store.threads.dump()[0]!.thread;
+  expect(thread).toMatchObject({ connector: 'source', trigger: { reason: 'Aktuell', source: 'Ärendesystemet' } });
+  expect(w.store.threads.audit.find(a => a.action === 'thread.pushed')).toMatchObject({
+    subject: `thread:${thread.id}`,
+    details: { connector: 'source' },
+  });
+  w.advance();
+  w.set([draft('2')]);
+  await w.uc.tick();
+  expect(w.store.threads.dump()[0]!.thread.trigger.source).toBe('Ärendesystemet');
+});
 test('dismissal suppresses unchanged work, a changed revision explains its return, and a new period is distinct', async () => {
   const w = world();
   w.set([draft()]);

@@ -52,6 +52,8 @@ export interface RefreshDeps {
   key(input: unknown): string;
   current(personId: string): Promise<AuthenticatedContext | undefined>;
   sources(persona: AuthenticatedContext): Promise<string[]>;
+  /** The system's word on a card's trigger ("Ekonomisystemet"); the id stays on the thread's `connector`. */
+  system(connector: string): string;
   scan(persona: AuthenticatedContext, connector: string): Promise<ScanObservation>;
 }
 /** Local presentation state is an optimistic fence, independent of source versions. */
