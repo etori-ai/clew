@@ -449,7 +449,9 @@ export class Registry {
     options: { figures?: boolean; connector?: string } = {},
   ): Promise<Omit<Area, 'needsYou' | 'waiting' | 'urgency'>[]> {
     const out: Omit<Area, 'needsYou' | 'waiting' | 'urgency'>[] = [];
-    for (const m of this.connectors.values()) {
+    // The connectors as they are now: a refresh during a figure's await re-adds replaced connectors at the Map's end,
+    // and a live iterator would list them again (one tile per area, D54).
+    for (const m of [...this.connectors.values()]) {
       const clew = this.clewFor(actor, {}, m.id);
       if (options.connector && m.id !== options.connector) continue;
       if (!this.visible(actor, m.id)) continue;
@@ -544,7 +546,8 @@ export class Registry {
   /** Drafts from every visible connector whose scan is switched on. A draft that breaks the action rule (D35) is refused and reported. */
   async scan(actor: Actor): Promise<Array<ThreadDraft & { connector: string }>> {
     const drafts: Array<ThreadDraft & { connector: string }> = [];
-    for (const m of this.connectors.values()) {
+    // A snapshot, as in `areas`: a connector replaced during a scan's await is not scanned twice.
+    for (const m of [...this.connectors.values()]) {
       const clew = this.clewFor(actor, {}, m.id);
       if (!m.scan || !this.visible(actor, m.id) || !this.governance(m.id).scanEnabled) continue;
       const result = await m.scan(actor, clew);

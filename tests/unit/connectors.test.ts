@@ -177,6 +177,38 @@ describe("an area's figure (D54)", () => {
     // The structural preview asks no figure at all.
     expect((await r.areas(hillevi, { figures: false })).every(a => a.figure === null)).toBe(true);
   });
+  test('a connector replaced while the figures are read is listed once, as the scan reads it once', async () => {
+    // Every run, call and scan first re-applies the connector rows, and a remote row is put back with `replace`, which
+    // moves it to the end of the registry. A concurrent request, or a figure that calls another capability, does that
+    // while this call waits on a figure; the connectors already listed must not come round again.
+    const { r } = world();
+    const scanned: string[] = [];
+    const replaceV = () =>
+      r.replace({
+        id: 'v',
+        kind: 'passthrough',
+        source: 'Andra',
+        capabilities: [read('v.list', listView)],
+        areas: [area('other', async () => ({ label: 'Andra', value: '1', tone: 'ok' }))],
+        scan: async () => (scanned.push('v'), []),
+      });
+    replaceV();
+    r.replace({
+      id: 'u',
+      kind: 'passthrough',
+      source: 'Tredje',
+      capabilities: [],
+      areas: [area('third', async () => (replaceV(), { label: 'Tredje', value: '2', tone: 'ok' }))],
+      scan: async () => (replaceV(), scanned.push('u'), []),
+    });
+    for (let i = 0; i < 2; i++) {
+      const ids = (await r.areas(hillevi)).map(a => a.id);
+      expect(ids.filter(id => id === 'other')).toHaveLength(1);
+      expect(new Set(ids).size).toBe(ids.length);
+    }
+    await r.scan(hillevi);
+    expect(scanned.sort()).toEqual(['u', 'v']);
+  });
 });
 
 describe('the fixture connectors push cards a person can act on, and the state survives in the source', () => {
