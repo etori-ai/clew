@@ -44,6 +44,7 @@ function world() {
       'http://llm.test/v1': { models: ['gpt-oss:120b', 'gpt-oss:20b'], key: KEY },
       'http://lokal.test/v1': { noList: true },
       'http://nere.test/v1': { down: true },
+      'http://resonerar.test/v1': { models: ['tankande'], refusesReasoningTools: true },
     },
     generate: async () => ({ text: 'ok', toolCalls: [] }),
   });
@@ -121,6 +122,7 @@ describe('the pure rules', () => {
       audience: { mode: 'all' },
       isDefault: false,
       tools: true,
+      reasoning: 'provider-default',
       createdBy: 'x',
       updatedBy: 'x',
       createdAt: T0,
@@ -256,6 +258,32 @@ describe('providers', () => {
       'provider.key',
     ]);
   });
+  test('Testa names a model that refuses a turn, and the setting that fixes it is audited and reaches the call', async () => {
+    const w = world();
+    await w.models.addProvider(w.mikael, { id: 'tanke', title: 'Tanke', baseUrl: 'http://resonerar.test/v1' });
+    const { id } = await w.models.addModel(w.mikael, { providerId: 'tanke', model: 'tankande' });
+    const refused = await w.models.testModel(w.mikael, id);
+    expect(refused).toMatchObject({ ok: false, health: { status: 'ok' } });
+    expect(refused.findings[0]!.text).toContain('vägrar anropet');
+    expect(refused.findings[0]!.text).toContain('tools with reasoning');
+    const updated = await w.models.updateModel(w.mikael, id, {
+      reasoning: 'none',
+      state: 'enabled',
+      isDefault: true,
+    });
+    expect(updated.reasoning).toBe('none');
+    expect(w.store.audit.find(a => a.action === 'model.reasoning')).toMatchObject({
+      actor: 'person:mikael',
+      subject: 'model:' + id,
+      details: { from: 'provider-default', to: 'none' },
+    });
+    expect(await w.models.testModel(w.mikael, id)).toMatchObject({ ok: true });
+    await (await w.models.resolve(w.hillevi))!.generate({ system: '', messages: [], tools: {}, timeoutMs: 1000 });
+    expect(w.wire.calls.at(-1)).toMatchObject({ kind: 'generate', reasoning: 'none' });
+    const audited = w.store.audit.length;
+    await w.models.updateModel(w.mikael, id, { reasoning: 'none' });
+    expect(w.store.audit).toHaveLength(audited);
+  });
   test('a provider goes only after its models', async () => {
     const w = world();
     const { big, small } = await installed(w);
@@ -371,6 +399,7 @@ describe("the person's model", () => {
       kind: 'generate',
       baseUrl: 'http://llm.test/v1',
       model: 'gpt-oss:20b',
+      reasoning: 'provider-default',
       apiKey: KEY,
     });
     expect((await w.models.resolve(w.hassan))!.id).toBe(big);

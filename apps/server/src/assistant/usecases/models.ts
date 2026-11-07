@@ -118,6 +118,7 @@ export function modelUsecases(deps: ModelDeps) {
       audience: m.audience,
       isDefault: m.isDefault,
       tools: m.tools,
+      reasoning: m.reasoning,
       health: p?.health ?? { status: 'untested', at: m.createdAt },
       createdAt: m.createdAt,
       updatedAt: m.updatedAt,
@@ -330,8 +331,8 @@ export function modelUsecases(deps: ModelDeps) {
     return modelDetail((await store.readModel(id))!);
   }
   /**
-   * Name, description, the endpoint's id, on or off, the audience, the tools switch and the default. One audit row per
-   * changed field. The default is one switched-on model: setting it clears the previous one (its own row says so), and
+   * Name, description, the endpoint's id, on or off, the audience, the tools switch, reasoning and the default. One audit
+   * row per changed field. The default is one switched-on model: setting it clears the previous one (its own row says so), and
    * switching the default off clears its flag too.
    */
   async function updateModel(persona: AuthenticatedContext, id: string, patch: ModelPatchInput): Promise<ModelDetail> {
@@ -365,6 +366,10 @@ export function modelUsecases(deps: ModelDeps) {
       next.tools = patch.tools;
       changes.push({ action: 'model.tools', details: { to: patch.tools } });
     }
+    if (patch.reasoning !== undefined && patch.reasoning !== row.reasoning) {
+      next.reasoning = patch.reasoning;
+      changes.push({ action: 'model.reasoning', details: { from: row.reasoning, to: patch.reasoning } });
+    }
     const isDefault = patch.isDefault ?? (state === 'disabled' ? false : row.isDefault);
     if (isDefault !== row.isDefault) {
       next.isDefault = isDefault;
@@ -396,7 +401,7 @@ export function modelUsecases(deps: ModelDeps) {
     });
     return modelDetail((await store.readModel(id))!);
   }
-  /** "Testa" on a model: one tiny completion with its id and its provider's key. The provider's health follows. */
+  /** "Testa" on a model: one tiny completion shaped like a turn, with its provider's key. The provider's health follows. */
   async function testModel(persona: AuthenticatedContext, id: string): Promise<ProviderTestReport> {
     requireAdmin(persona);
     const row = await mustModel(id);
@@ -404,7 +409,7 @@ export function modelUsecases(deps: ModelDeps) {
     const at = clock().toISOString();
     let report: ProviderTestReport;
     try {
-      await wire.ping(endpointOf(provider), row.model);
+      await wire.ping(endpointOf(provider), row.model, row);
       report = {
         ok: true,
         models: [],
@@ -418,7 +423,7 @@ export function modelUsecases(deps: ModelDeps) {
           ? 'Nyckeln avvisas.'
           : h.status === 'unreachable'
             ? 'Leverantören svarar inte.'
-            : 'Leverantören svarar men inte på den här modellen. Kontrollera modellens namn.';
+            : 'Leverantören svarar men vägrar anropet. Kontrollera modellens namn och inställningar.';
       report = {
         ok: false,
         models: [],
@@ -495,7 +500,7 @@ export function modelUsecases(deps: ModelDeps) {
       title: current.title,
       providerId: provider.id,
       tools: current.tools,
-      generate: wire.generator(endpointOf(provider), current.model),
+      generate: wire.generator(endpointOf(provider), current.model, current.reasoning),
     };
   }
   /** The minute probe (D8): every provider with a switched-on model, asked for its list. An endpoint without a list still answered. */

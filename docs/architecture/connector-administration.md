@@ -187,6 +187,7 @@ model
   audience             same shape as a connector's
   is_default           at most one row (partial unique index model_one_default), always a switched-on model
   tools                boolean: offer capabilities as tools; off for a model that does not call tools reliably
+  reasoning            'provider-default' (sends nothing) | 'none' (sends reasoning_effort: none, D75)
   created_by, updated_by, created_at, updated_at, version
 
 model_choice
@@ -199,7 +200,7 @@ model_choice
 `KeySealer`, `ModelWire`, `ModelHealth`, `ModelResolver`), the pure rules in `domain.ts` (`slugFor`, `choicesFor`,
 `pickModel`), the use cases in `usecases/models.ts` (`modelUsecases(deps)`), and the adapters: `adapters/postgres.ts`
 (the store), `adapters/memory.ts` (the store, a played endpoint and the in-process health), and
-`adapters/openai-compatible.ts` (the wire: `GET /models`, one tiny chat completion for "Testa", the AI SDK for a turn;
+`adapters/openai-compatible.ts` (the wire: `GET /models`, one tiny chat completion shaped like a turn for "Testa", D75, the AI SDK for a turn;
 every failure is a `WireError` of kind `unreachable`, `key-rejected` or `unsupported`). The composition root seals with
 the master key under `provider:key:<id>` and starts the minute probe beside the server.
 
@@ -225,7 +226,7 @@ its list as it opens (the same call as "Testa", cached a minute) and shows the s
 yet as a `CheckboxList`, a field for an id the endpoint does not list, and "Slå på dem direkt". On the provider page,
 "Testa" says how many listed models are not added and opens that dialog. `model.tsx`: Översikt (Testa, Gör till standard or Ta bort
 som standard, Ta bort; `MetadataList`; a form for the name, the description and the endpoint's id; the Verktyg
-switch), Vem kan välja den (the audience editor, worded for a model), Historik; a phone gets the sections as a
+and Utan resonemang switches), Vem kan välja den (the audience editor, worded for a model), Historik; a phone gets the sections as a
 menu, as on a connector. `provider.tsx`: the health `Banner`, Testa (findings, then the listed models not yet added
 to tick and add), Byt nyckel (empty removes it), Ta bort (disabled with a tooltip while it has models), its models,
 the name and address form, Historik.
@@ -245,7 +246,7 @@ an open question in `vision.md`; the audience is not that gate, it only says who
 administrative mutation needs the administration grant `admin.connectors` and the step-up and writes its audit row
 in the same transaction: `provider.added`, `provider.title`, `provider.url`, `provider.key`, `provider.removed`,
 `model.added`, `model.enabled`, `model.disabled`, `model.default` (on the new default and, with `replacedBy`, on the
-old one), `model.audience`, `model.tools`, `model.title`, `model.description`, `model.model`, `model.removed`. The
+old one), `model.audience`, `model.tools`, `model.reasoning`, `model.title`, `model.description`, `model.model`, `model.removed`. The
 person's pick is `model.chosen` on `person:<id>`. A provider is removed only once its models are gone. Health is not
 administration: a test or a probe that changes it is stored without a version bump or an audit row.
 

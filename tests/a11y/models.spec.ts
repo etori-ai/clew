@@ -89,6 +89,19 @@ test.describe('model administration', () => {
       await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Snabb (lokal) är avstängd'));
       expect((await focused(page)).tag).toBe('input');
     });
+    test('the reasoning switch is reached by keyboard, keeps focus and says what it did', async ({ page, api }) => {
+      api.admin = true;
+      await open(page, '/admin/models/gpt-oss-120b');
+      const toggle = page.getByRole('switch', { name: /^Utan resonemang/ });
+      await expect(toggle).not.toBeChecked();
+      await toggle.focus();
+      await page.keyboard.press('Space');
+      await expect(toggle).toBeChecked();
+      await expect
+        .poll(() => announcements(page))
+        .toContainEqual(expect.stringContaining('Modellen svarar utan resonemang'));
+      expect((await focused(page)).tag).toBe('input');
+    });
     test('adding a provider runs by keyboard: errors named, the step heading takes focus, the listed models are ticked and added', async ({
       page,
       api,

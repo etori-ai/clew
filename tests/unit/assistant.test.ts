@@ -549,6 +549,22 @@ describe('the model path only reads, and falls back when the provider fails', ()
     expect(seen).toContain('finance__invoices');
     expect(seen.some(n => n.includes('approve'))).toBe(false);
   });
+  test('a turn says nothing about reasoning unless the model is set to none (D75)', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const fakeFetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return new Response(
+        `data: ${JSON.stringify({ id: 'x', object: 'chat.completion.chunk', created: 1, model: 'm', choices: [{ index: 0, delta: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`,
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      );
+    };
+    const request = { system: 's', messages: [{ role: 'user' as const, content: 'hej' }], tools: {}, timeoutMs: 1000 };
+    const endpoint = { baseUrl: 'http://fake.test/v1' };
+    await createGenerator(endpoint, 'open-model', fakeFetch)(request);
+    await createGenerator(endpoint, 'open-model', fakeFetch, 'none')(request);
+    expect(bodies[0]).not.toHaveProperty('reasoning_effort');
+    expect(bodies[1]).toMatchObject({ reasoning_effort: 'none' });
+  });
   test('a stopped turn ends the streamed call like a timeout: the generator rejects and nothing is answered (D36)', async () => {
     const stop = new AbortController();
     const fakeFetch = async (_input: RequestInfo | URL, init?: RequestInit) =>
@@ -597,6 +613,7 @@ describe('the model path only reads, and falls back when the provider fails', ()
     expect(seen[0]).toEqual({ url: 'http://llm.test/v1/models', auth: 'Bearer nyckel' });
     await openAICompatibleWire(endpoint(200, { data: [] })).listModels({ baseUrl: 'http://llm.test/v1' });
     expect(seen[1]!.auth).toBeNull();
+    const plain = { tools: false, reasoning: 'provider-default' } as const;
     const kind = (p: Promise<unknown>) =>
       p.then(
         () => 'ok',
@@ -630,11 +647,23 @@ describe('the model path only reads, and falls back when the provider fails', ()
         openAICompatibleWire(endpoint(404, { error: { message: 'model "x" not found' } })).ping(
           { baseUrl: 'http://llm.test' },
           'x',
+          plain,
         ),
       ),
     ).toBe('unsupported');
     expect(
-      await kind(openAICompatibleWire(endpoint(200, { choices: [] })).ping({ baseUrl: 'http://llm.test' }, 'x')),
+      await kind(openAICompatibleWire(endpoint(200, { choices: [] })).ping({ baseUrl: 'http://llm.test' }, 'x', plain)),
     ).toBe('ok');
+    // The test is shaped like the turn the model will get (D75).
+    const bodies: Record<string, unknown>[] = [];
+    const recording = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    await openAICompatibleWire(recording).ping({ baseUrl: 'http://llm.test' }, 'x', plain);
+    await openAICompatibleWire(recording).ping({ baseUrl: 'http://llm.test' }, 'x', { tools: true, reasoning: 'none' });
+    expect(bodies[0]).not.toHaveProperty('tools');
+    expect(bodies[0]).not.toHaveProperty('reasoning_effort');
+    expect(bodies[1]).toMatchObject({ reasoning_effort: 'none', tools: [{ type: 'function' }] });
   });
 });

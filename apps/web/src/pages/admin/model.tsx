@@ -262,6 +262,18 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
                     })
                   }
                 />
+                <Switch
+                  label="Utan resonemang"
+                  description="Ber modellen svara direkt. Slå på om leverantören vägrar verktyg medan modellen resonerar. Lämna avstängt för andra modeller: alla servrar känner inte till inställningen."
+                  value={m.reasoning === 'none'}
+                  isDisabled={busy}
+                  changeAction={on =>
+                    run(async () => {
+                      await api.admin.updateModel(id, { reasoning: on ? 'none' : 'provider-default' });
+                      return on ? 'Modellen svarar utan resonemang.' : 'Modellen följer leverantörens inställning.';
+                    })
+                  }
+                />
                 <VStack gap={3} as="section" aria-label="Uppgifter">
                   <Heading level={3} accessibilityLevel={2}>
                     Uppgifter

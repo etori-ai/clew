@@ -67,6 +67,7 @@ export const actionLabel: Record<string, string> = {
   'model.default': 'Standard ändrad',
   'model.audience': 'Vem kan välja den ändrat',
   'model.tools': 'Verktyg ändrade',
+  'model.reasoning': 'Resonemang ändrat',
   'model.title': 'Namn ändrat',
   'model.description': 'Beskrivning ändrad',
   'model.model': 'Modellens id ändrat',

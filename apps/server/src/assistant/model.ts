@@ -1,7 +1,7 @@
 import { jsonSchema, stepCountIs, streamText, tool, type JSONSchema7, type ModelMessage, type ToolSet } from 'ai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { readsSummary, viewSummary } from '@clew/connectors';
-import type { ViewRef } from '@clew/contracts';
+import type { ModelReasoning, ViewRef } from '@clew/contracts';
 import type { ToolInfo } from './router';
 
 /** The configured model failed, timed out or answered nothing usable; the caller falls back to the router (D8). */
@@ -104,12 +104,13 @@ export type ModelGenerate = (request: {
  * The generate function for one model on one OpenAI-compatible endpoint (D24): the administered provider gives the base
  * URL and the opened key. Four steps at most, no retries, the caller's timeout. The completion is streamed (D36): each
  * text delta reports the step's text so far, and a new step starts it over, so the text heard last is the answer's.
- * `fetchImpl` is for tests.
+ * `reasoning` is the model's own setting (D75): `provider-default` sends nothing. `fetchImpl` is for tests.
  */
 export function createGenerator(
   endpoint: { baseUrl: string; apiKey?: string },
   model: string,
   fetchImpl?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
+  reasoning: ModelReasoning = 'provider-default',
 ): ModelGenerate {
   const provider = createOpenAICompatible({
     name: 'clew',
@@ -124,6 +125,7 @@ export function createGenerator(
     // Errors arrive as parts of the stream and are thrown below; the default handler would only log them a second time.
     const result = streamText({
       model: provider(model),
+      reasoning,
       system,
       messages,
       tools,

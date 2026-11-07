@@ -239,6 +239,13 @@
       "when": 1794002225863,
       "tag": "0033_connector_areas",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1794065558753,
+      "tag": "0034_model_reasoning",
+      "breakpoints": true
     }
   ]
 }

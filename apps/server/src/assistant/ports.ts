@@ -2,6 +2,7 @@ import type {
   AuditEntryView,
   AuthenticatedContext,
   ConnectorAudience,
+  ModelReasoning,
   ModelState,
   ProviderHealth,
 } from '@clew/contracts';
@@ -51,6 +52,7 @@ export interface ModelRecord {
   audience: ConnectorAudience;
   isDefault: boolean;
   tools: boolean;
+  reasoning: ModelReasoning;
   createdBy: string;
   updatedBy: string;
   createdAt: string;
@@ -69,7 +71,7 @@ export interface NewModel {
   at: string;
 }
 export type ModelPatch = Partial<
-  Pick<ModelRecord, 'model' | 'title' | 'description' | 'state' | 'audience' | 'isDefault' | 'tools'>
+  Pick<ModelRecord, 'model' | 'title' | 'description' | 'state' | 'audience' | 'isDefault' | 'tools' | 'reasoning'>
 >;
 export interface AuditEntry {
   actor: string;
@@ -129,10 +131,10 @@ export class WireError extends Error {
 export interface ModelWire {
   /** `GET {base}/models`: the ids the endpoint lists. */
   listModels(endpoint: Endpoint): Promise<string[]>;
-  /** One tiny completion: proves the model id and the key together. */
-  ping(endpoint: Endpoint, model: string): Promise<void>;
+  /** One tiny completion shaped like a real turn: proves the model id, the key and that the model takes the call (D75). */
+  ping(endpoint: Endpoint, model: string, call: Pick<ModelRecord, 'tools' | 'reasoning'>): Promise<void>;
   /** What the assistant calls for one turn with this model. */
-  generator(endpoint: Endpoint, model: string): ModelGenerate;
+  generator(endpoint: Endpoint, model: string, reasoning: ModelReasoning): ModelGenerate;
 }
 /**
  * Which endpoints answer, per provider, in this process. A failed generation marks the provider down and the router
