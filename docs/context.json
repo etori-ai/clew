@@ -859,7 +859,7 @@
       "number": 73,
       "path": "docs/decisions/D73-the-review-is-a-page-in-the-shell-with-an-address.md",
       "title": "D73 · The review is a page in the shell, with an address",
-      "status": "accepted, built 2026-11-07 on `main` as a page, rebuilt the same day as a drawer (see the amendment)",
+      "status": "accepted, built 2026-11-07 on `main` as a page, rebuilt the same day as a drawer (see the amendment), and on a phone as a sheet stacked over the card's sheet (see the second amendment)",
       "date": "2026-11-07",
       "area": "ui"
     },

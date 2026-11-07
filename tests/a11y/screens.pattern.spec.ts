@@ -86,4 +86,35 @@ test.describe('screens', () => {
     await page.getByRole('dialog').waitFor();
     await page.screenshot({ path: out('pattern-phone-panel') });
   });
+  test("the review on a phone: a tall sheet stacked over the card's sheet (D73, second amendment)", async ({
+    page,
+    api,
+  }) => {
+    const card = api.threads.find(t => t.id === 'fakturor')!;
+    card.actions = card.actions.map(a =>
+      a.id === 'approve' ? { ...a, review: 'each' as const, preview: 'finance.preview' } : a,
+    );
+    await page.setViewportSize(phone);
+    await open(page, '/?card=fakturor');
+    await page
+      .getByRole('dialog', { name: /^Kort: / })
+      .getByRole('link', { name: 'Granska 3' })
+      .click();
+    await page
+      .getByRole('dialog', { name: 'Granska 3 rader' })
+      .getByRole('img', { name: /Energibolaget AB/ })
+      .waitFor();
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: out('pattern-phone-review') });
+    await page
+      .getByRole('dialog', { name: 'Granska 3 rader' })
+      .getByRole('button', { name: 'Attestera', exact: true })
+      .click();
+    await page
+      .getByRole('dialog', { name: 'Granska 3 rader' })
+      .getByRole('img', { name: /Skolmaterial/ })
+      .waitFor();
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: out('pattern-phone-review-step-2'), fullPage: false });
+  });
 });

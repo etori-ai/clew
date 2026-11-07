@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test';
 import type { MockApi } from './support';
 import { desktop, expect, expectNoAxeViolations, narrow, open, phone, reflowProblems, test } from './support';
 
@@ -169,26 +170,108 @@ test.describe('the review where the card stands beside Hem (D73 amended)', () =>
   });
 });
 
-test.describe('the review on a phone (D73 amended, item 4)', () => {
+test.describe("the review on a phone: a tall sheet stacked over the card's sheet (D73, second amendment)", () => {
   test.use({ viewport: phone });
 
-  test('the same drawer with the page in sight at its edge, the document above the decision, no axe violations', async ({
+  /** The card's sheet, found by its dialog: covered by the review it is inert and hidden, so not by its role. */
+  const cardSheet = (page: Page) => page.locator('dialog[aria-label="Kort: Attestera 3 fakturor, 48 200 kr"]');
+
+  test("Granska in the card's sheet opens the review over it, the steps follow the address, and Esc leads back into the card's sheet with the selection and the focus on Granska", async ({
+    page,
+    api,
+  }) => {
+    reviewed(api);
+    await open(page, '/');
+    await page
+      .locator('#thread-fakturor')
+      .getByRole('link', { name: 'Attestera 3 fakturor, 48 200 kr', exact: true })
+      .click();
+    await expect(page).toHaveURL('/?card=fakturor');
+    const card = page.getByRole('dialog', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' });
+    await expect(card).toBeVisible();
+    await card.getByRole('link', { name: 'Granska 3' }).click();
+    await expect(page).toHaveURL('/cards/fakturor/review');
+    // Two sheets, one stack: the review on top with the focus, the card's sheet receding beneath it and inert.
+    const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
+    await expect(review).toBeVisible();
+    await expect(review).toHaveAttribute('data-sheet-stack', 'top');
+    await expect(cardSheet(page)).toHaveAttribute('data-sheet-stack', 'covered');
+    await expect(cardSheet(page)).toHaveAttribute('inert', '');
+    await expect(review.getByRole('heading', { level: 2, name: 'Granska 3 rader' })).toBeVisible();
+    await expect(review).toContainText('Attestera 3 fakturor, 48 200 kr · inget skrivs förrän du skickar');
+    await expect(review.getByRole('button', { name: 'Stäng', exact: true })).toBeVisible();
+    // The phone drops the footer's sentence about Esc; the decision's own line says nothing is written yet.
+    await expect(review).not.toContainText('Esc sparar och stänger');
+    // The document above the decision; on a phone a step opens on its document, not on the verb under it, so the
+    // document is in view and the verb is a thumb's reach below (D73, second amendment).
+    const img = review.getByRole('img', { name: /Energibolaget AB/ });
+    await expect(img).toBeVisible();
+    const attest = review.getByRole('button', { name: 'Attestera', exact: true });
+    await expect(review.getByRole('heading', { name: 'Underlag från ekonomisystemet' })).toBeFocused();
+    await expect(attest).not.toHaveAttribute('data-autofocus', '');
+    const [paper, button] = [await img.boundingBox(), await attest.boundingBox()];
+    expect(paper!.y + paper!.height).toBeLessThanOrEqual(button!.y);
+    await expectNoAxeViolations(page);
+    await review.getByRole('button', { name: 'Lämna kvar' }).click();
+    await expect(page).toHaveURL('/cards/fakturor/review?step=2');
+    await expect(review.getByRole('heading', { name: 'Skolmaterial Norrland AB · 18 300 kr' })).toBeVisible();
+    await review.getByRole('button', { name: 'Attestera', exact: true }).click();
+    await expect(page).toHaveURL('/cards/fakturor/review?step=3');
+    await page.keyboard.press('Escape');
+    await expect(page).toHaveURL('/?card=fakturor');
+    await expect(review).toHaveCount(0);
+    await expect(card).toBeVisible();
+    const boxes = card.getByRole('checkbox');
+    await expect(boxes.nth(0)).not.toBeChecked();
+    await expect(boxes.nth(1)).toBeChecked();
+    await expect(boxes.nth(2)).not.toBeChecked();
+    await expect(card.getByRole('link', { name: 'Granska 3' })).toBeFocused();
+    expect(api.threads.find(t => t.id === 'fakturor')!.state).toBe('open');
+  });
+
+  test("a cold open of a step stacks the review over the card's sheet, and ✕ leads back into the card's sheet", async ({
+    page,
+    api,
+  }) => {
+    reviewed(api);
+    await open(page, '/cards/fakturor/review?step=2');
+    const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
+    await expect(review.getByRole('heading', { name: 'Skolmaterial Norrland AB · 18 300 kr' })).toBeVisible();
+    await expect(review.getByText('2 av 3', { exact: true })).toBeVisible();
+    // Both sheets opened in one update: tree order puts the review on top.
+    await expect(review).toHaveAttribute('data-sheet-stack', 'top');
+    await expect(cardSheet(page)).toHaveAttribute('data-sheet-stack', 'covered');
+    await expect(review.getByRole('heading', { name: 'Underlag från ekonomisystemet' })).toBeFocused();
+    await expectNoAxeViolations(page);
+    await review.getByRole('button', { name: 'Attestera', exact: true }).click();
+    await expect(page).toHaveURL('/cards/fakturor/review?step=3');
+    await review.getByRole('button', { name: 'Stäng', exact: true }).click();
+    await expect(page).toHaveURL('/?card=fakturor');
+    await expect(review).toHaveCount(0);
+    const card = page.getByRole('dialog', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' });
+    await expect(card).toBeVisible();
+    await expect(card.getByRole('checkbox').nth(1)).toBeChecked();
+    await expect(card.getByRole('link', { name: 'Granska 3' })).toBeFocused();
+  });
+});
+
+test.describe('the review across a resize (D73, second amendment)', () => {
+  test.use({ viewport: desktop });
+
+  test('narrowing to a phone swaps the drawer for the sheet and keeps the step and the decisions', async ({
     page,
     api,
   }) => {
     reviewed(api);
     await open(page, '/cards/fakturor/review');
     const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
-    await expect(review.getByRole('heading', { level: 2, name: 'Granska 3 rader' })).toBeVisible();
-    // Astryx keeps a 56 px reveal of the page below 640 px.
-    const box = await review.boundingBox();
-    expect(box!.x).toBeGreaterThanOrEqual(56);
-    const img = review.getByRole('img', { name: /Energibolaget AB/ });
-    await expect(img).toBeVisible();
-    const attest = review.getByRole('button', { name: 'Attestera', exact: true });
-    const [paper, button] = [await img.boundingBox(), await attest.boundingBox()];
-    expect(paper!.y + paper!.height).toBeLessThanOrEqual(button!.y);
-    await expectNoAxeViolations(page);
+    await review.getByRole('button', { name: 'Attestera', exact: true }).click();
+    await expect(page).toHaveURL('/cards/fakturor/review?step=2');
+    await expect(review).not.toHaveAttribute('data-sheet-stack');
+    await page.setViewportSize(phone);
+    await expect(review).toHaveAttribute('data-sheet-stack', 'top');
+    await expect(review.getByRole('heading', { name: 'Skolmaterial Norrland AB · 18 300 kr' })).toBeVisible();
+    await expect(review.getByRole('list', { name: 'Hittills' })).toContainText('Godkänd');
   });
 });
 

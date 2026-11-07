@@ -1,6 +1,6 @@
 # D73 · The review is a page in the shell, with an address
 
-**Status:** accepted, built 2026-11-07 on `main` as a page, rebuilt the same day as a drawer (see the amendment) · **Date:** 2026-11-07 · **Area:** ui
+**Status:** accepted, built 2026-11-07 on `main` as a page, rebuilt the same day as a drawer (see the amendment), and on a phone as a sheet stacked over the card's sheet (see the second amendment) · **Date:** 2026-11-07 · **Area:** ui
 
 **Decision.** The review of several rows one at a time ([D70](D70-one-press-confirms-on-the-row-and-rows-with-a-document-are-reviewed-one-at-a-time.md)
 item 2) is no longer a fullscreen `Dialog` over Hem with state of its own. It is a page in the one shell, with the
@@ -119,3 +119,64 @@ heading and the summary's are level 3 under the drawer's h2. Evidence: `tests/a1
 and Skicka at 1280 px with the card as a drawer under the review, Esc, a direct open with a reload and ✕, an unknown
 step and card, a card without a review, the card beside the column at 1440 px, the phone with Astryx's 56 px reveal,
 reflow at 320 px), `screens.pattern.spec.ts` waiting for the drawer, `bun run check`.
+
+**Amended a second time 2026-11-07: the phone.** The product owner opened the review on an iPhone SE (375 × 667). The
+card there is Astryx's `BottomSheet` with "‹ Hem" and ✕ on its first row (D71, artboard 12), and "Granska 3" opened the
+desktop's side `Drawer` over that sheet with Astryx's 56 px page reveal: a 319 px column with the document, the row's
+heading, Attestera, Lämna kvar and Hoppa över wrapping onto three lines, and the footer's sentence with Föregående and
+Nästa taking a third of the height. Their words: "On mobile, either we use stacked from the bottom sheets, astryx added
+this lately, or navigation within the sheet." Decided:
+
+1. **On a phone the review is a `BottomSheet` with `height="tall"`, stacked over the card's sheet.** "On a phone" is the
+   same `mobileQuery` (767 px and narrower) where the card is a sheet. This is Astryx's documented drill-in: "open the
+   next sheet over the current one and keep each sheet's isOpen where its data lives". The card's sheet recedes beneath
+   (scaled and lifted, inert and hidden from assistive technology while covered), and the stack keeps one scrim. The
+   sheet is `purpose="info"`, so a downward swipe, the scrim and Esc close it as the ✕ does, and it keeps the padding the
+   card's sheet has (the theme's default). Inside it is the drawer's composition: a header row with the title as the
+   sheet's h2 and the ✕ at the end (the sheet has no header of its own, so the row is composed as the card's sheet
+   composes its first row), the subtitle under it, the mark row, the `Stepper` (it collapses to a segmented track with
+   the step's label under it, `collapsedVariant: 'withLabel'`), the document above the decision (the `Grid` stacks), the
+   summary on the last step, and Föregående and Nästa in the footer. The ✕ has the name Astryx gives the drawer's,
+   "Stäng".
+2. **The footer's sentence "Esc sparar och stänger …" is dropped on the phone.** A touch screen has no Esc, the height is
+   the document's, and the decision's own line ("Beslutet sparas som markering på kortet. Inget skrivs till … förrän du
+   skickar i sista steget.") and the subtitle already say that nothing is written until Skicka.
+3. **The address and the flow are unchanged.** `/cards/:threadId/review?step=` draws Hem with the card in its sheet and
+   the review's sheet over it; closing leads to `/?card=<threadId>` with the decisions as the card's selection and the
+   focus on "Granska N" in the card's sheet; Skicka as before. A cold open of a step opens both sheets in one update, and
+   Astryx then stacks them in tree order, so the review is written after the card's sheet.
+4. **The first amendment's "no `BottomSheet`, since the steps need the height" is withdrawn.** A `tall` sheet is a
+   pinned, near-full panel (about 92 % of the viewport), and over the card's sheet it mirrors the desktop: the review
+   over the card it came from.
+
+Weighed and left: **navigation within the card's sheet** (the review replacing the card inside one sheet). It would
+hide the card entirely, and the sheet's "‹ Hem" back row would take a second meaning ("back to the card" inside the
+review, "back to Hem" on the card), while a stacked sheet keeps the card in sight beneath, as the desktop keeps it beside
+or under the drawer, and is what Astryx ships for a drill-in. **A sheet that replaces the card's** (Astryx's "replacing a
+sheet") was not chosen for the same reason: the card would leave the screen.
+
+**Built as a sheet on the phone.** `apps/web/src/components/review-drawer.tsx` is renamed
+`apps/web/src/components/review-overlay.tsx` and `ReviewDrawer` is `ReviewOverlay`, since it is a drawer or a sheet:
+on `mobileQuery` it renders `BottomSheet height="tall" purpose="info"` with the label "Granska N rader", else the
+`Drawer` as before. The header is `LayoutHeader` with the `Heading` and an `IconButton` ✕ on the phone, `DrawerHeader`
+on a desktop; `Review` drops the footer's sentence on the phone. `StartPage` (`apps/web/src/pages/start.tsx`) renders
+`ReviewOverlay` after the card's sheet, so a deep link stacks the review on top. Closing works as the drawer's did: the
+sheet slides away, its dialog closes, and only on the dialog's `close` event does the overlay lead to `/?card=<id>`; the
+sheet's `ref` is its panel, so the overlay listens on the panel's enclosing dialog. Astryx returns the focus into the
+card's sheet it reveals, and the card puts it on "Granska N" from the handed-back state as before, so the focus lands
+there after a review opened from the card and after a cold open alike (seen in the suite and on the dev stack; which of
+the two placed it first was not told apart). The verb keeps the focus on each step (a frame after the
+step, as on the desktop) and carries `data-autofocus`. Three things the amendment did not name. The decisions, the step
+and the leaving state live in `ReviewOverlay` above the surface, so a resize across 768 px swaps the drawer for the sheet,
+or back, and keeps them; but opened in the commit of the swap, or one commit later, the new surface came out beneath the
+card's own (the card's sheet or drawer on top, measured in both directions), so after a swap the review opens a frame
+later. A `close` event while the address still names the review is the swap and ends nothing. On a phone a step opens on
+its document, the heading "Underlag från …" taking the focus, not on the verb: focusing the verb scrolled the sheet so
+that on 667 px of height the document was above the fold when a step opened, and the document is what a review is for;
+the verb is a thumb's reach under it, and Enter is not the way on a touch screen. The drawer keeps the verb, with room
+for both. Evidence:
+`tests/a11y/review.spec.ts` (9 cases; the phone's two assert the review as a dialog with `data-sheet-stack="top"` over
+the card's sheet `covered` and inert, the focus, the steps with `?step=`, Esc and ✕ back into the card's sheet at
+`/?card=fakturor` with the selection and the focus on "Granska 3", a cold open of `?step=2`, no axe violations; one more
+narrows a desktop review to a phone and keeps the step and the decisions; 320 px reflow), `screens.pattern.spec.ts` with
+`CLEW_SCREENS=1` (`pattern-phone-review`, `pattern-phone-review-step-2`), `bun run check`.

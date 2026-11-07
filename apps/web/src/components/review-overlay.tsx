@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { Thread, ThreadAction, ThreadItem } from '@clew/contracts';
@@ -6,6 +6,7 @@ import {
   AreaChip,
   Badge,
   Banner,
+  BottomSheet,
   Button,
   Card,
   Drawer,
@@ -14,13 +15,16 @@ import {
   Heading,
   HStack,
   Icon,
+  IconButton,
   Layout,
   LayoutContent,
   LayoutFooter,
+  LayoutHeader,
   Lightbox,
   List,
   ListItem,
   Skeleton,
+  StackItem,
   Step,
   Stepper,
   Text,
@@ -50,35 +54,38 @@ const reviewable = (thread: Thread | undefined) =>
   thread && thread.state === 'open' && !thread.receipt ? reviewedAction(thread) : undefined;
 /**
  * The drawer's desktop width budget (D73 amended): room for the document beside the decision, two columns of 360 px
- * and the inset, with the rail and the column's edge still in sight behind the scrim. Below 640 px Astryx keeps its
- * 56 px reveal of the page.
+ * and the inset, with the rail and the column's edge still in sight behind the scrim. On a phone the review is a sheet
+ * instead (D73, second amendment).
  */
 const REVIEW_WIDTH = 1040;
 
 /**
- * The review one row at a time (D70 item 2) as an Astryx `Drawer` from the end edge over Hem (D73, amended 2026-11-07:
- * an overlay, not a page of its own). The route `/cards/:threadId/review` draws Hem with the card beside the column, as
- * `/?card=` does, and this drawer over it; `threadId` is the card the route names, null on every other start route.
- * The step is the address's `step`, rewritten in place. Closing (✕, Esc, the scrim) keeps the decisions: the drawer
- * slides away first and then leads to `/?card=<threadId>` with them as the card's selection, so the page is no longer
- * inert when the card puts the focus back on its "Granska N". The card comes from the threads list, the cache Hem's
- * cards are drawn from (D33). A card that is not reviewed, or a step it does not have, says so inside the drawer, where
- * the ✕ is the way out.
+ * The review one row at a time (D70 item 2) as an overlay over Hem (D73, amended 2026-11-07: an overlay, not a page of
+ * its own): an Astryx `Drawer` from the end edge, and on a phone, where the card is itself a `BottomSheet`, a tall
+ * `BottomSheet` stacked over the card's sheet, Astryx's drill-in (D73, second amendment). The route
+ * `/cards/:threadId/review` draws Hem with the card beside the column (or in its sheet), as `/?card=` does, and this
+ * overlay over it; `threadId` is the card the route names, null on every other start route. The step is the address's
+ * `step`, rewritten in place. Closing (✕, Esc, the scrim, a swipe on the sheet) keeps the decisions: the overlay slides
+ * away first and then leads to `/?card=<threadId>` with them as the card's selection, so the page (or the card's sheet)
+ * is no longer inert when the card puts the focus back on its "Granska N". The decisions live here, above the surface,
+ * so a resize across the phone's width swaps the drawer for the sheet without losing them. The card comes from the
+ * threads list, the cache Hem's cards are drawn from (D33). A card that is not reviewed, or a step it does not have,
+ * says so inside the overlay, where the ✕ is the way out.
  */
-export function ReviewDrawer({ threadId }: { threadId: string | null }) {
+export function ReviewOverlay({ threadId }: { threadId: string | null }) {
   const navigate = useNavigate();
   const [search] = useSearchParams();
   const mobile = useMediaQuery(mobileQuery);
-  // 1.4.10: with 480 px or less in height nothing in the drawer is pinned; it scrolls as one.
+  // 1.4.10: with 480 px or less in height nothing in the overlay is pinned; it scrolls as one.
   const short = useMediaQuery(shortQuery);
   const threadsQ = useQuery(threadsQuery);
-  // One review, from the address naming it until the drawer has slid away: the card, the step the address last named
-  // (kept while the drawer leaves, so the step does not change under the slide), and the decisions taken in it.
+  // One review, from the address naming it until the overlay has slid away: the card, the step the address last named
+  // (kept while the overlay leaves, so the step does not change under the slide), and the decisions taken in it.
   const [held, setHeld] = useState<{ threadId: string; open: boolean } | null>(null);
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
-  // Where the drawer leads once it has slid away, set by a close or by Skicka; null while it stays.
+  // Where the overlay leads once it has slid away, set by a close or by Skicka; null while it stays.
   const [leaving, setLeaving] = useState<{ to: string; state?: ReviewReturn } | null>(null);
-  // While the decision is on its way the card turns handled under the drawer: the review keeps the card it was sending
+  // While the decision is on its way the card turns handled under the overlay: the review keeps the card it was sending
   // from until it has led back to Hem.
   const [sending, setSending] = useState(false);
   if (threadId && !leaving && (!held || !held.open || held.threadId !== threadId)) {
@@ -86,7 +93,7 @@ export function ReviewDrawer({ threadId }: { threadId: string | null }) {
     setDecisions({});
     setSending(false);
   } else if (!threadId && leaving) {
-    // The drawer has slid away and the address it led to has landed: the review is over.
+    // The overlay has slid away and the address it led to has landed: the review is over.
     setHeld(null);
     setLeaving(null);
     setSending(false);
@@ -105,10 +112,21 @@ export function ReviewDrawer({ threadId }: { threadId: string | null }) {
   const step = shown ? stepOf(lastSearch.current, items.length + 1) : null;
   const missing = threadsQ.data !== undefined && !shown;
   const failed = threadsQ.isError && threadsQ.data === undefined;
-  // The drawer opens once the threads are read, in the same commit as the card under it: where the card is itself a
-  // drawer (or the phone's sheet), the one shown last stacks on top, and the review must be the top one. Until then Hem
-  // draws its own loading state under the address.
-  const isOpen = !!threadId && !leaving && (threadsQ.data !== undefined || failed);
+  // The overlay opens once the threads are read, in the same commit as the card under it: where the card is itself a
+  // drawer, the one shown last stacks on top, and on a phone two sheets opened in one update stack in tree order, so the
+  // review, written after the card's sheet in `StartPage`, is the top one. Until then Hem draws its own loading state
+  // under the address.
+  // A resize across the phone's width swaps the drawer for the sheet (or back) while the card under it swaps too. Opened
+  // in that same commit, or one commit later, the new surface came out beneath the card's (measured in both directions:
+  // the card's sheet or drawer on top), so it opens a frame later, over the card already presented. A cold open is not
+  // a swap: both open in one update and tree order decides.
+  const [surface, setSurface] = useState(mobile);
+  const swapping = surface !== mobile;
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setSurface(mobile));
+    return () => cancelAnimationFrame(frame);
+  }, [mobile]);
+  const isOpen = !!threadId && !leaving && !swapping && (threadsQ.data !== undefined || failed);
   const title = shown
     ? step === null
       ? 'Steget finns inte'
@@ -116,7 +134,7 @@ export function ReviewDrawer({ threadId }: { threadId: string | null }) {
     : missing
       ? 'Kortet finns inte'
       : 'Granskning';
-  // The document title names the review while it is open; Hem's own title comes back with Hem's address. The drawer
+  // The document title names the review while it is open; Hem's own title comes back with Hem's address. The overlay
   // says its name itself when the focus enters it, so the title is not spoken.
   usePageTitle(isOpen && (shown || missing) ? title : null, false);
 
@@ -129,32 +147,58 @@ export function ReviewDrawer({ threadId }: { threadId: string | null }) {
     if (open || sending || leaving) return;
     leave(shown && step !== null ? reviewReturn(shown.thread.id, approved) : undefined);
   };
-  // The drawer has slid away and given the focus back: now the address follows. Leading back replaces the review's
-  // entry, so Back from the card goes where the person was before the review. Nothing is reset until that address has
-  // landed, or the drawer would open again for the render in between. A close that the address made (Back) leads nowhere
-  // and ends the review here.
-  const dialog = useRef<HTMLDialogElement>(null);
+  // The overlay has slid away and given the focus back (to the page, or into the card's sheet it revealed): now the
+  // address follows. Leading back replaces the review's entry, so Back from the card goes where the person was before
+  // the review. Nothing is reset until that address has landed, or the overlay would open again for the render in
+  // between. A close that the address made (Back) leads nowhere and ends the review here; a close while the address
+  // still names the review is the surface being swapped on a resize, and ends nothing.
+  // The drawer's ref is its dialog; the sheet's is its panel, inside its dialog.
+  const [dialog, setDialog] = useState<HTMLDialogElement | null>(null);
+  const sheetPanel = useCallback((panel: HTMLDivElement | null) => setDialog(panel?.closest('dialog') ?? null), []);
   const leavingRef = useRef(leaving);
   leavingRef.current = leaving;
+  const threadRef = useRef(threadId);
+  threadRef.current = threadId;
   useEffect(() => {
-    const el = dialog.current;
-    if (!el) return;
+    if (!dialog) return;
     const closed = () => {
       const to = leavingRef.current;
       if (to) {
         navigate(to.to, { replace: true, ...(to.state ? { state: to.state } : {}) });
         return;
       }
+      if (threadRef.current) return;
       setHeld(null);
       setSending(false);
     };
-    el.addEventListener('close', closed);
-    return () => el.removeEventListener('close', closed);
-  }, [navigate]);
+    dialog.addEventListener('close', closed);
+    return () => dialog.removeEventListener('close', closed);
+  }, [dialog, navigate]);
 
-  const header = (subtitle?: string) => (
-    <DrawerHeader title={title} {...(subtitle ? { subtitle } : {})} onOpenChange={onOpenChange} />
-  );
+  // The drawer's header is Astryx's `DrawerHeader`. The sheet has no header of its own (its label names it): the first
+  // row is composed as the card's sheet composes its own, the title as the h2 at the start and the ✕ at the end, with
+  // the name Astryx gives the drawer's ✕, "Stäng".
+  const header = (subtitle?: string) =>
+    mobile ? (
+      <LayoutHeader>
+        <VStack gap={1}>
+          <HStack justify="between" vAlign="center" gap={2}>
+            <StackItem size="fill">
+              <Heading level={2}>{title}</Heading>
+            </StackItem>
+            <IconButton
+              variant="ghost"
+              label="Stäng"
+              icon={<Icon icon="close" />}
+              onClick={() => onOpenChange(false)}
+            />
+          </HStack>
+          {subtitle && <Text type="supporting">{subtitle}</Text>}
+        </VStack>
+      </LayoutHeader>
+    ) : (
+      <DrawerHeader title={title} {...(subtitle ? { subtitle } : {})} onOpenChange={onOpenChange} />
+    );
   const message = (content: React.ReactNode) => (
     <Layout height={short ? 'auto' : 'fill'} header={header()} content={<LayoutContent>{content}</LayoutContent>} />
   );
@@ -173,6 +217,7 @@ export function ReviewDrawer({ threadId }: { threadId: string | null }) {
         leave();
       }}
       header={header(`${shown.thread.title} · inget skrivs förrän du skickar`)}
+      phone={mobile}
     />
   ) : shown ? (
     message(
@@ -196,15 +241,28 @@ export function ReviewDrawer({ threadId }: { threadId: string | null }) {
       </Banner>,
     )
   ) : null;
-  return (
+  // On a phone (D73, second amendment): a tall sheet over the card's sheet, `info` so a swipe, the scrim and Esc close
+  // it as the ✕ does, with the padding the card's sheet has (the theme's default).
+  return mobile ? (
+    <BottomSheet
+      ref={sheetPanel}
+      isOpen={isOpen}
+      onOpenChange={onOpenChange}
+      label={title}
+      height="tall"
+      purpose="info"
+    >
+      {body}
+    </BottomSheet>
+  ) : (
     <Drawer
-      ref={dialog}
+      ref={setDialog}
       isOpen={isOpen}
       onOpenChange={onOpenChange}
       label={title}
       side="end"
       width={REVIEW_WIDTH}
-      padding={mobile ? 4 : 6}
+      padding={6}
     >
       {body}
     </Drawer>
@@ -229,6 +287,7 @@ function Review({
   onSending,
   onSent,
   header,
+  phone,
 }: {
   thread: Thread;
   /** The thread as the cache has it now, which says when the source's answer has come to rest. */
@@ -239,9 +298,11 @@ function Review({
   onDecide: (ref: string, decision: Decision) => void;
   sending: boolean;
   onSending: (sending: boolean) => void;
-  /** The source has answered: the drawer leads back to the card, where the row keeps its place with the receipt. */
+  /** The source has answered: the overlay leads back to the card, where the row keeps its place with the receipt. */
   onSent: () => void;
   header: React.ReactNode;
+  /** On a phone the review is a sheet (D73, second amendment): the footer drops the sentence about Esc. */
+  phone: boolean;
 }) {
   const navigate = useNavigate();
   const short = useMediaQuery(shortQuery);
@@ -263,7 +324,7 @@ function Review({
     goTo(step + 1);
   };
   // Skicka is the card's own execute (D45/D47): the button keeps loading until the source's answer has come to rest,
-  // and only then does the drawer lead back to the card, where the row keeps its place with the receipt (D70 item 1).
+  // and only then does the overlay lead back to the card, where the row keeps its place with the receipt (D70 item 1).
   const { settling, error, perform } = useCardAction({ thread: live });
   const [sent, setSent] = useState(false);
   const send = async () => {
@@ -282,13 +343,19 @@ function Review({
     onSent();
   }, [sent, settling, error]);
   // Each step opens on its one next step, so Enter takes it (artboard B); the last step on its button, or its heading
-  // when there is nothing to send. A frame later, so the drawer has been shown and its page made inert first.
+  // when there is nothing to send. A frame later, so the overlay has been shown and its page made inert first. On a
+  // phone a step opens on its document instead (D73, second amendment): the verb stands under the document, and focusing
+  // it scrolled the sheet so the document was above the fold, which is the one thing a review is for. Enter is not the
+  // way on a touch screen; the verb is a thumb's reach under the document.
   const primary = useRef<HTMLButtonElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
+  const paperHeading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
-    const frame = requestAnimationFrame(() => (primary.current ?? heading.current)?.focus());
+    const frame = requestAnimationFrame(() =>
+      ((phone ? paperHeading.current : primary.current) ?? heading.current)?.focus(),
+    );
     return () => cancelAnimationFrame(frame);
-  }, [step]);
+  }, [step, phone]);
   const preview = useQuery({ ...previewQuery(thread.id, item?.ref ?? ''), enabled: !!item });
   const dataUrl = preview.data ? `data:${preview.data.mediaType};base64,${preview.data.data}` : null;
   const isImage = !!preview.data && preview.data.mediaType !== 'application/pdf';
@@ -319,9 +386,9 @@ function Review({
   const paper = item && (
     <VStack gap={2} as="section" aria-label="Underlaget">
       <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-        <Text type="supporting" weight="semibold">
+        <Heading ref={paperHeading} tabIndex={-1} level={4} accessibilityLevel={3}>
           Underlag från {source}
-        </Text>
+        </Heading>
         {dataUrl && isImage && <Button size="sm" variant="ghost" label="Förstora" onClick={() => setZoom(true)} />}
       </HStack>
       <Card padding={2}>
@@ -349,7 +416,7 @@ function Review({
       )}
     </VStack>
   );
-  // The drawer's title is the h2; a row and the summary are the level under it.
+  // The overlay's title is the h2; a row and the summary are the level under it.
   const decision = item && (
     <VStack gap={3}>
       {decisions[item.ref] && (
@@ -367,7 +434,14 @@ function Review({
         {item.detail}
       </Text>
       <HStack gap={2} wrap="wrap">
-        <Button ref={primary} size="lg" variant="primary" label={verb} onClick={() => decide('approve')} />
+        <Button
+          ref={primary}
+          {...(phone ? {} : { 'data-autofocus': '' })}
+          size="lg"
+          variant="primary"
+          label={verb}
+          onClick={() => decide('approve')}
+        />
         <Button size="lg" variant="secondary" label="Lämna kvar" onClick={() => decide('leave')} />
         <Button size="lg" variant="ghost" label="Hoppa över" onClick={() => goTo(step + 1)} />
       </HStack>
@@ -422,6 +496,12 @@ function Review({
       </HStack>
     </VStack>
   );
+  const stepButtons = (
+    <>
+      <Button size="sm" variant="secondary" label="Föregående" isDisabled={step === 0} onClick={() => goTo(step - 1)} />
+      <Button size="sm" variant="secondary" label="Nästa" isDisabled={last} onClick={() => goTo(step + 1)} />
+    </>
+  );
   return (
     <Layout
       height={short ? 'auto' : 'fill'}
@@ -467,18 +547,13 @@ function Review({
       }
       footer={
         <LayoutFooter>
+          {/* On a phone the sentence goes (D73, second amendment): a touch screen has no Esc, the height is the document's,
+              and the decision's own line already says that nothing is written until Skicka. */}
           <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-            <Text type="supporting">Esc sparar och stänger. Inget skrivs till {source} förrän du skickar.</Text>
-            <HStack gap={2}>
-              <Button
-                size="sm"
-                variant="secondary"
-                label="Föregående"
-                isDisabled={step === 0}
-                onClick={() => goTo(step - 1)}
-              />
-              <Button size="sm" variant="secondary" label="Nästa" isDisabled={last} onClick={() => goTo(step + 1)} />
-            </HStack>
+            {!phone && (
+              <Text type="supporting">Esc sparar och stänger. Inget skrivs till {source} förrän du skickar.</Text>
+            )}
+            {phone ? stepButtons : <HStack gap={2}>{stepButtons}</HStack>}
           </HStack>
         </LayoutFooter>
       }

@@ -56,7 +56,7 @@ import { Transcript } from '../components/conversation';
 import { toolHref, useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { GenericCard, ThreadRow } from '../components/card';
-import { ReviewDrawer } from '../components/review-drawer';
+import { ReviewOverlay } from '../components/review-overlay';
 import { BriefSkeleton } from '../components/brief';
 import {
   CONVERSATION_MIN,
@@ -1091,7 +1091,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       {slot.overlay}
       {sheet}
       {/* After the panel's drawer and the phone's sheet, so a direct open stacks the review on top of the card (D73 amended). */}
-      <ReviewDrawer threadId={reviewing} />
+      <ReviewOverlay threadId={reviewing} />
       <EventDialog
         item={openItem?.item ?? null}
         dayItems={openItem?.dayItems ?? []}
