@@ -55,7 +55,7 @@ export function ledgerSteps(
     if (s.draft.kind === 'execute')
       return { id: s.id, kind: 'execute', operation: s.draft.operation, payload: s.draft.payload };
     const own = durationMs(s.draft.within) ?? 0,
-      ceiling = withinCeiling[s.connector] ? durationMs(withinCeiling[s.connector]!) : undefined;
+      ceiling = withinCeiling[s.binding] ? durationMs(withinCeiling[s.binding]!) : undefined;
     const within = ceiling ? Math.min(own, ceiling) : own;
     return {
       id: s.id,

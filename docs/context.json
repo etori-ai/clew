@@ -891,6 +891,15 @@
       "status": "accepted, built 2026-11-07",
       "date": "2026-11-07",
       "area": "ui"
+    },
+    {
+      "key": "D77-job-approvals-preserve-intent-bindings-and-receipt-authority",
+      "number": 77,
+      "path": "docs/decisions/D77-job-approvals-preserve-intent-bindings-and-receipt-authority.md",
+      "title": "D77 · Job approvals preserve watch intent, binding identity and receipt authority",
+      "status": "accepted, built 2026-11-07",
+      "date": "2026-11-07",
+      "area": "integrations"
     }
   ],
   "documents": [
@@ -1692,6 +1701,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D77-job-approvals-preserve-intent-bindings-and-receipt-authority.md",
+      "title": "D77 · Job approvals preserve watch intent, binding identity and receipt authority",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -1750,7 +1765,8 @@
         "Keep approval separate from execution",
         "Bind an operation to its approved input",
         "Return what the source confirmed",
-        "Test the failure cases"
+        "Test the failure cases",
+        "Reading retained receipts"
       ]
     },
     {
@@ -2356,7 +2372,8 @@
         "Minimum additional state",
         "Decisions at the boundaries",
         "Deliver in three increments",
-        "Verification and limits"
+        "Verification and limits",
+        "Outcome: approval and receipt fixes"
       ]
     },
     {

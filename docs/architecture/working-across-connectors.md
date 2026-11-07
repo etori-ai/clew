@@ -80,7 +80,9 @@ Implemented:
 
 Planned but not implemented: a job card/step-list UI, administration screens for bindings, the full composer/pushed entry paths, and receipt-driven facts assembling the next proposal. Source event ingest is also proposed. Running watches currently have no cancellation path. `creates` metadata does not automatically start a job.
 
-Before expanding this path, address the [three reproduced approval/read gaps](../reviews/2026-11-07-multi-connector-task-continuation.md#three-reproduced-gaps-to-fix-first): approval replay recalculates watch times, old proposals can retain a disabled binding, and job reads do not fence receipts by the producing unit/authorization version. These findings remain open.
+The [three reproduced approval/read gaps](../reviews/2026-11-07-multi-connector-task-continuation.md#outcome-approval-and-receipt-fixes) are fixed: retries preserve the first committed watch schedule; approval rechecks binding revisions, eligibility and step ownership; job and execution receipts require their producing unit/authorization version and current capability access. [D77](../decisions/D77-job-approvals-preserve-intent-bindings-and-receipt-authority.md) records the behavior and compatibility limits.
+
+Each assembled step now carries `binding`; each source carries `bindingRevision`. Echo them when submitting the proposal, and treat step ids as opaque. Binding changes require a fresh proposal. Watch limits apply per binding, including when one connector has several followers. This metadata detects configuration changes; it does not make the client-supplied proposal an immutable server-side record. That record and receipt-driven continuation remain planned.
 
 A general process-graph editor with arbitrary branches and cross-step dataflow is outside D55's design. That boundary does not exclude tasks requiring changes in multiple connectors; those are the purpose of the job and its planned continuation.
 

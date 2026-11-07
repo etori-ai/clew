@@ -236,3 +236,35 @@ describe('approved source execution', () => {
     expect(w.store.outbox()).toEqual([]);
   });
 });
+
+test('execution evidence cannot be read, replayed, reconciled or undone under a new authority', async () => {
+  const w = world();
+  const approved = await w.approve();
+  await w.uc.progress(approved.id);
+  await w.store.transaction(async tx => {
+    const e = (await tx.lock(approved.id))!;
+    await tx.update({ ...e, result: { ...result, undoCapability: 'test.undo', undoMinutes: 10 } });
+  });
+  const before = w.store.audit();
+  for (const changed of [
+    { ...persona, unitId: 'other' },
+    { ...persona, authorizationVersion: 'v2' },
+  ]) {
+    expect(await w.uc.read(changed, approved.id)).toBeUndefined();
+    await expect(
+      w.uc.approve(changed, { decisionId: 'decision', operation: 'test.do', payload: { revision: 'r1' } }),
+    ).rejects.toThrow('finns inte');
+    await expect(w.uc.reconcile(changed, approved.id)).rejects.toThrow('finns inte');
+    await expect(
+      w.uc.approve(changed, {
+        decisionId: 'undo:' + approved.id,
+        operation: 'test.undo',
+        payload: { revision: 'r1' },
+        compensates: approved.id,
+      }),
+    ).rejects.toThrow('kan inte ångras');
+  }
+  expect(w.store.dump()).toHaveLength(1);
+  expect(w.store.audit()).toEqual(before);
+  expect((await w.uc.read(persona, approved.id))?.result).toMatchObject(result);
+});

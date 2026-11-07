@@ -90,7 +90,8 @@ Historical numbering collisions: **D37, D38, D39, D44, D45, D46** each identify 
 | [D74 · One page header for every surface](D74-one-page-header-for-every-surface.md) | ui | 2026-11-07 | accepted, built 2026-11-07 on `main` (a tool page, the calendar, the admin pages, then Hem and a |
 | [D75 · Source snapshots retain the authority that produced them](D75-source-snapshots-retain-the-authority-that-produced-them.md) | identity | 2026-11-07 | accepted, built 2026-11-07 |
 | [D76 · Loading sections reserve their place and enter together](D76-loading-sections-reserve-their-place-and-enter-together.md) | ui | 2026-11-07 | accepted, built 2026-11-07 |
+| [D77 · Job approvals preserve watch intent, binding identity and receipt authority](D77-job-approvals-preserve-intent-bindings-and-receipt-authority.md) | integrations | 2026-11-07 | accepted, built 2026-11-07 |
 
 ## Add a decision
 
-Use [TEMPLATE.md](TEMPLATE.md) and a new unused number (currently D77). Include status, date, area, decision, rationale and what it replaces. Preserve earlier decision bodies; record supersession explicitly. Refer to the full filename when a number is ambiguous. Update the implementation-status guide when delivery changes, add a session note to [HANDOVER.md](../../HANDOVER.md), and run `bun run docs:generate` followed by `bun run docs:check`. The generated context map includes every record.
+Use [TEMPLATE.md](TEMPLATE.md) and a new unused number (currently D78). Include status, date, area, decision, rationale and what it replaces. Preserve earlier decision bodies; record supersession explicitly. Refer to the full filename when a number is ambiguous. Update the implementation-status guide when delivery changes, add a session note to [HANDOVER.md](../../HANDOVER.md), and run `bun run docs:generate` followed by `bun run docs:check`. The generated context map includes every record.

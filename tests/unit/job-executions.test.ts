@@ -259,6 +259,8 @@ function world(
     bindings: bindingStore,
     followers: (a, k) => registry.followers(a, k),
     offered: k => registry.offered(k),
+    refresh: () => registry.refreshGovernance(),
+    digest: JSON.stringify,
     ledger,
     clock,
     ids: () => 'b' + ++id,
@@ -276,6 +278,8 @@ function world(
     store,
     bindingStore,
     systems,
+    source,
+    watch,
     ledger,
     jobs,
     call,
@@ -513,8 +517,8 @@ describe('one approval runs each step as its own execution or watch', () => {
     expect(w.store.outbox()).toHaveLength(2);
     expect(w.store.audit().map(e => e.action)).toEqual(['execution.approved', 'execution.approved', 'job.approved']);
     expect(w.store.dump().map(e => [e.connector, e.decisionId])).toEqual([
-      ['hr', 'job:absence:1004:2026-11-05:hr-1'],
-      ['timesheet', 'job:absence:1004:2026-11-05:timesheet-1'],
+      ['hr', 'job:absence:1004:2026-11-05:b1-1'],
+      ['timesheet', 'job:absence:1004:2026-11-05:b2-1'],
     ]);
     expect(a.steps.map(s => [s.connector, s.kind, s.state])).toEqual([
       ['hr', 'execute', 'pending'],
@@ -543,7 +547,7 @@ describe('one approval runs each step as its own execution or watch', () => {
     expect(w.store.dump()).toHaveLength(2);
     expect(w.store.audit()).toHaveLength(3);
   });
-  test('a step its connector refuses at approval persists nothing for the whole job', async () => {
+  test('an unbound step is refused before any job intent is committed', async () => {
     const w = world();
     await w.bindAll();
     const p = await w.jobs.assemble(manager, fact, w.call);
@@ -553,13 +557,14 @@ describe('one approval runs each step as its own execution or watch', () => {
         ...p.steps,
         {
           id: 'finance-1',
+          binding: 'missing',
           connector: 'finance',
           source: 'Ekonomisystemet',
           draft: { kind: 'execute' as const, operation: 'finance.pay', payload: {}, title: 'Betala' },
         },
       ],
     };
-    await expect(w.approve(rogue)).rejects.toThrow('ingen åtgärd');
+    await expect(w.approve(rogue)).rejects.toThrow('Förslaget har ändrats');
     expect(w.store.jobs()).toEqual([]);
     expect(w.store.dump()).toEqual([]);
     expect(w.store.audit()).toEqual([]);
@@ -591,30 +596,30 @@ describe('one approval runs each step as its own execution or watch', () => {
       ['pending', 'authority-revoked', null],
     ]);
     expect(w.systems.hr.writes() + w.systems.timesheet.writes()).toBe(0);
-    expect(await w.ledger.observe(job.id, 'payroll-1', 0)).toBe('waiting');
+    expect(await w.ledger.observe(job.id, 'b3-1', 0)).toBe('waiting');
     w.advance(6 * H);
-    expect(await w.ledger.observe(job.id, 'payroll-1', 0)).toBe('blocked');
+    expect(await w.ledger.observe(job.id, 'b3-1', 0)).toBe('blocked');
     expect(w.payroll.reads()).toBe(0);
   });
   test('a watch reads at its committed times only, settles when the fact is seen, and never executes', async () => {
     const w = world();
     const { job } = await approved(w);
-    expect(await w.ledger.observe(job.id, 'payroll-1', 1)).toBe('waiting');
+    expect(await w.ledger.observe(job.id, 'b3-1', 1)).toBe('waiting');
     expect(w.payroll.reads()).toBe(0);
     w.advance(6 * H);
-    expect(await w.ledger.observe(job.id, 'payroll-1', 0)).toBe('waiting');
+    expect(await w.ledger.observe(job.id, 'b3-1', 0)).toBe('waiting');
     expect(w.payroll.reads()).toBe(1);
-    expect(await w.ledger.observe(job.id, 'payroll-1', 0)).toBe('waiting');
+    expect(await w.ledger.observe(job.id, 'b3-1', 0)).toBe('waiting');
     expect(w.payroll.reads()).toBe(1);
     w.advance(6 * H);
     w.payroll.outage(true);
-    expect(await w.ledger.observe(job.id, 'payroll-1', 1)).toBe('waiting');
+    expect(await w.ledger.observe(job.id, 'b3-1', 1)).toBe('waiting');
     w.payroll.outage(false);
     w.payroll.set('registered');
     w.advance(6 * H);
-    expect(await w.ledger.observe(job.id, 'payroll-1', 2)).toBe('seen');
+    expect(await w.ledger.observe(job.id, 'b3-1', 2)).toBe('seen');
     expect(w.payroll.reads()).toBe(3);
-    expect(await w.ledger.observe(job.id, 'payroll-1', 2)).toBe('seen');
+    expect(await w.ledger.observe(job.id, 'b3-1', 2)).toBe('seen');
     expect(w.payroll.reads()).toBe(3);
     expect(
       w.store
@@ -637,9 +642,9 @@ describe('one approval runs each step as its own execution or watch', () => {
     const checks = ['2026-11-05T14:02:00.000Z', '2026-11-05T20:02:00.000Z', '2026-11-06T02:02:00.000Z'];
     expect(w.store.watches()).toEqual([
       {
-        id: `watch:${a.id}:payroll-1`,
+        id: `watch:${a.id}:b3-1`,
         jobId: a.id,
-        stepId: 'payroll-1',
+        stepId: 'b3-1',
         personId: 'hillevi',
         generation: 1,
         checks,
@@ -652,7 +657,7 @@ describe('one approval runs each step as its own execution or watch', () => {
       },
     ]);
     expect(w.store.audit().find(e => e.action === 'job.approved')?.details?.steps).toEqual(
-      expect.arrayContaining([expect.objectContaining({ id: 'payroll-1', kind: 'watch', checks })]),
+      expect.arrayContaining([expect.objectContaining({ id: 'b3-1', kind: 'watch', checks })]),
     );
     const started: string[] = [];
     const dispatch = (deliver: (i: { id: string; generation: number }) => Promise<void>) =>
@@ -676,7 +681,7 @@ describe('one approval runs each step as its own execution or watch', () => {
     await dispatch(async i => {
       started.push(`${i.id}:${i.generation}`);
     });
-    expect(started).toEqual([`watch:${a.id}:payroll-1:1`]);
+    expect(started).toEqual([`watch:${a.id}:b3-1:1`]);
     expect(w.store.watches()[0]).toMatchObject({
       attempt: 2,
       deliveredAt: '2026-11-05T08:02:05.000Z',
@@ -698,24 +703,24 @@ describe('one approval runs each step as its own execution or watch', () => {
     const w = world();
     const { job } = await approved(w);
     w.advance(6 * H);
-    await w.ledger.observe(job.id, 'payroll-1', 0);
+    await w.ledger.observe(job.id, 'b3-1', 0);
     w.advance(6 * H);
     w.payroll.outage(true);
-    await w.ledger.observe(job.id, 'payroll-1', 1);
+    await w.ledger.observe(job.id, 'b3-1', 1);
     w.payroll.outage(false);
     w.advance(13 * H);
-    expect(await w.ledger.observe(job.id, 'payroll-1', 2)).toBe('expired');
+    expect(await w.ledger.observe(job.id, 'b3-1', 2)).toBe('expired');
     expect(w.payroll.reads()).toBe(2); // the window's end reads nothing more
     expect(w.store.audit().filter(e => e.action === 'job.watch_expired')).toHaveLength(1);
     expect(w.store.cards()).toEqual([
       {
-        id: `watch:${job.id}:payroll-1`,
+        id: `watch:${job.id}:b3-1`,
         sourceAuthorization: manager.authorizationVersion,
         personId: 'hillevi',
         jobId: job.id,
-        stepId: 'payroll-1',
+        stepId: 'b3-1',
         connector: 'payroll',
-        topic: `watch-expired:${job.id}:payroll-1`,
+        topic: `watch-expired:${job.id}:b3-1`,
         title: 'Lönesystemet har inte visat det som bevakades',
         summary:
           'Bevakas i lönesystemet: En kontroll fram till 09:02 visade inget och en kontroll nådde inte systemet. Titta i Lönesystemet eller fråga om jobbet.',
@@ -723,7 +728,7 @@ describe('one approval runs each step as its own execution or watch', () => {
         at: '2026-11-06T09:02:00.000Z',
       },
     ]);
-    expect(await w.ledger.observe(job.id, 'payroll-1', 2)).toBe('expired');
+    expect(await w.ledger.observe(job.id, 'b3-1', 2)).toBe('expired');
     expect(w.store.cards()).toHaveLength(1);
     expect((await w.ledger.readJob(manager, job.id))?.steps[2]).toMatchObject({
       state: 'expired',
@@ -735,7 +740,7 @@ describe('one approval runs each step as its own execution or watch', () => {
     const w = world();
     const { job } = await approved(w);
     w.advance(25 * H);
-    expect(await w.ledger.observe(job.id, 'payroll-1', 0)).toBe('expired');
+    expect(await w.ledger.observe(job.id, 'b3-1', 0)).toBe('expired');
     expect(w.payroll.reads()).toBe(0);
     expect(w.store.audit().filter(e => e.action === 'job.watch_expired')).toHaveLength(1);
     expect(w.store.cards()).toHaveLength(1);
@@ -756,7 +761,7 @@ describe('one approval runs each step as its own execution or watch', () => {
     for (const s of job.steps) if (s.kind === 'execute') await w.ledger.progress(s.executionId!);
     w.systems.timesheet.loseReply();
     const undo = await w.ledger.undoJob(manager, job.id);
-    expect(undo.compensations.map(c => c.stepId)).toEqual(['hr-1', 'timesheet-1']);
+    expect(undo.compensations.map(c => c.stepId)).toEqual(['b1-1', 'b2-1']);
     expect(undo.skipped).toEqual([]);
     expect(w.store.dump()).toHaveLength(4);
     expect(w.store.outbox()).toHaveLength(4);
@@ -789,8 +794,8 @@ describe('one approval runs each step as its own execution or watch', () => {
     const { job } = await approved(w);
     await w.ledger.progress(stepOf(job, 'hr').executionId!);
     const partial = await w.ledger.undoJob(manager, job.id);
-    expect(partial.compensations.map(c => c.stepId)).toEqual(['hr-1']);
-    expect(partial.skipped).toEqual([{ stepId: 'timesheet-1', reason: 'not-done' }]);
+    expect(partial.compensations.map(c => c.stepId)).toEqual(['b1-1']);
+    expect(partial.skipped).toEqual([{ stepId: 'b2-1', reason: 'not-done' }]);
     const late = world();
     const second = await approved(late);
     for (const s of second.job.steps) if (s.kind === 'execute') await late.ledger.progress(s.executionId!);
@@ -812,5 +817,226 @@ describe('one approval runs each step as its own execution or watch', () => {
     expect(w.store.dump()).toEqual([]);
     expect(w.store.audit()).toEqual([]);
     expect(w.store.outbox()).toEqual([]);
+  });
+});
+
+describe('job approval and receipt boundaries', () => {
+  const proposalFor = async (w: ReturnType<typeof world>) => {
+    await w.bindAll();
+    return w.jobs.assemble(manager, fact, w.call);
+  };
+
+  test('a later retry keeps the first committed watch schedule and rejects changed intent', async () => {
+    const w = world(),
+      proposal = await proposalFor(w);
+    const first = await w.approve(proposal);
+    const saved = w.store.jobs()[0]!,
+      watches = w.store.watches();
+    w.advance(5000);
+    expect(await w.approve(proposal)).toEqual(first);
+    expect(w.store.jobs()).toEqual([saved]);
+    expect(w.store.watches()).toEqual(watches);
+    expect(w.store.audit().filter(e => e.action === 'job.approved')).toHaveLength(1);
+    const changed = structuredClone(proposal);
+    const watch = changed.steps.find(s => s.draft.kind === 'watch')!;
+    if (watch.draft.kind === 'watch') watch.draft.within = 'PT2H';
+    await expect(w.approve(changed)).rejects.toThrow('annat innehåll');
+    expect(w.store.watches()).toEqual(watches);
+    expect(w.store.dump()).toHaveLength(2);
+  });
+
+  test('concurrent approvals prepared at different times return the first committed schedule', async () => {
+    const w = world(),
+      proposal = await proposalFor(w);
+    let entered!: () => void,
+      release!: () => void,
+      pause = true;
+    const waiting = new Promise<void>(resolve => {
+      entered = resolve;
+    });
+    const resume = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    const authorize = w.source.authorize;
+    w.source.authorize = async (...args) => {
+      if (pause) {
+        pause = false;
+        entered();
+        await resume;
+      }
+      return authorize(...args);
+    };
+    const earlier = w.approve(proposal);
+    await waiting;
+    w.advance(2000);
+    let later: Awaited<ReturnType<typeof w.approve>>;
+    try {
+      later = await w.approve(proposal);
+    } finally {
+      release();
+    }
+    expect(await earlier).toEqual(later!);
+    expect(w.store.jobs()).toHaveLength(1);
+    expect(w.store.watches()).toHaveLength(1);
+    expect(w.store.outbox()).toHaveLength(2);
+    expect(w.store.audit().map(e => e.action)).toEqual(['execution.approved', 'execution.approved', 'job.approved']);
+  });
+
+  for (const change of ['disable', 'remove', 'audience', 'window', 'follower', 'add'] as const) {
+    test('approval refuses a stale proposal after a binding change: ' + change, async () => {
+      const w = world(),
+        proposal = await proposalFor(w);
+      const binding = (await w.jobs.bindings()).find(b => b.capability === 'payroll.followAbsence')!;
+      if (change === 'remove') await w.jobs.unbind(admin, binding.id);
+      else if (change === 'add')
+        await w.jobs.bind(admin, { kind: fact.kind, capability: 'hr.proposeAbsence', audience: { mode: 'all' } });
+      else
+        await w.jobs.bind(admin, {
+          ...binding,
+          ...(change === 'disable' ? { enabled: false } : {}),
+          ...(change === 'audience' ? { audience: { mode: 'selected' as const, units: ['other-unit'] } } : {}),
+          ...(change === 'window' ? { within: 'PT1H' } : {}),
+          ...(change === 'follower' ? { capability: 'payroll.otherFollow' } : {}),
+        });
+      await expect(w.approve(proposal)).rejects.toThrow('Förslaget har ändrats');
+      expect(w.store.jobs()).toEqual([]);
+      expect(w.store.dump()).toEqual([]);
+      expect(w.store.audit()).toEqual([]);
+      expect(w.store.watches()).toEqual([]);
+    });
+  }
+
+  test('bindings are checked again after step authorisation and before committing approval', async () => {
+    const w = world(),
+      proposal = await proposalFor(w);
+    const binding = (await w.jobs.bindings()).find(b => b.capability === 'timesheet.followAbsence')!;
+    const authorize = w.source.authorize;
+    let changed = false;
+    w.source.authorize = async (...args) => {
+      if (!changed) {
+        changed = true;
+        await w.jobs.bind(admin, { ...binding, enabled: false });
+      }
+      return authorize(...args);
+    };
+    await expect(w.approve(proposal)).rejects.toThrow('Förslaget har ändrats');
+    expect(w.store.jobs()).toEqual([]);
+    expect(w.store.audit()).toEqual([]);
+    expect(w.store.outbox()).toEqual([]);
+  });
+
+  test('steps must belong to their named bound follower and retain source authorisation', async () => {
+    const w = world(),
+      proposal = await proposalFor(w);
+    const forged = structuredClone(proposal);
+    forged.steps[0]!.binding = proposal.steps[1]!.binding;
+    await expect(w.approve(forged)).rejects.toThrow('Förslaget har ändrats');
+    const authorize = w.source.authorize;
+    w.source.authorize = async (...args) => {
+      if (args[1].startsWith('timesheet.')) throw new Error('source denied');
+      return authorize(...args);
+    };
+    await expect(w.approve(proposal)).rejects.toThrow('source denied');
+    expect(w.store.jobs()).toEqual([]);
+    expect(w.store.audit()).toEqual([]);
+  });
+
+  test('two followers of one connector have distinct steps and their own watch caps', async () => {
+    const extra = follower('payroll.followSecond', ['hr:absence'], f => [
+      {
+        kind: 'watch',
+        operation: 'payroll.absenceStatus',
+        input: { person: f.attributes.person },
+        expect: { path: ['status'], equals: 'registered' },
+        within: 'P1D',
+        title: 'Andra bevakningen',
+      },
+    ]);
+    const w = world({
+      connectors: [
+        hrConnector(),
+        timesheetConnector,
+        { ...payrollConnector, capabilities: [...payrollConnector.capabilities, extra] },
+      ],
+    });
+    await w.bindAll();
+    const binding = await w.jobs.bind(admin, {
+      kind: fact.kind,
+      capability: extra.name,
+      audience: { mode: 'all' },
+      within: 'PT1H',
+    });
+    const proposal = await w.jobs.assemble(manager, fact, w.call);
+    expect(new Set(proposal.steps.map(s => s.id)).size).toBe(4);
+    expect(proposal.steps.find(s => s.binding === binding.id)?.id).toBe(binding.id + '-1');
+    const job = await w.approve(proposal);
+    const watches = job.steps.filter(s => s.kind === 'watch');
+    expect(watches.map(s => s.expiresAt)).toEqual(['2026-11-06T08:02:00.000Z', '2026-11-05T09:02:00.000Z']);
+    expect(w.store.watches()).toHaveLength(2);
+  });
+
+  test('job, execution, replay and undo cannot expose a receipt under changed producing authority', async () => {
+    const w = world(),
+      proposal = await proposalFor(w),
+      job = await w.approve(proposal);
+    for (const step of job.steps) if (step.kind === 'execute') await w.ledger.progress(step.executionId);
+    const original = await w.ledger.readJob(manager, job.id);
+    expect(original?.steps[0]).toMatchObject({ state: 'succeeded', result: { headline: 'Klart' } });
+    const audit = w.store.audit();
+    const execution = job.steps.find(s => s.kind === 'execute')!;
+    for (const changed of [
+      { ...manager, unitId: 'other-unit' },
+      { ...manager, authorizationVersion: 'v2' },
+      { ...manager, id: 'other-person' },
+    ]) {
+      expect(await w.ledger.readJob(changed, job.id)).toBeUndefined();
+      expect(await w.ledger.read(changed, execution.executionId)).toBeUndefined();
+      await expect(w.ledger.undoJob(changed, job.id)).rejects.toThrow('Jobbet finns inte');
+      if (changed.id === manager.id)
+        await expect(w.jobs.approve(changed, { decisionId: job.decisionId, proposal })).rejects.toThrow('finns inte');
+    }
+    expect(w.store.audit()).toEqual(audit);
+    expect(await w.ledger.readJob(manager, job.id)).toEqual(original);
+  });
+
+  test('job reads recheck both execute and watch access without discarding stored receipts', async () => {
+    const w = world(),
+      proposal = await proposalFor(w),
+      job = await w.approve(proposal);
+    for (const step of job.steps) if (step.kind === 'execute') await w.ledger.progress(step.executionId);
+    const original = await w.ledger.readJob(manager, job.id);
+    const sourceAuthorize = w.source.authorize,
+      watchAuthorize = w.watch.authorize;
+    w.source.authorize = async () => {
+      throw new Error('connector disabled');
+    };
+    expect(await w.ledger.readJob(manager, job.id)).toBeUndefined();
+    w.source.authorize = sourceAuthorize;
+    w.watch.authorize = async () => {
+      throw new Error('watch permission removed');
+    };
+    expect(await w.ledger.readJob(manager, job.id)).toBeUndefined();
+    w.watch.authorize = watchAuthorize;
+    expect(await w.ledger.readJob(manager, job.id)).toEqual(original);
+  });
+
+  test('revocation during a job read is checked before returning its receipts', async () => {
+    const w = world(),
+      proposal = await proposalFor(w),
+      job = await w.approve(proposal);
+    let revoked = false;
+    const actor = {
+      ...manager,
+      authorize: async () => {
+        if (revoked) throw new Error('revoked');
+        return { version: 'v1' };
+      },
+    };
+    const authorize = w.watch.authorize;
+    w.watch.authorize = async (...args) => {
+      revoked = true;
+      return authorize(...args);
+    };
+    await expect(w.ledger.readJob(actor, job.id)).rejects.toThrow('revoked');
   });
 });

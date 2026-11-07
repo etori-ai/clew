@@ -38,7 +38,11 @@ export type LedgerStep =
       source: string;
     };
 export interface JobLedger {
-  approveJob(persona: AuthenticatedContext, input: { decisionId: string; steps: LedgerStep[] }): Promise<unknown>;
+  approveJob(
+    persona: AuthenticatedContext,
+    input: { decisionId: string; steps: LedgerStep[]; scheduleOrigin?: string },
+    authorizeApproval?: () => Promise<void>,
+  ): Promise<unknown>;
 }
 export interface JobBudget {
   perSourceMs: number;
@@ -51,6 +55,8 @@ export interface JobDeps {
   ledger: JobLedger;
   clock: () => Date;
   ids: () => string;
+  digest: (value: unknown) => string;
+  refresh: () => Promise<void>;
   budget?: Partial<JobBudget>;
 }
 export const DEFAULT_BUDGET: JobBudget = { perSourceMs: 3_000, totalMs: 4_000 };

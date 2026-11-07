@@ -1,6 +1,6 @@
 import { Value } from '@sinclair/typebox/value';
 import type { AuthenticatedContext } from '@clew/contracts';
-import type { Actor } from '@clew/connectors';
+import { actorOf, type Actor } from '@clew/connectors';
 import { FollowResponseSchema } from '@clew/connectors/protocol';
 import {
   JobError,
@@ -24,6 +24,8 @@ const TIMEOUT = Symbol('timeout');
  */
 export function jobUsecases(deps: JobDeps) {
   const budget = { ...DEFAULT_BUDGET, ...deps.budget };
+  const bindingRevision = (b: FollowBinding) =>
+    deps.digest([b.id, b.kind, b.capability, b.audience, b.within ?? null, b.enabled, b.updatedAt]);
   const withinBudget = <T>(work: Promise<T>, ms: number): Promise<T | typeof TIMEOUT> => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const late = new Promise<typeof TIMEOUT>(resolve => {
@@ -41,7 +43,13 @@ export function jobUsecases(deps: JobDeps) {
     fact: Fact,
     call: JobCall,
   ): Promise<{ source: JobSource; steps: JobStepDraft[] }> {
-    const base = { binding: binding.id, connector: connectorId, source, capability: binding.capability };
+    const base = {
+      binding: binding.id,
+      bindingRevision: bindingRevision(binding),
+      connector: connectorId,
+      source,
+      capability: binding.capability,
+    };
     try {
       const answer = await withinBudget(call(binding.capability, { fact }), budget.perSourceMs);
       if (answer === TIMEOUT) return { source: { ...base, status: 'timeout' }, steps: [] };
@@ -52,7 +60,8 @@ export function jobUsecases(deps: JobDeps) {
       return {
         source: { ...base, status: 'ok' },
         steps: answer.steps.map((draft, i) => ({
-          id: connectorId + '-' + (i + 1),
+          id: binding.id + '-' + (i + 1),
+          binding: binding.id,
           connector: connectorId,
           source,
           draft,
@@ -64,6 +73,7 @@ export function jobUsecases(deps: JobDeps) {
   }
   /** The job proposal for one fact, as the actor: nothing is written, every bound system is reported. */
   async function assemble(actor: Actor, fact: Fact, call: JobCall): Promise<JobProposal> {
+    await deps.refresh();
     const bindings = await deps.bindings.list(fact.kind);
     const followers = deps.followers(actor, fact.kind),
       offered = deps.offered(fact.kind);
@@ -77,6 +87,7 @@ export function jobUsecases(deps: JobDeps) {
       if (verdict.status !== 'ok') {
         sources.push({
           binding: b.id,
+          bindingRevision: bindingRevision(b),
           connector: connectorId,
           source,
           capability: b.capability,
@@ -100,6 +111,7 @@ export function jobUsecases(deps: JobDeps) {
         const follower = followers.find(f => f.name === b.capability)!;
         sources.push({
           binding: b.id,
+          bindingRevision: bindingRevision(b),
           connector: follower.connectorId,
           source: follower.source,
           capability: b.capability,
@@ -115,12 +127,63 @@ export function jobUsecases(deps: JobDeps) {
   /** One decision over the proposal's steps; the ledger makes each step its own execution or watch. */
   async function approve(persona: AuthenticatedContext, input: { decisionId: string; proposal: JobProposal }) {
     if (!input.proposal.steps.length) throw new JobError('Jobbet har inga steg.');
-    const bindings = await deps.bindings.list(input.proposal.fact.kind);
-    const ceiling = Object.fromEntries(bindings.map(b => [b.capability.split('.')[0]!, b.within]));
-    return deps.ledger.approveJob(persona, {
-      decisionId: input.decisionId,
-      steps: ledgerSteps(input.proposal.steps, ceiling, deps.clock().getTime()),
-    });
+    const proposal = structuredClone(input.proposal);
+    const validate = async () => {
+      await persona.authorize();
+      await deps.refresh();
+      const bindings = await deps.bindings.list(proposal.fact.kind);
+      const actor = actorOf(persona),
+        followers = deps.followers(actor, proposal.fact.kind);
+      const offered = deps.offered(proposal.fact.kind);
+      const stale = (): never => {
+        throw new JobError('Förslaget har ändrats. Hämta ett nytt förslag.');
+      };
+      if (
+        bindings.length !== proposal.sources.length ||
+        new Set(proposal.sources.map(s => s.binding)).size !== bindings.length
+      )
+        stale();
+      for (const source of proposal.sources) {
+        const binding = bindings.find(b => b.id === source.binding);
+        if (!binding || source.bindingRevision !== bindingRevision(binding) || source.capability !== binding.capability)
+          stale();
+        const follower = followers.find(f => f.name === binding!.capability);
+        const connector = follower?.connectorId ?? binding!.capability.split('.')[0]!;
+        if (source.connector !== connector || source.source !== (follower?.source ?? connector)) stale();
+        const verdict = classify(binding!, actor, offered, follower);
+        if (
+          ['disabled', 'degraded'].includes(source.status) ? verdict.status !== source.status : verdict.status !== 'ok'
+        )
+          stale();
+      }
+      for (const step of proposal.steps) {
+        const source = proposal.sources.find(s => s.binding === step.binding);
+        if (
+          !source ||
+          source.status !== 'ok' ||
+          step.connector !== source.connector ||
+          step.source !== source.source ||
+          !step.id.startsWith(step.binding + '-') ||
+          stepProblem(step.connector, step.draft)
+        )
+          stale();
+      }
+      return bindings;
+    };
+    const bindings = await validate();
+    const ceiling = Object.fromEntries(bindings.map(b => [b.id, b.within]));
+    const at = deps.clock();
+    return deps.ledger.approveJob(
+      persona,
+      {
+        decisionId: input.decisionId,
+        scheduleOrigin: at.toISOString(),
+        steps: ledgerSteps(proposal.steps, ceiling, at.getTime()),
+      },
+      async () => {
+        await validate();
+      },
+    );
   }
   /** An administrator binds a follower to a fact kind, or changes the binding; one transaction with its audit row (D23). */
   async function bind(persona: AuthenticatedContext, input: FollowBindingInput & { id?: string; enabled?: boolean }) {

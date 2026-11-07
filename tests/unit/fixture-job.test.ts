@@ -95,6 +95,8 @@ function world() {
     bindings,
     followers: (a, k) => registry.followers(a, k),
     offered: k => registry.offered(k),
+    refresh: () => registry.refreshGovernance(),
+    digest: JSON.stringify,
     ledger,
     clock,
     ids: () => 'b' + ++n,
@@ -167,9 +169,9 @@ describe('the fixture connectors declare a fact, its followers and a watch (D55)
       ['Lönesystemet', 'ok'],
     ]);
     expect(p.steps.map(s => [s.id, s.draft.kind, s.draft.operation, s.draft.title])).toEqual([
-      ['hr-1', 'execute', 'hr.reportAbsence', 'Sjukanmälan registreras'],
-      ['timesheet-1', 'execute', 'timesheet.markAbsence', 'Passet markeras frånvaro'],
-      ['payroll-1', 'watch', 'payroll.absenceStatus', 'Bevakas i lönesystemet'],
+      ['b1-1', 'execute', 'hr.reportAbsence', 'Sjukanmälan registreras'],
+      ['b2-1', 'execute', 'timesheet.markAbsence', 'Passet markeras frånvaro'],
+      ['b3-1', 'watch', 'payroll.absenceStatus', 'Bevakas i lönesystemet'],
     ]);
     expect(p.steps[2]!.draft).toMatchObject({
       input: { person: 'hr:emp:1004', date: today },
@@ -191,9 +193,9 @@ describe('the fixture connectors declare a fact, its followers and a watch (D55)
     })) as Awaited<ReturnType<typeof w.ledger.approveJob>>;
     const job = await settle(w, approved.id);
     expect(job.steps.map(s => [s.id, s.state])).toEqual([
-      ['hr-1', 'succeeded'],
-      ['timesheet-1', 'succeeded'],
-      ['payroll-1', 'waiting'],
+      ['b1-1', 'succeeded'],
+      ['b2-1', 'succeeded'],
+      ['b3-1', 'waiting'],
     ]);
     const hr = job.steps[0]!,
       ts = job.steps[1]!;
@@ -208,7 +210,7 @@ describe('the fixture connectors declare a fact, its followers and a watch (D55)
     expect((await w.call<{ rows: unknown[] }>('timesheet.today')).rows.length).toBeGreaterThanOrEqual(0);
     // Payroll reads the HR system once a night: today's report is pending, so the first check (45 s into the 3-minute window) leaves the watch waiting.
     w.advance(50_000);
-    expect(await w.ledger.observe(job.id, 'payroll-1', 0)).toBe('waiting');
+    expect(await w.ledger.observe(job.id, 'b3-1', 0)).toBe('waiting');
     expect((await w.ledger.readJob(manager, job.id))!.steps[2]).toMatchObject({ state: 'waiting', observations: 1 });
     expect(await w.call('payroll.absenceStatus', { person: 'hr:emp:1004', date: today })).toMatchObject({
       status: 'pending',
@@ -217,7 +219,7 @@ describe('the fixture connectors declare a fact, its followers and a watch (D55)
     for (const row of Object.values(reported)) row.at = '2000-01-01T00:00:00.000Z';
     w.state.set('reported-absences', reported);
     w.advance(50_000);
-    expect(await w.ledger.observe(job.id, 'payroll-1', 1)).toBe('seen');
+    expect(await w.ledger.observe(job.id, 'b3-1', 1)).toBe('seen');
     expect((await w.call<{ rows: Array<{ ref: string }> }>('payroll.absences')).rows.map(r => r.ref)).toEqual([
       'hr:absence:1004:' + today,
     ]);
@@ -240,10 +242,10 @@ describe('the fixture connectors declare a fact, its followers and a watch (D55)
     expect(watch.kind === 'watch' && Date.parse(watch.expiresAt) - w.clock().getTime()).toBe(3 * 60_000);
     for (let i = 0; i < 3; i++) {
       w.advance(45_000);
-      expect(await w.ledger.observe(approved.id, 'payroll-1', i)).toBe('waiting');
+      expect(await w.ledger.observe(approved.id, 'b3-1', i)).toBe('waiting');
     }
     w.advance(45_000);
-    expect(await w.ledger.observe(approved.id, 'payroll-1', 3)).toBe('expired');
+    expect(await w.ledger.observe(approved.id, 'b3-1', 3)).toBe('expired');
     expect(w.store.cards().map(c => [c.connector, c.title, c.at])).toEqual([
       ['payroll', 'Lönesystemet har inte visat det som bevakades', w.clock().toISOString()],
     ]);
@@ -259,7 +261,7 @@ describe('the fixture connectors declare a fact, its followers and a watch (D55)
     })) as Awaited<ReturnType<typeof w.ledger.approveJob>>;
     await settle(w, approved.id);
     const undo = await w.ledger.undoJob(manager, approved.id);
-    expect(undo.compensations.map(c => c.stepId)).toEqual(['hr-1', 'timesheet-1']);
+    expect(undo.compensations.map(c => c.stepId)).toEqual(['b1-1', 'b2-1']);
     expect(undo.skipped).toEqual([]);
     for (const c of undo.compensations) expect(await w.ledger.progress(c.compensationId)).toBe('done');
     expect(w.reportedAbsences()).toEqual({});

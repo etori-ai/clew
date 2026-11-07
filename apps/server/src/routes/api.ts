@@ -91,7 +91,8 @@ const JobApprovalInput = Type.Object(
         steps: Type.Array(
           Type.Object(
             {
-              id: Type.String({ minLength: 1, maxLength: 80 }),
+              id: Type.String({ minLength: 1, maxLength: 40 }),
+              binding: Type.String({ minLength: 1, maxLength: 80 }),
               connector: Type.String({ maxLength: 80 }),
               source: Type.String({ maxLength: 80 }),
               draft: StepDraftSchema,
@@ -104,6 +105,7 @@ const JobApprovalInput = Type.Object(
           Type.Object(
             {
               binding: Type.String(),
+              bindingRevision: Type.String({ minLength: 1, maxLength: 200 }),
               connector: Type.String(),
               source: Type.String(),
               capability: Type.String(),

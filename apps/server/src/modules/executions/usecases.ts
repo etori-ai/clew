@@ -15,6 +15,7 @@ import {
 import {
   executionView,
   jobView,
+  retainsAuthority,
   mayReplay,
   outcome,
   sameSafety,
@@ -46,7 +47,11 @@ export function executionUsecases({ store, source, watch, clock, ids, digest }: 
     const access = await source.authorize(persona, input.operation, input.payload);
     if (input.compensates) {
       const original = await store.read(input.compensates);
-      if (!undoable(original, persona.id, input.operation, access.connector, at))
+      if (
+        !original ||
+        !retainsAuthority(persona, original) ||
+        !undoable(original, persona.id, input.operation, access.connector, at)
+      )
         throw new ExecutionError('Åtgärden kan inte ångras.');
       if (digest(input.payload) !== digest(undoInputOf(original!)))
         throw new ExecutionError('Ångra måste gälla exakt den bekräftade åtgärden.');
@@ -85,6 +90,7 @@ export function executionUsecases({ store, source, watch, clock, ids, digest }: 
   /** One approved intent into the ledger: the row, its audit and its outbox intent, or the existing row for the same decision. Composable, so a job commits its steps in one transaction. */
   async function commit(tx: ExecutionTx, persona: AuthenticatedContext, execution: Execution): Promise<Execution> {
     const saved = await tx.insert(execution);
+    if (!retainsAuthority(persona, saved.execution)) throw new ExecutionError('Åtgärden finns inte.');
     if (saved.execution.digest !== execution.digest)
       throw new ExecutionError('Beslutet gäller redan ett annat innehåll.');
     if (saved.inserted) {
@@ -115,14 +121,17 @@ export function executionUsecases({ store, source, watch, clock, ids, digest }: 
   async function approve(persona: AuthenticatedContext, input: ApproveInput) {
     await persona.authorize();
     const execution = await prepare(persona, input, clock().toISOString());
-    return store.transaction(async tx => executionView(await commit(tx, persona, execution)));
+    const saved = await store.transaction(tx => commit(tx, persona, execution));
+    const result = await read(persona, saved.id);
+    if (!result) throw new ExecutionError('Åtgärden finns inte.');
+    return result;
   }
   /**
    * One approval over several steps (D55). Every execute step is prepared and authorized on its own connector first, so a
    * refused step persists nothing; then the steps and the job row commit together. A repeated identical approval returns
    * the same job and the same executions; a changed step is refused. Steps are independent: no step reads another's result.
    */
-  async function approveJob(persona: AuthenticatedContext, input: JobInput) {
+  async function approveJob(persona: AuthenticatedContext, input: JobInput, authorizeApproval?: () => Promise<void>) {
     await persona.authorize();
     if (!JOB_DECISION.test(input.decisionId)) throw new ExecutionError('Ogiltigt beslut.');
     if (!input.steps.length || input.steps.length > MAX_STEPS)
@@ -159,6 +168,22 @@ export function executionUsecases({ store, source, watch, clock, ids, digest }: 
         prepared.push({ step, connector: access.connector });
       }
     }
+    // Compare the approved duration/offsets, not the wall-clock time of a delivery retry.
+    // Callers with explicitly absolute schedules keep their existing digest contract.
+    const origin = input.scheduleOrigin === undefined ? undefined : Date.parse(input.scheduleOrigin);
+    if (origin !== undefined && !Number.isFinite(origin)) throw new ExecutionError('Ogiltig bevakning.');
+    const intent = input.steps.map(step => {
+      if (step.kind !== 'watch' || origin === undefined) return step;
+      const checks = step.checks.map(time => Date.parse(time) - origin);
+      const expiresAt = Date.parse(step.expiresAt) - origin;
+      if (
+        checks.some(time => !Number.isSafeInteger(time) || time <= 0) ||
+        !Number.isSafeInteger(expiresAt) ||
+        expiresAt <= 0
+      )
+        throw new ExecutionError('Ogiltig bevakning.');
+      return { ...step, checks, expiresAt };
+    });
     const job: Omit<Job, 'steps'> = {
       id: ids(),
       decisionId: input.decisionId,
@@ -166,11 +191,13 @@ export function executionUsecases({ store, source, watch, clock, ids, digest }: 
       principal: persona.principal.id,
       unitId: persona.unitId,
       authorizationVersion: persona.authorizationVersion,
-      digest: digest({ steps: input.steps }),
+      digest: digest({ steps: intent }),
       createdAt: at,
       updatedAt: at,
     };
-    return store.transaction(async tx => {
+    await authorizeApproval?.();
+    await persona.authorize();
+    const approved = await store.transaction(async tx => {
       const steps: JobStep[] = [];
       for (const p of prepared) {
         if (p.step.kind === 'execute') {
@@ -200,6 +227,7 @@ export function executionUsecases({ store, source, watch, clock, ids, digest }: 
           });
       }
       const saved = await tx.insertJob({ ...job, steps });
+      if (!retainsAuthority(persona, saved.job)) throw new ExecutionError('Jobbet finns inte.');
       if (saved.job.digest !== job.digest) throw new ExecutionError('Beslutet gäller redan ett annat innehåll.');
       if (saved.inserted) {
         // The watch's timer is intent in the same commit (D47): the outbox delivers the committed schedule to Temporal, which cannot invent or extend it.
@@ -221,19 +249,44 @@ export function executionUsecases({ store, source, watch, clock, ids, digest }: 
           },
         });
       }
-      return view(saved.job);
+      return saved.job;
     });
-  }
-  async function view(job: Job) {
-    const executions: Record<string, Execution | undefined> = {};
-    for (const s of job.steps) if (s.kind === 'execute') executions[s.executionId] = await store.read(s.executionId);
-    return jobView(job, executions);
+    const result = await readJob(persona, approved.id);
+    if (!result) throw new ExecutionError('Jobbet finns inte.');
+    return result;
   }
   async function readJob(persona: AuthenticatedContext, id: string) {
     const job = await store.readJob(id);
-    if (!job || job.personId !== persona.id) return undefined;
+    if (!job || !retainsAuthority(persona, job)) return undefined;
     await persona.authorize();
-    return view(job);
+    const executions: Record<string, Execution | undefined> = {};
+    for (const step of job.steps) {
+      if (step.kind === 'execute') {
+        const execution = await store.read(step.executionId);
+        if (
+          !execution ||
+          !retainsAuthority(persona, execution) ||
+          execution.connector !== step.connector ||
+          execution.operation !== step.operation
+        )
+          return undefined;
+        executions[step.executionId] = execution;
+      }
+    }
+    // Do not release part of a composite snapshot when any participating source is no longer allowed.
+    try {
+      for (const step of job.steps) {
+        const access =
+          step.kind === 'execute'
+            ? await source.authorize(persona, step.operation, executions[step.executionId]!.payload)
+            : await watch?.authorize(persona, step.operation, step.input);
+        if (access?.connector !== step.connector) return undefined;
+      }
+    } catch {
+      return undefined;
+    }
+    await persona.authorize();
+    return jobView(job, executions);
   }
   /**
    * "Ångra allt": one linked compensation per step whose confirmed effect can still be undone, approved in one decision and
@@ -241,8 +294,7 @@ export function executionUsecases({ store, source, watch, clock, ids, digest }: 
    */
   async function undoJob(persona: AuthenticatedContext, jobId: string) {
     const job = await store.readJob(jobId);
-    if (!job || job.personId !== persona.id) throw new ExecutionError('Jobbet finns inte.');
-    await persona.authorize();
+    if (!job || !(await readJob(persona, jobId))) throw new ExecutionError('Jobbet finns inte.');
     const at = clock().toISOString();
     const compensations: Array<{ stepId: string; original: Execution; execution: Execution }> = [],
       skipped: Array<{ stepId: string; reason: string }> = [];
@@ -374,9 +426,10 @@ export function executionUsecases({ store, source, watch, clock, ids, digest }: 
   }
   async function read(persona: AuthenticatedContext, id: string) {
     const e = await store.read(id);
-    if (!e || e.personId !== persona.id) return undefined;
+    if (!e || !retainsAuthority(persona, e)) return undefined;
     await persona.authorize();
-    await source.authorize(persona, e.operation, e.payload);
+    if ((await source.authorize(persona, e.operation, e.payload)).connector !== e.connector) return undefined;
+    await persona.authorize();
     return executionView(e);
   }
   async function settle(e: Execution, state: Execution['state'], reason: string | null, result?: ExecuteResult | null) {

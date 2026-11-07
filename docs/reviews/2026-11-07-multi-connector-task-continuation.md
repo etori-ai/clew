@@ -1,7 +1,7 @@
 # Exploration: carrying one task across connectors and approvals
 
 Date: 2026-11-07. Reviewed revision: `8bae24e`.
-Status: exploration and implementation recommendation. No new architecture decision is accepted and no runtime behavior is added.
+Status: exploration and implementation recommendation at the reviewed revision. The [outcome below](#outcome-approval-and-receipt-fixes) records subsequent fixes under D77; the broader continuation design remains a recommendation.
 
 ## Recommendation
 
@@ -71,7 +71,7 @@ These are in-memory use-case reproductions using the existing signed HR, time-re
 2. **A disabled binding does not invalidate an old proposal.** Assemble the absence job, disable `timesheet.followAbsence` through the binding use case, and assemble again: the new proposal omits it. Approving the old proposal still creates that execution. Recheck binding identity, enabled state, audience and compatibility at approval. This is a governance gap, not evidence that the source's execution permission is bypassed.
 3. **Job reads do not fence receipts by producing authority.** Approve and settle the fixture job, then call `readJob` for the same person with a different unit and authorisation version. It returns the confirmed HR receipt. The method checks person ownership and calls `persona.authorize()`, but neither compares stored authority nor reauthorises sources before returning receipts. Apply [D75's producing-authority policy](../decisions/D75-source-snapshots-retain-the-authority-that-produced-them.md) and current source visibility to the job projection and future proposals/facts. A new grant must not make old snapshots readable again.
 
-Add regression cases at these boundaries before building on them. These findings remain open; the existing passing tests do not close them.
+Add regression cases at these boundaries before building on them. The original tests did not cover these findings. They were subsequently fixed and covered by regressions; see [Outcome](#outcome-approval-and-receipt-fixes).
 
 ## Minimum additional state
 
@@ -119,3 +119,16 @@ The first increment precedes generic continuation. External event ingest, arbitr
 - Three isolated experiments derived from the fixture setup, with an injected clock and in-memory stores, reproduced the findings above. No development or production database was mutated.
 - Documentation generation/checks, local links and the signed connector smoke passed. All five repository Mermaid diagrams passed syntax validation; required formatting and whitespace checks passed.
 - This review does not implement continuation, repair the findings, validate a real vendor integration or settle a new architecture policy.
+
+## Outcome: approval and receipt fixes
+
+Implemented on 2026-11-07 under [D77](../decisions/D77-job-approvals-preserve-intent-bindings-and-receipt-authority.md), following the product owner's request to fix the findings.
+
+- Job approvals compare relative watch intent while preserving the first committed absolute schedule. Later and concurrent retries keep one job, execution set, approval audit and watch intent; changed effective intent is refused.
+- Assembly includes binding identity and revision. Approval refreshes governance, checks the current binding set, eligibility and step association, and repeats the check after step authorisation before commit. Two followers from one connector have separate step identities and binding-specific watch limits.
+- Job and individual execution receipt paths require the original person, unit and authorisation version. Job reads check current execute/watch capability access before exposing any part of the composite, and recheck person authority after those checks. Approval replay, reconciliation, compensation and calendar approval lookup retain the same producing-authority boundary. Stored evidence is preserved.
+- A PostgreSQL regression recreates the stores and use cases after approval, advances time, and proves replay preserves the original schedule and existing receipt without another execution, job approval or watch intent. It also exercises changed authority, changed input and a disabled binding.
+
+These fixes close the three reproduced gaps. The first delivery increment remains incomplete: immutable server-side reviewed proposals, full job/binding screens, fact provenance and creator-schema validation still need implementation. Binding revision metadata is not a signature of the proposal. Receipt-driven continuation and the broader staged task design remain planned.
+
+Fix verification: standard checks passed (567 unit/web tests, 6 Node runtime tests, formatting/types/dependencies/purity/docs); PostgreSQL suite 54 passed; durable-workflow suite 3 passed against PostgreSQL, Temporal and Node; whitespace check clean. No live vendor integration or UI change was tested in this backend fix.
