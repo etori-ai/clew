@@ -4,7 +4,7 @@ import { roomsMenuRow } from './rooms';
 
 /**
  * Not a test: screenshots of artboards 4, 7 and 8 of the canvas "Clew · hierarki, områden och figurer" as built (D71):
- * the view's header on a tool page, in the panel and under an answer, the record, the search hits, the review page (D73),
+ * the view's header on a tool page, in the panel and under an answer, the record, the search hits, the review's drawer (D73 amended),
  * the composer's tokens and the D8 banner. Run on demand with `CLEW_SCREENS=1 … playwright test -c tests/a11y
  * screens.pattern`; the images land in test-results/screens/.
  */
@@ -48,7 +48,7 @@ test.describe('screens', () => {
     await page.getByRole('button', { name: 'Visa allt' }).waitFor();
     await page.screenshot({ path: out('pattern-4-answer'), fullPage: true });
   });
-  test('artboard 8: tokens, the review page and the banner', async ({ page, api }) => {
+  test('artboard 8: tokens, the review drawer and the banner', async ({ page, api }) => {
     api.sources = [
       { connector: 'finance', state: 'idle', lastSuccess: '2026-11-04T05:00:00.000Z', error: 'unavailable' },
     ];
@@ -71,7 +71,11 @@ test.describe('screens', () => {
     );
     await open(page, '/');
     await page.getByRole('main').locator('#thread-fakturor').getByRole('link', { name: 'Granska 3' }).click();
-    await page.getByRole('main').getByRole('heading', { level: 1, name: 'Granska 3 rader' }).waitFor();
+    // The review is a drawer over Hem (D73 amended): wait for its document, then for the slide to settle.
+    await page
+      .getByRole('dialog', { name: 'Granska 3 rader' })
+      .getByRole('img', { name: /Energibolaget AB/ })
+      .waitFor();
     await page.waitForTimeout(300);
     await page.screenshot({ path: out('pattern-8-review') });
   });

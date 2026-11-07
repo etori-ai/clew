@@ -415,7 +415,7 @@ type ActionProps = {
   onOpenCardView: (threadId: string, actionId: string) => void;
 };
 /**
- * Running one of a card's actions, shared by the card, the row and the review's page (D73), so a decision sent from the
+ * Running one of a card's actions, shared by the card, the row and the review's drawer (D73), so a decision sent from the
  * review goes through the same confirm, the same decision endpoint (D45/D47), the same wait for the source and the same
  * error as from the card. Busy never disables the buttons: a disabled button drops the focus it holds (2.4.3).
  * Action-buttons wait on their own promise. The thread an action returns goes into the cache for every screen (D33);
@@ -464,7 +464,7 @@ export function useCardAction({
   };
   return { run, apply, busy, settling, pressed, error, selectable, perform };
 }
-/** The execute a card reviews one row at a time before it sends (D70): its next step is then "Granska N", which leads to the review's page (D73). */
+/** The execute a card reviews one row at a time before it sends (D70): its next step is then "Granska N", which leads to the review's address (D73). */
 export const reviewedAction = (thread: Thread) =>
   thread.actions.find(a => a.role === 'primary' && a.kind === 'execute' && a.review === 'each');
 
@@ -492,13 +492,22 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
     lastStatus.current = status;
     announce(status ?? thread.receipt?.headline ?? 'Åtgärden är kontrollerad.');
   }, [status, settling, announce, thread.receipt?.headline]);
-  // Back from the review's page with Spara och stäng or Esc (D73), the card starts from the rows the review approved;
-  // otherwise from what the connector marked. A change to the thread starts it over from the connector's marks.
-  const { state } = useLocation();
+  // Back from the review's drawer with ✕, Esc or the scrim (D73), the card starts from the rows the review approved;
+  // otherwise from what the connector marked. A change to the thread starts it over from the connector's marks. The card
+  // usually stood under the drawer all along (D73 amended), so the selection is taken again for each entry that hands
+  // one back, not only when the card is drawn.
+  const { state, key } = useLocation();
   const returned = returnedSelection(state, thread.id);
+  const returnedAt = returned ? key : null;
   const [selected, setSelected] = useState<string[]>(
     () => returned ?? thread.items.filter(i => i.selected).map(i => i.ref),
   );
+  const seededReturn = useRef(returnedAt);
+  useEffect(() => {
+    if (!returned || seededReturn.current === returnedAt) return;
+    seededReturn.current = returnedAt;
+    setSelected(returned);
+  }, [returnedAt]);
   const seededAt = useRef(thread.updatedAt);
   useEffect(() => {
     if (seededAt.current === thread.updatedAt) return;
@@ -510,7 +519,7 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
   const perform = async (action: ThreadAction, refs?: string[]) => {
     await performRefs(action, refs ?? selected);
   };
-  // A card whose next step is a review (D70): "Granska N" leads to the review's page, which sends once with the approved refs (D73).
+  // A card whose next step is a review (D70): "Granska N" leads to the review's drawer, which sends once with the approved refs (D73).
   const reviewed = reviewedAction(thread);
   // The card leaves at once (D64); the toast with Ångra confirms when the server has it.
   const dismiss = () =>
@@ -554,7 +563,8 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
     dismiss,
     pickRemind,
     reviewed,
-    returned: returned !== null,
+    /** The history entry the review handed its decisions back on, or null: the card's "Granska N" takes the focus once per entry. */
+    returned: returnedAt,
   };
 }
 type Actions = ReturnType<typeof useThreadActions>;
@@ -613,18 +623,18 @@ function ActionRow({
   const size = quiet ? 'md' : 'lg';
   // A row's step fills the phone's line, and the sheet's steps stand full width (artboards 11 and 12).
   const width = phone || stacked ? '100%' : undefined;
-  // Back from the review's page with Spara och stäng or Esc (D73), the focus is on "Granska N" again, as it was when the
-  // review was a dialog that closed. On the card, not the row: the card is what the address opens beside Hem or in the
-  // sheet. The panel puts the focus on its heading when it opens with Hem (usePanel's effect runs after the card's), so
-  // this waits a frame.
+  // Back from the review's drawer with ✕, Esc or the scrim (D73), the focus is on "Granska N" again. On the card, not the
+  // row: the card is what the address opens beside Hem or in the sheet. The drawer leads back only once it has slid
+  // away, so the page is no longer inert; the panel puts the focus on its heading when it opens with Hem (usePanel's
+  // effect runs after the card's), so this waits a frame.
   const review = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!returned || quiet) return;
     const frame = requestAnimationFrame(() => review.current?.focus());
     return () => cancelAnimationFrame(frame);
-  }, []);
+  }, [returned]);
   // The one next step: the execute itself, or "Granska N" when the rows are reviewed one at a time first (D70), a link
-  // to the review's page (D73).
+  // to the review's address, which opens it as a drawer over Hem (D73 amended).
   const primaryButton = primary ? (
     reviewed ? (
       <Button

@@ -1,6 +1,6 @@
 # D73 · The review is a page in the shell, with an address
 
-**Status:** accepted, built 2026-11-07 on `main` · **Date:** 2026-11-07 · **Area:** ui
+**Status:** accepted, built 2026-11-07 on `main` as a page, rebuilt the same day as a drawer (see the amendment) · **Date:** 2026-11-07 · **Area:** ui
 
 **Decision.** The review of several rows one at a time ([D70](D70-one-press-confirms-on-the-row-and-rows-with-a-document-are-reviewed-one-at-a-time.md)
 item 2) is no longer a fullscreen `Dialog` over Hem with state of its own. It is a page in the one shell, with the
@@ -96,3 +96,26 @@ The page of items 1 and 2 above was built and replaced within the day; its route
 the drawer. Weighed and left: a centred `Dialog` (the document wants the height and the width of a side overlay, and a
 fullscreen one hides the shell the owner asked to keep), a `BottomSheet` (block-axis sheets are for touch, and the
 steps need the height), the page (replaced by this amendment).
+
+**Built as a drawer.** `/cards/:threadId/review` is now one of the start routes in `apps/web/src/main.tsx`, the same
+element as `/` and `/conversations/:id`, so opening and closing the review never remounts Hem or the card under it.
+`reviewOf` in `apps/web/src/review-address.ts` names the card the route reviews; `StartPage` (`apps/web/src/pages/start.tsx`)
+then reads its address as `/?card=<threadId>`, so the card stands in the panel and the row says "öppet bredvid", and
+draws `ReviewDrawer` (`apps/web/src/components/review-drawer.tsx`, which takes over everything the page drew;
+`apps/web/src/pages/review.tsx` is deleted): `Drawer side="end"` with a width budget of 1040 px, a modal `dialog` named
+by its title, `DrawerHeader` with the subtitle and `onOpenChange`, the mark row, the `Stepper` and the document beside
+the decision in `LayoutContent`, Föregående, Nästa and the footer's sentence in `LayoutFooter`. Six things differ from
+the amendment or were not in it. The ✕ is named "Stäng", Astryx's own name for it (`@astryx.dialog.close`, shared with
+every Dialog), not "Stäng, Esc": `DrawerHeader` takes no label for it, and overriding the catalogue key would rename every
+dialog's close. The drawer opens once the threads have been read, not before with a loading state of its own: where the
+card under it is itself a drawer (below 1336 px) or the phone's sheet, the overlay shown last stacks on top, so the review
+opens in the same commit as the card and after it; until then Hem draws its own loading state under the address. Closing
+lets the drawer slide away first and only then leads to `/?card=<threadId>` (on the dialog's `close` event): while the
+drawer is modal the page is inert and the card could not take the focus. The card stood under the drawer all along, so
+`useThreadActions` in `apps/web/src/components/card.tsx` takes the handed-back selection, and `ActionRow` the focus on
+"Granska N", once per history entry that carries them rather than only when the card is drawn. With Hem drawn under
+the review its own reading sees the receipt arrive; `expectReceipt` is still called and is now belt and braces. A row's
+heading and the summary's are level 3 under the drawer's h2. Evidence: `tests/a11y/review.spec.ts` (7 cases: the flow
+and Skicka at 1280 px with the card as a drawer under the review, Esc, a direct open with a reload and ✕, an unknown
+step and card, a card without a review, the card beside the column at 1440 px, the phone with Astryx's 56 px reveal,
+reflow at 320 px), `screens.pattern.spec.ts` waiting for the drawer, `bun run check`.

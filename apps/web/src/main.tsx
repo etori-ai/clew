@@ -11,7 +11,6 @@ import { StartPage } from './pages/start';
 import { ConversationProvider } from './components/conversation-context';
 import { CalendarPage } from './pages/calendar';
 import { ToolPage } from './pages/tool';
-import { ReviewPage } from './pages/review';
 import { LoginPage } from './pages/login';
 import { ManifestReferencePage } from './pages/protocol';
 import { AdminConnectorsPage } from './pages/admin/connectors';
@@ -151,7 +150,9 @@ const RouterLink = forwardRef<
  * the areas as `area`; `/conversations/:id` a conversation in the same column (`/conversations/new` while a question
  * asked on another page is being answered). What the panel holds is in the query of whichever page it is beside
  * (`panel-address.ts`). `/calendar` and `/tools/:capability` are the tools, each a page of its own in the same shell (D42).
- * `/cards/:threadId/review` is a card's review one row at a time, a page in the shell with its step in `step` (D73).
+ * `/cards/:threadId/review` is a card's review one row at a time: Hem with the card beside the column and the review as a
+ * drawer over it, its step in `step` (D73, amended 2026-11-07). It is a start route, so opening and closing the review
+ * never remounts Hem or the card under it.
  */
 function App() {
   // One element for every start route: a route change between Hem and a conversation re-renders the page
@@ -173,10 +174,6 @@ function App() {
       <Route
         path="/tools/:capability"
         element={<Protected>{shell => <ToolPage user={shell.user} admin={shell.admin} />}</Protected>}
-      />
-      <Route
-        path="/cards/:threadId/review"
-        element={<Protected>{shell => <ReviewPage user={shell.user} admin={shell.admin} />}</Protected>}
       />
       <Route
         path="/admin"
@@ -216,6 +213,7 @@ function App() {
       />
       <Route path="/" element={start} />
       <Route path="/conversations/:conversationId" element={start} />
+      <Route path="/cards/:threadId/review" element={start} />
       <Route path="*" element={start} />
     </Routes>
   );

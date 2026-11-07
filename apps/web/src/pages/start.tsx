@@ -49,12 +49,14 @@ import { groupThreads } from '../stream';
 import { useReceiptArrivals } from '../linger';
 import { useThreadAction } from '../mutations';
 import { panelOf, withAction, withCard, withView, withoutPanel } from '../panel-address';
+import { reviewOf } from '../review-address';
 import { Composer, Suggestions, type ComposerAbout } from '../components/composer';
 import { titled, useConversation, type ConversationState } from '../components/conversation-context';
 import { Transcript } from '../components/conversation';
 import { toolHref, useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { GenericCard, ThreadRow } from '../components/card';
+import { ReviewDrawer } from '../components/review-drawer';
 import { BriefSkeleton } from '../components/brief';
 import {
   CONVERSATION_MIN,
@@ -146,9 +148,18 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const talk = useConversation();
   const navigate = useNavigate();
   const location = useLocation();
-  const params = useParams<{ conversationId?: string }>();
-  const [search] = useSearchParams();
-  const here = location.pathname;
+  const params = useParams<{ conversationId?: string; threadId?: string }>();
+  const [addressed] = useSearchParams();
+  // A card's review (D73, amended 2026-11-07) is Hem with the card beside the column, as `/?card=` draws it, and the
+  // review's drawer over it: the page reads its address as that one, so the row says "öppet bredvid" under the scrim and
+  // every link drawn under the drawer leads to Hem. The step is the drawer's own.
+  const reviewing = reviewOf(params);
+  const search = useMemo(
+    () => (reviewing ? new URLSearchParams({ card: reviewing }) : addressed),
+    [reviewing, addressed],
+  );
+  const here = reviewing ? '/' : location.pathname;
+  const query = reviewing ? `?${search.toString()}` : location.search;
   const conversationId = params.conversationId && params.conversationId !== 'new' ? params.conversationId : null;
   const tab = tabOf(search.get('tab'));
   const area = search.get('area');
@@ -308,7 +319,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       source: arrived.source,
       input: viewPanel.input,
       via: viewPanel.via,
-      address: here + location.search,
+      address: here + query,
     };
   const capabilityShown = viewPanel ? shownView.current : null;
   const view = useMemo(() => {
@@ -371,7 +382,8 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   ];
   const railCurrent: RailCurrent = { surface: 'start', conversationId };
   const pageTitle = view ? view.title : conversationId ? 'Samtal' : 'Hem';
-  usePageTitle(pageTitle, view || conversationId ? false : pageTitle);
+  // While the review is open its drawer names the document (D73 amended); Hem's title comes back with Hem's address.
+  usePageTitle(reviewing ? null : pageTitle, view || conversationId ? false : pageTitle);
   const nav = useRail({ current: railCurrent, admin });
 
   const openCardView = (threadId: string, actionId: string) => navigate(withAction(here, search, threadId, actionId));
@@ -828,7 +840,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           ? `view:${capabilityShown.capability}`
           : `action:${actionPanel?.threadId}:${actionPanel?.actionId}`,
         title: view.title,
-        address: capabilityShown?.address ?? here + location.search,
+        address: capabilityShown?.address ?? here + query,
         wide: view.spec?.kind === 'table',
         onClose: closePanel,
         actions: tool ? (
@@ -868,7 +880,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           kind: 'card',
           title: 'Kort',
           tab: panelCard.title,
-          address: here + location.search,
+          address: here + query,
           onClose: closePanel,
           // The card's buttons, Inte nu among them, are the card's own: the header holds what is open and ✕ (D66).
           body: () => card(panelCard, { beside: true, compact: true, level: 3, next: nextFor(panelCard) }),
@@ -1085,6 +1097,8 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       </Shell>
       {slot.overlay}
       {sheet}
+      {/* After the panel's drawer and the phone's sheet, so a direct open stacks the review on top of the card (D73 amended). */}
+      <ReviewDrawer threadId={reviewing} />
       <EventDialog
         item={openItem?.item ?? null}
         dayItems={openItem?.dayItems ?? []}

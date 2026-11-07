@@ -11,9 +11,10 @@ import type { Thread } from '@clew/contracts';
 export const LINGER_MS = 2_500;
 
 /**
- * The decisions sent from a page Hem was not drawn under (D73: Skicka on the review's own page). Hem's first reading is
- * a baseline, so a receipt that came while the review was on screen would otherwise be taken for an old one and draw
- * neither the row's moment nor the toast. The set lives in memory only, so a reload forgets it and draws no toast.
+ * The decisions sent from a surface Hem may not have been drawn under (D73: Skicka in the review). Hem's first reading
+ * is a baseline, so a receipt that came while Hem was not on screen would otherwise be taken for an old one and draw
+ * neither the row's moment nor the toast. Since D73's amendment the review is a drawer over Hem, whose own reading sees
+ * the receipt arrive, so this is belt and braces there. The set lives in memory only, so a reload forgets it.
  */
 const expected = new Set<string>();
 /** The decision on this card was sent from another page: Hem's next reading counts its receipt as arriving. */
@@ -40,7 +41,7 @@ export function receiptArrivals(
 /**
  * Watches the threads for arriving receipts: `onArrive` runs once per arrival, and the returned set holds the cards that
  * still keep their place in the stream. The first reading is a baseline, never an arrival, so a reload draws no toast;
- * the one exception is a decision sent from the review's page (`expectReceipt`, D73).
+ * the one exception is a decision named by `expectReceipt` (D73).
  */
 export function useReceiptArrivals(threads: readonly Thread[], onArrive: (thread: Thread) => void): Set<string> {
   const previous = useRef<Map<string, Thread> | null>(null);
@@ -50,7 +51,7 @@ export function useReceiptArrivals(threads: readonly Thread[], onArrive: (thread
   useEffect(() => {
     const arrivals = receiptArrivals(previous.current ?? new Map(), threads, expected);
     previous.current = new Map(threads.map(t => [t.id, t]));
-    // A decision sent from the review's page is read once it is in the threads: with its receipt it arrives now, without
+    // A decision named by `expectReceipt` is read once it is in the threads: with its receipt it arrives now, without
     // one it is the baseline and arrives the ordinary way.
     for (const t of threads) expected.delete(t.id);
     if (!arrivals.length) return;
