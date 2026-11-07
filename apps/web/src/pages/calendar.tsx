@@ -416,10 +416,17 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   );
   return (
     <Shell user={user} nav={nav}>
+      {/* The same gutter as a tool's page (D63 item 13, `tool.tsx`): 32 px in from the rail on a desktop, 12 on a phone; the product owner saw the calendar hug the rail while Hem and the tool pages did not (2026-11-07). A Toolbar bleeds out of the header to the edge and pads 12 px of its own, so the desktop one is set 20 px in and 24 px down, which puts the title 32 px from both edges as the review page has it; the conversation's toolbar on Hem is wrapped the same way. */}
       <Layout
         height="fill"
-        padding={mobile ? 3 : 4}
-        header={<LayoutHeader hasDivider>{toolbar}</LayoutHeader>}
+        padding={mobile ? 3 : 8}
+        header={
+          <LayoutHeader hasDivider>
+            <VStack paddingInline={mobile ? 0 : 5} paddingBlockStart={mobile ? 0 : 6}>
+              {toolbar}
+            </VStack>
+          </LayoutHeader>
+        }
         end={
           !narrow && thread ? (
             <LayoutPanel width={340} hasDivider role="complementary" label="Förslag" padding={0} isScrollable={false}>
