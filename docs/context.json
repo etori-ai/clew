@@ -900,6 +900,15 @@
       "status": "accepted, built 2026-11-07",
       "date": "2026-11-07",
       "area": "integrations"
+    },
+    {
+      "key": "D78-work-items-cards-and-proposals-have-distinct-meanings",
+      "number": 78,
+      "path": "docs/decisions/D78-work-items-cards-and-proposals-have-distinct-meanings.md",
+      "title": "D78 · Work items, cards and proposals have distinct meanings",
+      "status": "accepted",
+      "date": "2026-11-08",
+      "area": "product"
     }
   ],
   "documents": [
@@ -1707,6 +1716,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D78-work-items-cards-and-proposals-have-distinct-meanings.md",
+      "title": "D78 · Work items, cards and proposals have distinct meanings",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -1923,6 +1938,20 @@
       "category": "integrator-guide",
       "headings": [
         "How to read the decision history"
+      ]
+    },
+    {
+      "path": "docs/reference/vocabulary.md",
+      "title": "Clew vocabulary and entity map",
+      "category": "integrator-guide",
+      "headings": [
+        "Work and outcomes",
+        "From a card to the work",
+        "From a proposal to an outcome",
+        "Interface vocabulary",
+        "Integration vocabulary",
+        "Naming rules",
+        "Mapping to the current code"
       ]
     },
     {

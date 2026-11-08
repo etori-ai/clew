@@ -2,6 +2,8 @@
 
 Start with [How Clew works](overview.md): the components, ownership boundaries and end-to-end read, discovery and approval flows. It builds on the [product overview](../overview.md) and describes the current implementation.
 
+The [vocabulary and entity map](../reference/vocabulary.md) separates work items, proposals and conversations from the cards, views and panels that present them, and maps the terms to code.
+
 ## Explore the system
 
 | Page | Question it answers |

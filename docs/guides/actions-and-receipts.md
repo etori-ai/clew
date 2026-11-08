@@ -2,6 +2,8 @@
 
 Start with a source read that works under the person's access. A write adds three responsibilities: identifying what the person approved, establishing what the source actually did, and resolving an uncertain response without blindly repeating the effect.
 
+The [shared vocabulary](../reference/vocabulary.md) calls the tracked work a **work item** and its presentation a **card**. The connector contracts retain names such as `ThreadDraft`, `ThreadItem` and `ThreadAction`; use those exact names in payloads and code.
+
 The relevant code is the [card decision use case](../../apps/server/src/threads/usecases/decisions.ts), [execution use cases](../../apps/server/src/modules/executions/usecases.ts), [wire schemas](../../packages/connectors/src/protocol.ts) and [durable synthetic source](../../connectors/reference/connector.mjs). Calendar source writes also use this lifecycle. See [implementation status](../reference/status.md) and the [acceptance matrix](../reference/reliability-acceptance.md) for evidence and limits.
 
 ## Establish background source access
