@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { ScimError } from '../../apps/server/src/modules/people/contracts';
 import { applyGroupPatch, applyUserPatch, parseFilter } from '../../apps/server/src/modules/people/domain';
+import type { ProvisionStore } from '../../apps/server/src/modules/people/ports';
 import { scimUsecases } from '../../apps/server/src/modules/people/usecases';
 import { scimStoreContract } from '../scim-store-contract';
 
@@ -300,6 +301,40 @@ describe('SCIM groups and derivation', () => {
     });
     expect([...store.state.groups.values()].some(g => g.externalId === 'protected')).toBe(false);
     expect(store.state.groups.get(plain.id)?.externalId).toBeNull();
+  });
+  test('a push that changes nothing writes no unit and no assignment', async () => {
+    const inner = memoryProvisionStore();
+    let unitWrites = 0,
+      assignmentWrites = 0;
+    const store: ProvisionStore = {
+      transaction: fn =>
+        inner.transaction(tx =>
+          fn({
+            ...tx,
+            writeUnits: (organisationId, units) => (unitWrites++, tx.writeUnits(organisationId, units)),
+            replaceAssignments: (personId, assignments) => (
+              assignmentWrites++,
+              tx.replaceAssignments(personId, assignments)
+            ),
+          }),
+        ),
+    };
+    let seq = 0;
+    const scim = scimUsecases({ store, clock: () => new Date(), ids: () => 'id-' + ++seq, digest: t => t });
+    const p = { id: 'mk', organisationId: 'sundsvall', label: 'Metakatalogen' };
+    const a = (await scim.createUser(p, anna, BASE)).id;
+    const unit = await scim.createGroup(p, group('unit:skola', 'Bergsåkers skola', [a]), BASE);
+    await scim.createGroup(p, group('unit-manager:skola', 'Rektorer', [a]), BASE);
+    expect(unitWrites).toBeGreaterThan(0);
+    expect(assignmentWrites).toBeGreaterThan(0);
+    const [units, assignments] = [unitWrites, assignmentWrites];
+    await scim.replaceUser(p, a, anna, BASE);
+    await scim.replaceGroup(p, unit.id, group('unit:skola', 'Bergsåkers skola', [a]), BASE);
+    expect(unitWrites).toBe(units);
+    expect(assignmentWrites).toBe(assignments);
+    await scim.replaceGroup(p, unit.id, group('unit:skola', 'Bergsåkers nya skola', [a]), BASE);
+    expect(unitWrites).toBe(units + 1);
+    expect(inner.state.grants.get(a)).toMatchObject({ unitLabel: 'Bergsåkers nya skola', role: 'manager' });
   });
   test('a group belongs to the organisation that pushed it: another provisioner neither sees nor changes it, and its externalId stays unique across the installation', async () => {
     const { scim, p, store } = harness();

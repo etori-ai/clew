@@ -12,7 +12,8 @@ import type { ScimQuery, ScimUsecases } from '../modules/people/usecases';
  * derivation. Errors are the standard's error resource, in English: a machine reads them.
  */
 type Env = { Variables: { provisioner: Provisioner } };
-const BODY_LIMIT = 256 * 1024;
+/** Four megabytes: a group of ten thousand members, the largest resource a municipal push carries, is well under it. */
+const BODY_LIMIT = 4 * 1024 * 1024;
 export function scimRoutes(scim: ScimUsecases) {
   const app = new Hono<Env>();
   const json = (c: Context, body: unknown, status: 200 | 201 = 200, headers: Record<string, string> = {}) =>
@@ -47,6 +48,10 @@ export function scimRoutes(scim: ScimUsecases) {
   };
   const base = (c: Context) => (process.env.PUBLIC_URL ?? new URL(c.req.url).origin).replace(/\/+$/, '') + '/scim/v2';
   const body = async (c: Context): Promise<unknown> => {
+    // The declared length first, so an oversized body is refused before it is read; then the measured one, for a
+    // chunked body that declares none.
+    if (Number(c.req.header('content-length') ?? 0) > BODY_LIMIT)
+      throw new ScimError(413, 'The request body is too large.');
     const text = await c.req.raw.text();
     if (text.length > BODY_LIMIT) throw new ScimError(413, 'The request body is too large.');
     try {

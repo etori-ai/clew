@@ -56,13 +56,28 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
     if (!person) return undefined;
     const memberships = await tx.memberships(personId),
       rules = await tx.groupCapabilities();
-    const managed = memberships
-      .filter(m => m.externalId.startsWith(MANAGER_KEY))
-      .map(m => m.externalId.slice(MANAGER_KEY.length));
-    const knownLabels = managed.length ? await tx.unitLabels(managed) : {};
+    // Every unit the memberships name, as the unit table knows it: the label of a managed unit without a `unit:` group,
+    // and the comparison that lets an unchanged derivation write nothing (a daily push replays every person).
+    const named = [
+      ...new Set(
+        memberships.flatMap(m =>
+          m.externalId.startsWith(MANAGER_KEY)
+            ? [m.externalId.slice(MANAGER_KEY.length)]
+            : m.externalId.startsWith(UNIT_KEY)
+              ? [m.externalId.slice(UNIT_KEY.length)]
+              : [],
+        ),
+      ),
+    ];
+    const knownLabels = named.length ? await tx.unitLabels(named) : {};
     const derived = deriveAuthority(memberships, rules, knownLabels);
-    await tx.writeUnits(person.organisationId, derived.units);
-    await tx.replaceAssignments(personId, derived.assignments);
+    const movedUnits = derived.units.filter(u => knownLabels[u.id] !== u.label);
+    if (movedUnits.length) await tx.writeUnits(person.organisationId, movedUnits);
+    const held = await tx.assignmentsOf(personId),
+      sameAssignments =
+        held.length === derived.assignments.length &&
+        held.every((a, i) => a.unitId === derived.assignments[i]!.unitId && a.role === derived.assignments[i]!.role);
+    if (!sameAssignments) await tx.replaceAssignments(personId, derived.assignments);
     // Compared as stored, so a projection that still carries a name outside the closed list is rewritten.
     const before = await tx.grant(personId),
       previous = before && { ...before, capabilities: [...before.capabilities].sort() as Capability[] };

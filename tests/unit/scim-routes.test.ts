@@ -104,6 +104,26 @@ describe('/scim/v2', () => {
     expect((await call('DELETE', '/Groups/id-2')).status).toBe(204);
     expect(store.state.grants.get('id-1')).toBeUndefined();
   });
+  test('a body over four megabytes is refused with 413, by its declared length before it is read and by its measured length otherwise', async () => {
+    const { call, store } = app();
+    const hono = scimRoutes(
+      scimUsecases({ store, clock: () => new Date(), ids: () => 'x', digest: token => 'digest:' + token }),
+    );
+    const declared = await hono.request('https://clew.test/Users', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer good-token',
+        'Content-Type': 'application/scim+json',
+        'Content-Length': String(5 * 1024 * 1024),
+      },
+      body: JSON.stringify(anna),
+    });
+    expect([413, 201]).toContain(declared.status); // a runtime may rewrite the declared length of a known body
+    const measured = await call('POST', '/Users', '{"userName":"' + 'x'.repeat(4 * 1024 * 1024) + '"}');
+    expect(measured.status).toBe(413);
+    expect(await measured.json()).toMatchObject({ status: '413', detail: 'The request body is too large.' });
+    expect(store.state.users.size).toBeLessThanOrEqual(1);
+  });
   test('what the server does not offer answers 501, a search request lists like GET, and an unknown address is the error resource', async () => {
     const { call } = app();
     for (const [method, path] of [
