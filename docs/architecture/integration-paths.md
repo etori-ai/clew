@@ -1,6 +1,14 @@
 # Choose an integration path
 
-Start with the employee's task and the source's access policy. The default for a new external system is an independent HTTP connector, whether the source owner implements Clew's contract directly or you write an adapter beside it. [Integration architecture](integrations.md) explains that boundary.
+Start with the employee's task and the source's access policy. For native, model-independent work, use an independent HTTP connector, whether the source owner implements Clew's contract directly or you write an adapter beside it. [Integration architecture](integrations.md) explains that boundary. Existing MCP services have a separate AI-enabled chat path, currently a development prototype.
+
+## Consume a standard MCP service
+
+Choose this lane when a vendor already supplies tools or an MCP App and Clew should host that interaction. The vendor keeps its existing MCP endpoint, tool schemas and optional App resources; no Clew manifest, callback or view type is required. Clew owns registration, access, discovery, confirmation and the surrounding cards. Provider OAuth remains necessary and is not implemented by the synthetic demo.
+
+An administrator can configure a Clew-owned read watch over an existing tool. Temporal checks the source; a stable identity and eligibility/change rule determine whether to create a delivery card. The interval controls when Clew checks, not when it sends repeat reminders. The source needs no Clew-specific push support. Analytics-only tools do not imply that respondent invitations or submission are available.
+
+See [MCP chat services](mcp-chat-services.md) for the end-to-end path and remaining production work, [the independent demo](../../fixtures/mcp-pulse/README.md) to run it, and [provider evidence](../reviews/2026-11-08-mcp-services-and-provider-compatibility.md) for actual vendor capabilities. MCP services do not automatically acquire native scan, job, undo or reconciliation semantics. The following table describes the native connector lane.
 
 ## Add only what the task needs
 

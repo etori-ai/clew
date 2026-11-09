@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/main.ts",
     "start": "tsx src/main.ts",
-    "test:node": "node --import tsx --test --test-concurrency=1 tests/runtime.test.ts tests/fixture-runtime.test.ts",
+    "test:node": "node --import tsx --test --test-concurrency=1 tests/runtime.test.ts tests/fixture-runtime.test.ts tests/mcp-runtime.test.ts",
     "test:durability": "node --import tsx --test --test-concurrency=1 tests/execution-runtime.test.ts tests/timer-runtime.test.ts tests/watch-runtime.test.ts"
   },
   "dependencies": {
@@ -16,6 +16,7 @@
     "@clew/contracts": "workspace:*",
     "@clew/db": "workspace:*",
     "@hono/node-server": "2.1.6",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@sinclair/typebox": "0.34.52",
     "@temporalio/activity": "1.25.0",
     "@temporalio/client": "1.25.0",

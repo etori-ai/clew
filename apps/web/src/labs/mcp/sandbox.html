@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-src about:; base-uri 'none'; form-action 'none'">
+  <title>Isolerad tjänstevy</title>
+  <style>html,body,iframe { width: 100%; height: 100%; margin: 0; border: 0; display: block; }</style>
+</head>
+<body>
+<script>
+  // Development registrations only. Production needs a dedicated HTTPS sandbox origin.
+  let view;
+  addEventListener('message', event => {
+    const message = event.data;
+    if (message?.jsonrpc !== '2.0') return;
+    if (event.source === parent) {
+      if (message.method === 'ui/notifications/sandbox-resource-ready' && !view) {
+        view = document.createElement('iframe');
+        view.title = message.params.title || 'Tjänstens interaktiva vy';
+        view.setAttribute('sandbox', 'allow-scripts allow-forms');
+        const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">`;
+        view.srcdoc = '<!doctype html>' + csp + message.params.html;
+        document.body.append(view);
+      } else if (!message.method?.startsWith('ui/notifications/sandbox-')) view?.contentWindow.postMessage(message, '*');
+    } else if (view && event.source === view.contentWindow && !message.method?.startsWith('ui/notifications/sandbox-')) parent.postMessage(message, '*');
+  });
+  parent.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/sandbox-proxy-ready' }, '*');
+</script>
+</body>
+</html>

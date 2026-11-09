@@ -51,6 +51,7 @@ import type {
   Verb,
 } from '@clew/contracts';
 import { sessionFetch } from '@clew/ui';
+import type { McpDelivery, McpService, McpView, McpResult } from '@clew/contracts';
 
 import { ApiError } from './api-error';
 export { ApiError };
@@ -134,6 +135,18 @@ const post = <T>(path: string, body?: unknown) => call<T>(path, { method: 'POST'
 const patch = <T>(path: string, body: unknown) => call<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
 const del = <T>(path: string) => call<T>(path, { method: 'DELETE' });
 export const api = {
+  chatServices: () => call<{ services: McpService[]; deliveries: McpDelivery[] }>('/api/chat-services'),
+  chatService: (id: string, deliveryId?: string) =>
+    call<McpView>(
+      '/api/chat-services/' +
+        encodeURIComponent(id) +
+        (deliveryId ? '?delivery=' + encodeURIComponent(deliveryId) : ''),
+    ),
+  decideService: (id: string, input: { decisionId: string; name: string; arguments: Record<string, unknown> }) =>
+    call<McpResult>('/api/chat-services/' + encodeURIComponent(id) + '/decisions', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
   /** The manifest field by field (D60): a public document, read with the plain fetch since no session or token belongs on it. */
   manifestReference: async () => {
     const response = await fetch('/api/protocol/manifest-reference.json');

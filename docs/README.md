@@ -29,6 +29,12 @@ A connector is your independently deployed HTTP service. It translates a source 
 
 The [guide index](guides/README.md) separates the minimum read integration from optional search, scan, write and composition features.
 
+## Consume an existing MCP service
+
+A vendor that already exposes standard MCP does not need to build a Clew connector or supply a Clew manifest. The separate, AI-enabled chat path consumes discovered tools and optional provider-owned MCP Apps. Clew can also run an approved read on a schedule and deliver a separate card when meaningful source evidence changes.
+
+Read [MCP chat services](architecture/mcp-chat-services.md) for the ownership boundary, standard OAuth requirements, delivery flow and implementation map. The [independent poll/status demo](../fixtures/mcp-pulse/README.md) runs this path for an explicitly registered development user. This is a development prototype; OAuth and production hosting remain unfinished. The [provider review](reviews/2026-11-08-mcp-services-and-provider-compatibility.md) distinguishes verified vendor tools from the illustrative poll App.
+
 ## Develop and operate Clew
 
 | Task | Read |

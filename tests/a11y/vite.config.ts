@@ -9,7 +9,7 @@ export function a11yWebConfig(profile: A11yBrandProfile) {
     ...webConfig(),
     root: resolve(import.meta.dirname, '../../apps/web'),
     envDir: false as const,
-    define: brandingDefinitions(profile),
+    define: { ...brandingDefinitions(profile), 'import.meta.env.VITE_MCP_PREVIEW': '"true"' },
     build: { outDir: resolve(import.meta.dirname, '../../test-results/apps', profile) },
   };
 }

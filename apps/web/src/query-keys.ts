@@ -10,6 +10,9 @@ export const keys = {
   attention: ['attention'] as const,
   completions: ['completions'] as const,
   assistant: ['assistant'] as const,
+  chatServices: ['chat-services'] as const,
+  chatService: (id: string, deliveryId?: string) => ['chat-service', id, deliveryId ?? null] as const,
+
   /** The prefix of every loaded week; invalidated when a thread with proposals changes. */
   calendarAll: ['calendar'] as const,
   calendar: (week: string) => ['calendar', week] as const,

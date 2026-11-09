@@ -2,7 +2,7 @@
  * Workflow code. This file runs inside Temporal's deterministic sandbox: it may import only `@temporalio/workflow`
  * and types. Side effects happen in activities (`activities.ts`), which run in Node with the live adapters.
  */
-import { condition, defineSignal, proxyActivities, setHandler, sleep } from '@temporalio/workflow';
+import { condition, continueAsNew, defineSignal, proxyActivities, setHandler, sleep } from '@temporalio/workflow';
 import type * as activities from './activities';
 import type { ReminderInput } from '../threads/model';
 
@@ -20,6 +20,24 @@ export async function scheduledJob(input: { id: string; dueAt: string }): Promis
   const wait = Date.parse(input.dueAt) - Date.now();
   if (wait > 0) await sleep(wait);
   while ((await runScheduledJob(input.id)) === 'busy') await sleep('30 seconds');
+}
+
+const { observeMcp } = proxyActivities<typeof activities>({
+  startToCloseTimeout: '1 minute',
+  retry: { maximumAttempts: 3 },
+});
+export async function mcpWatch(id: string): Promise<void> {
+  for (let check = 0; check < 100; check++) {
+    let interval: number | null = 60;
+    try {
+      interval = await observeMcp(id);
+    } catch {
+      /* A failed read is never a delivery. Try later. */
+    }
+    if (interval === null) return;
+    await sleep(interval * 1000);
+  }
+  await continueAsNew<typeof mcpWatch>(id);
 }
 
 /** Absolute time: delayed dispatch cannot restart the original duration. Old reminder histories stay unchanged. */

@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
+  readonly VITE_MCP_PREVIEW?: string;
   readonly VITE_BRAND_PROFILE?: string;
   readonly VITE_BRAND_ACCENT?: string;
   readonly VITE_BRAND_ACCENT_MUTED?: string;

@@ -1588,3 +1588,4 @@ export interface ManifestReference {
   rules: ReferenceRule[];
   recipes: ReferenceRecipe[];
 }
+export type { McpTool, McpResult, McpWatch, McpRegistration, McpDelivery, McpService, McpView } from './mcp';
