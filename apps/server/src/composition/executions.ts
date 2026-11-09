@@ -12,6 +12,7 @@ import { ExecutionError, type ExecutionSource, type WatchSource } from '../modul
 import { executionDispatcher, watchDispatcher } from '../modules/executions/dispatch';
 import { startExecutionWorkflow, startWatchWorkflow } from '../temporal/executions';
 import { clock } from './ambient';
+import { reviewDocuments } from './documents';
 import { projectExecution } from './execution-projection';
 import { watchCardSink } from './watch-card';
 import { calendarApproval, calendarSource } from './calendar';
@@ -88,6 +89,7 @@ const watch: WatchSource = {
   read: (persona, operation, input) => registry.run(actorOf(persona), operation, input),
 };
 export const executions = executionUsecases({
+  review: reviewDocuments.validate,
   store: executionStore,
   source,
   watch,

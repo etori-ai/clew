@@ -1,5 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
-import type { Role } from '@clew/contracts';
+import type { Role, DocumentRequest } from '@clew/contracts';
 import { api } from './api';
 import { keys } from './query-keys';
 
@@ -76,11 +76,25 @@ export const viewQuery = (capability: string, inputJson: string | null) =>
  * and never refetched on its own: within the session a revisit replays the answer, which is right for a read action.
  */
 /** One item's document for the review flow (D70): read once per visit, never retried on its own (the dialog offers Försök igen). */
-export const previewQuery = (threadId: string, ref: string) =>
+export const previewQuery = (threadId: string, ref: string, revision?: string) =>
   queryOptions({
-    queryKey: keys.preview(threadId, ref),
+    queryKey: keys.preview(threadId, ref, revision),
     queryFn: () => api.preview(threadId, ref),
-    staleTime: Infinity,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
+  });
+/** Original bytes live only while open. Every mount and retry rechecks current access and the exact revision. */
+export const documentQuery = (request: DocumentRequest) =>
+  queryOptions({
+    queryKey: keys.document(request),
+    queryFn: ({ signal }) => api.document(request, signal),
+    gcTime: 0,
+    staleTime: 0,
+    refetchOnMount: 'always',
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     retry: false,

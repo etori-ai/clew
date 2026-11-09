@@ -10,6 +10,116 @@ const reviewed = (api: MockApi) => {
   );
 };
 
+test.describe('confirmed review completion', () => {
+  test.use({ viewport: desktop });
+  for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+    test(`a confirmed receipt shows a check and respects ${reducedMotion} motion`, async ({ page, api }) => {
+      await page.emulateMedia({ reducedMotion });
+      reviewed(api);
+      await open(page, '/cards/fakturor/review');
+      const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
+      await review.getByRole('button', { name: 'Attestera', exact: true }).click();
+      await review.getByRole('button', { name: 'Lämna kvar', exact: true }).click();
+      await review.getByRole('button', { name: 'Lämna kvar', exact: true }).click();
+      await expect(review.getByText('Redo att skicka', { exact: true })).toBeVisible();
+      await expect(review.getByRole('status', { name: 'Bekräftat av källan' })).toHaveCount(0);
+      await review.getByRole('button', { name: 'Attestera 1', exact: true }).click();
+      const completion = review.getByRole('status', { name: 'Bekräftat av källan' });
+      await expect(completion).toBeVisible();
+      const check = completion.getByRole('img', { name: 'Klart' });
+      const animation = await check.evaluate(el => ({
+        name: getComputedStyle(el).animationName,
+        duration: getComputedStyle(el).animationDuration,
+      }));
+      if (reducedMotion === 'reduce')
+        expect(animation.name === 'none' || animation.duration.split(',').every(value => parseFloat(value) === 0)).toBe(
+          true,
+        );
+      else expect(animation.name).not.toBe('none');
+      await expect(completion).toContainText('1 faktura attesterad');
+      if (reducedMotion === 'no-preference') await page.screenshot({ path: 'test-results/review-completed.png' });
+      await expect(page).toHaveURL('/?card=fakturor');
+      await expect(review).toHaveCount(0);
+    });
+  }
+  test('an uncertain source result never shows the success animation', async ({ page, api }) => {
+    reviewed(api);
+    let completionShown = false;
+    await page.exposeFunction('recordCompletion', () => {
+      completionShown = true;
+    });
+    await page.addInitScript(() => {
+      new MutationObserver(() => {
+        if (document.querySelector('[aria-label="Bekräftat av källan"]'))
+          (window as unknown as { recordCompletion(): void }).recordCompletion();
+      }).observe(document, { childList: true, subtree: true });
+    });
+    await page.route('**/api/threads/fakturor/act', async route => {
+      const card = api.threads.find(t => t.id === 'fakturor')!;
+      const refs = route.request().postDataJSON().refs as string[];
+      const next = {
+        ...card,
+        state: 'handled' as const,
+        receipt: {
+          at: '2026-11-04T08:00:00.000Z',
+          headline: 'Resultatet kunde inte bekräftas',
+          undoUntil: null,
+          undoCapability: null,
+          rows: refs.map(ref => ({ ref, label: ref, outcome: 'unknown' as const, detail: 'Källan svarade inte.' })),
+        },
+      };
+      api.threads = api.threads.map(t => (t.id === card.id ? next : t));
+      await route.fulfill({ json: { kind: 'execute', thread: next } });
+    });
+    await open(page, '/cards/fakturor/review');
+    const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
+    await review.getByRole('button', { name: 'Attestera', exact: true }).click();
+    await review.getByRole('button', { name: 'Hoppa över', exact: true }).click();
+    await review.getByRole('button', { name: 'Hoppa över', exact: true }).click();
+    await review.getByRole('button', { name: 'Attestera 1', exact: true }).click();
+    await expect(page).toHaveURL('/?card=fakturor');
+    expect(completionShown).toBe(false);
+  });
+});
+
+for (const [layout, viewport] of [
+  ['desktop', desktop],
+  ['phone', narrow],
+] as const) {
+  test.describe('review batch navigation on ' + layout, () => {
+    test.use({ viewport });
+    for (const count of [4, 5, 10]) {
+      test(`${count} invoices keep readable progress and allow jumping through the overview`, async ({ page, api }) => {
+        reviewed(api);
+        const card = api.threads.find(t => t.id === 'fakturor')!;
+        card.items = Array.from({ length: count }, (_, index) => ({
+          ...card.items[0]!,
+          ref: `invoice-${index}`,
+          label: `Leverantör ${index + 1} · 1 000 kr`,
+        }));
+        await open(page, '/cards/fakturor/review');
+        const review = page.getByRole('dialog', { name: `Granska ${count} rader` });
+        await expect(review.getByRole('button', { name: 'Attestera', exact: true })).toBeEnabled();
+        await expect(review.getByRole('list', { name: 'Rader', exact: true })).toHaveCount(count < 5 ? 1 : 0);
+        await expect(review.getByRole('progressbar', { name: 'Bedömda rader' })).toHaveCount(count >= 5 ? 1 : 0);
+        expect(await reflowProblems(page, review)).toEqual([]);
+        if (count === 10) {
+          await expectNoAxeViolations(page);
+          await page.screenshot({ path: `test-results/review-ten-${layout}.png` });
+        }
+        await review.getByRole('button', { name: 'Översikt', exact: true }).click();
+        await review.getByRole('button', { name: `Granska rad ${count}:`, exact: false }).click();
+        await expect(page).toHaveURL(`/cards/fakturor/review?step=${count}`);
+        await expect(review.getByRole('heading', { name: `Leverantör ${count} · 1 000 kr` })).toBeVisible();
+        await review.getByRole('button', { name: 'Attestera', exact: true }).click();
+        await expect(review.getByRole('list', { name: 'Hittills' })).toContainText('Vald för godkännande');
+        await expect(review.getByRole('button', { name: 'Attestera 1', exact: true })).toBeEnabled();
+        expect(card.state).toBe('open');
+      });
+    }
+  });
+}
+
 test.describe('rows with a document are reviewed one at a time in a drawer over Hem, and the receipt earns the check (D70, D73 amended)', () => {
   test.use({ viewport: desktop });
 
@@ -28,7 +138,7 @@ test.describe('rows with a document are reviewed one at a time in a drawer over 
     await expect(review).toBeVisible();
     await expect(review.getByRole('heading', { level: 2, name: 'Granska 3 rader' })).toBeVisible();
     await expect(review).toContainText('Attestera 3 fakturor, 48 200 kr · inget skrivs förrän du skickar');
-    await expect(review).toContainText('Esc sparar och stänger. Inget skrivs till ekonomisystemet förrän du skickar.');
+    await expect(review).toContainText('Dina val skickas i sista steget.');
     await expect(page).toHaveTitle('Granska 3 rader · Startsidan');
     await expect(page.locator('#thread-fakturor')).toContainText('öppet bredvid');
     await expect(review.getByRole('button', { name: 'Stäng', exact: true })).toBeVisible();
@@ -210,7 +320,8 @@ test.describe("the review on a phone: a tall sheet stacked over the card's sheet
     await expect(review.getByRole('heading', { name: 'Underlag från ekonomisystemet' })).toBeFocused();
     await expect(attest).not.toHaveAttribute('data-autofocus', '');
     const [paper, button] = [await img.boundingBox(), await attest.boundingBox()];
-    expect(paper!.y + paper!.height).toBeLessThanOrEqual(button!.y);
+    expect(paper!.y).toBeLessThan(button!.y);
+    await expect(attest).toBeInViewport();
     await expectNoAxeViolations(page);
     await review.getByRole('button', { name: 'Lämna kvar' }).click();
     await expect(page).toHaveURL('/cards/fakturor/review?step=2');
@@ -271,7 +382,9 @@ test.describe('the review across a resize (D73, second amendment)', () => {
     await page.setViewportSize(phone);
     await expect(review).toHaveAttribute('data-sheet-stack', 'top');
     await expect(review.getByRole('heading', { name: 'Skolmaterial Norrland AB · 18 300 kr' })).toBeVisible();
-    await expect(review.getByRole('list', { name: 'Hittills' })).toContainText('Godkänd');
+    await expect(review).toContainText('1 av 3 bedömda');
+    await review.getByRole('button', { name: 'Översikt', exact: true }).click();
+    await expect(review.getByRole('list', { name: 'Hittills' })).toContainText('Vald för godkännande');
   });
 });
 

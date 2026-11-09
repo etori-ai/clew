@@ -1,4 +1,31 @@
-import { FormatRegistry, Type, type Static } from '@sinclair/typebox';
+import { FormatRegistry, Type, type Static, type TSchema } from '@sinclair/typebox';
+import { Value } from '@sinclair/typebox/value';
+import { DocumentReviewSchema, ReviewEvidenceSchema } from './presentation';
+// Explicit exports keep these names visible to the Node ESM server through this package's CommonJS boundary.
+export {
+  MAX_DOCUMENT_BYTES,
+  DocumentMediaSchema,
+  DocumentSchema,
+  DocumentBundleSchema,
+  DocumentRequestSchema,
+  ReviewEvidenceSchema,
+  DocumentReviewSchema,
+  ReviewRecoverySchema,
+  MetricSchema,
+  MetricsSchema,
+  SeriesSchema,
+  ActivitySchema,
+  type DocumentDescriptor,
+  type DocumentBundle,
+  type DocumentRequest,
+  type DocumentContent,
+  type ReviewEvidence,
+  type DocumentReview,
+  type ReviewRecovery,
+  type Metric,
+  type Series,
+  type Activity,
+} from './presentation';
 
 /** Identity as the browser may see it. Never carries tokens, bindings or grants. */
 export interface SessionUser {
@@ -39,6 +66,9 @@ if (!FormatRegistry.Has('date-time'))
       /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(value) &&
       !Number.isNaN(Date.parse(value)),
   );
+/** Validate with this package's format registry: Node's ESM and CommonJS TypeBox copies have separate registries. */
+export const checkContract = <T extends TSchema>(schema: T, value: unknown): value is Static<T> =>
+  Value.Check(schema, value);
 const id = Type.String({ minLength: 1, maxLength: 80 });
 
 /** A calendar occurrence as the browser sees it. Participant names stay inside the calendar surface. */
@@ -365,6 +395,60 @@ const rowsView = <K extends 'table' | 'list'>(kind: K) =>
   });
 export const ViewSchema = Type.Union(
   [
+    object({
+      kind: Type.Literal('document', { description: 'Versioned original documents and attachments.' }),
+      body: { ...viewKey, description: 'The output property holding the semantic payload for this view kind.' },
+      modelReads,
+    }),
+    object({
+      kind: Type.Literal('metrics', { description: 'Typed measurements, units, reporting periods and freshness.' }),
+      body: viewKey,
+      modelReads,
+    }),
+    object({
+      kind: Type.Literal('activity', { description: 'Source events in chronological order.' }),
+      body: viewKey,
+      modelReads,
+    }),
+    object({
+      kind: Type.Literal('series', { description: 'Comparable series drawn as a chart and a data table.' }),
+      body: viewKey,
+      chart: Type.Union([Type.Literal('line'), Type.Literal('bar')], {
+        description: 'Line for trends, bar for category comparisons. Both include a data table.',
+      }),
+      modelReads,
+    }),
+    object({
+      kind: Type.Literal('record', {
+        description: 'A record with facts and bounded document, item, metric, series and activity sections.',
+      }),
+      title: viewKey,
+      fields: Type.Array(ViewFieldSchema, {
+        minItems: 1,
+        maxItems: 24,
+        description: 'Labelled facts in display order.',
+      }),
+      document: Type.Optional(viewKey),
+      recovery: Type.Optional(viewKey),
+      metrics: Type.Optional(viewKey),
+      series: Type.Optional(viewKey),
+      activity: Type.Optional(viewKey),
+      items: Type.Optional(
+        object(
+          {
+            rows: viewKey,
+            title: viewKey,
+            fields: Type.Array(ViewFieldSchema, {
+              minItems: 1,
+              maxItems: 12,
+              description: 'The item fields in display order.',
+            }),
+          },
+          'One flat item table, with at most 500 rows.',
+        ),
+      ),
+      modelReads,
+    }),
     rowsView('table'),
     rowsView('list'),
     object({
@@ -609,6 +693,14 @@ export type ThreadMessage = Static<typeof ThreadMessageSchema>;
 /** A row inside a card: an object with a ref the person can tick, point at or add to the conversation (D12). */
 export const ThreadItemSchema = object({
   ref: Type.String({ minLength: 1, maxLength: 200 }),
+  revision: Type.Optional(
+    Type.String({
+      minLength: 1,
+      maxLength: 200,
+      description:
+        'The source record/document-bundle revision represented by this item. Versioned review must match it.',
+    }),
+  ),
   label: Type.String(),
   detail: Type.String(),
   selectable: Type.Boolean(),
@@ -659,6 +751,8 @@ export const PreviewOutputSchema = object(
   "What a `preview` read answers for one item (D70): the item's document as base64, with its media type.",
 );
 export type PreviewOutput = Static<typeof PreviewOutputSchema>;
+export const ReviewPreviewSchema = Type.Union([PreviewOutputSchema, DocumentReviewSchema]);
+export type ReviewPreview = Static<typeof ReviewPreviewSchema>;
 /** What the source system answered, row by row, read back after an execute. Green only on a read-back. */
 export const ReceiptRowSchema = object({
   ref: Type.String(),
@@ -1350,6 +1444,7 @@ export type Area = Static<typeof AreaSchema>;
 export const ActInput = object({
   actionId: id,
   refs: Type.Optional(Type.Array(Type.String({ maxLength: 200 }), { maxItems: 50 })),
+  reviews: Type.Optional(Type.Array(ReviewEvidenceSchema, { maxItems: 50 })),
 });
 export type ActInput = Static<typeof ActInput>;
 

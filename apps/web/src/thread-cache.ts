@@ -65,20 +65,23 @@ export async function previewThread(client: QueryClient, thread: Thread): Promis
  * The change stream's notices (D46) against the person's own requests (D64). A notice says that something of the
  * person's has a new committed revision; while one of this client's mutations is in flight that is usually the
  * request itself, and a refetch now would draw the committed intermediate state over the preview or the answer. The
- * notice waits until the mutation cache is idle, then every read is invalidated as it would have been.
+ * notice waits until the mutation cache is idle. Versioned documents and review snapshots stay fixed while open;
+ * a changed work-item revision opens a new preview key. Policy changes still clear the entire protected tree.
  */
 export function changeNotices(client: QueryClient): { arrived(): void; stop(): void } {
   let held = false;
+  const refresh = () =>
+    client.invalidateQueries({ predicate: q => q.queryKey[0] !== 'document' && q.queryKey[0] !== 'preview' });
   const flush = () => {
     if (!held || client.isMutating()) return;
     held = false;
-    void client.invalidateQueries();
+    void refresh();
   };
   const unsubscribe = client.getMutationCache().subscribe(flush);
   return {
     arrived() {
       if (client.isMutating()) held = true;
-      else void client.invalidateQueries();
+      else void refresh();
     },
     stop: unsubscribe,
   };

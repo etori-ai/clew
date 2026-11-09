@@ -1,7 +1,21 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { openRef, viewRows, type PanelViewSpec, type ViewField, type ViewInput, type ViewRef } from '@clew/contracts';
+import {
+  openRef,
+  viewRows,
+  type Activity,
+  type Metric,
+  type Series,
+  type DocumentBundle,
+  type PanelViewSpec,
+  type ViewField,
+  type ViewInput,
+  type ViewRef,
+} from '@clew/contracts';
 import {
   AreaChip,
+  MetricView,
+  SeriesView,
+  ActivityView,
   Badge,
   Button,
   EmptyState,
@@ -30,6 +44,7 @@ import { useMarks } from '../marks';
 import { useConversation } from './conversation-context';
 import { AddToConversation } from './add-to-conversation';
 import { PageHeader } from './page-header';
+import { DocumentReader } from './document-reader';
 
 /**
  * A declared view (D38): the connector says what the output holds (a table, a list, one record, a text, and which
@@ -424,7 +439,7 @@ export function DeclaredView({
     if (said.current !== null && said.current !== count && controls)
       announce(
         count === 0
-          ? (view.kind !== 'detail' && view.kind !== 'text' && view.empty) || 'Inga rader'
+          ? ((view.kind === 'table' || view.kind === 'list') && view.empty) || 'Inga rader'
           : counted(count, view.kind === 'table' || view.kind === 'list' ? view.noun : undefined),
       );
     said.current = count;
@@ -455,7 +470,29 @@ export function DeclaredView({
       </VStack>
     );
   }
-  if (view.kind === 'detail') {
+  if (view.kind === 'document' || view.kind === 'metrics' || view.kind === 'series' || view.kind === 'activity') {
+    const body = (output as Row)?.[view.body];
+    return (
+      <VStack gap={3}>
+        {header}
+        {view.kind === 'document' ? (
+          <DocumentReader
+            bundle={body as DocumentBundle}
+            capability={view.capability}
+            input={input}
+            compact={!!limit}
+          />
+        ) : view.kind === 'metrics' ? (
+          <MetricView metrics={body as Metric[]} />
+        ) : view.kind === 'series' ? (
+          <SeriesView series={body as Series} chart={view.chart} />
+        ) : (
+          <ActivityView activity={body as Activity} />
+        )}
+      </VStack>
+    );
+  }
+  if (view.kind === 'detail' || view.kind === 'record') {
     const record = output && typeof output === 'object' && !Array.isArray(output) ? (output as Row) : {};
     const shown = view.fields.filter(
       f => !empty(record[f.key]) && (f.format !== 'link' || isWeb(String(record[f.key]))),
@@ -488,6 +525,29 @@ export function DeclaredView({
           </HStack>
         )}
         {shown.length === 0 && empty(record[view.title]) && <Text type="supporting">Inget att visa.</Text>}
+        {view.kind === 'record' && (
+          <>
+            {view.document && (
+              <DocumentReader
+                bundle={record[view.document] as DocumentBundle}
+                capability={view.capability}
+                input={input}
+                compact={!!limit}
+              />
+            )}
+            {view.items && (
+              <Rows
+                view={{ ...view, kind: 'table', title: view.items.title, fields: view.items.fields }}
+                rows={(record[view.items.rows] as Row[]).slice(0, limit ?? 500)}
+                hrefFor={hrefFor}
+                wide={wide && !limit}
+              />
+            )}
+            {view.metrics && <MetricView metrics={record[view.metrics] as Metric[]} />}
+            {view.series && <SeriesView series={record[view.series] as Series} />}
+            {view.activity && <ActivityView activity={record[view.activity] as Activity} />}
+          </>
+        )}
         <Text type="supporting">Hämtat ur {view.source}. Inget av det sparas på Startsidan.</Text>
       </VStack>
     );

@@ -1,7 +1,7 @@
-import { useCallback, useRef, useSyncExternalStore } from 'react';
+import { createElement, useCallback, useRef, useSyncExternalStore } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Thread } from '@clew/contracts';
-import { useToast } from '@clew/ui';
+import { CompletionFeedback, useToast } from '@clew/ui';
 import { applyThread, previewThread } from './thread-cache';
 import { atRest } from './optimistic';
 import { errorMessage } from './query-policy';
@@ -135,7 +135,11 @@ export function useAdminAction({
     mutationFn: fn => fn(),
     onSuccess: async message => {
       await Promise.all(invalidate.map(queryKey => client.invalidateQueries({ queryKey })));
-      if (message) toast({ body: message, ...(toastId ? { uniqueID: toastId } : {}) });
+      if (message)
+        toast({
+          body: createElement(CompletionFeedback, { title: message }),
+          ...(toastId ? { uniqueID: toastId } : {}),
+        });
     },
   });
   const inFlight = useRef(false);

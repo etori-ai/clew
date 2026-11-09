@@ -148,8 +148,14 @@ describe('the stream cache (D33)', () => {
     c.setQueryData(keys.threads, { threads: [] });
     c.setQueryData(keys.areas, { areas: [] });
     const notices = changeNotices(c);
+    const previewKey = keys.preview('invoice-card', 'invoice', 'revision-1');
+    const documentKey = keys.document({ ref: 'invoice', revision: 'revision-1' });
+    c.setQueryData(previewKey, { revision: 'revision-1' });
+    c.setQueryData(documentKey, new ArrayBuffer(4));
     notices.arrived();
     expect(c.getQueryState(keys.threads)?.isInvalidated).toBe(true);
+    expect(c.getQueryState(previewKey)?.isInvalidated).toBe(false);
+    expect(c.getQueryState(documentKey)?.isInvalidated).toBe(false);
     c.setQueryData(keys.threads, { threads: [] });
     let answer!: () => void;
     const pending = c
@@ -164,6 +170,8 @@ describe('the stream cache (D33)', () => {
     await tick();
     expect(c.getQueryState(keys.threads)?.isInvalidated).toBe(true);
     expect(c.getQueryState(keys.areas)?.isInvalidated).toBe(true);
+    expect(c.getQueryState(previewKey)?.isInvalidated).toBe(false);
+    expect(c.getQueryState(documentKey)?.isInvalidated).toBe(false);
     notices.stop();
   });
   test('the calendar page picks the open proposal thread, else the latest one, else none', () => {

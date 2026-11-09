@@ -189,6 +189,7 @@ export interface WatchSource {
   read(persona: AuthenticatedContext, operation: string, input: unknown): Promise<unknown>;
 }
 export interface ExecutionDeps {
+  review?: (persona: AuthenticatedContext, operation: string, payload: unknown) => Promise<void>;
   store: ExecutionStore;
   source: ExecutionSource;
   watch?: WatchSource;

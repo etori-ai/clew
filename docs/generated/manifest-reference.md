@@ -774,6 +774,19 @@ Example:
 true
 ```
 
+#### `documents`
+
+Implements POST /clew/documents for authorised, versioned binary document reads (D79).
+
+- Type: boolean
+- optional
+
+Example:
+
+```json
+true
+```
+
 ### areas[]
 
 #### `areas`
@@ -1186,6 +1199,20 @@ Example:
 ]
 ```
 
+#### `capabilities[].review`
+
+On an execute: the same-connector document or record read taking {ref}, whose version-bound evidence is required on approval.
+
+- Type: string
+- optional
+- Constraints: at most 80 characters
+
+Example:
+
+```json
+"finance.record"
+```
+
 #### `capabilities[].menu`
 
 How this capability's view is named and marked when an administrator puts it in Clew's menu under Verktyg (D40). Only on a read that declares a view and needs no input.
@@ -1271,7 +1298,7 @@ Example:
 
 How Clew draws the output: `table` and `list` over an array of records (`rows`, default "rows"; `title` names the field that names a row and is one of `fields`; `ref` the field holding the connector's ref), `detail` over one record, `text` over one Markdown string.
 
-- Type: object, one of `kind`: "table" / "list" / "detail" / "text"
+- Type: object, one of `kind`: "document" / "metrics" / "activity" / "series" / "record" / "table" / "list" / "detail" / "text"
 - optional
 - Pairs with:
   - **A view belongs to a read.** Only a `read` may declare a view. A propose or execute with one is refused. ([D38](../decisions/README.md))
@@ -1279,9 +1306,9 @@ How Clew draws the output: `table` and `list` over an array of records (`rows`, 
 
 #### `capabilities[].view.kind`
 
-`table`: What is drawn: `table` and `list` over an array of records, `detail` over one record, `text` over one Markdown string. `list`: What is drawn: `table` and `list` over an array of records, `detail` over one record, `text` over one Markdown string. `detail`: One record, drawn as a list of labelled fields. `text`: One Markdown string.
+`document`: Versioned original documents and attachments. `metrics`: Typed measurements, units, reporting periods and freshness. `activity`: Source events in chronological order. `series`: Comparable series drawn as a chart and a data table. `record`: A record with facts and bounded document, item, metric, series and activity sections. `table`: What is drawn: `table` and `list` over an array of records, `detail` over one record, `text` over one Markdown string. `list`: What is drawn: `table` and `list` over an array of records, `detail` over one record, `text` over one Markdown string. `detail`: One record, drawn as a list of labelled fields. `text`: One Markdown string.
 
-- Type: "table" / "list" / "detail" / "text"
+- Type: "document" / "metrics" / "activity" / "series" / "record" / "table" / "list" / "detail" / "text"
 - required
 
 Example:
@@ -1290,22 +1317,54 @@ Example:
 "table"
 ```
 
-#### `capabilities[].view.rows`
+#### `capabilities[].view.body`
 
-The output property holding the array of records. Default `rows`.
+The output property holding the semantic payload for this view kind.
 
 - Type: string
-- optional (table, list only)
+- required (document, metrics, activity, series, text only)
 - Constraints: matches `^[A-Za-z][A-Za-z0-9]*$`; at most 40 characters
 - Pairs with:
   - **A view names what the output declares.** Where the output schema declares `properties`, the view's `rows`, `title`, every field `key`, `ref` and `body` must be among them (the record's properties for a table or list). `title` must also be one of `fields`. An output without declared properties is not checked until the conformance check reads a real answer. ([D38](../decisions/README.md))
 
+Example:
+
+```json
+"document"
+```
+
+#### `capabilities[].view.modelReads`
+
+What the model is handed when it calls the capability as a tool: the whole `output`, or a `summary` (how many rows are shown, never their content) so names and numbers reach the person through the view and neither the model nor the stored conversation. Default `output`.
+
+- Type: "output" / "summary"
+- optional
+
+Example:
+
+```json
+"summary"
+```
+
+#### `capabilities[].view.chart`
+
+Line for trends, bar for category comparisons. Both include a data table.
+
+- Type: "line" / "bar"
+- required (series only)
+
+Example:
+
+```json
+"line"
+```
+
 #### `capabilities[].view.title`
 
-The field that names a row; one of `fields`. A list shows it first, a detail as its heading.
+A property name in the capability's output (or input).
 
 - Type: string
-- required (table, list, detail only)
+- required (record, table, list, detail only)
 - Constraints: matches `^[A-Za-z][A-Za-z0-9]*$`; at most 40 characters
 - Pairs with:
   - **A view names what the output declares.** Where the output schema declares `properties`, the view's `rows`, `title`, every field `key`, `ref` and `body` must be among them (the record's properties for a table or list). `title` must also be one of `fields`. An output without declared properties is not checked until the conformance check reads a real answer. ([D38](../decisions/README.md))
@@ -1318,11 +1377,11 @@ Example:
 
 #### `capabilities[].view.fields`
 
-The columns of a table or the lines of a list: a record property, its Swedish label and how it is drawn.
+Labelled facts in display order.
 
 - Type: array of object
-- required (table, list, detail only)
-- Constraints: 1 to 12 items
+- required (record, table, list, detail only)
+- Constraints: 1 to 24 items
 
 #### `capabilities[].view.fields[].key`
 
@@ -1425,6 +1484,253 @@ Example:
 ```json
 "dagar"
 ```
+
+#### `capabilities[].view.document`
+
+A property name in the capability's output (or input).
+
+- Type: string
+- optional (record only)
+- Constraints: matches `^[A-Za-z][A-Za-z0-9]*$`; at most 40 characters
+
+Example:
+
+```json
+"document"
+```
+
+#### `capabilities[].view.recovery`
+
+A property name in the capability's output (or input).
+
+- Type: string
+- optional (record only)
+- Constraints: matches `^[A-Za-z][A-Za-z0-9]*$`; at most 40 characters
+
+Example:
+
+```json
+"recovery"
+```
+
+#### `capabilities[].view.metrics`
+
+A property name in the capability's output (or input).
+
+- Type: string
+- optional (record only)
+- Constraints: matches `^[A-Za-z][A-Za-z0-9]*$`; at most 40 characters
+
+#### `capabilities[].view.series`
+
+A property name in the capability's output (or input).
+
+- Type: string
+- optional (record only)
+- Constraints: matches `^[A-Za-z][A-Za-z0-9]*$`; at most 40 characters
+
+#### `capabilities[].view.activity`
+
+A property name in the capability's output (or input).
+
+- Type: string
+- optional (record only)
+- Constraints: matches `^[A-Za-z][A-Za-z0-9]*$`; at most 40 characters
+
+Example:
+
+```json
+"activity"
+```
+
+#### `capabilities[].view.items`
+
+One flat item table, with at most 500 rows.
+
+- Type: object
+- optional (record only)
+
+Example:
+
+```json
+{
+  "rows": "lines",
+  "title": "text",
+  "fields": [
+    {
+      "key": "text",
+      "label": "Specifikation"
+    },
+    {
+      "key": "amount",
+      "label": "Belopp",
+      "format": "number",
+      "unit": {
+        "one": "kr",
+        "other": "kr"
+      }
+    }
+  ]
+}
+```
+
+#### `capabilities[].view.items.rows`
+
+A property name in the capability's output (or input).
+
+- Type: string
+- required
+- Constraints: matches `^[A-Za-z][A-Za-z0-9]*$`; at most 40 characters
+
+Example:
+
+```json
+"lines"
+```
+
+#### `capabilities[].view.items.title`
+
+A property name in the capability's output (or input).
+
+- Type: string
+- required
+- Constraints: matches `^[A-Za-z][A-Za-z0-9]*$`; at most 40 characters
+
+Example:
+
+```json
+"text"
+```
+
+#### `capabilities[].view.items.fields`
+
+The item fields in display order.
+
+- Type: array of object
+- required
+- Constraints: 1 to 12 items
+
+Example:
+
+```json
+[
+  {
+    "key": "text",
+    "label": "Specifikation"
+  },
+  {
+    "key": "amount",
+    "label": "Belopp",
+    "format": "number",
+    "unit": {
+      "one": "kr",
+      "other": "kr"
+    }
+  }
+]
+```
+
+#### `capabilities[].view.items.fields[].key`
+
+The property of a record the field shows.
+
+- Type: string
+- required
+- Constraints: matches `^[A-Za-z][A-Za-z0-9]*$`; at most 40 characters
+
+Example:
+
+```json
+"text"
+```
+
+#### `capabilities[].view.items.fields[].label`
+
+Swedish. The column heading or the field's name.
+
+- Type: string
+- required
+- Constraints: 1 to 60 characters
+
+Example:
+
+```json
+"Specifikation"
+```
+
+#### `capabilities[].view.items.fields[].format`
+
+How the value is drawn: `phone` and `email` become links that call and write, `link` an http(s) link out, `date` and `instant` are formatted in Swedish, `number` is aligned as one, `status` is a badge with a tone from `tones`. Default `text`.
+
+- Type: "text" / "phone" / "email" / "link" / "date" / "instant" / "number" / "status"
+- optional
+
+Example:
+
+```json
+"number"
+```
+
+#### `capabilities[].view.items.fields[].tones`
+
+For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.
+
+- Type: map of string to "ok" / "warn" / "alert" / "none"
+- optional
+
+#### `capabilities[].view.items.fields[].unit`
+
+For `number`: the unit drawn after the value, so a row reads "12 platser" and never "Platser: 12". Only where the unit alone says what the number is.
+
+- Type: object
+- optional
+
+Example:
+
+```json
+{
+  "one": "kr",
+  "other": "kr"
+}
+```
+
+#### `capabilities[].view.items.fields[].unit.one`
+
+Swedish. The word after 1: "plats".
+
+- Type: string
+- required
+- Constraints: 1 to 40 characters
+
+Example:
+
+```json
+"kr"
+```
+
+#### `capabilities[].view.items.fields[].unit.other`
+
+Swedish. The word after any other number: "platser".
+
+- Type: string
+- required
+- Constraints: 1 to 40 characters
+
+Example:
+
+```json
+"kr"
+```
+
+#### `capabilities[].view.rows`
+
+The output property holding the array of records. Default `rows`.
+
+- Type: string
+- optional (table, list only)
+- Constraints: matches `^[A-Za-z][A-Za-z0-9]*$`; at most 40 characters
+- Pairs with:
+  - **A view names what the output declares.** Where the output schema declares `properties`, the view's `rows`, `title`, every field `key`, `ref` and `body` must be among them (the record's properties for a table or list). `title` must also be one of `fields`. An output without declared properties is not checked until the conformance check reads a real answer. ([D38](../decisions/README.md))
 
 #### `capabilities[].view.ref`
 
@@ -1765,35 +2071,6 @@ Example:
 
 ```json
 "Inga träffar i telefonboken."
-```
-
-#### `capabilities[].view.modelReads`
-
-What the model is handed when it calls the capability as a tool: the whole `output`, or a `summary` (how many rows are shown, never their content) so names and numbers reach the person through the view and neither the model nor the stored conversation. Default `output`.
-
-- Type: "output" / "summary"
-- optional
-
-Example:
-
-```json
-"summary"
-```
-
-#### `capabilities[].view.body`
-
-The output property holding the Markdown.
-
-- Type: string
-- required (text only)
-- Constraints: matches `^[A-Za-z][A-Za-z0-9]*$`; at most 40 characters
-- Pairs with:
-  - **A view names what the output declares.** Where the output schema declares `properties`, the view's `rows`, `title`, every field `key`, `ref` and `body` must be among them (the record's properties for a table or list). `title` must also be one of `fields`. An output without declared properties is not checked until the conformance check reads a real answer. ([D38](../decisions/README.md))
-
-Example:
-
-```json
-"markdown"
 ```
 
 ### facts[]

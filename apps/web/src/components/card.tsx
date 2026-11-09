@@ -23,6 +23,7 @@ import {
   CheckboxList,
   CheckboxListItem,
   Collapsible,
+  CompletionMark,
   Dialog,
   DialogHeader,
   DropdownMenu,
@@ -42,7 +43,6 @@ import {
   TextInput,
   useAnimatedLayout,
   useAnnounce,
-  useEntryAnimation,
   useMediaQuery,
   useToast,
   VStack,
@@ -60,6 +60,7 @@ import { executionStatus } from '../execution-status';
 import { useMarks, type Mark, type Marks } from '../marks';
 import { AddToConversation } from './add-to-conversation';
 import { returnedSelection, reviewHref } from '../review-address';
+import { canUndoReceipt, receiptComplete } from '../receipt-state';
 
 const outcomeDot = {
   done: { variant: 'success', label: 'Klart' },
@@ -73,10 +74,7 @@ const shortDate = (d: string) =>
     .replace(/\.$/, '');
 const clock = (iso: string) => new Date(iso).toLocaleTimeString('sv-SE', { timeStyle: 'short' });
 /** The check a receipt earns (D70): drawn when the receipt arrives, on Astryx's own entry motion (which honours reduced motion), never before the source has read back. */
-export function ReceiptCheck({ size = 'md' }: { size?: 'md' | 'lg' }) {
-  const entry = useEntryAnimation('scaleIn');
-  return <Icon icon="check" color="success" size={size} label="Klart" xstyle={entry ?? undefined} />;
-}
+export const ReceiptCheck = CompletionMark;
 /** What a decision's row says (D70): the receipt's headline and when the source answered. */
 export const receiptLine = (thread: Thread) =>
   thread.receipt
@@ -432,8 +430,15 @@ export function useCardAction({
   const held = useSettling(thread);
   const settling = busy || held;
   const [pressed, setPressed] = useState<string | null>(null);
+  useEffect(() => {
+    if (!settling) setPressed(null);
+  }, [settling]);
   const selectable = thread.items.some(i => i.selectable);
-  const perform = async (action: ThreadAction, refs?: string[]): Promise<boolean> => {
+  const perform = async (
+    action: ThreadAction,
+    refs?: string[],
+    reviews?: import('@clew/contracts').ReviewEvidence[],
+  ): Promise<boolean> => {
     if (busy) return false;
     if (action.confirm && !window.confirm(action.confirm)) return false;
     const chosen = selectable ? refs : undefined;
@@ -454,7 +459,7 @@ export function useCardAction({
     setPressed(action.id);
     await run(
       async () => {
-        const result = await api.act(thread.id, action.id, chosen);
+        const result = await api.act(thread.id, action.id, chosen, reviews);
         if (result.kind !== 'execute') throw new ApiError(500, 'Oväntat svar.');
         return result.thread;
       },
@@ -701,13 +706,30 @@ function ActionRow({
   );
   const receipt = thread.receipt;
   // The way back is open while the receipt's window is (D70): on a done card, and on one the decision left waiting on others.
-  const undoOpen = !!receipt && !!receipt.undoCapability && !!countdown;
+  const undoOpen = !!countdown && canUndoReceipt(thread);
   const pending = executionStatus(thread.execution);
+  const viewReview =
+    reviewed && (receipt || pending || !open) && !quiet ? (
+      <Button ref={review} size={size} variant="secondary" label="Visa granskning" href={reviewHref(thread.id)} />
+    ) : null;
   // A decision the source has not confirmed is said so, unless it is the person's own and still on its way (D64).
-  if (pending && !settling)
+  if (pending && (!settling || pressed === null))
     return (
       <HStack gap={2} vAlign="center" wrap="wrap">
-        <Button size={size} label="Kontrollera status" clickAction={() => run(() => api.checkExecution(thread.id))} />
+        {(!thread.execution ||
+          ['pending', 'running', 'unknown'].includes(thread.execution.state) ||
+          thread.execution.reason) && (
+          <Button size={size} label="Kontrollera status" clickAction={() => run(() => api.checkExecution(thread.id))} />
+        )}
+        {undoOpen && (
+          <Button
+            size={size}
+            variant="destructive"
+            label={`Ångra bekräftade · ${countdown} kvar`}
+            clickAction={() => run(() => api.undoReceipt(thread.id))}
+          />
+        )}
+        {viewReview}
         <Text type="supporting">{pending}</Text>
         <DropdownMenu
           renderTrigger={trigger => (
@@ -807,6 +829,7 @@ function ActionRow({
             clickAction={() => run(() => api.undoReceipt(thread.id))}
           />
         )}
+        {viewReview}
         <TimePicker label="Påminn mig" rows={remindRows.rows} own={remindRows.own} size="md" />
         {quiet ? !compact && addToConversation : more({})}
       </HStack>
@@ -824,6 +847,7 @@ function ActionRow({
   if (undoOpen)
     return (
       <HStack gap={2} vAlign="center" wrap="wrap">
+        {viewReview}
         <Button
           size={size}
           variant="destructive"
@@ -838,7 +862,7 @@ function ActionRow({
         <Text type="supporting">Varje rad visar källsystemets svar. Grönt bara när det lästs tillbaka.</Text>
       </HStack>
     );
-  return null;
+  return viewReview;
 }
 /** The badges that need a hand: a draft to confirm, a reminder that has fired. */
 function Flags({ thread }: { thread: Thread }) {
@@ -929,7 +953,7 @@ export function GenericCard({
         <TimerNote thread={thread} />
         {/* The check is drawn once, here, when the receipt has come (D70): the card's heading is then what was done. */}
         <HStack gap={3} vAlign="center">
-          {receipt && <ReceiptCheck size="lg" />}
+          {receiptComplete(receipt) && <ReceiptCheck size="lg" />}
           <Heading ref={title} tabIndex={-1} level={2} accessibilityLevel={headingLevel}>
             {receipt ? receipt.headline : thread.title}
           </Heading>
@@ -1040,12 +1064,15 @@ export function GenericCard({
         </Card>
       )}
       {/* What the next step does (artboard E): written to the source and read back, undone within the window, without the model. */}
-      {open && !receipt && primary?.kind === 'execute' && (!executionStatus(thread.execution) || actions.settling) && (
-        <Text type="supporting" as="p">
-          {primary.label} skrivs till {thread.trigger.source.toLowerCase()} och läses tillbaka som kvitto. Ångra i 10
-          minuter. Fungerar utan modellen.
-        </Text>
-      )}
+      {open &&
+        !receipt &&
+        primary?.kind === 'execute' &&
+        (!executionStatus(thread.execution) || (actions.settling && actions.pressed !== null)) && (
+          <Text type="supporting" as="p">
+            {primary.label} skrivs till {thread.trigger.source.toLowerCase()} och läses tillbaka som kvitto. Ångra i 10
+            minuter. Fungerar utan modellen.
+          </Text>
+        )}
       {/* Why the card is here, folded away as the artboard draws it; the words can be read and announced, never a tooltip (D28). */}
       {!receipt && (
         <Card padding={3}>
@@ -1146,13 +1173,13 @@ export function ThreadRow({
   // A button's label does not wrap, so where the column beside the day is narrow the step goes under the line and the title keeps its words.
   // A decision on its way says so in a sentence, which takes the room the title needs: then too the step goes under the line.
   const narrowColumn = useMediaQuery(rowNarrowQuery);
-  const narrow = phone || narrowColumn || (!!executionStatus(thread.execution) && !actions.settling);
+  const narrow = phone || narrowColumn || !!executionStatus(thread.execution);
   const open = thread.state === 'open';
   const draft = thread.messages.at(-1)?.meta?.draft;
   const due = open && !thread.waitingOn && !notice && streamGroup(thread, todayDate) === 'nu';
   // A receipt that has just arrived (D70): the row keeps its place for a moment, the check in its day cell and what was done
   // in its line. A row that waits on others after the decision keeps its day and carries the receipt in its line too.
-  const done = thread.state === 'handled' && !!thread.receipt;
+  const done = thread.state === 'handled' && receiptComplete(thread.receipt);
   const day = done ? (
     <ReceiptCheck />
   ) : notice ? (

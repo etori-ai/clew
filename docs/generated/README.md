@@ -11,7 +11,7 @@ The manifest field by field, with examples and the rules between fields, is [man
 - [hello manifest](hello.manifest.json), from [connector.mjs](../../connectors/hello/connector.mjs): 5 capabilities; scan enabled.
 - [phonebook manifest](phonebook.manifest.json), from [connector.mjs](../../connectors/phonebook/connector.mjs): 5 capabilities; no scan.
 - [hr manifest](hr.manifest.json), from [connector.mjs](../../connectors/hr/connector.mjs): 15 capabilities; scan enabled.
-- [finance manifest](finance.manifest.json), from [connector.mjs](../../connectors/finance/connector.mjs): 7 capabilities; scan enabled.
+- [finance manifest](finance.manifest.json), from [connector.mjs](../../connectors/finance/connector.mjs): 14 capabilities; scan enabled.
 - [incidents manifest](incidents.manifest.json), from [connector.mjs](../../connectors/incidents/connector.mjs): 4 capabilities; scan enabled.
 - [communication manifest](communication.manifest.json), from [connector.mjs](../../connectors/communication/connector.mjs): 3 capabilities; scan enabled.
 - [timesheet manifest](timesheet.manifest.json), from [connector.mjs](../../connectors/timesheet/connector.mjs): 5 capabilities; no scan.
@@ -33,6 +33,7 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 | `facts` | no | array of object | The fact kinds this connector creates (D55), each prefixed with its id. |
 | `scan` | yes | boolean | Whether Clew should POST /clew/scan for each person nightly and on first visit. |
 | `delegation` | no | object | The connector acts as the person against its system with a token Clew obtains by token exchange. |
+| `documents` | no | boolean | Implements POST /clew/documents for authorised, versioned binary document reads (D79). |
 
 ## ManifestCapability
 
@@ -48,7 +49,8 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 | `model` | yes | boolean | Offer it to the model as a tool, once an administrator has enabled tools for the connector. Must be false for execute (D8). |
 | `scope` | yes | object | Who may call the capability at all. Omitted roles means every signed-in person. The connector narrows further in the call. |
 | `kinds` | no | array of "document" / "person" / "case" / "room" | For `<id>.search` (D26): what it can find. Its output is a SearchOutput; `<id>.fetch` takes one of its refs back and returns one SearchHit. |
-| `view` | no | object, one of `kind`: "table" / "list" / "detail" / "text" | How Clew draws the output: `table` and `list` over an array of records (`rows`, default "rows"; `title` names the field that names a row and is one of `fields`; `ref` the field holding the connector's ref), `detail` over one record, `text` over one Markdown string. |
+| `view` | no | object, one of `kind`: "document" / "metrics" / "activity" / "series" / "record" / "table" / "list" / "detail" / "text" | How Clew draws the output: `table` and `list` over an array of records (`rows`, default "rows"; `title` names the field that names a row and is one of `fields`; `ref` the field holding the connector's ref), `detail` over one record, `text` over one Markdown string. |
+| `review` | no | string | On an execute: the same-connector document or record read taking {ref}, whose version-bound evidence is required on approval. |
 | `menu` | no | object | How this capability's view is named and marked when an administrator puts it in Clew's menu under Verktyg (D40). Only on a read that declares a view and needs no input. |
 | `follows` | no | array of string | For a `propose` (D55): the fact kinds it answers for. Input is a FactEnvelope, output a FollowResponse; steps name this connector only. |
 | `creates` | no | string | The fact kind this `propose` or `execute` brings about (D55); must be one of the manifest's `facts`. |

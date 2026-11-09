@@ -1,4 +1,4 @@
-import type { ManifestReference } from '@clew/contracts';
+import type { ManifestReference, DocumentRequest, ReviewEvidence, ReviewPreview } from '@clew/contracts';
 import type {
   AddModelInput,
   AddProviderInput,
@@ -43,7 +43,6 @@ import type {
   ConversationResponse,
   TurnEvent,
   ManifestDiff,
-  PreviewOutput,
   Proposal,
   Role,
   Thread,
@@ -55,6 +54,11 @@ import type { McpDelivery, McpService, McpView, McpResult } from '@clew/contract
 
 import { ApiError } from './api-error';
 export { ApiError };
+export interface CorrectionExecution {
+  id: string;
+  state: 'pending' | 'running' | 'unknown' | 'failed' | 'partial' | 'succeeded';
+  result: { headline: string; rows: Array<{ ref: string; outcome: string; detail: string }> } | null;
+}
 
 /** Every call goes through the same-origin proxy with the session CSRF token. Errors carry the server's Swedish message. */
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -183,16 +187,39 @@ export const api = {
   attention: () => call<Attention>('/api/attention'),
   areas: () => call<{ areas: Area[]; menu?: MenuEntry[]; systems?: SystemMark[] }>('/api/areas'),
   connectors: () => call<{ connectors: unknown[]; tools: string[] }>('/api/connectors'),
-  act: (id: string, actionId: string, refs?: string[]) =>
+  act: (id: string, actionId: string, refs?: string[], reviews?: ReviewEvidence[]) =>
     post<{ kind: 'execute'; thread: Thread } | { kind: 'read' | 'propose'; output: unknown; view?: PanelViewSpec }>(
       `/api/threads/${id}/act`,
-      { actionId, refs },
+      { actionId, refs, reviews },
     ),
   undoReceipt: (id: string) => post<Thread>(`/api/threads/${id}/undo-receipt`),
+  retryRejected: (id: string) => post<Thread>(`/api/threads/${id}/retry`),
   /** One item's document for the review flow (D70). */
   preview: (id: string, ref: string) =>
-    call<PreviewOutput>(`/api/threads/${id}/preview?ref=${encodeURIComponent(ref)}`),
+    call<ReviewPreview>(`/api/threads/${id}/preview?ref=${encodeURIComponent(ref)}`),
+  documentHref: (request: DocumentRequest) =>
+    '/api/documents/content?request=' + encodeURIComponent(JSON.stringify(request)),
+  document: async (request: DocumentRequest, signal: AbortSignal) => {
+    const response = await sessionFetch(
+      '/api/documents/content?request=' + encodeURIComponent(JSON.stringify(request)),
+      { signal },
+    );
+    if (!response.ok) {
+      let message = 'Dokumentet kunde inte hämtas.';
+      try {
+        message = (await response.json()).error ?? message;
+      } catch {
+        /* no JSON */
+      }
+      throw new ApiError(response.status, message);
+    }
+    return response.arrayBuffer();
+  },
   checkExecution: (id: string) => post<Thread>(`/api/threads/${id}/execution/check`),
+  approveCorrection: (input: { decisionId: string; operation: string; payload: unknown }) =>
+    post<CorrectionExecution>('/api/executions', input),
+  correctionExecution: (id: string) => call<CorrectionExecution>(`/api/executions/${encodeURIComponent(id)}`),
+  checkCorrection: (id: string) => post<CorrectionExecution>(`/api/executions/${encodeURIComponent(id)}/reconcile`),
   snooze: (id: string, input: SnoozeInput = {}) => post<Thread>(`/api/threads/${id}/snooze`, input),
   snoozePresets: () => call<{ presets: SnoozePreset[] }>('/api/snooze/presets'),
   remindInvitees: (id: string) => post<Thread>(`/api/threads/${id}/remind-invitees`),

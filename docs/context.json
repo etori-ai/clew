@@ -94,8 +94,15 @@
       "capabilities": [
         "finance.invoices",
         "finance.budget",
+        "finance.record",
+        "finance.documents",
+        "finance.metrics",
+        "finance.trend",
+        "finance.comparison",
+        "finance.history",
         "finance.approve",
         "finance.unapprove",
+        "finance.correct",
         "finance.open",
         "finance.preview",
         "finance.lookup"
@@ -909,6 +916,24 @@
       "status": "accepted",
       "date": "2026-11-08",
       "area": "product"
+    },
+    {
+      "key": "D79-semantic-views-and-versioned-document-review",
+      "number": 79,
+      "path": "docs/decisions/D79-semantic-views-and-versioned-document-review.md",
+      "title": "D79 · Semantic views and versioned document review",
+      "status": "accepted for implementation",
+      "date": "2026-11-08",
+      "area": "integrations, ui, authorization"
+    },
+    {
+      "key": "D80-recover-rejected-rows-without-replaying-confirmed-writes",
+      "number": 80,
+      "path": "docs/decisions/D80-recover-rejected-rows-without-replaying-confirmed-writes.md",
+      "title": "D80 · Recover rejected rows without replaying confirmed writes",
+      "status": "accepted, implemented",
+      "date": "2026-11-08",
+      "area": "integrations, ui, authorization"
     },
     {
       "key": "D81-mcp-apps-extend-ai-chat-with-provider-owned-interactions",
@@ -1748,6 +1773,18 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D79-semantic-views-and-versioned-document-review.md",
+      "title": "D79 · Semantic views and versioned document review",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D80-recover-rejected-rows-without-replaying-confirmed-writes.md",
+      "title": "D80 · Recover rejected rows without replaying confirmed writes",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/D81-mcp-apps-extend-ai-chat-with-provider-owned-interactions.md",
       "title": "D81 · MCP Apps extend AI chat with provider-owned interactions",
       "category": "decision-history",
@@ -1840,6 +1877,18 @@
         "5. Adapt the example to your system",
         "6. Test and register your connector",
         "7. Add optional features deliberately"
+      ]
+    },
+    {
+      "path": "docs/guides/document-and-semantic-views.md",
+      "title": "Document and semantic views",
+      "category": "integrator-guide",
+      "headings": [
+        "Original documents",
+        "Rendering and limits",
+        "Review before a human decision",
+        "Reopen, correct and retry",
+        "Evidence and remaining validation"
       ]
     },
     {
@@ -1948,6 +1997,7 @@
         "Served by the instance",
         "HTTP routes",
         "Manifest semantics",
+        "Document and semantic views",
         "Scan observations",
         "Errors",
         "Related profiles",
@@ -2471,6 +2521,39 @@
         "The problem",
         "The four directions drawn",
         "Choice"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-08-connector-view-catalogue-and-document-previews.md",
+      "title": "Connector view catalogue and document previews",
+      "category": "review-history",
+      "headings": [
+        "Existing foundations",
+        "What Eneo does",
+        "Proposed catalogue",
+        "Document contract to settle",
+        "Figures and charts",
+        "Three journeys that test the catalogue",
+        "Renderer choices and Astryx",
+        "Development order and exit criteria",
+        "Evidence and verification"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-08-invoice-review-and-document-walkthrough.md",
+      "title": "Invoice review with documents and attachments",
+      "category": "review-history",
+      "headings": [
+        "Example work",
+        "Entry and return",
+        "Step one Inspect the first invoice",
+        "Step two Mark each invoice",
+        "Step three Check and submit",
+        "Step four Read the result",
+        "Behaviour under interruptions",
+        "Asking about a document",
+        "Acceptance scenarios for the first build",
+        "Implementation seams and decisions"
       ]
     },
     {

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { Thread } from '@clew/contracts';
 import { LINGER_MS, receiptArrivals } from '../../apps/web/src/linger';
 import { groupThreads } from '../../apps/web/src/stream';
+import { canUndoReceipt, receiptComplete } from '../../apps/web/src/receipt-state';
 
 const NOW = '2026-11-06T08:00:00.000Z';
 const thread = (values: Partial<Thread> = {}): Thread => ({
@@ -38,6 +39,32 @@ const receipt: Thread['receipt'] = {
 };
 
 describe('the moment a receipt arrives (D70)', () => {
+  test('late source confirmation earns completion once; unresolved and expired receipts do not offer undo', () => {
+    const row = { ref: 'invoice', label: 'Faktura', outcome: 'unknown' as const, detail: 'Väntar' };
+    const pending = thread({
+      receipt: { ...receipt, rows: [row] },
+      execution: {
+        id: 'e',
+        decisionId: 'd',
+        operation: 'finance.approve',
+        state: 'unknown',
+        reason: null,
+        compensates: null,
+      },
+    });
+    const done = {
+      ...pending,
+      receipt: { ...receipt, rows: [{ ...row, outcome: 'done' as const }] },
+      execution: { ...pending.execution!, state: 'succeeded' as const },
+    };
+    expect(receiptComplete(pending.receipt)).toBe(false);
+    expect(canUndoReceipt(pending, Date.parse(NOW))).toBe(false);
+    expect(canUndoReceipt(done, Date.parse(NOW))).toBe(true);
+    expect(canUndoReceipt(done, Date.parse(receipt.undoUntil!))).toBe(false);
+    expect(receiptArrivals(new Map([['a', pending]]), [done])).toEqual([done]);
+    expect(receiptArrivals(new Map([['a', done]]), [done])).toEqual([]);
+    expect(receiptArrivals(new Map(), [done])).toEqual([]);
+  });
   test('an arrival is a card that was open without a receipt and is handled with one now', () => {
     const before = new Map([
       ['a', thread()],

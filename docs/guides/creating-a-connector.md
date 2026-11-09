@@ -176,6 +176,7 @@ The [testing and deployment guide](testing-and-deployment.md) covers this from a
 | Feature | Add when | Next guide |
 |---|---|---|
 | Search | Records should join Clew's composite search | [Search and views](example-custom-directory.md) |
+| Documents and semantic views | Records need original PDF/DOCX/XLSX/images, composed facts, measurements, charts or history | [Document and semantic views](document-and-semantic-views.md) |
 | Model tools | The read/proposal is suitable for model use under the person's access | [Capability surfaces](../architecture/capability-surfaces.md) |
 | Scans and figures | The source can report outstanding occurrences or a meaningful area figure | [Actions](actions-and-receipts.md), [protocol](../reference/connector-protocol.md) |
 | Writes and undo | Source permissions, preconditions, evidence and recovery are established | [Actions and receipts](actions-and-receipts.md) |

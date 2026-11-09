@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Thread } from '@clew/contracts';
+import { receiptComplete } from './receipt-state';
 
 /**
  * The moment a receipt arrives (D70). A card whose decision the source has read back gets a receipt in the cache: an
@@ -34,7 +35,8 @@ export function receiptArrivals(
   return threads.filter(t => {
     const before = previous.get(t.id);
     const wasOpen = before ? before.state === 'open' && !before.receipt : sent.has(t.id);
-    return wasOpen && t.state !== 'dismissed' && !!t.receipt;
+    const newlyConfirmed = !!before?.receipt && !receiptComplete(before.receipt) && receiptComplete(t.receipt);
+    return (wasOpen || newlyConfirmed) && t.state !== 'dismissed' && !!t.receipt;
   });
 }
 

@@ -92,6 +92,8 @@ Historical numbering collisions: **D37, D38, D39, D44, D45, D46** each identify 
 | [D76 · Loading sections reserve their place and enter together](D76-loading-sections-reserve-their-place-and-enter-together.md) | ui | 2026-11-07 | accepted, built 2026-11-07 |
 | [D77 · Job approvals preserve watch intent, binding identity and receipt authority](D77-job-approvals-preserve-intent-bindings-and-receipt-authority.md) | integrations | 2026-11-07 | accepted, built 2026-11-07 |
 | [D78 · Work items, cards and proposals have distinct meanings](D78-work-items-cards-and-proposals-have-distinct-meanings.md) | product | 2026-11-08 | accepted |
+| [D79 · Semantic views and versioned document review](D79-semantic-views-and-versioned-document-review.md) | integrations, ui, authorization | 2026-11-08 | accepted for implementation |
+| [D80 · Recover rejected rows without replaying confirmed writes](D80-recover-rejected-rows-without-replaying-confirmed-writes.md) | integrations, ui, authorization | 2026-11-08 | accepted, implemented |
 | [D81 · MCP Apps extend AI chat with provider-owned interactions](D81-mcp-apps-extend-ai-chat-with-provider-owned-interactions.md) | integrations | 2026-11-08 | accepted direction; prototype only |
 
 ## Add a decision

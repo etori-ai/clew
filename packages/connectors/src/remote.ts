@@ -1,4 +1,5 @@
 import { Value } from '@sinclair/typebox/value';
+import { MAX_DOCUMENT_BYTES, type DocumentContent } from '@clew/contracts';
 import { CapabilityError, type Actor, type Capability, type Clew, type Connector } from './index';
 import { connectorProblems } from './validation';
 import {
@@ -156,6 +157,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
     model: c.model,
     scope: c.scope,
     ...(c.execution ? { execution: c.execution } : {}),
+    ...(c.review ? { review: c.review } : {}),
     ...(c.kinds ? { kinds: c.kinds } : {}),
     ...(c.follows ? { follows: c.follows } : {}),
     ...(c.creates ? { creates: c.creates } : {}),
@@ -182,6 +184,73 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
     id: manifest.id,
     kind: manifest.kind,
     source,
+    ...(manifest.documents
+      ? {
+          documents: async (
+            actor: Actor,
+            request: import('@clew/contracts').DocumentRequest,
+            clew: Clew,
+          ): Promise<DocumentContent> => {
+            const response = await (transport.fetch ?? fetch)(transport.url + '/clew/documents', {
+              redirect: 'error',
+              method: 'POST',
+              headers: {
+                'content-type': 'application/json',
+                accept: 'application/octet-stream',
+                authorization: 'Bearer ' + (await transport.assert(actor, clew.chain)),
+                ...(transport.key ? { 'x-clew-connector-key': transport.key } : {}),
+                ...(manifest.delegation
+                  ? { [DELEGATED_TOKEN_HEADER]: (await delegated(manifest, clew, source)) ?? '' }
+                  : {}),
+              },
+              body: JSON.stringify({ actor, request }),
+              signal: AbortSignal.any([
+                AbortSignal.timeout(transport.timeoutMs ?? 10_000),
+                ...(clew.signal ? [clew.signal] : []),
+              ]),
+            });
+            if (!response.ok || !response.body) {
+              await response.body?.cancel();
+              if (response.status === 409) throw new CapabilityError('Underlaget har ändrats. Läs in underlagen igen.');
+              if (response.status === 403) throw new CapabilityError('Du saknar behörighet att läsa underlaget.');
+              throw unavailable(source);
+            }
+            const declaredSize = Number(response.headers.get('content-length'));
+            if (declaredSize > MAX_DOCUMENT_BYTES) {
+              await response.body.cancel();
+              throw unavailable(source);
+            }
+            const reader = response.body.getReader(),
+              chunks: Uint8Array[] = [];
+            let size = 0;
+            try {
+              for (;;) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                size += value.length;
+                if (size > MAX_DOCUMENT_BYTES) throw unavailable(source);
+                chunks.push(value);
+              }
+            } catch (error) {
+              await reader.cancel();
+              throw error;
+            } finally {
+              reader.releaseLock();
+            }
+            const bytes = new Uint8Array(size);
+            let at = 0;
+            for (const chunk of chunks) {
+              bytes.set(chunk, at);
+              at += chunk.length;
+            }
+            return {
+              bytes,
+              mediaType: response.headers.get('content-type') as DocumentContent['mediaType'],
+              revision: response.headers.get('x-clew-document-revision') ?? '',
+            };
+          },
+        }
+      : {}),
     uses: manifest.uses ?? [],
     ...(manifest.facts ? { facts: manifest.facts } : {}),
     ...(manifest.delegation ? { delegation: manifest.delegation } : {}),

@@ -5,12 +5,13 @@ import { createVerifier } from './verification.mjs';
 import { manifest, CONNECTOR } from './manifest.mjs';
 import { costCentreOf, dateIn, money, seed, shortDate } from './fixture.mjs';
 import { memoryState } from './state.mjs';
+import { invoiceDocuments } from './documents.mjs';
 
 export { manifest };
 
 class Invalid extends Error {}
 class Conflict extends Error {}
-export const FAULTS = ['', 'unavailable', 'slow', 'unauthorized', 'conflict', 'crash-after-commit'];
+export const FAULTS = ['', 'unavailable', 'slow', 'unauthorized', 'conflict', 'rejected', 'crash-after-commit'];
 
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -92,8 +93,114 @@ export function createConnector({
   };
   const budgetOf = actor => records().budgets.find(b => b.costCentre === costCentre(actor));
   const deviation = b => Math.round((1000 * (b.budget - b.forecast)) / b.budget) / 10;
+  const invoice = (actor, ref) => {
+    const inv = records().invoices.find(i => i.ref === ref && i.costCentre === costCentre(actor));
+    if (!inv) throw new Invalid('Fakturan finns inte.');
+    return inv;
+  };
+  const history = inv => [
+    { id: 'received', at: inv.issued + 'T09:00:00.000Z', title: 'Faktura mottagen', detail: inv.supplier },
+    ...(approved()[inv.ref] ? [{ id: 'approved', at: approved()[inv.ref], title: 'Attesterad' }] : []),
+  ];
+  const budgetMetrics = actor => {
+    const b = budgetOf(actor);
+    return b
+      ? [
+          ['budget', 'Budget', b.budget],
+          ['forecast', 'Prognos', b.forecast],
+          ['outcome', 'Utfall', b.outcome],
+        ].map(([id, label, value]) => ({
+          id,
+          label,
+          value,
+          unit: 'kr',
+          period: 'Aktuellt budgetår',
+          dataAt: today() + 'T00:00:00.000Z',
+          tone: id === 'forecast' && b.forecast > b.budget ? 'warn' : 'none',
+          ...(id === 'forecast' ? { target: b.budget, comparison: 'Mot budget' } : {}),
+        }))
+      : [];
+  };
+  const budgetSeries = (actor, chart) => {
+    const b = budgetOf(actor);
+    // Explicitly synthetic development series; no historical source observations are claimed.
+    return {
+      title: chart === 'bar' ? 'Budget, utfall och prognos' : 'Exempel på periodiserat utfall och prognos',
+      unit: 'kr',
+      period: 'Syntetiskt budgetår',
+      dataAt: today() + 'T00:00:00.000Z',
+      axis: 'category',
+      categories: chart === 'bar' ? ['Aktuellt budgetår'] : ['Kvartal 1', 'Kvartal 2', 'Kvartal 3', 'Kvartal 4'],
+      series: [
+        {
+          id: 'actual',
+          label: 'Utfall',
+          role: 'actual',
+          values:
+            chart === 'bar'
+              ? [b?.outcome ?? null]
+              : [b ? Math.round(b.outcome / 2) : null, b?.outcome ?? null, null, null],
+        },
+        {
+          id: 'forecast',
+          label: 'Prognos',
+          role: 'forecast',
+          values:
+            chart === 'bar'
+              ? [b?.forecast ?? null]
+              : [null, b?.outcome ?? null, b ? Math.round(b.forecast * 0.75) : null, b?.forecast ?? null],
+        },
+        {
+          id: 'target',
+          label: 'Budget',
+          role: 'target',
+          values:
+            chart === 'bar' ? [b?.budget ?? null] : [1, 2, 3, 4].map(q => (b ? Math.round((b.budget * q) / 4) : null)),
+        },
+      ],
+    };
+  };
 
   const reads = {
+    'finance.record': (actor, input) => {
+      const inv = invoice(actor, input.ref);
+      return {
+        title: `Faktura ${inv.ref.split(':').at(-1)}`,
+        supplier: inv.supplier,
+        amount: inv.amount,
+        due: inv.due,
+        account: inv.account,
+        order: inv.order,
+        document: invoiceDocuments(inv).bundle,
+        recovery: {
+          ...(!approved()[inv.ref]
+            ? {
+                correction: {
+                  capability: 'finance.correct',
+                  label: 'Spara rättelse',
+                  fields: [
+                    {
+                      key: 'order',
+                      label: 'Beställningsnummer',
+                      value: inv.order ?? '',
+                      required: true,
+                      maxLength: 80,
+                    },
+                  ],
+                },
+              }
+            : {}),
+          source: { capability: 'finance.open', label: 'Öppna i ekonomisystemet' },
+        },
+        lines: inv.lines,
+        activity: history(inv),
+      };
+    },
+    'finance.documents': (actor, input) => ({ document: invoiceDocuments(invoice(actor, input.ref)).bundle }),
+    'finance.metrics': actor => ({ metrics: budgetMetrics(actor) }),
+    'finance.trend': actor => ({ series: budgetSeries(actor, 'line') }),
+    'finance.comparison': actor => ({ series: budgetSeries(actor, 'bar') }),
+    'finance.history': (actor, input) => ({ activity: history(invoice(actor, input.ref)) }),
     'finance.invoices': actor => ({
       rows: pending(actor).map(i => ({
         ref: i.ref,
@@ -115,8 +222,8 @@ export function createConnector({
         forecast: b.forecast,
       };
     },
-    'finance.open': (_actor, input) => ({
-      url: `https://finance.example.invalid/faktura/${encodeURIComponent(input.ref)}`,
+    'finance.open': (actor, input) => ({
+      url: `https://finance.example.invalid/faktura/${encodeURIComponent(invoice(actor, input.ref).ref)}`,
     }),
     // The invoice as the person would see it in the economy system (D70): drawn from its lines, for the person's own cost centre only.
     'finance.preview': (actor, input) => {
@@ -130,7 +237,26 @@ export function createConnector({
     },
     'finance.lookup': (actor, input) => {
       const op = state.get('op:' + input.operationId);
-      return op && op.person === personKey(actor) ? { found: true, result: op.result } : { found: false };
+      if (!op || op.person !== personKey(actor)) return { found: false };
+      // The delayed fixture validation eventually rejects a missing order instead of staying unknown forever.
+      // This settles the operation log only; a read never approves an invoice.
+      const rows = op.result.rows.map(row =>
+        row.outcome === 'unknown' && row.ref.endsWith('55140')
+          ? { ...row, outcome: 'failed', detail: 'Beställningsnummer saknas. Ange numret och granska fakturan igen.' }
+          : row,
+      );
+      if (rows.some((row, index) => row !== op.result.rows[index])) {
+        const ok = rows.filter(row => row.outcome === 'done').length;
+        const failed = rows.filter(row => row.outcome === 'failed').length;
+        const result = {
+          ...op.result,
+          rows,
+          headline: `${ok} ${ok === 1 ? 'faktura attesterad' : 'fakturor attesterade'}, ${failed} avvisad.`,
+        };
+        state.set('op:' + input.operationId, { ...op, result });
+        return { found: true, result };
+      }
+      return { found: true, result: op.result };
     },
   };
 
@@ -151,13 +277,41 @@ export function createConnector({
       const rows = input.refs.map(ref => {
         const inv = records().invoices.find(i => i.ref === ref && i.costCentre === cc);
         if (!inv) return { ref, label: 'Faktura', outcome: 'failed', detail: 'finns inte i ekonomisystemet' };
+        if (done[ref])
+          return {
+            ref,
+            label: `${inv.supplier} ${money(inv.amount)}`,
+            outcome: 'failed',
+            detail: 'Fakturan är redan attesterad. Kontrollera den i ekonomisystemet.',
+          };
+        const reviewed = input.reviews?.find(r => r.ref === ref);
+        const current = invoiceDocuments(inv).bundle;
+        if (
+          !reviewed ||
+          reviewed.revision !== current.revision ||
+          JSON.stringify(reviewed.documents) !==
+            JSON.stringify(current.documents.map(d => ({ id: d.id, revision: d.revision })))
+        )
+          return {
+            ref,
+            label: inv.supplier,
+            outcome: 'failed',
+            detail: 'Underlaget har ändrats eller saknar granskning. Granska fakturan igen.',
+          };
         // One invoice answers slowly in the fixture so the "unknown" state is exercised end to end.
-        if (ref.endsWith('55140'))
+        if (fault === 'rejected' && !inv.order)
+          return {
+            ref,
+            label: `${inv.supplier} ${money(inv.amount)}`,
+            outcome: 'failed',
+            detail: 'Beställningsnummer saknas. Ange numret och granska fakturan igen.',
+          };
+        if (fault !== 'rejected' && ref.endsWith('55140') && !inv.order)
           return {
             ref,
             label: `${inv.supplier} ${money(inv.amount)}`,
             outcome: 'unknown',
-            detail: 'Ekonomisystemet svarade inte, kontrolleras igen om 15 min',
+            detail: 'Ekonomisystemet validerar fakturan. Kontrollera status för besked.',
           };
         done[ref] = now();
         return {
@@ -175,6 +329,7 @@ export function createConnector({
         rows,
         undoCapability: 'finance.unapprove',
         undoMinutes: 10,
+        undoInput: { refs: rows.filter(r => r.outcome === 'done').map(r => r.ref) },
       };
     },
     'finance.unapprove': (_actor, input) => {
@@ -189,6 +344,40 @@ export function createConnector({
           outcome: 'done',
           detail: 'väntar igen i ekonomisystemet',
         })),
+      };
+    },
+    'finance.correct': (actor, input) => {
+      const inv = invoice(actor, input.ref);
+      const reject = detail => ({
+        headline: 'Rättelsen kunde inte sparas.',
+        rows: [{ ref: inv.ref, label: inv.supplier, outcome: 'failed', detail }],
+      });
+      if (approved()[inv.ref]) return reject('Fakturan är redan attesterad.');
+      if (invoiceDocuments(inv).bundle.revision !== input.revision)
+        return reject('Underlaget har ändrats. Läs in den senaste versionen.');
+      if (
+        !input.changes ||
+        Object.keys(input.changes).some(k => k !== 'order') ||
+        typeof input.changes.order !== 'string' ||
+        !input.changes.order.trim() ||
+        input.changes.order.length > 80
+      )
+        return reject('Ange ett giltigt beställningsnummer.');
+      const current = records();
+      current.invoices = current.invoices.map(i =>
+        i.ref === inv.ref ? { ...i, order: input.changes.order.trim() } : i,
+      );
+      state.set('records', current);
+      return {
+        headline: 'Beställningsnumret är sparat.',
+        rows: [
+          {
+            ref: inv.ref,
+            label: inv.supplier,
+            outcome: 'done',
+            detail: 'Rättat i ekonomisystemet. Granska underlaget igen innan du attesterar.',
+          },
+        ],
       };
     },
   };
@@ -233,6 +422,7 @@ export function createConnector({
       deadline: due,
       items: rows.map(r => ({
         ref: r.ref,
+        revision: invoiceDocuments(r).bundle.revision,
         label: `${r.supplier} · ${money(r.amount)}`,
         detail: `${r.account} · förfaller ${shortDate(r.due)}${r.order ? ' · beställning ' + r.order : ' · ingen beställning'}`,
         selectable: true,
@@ -248,7 +438,7 @@ export function createConnector({
           usesItems: true,
           // Each invoice is looked at before it is attested (D70): Clew opens the review flow and writes once at its end.
           review: 'each',
-          preview: 'finance.preview',
+          preview: 'finance.record',
         },
         {
           id: 'open',
@@ -266,7 +456,13 @@ export function createConnector({
         ...draft,
         occurrences: draft.items.map(i => ({
           key: i.ref,
-          revision: hash([i.label, i.detail, draft.summary, draft.actions]),
+          revision: hash([
+            i.label,
+            i.detail,
+            draft.summary,
+            draft.actions,
+            invoiceDocuments(invoice(actor, i.ref)).bundle.revision,
+          ]),
           period: 'once',
         })),
       },
@@ -320,6 +516,26 @@ export function createConnector({
         });
       }
       if (url.pathname === '/clew/figure') return json({ figure: figure(actor, body.area) });
+      if (url.pathname === '/clew/documents') {
+        const request = body.request;
+        if (
+          !request ||
+          !['finance.record', 'finance.documents'].includes(request.capability) ||
+          request.input?.ref !== request.ref
+        )
+          throw new Invalid('Dokumentförfrågan gäller inte fakturan.');
+        const { bundle, originals } = invoiceDocuments(invoice(actor, request.ref));
+        const descriptor = bundle.documents.find(d => d.id === request.document);
+        if (bundle.revision !== request.revision || !descriptor || descriptor.revision !== request.documentRevision)
+          throw new Conflict('Underlaget har ändrats. Öppna fakturan igen.');
+        return new Response(originals.find(d => d.id === descriptor.id).bytes, {
+          headers: {
+            'content-type': descriptor.mediaType,
+            'x-clew-document-revision': descriptor.revision,
+            'cache-control': 'no-store',
+          },
+        });
+      }
       const name = decodeURIComponent(url.pathname.slice('/clew/capabilities/'.length));
       const declared = manifest.capabilities.find(c => c.name === name);
       if (!declared) return fail('not-found', 'Okänd förmåga.', 404);

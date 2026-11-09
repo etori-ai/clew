@@ -17,6 +17,8 @@ import {
 import { api } from '../api';
 import { useThreadAction } from '../mutations';
 import { useMarks } from '../marks';
+import { canUndoReceipt } from '../receipt-state';
+import { reviewHref } from '../review-address';
 
 type Period = 'idag' | 'veckan' | 'allt';
 type Kind = 'alla' | 'hanterade' | 'avfardade' | 'fragor';
@@ -56,7 +58,7 @@ function HandledRow({ thread: t, now, onChange, conversationHref }: RowProps) {
     .sort()
     .at(-1);
   const undoOpen = !!undoUntil && Date.parse(undoUntil) > now && t.proposals.some(p => p.status === 'confirmed');
-  const receiptUndo = !!t.receipt?.undoUntil && Date.parse(t.receipt.undoUntil) > now && !!t.receipt.undoCapability;
+  const receiptUndo = canUndoReceipt(t, now);
   const reopenable = t.state === 'dismissed' && !!t.handledAt && now - Date.parse(t.handledAt) <= 10 * 60_000;
   const question = t.kind === 'question';
   const icon = question ? (
@@ -99,7 +101,13 @@ function HandledRow({ thread: t, now, onChange, conversationHref }: RowProps) {
           )}
         </VStack>
       }
-      href={question ? conversationHref(t.id) : undefined}
+      href={
+        question
+          ? conversationHref(t.id)
+          : t.actions.some(a => a.review === 'each')
+            ? reviewHref(t.id)
+            : `/?tab=done&card=${encodeURIComponent(t.id)}`
+      }
       endContent={end}
     />
   );

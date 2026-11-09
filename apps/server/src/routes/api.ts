@@ -5,6 +5,7 @@ import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import {
   ActInput,
+  DocumentRequestSchema,
   AskInput,
   AvailabilityInput,
   CancelEventInput,
@@ -51,6 +52,7 @@ import { FactEnvelopeSchema, StepDraftSchema } from '@clew/connectors/protocol';
 import { changesFor } from '../composition/changes';
 import { authenticate, AuthError, SESSION_COOKIE } from '../auth';
 import { getCookie } from 'hono/cookie';
+import { readDocument, reviewDocuments } from '../composition/documents';
 
 const {
   act,
@@ -138,6 +140,7 @@ const CancelReminderInput = Type.Object(
   { additionalProperties: false },
 );
 const validators = {
+  document: ajv.compile(DocumentRequestSchema),
   fact: ajv.compile(FactEnvelopeSchema),
   jobApproval: ajv.compile(JobApprovalInput),
   remind: ajv.compile(RemindInput),
@@ -156,9 +159,9 @@ const validators = {
   moveProposal: ajv.compile(MoveProposalInput),
   availability: ajv.compile(AvailabilityInput),
 };
-async function body<T>(request: Request, validate: (value: unknown) => value is T): Promise<T> {
+async function body<T>(request: Request, validate: (value: unknown) => value is T, max = 4000): Promise<T> {
   const text = await request.text();
-  if (text.length > 4000) throw new InputError('För stor förfrågan.');
+  if (text.length > max) throw new InputError('För stor förfrågan.');
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -207,7 +210,7 @@ api.get('/changes', c =>
 );
 /** Human approval is deliberately separate from capabilities and model tools. */
 api.post('/executions', async c => {
-  const input = await body(c.req.raw, approval),
+  const input = await body(c.req.raw, approval, 64_000),
     persona = c.get('session').context;
   if (registry.allowed(persona, input.operation)?.capability.kind !== 'execute') throw new InputError('Okänd förmåga.');
   return c.json(await executions.approve(persona, input), 202);
@@ -327,8 +330,36 @@ api.post('/cap/:name', async c => {
   return c.json({ output: await runCapability(c.get('session').context, name, input) });
 });
 api.post('/threads/:id/act', async c => {
-  const input = await body(c.req.raw, validators.act as unknown as (value: unknown) => value is ActInputType);
-  return c.json(await act(c.get('session').context, c.req.param('id'), input.actionId, input.refs));
+  const input = await body(c.req.raw, validators.act as unknown as (value: unknown) => value is ActInputType, 64_000);
+  return c.json(await act(c.get('session').context, c.req.param('id'), input.actionId, input.refs, input.reviews));
+});
+/** Binary content never traverses model tools or conversation storage. Every request reauthorizes metadata and bytes. */
+api.get('/documents/content', async c => {
+  const raw = c.req.query('request') ?? '';
+  if (raw.length > 8000) throw new InputError('För stor förfrågan.');
+  let request: unknown;
+  try {
+    request = JSON.parse(raw);
+  } catch {
+    throw new InputError('Ogiltig förfrågan.');
+  }
+  if (!validators.document(request)) throw new InputError('Ogiltig förfrågan.');
+  const result = await readDocument(c.get('session').context, request, c.req.raw.signal);
+  const headers = {
+    'Content-Type': result.mediaType,
+    'Content-Disposition': "attachment; filename*=UTF-8''" + encodeURIComponent(result.filename ?? 'dokument'),
+    'Cache-Control': 'private, no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "default-src 'none'; sandbox",
+    'Content-Length': String(result.bytes.length),
+  };
+  return c.body(new Uint8Array(result.bytes).buffer, 200, headers);
+});
+api.get('/documents/review', async c => {
+  const capability = c.req.query('capability') ?? '',
+    ref = c.req.query('ref') ?? '';
+  if (!capability || capability.length > 80 || !ref || ref.length > 200) throw new InputError('Ogiltigt underlag.');
+  return c.json(await reviewDocuments.preview(c.get('session').context, capability, ref));
 });
 api.post('/threads/:id/execution/check', async c => {
   const persona = c.get('session').context,
@@ -341,6 +372,9 @@ api.post('/threads/:id/execution/check', async c => {
 });
 api.post('/threads/:id/undo-receipt', async c =>
   c.json(await undoReceipt(c.get('session').context, c.req.param('id'))),
+);
+api.post('/threads/:id/retry', async c =>
+  c.json(await threads.retryRejected(c.get('session').context, c.req.param('id'))),
 );
 /** One item's document for the review flow (D70): a read through the card's own preview capability, never a decision. */
 api.get('/threads/:id/preview', async c => {

@@ -16,6 +16,85 @@ const object = (properties, required = Object.keys(properties)) => ({
 const array = items => ({ type: 'array', items });
 const empty = object({});
 const refs = object({ refs: array({ type: 'string', pattern: '^finance:inv:' }) });
+const reference = object({ ref: { type: 'string', pattern: '^finance:inv:' } });
+// Semantic payloads are validated against Clew's published view schemas at the protocol boundary.
+const document = { type: 'object' };
+const metrics = array({ type: 'object' });
+const series = { type: 'object' };
+const activity = array({ type: 'object' });
+const readView = (name, title, input, output, view) => ({
+  name,
+  title,
+  description: title,
+  kind: 'read',
+  model: true,
+  scope: { roles: ['manager'] },
+  input,
+  output,
+  view,
+});
+const record = readView(
+  'finance.record',
+  'Faktura och underlag',
+  reference,
+  object({
+    title: string,
+    supplier: string,
+    amount: number,
+    due: string,
+    account: string,
+    order: string,
+    document,
+    recovery: { type: 'object' },
+    lines: array(object({ text: string, amount: number })),
+    activity,
+  }),
+  {
+    kind: 'record',
+    title: 'title',
+    fields: [
+      { key: 'supplier', label: 'Leverantör' },
+      { key: 'amount', label: 'Belopp', format: 'number', unit: { one: 'kr', other: 'kr' } },
+      { key: 'due', label: 'Förfaller', format: 'date' },
+      { key: 'account', label: 'Konto' },
+      { key: 'order', label: 'Beställning' },
+    ],
+    document: 'document',
+    recovery: 'recovery',
+    activity: 'activity',
+    items: {
+      rows: 'lines',
+      title: 'text',
+      fields: [
+        { key: 'text', label: 'Specifikation' },
+        { key: 'amount', label: 'Belopp', format: 'number', unit: { one: 'kr', other: 'kr' } },
+      ],
+    },
+  },
+);
+const documentView = readView('finance.documents', 'Fakturans dokument', reference, object({ document }), {
+  kind: 'document',
+  body: 'document',
+  modelReads: 'summary',
+});
+const metricView = readView('finance.metrics', 'Budget i siffror', empty, object({ metrics }), {
+  kind: 'metrics',
+  body: 'metrics',
+});
+const trendView = readView('finance.trend', 'Utfall och prognos', empty, object({ series }), {
+  kind: 'series',
+  body: 'series',
+  chart: 'line',
+});
+const comparisonView = readView('finance.comparison', 'Budgetjämförelse', empty, object({ series }), {
+  kind: 'series',
+  body: 'series',
+  chart: 'bar',
+});
+const historyView = readView('finance.history', 'Fakturans händelser', reference, object({ activity }), {
+  kind: 'activity',
+  body: 'activity',
+});
 
 export const executeResult = object(
   {
@@ -55,6 +134,7 @@ const invoices = {
     ref: 'ref',
     noun: { one: 'faktura', other: 'fakturor' },
     empty: 'Inga fakturor väntar på attest.',
+    open: { capability: 'finance.record', title: 'Faktura och underlag', params: { ref: 'ref' } },
     fields: [
       { key: 'supplier', label: 'Leverantör' },
       { key: 'amount', label: 'Belopp', format: 'number', unit: { one: 'kr', other: 'kr' } },
@@ -95,7 +175,8 @@ const approve = {
   model: false,
   scope: manager,
   execution: deduplicated,
-  input: refs,
+  review: 'finance.record',
+  input: object({ ...refs.properties, reviews: array({ type: 'object' }) }),
   output: executeResult,
 };
 
@@ -108,6 +189,21 @@ const unapprove = {
   scope: manager,
   execution: deduplicated,
   input: refs,
+  output: executeResult,
+};
+const correct = {
+  name: 'finance.correct',
+  kind: 'execute',
+  title: 'Spara rättelse',
+  description: 'Rättar beställningsnumret på en ej attesterad faktura i den granskade versionen.',
+  model: false,
+  scope: manager,
+  execution: deduplicated,
+  input: object({
+    ref: reference.properties.ref,
+    revision: string,
+    changes: object({ order: { type: 'string', minLength: 1, maxLength: 80 } }),
+  }),
   output: executeResult,
 };
 
@@ -156,13 +252,14 @@ export const manifest = {
   source: 'Ekonomisystemet',
   uses: [],
   scan: true,
+  documents: true,
   areas: [
     {
       id: 'budget',
       title: 'Budget',
       icon: 'chart',
       roles: ['manager'],
-      standing: ['finance.invoices', 'finance.budget'],
+      standing: ['finance.invoices', 'finance.budget', 'finance.metrics', 'finance.trend', 'finance.comparison'],
       schedules: [
         { label: 'Fakturor som förfaller inom en vecka', when: 'Varje vardag 06:00' },
         { label: 'Prognosavvikelse', when: 'Månadens första måndag' },
@@ -170,5 +267,20 @@ export const manifest = {
       figure: true,
     },
   ],
-  capabilities: [invoices, budget, approve, unapprove, open, preview, lookup],
+  capabilities: [
+    invoices,
+    budget,
+    record,
+    documentView,
+    metricView,
+    trendView,
+    comparisonView,
+    historyView,
+    approve,
+    unapprove,
+    correct,
+    open,
+    preview,
+    lookup,
+  ],
 };

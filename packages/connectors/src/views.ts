@@ -1,4 +1,13 @@
 import { openRef, rowsKey, viewRows, type MenuHint, type MenuIcon, type View } from '@clew/contracts';
+import {
+  ActivitySchema,
+  DocumentBundleSchema,
+  MetricsSchema,
+  SeriesSchema,
+  ReviewRecoverySchema,
+  checkContract,
+} from '@clew/contracts';
+import { Value } from '@sinclair/typebox/value';
 
 export { openRef, rowsKey, viewRows };
 
@@ -16,6 +25,7 @@ export interface ViewSubject {
   output: unknown;
   view?: View;
   menu?: MenuHint;
+  review?: string;
 }
 const props = (schema: unknown): Record<string, Schema> | undefined => (schema as Schema | undefined)?.properties;
 
@@ -28,6 +38,11 @@ export function viewProblem(subject: ViewSubject, siblings: ViewSubject[]): stri
   const view = subject.view;
   if (!view) return undefined;
   if (subject.kind !== 'read') return `${subject.name}: only a read capability can declare a view`;
+  if (view.kind === 'document' || view.kind === 'metrics' || view.kind === 'series' || view.kind === 'activity') {
+    const key = (view as Extract<View, { body: string }>).body;
+    const out = props(subject.output);
+    return out && !out[key] ? `${subject.name}: view body "${key}" is not in the output schema` : undefined;
+  }
   if (view.kind === 'text') {
     const out = props(subject.output);
     return out && !out[view.body] ? `${subject.name}: view body "${view.body}" is not in the output schema` : undefined;
@@ -37,7 +52,7 @@ export function viewProblem(subject: ViewSubject, siblings: ViewSubject[]): stri
   const unitless = view.fields.find(f => f.unit && f.format !== 'number');
   if (unitless) return `${subject.name}: view field "${unitless.key}" has a unit but is not a number`;
   let record = props(subject.output);
-  if (view.kind !== 'detail') {
+  if (view.kind === 'table' || view.kind === 'list') {
     if (!keys.includes(view.title)) return `${subject.name}: view title "${view.title}" must be one of its fields`;
     const rows = rowsKey(view)!;
     if (record && !record[rows]) return `${subject.name}: view rows "${rows}" is not in the output schema`;
@@ -64,9 +79,69 @@ export function viewProblem(subject: ViewSubject, siblings: ViewSubject[]): stri
       return `${subject.name}: view ref "${view.ref}" is not in the output schema`;
   }
   if (record)
-    for (const key of view.kind === 'detail' ? [view.title, ...keys] : keys)
+    for (const key of view.kind === 'detail' || view.kind === 'record' ? [view.title, ...keys] : keys)
       if (!record[key]) return `${subject.name}: view field "${key}" is not in the output schema`;
+  if (view.kind === 'record') {
+    for (const key of [view.document, view.recovery, view.metrics, view.series, view.activity, view.items?.rows].filter(
+      Boolean,
+    ) as string[])
+      if (record && !record[key]) return `${subject.name}: record section "${key}" is not in the output schema`;
+    if (view.items) {
+      const items = view.items;
+      if (!items.fields.some(f => f.key === items.title))
+        return `${subject.name}: item title must name a displayed field`;
+      if (new Set(items.fields.map(f => f.key)).size !== items.fields.length)
+        return `${subject.name}: item fields must be unique`;
+      const item = record?.[items.rows]?.items?.properties;
+      for (const field of items.fields) {
+        if (item && !item[field.key]) return `${subject.name}: unknown item field "${field.key}"`;
+        if (field.unit && field.format !== 'number') return `${subject.name}: item units belong to number fields`;
+      }
+    }
+  }
   return undefined;
+}
+
+/** Validate semantic payloads even when the source's own output schema is permissive. */
+export function viewOutputProblem(view: View | undefined, output: unknown): string | undefined {
+  if (!view) return;
+  const data = output as Record<string, unknown> | null;
+  const check = (kind: string, value: unknown): boolean => {
+    if (kind === 'document') {
+      if (!Value.Check(DocumentBundleSchema, value)) return false;
+      return new Set(value.documents.map(d => d.id)).size === value.documents.length;
+    }
+    if (kind === 'metrics')
+      return Value.Check(MetricsSchema, value) && new Set(value.map(m => m.id)).size === value.length;
+    if (kind === 'activity')
+      return Value.Check(ActivitySchema, value) && new Set(value.map(e => e.id)).size === value.length;
+    if (kind === 'series')
+      return (
+        Value.Check(SeriesSchema, value) &&
+        new Set(value.series.map(s => s.id)).size === value.series.length &&
+        value.series.every(s => s.values.length === value.categories.length) &&
+        (value.axis !== 'time' ||
+          value.categories.every(
+            (c, i) =>
+              Number.isFinite(Date.parse(c)) && (i === 0 || Date.parse(c) > Date.parse(value.categories[i - 1]!)),
+          ))
+      );
+    return true;
+  };
+  if ('body' in view && !check(view.kind, data?.[view.body])) return 'Källans vy kunde inte verifieras.';
+  if (view.kind === 'record') {
+    if (view.recovery && !checkContract(ReviewRecoverySchema, data?.[view.recovery]))
+      return 'Källans rättelser kunde inte verifieras.';
+    for (const kind of ['document', 'metrics', 'series', 'activity'] as const)
+      if (view[kind] && !check(kind, data?.[view[kind]!])) return 'Källans vy kunde inte verifieras.';
+    if (
+      view.items &&
+      (!Array.isArray(data?.[view.items.rows]) ||
+        (data![view.items.rows] as unknown[]).length > 500 ||
+        (data![view.items.rows] as unknown[]).some(row => !row || typeof row !== 'object' || Array.isArray(row)))
+    )
+      return 'Källans rader kunde inte verifieras.';
+  }
 }
 
 /** The icon of a menu row whose capability names none. */

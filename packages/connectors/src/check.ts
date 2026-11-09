@@ -2,7 +2,7 @@ import type { Area, CheckFinding, CheckGroup, CheckItem, CheckLevel, CheckReport
 import { Registry, openGovernance, type Actor } from './index';
 import { fetchManifest, remoteConnector, type FetchLike } from './remote';
 import type { ConnectorManifest } from './protocol';
-import { menuRowOf, rowsKey, viewRows } from './views';
+import { menuRowOf, rowsKey, viewRows, viewOutputProblem } from './views';
 
 /**
  * The conformance check of a connector service (D21, D23): what `scripts/connector-check.ts` prints and what the admin
@@ -48,6 +48,11 @@ const VIEW: Record<NonNullable<ConnectorManifest['capabilities'][number]['view']
   list: 'lista',
   detail: 'detaljvy',
   text: 'text',
+  document: 'dokument',
+  record: 'post med underlag',
+  metrics: 'nyckeltal',
+  series: 'diagram och tabell',
+  activity: 'historik',
 };
 const worst = (a: CheckLevel, b: CheckLevel): CheckLevel =>
   a === 'fail' || b === 'fail' ? 'fail' : a === 'warn' || b === 'warn' ? 'warn' : 'ok';
@@ -138,6 +143,23 @@ export async function checkConnector(
   const checkView = (c: ConnectorManifest['capabilities'][number], output: unknown, row: Row) => {
     const view = c.view;
     if (!view) return;
+    if (
+      view.kind === 'document' ||
+      view.kind === 'record' ||
+      view.kind === 'metrics' ||
+      view.kind === 'series' ||
+      view.kind === 'activity'
+    ) {
+      const problem = viewOutputProblem(view, output);
+      if (problem) {
+        fail(`${c.name}: invalid ${view.kind} payload`);
+        row.note('fail', problem);
+      } else {
+        ok(`${c.name}: validated ${view.kind} view`);
+        row.note('ok', `Visas som ${VIEW[view.kind]}.`);
+      }
+      return;
+    }
     if (view.kind === 'text') {
       if (typeof (output as Record<string, unknown> | null)?.[view.body] === 'string') {
         ok(`${c.name}: view text drawn from "${view.body}"`);

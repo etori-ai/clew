@@ -211,6 +211,59 @@ export function threadUsecases(deps: ThreadDeps) {
       return id;
     });
   }
+  /** A new human review of definitively rejected rows; its stable id prevents replaying a successful retry. */
+  async function retryRejected(persona: AuthenticatedContext, threadId: string): Promise<Thread> {
+    await persona.authorize();
+    const original = await access.read(persona, threadId);
+    if (!original) throw new InputError('Kortet finns inte.');
+    const execution = original.execution;
+    if (!execution || execution.compensates || !['failed', 'partial'].includes(execution.state))
+      throw new InputError('Kontrollera källans besked innan ett nytt försök görs.');
+    const action = original.actions.find(a => a.kind === 'execute' && a.role === 'primary' && a.review === 'each');
+    if (!action || !registry.allowed(actorOf(persona), action.capability))
+      throw new InputError('Åtgärden är inte tillgänglig.');
+    const rejected = new Set(original.receipt?.rows.filter(r => r.outcome === 'failed').map(r => r.ref));
+    const items = original.items
+      .filter(i => rejected.has(i.ref))
+      .map(({ revision: _, ...i }) => ({ ...i, selected: true }));
+    if (!items.length) throw new InputError('Det finns inga avvisade rader att granska igen.');
+    const id = `retry:${execution.id}`,
+      at = clock().toISOString();
+    await store.transaction(async tx => {
+      const current = await tx.lockThread(persona.id, original.id);
+      if (!current || current.updatedAt !== original.updatedAt || current.execution?.id !== execution.id)
+        throw new InputError('Resultatet har ändrats. Läs in kortet igen.');
+      if (await tx.lockThread(persona.id, id)) return;
+      await tx.insertThread({
+        id,
+        personId: persona.id,
+        sourceAuthorization: persona.authorizationVersion,
+        kind: 'pushed',
+        topic: id,
+        title: `Granska ${items.length} ${items.length === 1 ? 'avvisad rad' : 'avvisade rader'} igen`,
+        state: 'open',
+        week: null,
+        connector: original.connector,
+        area: original.area,
+        summary: `Nytt försök efter: ${original.receipt!.headline} Tidigare bekräftade rader påverkas inte.`,
+        items,
+        actions: original.actions,
+        waitingOn: null,
+        deadline: original.deadline,
+        trigger: { reason: `Nytt försök från ${original.title}`, source: original.trigger.source, at },
+        createdAt: at,
+        updatedAt: at,
+      });
+      await tx.writeAudit({
+        actor: persona.principal.id,
+        action: 'thread.retry_created',
+        subject: 'thread:' + id,
+        at,
+        details: { originalThreadId: original.id, originalExecutionId: execution.id, refs: items.map(i => i.ref) },
+      });
+    });
+    return (await access.read(persona, id))!;
+  }
   /** Areas with live counts for the sidebar, and each figure with the time Clew read it (D54: "Personalsystemet 06:00"). */
   async function listAreas(persona: AuthenticatedContext): Promise<Area[]> {
     await persona.authorize();
@@ -501,6 +554,7 @@ export function threadUsecases(deps: ThreadDeps) {
   return {
     ensureThreads,
     pushDraft,
+    retryRejected,
     listAreas,
     closeReceiptWindow,
     dismissThread,

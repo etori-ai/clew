@@ -8,6 +8,7 @@ interface Descriptor {
   capabilities: Array<ViewSubject & { model: boolean; follows?: string[]; creates?: string }>;
   facts?: Array<{ kind: string; attributes: object }>;
   areas: Array<{ id: string; standing: string[] }>;
+  documents?: unknown;
 }
 function schemaCompiler() {
   const ajv = addFormats(new Ajv({ strict: false, addUsedSchema: false }));
@@ -39,6 +40,18 @@ export function connectorProblems(
     if (view) problems.push(`Capability ${view} (D38).`);
     const menu = menuProblem(c);
     if (menu) problems.push(`Capability ${menu} (D40).`);
+    if ((c.view?.kind === 'document' || (c.view?.kind === 'record' && c.view.document)) && !connector.documents)
+      problems.push(`Capability ${c.name}: document views require the connector's documents transport.`);
+    if (c.review) {
+      const read = connector.capabilities.find(r => r.name === c.review);
+      if (
+        c.kind !== 'execute' ||
+        !read ||
+        read.kind !== 'read' ||
+        !(read.view?.kind === 'document' || (read.view?.kind === 'record' && read.view.document))
+      )
+        problems.push(`Capability ${c.name}: review must name a document read of the same connector.`);
+    }
     if (c.follows && c.kind !== 'propose')
       problems.push(`Capability ${c.name}: only a propose can follow a fact (D55).`);
     if (c.creates && !connector.facts?.some(f => f.kind === c.creates))

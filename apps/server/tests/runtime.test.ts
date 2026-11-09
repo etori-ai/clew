@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 import { Hono } from 'hono';
 import { SignJWT, jwtVerify } from 'jose';
 import { calculatePKCECodeChallenge, randomPKCECodeVerifier } from 'openid-client';
 import { decryptTokens, encryptTokens } from '../src/auth-crypto';
 import { localInstant } from '../../../packages/calendar/src/dates';
+import type { AuthenticatedContext } from '@clew/contracts';
+import { fixtureConnectors } from '../../../tests/fixture-connectors';
+import { Registry } from '../../../tests/registry';
+import { documentReviews } from '../src/connectors/usecases/documents';
 
 test('sealed authentication tokens can only be opened by their own session', t => {
   const previousKey = process.env.MASTER_KEY;
@@ -32,6 +36,54 @@ test('Hono serves a Web Request through the Node runtime', async () => {
   const response = await app.request(new Request('http://fixture.test/health'));
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { ok: true });
+});
+
+test('the live API and its composition load in Node without external services', async () => {
+  const { api } = await import('../src/routes/api');
+  assert.equal(typeof api.fetch, 'function');
+});
+
+test('Node accepts a freshly issued document review and distinguishes invalid evidence from actual expiry', async () => {
+  let now = Date.parse('2026-11-08T20:00:00.000Z');
+  const clock = () => new Date(now);
+  const registry = new Registry();
+  fixtureConnectors({ only: ['finance'], clock }).connectors.forEach(connector => registry.register(connector));
+  const persona: AuthenticatedContext = {
+    id: 'hillevi',
+    name: 'Hillevi',
+    unitId: 'unit-skola',
+    unitLabel: 'Skola',
+    role: 'manager',
+    organisationId: 'fixture',
+    principal: { id: 'person:hillevi', kind: 'person' },
+    capabilities: [],
+    authorizationVersion: 'v1',
+    sessionBinding: 'fixture',
+    expiresAt: '2026-11-09T00:00:00.000Z',
+    authorize: async () => ({ version: 'v1' }),
+  };
+  const reviews = documentReviews({
+    registry,
+    clock,
+    run: (person, capability, input) => registry.run(person, capability, input),
+    sign: input => createHmac('sha256', 'node-review-fixture').update(JSON.stringify(input)).digest('hex'),
+  });
+  const { evidence } = await reviews.preview(persona, 'finance.record', 'finance:inv:55120');
+  const payload = { refs: [evidence.ref], reviews: [evidence] };
+  assert.equal(evidence.expiresAt, '2026-11-08T22:00:00.000Z');
+  await assert.doesNotReject(reviews.validate(persona, 'finance.approve', payload));
+  await assert.rejects(
+    reviews.validate(persona, 'finance.approve', { ...payload, reviews: [{ ...evidence, expiresAt: 'not-a-date' }] }),
+    /kunde inte verifieras/,
+  );
+  await assert.rejects(
+    reviews.validate(persona, 'finance.approve', { ...payload, reviews: [{ ...evidence, proof: '0'.repeat(64) }] }),
+    /ändrats/,
+  );
+  now += 2 * 3600_000 - 1;
+  await assert.doesNotReject(reviews.validate(persona, 'finance.approve', payload));
+  now += 1;
+  await assert.rejects(reviews.validate(persona, 'finance.approve', payload), /gått ut/);
 });
 
 test('Stockholm meetings keep their instant and reject skipped or repeated local times', () => {

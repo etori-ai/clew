@@ -24,6 +24,9 @@ import type {
 } from '@clew/contracts';
 import type { Figure } from './protocol';
 import { menuEligible, menuRowOf } from './views';
+import { viewOutputProblem } from './views';
+import { DocumentBundleSchema, MAX_DOCUMENT_BYTES, type DocumentRequest, type DocumentContent } from '@clew/contracts';
+import { Value } from '@sinclair/typebox/value';
 import { connectorProblems } from './validation';
 export {
   MENU_DEFAULT_ICON,
@@ -100,6 +103,7 @@ export type WriteSafety =
   | { strategy: 'conditional'; lookup: string };
 
 export interface Capability<I = unknown, O = unknown> {
+  review?: string;
   execution?: WriteSafety;
   /** `connector.verb`, stable, e.g. `finance.approveInvoices`. */
   name: string;
@@ -180,6 +184,7 @@ export interface AreaDefinition {
   icon?: MenuIcon;
 }
 export interface Connector {
+  documents?: (actor: Actor, request: DocumentRequest, clew: Clew) => Promise<DocumentContent>;
   delegation?: { audience: string };
   id: string;
   kind: ConnectorKind;
@@ -435,10 +440,48 @@ export class Registry {
     );
     if (!this.validator(found.capability.output)(output))
       throw new CapabilityError('Källans svar kunde inte verifieras.');
+    const viewError = viewOutputProblem(found.capability.view, output);
+    if (viewError) throw new CapabilityError(viewError);
     // Permission can change while a source is answering. Do not release the result under the old policy.
     await this.refresh();
     if (!this.allowed(actor, name)) throw new CapabilityError(UNKNOWN);
     return output as O;
+  }
+  /** Metadata and binary bytes share the read's scope and source, with a final descriptor/policy check. */
+  async document(actor: Actor, request: DocumentRequest, context: RunContext = {}): Promise<DocumentContent> {
+    await this.refresh();
+    const initial = this.allowed(actor, request.capability);
+    if (initial?.capability.kind !== 'read' || !initial.connector.documents) throw new CapabilityError(UNKNOWN);
+    const output = await this.run<Record<string, unknown>>(actor, request.capability, request.input, context);
+    const found = this.allowed(actor, request.capability);
+    if (found?.connector !== initial.connector) throw new CapabilityError(UNKNOWN);
+    const view = found?.capability.view;
+    const key = view?.kind === 'document' ? view.body : view?.kind === 'record' ? view.document : undefined;
+    const bundle = key ? output[key] : null;
+    if (!found?.connector.documents || found.capability.kind !== 'read' || !Value.Check(DocumentBundleSchema, bundle))
+      throw new CapabilityError('Dokumentet finns inte.');
+    const document = bundle.documents.find(d => d.id === request.document);
+    if (
+      !document ||
+      bundle.ref !== request.ref ||
+      bundle.revision !== request.revision ||
+      document.revision !== request.documentRevision
+    )
+      throw new CapabilityError('Underlaget har ändrats. Öppna dokumentet igen.');
+    const content = await found.connector.documents(actor, request, this.clewFor(actor, context, found.connector.id));
+    if (
+      content.bytes.length !== document.size ||
+      content.bytes.length > MAX_DOCUMENT_BYTES ||
+      content.mediaType !== document.mediaType ||
+      content.revision !== document.revision
+    )
+      throw new CapabilityError('Dokumentet kunde inte verifieras.');
+    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(content.bytes)));
+    if (Array.from(hash, b => b.toString(16).padStart(2, '0')).join('') !== document.sha256)
+      throw new CapabilityError('Dokumentet kunde inte verifieras.');
+    await this.refresh();
+    if (this.allowed(actor, request.capability)?.connector !== found.connector) throw new CapabilityError(UNKNOWN);
+    return { ...content, filename: document.filename };
   }
   /**
    * Areas for one actor: one entry per area definition of a visible connector whose roles include the actor's role.

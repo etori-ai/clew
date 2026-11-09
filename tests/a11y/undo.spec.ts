@@ -2,6 +2,25 @@ import { desktop, expect, expectNoAxeViolations, open, test } from './support';
 
 test.describe('a decision the card is left waiting on keeps its way back where the card lies (D70 amended)', () => {
   test.use({ viewport: desktop });
+  test('toast undo keeps a rejected request visible and succeeds when retried', async ({ page, api }) => {
+    await open(page, '/?card=samtal');
+    await page.locator('#card-samtal').getByRole('button', { name: 'Skicka 2 inbjudningar' }).click();
+    const toasts = page.getByRole('region', { name: 'Aviseringar' });
+    const undo = toasts.getByRole('button', { name: 'Ångra', exact: true });
+    await expect(undo).toBeVisible();
+    await page.route('**/api/threads/samtal/undo-receipt', route =>
+      route.fulfill({ status: 409, json: { error: 'Källan svarar inte. Försök igen.' } }),
+    );
+    await undo.click();
+    await expect(toasts.getByRole('alert')).toContainText('Källan svarar inte');
+    await expect(undo).toBeVisible();
+    expect(api.threads.find(t => t.id === 'samtal')!.receipt).not.toBeNull();
+    await page.unroute('**/api/threads/samtal/undo-receipt');
+    await undo.click();
+    await expect(undo).toHaveCount(0);
+    expect(api.threads.find(t => t.id === 'samtal')!.receipt).toBeNull();
+    await expect(page.locator('#card-samtal').getByRole('button', { name: 'Skicka 2 inbjudningar' })).toBeVisible();
+  });
 
   test('sending the invitations keeps the row with the receipt and Ångra, the toast says the card is under Väntar på andra, and the row there undoes it', async ({
     page,

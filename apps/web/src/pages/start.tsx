@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
-import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Area, MenuEntry, SessionUser, Thread, ViewRef, PanelViewSpec } from '@clew/contracts';
 import { isSnoozed } from '@clew/contracts';
 import {
@@ -47,7 +47,6 @@ import { applyThread } from '../thread-cache';
 import { keys } from '../query-keys';
 import { groupThreads } from '../stream';
 import { useReceiptArrivals } from '../linger';
-import { useThreadAction } from '../mutations';
 import { panelOf, withAction, withCard, withView, withoutPanel } from '../panel-address';
 import { reviewOf } from '../review-address';
 import { Composer, Suggestions, type ComposerAbout } from '../components/composer';
@@ -58,6 +57,7 @@ import { toolHref, useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { GenericCard, ThreadRow } from '../components/card';
 import { ReviewOverlay } from '../components/review-overlay';
+import { ReceiptNotice } from '../components/receipt-notice';
 import { BriefSkeleton } from '../components/brief';
 import { AsideSkeleton, AsyncContent } from '../components/loading';
 import {
@@ -246,37 +246,15 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   }, [threads]);
   // A receipt that has just arrived (D70): the row keeps its place for a moment, and a toast says where the card went,
   // with the way there and the way back. The toast stays until closed (2.2.1), as the Avfärda toast does.
-  const { run: runUndo } = useThreadAction({ onChange: replace });
   const lingering = useReceiptArrivals(threads, thread => {
-    const receipt = thread.receipt!;
-    // Where the card lies now: under Klart when the decision closed it, under Väntar på andra when it left the card
-    // waiting on someone else's answer (a confirmed proposal), else where it was.
-    const where =
-      thread.state === 'handled'
-        ? { tab: 'done' as const, label: 'Klart' }
-        : thread.waitingOn
-          ? { tab: 'waiting' as const, label: 'Väntar på andra' }
-          : { tab: 'needs-you' as const, label: 'Behöver dig' };
     const dismiss = toast({
-      body: `${receipt.headline.replace(/\.$/, '')}. Kortet ligger under ${where.label}.`,
+      body: (
+        <QueryClientProvider client={client}>
+          <ReceiptNotice threadId={thread.id} onChange={replace} dismiss={() => dismiss()} />
+        </QueryClientProvider>
+      ),
       isAutoHide: false,
       uniqueID: 'receipt:' + thread.id,
-      endContent: (
-        <HStack gap={1}>
-          <Button size="sm" variant="ghost" label="Visa" href={homeHref({ tab: where.tab })} />
-          {receipt.undoCapability && (
-            <Button
-              size="sm"
-              variant="ghost"
-              label="Ångra"
-              clickAction={async () => {
-                await runUndo(() => api.undoReceipt(thread.id));
-                dismiss();
-              }}
-            />
-          )}
-        </HStack>
-      ),
     });
   });
   // A view is addressable (integrations.md, "Answers and views"): the panel follows `open` or `open-card` in the address.
@@ -884,13 +862,16 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
    * panel: the day and what happened since yesterday are Hem's own (D72).
    */
   // A card stays a tab while it is in the stream (D66): snoozed or dismissed, it leaves the row with the pile. A done
-  // card stays while its receipt can still be undone (D70): the receipt is the person's own result, and Ångra is on it.
+  // card stays while its receipt can still be undone (D70). Reviewed cards remain addressable after that window,
+  // so closing a completed review can return to the same receipt on a phone as on desktop (D80).
   const inStream = (threadId: string) =>
     threads.some(
       t =>
         t.id === threadId &&
         ((t.state === 'open' && !isSnoozed(t, now)) ||
-          (t.state === 'handled' && !!t.receipt?.undoCapability && !!t.receipt.undoUntil && t.receipt.undoUntil > now)),
+          (t.state === 'handled' &&
+            (t.actions.some(a => a.review === 'each') ||
+              (!!t.receipt?.undoCapability && !!t.receipt.undoUntil && t.receipt.undoUntil > now)))),
     );
   const panelCard =
     panel?.kind === 'card' && !cardsInSheet ? (threads.find(t => t.id === panel.threadId) ?? null) : null;

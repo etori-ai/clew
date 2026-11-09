@@ -1,0 +1,62 @@
+/* D79: only renderer content. Application layout, controls and scrolling remain Astryx. */
+.clew-document-host {
+  min-width: 0;
+  width: 100%;
+}
+.clew-document-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.clew-document-frame {
+  width: 100%;
+  height: 560px;
+  border: 0;
+  background: white;
+  color-scheme: light;
+}
+.clew-pdf-page {
+  position: relative;
+  width: max-content;
+  background: white;
+  color-scheme: light;
+}
+.clew-pdf-page canvas {
+  display: block;
+}
+.clew-pdf-text {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  transform-origin: 0 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.clew-pdf-text :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0 0;
+  user-select: text;
+}
+.clew-pdf-text > :not(.markedContent),
+.clew-pdf-text .markedContent span:not(.markedContent) {
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.clew-pdf-text .markedContent {
+  display: contents;
+}
+.clew-pdf-text ::selection {
+  background: Highlight;
+}
