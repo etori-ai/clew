@@ -6,6 +6,7 @@ import { manifestProblems, parseManifest, remoteConnector, type FetchLike } from
 import { createConnector, manifest as financeManifest } from '../../connectors/finance/connector.mjs';
 import { memoryState } from '../../connectors/finance/state.mjs';
 import { assertionFor, testJwks } from '../connector-authority';
+import { invoiceInput } from '../document-fixtures';
 
 /** The finance fixture connector over the protocol: the invoice card, attest row by row with one unknown, undo, read-back. */
 const secret = 'test-secret-test-secret';
@@ -55,6 +56,46 @@ function stack(options: Parameters<typeof createConnector>[0] = {}) {
 }
 
 describe('the finance fixture connector', () => {
+  test('a rejected invoice can be corrected with revision checks, reviewed afresh and approved without replaying successful rows', async () => {
+    const { registry, state } = stack({ fault: 'rejected' });
+    const refs = ['finance:inv:55120', 'finance:inv:55121', 'finance:inv:55140'];
+    const initial = await invoiceInput(registry, hillevi, refs);
+    const result = await registry.run<Result>(hillevi, 'finance.approve', initial, { operationId: 'initial' });
+    expect(result.rows.map(r => r.outcome)).toEqual(['done', 'done', 'failed']);
+    const ref = refs[2]!;
+    const record = await registry.run<{
+      document: { revision: string };
+      recovery: { correction: { capability: string } };
+    }>(hillevi, 'finance.record', { ref });
+    expect(record.recovery.correction.capability).toBe('finance.correct');
+    const payload = { ref, revision: record.document.revision, changes: { order: 'PO-2026-222' } };
+    const correction = await registry.run<Result>(hillevi, 'finance.correct', payload, { operationId: 'correction' });
+    expect(correction.rows[0]!.outcome).toBe('done');
+    expect(await registry.run(hillevi, 'finance.correct', payload, { operationId: 'correction' })).toEqual(correction);
+    expect(
+      (await registry.run<Result>(hillevi, 'finance.correct', { ...payload, changes: { order: 'stale' } })).rows[0]!
+        .outcome,
+    ).toBe('failed');
+    const stale = await registry.run<Result>(hillevi, 'finance.approve', {
+      refs: [ref],
+      reviews: initial.reviews.filter(r => r.ref === ref),
+    });
+    expect(stale.rows[0]!.outcome).toBe('failed');
+    const refreshed = await invoiceInput(registry, hillevi, [ref]);
+    expect(
+      (await registry.run<Result>(hillevi, 'finance.approve', refreshed, { operationId: 'retry' })).rows[0]!.outcome,
+    ).toBe('done');
+    expect(Object.keys(state.get<Record<string, string>>('approved'))).toEqual(refs);
+    expect(
+      (await registry.run<Result>(hillevi, 'finance.approve', refreshed, { operationId: 'duplicate-new-decision' }))
+        .rows[0]!.outcome,
+    ).toBe('failed');
+    expect(
+      (await registry.run<Result>(hillevi, 'finance.approve', refreshed, { operationId: 'retry' })).rows[0]!.outcome,
+    ).toBe('done');
+    await expect(registry.run(stranger, 'finance.correct', payload)).rejects.toThrow();
+    await expect(registry.run(hassan, 'finance.correct', payload)).rejects.toThrow();
+  });
   test('the manifest is valid and passes the conformance check', async () => {
     expect(manifestProblems(financeManifest, 'finance')).toEqual([]);
     const { connectorFetch } = stack();
@@ -107,12 +148,17 @@ describe('the finance fixture connector', () => {
   test('attest answers row by row with one unknown, once per operation id, undoable and read back', async () => {
     const { registry, state } = stack();
     const refs = ['finance:inv:55120', 'finance:inv:55121', 'finance:inv:55140'];
-    const result = await registry.run<Result>(hillevi, 'finance.approve', { refs }, { operationId: 'op-1' });
+    const input = await invoiceInput(registry, hillevi, refs);
+    const result = await registry.run<Result>(hillevi, 'finance.approve', input, { operationId: 'op-1' });
     expect(result.rows.map(r => r.outcome)).toEqual(['done', 'done', 'unknown']);
     expect(result.headline).toBe('2 fakturor attesterade, 1 väntar på svar.');
     expect(receipt(result as never).undoUntil).not.toBeNull();
-    expect(await registry.run<Result>(hillevi, 'finance.approve', { refs }, { operationId: 'op-1' })).toEqual(result);
-    expect(await registry.run(hillevi, 'finance.lookup', { operationId: 'op-1' })).toEqual({ found: true, result });
+    expect(await registry.run<Result>(hillevi, 'finance.approve', input, { operationId: 'op-1' })).toEqual(result);
+    const checked = await registry.run<{ found: boolean; result: Result }>(hillevi, 'finance.lookup', {
+      operationId: 'op-1',
+    });
+    expect(checked.result.rows.map(r => r.outcome)).toEqual(['done', 'done', 'failed']);
+    expect(await registry.run(hillevi, 'finance.approve', input, { operationId: 'op-1' })).toEqual(checked.result);
     expect(Object.keys(state.get<Record<string, string>>('approved'))).toEqual([
       'finance:inv:55120',
       'finance:inv:55121',
@@ -124,7 +170,7 @@ describe('the finance fixture connector', () => {
   test('the card asks for a review one invoice at a time, and the preview draws the invoice for its own cost centre only (D70)', async () => {
     const { registry } = stack();
     const [draft] = await registry.scan(hillevi);
-    expect(draft!.actions[0]).toMatchObject({ id: 'approve', review: 'each', preview: 'finance.preview' });
+    expect(draft!.actions[0]).toMatchObject({ id: 'approve', review: 'each', preview: 'finance.record' });
     const out = await registry.run<{ title: string; mediaType: string; data: string }>(hillevi, 'finance.preview', {
       ref: 'finance:inv:55120',
     });
@@ -141,11 +187,17 @@ describe('the finance fixture connector', () => {
   test('the fault switches: conflict writes nothing, a crash after the commit is found by the lookup', async () => {
     const conflict = await stack({ fault: 'conflict' }).registry.run<Result>(hillevi, 'finance.approve', {
       refs: ['finance:inv:55120'],
+      reviews: [],
     });
     expect(conflict.rows[0]!.outcome).toBe('failed');
     const crashing = stack({ fault: 'crash-after-commit' });
     await expect(
-      crashing.registry.run(hillevi, 'finance.approve', { refs: ['finance:inv:55120'] }, { operationId: 'op-9' }),
+      crashing.registry.run(
+        hillevi,
+        'finance.approve',
+        await invoiceInput(crashing.registry, hillevi, ['finance:inv:55120']),
+        { operationId: 'op-9' },
+      ),
     ).rejects.toThrow(/svarar inte/);
     expect(await crashing.registry.run(hillevi, 'finance.lookup', { operationId: 'op-9' })).toMatchObject({
       found: true,

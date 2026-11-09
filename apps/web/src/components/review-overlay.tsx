@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import type { Thread, ThreadAction, ThreadItem } from '@clew/contracts';
+import type { Thread, ThreadAction, ReviewEvidence, Receipt } from '@clew/contracts';
 import {
   AreaChip,
   Badge,
@@ -9,9 +9,9 @@ import {
   BottomSheet,
   Button,
   Card,
+  CompletionFeedback,
   Drawer,
   DrawerHeader,
-  Grid,
   Heading,
   HStack,
   Icon,
@@ -23,6 +23,7 @@ import {
   Lightbox,
   List,
   ListItem,
+  ProgressBar,
   Skeleton,
   StackItem,
   Step,
@@ -40,21 +41,26 @@ import { withCard } from '../panel-address';
 import { reviewHref, reviewReturn, stepOf, type ReviewReturn } from '../review-address';
 import { mobileQuery, shortQuery } from './shell';
 import { reviewedAction, useCardAction } from './card';
+import { receiptComplete } from '../receipt-state';
+import { DocumentReader } from './document-reader';
+import { ReviewRecovery } from './review-recovery';
+import { api } from '../api';
 
 type Decision = 'approve' | 'leave';
-const decisionWord: Record<Decision, string> = { approve: 'Godkänd', leave: 'Lämnas kvar' };
+const decisionWord: Record<Decision, string> = { approve: 'Vald för godkännande', leave: 'Lämnas kvar' };
 /** The verb of the action, for its buttons: "Attestera valda" is "Attestera" on one row. */
 const verbOf = (action: ThreadAction) => action.label.replace(/\s+valda$/i, '');
-/** A row's short name for the stepper: what stands before the first " · " of its label. */
-const shortLabel = (item: ThreadItem) => item.label.split(' · ')[0] ?? item.label;
 /** The card beside Hem, where the review leads back to (D73). */
 const cardAddress = (threadId: string) => withCard('/', '', threadId);
 /** A card that is reviewed: open, not yet decided, with an execute that asks for a review one row at a time (D70). */
-const reviewable = (thread: Thread | undefined) =>
-  thread && thread.state === 'open' && !thread.receipt ? reviewedAction(thread) : undefined;
+const reviewable = (thread: Thread | undefined) => (thread ? reviewedAction(thread) : undefined);
+const submitted = (thread: Thread) =>
+  !!thread.receipt ||
+  thread.state !== 'open' ||
+  (!!thread.execution && !(thread.execution.compensates && thread.execution.state === 'succeeded'));
 /**
- * The drawer's desktop width budget (D73 amended): room for the document beside the decision, two columns of 360 px
- * and the inset, with the rail and the column's edge still in sight behind the scrim. On a phone the review is a sheet
+ * The drawer's desktop width budget (D73 amended): a readable document with the rail and the column's edge still
+ * in sight behind the scrim. On a phone the review is a sheet
  * instead (D73, second amendment).
  */
 const REVIEW_WIDTH = 1040;
@@ -83,6 +89,7 @@ export function ReviewOverlay({ threadId }: { threadId: string | null }) {
   // (kept while the overlay leaves, so the step does not change under the slide), and the decisions taken in it.
   const [held, setHeld] = useState<{ threadId: string; open: boolean } | null>(null);
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
+  const [evidence, setEvidence] = useState<Record<string, ReviewEvidence>>({});
   // Where the overlay leads once it has slid away, set by a close or by Skicka; null while it stays.
   const [leaving, setLeaving] = useState<{ to: string; state?: ReviewReturn } | null>(null);
   // While the decision is on its way the card turns handled under the overlay: the review keeps the card it was sending
@@ -91,6 +98,7 @@ export function ReviewOverlay({ threadId }: { threadId: string | null }) {
   if (threadId && !leaving && (!held || !held.open || held.threadId !== threadId)) {
     setHeld({ threadId, open: true });
     setDecisions({});
+    setEvidence({});
     setSending(false);
   } else if (!threadId && leaving) {
     // The overlay has slid away and the address it led to has landed: the review is over.
@@ -105,9 +113,10 @@ export function ReviewOverlay({ threadId }: { threadId: string | null }) {
   const live = shownId ? threadsQ.data?.threads.find(t => t.id === shownId) : undefined;
   const kept = useRef<{ thread: Thread; action: ThreadAction } | null>(null);
   const action = reviewable(live);
-  if (live && action) kept.current = { thread: live, action };
+  if (live && action && !sending) kept.current = { thread: live, action };
   const shown =
-    live && action ? { thread: live, action } : sending && kept.current?.thread.id === shownId ? kept.current : null;
+    sending && kept.current?.thread.id === shownId ? kept.current : live && action ? { thread: live, action } : null;
+  const readOnly = !!shown && submitted(shown.thread);
   const items = shown ? shown.thread.items.filter(i => i.selectable) : [];
   const step = shown ? stepOf(lastSearch.current, items.length + 1) : null;
   const missing = threadsQ.data !== undefined && !shown;
@@ -130,7 +139,7 @@ export function ReviewOverlay({ threadId }: { threadId: string | null }) {
   const title = shown
     ? step === null
       ? 'Steget finns inte'
-      : `Granska ${items.length} rader`
+      : `${readOnly ? 'Visa' : 'Granska'} ${items.length} ${items.length === 1 ? 'rad' : 'rader'}`
     : missing
       ? 'Kortet finns inte'
       : 'Granskning';
@@ -145,7 +154,14 @@ export function ReviewOverlay({ threadId }: { threadId: string | null }) {
   // ✕, Esc and the scrim save and close, as "Spara och stäng" did (D73 item 3); nothing closes while Skicka waits on the source.
   const onOpenChange = (open: boolean) => {
     if (open || sending || leaving) return;
-    leave(shown && step !== null ? reviewReturn(shown.thread.id, approved) : undefined);
+    leave(
+      shown && step !== null
+        ? reviewReturn(
+            shown.thread.id,
+            readOnly ? shown.thread.items.filter(i => i.selected).map(i => i.ref) : approved,
+          )
+        : undefined,
+    );
   };
   // The overlay has slid away and given the focus back (to the page, or into the card's sheet it revealed): now the
   // address follows. Leading back replaces the review's entry, so Back from the card goes where the person was before
@@ -207,16 +223,41 @@ export function ReviewOverlay({ threadId }: { threadId: string | null }) {
       thread={shown.thread}
       live={live ?? shown.thread}
       action={shown.action}
+      readOnly={readOnly}
+      onClose={() => onOpenChange(false)}
       step={step}
       decisions={decisions}
-      onDecide={(ref, d) => setDecisions(prev => ({ ...prev, [ref]: d }))}
+      evidence={evidence}
+      onDecide={(ref, d, proof) => {
+        setDecisions(prev => ({ ...prev, [ref]: d }));
+        setEvidence(prev => {
+          const next = { ...prev };
+          delete next[ref];
+          if (proof && d === 'approve') next[ref] = proof;
+          return next;
+        });
+      }}
+      onInvalidate={ref => {
+        setDecisions(prev => {
+          const next = { ...prev };
+          delete next[ref];
+          return next;
+        });
+        setEvidence(prev => {
+          const next = { ...prev };
+          delete next[ref];
+          return next;
+        });
+      }}
       sending={sending}
       onSending={setSending}
       onSent={() => {
         expectReceipt(shown.thread.id);
         leave();
       }}
-      header={header(`${shown.thread.title} · inget skrivs förrän du skickar`)}
+      header={header(
+        `${shown.thread.title} · ${readOnly ? 'resultat och underlag' : 'inget skrivs förrän du skickar'}`,
+      )}
       phone={mobile}
     />
   ) : shown ? (
@@ -230,9 +271,7 @@ export function ReviewOverlay({ threadId }: { threadId: string | null }) {
     )
   ) : missing ? (
     message(
-      <Text as="p">
-        Det finns inget att granska här: kortet är redan klart, har ingen granskning, eller så har adressen ändrats.
-      </Text>,
+      <Text as="p">Det finns inget att granska här: kortet har ingen granskning, eller så har adressen ändrats.</Text>,
     )
   ) : failed ? (
     message(
@@ -270,9 +309,8 @@ export function ReviewOverlay({ threadId }: { threadId: string | null }) {
 }
 
 /**
- * The review itself (D70 artboards B and C, D73): the mark row and the horizontal Stepper above, one step at a time,
- * the row's document beside its decision as the `checkout-wizard` template's two columns, which stack where both do
- * not fit, and Föregående and Nästa in the footer. Each row gets the action's verb, Lämna kvar and Hoppa över. Nothing
+ * The review itself (D70, D73): a constant-size navigator and an overview for any batch size. The document owns
+ * the content region; the footer owns the action's verb, Lämna kvar and Hoppa över. Nothing
  * is written until the last step's one button, which runs the same execute with the approved refs through the card's
  * own action (`useCardAction`). No text input (D12): a question about a row is asked in the conversation afterwards.
  */
@@ -280,9 +318,13 @@ function Review({
   thread,
   live,
   action,
+  readOnly,
+  onClose,
   step,
   decisions,
+  evidence,
   onDecide,
+  onInvalidate,
   sending,
   onSending,
   onSent,
@@ -293,9 +335,13 @@ function Review({
   /** The thread as the cache has it now, which says when the source's answer has come to rest. */
   live: Thread;
   action: ThreadAction;
+  readOnly: boolean;
+  onClose: () => void;
   step: number;
   decisions: Record<string, Decision>;
-  onDecide: (ref: string, decision: Decision) => void;
+  evidence: Record<string, ReviewEvidence>;
+  onDecide: (ref: string, decision: Decision, evidence?: ReviewEvidence) => void;
+  onInvalidate: (ref: string) => void;
   sending: boolean;
   onSending: (sending: boolean) => void;
   /** The source has answered: the overlay leads back to the card, where the row keeps its place with the receipt. */
@@ -319,17 +365,33 @@ function Review({
   // A step is a place in the address, rewritten in place, so the browser's Back leaves the review (D73 item 1).
   const goTo = (n: number) => navigate(reviewHref(thread.id, n), { replace: true });
   const decide = (d: Decision) => {
-    if (!item) return;
-    onDecide(item.ref, d);
+    if (!item || readOnly) return;
+    onDecide(item.ref, d, documents?.evidence);
     goTo(step + 1);
   };
   // Skicka is the card's own execute (D45/D47): the button keeps loading until the source's answer has come to rest,
   // and only then does the overlay lead back to the card, where the row keeps its place with the receipt (D70 item 1).
-  const { settling, error, perform } = useCardAction({ thread: live });
+  // The mutation response can arrive before the list query notifies this render. Keep that confirmed answer too.
+  const response = useRef<Thread | null>(null);
+  const { settling, error, perform, run } = useCardAction({
+    thread: live,
+    onChange: thread => {
+      response.current = thread;
+    },
+  });
   const [sent, setSent] = useState(false);
+  const [completed, setCompleted] = useState<Receipt | null>(null);
+  const onSentRef = useRef(onSent);
+  onSentRef.current = onSent;
   const send = async () => {
+    if (readOnly) return;
+    response.current = null;
     onSending(true);
-    const ran = await perform(action, approved);
+    const ran = await perform(
+      action,
+      approved,
+      approved.flatMap(ref => (evidence[ref] ? [evidence[ref]!] : [])),
+    );
     if (ran) setSent(true);
     else onSending(false);
   };
@@ -340,8 +402,20 @@ function Review({
       onSending(false);
       return;
     }
-    onSent();
-  }, [sent, settling, error]);
+    const receipt = live.receipt ?? response.current?.receipt;
+    if (
+      receipt &&
+      approved.length > 0 &&
+      approved.every(ref => receipt.rows.some(row => row.ref === ref && row.outcome === 'done'))
+    )
+      setCompleted(receipt);
+    else onSent();
+  }, [sent, settling, error, live.receipt]);
+  useEffect(() => {
+    if (!completed) return;
+    const timer = setTimeout(() => onSentRef.current(), 1800);
+    return () => clearTimeout(timer);
+  }, [completed]);
   // Each step opens on its one next step, so Enter takes it (artboard B); the last step on its button, or its heading
   // when there is nothing to send. A frame later, so the overlay has been shown and its page made inert first. On a
   // phone a step opens on its document instead (D73, second amendment): the verb stands under the document, and focusing
@@ -352,19 +426,71 @@ function Review({
   const paperHeading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     const frame = requestAnimationFrame(() =>
-      ((phone ? paperHeading.current : primary.current) ?? heading.current)?.focus(),
+      (
+        (phone || readOnly
+          ? paperHeading.current
+          : primary.current?.disabled
+            ? paperHeading.current
+            : primary.current) ?? heading.current
+      )?.focus(),
     );
     return () => cancelAnimationFrame(frame);
-  }, [step, phone]);
-  const preview = useQuery({ ...previewQuery(thread.id, item?.ref ?? ''), enabled: !!item });
-  const dataUrl = preview.data ? `data:${preview.data.mediaType};base64,${preview.data.data}` : null;
-  const isImage = !!preview.data && preview.data.mediaType !== 'application/pdf';
+  }, [step, phone, readOnly]);
+  const preview = useQuery({ ...previewQuery(thread.id, item?.ref ?? '', item?.revision), enabled: !!item });
+  const documents = preview.data && 'kind' in preview.data ? preview.data : undefined;
+  const legacy = preview.data && 'mediaType' in preview.data ? preview.data : undefined;
+  const dataUrl = legacy ? `data:${legacy.mediaType};base64,${legacy.data}` : null;
+  const isImage = !!legacy && legacy.mediaType !== 'application/pdf';
+  const [ready, setReady] = useState<Record<string, boolean>>({});
+  const readyKey = (id: string, revision: string) =>
+    `${documents?.bundle.ref}:${documents?.bundle.revision}:${id}:${revision}`;
+  const canApprove =
+    !preview.isFetching &&
+    !preview.isError &&
+    !!preview.data &&
+    (!documents || documents.bundle.documents.filter(d => d.required).every(d => ready[readyKey(d.id, d.revision)]));
+  // Legacy image reviews keep their one-press keyboard path once loading finishes. Never take focus from a control
+  // the person has already reached, or jump away from the versioned document's reading controls.
+  useEffect(() => {
+    if (!phone && legacy && canApprove && document.activeElement === paperHeading.current) primary.current?.focus();
+  }, [phone, legacy, canApprove]);
   // A decided row carries its mark; a row not yet looked at has none, and its description says so.
+  const rowOutcome = (ref: string) => thread.receipt?.rows.find(r => r.ref === ref);
+  const rowStatus = (ref: string) =>
+    readOnly
+      ? !thread.receipt
+        ? 'Väntar på besked'
+        : { done: 'Bekräftad', failed: 'Avvisad', unknown: 'Obekräftad', skipped: 'Inte skickad' }[
+            rowOutcome(ref)?.outcome ?? 'skipped'
+          ]
+      : decisions[ref]
+        ? decisionWord[decisions[ref]!]
+        : undefined;
+  const rowTone = (ref: string) =>
+    readOnly
+      ? !thread.receipt
+        ? 'warning'
+        : ({ done: 'success', failed: 'error', unknown: 'warning', skipped: 'neutral' } as const)[
+            rowOutcome(ref)?.outcome ?? 'skipped'
+          ]
+      : decisions[ref] === 'leave'
+        ? 'warning'
+        : 'info';
   const decisionIcon = (ref: string) =>
-    decisions[ref] === 'approve' ? (
-      <Icon icon="check" color="success" label="Godkänd" />
+    readOnly ? (
+      <Icon
+        icon={rowOutcome(ref)?.outcome === 'done' ? 'check' : rowOutcome(ref)?.outcome === 'failed' ? 'error' : 'clock'}
+        color={
+          ({ success: 'success', error: 'error', warning: 'warning', neutral: 'secondary', info: 'info' } as const)[
+            rowTone(ref)
+          ]
+        }
+        label={rowStatus(ref)}
+      />
+    ) : decisions[ref] === 'approve' ? (
+      <Icon icon="check" color="info" label={decisionWord.approve} />
     ) : decisions[ref] === 'leave' ? (
-      <Icon icon="clock" color="secondary" label="Lämnas kvar" />
+      <Icon icon="clock" color="warning" label={decisionWord.leave} />
     ) : undefined;
   const soFar = (
     <Card padding={3}>
@@ -373,10 +499,22 @@ function Review({
           <ListItem
             key={i.ref}
             startContent={decisionIcon(i.ref)}
-            label={<Text weight={n === step ? 'semibold' : undefined}>{i.label}</Text>}
-            description={n === step ? 'Det här' : decisions[i.ref] ? decisionWord[decisions[i.ref]!] : 'Inte bedömd än'}
+            label={
+              <Text weight={n === step ? 'semibold' : undefined}>
+                {n + 1}. {i.label}
+              </Text>
+            }
+            description={rowStatus(i.ref) ?? (n === step ? 'Det här' : 'Inte bedömd än')}
             endContent={
-              n !== step ? <Button size="sm" variant="ghost" label="Ändra" onClick={() => goTo(n)} /> : undefined
+              n !== step ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  label={readOnly ? 'Visa' : decisions[i.ref] ? 'Ändra' : 'Granska'}
+                  aria-label={`${readOnly ? 'Visa' : decisions[i.ref] ? 'Ändra' : 'Granska'} rad ${n + 1}: ${i.label}`}
+                  onClick={() => goTo(n)}
+                />
+              ) : undefined
             }
           />
         ))}
@@ -391,8 +529,8 @@ function Review({
         </Heading>
         {dataUrl && isImage && <Button size="sm" variant="ghost" label="Förstora" onClick={() => setZoom(true)} />}
       </HStack>
-      <Card padding={2}>
-        {preview.isPending ? (
+      <Card padding={3}>
+        {preview.isPending || preview.isFetching ? (
           <Skeleton height={480} />
         ) : preview.isError ? (
           <VStack gap={2}>
@@ -401,29 +539,52 @@ function Review({
             </Text>
             <Button size="sm" variant="secondary" label="Försök igen" onClick={() => void preview.refetch()} />
           </VStack>
+        ) : documents ? (
+          <DocumentReader
+            key={documents.bundle.ref + ':' + documents.bundle.revision}
+            bundle={documents.bundle}
+            capability={documents.capability}
+            input={{ ref: documents.bundle.ref }}
+            onReady={(id, revision, loaded) => setReady(prev => ({ ...prev, [readyKey(id, revision)]: loaded }))}
+          />
         ) : dataUrl && isImage ? (
           // A native image is the one thing here Astryx has no component for: it is sized to its column and nothing more.
-          <img src={dataUrl} alt={preview.data!.title} style={{ display: 'block', width: '100%', height: 'auto' }} />
+          <img src={dataUrl} alt={legacy!.title} style={{ display: 'block', width: '100%', height: 'auto' }} />
         ) : dataUrl ? (
           <VStack gap={2}>
-            <Text>{preview.data!.title}</Text>
+            <Text>{legacy!.title}</Text>
             <Button size="sm" variant="secondary" label="Hämta underlaget (PDF)" href={dataUrl} />
           </VStack>
         ) : null}
       </Card>
       {dataUrl && isImage && (
-        <Lightbox isOpen={zoom} onOpenChange={setZoom} media={{ src: dataUrl, alt: preview.data!.title }} hasZoom />
+        <Lightbox isOpen={zoom} onOpenChange={setZoom} media={{ src: dataUrl, alt: legacy!.title }} hasZoom />
       )}
     </VStack>
   );
   // The overlay's title is the h2; a row and the summary are the level under it.
   const decision = item && (
-    <VStack gap={3}>
-      {decisions[item.ref] && (
+    <VStack gap={1}>
+      {rowStatus(item.ref) && (
         <HStack gap={2} vAlign="center" wrap="wrap">
           <Badge
-            variant={decisions[item.ref] === 'approve' ? 'success' : 'neutral'}
-            label={decisionWord[decisions[item.ref]!]}
+            variant={rowTone(item.ref)}
+            icon={
+              <Icon
+                icon={
+                  readOnly
+                    ? rowOutcome(item.ref)?.outcome === 'done'
+                      ? 'check'
+                      : rowOutcome(item.ref)?.outcome === 'failed'
+                        ? 'error'
+                        : 'clock'
+                    : decisions[item.ref] === 'approve'
+                      ? 'check'
+                      : 'clock'
+                }
+              />
+            }
+            label={rowStatus(item.ref)!}
           />
         </HStack>
       )}
@@ -433,75 +594,103 @@ function Review({
       <Text as="p" color="secondary">
         {item.detail}
       </Text>
-      <HStack gap={2} wrap="wrap">
-        <Button
-          ref={primary}
-          {...(phone ? {} : { 'data-autofocus': '' })}
-          size="lg"
-          variant="primary"
-          label={verb}
-          onClick={() => decide('approve')}
+      {readOnly && rowOutcome(item.ref)?.detail && <Text as="p">{rowOutcome(item.ref)!.detail}</Text>}
+      {documents?.recovery && (
+        <ReviewRecovery
+          key={documents.bundle.ref + ':' + documents.bundle.revision}
+          document={documents}
+          editable={
+            (readOnly &&
+              rowOutcome(item.ref)?.outcome === 'failed' &&
+              ['failed', 'partial'].includes(thread.execution?.state ?? '')) ||
+            (!readOnly && thread.topic.startsWith('retry:'))
+          }
+          onSaved={async () => {
+            onInvalidate(item.ref);
+            await preview.refetch();
+            paperHeading.current?.focus();
+          }}
         />
-        <Button size="lg" variant="secondary" label="Lämna kvar" onClick={() => decide('leave')} />
-        <Button size="lg" variant="ghost" label="Hoppa över" onClick={() => goTo(step + 1)} />
-      </HStack>
-      <Text type="supporting" as="p">
-        Beslutet sparas som markering på kortet. Inget skrivs till {source} förrän du skickar i sista steget.
-      </Text>
-      {soFar}
+      )}
     </VStack>
   );
   const summary = last && (
     <VStack gap={4}>
       <VStack gap={1}>
         <Heading ref={heading} tabIndex={-1} level={2} accessibilityLevel={3}>
-          Det du valt
+          {readOnly ? 'Beslutets resultat' : 'Det du valt'}
         </Heading>
         <Text as="p" color="secondary">
-          {approved.length} av {items.length} skickas{left ? `, ${left} lämnas kvar` : ''}
-          {undecided ? `, ${undecided} ${undecided === 1 ? 'är inte bedömd' : 'är inte bedömda'}` : ''}. Inget är
-          skrivet än.
+          {readOnly ? (
+            (thread.receipt?.headline ?? 'Väntar på källans besked.')
+          ) : (
+            <>
+              {approved.length} av {items.length} skickas{left ? `, ${left} lämnas kvar` : ''}
+              {undecided ? `, ${undecided} ${undecided === 1 ? 'är inte bedömd' : 'är inte bedömda'}` : ''}. Inget är
+              skrivet än.
+            </>
+          )}
         </Text>
       </VStack>
       {soFar}
-      <Card padding={3} variant="muted">
-        <VStack gap={1.5}>
-          <Text weight="semibold">Vad som händer när du skickar</Text>
-          <Text as="p" type="supporting">
-            {verb} skrivs till {source} i ett beslut och läses tillbaka rad för rad som kvitto. Grönt bara när {source}{' '}
-            har bekräftat. Ångra i 10 minuter. Kortet går till Klart
-            {left + undecided > 0
-              ? `; det som lämnas kvar ligger kvar på kortet och kommer som ett eget kort vid nästa genomgång.`
-              : '.'}
-          </Text>
-        </VStack>
-      </Card>
+      {!readOnly && (
+        <Card padding={3} variant="muted">
+          <VStack gap={1.5}>
+            <Text weight="semibold">Vad som händer när du skickar</Text>
+            <Text as="p" type="supporting">
+              {verb} skrivs till {source} i ett beslut och läses tillbaka rad för rad som kvitto. Grönt bara när{' '}
+              {source} har bekräftat. Ångra i 10 minuter. Kortet går till Klart
+              {left + undecided > 0
+                ? `; det som lämnas kvar ligger kvar på kortet och kommer som ett eget kort vid nästa genomgång.`
+                : '.'}
+            </Text>
+          </VStack>
+        </Card>
+      )}
       {error && !sending && (
         <Text as="p" role="alert" color="accent">
           {error}
         </Text>
       )}
-      <HStack gap={2} wrap="wrap" vAlign="center">
-        <Button
-          ref={approved.length ? primary : undefined}
-          size="lg"
-          variant="primary"
-          label={`${verb} ${approved.length}`}
-          isDisabled={approved.length === 0}
-          isLoading={sending}
-          onClick={() => {
-            if (!sending) void send();
-          }}
-        />
-      </HStack>
     </VStack>
   );
-  const stepButtons = (
-    <>
-      <Button size="sm" variant="secondary" label="Föregående" isDisabled={step === 0} onClick={() => goTo(step - 1)} />
-      <Button size="sm" variant="secondary" label="Nästa" isDisabled={last} onClick={() => goTo(step + 1)} />
-    </>
+  const flowStatus = readOnly ? (
+    <Badge
+      variant={receiptComplete(thread.receipt) ? 'success' : 'warning'}
+      icon={<Icon icon={receiptComplete(thread.receipt) ? 'check' : 'clock'} />}
+      label={receiptComplete(thread.receipt) ? 'Bekräftat' : 'Behöver följas upp'}
+    />
+  ) : sending ? (
+    <Badge variant="info" icon={<Icon icon="clock" />} label="Skickar" />
+  ) : error ? (
+    <Badge variant="error" icon={<Icon icon="info" />} label="Kunde inte skicka" />
+  ) : undecided > 0 ? (
+    <Badge variant="neutral" icon={<Icon icon="clock" />} label="Granskning pågår" />
+  ) : approved.length > 0 ? (
+    <Badge variant="info" icon={<Icon icon="check" />} label="Redo att skicka" />
+  ) : (
+    <Badge variant="neutral" icon={<Icon icon="clock" />} label="Inget att skicka" />
   );
+  if (completed)
+    return (
+      <Layout
+        height={short ? 'auto' : 'fill'}
+        header={header}
+        content={
+          <LayoutContent>
+            <VStack gap={3} paddingBlock={10} role="status" aria-label="Bekräftat av källan">
+              <CompletionFeedback title="Klart" detail={completed.headline} />
+              <Text type="supporting">Bekräftat av {source}. Kvittot finns på kortet.</Text>
+            </VStack>
+          </LayoutContent>
+        }
+        footer={
+          <LayoutFooter>
+            <Button label="Visa kvittot" onClick={onSent} />
+          </LayoutFooter>
+        }
+      />
+    );
   return (
     <Layout
       height={short ? 'auto' : 'fill'}
@@ -509,36 +698,116 @@ function Review({
       header={header}
       content={
         <LayoutContent>
-          <VStack gap={5}>
-            <VStack gap={4}>
-              {/* The mark row (D71, artboard 8): the chip, the source and the counter as a neutral badge. */}
+          <VStack gap={4}>
+            <HStack gap={2} vAlign="center" justify="between" wrap="wrap">
               <HStack gap={2} vAlign="center" wrap="wrap">
                 <AreaChip ordinal={mark.ordinal} label={mark.title} {...(mark.icon ? { icon: mark.icon } : {})} />
                 <Text type="supporting">{mark.source}</Text>
-                {item && <Badge variant="neutral" label={`${step + 1} av ${items.length}`} />}
               </HStack>
-              {/* The steps show the way; Ändra in the list under each row is how one goes back, so a step is never a button whose name differs from its text (2.5.3). */}
+              <HStack gap={2} vAlign="center" wrap="wrap">
+                {flowStatus}
+                <Text type="supporting">
+                  {readOnly
+                    ? (thread.receipt?.rows.filter(r => r.outcome === 'done').length ?? 0)
+                    : items.length - undecided}{' '}
+                  av {items.length} {readOnly ? 'bekräftade' : 'bedömda'}
+                </Text>
+              </HStack>
+            </HStack>
+            {items.length > 1 && items.length < 5 ? (
               <Stepper
                 activeStep={step}
                 label="Rader"
-                horizontalOptions={{ minimumStepWidth: 112, collapsedVariant: 'withLabel' }}
+                onStepClick={n => {
+                  if (!sending) goTo(n);
+                }}
+                horizontalOptions={{ minimumStepWidth: 112, collapsedVariant: 'hiddenLabel' }}
               >
                 {items.map((i, n) => (
                   <Step
                     key={i.ref}
                     step={n}
-                    label={shortLabel(i)}
-                    description={decisions[i.ref] ? decisionWord[decisions[i.ref]!] : undefined}
-                  />
+                    label={i.label}
+                    indicator={decisionIcon(i.ref) ?? 'number'}
+                    status={
+                      readOnly
+                        ? rowTone(i.ref) === 'neutral' || rowTone(i.ref) === 'info'
+                          ? undefined
+                          : (rowTone(i.ref) as 'success' | 'warning' | 'error')
+                        : decisions[i.ref] === 'leave'
+                          ? 'warning'
+                          : undefined
+                    }
+                    isDisabled={sending}
+                    aria-label={i.label}
+                  >
+                    {rowStatus(i.ref) && (
+                      <Text as="p" type="supporting">
+                        {rowStatus(i.ref)}
+                      </Text>
+                    )}
+                  </Step>
                 ))}
-                <Step step={items.length} label="Skicka" />
+                <Step
+                  step={items.length}
+                  label={readOnly ? 'Resultat' : 'Skicka'}
+                  indicator="number"
+                  isDisabled={sending}
+                />
               </Stepper>
-            </VStack>
+            ) : items.length >= 5 ? (
+              <ProgressBar
+                label={readOnly ? 'Bekräftade rader' : 'Bedömda rader'}
+                isLabelHidden
+                variant="neutral"
+                value={
+                  readOnly
+                    ? (thread.receipt?.rows.filter(r => r.outcome === 'done').length ?? 0)
+                    : items.length - undecided
+                }
+                max={items.length}
+              />
+            ) : null}
+            <HStack justify="between" vAlign="center" gap={2}>
+              <HStack gap={2} vAlign="center" as="nav" aria-label="Granskningens rader">
+                <IconButton
+                  size="sm"
+                  variant="ghost"
+                  label="Föregående"
+                  tooltip="Föregående rad"
+                  icon={<Icon icon="chevronLeft" />}
+                  isDisabled={step === 0 || sending}
+                  onClick={() => goTo(step - 1)}
+                />
+                <Text role="status">{item ? `${step + 1} av ${items.length}` : 'Översikt'}</Text>
+                <IconButton
+                  size="sm"
+                  variant="ghost"
+                  label="Nästa"
+                  tooltip="Nästa rad"
+                  icon={<Icon icon="chevronRight" />}
+                  isDisabled={last || sending}
+                  onClick={() => goTo(step + 1)}
+                />
+              </HStack>
+              <Button
+                size="sm"
+                variant="secondary"
+                label="Översikt"
+                isDisabled={last || sending}
+                onClick={() => goTo(items.length)}
+              />
+            </HStack>
+            {readOnly && (
+              <Text as="p" type="supporting">
+                Kvittot visar beslutets resultat. Underlagen visar källans nuvarande version.
+              </Text>
+            )}
             {item ? (
-              <Grid columns={{ minWidth: 360, max: 2 }} gap={5}>
-                {paper}
+              <VStack gap={4} width="100%" maxWidth={800}>
                 {decision}
-              </Grid>
+                {paper}
+              </VStack>
             ) : (
               summary
             )}
@@ -546,16 +815,74 @@ function Review({
         </LayoutContent>
       }
       footer={
-        <LayoutFooter>
-          {/* On a phone the sentence goes (D73, second amendment): a touch screen has no Esc, the height is the document's,
-              and the decision's own line already says that nothing is written until Skicka. */}
-          <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-            {!phone && (
-              <Text type="supporting">Esc sparar och stänger. Inget skrivs till {source} förrän du skickar.</Text>
-            )}
-            {phone ? stepButtons : <HStack gap={2}>{stepButtons}</HStack>}
-          </HStack>
-        </LayoutFooter>
+        readOnly ? (
+          <LayoutFooter>
+            <VStack gap={2}>
+              {error && <Text role="alert">{error}</Text>}
+              <HStack gap={2} wrap="wrap">
+                <Button label="Tillbaka till kortet" onClick={onClose} />
+                {['failed', 'partial'].includes(thread.execution?.state ?? '') &&
+                  thread.receipt?.rows.some(r => r.outcome === 'failed') && (
+                    <Button
+                      label="Granska avvisade igen"
+                      clickAction={() =>
+                        run(async () => {
+                          const next = await api.retryRejected(thread.id);
+                          navigate(reviewHref(next.id));
+                          return next;
+                        })
+                      }
+                    />
+                  )}
+                {thread.execution && ['pending', 'running', 'unknown'].includes(thread.execution.state) && (
+                  <Button label="Kontrollera status" clickAction={() => run(() => api.checkExecution(thread.id))} />
+                )}
+              </HStack>
+            </VStack>
+          </LayoutFooter>
+        ) : (
+          <LayoutFooter label="Granskningens beslut">
+            <VStack gap={2}>
+              {item && !canApprove && (
+                <Text role="status" type="supporting">
+                  Öppna och läs de underlag som krävs innan du godkänner.
+                </Text>
+              )}
+              <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
+                {!phone && (
+                  <Text type="supporting">
+                    {last ? 'Skicka dina val till ' + source + '.' : 'Dina val skickas i sista steget.'}
+                  </Text>
+                )}
+                {item ? (
+                  <HStack gap={2} wrap="wrap" justify="end" width={phone ? '100%' : undefined}>
+                    <Button variant="ghost" label="Hoppa över" onClick={() => goTo(step + 1)} />
+                    <Button variant="secondary" label="Lämna kvar" onClick={() => decide('leave')} />
+                    <Button
+                      ref={primary}
+                      {...(phone ? {} : { 'data-autofocus': '' })}
+                      variant="primary"
+                      label={verb}
+                      isDisabled={!canApprove}
+                      onClick={() => decide('approve')}
+                    />
+                  </HStack>
+                ) : (
+                  <Button
+                    ref={approved.length ? primary : undefined}
+                    variant="primary"
+                    label={`${verb} ${approved.length}`}
+                    isDisabled={approved.length === 0}
+                    isLoading={sending}
+                    onClick={() => {
+                      if (!sending) void send();
+                    }}
+                  />
+                )}
+              </HStack>
+            </VStack>
+          </LayoutFooter>
+        )
       }
     />
   );

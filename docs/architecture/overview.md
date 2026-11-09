@@ -6,6 +6,8 @@ A central responsibility of that backend is carrying one person's task across se
 
 This is the current architecture, checked against the repository on 2026-11-07. Read [What Clew is](../overview.md) for the product concepts and [implementation status](../reference/status.md) for feature-specific limits.
 
+The [vocabulary and entity map](../reference/vocabulary.md) distinguishes a work item from its card and from a conversation about it. Existing `Thread` records carry both work and conversation fields; the product terms do not imply separate tables or renamed API contracts.
+
 ## Running components
 
 ```mermaid
@@ -60,7 +62,7 @@ The browser and model never obtain a connector's source credentials. A ref retur
 
 ## Discovering work without slowing the page
 
-A **scan** is a deterministic source read that returns card drafts and occurrence identities. The page reads Clew's persisted cards while requesting a coalesced refresh. Background workers refresh sources independently under bounded concurrency and source deadlines.
+A **scan** is a deterministic source read that returns work item drafts (`ThreadDraft`) and occurrence identities. The page presents persisted work items as cards or rows while requesting a coalesced refresh. Background workers refresh sources independently under bounded concurrency and source deadlines.
 
 An occurrence combines the person/assignment, connector, source key and recurring period. A revision identifies material change. A card's `topic` groups its presentation; it is not enough to establish source identity or completion.
 
@@ -132,7 +134,7 @@ A job's watch is how Clew follows a result in a system it does not write to. It 
 |---|---|---|
 | Source business record | Source system | Refs plus the minimum text/results needed for cards, answers and evidence. Live details are read again under current permissions. |
 | Local person and access grant | Clew; login identity comes from the IdP | Person, identity binding, current unit/role and capability grant. |
-| Work and conversation | Clew | Threads, messages, occurrence state, reminders and attention records. |
+| Work item and conversation | Clew | Threads, messages, occurrence state, reminders and attention records. Cards and rows present the work items. |
 | Human decision and execution | Clew | Approved input and result encrypted at rest, stable operation identity, per-item evidence and audit. |
 | Connector/model configuration | Clew | Manifests, governance, health and sealed transport/provider secrets. |
 | Source service credential | Connector/operator | For remote integrations, held by the connector. Built-in calendar credentials are handled by its server adapter. |

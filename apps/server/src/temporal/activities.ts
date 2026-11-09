@@ -5,6 +5,8 @@ export const progressExecution = (id: string) => executions.progress(id);
 /** One check of a job's watch step (D55): the ledger reads as the person at a committed time, or settles the window's end. */
 export const observeWatch = (jobId: string, stepId: string, check: number) => executions.observe(jobId, stepId, check);
 export { runScheduledJob } from '../composition/jobs';
+import { mcp } from '../composition/mcp';
+export const observeMcp = (id: string) => mcp.observe(id);
 
 /**
  * Activities run in Node with the live adapters. Each one is a use case from the composition root (D25): the

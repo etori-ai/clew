@@ -36,6 +36,7 @@ import { calendar, events, notifier, calendarAuthority, followups } from './cale
 import { systemContext } from '../system-context';
 import { cardDecisions } from '../threads/usecases/decisions';
 import { executions } from './executions';
+import { reviewDocuments } from './documents';
 import { visibleThread } from '../threads/access';
 import type { ReminderInput } from '../threads/model';
 import { refresh } from './refresh';
@@ -75,7 +76,14 @@ export const threads = {
     ...(await threadCore.attentionFor(p)),
     ...(await attentionStore.day(p.id, clock().toISOString())),
   }),
-  ...cardDecisions({ read: threadCore.threadFor, registry, run: runCapability, approve: executions.approve, clock }),
+  ...cardDecisions({
+    read: threadCore.threadFor,
+    registry,
+    run: runCapability,
+    approve: executions.approve,
+    clock,
+    documentPreview: reviewDocuments.preview,
+  }),
 };
 export const attention = {
   pending: async (p: Parameters<typeof threadCore.threadFor>[0]) => {

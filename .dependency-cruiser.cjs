@@ -59,7 +59,7 @@ module.exports = {
         'A use case depends on the ports in its model.ts, never on Drizzle, Postgres, Temporal or an adapter (D25). The live adapters are paired in composition/. Connector descriptors (connector.ts) and adapters are the exceptions.',
       severity: 'error',
       from: {
-        path: '^apps/server/src/(threads|modules/[^/]+|scheduler|assistant|connectors/usecases)/',
+        path: '^apps/server/src/(threads|modules/[^/]+|scheduler|assistant|mcp|connectors/usecases)/',
         pathNot: '/adapters/|/connector\\.ts$',
       },
       to: { path: store + '|' + timers + '|' + adapters + '|' + liveAdapters },
@@ -101,6 +101,13 @@ module.exports = {
       severity: 'error',
       from: { path: '^(apps|packages)/', pathNot: '^apps/server/src/routes/protocol\\.ts$' },
       to: { path: '^connectors/' },
+    },
+    {
+      name: 'mcp-fixtures-stay-out-of-clew',
+      comment: 'D81: mock MCP providers are independent services, never imported into the host or browser.',
+      severity: 'error',
+      from: { path: '^(apps|packages)/' },
+      to: { path: '^fixtures/' },
     },
     {
       name: 'connectors-stand-alone',

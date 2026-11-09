@@ -9,6 +9,7 @@
 - [Architecture overview](docs/architecture/overview.md): components, data ownership, reads, scans, approvals, durable execution and browser updates.
 - [Backend structure](docs/architecture/backend-structure.md): current code map, ports/adapters and dependency rules.
 - [Implementation status](docs/reference/status.md): implemented behavior versus proposals and fixtures.
+- [Vocabulary and entity map](docs/reference/vocabulary.md): shared product terms, interface containers, relationships and mappings to current code names.
 - [Reliability acceptance](docs/reference/reliability-acceptance.md): verification evidence and outstanding release gates; implementation completion does not select a real-system pilot.
 - [Machine context](docs/context.json): generated document inventory, canonical source paths, examples and all decision statuses. Paths in this JSON are relative to the repository root.
 

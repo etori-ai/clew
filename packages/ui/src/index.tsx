@@ -4,6 +4,10 @@ import { InternationalizationProvider } from '@astryxdesign/core/i18n';
 import { AppearanceProvider } from './appearance';
 import type { Branding } from './branding';
 import sv from '@astryxdesign/core/locales/sv-SE.json';
+export { DocumentSurface } from './document';
+export type { DocumentPosition } from './document';
+export { MetricView, SeriesView, ActivityView } from './presentation';
+export { CompletionMark, CompletionFeedback } from './completion';
 
 // Strictly Astryx: this package re-exports the components the app composes with and owns the shared providers.
 export { Button } from '@astryxdesign/core/Button';
@@ -122,6 +126,7 @@ export { Lightbox } from '@astryxdesign/core/Lightbox';
 export type { AnimatedLayout } from '@astryxdesign/core/hooks';
 // Glyphs beyond Astryx's registry come from Heroicons (MIT), the set Astryx's own templates draw with; each is named here once.
 export {
+  ArrowDownTrayIcon,
   ArrowPathIcon,
   AtSymbolIcon,
   BellIcon,

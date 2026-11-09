@@ -31,7 +31,7 @@ PostgreSQL records approved intent before dispatch. Temporal runs the durable wo
 2. [How Clew works](docs/architecture/overview.md): components, data, reads, decisions and follow-up.
 3. [What is implemented](docs/reference/status.md): working paths, fixture evidence and remaining limits.
 
-The [documentation home](docs/README.md) is the full reading map. [Vision](docs/vision.md) describes product direction; [decisions](docs/decisions/README.md) and [reviews](docs/reviews/README.md) preserve the reasoning.
+The [documentation home](docs/README.md) is the full reading map. The [vocabulary and entity map](docs/reference/vocabulary.md) explains work items, their cards, proposals and related concepts. [Vision](docs/vision.md) describes product direction; [decisions](docs/decisions/README.md) and [reviews](docs/reviews/README.md) preserve the reasoning.
 
 ## Build a custom connector
 

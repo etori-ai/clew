@@ -176,7 +176,7 @@ interface WireCall {
 /**
  * An OpenAI-compatible endpoint the test plays. `endpoints` maps a base URL to what it lists and which key it wants;
  * `generate` answers every turn. Calls are recorded with the key and the reasoning they carried, so a test can see a key
- * was opened. `refusesReasoningTools` plays a model that takes tools only when told not to reason (D78).
+ * was opened. `refusesReasoningTools` plays a model that takes tools only when told not to reason (D82).
  */
 export function memoryModelWire(
   options: {

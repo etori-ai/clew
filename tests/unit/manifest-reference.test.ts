@@ -65,14 +65,16 @@ describe('the field list', () => {
   });
   test('says which union variants a field belongs to, and what is required where', () => {
     const body = reference.fields.find(f => f.path === 'capabilities[].view.body')!;
-    expect(body.variants).toEqual(['text']);
+    expect(body.variants).toEqual(['document', 'metrics', 'activity', 'series', 'text']);
     expect(body.required).toBe(true);
     const rows = reference.fields.find(f => f.path === 'capabilities[].view.rows')!;
     expect(rows.variants).toEqual(['table', 'list']);
     expect(rows.required).toBe(false);
     const kind = reference.fields.find(f => f.path === 'capabilities[].view.kind')!;
     expect(kind.variants).toBeUndefined();
-    expect(kind.type).toBe('"table" / "list" / "detail" / "text"');
+    expect(kind.type).toBe(
+      '"document" / "metrics" / "activity" / "series" / "record" / "table" / "list" / "detail" / "text"',
+    );
     expect(kind.description).toContain('`detail`:');
     expect(reference.fields.find(f => f.path === 'capabilities[].execution')!.type).toBe(
       'object, one of `strategy`: "manual" / "deduplicated" / "conditional"',

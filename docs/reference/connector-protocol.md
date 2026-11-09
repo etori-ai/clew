@@ -48,6 +48,10 @@ The [manifest field reference](../generated/manifest-reference.md) covers every 
 
 JSON Schema validation alone does not prove these relationships or source authorization. Use the conformance checker and targeted behavioral tests.
 
+## Document and semantic views
+
+Protocol 2 also supports `document`, `record`, `metrics`, `series` and `activity`. Document originals use the optional authenticated `POST /clew/documents` binary route, separate from metadata capabilities. An execute's optional `review` names its document read and requires version-bound evidence at human approval. See [document and semantic views](../guides/document-and-semantic-views.md) for payloads, preview limits, source-side version checks and compatibility.
+
 ## Scan observations
 
 Scan drafts can include `occurrences: [{ key, revision, period }]`. The optional observation declares scope, observation time/version, completeness and pagination exhaustion; a delta can include tombstones. Only authoritative evidence may resolve missing work. Legacy topic-only drafts remain conservative. See [occurrence semantics](../guides/actions-and-receipts.md#scan-an-occurrence-into-a-card) and the generated `ScanResponse` definition; an empty response without a complete exhausted observation does not mean that the source has no outstanding work.

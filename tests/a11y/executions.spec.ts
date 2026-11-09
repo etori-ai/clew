@@ -24,7 +24,24 @@ for (const [layout, viewport] of [
         await expect(page.getByRole('button', { name: /^Attestera ·/ })).toHaveCount(0);
         await check.focus();
         await expect(check).toBeFocused();
+        let release!: () => void, arrived!: () => void;
+        const gate = new Promise<void>(resolve => {
+          release = resolve;
+        });
+        const requested = new Promise<void>(resolve => {
+          arrived = resolve;
+        });
+        await page.route('**/api/threads/fakturor/execution/check', async route => {
+          arrived();
+          await gate;
+          await route.fulfill({ json: card });
+        });
         await check.press('Enter');
+        await requested;
+        await expect(check).toBeVisible();
+        await expect(check).toBeFocused();
+        await expect(page.getByRole('button', { name: /^(Attestera|Inte nu)/ })).toHaveCount(0);
+        release();
         await expect(check).toBeFocused();
         await expectNoAxeViolations(page);
         expect(await reflowProblems(page)).toEqual([]);

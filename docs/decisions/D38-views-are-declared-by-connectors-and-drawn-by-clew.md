@@ -1,5 +1,7 @@
 # D38 · A view is declared by the connector and drawn by Clew
 
+**Scope update, 2026-11-08.** Native connector views still follow this decision. [D81](D81-mcp-apps-extend-ai-chat-with-provider-owned-interactions.md) admits provider-owned MCP Apps as a separate AI-chat extension surface; its development preview is not production MCP support.
+
 **Status:** accepted, built 2026-11-05; the kinds beyond the first four are not built; a view in the menu is D40, and such a view is a page of its own (D42) · **Date:** 2026-11-05 · **Area:** ui
 
 **Decision.** A connector never draws. A read capability may declare a **view**: how its output is to be shown, as

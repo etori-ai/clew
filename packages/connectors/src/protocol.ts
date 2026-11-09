@@ -9,6 +9,12 @@ import {
   ThreadActionSchema,
   ThreadItemSchema,
   ViewSchema,
+  DocumentRequestSchema,
+  DocumentBundleSchema,
+  ReviewEvidenceSchema,
+  MetricsSchema,
+  SeriesSchema,
+  ActivitySchema,
 } from '@clew/contracts';
 
 /**
@@ -198,6 +204,13 @@ export const ManifestCapabilitySchema = object({
     }),
   ),
   view: Type.Optional(ViewSchema),
+  review: Type.Optional(
+    Type.String({
+      maxLength: 80,
+      description:
+        'On an execute: the same-connector document or record read taking {ref}, whose version-bound evidence is required on approval.',
+    }),
+  ),
   menu: Type.Optional(MenuHintSchema),
   follows: Type.Optional(
     Type.Array(FactKindName, {
@@ -308,6 +321,11 @@ export const ConnectorManifestSchema = Type.Object(
       description: 'Whether Clew should POST /clew/scan for each person nightly and on first visit.',
     }),
     delegation: Type.Optional(DelegationSchema),
+    documents: Type.Optional(
+      Type.Boolean({
+        description: 'Implements POST /clew/documents for authorised, versioned binary document reads (D79).',
+      }),
+    ),
   },
   {
     additionalProperties: false,
@@ -318,6 +336,7 @@ export const ConnectorManifestSchema = Type.Object(
 export type ConnectorManifest = Static<typeof ConnectorManifestSchema>;
 
 export const CallRequestSchema = object({ actor: ActorSchema, input: Type.Unknown() });
+export const DocumentReadRequestSchema = object({ actor: ActorSchema, request: DocumentRequestSchema });
 export type CallRequest = Static<typeof CallRequestSchema>;
 export const ProtocolErrorSchema = object({
   code: Type.Union([
@@ -468,6 +487,12 @@ export function protocolSchema() {
       ProtocolError: ProtocolErrorSchema,
       ExecuteResult: ExecuteResultSchema,
       PreviewOutput: PreviewOutputSchema,
+      DocumentReadRequest: DocumentReadRequestSchema,
+      DocumentBundle: DocumentBundleSchema,
+      ReviewEvidence: ReviewEvidenceSchema,
+      Metrics: MetricsSchema,
+      Series: SeriesSchema,
+      Activity: ActivitySchema,
       ScanRequest: ScanRequestSchema,
       ScanResponse: ScanResponseSchema,
       ThreadDraft: ThreadDraftSchema,
@@ -521,7 +546,12 @@ export const ManifestPreviewCapabilitySchema = object({
       'Its input schema does not accept `{}`, so neither the conformance check nor a menu row can open it without a question.',
   }),
   view: Type.Union(
-    [Type.Literal('table'), Type.Literal('list'), Type.Literal('detail'), Type.Literal('text'), Type.Null()],
+    [
+      ...(['table', 'list', 'detail', 'text', 'document', 'record', 'metrics', 'series', 'activity'] as const).map(k =>
+        Type.Literal(k),
+      ),
+      Type.Null(),
+    ],
     { description: 'How Clew draws its output, or null for the generic rules.' },
   ),
   menu: Type.Union([MenuHintSchema, Type.Null()], {
@@ -730,6 +760,34 @@ export function openApiDocument(options: OpenApiOptions = {}) {
           security: signed,
           requestBody: body('ScanRequest'),
           responses: { '200': json('ScanResponse', 'Drafts and, optionally, what was observed.'), ...refused },
+        },
+      },
+      '/clew/documents': {
+        servers: connector,
+        post: {
+          tags: ['Connector'],
+          operationId: 'readDocument',
+          summary: 'Read an original document at its declared revision',
+          description:
+            'Only with documents: true. Authorize the actor, record and capability, verify all revisions, then return original bytes. No arbitrary URLs. Maximum 25 MiB. Clew verifies MIME, length and SHA-256 against a freshly authorized metadata read before returning content. Office previews have a smaller browser budget. No Range or partial responses in this increment.',
+          security: signed,
+          parameters: [delegated],
+          requestBody: body('DocumentReadRequest'),
+          responses: {
+            '200': {
+              description: 'Exact original bytes. Content-Type must equal the descriptor mediaType.',
+              headers: {
+                'X-Clew-Document-Revision': {
+                  required: true,
+                  schema: { type: 'string' },
+                  description: 'Exact document revision from the descriptor.',
+                },
+              },
+              content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
+            },
+            '409': json('CallResponse', 'The record or document revision changed.'),
+            ...refused,
+          },
         },
       },
       '/clew/figure': {

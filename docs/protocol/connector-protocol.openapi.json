@@ -252,6 +252,109 @@
         }
       }
     },
+    "/clew/documents": {
+      "servers": [
+        {
+          "url": "{connector}",
+          "description": "The base URL the connector is registered with in Clew. Every path below is relative to it.",
+          "variables": {
+            "connector": {
+              "default": "http://127.0.0.1:4020"
+            }
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Connector"
+        ],
+        "operationId": "readDocument",
+        "summary": "Read an original document at its declared revision",
+        "description": "Only with documents: true. Authorize the actor, record and capability, verify all revisions, then return original bytes. No arbitrary URLs. Maximum 25 MiB. Clew verifies MIME, length and SHA-256 against a freshly authorized metadata read before returning content. Office previews have a smaller browser budget. No Range or partial responses in this increment.",
+        "security": [
+          {
+            "clewAssertion": [],
+            "connectorKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Clew-Delegated-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "The person's own token for the connector's system (D26), present only when the manifest declares `delegation` and a session is behind the call."
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentReadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact original bytes. Content-Type must equal the descriptor mediaType.",
+            "headers": {
+              "X-Clew-Document-Revision": {
+                "required": true,
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Exact document revision from the descriptor."
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The transport key or the assertion was rejected. Required: an invalid credential is never answered with data; the conformance check probes this."
+          },
+          "403": {
+            "description": "Denied: `error.code` is `denied`, `error.message` is Swedish and shown to the person.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The record or document revision changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The source is unavailable: `error.code` is `unavailable`. For a write this does not say whether the effect happened.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/clew/figure": {
       "servers": [
         {
@@ -983,6 +1086,473 @@
                 "view": {
                   "description": "How Clew draws the output: `table` and `list` over an array of records (`rows`, default \"rows\"; `title` names the field that names a row and is one of `fields`; `ref` the field holding the connector's ref), `detail` over one record, `text` over one Markdown string.",
                   "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "body"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "description": "Versioned original documents and attachments.",
+                          "const": "document",
+                          "type": "string"
+                        },
+                        "body": {
+                          "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                          "maxLength": 40,
+                          "description": "The output property holding the semantic payload for this view kind.",
+                          "type": "string"
+                        },
+                        "modelReads": {
+                          "description": "What the model is handed when it calls the capability as a tool: the whole `output`, or a `summary` (how many rows are shown, never their content) so names and numbers reach the person through the view and neither the model nor the stored conversation. Default `output`.",
+                          "anyOf": [
+                            {
+                              "const": "output",
+                              "type": "string"
+                            },
+                            {
+                              "const": "summary",
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "body"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "description": "Typed measurements, units, reporting periods and freshness.",
+                          "const": "metrics",
+                          "type": "string"
+                        },
+                        "body": {
+                          "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                          "maxLength": 40,
+                          "description": "A property name in the capability's output (or input).",
+                          "type": "string"
+                        },
+                        "modelReads": {
+                          "description": "What the model is handed when it calls the capability as a tool: the whole `output`, or a `summary` (how many rows are shown, never their content) so names and numbers reach the person through the view and neither the model nor the stored conversation. Default `output`.",
+                          "anyOf": [
+                            {
+                              "const": "output",
+                              "type": "string"
+                            },
+                            {
+                              "const": "summary",
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "body"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "description": "Source events in chronological order.",
+                          "const": "activity",
+                          "type": "string"
+                        },
+                        "body": {
+                          "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                          "maxLength": 40,
+                          "description": "A property name in the capability's output (or input).",
+                          "type": "string"
+                        },
+                        "modelReads": {
+                          "description": "What the model is handed when it calls the capability as a tool: the whole `output`, or a `summary` (how many rows are shown, never their content) so names and numbers reach the person through the view and neither the model nor the stored conversation. Default `output`.",
+                          "anyOf": [
+                            {
+                              "const": "output",
+                              "type": "string"
+                            },
+                            {
+                              "const": "summary",
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "body",
+                        "chart"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "description": "Comparable series drawn as a chart and a data table.",
+                          "const": "series",
+                          "type": "string"
+                        },
+                        "body": {
+                          "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                          "maxLength": 40,
+                          "description": "A property name in the capability's output (or input).",
+                          "type": "string"
+                        },
+                        "chart": {
+                          "description": "Line for trends, bar for category comparisons. Both include a data table.",
+                          "anyOf": [
+                            {
+                              "const": "line",
+                              "type": "string"
+                            },
+                            {
+                              "const": "bar",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "modelReads": {
+                          "description": "What the model is handed when it calls the capability as a tool: the whole `output`, or a `summary` (how many rows are shown, never their content) so names and numbers reach the person through the view and neither the model nor the stored conversation. Default `output`.",
+                          "anyOf": [
+                            {
+                              "const": "output",
+                              "type": "string"
+                            },
+                            {
+                              "const": "summary",
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "title",
+                        "fields"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "description": "A record with facts and bounded document, item, metric, series and activity sections.",
+                          "const": "record",
+                          "type": "string"
+                        },
+                        "title": {
+                          "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                          "maxLength": 40,
+                          "description": "A property name in the capability's output (or input).",
+                          "type": "string"
+                        },
+                        "fields": {
+                          "minItems": 1,
+                          "maxItems": 24,
+                          "description": "Labelled facts in display order.",
+                          "type": "array",
+                          "items": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "key",
+                              "label"
+                            ],
+                            "properties": {
+                              "key": {
+                                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                                "maxLength": 40,
+                                "description": "The property of a record the field shows.",
+                                "type": "string"
+                              },
+                              "label": {
+                                "minLength": 1,
+                                "maxLength": 60,
+                                "description": "Swedish. The column heading or the field's name.",
+                                "type": "string"
+                              },
+                              "format": {
+                                "description": "How the value is drawn: `phone` and `email` become links that call and write, `link` an http(s) link out, `date` and `instant` are formatted in Swedish, `number` is aligned as one, `status` is a badge with a tone from `tones`. Default `text`.",
+                                "anyOf": [
+                                  {
+                                    "const": "text",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "phone",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "email",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "link",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "date",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "instant",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "number",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "status",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "tones": {
+                                "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                                "type": "object",
+                                "patternProperties": {
+                                  "^(.*)$": {
+                                    "anyOf": [
+                                      {
+                                        "const": "ok",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "warn",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "alert",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "none",
+                                        "type": "string"
+                                      }
+                                    ]
+                                  }
+                                }
+                              },
+                              "unit": {
+                                "additionalProperties": false,
+                                "description": "For `number`: the unit drawn after the value, so a row reads \"12 platser\" and never \"Platser: 12\". Only where the unit alone says what the number is.",
+                                "type": "object",
+                                "required": [
+                                  "one",
+                                  "other"
+                                ],
+                                "properties": {
+                                  "one": {
+                                    "minLength": 1,
+                                    "maxLength": 40,
+                                    "description": "Swedish. The word after 1: \"plats\".",
+                                    "type": "string"
+                                  },
+                                  "other": {
+                                    "minLength": 1,
+                                    "maxLength": 40,
+                                    "description": "Swedish. The word after any other number: \"platser\".",
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "document": {
+                          "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                          "maxLength": 40,
+                          "description": "A property name in the capability's output (or input).",
+                          "type": "string"
+                        },
+                        "recovery": {
+                          "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                          "maxLength": 40,
+                          "description": "A property name in the capability's output (or input).",
+                          "type": "string"
+                        },
+                        "metrics": {
+                          "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                          "maxLength": 40,
+                          "description": "A property name in the capability's output (or input).",
+                          "type": "string"
+                        },
+                        "series": {
+                          "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                          "maxLength": 40,
+                          "description": "A property name in the capability's output (or input).",
+                          "type": "string"
+                        },
+                        "activity": {
+                          "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                          "maxLength": 40,
+                          "description": "A property name in the capability's output (or input).",
+                          "type": "string"
+                        },
+                        "items": {
+                          "additionalProperties": false,
+                          "description": "One flat item table, with at most 500 rows.",
+                          "type": "object",
+                          "required": [
+                            "rows",
+                            "title",
+                            "fields"
+                          ],
+                          "properties": {
+                            "rows": {
+                              "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                              "maxLength": 40,
+                              "description": "A property name in the capability's output (or input).",
+                              "type": "string"
+                            },
+                            "title": {
+                              "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                              "maxLength": 40,
+                              "description": "A property name in the capability's output (or input).",
+                              "type": "string"
+                            },
+                            "fields": {
+                              "minItems": 1,
+                              "maxItems": 12,
+                              "description": "The item fields in display order.",
+                              "type": "array",
+                              "items": {
+                                "additionalProperties": false,
+                                "type": "object",
+                                "required": [
+                                  "key",
+                                  "label"
+                                ],
+                                "properties": {
+                                  "key": {
+                                    "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                                    "maxLength": 40,
+                                    "description": "The property of a record the field shows.",
+                                    "type": "string"
+                                  },
+                                  "label": {
+                                    "minLength": 1,
+                                    "maxLength": 60,
+                                    "description": "Swedish. The column heading or the field's name.",
+                                    "type": "string"
+                                  },
+                                  "format": {
+                                    "description": "How the value is drawn: `phone` and `email` become links that call and write, `link` an http(s) link out, `date` and `instant` are formatted in Swedish, `number` is aligned as one, `status` is a badge with a tone from `tones`. Default `text`.",
+                                    "anyOf": [
+                                      {
+                                        "const": "text",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "phone",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "email",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "link",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "date",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "instant",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "number",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "status",
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "tones": {
+                                    "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                                    "type": "object",
+                                    "patternProperties": {
+                                      "^(.*)$": {
+                                        "anyOf": [
+                                          {
+                                            "const": "ok",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "const": "warn",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "const": "alert",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "const": "none",
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  "unit": {
+                                    "additionalProperties": false,
+                                    "description": "For `number`: the unit drawn after the value, so a row reads \"12 platser\" and never \"Platser: 12\". Only where the unit alone says what the number is.",
+                                    "type": "object",
+                                    "required": [
+                                      "one",
+                                      "other"
+                                    ],
+                                    "properties": {
+                                      "one": {
+                                        "minLength": 1,
+                                        "maxLength": 40,
+                                        "description": "Swedish. The word after 1: \"plats\".",
+                                        "type": "string"
+                                      },
+                                      "other": {
+                                        "minLength": 1,
+                                        "maxLength": 40,
+                                        "description": "Swedish. The word after any other number: \"platser\".",
+                                        "type": "string"
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "modelReads": {
+                          "description": "What the model is handed when it calls the capability as a tool: the whole `output`, or a `summary` (how many rows are shown, never their content) so names and numbers reach the person through the view and neither the model nor the stored conversation. Default `output`.",
+                          "anyOf": [
+                            {
+                              "const": "output",
+                              "type": "string"
+                            },
+                            {
+                              "const": "summary",
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      }
+                    },
                     {
                       "additionalProperties": false,
                       "type": "object",
@@ -1792,6 +2362,11 @@
                     }
                   ]
                 },
+                "review": {
+                  "maxLength": 80,
+                  "description": "On an execute: the same-connector document or record read taking {ref}, whose version-bound evidence is required on approval.",
+                  "type": "string"
+                },
                 "menu": {
                   "additionalProperties": false,
                   "description": "How this capability's view is named and marked when an administrator puts it in Clew's menu under Verktyg (D40). Only on a read that declares a view and needs no input.",
@@ -1939,6 +2514,10 @@
                 "type": "string"
               }
             }
+          },
+          "documents": {
+            "description": "Implements POST /clew/documents for authorised, versioned binary document reads (D79).",
+            "type": "boolean"
           }
         }
       },
@@ -2252,6 +2831,496 @@
           }
         }
       },
+      "DocumentReadRequest": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "actor",
+          "request"
+        ],
+        "properties": {
+          "actor": {
+            "additionalProperties": false,
+            "description": "The acting person as Clew knows them. Never a token.",
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "unitId",
+              "unitLabel",
+              "role"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 80,
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "unitId": {
+                "type": "string"
+              },
+              "unitLabel": {
+                "type": "string"
+              },
+              "role": {
+                "anyOf": [
+                  {
+                    "const": "manager",
+                    "type": "string"
+                  },
+                  {
+                    "const": "employee",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          },
+          "request": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "capability",
+              "input",
+              "ref",
+              "revision",
+              "document",
+              "documentRevision"
+            ],
+            "properties": {
+              "capability": {
+                "minLength": 1,
+                "maxLength": 80,
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "patternProperties": {
+                  "^(.*)$": {}
+                }
+              },
+              "ref": {
+                "minLength": 1,
+                "maxLength": 200,
+                "type": "string"
+              },
+              "revision": {
+                "minLength": 1,
+                "maxLength": 200,
+                "type": "string"
+              },
+              "document": {
+                "minLength": 1,
+                "maxLength": 200,
+                "type": "string"
+              },
+              "documentRevision": {
+                "minLength": 1,
+                "maxLength": 200,
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "DocumentBundle": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "ref",
+          "revision",
+          "title",
+          "documents"
+        ],
+        "properties": {
+          "ref": {
+            "minLength": 1,
+            "maxLength": 200,
+            "type": "string"
+          },
+          "revision": {
+            "minLength": 1,
+            "maxLength": 200,
+            "type": "string"
+          },
+          "title": {
+            "minLength": 1,
+            "maxLength": 200,
+            "type": "string"
+          },
+          "documents": {
+            "minItems": 1,
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "id",
+                "revision",
+                "title",
+                "filename",
+                "mediaType",
+                "size",
+                "sha256",
+                "required"
+              ],
+              "properties": {
+                "id": {
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                "revision": {
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                "title": {
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                "filename": {
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                "mediaType": {
+                  "anyOf": [
+                    {
+                      "const": "application/pdf",
+                      "type": "string"
+                    },
+                    {
+                      "const": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                      "type": "string"
+                    },
+                    {
+                      "const": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                      "type": "string"
+                    },
+                    {
+                      "const": "image/png",
+                      "type": "string"
+                    },
+                    {
+                      "const": "image/jpeg",
+                      "type": "string"
+                    },
+                    {
+                      "const": "image/svg+xml",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "size": {
+                  "minimum": 1,
+                  "maximum": 26214400,
+                  "type": "integer"
+                },
+                "sha256": {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "required": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ReviewEvidence": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "ref",
+          "revision",
+          "documents",
+          "expiresAt",
+          "proof"
+        ],
+        "properties": {
+          "ref": {
+            "minLength": 1,
+            "maxLength": 200,
+            "type": "string"
+          },
+          "revision": {
+            "minLength": 1,
+            "maxLength": 200,
+            "type": "string"
+          },
+          "documents": {
+            "minItems": 1,
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "id",
+                "revision"
+              ],
+              "properties": {
+                "id": {
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                "revision": {
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "proof": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          }
+        }
+      },
+      "Metrics": {
+        "maxItems": 12,
+        "type": "array",
+        "items": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "id",
+            "label",
+            "value",
+            "unit",
+            "period",
+            "dataAt",
+            "tone"
+          ],
+          "properties": {
+            "id": {
+              "minLength": 1,
+              "maxLength": 200,
+              "type": "string"
+            },
+            "label": {
+              "minLength": 1,
+              "maxLength": 200,
+              "type": "string"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "unit": {
+              "maxLength": 24,
+              "type": "string"
+            },
+            "period": {
+              "minLength": 1,
+              "maxLength": 200,
+              "type": "string"
+            },
+            "dataAt": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "tone": {
+              "anyOf": [
+                {
+                  "const": "ok",
+                  "type": "string"
+                },
+                {
+                  "const": "warn",
+                  "type": "string"
+                },
+                {
+                  "const": "alert",
+                  "type": "string"
+                },
+                {
+                  "const": "none",
+                  "type": "string"
+                }
+              ]
+            },
+            "comparison": {
+              "minLength": 1,
+              "maxLength": 200,
+              "type": "string"
+            },
+            "target": {
+              "type": "number"
+            }
+          }
+        }
+      },
+      "Series": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title",
+          "unit",
+          "period",
+          "dataAt",
+          "axis",
+          "categories",
+          "series"
+        ],
+        "properties": {
+          "title": {
+            "minLength": 1,
+            "maxLength": 200,
+            "type": "string"
+          },
+          "unit": {
+            "maxLength": 24,
+            "type": "string"
+          },
+          "period": {
+            "minLength": 1,
+            "maxLength": 200,
+            "type": "string"
+          },
+          "dataAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "axis": {
+            "anyOf": [
+              {
+                "const": "time",
+                "type": "string"
+              },
+              {
+                "const": "category",
+                "type": "string"
+              }
+            ]
+          },
+          "categories": {
+            "minItems": 1,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "minLength": 1,
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          "series": {
+            "minItems": 1,
+            "maxItems": 6,
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "id",
+                "label",
+                "role",
+                "values"
+              ],
+              "properties": {
+                "id": {
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                "label": {
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                "role": {
+                  "anyOf": [
+                    {
+                      "const": "actual",
+                      "type": "string"
+                    },
+                    {
+                      "const": "forecast",
+                      "type": "string"
+                    },
+                    {
+                      "const": "target",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "values": {
+                  "minItems": 1,
+                  "maxItems": 100,
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Activity": {
+        "maxItems": 100,
+        "type": "array",
+        "items": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "id",
+            "at",
+            "title"
+          ],
+          "properties": {
+            "id": {
+              "minLength": 1,
+              "maxLength": 200,
+              "type": "string"
+            },
+            "at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "title": {
+              "minLength": 1,
+              "maxLength": 200,
+              "type": "string"
+            },
+            "detail": {
+              "maxLength": 1000,
+              "type": "string"
+            },
+            "actor": {
+              "minLength": 1,
+              "maxLength": 200,
+              "type": "string"
+            }
+          }
+        }
+      },
       "ScanRequest": {
         "additionalProperties": false,
         "type": "object",
@@ -2387,6 +3456,12 @@
                       "ref": {
                         "minLength": 1,
                         "maxLength": 200,
+                        "type": "string"
+                      },
+                      "revision": {
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "The source record/document-bundle revision represented by this item. Versioned review must match it.",
                         "type": "string"
                       },
                       "label": {
@@ -2665,6 +3740,12 @@
                 "ref": {
                   "minLength": 1,
                   "maxLength": 200,
+                  "type": "string"
+                },
+                "revision": {
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "The source record/document-bundle revision represented by this item. Versioned review must match it.",
                   "type": "string"
                 },
                 "label": {
@@ -3216,6 +4297,473 @@
       "View": {
         "description": "How Clew draws the output: `table` and `list` over an array of records (`rows`, default \"rows\"; `title` names the field that names a row and is one of `fields`; `ref` the field holding the connector's ref), `detail` over one record, `text` over one Markdown string.",
         "anyOf": [
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "kind",
+              "body"
+            ],
+            "properties": {
+              "kind": {
+                "description": "Versioned original documents and attachments.",
+                "const": "document",
+                "type": "string"
+              },
+              "body": {
+                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                "maxLength": 40,
+                "description": "The output property holding the semantic payload for this view kind.",
+                "type": "string"
+              },
+              "modelReads": {
+                "description": "What the model is handed when it calls the capability as a tool: the whole `output`, or a `summary` (how many rows are shown, never their content) so names and numbers reach the person through the view and neither the model nor the stored conversation. Default `output`.",
+                "anyOf": [
+                  {
+                    "const": "output",
+                    "type": "string"
+                  },
+                  {
+                    "const": "summary",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "kind",
+              "body"
+            ],
+            "properties": {
+              "kind": {
+                "description": "Typed measurements, units, reporting periods and freshness.",
+                "const": "metrics",
+                "type": "string"
+              },
+              "body": {
+                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                "maxLength": 40,
+                "description": "A property name in the capability's output (or input).",
+                "type": "string"
+              },
+              "modelReads": {
+                "description": "What the model is handed when it calls the capability as a tool: the whole `output`, or a `summary` (how many rows are shown, never their content) so names and numbers reach the person through the view and neither the model nor the stored conversation. Default `output`.",
+                "anyOf": [
+                  {
+                    "const": "output",
+                    "type": "string"
+                  },
+                  {
+                    "const": "summary",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "kind",
+              "body"
+            ],
+            "properties": {
+              "kind": {
+                "description": "Source events in chronological order.",
+                "const": "activity",
+                "type": "string"
+              },
+              "body": {
+                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                "maxLength": 40,
+                "description": "A property name in the capability's output (or input).",
+                "type": "string"
+              },
+              "modelReads": {
+                "description": "What the model is handed when it calls the capability as a tool: the whole `output`, or a `summary` (how many rows are shown, never their content) so names and numbers reach the person through the view and neither the model nor the stored conversation. Default `output`.",
+                "anyOf": [
+                  {
+                    "const": "output",
+                    "type": "string"
+                  },
+                  {
+                    "const": "summary",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "kind",
+              "body",
+              "chart"
+            ],
+            "properties": {
+              "kind": {
+                "description": "Comparable series drawn as a chart and a data table.",
+                "const": "series",
+                "type": "string"
+              },
+              "body": {
+                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                "maxLength": 40,
+                "description": "A property name in the capability's output (or input).",
+                "type": "string"
+              },
+              "chart": {
+                "description": "Line for trends, bar for category comparisons. Both include a data table.",
+                "anyOf": [
+                  {
+                    "const": "line",
+                    "type": "string"
+                  },
+                  {
+                    "const": "bar",
+                    "type": "string"
+                  }
+                ]
+              },
+              "modelReads": {
+                "description": "What the model is handed when it calls the capability as a tool: the whole `output`, or a `summary` (how many rows are shown, never their content) so names and numbers reach the person through the view and neither the model nor the stored conversation. Default `output`.",
+                "anyOf": [
+                  {
+                    "const": "output",
+                    "type": "string"
+                  },
+                  {
+                    "const": "summary",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "kind",
+              "title",
+              "fields"
+            ],
+            "properties": {
+              "kind": {
+                "description": "A record with facts and bounded document, item, metric, series and activity sections.",
+                "const": "record",
+                "type": "string"
+              },
+              "title": {
+                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                "maxLength": 40,
+                "description": "A property name in the capability's output (or input).",
+                "type": "string"
+              },
+              "fields": {
+                "minItems": 1,
+                "maxItems": 24,
+                "description": "Labelled facts in display order.",
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "key",
+                    "label"
+                  ],
+                  "properties": {
+                    "key": {
+                      "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                      "maxLength": 40,
+                      "description": "The property of a record the field shows.",
+                      "type": "string"
+                    },
+                    "label": {
+                      "minLength": 1,
+                      "maxLength": 60,
+                      "description": "Swedish. The column heading or the field's name.",
+                      "type": "string"
+                    },
+                    "format": {
+                      "description": "How the value is drawn: `phone` and `email` become links that call and write, `link` an http(s) link out, `date` and `instant` are formatted in Swedish, `number` is aligned as one, `status` is a badge with a tone from `tones`. Default `text`.",
+                      "anyOf": [
+                        {
+                          "const": "text",
+                          "type": "string"
+                        },
+                        {
+                          "const": "phone",
+                          "type": "string"
+                        },
+                        {
+                          "const": "email",
+                          "type": "string"
+                        },
+                        {
+                          "const": "link",
+                          "type": "string"
+                        },
+                        {
+                          "const": "date",
+                          "type": "string"
+                        },
+                        {
+                          "const": "instant",
+                          "type": "string"
+                        },
+                        {
+                          "const": "number",
+                          "type": "string"
+                        },
+                        {
+                          "const": "status",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "tones": {
+                      "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                      "type": "object",
+                      "patternProperties": {
+                        "^(.*)$": {
+                          "anyOf": [
+                            {
+                              "const": "ok",
+                              "type": "string"
+                            },
+                            {
+                              "const": "warn",
+                              "type": "string"
+                            },
+                            {
+                              "const": "alert",
+                              "type": "string"
+                            },
+                            {
+                              "const": "none",
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "unit": {
+                      "additionalProperties": false,
+                      "description": "For `number`: the unit drawn after the value, so a row reads \"12 platser\" and never \"Platser: 12\". Only where the unit alone says what the number is.",
+                      "type": "object",
+                      "required": [
+                        "one",
+                        "other"
+                      ],
+                      "properties": {
+                        "one": {
+                          "minLength": 1,
+                          "maxLength": 40,
+                          "description": "Swedish. The word after 1: \"plats\".",
+                          "type": "string"
+                        },
+                        "other": {
+                          "minLength": 1,
+                          "maxLength": 40,
+                          "description": "Swedish. The word after any other number: \"platser\".",
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "document": {
+                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                "maxLength": 40,
+                "description": "A property name in the capability's output (or input).",
+                "type": "string"
+              },
+              "recovery": {
+                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                "maxLength": 40,
+                "description": "A property name in the capability's output (or input).",
+                "type": "string"
+              },
+              "metrics": {
+                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                "maxLength": 40,
+                "description": "A property name in the capability's output (or input).",
+                "type": "string"
+              },
+              "series": {
+                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                "maxLength": 40,
+                "description": "A property name in the capability's output (or input).",
+                "type": "string"
+              },
+              "activity": {
+                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                "maxLength": 40,
+                "description": "A property name in the capability's output (or input).",
+                "type": "string"
+              },
+              "items": {
+                "additionalProperties": false,
+                "description": "One flat item table, with at most 500 rows.",
+                "type": "object",
+                "required": [
+                  "rows",
+                  "title",
+                  "fields"
+                ],
+                "properties": {
+                  "rows": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                    "maxLength": 40,
+                    "description": "A property name in the capability's output (or input).",
+                    "type": "string"
+                  },
+                  "title": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                    "maxLength": 40,
+                    "description": "A property name in the capability's output (or input).",
+                    "type": "string"
+                  },
+                  "fields": {
+                    "minItems": 1,
+                    "maxItems": 12,
+                    "description": "The item fields in display order.",
+                    "type": "array",
+                    "items": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "key",
+                        "label"
+                      ],
+                      "properties": {
+                        "key": {
+                          "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                          "maxLength": 40,
+                          "description": "The property of a record the field shows.",
+                          "type": "string"
+                        },
+                        "label": {
+                          "minLength": 1,
+                          "maxLength": 60,
+                          "description": "Swedish. The column heading or the field's name.",
+                          "type": "string"
+                        },
+                        "format": {
+                          "description": "How the value is drawn: `phone` and `email` become links that call and write, `link` an http(s) link out, `date` and `instant` are formatted in Swedish, `number` is aligned as one, `status` is a badge with a tone from `tones`. Default `text`.",
+                          "anyOf": [
+                            {
+                              "const": "text",
+                              "type": "string"
+                            },
+                            {
+                              "const": "phone",
+                              "type": "string"
+                            },
+                            {
+                              "const": "email",
+                              "type": "string"
+                            },
+                            {
+                              "const": "link",
+                              "type": "string"
+                            },
+                            {
+                              "const": "date",
+                              "type": "string"
+                            },
+                            {
+                              "const": "instant",
+                              "type": "string"
+                            },
+                            {
+                              "const": "number",
+                              "type": "string"
+                            },
+                            {
+                              "const": "status",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "tones": {
+                          "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                          "type": "object",
+                          "patternProperties": {
+                            "^(.*)$": {
+                              "anyOf": [
+                                {
+                                  "const": "ok",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "warn",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "alert",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "none",
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "unit": {
+                          "additionalProperties": false,
+                          "description": "For `number`: the unit drawn after the value, so a row reads \"12 platser\" and never \"Platser: 12\". Only where the unit alone says what the number is.",
+                          "type": "object",
+                          "required": [
+                            "one",
+                            "other"
+                          ],
+                          "properties": {
+                            "one": {
+                              "minLength": 1,
+                              "maxLength": 40,
+                              "description": "Swedish. The word after 1: \"plats\".",
+                              "type": "string"
+                            },
+                            "other": {
+                              "minLength": 1,
+                              "maxLength": 40,
+                              "description": "Swedish. The word after any other number: \"platser\".",
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "modelReads": {
+                "description": "What the model is handed when it calls the capability as a tool: the whole `output`, or a `summary` (how many rows are shown, never their content) so names and numbers reach the person through the view and neither the model nor the stored conversation. Default `output`.",
+                "anyOf": [
+                  {
+                    "const": "output",
+                    "type": "string"
+                  },
+                  {
+                    "const": "summary",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          },
           {
             "additionalProperties": false,
             "type": "object",
@@ -4554,6 +6102,26 @@
                         },
                         {
                           "const": "text",
+                          "type": "string"
+                        },
+                        {
+                          "const": "document",
+                          "type": "string"
+                        },
+                        {
+                          "const": "record",
+                          "type": "string"
+                        },
+                        {
+                          "const": "metrics",
+                          "type": "string"
+                        },
+                        {
+                          "const": "series",
+                          "type": "string"
+                        },
+                        {
+                          "const": "activity",
                           "type": "string"
                         },
                         {

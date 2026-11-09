@@ -2,6 +2,8 @@
 
 Start with [How Clew works](overview.md): the components, ownership boundaries and end-to-end read, discovery and approval flows. It builds on the [product overview](../overview.md) and describes the current implementation.
 
+The [vocabulary and entity map](../reference/vocabulary.md) separates work items, proposals and conversations from the cards, views and panels that present them, and maps the terms to code.
+
 ## Explore the system
 
 | Page | Question it answers |
@@ -10,6 +12,7 @@ Start with [How Clew works](overview.md): the components, ownership boundaries a
 | [Backend structure](backend-structure.md) | Where is the code, and which dependencies are allowed? |
 | [Integration architecture](integrations.md) | Why does Clew use independent connectors and its own contract? |
 | [Integration paths](integration-paths.md) | Which integration mechanism fits this source and which paths are available? |
+| [MCP chat services](mcp-chat-services.md) | How will standard MCP tools, provider-owned Apps and proactive read watches fit alongside native connectors? (Direction and prototype.) |
 | [Capability surfaces](capability-surfaces.md) | How do buttons, the model, callbacks and approved executions reach operations? |
 | [Identity](identity.md) | How are login, local grants, connector authority and source credentials separated? |
 | [Working across connectors](working-across-connectors.md) | How does Clew coordinate changes and follow-up across several systems? |

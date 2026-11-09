@@ -10,6 +10,8 @@ Read these in order if you are new to the project:
 2. [Architecture overview](architecture/overview.md): the running components, data boundaries and end-to-end read, scan and action flows.
 3. [Implementation status](reference/status.md): what works in this checkout and what remains a fixture, proposal or release gate.
 
+The [vocabulary and entity map](reference/vocabulary.md) defines work items, cards, proposals, conversations and interface containers, and connects those terms to the current code.
+
 [Vision](vision.md) explains the longer-term product direction and the boundary with Eneo. [Personas](personas.md) describe the people and needs behind the design; they are not a list of delivered features.
 
 ## Build a custom connector
@@ -20,12 +22,19 @@ A connector is your independently deployed HTTP service. It translates a source 
 |---|---|---|
 | Define and build a first integration | [Create a connector](guides/creating-a-connector.md) | [Phone book](../connectors/phonebook/README.md) |
 | Map source records, add search and views | [Directory walkthrough](guides/example-custom-directory.md) | [Manifest](../connectors/phonebook/manifest.mjs), [adapter](../connectors/phonebook/directory.mjs) |
+| Show original documents, records, metrics, charts and history | [Document and semantic views](guides/document-and-semantic-views.md) | [Finance fixture](../connectors/finance/manifest.mjs) |
 | Verify the actor and narrow source access | [Authorization](guides/authorization.md) | [Standalone verifier](../connectors/hello/verification.mjs) |
 | Discover work and add approved actions | [Actions and receipts](guides/actions-and-receipts.md) | [Durable synthetic source](../connectors/reference/README.md) |
 | Coordinate reads, changes and follow-up across systems | [Working across connectors](architecture/working-across-connectors.md) | [Job scenario](../tests/unit/fixture-job.test.ts), [read callback](../connectors/hello/connector.mjs) |
 | Check, register and operate the service | [Testing and deployment](guides/testing-and-deployment.md) | [Conformance checker](../packages/connectors/src/check.ts) |
 
 The [guide index](guides/README.md) separates the minimum read integration from optional search, scan, write and composition features.
+
+## Consume an existing MCP service
+
+A vendor that already exposes standard MCP does not need to build a Clew connector or supply a Clew manifest. The separate, AI-enabled chat path consumes discovered tools and optional provider-owned MCP Apps. Clew can also run an approved read on a schedule and deliver a separate card when meaningful source evidence changes.
+
+Read [MCP chat services](architecture/mcp-chat-services.md) for the ownership boundary, standard OAuth requirements, delivery flow and implementation map. The [independent poll/status demo](../fixtures/mcp-pulse/README.md) runs this path for an explicitly registered development user. This is a development prototype; OAuth and production hosting remain unfinished. The [provider review](reviews/2026-11-08-mcp-services-and-provider-compatibility.md) distinguishes verified vendor tools from the illustrative poll App.
 
 ## Develop and operate Clew
 

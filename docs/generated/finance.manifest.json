@@ -5,6 +5,7 @@
   "source": "Ekonomisystemet",
   "uses": [],
   "scan": true,
+  "documents": true,
   "areas": [
     {
       "id": "budget",
@@ -15,7 +16,10 @@
       ],
       "standing": [
         "finance.invoices",
-        "finance.budget"
+        "finance.budget",
+        "finance.metrics",
+        "finance.trend",
+        "finance.comparison"
       ],
       "schedules": [
         {
@@ -101,6 +105,13 @@
           "other": "fakturor"
         },
         "empty": "Inga fakturor väntar på attest.",
+        "open": {
+          "capability": "finance.record",
+          "title": "Faktura och underlag",
+          "params": {
+            "ref": "ref"
+          }
+        },
         "fields": [
           {
             "key": "supplier",
@@ -203,6 +214,345 @@
       }
     },
     {
+      "name": "finance.record",
+      "title": "Faktura och underlag",
+      "description": "Faktura och underlag",
+      "kind": "read",
+      "model": true,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "pattern": "^finance:inv:"
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "supplier": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "due": {
+            "type": "string"
+          },
+          "account": {
+            "type": "string"
+          },
+          "order": {
+            "type": "string"
+          },
+          "document": {
+            "type": "object"
+          },
+          "recovery": {
+            "type": "object"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "amount": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "text",
+                "amount"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "activity": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "title",
+          "supplier",
+          "amount",
+          "due",
+          "account",
+          "order",
+          "document",
+          "recovery",
+          "lines",
+          "activity"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "record",
+        "title": "title",
+        "fields": [
+          {
+            "key": "supplier",
+            "label": "Leverantör"
+          },
+          {
+            "key": "amount",
+            "label": "Belopp",
+            "format": "number",
+            "unit": {
+              "one": "kr",
+              "other": "kr"
+            }
+          },
+          {
+            "key": "due",
+            "label": "Förfaller",
+            "format": "date"
+          },
+          {
+            "key": "account",
+            "label": "Konto"
+          },
+          {
+            "key": "order",
+            "label": "Beställning"
+          }
+        ],
+        "document": "document",
+        "recovery": "recovery",
+        "activity": "activity",
+        "items": {
+          "rows": "lines",
+          "title": "text",
+          "fields": [
+            {
+              "key": "text",
+              "label": "Specifikation"
+            },
+            {
+              "key": "amount",
+              "label": "Belopp",
+              "format": "number",
+              "unit": {
+                "one": "kr",
+                "other": "kr"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "finance.documents",
+      "title": "Fakturans dokument",
+      "description": "Fakturans dokument",
+      "kind": "read",
+      "model": true,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "pattern": "^finance:inv:"
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "document",
+        "body": "document",
+        "modelReads": "summary"
+      }
+    },
+    {
+      "name": "finance.metrics",
+      "title": "Budget i siffror",
+      "description": "Budget i siffror",
+      "kind": "read",
+      "model": true,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "metrics": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "metrics"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "metrics",
+        "body": "metrics"
+      }
+    },
+    {
+      "name": "finance.trend",
+      "title": "Utfall och prognos",
+      "description": "Utfall och prognos",
+      "kind": "read",
+      "model": true,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "series": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "series"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "series",
+        "body": "series",
+        "chart": "line"
+      }
+    },
+    {
+      "name": "finance.comparison",
+      "title": "Budgetjämförelse",
+      "description": "Budgetjämförelse",
+      "kind": "read",
+      "model": true,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "series": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "series"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "series",
+        "body": "series",
+        "chart": "bar"
+      }
+    },
+    {
+      "name": "finance.history",
+      "title": "Fakturans händelser",
+      "description": "Fakturans händelser",
+      "kind": "read",
+      "model": true,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "pattern": "^finance:inv:"
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "activity": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "activity"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "activity",
+        "body": "activity"
+      }
+    },
+    {
       "name": "finance.approve",
       "kind": "execute",
       "title": "Attestera",
@@ -218,6 +568,7 @@
         "retentionSeconds": 86400,
         "lookup": "finance.lookup"
       },
+      "review": "finance.record",
       "input": {
         "type": "object",
         "properties": {
@@ -227,10 +578,17 @@
               "type": "string",
               "pattern": "^finance:inv:"
             }
+          },
+          "reviews": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
           }
         },
         "required": [
-          "refs"
+          "refs",
+          "reviews"
         ],
         "additionalProperties": false
       },
@@ -316,6 +674,107 @@
         },
         "required": [
           "refs"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "headline": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "enum": [
+                    "done",
+                    "failed",
+                    "unknown",
+                    "skipped"
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "label",
+                "outcome",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "undoCapability": {
+            "type": "string"
+          },
+          "undoMinutes": {
+            "type": "integer"
+          },
+          "undoInput": {}
+        },
+        "required": [
+          "headline",
+          "rows"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "finance.correct",
+      "kind": "execute",
+      "title": "Spara rättelse",
+      "description": "Rättar beställningsnumret på en ej attesterad faktura i den granskade versionen.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "execution": {
+        "strategy": "deduplicated",
+        "retentionSeconds": 86400,
+        "lookup": "finance.lookup"
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "pattern": "^finance:inv:"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "changes": {
+            "type": "object",
+            "properties": {
+              "order": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              }
+            },
+            "required": [
+              "order"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "ref",
+          "revision",
+          "changes"
         ],
         "additionalProperties": false
       },

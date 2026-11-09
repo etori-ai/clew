@@ -68,6 +68,29 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+  # Standard MCP mocks, deliberately no Clew connector manifest. Synthetic data only.
+  mcp-pulse:
+    image: node:26.13.0-bookworm-slim
+    init: true
+    working_dir: /workspace
+    command: node fixtures/mcp-pulse/server.mjs
+    environment:
+      HOST: 0.0.0.0
+    volumes:
+      - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
+    ports:
+      - "127.0.0.1:4035:4035"
+  mcp-status:
+    image: node:26.13.0-bookworm-slim
+    init: true
+    working_dir: /workspace
+    command: node fixtures/mcp-status/server.mjs
+    environment:
+      HOST: 0.0.0.0
+    volumes:
+      - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
+    ports:
+      - "127.0.0.1:4036:4036"
   # Temporal (MIT) runs approved executions, timers, bounded follow-up and scheduled jobs (D17/D45/D47).
   # auto-setup creates its two databases in the shared Postgres on first start. Dev only; production runs temporalio/server.
   temporal:

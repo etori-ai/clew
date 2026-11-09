@@ -1,4 +1,5 @@
 import { Registry } from '../registry';
+import { invoiceInput } from '../document-fixtures';
 import { describe, expect, test } from 'bun:test';
 import { openGovernance, receipt, type Actor, type Connector } from '../../packages/connectors/src/index';
 import { fixtureConnectors } from '../fixture-connectors';
@@ -227,9 +228,11 @@ describe('the fixture connectors push cards a person can act on, and the state s
     const { r, states } = registry();
     const [draft] = (await r.scan(hillevi)).filter(d => d.topic.startsWith('finance:'));
     const refs = draft!.items!.map(i => i.ref);
-    const result = await r.run<{ rows: { outcome: string }[]; undoCapability?: string }>(hillevi, 'finance.approve', {
-      refs,
-    });
+    const result = await r.run<{ rows: { outcome: string }[]; undoCapability?: string }>(
+      hillevi,
+      'finance.approve',
+      await invoiceInput(r, hillevi, refs),
+    );
     expect(result.rows.map(x => x.outcome)).toEqual(['done', 'done', 'unknown']);
     expect(receipt(result as never).undoUntil).not.toBeNull();
     expect((await r.scan(hillevi)).filter(d => d.topic.startsWith('finance:'))[0]!.items).toHaveLength(1);

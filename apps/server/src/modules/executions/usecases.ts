@@ -40,11 +40,15 @@ type ApproveInput = {
   compensates?: string;
   presentation?: Execution['presentation'];
 };
-export function executionUsecases({ store, source, watch, clock, ids, digest }: ExecutionDeps) {
+export function executionUsecases({ store, source, watch, clock, ids, digest, review }: ExecutionDeps) {
   /** Everything an approval needs before its transaction: authority, the source's write safety and, for an undo, the compensation rule. No I/O on the store beyond reading the original. */
   async function prepare(persona: AuthenticatedContext, input: ApproveInput, at: string): Promise<Execution> {
     if (!DECISION.test(input.decisionId)) throw new ExecutionError('Ogiltigt beslut.');
     const access = await source.authorize(persona, input.operation, input.payload);
+    // Existing decisions retain their approved versions even after source change or evidence expiry.
+    // Commit still compares the complete intent and its original authority before returning a replay.
+    if (review && !(await store.readDecision(persona.id, input.decisionId)))
+      await review(persona, input.operation, input.payload);
     if (input.compensates) {
       const original = await store.read(input.compensates);
       if (

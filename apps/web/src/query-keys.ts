@@ -10,6 +10,8 @@ export const keys = {
   attention: ['attention'] as const,
   completions: ['completions'] as const,
   assistant: ['assistant'] as const,
+  chatServices: ['chat-services'] as const,
+  chatService: (id: string, deliveryId?: string) => ['chat-service', id, deliveryId ?? null] as const,
   /** The prefix of every loaded week; invalidated when a thread with proposals changes. */
   calendarAll: ['calendar'] as const,
   calendar: (week: string) => ['calendar', week] as const,
@@ -19,10 +21,12 @@ export const keys = {
   verbsAll: ['verbs'] as const,
   verbs: (threadId: string) => ['verbs', threadId] as const,
   viewAll: ['view'] as const,
+  document: (request: unknown) => ['document', request] as const,
+  previewAll: ['preview'] as const,
   view: (capability: string, input: string | null) => ['view', capability, input] as const,
   cardView: (threadId: string, actionId: string) => ['card-view', threadId, actionId] as const,
   /** One item's document in the review flow (D70), kept for the visit: the source's document does not change under the person. */
-  preview: (threadId: string, ref: string) => ['preview', threadId, ref] as const,
+  preview: (threadId: string, ref: string, revision?: string) => ['preview', threadId, ref, revision ?? null] as const,
   /** The manifest reference (D60): public, the same for everyone, kept for the visit. */
   manifestReference: ['protocol', 'manifest-reference'] as const,
   admin: {

@@ -41,3 +41,6 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Page headers across every surface](2026-11-07-page-headers.md)
 - [Clew system foundation and connector review](2026-11-07-system-foundation-and-connector-review.md)
 - [The day beside, or in the column](2026-11-07-the-day-beside-or-in-the-column.md)
+- [Connector view catalogue and document previews](2026-11-08-connector-view-catalogue-and-document-previews.md)
+- [Invoice review with documents and attachments](2026-11-08-invoice-review-and-document-walkthrough.md)
+- [MCP services and employee-survey provider compatibility](2026-11-08-mcp-services-and-provider-compatibility.md)

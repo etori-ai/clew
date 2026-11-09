@@ -4,6 +4,8 @@ Coordinating tasks that span several systems is a core Clew responsibility. One 
 
 The design uses connector-declared facts and followers, with administrator bindings, rather than requiring an operator to draw a process graph. The job API, execution ledger and bounded watches exist today. The complete user interface and receipt-driven continuation into later proposals remain planned. Start with the [architecture overview](overview.md) for the surrounding system.
 
+In the [shared vocabulary](../reference/vocabulary.md), a **work item** is the work Clew tracks for the person; its **card** is a presentation. A **job proposal** describes steps for review, and a **job** groups those steps under one approval. A work item can conceptually continue through successive jobs, but the generic stored stage links and continuation flow remain planned.
+
 ## Example: one absence report
 
 The [D55 plan](../decisions/D55-a-job-is-assembled-from-what-connectors-follow-approved-once-and-run-per-system.md) describes a job built from the participating connectors' offers:

@@ -11,7 +11,7 @@ This page explains the product and its concepts. Continue with the [architecture
 Consider a manager with invoices awaiting approval.
 
 1. A connector reads outstanding work under the manager's access and reports it to Clew.
-2. Clew presents a card with a reason, relevant items and a next step. The manager can open current detail from the source, or ask the optional assistant to explain it.
+2. Clew tracks a work item and presents it as a card with a reason, relevant items and a next step. Opening the card shows the work item's detail view, usually in the side panel. The manager can also open current detail from the source or ask the optional assistant to explain it.
 3. The manager reviews the items and approves an action. Clew records exactly what was approved before contacting the source.
 4. The connector performs the approved operation under current source permissions and returns evidence of its outcome.
 5. Clew shows a receipt for each item. If the outcome is uncertain, it preserves that uncertainty and supports reconciliation. If the source supports compensation, the receipt can offer undo.
@@ -49,7 +49,7 @@ Clew owns these surfaces. A connector declares the meaning of its data and the s
 |---|---|
 | Source system | Business records, source permissions and evidence of source effects. |
 | Connector | Mapping source APIs, identities and records to Clew's contract; enforcing source access for the verified person. |
-| Clew | Local users and grants, connector configuration, work cards, conversations, approvals, audit, execution evidence and follow-up. |
+| Clew | Local users and grants, connector configuration, work items and their presentation, conversations, approvals, audit, execution evidence and follow-up. |
 | Identity provider | Signing the identity used at login. Clew resolves it to a local person and current grant. |
 | Optional model | Choosing allowed reads, explaining results and preparing proposals within the person's scope. |
 
@@ -59,19 +59,28 @@ Users and grants are core Clew entities. An employee directory with phone number
 
 ## The concepts, in order
 
+The [vocabulary and entity map](reference/vocabulary.md) defines the product terms, interface containers and their relationships, with a mapping to current code names. A **work item** is the work being tracked; a **card** presents it; a **proposal** describes a suggested change within that work.
+
 | Concept | Meaning |
 |---|---|
+| Work item | Something Clew tracks for a person: work to do, a suggestion, work waiting on others or information to acknowledge. It can concern several source records. |
+| Card and work item detail | Presentations of a work item. A compact card or row opens its fuller detail view, usually in the side panel. |
+| Source record | A business object owned by a source system, such as an invoice or a booked meeting. |
+| Proposal | A suggested change prepared for review, such as a booking proposal or job proposal. A `propose` capability must not perform the proposed source write. |
+| Conversation and context chip | The exchange with the assistant, and a visible reference to a work item or other supported object being discussed. |
+| Action | Something the person can do with the work or its records: read details, prepare a proposal, request an approved write or manage the work in Clew. |
+| Decision, execution and receipt | The approval, the tracked attempt to perform it, and evidence of the outcome. They are separate so a lost response is not mistaken for success. |
+| Job, step and watch | A job groups steps approved together. Each step performs an execution or watches for an expected result through bounded reads. |
 | Connector | An independently deployed HTTP integration with a stable id and manifest. The manifest's `source` is the displayed system name. |
 | Capability | A named operation such as `phonebook.directory`, with input/output schemas, scope and a kind: `read`, `propose` or `execute`. |
 | Read | Returns source information without changing the source. It may have a declared view and be available to the model. |
-| Proposal | Prepares work for review. A `propose` capability must not perform the proposed source write. |
 | Execute | Performs an approved source action. Always `model: false`, reached through a human decision path. |
 | Area and standing capability | An area groups capabilities offered to eligible people; a standing capability is available without a pushed card. |
-| View | A semantic declaration for displaying a read: `table`, `list`, `detail` or `text`. |
+| View and side panel | A view presents information; connector-declared forms are `table`, `list`, `detail` and `text`. The side panel is a container for opened content. |
 | Ref | A stable source-object identifier returned to its owner for later reads/actions. It is not authorization. |
 | Scan and occurrence | A scan discovers work. An occurrence identifies a particular source item and recurring period; its revision describes material change. |
-| Thread/card | Clew's persisted presentation of work and its conversation. One card may group several occurrences. |
-| Decision, execution and receipt | The approval, the tracked attempt to perform it, and the source evidence of the result. They are separate so a lost response is not mistaken for success. |
+
+**Thread** remains an implementation term: the current `Thread` type represents both pushed work and conversations. The current `Proposal` type is specifically a booking proposal. These code names do not define the broader product vocabulary.
 
 A connector author can start with reads and a view. [Create a connector](guides/creating-a-connector.md) walks through that minimum before introducing optional features.
 

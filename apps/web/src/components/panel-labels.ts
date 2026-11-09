@@ -1,6 +1,12 @@
 import type { ViewNoun } from '@clew/contracts';
 /** Swedish names for what read capabilities return. `tests/unit/panel-labels.test.ts` holds every connector output to this list. */
 export const fieldLabels: Record<string, string> = {
+  document: 'Underlag',
+  lines: 'Specifikation',
+  text: 'Text',
+  activity: 'Händelser',
+  metrics: 'Mätvärden',
+  series: 'Utveckling',
   absent: 'Frånvarande',
   account: 'Konto',
   acknowledged: 'Läst',
@@ -84,6 +90,7 @@ export const fieldLabels: Record<string, string> = {
 /** Addresses and references: useful to the code, never to the person reading the panel. */
 /** A follower's step drafts (D55) are Clew's input, drawn as a job, never as panel fields. */
 export const hiddenFields = new Set([
+  'recovery',
   'ref',
   'url',
   // A calendar event's handles (D11): the source's id and revision, the thread a proposal belongs to, and what a write may do.

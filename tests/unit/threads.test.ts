@@ -1,4 +1,5 @@
 import { Registry } from '../registry';
+import { invoiceInput } from '../document-fixtures';
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext, Thread } from '../../packages/contracts/src/index';
 import { actorOf, type Connector } from '../../packages/connectors/src/index';
@@ -92,6 +93,69 @@ function world() {
 }
 const actions = (store: ReturnType<typeof memoryThreadStore>, id: string) =>
   store.audit.filter(e => e.subject === 'thread:' + id).map(e => e.action);
+
+test('rejected-row recovery is scoped, audited once, and never repeats a completed retry or an uncertain write', async () => {
+  const w = world();
+  await w.threads.ensureThreads(hillevi);
+  const card = (await w.threads.listThreadsFor(hillevi)).find(t => t.connector === 'finance')!;
+  const original = {
+    ...card,
+    id: 'rejected-card',
+    topic: 'rejected-card',
+    execution: {
+      id: 'rejected-execution',
+      decisionId: 'decision',
+      operation: 'finance.approve',
+      state: 'partial' as const,
+      reason: null,
+      compensates: null,
+    },
+  };
+  const receipt = {
+    at: T0,
+    headline: 'Två klara, en avvisad.',
+    undoUntil: null,
+    undoCapability: null,
+    rows: card.items.map((i, n) => ({
+      ref: i.ref,
+      label: i.label,
+      outcome: n === 2 ? ('failed' as const) : ('done' as const),
+      detail: n === 2 ? 'Beställning saknas' : 'Klart',
+    })),
+  };
+  await w.store.transaction(async tx => {
+    await tx.insertThread({ ...original, personId: hillevi.id });
+    await tx.updateThread(original.id, { receipt });
+  });
+  const [first, same] = await Promise.all([
+    w.threads.retryRejected(hillevi, original.id),
+    w.threads.retryRejected(hillevi, original.id),
+  ]);
+  expect(first.id).toBe(same.id);
+  expect(first.items.map(i => i.ref)).toEqual([card.items[2]!.ref]);
+  expect(first.items[0]!.revision).toBeUndefined();
+  expect(first.receipt).toBeNull();
+  expect((await w.threads.threadFor(hillevi, original.id))!.receipt).toEqual(receipt);
+  expect(w.store.audit.filter(e => e.action === 'thread.retry_created')).toHaveLength(1);
+  expect(w.store.audit.at(-1)).toMatchObject({
+    actor: hillevi.principal.id,
+    details: { originalExecutionId: original.execution.id, refs: [card.items[2]!.ref] },
+  });
+  await w.store.transaction(tx => tx.updateThread(first.id, { state: 'handled', handledAt: T0 }));
+  expect((await w.threads.retryRejected(hillevi, original.id)).id).toBe(first.id);
+  await expect(w.threads.retryRejected(hassan, original.id)).rejects.toThrow(/finns inte/);
+  const uncertain = {
+    ...original,
+    id: 'uncertain',
+    topic: 'uncertain',
+    execution: { ...original.execution, state: 'unknown' as const },
+  };
+  await w.store.transaction(async tx => {
+    await tx.insertThread({ ...uncertain, personId: hillevi.id });
+    await tx.updateThread(uncertain.id, { receipt });
+  });
+  await expect(w.threads.retryRejected(hillevi, uncertain.id)).rejects.toThrow(/Kontrollera/);
+});
 async function invoices(w: ReturnType<typeof world>) {
   await w.threads.ensureThreads(hillevi);
   return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'finance:invoices')!;
@@ -145,7 +209,7 @@ describe('the scan', () => {
       tx.updateThread(card.id, { items: card.items.map(i => (i.ref === first!.ref ? { ...i, selected: false } : i)) }),
     );
     // One invoice is approved outside Clew: the next scan drops it from the card.
-    await w.registry.run(hillevi, 'finance.approve', { refs: [second!.ref] });
+    await w.registry.run(hillevi, 'finance.approve', await invoiceInput(w.registry, hillevi, [second!.ref]));
     await w.threads.ensureThreads(hillevi);
     const after = (await w.threads.threadFor(hillevi, card.id))!;
     expect(after.items.map(i => i.ref)).not.toContain(second!.ref);
@@ -216,7 +280,7 @@ describe('avfärda, inte nu and ångra', () => {
     const w = world();
     const card = await invoices(w);
     await w.threads.snoozeThread(hillevi, card.id);
-    await w.registry.run(hillevi, 'finance.approve', { refs: [card.items[1]!.ref] });
+    await w.registry.run(hillevi, 'finance.approve', await invoiceInput(w.registry, hillevi, [card.items[1]!.ref]));
     await w.threads.ensureThreads(hillevi);
     const after = (await w.threads.threadFor(hillevi, card.id))!;
     expect(after.snoozedUntil).toBeNull();

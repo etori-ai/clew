@@ -18,6 +18,8 @@ import { startupReadiness } from './startup';
 import { startExecutionDispatch } from './composition/executions';
 import { startRefresh } from './composition/refresh';
 import { startJobs } from './composition/jobs';
+import { mcpRoutes } from './routes/mcp';
+import { startMcpWatches } from './composition/mcp';
 
 // Local secrets written by `bun run auth:setup`. Never committed, never read by the browser bundle.
 for (const file of ['.env.local']) {
@@ -38,6 +40,7 @@ const startup = startupReadiness({
   onReady: () => {
     watchConnectors(connectorReconcile);
     startJobs();
+    startMcpWatches();
     startAssistantProbe();
     startExecutionDispatch();
     startTimerDispatch();
@@ -69,6 +72,7 @@ app.use('/api/*', async (c, next) => {
 // Connector callbacks authenticate with Clew's own assertion, not a session, so they are mounted before the session guard.
 app.route('/api/connectors', connectorRoutes);
 app.route('/api/admin', adminRoutes);
+app.route('/api/chat-services', mcpRoutes);
 app.route('/api', api);
 app.notFound(c => c.json({ error: 'Okänd adress.' }, 404));
 // Hono hands handler errors to onError, not to the middleware chain: map auth, calendar and input errors here.
