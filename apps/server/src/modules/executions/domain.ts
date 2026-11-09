@@ -8,6 +8,7 @@ import type {
   WatchCard,
   WatchExpect,
   WatchIntent,
+  WorkflowStart,
   WriteSafety,
 } from './model';
 
@@ -163,8 +164,27 @@ export const watchIntentOf = (
   attempt: 0,
   leaseUntil: null,
   nextAt: at,
-  deliveredAt: null,
+  deliveredAt: at,
   lastError: null,
+});
+/** The `approvedExecution` workflow behind an approval or a requested reconciliation (D45, D86): the stable id is the intent's, the input the execution id. */
+export const executionStart = (workflowId: string, executionId: string): WorkflowStart => ({
+  workflow: 'approvedExecution',
+  id: workflowId,
+  input: executionId,
+});
+export const watchWorkflowId = (intent: Pick<WatchIntent, 'id' | 'generation'>) => `${intent.id}:${intent.generation}`;
+/** The `jobWatch` workflow of a watch step (D55, D47, D86): the committed absolute checks and the window's end, never recomputed. */
+export const watchStart = (intent: WatchIntent): WorkflowStart => ({
+  workflow: 'jobWatch',
+  id: watchWorkflowId(intent),
+  input: {
+    jobId: intent.jobId,
+    stepId: intent.stepId,
+    generation: intent.generation,
+    checks: intent.checks,
+    expiresAt: intent.expiresAt,
+  },
 });
 /**
  * The card a watch leaves when its window ends unseen (D55 item 5, canvas J: "Lönesystemet har inte läst sjukanmälan").

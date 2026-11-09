@@ -1,9 +1,10 @@
-import type { DispatchIntent, Execution, ExecutionAudit, ExecutionStore, Job, WatchCard, WatchIntent } from '../model';
+import type { Execution, ExecutionAudit, ExecutionStore, Job, WatchCard, WatchIntent, WorkflowStart } from '../model';
 
+/** The ledger in memory for the unit tests (D25): the same contract as Postgres, with the workflow starts a commit made recorded in `enqueued` (D86). */
 export function memoryExecutionStore() {
   let records = new Map<string, Execution>(),
     jobs = new Map<string, Job>(),
-    outbox = new Map<string, DispatchIntent>(),
+    enqueued = new Map<string, WorkflowStart>(),
     watches = new Map<string, WatchIntent>(),
     cards = new Map<string, WatchCard>(),
     audit: ExecutionAudit[] = [];
@@ -21,45 +22,6 @@ export function memoryExecutionStore() {
       release();
     }
   };
-  /** The same lease for both outboxes: the first due, unleased, undelivered row, claimed for `until`. */
-  const claim = <T extends { attempt: number; leaseUntil: string | null; nextAt: string; deliveredAt: string | null }>(
-    rows: Map<string, T>,
-    now: string,
-    until: string,
-  ) => {
-    const next = [...rows.values()]
-      .sort((a, b) => a.nextAt.localeCompare(b.nextAt))
-      .find(o => !o.deliveredAt && o.nextAt <= now && (!o.leaseUntil || o.leaseUntil <= now));
-    if (!next) return undefined;
-    next.attempt++;
-    next.leaseUntil = until;
-    return structuredClone(next);
-  };
-  const finish = <
-    T extends {
-      attempt: number;
-      leaseUntil: string | null;
-      nextAt: string;
-      deliveredAt: string | null;
-      lastError: string | null;
-    },
-  >(
-    rows: Map<string, T>,
-    id: string,
-    attempt: number,
-    now: string,
-    retryAt: string,
-    error?: string,
-  ) => {
-    const intent = rows.get(id);
-    if (!intent || intent.attempt !== attempt) return;
-    Object.assign(intent, {
-      deliveredAt: error ? null : now,
-      leaseUntil: null,
-      nextAt: retryAt,
-      lastError: error ?? null,
-    });
-  };
   const store: ExecutionStore = {
     async readDecision(personId, decisionId) {
       return structuredClone([...records.values()].find(e => e.personId === personId && e.decisionId === decisionId));
@@ -74,7 +36,7 @@ export function memoryExecutionStore() {
       serialized(async () => {
         const r = structuredClone(records),
           j = structuredClone(jobs),
-          o = structuredClone(outbox),
+          o = structuredClone(enqueued),
           w = structuredClone(watches),
           c = structuredClone(cards),
           a = structuredClone(audit);
@@ -94,8 +56,8 @@ export function memoryExecutionStore() {
           async update(e) {
             r.set(e.id, structuredClone(e));
           },
-          async enqueue(intent) {
-            if (!o.has(intent.id)) o.set(intent.id, structuredClone(intent));
+          async enqueue(start) {
+            if (!o.has(start.id)) o.set(start.id, structuredClone(start));
           },
           async audit(entry) {
             a.push(structuredClone(entry));
@@ -125,23 +87,17 @@ export function memoryExecutionStore() {
         });
         records = r;
         jobs = j;
-        outbox = o;
+        enqueued = o;
         watches = w;
         cards = c;
         audit = a;
         return result;
       }),
-    claimDispatch: (now, until) => serialized(async () => claim(outbox, now, until)),
-    finishDispatch: (id, attempt, now, retryAt, error) =>
-      serialized(async () => finish(outbox, id, attempt, now, retryAt, error)),
-    claimWatch: (now, until) => serialized(async () => claim(watches, now, until)),
-    finishWatch: (id, attempt, now, retryAt, error) =>
-      serialized(async () => finish(watches, id, attempt, now, retryAt, error)),
   };
   return Object.assign(store, {
     dump: () => structuredClone([...records.values()]),
     jobs: () => structuredClone([...jobs.values()]),
-    outbox: () => structuredClone([...outbox.values()]),
+    enqueued: () => structuredClone([...enqueued.values()]),
     watches: () => structuredClone([...watches.values()]),
     cards: () => structuredClone([...cards.values()]),
     audit: () => structuredClone(audit),

@@ -307,7 +307,7 @@ describe('review evidence and the shared decision ledger', () => {
       }),
     ).rejects.toThrow(/Granska/);
     expect(w.store.audit()).toEqual([]);
-    expect(w.store.outbox()).toEqual([]);
+    expect(w.store.enqueued()).toEqual([]);
   });
 });
 test('semantic views reject mismatched series and duplicate documents even with loose connector schemas', async () => {

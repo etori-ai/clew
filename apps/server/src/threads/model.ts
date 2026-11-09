@@ -53,7 +53,7 @@ export interface JobInput {
   payload?: Record<string, unknown>;
 }
 
-/** One current desired timer per purpose and thread. Generation fences every old workflow. */
+/** One current desired timer per purpose and thread. Generation fences every old workflow. The delivery columns (`deliveredGeneration`, `deliveredState`, `attempt`, `nextAt`, `leaseUntil`) are the retired outbox's and stay as evidence (D86). */
 export interface TimerIntent {
   id: string;
   personId: string;
@@ -76,9 +76,15 @@ export type NewTimerIntent = Pick<
   TimerIntent,
   'id' | 'personId' | 'threadId' | 'kind' | 'unitId' | 'authorizationVersion' | 'dueAt' | 'requestedAt'
 >;
-export interface TimerDelivery {
-  claimTimer(now: string, until: string): Promise<TimerIntent | undefined>;
-  finishTimer(timer: TimerIntent, retryAt: string, error?: string): Promise<void>;
+/**
+ * A durable workflow start, committed with the intent it serves (D86): the registered workflow's name, its stable id
+ * (`<timer id>:v2:<generation>` for a reminder) and one JSON input. The Postgres adapter enqueues it on the
+ * transaction's own connection; the memory adapter records it for the unit tests.
+ */
+export interface WorkflowStart {
+  workflow: string;
+  id: string;
+  input: unknown;
 }
 
 /** What a reminder timer carries back when it fires (D17). Declared here so the workflow, the activity and the use case share one shape. */
@@ -112,11 +118,13 @@ export interface ThreadTx {
   /** Idempotent by job id. */
   scheduleJob(job: JobInput): Promise<void>;
   readTimer(id: string): Promise<TimerIntent | undefined>;
-  /** The caller holds the thread lock. Replacing increments generation and resets delivery acknowledgement. */
+  /** The caller holds the thread lock. Replacing increments generation; the previous generation's workflow is cancelled after commit, best effort, and the fence covers a cancel that does not arrive. */
   scheduleTimer(input: NewTimerIntent): Promise<TimerIntent>;
-  /** Optional generation makes an old toast harmless after replacement. */
+  /** Optional generation makes an old toast harmless after replacement. A cancelled timer's workflow is cancelled after commit the same way. */
   cancelTimer(id: string, at: string, generation?: number): Promise<boolean>;
   updateTimer(timer: TimerIntent): Promise<void>;
+  /** Start a durable workflow with this commit (D86): rolled back with it, dequeued by the engine once committed. Idempotent by workflow id. */
+  enqueue(start: WorkflowStart): Promise<void>;
 }
 export interface ThreadStore {
   /** Every unresolved pushed thread, plus at most 50 conversations/recently handled threads, newest first. */
@@ -129,21 +137,4 @@ export interface ThreadStore {
   /** The person's open pushed thread on a topic. */
   openThread(personId: string, topic: string): Promise<Thread | undefined>;
   transaction<T>(fn: (tx: ThreadTx) => Promise<T>): Promise<T>;
-}
-
-/** The timers behind "Inte nu" and "Påminn mig" (D17, D49). Temporal runs them; the memory adapter records them. */
-export interface ReminderTimers {
-  /** Rejects when the timer service cannot be reached. */
-  start(input: {
-    workflowId: string;
-    personId: string;
-    threadId: string;
-    title: string;
-    area: string;
-    seconds: number;
-    requestedAt: string;
-    silent?: boolean;
-  }): Promise<void>;
-  /** Best effort: a timer that already fired or is gone is not an error. */
-  cancel(workflowId: string): Promise<void>;
 }

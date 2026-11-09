@@ -1,6 +1,7 @@
 import type { AuthenticatedContext } from '@clew/contracts';
 import { InputError } from '../../context';
-import type { ReminderInput, ReminderTimers, ThreadStore, TimerIntent } from '../model';
+import type { ReminderInput, ThreadStore, TimerIntent } from '../model';
+import { reminderStart, reminderWorkflowId } from '../domain';
 
 export const MAX_REMINDER_SECONDS = 30 * 24 * 60 * 60;
 const clock = (d: Date) => d.toLocaleTimeString('sv-SE', { timeZone: 'Europe/Stockholm', timeStyle: 'short' });
@@ -10,15 +11,14 @@ const isReminderWaiting = (waitingOn: string | null) => !!waitingOn && waitingOn
 
 export interface ReminderDeps {
   store: ThreadStore;
-  timers?: ReminderTimers;
   clock: () => Date;
   authorized?: (timer: TimerIntent) => Promise<boolean>;
 }
 export function reminderUsecases(deps: ReminderDeps) {
   const { store } = deps;
   /**
-   * Commit the reminder, parked card and audit together. A newer generation supersedes every earlier timer;
-   * delivery to Temporal can retry independently without changing the approved absolute due time.
+   * Commit the reminder, parked card, audit and the workflow start together (D86). A newer generation supersedes
+   * every earlier timer; the store cancels the previous generation's wait after the commit, and the fence covers the rest.
    */
   async function remind(persona: AuthenticatedContext, threadId: string, seconds: number) {
     if (!Number.isInteger(seconds) || seconds < 1 || seconds > MAX_REMINDER_SECONDS)
@@ -41,6 +41,7 @@ export function reminderUsecases(deps: ReminderDeps) {
         dueAt: fireAt.toISOString(),
         requestedAt: at,
       });
+      await tx.enqueue(reminderStart(timer));
       // A card that already waits on someone keeps saying so (D49): the reminder is what comes after the wait, not a new reason for it.
       await tx.updateThread(threadId, {
         waitingOn:
@@ -58,13 +59,13 @@ export function reminderUsecases(deps: ReminderDeps) {
           generation: timer.generation,
           seconds,
           fireAt: fireAt.toISOString(),
-          delivery: 'queued',
+          delivery: 'committed',
         },
       });
       return timer;
     });
     return {
-      id: `${timer.id}:v2:${timer.generation}`,
+      id: reminderWorkflowId(timer),
       fireAt: fireAt.toISOString(),
       thread: (await store.readThread(persona.id, threadId))!,
     };

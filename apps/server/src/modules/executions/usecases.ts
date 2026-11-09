@@ -13,6 +13,7 @@ import {
   type WatchState,
 } from './model';
 import {
+  executionStart,
   executionView,
   jobView,
   retainsAuthority,
@@ -24,6 +25,7 @@ import {
   undoable,
   watchExpiredCard,
   watchIntentOf,
+  watchStart,
 } from './domain';
 
 const LEASE_MS = 120_000,
@@ -91,7 +93,7 @@ export function executionUsecases({ store, source, watch, clock, ids, digest, re
       leaseUntil: null,
     };
   }
-  /** One approved intent into the ledger: the row, its audit and its outbox intent, or the existing row for the same decision. Composable, so a job commits its steps in one transaction. */
+  /** One approved intent into the ledger: the row, its audit and its workflow start (D86), or the existing row for the same decision. Composable, so a job commits its steps in one transaction. */
   async function commit(tx: ExecutionTx, persona: AuthenticatedContext, execution: Execution): Promise<Execution> {
     const saved = await tx.insert(execution);
     if (!retainsAuthority(persona, saved.execution)) throw new ExecutionError('Åtgärden finns inte.');
@@ -110,15 +112,7 @@ export function executionUsecases({ store, source, watch, clock, ids, digest, re
           compensates: execution.compensates,
         },
       });
-      await tx.enqueue({
-        id: 'execution:' + execution.id,
-        executionId: execution.id,
-        attempt: 0,
-        leaseUntil: null,
-        nextAt: execution.createdAt,
-        deliveredAt: null,
-        lastError: null,
-      });
+      await tx.enqueue(executionStart('execution:' + execution.id, execution.id));
     }
     return saved.execution;
   }
@@ -234,8 +228,13 @@ export function executionUsecases({ store, source, watch, clock, ids, digest, re
       if (!retainsAuthority(persona, saved.job)) throw new ExecutionError('Jobbet finns inte.');
       if (saved.job.digest !== job.digest) throw new ExecutionError('Beslutet gäller redan ett annat innehåll.');
       if (saved.inserted) {
-        // The watch's timer is intent in the same commit (D47): the outbox delivers the committed schedule to Temporal, which cannot invent or extend it.
-        for (const s of steps) if (s.kind === 'watch') await tx.enqueueWatch(watchIntentOf(job, s, at));
+        // The watch's timer is intent in the same commit (D47) and so is its workflow (D86): the engine gets the committed schedule and cannot invent or extend it.
+        for (const s of steps)
+          if (s.kind === 'watch') {
+            const intent = watchIntentOf(job, s, at);
+            await tx.enqueueWatch(intent);
+            await tx.enqueue(watchStart(intent));
+          }
         await tx.audit({
           actor: persona.principal.id,
           action: 'job.approved',
@@ -554,15 +553,7 @@ export function executionUsecases({ store, source, watch, clock, ids, digest, re
     await store.transaction(async tx => {
       const e = await tx.lock(id);
       if (!e || e.reason === 'source-reset' || !['pending', 'unknown'].includes(e.state)) return;
-      await tx.enqueue({
-        id: 'reconcile:' + id + ':' + e.attempt,
-        executionId: id,
-        attempt: 0,
-        leaseUntil: null,
-        nextAt: at,
-        deliveredAt: null,
-        lastError: null,
-      });
+      await tx.enqueue(executionStart('reconcile:' + id + ':' + e.attempt, id));
       await tx.audit({
         actor: persona.principal.id,
         action: 'execution.reconciliation_requested',

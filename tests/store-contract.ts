@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Thread } from '../packages/contracts/src/index';
-import type { AuditEntry, NewThread, ThreadStore } from '../apps/server/src/threads/model';
+import type { AuditEntry, NewThread, ThreadStore, WorkflowStart } from '../apps/server/src/threads/model';
+import { reminderStart, reminderWorkflowId } from '../apps/server/src/threads/domain';
 
 /**
  * The store contract (D25): one suite, two adapters. `tests/unit/memory-store.test.ts` runs it against the memory
@@ -13,6 +14,10 @@ export interface StoreHarness {
   people: [string, string];
   auditFor(subject: string): Promise<AuditEntry[]>;
   hasJob(id: string): Promise<boolean>;
+  /** The workflow starts committed under ids with this prefix (D86): the memory adapter's list, the engine's queue rows in Postgres. */
+  enqueued(prefix: string): Promise<WorkflowStart[]>;
+  /** The workflow ids whose wait a committed transaction ended, in order. */
+  cancelled(): Promise<string[]>;
 }
 const T0 = '2026-11-04T06:00:00.000Z';
 const plus = (iso: string, ms: number) => new Date(Date.parse(iso) + ms).toISOString();
@@ -94,6 +99,73 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
         expect(await tx.cancelTimer(id, T0, 2)).toBe(true);
       });
       expect(await store.readTimer(id)).toMatchObject({ state: 'cancelled', generation: 2 });
+    });
+    test('a workflow start commits with its timer and rolls back with it; an ended wait is cancelled after the commit', async () => {
+      const {
+        store,
+        people: [a],
+        enqueued,
+        cancelled,
+      } = await make();
+      const t = draft(a),
+        id = `reminder:${t.id}`;
+      await store.transaction(tx => tx.insertThread(t));
+      const input = {
+        id,
+        personId: a,
+        threadId: t.id,
+        kind: 'reminder' as const,
+        unitId: 'unit',
+        authorizationVersion: 'v1',
+        dueAt: plus(T0, 60_000),
+        requestedAt: T0,
+      };
+      await expect(
+        store.transaction(async tx => {
+          await tx.lockThread(a, t.id);
+          const timer = await tx.scheduleTimer(input);
+          await tx.enqueue(reminderStart(timer));
+          throw new Error('rollback');
+        }),
+      ).rejects.toThrow('rollback');
+      expect(await enqueued(id)).toEqual([]);
+      expect(await cancelled()).toEqual([]);
+      const first = await store.transaction(async tx => {
+        await tx.lockThread(a, t.id);
+        const timer = await tx.scheduleTimer(input);
+        await tx.enqueue(reminderStart(timer));
+        await tx.enqueue(reminderStart(timer));
+        return timer;
+      });
+      expect(await enqueued(id)).toEqual([
+        { workflow: 'durableReminder', id: `${id}:v2:1`, input: { id, generation: 1, dueAt: input.dueAt } },
+      ]);
+      // The start commits with the row, so the timer is scheduled as soon as it exists.
+      expect((await store.readThread(a, t.id))?.timers).toEqual([
+        { kind: 'reminder', dueAt: input.dueAt, state: 'scheduled' },
+      ]);
+      // Replacing cancels the previous generation after the commit; cancelling ends the current one; a rolled-back cancel ends nothing.
+      const second = await store.transaction(async tx => {
+        await tx.lockThread(a, t.id);
+        const timer = await tx.scheduleTimer({ ...input, dueAt: plus(T0, 120_000) });
+        await tx.enqueue(reminderStart(timer));
+        return timer;
+      });
+      expect(await cancelled()).toEqual([reminderWorkflowId(first)]);
+      await expect(
+        store.transaction(async tx => {
+          await tx.lockThread(a, t.id);
+          await tx.cancelTimer(id, plus(T0, 1000));
+          throw new Error('rollback');
+        }),
+      ).rejects.toThrow('rollback');
+      expect(await cancelled()).toEqual([reminderWorkflowId(first)]);
+      await store.transaction(async tx => {
+        await tx.lockThread(a, t.id);
+        expect(await tx.cancelTimer(id, plus(T0, 1000))).toBe(true);
+      });
+      expect(await cancelled()).toEqual([reminderWorkflowId(first), reminderWorkflowId(second)]);
+      expect((await enqueued(id)).map(s => s.id)).toEqual([`${id}:v2:1`, `${id}:v2:2`]);
     });
     test('a thread and its source authority are read back as stored, only by its owner', async () => {
       const {

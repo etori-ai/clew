@@ -9,9 +9,8 @@ import { postgresExecutionStore } from '../modules/executions/adapters/postgres'
 import { retainsAuthority } from '../modules/executions/domain';
 import { executionUsecases } from '../modules/executions/usecases';
 import { ExecutionError, type ExecutionSource, type WatchSource } from '../modules/executions/model';
-import { executionDispatcher, watchDispatcher } from '../modules/executions/dispatch';
-import { startExecutionWorkflow, startWatchWorkflow } from '../dbos/executions';
 import { clock } from './ambient';
+import { ledger } from './durable';
 import { reviewDocuments } from './documents';
 import { projectExecution } from './execution-projection';
 import { watchCardSink } from './watch-card';
@@ -34,10 +33,11 @@ const place = (connector: string) => {
   const c = registry.connector(connector);
   return { source: c?.source ?? connector, area: c?.areas[0]?.id ?? connector };
 };
-export const executionStore = postgresExecutionStore(
-  { seal: sealSecret, open: openSecret },
-  { project: projectExecution, pushCard: watchCardSink(place) },
-);
+// Every approval starts its workflow inside the ledger's transaction (D86); there is no outbox loop behind it.
+export const executionStore = postgresExecutionStore({ seal: sealSecret, open: openSecret }, ledger, {
+  project: projectExecution(ledger),
+  pushCard: watchCardSink(place),
+});
 const source: ExecutionSource = {
   async authorize(persona, operation, input) {
     if (calendarOperations.includes(operation as (typeof calendarOperations)[number])) {
@@ -109,25 +109,3 @@ calendarApproval.previous = async (p, id) => {
   await source.authorize(p, e.operation, e.payload);
   return { operation: e.operation, payload: e.payload as CalendarCommand };
 };
-export const dispatchExecutions = executionDispatcher({ store: executionStore, start: startExecutionWorkflow, clock });
-/** A job's watch steps (D55) reach their `jobWatch` workflows through the same kind of outbox, on the same tick. */
-export const dispatchWatches = watchDispatcher({ store: executionStore, start: startWatchWorkflow, clock });
-export function startExecutionDispatch() {
-  let busy = false;
-  const tick = async () => {
-    if (busy) return;
-    busy = true;
-    try {
-      await dispatchExecutions();
-      await dispatchWatches();
-    } catch {
-      console.error('execution outbox unavailable');
-    } finally {
-      busy = false;
-    }
-  };
-  void tick();
-  const timer = setInterval(() => void tick(), 2000);
-  timer.unref();
-  return () => clearInterval(timer);
-}

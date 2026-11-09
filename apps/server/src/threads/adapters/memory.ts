@@ -1,17 +1,23 @@
 import { unresolvedExecution, type Thread } from '@clew/contracts';
-import type { AuditEntry, JobInput, ReminderTimers, ThreadStore, ThreadTx, TimerDelivery, TimerIntent } from '../model';
+import type { AuditEntry, JobInput, ThreadStore, ThreadTx, TimerIntent, WorkflowStart } from '../model';
 import { admitAttention, type AttentionDay } from '../attention-domain';
+import { reminderWorkflowId } from '../domain';
 
 /**
  * The store in memory: the unit tests' adapter (D25). Same contract as Postgres, held to it by `tests/store-contract.ts`.
- * A transaction is a snapshot: when the callback throws, every write since the snapshot is gone, the audit row included.
- * `audit` and `jobs` are exposed so a test can assert what a mutation recorded.
+ * A transaction is a snapshot: when the callback throws, every write since the snapshot is gone, the audit row and the
+ * workflow starts included. `audit`, `jobs`, `enqueued` and `cancelled` are exposed so a test can assert what a mutation
+ * recorded and which workflows it started or ended (D86).
  */
-export interface MemoryThreadStore extends ThreadStore, TimerDelivery {
+export interface MemoryThreadStore extends ThreadStore {
   audit: AuditEntry[];
   /** What the person is due to be told, by delivery id. */
   deliveries: string[];
   jobs: JobInput[];
+  /** Every workflow start committed through `enqueue`, in order. */
+  enqueued: WorkflowStart[];
+  /** Every workflow id whose wait a committed transaction ended: a cancelled timer or a replaced generation. */
+  cancelled: string[];
   /** Every thread with its owner, for assertions that need to see across people. */
   dump(): Array<{ personId: string; thread: Thread }>;
 }
@@ -19,6 +25,9 @@ export function memoryThreadStore(): MemoryThreadStore {
   let threads = new Map<string, { personId: string; thread: Thread }>();
   let audit: AuditEntry[] = [];
   let jobs: JobInput[] = [];
+  let enqueued: WorkflowStart[] = [];
+  const cancelled: string[] = [];
+  let ended: string[] = [];
   let timerRows = new Map<string, TimerIntent>();
   let days = new Map<string, AttentionDay>(),
     deliveries = new Set<string>();
@@ -31,11 +40,8 @@ export function memoryThreadStore(): MemoryThreadStore {
       .map(t => ({
         kind: t.kind as 'reminder' | 'snooze',
         dueAt: t.dueAt,
-        state: (t.state === 'blocked'
-          ? 'blocked'
-          : t.deliveredGeneration === t.generation && t.deliveredState === 'active'
-            ? 'scheduled'
-            : 'queued') as 'blocked' | 'scheduled' | 'queued',
+        // The start commits with the row (D86), so an active timer is scheduled; `queued` is the retired outbox's state.
+        state: (t.state === 'blocked' ? 'blocked' : 'scheduled') as 'blocked' | 'scheduled' | 'queued',
       }));
     return copy({ ...thread, ...(timers.length ? { timers } : {}) });
   };
@@ -68,6 +74,7 @@ export function memoryThreadStore(): MemoryThreadStore {
         leaseUntil: null,
       };
       timerRows.set(timer.id, timer);
+      if (timer.generation > 1) ended.push(reminderWorkflowId({ id: timer.id, generation: timer.generation - 1 }));
       return copy(timer);
     },
     async cancelTimer(id, at, generation) {
@@ -75,7 +82,11 @@ export function memoryThreadStore(): MemoryThreadStore {
       if (!t || !['active', 'blocked'].includes(t.state) || (generation !== undefined && t.generation !== generation))
         return false;
       timerRows.set(id, { ...t, state: 'cancelled', reason: null, nextAt: at, leaseUntil: null, attempt: 0 });
+      ended.push(reminderWorkflowId(t));
       return true;
+    },
+    async enqueue(start) {
+      if (!enqueued.some(s => s.id === start.id)) enqueued.push(copy(start));
     },
     async updateTimer(t) {
       if (timerRows.get(t.id)?.generation === t.generation) timerRows.set(t.id, copy(t));
@@ -138,40 +149,6 @@ export function memoryThreadStore(): MemoryThreadStore {
   };
   const store: MemoryThreadStore = {
     readTimer: tx.readTimer,
-    claimTimer: (now, until) =>
-      store.transaction(async () => {
-        const t = [...timerRows.values()]
-          .sort((a, b) => a.nextAt.localeCompare(b.nextAt))
-          .find(
-            t =>
-              ['active', 'cancelled'].includes(t.state) &&
-              (t.deliveredGeneration !== t.generation || t.deliveredState !== t.state) &&
-              t.nextAt <= now &&
-              (!t.leaseUntil || t.leaseUntil <= now),
-          );
-        if (!t) return undefined;
-        const claimed = { ...t, attempt: t.attempt + 1, leaseUntil: until };
-        timerRows.set(t.id, claimed);
-        return copy(claimed);
-      }),
-    finishTimer: (t, retryAt, error) =>
-      store.transaction(async () => {
-        const current = timerRows.get(t.id);
-        if (
-          !current ||
-          current.generation !== t.generation ||
-          current.state !== t.state ||
-          current.attempt !== t.attempt
-        )
-          return;
-        timerRows.set(t.id, {
-          ...current,
-          nextAt: retryAt,
-          leaseUntil: null,
-          reason: error ?? null,
-          ...(!error ? { deliveredGeneration: t.generation, deliveredState: t.state } : {}),
-        });
-      }),
     get audit() {
       return audit;
     },
@@ -180,6 +157,12 @@ export function memoryThreadStore(): MemoryThreadStore {
     },
     get jobs() {
       return jobs;
+    },
+    get enqueued() {
+      return enqueued;
+    },
+    get cancelled() {
+      return cancelled;
     },
     dump: () => [...threads.values()].map(copy),
     async listThreads(personId, now) {
@@ -225,16 +208,22 @@ export function memoryThreadStore(): MemoryThreadStore {
         threads: copy(threads),
         audit: copy(audit),
         jobs: copy(jobs),
+        enqueued: copy(enqueued),
         timerRows: copy(timerRows),
         days: copy(days),
         deliveries: copy(deliveries),
       };
+      ended = [];
       try {
-        return await fn(tx);
+        const result = await fn(tx);
+        // Committed: the waits this transaction ended are cancelled afterwards, as the Postgres store does.
+        cancelled.push(...ended);
+        return result;
       } catch (error) {
         threads = snapshot.threads;
         audit = snapshot.audit;
         jobs = snapshot.jobs;
+        enqueued = snapshot.enqueued;
         timerRows = snapshot.timerRows;
         days = snapshot.days;
         deliveries = snapshot.deliveries;
@@ -245,23 +234,4 @@ export function memoryThreadStore(): MemoryThreadStore {
     },
   };
   return store;
-}
-
-/** Timers that only remember what was asked of them. */
-export function memoryTimers(
-  options: { available?: boolean } = {},
-): ReminderTimers & { started: Array<Parameters<ReminderTimers['start']>[0]>; cancelled: string[] } {
-  const started: Array<Parameters<ReminderTimers['start']>[0]> = [],
-    cancelled: string[] = [];
-  return {
-    started,
-    cancelled,
-    async start(input) {
-      if (options.available === false) throw new Error('Timer service unavailable.');
-      started.push(input);
-    },
-    async cancel(workflowId) {
-      cancelled.push(workflowId);
-    },
-  };
 }

@@ -83,9 +83,9 @@ sequenceDiagram
   participant Source
   Person->>Web: Review and approve
   Web->>Server: Human decision request
-  Server->>DB: Commit approval, encrypted input, audit, projection and outbox
+  Server->>DB: Commit approval, encrypted input, audit, projection and the workflow start
   Server-->>Web: Saved, pending execution
-  Server->>Worker: Deliver committed intent
+  DB->>Worker: Dequeue the committed start
   Worker->>Server: Progress execution under current authority
   Server->>Connector: Execute with stable operation ID
   Connector->>Source: Authorized source operation
@@ -96,7 +96,7 @@ sequenceDiagram
   Server-->>Web: Change notification and authorized reread
 ```
 
-An **outbox** is a database record saying committed work still needs delivery. Committing it with the approval closes the gap between saving the person's decision and starting a workflow. The durable engine handles delivery and waiting; PostgreSQL remains the authority for what was approved and what outcome is known.
+The workflow start is one more write in the approval's transaction ([D86](../decisions/D86-the-ledger-starts-its-workflow-inside-its-own-transaction.md)): the engine checkpoints to the same database, so its `dbos.enqueue_workflow` runs on the ledger's own connection and there is no gap between saving the person's decision and starting the workflow, and no outbox to bridge one. The durable engine handles waiting and retries; PostgreSQL remains the authority for what was approved and what outcome is known.
 
 There is no transaction spanning Clew and an arbitrary source. A source can commit while its reply is lost. Clew retains the original operation identity and uses the connector's declared lookup/replay guarantees to recover evidence. It does not turn a timeout into success or blindly repeat an uncertain effect. Undo is a separately authorized compensating execution, not deletion of the original receipt.
 

@@ -11,6 +11,7 @@ import type { AuthenticatedContext } from '../../packages/contracts/src';
 import { Registry, openGovernance, type ScanObservation } from '../../packages/connectors/src';
 import { threadAccess } from '../../apps/server/src/threads/access';
 import { draft } from '../store-contract';
+import { forgetTestWorkflows, testDurable } from './durable';
 
 const people: string[] = [],
   subjects: string[] = [],
@@ -35,6 +36,7 @@ afterAll(async () => {
     await database().delete(schema.threads).where(inArray(schema.threads.personId, people));
     await database().delete(schema.people).where(inArray(schema.people.id, people));
   }
+  await forgetTestWorkflows();
   await closeDatabase();
 });
 async function person() {
@@ -53,8 +55,8 @@ async function person() {
 }
 test('postgres refresh coalesces, preserves dismissal, fences stale scans and only resolves complete observations', async () => {
   const actor = await person(),
-    store = postgresRefreshStore(actor.id),
-    threads = postgresThreadStore();
+    store = postgresRefreshStore({ durable: testDurable }, actor.id),
+    threads = postgresThreadStore({ durable: testDurable });
   let time = Date.parse('2098-11-05T09:00:00.000Z');
   const clock = () => new Date(time),
     key = (v: unknown) => createHash('sha256').update(JSON.stringify(v)).digest('hex');
@@ -151,7 +153,7 @@ test('postgres refresh coalesces, preserves dismissal, fences stale scans and on
 });
 test('attention budget, concurrent tabs, explicit reminders and delayed release share durable records', async () => {
   const actor = await person(),
-    store = postgresThreadStore(),
+    store = postgresThreadStore({ durable: testDurable }),
     attention = postgresAttention(),
     card = draft(actor.id);
   subjects.push('thread:' + card.id);
@@ -218,7 +220,6 @@ test('new jobs cannot be claimed by the legacy owner and stale acknowledgements 
   const claim = results.find(r => r && r !== 'busy')!;
   if (claim === 'busy') throw new Error('No claim');
   await durableJobs.completed(id, claim.attempt, '2098-11-05T09:00:01.000Z');
-  await durableJobs.delivered(id, 0, '2098-11-05T09:00:02.000Z');
   expect((await database().select().from(schema.jobs).where(eq(schema.jobs.id, id)))[0]?.status).toBe('done');
 });
 
@@ -226,8 +227,8 @@ test('postgres source snapshots reject transferred and renewed authority without
   let current = await person(),
     time = Date.parse('2098-11-05T09:00:00.000Z');
   const clock = () => new Date(time),
-    store = postgresRefreshStore(current.id),
-    threads = postgresThreadStore();
+    store = postgresRefreshStore({ durable: testDurable }, current.id),
+    threads = postgresThreadStore({ durable: testDurable });
   const registry = new Registry()
     .register({ id: 'reference', kind: 'passthrough', source: 'Reference', areas: [], capabilities: [] })
     .govern('reference', openGovernance());

@@ -976,6 +976,15 @@
       "number": 85,
       "path": "docs/decisions/D85-dbos-transact-replaces-temporal-as-the-durable-engine.md",
       "title": "D85 · DBOS Transact replaces Temporal as the durable engine",
+      "status": "accepted, implemented; the in-transaction start it names as the next step is D86 (2026-11-09)",
+      "date": "2026-11-09",
+      "area": "platform"
+    },
+    {
+      "key": "D86-the-ledger-starts-its-workflow-inside-its-own-transaction",
+      "number": 86,
+      "path": "docs/decisions/D86-the-ledger-starts-its-workflow-inside-its-own-transaction.md",
+      "title": "D86 · The ledger starts its durable workflow inside its own transaction; the outbox loops are retired",
       "status": "accepted, implemented",
       "date": "2026-11-09",
       "area": "platform"
@@ -1863,6 +1872,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D86-the-ledger-starts-its-workflow-inside-its-own-transaction.md",
+      "title": "D86 · The ledger starts its durable workflow inside its own transaction; the outbox loops are retired",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -2025,6 +2040,7 @@
       "headings": [
         "Inspect without exposing source data",
         "Upgrade from the previous scheduler",
+        "The ledger queue",
         "Restore safely",
         "Reproduce the synthetic upgrade and restore rehearsal"
       ]
@@ -2673,20 +2689,6 @@
         "What the spike did not cover",
         "Comparison after the spike",
         "Recommendation"
-      ]
-    },
-    {
-      "path": "docs/reviews/2026-11-09-mcp-backed-native-connectors.md",
-      "title": "Building a Clew connector over an MCP server",
-      "category": "review-history",
-      "headings": [
-        "The available choices",
-        "What the fake poll actually provides",
-        "What a native adapter would look like",
-        "Combining native work with the provider App",
-        "What Clew should support",
-        "Recommended next steps for Medarbetarpuls",
-        "Evidence and verification"
       ]
     },
     {

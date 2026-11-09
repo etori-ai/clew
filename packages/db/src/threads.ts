@@ -37,11 +37,8 @@ export function toThread(
     .map(t => ({
       kind: t.kind as 'reminder' | 'snooze',
       dueAt: t.dueAt.toISOString(),
-      state: (t.state === 'blocked'
-        ? 'blocked'
-        : t.deliveredGeneration === t.generation && t.deliveredState === 'active'
-          ? 'scheduled'
-          : 'queued') as 'blocked' | 'scheduled' | 'queued',
+      // The workflow starts in the commit that writes the row (D86), so an active timer is scheduled; `queued` was the outbox's state.
+      state: (t.state === 'blocked' ? 'blocked' : 'scheduled') as 'blocked' | 'scheduled' | 'queued',
     }));
   return {
     id: row.id,

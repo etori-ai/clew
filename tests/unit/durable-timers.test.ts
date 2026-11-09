@@ -2,7 +2,6 @@ import { expect, test } from 'bun:test';
 import type { AuthenticatedContext } from '../../packages/contracts/src';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { reminderUsecases } from '../../apps/server/src/threads/usecases/reminders';
-import { timerDispatcher } from '../../apps/server/src/threads/usecases/timer-dispatch';
 import { draft } from '../store-contract';
 
 const actor: AuthenticatedContext = {
@@ -60,33 +59,20 @@ test('an audit failure rolls back the card and timer intent before anything can 
   );
   expect(await w.store.readTimer(`reminder:${w.thread.id}`)).toBeUndefined();
   expect((await w.store.readThread(actor.id, w.thread.id))?.waitingOn).toBeNull();
-  expect(await w.store.claimTimer(w.clock().toISOString(), w.clock().toISOString())).toBeUndefined();
+  expect(w.store.enqueued).toEqual([]);
 });
-test('outage recovery preserves the absolute due time and a retried fire changes the card once', async () => {
+test('the workflow start commits with the intent and keeps the absolute due time; a retried fire changes the card once', async () => {
   const w = await world();
   const set = await w.reminders.remind(actor, w.thread.id, 60);
-  await timerDispatcher({
-    store: w.store,
-    clock: w.clock,
-    deliver: async () => {
-      throw new Error('offline');
+  expect(await w.store.readTimer(`reminder:${w.thread.id}`)).toMatchObject({ dueAt: set.fireAt, state: 'active' });
+  expect(w.store.enqueued).toEqual([
+    {
+      workflow: 'durableReminder',
+      id: set.id,
+      input: { id: `reminder:${w.thread.id}`, generation: 1, dueAt: set.fireAt },
     },
-  })();
-  expect(await w.store.readTimer(`reminder:${w.thread.id}`)).toMatchObject({
-    dueAt: set.fireAt,
-    reason: 'timer-service-unavailable',
-    deliveredGeneration: null,
-  });
+  ]);
   w.advance(120_000);
-  const delivered: string[] = [];
-  await timerDispatcher({
-    store: w.store,
-    clock: w.clock,
-    deliver: async t => {
-      delivered.push(t.dueAt);
-    },
-  })();
-  expect(delivered).toEqual([set.fireAt]);
   expect(
     await Promise.all([w.reminders.fire(`reminder:${w.thread.id}`, 1), w.reminders.fire(`reminder:${w.thread.id}`, 1)]),
   ).toEqual(['surfaced', 'skipped']);
@@ -104,28 +90,19 @@ test('a superseded workflow and stale undo cannot cancel or fire the newer gener
   expect(await w.reminders.fire(`reminder:${w.thread.id}`, 2)).toBe('skipped');
   expect(w.store.audit.filter(a => a.action === 'reminder.cancelled')).toHaveLength(1);
 });
-test('cancellation wins over a delayed start acknowledgement, and is itself delivered', async () => {
+test('a replacement starts the new generation and ends the old one after commit; cancellation ends the current one and fences the fire', async () => {
   const w = await world(),
     id = `reminder:${w.thread.id}`;
-  const set = await w.reminders.remind(actor, w.thread.id, 1);
-  const claimed = (await w.store.claimTimer(
-    w.clock().toISOString(),
-    new Date(w.clock().getTime() + 30_000).toISOString(),
-  ))!;
-  await w.reminders.cancelReminder(actor, w.thread.id, set.id);
-  await w.store.finishTimer(claimed, w.clock().toISOString());
-  expect(await w.store.readTimer(id)).toMatchObject({ state: 'cancelled', deliveredGeneration: null });
-  const sent: string[] = [];
-  await timerDispatcher({
-    store: w.store,
-    clock: w.clock,
-    deliver: async t => {
-      sent.push(t.state);
-    },
-  })();
-  expect(sent).toEqual(['cancelled']);
-  w.advance(2000);
+  const first = await w.reminders.remind(actor, w.thread.id, 1);
+  const second = await w.reminders.remind(actor, w.thread.id, 2);
+  expect(w.store.enqueued.map(s => s.id)).toEqual([first.id, second.id]);
+  expect(w.store.cancelled).toEqual([first.id]);
+  await w.reminders.cancelReminder(actor, w.thread.id, second.id);
+  expect(w.store.cancelled).toEqual([first.id, second.id]);
+  expect(await w.store.readTimer(id)).toMatchObject({ state: 'cancelled', generation: 2 });
+  w.advance(3000);
   expect(await w.reminders.fire(id, 1)).toBe('skipped');
+  expect(await w.reminders.fire(id, 2)).toBe('skipped');
 });
 test('revoked authority blocks delivery visibly and auditably', async () => {
   const w = await world(),

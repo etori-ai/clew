@@ -5,6 +5,8 @@ import { database, schema } from '../../packages/db/src/index';
 import { sealSecret, openSecret } from '../../apps/server/src/auth-crypto';
 import { postgresExecutionStore } from '../../apps/server/src/modules/executions/adapters/postgres';
 import { executionRecord, jobRecord, watchIntentRecord } from '../execution-store-contract';
+import { executionStart } from '../../apps/server/src/modules/executions/domain';
+import { forgetTestWorkflows, testDurable } from './durable';
 import { retireFixtureWork } from '../../scripts/fixture-maintenance';
 import { registerConnector } from '../../scripts/connector-registry';
 import { bindFollower } from '../../scripts/job-bindings';
@@ -15,9 +17,10 @@ const connectorId = 'fixture-' + randomUUID().slice(0, 24);
 const capability = connectorId + '.follow';
 const ids = ['pending', 'unknown', 'succeeded', 'untouched'].map(s => personId + '-' + s);
 const jobId = personId + '-job';
-const store = postgresExecutionStore({ seal: sealSecret, open: openSecret });
+const store = postgresExecutionStore({ seal: sealSecret, open: openSecret }, testDurable);
 
 afterAll(async () => {
+  await forgetTestWorkflows();
   const resets = await database()
     .select()
     .from(schema.audit)
@@ -73,16 +76,12 @@ test('reset retires pending work, preserves unknown effects and receipts, blocks
     for (const e of records) await tx.insert(e);
     await tx.insertJob(job);
     await tx.enqueueWatch(watchIntentRecord(job));
-    await tx.enqueue({
-      id: personId + '-dispatch',
-      executionId: ids[0]!,
-      attempt: 0,
-      nextAt: records[0]!.createdAt,
-      leaseUntil: null,
-      deliveredAt: null,
-      lastError: null,
-    });
+    await tx.enqueue(executionStart('execution:' + ids[0]!, ids[0]!));
   });
+  // A legacy outbox row (pre-D86): the reset still acknowledges it so an operator reading the table sees it closed.
+  await database()
+    .insert(schema.dispatchOutbox)
+    .values({ id: personId + '-dispatch', executionId: ids[0]!, nextAt: new Date(records[0]!.createdAt) });
   const receipt = { ...records[2]!.result!, at: records[2]!.createdAt, undoUntil: null, undoCapability: null };
   // A card the person closed before the reset keeps its state and its time; an open card is closed by the reset.
   const closedAt = new Date('2099-11-01T10:00:00.000Z');

@@ -1,13 +1,23 @@
 import { and, eq } from 'drizzle-orm';
 import { schema, type Transaction } from '@clew/db';
+import { enqueueWorkflow, type DurableQueue } from '@clew/db/durable';
+import { jobStart } from '@clew/db/jobs';
 import { receipt } from '@clew/connectors';
 import { ExecutionError, type Execution } from '../modules/executions/model';
 import type { CalendarCommand } from '../modules/calendar/usecases/decisions';
 import { timerTx } from '../threads/adapters/timer-postgres';
+import { reminderStart } from '../threads/domain';
 import { nextCheck } from '../modules/calendar/usecases/obligation';
 
-/** The execution, visible card and audit commit through this same physical transaction. Never source I/O here. */
-export async function projectExecution(tx: Transaction, e: Execution, stage: 'approval' | 'update') {
+type Stage = 'approval' | 'update';
+/**
+ * The execution, visible card and audit commit through this same physical transaction. Never source I/O here. The
+ * obligation timer and the receipt jobs it writes start their workflows in the same transaction (D86), in the engine's
+ * application and queue named by `durable`; the composition root binds it, a Postgres test binds its own.
+ */
+export const projectExecution = (durable: DurableQueue) => (tx: Transaction, e: Execution, stage: Stage) =>
+  project(tx, e, stage, durable);
+async function project(tx: Transaction, e: Execution, stage: Stage, durable: DurableQueue) {
   if (!e.presentation) return;
   if (stage === 'approval' && e.presentation.newTitle && e.connector === 'calendar' && !e.compensates) {
     await tx.insert(schema.threads).values({
@@ -104,7 +114,7 @@ export async function projectExecution(tx: Transaction, e: Execution, stage: 'ap
       .insert(schema.followupPolicies)
       .values(policy)
       .onConflictDoUpdate({ target: schema.followupPolicies.threadId, set: policy });
-    await timerTx(tx).scheduleTimer({
+    const timer = await timerTx(tx).scheduleTimer({
       id: `obligation:${thread.id}`,
       threadId: thread.id,
       personId: e.personId,
@@ -114,6 +124,7 @@ export async function projectExecution(tx: Transaction, e: Execution, stage: 'ap
       requestedAt: e.createdAt,
       dueAt: nextCheck(e.createdAt),
     });
+    await enqueueWorkflow(tx, durable, reminderStart(timer));
     await tx.insert(schema.audit).values({
       actor: e.principal,
       action: 'obligation.policy_approved',
@@ -178,16 +189,15 @@ export async function projectExecution(tx: Transaction, e: Execution, stage: 'ap
     })
     .where(eq(schema.threads.id, thread.id));
   if (!e.compensates && projectedReceipt?.undoUntil && e.state !== 'running') {
-    for (const kind of ['receipt-final', ...(command?.threadId ? ['undo-expiry'] : [])])
-      await tx
+    for (const kind of ['receipt-final', ...(command?.threadId ? ['undo-expiry'] : [])]) {
+      const runAt = new Date(projectedReceipt.undoUntil);
+      const inserted = await tx
         .insert(schema.jobs)
-        .values({
-          id: `${kind}:${e.id}`,
-          kind,
-          runAt: new Date(projectedReceipt.undoUntil),
-          payload: { threadId: thread.id },
-        })
-        .onConflictDoNothing();
+        .values({ id: `${kind}:${e.id}`, kind, runAt, payload: { threadId: thread.id } })
+        .onConflictDoNothing()
+        .returning({ id: schema.jobs.id });
+      if (inserted.length) await enqueueWorkflow(tx, durable, jobStart(`${kind}:${e.id}`, runAt));
+    }
   }
   if (stage === 'approval' || terminal || e.state === 'unknown') {
     await tx.insert(schema.audit).values({

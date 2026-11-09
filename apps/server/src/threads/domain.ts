@@ -1,4 +1,15 @@
 import { dayRhythm, stockholmClock, stockholmDate, stockholmInstant, type RhythmPoint } from '@clew/contracts';
+import type { TimerIntent, WorkflowStart } from './model';
+
+/** The `durableReminder` workflow of a timer generation (D47, D86): the id every start and cancel of it uses. */
+export const reminderWorkflowId = (timer: Pick<TimerIntent, 'id' | 'generation'>) =>
+  `${timer.id}:v2:${timer.generation}`;
+/** The workflow start a reminder, snooze or obligation timer commits with its row: wait until the absolute due time, then let the ledger decide by generation. */
+export const reminderStart = (timer: Pick<TimerIntent, 'id' | 'generation' | 'dueAt'>): WorkflowStart => ({
+  workflow: 'durableReminder',
+  id: reminderWorkflowId(timer),
+  input: { id: timer.id, generation: timer.generation, dueAt: timer.dueAt },
+});
 
 /**
  * The day as one track (D28): pure functions over instants, no clock in here. The review at 06:00, the bundles and the

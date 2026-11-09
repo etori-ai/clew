@@ -11,7 +11,9 @@ import { executionUsecases } from '../../apps/server/src/modules/executions/usec
 import { jobUsecases } from '../../apps/server/src/modules/jobs/usecases';
 import { postgresFollowBindingStore } from '../../apps/server/src/modules/jobs/adapters/postgres';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
+import { enqueuedWorkflows, forgetTestWorkflows, testDurable } from './durable';
 process.env.MASTER_KEY ??= randomBytes(32).toString('base64');
+const sealer = { seal: sealSecret, open: openSecret };
 const people: string[] = [];
 const make = async () => {
   const personId = 'exec-test-' + randomUUID();
@@ -19,7 +21,7 @@ const make = async () => {
   await database()
     .insert(schema.people)
     .values({ id: personId, organisationId: 'test', name: 'Synthetic execution test' });
-  const store = postgresExecutionStore({ seal: sealSecret, open: openSecret });
+  const store = postgresExecutionStore(sealer, testDurable);
   return {
     personId,
     store,
@@ -30,6 +32,16 @@ const make = async () => {
           .from(schema.audit)
           .where(and(eq(schema.audit.actor, 'person:' + personId), eq(schema.audit.action, action)))
       ).length,
+    enqueued: async (prefix: string) =>
+      (await enqueuedWorkflows(prefix)).map(({ workflow, id, input }) => ({ workflow, id, input })),
+    watches: async (jobId: string) =>
+      (await database().select().from(schema.watchIntents).where(eq(schema.watchIntents.jobId, jobId))).map(r => ({
+        ...r,
+        expiresAt: r.expiresAt.toISOString(),
+        nextAt: r.nextAt.toISOString(),
+        leaseUntil: r.leaseUntil?.toISOString() ?? null,
+        deliveredAt: r.deliveredAt?.toISOString() ?? null,
+      })),
   };
 };
 executionStoreContract('postgres', make);
@@ -44,7 +56,7 @@ test('approved input and source evidence are sealed and survive a new adapter in
   const [raw] = await database().select().from(schema.executions).where(eq(schema.executions.id, e.id));
   expect(raw!.payload).not.toContain('reference:item:1');
   expect(raw!.result).not.toContain('Sensitive');
-  const restarted = postgresExecutionStore({ seal: sealSecret, open: openSecret });
+  const restarted = postgresExecutionStore(sealer, testDurable);
   expect(await restarted.read(e.id)).toEqual(e);
 });
 test("a job's steps are sealed and survive a new adapter instance", async () => {
@@ -58,7 +70,7 @@ test("a job's steps are sealed and survive a new adapter instance", async () => 
   const [raw] = await database().select().from(schema.executionJobs).where(eq(schema.executionJobs.id, job.id));
   expect(raw!.steps).not.toContain('hr:emp:1004');
   expect(raw!.steps).not.toContain('registered');
-  expect(await postgresExecutionStore({ seal: sealSecret, open: openSecret }).readJob(job.id)).toEqual(job);
+  expect(await postgresExecutionStore(sealer, testDurable).readJob(job.id)).toEqual(job);
 });
 test('approval, card state and outcome are atomic; an uncertain undo preserves the original receipt', async () => {
   const w = await make(),
@@ -78,7 +90,7 @@ test('approval, card state and outcome are atomic; an uncertain undo preserves t
       createdAt: new Date(at),
       updatedAt: new Date(at),
     });
-  const store = postgresExecutionStore({ seal: sealSecret, open: openSecret }, projectExecution);
+  const store = postgresExecutionStore(sealer, testDurable, projectExecution(testDurable));
   const persona: AuthenticatedContext = {
     id: w.personId,
     name: 'Test',
@@ -153,10 +165,9 @@ test('a watch step that ends unseen leaves one card, one admitted delivery and i
   const w = await make(),
     e = executionRecord(w.personId, w.personId + '-expired-step'),
     job = jobRecord(w.personId, w.personId + '-expired-job', [e]);
-  const store = postgresExecutionStore(
-    { seal: sealSecret, open: openSecret },
-    { pushCard: watchCardSink(() => ({ source: 'Lönesystemet', area: 'lon' })) },
-  );
+  const store = postgresExecutionStore(sealer, testDurable, {
+    pushCard: watchCardSink(() => ({ source: 'Lönesystemet', area: 'lon' })),
+  });
   await store.transaction(async tx => {
     await tx.insert(e);
     await tx.insertJob(job);
@@ -244,7 +255,7 @@ test('a watch step that ends unseen leaves one card, one admitted delivery and i
     ).length,
   ).toBe(1);
   // A store the composition root has not given a card sink refuses to settle silently; the step stays waiting for a retry.
-  const silent = postgresExecutionStore({ seal: sealSecret, open: openSecret }),
+  const silent = postgresExecutionStore(sealer, testDurable),
     w2 = await make(),
     e2 = executionRecord(w2.personId, w2.personId + '-silent-step');
   const other = jobRecord(w2.personId, w2.personId + '-silent-job', [e2]);
@@ -294,7 +305,7 @@ test('job approval retries survive adapter restart with one schedule, and receip
   };
   const fact = { kind: 'reference:job-' + randomUUID(), attributes: { ref: 'synthetic:item' } };
   const stack = () => {
-    const store = postgresExecutionStore({ seal: sealSecret, open: openSecret });
+    const store = postgresExecutionStore(sealer, testDurable);
     const clock = () => new Date(now);
     const ledger = executionUsecases({
       store,
@@ -444,4 +455,5 @@ afterAll(async () => {
   await database().delete(schema.executionJobs).where(inArray(schema.executionJobs.personId, people));
   await database().delete(schema.threads).where(inArray(schema.threads.personId, people));
   await database().delete(schema.people).where(inArray(schema.people.id, people));
+  await forgetTestWorkflows();
 });

@@ -1,12 +1,17 @@
 import { and, eq } from 'drizzle-orm';
-import { database, schema, type Transaction } from '@clew/db';
+import { schema, type Transaction } from '@clew/db';
 import { readThread } from '@clew/db/threads';
-import { timerTx } from '../threads/adapters/timer-postgres';
-import { attentionTx } from '../threads/adapters/attention-postgres';
+import type { ThreadTx } from '../threads/model';
+import { reminderStart } from '../threads/domain';
+import { withThreadTx, type ThreadStoreOptions } from '../threads/adapters/postgres';
 import type { FollowupSnapshot, FollowupStore, FollowupTx } from '../modules/calendar/usecases/followups';
 
-/** Cross-module local delivery uses the same physical transaction as its ordinal and policy. */
-const adapter = (tx: Transaction): FollowupTx => ({
+/**
+ * Cross-module local delivery uses the same physical transaction as its ordinal and policy. The obligation timer's
+ * workflow starts with the timer row (D86) and a stopped timer's wait is cancelled after the commit, through the
+ * thread store's own transaction wrapper.
+ */
+const adapter = (tx: Transaction, timers: ThreadTx): FollowupTx => ({
   async load(threadId) {
     const [thread] = await tx.select().from(schema.threads).where(eq(schema.threads.id, threadId)).for('update');
     if (!thread) return undefined;
@@ -15,7 +20,7 @@ const adapter = (tx: Transaction): FollowupTx => ({
       .from(schema.followupPolicies)
       .where(eq(schema.followupPolicies.threadId, threadId))
       .for('update');
-    const timer = await timerTx(tx).readTimer(`obligation:${threadId}`);
+    const timer = await timers.readTimer(`obligation:${threadId}`);
     const current = (await readThread(thread.personId, threadId, tx))!;
     return {
       thread: current.thread,
@@ -47,7 +52,7 @@ const adapter = (tx: Transaction): FollowupTx => ({
       .onConflictDoUpdate({ target: schema.followupPolicies.threadId, set: row });
   },
   async schedule(p, dueAt, at) {
-    await timerTx(tx).scheduleTimer({
+    const timer = await timers.scheduleTimer({
       id: `obligation:${p.threadId}`,
       threadId: p.threadId,
       personId: p.personId,
@@ -57,9 +62,10 @@ const adapter = (tx: Transaction): FollowupTx => ({
       requestedAt: at,
       dueAt,
     });
+    await timers.enqueue(reminderStart(timer));
   },
   async stop(threadId, at) {
-    await timerTx(tx).cancelTimer(`obligation:${threadId}`, at);
+    await timers.cancelTimer(`obligation:${threadId}`, at);
   },
   async deliver(personId, p, ordinal, sender, at) {
     const id = `followup:${p.id}:${ordinal}`,
@@ -84,7 +90,7 @@ const adapter = (tx: Transaction): FollowupTx => ({
       .onConflictDoNothing()
       .returning();
     if (inserted.length) {
-      await attentionTx(tx).admitDelivery({ id: `delivery:${id}`, personId, threadId: id, kind: 'automatic', at });
+      await timers.admitDelivery({ id: `delivery:${id}`, personId, threadId: id, kind: 'automatic', at });
       await tx
         .insert(schema.threadMessages)
         .values({ id: `message:${id}`, threadId: id, role: 'assistant', body: summary, createdAt: new Date(at) });
@@ -128,9 +134,9 @@ const adapter = (tx: Transaction): FollowupTx => ({
     });
   },
 });
-export function postgresFollowupStore(): FollowupStore {
+export function postgresFollowupStore(options: ThreadStoreOptions): FollowupStore {
   return {
-    read: id => database().transaction(tx => adapter(tx).load(id)),
-    transaction: fn => database().transaction(tx => fn(adapter(tx))),
+    read: id => withThreadTx(options, (tx, timers) => adapter(tx, timers).load(id)),
+    transaction: fn => withThreadTx(options, (tx, timers) => fn(adapter(tx, timers))),
   };
 }

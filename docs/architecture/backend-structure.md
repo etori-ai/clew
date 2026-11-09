@@ -34,7 +34,7 @@ Connectors under `connectors/` import no Clew application or workspace package. 
 
 | Folder/file | Responsibility |
 |---|---|
-| [main.ts](../../apps/server/src/main.ts), [startup.ts](../../apps/server/src/startup.ts) | HTTP app, readiness, registration initialization and starting dispatchers/worker. |
+| [main.ts](../../apps/server/src/main.ts), [startup.ts](../../apps/server/src/startup.ts) | HTTP app, readiness, registration initialization and launching the durable engine. |
 | [auth.ts](../../apps/server/src/auth.ts), [system-context.ts](../../apps/server/src/system-context.ts) | Session-backed identity and current-grant identity for background work. |
 | [routes/](../../apps/server/src/routes/) | Auth, business API, connector callbacks/public keys, administration and served protocol. |
 | [composition/](../../apps/server/src/composition/) | Wires ports to live stores, calendar providers, model endpoints, clocks, ids and workflow delivery. |
@@ -44,7 +44,7 @@ Connectors under `connectors/` import no Clew application or workspace package. 
 | [modules/calendar/](../../apps/server/src/modules/calendar/) | Calendar capabilities, planning, reads, approval, execution and bounded follow-up. |
 | [modules/people/](../../apps/server/src/modules/people/) | Internal user reads over a `UserReads` port; no managed connector lifecycle. |
 | [modules/search/](../../apps/server/src/modules/search/) | Composite search, source budgets, result contracts and answer-card capability. |
-| [modules/executions/](../../apps/server/src/modules/executions/) | Approval ledger, source progress/reconciliation, compensation, job/watch state and outbox dispatch. |
+| [modules/executions/](../../apps/server/src/modules/executions/) | Approval ledger, source progress/reconciliation, compensation, job/watch state; every intent starts its workflow in its own transaction (D86). |
 | [modules/jobs/](../../apps/server/src/modules/jobs/) | Fact/follower binding and cross-system proposal assembly. |
 | [modules/operations/](../../apps/server/src/modules/operations/) | Reliability diagnostics over ports. |
 | [scheduler/](../../apps/server/src/scheduler/) | Scheduled job use cases, queue and durable ownership adapters. |
@@ -86,7 +86,7 @@ The [dependency rules](../../.dependency-cruiser.cjs) enforce these boundaries. 
 |---|---|---|
 | Read a declared view | [Capability routes](../../apps/server/src/routes/api.ts) | [Server registry](../../apps/server/src/connectors/registry.ts) → [capability registry](../../packages/connectors/src/index.ts) → [remote transport](../../packages/connectors/src/remote.ts) |
 | Discover source work | [Refresh composition](../../apps/server/src/composition/refresh.ts) | [Refresh use cases](../../apps/server/src/threads/usecases/refresh.ts) → store/registry ports |
-| Approve a card action | [Card decisions](../../apps/server/src/threads/usecases/decisions.ts) | [Execution composition](../../apps/server/src/composition/executions.ts) → [execution use cases](../../apps/server/src/modules/executions/usecases.ts) → outbox/workflow |
+| Approve a card action | [Card decisions](../../apps/server/src/threads/usecases/decisions.ts) | [Execution composition](../../apps/server/src/composition/executions.ts) → [execution use cases](../../apps/server/src/modules/executions/usecases.ts) → workflow start in the same transaction |
 | Configure a connector | [Administration routes](../../apps/server/src/routes/admin.ts) | [Connector use cases](../../apps/server/src/connectors/usecases/admin.ts) → store and [reconciliation](../../apps/server/src/connectors/reconcile.ts) |
 | Read Clew's users | [Internal capabilities](../../apps/server/src/modules/people/capabilities.ts) | [UserReads port](../../apps/server/src/modules/people/ports.ts) → [composition](../../apps/server/src/composition/people.ts) |
 

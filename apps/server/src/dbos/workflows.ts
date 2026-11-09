@@ -5,6 +5,10 @@
  *
  * A workflow function must be deterministic between checkpoints: the clock is `DBOS.now()`, waits are `DBOS.sleep`,
  * and a changed workflow body is a new application version (see `runtime.ts`).
+ *
+ * The four workflows the ledger starts from inside its transactions (D86: `scheduledJob`, `durableReminder`,
+ * `approvedExecution`, `jobWatch`) are registered with portable serialization: `dbos.enqueue_workflow` writes their
+ * input as plain JSON, and their names are the contract between the store adapters and this file.
  */
 import { DBOS } from '@dbos-inc/dbos-sdk';
 
@@ -61,7 +65,7 @@ export const scheduledJob = DBOS.registerWorkflow(
     while ((await step('runScheduledJob', () => activity('runScheduledJob')(input.id), 10)) === 'busy')
       await DBOS.sleep(30_000);
   },
-  { name: 'scheduledJob' },
+  { name: 'scheduledJob', serialization: 'portable' },
 );
 
 /**
@@ -91,7 +95,7 @@ export const durableReminder = DBOS.registerWorkflow(
     await sleepUntil(input.dueAt);
     await step('fireTimer', () => activity('fireTimer')(input.id, input.generation), 10);
   },
-  { name: 'durableReminder' },
+  { name: 'durableReminder', serialization: 'portable' },
 );
 
 /** An approved execution (D45): retries re-enter the persisted ledger; a dispatched operation is always investigated before any replay. */
@@ -103,7 +107,7 @@ export const approvedExecution = DBOS.registerWorkflow(
       await DBOS.sleep(state === 'busy' ? 30_000 : 2_000);
     }
   },
-  { name: 'approvedExecution' },
+  { name: 'approvedExecution', serialization: 'portable' },
 );
 
 /**
@@ -135,7 +139,7 @@ export const jobWatch = DBOS.registerWorkflow(
       await DBOS.sleep(10_000);
     }
   },
-  { name: 'jobWatch' },
+  { name: 'jobWatch', serialization: 'portable' },
 );
 
 /**

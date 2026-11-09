@@ -15,6 +15,8 @@ import {
 } from '../modules/calendar/usecases/decisions';
 import { followupUsecases } from '../modules/calendar/usecases/followups';
 import { postgresFollowupStore } from './followup-store';
+import { ledger } from './durable';
+import { cancelDurable } from '../dbos/start';
 
 /**
  * The calendar's live wiring (D25). It is its own file because the registry registers the calendar connector over
@@ -32,7 +34,7 @@ const bind: CalendarBinder = (persona: AuthenticatedContext) => {
 };
 /** The follow-up card goes into an invitee's stream through the threads module, which is built after this file: `index.ts` fills the slot. */
 export const notifier: { push: Notifier } = { push: async () => undefined };
-const store = postgresProposalStore();
+const store = postgresProposalStore(ledger);
 export const calendarApproval: Pick<CalendarDecisionDeps, 'approve' | 'previous'> = {
   approve: async () => {
     throw new Error('Calendar execution boundary not initialized');
@@ -61,7 +63,7 @@ export const calendarAuthority: { current: (id: string) => Promise<Authenticated
   current: async () => undefined,
 };
 export const followups = followupUsecases({
-  store: postgresFollowupStore(),
+  store: postgresFollowupStore({ durable: ledger, cancel: cancelDurable }),
   bind,
   clock,
   current: id => calendarAuthority.current(id),

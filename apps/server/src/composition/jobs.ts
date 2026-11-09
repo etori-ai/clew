@@ -1,6 +1,4 @@
 import { durableJobs } from '../scheduler/adapters/durable-postgres';
-import { startDurable } from '../dbos/start';
-import { scheduledJob } from '../dbos/workflows';
 import { scheduler, attention } from './index';
 import { clock } from './ambient';
 
@@ -14,40 +12,19 @@ export async function runScheduledJob(id: string): Promise<'done' | 'busy'> {
   await durableJobs.completed(id, job.attempt, clock().toISOString());
   return 'done';
 }
-export async function dispatchJobs(limit = 20) {
-  for (let n = 0; n < limit; n++) {
-    const job = await durableJobs.claimDelivery(clock().toISOString());
-    if (!job) return;
-    let error: string | undefined;
-    try {
-      // Idempotent by the job's natural id: a redelivery meets the running or finished workflow.
-      await startDurable(scheduledJob, `job:${job.id}`, { id: job.id, dueAt: job.dueAt });
-    } catch {
-      error = 'timer-service-unavailable';
-    }
-    await durableJobs.delivered(job.id, job.attempt, clock().toISOString(), error);
-  }
-}
+/**
+ * The nightly scan is scheduled at boot (idempotent by date; the job reschedules the next one when it runs). Every job
+ * row starts its workflow inside the transaction that writes it (D86), so nothing here polls for delivery; the retry is
+ * only for a database that is not reachable yet.
+ */
 export function startJobs() {
-  let busy = false,
-    seeded = false;
-  const tick = async () => {
-    if (busy) return;
-    busy = true;
+  const seed = async () => {
     try {
-      if (!seeded) {
-        await scheduler.scheduleNightly();
-        seeded = true;
-      }
-      await dispatchJobs();
+      await scheduler.scheduleNightly();
     } catch {
-      console.error('scheduled job outbox unavailable');
-    } finally {
-      busy = false;
+      console.error('nightly scan could not be scheduled, retrying');
+      setTimeout(() => void seed(), 2000).unref();
     }
   };
-  void tick();
-  const timer = setInterval(() => void tick(), 2000);
-  timer.unref();
-  return () => clearInterval(timer);
+  void seed();
 }

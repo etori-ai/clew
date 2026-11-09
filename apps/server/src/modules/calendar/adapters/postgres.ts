@@ -2,6 +2,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
 import { readThread, type ProposalRow } from '@clew/db/threads';
 import { scheduleJob } from '@clew/db/jobs';
+import type { DurableQueue } from '@clew/db/durable';
 import type { ProposalPatch, ProposalRecord, ProposalStore, ProposalThread, ProposalTx } from '../model';
 
 /** The proposal store the server runs (D25): the `ProposalStore` port over Drizzle and Postgres. */
@@ -44,7 +45,7 @@ async function read(personId: string | undefined, id: string): Promise<ProposalT
   const found = await readThread(owner, id);
   return found ? { thread: found.thread, proposals: found.proposalRows.map(toRecord) } : undefined;
 }
-const txOf = (tx: Transaction): ProposalTx => ({
+const txOf = (tx: Transaction, durable: DurableQueue): ProposalTx => ({
   async lockThread(personId, id) {
     const [r] = await tx
       .select()
@@ -144,10 +145,11 @@ const txOf = (tx: Transaction): ProposalTx => ({
     });
   },
   async scheduleJob(job) {
-    await scheduleJob({ id: job.id, kind: job.kind, runAt: new Date(job.runAt), payload: job.payload }, tx);
+    await scheduleJob({ id: job.id, kind: job.kind, runAt: new Date(job.runAt), payload: job.payload }, durable, tx);
   },
 });
-export function postgresProposalStore(): ProposalStore {
+/** The proposal store in Postgres; `durable` names the engine's application and queue for the jobs it schedules (D86). */
+export function postgresProposalStore(durable: DurableQueue): ProposalStore {
   return {
     readThread: (personId, id) => read(personId, id),
     readThreadById: id => read(undefined, id),
@@ -180,6 +182,6 @@ export function postgresProposalStore(): ProposalStore {
           )
       ).map(toRecord);
     },
-    transaction: fn => database().transaction(tx => fn(txOf(tx))),
+    transaction: fn => database().transaction(tx => fn(txOf(tx, durable))),
   };
 }

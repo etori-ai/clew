@@ -25,9 +25,8 @@ import { assistantUsecases } from '../assistant';
 import { postgresJobQueue, postgresPeople } from '../scheduler/adapters/postgres';
 import { createScheduler } from '../scheduler/usecases';
 import { postgresThreadStore } from '../threads/adapters/postgres';
-import { postgresTimerDelivery } from '../threads/adapters/timer-postgres';
-import { timerDispatcher } from '../threads/usecases/timer-dispatch';
-import { deliverTimer } from '../dbos/timers';
+import { cancelDurable } from '../dbos/start';
+import { ledger } from './durable';
 import { actorOf } from '@clew/connectors';
 import { reminderUsecases } from '../threads/usecases/reminders';
 import { threadUsecases } from '../threads/usecases/cards';
@@ -48,7 +47,8 @@ export { refresh } from './refresh';
  * or draws an id on its own. The tests build the same use cases over the memory adapters. The calendar is wired in
  * `calendar.ts`, before the registry, because the registry's calendar connector is built over it.
  */
-const store = postgresThreadStore();
+// The store starts every timer's workflow inside its own transaction and cancels an ended wait after the commit (D86).
+const store = postgresThreadStore({ durable: ledger, cancel: cancelDurable });
 export { calendar, events };
 const threadCore = threadUsecases({
   store,
@@ -112,7 +112,6 @@ export const reminders = reminderUsecases({
     return !!thread && visibleThread(registry, persona, thread);
   },
 });
-const dispatchTimers = timerDispatcher({ store: postgresTimerDelivery(), deliver: deliverTimer, clock });
 calendarAuthority.current = async id => {
   await refreshConnectors();
   const p = await systemContext(id, 'system:obligation');
@@ -122,24 +121,6 @@ export async function fireTimer(id: string, generation: number) {
   const timer = await store.readTimer(id);
   if (timer?.kind === 'obligation') return followups.fire(timer.threadId, generation);
   return reminders.fire(id, generation);
-}
-export function startTimerDispatch() {
-  let busy = false;
-  const tick = async () => {
-    if (busy) return;
-    busy = true;
-    try {
-      await dispatchTimers();
-    } catch {
-      console.error('timer outbox unavailable');
-    } finally {
-      busy = false;
-    }
-  };
-  void tick();
-  const timer = setInterval(() => void tick(), 2000);
-  timer.unref();
-  return () => clearInterval(timer);
 }
 // A cited answer becomes a card (D26) through the search connector's propose; the stream owns the card, so the slot is filled here.
 answerCards.create = async (actorId, input) => {
@@ -242,7 +223,7 @@ export const connectorReconcile: ConnectorReconcileDeps = {
 export const refreshConnectors = () => applyAllRows(connectorReconcile);
 registry.setRefresh(refreshConnectors);
 export const scheduler = createScheduler({
-  jobs: postgresJobQueue(),
+  jobs: postgresJobQueue(ledger),
   people: postgresPeople(),
   threads,
   calendar,

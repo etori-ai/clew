@@ -8,6 +8,7 @@
     "./auth": "./src/auth.ts",
     "./threads": "./src/threads.ts",
     "./jobs": "./src/jobs.ts",
+    "./durable": "./src/durable.ts",
     "./connectors": "./src/connectors.ts"
   },
   "dependencies": {

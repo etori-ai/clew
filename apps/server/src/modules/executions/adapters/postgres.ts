@@ -1,35 +1,28 @@
-import { and, eq, isNull, lte, or } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
-import type { Execution, DispatchIntent, ExecutionStore, Job, WatchCard, WatchIntent } from '../model';
+import { enqueueWorkflow, type DurableQueue } from '@clew/db/durable';
+import type { Execution, ExecutionStore, Job, WatchCard, WatchIntent } from '../model';
 
 export interface ExecutionSealer {
   seal(value: string, purpose: string): string;
   open(value: string, purpose: string): string;
 }
-const { executions: table, executionJobs: jobs, dispatchOutbox: outbox, watchIntents: watches, audit } = schema;
+const { executions: table, executionJobs: jobs, watchIntents: watches, audit } = schema;
 type Row = typeof table.$inferSelect;
 type JobRow = typeof jobs.$inferSelect;
 const date = (at: string | null) => (at === null ? null : new Date(at));
-const intent = (row: typeof outbox.$inferSelect): DispatchIntent => ({
-  ...row,
-  nextAt: row.nextAt.toISOString(),
-  leaseUntil: row.leaseUntil?.toISOString() ?? null,
-  deliveredAt: row.deliveredAt?.toISOString() ?? null,
-});
-const watchIntent = (row: typeof watches.$inferSelect): WatchIntent => ({
-  ...row,
-  expiresAt: row.expiresAt.toISOString(),
-  nextAt: row.nextAt.toISOString(),
-  leaseUntil: row.leaseUntil?.toISOString() ?? null,
-  deliveredAt: row.deliveredAt?.toISOString() ?? null,
-});
 /** The composition root's hooks into the same physical transaction: the card projection of an execution (D45) and the card a watch leaves (D55 item 5). */
 export interface ExecutionProjection {
   project?: (tx: Transaction, execution: Execution, stage: 'approval' | 'update') => Promise<void>;
   pushCard?: (tx: Transaction, card: WatchCard) => Promise<void>;
 }
+/**
+ * The ledger the server runs (D45): executions, jobs and watch intents sealed in Postgres, their workflows enqueued on
+ * the same transaction (D86) into the engine's application and queue named by `durable`.
+ */
 export function postgresExecutionStore(
   sealer: ExecutionSealer,
+  durable: DurableQueue,
   hooks: ExecutionProjection | ExecutionProjection['project'] = {},
 ): ExecutionStore {
   const { project, pushCard } = typeof hooks === 'function' ? { project: hooks } : hooks;
@@ -114,17 +107,7 @@ export function postgresExecutionStore(
             await tx.update(table).set(toRow(e)).where(eq(table.id, e.id));
             await project?.(tx, e, 'update');
           },
-          async enqueue(i) {
-            await tx
-              .insert(outbox)
-              .values({
-                ...i,
-                nextAt: new Date(i.nextAt),
-                leaseUntil: date(i.leaseUntil),
-                deliveredAt: date(i.deliveredAt),
-              })
-              .onConflictDoNothing();
-          },
+          enqueue: start => enqueueWorkflow(tx, durable, start),
           async audit(e) {
             await tx.insert(audit).values({
               actor: e.actor,
@@ -175,73 +158,5 @@ export function postgresExecutionStore(
           },
         }),
       ),
-    claimDispatch: (now, until) =>
-      database().transaction(async tx => {
-        const [row] = await tx
-          .select()
-          .from(outbox)
-          .where(
-            and(
-              isNull(outbox.deliveredAt),
-              lte(outbox.nextAt, new Date(now)),
-              or(isNull(outbox.leaseUntil), lte(outbox.leaseUntil, new Date(now))),
-            ),
-          )
-          .orderBy(outbox.nextAt)
-          .for('update', { skipLocked: true })
-          .limit(1);
-        if (!row) return undefined;
-        const [claimed] = await tx
-          .update(outbox)
-          .set({ attempt: row.attempt + 1, leaseUntil: new Date(until) })
-          .where(eq(outbox.id, row.id))
-          .returning();
-        return intent(claimed!);
-      }),
-    async finishDispatch(id, attempt, now, retryAt, error) {
-      await database()
-        .update(outbox)
-        .set({
-          deliveredAt: error ? null : new Date(now),
-          nextAt: new Date(retryAt),
-          leaseUntil: null,
-          lastError: error ?? null,
-        })
-        .where(and(eq(outbox.id, id), eq(outbox.attempt, attempt)));
-    },
-    claimWatch: (now, until) =>
-      database().transaction(async tx => {
-        const [row] = await tx
-          .select()
-          .from(watches)
-          .where(
-            and(
-              isNull(watches.deliveredAt),
-              lte(watches.nextAt, new Date(now)),
-              or(isNull(watches.leaseUntil), lte(watches.leaseUntil, new Date(now))),
-            ),
-          )
-          .orderBy(watches.nextAt)
-          .for('update', { skipLocked: true })
-          .limit(1);
-        if (!row) return undefined;
-        const [claimed] = await tx
-          .update(watches)
-          .set({ attempt: row.attempt + 1, leaseUntil: new Date(until) })
-          .where(eq(watches.id, row.id))
-          .returning();
-        return watchIntent(claimed!);
-      }),
-    async finishWatch(id, attempt, now, retryAt, error) {
-      await database()
-        .update(watches)
-        .set({
-          deliveredAt: error ? null : new Date(now),
-          nextAt: new Date(retryAt),
-          leaseUntil: null,
-          lastError: error ?? null,
-        })
-        .where(and(eq(watches.id, id), eq(watches.attempt, attempt)));
-    },
   };
 }

@@ -13,6 +13,7 @@ import {
   type CalendarCommand,
 } from '../../apps/server/src/modules/calendar/usecases/decisions';
 import { projectExecution } from '../../apps/server/src/composition/execution-projection';
+import { forgetTestWorkflows, testDurable } from './durable';
 import { sealSecret, openSecret } from '../../apps/server/src/auth-crypto';
 process.env.MASTER_KEY ??= randomBytes(32).toString('base64');
 const canonical = (v: unknown): unknown =>
@@ -52,6 +53,7 @@ afterAll(async () => {
     await database().delete(schema.threads).where(inArray(schema.threads.personId, people));
     await database().delete(schema.people).where(inArray(schema.people.id, people));
   }
+  await forgetTestWorkflows();
   await closeDatabase();
 });
 async function world() {
@@ -83,8 +85,9 @@ async function world() {
     })),
   });
   let failCommit = false;
-  const store = postgresExecutionStore({ seal: sealSecret, open: openSecret }, async (tx, e, stage) => {
-    await projectExecution(tx, e, stage);
+  const project = projectExecution(testDurable);
+  const store = postgresExecutionStore({ seal: sealSecret, open: openSecret }, testDurable, async (tx, e, stage) => {
+    await project(tx, e, stage);
     if (failCommit && e.state === 'succeeded') {
       failCommit = false;
       throw new Error('simulated database receipt failure');
@@ -97,7 +100,7 @@ async function world() {
     ids: randomUUID,
     digest: x => JSON.stringify(canonical(x)),
   });
-  const proposals = postgresProposalStore();
+  const proposals = postgresProposalStore(testDurable);
   const decisions = calendarDecisions({
     store: proposals,
     bind,

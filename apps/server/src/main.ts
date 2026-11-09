@@ -10,13 +10,12 @@ import { connectorRoutes } from './routes/connectors';
 import { protocolRoutes } from './routes/protocol';
 import { registry } from './connectors/registry';
 import { loadConnectors } from './connectors/remote';
-import { startAssistantProbe, startTimerDispatch } from './composition';
+import { startAssistantProbe } from './composition';
 import { startDurableRuntime } from './dbos/runtime';
 import { bindLiveActivities } from './dbos/activities';
 import { failure } from './context';
 import { signingAuthority } from './connectors/signing';
 import { startupReadiness } from './startup';
-import { startExecutionDispatch } from './composition/executions';
 import { startRefresh } from './composition/refresh';
 import { startJobs } from './composition/jobs';
 import { mcpRoutes } from './routes/mcp';
@@ -45,8 +44,6 @@ const startup = startupReadiness({
     startJobs();
     startMcpWatches();
     startAssistantProbe();
-    startExecutionDispatch();
-    startTimerDispatch();
     startRefresh();
     void loadConnectors(registry)
       .then(() => applyAllRows(connectorReconcile))

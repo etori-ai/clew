@@ -4,7 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext, Thread } from '../../packages/contracts/src/index';
 import { actorOf, type Connector } from '../../packages/connectors/src/index';
 import { fixtureConnectors } from '../fixture-connectors';
-import { memoryThreadStore, memoryTimers } from '../../apps/server/src/threads/adapters/memory';
+import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { ATTENTION_BUDGET, threadUsecases, type ThreadDeps } from '../../apps/server/src/threads/usecases/cards';
 import { reminderUsecases } from '../../apps/server/src/threads/usecases/reminders';
 import { searchConnector } from '../../apps/server/src/modules/search/connector';
@@ -77,19 +77,17 @@ function world() {
       return calendar.today;
     },
   };
-  const timers = memoryTimers();
   const deps: ThreadDeps = {
     store,
     registry,
     run: (p, name, input) => registry.run(actorOf(p), name, input),
     calendar,
-    timers,
     clock,
     ids: () => `thread-${++n}`,
   };
   const threads = threadUsecases(deps);
   const reminders = reminderUsecases({ store, clock, authorized: async () => true });
-  return { registry, store, clock, calendar, deps, threads, reminders, timers };
+  return { registry, store, clock, calendar, deps, threads, reminders };
 }
 const actions = (store: ReturnType<typeof memoryThreadStore>, id: string) =>
   store.audit.filter(e => e.subject === 'thread:' + id).map(e => e.action);
@@ -326,7 +324,7 @@ describe('avfärda, inte nu and ångra', () => {
       'Högst 30 dagar framåt.',
     );
     expect(w.store.audit.filter(e => e.action === 'thread.snoozed').map(e => e.details)).toEqual([
-      expect.objectContaining({ preset: 'lunch', delivery: 'queued', generation: 1 }),
+      expect.objectContaining({ preset: 'lunch', delivery: 'committed', generation: 1 }),
       expect.objectContaining({ text: 'fredag kl 9' }),
       expect.objectContaining({ until: '2026-11-04T15:00:00.000Z' }),
     ]);
@@ -362,12 +360,18 @@ describe('avfärda, inte nu and ångra', () => {
     expect(await w.reminders.surface(fired)).toBe('skipped');
     expect((await w.threads.threadFor(hillevi, card.id))!.snoozedUntil).toBe('2026-11-04T12:00:00.000Z');
   });
-  test('a snooze still lands when the timer service is away', async () => {
+  test('a snooze commits its workflow start with the card (D86)', async () => {
     const w = world();
     const card = await invoices(w);
-    const threads = threadUsecases({ ...w.deps, timers: memoryTimers({ available: false }) });
-    expect((await threads.snoozeThread(hillevi, card.id)).snoozedUntil).toBe('2026-11-05T05:00:00.000Z');
-    expect(w.store.audit.at(-1)?.details).toMatchObject({ delivery: 'queued' });
+    expect((await w.threads.snoozeThread(hillevi, card.id)).snoozedUntil).toBe('2026-11-05T05:00:00.000Z');
+    expect(w.store.audit.at(-1)?.details).toMatchObject({ delivery: 'committed' });
+    expect(w.store.enqueued).toEqual([
+      {
+        workflow: 'durableReminder',
+        id: `snooze:${card.id}:v2:1`,
+        input: { id: `snooze:${card.id}`, generation: 1, dueAt: '2026-11-05T05:00:00.000Z' },
+      },
+    ]);
   });
   test('a card dismissed more than ten minutes ago stays dismissed, an open card cannot be reopened', async () => {
     const w = world();
@@ -547,11 +551,12 @@ describe('påminn mig', () => {
     expect((await w.threads.threadFor(hillevi, card.id))!.state).toBe('handled');
     void set;
   });
-  test('queues the reminder when the timer service is away, and refuses bad input', async () => {
+  test('commits the reminder with its workflow start, and refuses bad input', async () => {
     const w = world();
     const card = await invoices(w);
-    const reminders = reminderUsecases({ store: w.store, timers: memoryTimers({ available: false }), clock: w.clock });
+    const reminders = reminderUsecases({ store: w.store, clock: w.clock });
     await expect(reminders.remind(hillevi, card.id, 600)).resolves.toMatchObject({ id: `reminder:${card.id}:v2:1` });
+    expect(w.store.enqueued.map(s => s.id)).toEqual([`reminder:${card.id}:v2:1`]);
     expect((await w.threads.threadFor(hillevi, card.id))!.waitingOn).toBe('påminnelsen 08:10');
     expect(actions(w.store, card.id)).toEqual(['thread.pushed', 'reminder.set']);
     await expect(w.reminders.remind(hillevi, card.id, 0)).rejects.toThrow('Ogiltig tid för påminnelsen.');

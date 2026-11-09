@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
 import type { ExecuteResult } from '../../packages/connectors/src/index';
 import { executionUsecases } from '../../apps/server/src/modules/executions/usecases';
-import { executionDispatcher } from '../../apps/server/src/modules/executions/dispatch';
 import { memoryExecutionStore } from '../../apps/server/src/modules/executions/adapters/memory';
 import type { ExecutionSource, WriteSafety } from '../../apps/server/src/modules/executions/model';
 
@@ -75,12 +74,12 @@ function world(safety: WriteSafety = { strategy: 'deduplicated', retentionSecond
 }
 
 describe('approved source execution', () => {
-  test('concurrent approvals save one intent, approval audit and outbox; changed content cannot reuse it', async () => {
+  test('concurrent approvals save one intent, approval audit and workflow start; changed content cannot reuse it', async () => {
     const w = world();
     const [a, b] = await Promise.all([w.approve(), w.approve()]);
     expect(a.id).toBe(b.id);
     expect(w.store.dump()).toHaveLength(1);
-    expect(w.store.outbox()).toHaveLength(1);
+    expect(w.store.enqueued()).toEqual([{ workflow: 'approvedExecution', id: 'execution:' + a.id, input: a.id }]);
     expect(w.store.audit().map(e => e.action)).toEqual(['execution.approved']);
     expect(w.writes()).toBe(0);
     await expect(
@@ -170,26 +169,17 @@ describe('approved source execution', () => {
       result: { rows: [{ outcome: 'done' }, { outcome: 'unknown' }] },
     });
   });
-  test('outbox retries outages and lost acknowledgements using the same workflow identity', async () => {
+  test('a requested reconciliation starts a second workflow under its own stable id; the approval keeps its own (D86)', async () => {
     const w = world();
-    await w.approve();
-    const calls: string[] = [];
-    let unavailable = true;
-    const tick = executionDispatcher({
-      store: w.store,
-      clock: w.clock,
-      start: async id => {
-        calls.push(id);
-        if (unavailable) throw new Error('Temporal away');
-      },
-    });
-    await tick();
-    expect(w.store.outbox()[0]?.deliveredAt).toBeNull();
-    unavailable = false;
-    w.advance(3000);
-    await tick();
-    expect(new Set(calls).size).toBe(1);
-    expect(w.store.outbox()[0]?.deliveredAt).not.toBeNull();
+    const e = await w.approve();
+    w.loseReply();
+    await w.uc.progress(e.id);
+    await w.uc.reconcile(persona, e.id);
+    await w.uc.reconcile(persona, e.id);
+    expect(w.store.enqueued().map(s => [s.id, s.input])).toEqual([
+      ['execution:' + e.id, e.id],
+      ['reconcile:' + e.id + ':1', e.id],
+    ]);
   });
 
   test('source retirement retains an unknown outcome but fences queued progress and reconciliation', async () => {
@@ -201,10 +191,10 @@ describe('approved source execution', () => {
       const row = (await tx.lock(e.id))!;
       await tx.update({ ...row, reason: 'source-reset', expiresAt: w.clock().toISOString(), attempt: row.attempt + 1 });
     });
-    const deliveries = w.store.outbox().length;
+    const starts = w.store.enqueued().length;
     expect(await w.uc.progress(e.id)).toBe('done');
     await w.uc.reconcile(persona, e.id);
-    expect(w.store.outbox()).toHaveLength(deliveries);
+    expect(w.store.enqueued()).toHaveLength(starts);
     expect(w.writes()).toBe(1);
     expect(await w.uc.read(persona, e.id)).toMatchObject({ state: 'unknown', reason: 'source-reset' });
   });
@@ -221,7 +211,7 @@ describe('approved source execution', () => {
     ).toBe(false);
   });
 
-  test('transaction failure rolls back approval, audit and outbox together', async () => {
+  test('transaction failure rolls back approval, audit and workflow start together', async () => {
     const w = world();
     const original = w.store.transaction;
     w.store.transaction = fn =>
@@ -233,7 +223,7 @@ describe('approved source execution', () => {
     await expect(w.approve()).rejects.toThrow('crash');
     expect(w.store.dump()).toEqual([]);
     expect(w.store.audit()).toEqual([]);
-    expect(w.store.outbox()).toEqual([]);
+    expect(w.store.enqueued()).toEqual([]);
   });
 });
 

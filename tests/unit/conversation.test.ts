@@ -7,7 +7,7 @@ import { searchUsecases } from '../../apps/server/src/modules/search/usecases';
 import { fixtureConnectors } from '../fixture-connectors';
 import { memoryCalendar, occurrence } from '../../packages/calendar/src/memory';
 import { localInstant } from '../../packages/calendar/src/dates';
-import { memoryThreadStore, memoryTimers } from '../../apps/server/src/threads/adapters/memory';
+import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { threadUsecases } from '../../apps/server/src/threads/usecases/cards';
 import { reminderUsecases } from '../../apps/server/src/threads/usecases/reminders';
 import { memoryObligations, memoryProposalStore } from '../../apps/server/src/modules/calendar/adapters/memory';
@@ -80,17 +80,15 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
     notify: async () => undefined,
     obligations: memoryObligations(),
   });
-  const timers = memoryTimers();
   const threads = threadUsecases({
     store,
     registry,
     run,
     calendar: { ...calendar, todayEvents: async () => [] },
-    timers,
     clock,
     ids,
   });
-  const reminders = reminderUsecases({ store, timers, clock });
+  const reminders = reminderUsecases({ store, clock });
   // The administered model (D24): with a `generate`, one provider and one switched-on default model the test plays.
   const modelStore = memoryModelStore(),
     health = memoryModelHealth();

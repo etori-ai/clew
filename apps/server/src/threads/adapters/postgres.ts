@@ -2,11 +2,21 @@ import { and, eq } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
 import { listThreads, toThread } from '@clew/db/threads';
 import { scheduleJob } from '@clew/db/jobs';
+import { enqueueWorkflow, type DurableQueue } from '@clew/db/durable';
 import type { ThreadPatch, ThreadStore, ThreadTx } from '../model';
 import { readTimer, timerTx } from './timer-postgres';
 import { attentionTx } from './attention-postgres';
 
-/** The store the server runs (D25): the `ThreadStore` port over Drizzle and Postgres. Held to the memory adapter's behaviour by `tests/store-contract.ts`. */
+/**
+ * The store the server runs (D25): the `ThreadStore` port over Drizzle and Postgres. Held to the memory adapter's
+ * behaviour by `tests/store-contract.ts`. `durable` names the engine's application and queue, so `enqueue` and every
+ * scheduled job start their workflow inside the transaction (D86); `cancel` is called after a commit for each workflow
+ * whose wait the transaction ended, best effort, and is the engine's `cancelDurable` in composition.
+ */
+export interface ThreadStoreOptions {
+  durable: DurableQueue;
+  cancel?: (workflowId: string) => Promise<void>;
+}
 const { threads, threadMessages, proposals, audit } = schema;
 const date = (value: string | null | undefined) =>
   value === undefined ? undefined : value === null ? null : new Date(value);
@@ -30,9 +40,10 @@ async function read(db: Transaction | ReturnType<typeof database>, where: Return
   ]);
   return toThread(row, messages, proposalRows, timerRows);
 }
-export const threadTx = (tx: Transaction): ThreadTx => ({
+export const threadTx = (tx: Transaction, options: ThreadStoreOptions, ended?: string[]): ThreadTx => ({
   ...attentionTx(tx),
-  ...timerTx(tx),
+  ...timerTx(tx, ended),
+  enqueue: start => enqueueWorkflow(tx, options.durable, start),
   async lockThreadById(id) {
     const [r] = await tx.select().from(threads).where(eq(threads.id, id)).for('update');
     return r ? read(tx, eq(threads.id, id)) : undefined;
@@ -107,10 +118,27 @@ export const threadTx = (tx: Transaction): ThreadTx => ({
     });
   },
   async scheduleJob(job) {
-    await scheduleJob({ id: job.id, kind: job.kind, runAt: new Date(job.runAt), payload: job.payload }, tx);
+    await scheduleJob(
+      { id: job.id, kind: job.kind, runAt: new Date(job.runAt), payload: job.payload },
+      options.durable,
+      tx,
+    );
   },
 });
-export function postgresThreadStore(): ThreadStore {
+/** One thread transaction, then the cancels it asked for: a cancel that fails or never arrives is covered by the generation fence, so it is logged, never raised. */
+export async function withThreadTx<T>(
+  options: ThreadStoreOptions,
+  fn: (tx: Transaction, thread: ThreadTx) => Promise<T>,
+): Promise<T> {
+  const ended: string[] = [];
+  const result = await database().transaction(tx => fn(tx, threadTx(tx, options, ended)));
+  for (const id of ended)
+    await options
+      .cancel?.(id)
+      .catch(error => console.error(`durable cancel of ${id} failed:`, error instanceof Error ? error.message : error));
+  return result;
+}
+export function postgresThreadStore(options: ThreadStoreOptions): ThreadStore {
   return {
     readTimer,
     listThreads: (personId, now) => listThreads(personId, new Date(now)),
@@ -119,6 +147,6 @@ export function postgresThreadStore(): ThreadStore {
     async openThread(personId, topic) {
       return read(database(), and(eq(threads.personId, personId), eq(threads.topic, topic), eq(threads.state, 'open')));
     },
-    transaction: fn => database().transaction(tx => fn(threadTx(tx))),
+    transaction: fn => withThreadTx(options, (_, tx) => fn(tx)),
   };
 }

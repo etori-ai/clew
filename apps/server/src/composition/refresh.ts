@@ -5,9 +5,11 @@ import { registry } from '../connectors/registry';
 import { systemContext } from '../system-context';
 import { calendar } from './calendar';
 import { clock } from './ambient';
+import { ledger } from './durable';
+import { cancelDurable } from '../dbos/start';
 
 export const refresh = refreshUsecases({
-  store: postgresRefreshStore(),
+  store: postgresRefreshStore({ durable: ledger, cancel: cancelDurable }),
   clock,
   ids: randomUUID,
   key: x => createHash('sha256').update(JSON.stringify(x)).digest('hex'),

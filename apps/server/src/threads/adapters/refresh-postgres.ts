@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, isNull, lte, or } from 'drizzle-orm';
 import { database, schema } from '@clew/db';
 import { readThread } from '@clew/db/threads';
-import { threadTx } from './postgres';
+import { withThreadTx, type ThreadStoreOptions } from './postgres';
 import { projectionVersion, type Occurrence, type RefreshRequest, type RefreshStore } from '../refresh-model';
 
 const jobs = schema.refreshRequests,
@@ -22,7 +22,7 @@ const rowOf = (r: RefreshRequest) => ({
   lastSuccess: r.lastSuccess ? new Date(r.lastSuccess) : null,
   observedAt: r.observedAt ? new Date(r.observedAt) : null,
 });
-export function postgresRefreshStore(personId?: string): RefreshStore {
+export function postgresRefreshStore(options: ThreadStoreOptions, personId?: string): RefreshStore {
   return {
     async request(r) {
       await database().transaction(async tx => {
@@ -90,9 +90,9 @@ export function postgresRefreshStore(personId?: string): RefreshStore {
       return (await database().select().from(jobs).where(eq(jobs.personId, personId))).map(requestOf);
     },
     transaction: fn =>
-      database().transaction(tx =>
+      withThreadTx(options, (tx, thread) =>
         fn({
-          ...threadTx(tx),
+          ...thread,
           async lockRequest(id) {
             const [r] = await tx.select().from(jobs).where(eq(jobs.id, id)).for('update');
             return r ? requestOf(r) : undefined;

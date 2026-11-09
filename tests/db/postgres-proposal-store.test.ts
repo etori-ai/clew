@@ -4,6 +4,7 @@ import { closeDatabase, database, schema } from '../../packages/db/src/index';
 import { readAudit } from '../../packages/db/src/threads';
 import { postgresProposalStore } from '../../apps/server/src/modules/calendar/adapters/postgres';
 import { proposalStoreContract } from '../proposal-store-contract';
+import { forgetTestWorkflows, testDurable } from './durable';
 
 /** The proposal store contract against Postgres (D25). `bun run test:db` inside the devcontainer. */
 if (!process.env.DATABASE_URL)
@@ -37,6 +38,7 @@ afterAll(async () => {
     }
     await database().delete(schema.people).where(inArray(schema.people.id, created));
   }
+  await forgetTestWorkflows();
   await closeDatabase();
 });
 proposalStoreContract('postgres', async () => {
@@ -47,7 +49,7 @@ proposalStoreContract('postgres', async () => {
     .values(people.map(id => ({ id, organisationId: 'test', name: id })));
   created.push(...people);
   return {
-    store: postgresProposalStore(),
+    store: postgresProposalStore(testDurable),
     people,
     auditFor: async subject =>
       (await readAudit(subject)).map(r => ({

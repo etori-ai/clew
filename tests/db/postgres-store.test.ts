@@ -1,9 +1,11 @@
-import { afterAll } from 'bun:test';
-import { eq, inArray } from 'drizzle-orm';
+import { afterAll, expect, test } from 'bun:test';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { closeDatabase, database, schema } from '../../packages/db/src/index';
 import { readAudit } from '../../packages/db/src/threads';
 import { postgresThreadStore } from '../../apps/server/src/threads/adapters/postgres';
-import { storeContract } from '../store-contract';
+import { draft, storeContract } from '../store-contract';
+import { reminderStart } from '../../apps/server/src/threads/domain';
+import { enqueuedWorkflows, forgetTestWorkflows, testDurable } from './durable';
 
 /**
  * The store contract against Postgres (D25). Run with `bun run test:db` inside the devcontainer: it needs
@@ -41,6 +43,7 @@ afterAll(async () => {
     }
     await database().delete(schema.people).where(inArray(schema.people.id, created));
   }
+  await forgetTestWorkflows();
   await closeDatabase();
 });
 storeContract('postgres', async () => {
@@ -50,8 +53,12 @@ storeContract('postgres', async () => {
     .insert(schema.people)
     .values(people.map(id => ({ id, organisationId: 'test', name: id })));
   created.push(...people);
+  const cancelled: string[] = [];
   return {
-    store: postgresThreadStore(),
+    store: postgresThreadStore({ durable: testDurable, cancel: async id => void cancelled.push(id) }),
+    enqueued: async prefix =>
+      (await enqueuedWorkflows(prefix)).map(({ workflow, id, input }) => ({ workflow, id, input })),
+    cancelled: async () => [...cancelled],
     people,
     auditFor: async subject =>
       (await readAudit(subject)).map(r => ({
@@ -64,4 +71,47 @@ storeContract('postgres', async () => {
     hasJob: async id =>
       (await database().select({ id: schema.jobs.id }).from(schema.jobs).where(eq(schema.jobs.id, id))).length > 0,
   };
+});
+
+test('a committed start is one ENQUEUED row of the test application in the ledger queue; a rolled-back one leaves no row (D86)', async () => {
+  const run = Math.random().toString(36).slice(2, 8),
+    person = `test-${run}-row`;
+  await database().insert(schema.people).values({ id: person, organisationId: 'test', name: person });
+  created.push(person);
+  const store = postgresThreadStore({ durable: testDurable });
+  const t = draft(person);
+  await store.transaction(tx => tx.insertThread(t));
+  const input = {
+    id: `reminder:${t.id}`,
+    personId: person,
+    threadId: t.id,
+    kind: 'reminder' as const,
+    unitId: 'unit',
+    authorizationVersion: 'v1',
+    dueAt: '2026-11-04T07:00:00.000Z',
+    requestedAt: '2026-11-04T06:00:00.000Z',
+  };
+  await expect(
+    store.transaction(async tx => {
+      await tx.enqueue(reminderStart(await tx.scheduleTimer(input)));
+      throw new Error('rollback');
+    }),
+  ).rejects.toThrow('rollback');
+  const rows = (prefix: string) =>
+    database().execute<{ workflow_uuid: string; status: string; queue_name: string; name: string }>(
+      sql`select workflow_uuid, status, queue_name, name from dbos.workflow_status where workflow_uuid like ${prefix + '%'}`,
+    );
+  expect([...(await rows(input.id))]).toEqual([]);
+  await store.transaction(async tx => tx.enqueue(reminderStart(await tx.scheduleTimer(input))));
+  expect([...(await rows(input.id))]).toEqual([
+    { workflow_uuid: `${input.id}:v2:1`, status: 'ENQUEUED', queue_name: testDurable.queue, name: 'durableReminder' },
+  ]);
+  expect(await enqueuedWorkflows(input.id)).toEqual([
+    {
+      id: `${input.id}:v2:1`,
+      workflow: 'durableReminder',
+      status: 'ENQUEUED',
+      input: { id: input.id, generation: 1, dueAt: input.dueAt },
+    },
+  ]);
 });

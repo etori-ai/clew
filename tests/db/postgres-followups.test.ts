@@ -4,6 +4,7 @@ import { database, schema, closeDatabase } from '../../packages/db/src';
 import { postgresProposalStore } from '../../apps/server/src/modules/calendar/adapters/postgres';
 import { postgresFollowupStore } from '../../apps/server/src/composition/followup-store';
 import { followupContract, followupFixture, followupAt } from '../followup-contract';
+import { forgetTestWorkflows, testDurable } from './durable';
 const created: string[] = [];
 afterAll(async () => {
   if (created.length) {
@@ -36,6 +37,7 @@ afterAll(async () => {
         ),
       );
   }
+  await forgetTestWorkflows();
   await closeDatabase();
 });
 followupContract('postgres follow-up', async () => {
@@ -45,7 +47,7 @@ followupContract('postgres follow-up', async () => {
   await database()
     .insert(schema.people)
     .values([id, id + ':invitee'].map(id => ({ id, name: 'Synthetic test', organisationId: 'test' })));
-  await postgresProposalStore().transaction(async tx => {
+  await postgresProposalStore(testDurable).transaction(async tx => {
     await tx.insertThread({
       id,
       personId: id,
@@ -60,7 +62,7 @@ followupContract('postgres follow-up', async () => {
     });
     await tx.insertProposals(fixture.proposals);
   });
-  const store = postgresFollowupStore();
+  const store = postgresFollowupStore({ durable: testDurable });
   await store.transaction(async tx => {
     await tx.save(fixture.policy!);
     await tx.schedule(fixture.policy!, followupAt, followupAt);

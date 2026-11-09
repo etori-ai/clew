@@ -19,10 +19,10 @@ import {
   type SnoozePreset,
   type Thread,
 } from '@clew/contracts';
-import { rhythmFor } from '../domain';
+import { reminderStart, rhythmFor } from '../domain';
 import { actorOf, receipt, type Actor, type ExecuteResult, type Registry, type ThreadDraft } from '@clew/connectors';
 import { InputError } from '../../context';
-import type { ReminderTimers, ThreadStore, ThreadTx } from '../model';
+import type { ThreadStore, ThreadTx } from '../model';
 import { threadAccess } from '../access';
 
 /**
@@ -44,7 +44,6 @@ export interface ThreadDeps {
     todayEvents(persona: AuthenticatedContext): Promise<Array<{ title: string; end: string }>>;
   };
   /** The timers behind a snooze (D29, D49): the same reminder workflow as D17, and the same return. */
-  timers?: ReminderTimers;
   clock: () => Date;
   ids: () => string;
 }
@@ -373,6 +372,7 @@ export function threadUsecases(deps: ThreadDeps) {
         dueAt: until,
         requestedAt: at,
       });
+      await tx.enqueue(reminderStart(timer));
       await tx.updateThread(threadId, { snoozedUntil: until, updatedAt: at });
       await tx.addMessage(threadId, { role: 'user', body: `Inte nu · ${snoozeWhen(until, at)}`, at });
       await tx.writeAudit({
@@ -384,7 +384,7 @@ export function threadUsecases(deps: ThreadDeps) {
           until,
           timerId: timer.id,
           generation: timer.generation,
-          delivery: 'queued',
+          delivery: 'committed',
           ...(input.preset ? { preset: input.preset } : {}),
           ...(input.text ? { text: input.text } : {}),
         },

@@ -1,42 +1,13 @@
-import { and, eq, isNull, lte, or } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { database, schema } from '@clew/db';
 import type { Job } from '../model';
 const jobs = schema.jobs;
+/**
+ * The engine's side of the job table (D47, D85): a `scheduledJob` workflow, enqueued with the row (D86), claims the
+ * execution under a lease and completes it with its audit. The status `temporal` is the engine owner's historical
+ * name; `dispatched` and the delivery columns belong to the retired outbox and are left as evidence.
+ */
 export const durableJobs = {
-  claimDelivery: (at: string) =>
-    database().transaction(async tx => {
-      const [j] = await tx
-        .select()
-        .from(jobs)
-        .where(
-          and(
-            eq(jobs.status, 'temporal'),
-            lte(jobs.nextAttemptAt, new Date(at)),
-            or(isNull(jobs.leaseUntil), lte(jobs.leaseUntil, new Date(at))),
-          ),
-        )
-        .orderBy(jobs.runAt)
-        .for('update', { skipLocked: true })
-        .limit(1);
-      if (!j) return undefined;
-      const [claimed] = await tx
-        .update(jobs)
-        .set({ dispatchAttempt: j.dispatchAttempt + 1, leaseUntil: new Date(Date.parse(at) + 30_000) })
-        .where(eq(jobs.id, j.id))
-        .returning();
-      return { id: j.id, dueAt: j.runAt.toISOString(), attempt: claimed!.dispatchAttempt };
-    }),
-  async delivered(id: string, attempt: number, at: string, error?: string) {
-    await database()
-      .update(jobs)
-      .set({
-        ...(error ? {} : { status: 'dispatched' as const }),
-        leaseUntil: null,
-        nextAttemptAt: new Date(Date.parse(at) + 10_000),
-        lastError: error ?? null,
-      })
-      .where(and(eq(jobs.id, id), eq(jobs.status, 'temporal'), eq(jobs.dispatchAttempt, attempt)));
-  },
   claimExecution: (id: string, at: string) =>
     database().transaction(async tx => {
       const [j] = await tx.select().from(jobs).where(eq(jobs.id, id)).for('update');

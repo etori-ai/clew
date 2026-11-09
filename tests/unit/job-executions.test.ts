@@ -10,7 +10,6 @@ import {
 import { FactEnvelopeSchema, FollowResponseSchema } from '../../packages/connectors/src/protocol';
 import { executionUsecases } from '../../apps/server/src/modules/executions/usecases';
 import { memoryExecutionStore } from '../../apps/server/src/modules/executions/adapters/memory';
-import { watchDispatcher } from '../../apps/server/src/modules/executions/dispatch';
 import type { ExecutionSource, WatchSource } from '../../apps/server/src/modules/executions/model';
 import { jobUsecases } from '../../apps/server/src/modules/jobs/usecases';
 import { memoryFollowBindingStore } from '../../apps/server/src/modules/jobs/adapters/memory';
@@ -506,7 +505,7 @@ describe('one approval runs each step as its own execution or watch', () => {
   }
   const stepOf = (job: Awaited<ReturnType<typeof approved>>['job'], connector: string) =>
     job.steps.find(s => s.connector === connector)!;
-  test('concurrent identical approvals save one job, one execution per system, their audit and outbox rows, and write nothing', async () => {
+  test('concurrent identical approvals save one job, one execution per system, their audit and workflow starts, and write nothing', async () => {
     const w = world();
     await w.bindAll();
     const p = await w.jobs.assemble(manager, fact, w.call);
@@ -514,7 +513,7 @@ describe('one approval runs each step as its own execution or watch', () => {
     expect(a.id).toBe(b.id);
     expect(w.store.jobs()).toHaveLength(1);
     expect(w.store.dump()).toHaveLength(2);
-    expect(w.store.outbox()).toHaveLength(2);
+    expect(w.store.enqueued().filter(s => s.workflow === 'approvedExecution')).toHaveLength(2);
     expect(w.store.audit().map(e => e.action)).toEqual(['execution.approved', 'execution.approved', 'job.approved']);
     expect(w.store.dump().map(e => [e.connector, e.decisionId])).toEqual([
       ['hr', 'job:absence:1004:2026-11-05:b1-1'],
@@ -634,7 +633,7 @@ describe('one approval runs each step as its own execution or watch', () => {
     expect(w.payroll.executes()).toBe(0);
     expect((await w.ledger.readJob(manager, job.id))?.steps[2]).toMatchObject({ state: 'seen', observations: 3 });
   });
-  test('the approval commits one timer intent per watch step with the job; a replay or a crash adds none, and the outbox delivers it once', async () => {
+  test('the approval commits one timer intent per watch step with the job and starts its workflow in the same commit; a replay or a crash adds none', async () => {
     const w = world();
     await w.bindAll();
     const p = await w.jobs.assemble(manager, fact, w.call);
@@ -652,41 +651,21 @@ describe('one approval runs each step as its own execution or watch', () => {
         attempt: 0,
         leaseUntil: null,
         nextAt: '2026-11-05T08:02:00.000Z',
-        deliveredAt: null,
+        deliveredAt: '2026-11-05T08:02:00.000Z',
         lastError: null,
       },
     ]);
     expect(w.store.audit().find(e => e.action === 'job.approved')?.details?.steps).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: 'b3-1', kind: 'watch', checks })]),
     );
-    const started: string[] = [];
-    const dispatch = (deliver: (i: { id: string; generation: number }) => Promise<void>) =>
-      watchDispatcher({ store: w.store, start: deliver, clock: w.clock })();
-    await dispatch(async () => {
-      throw new Error('Temporal unavailable');
-    });
-    expect(w.store.watches()[0]).toMatchObject({
-      attempt: 1,
-      deliveredAt: null,
-      lastError: 'workflow-service-unavailable',
-    });
-    await dispatch(async i => {
-      started.push(`${i.id}:${i.generation}`);
-    });
-    expect(started).toEqual([]); // backoff: not due yet
-    w.advance(5000);
-    await dispatch(async i => {
-      started.push(`${i.id}:${i.generation}`);
-    });
-    await dispatch(async i => {
-      started.push(`${i.id}:${i.generation}`);
-    });
-    expect(started).toEqual([`watch:${a.id}:b3-1:1`]);
-    expect(w.store.watches()[0]).toMatchObject({
-      attempt: 2,
-      deliveredAt: '2026-11-05T08:02:05.000Z',
-      lastError: null,
-    });
+    // The engine receives the committed schedule (D86): one `jobWatch` start per watch step, beside one `approvedExecution` per execute step.
+    expect(w.store.enqueued().filter(s => s.workflow === 'jobWatch')).toEqual([
+      {
+        workflow: 'jobWatch',
+        id: `watch:${a.id}:b3-1:1`,
+        input: { jobId: a.id, stepId: 'b3-1', generation: 1, checks, expiresAt: '2026-11-06T08:02:00.000Z' },
+      },
+    ]);
     const crashed = world();
     await crashed.bindAll();
     const q = await crashed.jobs.assemble(manager, fact, crashed.call);
@@ -698,6 +677,7 @@ describe('one approval runs each step as its own execution or watch', () => {
       });
     await expect(crashed.approve(q)).rejects.toThrow('crash');
     expect(crashed.store.watches()).toEqual([]);
+    expect(crashed.store.enqueued()).toEqual([]);
   });
   test('a watch past its window expires without a read and leaves one card for the person, named after the system and the step', async () => {
     const w = world();
@@ -764,7 +744,7 @@ describe('one approval runs each step as its own execution or watch', () => {
     expect(undo.compensations.map(c => c.stepId)).toEqual(['b1-1', 'b2-1']);
     expect(undo.skipped).toEqual([]);
     expect(w.store.dump()).toHaveLength(4);
-    expect(w.store.outbox()).toHaveLength(4);
+    expect(w.store.enqueued().filter(s => s.workflow === 'approvedExecution')).toHaveLength(4);
     expect(w.store.audit().filter(e => e.action === 'execution.approved')).toHaveLength(4);
     expect(w.store.audit().filter(e => e.action === 'job.undo_approved')).toHaveLength(1);
     const hrId = stepOf(job, 'hr').executionId!,
@@ -802,7 +782,7 @@ describe('one approval runs each step as its own execution or watch', () => {
     late.advance(11 * 60_000);
     await expect(late.ledger.undoJob(manager, second.job.id)).rejects.toThrow('Inget att ångra');
   });
-  test('a transaction crash leaves no job, execution, audit or outbox row', async () => {
+  test('a transaction crash leaves no job, execution, audit row or workflow start', async () => {
     const w = world();
     await w.bindAll();
     const p = await w.jobs.assemble(manager, fact, w.call);
@@ -816,7 +796,7 @@ describe('one approval runs each step as its own execution or watch', () => {
     expect(w.store.jobs()).toEqual([]);
     expect(w.store.dump()).toEqual([]);
     expect(w.store.audit()).toEqual([]);
-    expect(w.store.outbox()).toEqual([]);
+    expect(w.store.enqueued()).toEqual([]);
   });
 });
 
@@ -878,7 +858,7 @@ describe('job approval and receipt boundaries', () => {
     expect(await earlier).toEqual(later!);
     expect(w.store.jobs()).toHaveLength(1);
     expect(w.store.watches()).toHaveLength(1);
-    expect(w.store.outbox()).toHaveLength(2);
+    expect(w.store.enqueued().filter(s => s.workflow === 'approvedExecution')).toHaveLength(2);
     expect(w.store.audit().map(e => e.action)).toEqual(['execution.approved', 'execution.approved', 'job.approved']);
   });
 
@@ -922,7 +902,7 @@ describe('job approval and receipt boundaries', () => {
     await expect(w.approve(proposal)).rejects.toThrow('Förslaget har ändrats');
     expect(w.store.jobs()).toEqual([]);
     expect(w.store.audit()).toEqual([]);
-    expect(w.store.outbox()).toEqual([]);
+    expect(w.store.enqueued()).toEqual([]);
   });
 
   test('steps must belong to their named bound follower and retain source authorisation', async () => {

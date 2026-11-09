@@ -16,16 +16,15 @@ import { connectorAuthority } from '../src/connectors/authority';
 import { sealSecret, openSecret } from '../src/auth-crypto';
 import { postgresExecutionStore } from '../src/modules/executions/adapters/postgres';
 import { executionUsecases } from '../src/modules/executions/usecases';
-import { executionDispatcher } from '../src/modules/executions/dispatch';
+import { executionStart } from '../src/modules/executions/domain';
 import type { ExecutionSource } from '../src/modules/executions/model';
 import { bindActivities } from '../src/dbos/workflows';
-import { startExecutionWorkflow } from '../src/dbos/executions';
 import { durableResult } from '../src/dbos/start';
-import { launchTestEngine } from './durable';
+import { testEngine } from './durable';
 
 // The durable engine under its own application name, a synthetic person and source. No existing connector or business data is changed.
 test(
-  'Postgres + the durable engine + independent durable source recover a lost reply and reject duplicate intent',
+  'Postgres + the durable engine + independent durable source: the approval’s workflow starts in its transaction, a lost reply is recovered, duplicate intent is rejected',
   { timeout: 60_000 },
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'clew-durability-'));
@@ -36,7 +35,8 @@ test(
     const authority = await connectorAuthority(await exportPKCS8(pair.privateKey), id);
     await writeFile(join(directory, 'jwks.json'), JSON.stringify(authority.jwks));
     const fixture = fileURLToPath(new URL('../../../connectors/reference/server.mjs', import.meta.url));
-    let child: ChildProcess | undefined, engine: Awaited<ReturnType<typeof launchTestEngine>> | undefined;
+    const engine = testEngine('execution');
+    let child: ChildProcess | undefined, launched: Awaited<ReturnType<typeof engine.launch>> | undefined;
     let sourceErrors = '';
     const startSource = async (fault: string, port = 0) => {
       child = spawn(process.execPath, [fixture], {
@@ -97,7 +97,7 @@ test(
       };
       await database().insert(schema.people).values({ id, organisationId: 'test', name: 'Synthetic durability test' });
       await registry.run(persona, 'reference.items', {});
-      let now = Date.parse('2098-11-05T10:00:00Z'); // Production's dispatcher cannot claim test outbox rows.
+      const now = Date.parse('2098-11-05T10:00:00Z');
       const clock = () => new Date(now);
       const source: ExecutionSource = {
         async authorize(actor, operation, input) {
@@ -114,7 +114,7 @@ test(
         },
       };
       const build = () => {
-        const store = postgresExecutionStore({ seal: sealSecret, open: openSecret });
+        const store = postgresExecutionStore({ seal: sealSecret, open: openSecret }, engine.durable);
         return {
           store,
           uc: executionUsecases({
@@ -138,14 +138,11 @@ test(
       await assert.rejects(
         second.uc.approve(persona, { ...approval, payload: { ref: 'reference:item:1', revision: 999 } }),
       );
-      bindActivities({ progressExecution: second.uc.progress });
-      engine = await launchTestEngine('execution');
+      // The approval committed its workflow start (D86); it waits in the queue until this engine launches.
       const workflowId = 'execution:' + a.id;
-      const dispatch = executionDispatcher({ store: first.store, start: startExecutionWorkflow, clock });
-      await Promise.all([
-        dispatch(),
-        executionDispatcher({ store: second.store, start: startExecutionWorkflow, clock })(),
-      ]);
+      assert.equal((await engine.row(workflowId))?.status, 'ENQUEUED');
+      bindActivities({ progressExecution: second.uc.progress });
+      launched = await engine.launch();
       await durableResult(workflowId);
       const observed = await second.uc.read(persona, a.id);
       assert.equal(
@@ -164,25 +161,23 @@ test(
         ).length,
         1,
       );
-      // Restart the independent source with the same SQLite file, then lose the outbox acknowledgement.
+      // Restart the independent source with the same SQLite file, then replay the approval's start: the same workflow
+      // id meets the finished workflow and nothing runs again.
       await new Promise<void>(resolve => {
         child!.once('exit', () => resolve());
         child!.kill('SIGTERM');
       });
       await startSource('', port);
       assert.equal((await source.lookup(persona, (await first.store.read(a.id))!))?.rows[0]?.outcome, 'done');
-      await database()
-        .update(schema.dispatchOutbox)
-        .set({ deliveredAt: null, leaseUntil: null })
-        .where(eq(schema.dispatchOutbox.id, workflowId));
-      now += 31_000;
-      await dispatch();
+      await first.store.transaction(tx => tx.enqueue(executionStart(workflowId, a.id)));
+      assert.equal((await engine.row(workflowId))?.status, 'SUCCESS');
+      await new Promise(resolve => setTimeout(resolve, 2500));
       assert.equal(
         (await registry.run<{ rows: Array<{ revision: number }> }>(persona, 'reference.items', {})).rows[0]?.revision,
         2,
       );
     } finally {
-      await engine?.shutdown();
+      await launched?.shutdown();
       if (child?.exitCode === null)
         await new Promise<void>(resolve => {
           child!.once('exit', () => resolve());
@@ -191,7 +186,6 @@ test(
       const rows = await database().select().from(schema.executions).where(eq(schema.executions.personId, id));
       const ids = rows.map(row => row.id);
       if (ids.length) {
-        await database().delete(schema.dispatchOutbox).where(inArray(schema.dispatchOutbox.executionId, ids));
         await database()
           .delete(schema.audit)
           .where(
@@ -203,6 +197,7 @@ test(
         await database().delete(schema.executions).where(inArray(schema.executions.id, ids));
       }
       await database().delete(schema.people).where(eq(schema.people.id, id));
+      await engine.forget();
       await closeDatabase();
       await rm(directory, { recursive: true, force: true });
     }
