@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { ScimError } from '../../apps/server/src/modules/people/contracts';
 import { applyGroupPatch, applyUserPatch, parseFilter } from '../../apps/server/src/modules/people/domain';
+import type { ProvisionStore } from '../../apps/server/src/modules/people/ports';
 import { scimUsecases } from '../../apps/server/src/modules/people/usecases';
 import { scimStoreContract } from '../scim-store-contract';
 
@@ -176,8 +177,14 @@ describe('SCIM users', () => {
     expect(same.meta.lastModified).toBe(patched.meta.lastModified);
     await scim.deleteUser(p, id);
     await scim.deleteUser(p, id);
-    expect(audit('person:' + id)).toEqual(['scim.user.created', 'scim.user.replaced', 'scim.user.patched']);
+    // A flip of `active` is audited as deactivated or reactivated whatever verb carried it, with the verb in the details.
+    expect(audit('person:' + id)).toEqual(['scim.user.created', 'scim.user.replaced', 'scim.user.deactivated']);
+    expect(store.state.audit.find(a => a.action === 'scim.user.deactivated')?.details).toMatchObject({
+      via: 'scim.user.patched',
+      changed: ['userName', 'enabled'],
+    });
     await scim.patchUser(p, id, { schemas: [], Operations: [{ op: 'replace', path: 'active', value: true }] }, BASE);
+    expect(audit('person:' + id).at(-1)).toBe('scim.user.reactivated');
     await scim.deleteUser(p, id);
     expect(audit('person:' + id).at(-1)).toBe('scim.user.deactivated');
     await expect(scim.getUser(p, 'missing', BASE)).rejects.toMatchObject({ status: 404 });
@@ -271,6 +278,85 @@ describe('SCIM groups and derivation', () => {
     await scim.replaceGroup(p, unit.id, group('unit:it', 'IT och digitalisering', [a]), BASE);
     expect(store.state.grants.get(a)?.unitLabel).toBe('IT och digitalisering');
     expect(store.state.units.get('it')?.label).toBe('IT och digitalisering');
+  });
+  test('the protected key is refused on create and on patch, and nothing of it is stored (D93)', async () => {
+    const { scim, p, store } = harness();
+    const a = (await scim.createUser(p, anna, BASE)).id;
+    await expect(scim.createGroup(p, group('protected', 'Skyddade', [a]), BASE)).rejects.toMatchObject({
+      status: 400,
+      scimType: 'invalidValue',
+      detail: expect.stringContaining("The key 'protected' is not accepted"),
+    });
+    const plain = await scim.createGroup(p, { displayName: 'Plain', members: [{ value: a }] }, BASE);
+    await expect(
+      scim.patchGroup(
+        p,
+        plain.id,
+        { schemas: [], Operations: [{ op: 'replace', path: 'externalId', value: 'protected' }] },
+        BASE,
+      ),
+    ).rejects.toMatchObject({ status: 400, scimType: 'invalidValue' });
+    await expect(scim.replaceGroup(p, plain.id, group('protected', 'Plain', [a]), BASE)).rejects.toMatchObject({
+      status: 400,
+    });
+    expect([...store.state.groups.values()].some(g => g.externalId === 'protected')).toBe(false);
+    expect(store.state.groups.get(plain.id)?.externalId).toBeNull();
+  });
+  test('a push that changes nothing writes no unit and no assignment', async () => {
+    const inner = memoryProvisionStore();
+    let unitWrites = 0,
+      assignmentWrites = 0;
+    const store: ProvisionStore = {
+      transaction: fn =>
+        inner.transaction(tx =>
+          fn({
+            ...tx,
+            writeUnits: (organisationId, units) => (unitWrites++, tx.writeUnits(organisationId, units)),
+            replaceAssignments: (personId, assignments) => (
+              assignmentWrites++,
+              tx.replaceAssignments(personId, assignments)
+            ),
+          }),
+        ),
+    };
+    let seq = 0;
+    const scim = scimUsecases({ store, clock: () => new Date(), ids: () => 'id-' + ++seq, digest: t => t });
+    const p = { id: 'mk', organisationId: 'sundsvall', label: 'Metakatalogen' };
+    const a = (await scim.createUser(p, anna, BASE)).id;
+    const unit = await scim.createGroup(p, group('unit:skola', 'Bergsåkers skola', [a]), BASE);
+    await scim.createGroup(p, group('unit-manager:skola', 'Rektorer', [a]), BASE);
+    expect(unitWrites).toBeGreaterThan(0);
+    expect(assignmentWrites).toBeGreaterThan(0);
+    const [units, assignments] = [unitWrites, assignmentWrites];
+    await scim.replaceUser(p, a, anna, BASE);
+    await scim.replaceGroup(p, unit.id, group('unit:skola', 'Bergsåkers skola', [a]), BASE);
+    expect(unitWrites).toBe(units);
+    expect(assignmentWrites).toBe(assignments);
+    await scim.replaceGroup(p, unit.id, group('unit:skola', 'Bergsåkers nya skola', [a]), BASE);
+    expect(unitWrites).toBe(units + 1);
+    expect(inner.state.grants.get(a)).toMatchObject({ unitLabel: 'Bergsåkers nya skola', role: 'manager' });
+  });
+  test('a group belongs to the organisation that pushed it: another provisioner neither sees nor changes it, and its externalId stays unique across the installation', async () => {
+    const { scim, p, store } = harness();
+    const elsewhere = { id: 'other', organisationId: 'timra', label: 'Other' };
+    const a = (await scim.createUser(p, anna, BASE)).id;
+    const unit = await scim.createGroup(p, group('unit:skola', 'Bergsåkers skola', [a]), BASE);
+    expect(store.state.groups.get(unit.id)?.organisationId).toBe('sundsvall');
+    await expect(scim.getGroup(elsewhere, unit.id, BASE)).rejects.toMatchObject({ status: 404 });
+    await expect(scim.deleteGroup(elsewhere, unit.id)).rejects.toMatchObject({ status: 404 });
+    await expect(scim.replaceGroup(elsewhere, unit.id, group('unit:skola', 'Taken', []), BASE)).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(
+      scim.patchGroup(elsewhere, unit.id, { schemas: [], Operations: [{ op: 'remove', path: 'members' }] }, BASE),
+    ).rejects.toMatchObject({ status: 404 });
+    expect((await scim.listGroups(elsewhere, {}, BASE)).totalResults).toBe(0);
+    await expect(scim.createGroup(elsewhere, group('unit:skola', 'Same key', []), BASE)).rejects.toMatchObject({
+      status: 409,
+      scimType: 'uniqueness',
+    });
+    expect(store.state.grants.get(a)).toMatchObject({ unitId: 'skola', unitLabel: 'Bergsåkers skola' });
+    expect((await scim.getGroup(p, unit.id, BASE)).members.map(m => m.value)).toEqual([a]);
   });
   test('refuses an unknown member, a duplicate externalId and an unknown group; lists by externalId and displayName', async () => {
     const { scim, p } = harness();

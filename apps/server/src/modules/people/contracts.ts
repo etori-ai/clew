@@ -77,7 +77,7 @@ export const ScimPatchSchema = Type.Object(
 export type ScimPatch = Static<typeof ScimPatchSchema>;
 export type ScimPatchOperation = ScimPatch['Operations'][number];
 
-export type ScimStatus = 400 | 401 | 403 | 404 | 409 | 413 | 500;
+export type ScimStatus = 400 | 401 | 403 | 404 | 409 | 413 | 500 | 501;
 /** RFC 7644 §3.12: `scimType` for a 400 names the kind of mistake; `detail` says which attribute. */
 export type ScimType =
   | 'invalidFilter'

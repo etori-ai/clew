@@ -99,13 +99,17 @@ export const assignments = pgTable(
   ],
 );
 /**
- * A group as pushed: Clew's id (what a SCIM client addresses), the source's stable `externalId` when the client set one,
- * and its name as `label` (SCIM's `displayName`). Meaning comes from D68's keys in `externalId` or a mapping row; a group without an external id is a plain group.
+ * A group as pushed: Clew's id (what a SCIM client addresses), the organisation of the provisioner that pushed it (a
+ * client reads and writes its own organisation's groups only), the source's stable `externalId` when the client set
+ * one (unique across the installation, since D68's keys are shared vocabulary), and its name as `label` (SCIM's
+ * `displayName`). Meaning comes from D68's keys in `externalId` or a mapping row; a group without an external id is a
+ * plain group.
  */
 export const groups = pgTable(
   'auth_group',
   {
     id: text('id').primaryKey(),
+    organisationId: text('organisation_id').notNull(),
     externalId: text('external_id'),
     label: text('label').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

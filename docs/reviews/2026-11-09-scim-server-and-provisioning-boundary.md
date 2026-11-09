@@ -221,4 +221,19 @@ identity migration had to be renumbered anyway: `userName` and `externalId` are 
 use case (409) as in the indexes, and `userName` is matched without regard to case in the filter, the uniqueness check
 and the first-login binding, with the unique index on `lower(user_name)`. A unique violation that fires before the
 check saw the other row (two requests at once) is translated by the route into the same 409 `uniqueness`, naming the
-attribute from the constraint. The memory adapter now enforces the same indexes. Findings 4 to 9 are open.
+attribute from the constraint. The memory adapter now enforces the same indexes.
+
+Findings 4 to 9 followed on branch `scim-review-findings-4-9`, one commit each. Finding 4: the sub-app answers unknown
+addresses with the error resource through a handler of its own (Hono does not carry `notFound` through `app.route()`),
+`/Bulk`, `/Me` and the root `/.search` answer 501, and `/Users/.search` and `/Groups/.search` take a SearchRequest; the
+Node runtime test mounts the sub-app as `main.ts` does. Finding 5 became
+[D93](../decisions/D93-the-protected-key-is-refused-at-the-scim-boundary.md): the `protected` key is refused with 400
+`invalidValue` on every verb until Clew decides whether it may hold the fact, and the status matrix, D68, the guide and
+the identity page say so (the group-keys figure still draws the key and needs a redraw). Finding 6: `auth_group` carries
+the provisioner's organisation (migration 0041, backfilled from the members), checked on every read, list and write;
+`externalId` stays unique across the installation. Finding 7: a flip of `active` is audited as `scim.user.deactivated`
+or `scim.user.reactivated` whatever verb carried it, with the verb in the details. Finding 8: a four-megabyte body
+limit checked on the declared length before the body is read, and a derivation that writes only the units and
+assignments that moved. Finding 9: the guide explains what deactivation instead of deletion means for a client.
+Open from this review: the `attributes` and `excludedAttributes` parameters, `referenceTypes` and `specUri` in the
+discovery documents, the users overview's query count, and provisioner-token rotation in the runbook.

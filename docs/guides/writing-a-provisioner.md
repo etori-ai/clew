@@ -16,9 +16,11 @@ The repository ships one: `scripts/provisioner/`, which pushes the development s
 | `userName` | What a login is matched on. Unique across the installation and matched without regard to case, the standard's default for `userName`; a login carries no organisation. |
 | `displayName` (or `name.formatted`) | The name shown in the product. |
 | `emails` | A work address (`type: "work"`, else the primary, else the first). Clew needs it to invite the person to a meeting. |
-| `active` | `false` deactivates. `DELETE` also deactivates, because audit rows and threads reference the person; nothing is erased. |
+| `active` | `false` deactivates. `DELETE` also deactivates, because audit rows and threads reference the person; nothing is erased. A `PUT` without `active` re-enables, since the source is the authority. |
 
 Extension schemas and unknown attributes are accepted and ignored, as the standard asks.
+
+**Deactivation, not deletion.** `DELETE /Users/<id>` deactivates, and the resource stays readable with `active: false`, where the standard expects a 404 afterwards. Three consequences follow. A client that deletes and then posts the same `userName` gets 409 `uniqueness`, so find the person by filter first and `PUT` or `PATCH`, as `push.ts` does. A deactivated person keeps the `userName` until a `PATCH` changes it, so a recycled account name has to be moved off the old row before a new person can take it. And a `PUT` of a deactivated person without `active: false` re-enables them: a provisioner that pushes everyone present undoes an administrator's `DELETE` on the next run, which is D68's intent, and the audit row says `scim.user.reactivated`.
 
 ![What a pushed group means: keys in externalId give units, manager roles and capabilities; any other group may be mapped by an administrator](../architecture/figures/group-keys.svg)
 
@@ -29,7 +31,7 @@ Extension schemas and unknown attributes are accepted and ignored, as the standa
 | `unit:<unitId>` | An assignment to that unit as `employee` | The unit's name, shown in the product |
 | `unit-manager:<unitId>` | An assignment to that unit as `manager`, which wins over `unit:` for the same unit | Free |
 | `capability:<name>` | That capability, one of the closed list (`admin.connectors`, `admin.users`) | Free |
-| `protected` | Exclusion from lists another person can see | Free |
+| `protected` | Refused with 400 `invalidValue` ([D93](../decisions/D93-the-protected-key-is-refused-at-the-scim-boundary.md)): Clew has not decided whether it may hold that fact, so do not send it | Free |
 | Anything else | Nothing by itself; an administrator may map it to a capability in Clew ([D85](../decisions/D85-capabilities-are-mapped-from-provisioned-groups-in-clew.md)) and use it as a connector audience | Free |
 
 A person with no `unit:` or `unit-manager:` membership exists but can do nothing, so a mapping mistake fails closed. Several memberships give several assignments; until a person can switch, the active one is a managed unit before an employed one, then the lowest unit id.
@@ -42,7 +44,7 @@ A person with no `unit:` or `unit-manager:` membership exists but can do nothing
 docker exec -w /workspace clew-app-1 bun scripts/provisioner-token.ts add metakatalogen --organisation sundsvall --label "Metakatalogen"
 ```
 
-The token is printed once; Clew keeps its digest. `revoke <id>` ends it. The token scopes users to the organisation it was issued for.
+The token is printed once; Clew keeps its digest. `revoke <id>` ends it. The token scopes users and groups to the organisation it was issued for: another organisation's resources do not exist for this client, while `userName` and `externalId` stay unique across the installation.
 
 ## What a provisioner does on every run
 

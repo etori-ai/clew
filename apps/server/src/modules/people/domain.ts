@@ -5,9 +5,11 @@ import { isCapability, type Capability, type Role } from '@clew/contracts';
  *
  * A group's meaning is a key in its `externalId`: `unit:<unitId>` makes the member an employee of that unit and names
  * it with the group's `displayName`; `unit-manager:<unitId>` makes the member its manager, which wins over `unit:` for
- * the same unit; `capability:<name>` gives a capability of the closed list; `protected` keeps the person out of lists
- * others see. Any other group gives nothing here; a rules row (group to capability) may give a capability. A person
- * with no unit membership has no active grant, so a mapping mistake fails closed.
+ * the same unit; `capability:<name>` gives a capability of the closed list; `protected` was to keep the person out of
+ * lists others see, and D93 refuses that key at the boundary until Clew decides whether it may hold the fact, so the
+ * flag below is false in any installation provisioned since. Any other group gives nothing here; a rules row (group
+ * to capability) may give a capability. A person with no unit membership has no active grant, so a mapping mistake
+ * fails closed.
  */
 export const UNIT_KEY = 'unit:',
   MANAGER_KEY = 'unit-manager:',
@@ -147,6 +149,8 @@ export interface UserRecord {
 }
 export interface GroupRecord {
   id: string;
+  /** The organisation of the provisioner that pushed the group; a client sees its own organisation's groups only. */
+  organisationId: string;
   externalId: string | null;
   /** The group's name: SCIM's `displayName`. */
   label: string;
@@ -194,6 +198,18 @@ export function groupFields(input: ScimGroupInput): GroupFields {
     label: input.displayName,
     members: [...new Set((input.members ?? []).map(m => m.value))],
   };
+}
+/**
+ * D93: the `protected` key is refused at the boundary until D68's open question, whether Clew may hold that fact at
+ * all, is answered. Nothing about it is stored, derived into a context or shown; a client that sends it learns why.
+ */
+export function assertAcceptedKey(fields: GroupFields): void {
+  if (fields.externalId === PROTECTED_KEY)
+    throw new ScimError(
+      400,
+      `The key '${PROTECTED_KEY}' is not accepted: Clew has not decided whether it may hold that fact (D93). The group was not stored.`,
+      'invalidValue',
+    );
 }
 /** `attribute eq "value"` on one of `attributes`, the one filter shape D68 requires; anything else is `invalidFilter`. */
 export function parseFilter(
@@ -463,7 +479,8 @@ export const schemaDocuments = (base: string) => [
     schemas: [SCIM.schema],
     id: SCIM.group,
     name: 'Group',
-    description: 'A group; unit:, unit-manager:, capability: and protected keys in externalId carry meaning in Clew.',
+    description:
+      'A group; unit:, unit-manager: and capability: keys in externalId carry meaning in Clew. The key protected is refused (D93).',
     attributes: [
       attribute('displayName', 'string', { required: true }),
       attribute('externalId', 'string', { caseExact: true, uniqueness: 'server' }),

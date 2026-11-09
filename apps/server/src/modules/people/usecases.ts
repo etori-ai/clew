@@ -23,6 +23,7 @@ import {
 import {
   applyGroupPatch,
   applyUserPatch,
+  assertAcceptedKey,
   deriveAuthority,
   groupFields,
   groupResource,
@@ -46,8 +47,8 @@ import type { Provisioner, ProvisionStore, ProvisionTx } from './ports';
  * Deriving authority (D68, D85): the only path from memberships and the group-capability rows to the grant a person acts
  * with. Called by whatever changed a membership or such a row, inside that change's transaction, so the grant never lags the
  * fact that produced it. An unchanged grant writes no audit row; a changed one writes `grant.derived` on the person
- * with the new unit, role and capabilities, or `removed: true` when the person has no unit left (fail closed). The
- * `protected` membership is derived but never written to the audit row.
+ * with the new unit, role and capabilities, or `removed: true` when the person has no unit left (fail closed). A
+ * `protected` key never reaches these tables (D93), so the derived flag stays false and is never written to the audit row.
  */
 export function provisioningUsecases(deps: { store: ProvisionStore }) {
   async function deriveWithin(tx: ProvisionTx, actor: string, personId: string): Promise<Derived | undefined> {
@@ -55,13 +56,28 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
     if (!person) return undefined;
     const memberships = await tx.memberships(personId),
       rules = await tx.groupCapabilities();
-    const managed = memberships
-      .filter(m => m.externalId.startsWith(MANAGER_KEY))
-      .map(m => m.externalId.slice(MANAGER_KEY.length));
-    const knownLabels = managed.length ? await tx.unitLabels(managed) : {};
+    // Every unit the memberships name, as the unit table knows it: the label of a managed unit without a `unit:` group,
+    // and the comparison that lets an unchanged derivation write nothing (a daily push replays every person).
+    const named = [
+      ...new Set(
+        memberships.flatMap(m =>
+          m.externalId.startsWith(MANAGER_KEY)
+            ? [m.externalId.slice(MANAGER_KEY.length)]
+            : m.externalId.startsWith(UNIT_KEY)
+              ? [m.externalId.slice(UNIT_KEY.length)]
+              : [],
+        ),
+      ),
+    ];
+    const knownLabels = named.length ? await tx.unitLabels(named) : {};
     const derived = deriveAuthority(memberships, rules, knownLabels);
-    await tx.writeUnits(person.organisationId, derived.units);
-    await tx.replaceAssignments(personId, derived.assignments);
+    const movedUnits = derived.units.filter(u => knownLabels[u.id] !== u.label);
+    if (movedUnits.length) await tx.writeUnits(person.organisationId, movedUnits);
+    const held = await tx.assignmentsOf(personId),
+      sameAssignments =
+        held.length === derived.assignments.length &&
+        held.every((a, i) => a.unitId === derived.assignments[i]!.unitId && a.role === derived.assignments[i]!.role);
+    if (!sameAssignments) await tx.replaceAssignments(personId, derived.assignments);
     // Compared as stored, so a projection that still carries a name outside the closed list is rewritten.
     const before = await tx.grant(personId),
       previous = before && { ...before, capabilities: [...before.capabilities].sort() as Capability[] };
@@ -103,8 +119,9 @@ export type ProvisioningUsecases = ReturnType<typeof provisioningUsecases>;
  * transaction with its audit row (`scim.user.*`, `scim.group.*`, actor `provisioner:<id>`) and re-derives the grants
  * of everyone it touched. `DELETE` on a user deactivates, because audit rows and threads reference the person; `DELETE`
  * on a group removes it and its memberships, and the members lose what the group gave them. Users are read and written
- * within the provisioner's organisation, but `userName` and `externalId` are unique across the installation (a login
- * carries no organisation); groups belong to the installation.
+ * within the provisioner's organisation, and so are groups (another organisation's group does not exist for a client),
+ * while `userName` and a group's or a person's `externalId` are unique across the installation: a login carries no
+ * organisation, and D68's keys are shared vocabulary.
  */
 export interface ScimQuery {
   filter?: string;
@@ -134,8 +151,9 @@ export function scimUsecases(deps: {
     if (!user) throw new ScimError(404, `User '${id}' not found.`);
     return user;
   };
-  const groupOr404 = async (tx: ProvisionTx, id: string) => {
-    const group = await tx.readGroup(id);
+  /** Within the provisioner's organisation, as `userOr404`: another organisation's group does not exist for this client. */
+  const groupOr404 = async (tx: ProvisionTx, p: Provisioner, id: string) => {
+    const group = await tx.readGroup(p.organisationId, id);
     if (!group) throw new ScimError(404, `Group '${id}' not found.`);
     return group;
   };
@@ -190,12 +208,21 @@ export function scimUsecases(deps: {
     const changed = changedKeys(fieldsOf(current), fields),
       at = now();
     if (changed.length) {
+      // A flip of `active` is what an operator reads the audit for, whatever verb carried it (DELETE writes the same);
+      // the verb travels in the details.
+      const flipped = current.enabled !== fields.enabled,
+        recorded = flipped ? (fields.enabled ? 'scim.user.reactivated' : 'scim.user.deactivated') : action;
       await tx.updateUser(current.id, { ...fields, updatedAt: at });
       await tx.audit({
         actor: actorOf(p),
-        action,
+        action: recorded,
         subject: 'person:' + current.id,
-        details: { changed, userName: fields.userName, externalId: fields.externalId },
+        details: {
+          changed,
+          ...(flipped ? { via: action } : {}),
+          userName: fields.userName,
+          externalId: fields.externalId,
+        },
       });
     }
     // Always: silent when nothing moved, and it heals a projection written before provisioning existed.
@@ -210,6 +237,7 @@ export function scimUsecases(deps: {
     action: string,
     base: string,
   ) {
+    assertAcceptedKey(fields);
     await uniqueGroup(tx, fields, current.id);
     await membersExist(tx, p, fields.members);
     const before = (await tx.groupMembers(current.id)).map(m => m.id),
@@ -331,11 +359,13 @@ export function scimUsecases(deps: {
     createGroup: (p: Provisioner, body: unknown, base: string): Promise<ScimGroup> =>
       deps.store.transaction(async tx => {
         const fields = groupFields(checked(ScimGroupInputSchema, body, 'Group'));
+        assertAcceptedKey(fields);
         await uniqueGroup(tx, fields);
         await membersExist(tx, p, fields.members);
         const at = now(),
           record: GroupRecord = {
             id: deps.ids(),
+            organisationId: p.organisationId,
             externalId: fields.externalId,
             label: fields.label,
             createdAt: at,
@@ -354,7 +384,7 @@ export function scimUsecases(deps: {
         return groupView(tx, record, base);
       }),
     getGroup: (p: Provisioner, id: string, base: string) =>
-      deps.store.transaction(async tx => groupView(tx, await groupOr404(tx, id), base)),
+      deps.store.transaction(async tx => groupView(tx, await groupOr404(tx, p, id), base)),
     listGroups: (p: Provisioner, query: ScimQuery, base: string): Promise<ScimList<ScimGroup>> =>
       deps.store.transaction(async tx => {
         // SCIM filters on displayName; the column is Clew's `label`.
@@ -364,7 +394,7 @@ export function scimUsecases(deps: {
             value: parsed.value,
           },
           page = pageOf(query);
-        const listed = await tx.listGroups(page, filter);
+        const listed = await tx.listGroups(p.organisationId, page, filter);
         const Resources: ScimGroup[] = [];
         for (const row of listed.rows) Resources.push(await groupView(tx, row, base));
         return {
@@ -380,7 +410,7 @@ export function scimUsecases(deps: {
         writeGroup(
           tx,
           p,
-          await groupOr404(tx, id),
+          await groupOr404(tx, p, id),
           groupFields(checked(ScimGroupInputSchema, body, 'Group')),
           'scim.group.replaced',
           base,
@@ -388,7 +418,7 @@ export function scimUsecases(deps: {
       ),
     patchGroup: (p: Provisioner, id: string, body: unknown, base: string) =>
       deps.store.transaction(async tx => {
-        const current = await groupOr404(tx, id),
+        const current = await groupOr404(tx, p, id),
           patch = checked<{ Operations: Parameters<typeof applyGroupPatch>[1] }>(ScimPatchSchema, body, 'PatchOp'),
           members = (await tx.groupMembers(id)).map(m => m.id);
         const next = applyGroupPatch(
@@ -400,7 +430,7 @@ export function scimUsecases(deps: {
     /** Removes the group; its members are re-derived and lose what it gave them. The group-capability rows stay (D85). */
     deleteGroup: (p: Provisioner, id: string) =>
       deps.store.transaction(async tx => {
-        const current = await groupOr404(tx, id),
+        const current = await groupOr404(tx, p, id),
           members = (await tx.groupMembers(id)).map(m => m.id);
         await tx.deleteGroup(id);
         await tx.audit({
@@ -451,7 +481,7 @@ export function usersAdminUsecases(deps: { store: ProvisionStore }) {
       startIndex += page.rows.length;
       if (!page.rows.length || startIndex > page.total) break;
     }
-    const groups = (await tx.listGroups({ startIndex: 1, count: 10_000 })).rows
+    const groups = (await tx.listGroups(persona.organisationId, { startIndex: 1, count: 10_000 })).rows
       .filter(g => g.externalId)
       .map(g => ({ id: g.externalId!, label: g.label }))
       .sort((a, b) => a.label.localeCompare(b.label, 'sv') || a.id.localeCompare(b.id));

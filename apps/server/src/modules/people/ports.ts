@@ -71,10 +71,16 @@ export interface ProvisionTx {
     fields: Partial<Pick<UserRecord, 'externalId' | 'userName' | 'name' | 'email' | 'enabled'>> & { updatedAt: string },
   ): Promise<void>;
   userGroups(personId: string): Promise<Array<{ id: string; externalId: string | null; label: string }>>;
-  // SCIM: groups. A group belongs to the installation; its members are people of the provisioner's organisation.
-  readGroup(id: string): Promise<GroupRecord | undefined>;
+  // SCIM: groups. A group belongs to the organisation of the provisioner that pushed it, as its members do, so a client
+  // reads, lists and writes its own organisation's groups only; `externalId` is unique across the installation.
+  readGroup(organisationId: string, id: string): Promise<GroupRecord | undefined>;
+  /** Across the installation, for the uniqueness check and the mapping (an `externalId` is shared vocabulary). */
   findGroup(by: 'externalId' | 'label', value: string): Promise<GroupRecord | undefined>;
-  listGroups(page: Page, filter?: { attribute: 'externalId' | 'label'; value: string }): Promise<Listed<GroupRecord>>;
+  listGroups(
+    organisationId: string,
+    page: Page,
+    filter?: { attribute: 'externalId' | 'label'; value: string },
+  ): Promise<Listed<GroupRecord>>;
   insertGroup(record: GroupRecord): Promise<void>;
   updateGroup(
     id: string,

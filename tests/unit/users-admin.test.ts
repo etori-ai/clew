@@ -26,14 +26,23 @@ function stack() {
   s.users.get('zara')!.enabled = false;
   s.groups.set('g-skola', {
     id: 'g-skola',
+    organisationId: 'poc',
     externalId: 'unit:unit-skola',
     label: 'Bergsåkers skola',
     createdAt: T,
     updatedAt: T,
   });
-  s.groups.set('g-it', { id: 'g-it', externalId: 'unit:unit-it', label: 'IT', createdAt: T, updatedAt: T });
+  s.groups.set('g-it', {
+    id: 'g-it',
+    organisationId: 'poc',
+    externalId: 'unit:unit-it',
+    label: 'IT',
+    createdAt: T,
+    updatedAt: T,
+  });
   s.groups.set('g-ad', {
     id: 'g-ad',
+    organisationId: 'poc',
     externalId: 'S-1-5-21-it-staff',
     label: 'IT-personal',
     createdAt: T,
@@ -41,6 +50,7 @@ function stack() {
   });
   s.groups.set('g-plain', {
     id: 'g-plain',
+    organisationId: 'poc',
     externalId: null,
     label: 'No external id',
     createdAt: T,
