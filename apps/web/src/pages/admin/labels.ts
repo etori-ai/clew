@@ -1,4 +1,5 @@
 import type {
+  Capability,
   ConnectorAudience,
   ConnectorSummary,
   ModelSummary,
@@ -9,6 +10,13 @@ import type {
 
 /** Swedish words for what the administration page shows (D23). Colour never stands alone: every variant has its word. */
 export const roleLabel: Record<Role, string> = { manager: 'Chefer', employee: 'Medarbetare' };
+/** A person's role in one unit, singular. */
+export const roleOfOne: Record<Role, string> = { manager: 'Chef', employee: 'Medarbetare' };
+/** The closed list of capabilities (D85) in the administrator's words. */
+export const capabilityLabel: Record<Capability, string> = {
+  'admin.connectors': 'Administrera anslutna system',
+  'admin.users': 'Administrera användare',
+};
 export const kindLabel = {
   core: 'Startsidans egen',
   passthrough: 'Direkt från källan',

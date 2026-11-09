@@ -113,6 +113,8 @@ export const cardViewQuery = (threadId: string, actionId: string) =>
 export const adminQueries = {
   connectors: queryOptions({ queryKey: keys.admin.connectors, queryFn: () => api.admin.connectors() }),
   units: queryOptions({ queryKey: keys.admin.units, queryFn: () => api.admin.units() }),
+  groups: queryOptions({ queryKey: keys.admin.groups, queryFn: () => api.admin.groups() }),
+  users: queryOptions({ queryKey: keys.admin.users, queryFn: () => api.admin.users() }),
   connector: (id: string) =>
     queryOptions({ queryKey: keys.admin.connector(id), queryFn: () => api.admin.connector(id) }),
   preview: (id: string, role: Role) =>

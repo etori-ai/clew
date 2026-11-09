@@ -1,4 +1,5 @@
 import type {
+  UsersAdminOverview,
   AssistantStatus,
   ModelDetail,
   ModelSummary,
@@ -1026,4 +1027,80 @@ export const units = [
   { id: 'unit-skola', label: 'Bergsåkers skola' },
   { id: 'unit-omsorg', label: 'Hemtjänst Centrum' },
   { id: 'unit-it', label: 'IT och digitalisering' },
+];
+/** Administration › Användare (D85): the provisioned people and the mapping as the page lists them. */
+export const usersOverview = (): UsersAdminOverview => ({
+  users: [
+    {
+      id: 'hassan',
+      name: 'Hassan Ali',
+      userName: 'hassan',
+      externalId: 'dev:hassan',
+      email: 'hassan@clew.test',
+      enabled: true,
+      bound: true,
+      assignments: [{ unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum', role: 'employee' }],
+      active: { unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum', role: 'employee' },
+      capabilities: [],
+      groups: [{ externalId: 'unit:unit-omsorg', displayName: 'Hemtjänst Centrum' }],
+    },
+    {
+      id: 'hillevi',
+      name: 'Hillevi Berg',
+      userName: 'hillevi',
+      externalId: 'dev:hillevi',
+      email: 'hillevi@clew.test',
+      enabled: true,
+      bound: true,
+      assignments: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' }],
+      active: { unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' },
+      capabilities: [],
+      groups: [
+        { externalId: 'unit:unit-skola', displayName: 'Bergsåkers skola' },
+        { externalId: 'unit-manager:unit-skola', displayName: 'Chefer · Bergsåkers skola' },
+        { externalId: 'S-1-5-21-rektorer', displayName: 'Rektorer' },
+      ],
+    },
+    {
+      id: 'mikael',
+      name: 'Mikael Lund',
+      userName: 'mikael',
+      externalId: 'dev:mikael',
+      email: 'mikael@clew.test',
+      enabled: true,
+      bound: false,
+      assignments: [{ unitId: 'unit-it', unitLabel: 'IT och digitalisering', role: 'employee' }],
+      active: { unitId: 'unit-it', unitLabel: 'IT och digitalisering', role: 'employee' },
+      capabilities: ['admin.connectors', 'admin.users'],
+      groups: [
+        { externalId: 'unit:unit-it', displayName: 'IT och digitalisering' },
+        { externalId: 'S-1-5-21-it-staff', displayName: 'IT-personal' },
+      ],
+    },
+    {
+      id: 'omar',
+      name: 'Omar Ny',
+      userName: 'omar',
+      externalId: 'dev:omar',
+      email: 'omar@clew.test',
+      enabled: true,
+      bound: false,
+      assignments: [],
+      active: null,
+      capabilities: [],
+      groups: [],
+    },
+  ],
+  mapping: [{ groupExternalId: 'S-1-5-21-it-staff', displayName: 'IT-personal', capability: 'admin.connectors' }],
+  groups: [
+    { id: 'unit:unit-skola', label: 'Bergsåkers skola' },
+    { id: 'S-1-5-21-it-staff', label: 'IT-personal' },
+    { id: 'S-1-5-21-rektorer', label: 'Rektorer' },
+  ],
+  capabilities: ['admin.connectors', 'admin.users'],
+});
+/** Provisioned groups as the audience editor lists them (D68): the external id is what an audience stores. */
+export const groups = [
+  { id: 'S-1-5-21-it-staff', label: 'IT-personal' },
+  { id: 'S-1-5-21-rektorer', label: 'Rektorer' },
 ];

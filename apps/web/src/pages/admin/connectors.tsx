@@ -74,6 +74,7 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
   const client = useQueryClient();
   const list = useQuery(adminQueries.connectors);
   const units = useQuery(adminQueries.units).data?.units ?? EMPTY_UNITS;
+  const groups = useQuery(adminQueries.groups).data?.groups ?? EMPTY_UNITS;
   const [filter, setFilter] = useState<Filter>('alla');
   const [adding, setAdding] = useState(false);
   const toast = useToast();
@@ -269,6 +270,7 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
       <AddConnectorDialog
         isOpen={adding}
         units={units}
+        groups={groups}
         onClose={added => {
           setAdding(false);
           if (added) void client.invalidateQueries({ queryKey: keys.admin.all });

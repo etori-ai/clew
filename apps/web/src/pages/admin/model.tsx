@@ -59,6 +59,7 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
   const client = useQueryClient();
   const detail = useQuery(adminQueries.model(id));
   const units = useQuery(adminQueries.units).data?.units ?? EMPTY_UNITS;
+  const groups = useQuery(adminQueries.groups).data?.groups ?? EMPTY_UNITS;
   const m = detail.data ?? null;
   const missing = detail.isError && detail.error instanceof ApiError && detail.error.status === 400;
   const readError =
@@ -324,7 +325,7 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
           {tab === 'publik' && audience && (
             <div id={panel('publik')} role={role} aria-label="Vem kan välja den">
               <VStack gap={4}>
-                <AudienceEditor of="model" value={audience} onChange={setAudience} units={units} />
+                <AudienceEditor of="model" value={audience} onChange={setAudience} units={units} groups={groups} />
                 <HStack gap={2}>
                   <Button
                     variant="primary"

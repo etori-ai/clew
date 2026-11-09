@@ -16,6 +16,7 @@ import { ManifestReferencePage } from './pages/protocol';
 import { AdminConnectorsPage } from './pages/admin/connectors';
 import { AdminConnectorPage } from './pages/admin/connector';
 import { AdminModelsPage } from './pages/admin/models';
+import { AdminUsersPage } from './pages/admin/users';
 import { AdminModelPage } from './pages/admin/model';
 import { AdminProviderPage } from './pages/admin/provider';
 import { NotAdmin } from './pages/admin/shell';
@@ -236,6 +237,12 @@ function App() {
         path="/admin/models"
         element={admin(shell => (
           <AdminModelsPage user={shell.user} />
+        ))}
+      />
+      <Route
+        path="/admin/users"
+        element={admin(shell => (
+          <AdminUsersPage user={shell.user} />
         ))}
       />
       <Route

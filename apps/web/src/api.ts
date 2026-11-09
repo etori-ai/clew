@@ -1,4 +1,11 @@
-import type { ManifestReference, DocumentRequest, ReviewEvidence, ReviewPreview } from '@clew/contracts';
+import type {
+  CapabilityMapInputType,
+  UsersAdminOverview,
+  ManifestReference,
+  DocumentRequest,
+  ReviewEvidence,
+  ReviewPreview,
+} from '@clew/contracts';
 import type {
   AddModelInput,
   AddProviderInput,
@@ -235,6 +242,13 @@ export const api = {
   admin: {
     connectors: () => call<{ connectors: ConnectorSummary[] }>('/api/admin/connectors'),
     units: () => call<{ units: Array<{ id: string; label: string }> }>('/api/admin/units'),
+    groups: () => call<{ groups: Array<{ id: string; label: string }> }>('/api/admin/groups'),
+    // Användare (D62, D85): the provisioned people and the group-to-capability mapping.
+    users: () => call<UsersAdminOverview>('/api/admin/users'),
+    mapCapability: (input: CapabilityMapInputType) =>
+      post<UsersAdminOverview>('/api/admin/users/capability-map', input),
+    unmapCapability: (input: CapabilityMapInputType) =>
+      post<UsersAdminOverview>('/api/admin/users/capability-map/remove', input),
     connector: (id: string) => call<ConnectorDetail>(`/api/admin/connectors/${id}`),
     add: (input: AddConnectorInput) =>
       post<{ connector: ConnectorDetail; report: CheckReport }>('/api/admin/connectors', input),

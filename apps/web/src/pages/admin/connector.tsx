@@ -124,6 +124,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
   const client = useQueryClient();
   const detail = useQuery(adminQueries.connector(id));
   const units = useQuery(adminQueries.units).data?.units ?? EMPTY_UNITS;
+  const groups = useQuery(adminQueries.groups).data?.groups ?? EMPTY_UNITS;
   const c = detail.data ?? null;
   const missing = detail.isError && detail.error instanceof ApiError && detail.error.status === 400;
   const readError =
@@ -619,7 +620,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
           {tab === 'publik' && audience && (
             <div id={panel('publik')} role={mobile ? 'region' : 'tabpanel'} aria-label="Vem ser det">
               <VStack gap={4}>
-                <AudienceEditor value={audience} onChange={setAudience} units={units} />
+                <AudienceEditor value={audience} onChange={setAudience} units={units} groups={groups} />
                 <HStack gap={2}>
                   <Button
                     variant="primary"

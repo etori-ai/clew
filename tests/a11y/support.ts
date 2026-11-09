@@ -20,9 +20,18 @@ import {
   threads,
   today,
   units,
+  groups,
   user,
 } from './data';
-import { assistantStatus, modelDetail, modelProviders, models, providerDetail, providerReport } from './data';
+import {
+  assistantStatus,
+  modelDetail,
+  modelProviders,
+  models,
+  providerDetail,
+  providerReport,
+  usersOverview,
+} from './data';
 import type { ModelSummary, ProviderSummary } from '@clew/contracts';
 import { personSearch, phonebook } from './phonebook';
 import { rooms, roomsSpec } from './rooms';
@@ -70,6 +79,10 @@ export class MockApi {
   signedIn = true;
   /** The session says the person may administer connectors (D23). Off by default so the other suites see the ordinary page. */
   admin = false;
+  /** Användare (D85): the people and the mapping the users page shows; the mapping changes with the page's actions. */
+  users = usersOverview();
+  /** The users page for someone with `admin.connectors` but not `admin.users`: the server refuses. */
+  usersForbidden = false;
   connectors: ConnectorSummary[] = connectors();
   /** The rows under Verktyg in the menu (D40): none until a test puts one there, as none is shown until an administrator switches one on. */
   menu: MenuEntry[] = [];
@@ -125,6 +138,35 @@ export class MockApi {
       const cid = path.split('/')[3] ?? '';
       const found = () => this.connectors.find(c => c.id === cid);
       if (path === '/admin/units') return json({ units });
+      if (path === '/admin/groups') return json({ groups });
+      if (path === '/admin/users' && method === 'GET')
+        return this.usersForbidden
+          ? route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } })
+          : json(this.users);
+      if (path === '/admin/users/capability-map' && method === 'POST') {
+        const input = request.postDataJSON() as {
+          groupExternalId: string;
+          capability: 'admin.connectors' | 'admin.users';
+        };
+        if (
+          !this.users.mapping.some(
+            m => m.groupExternalId === input.groupExternalId && m.capability === input.capability,
+          )
+        )
+          this.users.mapping.push({
+            groupExternalId: input.groupExternalId,
+            displayName: this.users.groups.find(g => g.id === input.groupExternalId)?.label ?? null,
+            capability: input.capability,
+          });
+        return json(this.users);
+      }
+      if (path === '/admin/users/capability-map/remove' && method === 'POST') {
+        const input = request.postDataJSON() as { groupExternalId: string; capability: string };
+        this.users.mapping = this.users.mapping.filter(
+          m => !(m.groupExternalId === input.groupExternalId && m.capability === input.capability),
+        );
+        return json(this.users);
+      }
       if (path.startsWith('/admin/models') || path.startsWith('/admin/providers'))
         return this.handleModels(route, method, path);
       if (path === '/admin/connectors' && method === 'GET') return json({ connectors: this.connectors });
