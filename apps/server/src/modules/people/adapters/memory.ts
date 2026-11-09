@@ -196,6 +196,15 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
         .map(a => ({ unitId: a.unitId, unitLabel: state.units.get(a.unitId)?.label ?? a.unitId, role: a.role }))
         .sort((a, b) => a.unitId.localeCompare(b.unitId));
     },
+    async unitPeople(unitId) {
+      return [...state.assignments.entries()]
+        .flatMap(([personId, list]) => list.filter(a => a.unitId === unitId).map(a => ({ personId, role: a.role })))
+        .flatMap(({ personId, role }) => {
+          const u = state.users.get(personId);
+          return u ? [{ id: u.id, name: u.name, userName: u.userName, email: u.email, role, enabled: u.enabled }] : [];
+        })
+        .sort((a, b) => a.id.localeCompare(b.id));
+    },
     async bound(personId) {
       return state.bindings.has(personId);
     },

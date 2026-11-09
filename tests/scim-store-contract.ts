@@ -149,6 +149,11 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         await tx.writeUnits(p + '-org', [{ id: p + '-u1', label: 'Enhet 1' }]);
         await tx.replaceAssignments(a, [{ unitId: p + '-u1', role: 'manager' }]);
         expect(await tx.assignmentsOf(a)).toEqual([{ unitId: p + '-u1', unitLabel: 'Enhet 1', role: 'manager' }]);
+        // Personal (D94): the unit's people with their role on it, as the manager's page reads them.
+        expect(await tx.unitPeople(p + '-u1')).toEqual([
+          { id: a, name: 'Name ' + a, userName: 'u:' + a, email: a + '@example.test', role: 'manager', enabled: true },
+        ]);
+        expect(await tx.unitPeople(p + '-nowhere')).toEqual([]);
         expect(await tx.bound(a)).toBe(false);
       });
       await h.bind(a);

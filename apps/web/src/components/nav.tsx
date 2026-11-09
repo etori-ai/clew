@@ -28,7 +28,7 @@ import { SubRows, type ShellNav } from './shell';
 export type AdminSection = 'anslutningar' | 'modeller' | 'anvandare';
 /** What the rail marks as current: the place, and within the start page the conversation. */
 export interface RailCurrent {
-  surface: 'start' | 'calendar' | 'verktyg' | 'admin';
+  surface: 'start' | 'calendar' | 'verktyg' | 'staff' | 'admin';
   conversationId?: string | null;
   /** The capability whose tool page is open (D42), so its row under Verktyg is marked. */
   view?: string | null;
@@ -73,7 +73,16 @@ type Found = { href: string; detail: string };
  * tabs and the filter on Hem. At the foot Administration with its two sections, collapsed until one of them is
  * open. Every row is a link to a route, so the back button and a reload land in the same place. Returned as the shell's slots so the shell keeps the heading and the way out.
  */
-export function useRail({ current, admin }: { current: RailCurrent; admin: boolean }): ShellNav {
+export function useRail({
+  current,
+  admin,
+  manager,
+}: {
+  current: RailCurrent;
+  admin: boolean;
+  /** The session's role is manager (D94): the row Personal shows under Verktyg; the server checks the assignments again. */
+  manager: boolean;
+}): ShellNav {
   const navigate = useNavigate();
   const threads = useQuery(threadsQuery).data?.threads ?? EMPTY_THREADS;
   const areasData = useQuery(areasQuery).data;
@@ -180,6 +189,15 @@ export function useRail({ current, admin }: { current: RailCurrent; admin: boole
         </SideNavSection>
         <SideNavSection title="Verktyg">
           <SideNavItem label="Kalender" icon="calendar" href="/calendar" isSelected={current.surface === 'calendar'} />
+          {/* Personal (D94): a manager's people, a destination of its own; the server checks the assignments on every read. */}
+          {manager && (
+            <SideNavItem
+              label="Personal"
+              icon={clewIcon.people}
+              href="/staff"
+              isSelected={current.surface === 'staff'}
+            />
+          )}
           {menu.slice(0, TOOLS_SHOWN).map(tool)}
           {more.length > 0 && (
             <SideNavItem

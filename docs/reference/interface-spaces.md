@@ -8,7 +8,7 @@ This is the current placement reference, consolidated in [D83](../decisions/D83-
 
 | Space | Responsibility | Examples and behavior |
 |---|---|---|
-| Navigation rail | Choose a standing destination or earlier conversation. | Home, Calendar, approved tools, Administration and conversation history. A row here changes the main page and identifies the current destination. |
+| Navigation rail | Choose a standing destination or earlier conversation. | Home, Calendar, approved tools, Personal for a manager ([D94](../decisions/D94-a-manager-has-a-personal-section-listing-the-people-on-their-units.md)), Administration and conversation history. A row here changes the main page and identifies the current destination. |
 | Main page | The place the person is working, including its conversation. | Home's work list, Calendar, the phone book, an assistant transcript or administration. A conversation occupies the main column; it is not moved into the detail sidebar. |
 | Page content | Information that belongs to the destination without being opened. | Home's cards, I dag and Sedan i går. The day may occupy a right-hand grid column, but it is page content, not a panel tab replaced by an opened record. |
 | Context panel | Keep related information beside the current task. | An opened work item, source record or declared view. Native content uses the shared panel and its open-content menu; where space allows it is non-modal beside the page, otherwise it uses the existing responsive overlay. Closing returns to the opener or reveals another retained entry. |

@@ -107,7 +107,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   // A tool is a row the person has in the menu: a view that is not chosen, or not theirs, has no page.
   const entry = areasQ.data?.menu?.find(e => e.capability === capability) ?? null;
   const missing = areasQ.data !== undefined && !entry;
-  const nav = useRail({ current: { surface: 'verktyg', view: capability }, admin });
+  const nav = useRail({ current: { surface: 'verktyg', view: capability }, admin, manager: user.role === 'manager' });
   const inputJson = search.get('input');
   const main = useView(entry ? capability : null, inputJson, { title: entry?.label ?? '', via: false, address });
   const tool = main.shown?.capability === capability ? main.shown : null;

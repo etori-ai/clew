@@ -1,5 +1,6 @@
 import type {
   UsersAdminOverview,
+  StaffOverview,
   AssistantStatus,
   ModelDetail,
   ModelSummary,
@@ -1033,6 +1034,63 @@ export const units = [
   { id: 'unit-it', label: 'IT och digitalisering' },
 ];
 /** Administration › Användare (D85): the provisioned people and the mapping as the page lists them. */
+/** Personal (D94): what the test person, a rektor, manages: their own school and a fritidshem with a co-manager. */
+export const staffOverview = (): StaffOverview => ({
+  units: [
+    {
+      unitId: 'unit-skola',
+      unitLabel: 'Skönsmons skola',
+      people: [
+        {
+          id: 'anna',
+          name: 'Anna Lindqvist',
+          userName: 'anna.lindqvist',
+          email: 'anna.lindqvist@clew.test',
+          role: 'employee',
+          enabled: true,
+        },
+        {
+          id: 'erik',
+          name: 'Erik Nyström',
+          userName: 'erik.nystrom',
+          email: 'erik.nystrom@clew.test',
+          role: 'employee',
+          enabled: true,
+        },
+        {
+          id: 'sara',
+          name: 'Sara Pettersson',
+          userName: 'sara.pettersson',
+          email: 'sara.pettersson@clew.test',
+          role: 'employee',
+          enabled: false,
+        },
+      ],
+    },
+    {
+      unitId: 'unit-fritids',
+      unitLabel: 'Skönsmons fritidshem',
+      people: [
+        {
+          id: 'lena',
+          name: 'Lena Berg',
+          userName: 'lena.berg',
+          email: 'lena.berg@clew.test',
+          role: 'employee',
+          enabled: true,
+        },
+        {
+          id: 'omar',
+          name: 'Omar Sjöberg',
+          userName: 'omar.sjoberg',
+          email: 'omar.sjoberg@clew.test',
+          role: 'manager',
+          enabled: true,
+        },
+      ],
+    },
+  ],
+});
 export const usersOverview = (): UsersAdminOverview => ({
   users: [
     {

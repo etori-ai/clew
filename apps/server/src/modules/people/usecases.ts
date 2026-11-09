@@ -6,6 +6,8 @@ import {
   type Capability,
   type GroupCapabilityInputType,
   type GroupCapability,
+  type StaffOverview,
+  type StaffUnit,
   type UserAdminRow,
   type UsersAdminOverview,
 } from '@clew/contracts';
@@ -534,3 +536,31 @@ export function usersAdminUsecases(deps: { store: ProvisionStore }) {
   };
 }
 export type UsersAdminUsecases = ReturnType<typeof usersAdminUsecases>;
+
+/**
+ * Personal (D94): what a manager sees of the people on the units they manage, read only. The scope is the server's:
+ * the actor must manage at least one unit, and the units come from the actor's own assignments, never from the
+ * request. A person is listed under every unit they are assigned to, with their role on that unit; the manager is not
+ * listed on their own units. Nothing is written, so there is no audit row.
+ */
+export function staffUsecases(deps: { store: ProvisionStore }) {
+  const sv = (a: string, b: string) => a.localeCompare(b, 'sv');
+  return {
+    overview: (persona: AuthenticatedContext): Promise<StaffOverview> =>
+      deps.store.transaction(async tx => {
+        const managed = (await tx.assignmentsOf(persona.id)).filter(a => a.role === 'manager');
+        if (!managed.length) throw new ForbiddenError('Sidan Personal är för den som är chef för en enhet.');
+        const units: StaffUnit[] = [];
+        for (const unit of managed)
+          units.push({
+            unitId: unit.unitId,
+            unitLabel: unit.unitLabel,
+            people: (await tx.unitPeople(unit.unitId))
+              .filter(p => p.id !== persona.id)
+              .sort((a, b) => sv(a.name, b.name) || a.id.localeCompare(b.id)),
+          });
+        return { units: units.sort((a, b) => sv(a.unitLabel, b.unitLabel) || a.unitId.localeCompare(b.unitId)) };
+      }),
+  };
+}
+export type StaffUsecases = ReturnType<typeof staffUsecases>;

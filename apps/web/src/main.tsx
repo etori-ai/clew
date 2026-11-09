@@ -17,6 +17,7 @@ import { AdminConnectorsPage } from './pages/admin/connectors';
 import { AdminConnectorPage } from './pages/admin/connector';
 import { AdminModelsPage } from './pages/admin/models';
 import { AdminUsersPage } from './pages/admin/users';
+import { StaffPage } from './pages/staff';
 import { AdminModelPage } from './pages/admin/model';
 import { AdminProviderPage } from './pages/admin/provider';
 import { NotAdmin } from './pages/admin/shell';
@@ -214,6 +215,11 @@ function App() {
       <Route
         path="/tools/:capability"
         element={<Protected>{shell => <ToolPage user={shell.user} admin={shell.admin} />}</Protected>}
+      />
+      {/* Personal (D94): a manager's destination; the page itself tells anyone else, and the server refuses the read. */}
+      <Route
+        path="/staff"
+        element={<Protected>{shell => <StaffPage user={shell.user} admin={shell.admin} />}</Protected>}
       />
       <Route
         path="/admin"

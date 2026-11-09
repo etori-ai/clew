@@ -272,6 +272,21 @@ export function postgresProvisionStore(): ProvisionStore {
         .where(eq(schema.assignments.personId, personId))
         .orderBy(schema.assignments.unitId);
     },
+    async unitPeople(unitId) {
+      return tx
+        .select({
+          id: schema.people.id,
+          name: schema.people.name,
+          userName: schema.people.userName,
+          email: schema.people.email,
+          role: schema.assignments.role,
+          enabled: schema.people.enabled,
+        })
+        .from(schema.assignments)
+        .innerJoin(schema.people, eq(schema.people.id, schema.assignments.personId))
+        .where(eq(schema.assignments.unitId, unitId))
+        .orderBy(schema.people.id);
+    },
     async bound(personId) {
       const [row] = await tx
         .select({ personId: schema.identityBindings.personId })
