@@ -31,7 +31,7 @@ Extension schemas and unknown attributes are accepted and ignored, as the standa
 | `unit:<unitId>` | An assignment to that unit as `employee` | The unit's name, shown in the product |
 | `unit-manager:<unitId>` | An assignment to that unit as `manager`, which wins over `unit:` for the same unit | Free |
 | `capability:<name>` | That capability, one of the closed list (`admin.connectors`, `admin.users`) | Free |
-| `protected` | Refused with 400 `invalidValue` ([D92](../decisions/D92-the-protected-key-is-refused-at-the-scim-boundary.md)): Clew has not decided whether it may hold that fact, so do not send it | Free |
+| `protected` | Refused with 400 `invalidValue` ([D93](../decisions/D93-the-protected-key-is-refused-at-the-scim-boundary.md)): Clew has not decided whether it may hold that fact, so do not send it | Free |
 | Anything else | Nothing by itself; an administrator may map it to a capability in Clew ([D85](../decisions/D85-capabilities-are-mapped-from-provisioned-groups-in-clew.md)) and use it as a connector audience | Free |
 
 A person with no `unit:` or `unit-manager:` membership exists but can do nothing, so a mapping mistake fails closed. Several memberships give several assignments; until a person can switch, the active one is a managed unit before an employed one, then the lowest unit id.

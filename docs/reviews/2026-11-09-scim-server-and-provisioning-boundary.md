@@ -227,7 +227,7 @@ Findings 4 to 9 followed on branch `scim-review-findings-4-9`, one commit each. 
 addresses with the error resource through a handler of its own (Hono does not carry `notFound` through `app.route()`),
 `/Bulk`, `/Me` and the root `/.search` answer 501, and `/Users/.search` and `/Groups/.search` take a SearchRequest; the
 Node runtime test mounts the sub-app as `main.ts` does. Finding 5 became
-[D92](../decisions/D92-the-protected-key-is-refused-at-the-scim-boundary.md): the `protected` key is refused with 400
+[D93](../decisions/D93-the-protected-key-is-refused-at-the-scim-boundary.md): the `protected` key is refused with 400
 `invalidValue` on every verb until Clew decides whether it may hold the fact, and the status matrix, D68, the guide and
 the identity page say so (the group-keys figure still draws the key and needs a redraw). Finding 6: `auth_group` carries
 the provisioner's organisation (migration 0041, backfilled from the members), checked on every read, list and write;

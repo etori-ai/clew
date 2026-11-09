@@ -279,7 +279,7 @@ describe('SCIM groups and derivation', () => {
     expect(store.state.grants.get(a)?.unitLabel).toBe('IT och digitalisering');
     expect(store.state.units.get('it')?.label).toBe('IT och digitalisering');
   });
-  test('the protected key is refused on create and on patch, and nothing of it is stored (D92)', async () => {
+  test('the protected key is refused on create and on patch, and nothing of it is stored (D93)', async () => {
     const { scim, p, store } = harness();
     const a = (await scim.createUser(p, anna, BASE)).id;
     await expect(scim.createGroup(p, group('protected', 'Skyddade', [a]), BASE)).rejects.toMatchObject({

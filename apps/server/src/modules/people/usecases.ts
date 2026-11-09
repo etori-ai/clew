@@ -48,7 +48,7 @@ import type { Provisioner, ProvisionStore, ProvisionTx } from './ports';
  * with. Called by whatever changed a membership or such a row, inside that change's transaction, so the grant never lags the
  * fact that produced it. An unchanged grant writes no audit row; a changed one writes `grant.derived` on the person
  * with the new unit, role and capabilities, or `removed: true` when the person has no unit left (fail closed). A
- * `protected` key never reaches these tables (D92), so the derived flag stays false and is never written to the audit row.
+ * `protected` key never reaches these tables (D93), so the derived flag stays false and is never written to the audit row.
  */
 export function provisioningUsecases(deps: { store: ProvisionStore }) {
   async function deriveWithin(tx: ProvisionTx, actor: string, personId: string): Promise<Derived | undefined> {

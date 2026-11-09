@@ -1,4 +1,4 @@
-# D92 · The `protected` key is refused at the SCIM boundary until Clew decides whether it may hold the fact
+# D93 · The `protected` key is refused at the SCIM boundary until Clew decides whether it may hold the fact
 
 **Status:** accepted, built 2026-11-09 · **Date:** 2026-11-09 · **Area:** identity
 
