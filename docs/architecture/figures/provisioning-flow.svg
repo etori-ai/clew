@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="420" viewBox="0 0 1000 420" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14">
+  <title>How people enter Clew: a provisioner pushes the organisation's source to Clew's SCIM server, and Clew derives each person's grant</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4b5563"/>
+    </marker>
+  </defs>
+  <rect width="1000" height="420" fill="#ffffff"/>
+  <!-- Regions -->
+  <rect x="20" y="20" width="300" height="380" rx="14" fill="#f3f4f6" stroke="#d1d5db"/>
+  <text x="170" y="48" text-anchor="middle" font-weight="600" fill="#374151">The municipality</text>
+  <rect x="350" y="20" width="630" height="380" rx="14" fill="#eef4ff" stroke="#c7d7f5"/>
+  <text x="665" y="48" text-anchor="middle" font-weight="600" fill="#1e3a8a">Clew</text>
+  <!-- Source -->
+  <rect x="50" y="80" width="240" height="90" rx="10" fill="#ffffff" stroke="#9ca3af"/>
+  <text x="170" y="108" text-anchor="middle" font-weight="600" fill="#111827">The source</text>
+  <text x="170" y="130" text-anchor="middle" fill="#374151">directory, HR system, catalogue</text>
+  <text x="170" y="150" text-anchor="middle" fill="#6b7280">knows people, departments, managers</text>
+  <!-- Provisioner -->
+  <rect x="50" y="230" width="240" height="110" rx="10" fill="#ffffff" stroke="#9ca3af"/>
+  <text x="170" y="258" text-anchor="middle" font-weight="600" fill="#111827">Provisioner</text>
+  <text x="170" y="280" text-anchor="middle" fill="#374151">the installation's own process</text>
+  <text x="170" y="300" text-anchor="middle" fill="#374151">maps the source's facts to SCIM</text>
+  <text x="170" y="322" text-anchor="middle" fill="#6b7280">runs at least daily · not a connector</text>
+  <line x1="170" y1="170" x2="170" y2="228" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="182" y="204" fill="#6b7280">reads</text>
+  <!-- SCIM server -->
+  <rect x="380" y="230" width="200" height="110" rx="10" fill="#ffffff" stroke="#1d4ed8"/>
+  <text x="480" y="258" text-anchor="middle" font-weight="600" fill="#1e3a8a">SCIM 2.0 server</text>
+  <text x="480" y="280" text-anchor="middle" fill="#374151">/scim/v2</text>
+  <text x="480" y="300" text-anchor="middle" fill="#374151">Users · Groups</text>
+  <text x="480" y="322" text-anchor="middle" fill="#6b7280">bearer token per provisioner</text>
+  <line x1="290" y1="285" x2="378" y2="285" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="334" y="272" text-anchor="middle" fill="#6b7280">pushes</text>
+  <!-- Tables -->
+  <rect x="610" y="230" width="160" height="110" rx="10" fill="#ffffff" stroke="#1d4ed8"/>
+  <text x="690" y="258" text-anchor="middle" font-weight="600" fill="#1e3a8a">Stored as pushed</text>
+  <text x="690" y="280" text-anchor="middle" fill="#374151">people · units</text>
+  <text x="690" y="300" text-anchor="middle" fill="#374151">groups · members</text>
+  <text x="690" y="322" text-anchor="middle" fill="#6b7280">+ the admin's mapping</text>
+  <line x1="580" y1="285" x2="608" y2="285" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+  <!-- Derivation -->
+  <rect x="800" y="230" width="160" height="110" rx="10" fill="#ffffff" stroke="#1d4ed8"/>
+  <text x="880" y="258" text-anchor="middle" font-weight="600" fill="#1e3a8a">Derivation</text>
+  <text x="880" y="280" text-anchor="middle" fill="#374151">same transaction</text>
+  <text x="880" y="300" text-anchor="middle" fill="#374151">keys + mapping →</text>
+  <text x="880" y="322" text-anchor="middle" fill="#6b7280">one audit row per change</text>
+  <line x1="770" y1="285" x2="798" y2="285" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+  <!-- Grant -->
+  <rect x="610" y="80" width="350" height="110" rx="10" fill="#ecfdf5" stroke="#059669"/>
+  <text x="785" y="108" text-anchor="middle" font-weight="600" fill="#065f46">The person's grant</text>
+  <text x="785" y="130" text-anchor="middle" fill="#374151">active unit and role · capabilities</text>
+  <text x="785" y="150" text-anchor="middle" fill="#374151">what every request and every connector sees</text>
+  <text x="785" y="172" text-anchor="middle" fill="#6b7280">no unit membership → no grant (fails closed)</text>
+  <line x1="880" y1="230" x2="880" y2="192" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="892" y="214" fill="#6b7280">writes</text>
+  <!-- Note -->
+  <rect x="380" y="80" width="200" height="110" rx="10" fill="#ffffff" stroke="#c7d7f5" stroke-dasharray="4 3"/>
+  <text x="480" y="106" text-anchor="middle" font-weight="600" fill="#1e3a8a">Clew never reads the source</text>
+  <text x="480" y="128" text-anchor="middle" font-size="12" fill="#374151">It knows no field, group or</text>
+  <text x="480" y="145" text-anchor="middle" font-size="12" fill="#374151">system name of the municipality.</text>
+  <text x="480" y="165" text-anchor="middle" font-size="12" fill="#6b7280">Another municipality: a new</text>
+  <text x="480" y="181" text-anchor="middle" font-size="12" fill="#6b7280">provisioner, the same Clew.</text>
+  <!-- Footer -->
+  <text x="500" y="380" text-anchor="middle" fill="#6b7280">A person who leaves the source is deactivated, never erased: audit rows and threads still point at them.</text>
+</svg>

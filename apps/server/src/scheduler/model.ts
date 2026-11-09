@@ -14,7 +14,7 @@ export interface JobQueue {
   schedule(job: { id: string; kind: string; runAt: string; payload?: Record<string, unknown> }): Promise<void>;
 }
 export interface People {
-  /** Ids of everyone with an access grant: who the nightly scan runs for. */
+  /** Ids of the enabled people with an access grant and an identity binding: who the nightly scan runs for (D68). */
   granted(): Promise<string[]>;
   /** A system identity for one of them (`system-context.ts`), or undefined when the grant is gone. */
   personaFor(id: string): Promise<AuthenticatedContext | undefined>;

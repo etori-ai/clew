@@ -14,6 +14,8 @@ import {
   loginTransactions,
   readSession,
   resolveSubject,
+  bindFirstLogin,
+  readGroups,
   revokeSession,
   sessions,
   authenticationAudit,
@@ -76,6 +78,8 @@ export function authSettings() {
     origins: frontendOrigins(base.origin, process.env.FRONTEND_ORIGINS),
     local,
     callback: base.origin + '/api/auth/callback',
+    // The ID token claim a first login is matched on (D68 item 6): the account name the provisioner sets as userName.
+    bindingClaim: process.env.OIDC_BINDING_CLAIM ?? 'preferred_username',
   };
 }
 export function cookieOptions() {
@@ -151,7 +155,13 @@ export async function completeLogin(currentUrl: URL, cookie: string | undefined)
   const claims = tokens.claims();
   if (!claims || !tokens.refresh_token || !tokens.id_token || typeof claims.sub !== 'string')
     throw new AuthError(401, 'invalid');
-  const access = await resolveSubject(settings.issuer, claims.sub);
+  // A subject seen before is its person. A first login binds to the provisioned person whose userName equals the
+  // configured claim (D68 item 6); no match, two matches or a changed subject is a denied login, never a new user.
+  const claim = settings.bindingClaim,
+    value = claims[claim];
+  const access =
+    (await resolveSubject(settings.issuer, claims.sub)) ??
+    (typeof value === 'string' && value ? await bindFirstLogin(settings.issuer, claims.sub, claim, value) : undefined);
   if (!access) {
     await auditAuth('login-denied');
     throw new AuthError(403, 'denied');
@@ -288,6 +298,7 @@ export async function authenticate(raw: string | undefined) {
     organisationId: access.person.organisationId,
     principal: { id: 'person:' + access.person.id, kind: 'person' },
     capabilities: access.grant.capabilities,
+    groups: await readGroups(access.person.id),
     authorizationVersion: version,
     sessionBinding: digest,
     expiresAt: new Date(Math.min(row.idleExpiresAt.getTime(), row.expiresAt.getTime())).toISOString(),

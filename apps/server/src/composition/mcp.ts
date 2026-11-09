@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mcpUsecases } from '../mcp/usecases';
 import { connectMcp } from '../mcp/adapters/http';
 import { postgresMcpStore } from '../mcp/adapters/postgres';
-import { sealSecret, openSecret, authorizationVersion } from '../auth-crypto';
+import { sealSecret, openSecret, keyedDigest } from '../auth-crypto';
 import { systemContext } from '../system-context';
 import { models } from './index';
 import { clock } from './ambient';
@@ -24,7 +24,7 @@ export const mcp = mcpUsecases({
   clock,
   digest: value => createHash('sha256').update(JSON.stringify(value)).digest('hex'),
   // A plain hash of a five-point poll answer would be reversible by guessing. Keep the fingerprint keyed.
-  fingerprint: value => authorizationVersion({ purpose: 'mcp:decision', value }),
+  fingerprint: value => keyedDigest('mcp:decision', value),
   enabled,
 });
 /**

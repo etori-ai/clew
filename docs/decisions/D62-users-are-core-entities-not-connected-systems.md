@@ -20,7 +20,10 @@ reads; they never govern login, user records or the current user's authorization
 The connected-systems list excludes the internal provider, and direct administration requests and CLI lifecycle commands reject
 it. A remote connector cannot replace registered core capabilities. No user records, grants or audit
 history are deleted. There is no new user-administration page or new assistant-policy editor in this
-change; any future editor belongs with users or assistant settings, not connected-system lifecycle.
+change; any future editor belongs with users or assistant settings, not connected-system lifecycle. (Administration ›
+Användare arrived 2026-11-09 with [D85](D85-capabilities-are-mapped-from-provisioned-groups-in-clew.md): a read view of the
+provisioned people and the group-to-capability mapping, behind `admin.users`, outside connected-system lifecycle as this
+decision asks.)
 
 **Why.** A row called “Startsidan” with an off switch suggests an administrator can disable Clew itself.
 Renaming that row would still present a required core entity as an optional integration. Internal reuse

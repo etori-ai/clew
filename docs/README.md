@@ -30,6 +30,7 @@ A connector is your independently deployed HTTP service. It translates a source 
 | Discover work and add approved actions | [Actions and receipts](guides/actions-and-receipts.md) | [Durable synthetic source](../connectors/reference/README.md) |
 | Coordinate reads, changes and follow-up across systems | [Working across connectors](architecture/working-across-connectors.md) | [Job scenario](../tests/unit/fixture-job.test.ts), [read callback](../connectors/hello/connector.mjs) |
 | Check, register and operate the service | [Testing and deployment](guides/testing-and-deployment.md) | [Conformance checker](../packages/connectors/src/check.ts) |
+| Push people, units and groups into an installation | [Writing a provisioner](guides/writing-a-provisioner.md) | [Synthetic provisioner](../scripts/provisioner/push.ts) |
 
 The [guide index](guides/README.md) separates the minimum read integration from optional search, scan, write and composition features.
 

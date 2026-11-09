@@ -1,20 +1,17 @@
 /** Run inside the app container. Admin credentials come from env or piped Docker env JSON; never printed. */
 import { randomBytes } from 'node:crypto';
 import { rename, writeFile } from 'node:fs/promises';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { database, closeDatabase } from '@clew/db';
-import {
-  ABSOLUTE_MS,
-  IDLE_MS,
-  people,
-  accessGrants,
-  identityBindings,
-  authenticationAudit,
-  pruneAuthentication,
-} from '@clew/db/auth';
+import { ABSOLUTE_MS, IDLE_MS, people, provisioners, identityBindings, pruneAuthentication } from '@clew/db/auth';
 import { insertConnector, readConnector } from '@clew/db/connectors';
 import { writeAudit } from '@clew/db/threads';
-import { sealSecret } from '../apps/server/src/auth-crypto';
+import { randomToken, sealSecret, tokenDigest } from '../apps/server/src/auth-crypto';
+import { scimRoutes } from '../apps/server/src/routes/scim';
+import { scim } from '../apps/server/src/composition/people';
+import { scimClient } from './provisioner/client';
+import { developmentDirectory, fullName } from './provisioner/directory';
+import { push } from './provisioner/push';
 const realm = 'clew',
   issuer = 'http://keycloak.orb.local:8090/realms/' + realm;
 const base = process.env.KEYCLOAK_ADMIN_URL ?? 'http://host.docker.internal:8090';
@@ -190,23 +187,23 @@ await audienceClient('eneo');
 await audienceClient('supportmanagement');
 const testPasswords: Record<string, string> = {};
 try {
-  // Hillevi is the manager persona (rektor); Hassan the employee persona (undersköterska, mobile).
-  for (const [id, first, last, unit, label, role, capabilities] of [
-    ['hillevi', 'Hillevi', 'Berg', 'unit-skola', 'Bergsåkers skola', 'manager', ['calendar:plan']],
-    ['hassan', 'Hassan', 'Ali', 'unit-omsorg', 'Hemtjänst Centrum', 'employee', []],
-    // Mikael is the systemförvaltare persona: administration is a grant capability, not a work role (D23).
-    ['mikael', 'Mikael', 'Lund', 'unit-it', 'IT och digitalisering', 'employee', ['admin.connectors']],
-  ] as const) {
-    const key = 'TEST_' + id.toUpperCase() + '_PASSWORD';
+  // The development directory (scripts/provisioner/directory.ts) is the one list of people. This bootstrap gives each
+  // persona (`login`) a Keycloak account and a person row with the id the stack's fixtures and calendars key on; the
+  // synthetic provisioner below pushes everything else (the other people, names, addresses, units, roles, groups,
+  // capabilities) through SCIM, and the first login binds the Keycloak subject to the person by `preferred_username`
+  // (D68 item 6), so no binding is written here.
+  for (const person of developmentDirectory.people.filter(p => p.login)) {
+    const id = person.userName,
+      key = 'TEST_' + id.toUpperCase() + '_PASSWORD';
     let user = (await objects(root + '/users?exact=true&username=' + id)).find(u => u.username === id);
     let secret = previousTest[key];
     if (!user) {
       secret = randomBytes(18).toString('base64url');
       await admin(root + '/users', 'POST', {
         username: id,
-        firstName: first,
-        lastName: last,
-        email: id + '@clew.test',
+        firstName: person.givenName,
+        lastName: person.familyName,
+        email: person.email,
         emailVerified: true,
         enabled: true,
         requiredActions: [],
@@ -219,23 +216,74 @@ try {
     await database().transaction(async tx => {
       await tx
         .insert(people)
-        .values({ id, organisationId: 'poc', name: first + ' ' + last })
-        .onConflictDoNothing();
-      await tx
-        .insert(accessGrants)
-        .values({ personId: id, unitId: unit, unitLabel: label, role, capabilities: [...capabilities] })
-        .onConflictDoNothing();
+        .values({
+          id,
+          organisationId: 'poc',
+          name: fullName(person),
+          externalId: person.externalId,
+          userName: person.userName,
+          email: person.email,
+        })
+        .onConflictDoUpdate({
+          target: people.id,
+          set: { externalId: person.externalId, userName: person.userName, email: person.email },
+        });
+      // A binding that names another Keycloak account than today's is a changed subject: refuse, as a login would (D68 item 6).
       const [binding] = await tx
         .select()
         .from(identityBindings)
         .where(and(eq(identityBindings.issuer, issuer), eq(identityBindings.personId, id)));
       if (binding && binding.subject !== user.id) throw new Error('Subject changed: explicit identity review required');
-      if (!binding) {
-        await tx.insert(identityBindings).values({ issuer, subject: user.id as string, personId: id });
-        await tx.insert(authenticationAudit).values({ action: 'identity-bound', actor: 'bootstrap:auth' });
-      }
     });
   }
+  // The development provisioner (D68): one token, kept in the ignored test file and reused while its digest is still live.
+  let provisionerToken = previousTest.DEV_PROVISIONER_TOKEN;
+  const [live] = provisionerToken
+    ? await database()
+        .select({ id: provisioners.id })
+        .from(provisioners)
+        .where(
+          and(
+            eq(provisioners.id, 'dev'),
+            eq(provisioners.tokenDigest, tokenDigest(provisionerToken)),
+            isNull(provisioners.revokedAt),
+          ),
+        )
+    : [];
+  if (!live) {
+    provisionerToken = randomToken();
+    await database().transaction(async tx => {
+      await tx
+        .insert(provisioners)
+        .values({
+          id: 'dev',
+          organisationId: 'poc',
+          label: 'Development directory',
+          tokenDigest: tokenDigest(provisionerToken!),
+          createdBy: 'bootstrap:auth',
+        })
+        .onConflictDoUpdate({
+          target: provisioners.id,
+          set: { tokenDigest: tokenDigest(provisionerToken!), revokedAt: null, createdBy: 'bootstrap:auth' },
+        });
+      await writeAudit(tx, {
+        actor: 'bootstrap:auth',
+        action: 'provisioner.added',
+        subject: 'provisioner:dev',
+        details: { organisationId: 'poc' },
+      });
+    });
+  }
+  testPasswords.DEV_PROVISIONER_TOKEN = provisionerToken!;
+  // Push the directory through the SCIM server in-process: the same routes `bun run dev:provision` reaches over HTTP.
+  const inProcess = scimRoutes(scim);
+  const pushed = await push(
+    scimClient('http://clew.local', provisionerToken!, (input, init) => inProcess.request(input, init)),
+    developmentDirectory,
+  );
+  console.log(
+    `Development directory pushed through SCIM: ${pushed.created} users created, ${pushed.replaced} replaced, ${pushed.deactivated} deactivated; ${pushed.groupsCreated} groups created, ${pushed.groupsReplaced} replaced, ${pushed.groupsRemoved} removed.`,
+  );
   const master = existing.MASTER_KEY ?? randomBytes(32).toString('base64');
   // The hello connector (connectors/hello) as a draft row (D23): enable it with `bun scripts/connector-add.ts hello --enable` once it runs on :4010.
   process.env.MASTER_KEY = master;
@@ -270,7 +318,9 @@ try {
   await writeSettings(localFile, settings);
   await writeSettings(testFile, { ...settings, ...testPasswords });
   await pruneAuthentication();
-  console.log('Keycloak realm, client and identity bindings are ready. Secrets written to ignored, owner-only files.');
+  console.log(
+    'Keycloak realm, client and accounts are ready; each account binds to its person at first login. Secrets written to ignored, owner-only files.',
+  );
 } finally {
   await closeDatabase();
 }

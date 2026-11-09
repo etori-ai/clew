@@ -26,6 +26,7 @@ import type {
   Secrets,
   Transport,
   Units,
+  Groups,
 } from '../model';
 
 /**
@@ -45,6 +46,7 @@ export interface AdminDeps {
   transport: Transport;
   live: LiveRegistration;
   units: Units;
+  groups: Groups;
   clock: () => Date;
 }
 export const governanceOf = (
@@ -72,7 +74,7 @@ const previewActor = (role: Role, unitId: string | null): Actor => ({
 });
 
 export function connectorUsecases(deps: AdminDeps) {
-  const { store, registry, secrets, transport, live, units, clock } = deps;
+  const { store, registry, secrets, transport, live, units, groups, clock } = deps;
   const internal = new Set(deps.internal);
   const requireConnector = (id: string) => {
     if (internal.has(id)) throw new InputError('Funktionen ingår i Clew och är inte ett anslutet system.');
@@ -534,6 +536,11 @@ export function connectorUsecases(deps: AdminDeps) {
     requireAdmin(persona);
     return units.list();
   }
-  return { list, read, add, update, rotateSecret, test, refreshManifest, remove, preview, listUnits };
+  /** For the audience editor: the provisioned groups an audience can name (D23, D68). */
+  async function listGroups(persona: AuthenticatedContext) {
+    requireAdmin(persona);
+    return groups.list();
+  }
+  return { list, read, add, update, rotateSecret, test, refreshManifest, remove, preview, listUnits, listGroups };
 }
 export type ConnectorUsecases = ReturnType<typeof connectorUsecases>;

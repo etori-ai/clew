@@ -7,7 +7,7 @@ import {
   runCapability,
 } from '../connectors/registry';
 import { assertionFor, registerConnector, secretPurpose, unregisterConnector } from '../connectors/remote';
-import { postgresConnectorStore, postgresUnits } from '../connectors/adapters/postgres';
+import { postgresConnectorStore, postgresUnits, postgresGroups } from '../connectors/adapters/postgres';
 import { connectorUsecases } from '../connectors/usecases/admin';
 import type { LiveRegistration, Secrets } from '../connectors/model';
 import type { ReconcileDeps as ConnectorReconcileDeps } from '../connectors/reconcile';
@@ -194,6 +194,7 @@ export const connectorAdmin = connectorUsecases({
   secrets: connectorSecrets,
   live: connectorLive,
   units: postgresUnits(),
+  groups: postgresGroups(),
   clock,
   transport: {
     fetchManifest: (url, id) => fetchManifest(url, id),

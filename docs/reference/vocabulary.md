@@ -96,7 +96,20 @@ Opening a source record directly from a table shows that record's detail view. I
 
 A source system owns records. A connector exposes capabilities that read those records, prepare proposals or perform approved operations. Clew renders the results and tracks work, decisions and outcomes. The [connector protocol](connector-protocol.md) defines the wire contract; [working across connectors](../architecture/working-across-connectors.md) explains facts, followers and bindings.
 
+## Identity vocabulary
+
+| Term | Meaning |
+|---|---|
+| Person | A human in the organisation as Clew holds them: pushed in by the provisioner, able to sign in once a binding exists, deactivated and never erased when they leave. The word in code, tables and audit (`auth_person`, `personId`, `person:<id>`). |
+| Provisioner | The installation's own process that reads the organisation's source and pushes people and groups to Clew over SCIM (D68). Not a connector. |
+| Group | A group as the source pushed it. A key in its external id (`unit:`, `unit-manager:`, `capability:`, `protected`) gives it meaning; any other group is plain until an administrator maps it to a capability (D85) or names it as an audience. |
+| Assignment | One person in one unit with one role, `manager` or `employee`; a person may hold several. |
+| Grant | The one assignment a person acts as, with their capabilities: the derived projection every request and connector reads. |
+| Binding | The link from an identity provider's subject to a person, written at the first login. (Distinct from a follower binding in the integration vocabulary.) |
+
 ## Naming rules
+
+- Say **person** in code, tables and documentation, **användare** in the Swedish interface (the administrator's word; the page is Användare, D62), and **User** only for the SCIM resource at `/scim/v2`. The person is the human; the account is the binding; the User is the standard's name for the person as pushed.
 
 - Use **work item** for the tracked work in specifications and documentation. Use **card**, **row** and **panel** for presentation and layout.
 - Name the concrete content in the Swedish interface: **Granska fakturor**, **Visa bokningsförslaget**, **Öppna sjukanmälan**. The internal umbrella term does not require a generic label on every screen.
@@ -121,5 +134,6 @@ These names clarify product language without renaming types, API routes or store
 | Receipt | [`Receipt`](../../packages/contracts/src/index.ts) is the displayed outcome; connector execution results provide the underlying evidence. |
 | Context chip and object | [`Chip` and `ClewObject`](../../packages/contracts/src/index.ts) provide references for conversation context and object selection. |
 | Side panel and tab | [`PanelFrame` and `OpenTab`](../../apps/web/src/components/panel.tsx) hold opened content. Their existing `card` and `view` names remain implementation identifiers. |
+| Person, group, assignment and grant | [`auth_person`, `auth_group`, `auth_assignment` and `auth_access_grant`](../../packages/db/src/schema.ts); the SCIM resources `User` and `Group` are drawn from them in [`modules/people/domain.ts`](../../apps/server/src/modules/people/domain.ts). A group's name is `label` in Clew and `displayName` on the wire. |
 
 Earlier decisions and reviews retain their historical wording. Read their uses of *card* or *thread* in context, and use this vocabulary when writing new product explanations.

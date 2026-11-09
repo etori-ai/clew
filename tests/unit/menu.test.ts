@@ -125,6 +125,7 @@ function world() {
     clock: () => new Date(T0),
     live,
     units: { list: async () => [] },
+    groups: { list: async () => [] },
     secrets: { seal: (v, id) => `sealed(${id}):${v}`, open: (s, id) => s.replace(`sealed(${id}):`, '') },
     transport: {
       fetchManifest: (url, id) => fetchManifest(url, id, fetchLike),

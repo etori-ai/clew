@@ -14,7 +14,7 @@ import { adminQueries } from '../../queries';
 import { roleLabel } from './labels';
 
 /**
- * "Vem ser det" (D23): everyone, or a selection of roles, units and (later) groups. Any of the three lists admits a
+ * "Vem ser det" (D23): everyone, or a selection of roles, units and provisioned groups (D68). Any of the three lists admits a
  * person. Groups wait for SCIM and are shown disabled with the reason, so the editor does not change shape later.
  */
 /** What the editor says about the thing it governs: a connector (D23) or a model (D24). */
@@ -34,11 +34,14 @@ export function AudienceEditor({
   value,
   onChange,
   units,
+  groups = [],
   of = 'connector',
 }: {
   value: ConnectorAudience;
   onChange: (a: ConnectorAudience) => void;
   units: Array<{ id: string; label: string }>;
+  /** The provisioned groups with an external id; empty until a provisioner has pushed any. */
+  groups?: Array<{ id: string; label: string }>;
   of?: keyof typeof wording;
 }) {
   const selected = value.mode === 'selected' ? value : null;
@@ -89,12 +92,18 @@ export function AudienceEditor({
           />
           <MultiSelector
             label="Grupper"
-            placeholder="Kommer med SCIM"
+            placeholder={groups.length ? 'Välj grupper' : 'Inga grupper provisionerade'}
             value={selected.groups ?? []}
-            onChange={() => undefined}
-            options={[]}
-            isDisabled
-            disabledMessage="Grupper kommer när katalogen provisionerar dem genom SCIM."
+            onChange={g => update({ groups: g })}
+            hasSearch={groups.length > 15}
+            triggerDisplay="badges"
+            presentation="adaptive"
+            options={groups.map(g => ({ value: g.id, label: g.label }))}
+            emptyText="Inga grupper"
+            emptySearchText="Inga träffar"
+            searchPlaceholder="Sök grupp"
+            isDisabled={!groups.length}
+            disabledMessage="Grupper visas när katalogen har provisionerat dem genom SCIM."
           />
         </VStack>
       )}

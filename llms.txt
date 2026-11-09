@@ -28,6 +28,7 @@
 - [Search and views](docs/guides/example-custom-directory.md): phone book implementation.
 - [Actions and recovery](docs/guides/actions-and-receipts.md): source writes, receipts and execution limits.
 - [Validation and deployment](docs/guides/testing-and-deployment.md): checks, registration and operating notes.
+- [Writing a provisioner](docs/guides/writing-a-provisioner.md): how people, units and groups enter an installation through the SCIM 2.0 server at `/scim/v2` (D68, D85); a provisioner is not a connector.
 
 ## Working rules for this documentation
 

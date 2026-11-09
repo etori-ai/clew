@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import {
+  GroupCapabilityInput,
+  type GroupCapabilityInputType,
   AddConnectorInput,
   AddModelInput,
   AddProviderInput,
@@ -22,6 +24,7 @@ import type {
 } from '@clew/contracts';
 import { InputError, protectedRoute, type Env } from '../context';
 import { connectorAdmin, models } from '../composition';
+import { usersAdmin } from '../composition/people';
 import { operations } from '../composition/operations';
 
 /**
@@ -40,6 +43,7 @@ const validators = {
   providerKey: ajv.compile(ProviderKeyInput),
   addModel: ajv.compile(AddModelInput),
   patchModel: ajv.compile(ModelPatchInput),
+  groupCapability: ajv.compile(GroupCapabilityInput),
 };
 async function body<T>(request: Request, validate: (value: unknown) => boolean): Promise<T> {
   const text = await request.text();
@@ -57,6 +61,25 @@ export const adminRoutes = new Hono<Env>();
 adminRoutes.use('*', protectedRoute());
 adminRoutes.get('/reliability', async c => c.json(await operations.reliability(c.get('session').context)));
 adminRoutes.get('/units', async c => c.json({ units: await connectorAdmin.listUnits(c.get('session').context) }));
+adminRoutes.get('/groups', async c => c.json({ groups: await connectorAdmin.listGroups(c.get('session').context) }));
+// Användare (D62, D85): the provisioned people and the group-capability rows, behind `admin.users`.
+adminRoutes.get('/users', async c => c.json(await usersAdmin.overview(c.get('session').context)));
+adminRoutes.post('/users/group-capabilities', async c =>
+  c.json(
+    await usersAdmin.addGroupCapability(
+      c.get('session').context,
+      await body<GroupCapabilityInputType>(c.req.raw, validators.groupCapability),
+    ),
+  ),
+);
+adminRoutes.post('/users/group-capabilities/remove', async c =>
+  c.json(
+    await usersAdmin.removeGroupCapability(
+      c.get('session').context,
+      await body<GroupCapabilityInputType>(c.req.raw, validators.groupCapability),
+    ),
+  ),
+);
 adminRoutes.get('/connectors', async c => c.json({ connectors: await connectorAdmin.list(c.get('session').context) }));
 adminRoutes.post('/connectors', async c =>
   c.json(await connectorAdmin.add(c.get('session').context, await body<Add>(c.req.raw, validators.add)), 201),

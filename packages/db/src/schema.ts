@@ -26,12 +26,28 @@ import type {
 } from '@clew/contracts';
 
 // Identity. Ported from startsidan: canonical person, explicit subject binding, server-side session with sealed tokens.
-export const people = pgTable('auth_person', {
-  id: text('id').primaryKey(),
-  organisationId: text('organisation_id').notNull(),
-  name: text('name').notNull(),
-  enabled: boolean('enabled').notNull().default(true),
-});
+export const people = pgTable(
+  'auth_person',
+  {
+    id: text('id').primaryKey(),
+    organisationId: text('organisation_id').notNull(),
+    name: text('name').notNull(),
+    enabled: boolean('enabled').notNull().default(true),
+    // Provisioned identity (D68): the source's stable id, the name a login is matched on, and the work address Clew
+    // needs to invite the person. Null on rows written before provisioning existed.
+    externalId: text('external_id'),
+    userName: text('user_name'),
+    email: text('email'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  // Unique across the installation, because a login carries no organisation; `userName` without regard to case,
+  // RFC 7643's default for it (Keycloak lowercases account names, Entra does not).
+  t => [
+    uniqueIndex('auth_person_external_id').on(t.externalId),
+    uniqueIndex('auth_person_user_name').on(sql`lower(${t.userName})`),
+  ],
+);
 export const identityBindings = pgTable(
   'auth_identity_binding',
   {
@@ -56,6 +72,85 @@ export const accessGrants = pgTable(
     version: integer('version').notNull().default(1),
   },
   t => [check('auth_grant_role', sql`${t.role} IN ('manager', 'employee')`)],
+);
+// What a provisioner pushes (D68) and what an administrator maps (D85). `auth_access_grant` above is the derived
+// projection of these tables: the one active assignment (manager before employee, then the lowest unit id) and the
+// capabilities the person's memberships give, written in the same transaction as the change that moves them; the
+// development seed writes both until the derivation lands.
+export const units = pgTable('auth_unit', {
+  id: text('id').primaryKey(),
+  organisationId: text('organisation_id').notNull(),
+  label: text('label').notNull(),
+});
+export const assignments = pgTable(
+  'auth_assignment',
+  {
+    personId: text('person_id')
+      .notNull()
+      .references(() => people.id),
+    unitId: text('unit_id')
+      .notNull()
+      .references(() => units.id),
+    role: text('role').$type<'manager' | 'employee'>().notNull(),
+  },
+  t => [
+    primaryKey({ columns: [t.personId, t.unitId] }),
+    check('auth_assignment_role', sql`${t.role} IN ('manager', 'employee')`),
+  ],
+);
+/**
+ * A group as pushed: Clew's id (what a SCIM client addresses), the source's stable `externalId` when the client set one,
+ * and its name as `label` (SCIM's `displayName`). Meaning comes from D68's keys in `externalId` or a mapping row; a group without an external id is a plain group.
+ */
+export const groups = pgTable(
+  'auth_group',
+  {
+    id: text('id').primaryKey(),
+    externalId: text('external_id'),
+    label: text('label').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  t => [uniqueIndex('auth_group_external_id').on(t.externalId)],
+);
+export const groupMembers = pgTable(
+  'auth_group_member',
+  {
+    groupId: text('group_id')
+      .notNull()
+      .references(() => groups.id, { onDelete: 'cascade' }),
+    personId: text('person_id')
+      .notNull()
+      .references(() => people.id),
+  },
+  t => [primaryKey({ columns: [t.groupId, t.personId] }), index('auth_group_member_person').on(t.personId)],
+);
+/** A client that pushes people and groups (D68): the digest of its bearer token, never the token, and the organisation it fills. */
+export const provisioners = pgTable(
+  'auth_provisioner',
+  {
+    id: text('id').primaryKey(),
+    organisationId: text('organisation_id').notNull(),
+    label: text('label').notNull(),
+    tokenDigest: text('token_digest').notNull(),
+    createdBy: text('created_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  t => [uniqueIndex('auth_provisioner_token_digest').on(t.tokenDigest)],
+);
+/**
+ * D85: a group gives its members a capability. Keyed on the group's external id without a foreign key, so the row
+ * outlives a group the source removes and applies again when the same group returns; the capability is one of
+ * `CAPABILITIES` in `@clew/contracts`, checked where the row is written.
+ */
+export const groupCapabilities = pgTable(
+  'auth_group_capability',
+  {
+    groupExternalId: text('group_external_id').notNull(),
+    capability: text('capability').notNull(),
+  },
+  t => [primaryKey({ columns: [t.groupExternalId, t.capability] })],
 );
 export const loginTransactions = pgTable('auth_login_transaction', {
   digest: text('digest').primaryKey(),

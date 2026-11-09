@@ -31,8 +31,13 @@ const ID = /^[a-z][a-z0-9-]*$/;
 const steps = ['Adress och nyckel', 'Kontroll', 'Vem ser det', 'Aktivera'];
 /** Four steps share a 620 px dialog, so the first says its one word there; the heading under them has the whole name. */
 const stepLabels = ['Adress', 'Kontroll', 'Vem ser det', 'Aktivera'];
-type Props = { isOpen: boolean; onClose: (added: boolean) => void; units: Array<{ id: string; label: string }> };
-export function AddConnectorDialog({ isOpen, onClose, units }: Props) {
+type Props = {
+  isOpen: boolean;
+  onClose: (added: boolean) => void;
+  units: Array<{ id: string; label: string }>;
+  groups?: Array<{ id: string; label: string }>;
+};
+export function AddConnectorDialog({ isOpen, onClose, units, groups }: Props) {
   const [step, setStep] = useState(0);
   const [id, setId] = useState('');
   const [url, setUrl] = useState('');
@@ -240,7 +245,7 @@ export function AddConnectorDialog({ isOpen, onClose, units }: Props) {
           )}
           {step === 2 && (
             <VStack gap={3}>
-              <AudienceEditor value={audience} onChange={setAudience} units={units} />
+              <AudienceEditor value={audience} onChange={setAudience} units={units} groups={groups} />
               <Switch
                 label="Skicka kort"
                 description="Anslutningen får föreslå kort i strömmen (den nattliga genomgången och första besöket)."

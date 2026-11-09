@@ -20,10 +20,19 @@ import {
   threads,
   today,
   units,
+  groups,
   user,
   siteHeader,
 } from './data';
-import { assistantStatus, modelDetail, modelProviders, models, providerDetail, providerReport } from './data';
+import {
+  assistantStatus,
+  modelDetail,
+  modelProviders,
+  models,
+  providerDetail,
+  providerReport,
+  usersOverview,
+} from './data';
 import type { ModelSummary, ProviderSummary } from '@clew/contracts';
 import { personSearch, phonebook } from './phonebook';
 import { rooms, roomsSpec } from './rooms';
@@ -72,6 +81,10 @@ export class MockApi {
   signedIn = true;
   /** The session says the person may administer connectors (D23). Off by default so the other suites see the ordinary page. */
   admin = false;
+  /** Användare (D85): the people and the group-capability rows the users page shows; the rows change with the page's actions. */
+  users = usersOverview();
+  /** The users page for someone with `admin.connectors` but not `admin.users`: the server refuses. */
+  usersForbidden = false;
   /** The shared header (D88) every page draws: Clew's default until a test gives the person a connector's header. */
   header: SiteHeaderView = siteHeader();
   connectors: ConnectorSummary[] = connectors();
@@ -133,6 +146,35 @@ export class MockApi {
       const cid = path.split('/')[3] ?? '';
       const found = () => this.connectors.find(c => c.id === cid);
       if (path === '/admin/units') return json({ units });
+      if (path === '/admin/groups') return json({ groups });
+      if (path === '/admin/users' && method === 'GET')
+        return this.usersForbidden
+          ? route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } })
+          : json(this.users);
+      if (path === '/admin/users/group-capabilities' && method === 'POST') {
+        const input = request.postDataJSON() as {
+          groupExternalId: string;
+          capability: 'admin.connectors' | 'admin.users';
+        };
+        if (
+          !this.users.groupCapabilities.some(
+            m => m.groupExternalId === input.groupExternalId && m.capability === input.capability,
+          )
+        )
+          this.users.groupCapabilities.push({
+            groupExternalId: input.groupExternalId,
+            groupLabel: this.users.groups.find(g => g.id === input.groupExternalId)?.label ?? null,
+            capability: input.capability,
+          });
+        return json(this.users);
+      }
+      if (path === '/admin/users/group-capabilities/remove' && method === 'POST') {
+        const input = request.postDataJSON() as { groupExternalId: string; capability: string };
+        this.users.groupCapabilities = this.users.groupCapabilities.filter(
+          m => !(m.groupExternalId === input.groupExternalId && m.capability === input.capability),
+        );
+        return json(this.users);
+      }
       if (path.startsWith('/admin/models') || path.startsWith('/admin/providers'))
         return this.handleModels(route, method, path);
       if (path === '/admin/connectors' && method === 'GET') return json({ connectors: this.connectors });

@@ -5,8 +5,8 @@
 **Decision.** A running Clew learns about a connector from its own Postgres, never from the environment.
 An administrator adds a connector in the product (address, shared secret, who sees it), Clew fetches the
 manifest, checks the service the way `connector-check` does, and registers it in the live registry without a
-restart. The same page turns a connector on or off, limits it to an audience (roles, units and, when SCIM
-lands, groups), switches its scan and its assistant tools on or off, disables single capabilities, rotates
+restart. The same page turns a connector on or off, limits it to an audience (roles, units and, since 2026-11-09, the
+provisioned groups of [D68](D68-people-are-pushed-into-clew-through-standard-scim.md), named by their external id), switches its scan and its assistant tools on or off, disables single capabilities, rotates
 the secret and removes it. `CLEW_CONNECTORS` and `CLEW_CONNECTOR_SECRET_<ID>` are removed; the only environment
 Clew needs is what it already has (database, IdP, master key, Temporal). Design and screens:
 `docs/architecture/connector-administration.md`.

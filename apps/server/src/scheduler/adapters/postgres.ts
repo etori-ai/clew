@@ -1,3 +1,4 @@
+import { and, eq } from 'drizzle-orm';
 import { database, schema } from '@clew/db';
 import type { DurableQueue } from '@clew/db/durable';
 import { claimJob, finishJob, scheduleJob } from '@clew/db/jobs';
@@ -19,7 +20,15 @@ export function postgresJobQueue(durable: DurableQueue): JobQueue {
 export function postgresPeople(): People {
   return {
     async granted() {
-      return (await database().select({ id: schema.accessGrants.personId }).from(schema.accessGrants)).map(r => r.id);
+      // Enabled people with a grant who can sign in: a whole municipality may be provisioned (D68) without ever
+      // having logged in, and the nightly scan does not run for them.
+      const rows = await database()
+        .selectDistinct({ id: schema.accessGrants.personId })
+        .from(schema.accessGrants)
+        .innerJoin(schema.people, eq(schema.people.id, schema.accessGrants.personId))
+        .innerJoin(schema.identityBindings, eq(schema.identityBindings.personId, schema.accessGrants.personId))
+        .where(and(eq(schema.people.enabled, true)));
+      return rows.map(r => r.id);
     },
     personaFor: id => systemContext(id),
   };

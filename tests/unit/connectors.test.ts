@@ -377,6 +377,19 @@ describe('governance: an administrator decides who sees a connector (D23)', () =
     expect(r.visible(hassanIt, 'hr')).toBe(true);
     await expect(r.run(hassanIt, 'hr.absenceOverview', {})).rejects.toThrow(/behörighet/);
   });
+  test('a provisioned group in the audience is enough (D68); a person outside every group matches nothing', async () => {
+    const { r } = registry();
+    r.govern('hr', {
+      state: 'enabled',
+      audience: { mode: 'selected', groups: ['S-1-5-21-it-staff'] },
+      scanEnabled: true,
+      toolsEnabled: true,
+      capabilities: {},
+    });
+    expect(r.visible(hassan, 'hr')).toBe(false);
+    expect(r.visible({ ...hassan, groups: ['S-1-5-21-other'] }, 'hr')).toBe(false);
+    expect(r.visible({ ...hassan, groups: ['S-1-5-21-other', 'S-1-5-21-it-staff'] }, 'hr')).toBe(true);
+  });
   test('disabled or draft hides the connector from everyone; enabling it again brings it back without re-registering', async () => {
     const { r } = registry();
     const g = { audience: { mode: 'all' as const }, scanEnabled: true, toolsEnabled: true, capabilities: {} };

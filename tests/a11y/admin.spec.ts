@@ -377,6 +377,24 @@ test.describe('administration', () => {
       await page.getByRole('button', { name: 'Spara' }).click();
       await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Sparat: Alla'));
     });
+    test('a provisioned group can be chosen for the audience by keyboard (D68)', async ({ page, api }) => {
+      api.admin = true;
+      await open(page, '/admin/connectors/finance');
+      await page.getByRole('tab', { name: 'Vem ser det' }).click();
+      await expect(page.getByRole('radio', { name: 'Endast valda' })).toBeChecked();
+      const groups = page.getByRole('combobox', { name: 'Grupper' });
+      await expect(groups).toBeEnabled();
+      await groups.focus();
+      await page.keyboard.press('Enter');
+      const option = page.getByRole('option', { name: 'IT-personal' });
+      await expect(option).toBeVisible();
+      await option.click();
+      await page.keyboard.press('Escape');
+      await expect(groups).toContainText('IT-personal');
+      await page.getByRole('button', { name: 'Spara' }).click();
+      await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Sparat'));
+      await expectNoAxeViolations(page);
+    });
   });
 
   test.describe('1.4.10 reflow', () => {

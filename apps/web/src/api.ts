@@ -1,5 +1,12 @@
-import type { ManifestReference, DocumentRequest, ReviewEvidence, ReviewPreview } from '@clew/contracts';
-import type { SiteHeaderView } from '@clew/contracts';
+import type {
+  GroupCapabilityInputType,
+  UsersAdminOverview,
+  ManifestReference,
+  DocumentRequest,
+  ReviewEvidence,
+  ReviewPreview,
+  SiteHeaderView,
+} from '@clew/contracts';
 import type {
   AddModelInput,
   AddProviderInput,
@@ -238,6 +245,13 @@ export const api = {
   admin: {
     connectors: () => call<{ connectors: ConnectorSummary[] }>('/api/admin/connectors'),
     units: () => call<{ units: Array<{ id: string; label: string }> }>('/api/admin/units'),
+    groups: () => call<{ groups: Array<{ id: string; label: string }> }>('/api/admin/groups'),
+    // Användare (D62, D85): the provisioned people and the group-capability rows.
+    users: () => call<UsersAdminOverview>('/api/admin/users'),
+    addGroupCapability: (input: GroupCapabilityInputType) =>
+      post<UsersAdminOverview>('/api/admin/users/group-capabilities', input),
+    removeGroupCapability: (input: GroupCapabilityInputType) =>
+      post<UsersAdminOverview>('/api/admin/users/group-capabilities/remove', input),
     connector: (id: string) => call<ConnectorDetail>(`/api/admin/connectors/${id}`),
     add: (input: AddConnectorInput) =>
       post<{ connector: ConnectorDetail; report: CheckReport }>('/api/admin/connectors', input),

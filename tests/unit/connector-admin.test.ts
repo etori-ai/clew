@@ -129,6 +129,7 @@ function world(options: { helloUp?: boolean; users?: boolean } = {}) {
     clock,
     live,
     units: { list: async () => [{ id: 'unit-skola', label: 'Bergsåkers skola' }] },
+    groups: { list: async () => [{ id: 'S-1-5-21-it-staff', label: 'IT staff' }] },
     secrets: { seal: (v, id) => `sealed(${id}):${v}`, open: (s, id) => s.replace(`sealed(${id}):`, '') },
     transport: {
       fetchManifest: (url, id) => fetchManifest(url, id, helloFetch),

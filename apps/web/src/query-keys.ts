@@ -36,6 +36,8 @@ export const keys = {
     connectors: ['admin', 'connectors'] as const,
     connector: (id: string) => ['admin', 'connector', id] as const,
     units: ['admin', 'units'] as const,
+    groups: ['admin', 'groups'] as const,
+    users: ['admin', 'users'] as const,
     preview: (id: string, role: string) => ['admin', 'preview', id, role] as const,
     models: ['admin', 'models'] as const,
     model: (id: string) => ['admin', 'model', id] as const,

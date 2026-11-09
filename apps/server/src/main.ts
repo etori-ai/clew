@@ -25,6 +25,8 @@ import { startRefresh } from './composition/refresh';
 import { startJobs } from './composition/jobs';
 import { mcpRoutes } from './routes/mcp';
 import { startMcpWatches } from './composition/mcp';
+import { scimRoutes } from './routes/scim';
+import { scim } from './composition/people';
 
 // Local secrets written by `bun run auth:setup`. Never committed, never read by the browser bundle.
 for (const file of ['.env.local']) {
@@ -75,6 +77,12 @@ app.use('/api/*', async (c, next) => {
 });
 // Connector callbacks authenticate with Clew's own assertion, not a session, so they are mounted before the session guard.
 app.route('/api/connectors', connectorRoutes);
+// SCIM (D68) authenticates with a provisioner's token, not a session; a machine reads its answers, so they are English.
+app.use('/scim/*', async (c, next) => {
+  if (!startup.ready()) return c.json({ error: 'The service is starting. Retry shortly.' }, 503);
+  await next();
+});
+app.route('/scim/v2', scimRoutes(scim));
 app.route('/api/admin', adminRoutes);
 // The shared header (D88): what the person's header connector lists for them.
 app.route('/api/header', headerRoutes);

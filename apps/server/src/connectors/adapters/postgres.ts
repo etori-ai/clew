@@ -1,10 +1,18 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNotNull } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
 import { nextConnectorOrdinal } from '@clew/db/connectors';
-import type { ConnectorPatch, ConnectorRecord, ConnectorStore, ConnectorTx, NewConnector, Units } from '../model';
+import type {
+  ConnectorPatch,
+  ConnectorRecord,
+  ConnectorStore,
+  ConnectorTx,
+  Groups,
+  NewConnector,
+  Units,
+} from '../model';
 
 /** The connector store the server runs (D23, D25): the port over Drizzle and Postgres. Held to the memory adapter by `tests/connector-store-contract.ts`. */
-const { connectors, threads, audit, accessGrants } = schema;
+const { connectors, threads, audit, units } = schema;
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
 export const toRecord = (row: typeof connectors.$inferSelect): ConnectorRecord => ({
   id: row.id,
@@ -118,15 +126,24 @@ export function postgresConnectorStore(): ConnectorStore {
     transaction: fn => database().transaction(tx => fn(txOf(tx))),
   };
 }
-/** Distinct units from the grants, labelled. */
-export function postgresUnits(): Units {
+/** The provisioned groups with an external id (`auth_group`, D68), by name; the external id is what the audience stores. */
+export function postgresGroups(): Groups {
   return {
     async list() {
       const rows = await database()
-        .selectDistinct({ id: accessGrants.unitId, label: accessGrants.unitLabel })
-        .from(accessGrants)
-        .orderBy(accessGrants.unitLabel);
-      return rows;
+        .select({ id: schema.groups.externalId, label: schema.groups.label })
+        .from(schema.groups)
+        .where(isNotNull(schema.groups.externalId))
+        .orderBy(schema.groups.label, schema.groups.externalId);
+      return rows.map(r => ({ id: r.id!, label: r.label }));
+    },
+  };
+}
+/** The organisation's units as provisioned (`auth_unit`, D68), labelled and sorted by label. */
+export function postgresUnits(): Units {
+  return {
+    async list() {
+      return database().select({ id: units.id, label: units.label }).from(units).orderBy(units.label, units.id);
     },
   };
 }
