@@ -233,7 +233,7 @@ describe('SCIM groups and derivation', () => {
     const ad = await scim.createGroup(p, { displayName: 'Any AD group', members: [{ value: a }] }, BASE);
     expect(ad.externalId).toBeUndefined();
     expect(store.state.grants.get(a)?.capabilities).toEqual(['admin.connectors']);
-    store.state.mapping.push({ groupExternalId: 'S-1-5-21-ad', capability: 'admin.users' });
+    store.state.groupCapabilities.push({ groupExternalId: 'S-1-5-21-ad', capability: 'admin.users' });
     await scim.patchGroup(
       p,
       ad.id,
@@ -284,7 +284,7 @@ describe('SCIM patch and filter rules', () => {
     expect(() => applyUserPatch(fields, [{ op: 'replace', path: 'active', value: 'maybe' }])).toThrow('boolean');
   });
   test('group patches add, remove and replace members in every form the clients use', () => {
-    const g = { externalId: 'unit:a', displayName: 'A', members: ['1', '2'] };
+    const g = { externalId: 'unit:a', label: 'A', members: ['1', '2'] };
     expect(applyGroupPatch(g, [{ op: 'add', path: 'members', value: [{ value: '3' }] }]).members).toEqual([
       '1',
       '2',
@@ -296,7 +296,7 @@ describe('SCIM patch and filter rules', () => {
     expect(applyGroupPatch(g, [{ op: 'remove', path: 'members' }]).members).toEqual([]);
     expect(applyGroupPatch(g, [{ op: 'replace', value: { displayName: 'B', members: [{ value: '5' }] } }])).toEqual({
       externalId: 'unit:a',
-      displayName: 'B',
+      label: 'B',
       members: ['5'],
     });
     expect(applyGroupPatch(g, [{ op: 'remove', path: 'externalId' }]).externalId).toBeNull();

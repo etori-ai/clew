@@ -19,7 +19,7 @@ export {
   assignments,
   groups,
   groupMembers,
-  capabilityMap,
+  groupCapabilities,
   provisioners,
   identityBindings,
   sessions,

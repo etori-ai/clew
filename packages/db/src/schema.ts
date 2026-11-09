@@ -95,14 +95,14 @@ export const assignments = pgTable(
 );
 /**
  * A group as pushed: Clew's id (what a SCIM client addresses), the source's stable `externalId` when the client set one,
- * and a name. Meaning comes from D68's keys in `externalId` or a mapping row; a group without an external id is a plain group.
+ * and its name as `label` (SCIM's `displayName`). Meaning comes from D68's keys in `externalId` or a mapping row; a group without an external id is a plain group.
  */
 export const groups = pgTable(
   'auth_group',
   {
     id: text('id').primaryKey(),
     externalId: text('external_id'),
-    displayName: text('display_name').notNull(),
+    label: text('label').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -127,20 +127,20 @@ export const provisioners = pgTable(
     id: text('id').primaryKey(),
     organisationId: text('organisation_id').notNull(),
     label: text('label').notNull(),
-    digest: text('digest').notNull(),
+    tokenDigest: text('token_digest').notNull(),
     createdBy: text('created_by').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
   },
-  t => [uniqueIndex('auth_provisioner_digest').on(t.digest)],
+  t => [uniqueIndex('auth_provisioner_token_digest').on(t.tokenDigest)],
 );
 /**
- * D85: a group gives its members a capability. Keyed on the group's external id without a foreign key, so a mapping
+ * D85: a group gives its members a capability. Keyed on the group's external id without a foreign key, so the row
  * outlives a group the source removes and applies again when the same group returns; the capability is one of
  * `CAPABILITIES` in `@clew/contracts`, checked where the row is written.
  */
-export const capabilityMap = pgTable(
-  'auth_capability_map',
+export const groupCapabilities = pgTable(
+  'auth_group_capability',
   {
     groupExternalId: text('group_external_id').notNull(),
     capability: text('capability').notNull(),

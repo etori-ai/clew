@@ -1046,7 +1046,7 @@ export const usersOverview = (): UsersAdminOverview => ({
       assignments: [{ unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum', role: 'employee' }],
       active: { unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum', role: 'employee' },
       capabilities: [],
-      groups: [{ externalId: 'unit:unit-omsorg', displayName: 'Hemtjänst Centrum' }],
+      groups: [{ externalId: 'unit:unit-omsorg', label: 'Hemtjänst Centrum' }],
     },
     {
       id: 'hillevi',
@@ -1060,9 +1060,9 @@ export const usersOverview = (): UsersAdminOverview => ({
       active: { unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' },
       capabilities: [],
       groups: [
-        { externalId: 'unit:unit-skola', displayName: 'Bergsåkers skola' },
-        { externalId: 'unit-manager:unit-skola', displayName: 'Chefer · Bergsåkers skola' },
-        { externalId: 'S-1-5-21-rektorer', displayName: 'Rektorer' },
+        { externalId: 'unit:unit-skola', label: 'Bergsåkers skola' },
+        { externalId: 'unit-manager:unit-skola', label: 'Chefer · Bergsåkers skola' },
+        { externalId: 'S-1-5-21-rektorer', label: 'Rektorer' },
       ],
     },
     {
@@ -1077,8 +1077,8 @@ export const usersOverview = (): UsersAdminOverview => ({
       active: { unitId: 'unit-it', unitLabel: 'IT och digitalisering', role: 'employee' },
       capabilities: ['admin.connectors', 'admin.users'],
       groups: [
-        { externalId: 'unit:unit-it', displayName: 'IT och digitalisering' },
-        { externalId: 'S-1-5-21-it-staff', displayName: 'IT-personal' },
+        { externalId: 'unit:unit-it', label: 'IT och digitalisering' },
+        { externalId: 'S-1-5-21-it-staff', label: 'IT-personal' },
       ],
     },
     {
@@ -1095,7 +1095,9 @@ export const usersOverview = (): UsersAdminOverview => ({
       groups: [],
     },
   ],
-  mapping: [{ groupExternalId: 'S-1-5-21-it-staff', displayName: 'IT-personal', capability: 'admin.connectors' }],
+  groupCapabilities: [
+    { groupExternalId: 'S-1-5-21-it-staff', groupLabel: 'IT-personal', capability: 'admin.connectors' },
+  ],
   groups: [
     { id: 'unit:unit-skola', label: 'Bergsåkers skola' },
     { id: 'S-1-5-21-it-staff', label: 'IT-personal' },

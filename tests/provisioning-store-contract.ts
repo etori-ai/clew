@@ -1,18 +1,18 @@
 import { describe, expect, test } from 'bun:test';
-import type { Mapping } from '../apps/server/src/modules/people/domain';
+import type { GroupCapabilityRule } from '../apps/server/src/modules/people/domain';
 import type { ProvisionStore } from '../apps/server/src/modules/people/ports';
 import { provisioningUsecases } from '../apps/server/src/modules/people/usecases';
 
 /**
  * The provisioning contract (D68, D85, D25): one suite, two adapters. `tests/unit/provisioning.test.ts` runs it on the
  * memory adapter, `tests/db/postgres-provisioning.test.ts` on Postgres. The harness seeds people, groups, members and
- * mapping rows the way a SCIM client and an administrator would, and reads back what the derivation wrote.
+ * group-capability rows the way a SCIM client and an administrator would, and reads back what the derivation wrote.
  */
 export interface Seed {
   people: Array<{ id: string; organisationId: string }>;
-  groups: Array<{ externalId: string; displayName: string }>;
+  groups: Array<{ externalId: string; label: string }>;
   members: Array<{ group: string; person: string }>;
-  mapping?: Mapping[];
+  groupCapabilities?: GroupCapabilityRule[];
   units?: Array<{ id: string; organisationId: string; label: string }>;
 }
 export interface ProvisioningHarness {
@@ -26,7 +26,7 @@ export interface ProvisioningHarness {
   prefix: string;
   seed(seed: Seed): Promise<void>;
   setMembers(members: Array<{ group: string; person: string }>): Promise<void>;
-  setMapping(mapping: Mapping[]): Promise<void>;
+  setGroupCapabilities(rows: GroupCapabilityRule[]): Promise<void>;
   grant(
     personId: string,
   ): Promise<{ unitId: string; unitLabel: string; role: string; capabilities: string[] } | undefined>;
@@ -43,11 +43,11 @@ export function provisioningContract(name: string, make: () => Promise<Provision
       await h.seed({
         people: [{ id: anna, organisationId: 'org' }],
         groups: [
-          { externalId: 'unit:' + p + '-skola', displayName: 'Bergsåkers skola' },
-          { externalId: 'unit-manager:' + p + '-skola', displayName: 'Rektorer' },
-          { externalId: 'capability:admin.connectors', displayName: 'Clew-administratörer' },
-          { externalId: p + ':ad-anything', displayName: 'Some directory group' },
-          { externalId: 'capability:admin.everything', displayName: 'Not a capability' },
+          { externalId: 'unit:' + p + '-skola', label: 'Bergsåkers skola' },
+          { externalId: 'unit-manager:' + p + '-skola', label: 'Rektorer' },
+          { externalId: 'capability:admin.connectors', label: 'Clew-administratörer' },
+          { externalId: p + ':ad-anything', label: 'Some directory group' },
+          { externalId: 'capability:admin.everything', label: 'Not a capability' },
         ],
         members: [
           { group: 'unit:' + p + '-skola', person: anna },
@@ -56,7 +56,7 @@ export function provisioningContract(name: string, make: () => Promise<Provision
           { group: p + ':ad-anything', person: anna },
           { group: 'capability:admin.everything', person: anna },
         ],
-        mapping: [
+        groupCapabilities: [
           { groupExternalId: p + ':ad-anything', capability: 'admin.users' },
           { groupExternalId: p + ':ad-anything', capability: 'nonsense' },
         ],
@@ -93,10 +93,10 @@ export function provisioningContract(name: string, make: () => Promise<Provision
       await h.seed({
         people: [{ id: lena, organisationId: 'org' }],
         groups: [
-          { externalId: 'unit:' + p + '-a', displayName: 'A' },
-          { externalId: 'unit:' + p + '-c', displayName: 'C' },
-          { externalId: 'unit-manager:' + p + '-c', displayName: 'Chefer C' },
-          { externalId: 'unit-manager:' + p + '-b', displayName: 'Chefer B' },
+          { externalId: 'unit:' + p + '-a', label: 'A' },
+          { externalId: 'unit:' + p + '-c', label: 'C' },
+          { externalId: 'unit-manager:' + p + '-c', label: 'Chefer C' },
+          { externalId: 'unit-manager:' + p + '-b', label: 'Chefer B' },
         ],
         members: [
           { group: 'unit:' + p + '-a', person: lena },
@@ -123,8 +123,8 @@ export function provisioningContract(name: string, make: () => Promise<Provision
       await h.seed({
         people: [{ id: omar, organisationId: 'org' }],
         groups: [
-          { externalId: 'unit:' + p + '-x', displayName: 'X' },
-          { externalId: 'capability:admin.users', displayName: 'Admins' },
+          { externalId: 'unit:' + p + '-x', label: 'X' },
+          { externalId: 'capability:admin.users', label: 'Admins' },
         ],
         members: [
           { group: 'unit:' + p + '-x', person: omar },
@@ -153,8 +153,8 @@ export function provisioningContract(name: string, make: () => Promise<Provision
           { id: b, organisationId: 'org' },
         ],
         groups: [
-          { externalId: 'unit:' + p + '-it', displayName: 'IT' },
-          { externalId: group, displayName: 'IT staff' },
+          { externalId: 'unit:' + p + '-it', label: 'IT' },
+          { externalId: group, label: 'IT staff' },
         ],
         members: [
           { group: 'unit:' + p + '-it', person: a },
@@ -167,7 +167,7 @@ export function provisioningContract(name: string, make: () => Promise<Provision
       await usecases.derivePerson('system:test', a);
       await usecases.derivePerson('system:test', b);
       expect((await h.grant(a))!.capabilities).toEqual([]);
-      await h.setMapping([{ groupExternalId: group, capability: 'admin.users' }]);
+      await h.setGroupCapabilities([{ groupExternalId: group, capability: 'admin.users' }]);
       expect(await usecases.deriveGroup('person:mikael', group)).toEqual([a, b]);
       expect((await h.grant(a))!.capabilities).toEqual(['admin.users']);
       expect((await h.grant(b))!.capabilities).toEqual(['admin.users']);
@@ -181,7 +181,7 @@ export function provisioningContract(name: string, make: () => Promise<Provision
       if (!h.legacyGrant) return;
       await h.seed({
         people: [{ id: hillevi, organisationId: 'org' }],
-        groups: [{ externalId: 'unit:' + p + '-skola', displayName: 'Skolan' }],
+        groups: [{ externalId: 'unit:' + p + '-skola', label: 'Skolan' }],
         members: [{ group: 'unit:' + p + '-skola', person: hillevi }],
       });
       await h.legacyGrant(hillevi, {
@@ -205,7 +205,7 @@ export function provisioningContract(name: string, make: () => Promise<Provision
         eva = p + '-eva';
       await h.seed({
         people: [{ id: eva, organisationId: 'org' }],
-        groups: [{ externalId: 'unit:' + p + '-y', displayName: 'Y' }],
+        groups: [{ externalId: 'unit:' + p + '-y', label: 'Y' }],
         members: [{ group: 'unit:' + p + '-y', person: eva }],
       });
       const usecases = provisioningUsecases({ store: h.store });

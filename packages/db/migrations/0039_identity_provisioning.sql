@@ -6,10 +6,10 @@ CREATE TABLE "auth_assignment" (
 	CONSTRAINT "auth_assignment_role" CHECK ("auth_assignment"."role" IN ('manager', 'employee'))
 );
 --> statement-breakpoint
-CREATE TABLE "auth_capability_map" (
+CREATE TABLE "auth_group_capability" (
 	"group_external_id" text NOT NULL,
 	"capability" text NOT NULL,
-	CONSTRAINT "auth_capability_map_group_external_id_capability_pk" PRIMARY KEY("group_external_id","capability")
+	CONSTRAINT "auth_group_capability_group_external_id_capability_pk" PRIMARY KEY("group_external_id","capability")
 );
 --> statement-breakpoint
 CREATE TABLE "auth_group_member" (
@@ -21,7 +21,7 @@ CREATE TABLE "auth_group_member" (
 CREATE TABLE "auth_group" (
 	"id" text PRIMARY KEY NOT NULL,
 	"external_id" text,
-	"display_name" text NOT NULL,
+	"label" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -30,7 +30,7 @@ CREATE TABLE "auth_provisioner" (
 	"id" text PRIMARY KEY NOT NULL,
 	"organisation_id" text NOT NULL,
 	"label" text NOT NULL,
-	"digest" text NOT NULL,
+	"token_digest" text NOT NULL,
 	"created_by" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"revoked_at" timestamp with time zone
@@ -42,7 +42,7 @@ CREATE TABLE "auth_unit" (
 	"label" text NOT NULL
 );
 --> statement-breakpoint
--- Provisioning (D68, D85): what a SCIM client pushes and what an administrator maps. auth_person carries the deferred
+-- Provisioning (D68, D85): what a SCIM client pushes and what an administrator writes. auth_person carries the deferred
 -- policy-change trigger of 0018/0019; fire queued events before altering it (as 0030 did).
 SET CONSTRAINTS ALL IMMEDIATE;--> statement-breakpoint
 ALTER TABLE "auth_person" ADD COLUMN "external_id" text;--> statement-breakpoint
@@ -57,7 +57,7 @@ ALTER TABLE "auth_group_member" ADD CONSTRAINT "auth_group_member_group_id_auth_
 ALTER TABLE "auth_group_member" ADD CONSTRAINT "auth_group_member_person_id_auth_person_id_fk" FOREIGN KEY ("person_id") REFERENCES "public"."auth_person"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "auth_group_member_person" ON "auth_group_member" USING btree ("person_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "auth_group_external_id" ON "auth_group" USING btree ("external_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "auth_provisioner_digest" ON "auth_provisioner" USING btree ("digest");--> statement-breakpoint
+CREATE UNIQUE INDEX "auth_provisioner_token_digest" ON "auth_provisioner" USING btree ("token_digest");--> statement-breakpoint
 CREATE UNIQUE INDEX "auth_person_external_id" ON "auth_person" USING btree ("external_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "auth_person_user_name" ON "auth_person" USING btree ("user_name");--> statement-breakpoint
 -- Backfill (D68): every unit the grants know becomes a unit row, and every grant the one assignment it stands for. The

@@ -27,22 +27,22 @@ function stack() {
   s.groups.set('g-skola', {
     id: 'g-skola',
     externalId: 'unit:unit-skola',
-    displayName: 'Bergsåkers skola',
+    label: 'Bergsåkers skola',
     createdAt: T,
     updatedAt: T,
   });
-  s.groups.set('g-it', { id: 'g-it', externalId: 'unit:unit-it', displayName: 'IT', createdAt: T, updatedAt: T });
+  s.groups.set('g-it', { id: 'g-it', externalId: 'unit:unit-it', label: 'IT', createdAt: T, updatedAt: T });
   s.groups.set('g-ad', {
     id: 'g-ad',
     externalId: 'S-1-5-21-it-staff',
-    displayName: 'IT-personal',
+    label: 'IT-personal',
     createdAt: T,
     updatedAt: T,
   });
   s.groups.set('g-plain', {
     id: 'g-plain',
     externalId: null,
-    displayName: 'No external id',
+    label: 'No external id',
     createdAt: T,
     updatedAt: T,
   });
@@ -91,69 +91,73 @@ describe('Användare', () => {
       bound: true,
       active: { unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' },
       assignments: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' }],
-      groups: [{ externalId: 'unit:unit-skola', displayName: 'Bergsåkers skola' }],
+      groups: [{ externalId: 'unit:unit-skola', label: 'Bergsåkers skola' }],
     });
     expect(o.users[1]).toMatchObject({ bound: false, capabilities: [] });
-    expect(o.users[1]!.groups.map(g => g.displayName)).toEqual(['IT-personal', 'IT', 'No external id']);
+    expect(o.users[1]!.groups.map(g => g.label)).toEqual(['IT-personal', 'IT', 'No external id']);
     expect(o.users[2]).toMatchObject({ enabled: false, active: null, assignments: [] });
     expect(o.groups).toEqual([
       { id: 'unit:unit-skola', label: 'Bergsåkers skola' },
       { id: 'unit:unit-it', label: 'IT' },
       { id: 'S-1-5-21-it-staff', label: 'IT-personal' },
     ]);
-    expect(o.mapping).toEqual([]);
+    expect(o.groupCapabilities).toEqual([]);
     expect(o.capabilities).toEqual(['admin.connectors', 'admin.users']);
   });
   test('only admin.users may look or change', async () => {
     const { usecases, other } = stack();
     await expect(usecases.overview(other)).rejects.toThrow('behörighet');
     await expect(
-      usecases.map(other, { groupExternalId: 'S-1-5-21-it-staff', capability: 'admin.users' }),
+      usecases.addGroupCapability(other, { groupExternalId: 'S-1-5-21-it-staff', capability: 'admin.users' }),
     ).rejects.toThrow('behörighet');
   });
   test('mapping a group gives its members the capability at once, audited; unmapping takes it back; nothing happens twice', async () => {
     const { usecases, admin, store } = stack();
-    const mapped = await usecases.map(admin, { groupExternalId: 'S-1-5-21-it-staff', capability: 'admin.connectors' });
-    expect(mapped.mapping).toEqual([
-      { groupExternalId: 'S-1-5-21-it-staff', displayName: 'IT-personal', capability: 'admin.connectors' },
-    ]);
-    expect(mapped.users.find(u => u.id === 'mikael')?.capabilities).toEqual(['admin.connectors']);
-    expect(store.state.grants.get('mikael')?.capabilities).toEqual(['admin.connectors']);
-    expect(store.state.audit.map(a => a.action)).toEqual(['capability-map.added', 'grant.derived']);
-    expect(store.state.audit[0]).toMatchObject({
-      actor: 'person:mikael',
-      subject: 'group:S-1-5-21-it-staff',
-      details: { capability: 'admin.connectors', displayName: 'IT-personal' },
-    });
-    await usecases.map(admin, { groupExternalId: 'S-1-5-21-it-staff', capability: 'admin.connectors' });
-    expect(store.state.audit).toHaveLength(2);
-    const unmapped = await usecases.unmap(admin, {
+    const mapped = await usecases.addGroupCapability(admin, {
       groupExternalId: 'S-1-5-21-it-staff',
       capability: 'admin.connectors',
     });
-    expect(unmapped.mapping).toEqual([]);
+    expect(mapped.groupCapabilities).toEqual([
+      { groupExternalId: 'S-1-5-21-it-staff', groupLabel: 'IT-personal', capability: 'admin.connectors' },
+    ]);
+    expect(mapped.users.find(u => u.id === 'mikael')?.capabilities).toEqual(['admin.connectors']);
+    expect(store.state.grants.get('mikael')?.capabilities).toEqual(['admin.connectors']);
+    expect(store.state.audit.map(a => a.action)).toEqual(['group-capability.added', 'grant.derived']);
+    expect(store.state.audit[0]).toMatchObject({
+      actor: 'person:mikael',
+      subject: 'group:S-1-5-21-it-staff',
+      details: { capability: 'admin.connectors', groupLabel: 'IT-personal' },
+    });
+    await usecases.addGroupCapability(admin, { groupExternalId: 'S-1-5-21-it-staff', capability: 'admin.connectors' });
+    expect(store.state.audit).toHaveLength(2);
+    const unmapped = await usecases.removeGroupCapability(admin, {
+      groupExternalId: 'S-1-5-21-it-staff',
+      capability: 'admin.connectors',
+    });
+    expect(unmapped.groupCapabilities).toEqual([]);
     expect(store.state.grants.get('mikael')?.capabilities).toEqual([]);
     expect(store.state.audit.map(a => a.action)).toEqual([
-      'capability-map.added',
+      'group-capability.added',
       'grant.derived',
-      'capability-map.removed',
+      'group-capability.removed',
       'grant.derived',
     ]);
   });
   test('a group that is not provisioned cannot be mapped, but a stale mapping can be removed; an unknown capability is refused', async () => {
     const { usecases, admin, store } = stack();
-    await expect(usecases.map(admin, { groupExternalId: 'S-1-5-21-gone', capability: 'admin.users' })).rejects.toThrow(
-      'Gruppen finns inte',
-    );
-    store.state.mapping.push({ groupExternalId: 'S-1-5-21-gone', capability: 'admin.users' });
-    expect((await usecases.overview(admin)).mapping).toEqual([
-      { groupExternalId: 'S-1-5-21-gone', displayName: null, capability: 'admin.users' },
+    await expect(
+      usecases.addGroupCapability(admin, { groupExternalId: 'S-1-5-21-gone', capability: 'admin.users' }),
+    ).rejects.toThrow('Gruppen finns inte');
+    store.state.groupCapabilities.push({ groupExternalId: 'S-1-5-21-gone', capability: 'admin.users' });
+    expect((await usecases.overview(admin)).groupCapabilities).toEqual([
+      { groupExternalId: 'S-1-5-21-gone', groupLabel: null, capability: 'admin.users' },
     ]);
     expect(
-      (await usecases.unmap(admin, { groupExternalId: 'S-1-5-21-gone', capability: 'admin.users' })).mapping,
+      (await usecases.removeGroupCapability(admin, { groupExternalId: 'S-1-5-21-gone', capability: 'admin.users' }))
+        .groupCapabilities,
     ).toEqual([]);
     await expect(
-      usecases.map(admin, { groupExternalId: 'S-1-5-21-it-staff', capability: 'nonsense' as never }),
+      usecases.addGroupCapability(admin, { groupExternalId: 'S-1-5-21-it-staff', capability: 'nonsense' as never }),
     ).rejects.toThrow('Okänd behörighet');
   });
 });

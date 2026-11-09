@@ -18,10 +18,10 @@ manager roles and protected people stand. Precisely:
    both groups from those two fields; a manager of several units or an HR partner is several memberships. `protected`
    is unchanged.
 
-3. **Capabilities are mapped in Clew.** A mapping table, *group → capability*, owned by an administrator and edited
+3. **Capabilities are mapped in Clew.** A table of rows *group → capability* (`auth_group_capability`), owned by an administrator and edited
    under Administration › Användare by a person holding the new capability `admin.users`. One row maps one group
-   (`externalId`) to one capability; a group may map to several. Every change writes an audit row (`capability-map.added`,
-   `capability-map.removed`, with the group, the capability and the actor) in the same transaction, and re-derives the
+   (`externalId`) to one capability; a group may map to several. Every change writes an audit row (`group-capability.added`,
+   `group-capability.removed`, with the group, the capability and the actor) in the same transaction, and re-derives the
    capabilities of every current member in that transaction. D68's `capability:<name>` key keeps working as a direct path
    that needs no row, and is how an installation bootstraps its first `admin.users` holder; the development stack's
    synthetic provisioner uses it.

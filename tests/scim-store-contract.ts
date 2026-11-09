@@ -30,7 +30,7 @@ export const userRow = (id: string, organisationId: string, extra: Partial<UserR
 export const groupRow = (id: string, extra: Partial<GroupRecord> = {}): GroupRecord => ({
   id,
   externalId: 'g:' + id,
-  displayName: 'Group ' + id,
+  label: 'Group ' + id,
   createdAt: T,
   updatedAt: T,
   ...extra,
@@ -83,36 +83,33 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         await tx.insertUser(userRow(a, p + '-org'));
         await tx.insertUser(userRow(b, p + '-org'));
         await tx.insertGroup(groupRow(g1));
-        await tx.insertGroup(groupRow(g2, { externalId: null, displayName: 'No external id' }));
+        await tx.insertGroup(groupRow(g2, { externalId: null, label: 'No external id' }));
         await tx.setGroupMembers(g1, [a, b, a]);
         await tx.setGroupMembers(g2, [a]);
       });
       await store.transaction(async tx => {
         expect((await tx.groupMembers(g1)).map(m => m.id)).toEqual([a, b]);
         expect(await tx.userGroups(a)).toEqual([
-          { id: g1, externalId: 'g:' + g1, displayName: 'Group ' + g1 },
-          { id: g2, externalId: null, displayName: 'No external id' },
+          { id: g1, externalId: 'g:' + g1, label: 'Group ' + g1 },
+          { id: g2, externalId: null, label: 'No external id' },
         ]);
-        expect(await tx.memberships(a)).toEqual([{ externalId: 'g:' + g1, displayName: 'Group ' + g1 }]);
+        expect(await tx.memberships(a)).toEqual([{ externalId: 'g:' + g1, label: 'Group ' + g1 }]);
         expect(await tx.members('g:' + g1)).toEqual([a, b]);
         expect((await tx.findGroup('externalId', 'g:' + g1))?.id).toBe(g1);
-        expect((await tx.findGroup('displayName', 'No external id'))?.id).toBe(g2);
-        const listed = await tx.listGroups(
-          { startIndex: 1, count: 100 },
-          { attribute: 'displayName', value: 'Group ' + g1 },
-        );
+        expect((await tx.findGroup('label', 'No external id'))?.id).toBe(g2);
+        const listed = await tx.listGroups({ startIndex: 1, count: 100 }, { attribute: 'label', value: 'Group ' + g1 });
         expect(listed).toMatchObject({ total: 1, rows: [{ id: g1 }] });
-        await tx.updateGroup(g1, { displayName: 'Renamed', updatedAt: '2026-11-09T07:00:00.000Z' });
-        expect(await tx.readGroup(g1)).toMatchObject({ displayName: 'Renamed', externalId: 'g:' + g1 });
+        await tx.updateGroup(g1, { label: 'Renamed', updatedAt: '2026-11-09T07:00:00.000Z' });
+        expect(await tx.readGroup(g1)).toMatchObject({ label: 'Renamed', externalId: 'g:' + g1 });
         await tx.setGroupMembers(g1, [b]);
         expect((await tx.groupMembers(g1)).map(m => m.id)).toEqual([b]);
         await tx.deleteGroup(g1);
         expect(await tx.readGroup(g1)).toBeUndefined();
         expect(await tx.userGroups(b)).toEqual([]);
-        expect(await tx.userGroups(a)).toEqual([{ id: g2, externalId: null, displayName: 'No external id' }]);
+        expect(await tx.userGroups(a)).toEqual([{ id: g2, externalId: null, label: 'No external id' }]);
       });
     });
-    test('assignments carry their unit label, a binding is seen, and a mapping row is added and removed once', async () => {
+    test('assignments carry their unit label, a binding is seen, and a group-capability row is added and removed once', async () => {
       const h = await make(),
         p = h.prefix,
         a = p + '-a';
@@ -126,14 +123,14 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
       await h.bind(a);
       await h.store.transaction(async tx => {
         expect(await tx.bound(a)).toBe(true);
-        expect(await tx.setMapping(p + ':g', 'admin.users', true)).toBe(true);
-        expect(await tx.setMapping(p + ':g', 'admin.users', true)).toBe(false);
-        expect((await tx.mapping()).filter(m => m.groupExternalId === p + ':g')).toEqual([
+        expect(await tx.setGroupCapability(p + ':g', 'admin.users', true)).toBe(true);
+        expect(await tx.setGroupCapability(p + ':g', 'admin.users', true)).toBe(false);
+        expect((await tx.groupCapabilities()).filter(m => m.groupExternalId === p + ':g')).toEqual([
           { groupExternalId: p + ':g', capability: 'admin.users' },
         ]);
-        expect(await tx.setMapping(p + ':g', 'admin.users', false)).toBe(true);
-        expect(await tx.setMapping(p + ':g', 'admin.users', false)).toBe(false);
-        expect((await tx.mapping()).filter(m => m.groupExternalId === p + ':g')).toEqual([]);
+        expect(await tx.setGroupCapability(p + ':g', 'admin.users', false)).toBe(true);
+        expect(await tx.setGroupCapability(p + ':g', 'admin.users', false)).toBe(false);
+        expect((await tx.groupCapabilities()).filter(m => m.groupExternalId === p + ':g')).toEqual([]);
       });
     });
     test('a provisioner is found by the digest of its token while the token is not revoked', async () => {

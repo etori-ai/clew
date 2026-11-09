@@ -1133,26 +1133,26 @@ export interface UserAdminRow {
   /** The assignment the person acts as, from the grant projection; null when the person has no unit. */
   active: { unitId: string; unitLabel: string; role: Role } | null;
   capabilities: string[];
-  groups: Array<{ externalId: string | null; displayName: string }>;
+  groups: Array<{ externalId: string | null; label: string }>;
 }
-/** D85: one group gives one capability. `displayName` is the group's name when the group is provisioned, null when only the mapping remains. */
-export interface CapabilityMapping {
+/** D85: one group gives one capability. `groupLabel` is the group's name while the group is provisioned, null when only this row remains. */
+export interface GroupCapability {
   groupExternalId: string;
-  displayName: string | null;
+  groupLabel: string | null;
   capability: Capability;
 }
 export interface UsersAdminOverview {
   users: UserAdminRow[];
-  mapping: CapabilityMapping[];
+  groupCapabilities: GroupCapability[];
   /** The provisioned groups with an external id, as the editor offers them. */
   groups: Array<{ id: string; label: string }>;
   capabilities: Capability[];
 }
-export const CapabilityMapInput = Type.Object(
+export const GroupCapabilityInput = Type.Object(
   { groupExternalId: Type.String({ minLength: 1, maxLength: 512 }), capability: CapabilitySchema },
   { additionalProperties: false },
 );
-export type CapabilityMapInputType = Static<typeof CapabilityMapInput>;
+export type GroupCapabilityInputType = Static<typeof GroupCapabilityInput>;
 export const ConnectorAudienceSchema = Type.Union([
   object({ mode: Type.Literal('all') }),
   object({

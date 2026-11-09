@@ -28,7 +28,7 @@ People, units and groups enter an installation through Clew's SCIM 2.0 server at
 
 ![The identity tables: what the provisioner writes, what the administrator writes, what Clew derives and what a login binds](figures/identity-tables.svg)
 
-The data model (`packages/db/src/schema.ts`): `auth_person` carries the source's `externalId`, the `userName` a login is matched on and a work e-mail (empty on rows from before provisioning); `auth_unit` the organisation's units; `auth_assignment` any number of (unit, role) pairs per person with the two roles `manager` and `employee`; `auth_group` and `auth_group_member` every pushed group as pushed, with Clew's own id and the source's optional `externalId`; `auth_capability_map` the administrator's mapping from a group to a capability of the closed list `CAPABILITIES` in `@clew/contracts` ([D85](../decisions/D85-capabilities-are-mapped-from-provisioned-groups-in-clew.md)); `auth_provisioner` the clients.
+The data model (`packages/db/src/schema.ts`): `auth_person` carries the source's `externalId`, the `userName` a login is matched on and a work e-mail (empty on rows from before provisioning); `auth_unit` the organisation's units; `auth_assignment` any number of (unit, role) pairs per person with the two roles `manager` and `employee`; `auth_group` and `auth_group_member` every pushed group as pushed, with Clew's own id, the source's optional `externalId` and its name as `label`; `auth_group_capability` the administrator's mapping from a group to a capability of the closed list `CAPABILITIES` in `@clew/contracts` ([D85](../decisions/D85-capabilities-are-mapped-from-provisioned-groups-in-clew.md)); `auth_provisioner` the clients, by the digest of their token.
 
 ## Derivation
 
@@ -40,7 +40,7 @@ In development the provisioner is `scripts/provisioner/`: `bun run auth:setup` c
 
 ## Administration › Användare
 
-The page (`apps/web/src/pages/admin/users.tsx`, behind `admin.users`) shows the provisioned people with unit, role, capabilities, groups and whether they have signed in, and holds D85's mapping from a group to a capability. Adding or removing a row steps up, writes `capability-map.added`/`removed` and re-derives the group's members in the same transaction. It edits no identity: who exists and where they belong is the source's.
+The page (`apps/web/src/pages/admin/users.tsx`, behind `admin.users`) shows the provisioned people with unit, role, capabilities, groups and whether they have signed in, and holds D85's mapping from a group to a capability. Adding or removing a row steps up, writes `group-capability.added`/`removed` and re-derives the group's members in the same transaction. It edits no identity: who exists and where they belong is the source's.
 
 ## Clew to a connector
 

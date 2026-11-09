@@ -80,7 +80,7 @@ export class MockApi {
   signedIn = true;
   /** The session says the person may administer connectors (D23). Off by default so the other suites see the ordinary page. */
   admin = false;
-  /** Användare (D85): the people and the mapping the users page shows; the mapping changes with the page's actions. */
+  /** Användare (D85): the people and the group-capability rows the users page shows; the rows change with the page's actions. */
   users = usersOverview();
   /** The users page for someone with `admin.connectors` but not `admin.users`: the server refuses. */
   usersForbidden = false;
@@ -150,26 +150,26 @@ export class MockApi {
         return this.usersForbidden
           ? route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } })
           : json(this.users);
-      if (path === '/admin/users/capability-map' && method === 'POST') {
+      if (path === '/admin/users/group-capabilities' && method === 'POST') {
         const input = request.postDataJSON() as {
           groupExternalId: string;
           capability: 'admin.connectors' | 'admin.users';
         };
         if (
-          !this.users.mapping.some(
+          !this.users.groupCapabilities.some(
             m => m.groupExternalId === input.groupExternalId && m.capability === input.capability,
           )
         )
-          this.users.mapping.push({
+          this.users.groupCapabilities.push({
             groupExternalId: input.groupExternalId,
-            displayName: this.users.groups.find(g => g.id === input.groupExternalId)?.label ?? null,
+            groupLabel: this.users.groups.find(g => g.id === input.groupExternalId)?.label ?? null,
             capability: input.capability,
           });
         return json(this.users);
       }
-      if (path === '/admin/users/capability-map/remove' && method === 'POST') {
+      if (path === '/admin/users/group-capabilities/remove' && method === 'POST') {
         const input = request.postDataJSON() as { groupExternalId: string; capability: string };
-        this.users.mapping = this.users.mapping.filter(
+        this.users.groupCapabilities = this.users.groupCapabilities.filter(
           m => !(m.groupExternalId === input.groupExternalId && m.capability === input.capability),
         );
         return json(this.users);

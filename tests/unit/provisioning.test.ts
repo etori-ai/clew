@@ -9,12 +9,12 @@ describe('deriveAuthority', () => {
   test('keys in externalId carry the meaning; everything else is a plain group', () => {
     const d = deriveAuthority(
       [
-        { externalId: 'unit:u1', displayName: 'Enhet 1' },
-        { externalId: 'unit-manager:u2', displayName: 'Chefer' },
-        { externalId: 'capability:admin.users', displayName: 'Admins' },
-        { externalId: 'protected', displayName: 'Skyddade' },
-        { externalId: 'S-1-5-21-anything', displayName: 'AD group' },
-        { externalId: 'unit:', displayName: 'Empty key' },
+        { externalId: 'unit:u1', label: 'Enhet 1' },
+        { externalId: 'unit-manager:u2', label: 'Chefer' },
+        { externalId: 'capability:admin.users', label: 'Admins' },
+        { externalId: 'protected', label: 'Skyddade' },
+        { externalId: 'S-1-5-21-anything', label: 'AD group' },
+        { externalId: 'unit:', label: 'Empty key' },
       ],
       [],
       { u2: 'Enhet 2' },
@@ -29,15 +29,13 @@ describe('deriveAuthority', () => {
     expect(d.protected).toBe(true);
   });
   test('a mapping gives a capability only to members of that group, and only from the closed list', () => {
-    const mapping = [
+    const rules = [
       { groupExternalId: 'g1', capability: 'admin.connectors' },
       { groupExternalId: 'g2', capability: 'admin.users' },
       { groupExternalId: 'g1', capability: 'free-text' },
     ];
-    expect(deriveAuthority([{ externalId: 'g1', displayName: 'G1' }], mapping).capabilities).toEqual([
-      'admin.connectors',
-    ]);
-    expect(deriveAuthority([{ externalId: 'g1', displayName: 'G1' }], mapping).grant).toBeUndefined();
+    expect(deriveAuthority([{ externalId: 'g1', label: 'G1' }], rules).capabilities).toEqual(['admin.connectors']);
+    expect(deriveAuthority([{ externalId: 'g1', label: 'G1' }], rules).grant).toBeUndefined();
   });
   test('activeOf prefers a managed unit, then the lowest unit id', () => {
     expect(
@@ -88,20 +86,20 @@ provisioningContract('memory', async (): Promise<ProvisioningHarness> => {
         s.groups.set(g.externalId, {
           id: g.externalId,
           externalId: g.externalId,
-          displayName: g.displayName,
+          label: g.label,
           createdAt: T,
           updatedAt: T,
         });
       for (const m of seed.members) s.members.add(memberKey(m.group, m.person));
-      s.mapping = [...(seed.mapping ?? [])];
+      s.groupCapabilities = [...(seed.groupCapabilities ?? [])];
       for (const u of seed.units ?? []) s.units.set(u.id, { organisationId: u.organisationId, label: u.label });
     },
     async setMembers(members) {
       s.members.clear();
       for (const m of members) s.members.add(memberKey(m.group, m.person));
     },
-    async setMapping(mapping) {
-      s.mapping = [...mapping];
+    async setGroupCapabilities(rows) {
+      s.groupCapabilities = [...rows];
     },
     async legacyGrant(id, grant) {
       s.grants.set(id, { ...grant });

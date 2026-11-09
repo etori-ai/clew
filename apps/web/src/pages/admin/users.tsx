@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Capability, CapabilityMapping, SessionUser, UserAdminRow, UsersAdminOverview } from '@clew/contracts';
+import type { Capability, GroupCapability, SessionUser, UserAdminRow, UsersAdminOverview } from '@clew/contracts';
 import {
   Badge,
   Button,
@@ -40,9 +40,9 @@ interface Row extends Record<string, unknown> {
 }
 interface MapRow extends Record<string, unknown> {
   id: string;
-  m: CapabilityMapping;
+  m: GroupCapability;
 }
-const EMPTY: UsersAdminOverview = { users: [], mapping: [], groups: [], capabilities: [] };
+const EMPTY: UsersAdminOverview = { users: [], groupCapabilities: [], groups: [], capabilities: [] };
 const where = (u: UserAdminRow) =>
   u.active
     ? `${u.active.unitLabel} · ${roleOfOne[u.active.role].toLowerCase()}` +
@@ -75,7 +75,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
     if (!group || !capability) return;
     setBusy(true);
     try {
-      const next = await api.admin.mapCapability({ groupExternalId: group, capability: capability as Capability });
+      const next = await api.admin.addGroupCapability({ groupExternalId: group, capability: capability as Capability });
       client.setQueryData(keys.admin.users, next);
       say(
         `Sparat: ${groupLabel(group)} ger ${capabilityLabel[capability as Capability].toLowerCase()}.`,
@@ -90,12 +90,15 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
       await client.invalidateQueries({ queryKey: keys.admin.users });
     }
   };
-  const unmapIt = async (m: CapabilityMapping) => {
+  const unmapIt = async (m: GroupCapability) => {
     try {
-      const next = await api.admin.unmapCapability({ groupExternalId: m.groupExternalId, capability: m.capability });
+      const next = await api.admin.removeGroupCapability({
+        groupExternalId: m.groupExternalId,
+        capability: m.capability,
+      });
       client.setQueryData(keys.admin.users, next);
       say(
-        `Borttaget: ${m.displayName ?? m.groupExternalId} ger inte längre ${capabilityLabel[m.capability].toLowerCase()}.`,
+        `Borttaget: ${m.groupLabel ?? m.groupExternalId} ger inte längre ${capabilityLabel[m.capability].toLowerCase()}.`,
         'map:' + m.groupExternalId,
       );
     } catch (e) {
@@ -153,7 +156,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
       width: proportional(2, { minWidth: 200 }),
       renderCell: (r: MapRow) => (
         <VStack gap={0} hAlign="start">
-          <Text weight="semibold">{r.m.displayName ?? 'Grupp som inte längre provisioneras'}</Text>
+          <Text weight="semibold">{r.m.groupLabel ?? 'Grupp som inte längre provisioneras'}</Text>
           <Text type="code" color="secondary">
             {r.m.groupExternalId}
           </Text>
@@ -175,14 +178,14 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
           size="sm"
           variant="secondary"
           label="Ta bort"
-          aria-label={`Ta bort: ${r.m.displayName ?? r.m.groupExternalId} ger ${capabilityLabel[r.m.capability].toLowerCase()}`}
+          aria-label={`Ta bort: ${r.m.groupLabel ?? r.m.groupExternalId} ger ${capabilityLabel[r.m.capability].toLowerCase()}`}
           onClick={() => unmapIt(r.m)}
         />
       ),
     },
   ];
   const users = data?.users ?? [];
-  const mapping = data?.mapping ?? [];
+  const groupCapabilities = data?.groupCapabilities ?? [];
   const groups = data?.groups ?? [];
   return (
     <AdminShell user={user} section="anvandare" crumbs={[{ label: 'Användare' }]} pending={query.isPending}>
@@ -307,7 +310,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
               </HStack>
             </VStack>
           </Section>
-          {mapping.length === 0 ? (
+          {groupCapabilities.length === 0 ? (
             <Section variant="transparent" padding={4}>
               <Text type="supporting">
                 Ingen grupp ger någon behörighet ännu. Behörigheter kan också följa med katalogen som grupper med
@@ -316,17 +319,17 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
             </Section>
           ) : mobile ? (
             <List aria-label="Behörigheter från grupper" hasDividers>
-              {mapping.map(m => (
+              {groupCapabilities.map(m => (
                 <ListItem
                   key={m.groupExternalId + ':' + m.capability}
-                  label={<Text weight="semibold">{m.displayName ?? m.groupExternalId}</Text>}
+                  label={<Text weight="semibold">{m.groupLabel ?? m.groupExternalId}</Text>}
                   description={<Text type="supporting">{capabilityLabel[m.capability]}</Text>}
                   endContent={
                     <Button
                       size="sm"
                       variant="secondary"
                       label="Ta bort"
-                      aria-label={`Ta bort: ${m.displayName ?? m.groupExternalId} ger ${capabilityLabel[m.capability].toLowerCase()}`}
+                      aria-label={`Ta bort: ${m.groupLabel ?? m.groupExternalId} ger ${capabilityLabel[m.capability].toLowerCase()}`}
                       onClick={() => unmapIt(m)}
                     />
                   }
@@ -335,7 +338,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
             </List>
           ) : (
             <Table<MapRow>
-              data={mapping.map(m => ({ id: m.groupExternalId + ':' + m.capability, m }))}
+              data={groupCapabilities.map(m => ({ id: m.groupExternalId + ':' + m.capability, m }))}
               idKey="id"
               columns={mapColumns}
               density="balanced"

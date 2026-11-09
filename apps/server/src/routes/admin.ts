@@ -2,8 +2,8 @@ import { Hono } from 'hono';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import {
-  CapabilityMapInput,
-  type CapabilityMapInputType,
+  GroupCapabilityInput,
+  type GroupCapabilityInputType,
   AddConnectorInput,
   AddModelInput,
   AddProviderInput,
@@ -43,7 +43,7 @@ const validators = {
   providerKey: ajv.compile(ProviderKeyInput),
   addModel: ajv.compile(AddModelInput),
   patchModel: ajv.compile(ModelPatchInput),
-  capabilityMap: ajv.compile(CapabilityMapInput),
+  groupCapability: ajv.compile(GroupCapabilityInput),
 };
 async function body<T>(request: Request, validate: (value: unknown) => boolean): Promise<T> {
   const text = await request.text();
@@ -62,21 +62,21 @@ adminRoutes.use('*', protectedRoute());
 adminRoutes.get('/reliability', async c => c.json(await operations.reliability(c.get('session').context)));
 adminRoutes.get('/units', async c => c.json({ units: await connectorAdmin.listUnits(c.get('session').context) }));
 adminRoutes.get('/groups', async c => c.json({ groups: await connectorAdmin.listGroups(c.get('session').context) }));
-// Användare (D62, D85): the provisioned people and the group-to-capability mapping, behind `admin.users`.
+// Användare (D62, D85): the provisioned people and the group-capability rows, behind `admin.users`.
 adminRoutes.get('/users', async c => c.json(await usersAdmin.overview(c.get('session').context)));
-adminRoutes.post('/users/capability-map', async c =>
+adminRoutes.post('/users/group-capabilities', async c =>
   c.json(
-    await usersAdmin.map(
+    await usersAdmin.addGroupCapability(
       c.get('session').context,
-      await body<CapabilityMapInputType>(c.req.raw, validators.capabilityMap),
+      await body<GroupCapabilityInputType>(c.req.raw, validators.groupCapability),
     ),
   ),
 );
-adminRoutes.post('/users/capability-map/remove', async c =>
+adminRoutes.post('/users/group-capabilities/remove', async c =>
   c.json(
-    await usersAdmin.unmap(
+    await usersAdmin.removeGroupCapability(
       c.get('session').context,
-      await body<CapabilityMapInputType>(c.req.raw, validators.capabilityMap),
+      await body<GroupCapabilityInputType>(c.req.raw, validators.groupCapability),
     ),
   ),
 );

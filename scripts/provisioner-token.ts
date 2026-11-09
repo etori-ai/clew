@@ -37,10 +37,10 @@ try {
       if (existing) throw new Error(`Provisioner '${id}' already has an active token; revoke it first.`);
       await tx
         .insert(provisioners)
-        .values({ id, organisationId, label, digest: tokenDigest(token), createdBy: 'bootstrap:cli' })
+        .values({ id, organisationId, label, tokenDigest: tokenDigest(token), createdBy: 'bootstrap:cli' })
         .onConflictDoUpdate({
           target: provisioners.id,
-          set: { organisationId, label, digest: tokenDigest(token), createdBy: 'bootstrap:cli', revokedAt: null },
+          set: { organisationId, label, tokenDigest: tokenDigest(token), createdBy: 'bootstrap:cli', revokedAt: null },
         });
       await writeAudit(tx, {
         actor: 'bootstrap:cli',

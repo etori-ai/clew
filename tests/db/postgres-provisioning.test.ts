@@ -19,7 +19,7 @@ afterAll(async () => {
         .from(schema.people)
         .where(like(schema.people.id, p + '%'))
     ).map(r => r.id);
-    await db.delete(schema.capabilityMap).where(like(schema.capabilityMap.groupExternalId, '%' + p + '%'));
+    await db.delete(schema.groupCapabilities).where(like(schema.groupCapabilities.groupExternalId, '%' + p + '%'));
     if (people.length) {
       await db.delete(schema.identityBindings).where(inArray(schema.identityBindings.personId, people));
       await db.delete(schema.audit).where(
@@ -75,7 +75,7 @@ provisioningContract('postgres', async (): Promise<ProvisioningHarness> => {
             .returning({ id: schema.groups.id });
           if (created[0]) createdGroups.push(created[0].id);
         }
-        if (seed.mapping?.length) await tx.insert(schema.capabilityMap).values(seed.mapping);
+        if (seed.groupCapabilities?.length) await tx.insert(schema.groupCapabilities).values(seed.groupCapabilities);
         if (seed.units?.length) await tx.insert(schema.units).values(seed.units);
       });
       const members: Array<{ groupId: string; personId: string }> = [];
@@ -90,10 +90,12 @@ provisioningContract('postgres', async (): Promise<ProvisioningHarness> => {
         if (rows.length) await tx.insert(schema.groupMembers).values(rows);
       });
     },
-    async setMapping(mapping) {
+    async setGroupCapabilities(rows) {
       await db.transaction(async tx => {
-        await tx.delete(schema.capabilityMap).where(like(schema.capabilityMap.groupExternalId, '%' + prefix + '%'));
-        if (mapping.length) await tx.insert(schema.capabilityMap).values(mapping);
+        await tx
+          .delete(schema.groupCapabilities)
+          .where(like(schema.groupCapabilities.groupExternalId, '%' + prefix + '%'));
+        if (rows.length) await tx.insert(schema.groupCapabilities).values(rows);
       });
     },
     async legacyGrant(id, grant) {
@@ -141,7 +143,7 @@ scimStoreContract('postgres', async () => {
     async seedProvisioner(p, digest, revoked) {
       await database()
         .insert(schema.provisioners)
-        .values({ ...p, digest, createdBy: 'test', revokedAt: revoked ? new Date() : null });
+        .values({ ...p, tokenDigest: digest, createdBy: 'test', revokedAt: revoked ? new Date() : null });
     },
     async bind(personId) {
       await database()

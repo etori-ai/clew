@@ -16,8 +16,8 @@ const prefix = 'test-idm-' + randomUUID(),
   unitIds = [prefix + '-one', prefix + '-two'];
 afterAll(async () => {
   await database()
-    .delete(schema.capabilityMap)
-    .where(like(schema.capabilityMap.groupExternalId, prefix + '%'));
+    .delete(schema.groupCapabilities)
+    .where(like(schema.groupCapabilities.groupExternalId, prefix + '%'));
   await database()
     .delete(schema.groups)
     .where(like(schema.groups.externalId, prefix + '%'));
@@ -43,9 +43,9 @@ test('a person holds several assignments, the units are listed by label, and a g
       { personId: lena, unitId: unitIds[0]!, role: 'employee' },
       { personId: lena, unitId: unitIds[1]!, role: 'manager' },
     ]);
-    await tx.insert(schema.groups).values({ id: group, externalId: group, displayName: 'Any directory group' });
+    await tx.insert(schema.groups).values({ id: group, externalId: group, label: 'Any directory group' });
     await tx.insert(schema.groupMembers).values({ groupId: group, personId: lena });
-    await tx.insert(schema.capabilityMap).values({ groupExternalId: group, capability: 'admin.users' });
+    await tx.insert(schema.groupCapabilities).values({ groupExternalId: group, capability: 'admin.users' });
   });
   const held = await database().select().from(schema.assignments).where(eq(schema.assignments.personId, lena));
   expect(held.map(a => a.role).sort()).toEqual(['employee', 'manager']);
@@ -55,11 +55,11 @@ test('a person holds several assignments, the units are listed by label, and a g
   await expect(
     database().insert(schema.assignments).values({ personId: lena, unitId: unitIds[0]!, role: 'manager' }).execute(),
   ).rejects.toThrow();
-  // Removing a group removes its memberships; the mapping stays for the group's return (D85).
+  // Removing a group removes its memberships; the group-capability row stays for the group's return (D85).
   await database().delete(schema.groups).where(eq(schema.groups.id, group));
   expect(await database().select().from(schema.groupMembers).where(eq(schema.groupMembers.personId, lena))).toEqual([]);
   expect(
-    await database().select().from(schema.capabilityMap).where(eq(schema.capabilityMap.groupExternalId, group)),
+    await database().select().from(schema.groupCapabilities).where(eq(schema.groupCapabilities.groupExternalId, group)),
   ).toHaveLength(1);
 });
 test('user names and external ids are unique, and rows from before provisioning may leave them empty', async () => {

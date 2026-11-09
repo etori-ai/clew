@@ -1,5 +1,5 @@
 import type {
-  CapabilityMapInputType,
+  GroupCapabilityInputType,
   UsersAdminOverview,
   ManifestReference,
   DocumentRequest,
@@ -246,12 +246,12 @@ export const api = {
     connectors: () => call<{ connectors: ConnectorSummary[] }>('/api/admin/connectors'),
     units: () => call<{ units: Array<{ id: string; label: string }> }>('/api/admin/units'),
     groups: () => call<{ groups: Array<{ id: string; label: string }> }>('/api/admin/groups'),
-    // Användare (D62, D85): the provisioned people and the group-to-capability mapping.
+    // Användare (D62, D85): the provisioned people and the group-capability rows.
     users: () => call<UsersAdminOverview>('/api/admin/users'),
-    mapCapability: (input: CapabilityMapInputType) =>
-      post<UsersAdminOverview>('/api/admin/users/capability-map', input),
-    unmapCapability: (input: CapabilityMapInputType) =>
-      post<UsersAdminOverview>('/api/admin/users/capability-map/remove', input),
+    addGroupCapability: (input: GroupCapabilityInputType) =>
+      post<UsersAdminOverview>('/api/admin/users/group-capabilities', input),
+    removeGroupCapability: (input: GroupCapabilityInputType) =>
+      post<UsersAdminOverview>('/api/admin/users/group-capabilities/remove', input),
     connector: (id: string) => call<ConnectorDetail>(`/api/admin/connectors/${id}`),
     add: (input: AddConnectorInput) =>
       post<{ connector: ConnectorDetail; report: CheckReport }>('/api/admin/connectors', input),

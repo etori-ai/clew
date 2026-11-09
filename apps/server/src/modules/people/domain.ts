@@ -6,7 +6,7 @@ import { isCapability, type Capability, type Role } from '@clew/contracts';
  * A group's meaning is a key in its `externalId`: `unit:<unitId>` makes the member an employee of that unit and names
  * it with the group's `displayName`; `unit-manager:<unitId>` makes the member its manager, which wins over `unit:` for
  * the same unit; `capability:<name>` gives a capability of the closed list; `protected` keeps the person out of lists
- * others see. Any other group gives nothing here; a mapping row (group to capability) may give a capability. A person
+ * others see. Any other group gives nothing here; a rules row (group to capability) may give a capability. A person
  * with no unit membership has no active grant, so a mapping mistake fails closed.
  */
 export const UNIT_KEY = 'unit:',
@@ -15,9 +15,10 @@ export const UNIT_KEY = 'unit:',
   PROTECTED_KEY = 'protected';
 export interface Membership {
   externalId: string;
-  displayName: string;
+  label: string;
 }
-export interface Mapping {
+/** One row of D85's table: a group gives its members a capability. */
+export interface GroupCapabilityRule {
   groupExternalId: string;
   capability: string;
 }
@@ -58,7 +59,7 @@ export function activeOf(assignments: readonly Assignment[]): Assignment | undef
  */
 export function deriveAuthority(
   memberships: readonly Membership[],
-  mapping: readonly Mapping[],
+  rules: readonly GroupCapabilityRule[],
   knownLabels: Readonly<Record<string, string>> = {},
 ): Derived {
   const roles = new Map<string, Role>(),
@@ -74,13 +75,13 @@ export function deriveAuthority(
       const unitId = m.externalId.slice(UNIT_KEY.length);
       if (!unitId) continue;
       if (roles.get(unitId) !== 'manager') roles.set(unitId, 'employee');
-      labels.set(unitId, m.displayName);
+      labels.set(unitId, m.label);
     } else if (m.externalId.startsWith(CAPABILITY_KEY)) {
       const name = m.externalId.slice(CAPABILITY_KEY.length);
       if (isCapability(name)) capabilities.add(name);
     } else if (m.externalId === PROTECTED_KEY) isProtected = true;
   }
-  for (const row of mapping)
+  for (const row of rules)
     if (held.has(row.groupExternalId) && isCapability(row.capability)) capabilities.add(row.capability);
   const assignments = [...roles.entries()]
     .map(([unitId, role]) => ({ unitId, role }))
@@ -141,7 +142,8 @@ export interface UserRecord {
 export interface GroupRecord {
   id: string;
   externalId: string | null;
-  displayName: string;
+  /** The group's name: SCIM's `displayName`. */
+  label: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -155,7 +157,7 @@ export interface UserFields {
 }
 export interface GroupFields {
   externalId: string | null;
-  displayName: string;
+  label: string;
   members: string[];
 }
 const need = (attribute: string): never => {
@@ -183,7 +185,7 @@ export function userFields(input: ScimUserInput): UserFields {
 export function groupFields(input: ScimGroupInput): GroupFields {
   return {
     externalId: input.externalId ?? null,
-    displayName: input.displayName,
+    label: input.displayName,
     members: [...new Set((input.members ?? []).map(m => m.value))],
   };
 }
@@ -293,7 +295,7 @@ export function applyGroupPatch(current: GroupFields, operations: readonly ScimP
   };
   const setAttribute = (path: string, value: unknown) => {
     const key = path.toLowerCase().replace(/^urn:ietf:params:scim:schemas:core:2\.0:group:/, '');
-    if (key === 'displayname') next.displayName = asString(value, path);
+    if (key === 'displayname') next.label = asString(value, path);
     else if (key === 'externalid') next.externalId = asString(value, path);
     else if (key === 'members') members = new Set(memberIds(value));
     else if (key === 'schemas' || key === 'id' || key === 'meta')
@@ -332,7 +334,7 @@ export function applyGroupPatch(current: GroupFields, operations: readonly ScimP
 }
 export function userResource(
   record: UserRecord,
-  groups: ReadonlyArray<{ id: string; displayName: string }>,
+  groups: ReadonlyArray<{ id: string; label: string }>,
   base: string,
 ): ScimUser {
   return {
@@ -344,7 +346,7 @@ export function userResource(
     name: { formatted: record.name },
     emails: record.email ? [{ value: record.email, type: 'work', primary: true }] : [],
     active: record.enabled,
-    groups: groups.map(g => ({ value: g.id, display: g.displayName, $ref: `${base}/Groups/${g.id}` })),
+    groups: groups.map(g => ({ value: g.id, display: g.label, $ref: `${base}/Groups/${g.id}` })),
     meta: {
       resourceType: 'User',
       created: record.createdAt,
@@ -362,7 +364,7 @@ export function groupResource(
     schemas: [SCIM.group],
     id: record.id,
     ...(record.externalId ? { externalId: record.externalId } : {}),
-    displayName: record.displayName,
+    displayName: record.label,
     members: members.map(m => ({ value: m.id, display: m.name, $ref: `${base}/Users/${m.id}` })),
     meta: {
       resourceType: 'Group',

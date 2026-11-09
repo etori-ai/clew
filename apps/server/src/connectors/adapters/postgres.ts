@@ -131,10 +131,10 @@ export function postgresGroups(): Groups {
   return {
     async list() {
       const rows = await database()
-        .select({ id: schema.groups.externalId, label: schema.groups.displayName })
+        .select({ id: schema.groups.externalId, label: schema.groups.label })
         .from(schema.groups)
         .where(isNotNull(schema.groups.externalId))
-        .orderBy(schema.groups.displayName, schema.groups.externalId);
+        .orderBy(schema.groups.label, schema.groups.externalId);
       return rows.map(r => ({ id: r.id!, label: r.label }));
     },
   };

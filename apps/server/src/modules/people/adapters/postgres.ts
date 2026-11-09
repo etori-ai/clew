@@ -35,7 +35,7 @@ const userColumns = {
 const groupColumns = {
   id: schema.groups.id,
   externalId: schema.groups.externalId,
-  displayName: schema.groups.displayName,
+  label: schema.groups.label,
   createdAt: schema.groups.createdAt,
   updatedAt: schema.groups.updatedAt,
 };
@@ -52,7 +52,7 @@ const groupRecord = (r: GroupRow): GroupRecord => ({
   updatedAt: r.updatedAt.toISOString(),
 });
 const userColumn = { userName: schema.people.userName, externalId: schema.people.externalId } as const;
-const groupColumn = { externalId: schema.groups.externalId, displayName: schema.groups.displayName } as const;
+const groupColumn = { externalId: schema.groups.externalId, label: schema.groups.label } as const;
 /** The provisioning tables and the grant projection (D68, D85) inside one Postgres transaction. */
 export function postgresProvisionStore(): ProvisionStore {
   const txOf = (tx: Transaction): ProvisionTx => ({
@@ -65,12 +65,12 @@ export function postgresProvisionStore(): ProvisionStore {
     },
     async memberships(personId) {
       const rows = await tx
-        .select({ externalId: schema.groups.externalId, displayName: schema.groups.displayName })
+        .select({ externalId: schema.groups.externalId, label: schema.groups.label })
         .from(schema.groupMembers)
         .innerJoin(schema.groups, eq(schema.groups.id, schema.groupMembers.groupId))
         .where(and(eq(schema.groupMembers.personId, personId), isNotNull(schema.groups.externalId)))
         .orderBy(schema.groups.externalId);
-      return rows.map(r => ({ externalId: r.externalId!, displayName: r.displayName }));
+      return rows.map(r => ({ externalId: r.externalId!, label: r.label }));
     },
     async members(groupExternalId) {
       const rows = await tx
@@ -81,10 +81,13 @@ export function postgresProvisionStore(): ProvisionStore {
         .orderBy(schema.groupMembers.personId);
       return rows.map(r => r.personId);
     },
-    async mapping() {
+    async groupCapabilities() {
       return tx
-        .select({ groupExternalId: schema.capabilityMap.groupExternalId, capability: schema.capabilityMap.capability })
-        .from(schema.capabilityMap);
+        .select({
+          groupExternalId: schema.groupCapabilities.groupExternalId,
+          capability: schema.groupCapabilities.capability,
+        })
+        .from(schema.groupCapabilities);
     },
     async unitLabels(ids) {
       if (!ids.length) return {};
@@ -137,7 +140,7 @@ export function postgresProvisionStore(): ProvisionStore {
         .onConflictDoUpdate({ target: schema.accessGrants.personId, set: values });
     },
     audit: entry => writeAudit(tx, entry),
-    async provisioner(digest) {
+    async provisioner(tokenDigest) {
       const [row] = await tx
         .select({
           id: schema.provisioners.id,
@@ -145,7 +148,7 @@ export function postgresProvisionStore(): ProvisionStore {
           label: schema.provisioners.label,
         })
         .from(schema.provisioners)
-        .where(and(eq(schema.provisioners.digest, digest), isNull(schema.provisioners.revokedAt)));
+        .where(and(eq(schema.provisioners.tokenDigest, tokenDigest), isNull(schema.provisioners.revokedAt)));
       return row;
     },
     async readUser(organisationId, id) {
@@ -196,7 +199,7 @@ export function postgresProvisionStore(): ProvisionStore {
     },
     async userGroups(personId) {
       return tx
-        .select({ id: schema.groups.id, externalId: schema.groups.externalId, displayName: schema.groups.displayName })
+        .select({ id: schema.groups.id, externalId: schema.groups.externalId, label: schema.groups.label })
         .from(schema.groupMembers)
         .innerJoin(schema.groups, eq(schema.groups.id, schema.groupMembers.groupId))
         .where(eq(schema.groupMembers.personId, personId))
@@ -272,24 +275,24 @@ export function postgresProvisionStore(): ProvisionStore {
         .limit(1);
       return !!row;
     },
-    async setMapping(groupExternalId, capability, present) {
+    async setGroupCapability(groupExternalId, capability, present) {
       if (present) {
         const inserted = await tx
-          .insert(schema.capabilityMap)
+          .insert(schema.groupCapabilities)
           .values({ groupExternalId, capability })
           .onConflictDoNothing()
-          .returning({ capability: schema.capabilityMap.capability });
+          .returning({ capability: schema.groupCapabilities.capability });
         return inserted.length > 0;
       }
       const removed = await tx
-        .delete(schema.capabilityMap)
+        .delete(schema.groupCapabilities)
         .where(
           and(
-            eq(schema.capabilityMap.groupExternalId, groupExternalId),
-            eq(schema.capabilityMap.capability, capability),
+            eq(schema.groupCapabilities.groupExternalId, groupExternalId),
+            eq(schema.groupCapabilities.capability, capability),
           ),
         )
-        .returning({ capability: schema.capabilityMap.capability });
+        .returning({ capability: schema.groupCapabilities.capability });
       return removed.length > 0;
     },
   });

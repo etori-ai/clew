@@ -242,7 +242,7 @@ try {
         .where(
           and(
             eq(provisioners.id, 'dev'),
-            eq(provisioners.digest, tokenDigest(provisionerToken)),
+            eq(provisioners.tokenDigest, tokenDigest(provisionerToken)),
             isNull(provisioners.revokedAt),
           ),
         )
@@ -256,12 +256,12 @@ try {
           id: 'dev',
           organisationId: 'poc',
           label: 'Development directory',
-          digest: tokenDigest(provisionerToken!),
+          tokenDigest: tokenDigest(provisionerToken!),
           createdBy: 'bootstrap:auth',
         })
         .onConflictDoUpdate({
           target: provisioners.id,
-          set: { digest: tokenDigest(provisionerToken!), revokedAt: null, createdBy: 'bootstrap:auth' },
+          set: { tokenDigest: tokenDigest(provisionerToken!), revokedAt: null, createdBy: 'bootstrap:auth' },
         });
       await writeAudit(tx, {
         actor: 'bootstrap:auth',

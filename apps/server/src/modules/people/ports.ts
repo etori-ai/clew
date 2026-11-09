@@ -1,4 +1,12 @@
-import type { Assignment, DerivedUnit, Grant, GroupRecord, Mapping, Membership, UserRecord } from './domain';
+import type {
+  Assignment,
+  DerivedUnit,
+  Grant,
+  GroupCapabilityRule,
+  GroupRecord,
+  Membership,
+  UserRecord,
+} from './domain';
 
 /** Clew's own user records; identity and unit are always taken from the authenticated actor. */
 export interface UserReads {
@@ -32,7 +40,7 @@ export interface ProvisionTx {
   /** The groups with an external id the person is in; a group without one carries no meaning. */
   memberships(personId: string): Promise<Membership[]>;
   members(groupExternalId: string): Promise<string[]>;
-  mapping(): Promise<Mapping[]>;
+  groupCapabilities(): Promise<GroupCapabilityRule[]>;
   unitLabels(ids: readonly string[]): Promise<Record<string, string>>;
   /** Upsert by id: a unit named by a `unit:` group takes that group's label. */
   writeUnits(organisationId: string, units: readonly DerivedUnit[]): Promise<void>;
@@ -43,7 +51,7 @@ export interface ProvisionTx {
   audit(entry: { actor: string; action: string; subject: string; details: Record<string, unknown> }): Promise<void>;
   // SCIM: who is calling.
   /** The provisioner whose token has this digest and is not revoked. */
-  provisioner(digest: string): Promise<Provisioner | undefined>;
+  provisioner(tokenDigest: string): Promise<Provisioner | undefined>;
   // SCIM: users, always within the provisioner's organisation.
   readUser(organisationId: string, id: string): Promise<UserRecord | undefined>;
   findUser(organisationId: string, by: 'userName' | 'externalId', value: string): Promise<UserRecord | undefined>;
@@ -57,20 +65,17 @@ export interface ProvisionTx {
     id: string,
     fields: Partial<Pick<UserRecord, 'externalId' | 'userName' | 'name' | 'email' | 'enabled'>> & { updatedAt: string },
   ): Promise<void>;
-  userGroups(personId: string): Promise<Array<{ id: string; externalId: string | null; displayName: string }>>;
+  userGroups(personId: string): Promise<Array<{ id: string; externalId: string | null; label: string }>>;
   // SCIM: groups. A group belongs to the installation; its members are people of the provisioner's organisation.
   readGroup(id: string): Promise<GroupRecord | undefined>;
-  findGroup(by: 'externalId' | 'displayName', value: string): Promise<GroupRecord | undefined>;
-  listGroups(
-    page: Page,
-    filter?: { attribute: 'externalId' | 'displayName'; value: string },
-  ): Promise<Listed<GroupRecord>>;
+  findGroup(by: 'externalId' | 'label', value: string): Promise<GroupRecord | undefined>;
+  listGroups(page: Page, filter?: { attribute: 'externalId' | 'label'; value: string }): Promise<Listed<GroupRecord>>;
   insertGroup(record: GroupRecord): Promise<void>;
   updateGroup(
     id: string,
-    fields: Partial<Pick<GroupRecord, 'externalId' | 'displayName'>> & { updatedAt: string },
+    fields: Partial<Pick<GroupRecord, 'externalId' | 'label'>> & { updatedAt: string },
   ): Promise<void>;
-  /** Removes the group and its memberships; the mapping rows stay (D85). */
+  /** Removes the group and its memberships; its group-capability rows stay (D85). */
   deleteGroup(id: string): Promise<void>;
   groupMembers(groupId: string): Promise<Array<{ id: string; name: string }>>;
   setGroupMembers(groupId: string, personIds: readonly string[]): Promise<void>;
@@ -78,8 +83,8 @@ export interface ProvisionTx {
   assignmentsOf(personId: string): Promise<Array<{ unitId: string; unitLabel: string; role: Assignment['role'] }>>;
   /** Whether an identity binding exists for the person, with any issuer. */
   bound(personId: string): Promise<boolean>;
-  /** Add or remove one mapping row; true when the row changed. */
-  setMapping(groupExternalId: string, capability: string, present: boolean): Promise<boolean>;
+  /** Add or remove one group-capability row; true when the row changed. */
+  setGroupCapability(groupExternalId: string, capability: string, present: boolean): Promise<boolean>;
 }
 export interface ProvisionStore {
   transaction<T>(fn: (tx: ProvisionTx) => Promise<T>): Promise<T>;

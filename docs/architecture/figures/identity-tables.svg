@@ -41,7 +41,7 @@
 <text x="432" y="124" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">external_id</text>
 <text x="590" y="124" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
 <text x="688" y="124" font-size="10.5" font-weight="600" fill="#9a3412">UNIQUE</text>
-<text x="432" y="144" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">display_name</text>
+<text x="432" y="144" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">label</text>
 <text x="590" y="144" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
 <text x="432" y="164" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">created_at</text>
 <text x="590" y="164" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">timestamptz</text>
@@ -70,7 +70,7 @@
 <text x="812" y="98" font-size="11.5" fill="#374151">Every change writes a row in audit</text>
 <text x="812" y="115" font-size="11.5" fill="#374151">(actor, action, subject, details jsonb):</text>
 <text x="812" y="132" font-size="11.5" fill="#374151">scim.user.*, scim.group.*, grant.derived,</text>
-<text x="812" y="149" font-size="11.5" fill="#374151">capability-map.added/removed, identity.bound.</text>
+<text x="812" y="149" font-size="11.5" fill="#374151">group-capability.added/removed, identity.bound.</text>
 <text x="812" y="166" font-size="11.5" fill="#374151">Login events go to auth_audit.</text>
 <rect x="20" y="424" width="1200" height="286" rx="14" fill="#eef4ff" stroke="#c7d7f5"/>
 <text x="36" y="446" font-weight="600" font-size="14" fill="#1e3a8a">Derived by Clew, in the same transaction as the change</text>
@@ -133,7 +133,7 @@
 <text x="816" y="754" font-weight="600" font-size="14" fill="#374151">Written at the first login</text>
 <rect x="40" y="768" width="360" height="134" rx="8" fill="#ffffff" stroke="#ea580c"/>
 <path d="M 48 768 H 392 a 8 8 0 0 1 8 8 V 798 H 40 V 776 a 8 8 0 0 1 8 -8 Z" fill="#fff7ed" stroke="#ea580c"/>
-<text x="52" y="788" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-weight="600" font-size="13" fill="#111827">auth_capability_map</text>
+<text x="52" y="788" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-weight="600" font-size="13" fill="#111827">auth_group_capability</text>
 <text x="52" y="816" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">group_external_id</text>
 <text x="210" y="816" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
 <text x="308" y="816" font-size="10.5" font-weight="600" fill="#9a3412">PK</text>
@@ -154,7 +154,7 @@
 <text x="590" y="836" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
 <text x="432" y="856" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">label</text>
 <text x="590" y="856" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
-<text x="432" y="876" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">digest</text>
+<text x="432" y="876" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">token_digest</text>
 <text x="590" y="876" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
 <text x="688" y="876" font-size="10.5" font-weight="600" fill="#9a3412">UNIQUE</text>
 <text x="432" y="896" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">created_by</text>
@@ -164,7 +164,7 @@
 <text x="432" y="936" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">revoked_at</text>
 <text x="590" y="936" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">timestamptz</text>
 <line x1="432" y1="946" x2="768" y2="946" stroke="#e5e7eb"/>
-<text x="432" y="960" font-size="10.5" fill="#6b7280">digest: sha256 of the bearer token; the token is never stored</text>
+<text x="432" y="960" font-size="10.5" fill="#6b7280">token_digest: sha256 of the bearer token; the token is never stored</text>
 <text x="432" y="976" font-size="10.5" fill="#6b7280">revoked_at set = the token no longer authenticates</text>
 <rect x="820" y="768" width="360" height="138" rx="8" fill="#ffffff" stroke="#9ca3af"/>
 <path d="M 828 768 H 1172 a 8 8 0 0 1 8 8 V 798 H 820 V 776 a 8 8 0 0 1 8 -8 Z" fill="#f3f4f6" stroke="#9ca3af"/>

@@ -4,8 +4,8 @@ import {
   isCapability,
   type AuthenticatedContext,
   type Capability,
-  type CapabilityMapInputType,
-  type CapabilityMapping,
+  type GroupCapabilityInputType,
+  type GroupCapability,
   type UserAdminRow,
   type UsersAdminOverview,
 } from '@clew/contracts';
@@ -35,15 +35,15 @@ import {
   type Derived,
   type GroupFields,
   type GroupRecord,
-  type Mapping,
+  type GroupCapabilityRule,
   type UserFields,
   type UserRecord,
 } from './domain';
 import type { Provisioner, ProvisionStore, ProvisionTx } from './ports';
 
 /**
- * Deriving authority (D68, D85): the only path from memberships and the mapping to the grant a person acts with. Called
- * by whatever changed a membership or a mapping row, inside that change's transaction, so the grant never lags the
+ * Deriving authority (D68, D85): the only path from memberships and the group-capability rows to the grant a person acts
+ * with. Called by whatever changed a membership or such a row, inside that change's transaction, so the grant never lags the
  * fact that produced it. An unchanged grant writes no audit row; a changed one writes `grant.derived` on the person
  * with the new unit, role and capabilities, or `removed: true` when the person has no unit left (fail closed). The
  * `protected` membership is derived but never written to the audit row.
@@ -53,12 +53,12 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
     const person = await tx.person(personId);
     if (!person) return undefined;
     const memberships = await tx.memberships(personId),
-      mapping = await tx.mapping();
+      rules = await tx.groupCapabilities();
     const managed = memberships
       .filter(m => m.externalId.startsWith(MANAGER_KEY))
       .map(m => m.externalId.slice(MANAGER_KEY.length));
     const knownLabels = managed.length ? await tx.unitLabels(managed) : {};
-    const derived = deriveAuthority(memberships, mapping, knownLabels);
+    const derived = deriveAuthority(memberships, rules, knownLabels);
     await tx.writeUnits(person.organisationId, derived.units);
     await tx.replaceAssignments(personId, derived.assignments);
     // Compared as stored, so a projection that still carries a name outside the closed list is rewritten.
@@ -86,7 +86,7 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
     deriveWithin,
     /** Re-derive one person after their memberships changed. */
     derivePerson: (actor: string, personId: string) => deps.store.transaction(tx => deriveWithin(tx, actor, personId)),
-    /** Re-derive every member of a group after the group's meaning changed (a mapping row, a renamed `unit:` group). */
+    /** Re-derive every member of a group after the group's meaning changed (a group-capability row, a renamed `unit:` group). */
     deriveGroup: (actor: string, groupExternalId: string) =>
       deps.store.transaction(async tx => {
         const members = await tx.members(groupExternalId);
@@ -204,13 +204,13 @@ export function scimUsecases(deps: {
     const before = (await tx.groupMembers(current.id)).map(m => m.id),
       added = fields.members.filter(id => !before.includes(id)),
       removed = before.filter(id => !fields.members.includes(id)),
-      renamed = current.displayName !== fields.displayName || current.externalId !== fields.externalId,
+      renamed = current.label !== fields.label || current.externalId !== fields.externalId,
       at = now();
     if (!renamed && !added.length && !removed.length) return groupView(tx, current, base);
     if (renamed)
       await tx.updateGroup(current.id, {
         externalId: fields.externalId,
-        displayName: fields.displayName,
+        label: fields.label,
         updatedAt: at,
       });
     if (added.length || removed.length) await tx.setGroupMembers(current.id, fields.members);
@@ -220,7 +220,7 @@ export function scimUsecases(deps: {
       subject: 'group:' + current.id,
       details: {
         externalId: fields.externalId,
-        displayName: fields.displayName,
+        displayName: fields.label,
         ...(renamed ? { renamed: true } : {}),
         added: added.length,
         removed: removed.length,
@@ -323,7 +323,7 @@ export function scimUsecases(deps: {
           record: GroupRecord = {
             id: deps.ids(),
             externalId: fields.externalId,
-            displayName: fields.displayName,
+            label: fields.label,
             createdAt: at,
             updatedAt: at,
           };
@@ -333,7 +333,7 @@ export function scimUsecases(deps: {
           actor: actorOf(p),
           action: 'scim.group.created',
           subject: 'group:' + record.id,
-          details: { externalId: fields.externalId, displayName: fields.displayName, members: fields.members.length },
+          details: { externalId: fields.externalId, displayName: fields.label, members: fields.members.length },
         });
         for (const id of fields.members) await derivation.deriveWithin(tx, actorOf(p), id);
         return groupView(tx, record, base);
@@ -342,8 +342,12 @@ export function scimUsecases(deps: {
       deps.store.transaction(async tx => groupView(tx, await groupOr404(tx, id), base)),
     listGroups: (p: Provisioner, query: ScimQuery, base: string): Promise<ScimList<ScimGroup>> =>
       deps.store.transaction(async tx => {
-        const filter = parseFilter(query.filter, ['externalId', 'displayName']) as
-            { attribute: 'externalId' | 'displayName'; value: string } | undefined,
+        // SCIM filters on displayName; the column is Clew's `label`.
+        const parsed = parseFilter(query.filter, ['externalId', 'displayName']),
+          filter = parsed && {
+            attribute: (parsed.attribute === 'displayName' ? 'label' : 'externalId') as 'externalId' | 'label',
+            value: parsed.value,
+          },
           page = pageOf(query);
         const listed = await tx.listGroups(page, filter);
         const Resources: ScimGroup[] = [];
@@ -373,12 +377,12 @@ export function scimUsecases(deps: {
           patch = checked<{ Operations: Parameters<typeof applyGroupPatch>[1] }>(ScimPatchSchema, body, 'PatchOp'),
           members = (await tx.groupMembers(id)).map(m => m.id);
         const next = applyGroupPatch(
-          { externalId: current.externalId, displayName: current.displayName, members },
+          { externalId: current.externalId, label: current.label, members },
           patch.Operations,
         );
         return writeGroup(tx, p, current, next, 'scim.group.patched', base);
       }),
-    /** Removes the group; its members are re-derived and lose what it gave them. The mapping rows stay (D85). */
+    /** Removes the group; its members are re-derived and lose what it gave them. The group-capability rows stay (D85). */
     deleteGroup: (p: Provisioner, id: string) =>
       deps.store.transaction(async tx => {
         const current = await groupOr404(tx, id),
@@ -388,7 +392,7 @@ export function scimUsecases(deps: {
           actor: actorOf(p),
           action: 'scim.group.removed',
           subject: 'group:' + id,
-          details: { externalId: current.externalId, displayName: current.displayName, members: members.length },
+          details: { externalId: current.externalId, displayName: current.label, members: members.length },
         });
         for (const member of members) await derivation.deriveWithin(tx, actorOf(p), member);
       }),
@@ -398,9 +402,9 @@ export type ScimUsecases = ReturnType<typeof scimUsecases>;
 
 /**
  * Administration › Användare (D62, D68, D85): what an administrator with `admin.users` sees and may change. Identity,
- * units and roles are read only here; they come from the provisioner. The one thing written is D85's mapping from a
- * group to a capability: audited per row (`capability-map.added`, `capability-map.removed`), and every current member
- * of the group is re-derived in the same transaction, so a grant never lags the mapping that produced it.
+ * units and roles are read only here; they come from the provisioner. The one thing written is D85's rows, a group gives
+ * a capability: audited per row (`group-capability.added`, `group-capability.removed`), and every current member of the
+ * group is re-derived in the same transaction, so a grant never lags the row that produced it.
  */
 export const USERS_ADMIN_CAPABILITY: Capability = 'admin.users';
 export function usersAdminUsecases(deps: { store: ProvisionStore }) {
@@ -426,7 +430,7 @@ export function usersAdminUsecases(deps: { store: ProvisionStore }) {
           assignments: await tx.assignmentsOf(u.id),
           active: grant ? { unitId: grant.unitId, unitLabel: grant.unitLabel, role: grant.role } : null,
           capabilities: grant ? sorted(grant.capabilities) : [],
-          groups: (await tx.userGroups(u.id)).map(g => ({ externalId: g.externalId, displayName: g.displayName })),
+          groups: (await tx.userGroups(u.id)).map(g => ({ externalId: g.externalId, label: g.label })),
         });
       }
       startIndex += page.rows.length;
@@ -434,38 +438,38 @@ export function usersAdminUsecases(deps: { store: ProvisionStore }) {
     }
     const groups = (await tx.listGroups({ startIndex: 1, count: 10_000 })).rows
       .filter(g => g.externalId)
-      .map(g => ({ id: g.externalId!, label: g.displayName }))
+      .map(g => ({ id: g.externalId!, label: g.label }))
       .sort((a, b) => a.label.localeCompare(b.label, 'sv') || a.id.localeCompare(b.id));
     const names = new Map(groups.map(g => [g.id, g.label]));
-    const mapping: CapabilityMapping[] = (await tx.mapping())
-      .filter((m): m is Mapping & { capability: Capability } => isCapability(m.capability))
+    const groupCapabilities: GroupCapability[] = (await tx.groupCapabilities())
+      .filter((m): m is GroupCapabilityRule & { capability: Capability } => isCapability(m.capability))
       .map(m => ({
         groupExternalId: m.groupExternalId,
-        displayName: names.get(m.groupExternalId) ?? null,
+        groupLabel: names.get(m.groupExternalId) ?? null,
         capability: m.capability,
       }))
       .sort(
         (a, b) =>
-          (a.displayName ?? a.groupExternalId).localeCompare(b.displayName ?? b.groupExternalId, 'sv') ||
+          (a.groupLabel ?? a.groupExternalId).localeCompare(b.groupLabel ?? b.groupExternalId, 'sv') ||
           a.capability.localeCompare(b.capability),
       );
     users.sort((a, b) => a.name.localeCompare(b.name, 'sv') || a.id.localeCompare(b.id));
-    return { users, mapping, groups, capabilities: [...CAPABILITIES] };
+    return { users, groupCapabilities, groups, capabilities: [...CAPABILITIES] };
   }
-  async function change(persona: AuthenticatedContext, input: CapabilityMapInputType, present: boolean) {
+  async function change(persona: AuthenticatedContext, input: GroupCapabilityInputType, present: boolean) {
     require(persona);
     await persona.authorize();
     if (!isCapability(input.capability)) throw new InputError('Okänd behörighet.');
     return deps.store.transaction(async tx => {
       const group = await tx.findGroup('externalId', input.groupExternalId);
       if (!group && present) throw new InputError('Gruppen finns inte bland de provisionerade grupperna.');
-      const changed = await tx.setMapping(input.groupExternalId, input.capability, present);
+      const changed = await tx.setGroupCapability(input.groupExternalId, input.capability, present);
       if (changed) {
         await tx.audit({
           actor: 'person:' + persona.id,
-          action: present ? 'capability-map.added' : 'capability-map.removed',
+          action: present ? 'group-capability.added' : 'group-capability.removed',
           subject: 'group:' + input.groupExternalId,
-          details: { capability: input.capability, displayName: group?.displayName ?? null },
+          details: { capability: input.capability, groupLabel: group?.label ?? null },
         });
         for (const member of await tx.members(input.groupExternalId))
           await derivation.deriveWithin(tx, 'person:' + persona.id, member);
@@ -478,8 +482,10 @@ export function usersAdminUsecases(deps: { store: ProvisionStore }) {
       require(persona);
       return deps.store.transaction(tx => overviewWithin(tx, persona));
     },
-    map: (persona: AuthenticatedContext, input: CapabilityMapInputType) => change(persona, input, true),
-    unmap: (persona: AuthenticatedContext, input: CapabilityMapInputType) => change(persona, input, false),
+    addGroupCapability: (persona: AuthenticatedContext, input: GroupCapabilityInputType) =>
+      change(persona, input, true),
+    removeGroupCapability: (persona: AuthenticatedContext, input: GroupCapabilityInputType) =>
+      change(persona, input, false),
   };
 }
 export type UsersAdminUsecases = ReturnType<typeof usersAdminUsecases>;

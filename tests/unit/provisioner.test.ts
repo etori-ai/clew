@@ -115,7 +115,7 @@ describe('the synthetic provisioner', () => {
     store.state.groups.set('foreign', {
       id: 'foreign',
       externalId: 'S-1-5-21-ad',
-      displayName: 'AD',
+      label: 'AD',
       createdAt: 'x',
       updatedAt: 'x',
     });
