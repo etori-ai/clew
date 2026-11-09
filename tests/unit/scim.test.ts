@@ -225,6 +225,19 @@ describe('SCIM groups and derivation', () => {
       'grant.derived',
     ]);
   });
+  test('a manager group may arrive before its unit group: the unit row exists at once and the manager takes the label when the unit group comes', async () => {
+    const { scim, p, store } = harness();
+    const a = (await scim.createUser(p, anna, BASE)).id;
+    await scim.createGroup(p, group('unit-manager:ny', 'Chefer', [a]), BASE);
+    expect(store.state.units.get('ny')).toEqual({ organisationId: 'sundsvall', label: 'ny' });
+    expect(store.state.grants.get(a)).toMatchObject({ unitId: 'ny', unitLabel: 'ny', role: 'manager' });
+    const b = (await scim.createUser(p, { ...anna, externalId: 'mk-2', userName: 'bo' }, BASE)).id;
+    const unit = await scim.createGroup(p, group('unit:ny', 'Nya enheten', [b]), BASE);
+    expect(store.state.units.get('ny')?.label).toBe('Nya enheten');
+    expect(store.state.grants.get(a)?.unitLabel).toBe('Nya enheten');
+    await scim.replaceGroup(p, unit.id, group('unit:ny', 'Nyare enheten', [b]), BASE);
+    expect(store.state.grants.get(a)?.unitLabel).toBe('Nyare enheten');
+  });
   test('capabilities follow the capability key and the mapping; a renamed unit group relabels every member', async () => {
     const { scim, p, store } = harness();
     const a = (await scim.createUser(p, anna, BASE)).id;

@@ -32,6 +32,7 @@ import {
   userFields,
   userResource,
   MANAGER_KEY,
+  UNIT_KEY,
   type Derived,
   type GroupFields,
   type GroupRecord,
@@ -154,6 +155,14 @@ export function scimUsecases(deps: {
       if (!(await tx.readUser(p.organisationId, id)))
         throw new ScimError(400, `Member '${id}' is not a user of this organisation.`, 'invalidValue');
   };
+  /**
+   * The managers of the unit a `unit:` group names. Their grant carries the unit's label without their being members of
+   * that group, so a new or renamed unit group re-derives them too; any other group names nobody beyond its members.
+   */
+  const managersOfUnit = (tx: ProvisionTx, externalId: string | null): Promise<string[]> =>
+    externalId?.startsWith(UNIT_KEY)
+      ? tx.members(MANAGER_KEY + externalId.slice(UNIT_KEY.length))
+      : Promise.resolve([]);
   const userView = async (tx: ProvisionTx, record: UserRecord, base: string) =>
     userResource(record, await tx.userGroups(record.id), base);
   const groupView = async (tx: ProvisionTx, record: GroupRecord, base: string) =>
@@ -227,9 +236,12 @@ export function scimUsecases(deps: {
         members: fields.members.length,
       },
     });
-    // A renamed or re-keyed group changes what every member gets; otherwise only those who came or went.
-    for (const id of renamed ? [...new Set([...before, ...fields.members])] : [...added, ...removed])
-      await derivation.deriveWithin(tx, actorOf(p), id);
+    // A renamed or re-keyed group changes what every member gets, and a unit's label what its managers carry;
+    // otherwise only those who came or went.
+    const touched = renamed
+      ? [...new Set([...before, ...fields.members, ...(await managersOfUnit(tx, fields.externalId))])]
+      : [...added, ...removed];
+    for (const id of touched) await derivation.deriveWithin(tx, actorOf(p), id);
     return groupView(tx, { ...current, ...fields, updatedAt: at }, base);
   }
   return {
@@ -335,7 +347,8 @@ export function scimUsecases(deps: {
           subject: 'group:' + record.id,
           details: { externalId: fields.externalId, displayName: fields.label, members: fields.members.length },
         });
-        for (const id of fields.members) await derivation.deriveWithin(tx, actorOf(p), id);
+        for (const id of new Set([...fields.members, ...(await managersOfUnit(tx, fields.externalId))]))
+          await derivation.deriveWithin(tx, actorOf(p), id);
         return groupView(tx, record, base);
       }),
     getGroup: (p: Provisioner, id: string, base: string) =>

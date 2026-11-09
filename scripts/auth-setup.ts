@@ -187,11 +187,12 @@ await audienceClient('eneo');
 await audienceClient('supportmanagement');
 const testPasswords: Record<string, string> = {};
 try {
-  // The development directory (scripts/provisioner/directory.ts) is the one list of people. This bootstrap gives each a
-  // Keycloak account and a person row with the id the stack's fixtures and calendars key on; the synthetic provisioner
-  // below pushes everything else (name, address, units, roles, capabilities) through SCIM, and the first login binds the
-  // Keycloak subject to the person by `preferred_username` (D68 item 6), so no binding is written here.
-  for (const person of developmentDirectory.people) {
+  // The development directory (scripts/provisioner/directory.ts) is the one list of people. This bootstrap gives each
+  // persona (`login`) a Keycloak account and a person row with the id the stack's fixtures and calendars key on; the
+  // synthetic provisioner below pushes everything else (the other people, names, addresses, units, roles, groups,
+  // capabilities) through SCIM, and the first login binds the Keycloak subject to the person by `preferred_username`
+  // (D68 item 6), so no binding is written here.
+  for (const person of developmentDirectory.people.filter(p => p.login)) {
     const id = person.userName,
       key = 'TEST_' + id.toUpperCase() + '_PASSWORD';
     let user = (await objects(root + '/users?exact=true&username=' + id)).find(u => u.username === id);

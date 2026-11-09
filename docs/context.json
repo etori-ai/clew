@@ -2845,6 +2845,22 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-09-scim-server-and-provisioning-boundary.md",
+      "title": "Review: the SCIM server and the provisioning boundary · 2026-11-09",
+      "category": "review-history",
+      "headings": [
+        "Question",
+        "Assessment",
+        "Method",
+        "What holds",
+        "Findings",
+        "The boundary, assessed",
+        "Recommended order",
+        "Verification",
+        "Outcome"
+      ]
+    },
+    {
       "path": "docs/reviews/2026-11-09-sitevision-connector.md",
       "title": "A Sitevision connector: the header, search and pages from the intranet's CMS · 2026-11-09",
       "category": "review-history",

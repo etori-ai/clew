@@ -42,7 +42,7 @@ export interface ProvisionTx {
   members(groupExternalId: string): Promise<string[]>;
   groupCapabilities(): Promise<GroupCapabilityRule[]>;
   unitLabels(ids: readonly string[]): Promise<Record<string, string>>;
-  /** Upsert by id: a unit named by a `unit:` group takes that group's label. */
+  /** Upsert by id, one per assignment, before the assignments that reference them; the label is the derived one. */
   writeUnits(organisationId: string, units: readonly DerivedUnit[]): Promise<void>;
   replaceAssignments(personId: string, assignments: readonly Assignment[]): Promise<void>;
   grant(personId: string): Promise<(Omit<Grant, 'capabilities'> & { capabilities: string[] }) | undefined>;

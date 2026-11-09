@@ -174,6 +174,33 @@ export function provisioningContract(name: string, make: () => Promise<Provision
       expect((await h.audit(b)).at(-1)).toMatchObject({ actor: 'person:mikael', action: 'grant.derived' });
       expect(await usecases.derivePerson('system:test', p + '-nobody')).toBeUndefined();
     });
+    test('a manager of a unit nobody has pushed a unit: group for gets the unit row at once, labelled by its id until the group names it', async () => {
+      const h = await make(),
+        p = h.prefix,
+        nour = p + '-nour',
+        ola = p + '-ola',
+        unit = p + '-ny';
+      await h.seed({
+        people: [{ id: nour, organisationId: 'org' }],
+        groups: [{ externalId: 'unit-manager:' + unit, label: 'Chefer' }],
+        members: [{ group: 'unit-manager:' + unit, person: nour }],
+      });
+      const usecases = provisioningUsecases({ store: h.store });
+      // On Postgres the assignment references the unit row, so the row has to exist before the assignment is written.
+      await usecases.derivePerson('system:test', nour);
+      expect(await h.unitLabel(unit)).toBe(unit);
+      expect(await h.assignments(nour)).toEqual([{ unitId: unit, role: 'manager' }]);
+      expect(await h.grant(nour)).toMatchObject({ unitId: unit, unitLabel: unit, role: 'manager' });
+      await h.seed({
+        people: [{ id: ola, organisationId: 'org' }],
+        groups: [{ externalId: 'unit:' + unit, label: 'Nya enheten' }],
+        members: [{ group: 'unit:' + unit, person: ola }],
+      });
+      await usecases.derivePerson('system:test', ola);
+      await usecases.derivePerson('system:test', nour);
+      expect(await h.unitLabel(unit)).toBe('Nya enheten');
+      expect(await h.grant(nour)).toMatchObject({ unitId: unit, unitLabel: 'Nya enheten', role: 'manager' });
+    });
     test('a grant from before provisioning is rewritten even when only a name outside the closed list differs', async () => {
       const h = await make(),
         p = h.prefix,

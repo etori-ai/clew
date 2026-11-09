@@ -10,8 +10,11 @@ import { fullName, type Directory, type DirectoryPerson } from './directory';
 const SCIM_USER = 'urn:ietf:params:scim:schemas:core:2.0:User',
   SCIM_GROUP = 'urn:ietf:params:scim:schemas:core:2.0:Group',
   SCIM_PATCH = 'urn:ietf:params:scim:api:messages:2.0:PatchOp';
-/** The keys this provisioner writes; a group with another key belongs to somebody else and is left alone. */
-const OWNED = ['unit:', 'unit-manager:', 'capability:'];
+/**
+ * The keys this provisioner writes, plus `ad:`, the development directory's plain groups; a group with another key
+ * belongs to somebody else and is left alone.
+ */
+const OWNED = ['unit:', 'unit-manager:', 'capability:', 'ad:'];
 export interface PlannedGroup {
   externalId: string;
   displayName: string;
@@ -29,17 +32,36 @@ export function plan(directory: Directory): Plan {
     groups.set(externalId, g);
     return g;
   };
+  const unitOf = (p: DirectoryPerson, id: string, what: string) => {
+    const unit = directory.units.find(u => u.id === id);
+    if (!unit) throw new Error(`${p.userName} has ${what} '${id}', which the directory does not list.`);
+    return unit;
+  };
   for (const unit of directory.units) group('unit:' + unit.id, unit.label);
+  for (const g of directory.groups) group(g.id, g.label);
   for (const p of directory.people) {
-    const unit = directory.units.find(u => u.id === p.department);
-    if (!unit) throw new Error(`${p.userName} has department '${p.department}', which the directory does not list.`);
-    group('unit:' + unit.id, unit.label).members.push(p.externalId);
-    if (p.manager) group('unit-manager:' + unit.id, 'Chefer · ' + unit.label).members.push(p.externalId);
+    const home = unitOf(p, p.department, 'department');
+    group('unit:' + home.id, home.label).members.push(p.externalId);
+    for (const id of p.alsoIn ?? []) {
+      const unit = unitOf(p, id, 'unit');
+      group('unit:' + unit.id, unit.label).members.push(p.externalId);
+    }
+    for (const id of [...(p.manager ? [home.id] : []), ...(p.alsoManages ?? [])]) {
+      const unit = unitOf(p, id, 'unit');
+      group('unit-manager:' + unit.id, 'Chefer · ' + unit.label).members.push(p.externalId);
+    }
+    for (const id of p.groups ?? []) {
+      const g = directory.groups.find(g => g.id === id);
+      if (!g) throw new Error(`${p.userName} has group '${id}', which the directory does not list.`);
+      group(g.id, g.label).members.push(p.externalId);
+    }
     for (const c of p.capabilities) group('capability:' + c, 'Clew · ' + c).members.push(p.externalId);
   }
   return {
     users: directory.people.map(p => ({ externalId: p.externalId, body: userBody(p) })),
-    groups: [...groups.values()].sort((a, b) => a.externalId.localeCompare(b.externalId)),
+    groups: [...groups.values()]
+      .map(g => ({ ...g, members: [...new Set(g.members)] }))
+      .sort((a, b) => a.externalId.localeCompare(b.externalId)),
   };
 }
 const userBody = (p: DirectoryPerson) => ({

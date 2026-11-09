@@ -26,6 +26,11 @@ export interface Assignment {
   unitId: string;
   role: Role;
 }
+/**
+ * A unit the person is assigned to: labelled by its `unit:` group, else as the unit table knows it, else by its id. One
+ * per assignment, so the unit row exists before the assignment that references it (a manager of a unit nobody has
+ * pushed a `unit:` group for yet).
+ */
 export interface DerivedUnit {
   id: string;
   label: string;
@@ -38,7 +43,7 @@ export interface Grant {
   capabilities: Capability[];
 }
 export interface Derived {
-  /** Units named by a `unit:` group, labelled by that group. */
+  /** Every unit the person is assigned to, sorted by unit id. */
   units: DerivedUnit[];
   /** Every assignment, one per unit, sorted by unit id. */
   assignments: Assignment[];
@@ -87,16 +92,17 @@ export function deriveAuthority(
     .map(([unitId, role]) => ({ unitId, role }))
     .sort((a, b) => a.unitId.localeCompare(b.unitId));
   const active = activeOf(assignments),
-    sorted = [...capabilities].sort();
+    sorted = [...capabilities].sort(),
+    labelOf = (unitId: string) => labels.get(unitId) ?? knownLabels[unitId] ?? unitId;
   return {
-    units: [...labels.entries()].map(([id, label]) => ({ id, label })).sort((a, b) => a.id.localeCompare(b.id)),
+    units: assignments.map(a => ({ id: a.unitId, label: labelOf(a.unitId) })),
     assignments,
     active,
     capabilities: sorted,
     protected: isProtected,
     grant: active && {
       unitId: active.unitId,
-      unitLabel: labels.get(active.unitId) ?? knownLabels[active.unitId] ?? active.unitId,
+      unitLabel: labelOf(active.unitId),
       role: active.role,
       capabilities: sorted,
     },

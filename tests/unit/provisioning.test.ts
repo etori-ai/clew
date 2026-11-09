@@ -19,7 +19,11 @@ describe('deriveAuthority', () => {
       [],
       { u2: 'Enhet 2' },
     );
-    expect(d.units).toEqual([{ id: 'u1', label: 'Enhet 1' }]);
+    // One unit per assignment: u2 is managed without a `unit:` group of its own, so it takes the known label.
+    expect(d.units).toEqual([
+      { id: 'u1', label: 'Enhet 1' },
+      { id: 'u2', label: 'Enhet 2' },
+    ]);
     expect(d.assignments).toEqual([
       { unitId: 'u1', role: 'employee' },
       { unitId: 'u2', role: 'manager' },
