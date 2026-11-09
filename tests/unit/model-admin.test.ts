@@ -39,13 +39,14 @@ function world() {
     hassan = persona('hassan', 'employee');
   const store = memoryModelStore(),
     health = memoryModelHealth();
+  const endpoints = {
+    'http://llm.test/v1': { models: ['gpt-oss:120b', 'gpt-oss:20b'], key: KEY },
+    'http://lokal.test/v1': { noList: true },
+    'http://nere.test/v1': { down: true },
+    'http://resonerar.test/v1': { models: ['tankande'], refusesReasoningTools: true },
+  };
   const wire = memoryModelWire({
-    endpoints: {
-      'http://llm.test/v1': { models: ['gpt-oss:120b', 'gpt-oss:20b'], key: KEY },
-      'http://lokal.test/v1': { noList: true },
-      'http://nere.test/v1': { down: true },
-      'http://resonerar.test/v1': { models: ['tankande'], refusesReasoningTools: true },
-    },
+    endpoints,
     generate: async () => ({ text: 'ok', toolCalls: [] }),
   });
   let now = Date.parse(T0);
@@ -67,6 +68,7 @@ function world() {
     store,
     health,
     wire,
+    endpoints,
     models,
     advance: (ms: number) => {
       now += ms;
@@ -258,31 +260,52 @@ describe('providers', () => {
       'provider.key',
     ]);
   });
-  test('Testa names a model that refuses a turn, and the setting that fixes it is audited and reaches the call', async () => {
+  test('Testa settles reasoning: off only when the provider refuses tools with it, audited, and back when it stops', async () => {
     const w = world();
     await w.models.addProvider(w.mikael, { id: 'tanke', title: 'Tanke', baseUrl: 'http://resonerar.test/v1' });
     const { id } = await w.models.addModel(w.mikael, { providerId: 'tanke', model: 'tankande' });
-    const refused = await w.models.testModel(w.mikael, id);
-    expect(refused).toMatchObject({ ok: false, health: { status: 'ok' } });
-    expect(refused.findings[0]!.text).toContain('vägrar anropet');
-    expect(refused.findings[0]!.text).toContain('tools with reasoning');
-    const updated = await w.models.updateModel(w.mikael, id, {
-      reasoning: 'none',
-      state: 'enabled',
-      isDefault: true,
-    });
-    expect(updated.reasoning).toBe('none');
-    expect(w.store.audit.find(a => a.action === 'model.reasoning')).toMatchObject({
-      actor: 'person:mikael',
-      subject: 'model:' + id,
-      details: { from: 'provider-default', to: 'none' },
-    });
-    expect(await w.models.testModel(w.mikael, id)).toMatchObject({ ok: true });
+    await w.models.updateModel(w.mikael, id, { state: 'enabled', isDefault: true });
+    const pings = () => w.wire.calls.filter(c => c.kind === 'ping').map(c => c.reasoning);
+    const settled = await w.models.testModel(w.mikael, id);
+    expect(settled).toMatchObject({ ok: true, health: { status: 'ok' } });
+    expect(settled.findings.map(f => f.text).join(' ')).toContain('utan resonemang');
+    expect(pings()).toEqual(['provider-default', 'none']);
+    expect((await w.models.readModel(w.mikael, id)).reasoning).toBe('none');
+    expect(w.store.audit.filter(a => a.action === 'model.reasoning')).toEqual([
+      expect.objectContaining({
+        actor: 'person:mikael',
+        subject: 'model:' + id,
+        details: { from: 'provider-default', to: 'none', found: 'test' },
+      }),
+    ]);
     await (await w.models.resolve(w.hillevi))!.generate({ system: '', messages: [], tools: {}, timeoutMs: 1000 });
     expect(w.wire.calls.at(-1)).toMatchObject({ kind: 'generate', reasoning: 'none' });
-    const audited = w.store.audit.length;
-    await w.models.updateModel(w.mikael, id, { reasoning: 'none' });
-    expect(w.store.audit).toHaveLength(audited);
+    // The same answer again writes nothing; a provider that starts taking the call gets its default back.
+    await w.models.testModel(w.mikael, id);
+    expect(w.store.audit.filter(a => a.action === 'model.reasoning')).toHaveLength(1);
+    w.endpoints['http://resonerar.test/v1'].refusesReasoningTools = false;
+    expect((await w.models.testModel(w.mikael, id)).findings).toHaveLength(1);
+    expect((await w.models.readModel(w.mikael, id)).reasoning).toBe('provider-default');
+    expect(w.store.audit.at(-1)).toMatchObject({
+      action: 'model.reasoning',
+      details: { from: 'none', to: 'provider-default', found: 'test' },
+    });
+  });
+  test('Testa leaves reasoning alone when the call fails for another reason or the model has no tools', async () => {
+    const w = world();
+    await w.models.addProvider(w.mikael, { id: 'tanke', title: 'Tanke', baseUrl: 'http://resonerar.test/v1' });
+    const wrong = await w.models.addModel(w.mikael, { providerId: 'tanke', model: 'finns-inte' });
+    const refused = await w.models.testModel(w.mikael, wrong.id);
+    expect(refused).toMatchObject({ ok: false, health: { status: 'ok' } });
+    expect(refused.findings[0]!.text).toContain('vägrar anropet');
+    expect(refused.findings[0]!.text).toContain('model not found');
+    const quiet = await w.models.addModel(w.mikael, { providerId: 'tanke', model: 'tankande', tools: false });
+    const before = w.wire.calls.length;
+    expect(await w.models.testModel(w.mikael, quiet.id)).toMatchObject({ ok: true });
+    expect(w.wire.calls.slice(before)).toEqual([
+      expect.objectContaining({ kind: 'ping', reasoning: 'provider-default' }),
+    ]);
+    expect(w.store.audit.some(a => a.action === 'model.reasoning')).toBe(false);
   });
   test('a provider goes only after its models', async () => {
     const w = world();

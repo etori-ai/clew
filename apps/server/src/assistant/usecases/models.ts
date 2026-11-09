@@ -7,6 +7,7 @@ import type {
   ModelChoice,
   ModelDetail,
   ModelPatchInput,
+  ModelReasoning,
   ModelSummary,
   ProviderDetail,
   ProviderHealth,
@@ -331,7 +332,7 @@ export function modelUsecases(deps: ModelDeps) {
     return modelDetail((await store.readModel(id))!);
   }
   /**
-   * Name, description, the endpoint's id, on or off, the audience, the tools switch, reasoning and the default. One audit
+   * Name, description, the endpoint's id, on or off, the audience, the tools switch and the default. One audit
    * row per changed field. The default is one switched-on model: setting it clears the previous one (its own row says so), and
    * switching the default off clears its flag too.
    */
@@ -366,10 +367,6 @@ export function modelUsecases(deps: ModelDeps) {
       next.tools = patch.tools;
       changes.push({ action: 'model.tools', details: { to: patch.tools } });
     }
-    if (patch.reasoning !== undefined && patch.reasoning !== row.reasoning) {
-      next.reasoning = patch.reasoning;
-      changes.push({ action: 'model.reasoning', details: { from: row.reasoning, to: patch.reasoning } });
-    }
     const isDefault = patch.isDefault ?? (state === 'disabled' ? false : row.isDefault);
     if (isDefault !== row.isDefault) {
       next.isDefault = isDefault;
@@ -401,21 +398,41 @@ export function modelUsecases(deps: ModelDeps) {
     });
     return modelDetail((await store.readModel(id))!);
   }
-  /** "Testa" on a model: one tiny completion shaped like a turn, with its provider's key. The provider's health follows. */
+  /**
+   * "Testa" on a model: one tiny completion shaped like a turn, with its provider's key. The provider's health follows.
+   * It also settles the model's reasoning (D82): the call goes as the provider's default first, and only when the
+   * provider refuses it with tools does the same call go again with reasoning off. The answer is the model's setting from
+   * then on, written with its audit row when it changes, so a provider that later accepts the default gets it back.
+   */
   async function testModel(persona: AuthenticatedContext, id: string): Promise<ProviderTestReport> {
     requireAdmin(persona);
     const row = await mustModel(id);
     const provider = await mustProvider(row.providerId);
+    const endpoint = endpointOf(provider);
     const at = clock().toISOString();
     let report: ProviderTestReport;
     try {
-      await wire.ping(endpointOf(provider), row.model, row);
-      report = {
-        ok: true,
-        models: [],
-        health: { status: 'ok', at },
-        findings: [{ level: 'ok', text: `${row.title} svarar.` }],
-      };
+      const reasoning = await settleReasoning(endpoint, row);
+      const findings: CheckFinding[] = [{ level: 'ok', text: `${row.title} svarar.` }];
+      if (reasoning === 'none')
+        findings.push({
+          level: 'ok',
+          text: 'Leverantören tar inte verktyg medan modellen resonerar, så Clew ber modellen svara utan resonemang.',
+        });
+      if (reasoning !== row.reasoning) {
+        await persona.authorize();
+        await store.transaction(async tx => {
+          await tx.updateModel(id, { reasoning }, persona.principal.id, at);
+          await tx.writeAudit({
+            actor: persona.principal.id,
+            action: 'model.reasoning',
+            subject: 'model:' + id,
+            at,
+            details: { from: row.reasoning, to: reasoning, found: 'test' },
+          });
+        });
+      }
+      report = { ok: true, models: [], health: { status: 'ok', at }, findings };
     } catch (error) {
       const h = healthOf(error, at);
       const text =
@@ -433,6 +450,23 @@ export function modelUsecases(deps: ModelDeps) {
     }
     await record(row.providerId, report.health);
     return report;
+  }
+  /**
+   * The reasoning a model's turns need: the provider's default when it takes the call, otherwise `none` when that call is
+   * taken. A refusal is not read from its text; the same call failing one way and passing the other is the evidence.
+   * Any other failure, or a second refusal, is the first call's error.
+   */
+  async function settleReasoning(endpoint: Endpoint, row: ModelRecord): Promise<ModelReasoning> {
+    try {
+      await wire.ping(endpoint, row.model, { tools: row.tools, reasoning: 'provider-default' });
+      return 'provider-default';
+    } catch (error) {
+      if (!row.tools || !(error instanceof WireError) || error.kind !== 'unsupported') throw error;
+      await wire.ping(endpoint, row.model, { tools: true, reasoning: 'none' }).catch(() => {
+        throw error;
+      });
+      return 'none';
+    }
   }
   /** The model goes, and every person who had picked it falls back to the default. */
   async function removeModel(persona: AuthenticatedContext, id: string): Promise<{ removed: true }> {

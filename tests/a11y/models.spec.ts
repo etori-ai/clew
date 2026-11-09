@@ -89,18 +89,18 @@ test.describe('model administration', () => {
       await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Snabb (lokal) är avstängd'));
       expect((await focused(page)).tag).toBe('input');
     });
-    test('the reasoning switch is reached by keyboard, keeps focus and says what it did', async ({ page, api }) => {
+    test('Testa says what it found, and the reasoning it settled is a sentence, not a switch (D82)', async ({
+      page,
+      api,
+    }) => {
       api.admin = true;
       await open(page, '/admin/models/gpt-oss-120b');
-      const toggle = page.getByRole('switch', { name: /^Utan resonemang/ });
-      await expect(toggle).not.toBeChecked();
-      await toggle.focus();
-      await page.keyboard.press('Space');
-      await expect(toggle).toBeChecked();
-      await expect
-        .poll(() => announcements(page))
-        .toContainEqual(expect.stringContaining('Modellen svarar utan resonemang'));
-      expect((await focused(page)).tag).toBe('input');
+      await expect(page.getByRole('switch', { name: /resonemang/i })).toHaveCount(0);
+      await expect(page.getByText('Leverantörens standard', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Testa', exact: true }).click();
+      await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('svarar'));
+      await expect(page.getByRole('list', { name: 'Testets resultat' })).toBeVisible();
+      await expectNoAxeViolations(page);
     });
     test('adding a provider runs by keyboard: errors named, the step heading takes focus, the listed models are ticked and added', async ({
       page,

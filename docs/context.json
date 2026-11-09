@@ -948,9 +948,9 @@
       "key": "D82-a-models-reasoning-is-its-own-setting",
       "number": 82,
       "path": "docs/decisions/D82-a-models-reasoning-is-its-own-setting.md",
-      "title": "D82 · A model's reasoning is its own setting, and \"Testa\" tries a real turn's shape",
-      "status": "accepted, built 2026-11-07",
-      "date": "2026-11-07",
+      "title": "D82 · A model's reasoning is its own setting, and \"Testa\" settles it",
+      "status": "accepted, built 2026-11-09",
+      "date": "2026-11-07, revised 2026-11-09",
       "area": "product"
     }
   ],
@@ -1801,7 +1801,7 @@
     },
     {
       "path": "docs/decisions/D82-a-models-reasoning-is-its-own-setting.md",
-      "title": "D82 · A model's reasoning is its own setting, and \"Testa\" tries a real turn's shape",
+      "title": "D82 · A model's reasoning is its own setting, and \"Testa\" settles it",
       "category": "decision-history",
       "headings": []
     },

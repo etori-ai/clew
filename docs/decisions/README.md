@@ -95,7 +95,7 @@ Historical numbering collisions: **D37, D38, D39, D44, D45, D46** each identify 
 | [D79 · Semantic views and versioned document review](D79-semantic-views-and-versioned-document-review.md) | integrations, ui, authorization | 2026-11-08 | accepted for implementation |
 | [D80 · Recover rejected rows without replaying confirmed writes](D80-recover-rejected-rows-without-replaying-confirmed-writes.md) | integrations, ui, authorization | 2026-11-08 | accepted, implemented |
 | [D81 · MCP Apps extend AI chat with provider-owned interactions](D81-mcp-apps-extend-ai-chat-with-provider-owned-interactions.md) | integrations | 2026-11-08 | accepted direction; prototype only |
-| [D82 · A model's reasoning is its own setting, and "Testa" tries a real turn's shape](D82-a-models-reasoning-is-its-own-setting.md) | product | 2026-11-07 | accepted, built 2026-11-07 |
+| [D82 · A model's reasoning is its own setting, and "Testa" settles it](D82-a-models-reasoning-is-its-own-setting.md) | product | 2026-11-07, revised 2026-11-09 | accepted, built 2026-11-09 |
 
 ## Add a decision
 
