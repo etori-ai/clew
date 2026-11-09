@@ -1,3 +1,4 @@
+import type { Locator } from '@playwright/test';
 import { announcements, composer, desktop, expect, expectNoAxeViolations, heading, open, test } from './support';
 
 test.use({ viewport: desktop });
@@ -61,6 +62,41 @@ test.describe('the answer on its way', () => {
     await expect(page.getByRole('log')).toHaveCount(0);
     await expect(composer(page)).toHaveText('Vem är på plats?');
   });
+
+  // D92: the conversation takes Hem's place with Astryx's fade and Hem comes back with one; under reduced motion both are
+  // there at once. (Hem's own first entrance is D76's, tested in loading.spec.ts.)
+  for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+    test(`the conversation fades in over Hem, Hem fades back, and ${reducedMotion} motion is respected`, async ({
+      page,
+      api,
+    }) => {
+      await page.emulateMedia({ reducedMotion });
+      await open(page, '/');
+      /** Whether anything from the element up to the main region is animated. */
+      const entering = (from: Locator) =>
+        from.evaluate(el => {
+          for (let e: Element | null = el; e && e.tagName !== 'MAIN'; e = e.parentElement) {
+            const s = getComputedStyle(e);
+            if (s.animationName !== 'none' && s.animationDuration.split(',').some(value => parseFloat(value) > 0))
+              return true;
+          }
+          return false;
+        });
+      const release = api.holdAnswer();
+      const input = composer(page);
+      await input.fill('Vem är på plats?');
+      await input.press('Enter');
+      const log = page.getByRole('log');
+      await expect(log).toContainText('Vem är på plats?');
+      expect(await entering(log)).toBe(reducedMotion === 'no-preference');
+      release();
+      await expect(log).not.toHaveAttribute('aria-busy', 'true');
+      await page.getByRole('button', { name: 'Stäng samtalet' }).click();
+      const greeting = heading(page, 1, 'Hej Testa');
+      await expect(greeting).toBeVisible();
+      expect(await entering(greeting)).toBe(reducedMotion === 'no-preference');
+    });
+  }
 
   test('the box stays where it is while "Menar du" comes and goes under it', async ({ page, api: _ }) => {
     await open(page, '/');

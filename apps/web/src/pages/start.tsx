@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { keepPreviousData, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Area, MenuEntry, SessionUser, Thread, ViewRef, PanelViewSpec } from '@clew/contracts';
@@ -34,6 +34,7 @@ import {
   Text,
   VStack,
   useAnnounce,
+  useEntryAnimation,
   useMediaQuery,
   useToast,
 } from '@clew/ui';
@@ -54,6 +55,17 @@ import { Composer, Suggestions, type ComposerAbout } from '../components/compose
 import { PageHeader } from '../components/page-header';
 import { titled, useConversation, type ConversationState } from '../components/conversation-context';
 import { Transcript } from '../components/conversation';
+
+type EntryStyle = NonNullable<ReturnType<typeof useEntryAnimation>> | undefined;
+/**
+ * The column fades in when it changes hands (D92): the conversation taking Hem's place when a question is sent, and Hem
+ * coming back when the conversation closes. Keyed by whose turn it is, so each hand-over mounts anew and gets Astryx's
+ * entry motion; what is on the page from the first paint does not animate, and reduced motion shows it at once.
+ */
+function Entering({ children }: { children: (entry: EntryStyle) => ReactNode }) {
+  const entry = useEntryAnimation('fadeIn');
+  return <>{children(entry ?? undefined)}</>;
+}
 import { toolHref, useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { GenericCard, ThreadRow } from '../components/card';
@@ -1039,10 +1051,10 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   );
 
   /** What the column holds: the transcript when a conversation is open (D31), else Hem. The panel is the Layout's end. */
-  const column = () => {
+  const column = (entry: EntryStyle) => {
     if (talk.open)
       return short ? (
-        <VStack gap={4} padding={3}>
+        <VStack gap={4} padding={3} xstyle={entry}>
           {conversationHeader}
           {transcript}
           <Composer place="conversation" />
@@ -1051,6 +1063,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         // The same gutter as every page (D74 item 3): the Layout's padding reaches the header, so the title stands 32 px in
         // from the rail and 32 px down on a desktop, 12 on a phone.
         <Layout
+          xstyle={entry}
           height="fill"
           padding={mobile ? 3 : 8}
           defaultHasDividers
@@ -1071,11 +1084,12 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     // Hem (D53, artboard A): the content takes the width the rail leaves, the panel beside it only while something is open (D72),
     // the box in the page flow under the greeting; on a phone the box is docked at the foot, and on a short screen nothing is docked.
     return short ? (
-      <VStack gap={4} padding={3}>
+      <VStack gap={4} padding={3} xstyle={entry}>
         {landing()}
       </VStack>
     ) : (
       <Layout
+        xstyle={entry}
         height="fill"
         padding={0}
         end={slot.end}
@@ -1144,7 +1158,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           ) : undefined
         }
       >
-        {column()}
+        <Entering key={talk.open ? 'conversation' : 'hem'}>{column}</Entering>
       </Shell>
       {slot.overlay}
       {sheet}
