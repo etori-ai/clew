@@ -1,40 +1,42 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { SessionUser } from '@clew/contracts';
 import {
   AppShell,
   Button,
-  Dialog,
-  DialogHeader,
-  RadioList,
-  RadioListItem,
   SideNav,
-  SideNavHeading,
   SideNavItem,
   SideNavSection,
-  Text,
-  UserCircleIcon,
   VStack,
   signOut,
   useAppearance,
+  useMediaQuery,
   useToast,
   Divider,
   HStack,
   StackItem,
 } from '@clew/ui';
+import { createHeaderBandTheme } from '@clew/ui/theme';
+import { SiteHeader, SiteHeaderPerson, selectedItem, type SiteMenu } from '@clew/site-header';
 import { branding } from '../branding';
-import { threadsQuery } from '../queries';
+import { headerQuery, threadsQuery } from '../queries';
 import { useSourceBanner } from './source-banner';
 import { api } from '../api';
 import { ReminderBell } from './reminders';
-
-const headerLogo = branding.logo;
 
 /** AppShell moves the SideNav into a drawer below its `md` breakpoint (768 px); every phone decision in the app follows the same line. */
 export const mobileQuery = '(max-width: 767px)';
 /** 1.4.10: with 480 px or less in height nothing is pinned; the page scrolls as one. */
 export const shortQuery = '(max-height: 480px)';
+/** The band's theme (D88) is the installation's, so it is built once with the build's branding. */
+const bandTheme = createHeaderBandTheme(branding);
+/** Until the installation's header has arrived: the site's name and Start, so the bar keeps its height and heading. */
+const PENDING_MENU: SiteMenu = {
+  version: 1,
+  site: { name: 'Startsidan', href: '/' },
+  items: [{ id: 'start', label: 'Start', href: '/' }],
+};
 
 /**
  * The rows under a rail row that opens (D56). Astryx indents them only as far as the parent's label, so they read as its
@@ -64,26 +66,29 @@ type Props = {
   height?: 'fill' | 'auto';
   children: ReactNode;
 };
-/** One shell for every surface (D31, D39); Astryx owns navigation, overlays and focus restoration. */
+/**
+ * One shell for every surface (D31, D39, D88); Astryx owns navigation, overlays and focus restoration. The shared header
+ * (`@clew/site-header`) is the top bar: the installation's logo and name, the reminder bell and the person on the band,
+ * the places the person's header connector lists under them (D88), and the current place's own pages under the band. The rail keeps
+ * Clew's own places and conversations. On a phone the shell draws the band's heading row as its bar and the places go
+ * into the drawer with the rail.
+ */
 export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   const { mode, setMode, isPersistent } = useAppearance();
-  const logoSrc = mode === 'dark' && headerLogo?.darkSrc ? headerLogo.darkSrc : headerLogo?.src;
-  const [failedLogo, setFailedLogo] = useState<string | null>(null);
-  const [navigationOpen, setNavigationOpen] = useState(false);
-  // Every row in the phone drawer asks to close it. Settings opens over the drawer instead, so its row is still there for Escape to return focus to (2.4.3).
-  const keepNavigation = useRef(false);
-  const changeNavigation = (open: boolean) => {
-    if (open || !keepNavigation.current) setNavigationOpen(open);
-    keepNavigation.current = false;
-  };
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
+  const mobile = useMediaQuery(mobileQuery);
   const toast = useToast();
   const location = useLocation(),
     navigate = useNavigate();
   const deliveryAttempts = useRef(new Set<string>());
   // The same session-scoped cache as the start page carries reminder cards and pending delivery claims.
   const threadsQ = useQuery(threadsQuery);
+  // The header is public and the same for everyone; a save on Sidhuvud invalidates it for the administrator at once.
+  const headerQ = useQuery(headerQuery);
+  const menu = headerQ.data?.menu ?? PENDING_MENU;
+  const here = window.location.origin + location.pathname + location.search;
+  const selected = selectedItem(menu, here);
+  // The connector's logo when it gives one, else the installation's own (D37/D38).
+  const logo = headerQ.data?.logo ?? branding.logo;
   // A system that does not answer is said at the top of every page (D8, D71 artboard 8), under the page's own banner.
   const silent = useSourceBanner();
   const deliveryContext = useRef(threadsQ.data),
@@ -128,120 +133,73 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
         });
     }
   }, [threadsQ.data, toast, navigate]);
-  useEffect(() => {
-    setNavigationOpen(false);
-  }, [location.key]);
   const logout = async () => {
-    setSigningOut(true);
     try {
       await signOut();
     } catch (error) {
       toast({ type: 'error', body: error instanceof Error ? error.message : 'Kunde inte logga ut. Försök igen.' });
-    } finally {
-      setSigningOut(false);
     }
   };
   return (
-    <>
-      <AppShell
-        height={height}
-        variant="elevated"
-        contentPadding={0}
-        mobileNav={{ breakpoint: 'md', isOpen: navigationOpen, onOpenChange: changeNavigation }}
-        banner={
-          banner || silent ? (
-            <VStack gap={0}>
-              {banner}
-              {silent}
-            </VStack>
-          ) : undefined
-        }
-        sideNav={
-          <SideNav
-            header={
-              <SideNavHeading
-                heading="Startsidan"
-                headingHref="/"
-                headerEndContent={<ReminderBell />}
-                icon={
-                  headerLogo && logoSrc !== failedLogo ? (
-                    <img
-                      src={logoSrc}
-                      alt={headerLogo.alt}
-                      width={20}
-                      height={20}
-                      style={{
-                        width: 20,
-                        height: 20,
-                        objectFit: 'contain',
-                        padding: 'var(--spacing-3)',
-                        boxSizing: 'content-box',
-                        backgroundColor: mode === 'dark' && !headerLogo.darkSrc ? 'var(--color-on-dark)' : undefined,
-                      }}
-                      onError={() => setFailedLogo(logoSrc ?? null)}
-                    />
-                  ) : undefined
-                }
+    <AppShell
+      height={height}
+      // `section`: with a top bar Astryx paints the rail and the page on one surface and parts them with a divider (D88).
+      variant="section"
+      contentPadding={0}
+      mobileNav={{ breakpoint: 'md' }}
+      banner={
+        banner || silent ? (
+          <VStack gap={0}>
+            {banner}
+            {silent}
+          </VStack>
+        ) : undefined
+      }
+      topNav={
+        <SiteHeader
+          menu={menu}
+          selected={selected}
+          location={here}
+          logo={logo}
+          // No band on a phone: the shell's bar carries the drawer, which would inherit the band's colours (D88).
+          band={mobile ? undefined : bandTheme}
+          end={
+            <HStack gap={2} vAlign="center">
+              <ReminderBell />
+              <SiteHeaderPerson
+                name={user.name}
+                description={user.unitLabel}
+                onSignOut={() => void logout()}
+                appearance={{ mode, onChange: setMode, isPersistent }}
               />
-            }
-            topContent={nav.top}
-            footer={
+            </HStack>
+          }
+        />
+      }
+      sideNav={
+        <SideNav
+          topContent={nav.top}
+          footer={
+            nav.footer ? (
               <SideNavSection title="Alltid" isHeaderHidden>
                 {nav.footer}
-                {/* The last row of the rail, a disclosure like Administration above it. Not in `footerIcons`: Astryx draws those in the phone top bar too (D39). */}
-                <SideNavItem label={user.name} icon={UserCircleIcon} collapsible={{ defaultIsCollapsed: true }}>
-                  <SubRows>
-                    <SideNavItem
-                      label="Inställningar"
-                      onClick={() => {
-                        keepNavigation.current = true;
-                        setSettingsOpen(true);
-                      }}
-                    />
-                    <SideNavItem
-                      label={signingOut ? 'Loggar ut …' : 'Logga ut'}
-                      isDisabled={signingOut}
-                      onClick={() => {
-                        void logout();
-                      }}
-                    />
-                  </SubRows>
-                </SideNavItem>
               </SideNavSection>
-            }
-          >
-            {nav.sections}
-          </SideNav>
-        }
-      >
-        {children}
-      </AppShell>
-      <Dialog isOpen={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogHeader title="Inställningar" onOpenChange={setSettingsOpen} />
-        <VStack gap={4} padding={3}>
-          <VStack gap={1}>
-            <Text weight="semibold">{user.name}</Text>
-            <Text type="supporting">{user.unitLabel}</Text>
-          </VStack>
-          <RadioList
-            label="Utseende"
-            value={mode}
-            onChange={value => {
-              if (value === 'system' || value === 'light' || value === 'dark') setMode(value);
-            }}
-            description={
-              isPersistent
-                ? 'Valet sparas i den här webbläsaren.'
-                : 'Webbläsaren tillåter inte att valet sparas. Det gäller tills du laddar om sidan.'
-            }
-          >
-            <RadioListItem value="system" label="Samma som datorn" />
-            <RadioListItem value="light" label="Ljust" />
-            <RadioListItem value="dark" label="Mörkt" />
-          </RadioList>
-          <Button label="Stäng" variant="secondary" onClick={() => setSettingsOpen(false)} />
-        </VStack>
-      </Dialog>
-    </>
+            ) : undefined
+          }
+        >
+          {/* On a phone the header's places are rows in the drawer, since the bar holds only the heading there. Every row is a link to its address. */}
+          {mobile ? (
+            <SideNavSection title="Huvudmeny">
+              {menu.items.map(item => (
+                <SideNavItem key={item.id} label={item.label} href={item.href} isSelected={item.id === selected} />
+              ))}
+            </SideNavSection>
+          ) : null}
+          {nav.sections}
+        </SideNav>
+      }
+    >
+      {children}
+    </AppShell>
   );
 }

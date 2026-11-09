@@ -34,12 +34,14 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
         // By level, not by tag: the calendar's month on a phone is an h3 that says level 1.
         await expect(page.getByRole('main').locator('h1:not([aria-level]), [aria-level="1"]')).toBeVisible();
         await page.evaluate(() => document.fonts.ready.then(() => undefined));
-        const nav = await openNav(page);
-        const heading = nav.locator('.astryx-side-nav-heading');
-        const home = nav.getByRole('link', { name: /Startsidan/ });
+        // The logo and the name stand in the shared header's band (D88), the shell's banner, on every width.
+        const header = page.getByRole('banner');
+        const heading = header.locator('.astryx-top-nav-heading').first();
+        const home = header.getByRole('link', { name: /Startsidan/ });
         await expect(home).toBeVisible();
         await expect(home).toHaveAccessibleName(/Startsidan/);
-        const brand = await home.evaluate(element => {
+        // The page's own tokens: the band swaps them for its own, so they are read on the page.
+        const brand = await page.getByRole('main').evaluate(element => {
           const style = getComputedStyle(element);
           return {
             accent: style.getPropertyValue('--color-accent'),
@@ -51,19 +53,18 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
         if (expectedLogo) {
           const logo = heading.getByRole('img', { name: expectedLogo.alt, exact: true });
           await expect(logo).toBeVisible();
-          await expect(logo).toHaveAttribute('src', expectedLogo.src);
+          // On the band the dark variant is drawn (Sundsvall's white dragon); a logo without one keeps its own ground.
+          await expect(logo).toHaveAttribute('src', expectedLogo.darkSrc ?? expectedLogo.src);
           await expect(logo).toHaveJSProperty('complete', true);
-          expect(await logo.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
-          if (profile === 'sundsvall') {
-            const clearance = await logo.evaluate((img: HTMLImageElement) => {
-              const style = getComputedStyle(img);
-              return {
-                padding: parseFloat(style.paddingTop),
-                symbolWidth: (parseFloat(style.height) * img.naturalWidth) / img.naturalHeight,
-              };
-            });
-            expect(clearance.padding).toBeGreaterThanOrEqual(clearance.symbolWidth);
-          }
+          const shape = await logo.evaluate((img: HTMLImageElement) => ({
+            natural: img.naturalWidth / img.naturalHeight,
+            drawn: img.getBoundingClientRect().width / img.getBoundingClientRect().height,
+            height: img.getBoundingClientRect().height,
+          }));
+          expect(shape.natural).toBeGreaterThan(0);
+          // Never cropped, stretched or filtered (D37): the mark keeps its proportions at the row's height.
+          expect(Math.abs(shape.drawn - shape.natural)).toBeLessThan(0.05);
+          expect(shape.height).toBe(28);
         } else {
           await expect(heading.getByRole('img')).toHaveCount(0);
         }
@@ -79,14 +80,14 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
   if (expectedLogo)
     test('a failed image request leaves a named, working home link', async ({ page, api: _ }) => {
       let failedRequests = 0;
-      await page.route(`**${expectedLogo.src}`, route => {
+      await page.route(`**${expectedLogo.darkSrc ?? expectedLogo.src}`, route => {
         failedRequests++;
         return route.abort();
       });
       await page.goto('/calendar');
-      const nav = await openNav(page);
-      const heading = nav.locator('.astryx-side-nav-heading');
-      const home = nav.getByRole('link', { name: /Startsidan/ });
+      const header = page.getByRole('banner');
+      const heading = header.locator('.astryx-top-nav-heading').first();
+      const home = header.getByRole('link', { name: /Startsidan/ });
       await expect(home).toBeVisible();
       await expect.poll(() => failedRequests).toBeGreaterThan(0);
       await expect(heading.getByRole('img')).toHaveCount(0);
@@ -95,7 +96,9 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
       await expect(page).toHaveURL('/');
     });
 
-  test('the rail reads as its own area and its selected row stands out, in both appearances and in the phone drawer (D46)', async ({
+  // With the shared header above (D88) Astryx paints the rail and the page on one surface and parts them with a divider,
+  // so the rail's own area is the divider's, not a colour's; the selected row still stands out from its rail.
+  test("the rail's selected row stands out, in both appearances and in the phone drawer (D46, D88)", async ({
     page,
     api: _,
   }) => {
@@ -111,7 +114,8 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
         }
         return 'none';
       });
-    const selectedIn = (nav: Locator) => nav.locator('a[aria-current="page"]');
+    // The header's Start row (D88) is current on every page too; the rail's own current row is the page's.
+    const selectedIn = (nav: Locator) => nav.locator('a[aria-current="page"]:not([href="/"])');
     const standsOut = async (nav: Locator) =>
       (await painted(selectedIn(nav))) !== (await painted(selectedIn(nav).locator('xpath=..')));
     const rail = page.locator('.astryx-app-shell-sidenav');
@@ -124,15 +128,14 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
     await open(page, '/calendar');
     for (const appearance of ['light', 'dark'] as const) {
       if (appearance === 'dark') {
-        await page.getByRole('button', { name: 'Testa Testsson', exact: true }).click();
-        await page.getByRole('button', { name: 'Inställningar', exact: true }).click();
+        await page.getByRole('button', { name: 'Testa Testsson, inställningar', exact: true }).click();
         await page.getByRole('radio', { name: 'Mörkt', exact: true }).check();
         await page.keyboard.press('Escape');
       }
       await expect
         .poll(async () => {
           const now = await colours();
-          return now.rail !== now.page && now.selected !== now.rail;
+          return now.selected !== now.rail;
         })
         .toBe(true);
     }
@@ -145,7 +148,7 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
 
   test('appearance changes the theme and survives navigation and reload', async ({ page, api: _ }) => {
     await page.goto('/');
-    const profileButton = page.getByRole('button', { name: 'Testa Testsson', exact: true });
+    const profileButton = page.getByRole('button', { name: 'Testa Testsson, inställningar', exact: true });
     await expect(profileButton).toBeVisible();
     await expect(page.getByRole('main').getByRole('heading', { level: 1 }).first()).toBeVisible();
     const appearance = () =>
@@ -159,7 +162,6 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
         }));
     const light = await appearance();
     await profileButton.click();
-    await page.getByRole('button', { name: 'Inställningar', exact: true }).click();
     await page.getByRole('radio', { name: 'Mörkt', exact: true }).check();
     const dark = await appearance();
     expect(dark.mode).toBe('dark');
@@ -180,7 +182,6 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
     await expect(profileButton).toBeVisible();
     await expect.poll(async () => (await appearance()).mode).toBe(dark.mode);
     await profileButton.click();
-    await page.getByRole('button', { name: 'Inställningar', exact: true }).click();
     await page.getByRole('radio', { name: 'Ljust', exact: true }).check();
     // The default follows the computer, so it has both schemes open; Ljust fixes one, with the same colour.
     expect(light.mode).toBe('light dark');

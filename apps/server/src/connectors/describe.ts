@@ -37,5 +37,6 @@ export function describeBundled(connector: Connector): ConnectorManifest {
     })),
     ...(connector.facts ? { facts: connector.facts.map(f => ({ kind: f.kind, title: f.title, attributes: {} })) } : {}),
     scan: !!connector.scan,
+    ...(connector.header ? { header: { capability: connector.header } } : {}),
   };
 }

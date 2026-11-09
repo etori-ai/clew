@@ -30,6 +30,7 @@ Paths are relative to the registered connector base URL. Bodies and responses ar
 | `POST /clew/capabilities/{name}` | `CallRequest` (`actor`, `input`) | `CallResponse` (`output` or `error`) | For declared capabilities; `{name}` is the full capability name. |
 | `POST /clew/scan` | `ScanRequest` | `ScanResponse` (`drafts`, optional `observation`) | When `scan: true`. |
 | `POST /clew/figure` | `FigureRequest` (`actor`, `area`) | `FigureResponse` (`figure` or null) | For an area declaring `figure: true`. |
+| `POST /clew/capabilities/<header capability>` | `CallRequest` | `CallResponse` whose `output` is a `SiteHeaderOutput` (`site`, `items` with their `children`, optional `logo`) | When the manifest declares `header: { capability }` ([D88](../decisions/D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md)): the read that gives Clew its shared header for the acting person. A read without input; the first enabled declaring connector in registration order answers. |
 
 Every POST requires both `Authorization: Bearer <Clew assertion>` and `X-Clew-Connector-Key: <transport key>`. Trust the actor from the verified assertion, not the body. See [authorization](../guides/authorization.md) for exact claims, callbacks and optional delegated tokens.
 

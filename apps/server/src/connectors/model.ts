@@ -27,6 +27,8 @@ export interface ConnectorRecord {
   audience: ConnectorAudience;
   scanEnabled: boolean;
   toolsEnabled: boolean;
+  /** Gives Clew its shared header (D88): at most one row, chosen by an administrator. */
+  header: boolean;
   capabilities: Record<string, CapabilityOverride>;
   /** Per area of the manifest (D54): `figure: false` when its figure is switched off on Hem. */
   areas: Record<string, AreaOverride>;
@@ -62,6 +64,7 @@ export type ConnectorPatch = Partial<
     | 'audience'
     | 'scanEnabled'
     | 'toolsEnabled'
+    | 'header'
     | 'capabilities'
     | 'areas'
     | 'manifest'

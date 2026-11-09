@@ -4,6 +4,8 @@ A **provisioner** is the one thing that puts people, units and groups into a Cle
 
 The repository ships one: `scripts/provisioner/`, which pushes the development stack's directory. Read it alongside this page; it is about two hundred lines.
 
+![How people enter Clew: the source, the provisioner, the SCIM server, the stored tables, the derivation and the person's grant](../architecture/figures/provisioning-flow.svg)
+
 ## What Clew expects
 
 **Users** (`/scim/v2/Users`, RFC 7643 core schema). Four attributes are required beyond the standard's `userName`, and Clew names the missing one in the error:
@@ -17,6 +19,8 @@ The repository ships one: `scripts/provisioner/`, which pushes the development s
 | `active` | `false` deactivates. `DELETE` also deactivates, because audit rows and threads reference the person; nothing is erased. |
 
 Extension schemas and unknown attributes are accepted and ignored, as the standard asks.
+
+![What a pushed group means: keys in externalId give units, manager roles and capabilities; any other group may be mapped by an administrator](../architecture/figures/group-keys.svg)
 
 **Groups** (`/scim/v2/Groups`). Every group is stored as pushed. Meaning is carried by a key in the group's `externalId`:
 

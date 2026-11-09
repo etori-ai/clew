@@ -110,6 +110,8 @@ export const cardViewQuery = (threadId: string, actionId: string) =>
   });
 
 /** Administration (D23). The detail read keeps its 400 for the page to turn into "Anslutningen finns inte". */
+/** The shared header (D88): what the person's header connector lists for them, read once per visit. */
+export const headerQuery = queryOptions({ queryKey: keys.header, queryFn: () => api.header(), staleTime: Infinity });
 export const adminQueries = {
   connectors: queryOptions({ queryKey: keys.admin.connectors, queryFn: () => api.admin.connectors() }),
   units: queryOptions({ queryKey: keys.admin.units, queryFn: () => api.admin.units() }),

@@ -145,6 +145,8 @@ For a synthetic colleague, the minimal example responds:
 
 The list is scoped by the verified actor's unit and source permissions. A ref must stay stable and must be checked again if a later capability accepts it. Do not add `/clew/scan` or `/clew/figure` until you declare those features.
 
+A content system (an intranet on Sitevision, SharePoint or WordPress) can also give Clew its **shared header** ([D88](../decisions/D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md)): declare `header: { capability: '<id>.header' }` in the manifest and let that read, which takes no input, answer the site's name and address, the places in the band with their own pages, and the logo when the system has one, as absolute addresses, listing what the acting person may read. Clew checks the answer against `SiteHeaderOutput`, draws it above every page for the people in the connector's audience, and edits nothing of it. [`connectors/intranet`](../../connectors/intranet/README.md) is the fixture.
+
 Use the complete [verifier](../../connectors/phonebook/verification.mjs) and [authorization guide](authorization.md), including key rotation and source authentication. A curl request with only a body actor and transport secret must fail: the secret cannot sign a person. Use the signed fixture harness or a registered Clew test instance for authenticated calls.
 
 ## 5. Adapt the example to your system

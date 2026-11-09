@@ -41,7 +41,7 @@ The job API, per-system execution ledger and bounded watches are implemented and
 | Views | Inspect source data as a table, list, detail or text, on a tool page or beside the current conversation/page. |
 | Receipts and reminders | Understand confirmed outcomes, revisit unresolved work and bring work back at the agreed time. |
 
-Clew owns these surfaces. A connector declares the meaning of its data and the supported view to use; it does not send frontend code or choose the application's layout. The experimental [portal](reference/status.md) is a second frontend over the same backend, with a narrower and less-verified feature set.
+Clew owns these surfaces. A connector declares the meaning of its data and the supported view to use; it does not send frontend code or choose the application's layout.
 
 ## Who owns what
 

@@ -34,6 +34,7 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 | `scan` | yes | boolean | Whether Clew should POST /clew/scan for each person nightly and on first visit. |
 | `delegation` | no | object | The connector acts as the person against its system with a token Clew obtains by token exchange. |
 | `documents` | no | boolean | Implements POST /clew/documents for authorised, versioned binary document reads (D79). |
+| `header` | no | object | The shared header (D88): this connector gives Clew the header it draws above every page, for the people in the connector's audience, as the content system (Sitevision, SharePoint, WordPress) lists its sections for them. When several enabled connectors declare one, the earliest registered answers. Clew keeps no header of its own beyond its default (the site's name and Start). |
 
 ## ManifestCapability
 

@@ -10,6 +10,12 @@ An administrator can configure a Clew-owned read watch over an existing tool. A 
 
 See [MCP chat services](mcp-chat-services.md) for the end-to-end path and remaining production work, [the independent demo](../../fixtures/mcp-pulse/README.md) to run it, and [provider evidence](../reviews/2026-11-08-mcp-services-and-provider-compatibility.md) for actual vendor capabilities. MCP services do not automatically acquire native scan, job, undo or reconciliation semantics. The following table describes the native connector lane.
 
+## Use MCP behind a native connector
+
+An independent connector can call an MCP server as its source API and expose selected results through the existing Clew protocol. This supports native, model-independent work without requiring the MCP vendor to adopt Clew's contract. The adapter supplies the actor mapping, views, occurrence semantics and write guarantees that tool discovery alone cannot establish.
+
+The [MCP-backed connector exploration](../reviews/2026-11-09-mcp-backed-native-connectors.md) maps the poll fixture to native capabilities, compares a wrapper with direct MCP and a proposed App handoff, and identifies the missing form, source-history and recovery support. The wrapper and handoff are proposals, not delivered poll features.
+
 ## Add only what the task needs
 
 | Need | Implement | Clew supplies | Guide |

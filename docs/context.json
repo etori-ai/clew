@@ -815,7 +815,7 @@
       "number": 67,
       "path": "docs/decisions/D67-the-portal-is-a-second-web-app-over-the-same-server.md",
       "title": "D67 · The portal is a second web app over the same server, drawn as the product owner's proof of concept draws it",
-      "status": "proposed, built 2026-11-06 as an experiment beside the web app; nothing in `apps/web` or the server changed for it; the top bar is the header shared with the intranet and Clew's places are a `SideNav` since [D87](D87-one-header-shared-by-the-portal-and-the-intranet.md)",
+      "status": "superseded by [D88](D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md) on 2026-11-09: the product owner decided that Clew has one front end, and `apps/portal` was removed; built 2026-11-06 as an experiment beside the web app; the top bar is the header shared with the intranet and Clew's places are a `SideNav` since [D87](D87-one-header-shared-by-the-portal-and-the-intranet.md)",
       "date": "2026-11-06",
       "area": "ui, product"
     },
@@ -1004,9 +1004,18 @@
       "number": 87,
       "path": "docs/decisions/D87-one-header-shared-by-the-portal-and-the-intranet.md",
       "title": "D87 · One header shared by the portal and the intranet, built with Astryx and embedded as a custom element",
-      "status": "proposed, built 2026-11-09 as an experiment in this repository, to move to its own repository if it holds",
+      "status": "proposed, built 2026-11-09 as an experiment in this repository, to move to its own repository if it holds; amended the same day by [D88](D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md): the host is the web app (the portal is gone), the header has a band and three rows, its breakpoint is `md`, and Clew's own header comes from a connector's `header` capability",
       "date": "2026-11-09",
       "area": "ui"
+    },
+    {
+      "key": "D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content",
+      "number": 88,
+      "path": "docs/decisions/D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md",
+      "title": "D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end",
+      "status": "accepted, built 2026-11-09 on `main`",
+      "date": "2026-11-09",
+      "area": "ui, product, integrations"
     }
   ],
   "documents": [
@@ -1093,6 +1102,12 @@
     {
       "path": "connectors/incidents/README.md",
       "title": "incidents: a generic deviation system, as a fixture connector",
+      "category": "integrator-guide",
+      "headings": []
+    },
+    {
+      "path": "connectors/intranet/README.md",
+      "title": "Intranet connector (fixture)",
       "category": "integrator-guide",
       "headings": []
     },
@@ -1231,6 +1246,7 @@
       "category": "architecture-guide",
       "headings": [
         "Consume a standard MCP service",
+        "Use MCP behind a native connector",
         "Add only what the task needs",
         "Choose source authentication separately",
         "Examples and their evidence",
@@ -1912,6 +1928,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md",
+      "title": "D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -1972,6 +1994,19 @@
         "Return what the source confirmed",
         "Test the failure cases",
         "Reading retained receipts"
+      ]
+    },
+    {
+      "path": "docs/guides/authentication-overview.md",
+      "title": "How authentication works end to end",
+      "category": "integrator-guide",
+      "headings": [
+        "1. The person signs in to Clew",
+        "2. Clew identifies itself and the person to the connector",
+        "3. The connector authenticates to the case system",
+        "4. A note on a case is a human decision, never a tool",
+        "The MCP chat lane",
+        "Where to go next"
       ]
     },
     {
@@ -2735,6 +2770,46 @@
         "What the spike did not cover",
         "Comparison after the spike",
         "Recommendation"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-09-header-from-a-connector.md",
+      "title": "A header owned by a connector: what a content system may give Clew",
+      "category": "review-history",
+      "headings": [
+        "The question",
+        "Options",
+        "What a connector may decide, in D88",
+        "What a Sitevision connector would do",
+        "Not settled"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-09-mcp-backed-native-connectors.md",
+      "title": "Building a Clew connector over an MCP server",
+      "category": "review-history",
+      "headings": [
+        "The available choices",
+        "What the fake poll actually provides",
+        "What a native adapter would look like",
+        "Combining native work with the provider App",
+        "What Clew should support",
+        "Recommended next steps for Medarbetarpuls",
+        "Evidence and verification"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-09-sitevision-connector.md",
+      "title": "A Sitevision connector: the header, search and pages from the intranet's CMS · 2026-11-09",
+      "category": "review-history",
+      "headings": [
+        "The question",
+        "Short answer",
+        "What Sitevision offers",
+        "Mapping onto Clew",
+        "Recommendation",
+        "Not settled",
+        "Sources"
       ]
     },
     {

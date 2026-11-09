@@ -253,6 +253,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
       : {}),
     uses: manifest.uses ?? [],
     ...(manifest.facts ? { facts: manifest.facts } : {}),
+    ...(manifest.header ? { header: manifest.header.capability } : {}),
     ...(manifest.delegation ? { delegation: manifest.delegation } : {}),
     areas: manifest.areas.map(a => ({
       id: a.id,

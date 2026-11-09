@@ -35,9 +35,10 @@ export default defineConfig({
       timeout: 120_000,
     },
     {
-      // The shared header's embed on the intranet stand-in (D87), served by the portal's dev server: `/intranat/…`.
-      command: 'node_modules/.bin/vite --port 4175 --strictPort --logLevel warn',
-      cwd: '../../apps/portal',
+      // The shared header's embed on the intranet stand-in (D87, D88), served by the web app's dev server: `/intranat/…`.
+      // The stand-in draws the build's profile; the spec looks for Sundsvall's dragon, so the dev server is given that profile.
+      command: 'VITE_BRAND_PROFILE=sundsvall node_modules/.bin/vite --port 4175 --strictPort --logLevel warn',
+      cwd: '../../apps/web',
       url: 'http://localhost:4175/intranat/',
       reuseExistingServer: false,
       timeout: 120_000,

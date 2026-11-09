@@ -1,6 +1,6 @@
 # D87 · One header shared by the portal and the intranet, built with Astryx and embedded as a custom element
 
-**Status:** proposed, built 2026-11-09 as an experiment in this repository, to move to its own repository if it holds ·
+**Status:** proposed, built 2026-11-09 as an experiment in this repository, to move to its own repository if it holds; amended the same day by [D88](D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md): the host is the web app (the portal is gone), the header has a band and three rows, its breakpoint is `md`, and Clew's own header comes from a connector's `header` capability ·
 **Date:** 2026-11-09 · **Area:** ui
 
 **Decision.** The top bar of Clew's portal and of the intranet (Sitevision, under `/intranat`) is one component,
@@ -141,3 +141,10 @@ the boundary goes both ways. Building it here first keeps the theme and the port
 
 **Replaces.** Amends D67 item 1 (the portal's top bar held Clew's places; they are now the `SideNav`) and item 2 (the
 intranet's sections are drawn, by the intranet's own header, not by Clew). D37/D38 stand for the logo and the profile.
+
+**Amended 2026-11-09 (D88).** The portal was removed the same day; the web app draws `SiteHeader` above its rail, so
+item 3 reads "the web app" where it says "the portal", and the stand-in of item 8 is the web app's dev server's. The
+header is now a band (a nested theme, `createHeaderBandTheme`) with the heading row and the places on two rows and the
+current place's own pages on a row under the band; `SITE_HEADER_BREAKPOINT` is `md`. The menu Clew draws comes from
+the connector that declares a `header` capability in its manifest (`GET /api/header` for the signed-in person); the
+intranet's embed keeps the sources this decision describes.

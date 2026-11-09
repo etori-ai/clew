@@ -374,6 +374,9 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                   <MetadataListItem label="Skickar kort">
                     {c.scan ? (c.scanEnabled ? 'Ja' : 'Avstängt') : 'Anslutningen skickar inga kort'}
                   </MetadataListItem>
+                  <MetadataListItem label="Ger sidhuvudet">
+                    {c.header ? 'Ja' : c.headerCapability ? 'Kan ge sidhuvudet' : 'Anslutningen kan inte ge sidhuvudet'}
+                  </MetadataListItem>
                   <MetadataListItem label="I menyn">
                     {tools.some(t => t.menu.on)
                       ? tools
@@ -514,6 +517,22 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                   changeAction={on =>
                     run(async () => {
                       await api.admin.update(id, { scanEnabled: on });
+                    })
+                  }
+                />
+                {/* The shared header (D88): one connector gives it; switching it on here takes it from the one that held it. */}
+                <Switch
+                  label="Ger sidhuvudet"
+                  description="Anslutningens platser och logotyp ritas i sidhuvudet på varje sida. Bara en anslutning i taget; den som hade det släpper det."
+                  value={c.header}
+                  isDisabled={busy || !c.headerCapability}
+                  disabledMessage="Anslutningens beskrivning pekar inte ut någon förmåga för sidhuvudet."
+                  changeAction={on =>
+                    run(async () => {
+                      await api.admin.update(id, { header: on });
+                      return on
+                        ? 'Anslutningen ger sidhuvudet nu.'
+                        : 'Anslutningen ger inte längre sidhuvudet; Clews eget visas.';
                     })
                   }
                 />

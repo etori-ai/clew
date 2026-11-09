@@ -4,6 +4,8 @@ Clew separates **login identity**, **local permission**, **connector authority**
 
 ## Browser to Clew
 
+![The first login: SSO vouches for the account, Clew binds the subject to the one provisioned person with the same user name, or denies](figures/first-login.svg)
+
 The [authentication implementation](../../apps/server/src/auth.ts) uses OIDC Authorization Code with PKCE. Development uses Keycloak. The server keeps tokens sealed in its database; the browser receives an opaque, HttpOnly session cookie and the session's CSRF token for mutations.
 
 Login validates state/nonce and resolves the verified issuer and subject through an existing local identity binding. A subject seen for the first time binds to the one enabled, provisioned person whose `userName` equals the ID token claim named by `OIDC_BINDING_CLAIM` (default `preferred_username`), with an `identity-bound` row in the authentication log and an `identity.bound` audit row on the person (D68 item 6, `bindFirstLogin` in `packages/db/src/auth.ts`). No match, two matches, a disabled person, or a subject that differs from the person's existing binding is a denied login, audited as `identity-unmatched` or `identity-conflict`; a changed subject needs a person's review, never an automatic rebind. The person must have a local access grant. A matching display name or e-mail is never a substitute. Login does not create a user on demand.
@@ -20,11 +22,15 @@ Users and grants are core entities ([D62](../decisions/D62-users-are-core-entiti
 
 ## Provisioning
 
+![How people enter Clew: the source, the provisioner, the SCIM server, the stored tables, the derivation and the person's grant](figures/provisioning-flow.svg)
+
 People, units and groups enter an installation through Clew's SCIM 2.0 server at `/scim/v2` and in no other way (D68; `apps/server/src/routes/scim.ts` over `modules/people/usecases.ts`). A **provisioner**, the installation's own process, reads the organisation's source and pushes; Clew never reads the source and never learns its name ([guide](../guides/writing-a-provisioner.md)). The server offers `Users` and `Groups` with `POST`, `GET`, `PUT`, `PATCH` and `DELETE`, `filter` as one equality (`userName`/`externalId` on users, `externalId`/`displayName` on groups), `startIndex`/`count` paging and the discovery resources; bulk, sorting and ETags are not offered. A provisioner authenticates with a bearer token whose digest Clew holds (`auth_provisioner`, issued and revoked with `bun scripts/provisioner-token.ts`); users are scoped to the token's organisation, groups belong to the installation. Every mutation writes its `scim.*` audit row and re-derives the grants it touched in the same transaction. `DELETE` on a user deactivates, never erases. The answers are English: a machine reads them.
 
 The data model (`packages/db/src/schema.ts`): `auth_person` carries the source's `externalId`, the `userName` a login is matched on and a work e-mail (empty on rows from before provisioning); `auth_unit` the organisation's units; `auth_assignment` any number of (unit, role) pairs per person with the two roles `manager` and `employee`; `auth_group` and `auth_group_member` every pushed group as pushed, with Clew's own id and the source's optional `externalId`; `auth_capability_map` the administrator's mapping from a group to a capability of the closed list `CAPABILITIES` in `@clew/contracts` ([D85](../decisions/D85-capabilities-are-mapped-from-provisioned-groups-in-clew.md)); `auth_provisioner` the clients.
 
 ## Derivation
+
+![What a pushed group means: keys in externalId give units, manager roles and capabilities; any other group may be mapped by an administrator](figures/group-keys.svg)
 
 `auth_access_grant` is a projection of those tables: the one active assignment (manager before employee, then the lowest unit id) and the person's capabilities, which is what the authenticated context and the connector actor carry. Meaning comes from keys in a group's `externalId` (`unit:<id>`, `unit-manager:<id>`, `capability:<name>`, `protected`) and from the mapping; a person with no unit membership has no grant, so a mistake fails closed. The derivation is `deriveAuthority` in `modules/people/domain.ts` (pure) and `provisioningUsecases` in `usecases.ts`: called inside the transaction that changed a membership or a mapping row, it rewrites the person's units, assignments and grant and writes one `grant.derived` audit row only when the grant changed, or `removed: true` when the person has no unit left.
 

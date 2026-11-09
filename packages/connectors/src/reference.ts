@@ -630,7 +630,7 @@ const SECTIONS: Array<{ id: string; title: string; holds: (path: string) => bool
   {
     id: 'document',
     title: 'The document',
-    holds: p => !p.includes('.') && !['areas', 'capabilities', 'facts', 'delegation'].includes(p),
+    holds: p => !p.includes('.') && !['areas', 'capabilities', 'facts', 'delegation', 'header'].includes(p),
   },
   { id: 'areas', title: 'areas[]', holds: p => p.startsWith('areas') },
   {
@@ -641,6 +641,7 @@ const SECTIONS: Array<{ id: string; title: string; holds: (path: string) => bool
   { id: 'view', title: 'capabilities[].view', holds: p => p.startsWith('capabilities[].view') },
   { id: 'facts', title: 'facts[]', holds: p => p.startsWith('facts') },
   { id: 'delegation', title: 'delegation', holds: p => p.startsWith('delegation') },
+  { id: 'header', title: 'header', holds: p => p.startsWith('header') },
 ];
 export const anchorOf = (path: string) =>
   'field-' +

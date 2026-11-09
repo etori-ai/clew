@@ -4,6 +4,7 @@ import { serve } from '@hono/node-server';
 import { authRoutes } from './routes/auth';
 import { api } from './routes/api';
 import { adminRoutes } from './routes/admin';
+import { headerRoutes } from './routes/header';
 import { connectorReconcile } from './composition';
 import { applyAllRows, syncBundledRows, watchConnectors } from './connectors/reconcile';
 import { connectorRoutes } from './routes/connectors';
@@ -79,6 +80,8 @@ app.use('/scim/*', async (c, next) => {
 });
 app.route('/scim/v2', scimRoutes(scim));
 app.route('/api/admin', adminRoutes);
+// The shared header (D88): what the person's header connector lists for them.
+app.route('/api/header', headerRoutes);
 app.route('/api/chat-services', mcpRoutes);
 app.route('/api', api);
 app.notFound(c => c.json({ error: 'Okänd adress.' }, 404));

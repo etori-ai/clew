@@ -5,6 +5,7 @@ import type {
   DocumentRequest,
   ReviewEvidence,
   ReviewPreview,
+  SiteHeaderView,
 } from '@clew/contracts';
 import type {
   AddModelInput,
@@ -239,6 +240,8 @@ export const api = {
     ),
   runCapability: (name: string, input?: unknown) => post<{ output: unknown }>(`/api/cap/${name}`, input ?? {}),
   // Administration (D23). Every call is checked again on the server; no secret ever comes back.
+  /** The shared header (D88): what the person's header connector lists for them, else Clew's default. */
+  header: () => call<SiteHeaderView>('/api/header'),
   admin: {
     connectors: () => call<{ connectors: ConnectorSummary[] }>('/api/admin/connectors'),
     units: () => call<{ units: Array<{ id: string; label: string }> }>('/api/admin/units'),

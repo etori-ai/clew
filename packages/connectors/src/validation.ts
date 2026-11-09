@@ -9,6 +9,8 @@ interface Descriptor {
   facts?: Array<{ kind: string; attributes: object }>;
   areas: Array<{ id: string; standing: string[] }>;
   documents?: unknown;
+  /** The manifest names the capability in an object; a Connector carries its name. */
+  header?: string | { capability: string };
 }
 function schemaCompiler() {
   const ajv = addFormats(new Ajv({ strict: false, addUsedSchema: false }));
@@ -71,6 +73,15 @@ export function connectorProblems(
     areas.add(a.id);
     for (const s of a.standing)
       if (!names.has(s)) problems.push(`Area ${a.id} lists unknown standing capability ${s}.`);
+  }
+  // The shared header (D88): the capability it names must be one of the connector's reads that opens without a question.
+  if (connector.header) {
+    const name = typeof connector.header === 'string' ? connector.header : connector.header.capability;
+    const c = connector.capabilities.find(x => x.name === name);
+    if (!c) problems.push(`Header names unknown capability ${name} (D88).`);
+    else if (c.kind !== 'read') problems.push(`Header capability ${c.name} must be a read (D88).`);
+    else if (menuProblem({ ...c, menu: { label: 'x', icon: 'link' }, view: c.view ?? { kind: 'text', body: 'x' } }))
+      problems.push(`Header capability ${c.name} must take no input (D88).`);
   }
   return problems;
 }

@@ -1,7 +1,10 @@
 # Shared header (`@clew/site-header`)
 
-One header for Clew's portal and the intranet, so a person moving between `/portal` and `/intranat` sees the same
-bar ([D87](../../docs/decisions/D87-one-header-shared-by-the-portal-and-the-intranet.md)). An experiment in Clew's
+One header for Clew's web app and the intranet, so a person moving between Startsidan and `/intranat` sees the same
+bar ([D87](../../docs/decisions/D87-one-header-shared-by-the-portal-and-the-intranet.md),
+[D88](../../docs/decisions/D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md)). In the
+web app the header's content comes from the connector whose manifest declares a `header` capability, served to the
+signed-in person at `/api/header`; the intranet's embed reads its own menu as described below. An experiment in Clew's
 repository, meant to move to its own repository.
 
 ## On a page Clew does not render (the intranet)
@@ -38,7 +41,7 @@ Serve `dist/` (all files: the entry loads its chunks by relative path) and put t
 
 The header renders in a shadow root: the page's CSS does not reach it and its CSS does not reach the page.
 
-## In a React app with Astryx (the portal)
+## In a React app with Astryx (the web app)
 
 ```tsx
 import { SITE_HEADER_BREAKPOINT, SiteHeader, SiteHeaderPerson } from '@clew/site-header';
@@ -65,7 +68,7 @@ the public origin, since `URL` may be an internal host behind a proxy. WordPress
 
 ```bash
 bun packages/site-header/scripts/site-menu.ts --source sitevision --base https://intranet.example.org \
-  --root 4.1a2b3c --start-href /portal/ --out site-menu.json   # the public menu: no credentials are sent
+  --root 4.1a2b3c --start-href / --out site-menu.json   # the public menu: no credentials are sent
 bun packages/site-header/scripts/site-menu.ts --source wordpress --base https://intranet.example.org \
   --root 0 --depth 3 --list                                     # every page and its address
 ```
@@ -75,7 +78,7 @@ and lists that user's pages; such a file names pages that are not public and mus
 
 ## Trying it locally
 
-`bun run dev:portal`, then open `/intranat/` on the portal's address: a stand-in intranet page with the element,
+`bun run dev`, then open `/intranat/` on the web app's address (3020): a stand-in intranet page with the element,
 deliberately loud CSS and two sections that are not public. Signed in to Clew, it shows you and your sections, as an
 intranet with single sign-on would; without a Clew server, `/intranat/logga-in` sets a demo cookie instead.
 `/intranat/?source=wordpress` reads the same pages through the WordPress source, and `/intranat/?built` loads the

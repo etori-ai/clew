@@ -20,16 +20,15 @@ const rowLook = (row: Locator) =>
   });
 
 for (const viewport of [desktop, narrow])
-  test(`the compact header works by keyboard at ${viewport.width}px`, async ({ page, api: _ }) => {
+  test(`the header's bell works by keyboard at ${viewport.width}px`, async ({ page, api: _ }) => {
     await page.setViewportSize(viewport);
     await open(page, '/');
-    const nav = await openNav(page);
-    const header = nav.locator('.astryx-side-nav-heading');
-    const headerBounds = (await header.boundingBox())!;
-    expect(headerBounds.height).toBeLessThanOrEqual(56);
+    // The shared header (D88) is the shell's banner: the home link, the bell and the person, on a phone as the bar.
+    const header = page.getByRole('banner');
     const bell = header.getByRole('button', { name: 'Påminnelser: 0', exact: true });
     await expect(bell).toBeVisible();
     const home = header.getByRole('link', { name: /Startsidan/ });
+    await expect(home).toBeVisible();
     await expect(home.locator('button')).toHaveCount(0);
     await bell.focus();
     await page.keyboard.press('Enter');
@@ -40,64 +39,55 @@ for (const viewport of [desktop, narrow])
   });
 
 for (const viewport of [desktop, narrow])
-  test(`the account is a rail row like the others and works by keyboard at ${viewport.width}px`, async ({
+  test(`the person is a button in the header that opens the settings by keyboard at ${viewport.width}px`, async ({
     page,
     api,
   }) => {
     api.admin = true;
     await page.setViewportSize(viewport);
     await open(page, '/');
+    const header = page.getByRole('banner');
+    const account = header.getByRole('button', { name: 'Testa Testsson, inställningar', exact: true });
+    await expect(account).toBeVisible();
+    await expect(account).toHaveAttribute('aria-haspopup', 'dialog');
+    // The rail is Clew's places and conversations alone (D50): no heading, no account row.
     const nav = await openNav(page);
-    const account = nav.getByRole('button', { name: 'Testa Testsson', exact: true });
-    await expect(account).toHaveText('Testa Testsson');
-    await expect(account).toHaveAttribute('aria-expanded', 'false');
-    await account.click({ trial: true }); // The phone drawer slides in; measure it where it stops.
-
-    const calendar = nav.getByRole('link', { name: 'Kalender', exact: true });
-    const administration = nav.getByRole('button', { name: 'Administration', exact: true });
-    expect(await rowLook(account)).toEqual(await rowLook(calendar));
-    expect(await rowLook(administration)).toEqual(await rowLook(calendar));
-    const calendarIcon = (await calendar.locator('svg').first().boundingBox())!;
-    const calendarLabel = (await calendar.getByText('Kalender', { exact: true }).boundingBox())!;
-    for (const [row, label] of [
-      [account, 'Testa Testsson'],
-      [administration, 'Administration'],
-    ] as const) {
-      const icon = (await row.locator('svg').first().boundingBox())!;
-      expect(icon).toEqual({ ...calendarIcon, y: icon.y });
-      expect((await row.getByText(label, { exact: true }).boundingBox())!.x).toBe(calendarLabel.x);
+    await expect(nav.getByRole('button', { name: 'Testa Testsson', exact: true })).toHaveCount(0);
+    await expect(nav.getByRole('button', { name: 'Inställningar', exact: true })).toHaveCount(0);
+    await expect(nav.getByRole('button', { name: 'Administration', exact: true })).toBeVisible();
+    if (viewport === narrow) {
+      await page.keyboard.press('Escape');
+      await expect(nav).toBeHidden();
     }
-    const accountChevron = (await account.locator('svg').last().boundingBox())!;
-    // The areas are a filter on Hem, not a row here (D50, D53): Administration is the other disclosure the account lines up with.
-    expect(accountChevron.x).toBe((await administration.locator('svg').last().boundingBox())!.x);
-    const [above, below] = [(await administration.boundingBox())!, (await account.boundingBox())!];
-    expect(below.y).toBeGreaterThanOrEqual(above.y + above.height);
-
     await account.focus();
     await page.keyboard.press('Enter');
-    await expect(account).toHaveAttribute('aria-expanded', 'true');
-    await expectNoAxeViolations(page);
-    const settingsRow = nav.getByRole('button', { name: 'Inställningar', exact: true });
-    await page.keyboard.press('Tab');
-    await expect(settingsRow).toBeFocused();
-    await page.keyboard.press('Enter');
-    const settings = page.getByRole('dialog', { name: 'Inställningar', exact: true });
+    const settings = page.getByRole('dialog', { name: 'Testa Testsson', exact: true });
     await expect(settings).toBeVisible();
     await expect(settings.getByText('Skönsmons skola', { exact: true })).toBeVisible();
     await page.getByRole('radio', { name: 'Mörkt', exact: true }).check();
-    // The rail behind the dialog shortens long thread titles by design, so this asks only for no sideways scrolling.
+    await expect(settings.getByRole('button', { name: 'Logga ut', exact: true })).toBeVisible();
     expect((await reflowProblems(page)).filter(problem => !problem.startsWith('clipped: '))).toEqual([]);
     await expectNoAxeViolations(page);
     await page.keyboard.press('Escape');
     await expect(settings).not.toBeVisible();
-    await expect(settingsRow).toBeFocused();
+    await expect(account).toBeFocused();
   });
 
-test('the account stays out of the phone top bar', async ({ page, api: _ }) => {
+test('the phone bar holds the heading, the bell and the person, and the drawer holds the rail', async ({
+  page,
+  api: _,
+}) => {
   await page.setViewportSize(narrow);
   await open(page, '/');
+  const header = page.getByRole('banner');
   await expect(page.getByRole('button', { name: 'Öppna navigering' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Testa Testsson', exact: true })).toHaveCount(0);
+  await expect(header.getByRole('button', { name: 'Testa Testsson, inställningar', exact: true })).toBeVisible();
+  await expect(header.getByRole('button', { name: 'Påminnelser: 0', exact: true })).toBeVisible();
+  const nav = await openNav(page);
+  await expect(nav.getByRole('link', { name: 'Ny fråga', exact: true })).toBeVisible();
+  await expect(
+    nav.getByRole('group', { name: 'Huvudmeny' }).getByRole('link', { name: 'Start', exact: true }),
+  ).toBeVisible();
 });
 
 for (const source of ['/calendar', '/?area=budget'])
@@ -135,8 +125,7 @@ test('an empty bell says what will appear, leads to the overview and restores fo
 }) => {
   await page.setViewportSize(narrow);
   await open(page, '/?area=personal');
-  const nav = await openNav(page);
-  const bell = nav.getByRole('button', { name: 'Påminnelser: 0', exact: true });
+  const bell = page.getByRole('banner').getByRole('button', { name: 'Påminnelser: 0', exact: true });
   await bell.click();
   const list = page.getByRole('dialog', { name: 'Påminnelser', exact: true });
   await expect(list.getByText('Inga aktuella påminnelser')).toBeVisible();
@@ -211,8 +200,7 @@ test('a blocked browser preference stays usable without claiming it was saved', 
     });
   });
   await open(page, '/');
-  await page.getByRole('button', { name: 'Testa Testsson', exact: true }).click();
-  await page.getByRole('button', { name: 'Inställningar', exact: true }).click();
+  await page.getByRole('button', { name: 'Testa Testsson, inställningar', exact: true }).click();
   await page.getByRole('radio', { name: 'Mörkt', exact: true }).check();
   await expect(page.getByText(/Webbläsaren tillåter inte att valet sparas/)).toBeVisible();
   await expect(page.getByRole('radio', { name: 'Mörkt', exact: true })).toBeChecked();
@@ -221,12 +209,14 @@ test('a blocked browser preference stays usable without claiming it was saved', 
 test('logout reports failure, then ends the session after a successful retry', async ({ page, api }) => {
   await page.route('**/api/auth/logout', route => route.fulfill({ status: 503 }));
   await open(page, '/');
-  const account = page.getByRole('button', { name: 'Testa Testsson', exact: true });
+  const account = page.getByRole('button', { name: 'Testa Testsson, inställningar', exact: true });
   await account.click();
   await page.getByRole('button', { name: 'Logga ut', exact: true }).click();
   await expect
     .poll(() => announcements(page))
     .toContainEqual(expect.stringContaining('Utloggningen kunde inte bekräftas. Försök igen.'));
+  // The dialog closed with the attempt; the retry opens it again.
+  await account.click();
   await page.unroute('**/api/auth/logout');
   await page.route('**/api/auth/logout', route => {
     expect(route.request().headers()['x-csrf-token']).toBe('test');
@@ -244,10 +234,7 @@ for (const viewport of [desktop, narrow])
     await page.setViewportSize(viewport);
     await open(page, '/');
     const nav = await openNav(page);
-    for (const [name, row] of [
-      ['Administration', 'Modeller'],
-      ['Testa Testsson', 'Logga ut'],
-    ] as const) {
+    for (const [name, row] of [['Administration', 'Modeller']] as const) {
       const parent = nav.getByRole('button', { name, exact: true });
       await parent.click();
       const rows = nav.getByRole('group', { name, exact: true });
@@ -270,15 +257,14 @@ for (const viewport of [desktop, narrow])
     await expectNoAxeViolations(page);
   });
 
-test('the account signs out from the phone drawer', async ({ page, api }) => {
+test('the person signs out from the phone bar', async ({ page, api }) => {
   await page.route('**/api/auth/logout', route => {
     api.signedIn = false;
     return route.fulfill({ json: { url: '/' } });
   });
   await page.setViewportSize(narrow);
   await open(page, '/');
-  const nav = await openNav(page);
-  await nav.getByRole('button', { name: 'Testa Testsson', exact: true }).click();
-  await nav.getByRole('button', { name: 'Logga ut', exact: true }).click();
+  await page.getByRole('banner').getByRole('button', { name: 'Testa Testsson, inställningar', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Logga ut', exact: true }).click();
   await expect(page.getByRole('link', { name: 'Logga in', exact: true })).toBeVisible();
 });

@@ -60,6 +60,39 @@ test.describe('administration', () => {
 
   test.describe('desktop', () => {
     test.use({ viewport: desktop });
+    test('"Ger sidhuvudet" is a switch on a connector that declares a header capability, and the status line says so (D88)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/connectors/finance');
+      await expect(page.getByText('Kan ge sidhuvudet', { exact: true })).toBeVisible();
+      await pickSection(page, 'Områden');
+      const toggle = page.getByRole('switch', { name: 'Ger sidhuvudet', exact: true });
+      await expect(toggle).toBeEnabled();
+      let sent: unknown;
+      await page.route('**/api/admin/connectors/finance', async route => {
+        if (route.request().method() === 'PATCH') sent = route.request().postDataJSON();
+        await route.fallback();
+      });
+      await toggle.focus();
+      await page.keyboard.press('Space');
+      await expect(
+        page.getByRole('region', { name: 'Aviseringar' }).getByText('Anslutningen ger sidhuvudet nu.'),
+      ).toBeVisible();
+      expect(sent).toEqual({ header: true });
+      await expect(toggle).toBeChecked();
+      await expectNoAxeViolations(page);
+      // The status line in the page's head says so on the next visit; the other connectors no longer hold it.
+      await open(page, '/admin/connectors/finance');
+      await expect(page.getByText('Kan ge sidhuvudet', { exact: true })).toHaveCount(0);
+      await expect(page.getByText('Ja', { exact: true })).toHaveCount(2);
+      // A connector without a header capability has the switch, disabled, and says why in its status line.
+      await open(page, '/admin/connectors/hr');
+      await expect(page.getByText('Anslutningen kan inte ge sidhuvudet', { exact: true })).toBeVisible();
+      await pickSection(page, 'Områden');
+      await expect(page.getByRole('switch', { name: 'Ger sidhuvudet', exact: true })).toBeDisabled();
+    });
     test('a person without the grant sees no data and one way back', async ({ page, api: _ }) => {
       await page.goto('/admin/connectors');
       await expect(

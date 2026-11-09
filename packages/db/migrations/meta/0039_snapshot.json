@@ -1,6 +1,6 @@
 {
-  "id": "c28cac20-450c-454d-afcb-81be14f4e052",
-  "prevId": "81f36c4b-210b-4cda-b0e9-ee10821953b0",
+  "id": "3666484d-9110-40c4-a013-91e181e94378",
+  "prevId": "f5739544-53c9-49e0-9190-d1f077e369c9",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -458,6 +458,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
+        },
+        "header_holder": {
+          "name": "header_holder",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "capabilities": {
           "name": "capabilities",

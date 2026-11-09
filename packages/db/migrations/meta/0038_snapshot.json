@@ -1,5 +1,5 @@
 {
-  "id": "81f36c4b-210b-4cda-b0e9-ee10821953b0",
+  "id": "f5739544-53c9-49e0-9190-d1f077e369c9",
   "prevId": "fbe5ba7c-3264-403f-9c8f-f07b26651e50",
   "version": "7",
   "dialect": "postgresql",
@@ -69,77 +69,6 @@
         "auth_grant_role": {
           "name": "auth_grant_role",
           "value": "\"auth_access_grant\".\"role\" IN ('manager', 'employee')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.auth_assignment": {
-      "name": "auth_assignment",
-      "schema": "",
-      "columns": {
-        "person_id": {
-          "name": "person_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "unit_id": {
-          "name": "unit_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "role": {
-          "name": "role",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "auth_assignment_person_id_auth_person_id_fk": {
-          "name": "auth_assignment_person_id_auth_person_id_fk",
-          "tableFrom": "auth_assignment",
-          "tableTo": "auth_person",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "auth_assignment_unit_id_auth_unit_id_fk": {
-          "name": "auth_assignment_unit_id_auth_unit_id_fk",
-          "tableFrom": "auth_assignment",
-          "tableTo": "auth_unit",
-          "columnsFrom": [
-            "unit_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "auth_assignment_person_id_unit_id_pk": {
-          "name": "auth_assignment_person_id_unit_id_pk",
-          "columns": [
-            "person_id",
-            "unit_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "auth_assignment_role": {
-          "name": "auth_assignment_role",
-          "value": "\"auth_assignment\".\"role\" IN ('manager', 'employee')"
         }
       },
       "isRLSEnabled": false
@@ -312,39 +241,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.auth_capability_map": {
-      "name": "auth_capability_map",
-      "schema": "",
-      "columns": {
-        "group_external_id": {
-          "name": "group_external_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "capability": {
-          "name": "capability",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "auth_capability_map_group_external_id_capability_pk": {
-          "name": "auth_capability_map_group_external_id_capability_pk",
-          "columns": [
-            "group_external_id",
-            "capability"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.connector_signing_key": {
       "name": "connector_signing_key",
       "schema": "",
@@ -458,6 +354,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
+        },
+        "header_holder": {
+          "name": "header_holder",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "capabilities": {
           "name": "capabilities",
@@ -1281,107 +1184,6 @@
           "value": "\"followup_policy\".\"max_reminders\" BETWEEN 1 AND 2 AND \"followup_policy\".\"after_workdays\" >= 2"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.auth_group_member": {
-      "name": "auth_group_member",
-      "schema": "",
-      "columns": {
-        "group_external_id": {
-          "name": "group_external_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "person_id": {
-          "name": "person_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "auth_group_member_person": {
-          "name": "auth_group_member_person",
-          "columns": [
-            {
-              "expression": "person_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "auth_group_member_group_external_id_auth_group_external_id_fk": {
-          "name": "auth_group_member_group_external_id_auth_group_external_id_fk",
-          "tableFrom": "auth_group_member",
-          "tableTo": "auth_group",
-          "columnsFrom": [
-            "group_external_id"
-          ],
-          "columnsTo": [
-            "external_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "auth_group_member_person_id_auth_person_id_fk": {
-          "name": "auth_group_member_person_id_auth_person_id_fk",
-          "tableFrom": "auth_group_member",
-          "tableTo": "auth_person",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "auth_group_member_group_external_id_person_id_pk": {
-          "name": "auth_group_member_group_external_id_person_id_pk",
-          "columns": [
-            "group_external_id",
-            "person_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.auth_group": {
-      "name": "auth_group",
-      "schema": "",
-      "columns": {
-        "external_id": {
-          "name": "external_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "display_name": {
-          "name": "display_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.auth_identity_binding": {
@@ -2259,58 +2061,9 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
-        },
-        "external_id": {
-          "name": "external_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "user_name": {
-          "name": "user_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "email": {
-          "name": "email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
-      "indexes": {
-        "auth_person_external_id": {
-          "name": "auth_person_external_id",
-          "columns": [
-            {
-              "expression": "external_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "auth_person_user_name": {
-          "name": "auth_person_user_name",
-          "columns": [
-            {
-              "expression": "user_name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -3311,37 +3064,6 @@
           "value": "\"timer_intent\".\"state\" IN ('active', 'cancelled', 'fired', 'blocked')"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.auth_unit": {
-      "name": "auth_unit",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "organisation_id": {
-          "name": "organisation_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "label": {
-          "name": "label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.watch_intent": {

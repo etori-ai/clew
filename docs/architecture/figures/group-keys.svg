@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="540" viewBox="0 0 1000 540" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14">
+  <title>What a pushed group means in Clew: keys in the group's externalId give units, manager roles and capabilities; any other group may be mapped by an administrator</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4b5563"/>
+    </marker>
+  </defs>
+  <rect width="1000" height="540" fill="#ffffff"/>
+  <text x="200" y="40" text-anchor="middle" font-weight="600" fill="#374151">Groups as the provisioner pushes them</text>
+  <text x="200" y="60" text-anchor="middle" fill="#6b7280">the key sits in the group's externalId</text>
+  <text x="640" y="40" text-anchor="middle" font-weight="600" fill="#1e3a8a">What a member gets in Clew</text>
+  <text x="640" y="60" text-anchor="middle" fill="#6b7280">derived, never granted by hand</text>
+  <!-- rows -->
+  <g>
+    <rect x="40" y="90" width="320" height="56" rx="8" fill="#f3f4f6" stroke="#9ca3af"/>
+    <text x="56" y="113" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" fill="#111827">unit:skola</text>
+    <text x="56" y="134" fill="#6b7280">displayName "Bergsåkers skola"</text>
+    <line x1="360" y1="118" x2="438" y2="118" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+    <rect x="440" y="90" width="520" height="56" rx="8" fill="#eef4ff" stroke="#1d4ed8"/>
+    <text x="456" y="113" font-weight="600" fill="#1e3a8a">Employee of unit skola</text>
+    <text x="456" y="134" fill="#374151">the unit is shown with the group's name</text>
+  </g>
+  <g>
+    <rect x="40" y="160" width="320" height="56" rx="8" fill="#f3f4f6" stroke="#9ca3af"/>
+    <text x="56" y="183" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" fill="#111827">unit-manager:skola</text>
+    <text x="56" y="204" fill="#6b7280">displayName free</text>
+    <line x1="360" y1="188" x2="438" y2="188" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+    <rect x="440" y="160" width="520" height="56" rx="8" fill="#eef4ff" stroke="#1d4ed8"/>
+    <text x="456" y="183" font-weight="600" fill="#1e3a8a">Manager of unit skola</text>
+    <text x="456" y="204" fill="#374151">wins over unit: for the same unit</text>
+  </g>
+  <g>
+    <rect x="40" y="230" width="320" height="56" rx="8" fill="#f3f4f6" stroke="#9ca3af"/>
+    <text x="56" y="253" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" fill="#111827">capability:admin.users</text>
+    <text x="56" y="274" fill="#6b7280">one of Clew's closed list</text>
+    <line x1="360" y1="258" x2="438" y2="258" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+    <rect x="440" y="230" width="520" height="56" rx="8" fill="#eef4ff" stroke="#1d4ed8"/>
+    <text x="456" y="253" font-weight="600" fill="#1e3a8a">The capability admin.users</text>
+    <text x="456" y="274" fill="#374151">administer users and the mapping below</text>
+  </g>
+  <g>
+    <rect x="40" y="300" width="320" height="56" rx="8" fill="#f3f4f6" stroke="#9ca3af"/>
+    <text x="56" y="323" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" fill="#111827">protected</text>
+    <text x="56" y="344" fill="#6b7280">displayName free</text>
+    <line x1="360" y1="328" x2="438" y2="328" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+    <rect x="440" y="300" width="520" height="56" rx="8" fill="#eef4ff" stroke="#1d4ed8"/>
+    <text x="456" y="323" font-weight="600" fill="#1e3a8a">Kept out of lists others see</text>
+    <text x="456" y="344" fill="#374151">derived today, stored and applied later</text>
+  </g>
+  <g>
+    <rect x="40" y="370" width="320" height="74" rx="8" fill="#f3f4f6" stroke="#9ca3af"/>
+    <text x="56" y="393" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" fill="#111827">S-1-5-21-… (any AD group)</text>
+    <text x="56" y="414" fill="#6b7280">pushed as it is, kept as it is</text>
+    <line x1="360" y1="407" x2="438" y2="407" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+    <rect x="440" y="370" width="520" height="74" rx="8" fill="#fff7ed" stroke="#ea580c"/>
+    <text x="456" y="393" font-weight="600" fill="#9a3412">Nothing by itself</text>
+    <text x="456" y="414" fill="#374151">an administrator maps it to a capability in Clew (D85),</text>
+    <text x="456" y="433" fill="#374151">or names it as a connector audience</text>
+  </g>
+  <!-- outcome -->
+  <rect x="40" y="468" width="920" height="50" rx="10" fill="#ecfdf5" stroke="#059669"/>
+  <text x="500" y="490" text-anchor="middle" font-weight="600" fill="#065f46">Anna is in unit:skola, unit-manager:skola and the AD group mapped to admin.connectors</text>
+  <text x="500" y="509" text-anchor="middle" fill="#374151">→ her grant: Bergsåkers skola · manager · [admin.connectors]. Several units: manager before employee, then the lowest unit id is the active one.</text>
+</svg>

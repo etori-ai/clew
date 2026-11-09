@@ -1,6 +1,6 @@
 import { test as base, expect, type Locator, type Page, type Route } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import type { MenuEntry, Thread } from '@clew/contracts';
+import type { MenuEntry, Thread, SiteHeaderView } from '@clew/contracts';
 import {
   NEXT_WEEK,
   NOW,
@@ -22,6 +22,7 @@ import {
   units,
   groups,
   user,
+  siteHeader,
 } from './data';
 import {
   assistantStatus,
@@ -83,6 +84,8 @@ export class MockApi {
   users = usersOverview();
   /** The users page for someone with `admin.connectors` but not `admin.users`: the server refuses. */
   usersForbidden = false;
+  /** The shared header (D88) every page draws: Clew's default until a test gives the person a connector's header. */
+  header: SiteHeaderView = siteHeader();
   connectors: ConnectorSummary[] = connectors();
   /** The rows under Verktyg in the menu (D40): none until a test puts one there, as none is shown until an administrator switches one on. */
   menu: MenuEntry[] = [];
@@ -131,6 +134,10 @@ export class MockApi {
         : route.fulfill({ status: 401, json: { error: 'Ingen session' } });
     }
     if (path === '/auth/activity') return json({ expiresAt: session.expiresAt });
+    // The shared header (D88): what the person's header connector lists for them, Clew's default until a test says otherwise.
+    if (path === '/header') return json(this.header);
+    // The MCP service inbox (D81): empty unless a spec routes it itself.
+    if (path === '/chat-services') return json({ services: [], deliveries: [] });
     if (path.startsWith('/admin/')) {
       if (!this.admin)
         return route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } });
@@ -233,8 +240,12 @@ export class MockApi {
             ...('audience' in patch ? { audience: patch.audience! } : {}),
             ...('scanEnabled' in patch ? { scanEnabled: patch.scanEnabled! } : {}),
             ...('toolsEnabled' in patch ? { toolsEnabled: patch.toolsEnabled! } : {}),
+            ...('header' in patch ? { header: patch.header! } : {}),
             updatedAt: NOW,
           };
+          // The header is exclusive (D88): the new holder takes it from the previous one.
+          if ('header' in patch && patch.header)
+            this.connectors = this.connectors.map(x => (x.id === cid ? x : { ...x, header: false }));
           if ('menu' in patch)
             for (const [name, on] of Object.entries((patch as { menu: Record<string, boolean> }).menu))
               this.menuOn = on ? [...new Set([...this.menuOn, name])] : this.menuOn.filter(n => n !== name);

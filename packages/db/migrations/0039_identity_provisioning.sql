@@ -13,14 +13,27 @@ CREATE TABLE "auth_capability_map" (
 );
 --> statement-breakpoint
 CREATE TABLE "auth_group_member" (
-	"group_external_id" text NOT NULL,
+	"group_id" text NOT NULL,
 	"person_id" text NOT NULL,
-	CONSTRAINT "auth_group_member_group_external_id_person_id_pk" PRIMARY KEY("group_external_id","person_id")
+	CONSTRAINT "auth_group_member_group_id_person_id_pk" PRIMARY KEY("group_id","person_id")
 );
 --> statement-breakpoint
 CREATE TABLE "auth_group" (
-	"external_id" text PRIMARY KEY NOT NULL,
-	"display_name" text NOT NULL
+	"id" text PRIMARY KEY NOT NULL,
+	"external_id" text,
+	"display_name" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "auth_provisioner" (
+	"id" text PRIMARY KEY NOT NULL,
+	"organisation_id" text NOT NULL,
+	"label" text NOT NULL,
+	"digest" text NOT NULL,
+	"created_by" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"revoked_at" timestamp with time zone
 );
 --> statement-breakpoint
 CREATE TABLE "auth_unit" (
@@ -29,17 +42,22 @@ CREATE TABLE "auth_unit" (
 	"label" text NOT NULL
 );
 --> statement-breakpoint
--- auth_person carries the deferred policy-change trigger of 0018/0019; fire queued events before altering it (as 0030 did).
+-- Provisioning (D68, D85): what a SCIM client pushes and what an administrator maps. auth_person carries the deferred
+-- policy-change trigger of 0018/0019; fire queued events before altering it (as 0030 did).
 SET CONSTRAINTS ALL IMMEDIATE;--> statement-breakpoint
 ALTER TABLE "auth_person" ADD COLUMN "external_id" text;--> statement-breakpoint
 ALTER TABLE "auth_person" ADD COLUMN "user_name" text;--> statement-breakpoint
 ALTER TABLE "auth_person" ADD COLUMN "email" text;--> statement-breakpoint
+ALTER TABLE "auth_person" ADD COLUMN "created_at" timestamp with time zone DEFAULT now() NOT NULL;--> statement-breakpoint
+ALTER TABLE "auth_person" ADD COLUMN "updated_at" timestamp with time zone DEFAULT now() NOT NULL;--> statement-breakpoint
 SET CONSTRAINTS ALL DEFERRED;--> statement-breakpoint
 ALTER TABLE "auth_assignment" ADD CONSTRAINT "auth_assignment_person_id_auth_person_id_fk" FOREIGN KEY ("person_id") REFERENCES "public"."auth_person"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "auth_assignment" ADD CONSTRAINT "auth_assignment_unit_id_auth_unit_id_fk" FOREIGN KEY ("unit_id") REFERENCES "public"."auth_unit"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "auth_group_member" ADD CONSTRAINT "auth_group_member_group_external_id_auth_group_external_id_fk" FOREIGN KEY ("group_external_id") REFERENCES "public"."auth_group"("external_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "auth_group_member" ADD CONSTRAINT "auth_group_member_group_id_auth_group_id_fk" FOREIGN KEY ("group_id") REFERENCES "public"."auth_group"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "auth_group_member" ADD CONSTRAINT "auth_group_member_person_id_auth_person_id_fk" FOREIGN KEY ("person_id") REFERENCES "public"."auth_person"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "auth_group_member_person" ON "auth_group_member" USING btree ("person_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "auth_group_external_id" ON "auth_group" USING btree ("external_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "auth_provisioner_digest" ON "auth_provisioner" USING btree ("digest");--> statement-breakpoint
 CREATE UNIQUE INDEX "auth_person_external_id" ON "auth_person" USING btree ("external_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "auth_person_user_name" ON "auth_person" USING btree ("user_name");--> statement-breakpoint
 -- Backfill (D68): every unit the grants know becomes a unit row, and every grant the one assignment it stands for. The

@@ -344,6 +344,33 @@ export async function checkConnector(
         `Genomgången föreslår ${counts.join(' och ')}. ${same ? 'Två genomgångar gav samma kort.' : 'Två genomgångar gav olika kort.'}`,
       );
   }
+  // The shared header (D88): asked as both roles; the answer must be in the protocol's shape. Its words stay out of the
+  // report (D23, D44): the check counts the places and says whether a logo came along, never what they are.
+  if (manifest.header) {
+    // The check's registry makes the connector the holder for the probe; in an installation an administrator chooses one.
+    registry.govern(manifest.id, { ...registry.governance(manifest.id), header: true });
+    for (const actor of [CHECK_MANAGER, CHECK_EMPLOYEE]) {
+      const answer = await registry.header(actor);
+      if (answer) {
+        const n = answer.output.items.length;
+        ok(`header as ${actor.role}: ${n} places${answer.output.logo ? ', a logo' : ''}`);
+        item(
+          'ok',
+          'surfaces',
+          'Sidhuvud',
+          `Kan ge sidhuvudet: för ${ROLE[actor.role]} ${count(n, 'plats', 'platser')}${answer.output.logo ? ' och en logotyp' : ''}.`,
+        );
+      } else {
+        fail(`header as ${actor.role}: no answer in the protocol's shape`);
+        item(
+          'fail',
+          'surfaces',
+          'Sidhuvud',
+          `Kan inte ge sidhuvudet: svaret för ${ROLE[actor.role]} är inte i protokollets form.`,
+        );
+      }
+    }
+  }
   // One row per area: the roles that see the same thing share a sentence. The figure's value is an answer and stays out
   // (D23, D44): the check says which parts of the richer shape (D54) came back, never what they say.
   const areas = new Map<string, { title: string; byRole: Map<string, Role[]> }>();
