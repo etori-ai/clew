@@ -3,14 +3,14 @@ import { describe, expect, test } from 'bun:test';
 import { type Actor } from '../../packages/connectors/src/index';
 import { checkConnector } from '../../packages/connectors/src/check';
 import { parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
-import { createConnector, manifest as absenceManifest } from '../../connectors/absence/connector.mjs';
-import type { Statistics } from '../../connectors/absence/connector.mjs';
-import { StatisticsUnavailable, createFixtureStatistics } from '../../connectors/absence/statistics.mjs';
-import { createQlikStatistics, toRowFromCells, type SocketLike } from '../../connectors/absence/qlik.mjs';
+import { createConnector, manifest as qlikManifest } from '../../connectors/qlik/connector.mjs';
+import type { Statistics } from '../../connectors/qlik/connector.mjs';
+import { StatisticsUnavailable, createFixtureStatistics } from '../../connectors/qlik/statistics.mjs';
+import { createQlikStatistics, toRowFromCells, type SocketLike } from '../../connectors/qlik/engine.mjs';
 import { assertionFor, testJwks } from '../connector-authority';
 
 /**
- * The absence statistics connector (D82): aggregates per unit and month, a group below the minimum held back, the
+ * The Qlik connector (D82), sick leave its first area: aggregates per unit and month, a group below the minimum held back, the
  * area figure, and Qlik's Engine API as an adapter, run here against a fake engine on the socket. Over the protocol.
  */
 const secret = 'test-secret-test-secret';
@@ -56,30 +56,30 @@ function stack(options: Parameters<typeof createConnector>[0] = {}) {
   const service = createConnector({ jwks: testJwks, secret, statistics: fixture(), ...options });
   const connectorFetch: FetchLike = (input, init) => service.handle(new Request(input, init));
   const registry = new Registry().register(
-    remoteConnector(parseManifest(absenceManifest, 'absence'), {
-      url: 'http://absence',
+    remoteConnector(parseManifest(qlikManifest, 'qlik'), {
+      url: 'http://qlik',
       key: secret,
-      assert: assertionFor('absence', secret),
+      assert: assertionFor('qlik', secret),
       fetch: connectorFetch,
     }),
   );
   return { registry, connectorFetch, service };
 }
 
-describe('the absence connector', () => {
+describe('the qlik connector', () => {
   test('the manifest is valid: two reads for managers, table views, an area with a figure, no scan', () => {
-    const manifest = parseManifest(absenceManifest, 'absence');
+    const manifest = parseManifest(qlikManifest, 'qlik');
     expect(manifest.capabilities.map(c => [c.name, c.kind, c.view?.kind, c.scope.roles])).toEqual([
-      ['absence.unitRates', 'read', 'table', ['manager']],
-      ['absence.trend', 'read', 'table', ['manager']],
+      ['qlik.sickLeaveByUnit', 'read', 'table', ['manager']],
+      ['qlik.sickLeaveTrend', 'read', 'table', ['manager']],
     ]);
     expect(manifest.scan).toBe(false);
-    expect(manifest.areas).toMatchObject([{ id: 'absence', roles: ['manager'], figure: true }]);
+    expect(manifest.areas).toMatchObject([{ id: 'sick-leave', roles: ['manager'], figure: true }]);
   });
 
   test("a manager reads their unit's latest closed month against the same month last year", async () => {
     const { registry } = stack();
-    const out = await registry.run<{ updated: string; rows: UnitRow[] }>(hillevi, 'absence.unitRates', {});
+    const out = await registry.run<{ updated: string; rows: UnitRow[] }>(hillevi, 'qlik.sickLeaveByUnit', {});
     expect(out.updated).toBe('2026-11-06T03:00:00.000Z');
     expect(out.rows).toHaveLength(1);
     const [row] = out.rows;
@@ -99,7 +99,7 @@ describe('the absence connector', () => {
 
   test('a group smaller than the minimum is held back, in the table and in every month of its trend', async () => {
     const { registry } = stack();
-    const out = await registry.run<{ rows: UnitRow[] }>(itChief, 'absence.unitRates', {});
+    const out = await registry.run<{ rows: UnitRow[] }>(itChief, 'qlik.sickLeaveByUnit', {});
     expect(out.rows.map(r => r.unit)).toEqual(['IT och digitalisering', 'Servicedesk']);
     const small = out.rows[1]!;
     expect(small).toEqual({
@@ -109,20 +109,20 @@ describe('the absence connector', () => {
       month: 'oktober 2026',
       note: 'Färre än 5 medarbetare. Visas inte.',
     });
-    const trend = await registry.run<{ rows: UnitRow[] }>(itChief, 'absence.trend', { unit: small.ref });
+    const trend = await registry.run<{ rows: UnitRow[] }>(itChief, 'qlik.sickLeaveTrend', { unit: small.ref });
     expect(trend.rows).toHaveLength(12);
     expect(trend.rows.every(r => r.total === undefined && r.headcount === undefined && !!r.note)).toBe(true);
     // A lower minimum is the operator's choice, after HR and the data protection officer (D82).
     const lower = stack({ minGroup: 3 });
-    const shown = await lower.registry.run<{ rows: UnitRow[] }>(itChief, 'absence.unitRates', {});
+    const shown = await lower.registry.run<{ rows: UnitRow[] }>(itChief, 'qlik.sickLeaveByUnit', {});
     expect(shown.rows[1]).toMatchObject({ unit: 'Servicedesk', headcount: 4 });
     expect(shown.rows[1]!.total).toBeNumber();
   });
 
   test('the trend is twelve months newest first, opened from a row; a unit that is not theirs is not found', async () => {
     const { registry } = stack();
-    const { rows } = await registry.run<{ rows: UnitRow[] }>(hillevi, 'absence.unitRates', {});
-    const trend = await registry.run<{ unit: string; rows: UnitRow[] }>(hillevi, 'absence.trend', {
+    const { rows } = await registry.run<{ rows: UnitRow[] }>(hillevi, 'qlik.sickLeaveByUnit', {});
+    const trend = await registry.run<{ unit: string; rows: UnitRow[] }>(hillevi, 'qlik.sickLeaveTrend', {
       unit: rows[0]!.ref,
     });
     expect(trend.unit).toBe('Bergsåkers skola');
@@ -142,30 +142,30 @@ describe('the absence connector', () => {
     ]);
     expect(trend.rows[0]).toMatchObject({ ref: 'month:2026-10', month: 'oktober 2026', total: 5.3, lastYear: 5.5 });
     // Without input it is the first of the person's units.
-    expect((await registry.run<{ unit: string }>(hillevi, 'absence.trend', {})).unit).toBe('Bergsåkers skola');
-    const { rows: theirs } = await registry.run<{ rows: UnitRow[] }>(itChief, 'absence.unitRates', {});
-    await expect(registry.run(hillevi, 'absence.trend', { unit: theirs[0]!.ref })).rejects.toThrow(
+    expect((await registry.run<{ unit: string }>(hillevi, 'qlik.sickLeaveTrend', {})).unit).toBe('Bergsåkers skola');
+    const { rows: theirs } = await registry.run<{ rows: UnitRow[] }>(itChief, 'qlik.sickLeaveByUnit', {});
+    await expect(registry.run(hillevi, 'qlik.sickLeaveTrend', { unit: theirs[0]!.ref })).rejects.toThrow(
       'Enheten finns inte bland dina enheter.',
     );
-    await expect(registry.run(hillevi, 'absence.trend', { unit: 'Bergsåkers skola' })).rejects.toThrow();
+    await expect(registry.run(hillevi, 'qlik.sickLeaveTrend', { unit: 'Bergsåkers skola' })).rejects.toThrow();
   });
 
   test('a manager whose unit is not in the statistics gets no rows and no figure', async () => {
     const { registry } = stack();
-    expect((await registry.run<{ rows: UnitRow[] }>(elsewhere, 'absence.unitRates', {})).rows).toEqual([]);
-    expect(await registry.run(elsewhere, 'absence.trend', {})).toMatchObject({ unit: 'Annan enhet', rows: [] });
-    expect((await registry.areas(elsewhere)).find(a => a.id === 'absence')?.figure).toBeNull();
+    expect((await registry.run<{ rows: UnitRow[] }>(elsewhere, 'qlik.sickLeaveByUnit', {})).rows).toEqual([]);
+    expect(await registry.run(elsewhere, 'qlik.sickLeaveTrend', {})).toMatchObject({ unit: 'Annan enhet', rows: [] });
+    expect((await registry.areas(elsewhere)).find(a => a.id === 'sick-leave')?.figure).toBeNull();
   });
 
   test('an employee neither sees the area nor gets an answer from the connector itself', async () => {
     const { registry, connectorFetch } = stack();
-    expect((await registry.areas(hassan)).map(a => a.id)).not.toContain('absence');
-    await expect(registry.run(hassan, 'absence.unitRates', {})).rejects.toThrow();
+    expect((await registry.areas(hassan)).map(a => a.id)).not.toContain('sick-leave');
+    await expect(registry.run(hassan, 'qlik.sickLeaveByUnit', {})).rejects.toThrow();
     // Past Clew's scope check, the connector refuses on the verified role.
-    const response = await connectorFetch('http://absence/clew/capabilities/absence.unitRates', {
+    const response = await connectorFetch('http://qlik/clew/capabilities/qlik.sickLeaveByUnit', {
       method: 'POST',
       headers: {
-        authorization: 'Bearer ' + (await assertionFor('absence', secret)(hassan)),
+        authorization: 'Bearer ' + (await assertionFor('qlik', secret)(hassan)),
         'x-clew-connector-key': secret,
         'content-type': 'application/json',
       },
@@ -179,18 +179,18 @@ describe('the absence connector', () => {
 
   test('the area figure (D54) says the rate, the month and last year, and opens the table of units', async () => {
     const plain = await stack().registry.areas(hillevi);
-    expect(plain.find(a => a.id === 'absence')?.figure).toMatchObject({
+    expect(plain.find(a => a.id === 'sick-leave')?.figure).toMatchObject({
       label: 'Sjukfrånvaro',
       value: '5,3 %',
       comparison: 'oktober 2026 · 5,5 % i fjol, −0,2',
       tone: 'none',
-      opens: { capability: 'absence.unitRates', title: 'Sjukfrånvaro per enhet' },
+      opens: { capability: 'qlik.sickLeaveByUnit', title: 'Sjukfrånvaro per enhet' },
     });
     // The tone is the organisation's threshold, not the connector's: warn at or above it, ok below.
     const warned = await stack({ warnAbove: 5 }).registry.areas(hillevi);
-    expect(warned.find(a => a.id === 'absence')?.figure).toMatchObject({ tone: 'warn' });
+    expect(warned.find(a => a.id === 'sick-leave')?.figure).toMatchObject({ tone: 'warn' });
     const calm = await stack({ warnAbove: 6 }).registry.areas(hillevi);
-    expect(calm.find(a => a.id === 'absence')?.figure).toMatchObject({ tone: 'ok' });
+    expect(calm.find(a => a.id === 'sick-leave')?.figure).toMatchObject({ tone: 'ok' });
   });
 
   test('aggregates are read once per cache window, and again after it', async () => {
@@ -205,13 +205,13 @@ describe('the absence connector', () => {
     };
     const { registry } = stack({ statistics, cacheSeconds: 60, now: () => clock });
     await Promise.all([
-      registry.run(hillevi, 'absence.unitRates', {}),
-      registry.run(hillevi, 'absence.trend', {}),
+      registry.run(hillevi, 'qlik.sickLeaveByUnit', {}),
+      registry.run(hillevi, 'qlik.sickLeaveTrend', {}),
       registry.areas(hillevi),
     ]);
     expect(reads).toBe(1);
     clock = 61_000;
-    await registry.run(hillevi, 'absence.unitRates', {});
+    await registry.run(hillevi, 'qlik.sickLeaveByUnit', {});
     expect(reads).toBe(2);
   });
 
@@ -222,17 +222,15 @@ describe('the absence connector', () => {
       },
     };
     const { registry, connectorFetch } = stack({ statistics });
-    await expect(registry.run(hillevi, 'absence.unitRates', {})).rejects.toThrow(
-      'Sjukfrånvarostatistiken svarar inte just nu.',
-    );
-    const response = await connectorFetch('http://absence/clew/figure', {
+    await expect(registry.run(hillevi, 'qlik.sickLeaveByUnit', {})).rejects.toThrow('Qlik svarar inte just nu.');
+    const response = await connectorFetch('http://qlik/clew/figure', {
       method: 'POST',
       headers: {
-        authorization: 'Bearer ' + (await assertionFor('absence', secret)(hillevi)),
+        authorization: 'Bearer ' + (await assertionFor('qlik', secret)(hillevi)),
         'x-clew-connector-key': secret,
         'content-type': 'application/json',
       },
-      body: JSON.stringify({ actor: hillevi, area: 'absence' }),
+      body: JSON.stringify({ actor: hillevi, area: 'sick-leave' }),
     });
     expect(response.status).toBe(503);
     expect(await response.text()).not.toContain('qlikbot');
@@ -240,11 +238,11 @@ describe('the absence connector', () => {
 
   test('passes the conformance check and refuses another secret', async () => {
     const { connectorFetch } = stack();
-    const sign = (key: string) => assertionFor('absence', key);
+    const sign = (key: string) => assertionFor('qlik', key);
     const report = await checkConnector({
       key: secret,
-      url: 'http://absence',
-      id: 'absence',
+      url: 'http://qlik',
+      id: 'qlik',
       assert: sign(secret),
       assertForeign: sign('another-secret-entirely'),
       fetch: connectorFetch,
@@ -454,7 +452,7 @@ describe('the Qlik Engine adapter', () => {
       socket: engine.socket,
     });
     const { registry } = stack({ statistics, unitMap: { 'unit-skola': ['Barn- och utbildningsförvaltningen'] } });
-    const { rows } = await registry.run<{ rows: UnitRow[] }>(hillevi, 'absence.unitRates', {});
+    const { rows } = await registry.run<{ rows: UnitRow[] }>(hillevi, 'qlik.sickLeaveByUnit', {});
     expect(rows).toEqual([
       {
         ref: rows[0]!.ref,

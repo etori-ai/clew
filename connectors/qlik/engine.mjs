@@ -27,7 +27,7 @@ export function hypercubeFor(cube) {
   return {
     measures,
     qProp: {
-      qInfo: { qType: 'clew-absence' },
+      qInfo: { qType: 'clew-sick-leave' },
       qHyperCubeDef: {
         qDimensions: [{ qDef: { qFieldDefs: [cube.unit] } }, { qDef: { qFieldDefs: [cube.period] } }],
         qMeasures: measures.map(m => measureDef(cube.measures[m])),
@@ -146,7 +146,7 @@ export function createQlikStatistics({
     !cube.measures?.total ||
     !cube.measures?.headcount
   )
-    throw new Error('QLIK_CUBE must name unit, period, measures.total and measures.headcount.');
+    throw new Error('QLIK_SICK_LEAVE_CUBE must name unit, period, measures.total and measures.headcount.');
   if (ratesAs !== 'fraction' && ratesAs !== 'percent') throw new Error('QLIK_RATES_AS must be fraction or percent.');
 
   const target = `${base.toString().replace(/\/$/, '')}/app/${encodeURIComponent(appId)}`;
