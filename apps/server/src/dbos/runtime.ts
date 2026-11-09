@@ -2,6 +2,8 @@ import { hostname } from 'node:os';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import './workflows';
 import { startHeartbeat } from './heartbeat';
+import { dbosLogger, logger } from '../logging';
+import { telemetry } from '../telemetry';
 
 /**
  * The durable engine (D85): DBOS Transact in the BFF process, checkpointing to Clew's own PostgreSQL database (the
@@ -12,6 +14,9 @@ import { startHeartbeat } from './heartbeat';
  *  - `CLEW_RELEASE`: the application version; unset, DBOS hashes the workflow source. Workflows are tagged with the
  *    version that started them and are recovered only by executors of that version; an operator moves the rest with
  *    `forkWorkflow`. Only the latest registered version dequeues, so the version that launches promotes itself.
+ *  - Logging and tracing (D91): the engine's log lines go through Clew's logger, and when telemetry export is on the
+ *    engine emits its workflow and step spans on the global tracer provider, in the `dbos.*` semantic-convention
+ *    names, so a reminder's workflow and the Postgres writes under it are one trace.
  */
 export const DEFAULT_APPLICATION = 'clew';
 /**
@@ -42,7 +47,9 @@ export async function launchDurable(options: DurableOptions = {}) {
     systemDatabaseUrl: databaseUrl,
     executorID,
     ...(applicationVersion ? { applicationVersion } : {}),
-    logLevel: process.env.DBOS_LOG_LEVEL ?? 'warn',
+    logger: dbosLogger,
+    tracingEnabled: telemetry.enabled,
+    otelAttributeFormat: 'semconv',
     systemDatabasePoolSize: 5,
   });
   await DBOS.launch();
@@ -75,13 +82,13 @@ const RETRY_MS = 30_000;
 export function startDurableRuntime() {
   launchDurable()
     .then(info =>
-      console.log(`Durable engine (DBOS) launched: executor ${info.executorID}, version ${info.applicationVersion}`),
+      logger.info(
+        { scope: 'dbos', executor: info.executorID, version: info.applicationVersion },
+        'durable engine (DBOS) launched',
+      ),
     )
     .catch(async error => {
-      console.error(
-        `durable engine unavailable, retrying in ${RETRY_MS / 1000} s:`,
-        error instanceof Error ? error.message : error,
-      );
+      logger.error({ scope: 'dbos', error }, `durable engine unavailable, retrying in ${RETRY_MS / 1000} s`);
       await DBOS.shutdown().catch(() => undefined);
       setTimeout(startDurableRuntime, RETRY_MS).unref();
     });

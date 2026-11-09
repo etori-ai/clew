@@ -9,6 +9,7 @@ import { clock } from './ambient';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { startDurable } from '../dbos/start';
 import { mcpWatch } from '../dbos/workflows';
+import { logger } from '../logging';
 
 const enabled = process.env.CLEW_POC === 'true' && process.env.NODE_ENV !== 'production';
 const store = postgresMcpStore({
@@ -44,8 +45,8 @@ export function startMcpWatches() {
         if (rounds.some(w => w.status === 'PENDING' || w.status === 'ENQUEUED')) continue;
         await startDurable(mcpWatch, `mcp-watch:${r.id}:${rounds.length + 1}`, r.id);
       }
-    } catch {
-      console.error('MCP watch reconciliation unavailable');
+    } catch (error) {
+      logger.error({ scope: 'mcp', error }, 'MCP watch reconciliation unavailable');
     } finally {
       busy = false;
     }

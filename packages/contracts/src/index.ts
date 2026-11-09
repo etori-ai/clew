@@ -748,6 +748,20 @@ export const VerbSchema = object({
   week: Type.Optional(Type.String()),
 });
 export type Verb = Static<typeof VerbSchema>;
+/**
+ * What one model turn cost and where its trace is (D91): the provider, the wall time, the steps, the tokens, how the
+ * model stopped and the OpenTelemetry trace id when the turn was traced. Metadata only: never the prompt or the answer.
+ */
+export const ModelCallSchema = object({
+  providerId: Type.String({ maxLength: 60 }),
+  durationMs: Type.Integer({ minimum: 0 }),
+  steps: Type.Optional(Type.Integer({ minimum: 0 })),
+  inputTokens: Type.Optional(Type.Integer({ minimum: 0 })),
+  outputTokens: Type.Optional(Type.Integer({ minimum: 0 })),
+  finishReason: Type.Optional(Type.String({ maxLength: 40 })),
+  traceId: Type.Optional(Type.String({ maxLength: 32 })),
+});
+export type ModelCall = Static<typeof ModelCallSchema>;
 /** Per-message memory of a conversation: what was pointed at, what came back, and how it was produced. */
 export const MessageMetaSchema = object({
   access: Type.Optional(
@@ -772,6 +786,10 @@ export const MessageMetaSchema = object({
   cards: Type.Optional(Type.Array(id, { maxItems: 3 })),
   /** The model that wrote this answer (D24); absent when the router answered. */
   model: Type.Optional(ModelRefSchema),
+  /** The model turn's cost and trace (D91); absent when the router answered. */
+  modelCall: Type.Optional(ModelCallSchema),
+  /** Why the router answered although a model is configured (D8): the failure in the wire's own words, cut short. */
+  fallbackReason: Type.Optional(Type.String({ maxLength: 200 })),
 });
 export type MessageMeta = Static<typeof MessageMetaSchema>;
 export const ThreadMessageSchema = object({

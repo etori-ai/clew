@@ -2,6 +2,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import { database } from '@clew/db';
+import { logPort } from '../logging';
 
 /**
  * Executor liveness and takeover (D85). DBOS recovers a crashed executor's PENDING workflows only when an executor
@@ -65,13 +66,12 @@ export async function adoptExecutors(executorIDs: string[]) {
 }
 
 /** Beat every ten seconds, sweep every thirty; the returned function stops both and removes this executor's row. */
-export async function startHeartbeat(application: string, executorID: string, log = console.log) {
+export async function startHeartbeat(application: string, executorID: string, log = logPort('dbos')) {
+  const fail = logPort('dbos', 'error');
   await ensureHeartbeatTable();
   await beat(application, executorID);
   const beating = setInterval(() => {
-    beat(application, executorID).catch(error =>
-      console.error('durable heartbeat failed:', error instanceof Error ? error.message : error),
-    );
+    beat(application, executorID).catch(error => fail('durable heartbeat failed', error));
   }, HEARTBEAT_MS);
   beating.unref();
   const sweeping = setInterval(() => {
@@ -81,7 +81,7 @@ export async function startHeartbeat(application: string, executorID: string, lo
         const adopted = await adoptExecutors(dead);
         log(`durable engine: adopted ${adopted.length} workflow(s) from dead executor(s) ${dead.join(', ')}`);
       })
-      .catch(error => console.error('durable sweep failed:', error instanceof Error ? error.message : error));
+      .catch(error => fail('durable sweep failed', error));
   }, SWEEP_MS);
   sweeping.unref();
   return async () => {

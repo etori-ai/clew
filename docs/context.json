@@ -1034,6 +1034,15 @@
       "status": "accepted (product owner, 2026-11-09), built; not compared with the design canvas, which has no errand section, and not yet seen against a running stack",
       "date": "2026-11-09",
       "area": "ui"
+    },
+    {
+      "key": "D91-one-logger-opentelemetry-export-and-the-model-turn-in-the-audit-trail",
+      "number": 91,
+      "path": "docs/decisions/D91-one-logger-opentelemetry-export-and-the-model-turn-in-the-audit-trail.md",
+      "title": "D91 · One logger, OpenTelemetry export, and the model turn in the audit trail",
+      "status": "accepted, built 2026-11-09 on `main`",
+      "date": "2026-11-09",
+      "area": "platform"
     }
   ],
   "documents": [
@@ -1312,6 +1321,19 @@
         "Scope of the runnable mock",
         "Trace the implemented external path",
         "Real-provider evidence"
+      ]
+    },
+    {
+      "path": "docs/architecture/observability.md",
+      "title": "Observability",
+      "category": "architecture-guide",
+      "headings": [
+        "Three records, three jobs",
+        "The log",
+        "Traces and metrics",
+        "What a model turn leaves behind",
+        "Development stack",
+        "Backends an operator may run"
       ]
     },
     {
@@ -1975,6 +1997,12 @@
     {
       "path": "docs/decisions/D90-mina-arenden-is-a-section-on-hem.md",
       "title": "D90 · Mina ärenden is a section on Hem, after the day's work",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D91-one-logger-opentelemetry-export-and-the-model-turn-in-the-audit-trail.md",
+      "title": "D91 · One logger, OpenTelemetry export, and the model turn in the audit trail",
       "category": "decision-history",
       "headings": []
     },
@@ -2828,6 +2856,18 @@
         "What a connector may decide, in D88",
         "What a Sitevision connector would do",
         "Not settled"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-09-logging-tracing-and-audit-options.md",
+      "title": "Logging, tracing and audit: what fits Clew (2026-11-09)",
+      "category": "review-history",
+      "headings": [
+        "1. What Clew has today",
+        "2. Libraries and licences (checked 2026-11-09 with `npm view … license` and the repositories' LICENSE files)",
+        "3. The standards situation",
+        "4. Recommended shape",
+        "5. What a decision would have to settle"
       ]
     },
     {

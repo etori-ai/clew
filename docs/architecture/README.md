@@ -19,6 +19,7 @@ The [vocabulary and entity map](../reference/vocabulary.md) separates work items
 | [Working across connectors](working-across-connectors.md) | How does Clew coordinate changes and follow-up across several systems? |
 | [Connector administration](connector-administration.md) | How are registration, governance, model providers and changes managed? |
 | [Scheduled work](scheduled-work.md) | What belongs in PostgreSQL and what does the durable engine execute? |
+| [Observability](observability.md) | What does Clew log, trace and export, what does a model turn leave behind, and how does that relate to the audit trail? |
 | [Testing](testing.md) | Which tests establish behavior at each boundary? |
 
 ## Implement an integration

@@ -170,4 +170,6 @@ export interface AssistantDeps {
   clock: () => Date;
   ids: () => string;
   log: (message: string, ...details: unknown[]) => void;
+  /** The active trace's id (D91), written on a model turn's message and audit row so the record finds its trace; absent when nothing traces. */
+  trace?: () => string | undefined;
 }

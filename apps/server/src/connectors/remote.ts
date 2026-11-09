@@ -5,6 +5,7 @@ import { enabledConnectors, recordHealth, type ConnectorHealth, type ConnectorRo
 import { openSecret } from '../auth-crypto';
 import { signingAuthority } from './signing';
 import type { ConnectorAuthority } from './authority';
+import { logPort } from '../logging';
 export { AssertionError } from './authority';
 
 /**
@@ -73,7 +74,7 @@ export function unregisterConnector(registry: Registry, id: string) {
  * changed, and the health is recorded. A row without a stored manifest waits for the first successful fetch.
  */
 export async function loadConnectors(registry: Registry, options: LoadOptions = {}) {
-  const { attempts = 20, delayMs = 3000, log = console.log, record = recordHealth } = options;
+  const { attempts = 20, delayMs = 3000, log = logPort('connectors'), record = recordHealth } = options;
   const rows = await (options.rows ?? (async () => (await enabledConnectors()).map(sourceOf)))();
   const loaded: string[] = [];
   await Promise.all(

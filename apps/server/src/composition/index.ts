@@ -39,6 +39,8 @@ import { reviewDocuments } from './documents';
 import { visibleThread } from '../threads/access';
 import { refresh } from './refresh';
 import { postgresAttention } from '../threads/adapters/attention-postgres';
+import { logPort } from '../logging';
+import { currentTraceId, telemetry } from '../telemetry';
 export { refresh } from './refresh';
 
 /**
@@ -144,7 +146,7 @@ const modelHealth = memoryModelHealth();
 export const models = modelUsecases({
   store: postgresModelStore(),
   sealer: modelSealer,
-  wire: openAICompatibleWire(),
+  wire: openAICompatibleWire(fetch, { recordModelContent: telemetry.recordModelContent }),
   health: modelHealth,
   clock,
 });
@@ -156,14 +158,13 @@ export const assistant = assistantUsecases({
   models: { resolve: models.resolve, health: modelHealth },
   clock,
   ids,
-  log: console.error,
+  log: logPort('assistant', 'error'),
+  trace: currentTraceId,
 });
 /** The models' health probe (D8), started by main.ts beside the server: once at boot, then every minute. */
 export const startAssistantProbe = (intervalMs = 60_000) => {
-  const tick = () =>
-    void models
-      .probe()
-      .catch(error => console.error('models: probe failed:', error instanceof Error ? error.message : error));
+  const probeFailed = logPort('models', 'error');
+  const tick = () => void models.probe().catch(error => probeFailed('models: probe failed', error));
   tick();
   setInterval(tick, intervalMs).unref?.();
 };
@@ -218,7 +219,7 @@ export const connectorReconcile: ConnectorReconcileDeps = {
   bundled: bundledIds,
   internal: internalIds,
   clock,
-  log: console.log,
+  log: logPort('connectors'),
 };
 // Refresh from the authoritative rows, including across server instances, before releasing protected data.
 export const refreshConnectors = () => applyAllRows(connectorReconcile);
@@ -229,5 +230,5 @@ export const scheduler = createScheduler({
   threads,
   calendar,
   clock,
-  log: console.error,
+  log: logPort('scheduler', 'error'),
 });

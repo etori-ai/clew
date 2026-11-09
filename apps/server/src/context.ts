@@ -4,6 +4,7 @@ import { AuthError, authenticate, verifyMutation, SESSION_COOKIE, type Session }
 import { CalendarError } from '@clew/calendar/model';
 import { ExecutionError } from './modules/executions/model';
 import { JobError } from './modules/jobs/contracts';
+import { logger } from './logging';
 
 export type Env = { Variables: { session: Session } };
 export const privateHeaders = { 'Cache-Control': 'no-store, private', 'X-Content-Type-Options': 'nosniff' };
@@ -53,6 +54,6 @@ export function failure(c: Context, error: unknown) {
     error instanceof JobError
   )
     return c.json({ error: error.message }, 400, privateHeaders);
-  console.error(error);
+  logger.error({ scope: 'http', error, method: c.req.method, path: c.req.path }, 'request failed');
   return c.json({ error: 'Något gick fel. Försök igen.' }, 503, privateHeaders);
 }

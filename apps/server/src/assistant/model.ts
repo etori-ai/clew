@@ -24,6 +24,8 @@ const clip = (value: unknown) => {
 
 export type ToolSchemaInfo = ToolInfo & { input: unknown };
 export type ToolCallRecord = { capability: string; input: Record<string, unknown>; output: unknown };
+/** What the wire reports about one turn (D91): tokens, steps and how the model stopped. Never content. */
+export type ModelUsage = { inputTokens?: number; outputTokens?: number; finishReason?: string; steps?: number };
 /**
  * The model's tool set: every in-scope read capability, run through the same validated path as REST and cards. A tool whose
  * view says the model reads a summary (D38) is still run, so the person's view has its rows, but the model is handed only
@@ -99,18 +101,21 @@ export type ModelGenerate = (request: {
   timeoutMs: number;
   onText?: (text: string) => void;
   signal?: AbortSignal;
-}) => Promise<{ text: string; toolCalls: ToolCallRecord[] }>;
+}) => Promise<{ text: string; toolCalls: ToolCallRecord[]; usage?: ModelUsage }>;
 /**
  * The generate function for one model on one OpenAI-compatible endpoint (D24): the administered provider gives the base
  * URL and the opened key. Four steps at most, no retries, the caller's timeout. The completion is streamed (D36): each
  * text delta reports the step's text so far, and a new step starts it over, so the text heard last is the answer's.
  * `reasoning` is the model's own setting (D84): `provider-default` sends nothing. `fetchImpl` is for tests.
+ * Telemetry (D91): the AI SDK's registered integration draws the turn's `gen_ai.*` spans; prompts, completions and
+ * tool arguments go on them only when `recordContent` is set, which an operator does, never a default.
  */
 export function createGenerator(
   endpoint: { baseUrl: string; apiKey?: string },
   model: string,
   fetchImpl?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
   reasoning: ModelReasoning = 'provider-default',
+  telemetry: { recordContent?: boolean } = {},
 ): ModelGenerate {
   const provider = createOpenAICompatible({
     name: 'clew',
@@ -133,6 +138,11 @@ export function createGenerator(
       maxRetries: 0,
       abortSignal,
       onError: () => undefined,
+      telemetry: {
+        functionId: 'assistant.turn',
+        recordInputs: telemetry.recordContent === true,
+        recordOutputs: telemetry.recordContent === true,
+      },
     });
     let step = '';
     for await (const part of result.fullStream) {
@@ -143,14 +153,22 @@ export function createGenerator(
       } else if (part.type === 'error') throw part.error instanceof Error ? part.error : new Error(String(part.error));
       else if (part.type === 'abort') throw new Error(part.reason ?? 'aborted');
     }
-    const toolCalls: ToolCallRecord[] = (await result.steps).flatMap(s =>
+    const steps = await result.steps;
+    const toolCalls: ToolCallRecord[] = steps.flatMap(s =>
       s.toolResults.map(r => ({
         capability: fromToolName(r.toolName),
         input: (r.input ?? {}) as Record<string, unknown>,
         output: r.output,
       })),
     );
-    return { text: await result.text, toolCalls };
+    const [totalUsage, finishReason] = await Promise.all([result.totalUsage, result.finishReason]);
+    const usage: ModelUsage = {
+      steps: steps.length,
+      ...(totalUsage.inputTokens !== undefined ? { inputTokens: totalUsage.inputTokens } : {}),
+      ...(totalUsage.outputTokens !== undefined ? { outputTokens: totalUsage.outputTokens } : {}),
+      ...(finishReason ? { finishReason } : {}),
+    };
+    return { text: await result.text, toolCalls, usage };
   };
 }
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -165,12 +183,12 @@ export async function modelAnswer(args: {
   timeoutMs?: number;
   onText?: (text: string) => void;
   signal?: AbortSignal;
-}): Promise<{ body: string; view?: ViewRef; toolCalls: ToolCallRecord[] }> {
+}): Promise<{ body: string; view?: ViewRef; toolCalls: ToolCallRecord[]; usage?: ModelUsage }> {
   const messages: ModelMessage[] = [
     ...args.history.map(m => ({ role: m.role, content: m.body }) as ModelMessage),
     { role: 'user', content: args.text },
   ];
-  let result: { text: string; toolCalls: ToolCallRecord[] };
+  let result: { text: string; toolCalls: ToolCallRecord[]; usage?: ModelUsage };
   try {
     result = await args.generate({
       system: args.system,
@@ -193,6 +211,7 @@ export async function modelAnswer(args: {
   return {
     body,
     toolCalls: result.toolCalls,
+    ...(result.usage ? { usage: result.usage } : {}),
     ...(shown && info
       ? {
           view: {

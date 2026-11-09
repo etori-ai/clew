@@ -8,6 +8,7 @@
 - [Platform overview](docs/overview.md): employee journey, ownership, vocabulary and boundaries.
 - [Architecture overview](docs/architecture/overview.md): components, data ownership, reads, scans, approvals, durable execution and browser updates.
 - [Backend structure](docs/architecture/backend-structure.md): current code map, ports/adapters and dependency rules.
+- [Observability](docs/architecture/observability.md): the structured log, OpenTelemetry export, what a model turn records, and the audit trail's place beside them.
 - [Implementation status](docs/reference/status.md): implemented behavior versus proposals and fixtures.
 - [Interface spaces](docs/reference/interface-spaces.md): placement, drill-in, close, focus and address rules for pages, context panels, overlays and confirmations.
 - [Vocabulary and entity map](docs/reference/vocabulary.md): shared product terms, interface containers, relationships and mappings to current code names.

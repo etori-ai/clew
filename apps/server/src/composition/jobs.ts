@@ -1,6 +1,7 @@
 import { durableJobs } from '../scheduler/adapters/durable-postgres';
 import { scheduler, attention } from './index';
 import { clock } from './ambient';
+import { logger } from '../logging';
 
 export async function runScheduledJob(id: string): Promise<'done' | 'busy'> {
   const job = await durableJobs.claimExecution(id, clock().toISOString());
@@ -21,8 +22,8 @@ export function startJobs() {
   const seed = async () => {
     try {
       await scheduler.scheduleNightly();
-    } catch {
-      console.error('nightly scan could not be scheduled, retrying');
+    } catch (error) {
+      logger.error({ scope: 'scheduler', error }, 'nightly scan could not be scheduled, retrying');
       setTimeout(() => void seed(), 2000).unref();
     }
   };

@@ -7,6 +7,7 @@ import { signingAuthority } from '../connectors/signing';
 import { refreshConnectors } from '../composition';
 import { AssertionError, verifyAssertion } from '../connectors/remote';
 import { systemContext } from '../system-context';
+import { logger } from '../logging';
 
 /**
  * The one way back in for a remote connector (D21): run another connector's `read` or `propose` as the person the connector
@@ -26,7 +27,7 @@ connectorRoutes.post('/call', async c => {
   try {
     assertion = await verifyAssertion(header.slice(7).trim());
   } catch (e) {
-    if (!(e instanceof AssertionError)) console.error('connector callback', e);
+    if (!(e instanceof AssertionError)) logger.error({ scope: 'connectors', error: e }, 'connector callback failed');
     return error('denied', 'Ogiltigt behörighetsbevis.', 401);
   }
   const text = await c.req.raw.text();
@@ -60,7 +61,7 @@ connectorRoutes.post('/call', async c => {
         e.message,
         e.message === 'Okänd förmåga.' ? 404 : 400,
       );
-    console.error('connector callback', assertion.connectorId, e);
+    logger.error({ scope: 'connectors', connector: assertion.connectorId, error: e }, 'connector callback failed');
     return error('unavailable', 'Tjänsten går inte att nå just nu.', 503);
   }
 });

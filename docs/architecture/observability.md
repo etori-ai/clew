@@ -1,0 +1,118 @@
+# Observability
+
+How Clew records what it does: the structured log, the traces and metrics it exports, what a model turn leaves behind,
+and how that relates to the audit trail. Decided in [D91](../decisions/D91-one-logger-opentelemetry-export-and-the-model-turn-in-the-audit-trail.md);
+the options weighed are in the [review of 2026-11-09](../reviews/2026-11-09-logging-tracing-and-audit-options.md).
+
+## Three records, three jobs
+
+| Record | Where it lives | What it is for | Guarantee |
+|---|---|---|---|
+| Audit row | `audit` table, PostgreSQL | Evidence: who did what to which subject, and for a model turn what it cost and where its trace is | Written in the same transaction as the change; commits or rolls back with it |
+| Log line | stdout, JSON, one per event | Operations: what the process did and why something failed, with the trace it belongs to | Best effort; a collector ships it |
+| Span and metric | OTLP to the operator's backend | Timing and structure: a request, the model's steps and tool calls, a workflow and its Postgres writes, as one trace | Best effort; off until an endpoint is configured |
+
+Audit is never moved into the logging pipeline. A log line or a span may be dropped; an audit row may not.
+
+## The log
+
+`apps/server/src/logging.ts` makes the one `pino` logger. Every line carries `service: clew`, `scope` (the folder or
+subsystem: `assistant`, `connectors`, `dbos`, `http`, `otel`, `process`, `scheduler` …), `level`, `time`, `message`,
+and, while a span is active, `trace_id` and `span_id`. An error travels as `error` with its type, message and stack.
+
+Use cases do not import the logger. Each folder declares a `log` port in its `model.ts` or `ports.ts`
+(`(message: string, ...details: unknown[]) => void`), and `apps/server/src/composition/` binds it with
+`logPort(scope, level)`. The unit suite passes its own function and asserts what was said.
+
+DBOS's logging goes through `dbosLogger` in the same file: the engine's `info` lines are its own chatter and come out
+at `debug`, warnings and errors keep their level, and its span attributes come along as `dbos` when tracing is on.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `LOG_LEVEL` | `info` | The floor: `debug` shows every engine line and the probes |
+| `LOG_FORMAT` | JSON | `pretty` renders for a terminal (development stack); production keeps JSON |
+
+Nothing in `apps/server/src` writes to the console. A process-level handler logs unhandled rejections and ends the
+process after an uncaught exception, once telemetry is flushed, so the container runtime restarts it.
+
+## Traces and metrics
+
+`apps/server/src/telemetry.ts` is the first import of `main.ts`. With `OTEL_EXPORTER_OTLP_ENDPOINT` set it starts the
+OpenTelemetry Node SDK with OTLP/HTTP exporters for traces and metrics. Unset, it starts nothing and no data leaves the
+process: there is no default endpoint and no account.
+
+What is instrumented:
+
+- **Requests**: `@hono/otel` opens one server span per request, named by method and route, with the path alone as its
+  URL (query strings may carry an authorization code or a person's name) and the `http.server.request.duration`
+  metric.
+- **Outgoing calls**: the undici instrumentation spans every `fetch`: connectors, the CalDAV server, the identity
+  provider, the model endpoint.
+- **The durable engine**: DBOS emits a span per workflow and step on the same tracer provider, in the `dbos.*`
+  semantic-convention names, so a reminder's workflow and the writes under it are one trace with the request that
+  started it.
+- **Model turns**: the AI SDK's `@ai-sdk/otel` integration emits `invoke_agent assistant.turn`, `step`,
+  `chat {model}` and `execute_tool {tool}` spans with the GenAI semantic conventions (`gen_ai.operation.name`,
+  `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`,
+  `gen_ai.response.finish_reasons`) and the `gen_ai.client.inference.duration` metric.
+
+The resource names the instance: `service.name=clew`, `service.version` from `CLEW_RELEASE`, `service.instance.id`
+from `CLEW_EXECUTOR_ID` (the same name the durable engine uses), else the host name.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | Where traces and metrics go, OTLP/HTTP (`http://otel:4318` in the development stack) |
+| `CLEW_MODEL_TELEMETRY_CONTENT` | unset | `true` puts prompts, completions and tool arguments on the model spans. Development stacks only |
+| `CLEW_RELEASE`, `CLEW_EXECUTOR_ID` | unset, host name | The resource's version and instance id |
+
+The standard `OTEL_*` variables of the OpenTelemetry SDK (headers, protocol, sampler) work as documented upstream.
+
+### Content is off
+
+The model spans record no prompt, completion or tool arguments unless an operator sets
+`CLEW_MODEL_TELEMETRY_CONTENT=true`. The system prompt names the person and their unit, tool results carry staff
+data, and the audit rule is metadata only; the same rule holds for telemetry. Token counts, durations, model and
+provider names, finish reasons and tool names are always recorded.
+
+### Known gaps
+
+Clew's own Postgres queries run through `postgres.js`, which has no OpenTelemetry instrumentation, so they appear as
+time inside the use case's span, not as spans of their own. Log lines are not exported over OTLP from the process; a
+collector reading stdout is the expected shape. The GenAI semantic conventions are still at Development status and
+their attribute names may change; Clew's own records use Clew's names.
+
+## What a model turn leaves behind
+
+Beside the message and the audit row every turn writes, a turn the model answered records
+`MessageMeta.modelCall` ([contracts](../../packages/contracts/src/index.ts), `ModelCallSchema`):
+
+| Field | Meaning |
+|---|---|
+| `providerId` | The administered provider (D24) |
+| `durationMs` | Wall time of the model call by the deps' clock |
+| `steps` | Model steps in the turn (at most four) |
+| `inputTokens`, `outputTokens` | The wire's usage report, when the provider gives one |
+| `finishReason` | How the model stopped |
+| `traceId` | The OpenTelemetry trace, when the turn was traced |
+
+The same record is in the audit row's `details.modelCall`, so a reader goes from an answer in a conversation to its
+audit row to its trace in the backend. When a configured model fails and the router answers (D8),
+`MessageMeta.fallbackReason` and `details.fallbackReason` carry the wire's words, cut to 200 characters. Never the
+text of the prompt or the answer: the message body holds the answer, nothing else does.
+
+## Development stack
+
+`.devcontainer/compose.yaml` runs `grafana/otel-lgtm` as the `otel` service: Grafana, Tempo (traces), Loki (logs) and
+Prometheus (metrics) in one container, AGPL-3.0 as a separate process. The app exports to `http://otel:4318`;
+Grafana is at `http://localhost:3023` (anonymous administrator, development only). Explore › Tempo shows a request's
+trace with the model's steps and tool calls under it; Explore › Prometheus has `gen_ai_client_inference_duration` and
+`http_server_request_duration`. Logs stay on the container's stdout in the development stack.
+
+## Backends an operator may run
+
+The application speaks OTLP and nothing else. Any backend that receives OTLP fits: Grafana Tempo, Loki and Mimir
+(AGPL-3.0), SigNoz (MIT core), Jaeger (Apache-2.0, traces only), HyperDX (MIT), OpenObserve (AGPL-3.0), and Langfuse
+(MIT core) through its OTLP endpoint for a prompt-and-tool view of the model spans. An OpenTelemetry Collector between
+Clew and the backend is the usual place to fan out, to collect stdout as logs, and to set retention and redaction
+policy. Choose with the [open-source rule](../../CLAUDE.md) in mind: Arize Phoenix (Elastic License 2.0) and Sentry
+self-hosted (Functional Source License) are not OSI-licensed.

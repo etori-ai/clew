@@ -53,6 +53,7 @@ import { changesFor } from '../composition/changes';
 import { authenticate, AuthError, SESSION_COOKIE } from '../auth';
 import { getCookie } from 'hono/cookie';
 import { readDocument, reviewDocuments } from '../composition/documents';
+import { logger } from '../logging';
 
 const {
   act,
@@ -467,7 +468,8 @@ api.post('/conversation/stream', async c => {
       await send({ type: 'done', response });
     } catch (error) {
       if (error instanceof TurnStopped || stop.signal.aborted) return;
-      if (!(error instanceof InputError || error instanceof CalendarError)) console.error(error);
+      if (!(error instanceof InputError || error instanceof CalendarError))
+        logger.error({ scope: 'assistant', error }, 'conversation turn failed');
       await send({
         type: 'error',
         message:

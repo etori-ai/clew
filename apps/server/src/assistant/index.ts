@@ -5,6 +5,7 @@ import type {
   ConversationInput,
   ConversationResponse,
   MessageMeta,
+  ModelCall,
   ModelRef,
   SearchResult,
   SourceCitation,
@@ -55,7 +56,11 @@ type Produced = {
   sources?: SourceCitation[];
   /** The administered model that wrote the answer (D24). */
   model?: ModelRef;
+  /** The model turn's cost and trace (D91). */
+  modelCall?: ModelCall;
 };
+/** The model path did not answer (D8): the router takes over and the reason is kept with the turn. */
+type ModelUnavailableOutcome = { unavailable: string };
 const SEARCH_TOOL = SEARCH_CONNECTOR + '.search';
 /** What a caller hears while a turn runs (D36): the capabilities it reads and the model's text so far; `signal` is the person pressing Stoppa. */
 export interface TurnObserver {
@@ -311,8 +316,8 @@ export function assistantUsecases(deps: AssistantDeps) {
     chips: ResolvedChips,
     model: ResolvedModel,
     turn: Turn,
-  ): Promise<Produced | undefined> {
-    if (!models.health.available(model.providerId)) return undefined;
+  ): Promise<Produced | ModelUnavailableOutcome> {
+    if (!models.health.available(model.providerId)) return { unavailable: 'provider marked down' };
     const tools = model.tools ? registry.tools(actorOf(persona)) : [];
     const now = clock();
     const system = systemPrompt({
@@ -334,6 +339,7 @@ export function assistantUsecases(deps: AssistantDeps) {
     try {
       // The search fan-out (D26) takes up to four seconds of its own, so a turn that may search gets a longer budget than a plain read.
       const timeoutMs = tools.some(t => t.name === SEARCH_TOOL) ? 12_000 : 8_000;
+      const started = clock().getTime();
       const answer = await modelAnswer({
         system,
         history: history.slice(-20).map(m => ({ role: m.role, body: m.body })),
@@ -345,7 +351,19 @@ export function assistantUsecases(deps: AssistantDeps) {
         onText,
         ...(turn.signal ? { signal: turn.signal } : {}),
       });
-      models.health.mark(model.providerId, true, clock().toISOString());
+      const ended = clock();
+      models.health.mark(model.providerId, true, ended.toISOString());
+      // The turn's record (D91): what it cost and where its trace is, never what was said.
+      const traceId = deps.trace?.();
+      const modelCall: ModelCall = {
+        providerId: model.providerId,
+        durationMs: Math.max(0, ended.getTime() - started),
+        ...(answer.usage?.steps !== undefined ? { steps: answer.usage.steps } : {}),
+        ...(answer.usage?.inputTokens !== undefined ? { inputTokens: answer.usage.inputTokens } : {}),
+        ...(answer.usage?.outputTokens !== undefined ? { outputTokens: answer.usage.outputTokens } : {}),
+        ...(answer.usage?.finishReason ? { finishReason: answer.usage.finishReason.slice(0, 40) } : {}),
+        ...(traceId ? { traceId } : {}),
+      };
       const source = answer.toolCalls.length
         ? [
             ...new Set(answer.toolCalls.map(c => tools.find(t => t.name === c.capability)?.source ?? 'Startsidan')),
@@ -374,13 +392,15 @@ export function assistantUsecases(deps: AssistantDeps) {
         ...(view ? { view } : {}),
         ...(sources?.length ? { sources } : {}),
         model: { id: model.id, title: model.title },
+        modelCall,
       };
     } catch (e) {
       if (turn.signal?.aborted) throw new TurnStopped();
       models.health.mark(model.providerId, false, clock().toISOString());
-      deps.log('assistant: model unavailable, falling back to the router:', e instanceof Error ? e.message : e);
+      const reason = (e instanceof Error ? e.message : String(e)).slice(0, 200);
+      deps.log('assistant: model unavailable, falling back to the router:', reason);
       if (sent) turn.emit({ type: 'text', delta: '', reset: true });
-      return undefined;
+      return { unavailable: reason };
     }
   }
   /**
@@ -429,7 +449,12 @@ export function assistantUsecases(deps: AssistantDeps) {
     // The person's model is resolved on the server for every turn (D24): their pick, else the default; none means the router (D8).
     const model = produced ? undefined : await models.resolve(persona);
     const fallback = model ? 'unavailable' : 'router';
-    if (!produced && model) produced = await modelPath(persona, input.text, history, context, model, turn);
+    let fallbackReason: string | undefined;
+    if (!produced && model) {
+      const outcome = await modelPath(persona, input.text, history, context, model, turn);
+      if ('unavailable' in outcome) fallbackReason = outcome.unavailable;
+      else produced = outcome;
+    }
     if (!produced && named.length) produced = cardPath(named, fallback);
     if (!produced) produced = await routerPath(persona, input.text, fallback, turn);
     if (observer.signal?.aborted) throw new TurnStopped();
@@ -467,6 +492,8 @@ export function assistantUsecases(deps: AssistantDeps) {
       ...(produced.followUps.length ? { followUps: produced.followUps.slice(0, 3) } : {}),
       ...(cards.length ? { cards } : {}),
       ...(produced.model ? { model: produced.model } : {}),
+      ...(produced.modelCall ? { modelCall: produced.modelCall } : {}),
+      ...(fallbackReason ? { fallbackReason } : {}),
     };
     await store.transaction(async tx => {
       if (!existing) {
@@ -513,6 +540,9 @@ export function assistantUsecases(deps: AssistantDeps) {
           ...(produced!.sources?.length ? { sources: produced!.sources.map(s => s.ref) } : {}),
           ...(cards.length ? { cards } : {}),
           ...(produced!.model ? { model: produced!.model.id } : {}),
+          // The audit row finds the turn's trace and cost (D91); the text stays in the message, never here.
+          ...(produced!.modelCall ? { modelCall: produced!.modelCall } : {}),
+          ...(fallbackReason ? { fallbackReason } : {}),
         },
       });
     });

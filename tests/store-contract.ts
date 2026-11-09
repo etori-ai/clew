@@ -226,6 +226,17 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
         ['user', 'Attestera valda', plus(T0, 2000), { refs: ['finance:inv:1'] }],
       ]);
       expect(read.updatedAt).toBe(plus(T0, 2000));
+      // A conversation turn writes the question and the answer at the same instant (assistant/index.ts); they come back
+      // in the order they were written, never the answer first.
+      await store.transaction(async tx => {
+        await tx.addMessage(t.id, { role: 'user', body: 'Vad är detta?', at: plus(T0, 2000) });
+        await tx.addMessage(t.id, { role: 'assistant', body: 'Ett meddelande om en ny rutin.', at: plus(T0, 2000) });
+      });
+      expect((await store.readThread(a, t.id))!.messages.slice(1).map(m => [m.role, m.body])).toEqual([
+        ['user', 'Attestera valda'],
+        ['user', 'Vad är detta?'],
+        ['assistant', 'Ett meddelande om en ny rutin.'],
+      ]);
       const receipt = {
         at: plus(T0, 3000),
         headline: 'Klart.',
