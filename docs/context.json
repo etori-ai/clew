@@ -2649,6 +2649,18 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-09-dbos-spike-durable-reminders.md",
+      "title": "Spike: durable reminders on DBOS Transact instead of Temporal · 2026-11-09",
+      "category": "review-history",
+      "headings": [
+        "What was compared",
+        "Results",
+        "What the spike did not cover",
+        "Comparison after the spike",
+        "Recommendation"
+      ]
+    },
+    {
       "path": "docs/reviews/README.md",
       "title": "Reviews and explorations",
       "category": "review-history",

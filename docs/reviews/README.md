@@ -45,3 +45,4 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Connector view catalogue and document previews](2026-11-08-connector-view-catalogue-and-document-previews.md)
 - [Invoice review with documents and attachments](2026-11-08-invoice-review-and-document-walkthrough.md)
 - [MCP services and employee-survey provider compatibility](2026-11-08-mcp-services-and-provider-compatibility.md)
+- [Spike: durable reminders on DBOS Transact instead of Temporal · 2026-11-09](2026-11-09-dbos-spike-durable-reminders.md)

@@ -1,0 +1,59 @@
+[   0.0s] === recovery: two instances, SIGKILL the owner, restart with same id / new id / takeover
+[  17.9s] started A (executor a, pid 806284) in 10000 ms
+[  45.2s] started B (executor b, pid 806472) in 15600 ms
+[  57.2s]   owners after dequeue: {"mw90tx0a-rec-0":"b","mw90tx0a-rec-1":"a","mw90tx0a-rec-2":"b","mw90tx0a-rec-3":"b","mw90tx0a-rec-4":"b","mw90tx0a-rec-5":"b"}
+[  57.2s] SIGKILL B (pid 806472); port 4102 is dead
+[  78.1s] --- after due time with B dead (5 of its timers), survivor alive
+[  78.1s]   PASS survivor's own timers fired (1)
+[  78.1s]   OBSERVED dead executor's timers did not fire while it is dead (5 stranded)
+[  78.1s]   restart B with the SAME executor id b
+[  90.9s] started B2 (executor b, pid 806996) in 9200 ms
+[  99.3s] --- after B restarted as executor b
+[  99.4s]   PASS dead executor's timers recovered and fired exactly once
+[ 103.5s] SIGKILL B2 (pid 806996); port 4102 is dead
+[ 103.5s]   second round: fresh pair, kill an owner, replace it with a NEW executor id z (a replaced pod), then take over
+[ 105.4s] SIGKILL A (pid 806284); port 4101 is dead
+[ 113.8s] started A3 (executor a, pid 807173) in 5200 ms
+[ 124.8s] started B3 (executor b, pid 807281) in 6200 ms
+[ 134.8s]   owners: {"mw90tx0a-rec2-0":"b","mw90tx0a-rec2-1":"a","mw90tx0a-rec2-2":"a","mw90tx0a-rec2-3":"a","mw90tx0a-rec2-4":"b","mw90tx0a-rec2-5":"b"}
+[ 134.8s] SIGKILL A3 (pid 807173); port 4101 is dead
+[ 140.7s] started Z (executor z, pid 807487) in 4000 ms
+[ 156.3s] --- after due time with executor a dead and Z (new id) up
+[ 156.4s]   OBSERVED dead executor's timers stranded under a new executor id (3)
+[ 156.4s]   takeover: Z adopts executor a through recoverPendingWorkflows
+[ 156.6s]   recovered: 3 workflows
+[ 161.7s] --- after takeover
+[ 161.7s]   PASS dead executor's timers fired exactly once after takeover
+[ 161.7s] SIGKILL B3 (pid 807281); port 4102 is dead
+[ 161.7s] SIGKILL Z (pid 807487); port 4101 is dead
+[ 161.7s] === version: hash-versioned pending workflow across a code change, then pinned version
+[ 164.2s] started A (executor a, pid 807732) in 2200 ms
+[ 166.3s] SIGKILL A (pid 807732); port 4101 is dead
+[ 166.3s]   restart with changed workflow source (EXTRA_WORKFLOW=1), same executor id
+[ 167.7s] started A2 (executor a, pid 807805) in 1400 ms
+[ 180.8s] --- after due time on new code
+[ 180.8s]   OBSERVED workflow from the old hash version was not recovered by the new code
+[ 180.8s]   try DBOS.resumeWorkflow from the new version
+[ 180.8s]   resume: {"mw90tx0a-ver-hash:v2:1":"resumed"}
+[ 184.8s] --- after resume
+[ 184.8s]   OBSERVED resume did not run the old-version workflow on the new code
+[ 184.8s]   try DBOS.forkWorkflow(id, 0, { applicationVersion: current }) from the new version
+[ 184.9s]   fork: {"mw90tx0a-ver-hash:v2:1":"forked as mw90tx0a-ver-hash:v2:1:fork"}
+[ 188.9s] --- after fork
+[ 188.9s]   PASS fork onto the current version fired the reminder exactly once
+[ 188.9s] SIGKILL A2 (pid 807805); port 4101 is dead
+[ 188.9s]   pinned version: DBOS__APPVERSION=1, code change between runs
+[ 190.4s] started P1 (executor a, pid 808017) in 1400 ms
+[ 192.4s] SIGKILL P1 (pid 808017); port 4101 is dead
+[ 193.0s] started P2 (executor a, pid 808082) in 600 ms
+[ 204.0s] --- pinned, after due time
+[ 204.0s]   PASS pinned version recovered across the code change
+[ 204.0s] SIGKILL P2 (pid 808082); port 4101 is dead
+[ 204.1s] === atomic: enqueue inside the transaction, rollback leaves nothing; latency of 20 commits
+[ 204.5s] started A (executor a, pid 808210) in 400 ms
+[ 211.1s]   commit latency (intent row + enqueue, ms): median 1.8 p95 2.6 max 3.3
+[ 211.1s]   fire skew (s after due): min 0.02 median 0.04 max 0.05
+[ 211.1s]   PASS rollback left no intent row
+[ 211.1s]   PASS rollback left no workflow row
+[ 211.1s]   PASS all 20 fired exactly once
+[ 211.1s] SIGKILL A (pid 808210); port 4101 is dead
