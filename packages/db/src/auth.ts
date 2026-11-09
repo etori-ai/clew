@@ -1,17 +1,26 @@
-import { and, eq, gt, isNull, lte, or } from 'drizzle-orm';
+import { and, eq, gt, isNotNull, isNull, lte, or } from 'drizzle-orm';
 import { database } from './index';
 import {
   people,
   accessGrants,
   identityBindings,
+  groups,
+  groupMembers,
   sessions,
   loginTransactions,
   authenticationAudit,
   logoutReceipts,
+  audit,
 } from './schema';
 export {
   people,
   accessGrants,
+  units,
+  assignments,
+  groups,
+  groupMembers,
+  capabilityMap,
+  provisioners,
   identityBindings,
   sessions,
   loginTransactions,
@@ -43,12 +52,72 @@ export async function readAccess(personId: string) {
     .where(and(eq(people.id, personId), eq(people.enabled, true)));
   return row;
 }
+/** The external ids of the provisioned groups a person is in, for connector audiences (D23, D68). */
+export async function readGroups(personId: string): Promise<string[]> {
+  const rows = await database()
+    .select({ externalId: groups.externalId })
+    .from(groupMembers)
+    .innerJoin(groups, eq(groups.id, groupMembers.groupId))
+    .where(and(eq(groupMembers.personId, personId), isNotNull(groups.externalId)))
+    .orderBy(groups.externalId);
+  return rows.map(r => r.externalId!);
+}
 export async function resolveSubject(issuer: string, subject: string) {
   const [row] = await database()
     .select()
     .from(identityBindings)
     .where(and(eq(identityBindings.issuer, issuer), eq(identityBindings.subject, subject)));
   return row ? readAccess(row.personId) : undefined;
+}
+/**
+ * First login (D68 item 6): the verified subject binds to the one enabled, provisioned person whose `userName` equals the
+ * configured claim's value. Exactly one match, never an e-mail address, one binding per person and issuer; a subject that
+ * differs from an existing binding is refused and audited, because a change of subject needs a person's review. Returns
+ * the person's access when bound, undefined when not; the caller treats undefined as a denied login.
+ */
+export async function bindFirstLogin(issuer: string, subject: string, claim: string, value: string) {
+  return database().transaction(async tx => {
+    const matches = await tx
+      .select({ id: people.id, enabled: people.enabled })
+      .from(people)
+      .where(eq(people.userName, value));
+    const [person] = matches;
+    if (matches.length !== 1 || !person || !person.enabled) {
+      // The claim is the account name the IdP vouched for, not a person Clew knows; it is what an operator needs to see.
+      await tx.insert(authenticationAudit).values({ action: 'identity-unmatched', actor: 'claim:' + value });
+      return undefined;
+    }
+    const [bound] = await tx
+      .select({ subject: identityBindings.subject })
+      .from(identityBindings)
+      .where(and(eq(identityBindings.issuer, issuer), eq(identityBindings.personId, person.id)));
+    if (bound) {
+      if (bound.subject === subject) return readAccess(person.id);
+      await tx.insert(authenticationAudit).values({ action: 'identity-conflict', actor: 'person:' + person.id });
+      await tx.insert(audit).values({
+        actor: 'person:' + person.id,
+        action: 'identity.conflict',
+        subject: 'person:' + person.id,
+        details: { issuer, claim },
+      });
+      return undefined;
+    }
+    // Another binding may have claimed this subject between the lookup and here; the primary key says so.
+    const inserted = await tx
+      .insert(identityBindings)
+      .values({ issuer, subject, personId: person.id })
+      .onConflictDoNothing()
+      .returning({ personId: identityBindings.personId });
+    if (!inserted.length) return undefined;
+    await tx.insert(authenticationAudit).values({ action: 'identity-bound', actor: 'person:' + person.id });
+    await tx.insert(audit).values({
+      actor: 'person:' + person.id,
+      action: 'identity.bound',
+      subject: 'person:' + person.id,
+      details: { issuer, claim },
+    });
+    return readAccess(person.id);
+  });
 }
 export async function auditAuth(action: string, actor?: string) {
   await database().insert(authenticationAudit).values({ action, actor });

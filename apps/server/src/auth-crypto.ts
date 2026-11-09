@@ -45,8 +45,41 @@ export function decryptTokens(
     open(envelope.data, open(envelope.key, masterKey(), 'auth:key:' + session), 'auth:tokens:' + session).toString(),
   );
 }
-export function authorizationVersion(value: object) {
-  return createHmac('sha256', masterKey()).update(JSON.stringify(value)).digest('hex');
+/**
+ * The part of a person's access record that is authority: what durable work (executions, watches, timers, follow-up
+ * policies, retained answers) compares before it acts for the person. A corrected name, a renamed unit label or a new
+ * column on the person or the grant is not authority and must not read as lost authority (D68, narrowed 2026-11-09).
+ */
+export interface Authority {
+  enabled: boolean;
+  organisationId: string;
+  unitId: string;
+  role: string;
+  capabilities: string[];
+  version: number;
+}
+export function authorityOf(access: {
+  person: { organisationId: string; enabled: boolean };
+  grant: { unitId: string; role: string; capabilities: readonly string[]; version: number };
+}): Authority {
+  return {
+    enabled: access.person.enabled,
+    organisationId: access.person.organisationId,
+    unitId: access.grant.unitId,
+    role: access.grant.role,
+    capabilities: [...new Set(access.grant.capabilities)].sort(),
+    version: access.grant.version,
+  };
+}
+/** An HMAC over the authority alone, in a fixed field order, so the value changes exactly when the authority does. */
+export function authorizationVersion(access: Parameters<typeof authorityOf>[0]) {
+  return createHmac('sha256', masterKey())
+    .update(JSON.stringify(authorityOf(access)))
+    .digest('hex');
+}
+/** A keyed digest for a value that a plain hash would leave guessable (a poll answer, a decision), bound to a purpose. */
+export function keyedDigest(purpose: string, value: unknown) {
+  return createHmac('sha256', masterKey()).update(JSON.stringify({ purpose, value })).digest('hex');
 }
 export function localReturnTo(value: string | null) {
   if (!value || !value.startsWith('/') || value.startsWith('//') || /[\\\r\n]/.test(value)) return '/';

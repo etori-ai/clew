@@ -40,6 +40,8 @@ export interface AuthenticatedContext extends SessionUser {
   organisationId: string;
   principal: { id: string; kind: 'person' };
   capabilities: string[];
+  /** The external ids of the provisioned groups the person is in (D68): what a connector audience's `groups` match. Absent means none. */
+  groups?: string[];
   authorizationVersion: string;
   sessionBinding: string;
   expiresAt: string;
@@ -1108,6 +1110,49 @@ export function parseSwedishTime(text: string, now: string): string | null {
  */
 export const RoleSchema = Type.Union([Type.Literal('manager'), Type.Literal('employee')]);
 export type Role = Static<typeof RoleSchema>;
+/**
+ * The grant capabilities Clew enforces (D85): a closed list. A group mapping, a `capability:` group key or the development
+ * seed may name nothing else; a new name is a contract change. `admin.connectors` administers connected systems (D23),
+ * `admin.users` the users page and the group-to-capability mapping (D85).
+ */
+export const CAPABILITIES = ['admin.connectors', 'admin.users'] as const;
+export type Capability = (typeof CAPABILITIES)[number];
+export const CapabilitySchema = Type.Union(CAPABILITIES.map(c => Type.Literal(c)));
+export const isCapability = (value: string): value is Capability => (CAPABILITIES as readonly string[]).includes(value);
+/** Administration › Användare (D62, D68, D85): a provisioned person as the page lists them. No token, no subject. */
+export interface UserAdminRow {
+  id: string;
+  name: string;
+  userName: string | null;
+  externalId: string | null;
+  email: string | null;
+  enabled: boolean;
+  /** An identity binding exists, so the person has signed in (or was bound by the development seed). */
+  bound: boolean;
+  assignments: Array<{ unitId: string; unitLabel: string; role: Role }>;
+  /** The assignment the person acts as, from the grant projection; null when the person has no unit. */
+  active: { unitId: string; unitLabel: string; role: Role } | null;
+  capabilities: string[];
+  groups: Array<{ externalId: string | null; displayName: string }>;
+}
+/** D85: one group gives one capability. `displayName` is the group's name when the group is provisioned, null when only the mapping remains. */
+export interface CapabilityMapping {
+  groupExternalId: string;
+  displayName: string | null;
+  capability: Capability;
+}
+export interface UsersAdminOverview {
+  users: UserAdminRow[];
+  mapping: CapabilityMapping[];
+  /** The provisioned groups with an external id, as the editor offers them. */
+  groups: Array<{ id: string; label: string }>;
+  capabilities: Capability[];
+}
+export const CapabilityMapInput = Type.Object(
+  { groupExternalId: Type.String({ minLength: 1, maxLength: 512 }), capability: CapabilitySchema },
+  { additionalProperties: false },
+);
+export type CapabilityMapInputType = Static<typeof CapabilityMapInput>;
 export const ConnectorAudienceSchema = Type.Union([
   object({ mode: Type.Literal('all') }),
   object({

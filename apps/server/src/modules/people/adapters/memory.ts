@@ -1,0 +1,201 @@
+import type { Assignment, Grant, GroupRecord, Mapping, UserRecord } from '../domain';
+import type { Provisioner, ProvisionStore, ProvisionTx } from '../ports';
+
+/**
+ * The provisioning store in memory: the unit tests' adapter (D25), held to Postgres by
+ * `tests/provisioning-store-contract.ts` and `tests/scim-store-contract.ts`. State is plain and seedable; a transaction
+ * is a snapshot that a throw rolls back, the audit rows included.
+ */
+export interface MemoryProvisionState {
+  users: Map<string, UserRecord>;
+  groups: Map<string, GroupRecord>;
+  /** `memberKey(groupId, personId)`. */
+  members: Set<string>;
+  mapping: Mapping[];
+  units: Map<string, { organisationId: string; label: string }>;
+  assignments: Map<string, Assignment[]>;
+  grants: Map<string, Omit<Grant, 'capabilities'> & { capabilities: string[] }>;
+  /** By token digest. */
+  provisioners: Map<string, Provisioner & { revoked?: boolean }>;
+  /** Person ids with an identity binding. */
+  bindings: Set<string>;
+  audit: Array<{ actor: string; action: string; subject: string; details: Record<string, unknown> }>;
+}
+export const memberKey = (groupId: string, personId: string) => groupId + '\u0000' + personId;
+const splitKey = (key: string) => key.split('\u0000') as [string, string];
+export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisionState } {
+  const state: MemoryProvisionState = {
+    users: new Map(),
+    groups: new Map(),
+    members: new Set(),
+    mapping: [],
+    units: new Map(),
+    assignments: new Map(),
+    grants: new Map(),
+    provisioners: new Map(),
+    bindings: new Set(),
+    audit: [],
+  };
+  const snapshot = () => structuredClone(state),
+    restore = (s: MemoryProvisionState) => Object.assign(state, s);
+  const byId = <T extends { id: string }>(rows: T[]) => rows.sort((a, b) => a.id.localeCompare(b.id));
+  const page = <T extends { id: string }>(rows: T[], p: { startIndex: number; count: number }) => ({
+    total: rows.length,
+    rows: byId(rows).slice(p.startIndex - 1, p.startIndex - 1 + p.count),
+  });
+  const groupsOf = (personId: string) =>
+    [...state.members]
+      .map(splitKey)
+      .filter(([, p]) => p === personId)
+      .map(([g]) => state.groups.get(g))
+      .filter((g): g is GroupRecord => !!g);
+  const tx: ProvisionTx = {
+    async person(id) {
+      const p = state.users.get(id);
+      return p && { id: p.id, organisationId: p.organisationId };
+    },
+    async memberships(personId) {
+      return groupsOf(personId)
+        .filter(g => g.externalId !== null)
+        .map(g => ({ externalId: g.externalId!, displayName: g.displayName }))
+        .sort((a, b) => a.externalId.localeCompare(b.externalId));
+    },
+    async members(groupExternalId) {
+      const group = [...state.groups.values()].find(g => g.externalId === groupExternalId);
+      return group ? (await tx.groupMembers(group.id)).map(m => m.id) : [];
+    },
+    async mapping() {
+      return state.mapping.map(m => ({ ...m }));
+    },
+    async unitLabels(ids) {
+      return Object.fromEntries(ids.flatMap(id => (state.units.has(id) ? [[id, state.units.get(id)!.label]] : [])));
+    },
+    async writeUnits(organisationId, units) {
+      for (const u of units)
+        state.units.set(u.id, {
+          organisationId: state.units.get(u.id)?.organisationId ?? organisationId,
+          label: u.label,
+        });
+    },
+    async replaceAssignments(personId, assignments) {
+      state.assignments.set(
+        personId,
+        assignments.map(a => ({ ...a })),
+      );
+    },
+    async grant(personId) {
+      const g = state.grants.get(personId);
+      return g && structuredClone(g);
+    },
+    async writeGrant(personId, grant) {
+      if (grant) state.grants.set(personId, { ...grant, capabilities: [...grant.capabilities] });
+      else state.grants.delete(personId);
+    },
+    async audit(entry) {
+      state.audit.push(structuredClone(entry));
+    },
+    async provisioner(digest) {
+      const p = state.provisioners.get(digest);
+      return p && !p.revoked ? { id: p.id, organisationId: p.organisationId, label: p.label } : undefined;
+    },
+    async readUser(organisationId, id) {
+      const u = state.users.get(id);
+      return u && u.organisationId === organisationId ? { ...u } : undefined;
+    },
+    async findUser(organisationId, by, value) {
+      const u = [...state.users.values()].find(u => u.organisationId === organisationId && u[by] === value);
+      return u && { ...u };
+    },
+    async listUsers(organisationId, p, filter) {
+      return page(
+        [...state.users.values()]
+          .filter(u => u.organisationId === organisationId && (!filter || u[filter.attribute] === filter.value))
+          .map(u => ({ ...u })),
+        p,
+      );
+    },
+    async insertUser(record) {
+      if (state.users.has(record.id)) throw new Error('duplicate user id');
+      state.users.set(record.id, { ...record });
+    },
+    async updateUser(id, fields) {
+      const u = state.users.get(id);
+      if (u) state.users.set(id, { ...u, ...fields });
+    },
+    async userGroups(personId) {
+      return byId(groupsOf(personId).map(g => ({ id: g.id, externalId: g.externalId, displayName: g.displayName })));
+    },
+    async readGroup(id) {
+      const g = state.groups.get(id);
+      return g && { ...g };
+    },
+    async findGroup(by, value) {
+      const g = [...state.groups.values()].find(g => g[by] === value);
+      return g && { ...g };
+    },
+    async listGroups(p, filter) {
+      return page(
+        [...state.groups.values()].filter(g => !filter || g[filter.attribute] === filter.value).map(g => ({ ...g })),
+        p,
+      );
+    },
+    async insertGroup(record) {
+      if (state.groups.has(record.id)) throw new Error('duplicate group id');
+      state.groups.set(record.id, { ...record });
+    },
+    async updateGroup(id, fields) {
+      const g = state.groups.get(id);
+      if (g) state.groups.set(id, { ...g, ...fields });
+    },
+    async deleteGroup(id) {
+      state.groups.delete(id);
+      for (const key of [...state.members]) if (splitKey(key)[0] === id) state.members.delete(key);
+    },
+    async groupMembers(groupId) {
+      return byId(
+        [...state.members]
+          .map(splitKey)
+          .filter(([g]) => g === groupId)
+          .map(([, p]) => state.users.get(p))
+          .filter((u): u is UserRecord => !!u)
+          .map(u => ({ id: u.id, name: u.name })),
+      );
+    },
+    async setGroupMembers(groupId, personIds) {
+      for (const key of [...state.members]) if (splitKey(key)[0] === groupId) state.members.delete(key);
+      for (const p of personIds) state.members.add(memberKey(groupId, p));
+    },
+    async assignmentsOf(personId) {
+      return (state.assignments.get(personId) ?? [])
+        .map(a => ({ unitId: a.unitId, unitLabel: state.units.get(a.unitId)?.label ?? a.unitId, role: a.role }))
+        .sort((a, b) => a.unitId.localeCompare(b.unitId));
+    },
+    async bound(personId) {
+      return state.bindings.has(personId);
+    },
+    async setMapping(groupExternalId, capability, present) {
+      const index = state.mapping.findIndex(m => m.groupExternalId === groupExternalId && m.capability === capability);
+      if (present && index === -1) {
+        state.mapping.push({ groupExternalId, capability });
+        return true;
+      }
+      if (!present && index !== -1) {
+        state.mapping.splice(index, 1);
+        return true;
+      }
+      return false;
+    },
+  };
+  return {
+    state,
+    async transaction(fn) {
+      const before = snapshot();
+      try {
+        return await fn(tx);
+      } catch (error) {
+        restore(before);
+        throw error;
+      }
+    },
+  };
+}

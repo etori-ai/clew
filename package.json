@@ -31,6 +31,7 @@
     "auth:setup": "bun scripts/auth-setup.ts",
     "calendar": "sh scripts/calendar.sh",
     "dev:connectors": "bun scripts/dev-connectors.ts",
+    "dev:provision": "bun scripts/provisioner/index.ts",
     "fixtures:reset": "sh scripts/fixtures-reset.sh",
     "graph": "sh scripts/graph.sh",
     "astryx": "cd packages/ui && node ../../node_modules/@astryxdesign/cli/clients/cli/bin/astryx.mjs",

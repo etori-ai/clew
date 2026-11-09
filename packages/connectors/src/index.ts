@@ -251,9 +251,14 @@ export interface ScanObservation {
     tombstones?: Array<{ key: string; period: string }>;
   };
 }
-/** A person is in the audience by role, by unit or by group (any of). Groups match nothing until SCIM provides them. */
-export const inAudience = (audience: ConnectorAudience, actor: Actor) =>
-  audience.mode === 'all' || !!audience.roles?.includes(actor.role) || !!audience.units?.includes(actor.unitId);
+/** A person is in the audience by role, by unit or by group (any of). Groups are the provisioned groups' external ids (D68). */
+/** An actor with the provisioned groups the authenticated context carries (D68); a bare actor has none. */
+export type AudiencedActor = Actor & { groups?: readonly string[] };
+export const inAudience = (audience: ConnectorAudience, actor: AudiencedActor) =>
+  audience.mode === 'all' ||
+  !!audience.roles?.includes(actor.role) ||
+  !!audience.units?.includes(actor.unitId) ||
+  !!audience.groups?.some(g => actor.groups?.includes(g));
 /** Everything the person may not reach reads like "unknown", so a hidden connector cannot be probed (D23). */
 export const UNKNOWN = 'Okänd förmåga.';
 
@@ -357,7 +362,7 @@ export class Registry {
     return this.capabilities.get(name);
   }
   /** A connector exists for this person: registered, switched on and the person is in its audience. */
-  visible(actor: Actor, connectorId: string) {
+  visible(actor: AudiencedActor, connectorId: string) {
     if (!this.connectors.has(connectorId)) return false;
     const g = this.governance(connectorId);
     return g.state === 'enabled' && inAudience(g.audience, actor);

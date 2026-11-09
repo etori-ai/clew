@@ -1,5 +1,5 @@
 import type { AuthenticatedContext } from '@clew/contracts';
-import { readAccess } from '@clew/db/auth';
+import { readAccess, readGroups } from '@clew/db/auth';
 import { authorizationVersion } from './auth-crypto';
 
 /**
@@ -22,6 +22,7 @@ export async function systemContext(
     organisationId: access.person.organisationId,
     principal: { id: 'person:' + personId, kind: 'person' },
     capabilities: access.grant.capabilities,
+    groups: await readGroups(personId),
     authorizationVersion: version,
     sessionBinding: binding,
     expiresAt: new Date(Date.now() + 60_000).toISOString(),

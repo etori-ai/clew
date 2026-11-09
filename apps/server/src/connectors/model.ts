@@ -115,7 +115,11 @@ export interface LiveRegistration {
   register(source: { id: string; url: string; secret: string; manifest: unknown }, manifest: ConnectorManifest): void;
   unregister(id: string): void;
 }
-/** The organisation's units as the grants know them, for the audience editor. SCIM will own this list (identity.md). */
+/** The organisation's units as provisioned (D68), for the audience editor. */
 export interface Units {
+  list(): Promise<Array<{ id: string; label: string }>>;
+}
+/** The provisioned groups with an external id (D68), for the audience editor: `id` is the external id an audience names. */
+export interface Groups {
   list(): Promise<Array<{ id: string; label: string }>>;
 }
