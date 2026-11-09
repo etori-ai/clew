@@ -493,7 +493,18 @@ export function openRef(open: ViewOpen, row: Record<string, unknown>, source: st
   return { capability: open.capability, input, title: open.title, source };
 }
 /** The declared view as the browser gets it beside the output: the declaration, whose it is, and whether a row can be added to the conversation. */
-export type PanelViewSpec = View & { capability: string; connector: string; source: string; chip: boolean };
+/**
+ * `rowViews` is set for a view of Clew's own connectors only (the combined errand list, D35 item 4): each row may then
+ * carry the view it opens (`view`, a ViewRef into the connector the row came from) and the output may name the systems
+ * that did not answer (`unanswered`). A connector outside Clew never gets it, so its rows open only its own reads.
+ */
+export type PanelViewSpec = View & {
+  capability: string;
+  connector: string;
+  source: string;
+  chip: boolean;
+  rowViews?: boolean;
+};
 
 /**
  * A view as a tool in the menu (D40): one click away on every page, under Verktyg. Any read that declares a view and
@@ -624,6 +635,85 @@ export const SearchResultSchema = object({
   sources: Type.Array(SearchSourceSchema),
 });
 export type SearchResult = Static<typeof SearchResultSchema>;
+/**
+ * The shared state of an errand (D89): whose move it is, in words every case system can answer in, so that lists from
+ * several systems are ordered together. The order here is the order a list is drawn in.
+ */
+export const ERRAND_STATES = ['waiting-on-me', 'new', 'active', 'waiting-on-others', 'closed'] as const;
+export const ErrandState = Type.Union(
+  ERRAND_STATES.map(state => Type.Literal(state)),
+  {
+    description:
+      '`waiting-on-me`: the person has to act. `new`: nobody has started. `active`: being handled. `waiting-on-others`: someone else has to act. `closed`: finished.',
+  },
+);
+export type ErrandState = (typeof ERRAND_STATES)[number];
+/**
+ * One errand as a case system's connector lists it (D35, D89): what Clew needs to list, order and make a card of, and
+ * nothing that names a person. The free text and everything only one system has are in the connector's own view.
+ */
+export const ErrandRowSchema = object(
+  {
+    ref: Type.String({
+      minLength: 1,
+      maxLength: 200,
+      pattern: '^errand:[a-z][a-z0-9-]*:[A-Za-z0-9:_.-]+$',
+      description:
+        "`errand:<connector id>:<the system's own identity>`, stable. What `<id>.errand` takes back. Clew treats it as opaque.",
+    }),
+    label: Type.String({
+      minLength: 1,
+      maxLength: 200,
+      description:
+        'The errand number and the category or type display name. Never the title, a name or an account: it is the only errand text a card title or a conversation may carry.',
+    }),
+    state: ErrandState,
+    status: Type.String({ minLength: 1, maxLength: 80, description: "Swedish. The system's own name for the status." }),
+    waitingOn: Type.Optional(
+      Type.String({ minLength: 1, maxLength: 80, description: 'Swedish. Who or what the errand waits on.' }),
+    ),
+    since: { ...instant, description: 'When the errand last changed.' },
+    dueAt: Type.Optional({ ...instant, description: 'The deadline, where the system has one on the errand.' }),
+    area: Type.String({
+      minLength: 1,
+      maxLength: 80,
+      description:
+        'Swedish. The business area or namespace, as a label. Clew never reads it for access: the case system decides what the person sees.',
+    }),
+    link: Type.Optional(Type.String({ maxLength: 1000, description: 'The errand in its own system.' })),
+  },
+  "One errand in a case system's list (D35, D89).",
+);
+export type ErrandRow = Static<typeof ErrandRowSchema>;
+/** What `<id>.errands` returns. */
+export const ErrandsOutputSchema = object(
+  { rows: Type.Array(ErrandRowSchema, { maxItems: 500 }) },
+  "What `<id>.errands` returns: the person's errands in this system, as the system lets them see them.",
+);
+export type ErrandsOutput = Static<typeof ErrandsOutputSchema>;
+/** What `<id>.errands` and the composite `clew.errands` take: the errands assigned to the person or their group, or the ones the person reported. */
+export const ErrandsInputSchema = object({
+  view: Type.Optional(Type.Union([Type.Literal('assigned'), Type.Literal('reported')])),
+});
+export type ErrandsInput = Static<typeof ErrandsInputSchema>;
+/**
+ * What the composite `clew.errands` returns (D35 item 4): every system's rows in one list, each marked with the
+ * connector it came from and the view that opens it there, and every system's part in the answer. `unanswered` names
+ * the systems that did not answer, as a person reads them.
+ */
+export const ErrandsResultSchema = object({
+  rows: Type.Array(
+    object({
+      ...ErrandRowSchema.properties,
+      connector: Type.String(),
+      system: Type.String(),
+      view: Type.Optional(ViewRefSchema),
+    }),
+  ),
+  systems: Type.Array(SearchSourceSchema),
+  unanswered: Type.Array(Type.String()),
+});
+export type ErrandsResult = Static<typeof ErrandsResultSchema>;
 /** A Clew-side action the conversation proposes; executed only after the person confirms, through the thread endpoints. */
 export const ClewActionSchema = object({
   n: Type.Integer(),

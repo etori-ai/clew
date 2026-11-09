@@ -4,6 +4,8 @@ import {
   MenuIconSchema,
   PreviewOutputSchema,
   SearchHitSchema,
+  ErrandRowSchema,
+  ErrandsOutputSchema,
   SearchKind,
   SearchOutputSchema,
   ThreadActionSchema,
@@ -177,7 +179,8 @@ export const ManifestCapabilitySchema = object({
   name: Type.String({
     pattern: '^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$',
     maxLength: 80,
-    description: '`<connector id>.<verb>`, stable.',
+    description:
+      '`<connector id>.<verb>`, stable. Two names are profiles Clew combines across connectors: `<id>.search` (D26, see `kinds`), and `<id>.errands` (D35, D89), a read that takes `{ view?: "assigned" | "reported" }` and answers an ErrandsOutput with the errands the case system lets the person see. Its view\'s `open` names the read that shows one errand, by convention `<id>.errand`. Clew lists every `<id>.errands` in the person\'s scope as `clew.errands`.',
   }),
   kind: Type.Union([Type.Literal('read'), Type.Literal('propose'), Type.Literal('execute')], {
     description:
@@ -515,6 +518,8 @@ export function protocolSchema() {
       CallbackRequest: CallbackRequestSchema,
       SearchHit: SearchHitSchema,
       SearchOutput: SearchOutputSchema,
+      ErrandRow: ErrandRowSchema,
+      ErrandsOutput: ErrandsOutputSchema,
       Delegation: DelegationSchema,
       View: ViewSchema,
       Menu: MenuHintSchema,

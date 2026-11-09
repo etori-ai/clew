@@ -142,6 +142,9 @@ export const isSearchSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId
   c.kind === 'read' && c.name === connectorId + '.search' && connectorId !== SEARCH_CONNECTOR;
 /** The core connector that owns the composite search and the question area. */
 export const SEARCH_CONNECTOR = 'clew';
+/** A capability is an errand source when it is named `<id>.errands` and is a read (D35, D89); the composite `clew.errands` is never one itself. */
+export const isErrandSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId: string) =>
+  c.kind === 'read' && c.name === connectorId + '.errands' && connectorId !== SEARCH_CONNECTOR;
 /** What an execute capability returns: the source system's answer, row by row, read back. */
 export interface ExecuteResult {
   headline: string;
@@ -189,6 +192,11 @@ export interface AreaDefinition {
   schedules: Array<{ label: string; when: string }>;
   /** One of Clew's icons for the area's button under the box (D41). */
   icon?: MenuIcon;
+  /**
+   * For Clew's own connectors only: whether the area exists for this person at all. The errand area is there only for
+   * a person with a case system (D89). A connector outside Clew cannot declare it: a manifest carries no code.
+   */
+  offered?: (actor: Actor) => boolean;
 }
 export interface Connector {
   documents?: (actor: Actor, request: DocumentRequest, clew: Clew) => Promise<DocumentContent>;
@@ -549,7 +557,8 @@ export class Registry {
       if (
         this.connectors.get(connector.id) !== connector ||
         !this.visible(actor, connector.id) ||
-        !area.roles.includes(actor.role)
+        !area.roles.includes(actor.role) ||
+        (area.offered && !area.offered(actor))
       )
         return [];
       const figure = wantsFigure({ connector, area }) ? figures[i]! : null;
@@ -698,6 +707,21 @@ export class Registry {
       }));
   }
   /**
+   * The errand sources a person may use (D35, D89): every `<id>.errands` read in scope, with the read a row of it opens.
+   * The name is tested before the scope: `clew.errands` is in scope only for a person with a source, so its own scope
+   * asks this, and must never be asked from here.
+   */
+  errandSources(actor: Actor) {
+    return [...this.capabilities.values()]
+      .filter(c => isErrandSource(c.capability, c.connector.id) && !!this.allowed(actor, c.capability.name))
+      .map(c => ({
+        name: c.capability.name,
+        connectorId: c.connector.id,
+        source: c.connector.source,
+        ...(this.opens(actor, c.capability) ? { open: this.opens(actor, c.capability)! } : {}),
+      }));
+  }
+  /**
    * Every registered `propose` that follows a fact kind (D55), whether or not this person may call it: the job assembler
    * classifies an administrator's binding against it, so a follower that went away or out of scope is named, never silently skipped.
    */
@@ -747,6 +771,7 @@ export class Registry {
       connector: found.connector.id,
       source: found.connector.source,
       chip,
+      ...(rows && found.connector.kind === 'core' ? { rowViews: true } : {}),
     } as PanelViewSpec;
   }
   /**
@@ -801,15 +826,18 @@ export class Registry {
   /**
    * Tool definitions for the model: `model: true` capabilities the person may call, from connectors whose tools are on (D8).
    * The per-connector search sources are left out while the composite search is registered, so the model sees one search tool (D26).
+   * The per-connector errand lists are left out the same way while `clew.errands` is registered (D35 item 4).
    */
   tools(actor: Actor) {
     const composite = this.capabilities.has(SEARCH_CONNECTOR + '.search');
+    const errands = this.capabilities.has(SEARCH_CONNECTOR + '.errands');
     return this.capabilitiesFor(actor)
       .filter(c => {
         const g = this.governance(c.connector.id);
         return c.capability.model && g.toolsEnabled && g.capabilities[c.capability.name]?.model !== false;
       })
       .filter(c => !(composite && isSearchSource(c.capability, c.connector.id)))
+      .filter(c => !(errands && isErrandSource(c.capability, c.connector.id)))
       .map(c => ({
         name: c.capability.name,
         title: c.capability.title,

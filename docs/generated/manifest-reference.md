@@ -1027,7 +1027,7 @@ Example:
 
 #### `capabilities[].name`
 
-`<connector id>.<verb>`, stable.
+`<connector id>.<verb>`, stable. Two names are profiles Clew combines across connectors: `<id>.search` (D26, see `kinds`), and `<id>.errands` (D35, D89), a read that takes `{ view?: "assigned" | "reported" }` and answers an ErrandsOutput with the errands the case system lets the person see. Its view's `open` names the read that shows one errand, by convention `<id>.errand`. Clew lists every `<id>.errands` in the person's scope as `clew.errands`.
 
 - Type: string
 - required

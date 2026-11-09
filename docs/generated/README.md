@@ -41,7 +41,7 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 | Field | Required | Shape | Description |
 |---|---|---|---|
 | `execution` | no | object, one of `strategy`: "manual" / "deduplicated" / "conditional" | How a write may be repeated safely after a lost answer (D45): `manual`, `deduplicated` (operation ids kept for `retentionSeconds`, found by `lookup`) or `conditional` (`lookup` tells whether the effect holds). Omitted means manual. Only meaningful on an `execute`. |
-| `name` | yes | string | `<connector id>.<verb>`, stable. |
+| `name` | yes | string | `<connector id>.<verb>`, stable. Two names are profiles Clew combines across connectors: `<id>.search` (D26, see `kinds`), and `<id>.errands` (D35, D89), a read that takes `{ view?: "assigned" \| "reported" }` and answers an ErrandsOutput with the errands the case system lets the person see. Its view's `open` names the read that shows one errand, by convention `<id>.errand`. Clew lists every `<id>.errands` in the person's scope as `clew.errands`. |
 | `kind` | yes | "read" / "propose" / "execute" | `read` answers; `propose` drafts something for a person to decide; `execute` changes the source and runs only after a human decision (D8), never as a tool and never through a callback. |
 | `title` | yes | string | Swedish. A button label. |
 | `description` | yes | string | Swedish. What the model reads when `model` is true. |

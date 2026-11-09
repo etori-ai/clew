@@ -10,6 +10,8 @@ import { userCapabilities } from '../modules/people/capabilities';
 import { userReads } from '../composition/people';
 import { searchConnector, type AnswerCards } from '../modules/search/connector';
 import { searchUsecases } from '../modules/search/usecases';
+import { errandCapabilities } from '../modules/errands/capabilities';
+import { errandUsecases } from '../modules/errands/usecases';
 
 /**
  * The registry the BFF runs with: the bundled connectors below plus every enabled connector row
@@ -27,7 +29,20 @@ export const answerCards: AnswerCards = {};
 // Clew's core only (D61): every other system, the development fixtures included, is a connector row (D21, D23).
 // Users are core entities, not installed systems. Their read capabilities share dispatch only (D62).
 const internal = [userCapabilities(userReads)];
-const bundled = [calendarConnector(calendar, events), searchConnector(search, answerCards)];
+/** The combined errand list (D35 item 4, D89) lists its case systems from the registry the same way. */
+const errands = errandUsecases({ sources: actor => registry.errandSources(actor) });
+/**
+ * Clew's own connector is assembled here, the only file that names connectors: the composite search owns the id and the
+ * question area, and the errand list adds its read and its area. The two modules never import each other (D20).
+ */
+const core = searchConnector(search, answerCards);
+const errandPart = errandCapabilities(errands, actor => registry.errandSources(actor).length > 0);
+const clewConnector = {
+  ...core,
+  areas: [...core.areas, ...errandPart.areas],
+  capabilities: [...core.capabilities, ...errandPart.capabilities],
+};
+const bundled = [calendarConnector(calendar, events), clewConnector];
 for (const m of [...internal, ...bundled]) registry.register({ ...m, uses: ['*'] });
 export const internalIds = internal.map(m => m.id);
 /** The connectors that live in this process: they get a `connector` row at boot so an administrator can govern them too (D23). */

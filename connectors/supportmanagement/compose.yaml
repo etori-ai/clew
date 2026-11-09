@@ -1,0 +1,26 @@
+# The SupportManagement connector next to the devcontainer. An administrator registers it in Clew (Administration ›
+# Anslutna system, or `bun scripts/connector-add.ts`), so nothing on Clew's container names it (D23).
+#
+#   SM_SECRET=<16+ characters> CLEW_URL=http://host.docker.internal:3000 docker compose -f connectors/supportmanagement/compose.yaml up sm
+# and register it from inside the app container with the same secret:
+#   docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts sm http://host.docker.internal:4050 --secret <the secret>
+#
+# Without SM_ADAPTER the connector serves the made-up errands in errands.mjs. Against SupportManagement (D89):
+#   SM_ADAPTER=api SM_URL=https://… SM_MUNICIPALITY_ID=… SM_AUDIENCE=<the audience the gateway accepts>
+# The connector holds no credential for SupportManagement: every call carries the person's own token.
+services:
+  sm:
+    build: .
+    environment:
+      CLEW_CONNECTOR_SECRET: ${SM_SECRET:?set SM_SECRET to a shared secret of 16+ characters}
+      CLEW_URL: ${CLEW_URL:?set CLEW_URL to Clew's base URL, https outside local development}
+      SM_ADAPTER: ${SM_ADAPTER:-fixture}
+      SM_AUDIENCE: ${SM_AUDIENCE:-}
+      SM_SOURCE_LABEL: ${SM_SOURCE_LABEL:-}
+      SM_MUNICIPALITY_ID: ${SM_MUNICIPALITY_ID:-}
+      SM_URL: ${SM_URL:-}
+      SM_STATUS_KINDS: ${SM_STATUS_KINDS:-}
+      SM_NAMESPACE_LABELS: ${SM_NAMESPACE_LABELS:-}
+      SM_NAMESPACE_LINKS: ${SM_NAMESPACE_LINKS:-}
+    ports:
+      - "127.0.0.1:4050:4050"

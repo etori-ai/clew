@@ -43,6 +43,7 @@ Connectors under `connectors/` import no Clew application or workspace package. 
 | [modules/calendar/](../../apps/server/src/modules/calendar/) | Calendar capabilities, planning, reads, approval, execution and bounded follow-up. |
 | [modules/people/](../../apps/server/src/modules/people/) | Internal user reads over a `UserReads` port; no managed connector lifecycle. |
 | [modules/search/](../../apps/server/src/modules/search/) | Composite search, source budgets, result contracts and answer-card capability. |
+| [modules/errands/](../../apps/server/src/modules/errands/) | The combined errand list `clew.errands` over every `<id>.errands` in the person's scope: budgets, the order across systems and the systems that did not answer (D89). The registry joins it into the core connector beside the search. |
 | [modules/executions/](../../apps/server/src/modules/executions/) | Approval ledger, source progress/reconciliation, compensation, job/watch state; every intent starts its workflow in its own transaction (D86). |
 | [modules/jobs/](../../apps/server/src/modules/jobs/) | Fact/follower binding and cross-system proposal assembly. |
 | [modules/operations/](../../apps/server/src/modules/operations/) | Reliability diagnostics over ports. |

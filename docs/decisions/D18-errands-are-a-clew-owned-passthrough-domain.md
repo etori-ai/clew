@@ -1,6 +1,6 @@
 # D18 · Errands are a Clew-owned pass-through domain; SupportManagement is the first adapter
 
-**Status:** proposed, hosting shape replaced by D35 · **Date:** 2026-11-04 · **Area:** integrations
+**Status:** proposed, hosting shape replaced by D35, identity replaced by D89 (2026-11-09) · **Date:** 2026-11-04 · **Area:** integrations
 
 **Decision.** An errand (ärende) is a first-class Clew *concept* and a *pass-through* module kind (D3),
 never core. Clew owns the contract: an `ErrandProvider` interface and model in `packages/errands`, modelled
