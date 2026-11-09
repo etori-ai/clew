@@ -156,9 +156,11 @@ export const threadMessages = pgTable(
     // Conversation memory (D12): chips, refs, answer shape, view, draft, tool calls. Null for card messages.
     meta: jsonb('meta').$type<MessageMeta | null>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    // A turn writes its question and its answer at the same instant; the sequence keeps them in the order they were written.
+    seq: bigserial('seq', { mode: 'number' }).notNull(),
   },
   t => [
-    index('thread_message_thread').on(t.threadId, t.createdAt),
+    index('thread_message_thread').on(t.threadId, t.createdAt, t.seq),
     check('thread_message_role', sql`${t.role} IN ('assistant', 'user')`),
   ],
 );

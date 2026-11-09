@@ -35,7 +35,11 @@ async function read(db: Transaction | ReturnType<typeof database>, where: Return
   const [row] = await db.select().from(threads).where(where);
   if (!row) return undefined;
   const [messages, proposalRows, timerRows] = await Promise.all([
-    db.select().from(threadMessages).where(eq(threadMessages.threadId, row.id)).orderBy(threadMessages.createdAt),
+    db
+      .select()
+      .from(threadMessages)
+      .where(eq(threadMessages.threadId, row.id))
+      .orderBy(threadMessages.createdAt, threadMessages.seq),
     db.select().from(proposals).where(eq(proposals.threadId, row.id)).orderBy(proposals.start),
     db.select().from(schema.timerIntents).where(eq(schema.timerIntents.threadId, row.id)),
   ]);
@@ -57,7 +61,11 @@ export const threadTx = (tx: Transaction, options: ThreadStoreOptions, ended?: s
       .for('update');
     if (!row) return undefined;
     const [messages, proposalRows, timerRows] = await Promise.all([
-      tx.select().from(threadMessages).where(eq(threadMessages.threadId, id)).orderBy(threadMessages.createdAt),
+      tx
+        .select()
+        .from(threadMessages)
+        .where(eq(threadMessages.threadId, id))
+        .orderBy(threadMessages.createdAt, threadMessages.seq),
       tx.select().from(proposals).where(eq(proposals.threadId, id)).orderBy(proposals.start),
       tx.select().from(schema.timerIntents).where(eq(schema.timerIntents.threadId, id)),
     ]);

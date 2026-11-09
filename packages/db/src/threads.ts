@@ -105,7 +105,7 @@ export async function listThreads(personId: string, now = new Date()): Promise<T
       .select()
       .from(threadMessages)
       .where(inArray(threadMessages.threadId, ids))
-      .orderBy(threadMessages.createdAt),
+      .orderBy(threadMessages.createdAt, threadMessages.seq),
     database().select().from(proposals).where(inArray(proposals.threadId, ids)).orderBy(proposals.start),
     database().select().from(timerIntents).where(inArray(timerIntents.threadId, ids)),
   ]);
@@ -126,7 +126,11 @@ export async function readThread(personId: string, id: string, tx?: Transaction)
     .where(and(eq(threads.id, id), eq(threads.personId, personId)));
   if (!row) return undefined;
   const [messages, proposalRows, timerRows] = await Promise.all([
-    db.select().from(threadMessages).where(eq(threadMessages.threadId, id)).orderBy(threadMessages.createdAt),
+    db
+      .select()
+      .from(threadMessages)
+      .where(eq(threadMessages.threadId, id))
+      .orderBy(threadMessages.createdAt, threadMessages.seq),
     db.select().from(proposals).where(eq(proposals.threadId, id)).orderBy(proposals.start),
     db.select().from(timerIntents).where(eq(timerIntents.threadId, id)),
   ]);
