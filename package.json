@@ -13,6 +13,7 @@
     "dev:portal": "bun run --cwd apps/portal dev",
     "build": "bun run --cwd apps/web build",
     "build:portal": "bun run --cwd apps/portal build",
+    "build:site-header": "bun run --cwd packages/site-header build",
     "typecheck": "tsc -p tsconfig.json",
     "test": "bun test tests/unit apps/web/tests",
     "test:db": "bun test tests/db",

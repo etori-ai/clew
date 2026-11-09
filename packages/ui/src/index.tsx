@@ -3,7 +3,7 @@ import { LayerProvider } from '@astryxdesign/core/Layer';
 import { InternationalizationProvider } from '@astryxdesign/core/i18n';
 import { AppearanceProvider } from './appearance';
 import type { Branding } from './branding';
-import sv from '@astryxdesign/core/locales/sv-SE.json';
+import { swedish } from './locale';
 export { DocumentSurface } from './document';
 export type { DocumentPosition } from './document';
 export { MetricView, SeriesView, ActivityView } from './presentation';
@@ -178,34 +178,7 @@ export { Field, FieldStatus } from '@astryxdesign/core/Field';
 export { Popover } from '@astryxdesign/core/Popover';
 export { useAppearance } from './appearance';
 
-// The shipped sv-SE catalog is incomplete. Keys reachable by this POC are covered here.
-export const swedish = {
-  ...sv,
-  '@astryx.input.readOnly': { defaultMessage: 'Skrivskyddad' },
-  '@astryx.chatComposer.placeholder': { defaultMessage: 'Skriv ett meddelande …' },
-  '@astryx.chatComposer.send': { defaultMessage: 'Skicka' },
-  '@astryx.chatComposer.stop': { defaultMessage: 'Stoppa' },
-  '@astryx.chatDictation.start': { defaultMessage: 'Tala' },
-  '@astryx.chatDictation.stop': { defaultMessage: 'Sluta tala' },
-  '@astryx.chatTriggerMenu.searching': { defaultMessage: 'Söker …' },
-  '@astryx.dropdownMenu.backTo': { defaultMessage: 'Tillbaka till {parent}' },
-  '@astryx.kbd.key.alt': { defaultMessage: 'Alt' },
-  '@astryx.kbd.key.backspace': { defaultMessage: 'Backsteg' },
-  '@astryx.kbd.key.command': { defaultMessage: 'Kommando' },
-  '@astryx.kbd.key.control': { defaultMessage: 'Kontroll' },
-  '@astryx.kbd.key.controlShort': { defaultMessage: 'Ctrl' },
-  '@astryx.kbd.key.down': { defaultMessage: 'Nedåtpil' },
-  '@astryx.kbd.key.enter': { defaultMessage: 'Retur' },
-  '@astryx.kbd.key.escape': { defaultMessage: 'Escape' },
-  '@astryx.kbd.key.escapeShort': { defaultMessage: 'Esc' },
-  '@astryx.kbd.key.left': { defaultMessage: 'Vänsterpil' },
-  '@astryx.kbd.key.plus': { defaultMessage: 'Plus' },
-  '@astryx.kbd.key.right': { defaultMessage: 'Högerpil' },
-  '@astryx.kbd.key.shift': { defaultMessage: 'Skift' },
-  '@astryx.kbd.key.tab': { defaultMessage: 'Tabb' },
-  '@astryx.kbd.key.up': { defaultMessage: 'Uppåtpil' },
-  '@astryx.kbd.shortcut': { defaultMessage: '{shortcut} + {key}' },
-};
+export { swedish } from './locale';
 /**
  * The installation's Astryx theme (D38) and Swedish strings. LayerProvider keeps the toast
  * stack inside these providers: without it Astryx mounts a fallback root that gets neither the Swedish catalog nor the theme.

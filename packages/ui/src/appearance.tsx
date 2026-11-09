@@ -3,8 +3,8 @@ import { Theme } from '@astryxdesign/core/theme';
 import { createClewTheme } from './theme';
 import type { Branding } from './branding';
 
-type ColorMode = 'system' | 'light' | 'dark';
-const preferenceKey = 'clew:color-mode';
+import { APPEARANCE_PREFERENCE_KEY as preferenceKey, type ColorMode } from './appearance-preference';
+
 const AppearanceContext = createContext<{
   mode: ColorMode;
   isPersistent: boolean;

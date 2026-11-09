@@ -9,6 +9,9 @@
   "exports": {
     ".": "./src/index.tsx",
     "./branding": "./src/branding.ts",
+    "./theme": "./src/theme.ts",
+    "./locale": "./src/locale.ts",
+    "./appearance-preference": "./src/appearance-preference.ts",
     "./styles.css": "./src/styles.css"
   },
   "dependencies": {

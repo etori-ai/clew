@@ -1,0 +1,26 @@
+{
+  "name": "@clew/site-header",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sources": "./src/sources/index.ts",
+    "./demo": "./demo/plugin.ts",
+    "./fixtures/site-menu.json": "./fixtures/site-menu.json"
+  },
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@astryxdesign/core": "0.7.7",
+    "@astryxdesign/theme-neutral": "0.7.7",
+    "@clew/ui": "workspace:*",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.2.1",
+    "vite": "8.3.5"
+  }
+}

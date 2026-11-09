@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "site": { "name": "Startsidan", "href": "/portal/" },
+  "items": [
+    { "id": "start", "label": "Start", "href": "/portal/" },
+    {
+      "id": "anstallning-arbetsmiljo",
+      "label": "Anställning och arbetsmiljö",
+      "href": "/intranat/anstallning-arbetsmiljo"
+    },
+    { "id": "ekonomi-styrning", "label": "Ekonomi och styrning", "href": "/intranat/ekonomi-styrning" },
+    { "id": "kompetensforsorjning", "label": "Kompetensförsörjning", "href": "/intranat/kompetensforsorjning" },
+    { "id": "organisation", "label": "Organisation", "href": "/intranat/organisation" }
+  ]
+}

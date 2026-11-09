@@ -63,7 +63,8 @@ authRoutes.post('/activity', protectedRoute(), async c => {
 authRoutes.post('/logout', async c => {
   try {
     const raw = getCookie(c, SESSION_COOKIE);
-    if (c.req.header('origin') !== authSettings().origin) throw new AuthError(403, 'invalid');
+    // Any listed front end may sign out (D67 item 6): the portal's "Logga ut" was refused when only PUBLIC_URL was.
+    if (!authSettings().origins.includes(c.req.header('origin') ?? '')) throw new AuthError(403, 'invalid');
     const session = raw ? await readSession(tokenDigest(raw)) : undefined;
     if (session) verifyMutation(c.req.raw, session.csrf);
     const url = await logout(raw);

@@ -1,0 +1,42 @@
+{
+  "_comment": "Demo data (D87): the intranet stand-in's page tree as Sitevision's headless endpoint would answer it. `public: false` pages are listed only to a signed-in visitor of the stand-in. Invented for the demo; not Sitevision's data.",
+  "root": "4.intranat",
+  "nodes": {
+    "4.intranat": [
+      {
+        "id": "4.anstallning",
+        "label": "Anställning och arbetsmiljö",
+        "uri": "/intranat/anstallning-arbetsmiljo",
+        "public": true
+      },
+      { "id": "4.ekonomi", "label": "Ekonomi och styrning", "uri": "/intranat/ekonomi-styrning", "public": false },
+      {
+        "id": "4.kompetens",
+        "label": "Kompetensförsörjning",
+        "uri": "/intranat/kompetensforsorjning",
+        "public": false
+      },
+      { "id": "4.organisation", "label": "Organisation", "uri": "/intranat/organisation", "public": true }
+    ],
+    "4.anstallning": [
+      {
+        "id": "4.semester",
+        "label": "Semester och ledighet",
+        "uri": "/intranat/anstallning-arbetsmiljo/semester",
+        "public": true
+      },
+      { "id": "4.lon", "label": "Lön och förmåner", "uri": "/intranat/anstallning-arbetsmiljo/lon", "public": false }
+    ],
+    "4.ekonomi": [
+      { "id": "4.budget", "label": "Budgetprocessen", "uri": "/intranat/ekonomi-styrning/budget", "public": false }
+    ],
+    "4.organisation": [
+      {
+        "id": "4.forvaltningar",
+        "label": "Förvaltningar",
+        "uri": "/intranat/organisation/forvaltningar",
+        "public": true
+      }
+    ]
+  }
+}

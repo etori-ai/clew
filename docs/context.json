@@ -814,7 +814,7 @@
       "number": 67,
       "path": "docs/decisions/D67-the-portal-is-a-second-web-app-over-the-same-server.md",
       "title": "D67 · The portal is a second web app over the same server, drawn as the product owner's proof of concept draws it",
-      "status": "proposed, built 2026-11-06 as an experiment beside the web app; nothing in `apps/web` or the server changed for it",
+      "status": "proposed, built 2026-11-06 as an experiment beside the web app; nothing in `apps/web` or the server changed for it; the top bar is the header shared with the intranet and Clew's places are a `SideNav` since [D87](D87-one-header-shared-by-the-portal-and-the-intranet.md)",
       "date": "2026-11-06",
       "area": "ui, product"
     },
@@ -988,6 +988,15 @@
       "status": "accepted, implemented",
       "date": "2026-11-09",
       "area": "platform"
+    },
+    {
+      "key": "D87-one-header-shared-by-the-portal-and-the-intranet",
+      "number": 87,
+      "path": "docs/decisions/D87-one-header-shared-by-the-portal-and-the-intranet.md",
+      "title": "D87 · One header shared by the portal and the intranet, built with Astryx and embedded as a custom element",
+      "status": "proposed, built 2026-11-09 as an experiment in this repository, to move to its own repository if it holds",
+      "date": "2026-11-09",
+      "area": "ui"
     }
   ],
   "documents": [
@@ -1874,6 +1883,12 @@
     {
       "path": "docs/decisions/D86-the-ledger-starts-its-workflow-inside-its-own-transaction.md",
       "title": "D86 · The ledger starts its durable workflow inside its own transaction; the outbox loops are retired",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D87-one-header-shared-by-the-portal-and-the-intranet.md",
+      "title": "D87 · One header shared by the portal and the intranet, built with Astryx and embedded as a custom element",
       "category": "decision-history",
       "headings": []
     },

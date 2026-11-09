@@ -25,12 +25,22 @@ export default defineConfig({
     timezoneId: 'Europe/Stockholm',
     trace: 'retain-on-failure',
   },
-  webServer: {
-    command:
-      'node_modules/.bin/vite build --config ../../tests/a11y/vite.config.ts --logLevel warn && node_modules/.bin/vite preview --config ../../tests/a11y/vite.config.ts --port 4173 --strictPort',
-    cwd: '../../apps/web',
-    url: 'http://localhost:4173',
-    reuseExistingServer: false,
-    timeout: 120_000,
-  },
+  webServer: [
+    {
+      command:
+        'node_modules/.bin/vite build --config ../../tests/a11y/vite.config.ts --logLevel warn && node_modules/.bin/vite preview --config ../../tests/a11y/vite.config.ts --port 4173 --strictPort',
+      cwd: '../../apps/web',
+      url: 'http://localhost:4173',
+      reuseExistingServer: false,
+      timeout: 120_000,
+    },
+    {
+      // The shared header's embed on the intranet stand-in (D87), served by the portal's dev server: `/intranat/…`.
+      command: 'node_modules/.bin/vite --port 4175 --strictPort --logLevel warn',
+      cwd: '../../apps/portal',
+      url: 'http://localhost:4175/intranat/',
+      reuseExistingServer: false,
+      timeout: 120_000,
+    },
+  ],
 });

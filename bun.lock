@@ -34,6 +34,7 @@
       "dependencies": {
         "@clew/calendar": "workspace:*",
         "@clew/contracts": "workspace:*",
+        "@clew/site-header": "workspace:*",
         "@clew/ui": "workspace:*",
         "@tanstack/react-query": "5.105.3",
         "react": "19.3.1",
@@ -122,6 +123,21 @@
         "@clew/contracts": "workspace:*",
         "drizzle-orm": "0.45.4",
         "postgres": "3.4.9",
+      },
+    },
+    "packages/site-header": {
+      "name": "@clew/site-header",
+      "version": "0.0.1",
+      "dependencies": {
+        "@astryxdesign/core": "0.7.7",
+        "@astryxdesign/theme-neutral": "0.7.7",
+        "@clew/ui": "workspace:*",
+        "react": "19.3.1",
+        "react-dom": "19.3.1",
+      },
+      "devDependencies": {
+        "@vitejs/plugin-react": "6.2.1",
+        "vite": "8.3.5",
       },
     },
     "packages/ui": {
@@ -249,6 +265,8 @@
     "@clew/portal": ["@clew/portal@workspace:apps/portal"],
 
     "@clew/server": ["@clew/server@workspace:apps/server"],
+
+    "@clew/site-header": ["@clew/site-header@workspace:packages/site-header"],
 
     "@clew/ui": ["@clew/ui@workspace:packages/ui"],
 

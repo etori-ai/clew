@@ -1,16 +1,19 @@
 import { resolve } from 'node:path';
 import { defineConfig, loadEnv } from 'vite';
 import { resolveBranding } from '@clew/ui/branding';
+import { siteHeaderDemo } from '../../packages/site-header/demo/plugin';
 import { webConfig } from '../web/vite.config';
 
 /**
  * The portal (D67) is the web app's build on its own port, over the same BFF through the same proxy, with the web
- * app's public assets (the municipal logos) served as they are. Nothing here is a second configuration to keep.
+ * app's public assets (the municipal logos) served as they are. Nothing here is a second configuration to keep. In
+ * development it also serves the intranet's stand-in at `/intranat/…` with the shared header's embed (D87).
  */
 export function portalConfig() {
   const web = webConfig();
   return {
     ...web,
+    plugins: [...web.plugins, siteHeaderDemo({ startHref: '/' })],
     publicDir: resolve(import.meta.dirname, '../web/public'),
     server: { ...web.server, port: 5174 },
   };

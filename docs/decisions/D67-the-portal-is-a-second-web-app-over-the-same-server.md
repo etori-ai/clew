@@ -1,6 +1,6 @@
 # D67 · The portal is a second web app over the same server, drawn as the product owner's proof of concept draws it
 
-**Status:** proposed, built 2026-11-06 as an experiment beside the web app; nothing in `apps/web` or the server changed for it · **Date:** 2026-11-06 · **Area:** ui, product
+**Status:** proposed, built 2026-11-06 as an experiment beside the web app; nothing in `apps/web` or the server changed for it; the top bar is the header shared with the intranet and Clew's places are a `SideNav` since [D87](D87-one-header-shared-by-the-portal-and-the-intranet.md) · **Date:** 2026-11-06 · **Area:** ui, product
 
 **Decision.** The product owner's proof of concept at https://start.sundsvall.dev/portal/start (reviewed in
 [the review of the same day](../reviews/2026-11-06-startsidan-poc-against-clews-core.md)) is built as `apps/portal`, a
@@ -44,7 +44,9 @@ know there are two apps.
    first activity call is a POST, so the portal was signed out on the first click. An operator now lists the other
    front ends in `FRONTEND_ORIGINS` (comma-separated bare origins under the public origin's scheme, refused at start
    otherwise; `apps/server/src/auth-origin.ts`, `tests/unit/auth-origin.test.ts`), and a mutation is accepted from
-   the public origin or a listed one, with the CSRF token still required. The product owner's purpose for the portal
+   the public origin or a listed one, with the CSRF token still required. Sign-out (`POST /api/auth/logout`) kept
+   its own check against the public origin alone until 2026-11-09, so the portal's "Logga ut" was refused; it now
+   takes the same list. The product owner's purpose for the portal
    is to show that several front ends can sit on the one server, so the list is the server's rule, not the portal's
    workaround. The development stack lists `http://localhost:3024`.
 7. **Checks.** `bun run typecheck` and `bun run format:check` cover `apps/portal` through the root `tsconfig.json`

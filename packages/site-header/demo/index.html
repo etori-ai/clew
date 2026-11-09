@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Intranätet</title>
+    <!--
+      A stand-in for an intranet page (D87). Its own CSS is deliberately loud and global, the way a CMS theme can be:
+      if any of it reaches the header, the shadow root is not doing its job.
+    -->
+    <style>
+      * {
+        font-family: Georgia, serif;
+      }
+      body {
+        margin: 0;
+        background: #fbfaf7;
+        color: #222;
+        line-height: 1.6;
+      }
+      a {
+        color: #b00020;
+        text-decoration: underline wavy;
+      }
+      nav a,
+      nav button,
+      header a {
+        font-size: 22px;
+        padding: 12px;
+        background: #fde68a;
+      }
+      button {
+        border: 3px dashed #b00020;
+        border-radius: 0;
+      }
+      img {
+        border: 4px solid #b00020;
+      }
+      ul {
+        list-style: square;
+      }
+      main {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 32px 16px;
+      }
+    </style>
+    <script type="module" src="%EMBED%"></script>
+  </head>
+  <body>
+    <site-header menu-src="/site-menu.json" source="sitevision" source-root="%ROOT%" %VISITOR%></site-header>
+    <main>
+      <h1 id="rubrik">Intranätet</h1>
+      <p>
+        Den här sidan står i för intranätet. Den ritas inte av Clew, och dess CSS är medvetet högljudd. Huvudet överst
+        är samma komponent som i portalen, laddad som <code>&lt;site-header&gt;</code>.
+      </p>
+      <p>
+        Ekonomi och styrning och Kompetensförsörjning är inte publika i attrappen. De syns i huvudet när du är inloggad i
+        Clew, som på ett intranät med gemensam inloggning, och då står ditt namn i huvudet.
+      </p>
+      <p><a href="/">Till portalens start</a></p>
+    </main>
+    <script>
+      const section = location.pathname.replace(/^\/intranat\/?/, '').replace(/\/$/, '');
+      if (section) {
+        const words = section.replace(/-/g, ' ');
+        document.getElementById('rubrik').textContent = words.charAt(0).toUpperCase() + words.slice(1);
+        document.title = `${document.getElementById('rubrik').textContent} – Intranätet`;
+      }
+    </script>
+  </body>
+</html>
