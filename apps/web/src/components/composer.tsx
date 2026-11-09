@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { useNavigate } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ClewObject } from '@clew/contracts';
@@ -19,7 +19,9 @@ import {
   Text,
   Token,
   TypeaheadItem,
+  VisuallyHidden,
   useChatDictation,
+  useEntryAnimation,
   useToast,
   type ChatComposerTrigger,
   type SearchableItem,
@@ -88,6 +90,39 @@ function ModelMenu({ isDisabled }: { isDisabled: boolean }) {
       </DropdownMenuRadioGroup>
     </DropdownMenu>
   );
+}
+
+/**
+ * What goes into the box enters, it does not pop (D92). Pressing "Lägg till i samtalet" changes four things in one frame,
+ * a card's button far from the box among them, so the drawer slides open, the chip scales in and the verbs fade in, each
+ * on Astryx's own entry motion: its tokens, nothing when the element was on the page from the first paint, and still
+ * under reduced motion. Nothing waits for it; the field has the focus from the same click.
+ */
+function Drawer(props: ComponentProps<typeof ChatComposerDrawer>) {
+  const entry = useEntryAnimation('slideDown');
+  return <ChatComposerDrawer {...props} xstyle={entry ?? undefined} />;
+}
+function Chip(props: ComponentProps<typeof Token>) {
+  const entry = useEntryAnimation('scaleIn');
+  return <Token {...props} xstyle={entry ?? undefined} />;
+}
+function Verb(props: ComponentProps<typeof Button>) {
+  const entry = useEntryAnimation('fadeIn');
+  return <Button {...props} xstyle={entry ?? undefined} />;
+}
+/** A screen reader hears what the eye sees enter: the chip's name, once, when it is added. Removing is the chip's own button. */
+function useAddedAnnouncement(chips: { ref: string; label: string }[]) {
+  const seen = useRef<Set<string> | null>(null);
+  const [announced, setAnnounced] = useState('');
+  useEffect(() => {
+    const refs = new Set(chips.map(c => c.ref));
+    const before = seen.current;
+    seen.current = refs;
+    if (!before) return;
+    const added = chips.filter(c => !before.has(c.ref));
+    if (added.length > 0) setAnnounced(`${added[added.length - 1]!.label} är med i samtalet`);
+  }, [chips]);
+  return announced;
 }
 
 /** Microphone inside the composer; the browser's speech recognition writes into the same input. */
@@ -216,6 +251,7 @@ export function Composer({
           : 'Skriv eller säg vad du vill göra …';
   const plain = talk.value.replace(/@\[[^\]]+\]/g, '').trim();
   const aboutChips = (about?.chips ?? []).filter(c => !talk.chips.some(t => t.ref === c.ref));
+  const announced = useAddedAnnouncement(talk.chips);
   const mobile = useMediaQuery(mobileQuery);
   // The scope line (H3.3): in a conversation the conversation; on Hem with a card open beside it, the card (D53, artboard E).
   const scope =
@@ -248,13 +284,13 @@ export function Composer({
       placeholder={placeholder}
       drawer={
         talk.chips.length > 0 || aboutChips.length > 0 ? (
-          <ChatComposerDrawer
+          <Drawer
             {...(talk.chips.length > 0 ? { count: talk.chips.length + aboutChips.length } : {})}
             label="Objekt i samtalet"
           >
             {/* What the page's box asks about (artboard E): the open card as a token, let go of with its X or with "Ny fråga i stället" (both close the card). */}
             {aboutChips.map(c => (
-              <Token
+              <Chip
                 key={c.ref}
                 label={c.label}
                 icon={glyph(c.ref)}
@@ -262,7 +298,7 @@ export function Composer({
               />
             ))}
             {talk.chips.map(c => (
-              <Token
+              <Chip
                 key={c.ref}
                 label={c.label}
                 icon={glyph(c.ref)}
@@ -270,7 +306,7 @@ export function Composer({
                 data-chip-remove=""
               />
             ))}
-          </ChatComposerDrawer>
+          </Drawer>
         ) : undefined
       }
       input={
@@ -308,7 +344,7 @@ export function Composer({
           {talk.chips.length === 1 && !plain && talk.verbs.length > 0 && (
             <HStack gap={1} wrap="wrap" role="group" aria-label="Om kortet">
               {talk.verbs.map(v => (
-                <Button
+                <Verb
                   key={v.id}
                   size="sm"
                   variant="ghost"
@@ -320,6 +356,7 @@ export function Composer({
             </HStack>
           )}
           {place !== 'page' && <ModelMenu isDisabled={talk.busy} />}
+          <VisuallyHidden role="status">{announced}</VisuallyHidden>
         </HStack>
       }
       sendActions={<Dictation onResult={text => talk.setValue((talk.value + ' ' + text).trim())} />}
