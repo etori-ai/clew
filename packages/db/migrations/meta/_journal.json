@@ -253,6 +253,13 @@
       "when": 1794172403401,
       "tag": "0035_oval_rocket_racer",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1794212342573,
+      "tag": "0036_mcp_delivery_resolution",
+      "breakpoints": true
     }
   ]
 }

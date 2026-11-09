@@ -637,6 +637,7 @@ export const mcpDeliveries = pgTable('mcp_delivery', {
   title: text('title').notNull(),
   text: text('text').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
 });
 export const mcpDecisions = pgTable(
   'mcp_decision',

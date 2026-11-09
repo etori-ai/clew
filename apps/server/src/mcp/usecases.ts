@@ -2,7 +2,7 @@ import Ajv from 'ajv';
 import type { AuthenticatedContext, McpRegistration, McpResult, McpService } from '@clew/contracts';
 import { ForbiddenError, InputError } from '../context';
 import type { McpDeps, McpSession } from './ports';
-import { appUri, atPointer } from './domain';
+import { appUri, atPointer, watchEvidence } from './domain';
 
 export function mcpUsecases(deps: McpDeps) {
   const { store } = deps;
@@ -39,6 +39,28 @@ export function mcpUsecases(deps: McpDeps) {
       await s.close();
     }
   }
+  async function resolveAttention(p: AuthenticatedContext, r: McpRegistration, result: McpResult) {
+    const evidence = watchEvidence(r.watch, result);
+    if (!evidence || evidence.eligible) return;
+    await registration(p, r.id);
+    const deliveryId = deps.digest([r.id, deps.digest(evidence.identity)]);
+    await store.transaction(async tx => {
+      if (await tx.resolve(p.id, r.id, deliveryId, deps.clock().toISOString()))
+        await tx.audit(p.principal.id, 'mcp.resolved', deliveryId);
+    });
+  }
+  async function refreshAttention(p: AuthenticatedContext, r: McpRegistration, s: McpSession) {
+    // Completion is defined by the operator's existing read rule, never by a tool name or the write receipt.
+    // A refresh failure must not turn a successful source write into an ambiguous outcome.
+    try {
+      await registration(p, r.id);
+      if (!r.readTools.includes(r.watch.tool)) return;
+      validate(s, r.watch.tool, r.watch.arguments);
+      await resolveAttention(p, r, await s.call(r.watch.tool, r.watch.arguments));
+    } catch {
+      // Leave attention intact; the durable watch will check again without repeating the mutation.
+    }
+  }
   async function inbox(p: AuthenticatedContext) {
     if (!(await allowed(p))) return { services: [], deliveries: [] };
     await p.authorize();
@@ -64,11 +86,12 @@ export function mcpUsecases(deps: McpDeps) {
   }
   async function view(p: AuthenticatedContext, id: string, deliveryId?: string) {
     return withSession(p, id, async (r, s) => {
-      const delivery = deliveryId ? (await store.deliveries(p.id, [id])).find(d => d.id === deliveryId) : undefined;
+      const delivery = deliveryId ? await store.delivery(p.id, id, deliveryId) : undefined;
       if (deliveryId && !delivery) throw new InputError('Kortet finns inte längre.');
       if (!r.readTools.includes(r.watch.tool)) throw new ForbiddenError();
       const tool = validate(s, r.watch.tool, r.watch.arguments);
       const result = await s.call(tool.name, r.watch.arguments);
+      await resolveAttention(p, r, result);
       if (delivery) {
         const values = r.watch.identity.map(pointer => atPointer(result.structuredContent, pointer));
         if (
@@ -106,7 +129,11 @@ export function mcpUsecases(deps: McpDeps) {
       if (prior) {
         if (prior.digest !== digest || prior.connectionId !== id)
           throw new InputError('Bekräftelsen gäller en annan åtgärd.');
-        if (prior.result) return prior.result;
+        if (prior.result) {
+          if (!prior.result.isError) await refreshAttention(p, r, s);
+          await registration(p, id);
+          return prior.result;
+        }
         throw new InputError('Svaret från tjänsten är osäkert. Kontrollera hos tjänsten innan du försöker igen.');
       }
       await registration(p, id);
@@ -135,6 +162,7 @@ export function mcpUsecases(deps: McpDeps) {
         await tx.finish({ ...decision, result, state: result.isError ? 'failed' : 'succeeded' });
         await tx.audit(p.principal.id, result.isError ? 'mcp.failed' : 'mcp.succeeded', decisionId);
       });
+      if (!result.isError) await refreshAttention(p, r, s);
       await registration(p, id);
       return result;
     });
@@ -151,23 +179,22 @@ export function mcpUsecases(deps: McpDeps) {
       if (!r.readTools.includes(r.watch.tool)) throw new ForbiddenError();
       validate(s, r.watch.tool, r.watch.arguments);
       const result = await s.call(r.watch.tool, r.watch.arguments);
-      if (result.isError || !result.structuredContent) throw new InputError('Tjänsten kunde inte kontrolleras.');
-      const values = r.watch.identity.map(pointer => atPointer(result.structuredContent, pointer));
-      if (!values.length || values.some(v => v === undefined))
-        throw new InputError('Tjänstens svar saknar en stabil identitet.');
-      const key = deps.digest(values);
-      const eligible =
-        !r.watch.condition ||
-        JSON.stringify(atPointer(result.structuredContent, r.watch.condition.pointer)) ===
-          JSON.stringify(r.watch.condition.equals);
+      const evidence = watchEvidence(r.watch, result);
+      if (!evidence) throw new InputError('Tjänstens svar saknar uppgifter för att kontrollera kortet.');
+      const key = deps.digest(evidence.identity);
+      const deliveryId = deps.digest([id, key]);
+      const { eligible } = evidence;
       await registration(p, id);
       await store.transaction(async tx => {
+        // The source identity may stay the same when its eligibility changes (for example, an answer).
+        if (!eligible && (await tx.resolve(p.id, id, deliveryId, deps.clock().toISOString())))
+          await tx.audit(p.principal.id, 'mcp.resolved', deliveryId);
         if (r.lastKey === key) return;
         await tx.observe(id, key);
         await tx.audit(p.principal.id, 'mcp.observed', id);
         if (!eligible || (!r.lastKey && !r.watch.deliverInitial)) return;
         const inserted = await tx.deliver(p.id, {
-          id: deps.digest([id, key]),
+          id: deliveryId,
           connectionId: id,
           title: s.title,
           text: result.content

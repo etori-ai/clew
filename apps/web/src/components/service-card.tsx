@@ -1,11 +1,11 @@
 import type { McpDelivery } from '@clew/contracts';
 import { Button, Card, Heading, HStack, Text, VStack } from '@clew/ui';
-
-export const serviceCardHref = (delivery: McpDelivery) =>
-  `/chat/services/${encodeURIComponent(delivery.connectionId)}?delivery=${encodeURIComponent(delivery.id)}`;
+import { useLocation } from 'react-router';
+import { withService } from '../service-address';
 
 /** The same surface, source line, heading and action anatomy as Clew's work cards; MCP owns the content. */
 export function ServiceCard({ delivery }: { delivery: McpDelivery }) {
+  const location = useLocation();
   const when = new Intl.DateTimeFormat('sv-SE', {
     day: 'numeric',
     month: 'short',
@@ -23,7 +23,14 @@ export function ServiceCard({ delivery }: { delivery: McpDelivery }) {
           <Heading level={3}>{delivery.text}</Heading>
         </VStack>
         <HStack>
-          <Button label={`Öppna ${delivery.title}`} href={serviceCardHref(delivery)} variant="primary" />
+          <Button
+            label={`Öppna ${delivery.title}`}
+            href={withService(location.pathname, location.search, {
+              connectionId: delivery.connectionId,
+              deliveryId: delivery.id,
+            })}
+            variant="primary"
+          />
         </HStack>
       </VStack>
     </Card>

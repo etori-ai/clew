@@ -952,6 +952,15 @@
       "status": "proposed 2026-11-06 (first written as D63, renumbered 2026-11-09 because `main` had taken D63 meanwhile), amended 2026-11-09 (the connector is the Qlik connector, see below); connector built with a fixture and a Qlik Engine adapter tested against a fake engine; not run against a real Qlik, the minimum group size and the Qlik object not yet agreed",
       "date": "2026-11-06",
       "area": "integrations"
+    },
+    {
+      "key": "D83-interface-spaces-have-stable-navigation-roles",
+      "number": 83,
+      "path": "docs/decisions/D83-interface-spaces-have-stable-navigation-roles.md",
+      "title": "D83 · Interface spaces have stable navigation roles",
+      "status": "accepted; MCP catalogue correction implemented in the development prototype",
+      "date": "2026-11-09",
+      "area": "ui, product"
     }
   ],
   "documents": [
@@ -1818,6 +1827,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D83-interface-spaces-have-stable-navigation-roles.md",
+      "title": "D83 · Interface spaces have stable navigation roles",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -2030,6 +2045,17 @@
         "Related profiles",
         "Contract changes",
         "Source map"
+      ]
+    },
+    {
+      "path": "docs/reference/interface-spaces.md",
+      "title": "Interface spaces and navigation",
+      "category": "integrator-guide",
+      "headings": [
+        "Where content belongs",
+        "Placement and return rules",
+        "MCP catalogue and App flow",
+        "Implementation and verification"
       ]
     },
     {

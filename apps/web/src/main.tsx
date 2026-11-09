@@ -29,6 +29,10 @@ const Devtools = import.meta.env.DEV
 // D81: synthetic service lab; excluded from normal production builds.
 const McpPreview =
   import.meta.env.DEV || import.meta.env.VITE_MCP_PREVIEW === 'true' ? lazy(() => import('./labs/mcp/preview')) : null;
+const McpServiceOverlay =
+  import.meta.env.DEV || import.meta.env.VITE_MCP_PREVIEW === 'true'
+    ? lazy(() => import('./labs/mcp/services-overlay'))
+    : null;
 /**
  * The protected tree mounts only after a live session is confirmed. No user content is kept in browser storage: the
  * query cache (D33) is one client per confirmed session, in memory, emptied once the boundary has shown the ended card.
@@ -133,7 +137,14 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
     <SessionBoundary session={shell.session} onEnded={() => client.clear()}>
       <QueryClientProvider client={client}>
         {/* One conversation for the whole session's pages (D50): asked on a tool's page, it is still there when the transcript takes the column. */}
-        <ConversationProvider>{children(shell)}</ConversationProvider>
+        <ConversationProvider>
+          {children(shell)}
+          {McpServiceOverlay && (
+            <Suspense fallback={null}>
+              <McpServiceOverlay />
+            </Suspense>
+          )}
+        </ConversationProvider>
         {Devtools && (
           <Suspense fallback={null}>
             <Devtools initialIsOpen={false} buttonPosition="bottom-right" />
@@ -177,7 +188,7 @@ function App() {
           path="/labs/mcp"
           element={
             <Suspense fallback={<Spinner label="Öppnar prototypen …" />}>
-              <Protected>{shell => <McpPreview user={shell.user} admin={shell.admin} />}</Protected>
+              <Protected>{() => <McpPreview />}</Protected>
             </Suspense>
           }
         />
@@ -187,7 +198,7 @@ function App() {
           path="/chat/services/:connectionId?"
           element={
             <Suspense fallback={<Spinner label="Hämtar tjänster …" />}>
-              <Protected>{shell => <McpPreview user={shell.user} admin={shell.admin} />}</Protected>
+              <Protected>{() => <McpPreview />}</Protected>
             </Suspense>
           }
         />
