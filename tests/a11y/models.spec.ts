@@ -212,6 +212,16 @@ test.describe('model administration', () => {
         .poll(() => announcements(page))
         .toContainEqual(expect.stringContaining('1 modell tillagd, avstängd tills du slår på den'));
       await expect(page.getByRole('link', { name: 'llama3.3:70b' })).toBeVisible();
+      // Each model is tested as it is added (D82); one that does not answer is named in the same announcement.
+      await page.getByRole('button', { name: 'Lägg till modell' }).first().click();
+      await dialog
+        .getByRole('textbox', { name: /^Eller en modell som inte finns i listan|^Modellens id/ })
+        .fill('trasig:1b');
+      await dialog.getByRole('button', { name: 'Lägg till 1 modell' }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect
+        .poll(() => announcements(page))
+        .toContainEqual(expect.stringContaining('trasig:1b svarade inte på testet'));
     });
     test('with a long model list on a short screen the list scrolls inside the dialog and its actions stay on screen', async ({
       page,

@@ -155,7 +155,9 @@ try {
     title: 'Kontrollmodell',
     description: 'Används av models-check.',
   });
-  modelId = added.id;
+  modelId = added.model.id;
+  if (!added.report.ok) fail('test on add: ' + added.report.findings.map(f => f.text).join('; '));
+  ok(`model tested on add, reasoning ${added.model.reasoning}`);
   await models.updateModel(admin, modelId, { state: 'enabled' });
   ok(`model ${modelId} added and switched on`);
   const test = await models.testModel(admin, modelId);

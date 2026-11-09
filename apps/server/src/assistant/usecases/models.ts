@@ -299,8 +299,15 @@ export function modelUsecases(deps: ModelDeps) {
     return { removed: true };
   }
 
-  /** A model under a provider, by the id its endpoint uses. Clew's id is derived from it. It starts switched off. */
-  async function addModel(persona: AuthenticatedContext, input: AddModelInput): Promise<ModelDetail> {
+  /**
+   * A model under a provider, by the id its endpoint uses. Clew's id is derived from it. It starts switched off, and it is
+   * tested at once as "Testa" would (D82), so its reasoning is settled before anyone asks it a question. A failed test does
+   * not undo the addition: the report says what the provider answered.
+   */
+  async function addModel(
+    persona: AuthenticatedContext,
+    input: AddModelInput,
+  ): Promise<{ model: ModelDetail; report: ProviderTestReport }> {
     const { by, at } = await mutating(persona);
     await mustProvider(input.providerId);
     const existing = await store.listModels();
@@ -329,7 +336,8 @@ export function modelUsecases(deps: ModelDeps) {
         details: { provider: input.providerId, model: input.model },
       });
     });
-    return modelDetail((await store.readModel(id))!);
+    const report = await check(persona, (await store.readModel(id))!);
+    return { model: await modelDetail((await store.readModel(id))!), report };
   }
   /**
    * Name, description, the endpoint's id, on or off, the audience, the tools switch and the default. One audit
@@ -406,7 +414,11 @@ export function modelUsecases(deps: ModelDeps) {
    */
   async function testModel(persona: AuthenticatedContext, id: string): Promise<ProviderTestReport> {
     requireAdmin(persona);
-    const row = await mustModel(id);
+    return check(persona, await mustModel(id));
+  }
+  /** The test itself, for "Testa" and for a model just added. */
+  async function check(persona: AuthenticatedContext, row: ModelRecord): Promise<ProviderTestReport> {
+    const id = row.id;
     const provider = await mustProvider(row.providerId);
     const endpoint = endpointOf(provider);
     const at = clock().toISOString();

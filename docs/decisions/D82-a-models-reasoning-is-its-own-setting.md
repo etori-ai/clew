@@ -1,15 +1,17 @@
-# D82 · A model's reasoning is its own setting, and "Testa" settles it
+# D82 · A model's reasoning is its own setting, and the model test settles it
 
 **Status:** accepted, built 2026-11-09 · **Date:** 2026-11-07, revised 2026-11-09 · **Area:** product
 
 **Decision.** A model has a `reasoning` value beside `tools` (D24). `provider-default`, what every model starts with,
 sends nothing about reasoning. `none` sends `reasoning_effort: "none"` through the AI SDK's `reasoning` call option.
-Nobody sets it by hand: "Testa" on a model settles it. The test sends a call shaped like a turn, with one tool when the
+Nobody sets it by hand: the model test settles it, run when a model is added and again on "Testa". The test sends a call shaped like a turn, with one tool when the
 model has tools on, first with nothing about reasoning. When the provider refuses that call and takes the same call with
 `reasoning_effort: "none"`, the model's value becomes `none`; when it takes the first call, the value becomes
 `provider-default`. A change writes a `model.reasoning` audit row with the old value, the new one and `found: test`, in
 the transaction that changes the row. The model's page shows the value as a sentence under "Resonemang", and the test's
-findings say when Clew asks the model not to reason. The value is a closed list, so a later effort level is a new
+findings say when Clew asks the model not to reason. Adding a model returns the test's report beside the model; a
+failed test keeps the model, which starts switched off anyway, and the add dialogs' announcement names each model that
+did not answer. The value is a closed list, so a later effort level is a new
 literal and not a new column.
 
 **Why.** The product owner saw "Modellen svarar inte just nu." on every free-text question with `gpt-6-luna`. The
@@ -38,8 +40,8 @@ servers such as vLLM, Ollama and llama.cpp take tools with reasoning in a chat c
   path and leaves no record of what was sent. The test does it once, where an administrator acts, and writes the row.
 
 **Consequences.** Migration `0036_model_reasoning` adds the column with the default, so existing models send what they
-sent before. A model that has never been tested keeps `provider-default`; an administrator presses "Testa" when the
-composer says the model does not answer. A later test starts from the default again, so a provider that starts taking
+sent before. A model added before this revision keeps `provider-default` until an administrator presses "Testa"; one
+added now is settled before anyone can ask it a question. Adding a model costs one or two tiny calls to its provider. A later test starts from the default again, so a provider that starts taking
 tools with reasoning gets the model's own reasoning back. A test that fails for another reason (a wrong model id, a
 refused key, no answer), or whose second call also fails, leaves the value as it was and reports the first call's
 error. A model with tools off is tested without a tool and settles at `provider-default`. The minute probe still reads

@@ -501,6 +501,21 @@ export class MockApi {
         enabledModels: this.models.filter(m => m.providerId === p.id && m.state === 'enabled').length,
       }));
     };
+    // A model whose id starts with "trasig" plays one the provider refuses, so a failed test on add can be heard.
+    const answered = (m: ModelSummary) =>
+      m.model.startsWith('trasig')
+        ? {
+            ok: false,
+            models: [],
+            health: { status: 'ok', at: NOW },
+            findings: [{ level: 'fail', text: 'Leverantören svarar men vägrar anropet.' }],
+          }
+        : {
+            ok: true,
+            models: [],
+            health: { status: 'ok', at: NOW },
+            findings: [{ level: 'ok', text: `${m.title} svarar.` }],
+          };
     if (kind === 'models') {
       if (!id && method === 'GET') return json({ providers: this.providers, models: this.models });
       if (!id && method === 'POST') {
@@ -520,17 +535,11 @@ export class MockApi {
         };
         this.models = [...this.models, m];
         counted();
-        return json(modelDetail(m), 201);
+        return json({ model: modelDetail(m), report: answered(m) }, 201);
       }
       const m = this.models.find(x => x.id === id);
       if (!m) return missing('Modellen');
-      if (action === 'test')
-        return json({
-          ok: true,
-          models: [],
-          health: { status: 'ok', at: NOW },
-          findings: [{ level: 'ok', text: `${m.title} svarar.` }],
-        });
+      if (action === 'test') return json(answered(m));
       if (method === 'DELETE') {
         this.models = this.models.filter(x => x.id !== id);
         counted();

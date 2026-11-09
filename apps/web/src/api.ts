@@ -252,7 +252,8 @@ export const api = {
     // Modeller (D24): providers and the models under them. A key goes in, never comes out.
     models: () => call<{ providers: ProviderSummary[]; models: ModelSummary[] }>('/api/admin/models'),
     model: (id: string) => call<ModelDetail>(`/api/admin/models/${id}`),
-    addModel: (input: AddModelInput) => post<ModelDetail>('/api/admin/models', input),
+    addModel: (input: AddModelInput) =>
+      post<{ model: ModelDetail; report: ProviderTestReport }>('/api/admin/models', input),
     updateModel: (id: string, input: ModelPatchInput) => patch<ModelDetail>(`/api/admin/models/${id}`, input),
     removeModel: (id: string) => del<{ removed: true }>(`/api/admin/models/${id}`),
     testModel: (id: string) => post<ProviderTestReport>(`/api/admin/models/${id}/test`),
