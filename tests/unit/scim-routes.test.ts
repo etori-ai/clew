@@ -104,6 +104,33 @@ describe('/scim/v2', () => {
     expect((await call('DELETE', '/Groups/id-2')).status).toBe(204);
     expect(store.state.grants.get('id-1')).toBeUndefined();
   });
+  test('what the server does not offer answers 501, a search request lists like GET, and an unknown address is the error resource', async () => {
+    const { call } = app();
+    for (const [method, path] of [
+      ['POST', '/Bulk'],
+      ['GET', '/Me'],
+      ['POST', '/.search'],
+    ] as const) {
+      const response = await call(method, path, method === 'POST' ? {} : undefined);
+      expect(response.status).toBe(501);
+      expect(response.headers.get('content-type')).toBe('application/scim+json; charset=utf-8');
+      expect(await response.json()).toMatchObject({ status: '501' });
+    }
+    await call('POST', '/Users', anna);
+    await call('POST', '/Users', { ...anna, externalId: 'mk-2', userName: 'bo' });
+    const searched = await call('POST', '/Users/.search', {
+      schemas: ['urn:ietf:params:scim:api:messages:2.0:SearchRequest'],
+      filter: 'userName eq "bo"',
+      startIndex: 1,
+      count: 10,
+    });
+    expect(searched.status).toBe(200);
+    expect(await searched.json()).toMatchObject({ totalResults: 1, Resources: [{ userName: 'bo' }] });
+    const groups = await call('POST', '/Groups/.search', { count: 0 });
+    expect(await groups.json()).toMatchObject({ totalResults: 0, Resources: [] });
+    expect((await call('POST', '/Users/.search', [])).status).toBe(400);
+    expect((await call('PATCH', '/Users/id-1/anything')).status).toBe(404);
+  });
   test('a unique index that fires in a race answers the same 409 as the check, naming the attribute when Postgres names the index', async () => {
     const violation = (constraint?: string, wrapped = false) => {
       const raw = Object.assign(new Error('duplicate key value violates unique constraint'), {
@@ -156,7 +183,10 @@ describe('/scim/v2', () => {
     expect((await call('GET', '/Users/nobody')).status).toBe(404);
     await call('POST', '/Users', anna);
     expect(await (await call('POST', '/Users', anna)).json()).toMatchObject({ status: '409', scimType: 'uniqueness' });
-    expect(await (await call('GET', '/Me')).json()).toMatchObject({ status: '404', detail: 'No such SCIM resource.' });
+    expect(await (await call('GET', '/Nothing')).json()).toMatchObject({
+      status: '404',
+      detail: 'No such SCIM resource.',
+    });
     expect((await call('GET', '/Users?filter=' + encodeURIComponent('userName co "a"'))).status).toBe(400);
   });
 });

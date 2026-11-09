@@ -38,6 +38,29 @@ test('Hono serves a Web Request through the Node runtime', async () => {
   assert.deepEqual(await response.json(), { ok: true });
 });
 
+test('an unknown address under a mounted /scim/v2 answers the SCIM error resource, not the parent 404', async () => {
+  // Hono does not carry a sub-app's `notFound` through `app.route()`; the sub-app answers with a handler of its own.
+  const { memoryProvisionStore } = await import('../src/modules/people/adapters/memory');
+  const { scimUsecases } = await import('../src/modules/people/usecases');
+  const { scimRoutes } = await import('../src/routes/scim');
+  const store = memoryProvisionStore();
+  store.state.provisioners.set('digest:t', { id: 'mk', organisationId: 'sundsvall', label: 'Metakatalogen' });
+  const scim = scimUsecases({ store, clock: () => new Date(), ids: () => 'x', digest: token => 'digest:' + token });
+  const parent = new Hono().route('/scim/v2', scimRoutes(scim)).notFound(c => c.json({ error: 'Okänd adress.' }, 404));
+  const headers = { Authorization: 'Bearer t' };
+  const unknown = await parent.request('http://clew.test/scim/v2/Nothing', { headers });
+  assert.equal(unknown.status, 404);
+  assert.equal(unknown.headers.get('content-type'), 'application/scim+json; charset=utf-8');
+  assert.deepEqual(await unknown.json(), {
+    schemas: ['urn:ietf:params:scim:api:messages:2.0:Error'],
+    status: '404',
+    detail: 'No such SCIM resource.',
+  });
+  assert.equal((await parent.request('http://clew.test/scim/v2/Me', { headers })).status, 501);
+  assert.equal((await parent.request('http://clew.test/elsewhere')).status, 404);
+  assert.deepEqual(await (await parent.request('http://clew.test/elsewhere')).json(), { error: 'Okänd adress.' });
+});
+
 test('the live API and its composition load in Node without external services', async () => {
   const { api } = await import('../src/routes/api');
   assert.equal(typeof api.fetch, 'function');

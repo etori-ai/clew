@@ -3,7 +3,7 @@ import { privateHeaders } from '../context';
 import { SCIM_CONTENT_TYPE, ScimError } from '../modules/people/contracts';
 import { resourceTypes, schemaDocuments, serviceProviderConfig } from '../modules/people/domain';
 import type { Provisioner } from '../modules/people/ports';
-import type { ScimUsecases } from '../modules/people/usecases';
+import type { ScimQuery, ScimUsecases } from '../modules/people/usecases';
 
 /**
  * SCIM 2.0 under `/scim/v2` (RFC 7644; D68): the one way people and groups enter an installation. A bearer token issued to
@@ -103,11 +103,28 @@ export function scimRoutes(scim: ScimUsecases) {
     }),
   );
   const idOf = (c: Context) => c.req.param('id') ?? '';
-  const query = (c: Context) => ({
+  const query = (c: Context): ScimQuery => ({
     filter: c.req.query('filter'),
     startIndex: c.req.query('startIndex'),
     count: c.req.query('count'),
   });
+  /** RFC 7644 §3.4.3: the query of a list carried in a `SearchRequest` body, for clients that keep filters out of the address. */
+  const searchQuery = async (c: Context): Promise<ScimQuery> => {
+    const sent = await body(c);
+    if (!sent || typeof sent !== 'object' || Array.isArray(sent))
+      throw new ScimError(400, 'A SearchRequest body is required.', 'invalidSyntax');
+    const s = sent as { filter?: unknown; startIndex?: unknown; count?: unknown },
+      text = (v: unknown) => (v === undefined || v === null ? undefined : String(v));
+    return { filter: text(s.filter), startIndex: text(s.startIndex), count: text(s.count) };
+  };
+  /** RFC 7644 §3.7 and §3.11: what this server does not offer answers 501, not 404, so a client can tell the two apart. */
+  const notImplemented = (what: string) =>
+    route(async () => {
+      throw new ScimError(501, `${what} is not supported by this server.`);
+    });
+  app.all('/Bulk', notImplemented('Bulk'));
+  app.all('/Me', notImplemented('/Me'));
+  app.all('/.search', notImplemented('A search across resource types'));
   app.post(
     '/Users',
     route(async c => {
@@ -118,6 +135,10 @@ export function scimRoutes(scim: ScimUsecases) {
   app.get(
     '/Users',
     route(async c => json(c, await scim.listUsers(c.get('provisioner'), query(c), base(c)))),
+  );
+  app.post(
+    '/Users/.search',
+    route(async c => json(c, await scim.listUsers(c.get('provisioner'), await searchQuery(c), base(c)))),
   );
   app.get(
     '/Users/:id',
@@ -149,6 +170,10 @@ export function scimRoutes(scim: ScimUsecases) {
     '/Groups',
     route(async c => json(c, await scim.listGroups(c.get('provisioner'), query(c), base(c)))),
   );
+  app.post(
+    '/Groups/.search',
+    route(async c => json(c, await scim.listGroups(c.get('provisioner'), await searchQuery(c), base(c)))),
+  );
   app.get(
     '/Groups/:id',
     route(async c => json(c, await scim.getGroup(c.get('provisioner'), idOf(c), base(c)))),
@@ -168,7 +193,9 @@ export function scimRoutes(scim: ScimUsecases) {
       return c.body(null, 204, privateHeaders);
     }),
   );
-  app.notFound(c => fail(c, new ScimError(404, 'No such SCIM resource.')));
+  // A handler, not `notFound`: Hono does not carry a sub-app's not-found handler through `app.route()`, so the parent's
+  // Swedish JSON 404 answered here before. The token middleware above runs first, so an unknown address still needs one.
+  app.all('*', c => fail(c, new ScimError(404, 'No such SCIM resource.')));
   return app;
 }
 const listOf = <T>(Resources: T[]) => ({
