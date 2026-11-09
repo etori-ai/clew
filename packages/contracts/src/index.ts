@@ -1304,7 +1304,7 @@ export type ProviderHealth = Static<typeof ProviderHealthSchema>;
 export const ModelStateSchema = Type.Union([Type.Literal('enabled'), Type.Literal('disabled')]);
 export type ModelState = Static<typeof ModelStateSchema>;
 /**
- * What a call says about reasoning (D82). `provider-default` says nothing, so an endpoint that does not know the field
+ * What a call says about reasoning (D83). `provider-default` says nothing, so an endpoint that does not know the field
  * never sees it; `none` asks the model not to reason, for a model that refuses tools while it does. "Testa" settles it;
  * nobody sets it by hand.
  */

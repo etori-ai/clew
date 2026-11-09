@@ -4,7 +4,7 @@ import { WireError, type Endpoint, type ModelWire } from '../ports';
 /**
  * The live OpenAI-compatible wire (D24): the only protocol, so an open-weight model on a self-hosted endpoint is a
  * complete installation and a closed provider is an operator's entry, never a dependency. `GET {base}/models` lists,
- * one tiny chat completion proves a model id and a key and that the model takes a call shaped like a turn (D82), and the
+ * one tiny chat completion proves a model id and a key and that the model takes a call shaped like a turn (D83), and the
  * AI SDK's OpenAI-compatible provider runs a turn.
  * Every failure becomes a `WireError`: no answer (network, timeout, 5xx), a refused key (401, 403), or anything else.
  */
@@ -50,7 +50,7 @@ async function call(
     throw new WireError('unsupported', 'svaret är inte JSON');
   }
 }
-/** A tool the model need not call: a turn offers tools, and some models refuse a call only because of them (D82). */
+/** A tool the model need not call: a turn offers tools, and some models refuse a call only because of them (D83). */
 const probeTool = {
   type: 'function',
   function: { name: 'clew_probe', description: 'Not used.', parameters: { type: 'object', properties: {} } },

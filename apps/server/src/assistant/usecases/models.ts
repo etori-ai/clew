@@ -301,7 +301,7 @@ export function modelUsecases(deps: ModelDeps) {
 
   /**
    * A model under a provider, by the id its endpoint uses. Clew's id is derived from it. It starts switched off, and it is
-   * tested at once as "Testa" would (D82), so its reasoning is settled before anyone asks it a question. A failed test does
+   * tested at once as "Testa" would (D83), so its reasoning is settled before anyone asks it a question. A failed test does
    * not undo the addition: the report says what the provider answered.
    */
   async function addModel(
@@ -408,7 +408,7 @@ export function modelUsecases(deps: ModelDeps) {
   }
   /**
    * "Testa" on a model: one tiny completion shaped like a turn, with its provider's key. The provider's health follows.
-   * It also settles the model's reasoning (D82): the call goes as the provider's default first, and only when the
+   * It also settles the model's reasoning (D83): the call goes as the provider's default first, and only when the
    * provider refuses it with tools does the same call go again with reasoning off. The answer is the model's setting from
    * then on, written with its audit row when it changes, so a provider that later accepts the default gets it back.
    */

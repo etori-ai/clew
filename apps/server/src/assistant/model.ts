@@ -104,7 +104,7 @@ export type ModelGenerate = (request: {
  * The generate function for one model on one OpenAI-compatible endpoint (D24): the administered provider gives the base
  * URL and the opened key. Four steps at most, no retries, the caller's timeout. The completion is streamed (D36): each
  * text delta reports the step's text so far, and a new step starts it over, so the text heard last is the answer's.
- * `reasoning` is the model's own setting (D82): `provider-default` sends nothing. `fetchImpl` is for tests.
+ * `reasoning` is the model's own setting (D83): `provider-default` sends nothing. `fetchImpl` is for tests.
  */
 export function createGenerator(
   endpoint: { baseUrl: string; apiKey?: string },

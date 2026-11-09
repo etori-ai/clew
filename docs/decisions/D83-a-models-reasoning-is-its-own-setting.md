@@ -1,4 +1,4 @@
-# D82 · A model's reasoning is its own setting, and the model test settles it
+# D83 · A model's reasoning is its own setting, and the model test settles it
 
 **Status:** accepted, built 2026-11-09 · **Date:** 2026-11-07, revised 2026-11-09 · **Area:** product
 
