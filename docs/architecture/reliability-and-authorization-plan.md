@@ -4,6 +4,8 @@ Date: 2026-11-05
 
 Status: shared mechanisms implemented; reference-stack verification recorded, release evidence and selected-source pilot still open. Accepted mechanisms are recorded separately in D44–D47.
 
+Engine note (2026-11-09): [D85](../decisions/D85-dbos-transact-replaces-temporal-as-the-durable-engine.md) replaced Temporal with DBOS Transact inside the server; read "Temporal" below as the durable engine. The plan is kept as written.
+
 Baseline: revision `4696f6d` and the [architecture review](../reviews/2026-11-05-architecture-against-vision.md)
 
 Pilot source: deliberately undecided, at the product owner's request

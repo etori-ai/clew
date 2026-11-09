@@ -1,6 +1,6 @@
-import { WorkflowExecutionAlreadyStartedError } from '@temporalio/client';
 import { durableJobs } from '../scheduler/adapters/durable-postgres';
-import { temporalClient, TASK_QUEUE } from '../temporal/client';
+import { startDurable } from '../dbos/start';
+import { scheduledJob } from '../dbos/workflows';
 import { scheduler, attention } from './index';
 import { clock } from './ambient';
 
@@ -20,16 +20,10 @@ export async function dispatchJobs(limit = 20) {
     if (!job) return;
     let error: string | undefined;
     try {
-      const client = await temporalClient();
-      await client.workflow.start('scheduledJob', {
-        taskQueue: TASK_QUEUE,
-        workflowId: `job:${job.id}`,
-        args: [{ id: job.id, dueAt: job.dueAt }],
-        workflowIdConflictPolicy: 'USE_EXISTING',
-        workflowIdReusePolicy: 'REJECT_DUPLICATE',
-      });
-    } catch (e) {
-      if (!(e instanceof WorkflowExecutionAlreadyStartedError)) error = 'timer-service-unavailable';
+      // Idempotent by the job's natural id: a redelivery meets the running or finished workflow.
+      await startDurable(scheduledJob, `job:${job.id}`, { id: job.id, dueAt: job.dueAt });
+    } catch {
+      error = 'timer-service-unavailable';
     }
     await durableJobs.delivered(job.id, job.attempt, clock().toISOString(), error);
   }

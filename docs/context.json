@@ -292,7 +292,7 @@
       "number": 15,
       "path": "docs/decisions/D15-postgres-scheduler-now-temporal-later.md",
       "title": "D15 · Postgres-backed scheduler in v1, Temporal later",
-      "status": "accepted, narrowed by D17 (Temporal adopted 2026-11-04 for new timers; the three job kinds remain on the `job` table until migrated)",
+      "status": "accepted, narrowed by D17 (Temporal adopted 2026-11-04 for new timers; the three job kinds remain on the `job` table until migrated); the engine is DBOS Transact since D85 (2026-11-09)",
       "date": "2026-11-03",
       "area": "platform"
     },
@@ -310,7 +310,7 @@
       "number": 17,
       "path": "docs/decisions/D17-temporal-runs-the-durable-timers.md",
       "title": "D17 · Temporal runs the durable timers, starting with a person's own reminders",
-      "status": "accepted",
+      "status": "superseded by D85 (2026-11-09: DBOS Transact replaces Temporal; the worker, the server services and the legacy `reminder` function are gone)",
       "date": "2026-11-04",
       "area": "platform"
     },
@@ -607,7 +607,7 @@
       "number": 45,
       "path": "docs/decisions/D45-approved-intent-precedes-source-dispatch.md",
       "title": "D45 · Approved intent precedes source dispatch",
-      "status": "accepted, generic card path implemented; calendar migration pending",
+      "status": "accepted, generic card path implemented; calendar migration pending; amended by D85 (2026-11-09: the durable engine is DBOS Transact, so \"Temporal\" below reads \"the durable engine\")",
       "date": "2026-11-05",
       "area": "platform"
     },
@@ -634,7 +634,7 @@
       "number": 47,
       "path": "docs/decisions/D47-occurrences-timers-and-attention-have-durable-identities.md",
       "title": "D47 · Occurrences, timers and attention have durable identities",
-      "status": "accepted, implemented",
+      "status": "accepted, implemented; amended by D85 (2026-11-09: the durable engine is DBOS Transact, so \"Temporal\" below reads \"the durable engine\"; recovery keys on stable executor ids and the application version, see D85)",
       "date": "2026-11-05",
       "area": "platform"
     },
@@ -970,6 +970,15 @@
       "status": "accepted, built 2026-11-09",
       "date": "2026-11-07, revised 2026-11-09",
       "area": "product"
+    },
+    {
+      "key": "D85-dbos-transact-replaces-temporal-as-the-durable-engine",
+      "number": 85,
+      "path": "docs/decisions/D85-dbos-transact-replaces-temporal-as-the-durable-engine.md",
+      "title": "D85 · DBOS Transact replaces Temporal as the durable engine",
+      "status": "accepted, implemented",
+      "date": "2026-11-09",
+      "area": "platform"
     }
   ],
   "documents": [
@@ -1848,6 +1857,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D85-dbos-transact-replaces-temporal-as-the-durable-engine.md",
+      "title": "D85 · DBOS Transact replaces Temporal as the durable engine",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -2658,6 +2673,20 @@
         "What the spike did not cover",
         "Comparison after the spike",
         "Recommendation"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-09-mcp-backed-native-connectors.md",
+      "title": "Building a Clew connector over an MCP server",
+      "category": "review-history",
+      "headings": [
+        "The available choices",
+        "What the fake poll actually provides",
+        "What a native adapter would look like",
+        "Combining native work with the provider App",
+        "What Clew should support",
+        "Recommended next steps for Medarbetarpuls",
+        "Evidence and verification"
       ]
     },
     {

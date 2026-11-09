@@ -6,7 +6,7 @@ Start with the employee's task and the source's access policy. For native, model
 
 Choose this lane when a vendor already supplies tools or an MCP App and Clew should host that interaction. The vendor keeps its existing MCP endpoint, tool schemas and optional App resources; no Clew manifest, callback or view type is required. Clew owns registration, access, discovery, confirmation and the surrounding cards. Provider OAuth remains necessary and is not implemented by the synthetic demo.
 
-An administrator can configure a Clew-owned read watch over an existing tool. Temporal checks the source; a stable identity and eligibility/change rule determine whether to create a delivery card. The interval controls when Clew checks, not when it sends repeat reminders. The source needs no Clew-specific push support. Analytics-only tools do not imply that respondent invitations or submission are available.
+An administrator can configure a Clew-owned read watch over an existing tool. A durable workflow checks the source; a stable identity and eligibility/change rule determine whether to create a delivery card. The interval controls when Clew checks, not when it sends repeat reminders. The source needs no Clew-specific push support. Analytics-only tools do not imply that respondent invitations or submission are available.
 
 See [MCP chat services](mcp-chat-services.md) for the end-to-end path and remaining production work, [the independent demo](../../fixtures/mcp-pulse/README.md) to run it, and [provider evidence](../reviews/2026-11-08-mcp-services-and-provider-compatibility.md) for actual vendor capabilities. MCP services do not automatically acquire native scan, job, undo or reconciliation semantics. The following table describes the native connector lane.
 

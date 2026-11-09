@@ -11,7 +11,8 @@ import { protocolRoutes } from './routes/protocol';
 import { registry } from './connectors/registry';
 import { loadConnectors } from './connectors/remote';
 import { startAssistantProbe, startTimerDispatch } from './composition';
-import { startWorker } from './temporal/worker';
+import { startDurableRuntime } from './dbos/runtime';
+import { bindLiveActivities } from './dbos/activities';
 import { failure } from './context';
 import { signingAuthority } from './connectors/signing';
 import { startupReadiness } from './startup';
@@ -38,6 +39,8 @@ const startup = startupReadiness({
     await applyAllRows(connectorReconcile);
   },
   onReady: () => {
+    bindLiveActivities();
+    startDurableRuntime();
     watchConnectors(connectorReconcile);
     startJobs();
     startMcpWatches();
@@ -45,7 +48,6 @@ const startup = startupReadiness({
     startExecutionDispatch();
     startTimerDispatch();
     startRefresh();
-    void startWorker();
     void loadConnectors(registry)
       .then(() => applyAllRows(connectorReconcile))
       .catch(error => console.error('connectors', error));

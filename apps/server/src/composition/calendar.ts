@@ -1,7 +1,7 @@
 import type { AuthenticatedContext } from '@clew/contracts';
 import { bindCalendar, type CalendarBinding } from '@clew/calendar/accounts';
 import { postgresProposalStore } from '../modules/calendar/adapters/postgres';
-import { temporalObligations } from '../temporal/obligations';
+import { durableObligations } from '../dbos/obligations';
 import type { Notifier } from '../modules/calendar/model';
 import { systemContext } from '../system-context';
 import { calendarUsecases } from '../modules/calendar/usecases/samtal';
@@ -55,7 +55,7 @@ const core = calendarUsecases({
   ids,
   people: { personaFor: id => systemContext(id, 'system:obligation') },
   notify: (personId, draft) => notifier.push(personId, draft),
-  obligations: temporalObligations(),
+  obligations: durableObligations(),
 });
 export const calendarAuthority: { current: (id: string) => Promise<AuthenticatedContext | undefined> } = {
   current: async () => undefined,

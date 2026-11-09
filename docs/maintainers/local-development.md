@@ -9,7 +9,7 @@ Host commands below start Docker infrastructure; application commands run inside
 Everything runs in Docker. Commands go through `docker exec` into the app container (Claude Code and most editors sit outside the devcontainer).
 
 ```sh
-sh scripts/compose.sh up -d --build --wait              # the app image (Node 26.13.0 LTS + Bun 1.4.4), Postgres 17, Temporal, the six fixture connectors and the local fake of Microsoft Graph
+sh scripts/compose.sh up -d --build --wait              # the app image (Node 26.13.0 LTS + Bun 1.4.4), Postgres 17, the six fixture connectors and the local fake of Microsoft Graph
 docker exec -w /workspace clew-app-1 bun install --frozen-lockfile
 docker exec -w /workspace clew-app-1 bun run db:init     # Drizzle migrations
 docker exec -w /workspace clew-app-1 bun run dev:connectors  # fills missing fixture registrations and follower bindings (D61)
@@ -43,14 +43,14 @@ Checks:
 docker exec -w /workspace clew-app-1 bun run check      # tsc + dependency rules (D20) + Bun unit tests + Node runtime tests; also runs in CI
 docker exec -w /workspace clew-app-1 bun run test:node  # current server runtime, without external services
 docker exec -w /workspace clew-app-1 bun run test:db    # PostgreSQL contracts
-docker exec -w /workspace clew-app-1 bun run test:durability # PostgreSQL/Temporal/Node synthetic reliability scenarios
+docker exec -w /workspace clew-app-1 bun run test:durability # PostgreSQL/DBOS/Node synthetic reliability scenarios
 sh scripts/a11y.sh menu.spec.ts --timeout 15000         # on the host: the WCAG specs a change touches, failing fast (D51); the full suite runs by hand until the run-up to a release (D59)
 sh scripts/a11y.sh                                      # the whole WCAG 2.2 AA suite, as the workflow runs it: about eight minutes, not a per-edit check
 ```
 
-Ports on loopback: 3020 web, 3021 Nextcloud (`calendar-admin`), 3022 Mailpit, 3023 Temporal UI, 3024 the portal, 4040 to 4046 the fixture connectors, 4047 the local fake of Microsoft Graph (`/v1.0`).
+Ports on loopback: 3020 web, 3021 Nextcloud (`calendar-admin`), 3022 Mailpit, 3024 the portal, 4040 to 4046 the fixture connectors, 4047 the local fake of Microsoft Graph (`/v1.0`).
 
-Temporal (server and UI) starts with the base compose stack and creates its two databases in the shared Postgres on first start. The BFF runs the worker in-process. Approved executions, reminder/snooze timers, bounded calendar follow-up and scheduled jobs use durable PostgreSQL intent before Temporal dispatch. A reminder keeps its absolute due time through an outage; queued/blocked states remain visible. Follow workflows in the UI at http://localhost:3023 and inspect aggregates with `docker exec -w /workspace clew-app-1 bun scripts/reliability-status.ts`. See [scheduled work](../architecture/scheduled-work.md) and the [operations runbook](reliability-operations.md).
+The durable engine (DBOS Transact, D85) runs inside the BFF and checkpoints to the `dbos` schema of the development database; there is no separate service or UI. Approved executions, reminder/snooze timers, bounded calendar follow-up and scheduled jobs use durable PostgreSQL intent before dispatch. A reminder keeps its absolute due time through an outage; queued/blocked states remain visible. Inspect workflows with SQL (`select workflow_uuid, name, status, executor_id, application_version from dbos.workflow_status order by created_at desc limit 50` through `docker exec clew-postgres-1 psql -U clew clew`) and aggregates with `docker exec -w /workspace clew-app-1 bun scripts/reliability-status.ts`. See [scheduled work](../architecture/scheduled-work.md) and the [operations runbook](reliability-operations.md).
 
 The older login/connector smoke scripts assume synchronous source decisions; they are not acceptance evidence for the new asynchronous paths. See [testing](../architecture/testing.md) for the maintained suites and remaining live-source checks.
 

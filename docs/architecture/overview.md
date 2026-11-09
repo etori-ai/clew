@@ -18,7 +18,7 @@ flowchart TB
   Portal -->|Same API| Server
   Server <-->|OIDC login| IdP[Identity provider]
   Server <-->|Intent, grants, audit and results| DB[(PostgreSQL)]
-  Server <-->|Dispatch and durable waits| Temporal[Temporal service]
+  Server <-->|Dispatch and durable waits| Engine[DBOS engine inside the server, state in PostgreSQL]
   Server -->|Signed connector HTTP calls| Connectors[Independent connector services]
   Connectors -->|Source API and access policy| Sources[Systems of record]
   Connectors -. declared callbacks .-> Server
@@ -31,7 +31,7 @@ flowchart TB
 | Portal | Experimental alternative frontend using the same server and shared web components. | [apps/portal](../../apps/portal/) |
 | Server/BFF | Browser-facing API, identity, capability dispatch, conversations, decisions, connector/model administration and background coordination. BFF means backend for frontend. | [apps/server](../../apps/server/) |
 | PostgreSQL | Authoritative Clew state: users/grants, configuration, threads, approvals, audit, source evidence and durable delivery intent. | [Database schema and migrations](../../packages/db/src/) |
-| Temporal | Durable workflows for approved executions, timers, follow-up and jobs. The current server starts an embedded Node worker; the Temporal service is separate. | [Worker and workflows](../../apps/server/src/temporal/) |
+| DBOS Transact | Durable workflows for approved executions, timers, follow-up and jobs ([D85](../decisions/D85-dbos-transact-replaces-temporal-as-the-durable-engine.md)). The engine runs inside the server process and checkpoints to the `dbos` schema of Clew's database; there is no separate service. | [Engine and workflows](../../apps/server/src/dbos/) |
 | Connector | Manifest and declared operations; verifies Clew's authority and translates into the source's API. | [connectors](../../connectors/) or an external repository |
 | Identity provider | Authenticates people. Development uses Keycloak; Clew keeps its own grants and identity bindings. | [Identity](identity.md) |
 | Model endpoint | Optional inference. Providers/models are configured in Clew's database and administration UI. | [Assistant](../../apps/server/src/assistant/) |
@@ -78,7 +78,7 @@ sequenceDiagram
   participant Web as Web app
   participant Server as Clew server
   participant DB as PostgreSQL
-  participant Worker as Temporal workflow/worker
+  participant Worker as Durable workflow (DBOS)
   participant Connector
   participant Source
   Person->>Web: Review and approve
@@ -96,7 +96,7 @@ sequenceDiagram
   Server-->>Web: Change notification and authorized reread
 ```
 
-An **outbox** is a database record saying committed work still needs delivery. Committing it with the approval closes the gap between saving the person's decision and starting a workflow. Temporal handles delivery and waiting; PostgreSQL remains the authority for what was approved and what outcome is known.
+An **outbox** is a database record saying committed work still needs delivery. Committing it with the approval closes the gap between saving the person's decision and starting a workflow. The durable engine handles delivery and waiting; PostgreSQL remains the authority for what was approved and what outcome is known.
 
 There is no transaction spanning Clew and an arbitrary source. A source can commit while its reply is lost. Clew retains the original operation identity and uses the connector's declared lookup/replay guarantees to recover evidence. It does not turn a timeout into success or blindly repeat an uncertain effect. Undo is a separately authorized compensating execution, not deletion of the original receipt.
 
@@ -118,11 +118,11 @@ One approval commits all the job's execution/watch intents. Each write then foll
 
 The plan in [D55](../decisions/D55-a-job-is-assembled-from-what-connectors-follow-approved-once-and-run-per-system.md) also carries work between stages: a confirmed receipt can supply a new fact, which followers turn into the **next proposal** for the person's approval. An absence may lead to a proposal to move a meeting; an unstaffed-shift result may lead to arranging cover. This is task orchestration across connectors without requiring an operator to design a process graph.
 
-The current API, bindings, ledger and Temporal watches support the initial job. Steps within that job are computed from the same fact and run independently; dispatch order does not express a dependency. Receipt-driven continuation, the complete job card/step-list interface and binding administration screens remain planned. [Working across connectors](working-across-connectors.md) details both the implemented path and that intended continuation.
+The current API, bindings, ledger and durable watches support the initial job. Steps within that job are computed from the same fact and run independently; dispatch order does not express a dependency. Receipt-driven continuation, the complete job card/step-list interface and binding administration screens remain planned. [Working across connectors](working-across-connectors.md) details both the implemented path and that intended continuation.
 
 ## Timers, follow-up and browser updates
 
-Reminder and snooze changes commit absolute due times and generation numbers. A cancelled or superseded generation cannot resurface work. Temporal waits; the activity rechecks current authority and the committed state before acting.
+Reminder and snooze changes commit absolute due times and generation numbers. A cancelled or superseded generation cannot resurface work. The workflow waits; the step rechecks current authority and the committed state before acting.
 
 Bounded calendar follow-up and cross-system watch steps use the same separation between durable intent and delivery. Attention records control when discovered work is announced and prevent repeated announcements across tabs. The server sends committed revisions over authenticated server-sent events (SSE); the browser invalidates its TanStack Query cache and rereads authorized state. A change notice is not evidence that the person saw a card.
 
@@ -138,7 +138,7 @@ A job's watch is how Clew follows a result in a system it does not write to. It 
 | Human decision and execution | Clew | Approved input and result encrypted at rest, stable operation identity, per-item evidence and audit. |
 | Connector/model configuration | Clew | Manifests, governance, health and sealed transport/provider secrets. |
 | Source service credential | Connector/operator | For remote integrations, held by the connector. Built-in calendar credentials are handled by its server adapter. |
-| Workflow progress and durable waits | Temporal | Workflow histories; business intent and user-visible evidence remain in PostgreSQL. |
+| Workflow progress and durable waits | DBOS Transact, in the `dbos` schema of Clew's database | Workflow checkpoints; business intent and user-visible evidence remain in Clew's own tables. |
 
 `passthrough` means the source owns the business record. It does not mean Clew stores no source-derived data. `derived` means the connector supplies a computed result or snapshot with a defined purpose. `core` is reserved for domains owned inside Clew and is not an accepted remote manifest kind.
 
@@ -148,6 +148,6 @@ Stored snapshots require both data minimization and current authorization. Sourc
 
 Inside the server, routes parse requests and call use cases. Use cases own authorization, transactions and audit through ports; domain functions hold pure logic. Adapters implement storage or external protocols, and the composition root wires them together. Modules do not import each other; cross-module capability calls go through the registry.
 
-[Backend structure](backend-structure.md) maps these concepts to the current folders. Dependency and purity checks enforce the boundaries. [Testing](testing.md) separates fast memory/fixture tests from PostgreSQL, Node/Temporal and browser verification.
+[Backend structure](backend-structure.md) maps these concepts to the current folders. Dependency and purity checks enforce the boundaries. [Testing](testing.md) separates fast memory/fixture tests from PostgreSQL, Node/engine and browser verification.
 
 Clew's future MCP surface, SCIM provisioning, source change-event ingest and broader identity assignments are designs, not available integration routes. The [support matrix](../reference/status.md) and [acceptance ledger](../reference/reliability-acceptance.md) are the detailed limits. To extend the running system, continue with [Create a connector](../guides/creating-a-connector.md).

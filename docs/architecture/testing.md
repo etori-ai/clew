@@ -9,7 +9,7 @@ Almost everything is a unit test in `tests/unit`, run by `bun test` without exte
 functions and use cases built over memory adapters. The one slow test per store is a contract that proves the
 memory adapter behaves like the real one; it runs in the devcontainer, not in `bun run check`. Adapters for
 external systems are tested against recorded fixtures. The accessibility suite drives a built web app in
-Playwright with `/api` mocked. Nothing in `bun run check` needs Postgres, Temporal, Keycloak, Nextcloud, a browser
+Playwright with `/api` mocked. Nothing in `bun run check` needs Postgres, the durable engine, Keycloak, Nextcloud, a browser
 or the network, and CI (`.github/workflows/check.yml`) runs it without the stack on purpose.
 
 ## Where a new test goes
@@ -26,7 +26,7 @@ or the network, and CI (`.github/workflows/check.yml`) runs it without the stack
 | A view, route or state in the web app | An accessibility test (axe, keyboard, reflow, announcements) | `tests/a11y/` | `sh scripts/a11y.sh`, CI `a11y.yml` |
 | A browser cache helper (`apps/web/src/thread-cache.ts`, `query-policy.ts`, D33) | Example tests against a real `QueryClient` from `@tanstack/query-core`: what is written, what is invalidated, what is retried. No DOM, no React | `tests/unit/web-*.test.ts` | `bun run check` |
 | The web build's configuration boundary (D38 branding isolation) | A focused Vite contract that packages only the small browser configuration entry and asserts its exported value under conflicting environment inputs | `apps/web/tests/branding-config.test.ts`, beside the app that owns Vite | `bun run check` |
-| Durable state across the database and worker/source boundary | Real PostgreSQL contracts and Node/Temporal workflows against an independent synthetic fault source; timer cancellation/replay; a job's watch steps through the outbox; `scripts/jobs-check.ts` runs a job on the independent fixture connectors against the dev stack | `tests/db/`, `apps/server/tests/execution-runtime.test.ts`, `apps/server/tests/timer-runtime.test.ts`, `apps/server/tests/watch-runtime.test.ts` | `bun run test:db`, `bun run test:durability`, CI `reliability.yml` |
+| Durable state across the database and worker/source boundary | Real PostgreSQL contracts and Node/DBOS workflows against an independent synthetic fault source; timer cancellation and a killed instance's takeover; a job's watch steps through the outbox; `scripts/jobs-check.ts` runs a job on the independent fixture connectors against the dev stack | `tests/db/`, `apps/server/tests/execution-runtime.test.ts`, `apps/server/tests/timer-runtime.test.ts`, `apps/server/tests/watch-runtime.test.ts` | `bun run test:db`, `bun run test:durability`, CI `reliability.yml` |
 | Upgrade and restore | Isolated databases starting at migration 0019, conservative upgrade, repeated migration and evidence comparison after pg_dump/pg_restore | `scripts/recovery-rehearsal.ts` | [operations runbook](../maintainers/reliability-operations.md), CI `reliability.yml` |
 
 ## Microsoft 365 without Microsoft
@@ -95,9 +95,9 @@ and generated modules are removed, and mutated environment variables are restore
 ## Rules the tools enforce
 
 - `dependency-cruiser` (`bun run deps`): `usecases-reach-stores-through-ports` (a use case never imports `@clew/db`,
-  Drizzle, Postgres, Temporal, an adapter or the composition root; an error for every `usecases` folder),
+  Drizzle, Postgres, the durable engine, an adapter or the composition root; an error for every `usecases` folder),
   `unit-tests-stay-fast` (`tests/unit` never imports a live adapter, the composition root,
-  `@clew/db` or Temporal; a type needed from the schema comes from `packages/db/src/schema.ts`, because TypeScript 7
+  `@clew/db` or the durable engine; a type needed from the schema comes from `packages/db/src/schema.ts`, because TypeScript 7
   has no compiler API and the cruiser cannot tell `import type` apart), `domain-is-pure`, `routes-stay-thin`.
 - `scripts/purity-check.ts` (`bun run purity`): no `Date.now()`, `new Date()`, `process.env`, `randomUUID()` or
   `Math.random()` in domain files and use cases. The clock and the id source are `deps.clock` and
@@ -113,7 +113,7 @@ and generated modules are removed, and mutated environment variables are restore
 docker exec -w /workspace clew-app-1 bun run check          # everything CI runs, no stack needed
 docker exec -w /workspace clew-app-1 bun test tests/unit     # the fast suite alone
 docker exec -w /workspace clew-app-1 bun run test:db         # the store contract against Postgres
-docker exec -w /workspace clew-app-1 bun run test:durability # real Node, PostgreSQL, Temporal and synthetic fault source
+docker exec -w /workspace clew-app-1 bun run test:durability # real Node, PostgreSQL, the DBOS engine and synthetic fault source
 sh scripts/a11y.sh                                           # the WCAG suite
 ```
 
@@ -145,13 +145,13 @@ Business use cases are built over ports (D25), with live and memory adapters wir
 | `scheduler/` | `createScheduler` | `JobQueue`, `People` | `tests/unit/scheduler.test.ts` |
 | `assistant/` | `assistantUsecases` | `ThreadStore`, `ModelProvider` | `tests/unit/conversation.test.ts` |
 
-`temporal/activities.ts` and `temporal/workflows.ts` call use cases through the composition root. Durable timer generations, execution progress, bounded follow-up and scheduled job ownership are tested separately from workflow history compatibility. The fixture `apps/server/tests/fixtures/workflows-v46.ts` preserves the previous workflow functions for replay. `today()` and `isPast()` in `@clew/calendar/dates` are for the browser;
+`dbos/activities.ts` binds use cases from the composition root to the steps in `dbos/workflows.ts`; a runtime test binds its own. Durable timer generations, execution progress, bounded follow-up and scheduled job ownership are tested separately from recovery: `apps/server/tests/fixtures/durable-child.ts` is a second instance killed while a reminder waits, whose workflow the timer runtime test claims and adopts. `today()` and `isPast()` in `@clew/calendar/dates` are for the browser;
 the server derives the date from `clock()` and the purity guard refuses them.
 
 Still outside the pattern, on purpose: `auth.ts`, `system-context.ts` and `connectors/remote.ts` (identity and
 connector loading, platform code over `@clew/db` directly) and the connector descriptors `modules/*/connector.ts`
 that describe built-in capabilities. Internal `people.*` reads now use a `UserReads` port, composed with a PostgreSQL adapter.
 
-The shared follow-up contract (`tests/followup-contract.ts`) runs on memory and PostgreSQL. Calendar execution projection, refresh/attention and ownership have PostgreSQL scenarios in addition to pure/use-case tests. Runtime tests are required for boundaries memory cannot prove: real transactions, process/protocol response loss and Temporal history replay. Keep these in the separate reliability lane, not the fast suite.
+The shared follow-up contract (`tests/followup-contract.ts`) runs on memory and PostgreSQL. Calendar execution projection, refresh/attention and ownership have PostgreSQL scenarios in addition to pure/use-case tests. Runtime tests are required for boundaries memory cannot prove: real transactions, process/protocol response loss and recovery of a pending workflow after process death. Keep these in the separate reliability lane, not the fast suite.
 
 The older `scripts/auth-dev-check.ts` assumes synchronous decisions and refresh. It is a historical development smoke script, not a current acceptance gate for the asynchronous lifecycle; do not use its results to claim this roadmap is verified. `scripts/jobs-check.ts` runs the job across systems on the fixture connectors of the development stack (D61). Use the maintained suites above and the [acceptance matrix](../reference/reliability-acceptance.md). A live login/calendar run still needs an updated scenario, authorized synthetic records and explicit source assertions.

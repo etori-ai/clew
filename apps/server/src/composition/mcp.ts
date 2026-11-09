@@ -6,7 +6,9 @@ import { sealSecret, openSecret, authorizationVersion } from '../auth-crypto';
 import { systemContext } from '../system-context';
 import { models } from './index';
 import { clock } from './ambient';
-import { temporalClient, TASK_QUEUE } from '../temporal/client';
+import { DBOS } from '@dbos-inc/dbos-sdk';
+import { startDurable } from '../dbos/start';
+import { mcpWatch } from '../dbos/workflows';
 
 const enabled = process.env.CLEW_POC === 'true' && process.env.NODE_ENV !== 'production';
 const store = postgresMcpStore({
@@ -24,7 +26,11 @@ export const mcp = mcpUsecases({
   fingerprint: value => authorizationVersion({ purpose: 'mcp:decision', value }),
   enabled,
 });
-/** Reconcile registered watches with durable Temporal workflows. Configuration and source data stay in Postgres. */
+/**
+ * Reconcile registered watches with durable workflows. Configuration and source data stay in Postgres. A watch runs
+ * as rounds of at most a hundred reads (`mcpWatch`); when a registration has no running round, the next one starts
+ * under the round's number, so two instances reconciling at once meet the same id.
+ */
 export function startMcpWatches() {
   if (!enabled) return;
   let busy = false;
@@ -32,16 +38,11 @@ export function startMcpWatches() {
     if (busy) return;
     busy = true;
     try {
-      const client = await temporalClient();
       for (const r of await store.registrations()) {
         if (!r.enabled) continue;
-        await client.workflow.start('mcpWatch', {
-          workflowId: 'mcp-watch:' + r.id,
-          taskQueue: TASK_QUEUE,
-          args: [r.id],
-          workflowIdConflictPolicy: 'USE_EXISTING',
-          workflowIdReusePolicy: 'ALLOW_DUPLICATE',
-        });
+        const rounds = await DBOS.listWorkflows({ workflow_id_prefix: `mcp-watch:${r.id}:`, limit: 10_000 });
+        if (rounds.some(w => w.status === 'PENDING' || w.status === 'ENQUEUED')) continue;
+        await startDurable(mcpWatch, `mcp-watch:${r.id}:${rounds.length + 1}`, r.id);
       }
     } catch {
       console.error('MCP watch reconciliation unavailable');

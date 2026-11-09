@@ -1,6 +1,6 @@
 # D47 · Occurrences, timers and attention have durable identities
 
-**Status:** accepted, implemented · **Date:** 2026-11-05 · **Area:** platform
+**Status:** accepted, implemented; amended by D85 (2026-11-09: the durable engine is DBOS Transact, so "Temporal" below reads "the durable engine"; recovery keys on stable executor ids and the application version, see D85) · **Date:** 2026-11-05 · **Area:** platform
 
 **Decision.** PostgreSQL owns work occurrence identity, timer intent, follow-up bounds and attention admission. Threads project those records into cards. Temporal runs the waits and retries after committed intent; it cannot invent a human approval. [D45](D45-approved-intent-precedes-source-dispatch.md) also governs calendar create, move, cancel, confirmation and compensation.
 

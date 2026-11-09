@@ -7,8 +7,6 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID, randomBytes, createHash } from 'node:crypto';
 import { generateKeyPair, exportPKCS8 } from 'jose';
-import { NativeConnection, Worker } from '@temporalio/worker';
-import { Client, Connection, WorkflowExecutionAlreadyStartedError } from '@temporalio/client';
 import { and, eq, inArray } from 'drizzle-orm';
 import { database, schema, closeDatabase } from '@clew/db';
 import { Registry, openGovernance, type ExecuteResult } from '@clew/connectors';
@@ -20,10 +18,14 @@ import { postgresExecutionStore } from '../src/modules/executions/adapters/postg
 import { executionUsecases } from '../src/modules/executions/usecases';
 import { executionDispatcher } from '../src/modules/executions/dispatch';
 import type { ExecutionSource } from '../src/modules/executions/model';
+import { bindActivities } from '../src/dbos/workflows';
+import { startExecutionWorkflow } from '../src/dbos/executions';
+import { durableResult } from '../src/dbos/start';
+import { launchTestEngine } from './durable';
 
-// Separate Temporal queue and synthetic person/source. No existing connector or business data is changed.
+// The durable engine under its own application name, a synthetic person and source. No existing connector or business data is changed.
 test(
-  'Postgres + Temporal + independent durable source recover a lost reply and reject duplicate intent',
+  'Postgres + the durable engine + independent durable source recover a lost reply and reject duplicate intent',
   { timeout: 60_000 },
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'clew-durability-'));
@@ -34,11 +36,7 @@ test(
     const authority = await connectorAuthority(await exportPKCS8(pair.privateKey), id);
     await writeFile(join(directory, 'jwks.json'), JSON.stringify(authority.jwks));
     const fixture = fileURLToPath(new URL('../../../connectors/reference/server.mjs', import.meta.url));
-    let child: ChildProcess | undefined,
-      worker: Worker | undefined,
-      run: Promise<void> | undefined,
-      connection: Connection | undefined,
-      native: NativeConnection | undefined;
+    let child: ChildProcess | undefined, engine: Awaited<ReturnType<typeof launchTestEngine>> | undefined;
     let sourceErrors = '';
     const startSource = async (fault: string, port = 0) => {
       child = spawn(process.execPath, [fixture], {
@@ -140,37 +138,15 @@ test(
       await assert.rejects(
         second.uc.approve(persona, { ...approval, payload: { ref: 'reference:item:1', revision: 999 } }),
       );
-      const address = process.env.TEMPORAL_ADDRESS ?? 'temporal:7233';
-      native = await NativeConnection.connect({ address });
-      connection = await Connection.connect({ address });
-      const client = new Client({ connection }),
-        queue = id;
-      worker = await Worker.create({
-        connection: native,
-        taskQueue: queue,
-        workflowsPath: fileURLToPath(new URL('../src/temporal/workflows.ts', import.meta.url)),
-        activities: { progressExecution: second.uc.progress },
-        maxConcurrentActivityTaskExecutions: 2,
-        maxConcurrentWorkflowTaskExecutions: 2,
-      });
-      run = worker.run();
+      bindActivities({ progressExecution: second.uc.progress });
+      engine = await launchTestEngine('execution');
       const workflowId = 'execution:' + a.id;
-      const start = async (outboxId: string, executionId: string) => {
-        try {
-          await client.workflow.start('approvedExecution', {
-            workflowId: outboxId,
-            taskQueue: queue,
-            args: [executionId],
-            workflowIdConflictPolicy: 'USE_EXISTING',
-            workflowIdReusePolicy: 'REJECT_DUPLICATE',
-          });
-        } catch (e) {
-          if (!(e instanceof WorkflowExecutionAlreadyStartedError)) throw e;
-        }
-      };
-      const dispatch = executionDispatcher({ store: first.store, start, clock });
-      await Promise.all([dispatch(), executionDispatcher({ store: second.store, start, clock })()]);
-      await client.workflow.getHandle(workflowId).result();
+      const dispatch = executionDispatcher({ store: first.store, start: startExecutionWorkflow, clock });
+      await Promise.all([
+        dispatch(),
+        executionDispatcher({ store: second.store, start: startExecutionWorkflow, clock })(),
+      ]);
+      await durableResult(workflowId);
       const observed = await second.uc.read(persona, a.id);
       assert.equal(
         observed?.state,
@@ -206,12 +182,7 @@ test(
         2,
       );
     } finally {
-      if (worker) {
-        worker.shutdown();
-        await run?.catch(() => undefined);
-      }
-      await native?.close();
-      await connection?.close();
+      await engine?.shutdown();
       if (child?.exitCode === null)
         await new Promise<void>(resolve => {
           child!.once('exit', () => resolve());

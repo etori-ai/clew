@@ -13,7 +13,7 @@ flowchart LR
   Person[Employee] --> Web[Startsidan web app]
   Web --> Server[Clew server]
   Server --> DB[(PostgreSQL: coordination and evidence)]
-  Server <--> Temporal[Temporal: durable work and timers]
+  Server <--> Engine[DBOS: durable work and timers, inside the server]
   Server --> Connector[Connector service]
   Connector --> Source[Source system]
   Server -. optional inference .-> Model[Model endpoint]
@@ -21,7 +21,7 @@ flowchart LR
 
 A connector can be written in any language. An administrator registers its URL, transport secret and audience without rebuilding Clew. The browser calls Clew; the connector calls the source. The optional assistant uses the person's allowed reads and proposals; source writes pass through a separate human approval flow.
 
-PostgreSQL records approved intent before dispatch. Temporal runs the durable work and waits. The connector reports what the source actually did; an uncertain outcome remains visible until it can be resolved.
+PostgreSQL records approved intent before dispatch. A durable engine inside the server (DBOS Transact) runs the work and waits, checkpointing to the same database. The connector reports what the source actually did; an uncertain outcome remains visible until it can be resolved.
 
 [Work across connectors](docs/architecture/working-across-connectors.md) explains how connectors declare facts and follow-up steps, how Clew assembles a job for one approval, and how dependent work is planned to become a later proposal. The job API and execution/watch machinery exist; the complete employee and administrator interfaces and receipt-driven continuation are still planned.
 

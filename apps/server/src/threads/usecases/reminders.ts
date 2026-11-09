@@ -114,7 +114,7 @@ export function reminderUsecases(deps: ReminderDeps) {
    * or Påminn mig (D49): the thread is reopened if it was dismissed or snoozed meanwhile, marked `remindedAt` so it sorts
    * first under "Nu" for the day, its trigger says why it is back and who it waited on, and the person is told. A card
    * already handled with a receipt is left alone: the work is done. Idempotent: a retried timer sees `remindedAt` already
-   * at or after the fire time and does nothing. Runs as the Temporal activity `surfaceReminder`.
+   * at or after the fire time and does nothing. Reached by the durable `fireTimer` step through `fire`.
    */
   async function surface(input: ReminderInput, generation?: number): Promise<'surfaced' | 'skipped'> {
     const at = deps.clock().toISOString();

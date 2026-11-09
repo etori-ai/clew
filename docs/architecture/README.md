@@ -18,7 +18,7 @@ The [vocabulary and entity map](../reference/vocabulary.md) separates work items
 | [Identity](identity.md) | How are login, local grants, connector authority and source credentials separated? |
 | [Working across connectors](working-across-connectors.md) | How does Clew coordinate changes and follow-up across several systems? |
 | [Connector administration](connector-administration.md) | How are registration, governance, model providers and changes managed? |
-| [Scheduled work](scheduled-work.md) | What belongs in PostgreSQL and what does Temporal execute? |
+| [Scheduled work](scheduled-work.md) | What belongs in PostgreSQL and what does the durable engine execute? |
 | [Testing](testing.md) | Which tests establish behavior at each boundary? |
 
 ## Implement an integration

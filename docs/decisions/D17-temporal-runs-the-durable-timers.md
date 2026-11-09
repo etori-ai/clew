@@ -1,6 +1,6 @@
 # D17 · Temporal runs the durable timers, starting with a person's own reminders
 
-**Status:** accepted · **Date:** 2026-11-04 · **Area:** platform
+**Status:** superseded by D85 (2026-11-09: DBOS Transact replaces Temporal; the worker, the server services and the legacy `reminder` function are gone) · **Date:** 2026-11-04 · **Area:** platform
 
 **Decision.** Temporal (MIT; server `temporalio/auto-setup` 1.29.7 in the devcontainer with its two
 databases in the shared Postgres, UI `temporalio/ui` 2.58.0 on port 3023, TypeScript SDK 1.25.0) is

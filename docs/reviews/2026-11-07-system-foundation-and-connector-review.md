@@ -18,7 +18,7 @@ The execution ledger is particularly valuable. Approval, audit and delivery inte
 
 Temporal has an identifiable responsibility here: waiting and delivery for committed work. PostgreSQL holds the business intent and evidence. The real-stack tests passed for lost-response recovery, timers and bounded watches. Removing Temporal would require preserving those behaviors elsewhere; it is not the first simplification to pursue.
 
-Evidence: [registry](../../packages/connectors/src/index.ts), [execution use cases](../../apps/server/src/modules/executions/usecases.ts), [workflows](../../apps/server/src/temporal/workflows.ts), [dependency rules](../../.dependency-cruiser.cjs).
+Evidence: [registry](../../packages/connectors/src/index.ts), [execution use cases](../../apps/server/src/modules/executions/usecases.ts), [workflows](../../apps/server/src/dbos/workflows.ts), [dependency rules](../../.dependency-cruiser.cjs).
 
 ## Findings to address
 

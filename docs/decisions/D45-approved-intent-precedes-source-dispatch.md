@@ -1,6 +1,6 @@
 # D45 · Approved intent precedes source dispatch
 
-**Status:** accepted, generic card path implemented; calendar migration pending · **Date:** 2026-11-05 · **Area:** platform
+**Status:** accepted, generic card path implemented; calendar migration pending; amended by D85 (2026-11-09: the durable engine is DBOS Transact, so "Temporal" below reads "the durable engine") · **Date:** 2026-11-05 · **Area:** platform
 
 **Implementation follow-up, 2026-11-05:** [D47](D47-occurrences-timers-and-attention-have-durable-identities.md) records the calendar migration and bounded follow-up now implemented. The pending wording below describes this decision's original checkpoint; use the [acceptance matrix](../reference/reliability-acceptance.md) for current evidence.
 

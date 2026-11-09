@@ -1,9 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
-import { NativeConnection, Worker } from '@temporalio/worker';
-import { Client, Connection, WorkflowExecutionAlreadyStartedError } from '@temporalio/client';
 import { and, eq, inArray } from 'drizzle-orm';
 import { database, schema, closeDatabase } from '@clew/db';
 import type { AuthenticatedContext } from '@clew/contracts';
@@ -13,14 +10,17 @@ import { executionUsecases } from '../src/modules/executions/usecases';
 import { watchDispatcher } from '../src/modules/executions/dispatch';
 import { watchCardSink } from '../src/composition/watch-card';
 import type { ExecutionSource, WatchIntent, WatchSource } from '../src/modules/executions/model';
+import { bindActivities, type WatchOutcome } from '../src/dbos/workflows';
+import { startWatchWorkflow, watchWorkflowId } from '../src/dbos/executions';
+import { durableResult } from '../src/dbos/start';
+import { launchTestEngine } from './durable';
 
-// A job's watch steps (D55) on PostgreSQL, Temporal and production Node: a separate task queue and a synthetic person and source.
+// A job's watch steps (D55) on PostgreSQL, the durable engine and production Node: its own application name and a synthetic person and source.
 test(
   "real watch workflows read at the committed checks, settle when the fact is seen, leave one card at the window's end, and recover delayed delivery",
   { timeout: 60_000 },
   async () => {
-    const id = 'watch-runtime-' + randomUUID(),
-      queue = id;
+    const id = 'watch-runtime-' + randomUUID();
     process.env.MASTER_KEY ??= randomBytes(32).toString('base64');
     // Approval and delivery run on a far-future clock so the development server's dispatcher never claims the test's intents.
     // The ledger's clock is then moved inside the committed window, which lies in the real past, so the workflow waits for nothing.
@@ -71,26 +71,11 @@ test(
       { pushCard: watchCardSink(() => ({ source: 'Lönesystemet', area: 'lon' })) },
     );
     const uc = executionUsecases({ store, source, watch, clock, ids: randomUUID, digest: JSON.stringify });
-    const address = process.env.TEMPORAL_ADDRESS ?? 'temporal:7233';
-    let worker: Worker | undefined,
-      running: Promise<void> | undefined,
-      native: NativeConnection | undefined,
-      connection: Connection | undefined;
+    bindActivities({ observeWatch: uc.observe });
+    const engine = await launchTestEngine('watch');
     const started: string[] = [];
     try {
       await database().insert(schema.people).values({ id, name: 'Synthetic watch test', organisationId: 'test' });
-      native = await NativeConnection.connect({ address });
-      connection = await Connection.connect({ address });
-      const client = new Client({ connection });
-      worker = await Worker.create({
-        connection: native,
-        taskQueue: queue,
-        workflowsPath: fileURLToPath(new URL('../src/temporal/workflows.ts', import.meta.url)),
-        activities: { observeWatch: uc.observe },
-        maxConcurrentActivityTaskExecutions: 2,
-        maxConcurrentWorkflowTaskExecutions: 2,
-      });
-      running = worker.run();
       const checks = ['2020-01-01T00:00:00.000Z', '2020-01-01T00:30:00.000Z', '2020-01-01T01:00:00.000Z'];
       const approve = (step: 'seen' | 'expired', expiresAt: string) =>
         uc.approveJob(persona, {
@@ -123,24 +108,12 @@ test(
       now = Date.parse('2020-01-01T02:00:00.000Z');
       const start = async (i: WatchIntent) => {
         started.push(i.id);
-        try {
-          await client.workflow.start('jobWatch', {
-            workflowId: `${i.id}:${i.generation}`,
-            taskQueue: queue,
-            args: [
-              { jobId: i.jobId, stepId: i.stepId, generation: i.generation, checks: i.checks, expiresAt: i.expiresAt },
-            ],
-            workflowIdConflictPolicy: 'USE_EXISTING',
-            workflowIdReusePolicy: 'REJECT_DUPLICATE',
-          });
-        } catch (error) {
-          if (!(error instanceof WorkflowExecutionAlreadyStartedError)) throw error;
-        }
+        await startWatchWorkflow(i);
       };
       await watchDispatcher({
         store,
         start: async () => {
-          throw new Error('simulated unavailable Temporal');
+          throw new Error('simulated unavailable engine');
         },
         clock: dispatchClock,
       })();
@@ -157,8 +130,14 @@ test(
         [`watch:${expired.id}:payroll-1`, `watch:${seen.id}:payroll-1`].sort(),
         'each intent delivered once',
       );
-      assert.equal(await client.workflow.getHandle(`watch:${seen.id}:payroll-1:1`).result(), 'seen');
-      assert.equal(await client.workflow.getHandle(`watch:${expired.id}:payroll-1:1`).result(), 'expired');
+      assert.equal(
+        await durableResult<WatchOutcome>(watchWorkflowId({ id: `watch:${seen.id}:payroll-1`, generation: 1 })),
+        'seen',
+      );
+      assert.equal(
+        await durableResult<WatchOutcome>(watchWorkflowId({ id: `watch:${expired.id}:payroll-1`, generation: 1 })),
+        'expired',
+      );
       assert.deepEqual(reads, { seen: 2, expired: 3 });
       const seenStep = (await uc.readJob(persona, seen.id))!.steps[0]!,
         expiredStep = (await uc.readJob(persona, expired.id))!.steps[0]!;
@@ -197,12 +176,7 @@ test(
       assert.equal((await audit('job:' + expired.id, 'job.watch_expired')).length, 1);
       assert.deepEqual(reads, { seen: 2, expired: 3 });
     } finally {
-      if (worker) {
-        worker.shutdown();
-        await running?.catch(() => undefined);
-      }
-      await native?.close();
-      await connection?.close();
+      await engine.shutdown();
       const jobs = (
         await database().select().from(schema.executionJobs).where(eq(schema.executionJobs.personId, id))
       ).map(j => j.id);

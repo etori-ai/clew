@@ -95,7 +95,7 @@ for three systems" would today be three confirmations on three cards, serialised
 **4. Dispatch.** Once an intent is saved, the path is right: the approval transaction writes the execution, its audit row
 and its outbox row together, the outbox delivers only committed ids into Temporal
 ([dispatch.ts](../../apps/server/src/modules/executions/dispatch.ts)), and `approvedExecution` runs one saved intent
-([workflows.ts](../../apps/server/src/temporal/workflows.ts#L28)). **Holds (D45).** Per step, this is exactly what
+([workflows.ts](../../apps/server/src/dbos/workflows.ts#L28)). **Holds (D45).** Per step, this is exactly what
 artboard J wants; it only needs more than one step to exist under one decision.
 
 **5. Receipts.** Each execution settles `succeeded`, `partial`, `failed` or `unknown` with per-row evidence, and the

@@ -14,8 +14,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Start isolated PostgreSQL and Temporal
-        run: sh scripts/compose.sh up -d --wait postgres temporal
+      - name: Start isolated PostgreSQL
+        run: sh scripts/compose.sh up -d --wait postgres
       - name: Verify database contracts, real workflows and upgrade
         run: >-
           sh scripts/compose.sh run --rm --no-deps --build app sh -c

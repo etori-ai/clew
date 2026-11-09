@@ -57,7 +57,7 @@ A job prepares independent steps across several systems. The current example is 
 
 Assembly asks bound followers concurrently as the person. Each answers with zero or more steps; Clew reports every bound system's outcome and marks partial proposals. Preparing the proposal performs no source writes.
 
-Approval commits the job, execution rows, watch intent, audit and outbox in one transaction. Each execute then uses its own operation identity, source guarantees and receipt. Each watch has committed check times and a deadline; Temporal calls the authorized read and settles it as seen, blocked or expired. An expired watch can create a card for the person. Undo records separate compensations for supported steps.
+Approval commits the job, execution rows, watch intent, audit and outbox in one transaction. Each execute then uses its own operation identity, source guarantees and receipt. Each watch has committed check times and a deadline; the durable workflow calls the authorized read and settles it as seen, blocked or expired. An expired watch can create a card for the person. Undo records separate compensations for supported steps.
 
 **Within one job, steps are independent.** Every step is prepared from the same fact; its input does not depend on another step's output. Dispatch order carries no meaning, and there is no atomic transaction across systems. This supports a coordinated task with several writes while preserving the outcome of each.
 
@@ -77,7 +77,7 @@ Implemented:
 
 - `POST /api/jobs/assemble`, `POST /api/jobs` and `GET /api/jobs/:id`.
 - Fact/follower validation, database bindings, proposal assembly and the execution/job ledger.
-- Outbox-driven Temporal watch workflows, bounded checks and expiry cards.
+- Outbox-driven durable watch workflows (DBOS, D85), bounded checks and expiry cards.
 - CLI binding management through [job-bind.ts](../../scripts/job-bind.ts).
 
 Planned but not implemented: a job card/step-list UI, administration screens for bindings, the full composer/pushed entry paths, and receipt-driven facts assembling the next proposal. Source event ingest is also proposed. Running watches currently have no cancellation path. `creates` metadata does not automatically start a job.

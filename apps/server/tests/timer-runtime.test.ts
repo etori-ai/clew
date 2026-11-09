@@ -1,38 +1,41 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { Worker, NativeConnection } from '@temporalio/worker';
-import { Client, Connection } from '@temporalio/client';
 import { and, eq, inArray } from 'drizzle-orm';
+import { DBOS } from '@dbos-inc/dbos-sdk';
 import { database, schema, closeDatabase } from '@clew/db';
 import { postgresThreadStore } from '../src/threads/adapters/postgres';
 import { postgresTimerDelivery } from '../src/threads/adapters/timer-postgres';
 import { reminderUsecases } from '../src/threads/usecases/reminders';
 import { timerDispatcher } from '../src/threads/usecases/timer-dispatch';
-import type { TimerIntent } from '../src/threads/model';
+import { bindActivities } from '../src/dbos/workflows';
+import { deliverTimer, reminderWorkflowId } from '../src/dbos/timers';
+import { durableResult } from '../src/dbos/start';
+import { adoptExecutors, beat, claimDead, ensureHeartbeatTable } from '../src/dbos/heartbeat';
+import { launchTestEngine } from './durable';
 
+// Real PostgreSQL, the durable engine (DBOS) in production Node, synthetic person and threads. The engine runs under its own application name.
 test(
-  'real timer workflows recover delayed delivery; cancelled/replaced generations never surface; old histories replay',
-  { timeout: 60000 },
+  'real timer workflows recover delayed delivery; cancelled/replaced generations never surface; a killed instance’s reminder is adopted and fires once',
+  { timeout: 90_000 },
   async () => {
     const id = 'timer-runtime-' + randomUUID(),
-      queue = id,
       store = postgresThreadStore(),
       delivery = postgresTimerDelivery(id);
     // Future outbox eligibility isolates test claims from the development server; absolute timer due times are already past.
     let now = Date.parse('2098-11-05T10:00:00.000Z');
     const clock = () => new Date(now);
     const uc = reminderUsecases({ store, clock, authorized: async () => true });
-    const connection = await Connection.connect({ address: process.env.TEMPORAL_ADDRESS ?? 'temporal:7233' });
-    const native = await NativeConnection.connect({ address: process.env.TEMPORAL_ADDRESS ?? 'temporal:7233' });
-    const client = new Client({ connection });
-    let worker: Worker | undefined,
-      running: Promise<void> | undefined,
-      legacy: Worker | undefined,
-      legacyRun: Promise<void> | undefined;
+    bindActivities({ fireTimer: uc.fire });
+    const engine = await launchTestEngine('timer');
     const ids: string[] = [];
-    const seed = async (suffix: string, kind: 'reminder' | 'snooze' = 'reminder') => {
+    const seed = async (
+      suffix: string,
+      kind: 'reminder' | 'snooze' = 'reminder',
+      dueAt = '2020-01-01T00:00:00.000Z',
+    ) => {
       const threadId = id + suffix;
       ids.push(threadId);
       return store.transaction(async tx => {
@@ -65,7 +68,7 @@ test(
           unitId: 'test',
           authorizationVersion: 'v1',
           requestedAt: clock().toISOString(),
-          dueAt: '2020-01-01T00:00:00.000Z',
+          dueAt,
         });
         await tx.writeAudit({
           actor: 'test',
@@ -76,81 +79,41 @@ test(
         return timer;
       });
     };
-    const start = async (t: TimerIntent) =>
-      client.workflow.start('durableReminder', {
-        workflowId: `${t.id}:v2:${t.generation}`,
-        taskQueue: queue,
-        args: [{ id: t.id, generation: t.generation, dueAt: t.dueAt }],
-        workflowIdConflictPolicy: 'USE_EXISTING',
-        workflowIdReusePolicy: 'REJECT_DUPLICATE',
-      });
+    const deliveries = (threadId: string) =>
+      database().select().from(schema.deliveries).where(eq(schema.deliveries.threadId, threadId));
+    const audit = (threadId: string, action: string) =>
+      database()
+        .select()
+        .from(schema.audit)
+        .where(and(eq(schema.audit.subject, 'thread:' + threadId), eq(schema.audit.action, action)));
+    let child: ReturnType<typeof spawn> | undefined;
     try {
       await database().insert(schema.people).values({ id, name: 'Synthetic timer', organisationId: 'test' });
-      worker = await Worker.create({
-        connection: native,
-        taskQueue: queue,
-        workflowsPath: fileURLToPath(new URL('../src/temporal/workflows.ts', import.meta.url)),
-        activities: { fireTimer: uc.fire },
-        maxConcurrentActivityTaskExecutions: 2,
-        maxConcurrentWorkflowTaskExecutions: 2,
-      });
-      running = worker.run();
       const first = await seed(':first');
       await timerDispatcher({
         store: delivery,
         clock,
         deliver: async () => {
-          throw new Error('simulated unavailable Temporal');
+          throw new Error('simulated unavailable engine');
         },
       })();
       assert.equal((await store.readTimer(first.id))?.deliveredGeneration, null);
       now += 120000;
-      await timerDispatcher({
-        store: delivery,
-        clock,
-        deliver: async t => {
-          await start(t);
-        },
-      })();
-      await client.workflow.getHandle(`${first.id}:v2:1`).result();
+      await timerDispatcher({ store: delivery, clock, deliver: deliverTimer })();
+      await durableResult(reminderWorkflowId(first));
       assert.equal((await store.readTimer(first.id))?.state, 'fired');
-      await uc.fire(first.id, 1); // Crash after commit but before activity acknowledgement.
-      assert.equal(
-        (await database().select().from(schema.deliveries).where(eq(schema.deliveries.threadId, first.threadId)))
-          .length,
-        1,
-      );
-      assert.equal(
-        (
-          await database()
-            .select()
-            .from(schema.audit)
-            .where(
-              and(eq(schema.audit.subject, 'thread:' + first.threadId), eq(schema.audit.action, 'thread.reminded')),
-            )
-        ).length,
-        1,
-      );
+      await uc.fire(first.id, 1); // Crash after commit but before the step is acknowledged.
+      assert.equal((await deliveries(first.threadId)).length, 1);
+      assert.equal((await audit(first.threadId, 'thread.reminded')).length, 1);
       // A snooze's timer comes back the way a reminder does (D49): the same delivery and mark, its own audit action.
       const snoozed = await seed(':snoozed', 'snooze');
-      await (await start(snoozed)).result();
+      await deliverTimer(snoozed);
+      await durableResult(reminderWorkflowId(snoozed));
       const back = await store.readThread(id, snoozed.threadId);
       assert.equal(back?.snoozedUntil, null);
       assert.ok(back?.remindedAt);
-      assert.equal(
-        (await database().select().from(schema.deliveries).where(eq(schema.deliveries.threadId, snoozed.threadId)))
-          .length,
-        1,
-      );
-      assert.equal(
-        (
-          await database()
-            .select()
-            .from(schema.audit)
-            .where(and(eq(schema.audit.subject, 'thread:' + snoozed.threadId), eq(schema.audit.action, 'thread.woken')))
-        ).length,
-        1,
-      );
+      assert.equal((await deliveries(snoozed.threadId)).length, 1);
+      assert.equal((await audit(snoozed.threadId, 'thread.woken')).length, 1);
       const cancelled = await seed(':cancelled');
       await store.transaction(async tx => {
         await tx.cancelTimer(cancelled.id, clock().toISOString());
@@ -161,7 +124,10 @@ test(
           at: clock().toISOString(),
         });
       });
-      await (await start(cancelled)).result();
+      // The outbox delivers the cancelled state: nothing to cancel yet, and a late start of the old generation is fenced by the ledger.
+      await deliverTimer({ ...cancelled, state: 'cancelled' });
+      await deliverTimer(cancelled);
+      await durableResult(reminderWorkflowId(cancelled));
       assert.equal((await store.readThread(id, cancelled.threadId))?.remindedAt, null);
       const old = await seed(':replaced');
       const replacement = await store.transaction(tx =>
@@ -176,50 +142,65 @@ test(
           dueAt: old.dueAt,
         }),
       );
-      await (await start(old)).result();
+      await deliverTimer(old);
+      await durableResult(reminderWorkflowId(old));
       assert.equal((await store.readThread(id, old.threadId))?.remindedAt, null);
-      await (await start(replacement)).result();
+      await deliverTimer(replacement);
+      await durableResult(reminderWorkflowId(replacement));
       assert.equal((await store.readTimer(old.id))?.generation, 2);
+      assert.equal((await deliveries(old.threadId)).length, 1);
 
-      // Histories are produced by the previous release's workflow code, then replayed by the current release.
-      legacy = await Worker.create({
-        connection: native,
-        taskQueue: queue + ':legacy',
-        workflowsPath: fileURLToPath(new URL('./fixtures/workflows-v46.ts', import.meta.url)),
-        activities: {
-          surfaceReminder: async () => 'surfaced',
-          checkObligation: async () => ({ action: 'return', why: 'answered' }),
-          returnObligation: async () => {},
+      // A reminder waiting on a different instance ends when that instance is killed; cancel from here ends it quietly.
+      const waiting = await seed(':waiting', 'reminder', new Date(Date.now() + 3_600_000).toISOString());
+      await deliverTimer(waiting);
+      assert.equal((await DBOS.getWorkflowStatus(reminderWorkflowId(waiting)))?.status, 'PENDING');
+      await deliverTimer({ ...waiting, state: 'cancelled' });
+      assert.equal((await DBOS.getWorkflowStatus(reminderWorkflowId(waiting)))?.status, 'CANCELLED');
+
+      // Process death: a second instance of the same application starts a reminder due in ten seconds and is SIGKILLed.
+      // Its heartbeat lapses, this instance claims it once and adopts its workflow, which fires here exactly once.
+      const adopted = await seed(':adopted', 'reminder', new Date(Date.now() + 10_000).toISOString());
+      child = spawn(
+        process.execPath,
+        ['--import', 'tsx', fileURLToPath(new URL('./fixtures/durable-child.ts', import.meta.url))],
+        {
+          env: {
+            ...process.env,
+            DURABLE_APP: engine.name,
+            DURABLE_EXECUTOR: 'timer-child',
+            DURABLE_TIMER: JSON.stringify(adopted),
+          },
+          stdio: ['ignore', 'pipe', 'inherit'],
         },
-        maxConcurrentActivityTaskExecutions: 2,
-        maxConcurrentWorkflowTaskExecutions: 2,
-      });
-      legacyRun = legacy.run();
-      for (const name of ['reminder', 'obligation']) {
-        const handle = await client.workflow.start(name, {
-          workflowId: id + ':legacy:' + name,
-          taskQueue: queue + ':legacy',
-          args: [
-            { threadId: id, personId: id, requestedAt: clock().toISOString(), seconds: 0, title: 'Test', area: 'test' },
-          ],
+      );
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('child instance did not start')), 30_000);
+        child!.once('exit', code => reject(new Error('child instance exited during startup: ' + code)));
+        child!.stdout!.on('data', chunk => {
+          if (String(chunk).includes('started ')) {
+            clearTimeout(timeout);
+            resolve();
+          }
         });
-        await handle.result();
-        await Worker.runReplayHistory(
-          { workflowsPath: fileURLToPath(new URL('../src/temporal/workflows.ts', import.meta.url)) },
-          await handle.fetchHistory(),
-        );
-      }
+      });
+      await new Promise<void>(resolve => {
+        child!.once('exit', () => resolve());
+        child!.kill('SIGKILL');
+      });
+      const stranded = await DBOS.getWorkflowStatus(reminderWorkflowId(adopted));
+      assert.deepEqual([stranded?.status, stranded?.executorId], ['PENDING', 'timer-child']);
+      await ensureHeartbeatTable();
+      await beat(engine.name, 'timer-child', new Date(Date.now() - 120_000));
+      assert.deepEqual(await claimDead(engine.name, engine.executorID), ['timer-child']);
+      assert.deepEqual(await claimDead(engine.name, engine.executorID), [], 'claimed once');
+      assert.deepEqual(await adoptExecutors(['timer-child']), [reminderWorkflowId(adopted)]);
+      await durableResult(reminderWorkflowId(adopted));
+      assert.equal((await store.readTimer(adopted.id))?.state, 'fired');
+      assert.equal((await deliveries(adopted.threadId)).length, 1);
+      assert.equal((await audit(adopted.threadId, 'thread.reminded')).length, 1);
     } finally {
-      if (legacy) {
-        legacy.shutdown();
-        await legacyRun;
-      }
-      if (worker) {
-        worker.shutdown();
-        await running;
-      }
-      await native.close();
-      await connection.close();
+      if (child && child.exitCode === null) child.kill('SIGKILL');
+      await engine.shutdown();
       if (ids.length) {
         await database()
           .delete(schema.audit)

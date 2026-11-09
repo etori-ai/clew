@@ -27,7 +27,7 @@ import { createScheduler } from '../scheduler/usecases';
 import { postgresThreadStore } from '../threads/adapters/postgres';
 import { postgresTimerDelivery } from '../threads/adapters/timer-postgres';
 import { timerDispatcher } from '../threads/usecases/timer-dispatch';
-import { deliverTimer } from '../temporal/timers';
+import { deliverTimer } from '../dbos/timers';
 import { actorOf } from '@clew/connectors';
 import { reminderUsecases } from '../threads/usecases/reminders';
 import { threadUsecases } from '../threads/usecases/cards';
@@ -38,7 +38,6 @@ import { cardDecisions } from '../threads/usecases/decisions';
 import { executions } from './executions';
 import { reviewDocuments } from './documents';
 import { visibleThread } from '../threads/access';
-import type { ReminderInput } from '../threads/model';
 import { refresh } from './refresh';
 import { postgresAttention } from '../threads/adapters/attention-postgres';
 export { refresh } from './refresh';
@@ -123,13 +122,6 @@ export async function fireTimer(id: string, generation: number) {
   const timer = await store.readTimer(id);
   if (timer?.kind === 'obligation') return followups.fire(timer.threadId, generation);
   return reminders.fire(id, generation);
-}
-export async function fireLegacyReminder(input: ReminderInput) {
-  const persona = await systemContext(input.personId, 'system:reminder');
-  await refreshConnectors();
-  const t = persona && (await store.readThread(persona.id, input.threadId));
-  if (!persona || !t || !visibleThread(registry, persona, t)) return 'skipped';
-  return reminders.surface(input);
 }
 export function startTimerDispatch() {
   let busy = false;

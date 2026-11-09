@@ -10,7 +10,7 @@ import { retainsAuthority } from '../modules/executions/domain';
 import { executionUsecases } from '../modules/executions/usecases';
 import { ExecutionError, type ExecutionSource, type WatchSource } from '../modules/executions/model';
 import { executionDispatcher, watchDispatcher } from '../modules/executions/dispatch';
-import { startExecutionWorkflow, startWatchWorkflow } from '../temporal/executions';
+import { startExecutionWorkflow, startWatchWorkflow } from '../dbos/executions';
 import { clock } from './ambient';
 import { reviewDocuments } from './documents';
 import { projectExecution } from './execution-projection';

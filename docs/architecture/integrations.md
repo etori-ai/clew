@@ -50,7 +50,7 @@ Approved writes cross two independently failing systems. Clew commits the decisi
 
 ## Relationship to MCP and Eneo
 
-The separate [MCP chat-services path](mcp-chat-services.md) (D81, 2026-11-08) admits standard MCP services and provider-owned Apps in AI-enabled chat without a Clew manifest. Its development prototype has an HTTP gateway, Temporal read watches and persistent delivery cards backed by independent synthetic providers. Vendor OAuth, production Apps hosting, normal conversational tool routing and complete watch/attention policy remain unfinished. The native connector path below remains unchanged.
+The separate [MCP chat-services path](mcp-chat-services.md) (D81, 2026-11-08) admits standard MCP services and provider-owned Apps in AI-enabled chat without a Clew manifest. Its development prototype has an HTTP gateway, durable read watches and persistent delivery cards backed by independent synthetic providers. Vendor OAuth, production Apps hosting, normal conversational tool routing and complete watch/attention policy remain unfinished. The native connector path below remains unchanged.
 
 A connector may speak MCP behind its source adapter, but the boundary with Clew is the Clew connector protocol. A public Clew MCP server for external agents is designed, not implemented. No `apps/mcp-*` host or generic MCP passthrough is part of the current authoring path.
 

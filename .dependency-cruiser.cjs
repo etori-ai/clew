@@ -1,20 +1,13 @@
 /** Backend structure rules (D20), run by `bun run deps` as part of `bun run check`. See docs/architecture/backend-structure.md. */
 const store = '^packages/db/|node_modules/(drizzle-orm|postgres)/';
 const adapters = '^packages/calendar/src/(nextcloud|microsoft365|fake-graph|adapters)\\.ts$|/adapters?/';
-const runtime = 'node_modules/(hono|jose|openid-client|@temporalio|@hono|ai|@ai-sdk)/';
-const timers = 'node_modules/@temporalio/|^apps/server/src/temporal/';
+const runtime = 'node_modules/(hono|jose|openid-client|@dbos-inc|@hono|ai|@ai-sdk)/';
+const timers = 'node_modules/@dbos-inc/|^apps/server/src/dbos/';
 const liveAdapters =
-  '^apps/server/src/([^/]+|modules/[^/]+)/adapters/(postgres|temporal|provider)\\.ts$|^apps/server/src/composition/';
+  '^apps/server/src/([^/]+|modules/[^/]+)/adapters/(postgres|dbos|provider)\\.ts$|^apps/server/src/composition/';
 module.exports = {
   forbidden: [
-    {
-      name: 'no-circular',
-      comment:
-        'Temporal workflows and activities type each other (import type), which is its documented pattern and not a runtime cycle.',
-      severity: 'error',
-      from: { pathNot: '^apps/server/src/temporal/(workflows|activities)\\.ts$' },
-      to: { circular: true },
-    },
+    { name: 'no-circular', severity: 'error', from: {}, to: { circular: true } },
     {
       name: 'routes-stay-thin',
       comment:
@@ -51,12 +44,12 @@ module.exports = {
         'A module knows its contract, the registry handle and its adapter, never routes, the stream or the assistant. The connector registry is platform code and is kept out of modules/ for that reason.',
       severity: 'error',
       from: { path: '^apps/server/src/modules/' },
-      to: { path: '^apps/server/src/(routes|threads|assistant|temporal|scheduler|main)' },
+      to: { path: '^apps/server/src/(routes|threads|assistant|dbos|scheduler|main)' },
     },
     {
       name: 'usecases-reach-stores-through-ports',
       comment:
-        'A use case depends on the ports in its model.ts, never on Drizzle, Postgres, Temporal or an adapter (D25). The live adapters are paired in composition/. Connector descriptors (connector.ts) and adapters are the exceptions.',
+        'A use case depends on the ports in its model.ts, never on Drizzle, Postgres, the durable engine or an adapter (D25). The live adapters are paired in composition/. Connector descriptors (connector.ts) and adapters are the exceptions.',
       severity: 'error',
       from: {
         path: '^apps/server/src/(threads|modules/[^/]+|scheduler|assistant|mcp|connectors/usecases)/',
@@ -67,7 +60,7 @@ module.exports = {
     {
       name: 'unit-tests-stay-fast',
       comment:
-        'tests/unit runs without Postgres, Temporal or a network (D25): it imports use cases, domain and the memory adapters, never a live adapter or the composition root.',
+        'tests/unit runs without Postgres, the durable engine or a network (D25): it imports use cases, domain and the memory adapters, never a live adapter or the composition root.',
       severity: 'error',
       from: { path: '^tests/unit/' },
       to: { path: store + '|' + timers + '|' + liveAdapters, pathNot: '^packages/db/src/schema\\.ts$' },

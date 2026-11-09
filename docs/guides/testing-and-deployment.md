@@ -92,7 +92,7 @@ On manifest changes, restart/deploy the connector and use Hämta manifest igen i
 
 ## Additional write verification
 
-The ordinary Node suite checks runtime compatibility. The separate durability suite exercises the synthetic durable source with PostgreSQL and Temporal; it requires the configured services. Read the scripts and fixture scope before running it:
+The ordinary Node suite checks runtime compatibility. The separate durability suite exercises the synthetic durable source with PostgreSQL and the DBOS engine in production Node, including a killed second instance; it requires the database. Read the scripts and fixture scope before running it:
 
 ```sh
 docker exec -w /workspace clew-app-1 bun run test:node

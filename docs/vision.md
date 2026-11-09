@@ -49,7 +49,7 @@ confirm, send the invitations, wait for the answers, remind, follow up, close. I
 ("Pågår utan dig"), retries what came back unknown, expires undo windows, bundles interruptions and
 re-opens what was dismissed too early. The person has the same engine for their own triggers: "påminn
 mig om tio minuter om det här", "bevaka fakturan tills den är attesterad", set from the conversation and
-changed as casually. The scheduler is therefore a crucial part of the system, not housekeeping. Temporal now runs durable reminders, workflows and scheduled-job execution (D17); PostgreSQL retains their intent and evidence (the earlier Postgres-only scheduler is recorded in D15); see the [implementation status](reference/status.md) for the limits of current delivery. What Clew does not do is model the organisation's processes: there is no
+changed as casually. The scheduler is therefore a crucial part of the system, not housekeeping. DBOS Transact runs durable reminders, workflows and scheduled-job execution inside the server (D85, after Temporal in D17); PostgreSQL retains their intent and evidence (the earlier Postgres-only scheduler is recorded in D15); see the [implementation status](reference/status.md) for the limits of current delivery. What Clew does not do is model the organisation's processes: there is no
 process designer, no swimlanes, and a process that is the organisation's record of a case lives in the
 case system, which Clew links to and pushes from.
 
@@ -65,7 +65,7 @@ retention, erasure and export. Clew never copies a record another system owns in
 own and will buy Clew as a hosted service. The open-source rule guarantees that any of them, or a region
 or an agency, can run the whole stack themselves instead. Architecture choices are judged on fitness for
 the work, not on how many containers a self-hosted install needs; a component that earns its place
-(Keycloak, Postgres, Temporal when its trigger arrives) is taken.
+(Keycloak, Postgres) is taken.
 
 **The assistant takes the initiative, the person decides.** Clew pushes; the person reads, asks, adjusts
 and confirms. Every proposal is computed by deterministic code or drafted by the model, and nothing

@@ -8,7 +8,7 @@ A **module** is a bounded responsibility inside the server. A **connector** is a
 
 ```text
 apps/
-  server/src/       Node/Hono backend and embedded Temporal worker
+  server/src/       Node/Hono backend with the durable engine (DBOS) in-process
   web/src/          Startsidan React frontend
   portal/src/       experimental second frontend over the same server
 packages/
@@ -48,7 +48,7 @@ Connectors under `connectors/` import no Clew application or workspace package. 
 | [modules/jobs/](../../apps/server/src/modules/jobs/) | Fact/follower binding and cross-system proposal assembly. |
 | [modules/operations/](../../apps/server/src/modules/operations/) | Reliability diagnostics over ports. |
 | [scheduler/](../../apps/server/src/scheduler/) | Scheduled job use cases, queue and durable ownership adapters. |
-| [temporal/](../../apps/server/src/temporal/) | Workflow definitions, activities, worker and delivery adapters. |
+| [dbos/](../../apps/server/src/dbos/) | Workflow definitions, activity bindings, the engine runtime, heartbeat/takeover and delivery adapters ([D85](../decisions/D85-dbos-transact-replaces-temporal-as-the-durable-engine.md)). |
 
 There is no bundled `packages/connectors/src/mock` implementation or separate `modules/figures` module. Figures come from connectors through the registry. Model providers are administered in the database, not selected by an `adapters/provider.ts` environment adapter.
 
@@ -94,7 +94,7 @@ The [dependency rules](../../.dependency-cruiser.cjs) enforce these boundaries. 
 
 The architecture is a boundary to preserve, not a claim that every historical path is already identical. Calendar has dedicated API/UI paths and is wired directly into parts of the thread and assistant composition. Its source writes nevertheless converge on the execution ledger. The live thread composition replaces the older synchronous `ensureThreads` path with `refresh.request`; some unit scenarios still exercise the older helper.
 
-Authentication and connector loading are platform code with direct database access. Temporal activities call composed use cases. Old workflow functions remain for history compatibility; removing them requires replay/retirement evidence. These are different concerns from permitting a new vendor integration inside the monolith.
+Authentication and connector loading are platform code with direct database access. Workflow steps call composed use cases. A changed workflow body is a new application version; pending workflows of an older version are moved by an operator (D85). These are different concerns from permitting a new vendor integration inside the monolith.
 
 ## Verify a change
 
