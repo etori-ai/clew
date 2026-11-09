@@ -949,7 +949,7 @@
       "number": 82,
       "path": "docs/decisions/D82-sick-leave-statistics-come-through-an-absence-connector-that-reads-only-aggregates.md",
       "title": "D82 · Sick-leave statistics come through an absence connector that reads only aggregates",
-      "status": "proposed 2026-11-06 (first written as D63, renumbered 2026-11-09 because `main` had taken D63 meanwhile), connector built with a fixture and a Qlik Engine adapter tested against a fake engine; not run against a real Qlik, the minimum group size and the Qlik object not yet agreed",
+      "status": "proposed 2026-11-06 (first written as D63, renumbered 2026-11-09 because `main` had taken D63 meanwhile), amended 2026-11-09 (the connector is the Qlik connector, see below); connector built with a fixture and a Qlik Engine adapter tested against a fake engine; not run against a real Qlik, the minimum group size and the Qlik object not yet agreed",
       "date": "2026-11-06",
       "area": "integrations"
     }
@@ -991,18 +991,6 @@
         "Understand the platform",
         "Build a custom connector",
         "Run and contribute"
-      ]
-    },
-    {
-      "path": "connectors/absence/README.md",
-      "title": "absence: sick-leave statistics as a Clew connector",
-      "category": "integrator-guide",
-      "headings": [
-        "What a manager gets",
-        "Configuration",
-        "Before it is switched on against Qlik",
-        "What it never does",
-        "Run and check"
       ]
     },
     {
@@ -1069,6 +1057,18 @@
         "What a person gets",
         "Configuration",
         "The phone book API",
+        "What it never does",
+        "Run and check"
+      ]
+    },
+    {
+      "path": "connectors/qlik/README.md",
+      "title": "qlik: what Qlik knows, as a Clew connector",
+      "category": "integrator-guide",
+      "headings": [
+        "What a manager gets",
+        "Configuration",
+        "Before it is switched on against Qlik",
         "What it never does",
         "Run and check"
       ]

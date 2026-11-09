@@ -1,5 +1,5 @@
-// The absence statistics' read operations and HTTP boundary (D82).
-// manifest.mjs owns the contract and views; statistics.mjs and qlik.mjs own source access and mapping.
+// The Qlik connector's read operations and HTTP boundary (D82): sick-leave statistics, the first thing it shows.
+// manifest.mjs owns the contract and views; statistics.mjs and engine.mjs own source access and mapping.
 // Only aggregates are handled here, and a group smaller than `minGroup` is held back before anything leaves.
 import { createHash } from 'node:crypto';
 import { createVerifier } from './verification.mjs';
@@ -109,7 +109,7 @@ export function createConnector({
   }
 
   const capabilities = {
-    'absence.unitRates': async actor => {
+    'qlik.sickLeaveByUnit': async actor => {
       requireManager(actor);
       const units = unitsOf(actor);
       const data = await read();
@@ -121,7 +121,7 @@ export function createConnector({
       return output;
     },
 
-    'absence.trend': async (actor, input) => {
+    'qlik.sickLeaveTrend': async (actor, input) => {
       requireManager(actor);
       if (input.unit !== undefined && (typeof input.unit !== 'string' || !unitRef.test(input.unit)))
         throw new Invalid('Ogiltig enhet.');
@@ -143,7 +143,7 @@ export function createConnector({
    * comparison, opening the table of units. Without `warnAbove` the number is the whole message, so the tone is none.
    */
   async function figure(actor, area) {
-    if (area !== 'absence' || actor.role !== 'manager') return null;
+    if (area !== 'sick-leave' || actor.role !== 'manager') return null;
     const units = unitsOf(actor);
     const data = await read();
     const latest = latestFor(data, units);
@@ -162,7 +162,7 @@ export function createConnector({
         value: `${decimal.format(shown.total)} %`,
         comparison,
         tone,
-        opens: 'absence.unitRates',
+        opens: 'qlik.sickLeaveByUnit',
       };
     }
     return null;
@@ -210,8 +210,8 @@ export function createConnector({
       if (error instanceof Denied) return errorResponse('denied', error.message, 403);
 
       // The source's error text stays here, and so does anything an unexpected error might carry: only its name is logged.
-      if (!(error instanceof StatisticsUnavailable)) console.error('absence connector: unexpected', error?.name);
-      return errorResponse('unavailable', 'Sjukfrånvarostatistiken svarar inte just nu.', 503);
+      if (!(error instanceof StatisticsUnavailable)) console.error('qlik connector: unexpected', error?.name);
+      return errorResponse('unavailable', 'Qlik svarar inte just nu.', 503);
     }
   }
 
