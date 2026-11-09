@@ -1043,6 +1043,15 @@
       "status": "accepted, built 2026-11-09 on `main`",
       "date": "2026-11-09",
       "area": "platform"
+    },
+    {
+      "key": "D92-the-protected-key-is-refused-at-the-scim-boundary",
+      "number": 92,
+      "path": "docs/decisions/D92-the-protected-key-is-refused-at-the-scim-boundary.md",
+      "title": "D92 · The `protected` key is refused at the SCIM boundary until Clew decides whether it may hold the fact",
+      "status": "accepted, built 2026-11-09",
+      "date": "2026-11-09",
+      "area": "identity"
     }
   ],
   "documents": [
@@ -2003,6 +2012,12 @@
     {
       "path": "docs/decisions/D91-one-logger-opentelemetry-export-and-the-model-turn-in-the-audit-trail.md",
       "title": "D91 · One logger, OpenTelemetry export, and the model turn in the audit trail",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D92-the-protected-key-is-refused-at-the-scim-boundary.md",
+      "title": "D92 · The `protected` key is refused at the SCIM boundary until Clew decides whether it may hold the fact",
       "category": "decision-history",
       "headings": []
     },

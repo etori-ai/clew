@@ -278,6 +278,29 @@ describe('SCIM groups and derivation', () => {
     expect(store.state.grants.get(a)?.unitLabel).toBe('IT och digitalisering');
     expect(store.state.units.get('it')?.label).toBe('IT och digitalisering');
   });
+  test('the protected key is refused on create and on patch, and nothing of it is stored (D92)', async () => {
+    const { scim, p, store } = harness();
+    const a = (await scim.createUser(p, anna, BASE)).id;
+    await expect(scim.createGroup(p, group('protected', 'Skyddade', [a]), BASE)).rejects.toMatchObject({
+      status: 400,
+      scimType: 'invalidValue',
+      detail: expect.stringContaining("The key 'protected' is not accepted"),
+    });
+    const plain = await scim.createGroup(p, { displayName: 'Plain', members: [{ value: a }] }, BASE);
+    await expect(
+      scim.patchGroup(
+        p,
+        plain.id,
+        { schemas: [], Operations: [{ op: 'replace', path: 'externalId', value: 'protected' }] },
+        BASE,
+      ),
+    ).rejects.toMatchObject({ status: 400, scimType: 'invalidValue' });
+    await expect(scim.replaceGroup(p, plain.id, group('protected', 'Plain', [a]), BASE)).rejects.toMatchObject({
+      status: 400,
+    });
+    expect([...store.state.groups.values()].some(g => g.externalId === 'protected')).toBe(false);
+    expect(store.state.groups.get(plain.id)?.externalId).toBeNull();
+  });
   test('refuses an unknown member, a duplicate externalId and an unknown group; lists by externalId and displayName', async () => {
     const { scim, p } = harness();
     const a = (await scim.createUser(p, anna, BASE)).id;

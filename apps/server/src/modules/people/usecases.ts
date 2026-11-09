@@ -23,6 +23,7 @@ import {
 import {
   applyGroupPatch,
   applyUserPatch,
+  assertAcceptedKey,
   deriveAuthority,
   groupFields,
   groupResource,
@@ -46,8 +47,8 @@ import type { Provisioner, ProvisionStore, ProvisionTx } from './ports';
  * Deriving authority (D68, D85): the only path from memberships and the group-capability rows to the grant a person acts
  * with. Called by whatever changed a membership or such a row, inside that change's transaction, so the grant never lags the
  * fact that produced it. An unchanged grant writes no audit row; a changed one writes `grant.derived` on the person
- * with the new unit, role and capabilities, or `removed: true` when the person has no unit left (fail closed). The
- * `protected` membership is derived but never written to the audit row.
+ * with the new unit, role and capabilities, or `removed: true` when the person has no unit left (fail closed). A
+ * `protected` key never reaches these tables (D92), so the derived flag stays false and is never written to the audit row.
  */
 export function provisioningUsecases(deps: { store: ProvisionStore }) {
   async function deriveWithin(tx: ProvisionTx, actor: string, personId: string): Promise<Derived | undefined> {
@@ -219,6 +220,7 @@ export function scimUsecases(deps: {
     action: string,
     base: string,
   ) {
+    assertAcceptedKey(fields);
     await uniqueGroup(tx, fields, current.id);
     await membersExist(tx, p, fields.members);
     const before = (await tx.groupMembers(current.id)).map(m => m.id),
@@ -340,6 +342,7 @@ export function scimUsecases(deps: {
     createGroup: (p: Provisioner, body: unknown, base: string): Promise<ScimGroup> =>
       deps.store.transaction(async tx => {
         const fields = groupFields(checked(ScimGroupInputSchema, body, 'Group'));
+        assertAcceptedKey(fields);
         await uniqueGroup(tx, fields);
         await membersExist(tx, p, fields.members);
         const at = now(),

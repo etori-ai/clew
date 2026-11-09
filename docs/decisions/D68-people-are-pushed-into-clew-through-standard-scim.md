@@ -22,7 +22,7 @@ Nothing in Clew names Metakatalogen or any other source. Clew's own vocabulary s
    | `unit:<unitId>` | An assignment to that unit as `employee` | The unit's name, shown in the product |
    | `unit-manager:<unitId>` | An assignment to that unit as `manager`, which wins over `unit:` for the same unit | Free |
    | `capability:<name>` | That capability, such as `capability:admin.connectors` | Free |
-   | `protected` | Exclusion from every list another person can see | Free |
+   | `protected` | Refused with 400 `invalidValue` by [D92](D92-the-protected-key-is-refused-at-the-scim-boundary.md) until Clew decides whether it may hold the fact; was to mean exclusion from every list another person can see | Free |
    | Anything else | Nothing in authorization; a plain group for connector audiences (D23) | Free |
 
    A person with no `unit:` or `unit-manager:` membership is provisioned but has no access, so a mapping error fails
@@ -71,7 +71,8 @@ binding; see the [operations runbook](../maintainers/reliability-operations.md#c
 
 **Open.** The production identity provider, Keycloak as a broker or Entra directly, which decides the claim in point 6.
 How Sundsvall records protected people, and whether Clew may hold that fact at all; if it does, membership of
-`protected` must stay out of logs, audit details and administration views. The source must have a stable, never reused
+`protected` must stay out of logs, audit details and administration views; until it is answered,
+[D92](D92-the-protected-key-is-refused-at-the-scim-boundary.md) refuses the key at the boundary. The source must have a stable, never reused
 id; Metakatalogen's is not yet confirmed.
 
 **Replaces.** Changes `docs/architecture/identity.md`, where Keycloak or Entra was the SCIM client and roles were also
