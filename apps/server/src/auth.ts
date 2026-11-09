@@ -2,6 +2,7 @@ import * as oidc from 'openid-client';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { AuthenticatedContext } from '@clew/contracts';
 import { database } from '@clew/db';
+import { logger } from './logging';
 import {
   ABSOLUTE_MS,
   IDLE_MS,
@@ -252,7 +253,7 @@ const delegation = delegationFor({
       const last = exchangeFailures.get(audience) ?? 0;
       if (Date.now() - last > 60_000) {
         exchangeFailures.set(audience, Date.now());
-        console.error(`token exchange for audience ${audience} failed: ${code}`);
+        logger.error({ scope: 'auth', audience, code }, 'token exchange failed');
       }
       throw new AuthError(503, 'unavailable');
     }

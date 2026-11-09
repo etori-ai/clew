@@ -7,6 +7,7 @@ import { calendar } from './calendar';
 import { clock } from './ambient';
 import { ledger } from './durable';
 import { cancelDurable } from '../dbos/start';
+import { logger } from '../logging';
 
 export const refresh = refreshUsecases({
   store: postgresRefreshStore({ durable: ledger, cancel: cancelDurable }),
@@ -45,7 +46,7 @@ export function startRefresh() {
       busy[i] = true;
       void refresh
         .tick()
-        .catch(() => console.error('refresh store unavailable'))
+        .catch(error => logger.error({ scope: 'refresh', error }, 'refresh store unavailable'))
         .finally(() => {
           busy[i] = false;
         });

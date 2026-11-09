@@ -35,6 +35,9 @@ services:
       # The BFF listens on every interface so the fixture connectors can reach it; the published port is still loopback only.
       HOST: 0.0.0.0
       CLEW_DEV_CONNECTOR_SECRET: ${CLEW_DEV_CONNECTOR_SECRET:-clew-dev-only-transport-key}
+      # Telemetry (D91): traces and metrics to the otel service below; unset in production until an operator chooses a backend.
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel:4318
+      LOG_FORMAT: pretty
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,6 +66,15 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+  # Traces, metrics and a place to look at them (D91): Grafana, Tempo, Loki and Prometheus in one container, AGPL-3.0 as a
+  # separate process. The app exports OTLP to otel:4318; Grafana is anonymous and development only.
+  otel:
+    image: grafana/otel-lgtm:0.40.0@sha256:72e05804790e6e0d8c0b70a6d5ff1f721ef7b203463374631e99aa3429bd0cf6
+    ports:
+      - "127.0.0.1:3023:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
   # Standard MCP mocks, deliberately no Clew connector manifest. Synthetic data only.
   mcp-pulse:
     image: node:26.13.0-bookworm-slim

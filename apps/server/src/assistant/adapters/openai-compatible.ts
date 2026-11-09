@@ -57,7 +57,10 @@ const probeTool = {
   type: 'function',
   function: { name: 'clew_probe', description: 'Not used.', parameters: { type: 'object', properties: {} } },
 };
-export function openAICompatibleWire(fetchImpl: typeof fetch = fetch): ModelWire {
+export function openAICompatibleWire(
+  fetchImpl: typeof fetch = fetch,
+  options: { recordModelContent?: boolean } = {},
+): ModelWire {
   return {
     async listModels(e) {
       const body = (await call(e, '/models', { method: 'GET' }, 5_000, fetchImpl)) as {
@@ -86,6 +89,7 @@ export function openAICompatibleWire(fetchImpl: typeof fetch = fetch): ModelWire
         fetchImpl,
       );
     },
-    generator: (e, model, reasoning) => createGenerator(e, model, fetchImpl, reasoning),
+    generator: (e, model, reasoning) =>
+      createGenerator(e, model, fetchImpl, reasoning, { recordContent: options.recordModelContent === true }),
   };
 }

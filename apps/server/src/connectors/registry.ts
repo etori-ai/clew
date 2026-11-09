@@ -12,6 +12,7 @@ import { searchConnector, type AnswerCards } from '../modules/search/connector';
 import { searchUsecases } from '../modules/search/usecases';
 import { errandCapabilities } from '../modules/errands/capabilities';
 import { errandUsecases } from '../modules/errands/usecases';
+import { logger } from '../logging';
 
 /**
  * The registry the BFF runs with: the bundled connectors below plus every enabled connector row
@@ -20,7 +21,8 @@ import { errandUsecases } from '../modules/errands/usecases';
  * the registry (D20): in-process through the `clew.call` handle, remote through `POST /api/connectors/call`.
  */
 export const registry = new Registry({
-  onRefused: (id, topic, problem) => console.error(`connector ${id}: draft ${topic} refused (D35): ${problem}`),
+  onRefused: (id, topic, problem) =>
+    logger.error({ scope: 'connectors', connector: id, topic, problem }, 'connector draft refused (D35)'),
 });
 /** The composite search (D26) lists its sources from the registry at call time, so a connector enabled by an administrator is searched from the next question on. */
 const search = searchUsecases({ sources: actor => registry.searchSources(actor), clock });

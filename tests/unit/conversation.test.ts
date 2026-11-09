@@ -136,6 +136,7 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
     },
     clock,
     ids,
+    trace: () => '0af7651916cd43dd8448eb211c80319c',
     log: (...args: unknown[]) => {
       logged.push(args);
     },
@@ -463,6 +464,7 @@ describe('with a model', () => {
       return {
         text: 'Tre på plats. Personalsystemet 08:00.',
         toolCalls: [{ capability: 'hr.whoIsOn', input: {}, output }],
+        usage: { inputTokens: 120, outputTokens: 18, finishReason: 'stop', steps: 2 },
       };
     };
     const w = world({ generate });
@@ -481,10 +483,31 @@ describe('with a model', () => {
       action: 'conversation.asked',
       details: { assistant: 'model', tools: ['hr.whoIsOn'], model: 'open-model' },
     });
+    // The turn's cost and trace (D91) are on the message and in the audit row: the provider, the wall time by the
+    // deps' clock, steps, tokens, the finish reason and the trace id the deps hand out. Never the text.
+    const modelCall = {
+      providerId: 'llm',
+      durationMs: 0,
+      steps: 2,
+      inputTokens: 120,
+      outputTokens: 18,
+      finishReason: 'stop',
+      traceId: '0af7651916cd43dd8448eb211c80319c',
+    };
+    expect(turn.thread.messages.at(-1)!.meta?.modelCall).toEqual(modelCall);
+    expect(w.store.audit.at(-1)).toMatchObject({ details: { modelCall } });
+    expect(JSON.stringify(w.store.audit.at(-1))).not.toContain('Tre på plats');
     fail = true;
     const fallback = await w.assistant.converse(hillevi, { text: 'vem är på plats i dag?' });
     expect(fallback.assistant).toBe('unavailable');
     expect(fallback.model).toBeUndefined();
+    // Why the router answered is kept with the turn (D91): the wire's words, on the message and in the audit row.
+    expect(fallback.thread.messages.at(-1)!.meta).toMatchObject({
+      assistant: 'unavailable',
+      fallbackReason: 'timeout',
+    });
+    expect(fallback.thread.messages.at(-1)!.meta?.modelCall).toBeUndefined();
+    expect(w.store.audit.at(-1)).toMatchObject({ details: { assistant: 'unavailable', fallbackReason: 'timeout' } });
     expect(await w.status(hillevi)).toMatchObject({ configured: true, available: false, model: 'Öppen modell' });
     expect(w.logged).toHaveLength(1);
     w.health.mark('llm', true, T0);

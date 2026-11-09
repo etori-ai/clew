@@ -4,6 +4,7 @@ import { parseManifest } from '@clew/connectors/remote';
 import { describeBundled } from './describe';
 import type { ConnectorRecord, ConnectorStore, LiveRegistration, Secrets } from './model';
 import { governanceOf } from './usecases/admin';
+import { logPort } from '../logging';
 
 /**
  * Keeps the live registry equal to the `connector` rows (D23). At boot: every bundled connector gets its row if it has
@@ -92,7 +93,7 @@ function applyInternal(deps: ReconcileDeps, id: string, row?: ConnectorRecord) {
 }
 /** Apply one row to the live registry: register or unregister a remote connector, then its governance. */
 export function applyRow(deps: ReconcileDeps, row: ConnectorRecord) {
-  const { registry, secrets, live, log = console.log } = deps;
+  const { registry, secrets, live, log = logPort('connectors') } = deps;
   if (deps.internal?.includes(row.id)) {
     applyInternal(deps, row.id, row);
     return;
@@ -168,7 +169,7 @@ export function watchConnectors(deps: ReconcileDeps, intervalMs = 5000) {
     try {
       await applyAllRows(deps);
     } catch (error) {
-      (deps.log ?? console.log)('connectors: watch failed: ' + (error as Error).message);
+      (deps.log ?? logPort('connectors', 'error'))('connectors: watch failed: ' + (error as Error).message);
     }
   };
   const timer = setInterval(() => void tick(), intervalMs);

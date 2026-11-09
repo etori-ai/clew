@@ -1,6 +1,10 @@
+// Telemetry first (D91): the undici instrumentation patches `fetch` at load, before any module that calls it.
+import { shutdownTelemetry, telemetry } from './telemetry';
+import { logger } from './logging';
 import { resolve } from 'node:path';
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
+import { httpInstrumentationMiddleware } from '@hono/otel';
 import { authRoutes } from './routes/auth';
 import { api } from './routes/api';
 import { adminRoutes } from './routes/admin';
@@ -32,6 +36,9 @@ for (const file of ['.env.local']) {
 }
 
 const app = new Hono();
+// One server span per request when export is on (D91). The URL on the span is the path alone: the sign-in callback's
+// query carries the authorization code, and a view's input may name a person.
+if (telemetry.enabled) app.use(httpInstrumentationMiddleware({ getUrlFull: c => new URL(c.req.url).pathname }));
 const startup = startupReadiness({
   initialize: async () => {
     await signingAuthority();
@@ -48,13 +55,10 @@ const startup = startupReadiness({
     startRefresh();
     void loadConnectors(registry)
       .then(() => applyAllRows(connectorReconcile))
-      .catch(error => console.error('connectors', error));
+      .catch(error => logger.error({ scope: 'connectors', error }, 'loading connectors failed'));
   },
   onError: error =>
-    console.error(
-      'startup initialization failed; retrying in five seconds',
-      error instanceof Error ? error.message : 'Unknown failure',
-    ),
+    logger.error({ scope: 'startup', error }, 'startup initialization failed; retrying in five seconds'),
   retry: run => {
     setTimeout(run, 5000).unref();
   },
@@ -83,6 +87,17 @@ app.onError((error, c) => failure(c, error));
 const port = Number(process.env.PORT ?? 3000);
 // Loopback by default (Vite proxies to it in dev); a container stack sets HOST=0.0.0.0 so connector services can call back.
 serve({ fetch: app.fetch, port, hostname: process.env.HOST ?? '127.0.0.1' }, info => {
-  console.log(`Clew BFF listening on http://${info.address}:${info.port}`);
+  logger.info(
+    { scope: 'server', address: info.address, port: info.port },
+    `Clew BFF listening on http://${info.address}:${info.port}`,
+  );
   void startup.start();
 });
+// A rejection nobody caught is a bug worth a record, not a silent exit; an exception out of the loop ends the process
+// after the telemetry buffer is flushed, and the container runtime restarts it.
+process.on('unhandledRejection', reason => logger.error({ scope: 'process', error: reason }, 'unhandled rejection'));
+process.on('uncaughtException', error => {
+  logger.fatal({ scope: 'process', error }, 'uncaught exception');
+  void shutdownTelemetry().finally(() => process.exit(1));
+});
+process.once('SIGTERM', () => void shutdownTelemetry().finally(() => process.exit(0)));

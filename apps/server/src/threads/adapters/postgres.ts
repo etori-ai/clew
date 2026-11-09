@@ -6,6 +6,7 @@ import { enqueueWorkflow, type DurableQueue } from '@clew/db/durable';
 import type { ThreadPatch, ThreadStore, ThreadTx } from '../model';
 import { readTimer, timerTx } from './timer-postgres';
 import { attentionTx } from './attention-postgres';
+import { logger } from '../../logging';
 
 /**
  * The store the server runs (D25): the `ThreadStore` port over Drizzle and Postgres. Held to the memory adapter's
@@ -135,7 +136,7 @@ export async function withThreadTx<T>(
   for (const id of ended)
     await options
       .cancel?.(id)
-      .catch(error => console.error(`durable cancel of ${id} failed:`, error instanceof Error ? error.message : error));
+      .catch(error => logger.error({ scope: 'threads', timer: id, error }, 'durable cancel failed'));
   return result;
 }
 export function postgresThreadStore(options: ThreadStoreOptions): ThreadStore {
