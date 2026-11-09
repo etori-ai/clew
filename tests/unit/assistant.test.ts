@@ -665,5 +665,11 @@ describe('the model path only reads, and falls back when the provider fails', ()
     expect(bodies[0]).not.toHaveProperty('tools');
     expect(bodies[0]).not.toHaveProperty('reasoning_effort');
     expect(bodies[1]).toMatchObject({ reasoning_effort: 'none', tools: [{ type: 'function' }] });
+    // No token limit, as a turn has none: OpenAI's reasoning models refuse `max_tokens` and older servers do not know
+    // `max_completion_tokens`, so either name would fail the test on a model that answers turns.
+    for (const body of bodies) {
+      expect(body).not.toHaveProperty('max_tokens');
+      expect(body).not.toHaveProperty('max_completion_tokens');
+    }
   });
 });
