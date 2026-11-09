@@ -1,5 +1,10 @@
+-- As in 0030: an upgrade that runs 0031's DELETE in the same transaction reaches this ALTER with deferred trigger
+-- events queued on connector and fails with "pending trigger events". Fire them first, and keep them immediate through
+-- the UPDATE below so that 0033's ALTER of connector does not meet the same queue.
+SET CONSTRAINTS ALL IMMEDIATE;--> statement-breakpoint
 ALTER TABLE "connector" ADD COLUMN "ordinal" integer;--> statement-breakpoint
 -- The systems registered so far take their places in the order they were added (D71); a bundled row has none.
 UPDATE connector SET ordinal = ranked.n
 FROM (SELECT id, row_number() OVER (ORDER BY created_at, id) AS n FROM connector WHERE NOT bundled) AS ranked
-WHERE connector.id = ranked.id;
+WHERE connector.id = ranked.id;--> statement-breakpoint
+SET CONSTRAINTS ALL DEFERRED;
