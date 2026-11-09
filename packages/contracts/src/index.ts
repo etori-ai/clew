@@ -1303,6 +1303,12 @@ export const ProviderHealthSchema = object({
 export type ProviderHealth = Static<typeof ProviderHealthSchema>;
 export const ModelStateSchema = Type.Union([Type.Literal('enabled'), Type.Literal('disabled')]);
 export type ModelState = Static<typeof ModelStateSchema>;
+/**
+ * What a call says about reasoning (D84). `provider-default` says nothing, so an endpoint that does not know the field
+ * never sees it; `none` asks the model not to reason, for a model that refuses tools while it does. "Testa" settles it;
+ * nobody sets it by hand.
+ */
+export type ModelReasoning = 'provider-default' | 'none';
 const adminSlug = Type.String({ pattern: '^[a-z][a-z0-9-]*$', minLength: 1, maxLength: 60 });
 const endpointUrl = Type.String({ pattern: '^https?://[^\\s]+$', minLength: 8, maxLength: 500 });
 /** Empty means no key: a local endpoint may need none. */
@@ -1374,6 +1380,7 @@ export interface ModelSummary {
   audience: ConnectorAudience;
   isDefault: boolean;
   tools: boolean;
+  reasoning: ModelReasoning;
   /** The provider's health: a model answers when its endpoint does. */
   health: ProviderHealth;
   createdAt: string;

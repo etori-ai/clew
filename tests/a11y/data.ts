@@ -937,6 +937,7 @@ const modelSummary = (
   audience: { mode: 'all' },
   isDefault: false,
   tools: true,
+  reasoning: 'provider-default',
   health: { status: 'ok', at: NOW },
   createdAt: '2026-11-03T06:00:00.000Z',
   updatedAt: NOW,

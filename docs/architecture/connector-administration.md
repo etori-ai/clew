@@ -59,7 +59,7 @@ The screens stay in the same application shell and navigation. Browser visibilit
 
 Administration → Modeller manages provider endpoints/keys and the models available from them. Clew uses an OpenAI-compatible protocol and can run against a self-hosted model. Provider keys stay on the server, sealed under the installation master key.
 
-Models have an enabled state, audience, display name, tool setting and optional installation default. The server resolves the person's permitted choice for each turn. If no model is available, deterministic navigation, reads and decisions remain available.
+Models have an enabled state, audience, display name, tool setting and optional installation default. Adding a model tests it at once, and Testa repeats the test; the test sends a call shaped like a turn and settles the model's reasoning: nothing is sent about it unless the provider refuses tools while the model reasons, and then Clew asks the model not to reason ([D84](../decisions/D84-a-models-reasoning-is-its-own-setting.md)). The server resolves the person's permitted choice for each turn. If no model is available, deterministic navigation, reads and decisions remain available.
 
 Implementation: [model use cases](../../apps/server/src/assistant/usecases/models.ts), [ports](../../apps/server/src/assistant/ports.ts), [provider adapter](../../apps/server/src/assistant/adapters/openai-compatible.ts) and [composition](../../apps/server/src/composition/index.ts). Model selection is stored in the database; legacy `AI_*` environment variables do not select the composer model.
 

@@ -1,3 +1,4 @@
+import type { ModelReasoning } from '@clew/contracts';
 import type { ModelGenerate } from '../model';
 import type {
   AuditEntry,
@@ -104,6 +105,7 @@ export function memoryModelStore(): MemoryModelStore {
             audience: { mode: 'all' },
             isDefault: false,
             tools: r.tools,
+            reasoning: 'provider-default',
             createdBy: r.createdBy,
             updatedBy: r.createdBy,
             createdAt: r.at,
@@ -164,19 +166,28 @@ export function memoryModelHealth(): ModelHealth & { state: Map<string, { ok: bo
     },
   };
 }
+interface WireCall {
+  kind: 'list' | 'ping' | 'generate';
+  baseUrl: string;
+  apiKey?: string;
+  model?: string;
+  reasoning?: ModelReasoning;
+}
 /**
  * An OpenAI-compatible endpoint the test plays. `endpoints` maps a base URL to what it lists and which key it wants;
- * `generate` answers every turn. Calls are recorded with the key they carried, so a test can see a key was opened.
+ * `generate` answers every turn. Calls are recorded with the key and the reasoning they carried, so a test can see a key
+ * was opened. `refusesReasoningTools` plays a model that takes tools only when told not to reason (D84).
  */
 export function memoryModelWire(
   options: {
-    endpoints?: Record<string, { models?: string[]; key?: string; down?: boolean; noList?: boolean }>;
+    endpoints?: Record<
+      string,
+      { models?: string[]; key?: string; down?: boolean; noList?: boolean; refusesReasoningTools?: boolean }
+    >;
     generate?: ModelGenerate;
   } = {},
-): ModelWire & {
-  calls: Array<{ kind: 'list' | 'ping' | 'generate'; baseUrl: string; apiKey?: string; model?: string }>;
-} {
-  const calls: Array<{ kind: 'list' | 'ping' | 'generate'; baseUrl: string; apiKey?: string; model?: string }> = [];
+): ModelWire & { calls: WireCall[] } {
+  const calls: WireCall[] = [];
   const endpoints = options.endpoints ?? {};
   const answer = (e: Endpoint) => {
     const found = endpoints[e.baseUrl];
@@ -192,14 +203,22 @@ export function memoryModelWire(
       if (found.noList) throw new WireError('unsupported', '404');
       return [...(found.models ?? [])];
     },
-    async ping(e, model) {
-      calls.push({ kind: 'ping', baseUrl: e.baseUrl, model, ...(e.apiKey ? { apiKey: e.apiKey } : {}) });
+    async ping(e, model, { tools, reasoning }) {
+      calls.push({ kind: 'ping', baseUrl: e.baseUrl, model, reasoning, ...(e.apiKey ? { apiKey: e.apiKey } : {}) });
       const found = answer(e);
       if (found.models && !found.models.includes(model)) throw new WireError('unsupported', 'model not found');
+      if (found.refusesReasoningTools && tools && reasoning !== 'none')
+        throw new WireError('unsupported', 'tools with reasoning are not supported');
     },
-    generator(e, model) {
+    generator(e, model, reasoning) {
       return async request => {
-        calls.push({ kind: 'generate', baseUrl: e.baseUrl, model, ...(e.apiKey ? { apiKey: e.apiKey } : {}) });
+        calls.push({
+          kind: 'generate',
+          baseUrl: e.baseUrl,
+          model,
+          reasoning,
+          ...(e.apiKey ? { apiKey: e.apiKey } : {}),
+        });
         answer(e);
         if (!options.generate) throw new WireError('unsupported', 'no generate in this test');
         return options.generate(request);

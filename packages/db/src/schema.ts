@@ -340,6 +340,7 @@ export const models = pgTable(
     audience: jsonb('audience').$type<ConnectorAudience>().notNull().default({ mode: 'all' }),
     isDefault: boolean('is_default').notNull().default(false),
     tools: boolean('tools').notNull().default(true),
+    reasoning: text('reasoning').$type<'provider-default' | 'none'>().notNull().default('provider-default'),
     createdBy: text('created_by').notNull(),
     updatedBy: text('updated_by').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -349,6 +350,7 @@ export const models = pgTable(
   t => [
     check('model_id', sql`${t.id} ~ '^[a-z][a-z0-9-]*$'`),
     check('model_state', sql`${t.state} IN ('enabled', 'disabled')`),
+    check('model_reasoning', sql`${t.reasoning} IN ('provider-default', 'none')`),
     index('model_by_provider').on(t.providerId),
     // One default per installation: a second row with the flag is refused by the database, not only by the use case.
     uniqueIndex('model_one_default')

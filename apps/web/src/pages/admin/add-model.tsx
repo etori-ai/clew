@@ -78,13 +78,20 @@ const addedMessage = (n: number, enable: boolean) =>
   n === 1
     ? `1 modell tillagd${enable ? ' och påslagen' : ', avstängd tills du slår på den'}.`
     : `${n} modeller tillagda${enable ? ' och påslagna' : ', avstängda tills du slår på dem'}.`;
-/** Add the picked models, each its own call and audit row, switched on afterwards when asked. Returns the toast. */
+/**
+ * Add the picked models, each its own call and audit row, switched on afterwards when asked. The server tests each one
+ * as it is added (D84); the toast names any that did not answer, so the administrator opens it before anyone asks it.
+ */
 async function addPicked(providerId: string, ids: string[], enable: boolean): Promise<string> {
+  const silent: string[] = [];
   for (const model of ids) {
     const added = await api.admin.addModel({ providerId, model });
-    if (enable) await api.admin.updateModel(added.id, { state: 'enabled' });
+    if (!added.report.ok) silent.push(added.model.title);
+    if (enable) await api.admin.updateModel(added.model.id, { state: 'enabled' });
   }
-  return addedMessage(ids.length, enable);
+  const done = addedMessage(ids.length, enable);
+  if (!silent.length) return done;
+  return `${done} ${silent.join(', ')} svarade inte på testet. Öppna ${silent.length === 1 ? 'modellen' : 'modellerna'} och tryck Testa för att se varför.`;
 }
 
 /**

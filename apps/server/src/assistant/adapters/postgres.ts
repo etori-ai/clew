@@ -28,6 +28,7 @@ const modelOf = (row: typeof models.$inferSelect): ModelRecord => ({
   audience: row.audience,
   isDefault: row.isDefault,
   tools: row.tools,
+  reasoning: row.reasoning,
   createdBy: row.createdBy,
   updatedBy: row.updatedBy,
   createdAt: row.createdAt.toISOString(),

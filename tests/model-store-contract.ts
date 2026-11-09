@@ -81,6 +81,7 @@ export function modelStoreContract(name: string, make: () => Promise<ModelStoreH
         audience: { mode: 'all' },
         isDefault: false,
         tools: true,
+        reasoning: 'provider-default',
         createdAt: T0,
         version: 1,
       });
@@ -100,7 +101,13 @@ export function modelStoreContract(name: string, make: () => Promise<ModelStoreH
         await store.transaction(tx =>
           tx.updateModel(
             m,
-            { state: 'enabled', audience: { mode: 'selected', roles: ['manager'] }, title: 'Kapabel', tools: false },
+            {
+              state: 'enabled',
+              audience: { mode: 'selected', roles: ['manager'] },
+              title: 'Kapabel',
+              tools: false,
+              reasoning: 'none',
+            },
             'person:mikael',
             T1,
           ),
@@ -111,6 +118,7 @@ export function modelStoreContract(name: string, make: () => Promise<ModelStoreH
         audience: { mode: 'selected', roles: ['manager'] },
         title: 'Kapabel',
         tools: false,
+        reasoning: 'none',
         updatedAt: T1,
         version: 2,
       });

@@ -245,6 +245,11 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
                   <MetadataListItem label="Leverantörens hälsa">
                     {providerHealthLabel[m.health.status]} · <Timestamp value={m.health.at} format="auto" />
                   </MetadataListItem>
+                  <MetadataListItem label="Resonemang">
+                    {m.reasoning === 'none'
+                      ? 'Av, eftersom leverantören inte tar verktyg medan modellen resonerar'
+                      : 'Leverantörens standard'}
+                  </MetadataListItem>
                   <MetadataListItem label="Tillagd">
                     {actorLabel(m.createdBy)} · <Timestamp value={m.createdAt} format="date_time" />
                   </MetadataListItem>

@@ -39,12 +39,14 @@ function world() {
     hassan = persona('hassan', 'employee');
   const store = memoryModelStore(),
     health = memoryModelHealth();
+  const endpoints = {
+    'http://llm.test/v1': { models: ['gpt-oss:120b', 'gpt-oss:20b'], key: KEY },
+    'http://lokal.test/v1': { noList: true },
+    'http://nere.test/v1': { down: true },
+    'http://resonerar.test/v1': { models: ['tankande'], refusesReasoningTools: true },
+  };
   const wire = memoryModelWire({
-    endpoints: {
-      'http://llm.test/v1': { models: ['gpt-oss:120b', 'gpt-oss:20b'], key: KEY },
-      'http://lokal.test/v1': { noList: true },
-      'http://nere.test/v1': { down: true },
-    },
+    endpoints,
     generate: async () => ({ text: 'ok', toolCalls: [] }),
   });
   let now = Date.parse(T0);
@@ -66,6 +68,7 @@ function world() {
     store,
     health,
     wire,
+    endpoints,
     models,
     advance: (ms: number) => {
       now += ms;
@@ -82,13 +85,13 @@ async function installed(w: ReturnType<typeof world>) {
     baseUrl: 'http://llm.test/v1/',
     apiKey: KEY,
   });
-  const big = await w.models.addModel(w.mikael, {
+  const { model: big } = await w.models.addModel(w.mikael, {
     providerId: 'kommunen',
     model: 'gpt-oss:120b',
     title: 'Kapabel',
     description: 'Långa svar och utkast.',
   });
-  const small = await w.models.addModel(w.mikael, {
+  const { model: small } = await w.models.addModel(w.mikael, {
     providerId: 'kommunen',
     model: 'gpt-oss:20b',
     title: 'Snabb (lokal)',
@@ -121,6 +124,7 @@ describe('the pure rules', () => {
       audience: { mode: 'all' },
       isDefault: false,
       tools: true,
+      reasoning: 'provider-default',
       createdBy: 'x',
       updatedBy: 'x',
       createdAt: T0,
@@ -256,6 +260,53 @@ describe('providers', () => {
       'provider.key',
     ]);
   });
+  test('adding a model settles its reasoning: off only when the provider refuses tools with it, audited, and back when it stops', async () => {
+    const w = world();
+    await w.models.addProvider(w.mikael, { id: 'tanke', title: 'Tanke', baseUrl: 'http://resonerar.test/v1' });
+    const pings = () => w.wire.calls.filter(c => c.kind === 'ping').map(c => c.reasoning);
+    const added = await w.models.addModel(w.mikael, { providerId: 'tanke', model: 'tankande' });
+    const id = added.model.id;
+    expect(added.report).toMatchObject({ ok: true, health: { status: 'ok' } });
+    expect(added.report.findings.map(f => f.text).join(' ')).toContain('utan resonemang');
+    expect(added.model.reasoning).toBe('none');
+    expect(pings()).toEqual(['provider-default', 'none']);
+    expect(actions(w.store, 'model:' + id)).toEqual(['model.added', 'model.reasoning']);
+    expect(w.store.audit.find(a => a.action === 'model.reasoning')).toMatchObject({
+      actor: 'person:mikael',
+      subject: 'model:' + id,
+      details: { from: 'provider-default', to: 'none', found: 'test' },
+    });
+    await w.models.updateModel(w.mikael, id, { state: 'enabled', isDefault: true });
+    await (await w.models.resolve(w.hillevi))!.generate({ system: '', messages: [], tools: {}, timeoutMs: 1000 });
+    expect(w.wire.calls.at(-1)).toMatchObject({ kind: 'generate', reasoning: 'none' });
+    // Testa with the same answer writes nothing; a provider that starts taking the call gets its default back.
+    await w.models.testModel(w.mikael, id);
+    expect(w.store.audit.filter(a => a.action === 'model.reasoning')).toHaveLength(1);
+    w.endpoints['http://resonerar.test/v1'].refusesReasoningTools = false;
+    expect((await w.models.testModel(w.mikael, id)).findings).toHaveLength(1);
+    expect((await w.models.readModel(w.mikael, id)).reasoning).toBe('provider-default');
+    expect(w.store.audit.at(-1)).toMatchObject({
+      action: 'model.reasoning',
+      details: { from: 'none', to: 'provider-default', found: 'test' },
+    });
+  });
+  test('a failed test on add keeps the model and its reasoning, and a model without tools is tested without one', async () => {
+    const w = world();
+    await w.models.addProvider(w.mikael, { id: 'tanke', title: 'Tanke', baseUrl: 'http://resonerar.test/v1' });
+    const wrong = await w.models.addModel(w.mikael, { providerId: 'tanke', model: 'finns-inte' });
+    expect(wrong.report).toMatchObject({ ok: false, health: { status: 'ok' } });
+    expect(wrong.report.findings[0]!.text).toContain('vägrar anropet');
+    expect(wrong.report.findings[0]!.text).toContain('model not found');
+    expect(wrong.model).toMatchObject({ state: 'disabled', reasoning: 'provider-default' });
+    expect(await w.models.testModel(w.mikael, wrong.model.id)).toMatchObject({ ok: false });
+    const before = w.wire.calls.length;
+    const quiet = await w.models.addModel(w.mikael, { providerId: 'tanke', model: 'tankande', tools: false });
+    expect(quiet.report).toMatchObject({ ok: true });
+    expect(w.wire.calls.slice(before)).toEqual([
+      expect.objectContaining({ kind: 'ping', reasoning: 'provider-default' }),
+    ]);
+    expect(w.store.audit.some(a => a.action === 'model.reasoning')).toBe(false);
+  });
   test('a provider goes only after its models', async () => {
     const w = world();
     const { big, small } = await installed(w);
@@ -277,7 +328,8 @@ describe('models', () => {
       baseUrl: 'http://llm.test/v1',
       apiKey: KEY,
     });
-    const m = await w.models.addModel(w.mikael, { providerId: 'kommunen', model: 'gpt-oss:20b' });
+    const { model: m, report } = await w.models.addModel(w.mikael, { providerId: 'kommunen', model: 'gpt-oss:20b' });
+    expect(report).toMatchObject({ ok: true, findings: [{ level: 'ok', text: 'gpt-oss:20b svarar.' }] });
     expect(m).toMatchObject({
       id: 'gpt-oss-20b',
       providerTitle: 'Kommunens modeller',
@@ -310,7 +362,7 @@ describe('models', () => {
     await expect(
       w.models.updateModel(
         w.mikael,
-        (await w.models.addModel(w.mikael, { providerId: 'kommunen', model: 'extra' })).id,
+        (await w.models.addModel(w.mikael, { providerId: 'kommunen', model: 'extra' })).model.id,
         { isDefault: true },
       ),
     ).rejects.toThrow('Slå på modellen');
@@ -371,6 +423,7 @@ describe("the person's model", () => {
       kind: 'generate',
       baseUrl: 'http://llm.test/v1',
       model: 'gpt-oss:20b',
+      reasoning: 'provider-default',
       apiKey: KEY,
     });
     expect((await w.models.resolve(w.hassan))!.id).toBe(big);
@@ -408,7 +461,7 @@ describe("the person's model", () => {
       ['nere', 'x'],
       ['lokal', 'y'],
     ] as const) {
-      const m = await w.models.addModel(w.mikael, { providerId: provider, model });
+      const { model: m } = await w.models.addModel(w.mikael, { providerId: provider, model });
       await w.models.updateModel(w.mikael, m.id, { state: 'enabled' });
     }
     w.health.mark('nere', true, T0);

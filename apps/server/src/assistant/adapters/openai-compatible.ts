@@ -4,7 +4,8 @@ import { WireError, type Endpoint, type ModelWire } from '../ports';
 /**
  * The live OpenAI-compatible wire (D24): the only protocol, so an open-weight model on a self-hosted endpoint is a
  * complete installation and a closed provider is an operator's entry, never a dependency. `GET {base}/models` lists,
- * one tiny chat completion proves a model id and a key, and the AI SDK's OpenAI-compatible provider runs a turn.
+ * one tiny chat completion proves a model id and a key and that the model takes a call shaped like a turn (D84), and the
+ * AI SDK's OpenAI-compatible provider runs a turn.
  * Every failure becomes a `WireError`: no answer (network, timeout, 5xx), a refused key (401, 403), or anything else.
  */
 const headers = (e: Endpoint): Record<string, string> => ({
@@ -49,6 +50,11 @@ async function call(
     throw new WireError('unsupported', 'svaret är inte JSON');
   }
 }
+/** A tool the model need not call: a turn offers tools, and some models refuse a call only because of them (D84). */
+const probeTool = {
+  type: 'function',
+  function: { name: 'clew_probe', description: 'Not used.', parameters: { type: 'object', properties: {} } },
+};
 export function openAICompatibleWire(fetchImpl: typeof fetch = fetch): ModelWire {
   return {
     async listModels(e) {
@@ -61,18 +67,24 @@ export function openAICompatibleWire(fetchImpl: typeof fetch = fetch): ModelWire
         .filter((id): id is string => typeof id === 'string')
         .sort();
     },
-    async ping(e, model) {
+    async ping(e, model, { tools, reasoning }) {
       await call(
         e,
         '/chat/completions',
         {
           method: 'POST',
-          body: JSON.stringify({ model, max_tokens: 4, messages: [{ role: 'user', content: 'Svara med ordet ok.' }] }),
+          body: JSON.stringify({
+            model,
+            max_tokens: 4,
+            messages: [{ role: 'user', content: 'Svara med ordet ok.' }],
+            ...(tools ? { tools: [probeTool] } : {}),
+            ...(reasoning === 'none' ? { reasoning_effort: 'none' } : {}),
+          }),
         },
         20_000,
         fetchImpl,
       );
     },
-    generator: (e, model) => createGenerator(e, model, fetchImpl),
+    generator: (e, model, reasoning) => createGenerator(e, model, fetchImpl, reasoning),
   };
 }

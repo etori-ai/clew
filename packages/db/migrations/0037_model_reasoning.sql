@@ -1,0 +1,2 @@
+ALTER TABLE "model" ADD COLUMN "reasoning" text DEFAULT 'provider-default' NOT NULL;--> statement-breakpoint
+ALTER TABLE "model" ADD CONSTRAINT "model_reasoning" CHECK ("model"."reasoning" IN ('provider-default', 'none'));

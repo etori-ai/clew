@@ -7,6 +7,7 @@ import type {
   ModelChoice,
   ModelDetail,
   ModelPatchInput,
+  ModelReasoning,
   ModelSummary,
   ProviderDetail,
   ProviderHealth,
@@ -118,6 +119,7 @@ export function modelUsecases(deps: ModelDeps) {
       audience: m.audience,
       isDefault: m.isDefault,
       tools: m.tools,
+      reasoning: m.reasoning,
       health: p?.health ?? { status: 'untested', at: m.createdAt },
       createdAt: m.createdAt,
       updatedAt: m.updatedAt,
@@ -297,8 +299,15 @@ export function modelUsecases(deps: ModelDeps) {
     return { removed: true };
   }
 
-  /** A model under a provider, by the id its endpoint uses. Clew's id is derived from it. It starts switched off. */
-  async function addModel(persona: AuthenticatedContext, input: AddModelInput): Promise<ModelDetail> {
+  /**
+   * A model under a provider, by the id its endpoint uses. Clew's id is derived from it. It starts switched off, and it is
+   * tested at once as "Testa" would (D84), so its reasoning is settled before anyone asks it a question. A failed test does
+   * not undo the addition: the report says what the provider answered.
+   */
+  async function addModel(
+    persona: AuthenticatedContext,
+    input: AddModelInput,
+  ): Promise<{ model: ModelDetail; report: ProviderTestReport }> {
     const { by, at } = await mutating(persona);
     await mustProvider(input.providerId);
     const existing = await store.listModels();
@@ -327,11 +336,12 @@ export function modelUsecases(deps: ModelDeps) {
         details: { provider: input.providerId, model: input.model },
       });
     });
-    return modelDetail((await store.readModel(id))!);
+    const report = await check(persona, (await store.readModel(id))!);
+    return { model: await modelDetail((await store.readModel(id))!), report };
   }
   /**
-   * Name, description, the endpoint's id, on or off, the audience, the tools switch and the default. One audit row per
-   * changed field. The default is one switched-on model: setting it clears the previous one (its own row says so), and
+   * Name, description, the endpoint's id, on or off, the audience, the tools switch and the default. One audit
+   * row per changed field. The default is one switched-on model: setting it clears the previous one (its own row says so), and
    * switching the default off clears its flag too.
    */
   async function updateModel(persona: AuthenticatedContext, id: string, patch: ModelPatchInput): Promise<ModelDetail> {
@@ -396,21 +406,45 @@ export function modelUsecases(deps: ModelDeps) {
     });
     return modelDetail((await store.readModel(id))!);
   }
-  /** "Testa" on a model: one tiny completion with its id and its provider's key. The provider's health follows. */
+  /**
+   * "Testa" on a model: one tiny completion shaped like a turn, with its provider's key. The provider's health follows.
+   * It also settles the model's reasoning (D84): the call goes as the provider's default first, and only when the
+   * provider refuses it with tools does the same call go again with reasoning off. The answer is the model's setting from
+   * then on, written with its audit row when it changes, so a provider that later accepts the default gets it back.
+   */
   async function testModel(persona: AuthenticatedContext, id: string): Promise<ProviderTestReport> {
     requireAdmin(persona);
-    const row = await mustModel(id);
+    return check(persona, await mustModel(id));
+  }
+  /** The test itself, for "Testa" and for a model just added. */
+  async function check(persona: AuthenticatedContext, row: ModelRecord): Promise<ProviderTestReport> {
+    const id = row.id;
     const provider = await mustProvider(row.providerId);
+    const endpoint = endpointOf(provider);
     const at = clock().toISOString();
     let report: ProviderTestReport;
     try {
-      await wire.ping(endpointOf(provider), row.model);
-      report = {
-        ok: true,
-        models: [],
-        health: { status: 'ok', at },
-        findings: [{ level: 'ok', text: `${row.title} svarar.` }],
-      };
+      const reasoning = await settleReasoning(endpoint, row);
+      const findings: CheckFinding[] = [{ level: 'ok', text: `${row.title} svarar.` }];
+      if (reasoning === 'none')
+        findings.push({
+          level: 'ok',
+          text: 'Leverantören tar inte verktyg medan modellen resonerar, så Clew ber modellen svara utan resonemang.',
+        });
+      if (reasoning !== row.reasoning) {
+        await persona.authorize();
+        await store.transaction(async tx => {
+          await tx.updateModel(id, { reasoning }, persona.principal.id, at);
+          await tx.writeAudit({
+            actor: persona.principal.id,
+            action: 'model.reasoning',
+            subject: 'model:' + id,
+            at,
+            details: { from: row.reasoning, to: reasoning, found: 'test' },
+          });
+        });
+      }
+      report = { ok: true, models: [], health: { status: 'ok', at }, findings };
     } catch (error) {
       const h = healthOf(error, at);
       const text =
@@ -418,7 +452,7 @@ export function modelUsecases(deps: ModelDeps) {
           ? 'Nyckeln avvisas.'
           : h.status === 'unreachable'
             ? 'Leverantören svarar inte.'
-            : 'Leverantören svarar men inte på den här modellen. Kontrollera modellens namn.';
+            : 'Leverantören svarar men vägrar anropet. Kontrollera modellens namn och inställningar.';
       report = {
         ok: false,
         models: [],
@@ -428,6 +462,23 @@ export function modelUsecases(deps: ModelDeps) {
     }
     await record(row.providerId, report.health);
     return report;
+  }
+  /**
+   * The reasoning a model's turns need: the provider's default when it takes the call, otherwise `none` when that call is
+   * taken. A refusal is not read from its text; the same call failing one way and passing the other is the evidence.
+   * Any other failure, or a second refusal, is the first call's error.
+   */
+  async function settleReasoning(endpoint: Endpoint, row: ModelRecord): Promise<ModelReasoning> {
+    try {
+      await wire.ping(endpoint, row.model, { tools: row.tools, reasoning: 'provider-default' });
+      return 'provider-default';
+    } catch (error) {
+      if (!row.tools || !(error instanceof WireError) || error.kind !== 'unsupported') throw error;
+      await wire.ping(endpoint, row.model, { tools: true, reasoning: 'none' }).catch(() => {
+        throw error;
+      });
+      return 'none';
+    }
   }
   /** The model goes, and every person who had picked it falls back to the default. */
   async function removeModel(persona: AuthenticatedContext, id: string): Promise<{ removed: true }> {
@@ -495,7 +546,7 @@ export function modelUsecases(deps: ModelDeps) {
       title: current.title,
       providerId: provider.id,
       tools: current.tools,
-      generate: wire.generator(endpointOf(provider), current.model),
+      generate: wire.generator(endpointOf(provider), current.model, current.reasoning),
     };
   }
   /** The minute probe (D8): every provider with a switched-on model, asked for its list. An endpoint without a list still answered. */
