@@ -158,7 +158,8 @@
     "D39",
     "D44",
     "D45",
-    "D46"
+    "D46",
+    "D85"
   ],
   "decisions": [
     {
@@ -823,7 +824,7 @@
       "number": 68,
       "path": "docs/decisions/D68-people-are-pushed-into-clew-through-standard-scim.md",
       "title": "D68 · People are pushed into Clew through standard SCIM, and mapping happens outside Clew",
-      "status": "accepted, not built yet; the group keys are proposed until a first provisioner has used them",
+      "status": "accepted, built 2026-11-09 (the SCIM server, the derivation, the synthetic provisioner, binding at first login, Administration › Användare); the group keys are proposed until a real provisioner has used them; item 2 amended by D85 (2026-11-09): capabilities are mapped from groups in Clew, units and manager roles keep these keys",
       "date": "2026-11-06",
       "area": "identity"
     },
@@ -970,6 +971,15 @@
       "status": "accepted, built 2026-11-09",
       "date": "2026-11-07, revised 2026-11-09",
       "area": "product"
+    },
+    {
+      "key": "D85-capabilities-are-mapped-from-provisioned-groups-in-clew",
+      "number": 85,
+      "path": "docs/decisions/D85-capabilities-are-mapped-from-provisioned-groups-in-clew.md",
+      "title": "D85 · Capabilities are mapped from provisioned groups in Clew; units and manager roles keep D68's keys",
+      "status": "accepted, built 2026-11-09 (the mapping table, the closed list `CAPABILITIES` with `admin.connectors` and `admin.users`, the derivation, the editor on Administration › Användare)",
+      "date": "2026-11-09",
+      "area": "identity"
     },
     {
       "key": "D85-dbos-transact-replaces-temporal-as-the-durable-engine",
@@ -1205,11 +1215,14 @@
       "headings": [
         "Browser to Clew",
         "Clew's local authority",
+        "Provisioning",
+        "Derivation",
+        "Administration › Användare",
         "Clew to a connector",
         "Connector callbacks",
         "Source authentication and background work",
         "Retained data and revocation",
-        "Identity designs not yet implemented"
+        "What is not built"
       ]
     },
     {
@@ -1875,6 +1888,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D85-capabilities-are-mapped-from-provisioned-groups-in-clew.md",
+      "title": "D85 · Capabilities are mapped from provisioned groups in Clew; units and manager roles keep D68's keys",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/D85-dbos-transact-replaces-temporal-as-the-durable-engine.md",
       "title": "D85 · DBOS Transact replaces Temporal as the durable engine",
       "category": "decision-history",
@@ -2022,6 +2041,16 @@
       ]
     },
     {
+      "path": "docs/guides/writing-a-provisioner.md",
+      "title": "Writing a provisioner",
+      "category": "integrator-guide",
+      "headings": [
+        "What Clew expects",
+        "What a provisioner does on every run",
+        "The example"
+      ]
+    },
+    {
       "path": "docs/maintainers/README.md",
       "title": "Maintain Clew",
       "category": "maintainer-guide",
@@ -2057,6 +2086,8 @@
         "Upgrade from the previous scheduler",
         "The ledger queue",
         "Restore safely",
+        "Provisioning",
+        "Changing the authorization fingerprint",
         "Reproduce the synthetic upgrade and restore rehearsal"
       ]
     },

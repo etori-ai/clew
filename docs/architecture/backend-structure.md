@@ -42,7 +42,7 @@ Connectors under `connectors/` import no Clew application or workspace package. 
 | [threads/](../../apps/server/src/threads/) | Authorized card/history reads, occurrence refresh, decisions, reminders, timers and attention. |
 | [assistant/](../../apps/server/src/assistant/) | Conversation/router, model tools, answer context, provider/model administration and adapters. |
 | [modules/calendar/](../../apps/server/src/modules/calendar/) | Calendar capabilities, planning, reads, approval, execution and bounded follow-up. |
-| [modules/people/](../../apps/server/src/modules/people/) | Internal user reads over a `UserReads` port; no managed connector lifecycle. |
+| [modules/people/](../../apps/server/src/modules/people/) | Users (D62, D68, D85): the SCIM 2.0 server's use cases, the derivation of a person's grant from memberships and the mapping, the users administration, and the internal `people.*` reads over a `UserReads` port; no managed connector lifecycle. |
 | [modules/search/](../../apps/server/src/modules/search/) | Composite search, source budgets, result contracts and answer-card capability. |
 | [modules/executions/](../../apps/server/src/modules/executions/) | Approval ledger, source progress/reconciliation, compensation, job/watch state; every intent starts its workflow in its own transaction (D86). |
 | [modules/jobs/](../../apps/server/src/modules/jobs/) | Fact/follower binding and cross-system proposal assembly. |

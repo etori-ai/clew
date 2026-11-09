@@ -18,5 +18,6 @@ The first useful result is one authorized read shown in Clew. No scan, write, mo
 | Discover outstanding work and perform approved changes | [Actions and receipts](actions-and-receipts.md) |
 | Call another connector or participate in a cross-system job | [Working across connectors](../architecture/working-across-connectors.md) |
 | Look up exact fields, routes or compatibility rules | [Protocol reference](../reference/connector-protocol.md), [manifest reference](../generated/manifest-reference.md) |
+| Push the organisation's people, units and groups into Clew (not a connector) | [Writing a provisioner](writing-a-provisioner.md) |
 
 Use the [support matrix](../reference/status.md) to distinguish available behavior from designs. Full application setup is in [local development](../maintainers/local-development.md).

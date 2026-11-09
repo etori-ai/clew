@@ -1,6 +1,6 @@
 # D68 · People are pushed into Clew through standard SCIM, and mapping happens outside Clew
 
-**Status:** accepted, not built yet; the group keys are proposed until a first provisioner has used them · **Date:** 2026-11-06 · **Area:** identity
+**Status:** accepted, built 2026-11-09 (the SCIM server, the derivation, the synthetic provisioner, binding at first login, Administration › Användare); the group keys are proposed until a real provisioner has used them; item 2 amended by D85 (2026-11-09): capabilities are mapped from groups in Clew, units and manager roles keep these keys · **Date:** 2026-11-06 · **Area:** identity
 
 **Decision.** Clew is a standard SCIM 2.0 server (RFC 7643, 7644) and the only way people, units and groups enter a
 production installation. Clew never reads an organisation's directory to learn who exists. Each installation runs a
@@ -63,7 +63,9 @@ extension because every client can set them; a client that cannot set a group's 
 or the new e-mail column stops durable work
 ([finding 1](../reviews/2026-11-06-users-groups-roles-and-scim.md)). `granted()` in
 `apps/server/src/scheduler/adapters/postgres.ts` runs the nightly scan for everyone with a grant, so it has to narrow
-to people who have logged in before a whole municipality is pushed.
+to people who have logged in before a whole municipality is pushed. Both landed 2026-11-09: the fingerprint covers
+enabled, organisation, unit, role, capabilities and grant version only, and `granted()` takes enabled people with a
+binding; see the [operations runbook](../maintainers/reliability-operations.md#changing-the-authorization-fingerprint).
 
 **Open.** The production identity provider, Keycloak as a broker or Entra directly, which decides the claim in point 6.
 How Sundsvall records protected people, and whether Clew may hold that fact at all; if it does, membership of
@@ -83,3 +85,5 @@ makes group membership the only authority once a provisioner runs. Until this de
 local grants stand; when it is built, the `capability:<name>` groups replace them for every provisioned installation,
 and the development stack's synthetic grants become the synthetic provisioner's groups. `docs/architecture/identity.md`
 no longer calls users a core connector.
+
+**Built.** 2026-11-09, in order: the authorization fingerprint narrowed to authority and the nightly scan to people who can sign in (the must-land-first items); migration `0038` with units, assignments, groups, members, the mapping table and the provisioning columns, `0039` with the provisioner table, Clew's own id on groups and SCIM timestamps; the derivation (`modules/people/domain.ts`, `usecases.ts`); the server at `/scim/v2` (`routes/scim.ts`, tokens through `scripts/provisioner-token.ts`); the synthetic provisioner (`scripts/provisioner/`, [guide](../guides/writing-a-provisioner.md)), which the development seed runs in-process so it writes no grant itself; binding at first login by `OIDC_BINDING_CLAIM`; connector audiences on groups; the users page. The current description is [identity.md](../architecture/identity.md); the session notes are in `HANDOVER.md`.

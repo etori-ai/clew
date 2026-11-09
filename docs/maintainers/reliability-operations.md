@@ -39,6 +39,22 @@ Restore into an isolated database first, with every application instance stopped
 
 Verify execution IDs/results, timer generations and cancellations, job ownership, follow-up counters, occurrence dispositions, audit and authority. Resolve uncertain effects by source read-back or a documented manual process. Keep unresolved cards visible. Only enable workers after the operator has approved reconciliation and confirmed old owners cannot act. Restoring engine state older than the ledger re-runs workflows the ledger already settled; the generation and ledger fences make them no-ops, which the rehearsal should show. An actual source's retention/recovery procedure remains pilot acceptance work.
 
+## Provisioning
+
+People, units and groups enter an installation only through `/scim/v2` (D68). An operator issues a provisioner its bearer token and revokes it with `bun scripts/provisioner-token.ts add <id> --organisation <organisationId> --label "<text>"` and `revoke <id>`, inside the app container; the token is printed once and Clew keeps only its digest (`auth_provisioner`). Run the provisioner at least daily: validity lives in the source, so a person's access ends when the push that drops their unit membership arrives, and a leaver's account must also be closed at the identity provider. A deleted user is deactivated, never erased, because audit rows and threads reference the person.
+
+What to read when something is wrong. The audit table carries `scim.user.*` and `scim.group.*` (actor `provisioner:<id>`), `grant.derived` on the person with the unit, role and capabilities that resulted or `removed: true` when the person has no unit left, `capability-map.added`/`removed` on the group (actor the administrator), and `identity.bound`/`identity.conflict` on the person. The authentication log (`auth_audit`) carries `identity-bound`, `identity-unmatched` with the claim value as actor (which account tried and found no provisioned person) and `identity-conflict` (a provisioned person's subject changed; a person must review it, Clew never rebinds). A person who can sign in but reaches nothing has no `unit:` or `unit-manager:` membership: the provisioner's mapping, not Clew, decides that. A mapping row whose group the source removed stays and shows as such on Administration › Användare, where it can be removed.
+
+Changing `OIDC_BINDING_CLAIM` after people have signed in changes nothing for them: bindings stand. It decides only how a subject not seen before finds its person.
+
+## Changing the authorization fingerprint
+
+`authorizationVersion` in `apps/server/src/auth-crypto.ts` is an HMAC over the authority in a person's access record and nothing else: enabled, organisation, unit, role, the sorted capabilities and the grant version (narrowed 2026-11-09 for [D68](../decisions/D68-people-are-pushed-into-clew-through-standard-scim.md); `tests/unit/authorization-version.test.ts` holds the list). A corrected name, a renamed unit label or a new column on the person or the grant leaves it unchanged, so directory updates do not stop work in flight.
+
+Durable work stores the value and compares it exactly. When it differs, a queued execution or watch settles `blocked` with `authority-revoked`, a timer or follow-up policy pauses, and an answer retained in a thread is hidden until a fresh scan creates a new projection (D75). A change to the formula, to the field list or to `MASTER_KEY` therefore changes every stored value at once and reads as lost authority for everyone. Treat it as a release of its own: note the reliability counts before, deploy in a quiet window, expect blocked executions with that reason, let the nightly scan rebuild cards, and let the people concerned approve again. Do not roll back to a binary with the other formula; it would read the new values the same way. The narrowing of 2026-11-09 is itself such a change on the first deployment that carries it. This is reasoned from the code paths named; it has not been rehearsed against a populated installation.
+
+The nightly scan runs for enabled people with a grant and an identity binding (`granted()` in `apps/server/src/scheduler/adapters/postgres.ts`, `tests/db/scheduler-people.test.ts`). A person pushed in through provisioning who has never signed in is not scanned.
+
 ## Reproduce the synthetic upgrade and restore rehearsal
 
 Use only the disposable development/CI stack with `CLEW_POC=true`. The script refuses existing database names and requires a fixture marker before cleanup. It never restores over the application database.
