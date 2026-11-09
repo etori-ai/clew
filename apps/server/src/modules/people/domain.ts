@@ -149,6 +149,8 @@ export interface UserRecord {
 }
 export interface GroupRecord {
   id: string;
+  /** The organisation of the provisioner that pushed the group; a client sees its own organisation's groups only. */
+  organisationId: string;
   externalId: string | null;
   /** The group's name: SCIM's `displayName`. */
   label: string;

@@ -134,6 +134,7 @@ describe('the synthetic provisioner', () => {
     const { store, client } = stack();
     store.state.groups.set('foreign', {
       id: 'foreign',
+      organisationId: 'poc',
       externalId: 'S-1-5-21-ad',
       label: 'AD',
       createdAt: 'x',

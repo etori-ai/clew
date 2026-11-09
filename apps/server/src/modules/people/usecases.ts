@@ -104,8 +104,9 @@ export type ProvisioningUsecases = ReturnType<typeof provisioningUsecases>;
  * transaction with its audit row (`scim.user.*`, `scim.group.*`, actor `provisioner:<id>`) and re-derives the grants
  * of everyone it touched. `DELETE` on a user deactivates, because audit rows and threads reference the person; `DELETE`
  * on a group removes it and its memberships, and the members lose what the group gave them. Users are read and written
- * within the provisioner's organisation, but `userName` and `externalId` are unique across the installation (a login
- * carries no organisation); groups belong to the installation.
+ * within the provisioner's organisation, and so are groups (another organisation's group does not exist for a client),
+ * while `userName` and a group's or a person's `externalId` are unique across the installation: a login carries no
+ * organisation, and D68's keys are shared vocabulary.
  */
 export interface ScimQuery {
   filter?: string;
@@ -135,8 +136,9 @@ export function scimUsecases(deps: {
     if (!user) throw new ScimError(404, `User '${id}' not found.`);
     return user;
   };
-  const groupOr404 = async (tx: ProvisionTx, id: string) => {
-    const group = await tx.readGroup(id);
+  /** Within the provisioner's organisation, as `userOr404`: another organisation's group does not exist for this client. */
+  const groupOr404 = async (tx: ProvisionTx, p: Provisioner, id: string) => {
+    const group = await tx.readGroup(p.organisationId, id);
     if (!group) throw new ScimError(404, `Group '${id}' not found.`);
     return group;
   };
@@ -348,6 +350,7 @@ export function scimUsecases(deps: {
         const at = now(),
           record: GroupRecord = {
             id: deps.ids(),
+            organisationId: p.organisationId,
             externalId: fields.externalId,
             label: fields.label,
             createdAt: at,
@@ -366,7 +369,7 @@ export function scimUsecases(deps: {
         return groupView(tx, record, base);
       }),
     getGroup: (p: Provisioner, id: string, base: string) =>
-      deps.store.transaction(async tx => groupView(tx, await groupOr404(tx, id), base)),
+      deps.store.transaction(async tx => groupView(tx, await groupOr404(tx, p, id), base)),
     listGroups: (p: Provisioner, query: ScimQuery, base: string): Promise<ScimList<ScimGroup>> =>
       deps.store.transaction(async tx => {
         // SCIM filters on displayName; the column is Clew's `label`.
@@ -376,7 +379,7 @@ export function scimUsecases(deps: {
             value: parsed.value,
           },
           page = pageOf(query);
-        const listed = await tx.listGroups(page, filter);
+        const listed = await tx.listGroups(p.organisationId, page, filter);
         const Resources: ScimGroup[] = [];
         for (const row of listed.rows) Resources.push(await groupView(tx, row, base));
         return {
@@ -392,7 +395,7 @@ export function scimUsecases(deps: {
         writeGroup(
           tx,
           p,
-          await groupOr404(tx, id),
+          await groupOr404(tx, p, id),
           groupFields(checked(ScimGroupInputSchema, body, 'Group')),
           'scim.group.replaced',
           base,
@@ -400,7 +403,7 @@ export function scimUsecases(deps: {
       ),
     patchGroup: (p: Provisioner, id: string, body: unknown, base: string) =>
       deps.store.transaction(async tx => {
-        const current = await groupOr404(tx, id),
+        const current = await groupOr404(tx, p, id),
           patch = checked<{ Operations: Parameters<typeof applyGroupPatch>[1] }>(ScimPatchSchema, body, 'PatchOp'),
           members = (await tx.groupMembers(id)).map(m => m.id);
         const next = applyGroupPatch(
@@ -412,7 +415,7 @@ export function scimUsecases(deps: {
     /** Removes the group; its members are re-derived and lose what it gave them. The group-capability rows stay (D85). */
     deleteGroup: (p: Provisioner, id: string) =>
       deps.store.transaction(async tx => {
-        const current = await groupOr404(tx, id),
+        const current = await groupOr404(tx, p, id),
           members = (await tx.groupMembers(id)).map(m => m.id);
         await tx.deleteGroup(id);
         await tx.audit({
@@ -463,7 +466,7 @@ export function usersAdminUsecases(deps: { store: ProvisionStore }) {
       startIndex += page.rows.length;
       if (!page.rows.length || startIndex > page.total) break;
     }
-    const groups = (await tx.listGroups({ startIndex: 1, count: 10_000 })).rows
+    const groups = (await tx.listGroups(persona.organisationId, { startIndex: 1, count: 10_000 })).rows
       .filter(g => g.externalId)
       .map(g => ({ id: g.externalId!, label: g.label }))
       .sort((a, b) => a.label.localeCompare(b.label, 'sv') || a.id.localeCompare(b.id));

@@ -27,8 +27,9 @@ export const userRow = (id: string, organisationId: string, extra: Partial<UserR
   updatedAt: T,
   ...extra,
 });
-export const groupRow = (id: string, extra: Partial<GroupRecord> = {}): GroupRecord => ({
+export const groupRow = (id: string, organisationId: string, extra: Partial<GroupRecord> = {}): GroupRecord => ({
   id,
+  organisationId,
   externalId: 'g:' + id,
   label: 'Group ' + id,
   createdAt: T,
@@ -96,8 +97,9 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
       await store.transaction(async tx => {
         await tx.insertUser(userRow(a, p + '-org'));
         await tx.insertUser(userRow(b, p + '-org'));
-        await tx.insertGroup(groupRow(g1));
-        await tx.insertGroup(groupRow(g2, { externalId: null, label: 'No external id' }));
+        await tx.insertGroup(groupRow(g1, p + '-org'));
+        await tx.insertGroup(groupRow(g2, p + '-org', { externalId: null, label: 'No external id' }));
+        await tx.insertGroup(groupRow(p + '-g3', p + '-elsewhere'));
         await tx.setGroupMembers(g1, [a, b, a]);
         await tx.setGroupMembers(g2, [a]);
       });
@@ -111,14 +113,29 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         expect(await tx.members('g:' + g1)).toEqual([a, b]);
         expect((await tx.findGroup('externalId', 'g:' + g1))?.id).toBe(g1);
         expect((await tx.findGroup('label', 'No external id'))?.id).toBe(g2);
-        const listed = await tx.listGroups({ startIndex: 1, count: 100 }, { attribute: 'label', value: 'Group ' + g1 });
+        const listed = await tx.listGroups(
+          p + '-org',
+          { startIndex: 1, count: 100 },
+          { attribute: 'label', value: 'Group ' + g1 },
+        );
         expect(listed).toMatchObject({ total: 1, rows: [{ id: g1 }] });
+        // Another organisation's group is found for the uniqueness check, but neither read nor listed for this one.
+        expect((await tx.findGroup('externalId', 'g:' + p + '-g3'))?.organisationId).toBe(p + '-elsewhere');
+        expect(await tx.readGroup(p + '-org', p + '-g3')).toBeUndefined();
+        expect((await tx.listGroups(p + '-org', { startIndex: 1, count: 100 })).rows.map(r => r.id)).toEqual([g1, g2]);
+        expect((await tx.listGroups(p + '-elsewhere', { startIndex: 1, count: 100 })).rows.map(r => r.id)).toEqual([
+          p + '-g3',
+        ]);
         await tx.updateGroup(g1, { label: 'Renamed', updatedAt: '2026-11-09T07:00:00.000Z' });
-        expect(await tx.readGroup(g1)).toMatchObject({ label: 'Renamed', externalId: 'g:' + g1 });
+        expect(await tx.readGroup(p + '-org', g1)).toMatchObject({
+          label: 'Renamed',
+          externalId: 'g:' + g1,
+          organisationId: p + '-org',
+        });
         await tx.setGroupMembers(g1, [b]);
         expect((await tx.groupMembers(g1)).map(m => m.id)).toEqual([b]);
         await tx.deleteGroup(g1);
-        expect(await tx.readGroup(g1)).toBeUndefined();
+        expect(await tx.readGroup(p + '-org', g1)).toBeUndefined();
         expect(await tx.userGroups(b)).toEqual([]);
         expect(await tx.userGroups(a)).toEqual([{ id: g2, externalId: null, label: 'No external id' }]);
       });

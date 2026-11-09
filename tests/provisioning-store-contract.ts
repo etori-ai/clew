@@ -10,7 +10,8 @@ import { provisioningUsecases } from '../apps/server/src/modules/people/usecases
  */
 export interface Seed {
   people: Array<{ id: string; organisationId: string }>;
-  groups: Array<{ externalId: string; label: string }>;
+  /** Groups of organisation `org` unless said otherwise. */
+  groups: Array<{ externalId: string; label: string; organisationId?: string }>;
   members: Array<{ group: string; person: string }>;
   groupCapabilities?: GroupCapabilityRule[];
   units?: Array<{ id: string; organisationId: string; label: string }>;

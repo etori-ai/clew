@@ -301,6 +301,28 @@ describe('SCIM groups and derivation', () => {
     expect([...store.state.groups.values()].some(g => g.externalId === 'protected')).toBe(false);
     expect(store.state.groups.get(plain.id)?.externalId).toBeNull();
   });
+  test('a group belongs to the organisation that pushed it: another provisioner neither sees nor changes it, and its externalId stays unique across the installation', async () => {
+    const { scim, p, store } = harness();
+    const elsewhere = { id: 'other', organisationId: 'timra', label: 'Other' };
+    const a = (await scim.createUser(p, anna, BASE)).id;
+    const unit = await scim.createGroup(p, group('unit:skola', 'Bergsåkers skola', [a]), BASE);
+    expect(store.state.groups.get(unit.id)?.organisationId).toBe('sundsvall');
+    await expect(scim.getGroup(elsewhere, unit.id, BASE)).rejects.toMatchObject({ status: 404 });
+    await expect(scim.deleteGroup(elsewhere, unit.id)).rejects.toMatchObject({ status: 404 });
+    await expect(scim.replaceGroup(elsewhere, unit.id, group('unit:skola', 'Taken', []), BASE)).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(
+      scim.patchGroup(elsewhere, unit.id, { schemas: [], Operations: [{ op: 'remove', path: 'members' }] }, BASE),
+    ).rejects.toMatchObject({ status: 404 });
+    expect((await scim.listGroups(elsewhere, {}, BASE)).totalResults).toBe(0);
+    await expect(scim.createGroup(elsewhere, group('unit:skola', 'Same key', []), BASE)).rejects.toMatchObject({
+      status: 409,
+      scimType: 'uniqueness',
+    });
+    expect(store.state.grants.get(a)).toMatchObject({ unitId: 'skola', unitLabel: 'Bergsåkers skola' });
+    expect((await scim.getGroup(p, unit.id, BASE)).members.map(m => m.value)).toEqual([a]);
+  });
   test('refuses an unknown member, a duplicate externalId and an unknown group; lists by externalId and displayName', async () => {
     const { scim, p } = harness();
     const a = (await scim.createUser(p, anna, BASE)).id;

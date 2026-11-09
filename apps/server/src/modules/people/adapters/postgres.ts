@@ -34,6 +34,7 @@ const userColumns = {
 };
 const groupColumns = {
   id: schema.groups.id,
+  organisationId: schema.groups.organisationId,
   externalId: schema.groups.externalId,
   label: schema.groups.label,
   createdAt: schema.groups.createdAt,
@@ -204,16 +205,21 @@ export function postgresProvisionStore(): ProvisionStore {
         .where(eq(schema.groupMembers.personId, personId))
         .orderBy(schema.groups.id);
     },
-    async readGroup(id) {
-      const [row] = await tx.select(groupColumns).from(schema.groups).where(eq(schema.groups.id, id));
+    async readGroup(organisationId, id) {
+      const [row] = await tx
+        .select(groupColumns)
+        .from(schema.groups)
+        .where(and(eq(schema.groups.id, id), eq(schema.groups.organisationId, organisationId)));
       return row && groupRecord(row);
     },
     async findGroup(by, value) {
       const [row] = await tx.select(groupColumns).from(schema.groups).where(eq(groupColumn[by], value));
       return row && groupRecord(row);
     },
-    async listGroups(page, filter) {
-      const where = filter ? eq(groupColumn[filter.attribute], filter.value) : undefined;
+    async listGroups(organisationId, page, filter) {
+      const where = filter
+        ? and(eq(schema.groups.organisationId, organisationId), eq(groupColumn[filter.attribute], filter.value))
+        : eq(schema.groups.organisationId, organisationId);
       const [counted] = await tx
         .select({ total: sql<number>`count(*)::int` })
         .from(schema.groups)

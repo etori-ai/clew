@@ -70,7 +70,7 @@ provisioningContract('postgres', async (): Promise<ProvisioningHarness> => {
         for (const g of seed.groups) {
           const created = await tx
             .insert(schema.groups)
-            .values({ id: prefix + ':' + g.externalId, ...g })
+            .values({ id: prefix + ':' + g.externalId, organisationId: 'org', ...g })
             .onConflictDoNothing()
             .returning({ id: schema.groups.id });
           if (created[0]) createdGroups.push(created[0].id);

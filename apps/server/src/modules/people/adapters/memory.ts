@@ -149,17 +149,19 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
     async userGroups(personId) {
       return byId(groupsOf(personId).map(g => ({ id: g.id, externalId: g.externalId, label: g.label })));
     },
-    async readGroup(id) {
+    async readGroup(organisationId, id) {
       const g = state.groups.get(id);
-      return g && { ...g };
+      return g && g.organisationId === organisationId ? { ...g } : undefined;
     },
     async findGroup(by, value) {
       const g = [...state.groups.values()].find(g => g[by] === value);
       return g && { ...g };
     },
-    async listGroups(p, filter) {
+    async listGroups(organisationId, p, filter) {
       return page(
-        [...state.groups.values()].filter(g => !filter || g[filter.attribute] === filter.value).map(g => ({ ...g })),
+        [...state.groups.values()]
+          .filter(g => g.organisationId === organisationId && (!filter || g[filter.attribute] === filter.value))
+          .map(g => ({ ...g })),
         p,
       );
     },

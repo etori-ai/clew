@@ -42,7 +42,7 @@ A person with no `unit:` or `unit-manager:` membership exists but can do nothing
 docker exec -w /workspace clew-app-1 bun scripts/provisioner-token.ts add metakatalogen --organisation sundsvall --label "Metakatalogen"
 ```
 
-The token is printed once; Clew keeps its digest. `revoke <id>` ends it. The token scopes users to the organisation it was issued for.
+The token is printed once; Clew keeps its digest. `revoke <id>` ends it. The token scopes users and groups to the organisation it was issued for: another organisation's resources do not exist for this client, while `userName` and `externalId` stay unique across the installation.
 
 ## What a provisioner does on every run
 

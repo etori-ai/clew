@@ -43,7 +43,9 @@ test('a person holds several assignments, the units are listed by label, and a g
       { personId: lena, unitId: unitIds[0]!, role: 'employee' },
       { personId: lena, unitId: unitIds[1]!, role: 'manager' },
     ]);
-    await tx.insert(schema.groups).values({ id: group, externalId: group, label: 'Any directory group' });
+    await tx
+      .insert(schema.groups)
+      .values({ id: group, organisationId: 'test', externalId: group, label: 'Any directory group' });
     await tx.insert(schema.groupMembers).values({ groupId: group, personId: lena });
     await tx.insert(schema.groupCapabilities).values({ groupExternalId: group, capability: 'admin.users' });
   });
