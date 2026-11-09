@@ -61,6 +61,8 @@ Within a job, steps are currently independent and prepared from the same fact. T
 
 ## Interface vocabulary
 
+[Interface spaces and navigation](interface-spaces.md) defines placement and return behavior: a page is a destination, a context panel keeps related material beside it, and a focused overlay holds contextual service/review interactions without replacing that destination.
+
 | Term | Meaning |
 |---|---|
 | Card | A visual presentation of a work item, including its summary and available actions. |
@@ -69,6 +71,7 @@ Within a job, steps are currently independent and prepared from the same fact. T
 | Page | A navigable destination such as Home, Calendar, a conversation or a tool page. |
 | View | A presentation of information. Connector-declared views have the supported forms `table`, `list`, `detail` and `text`. |
 | Side panel | The container beside the current page for opened work item details or other views. On narrow screens it can be a drawer. |
+| Focused overlay | A temporary interaction above the current page, shown as the existing sidebar Drawer or corresponding mobile sheet. Catalogue drill-in and confirmation retain their parent. |
 | Tab | An entry for content kept open in the panel. Several tabs may be available through the panel's open-content menu. |
 | Context chip | A visible reference attached to a conversation, identifying the work item, record, proposal or other supported object being discussed. |
 | Tool | A standing entry point in the product to a capability or view, such as the phone book. Qualify an assistant-callable operation as a **model tool**. |

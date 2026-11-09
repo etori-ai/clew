@@ -1,5 +1,5 @@
 import { database, schema } from '@clew/db';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import type { McpResult } from '@clew/contracts';
 import type { McpStore } from '../ports';
 
@@ -21,10 +21,25 @@ export function postgresMcpStore(secrets: {
             await database()
               .select()
               .from(deliveries)
-              .where(and(eq(deliveries.personId, personId), inArray(deliveries.connectionId, ids)))
+              .where(
+                and(
+                  eq(deliveries.personId, personId),
+                  inArray(deliveries.connectionId, ids),
+                  isNull(deliveries.resolvedAt),
+                ),
+              )
               .orderBy(desc(deliveries.createdAt))
               .limit(50)
           ).map(r => ({ ...r, createdAt: r.createdAt.toISOString() })),
+    delivery: async (personId, connectionId, id) => {
+      const [row] = await database()
+        .select()
+        .from(deliveries)
+        .where(
+          and(eq(deliveries.personId, personId), eq(deliveries.connectionId, connectionId), eq(deliveries.id, id)),
+        );
+      return row ? { ...row, createdAt: row.createdAt.toISOString() } : undefined;
+    },
     decision: async (personId, id) => {
       const [r] = await database()
         .select()
@@ -46,6 +61,21 @@ export function postgresMcpStore(secrets: {
                 .insert(deliveries)
                 .values({ ...delivery, personId, createdAt: new Date(delivery.createdAt) })
                 .onConflictDoNothing()
+                .returning({ id: deliveries.id })
+            ).length > 0,
+          resolve: async (personId, connectionId, id, at) =>
+            (
+              await db
+                .update(deliveries)
+                .set({ resolvedAt: new Date(at) })
+                .where(
+                  and(
+                    eq(deliveries.personId, personId),
+                    eq(deliveries.connectionId, connectionId),
+                    eq(deliveries.id, id),
+                    isNull(deliveries.resolvedAt),
+                  ),
+                )
                 .returning({ id: deliveries.id })
             ).length > 0,
           claim: async decision =>

@@ -89,7 +89,7 @@ test.describe('model administration', () => {
       await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Snabb (lokal) är avstängd'));
       expect((await focused(page)).tag).toBe('input');
     });
-    test('Testa says what it found, and the reasoning it settled is a sentence, not a switch (D83)', async ({
+    test('Testa says what it found, and the reasoning it settled is a sentence, not a switch (D84)', async ({
       page,
       api,
     }) => {
@@ -212,7 +212,7 @@ test.describe('model administration', () => {
         .poll(() => announcements(page))
         .toContainEqual(expect.stringContaining('1 modell tillagd, avstängd tills du slår på den'));
       await expect(page.getByRole('link', { name: 'llama3.3:70b' })).toBeVisible();
-      // Each model is tested as it is added (D83); one that does not answer is named in the same announcement.
+      // Each model is tested as it is added (D84); one that does not answer is named in the same announcement.
       await page.getByRole('button', { name: 'Lägg till modell' }).first().click();
       await dialog
         .getByRole('textbox', { name: /^Eller en modell som inte finns i listan|^Modellens id/ })

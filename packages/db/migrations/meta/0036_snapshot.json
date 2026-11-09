@@ -1,5 +1,5 @@
 {
-  "id": "6b439570-dc9c-4528-9e67-9ddf766d8bfc",
+  "id": "81335a3d-e5ba-4dc4-80a1-2a3e07cdb908",
   "prevId": "30a6a687-7b2b-4e8e-8666-6dc0142108b4",
   "version": "7",
   "dialect": "postgresql",
@@ -1665,6 +1665,12 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},
@@ -1912,13 +1918,6 @@
           "notNull": true,
           "default": true
         },
-        "reasoning": {
-          "name": "reasoning",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'provider-default'"
-        },
         "created_by": {
           "name": "created_by",
           "type": "text",
@@ -2012,10 +2011,6 @@
         "model_state": {
           "name": "model_state",
           "value": "\"model\".\"state\" IN ('enabled', 'disabled')"
-        },
-        "model_reasoning": {
-          "name": "model_reasoning",
-          "value": "\"model\".\"reasoning\" IN ('provider-default', 'none')"
         }
       },
       "isRLSEnabled": false

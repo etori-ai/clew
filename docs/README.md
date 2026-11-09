@@ -10,6 +10,8 @@ Read these in order if you are new to the project:
 2. [Architecture overview](architecture/overview.md): the running components, data boundaries and end-to-end read, scan and action flows.
 3. [Implementation status](reference/status.md): what works in this checkout and what remains a fixture, proposal or release gate.
 
+[Interface spaces and navigation](reference/interface-spaces.md) defines where pages, contextual details, service catalogues, Apps and confirmations open, and how people return.
+
 The [vocabulary and entity map](reference/vocabulary.md) defines work items, cards, proposals, conversations and interface containers, and connects those terms to the current code.
 
 [Vision](vision.md) explains the longer-term product direction and the boundary with Eneo. [Personas](personas.md) describe the people and needs behind the design; they are not a list of delivered features.

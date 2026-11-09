@@ -9,6 +9,7 @@ The [vocabulary and entity map](../reference/vocabulary.md) separates work items
 | Page | Question it answers |
 |---|---|
 | [Architecture overview](overview.md) | What runs where, who owns the data, and how does work move through Clew? |
+| [Interface spaces](../reference/interface-spaces.md) | Where should a page, detail, catalogue, App or confirmation open, and where does close return? |
 | [Backend structure](backend-structure.md) | Where is the code, and which dependencies are allowed? |
 | [Integration architecture](integrations.md) | Why does Clew use independent connectors and its own contract? |
 | [Integration paths](integration-paths.md) | Which integration mechanism fits this source and which paths are available? |

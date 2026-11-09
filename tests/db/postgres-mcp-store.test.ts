@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { eq, inArray } from 'drizzle-orm';
 import { database, closeDatabase, schema } from '@clew/db';
 import { postgresMcpStore } from '../../apps/server/src/mcp/adapters/postgres';
+import { mcpResolutionContract } from '../mcp-resolution-contract';
 import { sealSecret, openSecret } from '../../apps/server/src/auth-crypto';
 
 if (!process.env.DATABASE_URL) throw new Error('Run this test in the development container.');
@@ -32,7 +33,9 @@ afterAll(async () => {
     await tx.delete(schema.mcpDeliveries).where(eq(schema.mcpDeliveries.personId, personId));
     await tx.delete(schema.mcpDecisions).where(eq(schema.mcpDecisions.personId, personId));
     await tx.delete(schema.mcpConnections).where(eq(schema.mcpConnections.id, connectionId));
-    await tx.delete(schema.audit).where(inArray(schema.audit.subject, [connectionId, decisionId]));
+    await tx
+      .delete(schema.audit)
+      .where(inArray(schema.audit.subject, [connectionId, decisionId, prefix + '-resolved', prefix + '-rollback']));
     await tx.delete(schema.people).where(eq(schema.people.id, personId));
   });
   if (previousKey === undefined) delete process.env.MASTER_KEY;
@@ -98,4 +101,35 @@ test('MCP decisions claim once, preserve an unknown outcome and encrypt provider
   expect(stored?.result).not.toContain('Private provider receipt');
   const audit = await database().select().from(schema.audit).where(eq(schema.audit.subject, decisionId));
   expect(audit.map(r => r.action).sort()).toEqual(['mcp.approved', 'mcp.succeeded']);
+});
+
+test('MCP resolution is transactional, scoped and retains deduplication and historical links', async () => {
+  const id = prefix + '-resolved';
+  await mcpResolutionContract(store, personId, connectionId, id);
+  const audit = await database().select().from(schema.audit).where(eq(schema.audit.subject, id));
+  expect(audit.map(r => r.action).sort()).toEqual(['mcp.delivered', 'mcp.resolved']);
+  const active = {
+    id: prefix + '-rollback',
+    connectionId,
+    title: 'Provider',
+    text: 'Pending',
+    createdAt: '2026-11-09T10:00:00.000Z',
+  };
+  await store.transaction(async tx => {
+    await tx.deliver(personId, active);
+    await tx.audit(personId, 'mcp.delivered', active.id);
+  });
+  await expect(
+    store.transaction(async tx => {
+      await tx.resolve(personId, connectionId, active.id, '2026-11-09T10:01:00Z');
+      await tx.audit(personId, 'mcp.resolved', connectionId);
+      throw new Error('Rollback');
+    }),
+  ).rejects.toThrow('Rollback');
+  expect((await store.deliveries(personId, [connectionId])).some(d => d.id === active.id)).toBe(true);
+  expect(
+    (await database().select().from(schema.audit).where(eq(schema.audit.subject, connectionId))).some(
+      r => r.action === 'mcp.resolved',
+    ),
+  ).toBe(false);
 });

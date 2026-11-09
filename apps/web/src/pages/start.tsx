@@ -43,6 +43,7 @@ import { errorMessage } from '../query-policy';
 import { areasQuery, assistantQuery, cardViewQuery, threadsQuery, todayQuery, viewQuery } from '../queries';
 import { chatServicesQuery } from '../queries';
 import { ServiceCard } from '../components/service-card';
+import { withServices } from '../service-address';
 import { applyThread } from '../thread-cache';
 import { keys } from '../query-keys';
 import { groupThreads } from '../stream';
@@ -808,8 +809,9 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
                 Från dina tjänster
               </Heading>
               <Button
+                data-service-focus-return
                 label={`Alla tjänster (${servicesQ.data.services.length})`}
-                href="/chat/services"
+                href={withServices(location.pathname, location.search)}
                 variant="secondary"
                 size="sm"
               />

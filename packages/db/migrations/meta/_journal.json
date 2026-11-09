@@ -257,8 +257,15 @@
     {
       "idx": 36,
       "version": "7",
-      "when": 1794207256223,
-      "tag": "0036_model_reasoning",
+      "when": 1794212342573,
+      "tag": "0036_mcp_delivery_resolution",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1794215263418,
+      "tag": "0037_model_reasoning",
       "breakpoints": true
     }
   ]

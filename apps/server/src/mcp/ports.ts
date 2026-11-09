@@ -18,13 +18,16 @@ export interface McpDecision {
 export interface McpTx {
   observe(id: string, key: string): Promise<void>;
   deliver(personId: string, delivery: McpDelivery): Promise<boolean>;
+  resolve(personId: string, connectionId: string, deliveryId: string, at: string): Promise<boolean>;
   claim(decision: McpDecision): Promise<boolean>;
   finish(decision: McpDecision): Promise<void>;
   audit(actor: string, action: string, subject: string): Promise<void>;
 }
 export interface McpStore {
   registrations(personId?: string): Promise<McpRegistration[]>;
+  /** Active attention only; resolved deliveries remain addressable by their original link. */
   deliveries(personId: string, ids: string[]): Promise<McpDelivery[]>;
+  delivery(personId: string, connectionId: string, id: string): Promise<McpDelivery | undefined>;
   decision(personId: string, id: string): Promise<McpDecision | undefined>;
   transaction<T>(run: (tx: McpTx) => Promise<T>): Promise<T>;
 }
