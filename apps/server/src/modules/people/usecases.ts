@@ -190,12 +190,21 @@ export function scimUsecases(deps: {
     const changed = changedKeys(fieldsOf(current), fields),
       at = now();
     if (changed.length) {
+      // A flip of `active` is what an operator reads the audit for, whatever verb carried it (DELETE writes the same);
+      // the verb travels in the details.
+      const flipped = current.enabled !== fields.enabled,
+        recorded = flipped ? (fields.enabled ? 'scim.user.reactivated' : 'scim.user.deactivated') : action;
       await tx.updateUser(current.id, { ...fields, updatedAt: at });
       await tx.audit({
         actor: actorOf(p),
-        action,
+        action: recorded,
         subject: 'person:' + current.id,
-        details: { changed, userName: fields.userName, externalId: fields.externalId },
+        details: {
+          changed,
+          ...(flipped ? { via: action } : {}),
+          userName: fields.userName,
+          externalId: fields.externalId,
+        },
       });
     }
     // Always: silent when nothing moved, and it heals a projection written before provisioning existed.

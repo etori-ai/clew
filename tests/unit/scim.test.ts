@@ -176,8 +176,14 @@ describe('SCIM users', () => {
     expect(same.meta.lastModified).toBe(patched.meta.lastModified);
     await scim.deleteUser(p, id);
     await scim.deleteUser(p, id);
-    expect(audit('person:' + id)).toEqual(['scim.user.created', 'scim.user.replaced', 'scim.user.patched']);
+    // A flip of `active` is audited as deactivated or reactivated whatever verb carried it, with the verb in the details.
+    expect(audit('person:' + id)).toEqual(['scim.user.created', 'scim.user.replaced', 'scim.user.deactivated']);
+    expect(store.state.audit.find(a => a.action === 'scim.user.deactivated')?.details).toMatchObject({
+      via: 'scim.user.patched',
+      changed: ['userName', 'enabled'],
+    });
     await scim.patchUser(p, id, { schemas: [], Operations: [{ op: 'replace', path: 'active', value: true }] }, BASE);
+    expect(audit('person:' + id).at(-1)).toBe('scim.user.reactivated');
     await scim.deleteUser(p, id);
     expect(audit('person:' + id).at(-1)).toBe('scim.user.deactivated');
     await expect(scim.getUser(p, 'missing', BASE)).rejects.toMatchObject({ status: 404 });
