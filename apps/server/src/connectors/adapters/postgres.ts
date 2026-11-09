@@ -16,6 +16,7 @@ export const toRecord = (row: typeof connectors.$inferSelect): ConnectorRecord =
   audience: row.audience,
   scanEnabled: row.scanEnabled,
   toolsEnabled: row.toolsEnabled,
+  header: row.headerHolder,
   capabilities: row.capabilities,
   areas: row.areas,
   manifest: row.manifest ?? null,
@@ -55,11 +56,12 @@ const txOf = (tx: Transaction): ConnectorTx => ({
   async update(id, patch: ConnectorPatch, by, at) {
     const [row] = await tx.select({ version: connectors.version }).from(connectors).where(eq(connectors.id, id));
     if (!row) return false;
-    const { secretChangedAt, manifestAt, ...rest } = patch;
+    const { secretChangedAt, manifestAt, header, ...rest } = patch;
     await tx
       .update(connectors)
       .set({
         ...rest,
+        ...(header !== undefined ? { headerHolder: header } : {}),
         ...(secretChangedAt !== undefined ? { secretChangedAt: new Date(secretChangedAt!) } : {}),
         ...(manifestAt !== undefined ? { manifestAt: manifestAt ? new Date(manifestAt) : null } : {}),
         updatedBy: by,

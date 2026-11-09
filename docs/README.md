@@ -25,6 +25,7 @@ A connector is your independently deployed HTTP service. It translates a source 
 | Define and build a first integration | [Create a connector](guides/creating-a-connector.md) | [Phone book](../connectors/phonebook/README.md) |
 | Map source records, add search and views | [Directory walkthrough](guides/example-custom-directory.md) | [Manifest](../connectors/phonebook/manifest.mjs), [adapter](../connectors/phonebook/directory.mjs) |
 | Show original documents, records, metrics, charts and history | [Document and semantic views](guides/document-and-semantic-views.md) | [Finance fixture](../connectors/finance/manifest.mjs) |
+| Understand who authenticates to whom, and where a write is approved | [Authentication overview](guides/authentication-overview.md) | [Token exchange](../apps/server/src/auth-exchange.ts), [Eneo connector](../connectors/eneo/README.md) |
 | Verify the actor and narrow source access | [Authorization](guides/authorization.md) | [Standalone verifier](../connectors/hello/verification.mjs) |
 | Discover work and add approved actions | [Actions and receipts](guides/actions-and-receipts.md) | [Durable synthetic source](../connectors/reference/README.md) |
 | Coordinate reads, changes and follow-up across systems | [Working across connectors](architecture/working-across-connectors.md) | [Job scenario](../tests/unit/fixture-job.test.ts), [read callback](../connectors/hello/connector.mjs) |
@@ -37,6 +38,8 @@ The [guide index](guides/README.md) separates the minimum read integration from 
 A vendor that already exposes standard MCP does not need to build a Clew connector or supply a Clew manifest. The separate, AI-enabled chat path consumes discovered tools and optional provider-owned MCP Apps. Clew can also run an approved read on a schedule and deliver a separate card when meaningful source evidence changes.
 
 Read [MCP chat services](architecture/mcp-chat-services.md) for the ownership boundary, standard OAuth requirements, delivery flow and implementation map. The [independent poll/status demo](../fixtures/mcp-pulse/README.md) runs this path for an explicitly registered development user. This is a development prototype; OAuth and production hosting remain unfinished. The [provider review](reviews/2026-11-08-mcp-services-and-provider-compatibility.md) distinguishes verified vendor tools from the illustrative poll App.
+
+For tighter native integration, an independent connector can use MCP as its source API. The [MCP-backed connector exploration](reviews/2026-11-09-mcp-backed-native-connectors.md) compares the options using the poll fixture and separates existing support from proposed forms and App handoffs.
 
 ## Develop and operate Clew
 

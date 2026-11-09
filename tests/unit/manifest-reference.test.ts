@@ -55,6 +55,7 @@ describe('the field list', () => {
         'capabilities[].menu.icon',
         'facts[].attributes',
         'delegation.audience',
+        'header.capability',
         'uses',
         'scan',
       ]),
@@ -395,6 +396,7 @@ describe('the renderings', () => {
       'capabilities[].view',
       'facts[]',
       'delegation',
+      'header',
     ]);
     for (const f of reference.fields) expect(f.id).toBe(anchorOf(f.path));
     expect(anchorOf('capabilities[].view.fields[].key')).toBe('field-capabilities-view-fields-key');
@@ -413,7 +415,7 @@ describe('the renderings', () => {
     expect(data.headers.get('access-control-allow-origin')).toBe('*');
     const body = await data.json();
     expect(body.fields.map((f: { path: string }) => f.path)).toEqual(paths);
-    expect(body.sections.length).toBe(6);
+    expect(body.sections.length).toBe(7);
     const redirect = await protocolRoutes.request('http://clew.local/manifest-reference', { redirect: 'manual' });
     expect(redirect.status).toBe(302);
     expect(redirect.headers.get('location')).toBe('/protocol/manifest');

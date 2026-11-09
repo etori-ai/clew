@@ -46,3 +46,6 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Invoice review with documents and attachments](2026-11-08-invoice-review-and-document-walkthrough.md)
 - [MCP services and employee-survey provider compatibility](2026-11-08-mcp-services-and-provider-compatibility.md)
 - [Spike: durable reminders on DBOS Transact instead of Temporal · 2026-11-09](2026-11-09-dbos-spike-durable-reminders.md)
+- [A header owned by a connector: what a content system may give Clew](2026-11-09-header-from-a-connector.md)
+- [Building a Clew connector over an MCP server](2026-11-09-mcp-backed-native-connectors.md)
+- [A Sitevision connector: the header, search and pages from the intranet's CMS · 2026-11-09](2026-11-09-sitevision-connector.md)

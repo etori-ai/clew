@@ -6,7 +6,7 @@ import { LayerProvider } from '@astryxdesign/core/Layer';
 import { Button } from '@astryxdesign/core/Button';
 import { Section } from '@astryxdesign/core/Section';
 import { resolveBranding } from '@clew/ui/branding';
-import { createClewTheme } from '@clew/ui/theme';
+import { createClewTheme, createHeaderBandTheme } from '@clew/ui/theme';
 import { swedish } from '@clew/ui/locale';
 import { APPEARANCE_PREFERENCE_KEY, readAppearancePreference, type ColorMode } from '@clew/ui/appearance-preference';
 import resetCss from '@astryxdesign/core/reset.css?inline';
@@ -215,15 +215,22 @@ function EmbeddedHeader({
     [settings.profile, settings.logoSrc, settings.logoDarkSrc, settings.logoAlt],
   );
   const theme = useMemo(() => createClewTheme(branding), [branding]);
+  const band = useMemo(() => createHeaderBandTheme(branding), [branding]);
   // Astryx's `Theme` writes an unbuilt theme's CSS into the document head, scoped to `[data-astryx-theme]`, and marks
   // `<html>` with that attribute: on the host page that CSS would restyle the page. The element generates the same CSS
   // into its shadow root instead and hands `Theme` the theme as built, which is how a pre-built theme skips injection.
   const styles = useMemo(() => {
     const css = generateThemeCSS(theme);
-    return stylesFor({ name: theme.name, prose: css.prose, component: css.component });
-  }, [theme]);
+    // The band (D88) is a nested theme of its own; its CSS goes into the shadow root the same way.
+    const bandCss = generateThemeCSS(band);
+    return [
+      ...stylesFor({ name: theme.name, prose: css.prose, component: css.component }),
+      ...stylesFor({ name: band.name, prose: bandCss.prose, component: bandCss.component }),
+    ];
+  }, [theme, band]);
   useLayoutEffect(() => onTheme(styles), [styles, onTheme]);
   const built = useMemo(() => ({ ...theme, __built: true }) as typeof theme, [theme]);
+  const builtBand = useMemo(() => ({ ...band, __built: true }) as typeof band, [band]);
   const menu = useMenu(settings);
   const [mode, chooseMode] = useColorMode(settings.appearance);
   const prefersDark = useMediaQuery('(prefers-color-scheme: dark)');
@@ -245,9 +252,16 @@ function EmbeddedHeader({
     <InternationalizationProvider locale="sv-SE" messages={{ 'sv-SE': swedish }}>
       <Theme theme={built} mode={mode}>
         <LayerProvider>
-          {/* What the portal's AppShell (`variant="section"`) paints under its top bar: the surface and a divider. */}
+          {/* What the web app's AppShell (`variant="section"`) paints under its top bar: the surface and a divider. */}
           <Section variant="section" padding={0} dividers={['bottom']}>
-            <SiteHeader menu={menu} selected={selected} logo={branding.logo} end={end} />
+            <SiteHeader
+              menu={menu}
+              selected={selected}
+              location={window.location.href}
+              logo={branding.logo}
+              band={builtBand}
+              end={end}
+            />
           </Section>
         </LayerProvider>
       </Theme>

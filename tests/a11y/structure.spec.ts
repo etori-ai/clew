@@ -35,16 +35,23 @@ test.describe('2.4.2 page titled', () => {
 });
 
 test.describe('1.3.1 and 2.4.6 structure', () => {
-  // No TopNav (the canvas's H1 and H4, the `shell-side-nav` template): the rail is the page's one navigation and carries the product and the person.
+  // The shared header (D88) is two named navigation landmarks in the banner (the heading row with the home link and
+  // the person, then Huvudmeny with the places; a third under the band when the place has pages), and the rail is the
+  // page's own, with Clew's places and conversations.
   for (const path of ['/', '/?area=personal', '/?tab=done', '/calendar'])
-    test(`${path} has one h1, one main and one rail`, async ({ page, api: _ }) => {
+    test(`${path} has one h1, one main, the header's landmarks and one rail`, async ({ page, api: _ }) => {
       await open(page, path);
       await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveCount(1);
       await expect(page.getByRole('main')).toHaveCount(1);
-      await expect(page.getByRole('navigation')).toHaveCount(1);
+      await expect(page.getByRole('navigation')).toHaveCount(3);
       await expect(
-        page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: /Startsidan/ }),
+        page
+          .getByRole('banner')
+          .getByRole('navigation', { name: 'Startsidan' })
+          .getByRole('link', { name: /Startsidan/ }),
       ).toBeVisible();
+      await expect(page.getByRole('banner').getByRole('navigation', { name: 'Huvudmeny' })).toBeVisible();
+      await expect(page.getByRole('navigation', { name: 'Sidonavigering' })).toHaveCount(1);
     });
 
   test('the rail is one navigation landmark of places and conversations (D50), in the drawer on a phone', async ({
@@ -68,7 +75,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
       await expect(rail.getByRole('link', { name: gone, exact: true })).toHaveCount(0);
     await expect(rail.getByRole('button', { name: 'Områden' })).toHaveCount(0);
     await rail.getByRole('link', { name: /^Hem/ }).click();
-    await expect(page.locator('nav a[aria-current="page"]')).toHaveText(/^Hem/);
+    await expect(rail.locator('a[aria-current="page"]')).toHaveText(/^Hem/);
     await page.setViewportSize(phone);
     await expect(page.getByRole('navigation', { name: 'Sidonavigering' })).toHaveCount(0);
     const nav = await openNav(page);

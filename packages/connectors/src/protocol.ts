@@ -326,6 +326,19 @@ export const ConnectorManifestSchema = Type.Object(
         description: 'Implements POST /clew/documents for authorised, versioned binary document reads (D79).',
       }),
     ),
+    header: Type.Optional(
+      object(
+        {
+          capability: Type.String({
+            pattern: '^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$',
+            maxLength: 80,
+            description:
+              "One of this manifest's read capabilities, taking no input and answering a SiteHeaderOutput: the site's name, the places in the band with their own pages, and the logo when the system has one.",
+          }),
+        },
+        "The shared header (D88): this connector gives Clew the header it draws above every page, for the people in the connector's audience, as the content system (Sitevision, SharePoint, WordPress) lists its sections for them. When several enabled connectors declare one, the earliest registered answers. Clew keeps no header of its own beyond its default (the site's name and Start).",
+      ),
+    ),
   },
   {
     additionalProperties: false,

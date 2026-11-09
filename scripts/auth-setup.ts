@@ -259,9 +259,9 @@ try {
     OIDC_CLIENT_ID: 'clew-web',
     OIDC_CLIENT_SECRET: clientSecret,
     PUBLIC_URL: publicUrl,
-    // The portal (apps/portal, D67 item 6) is a second front end on its own port: without it listed, its first
-    // mutation is refused and the person is signed out. An operator's own list is kept.
-    FRONTEND_ORIGINS: existing.FRONTEND_ORIGINS ?? 'http://localhost:3024',
+    // Other front ends on their own origins (D67 item 6): Clew has one front end since D88, so only an operator's own
+    // list is kept.
+    ...(existing.FRONTEND_ORIGINS ? { FRONTEND_ORIGINS: existing.FRONTEND_ORIGINS } : {}),
     MASTER_KEY: master,
     AUTH_LOCAL_HTTP: 'true',
   };

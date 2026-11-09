@@ -48,7 +48,7 @@ sh scripts/a11y.sh menu.spec.ts --timeout 15000         # on the host: the WCAG 
 sh scripts/a11y.sh                                      # the whole WCAG 2.2 AA suite, as the workflow runs it: about eight minutes, not a per-edit check
 ```
 
-Ports on loopback: 3020 web, 3021 Nextcloud (`calendar-admin`), 3022 Mailpit, 3024 the portal, 4040 to 4046 the fixture connectors, 4047 the local fake of Microsoft Graph (`/v1.0`).
+Ports on loopback: 3020 web, 3021 Nextcloud (`calendar-admin`), 3022 Mailpit, 4040 to 4046 the fixture connectors, 4047 the local fake of Microsoft Graph (`/v1.0`).
 
 The durable engine (DBOS Transact, D85) runs inside the BFF and checkpoints to the `dbos` schema of the development database; there is no separate service or UI. Approved executions, reminder/snooze timers, bounded calendar follow-up and scheduled jobs use durable PostgreSQL intent before dispatch. A reminder keeps its absolute due time through an outage; queued/blocked states remain visible. Inspect workflows with SQL (`select workflow_uuid, name, status, executor_id, application_version from dbos.workflow_status order by created_at desc limit 50` through `docker exec clew-postgres-1 psql -U clew clew`) and aggregates with `docker exec -w /workspace clew-app-1 bun scripts/reliability-status.ts`. See [scheduled work](../architecture/scheduled-work.md) and the [operations runbook](reliability-operations.md).
 

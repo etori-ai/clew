@@ -1,11 +1,13 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolveBranding } from '@clew/ui/branding';
+import { siteHeaderDemo } from '../../packages/site-header/demo/plugin';
 
-// Shared by the application and its isolated browser-test build.
-export function webConfig() {
+// Shared by the application and its isolated browser-test build. The intranet stand-in (`/intranat/…`, D87) is served
+// by the dev server only (`apply: 'serve'`); nothing of it is in a build.
+export function webConfig(options: { profile?: string } = {}) {
   return {
-    plugins: [react()],
+    plugins: [react(), siteHeaderDemo({ startHref: '/', profile: options.profile })],
     server: {
       host: '0.0.0.0',
       port: 5173,
@@ -28,5 +30,6 @@ export default defineConfig(({ mode }) => {
     logoSrc: env.VITE_HEADER_LOGO_SRC,
     logoAlt: env.VITE_HEADER_LOGO_ALT,
   });
-  return webConfig();
+  // The intranet stand-in draws the same profile as this build (Neutral unless the build says otherwise, D46).
+  return webConfig({ profile: env.VITE_BRAND_PROFILE?.trim() || 'neutral' });
 });

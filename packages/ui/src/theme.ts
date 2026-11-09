@@ -2,7 +2,7 @@ import { defineTheme } from '@astryxdesign/core/theme';
 import { neutralPalettes, neutralTheme } from '@astryxdesign/theme-neutral';
 import { sundsvallPalette as palette, type Branding } from './branding';
 
-const { red, green, white } = neutralPalettes;
+const { red, green, white, neutral } = neutralPalettes;
 
 /**
  * Every brand inherits Astryx Neutral with shared component overrides (D31 item 8, D39): ChatLayout docks the composer on a sticky
@@ -141,6 +141,42 @@ export function createClewTheme(branding: Branding) {
       '--color-text-accent': 'var(--color-text-primary)',
       '--color-icon-accent': [branding.colors.accent, branding.colors.accentMuted],
       '--focus-outline-color': [branding.colors.accent, branding.colors.accentMuted],
+    },
+  });
+}
+
+/**
+ * The band of the shared header (D88): the installation's accent as the ground with its on-accent text and icons, the
+ * same in both appearances, as the reference draws a dark blue bar on every page. Nested inside the page's theme by
+ * `SiteHeader`, so only the bar changes: Astryx's own selected mark and focus ring swap to the on-accent colour, and
+ * every token a `TopNav` and its items read is set, so nothing of the page's surface shows through. Neutral has no
+ * accent pair of its own in Clew's sense, so its bar is Neutral's accent, a near-black, with white text.
+ */
+export function createHeaderBandTheme(branding: Branding) {
+  const band = branding.colors ? branding.colors.accent : neutral.light[10];
+  const on = branding.colors ? palette.white : neutral.light[100];
+  return defineTheme({
+    name: `clew-header-band-${branding.profile}`,
+    extends: createClewTheme(branding),
+    tokens: {
+      '--color-background-body': band,
+      '--color-background-surface': band,
+      '--color-background-card': band,
+      '--color-background-muted': band,
+      '--color-text-primary': on,
+      '--color-text-secondary': on,
+      '--color-text-accent': on,
+      '--color-icon-primary': on,
+      '--color-icon-secondary': on,
+      '--color-icon-accent': on,
+      '--color-accent': on,
+      '--color-on-accent': band,
+      // The selected item's and a secondary button's ground: a lighter wash of the band, white text still above 4.5:1.
+      '--color-accent-muted': 'color-mix(in srgb, ' + on + ' 18%, ' + band + ')',
+      '--color-neutral': 'color-mix(in srgb, ' + on + ' 18%, ' + band + ')',
+      '--color-border': on,
+      '--color-border-emphasized': on,
+      '--focus-outline-color': on,
     },
   });
 }

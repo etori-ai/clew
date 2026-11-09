@@ -50,6 +50,7 @@ export const actionLabel: Record<string, string> = {
   'connector.audience': 'Vem ser det ändrat',
   'connector.scan': 'Kortutskick ändrat',
   'connector.tools': 'Assistentens verktyg ändrade',
+  'connector.header': 'Sidhuvudet ändrat',
   'connector.menu': 'Verktyg i menyn ändrat',
   'connector.capability': 'Funktioner ändrade',
   'connector.url': 'Adress ändrad',

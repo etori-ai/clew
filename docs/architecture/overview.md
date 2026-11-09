@@ -13,9 +13,7 @@ The [vocabulary and entity map](../reference/vocabulary.md) distinguishes a work
 ```mermaid
 flowchart TB
   Person[Employee] --> Web[Startsidan: React web app]
-  Person -. experimental .-> Portal[Portal: second web app]
   Web -->|Session-authenticated API| Server[Clew server: Node and Hono]
-  Portal -->|Same API| Server
   Server <-->|OIDC login| IdP[Identity provider]
   Server <-->|Intent, grants, audit and results| DB[(PostgreSQL)]
   Server <-->|Dispatch and durable waits| Engine[DBOS engine inside the server, state in PostgreSQL]
@@ -28,8 +26,7 @@ flowchart TB
 | Component | Responsibility | Location |
 |---|---|---|
 | Web app | Employee interface, declared-view rendering, query cache and accessibility behavior. Calls Clew's API. | [apps/web](../../apps/web/) and [packages/ui](../../packages/ui/) |
-| Portal | Experimental alternative frontend using the same server and shared web components. | [apps/portal](../../apps/portal/) |
-| Shared header | Experimental top bar shared by the portal and the intranet: a React component in the portal and a custom element (shadow root, same theme) on the intranet's pages, with the menu from Sitevision (D87). | [packages/site-header](../../packages/site-header/) |
+| Shared header | The top bar of the web app and of the intranet: a React component above the web app's rail and a custom element (shadow root, same theme) on the intranet's pages. Its places, pages, name and logo come from the connector whose manifest declares a `header` capability (D88); the intranet's embed may also list its pages from Sitevision or WordPress (D87). | [packages/site-header](../../packages/site-header/) |
 | Server/BFF | Browser-facing API, identity, capability dispatch, conversations, decisions, connector/model administration and background coordination. BFF means backend for frontend. | [apps/server](../../apps/server/) |
 | PostgreSQL | Authoritative Clew state: users/grants, configuration, threads, approvals, audit, source evidence and durable delivery intent. | [Database schema and migrations](../../packages/db/src/) |
 | DBOS Transact | Durable workflows for approved executions, timers, follow-up and jobs ([D85](../decisions/D85-dbos-transact-replaces-temporal-as-the-durable-engine.md)). The engine runs inside the server process and checkpoints to the `dbos` schema of Clew's database; there is no separate service. | [Engine and workflows](../../apps/server/src/dbos/) |

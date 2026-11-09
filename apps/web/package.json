@@ -11,6 +11,7 @@
   "dependencies": {
     "@clew/calendar": "workspace:*",
     "@clew/contracts": "workspace:*",
+    "@clew/site-header": "workspace:*",
     "@clew/ui": "workspace:*",
     "@tanstack/react-query": "5.105.3",
     "react": "19.3.1",

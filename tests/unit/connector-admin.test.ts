@@ -578,3 +578,96 @@ describe('authoritative refresh without rebuilding unchanged connectors', () => 
     expect(w.registry.visible(hillevi, 'hello')).toBe(false);
   });
 });
+
+/** A connector that can give the shared header (D88): one read without input, named by the manifest's `header`. */
+const headerConnector = (id: string, name: string): Connector => ({
+  id,
+  kind: 'passthrough',
+  source: name,
+  areas: [],
+  header: `${id}.header`,
+  capabilities: [
+    {
+      name: `${id}.header`,
+      kind: 'read',
+      title: 'Sidhuvudets platser',
+      description: 'Platserna i sidhuvudet.',
+      input: { type: 'object', properties: {}, additionalProperties: false } as never,
+      output: { type: 'object' } as never,
+      model: false,
+      scope: {},
+      run: async () => ({ site: { name, href: '/' }, items: [{ id: 'start', label: 'Start', href: '/' }] }),
+    },
+  ],
+  uses: [],
+});
+describe('the shared header is given by one chosen connector (D88)', () => {
+  test('an administrator chooses the holder on its page; choosing another takes it over with an audit row on both, and a connector without the capability is refused', async () => {
+    const { admin, registry, store, reconcile } = world();
+    await syncBundledRows(reconcile);
+    for (const [id, name] of [
+      ['intranet', 'Intranätet'],
+      ['sharepoint', 'SharePoint'],
+    ] as const) {
+      registry.register(headerConnector(id, name));
+      registry.govern(id, { ...registry.governance('finance'), state: 'enabled', audience: { mode: 'all' } });
+      await store.transaction(tx =>
+        tx.insert({
+          id,
+          bundled: true,
+          url: null,
+          secret: null,
+          state: 'enabled',
+          manifest: null,
+          health: { status: 'ok', at: T0 },
+          createdBy: 'system:boot',
+          at: T0,
+        }),
+      );
+    }
+    // A candidate gives nothing until it is chosen.
+    expect((await admin.read(mikael, 'intranet')).headerCapability).toBe('intranet.header');
+    expect((await admin.read(mikael, 'intranet')).header).toBe(false);
+    expect(
+      await registry.header({
+        id: 'hassan',
+        name: 'Hassan',
+        unitId: 'unit-skola',
+        unitLabel: 'Skolan',
+        role: 'employee',
+      }),
+    ).toBeNull();
+    const chosen = await admin.update(mikael, 'intranet', { header: true });
+    expect(chosen.header).toBe(true);
+    expect(registry.governance('intranet').header).toBe(true);
+    expect(actions(store, 'intranet')).toEqual(['connector.header']);
+    expect(
+      (
+        await registry.header({
+          id: 'hassan',
+          name: 'Hassan',
+          unitId: 'unit-skola',
+          unitLabel: 'Skolan',
+          role: 'employee',
+        })
+      )?.connector.id,
+    ).toBe('intranet');
+    // Choosing another takes it over in the same transaction, with the audit saying who took it.
+    const taken = await admin.update(mikael, 'sharepoint', { header: true });
+    expect(taken.header).toBe(true);
+    expect((await admin.read(mikael, 'intranet')).header).toBe(false);
+    expect(registry.governance('intranet').header).toBeUndefined();
+    expect(registry.governance('sharepoint').header).toBe(true);
+    expect(store.audit.filter(a => a.action === 'connector.header').map(a => [a.subject, a.details])).toEqual([
+      ['connector:intranet', { to: true }],
+      ['connector:sharepoint', { to: true, from: 'intranet' }],
+      ['connector:intranet', { to: false, takenBy: 'sharepoint' }],
+    ]);
+    expect((await admin.list(mikael)).filter(c => c.header).map(c => c.id)).toEqual(['sharepoint']);
+    // Giving it up leaves Clew's default; a connector whose manifest names no header capability cannot take it.
+    await admin.update(mikael, 'sharepoint', { header: false });
+    expect((await admin.list(mikael)).filter(c => c.header)).toEqual([]);
+    await expect(admin.update(mikael, 'finance', { header: true })).rejects.toThrow('kan inte ge sidhuvudet');
+    expect(actions(store, 'finance')).toEqual([]);
+  });
+});

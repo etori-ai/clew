@@ -1,6 +1,6 @@
 # D67 · The portal is a second web app over the same server, drawn as the product owner's proof of concept draws it
 
-**Status:** proposed, built 2026-11-06 as an experiment beside the web app; nothing in `apps/web` or the server changed for it; the top bar is the header shared with the intranet and Clew's places are a `SideNav` since [D87](D87-one-header-shared-by-the-portal-and-the-intranet.md) · **Date:** 2026-11-06 · **Area:** ui, product
+**Status:** superseded by [D88](D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md) on 2026-11-09: the product owner decided that Clew has one front end, and `apps/portal` was removed; built 2026-11-06 as an experiment beside the web app; the top bar is the header shared with the intranet and Clew's places are a `SideNav` since [D87](D87-one-header-shared-by-the-portal-and-the-intranet.md) · **Date:** 2026-11-06 · **Area:** ui, product
 
 **Decision.** The product owner's proof of concept at https://start.sundsvall.dev/portal/start (reviewed in
 [the review of the same day](../reviews/2026-11-06-startsidan-poc-against-clews-core.md)) is built as `apps/portal`, a

@@ -3,9 +3,9 @@ import { resolve } from 'node:path';
 import type { Plugin } from 'vite';
 
 /**
- * A stand-in for the intranet in the portal's dev server (D87): `/intranat/…` answers with a page Clew does not render,
+ * A stand-in for the intranet in the web app's dev server (D87, D88): `/intranat/…` answers with a page Clew does not render,
  * carrying the `<site-header>` embed from source, and `/site-menu.json` answers with the fixture menu. Production has
- * the two sites behind one domain (`/portal` and `/intranat`); here both are the portal's origin, so the header can be
+ * the two sites behind one domain (Startsidan and `/intranat`); here both are the web app's origin, so the header can be
  * compared by clicking between them. `/rest-api/1/1/<id>/headless` answers as Sitevision's Model REST API would, from
  * the demo tree: the public pages to anyone, and the rest to a signed-in visitor. Signed in means signed in to Clew,
  * read from the BFF with the visitor's cookie, as an intranet with single sign-on would know the same person; without
@@ -13,7 +13,7 @@ import type { Plugin } from 'vite';
  * would, and `/intranat/?source=wordpress` makes the element read them through the WordPress source. Development only (`apply: 'serve'`); nothing of it is in a build. No imports from
  * the package's TypeScript: this file is loaded by the Vite configuration, outside the app's bundler.
  */
-export function siteHeaderDemo(options: { startHref?: string; bff?: string } = {}): Plugin {
+export function siteHeaderDemo(options: { startHref?: string; bff?: string; profile?: string } = {}): Plugin {
   const embed = resolve(import.meta.dirname, '../src/embed.tsx');
   const page = resolve(import.meta.dirname, 'index.html');
   const fixture = resolve(import.meta.dirname, '../fixtures/site-menu.json');
@@ -180,6 +180,8 @@ export function siteHeaderDemo(options: { startHref?: string; bff?: string } = {
                   : `/@fs${embed}`,
               )
               .replace('%VISITOR%', visitor)
+              // The same branding profile as the web app it stands beside (D88), so both sites draw one header.
+              .replace('%PROFILE%', quoted(options.profile ?? 'sundsvall'))
               .replace(
                 'source="sitevision" source-root="%ROOT%"',
                 new URLSearchParams((req.url ?? '').split('?')[1]).get('source') === 'wordpress'

@@ -26,8 +26,6 @@ services:
     ports:
       # Only the Vite dev server is published, on loopback. It proxies /api to the BFF inside the container.
       - "127.0.0.1:3020:5173"
-      # The portal (D67), a second Vite app over the same BFF.
-      - "127.0.0.1:3024:5174"
     extra_hosts:
       - "keycloak.orb.local:host-gateway"
     environment:
@@ -220,6 +218,15 @@ services:
         condition: service_started
     ports:
       - "127.0.0.1:4046:4046"
+  # The intranet (D88): the connector that gives Clew its shared header, standing in for the content system an
+  # installation lists its sections from. No state of its own. 4049: 4048 is the Qlik connector's.
+  intranet:
+    <<: *fixture
+    working_dir: /workspace/connectors/intranet
+    volumes:
+      - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
+    ports:
+      - "127.0.0.1:4049:4049"
 
 volumes:
   node_modules:

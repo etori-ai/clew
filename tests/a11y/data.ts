@@ -5,6 +5,7 @@ import type {
   ProviderDetail,
   ProviderSummary,
   ProviderTestReport,
+  SiteHeaderView,
 } from '@clew/contracts';
 import type {
   Area,
@@ -756,6 +757,7 @@ const summary = (values: Partial<ConnectorSummary> & Pick<ConnectorSummary, 'id'
   audience: { mode: 'all' },
   scanEnabled: true,
   toolsEnabled: true,
+  header: false,
   registered: true,
   counts: { capabilities: 5, execute: 2, tools: 3 },
   manifestAt: NOW,
@@ -811,6 +813,8 @@ export const connectorDetail = (
   ...c,
   protocol: 1,
   scan: true,
+  // The economy system declares a header capability in the suite, so its page offers the switch (D88).
+  headerCapability: c.id === 'finance' ? 'finance.header' : null,
   createdBy: 'person:mikael',
   updatedBy: 'person:mikael',
   capabilities: [
@@ -1027,3 +1031,10 @@ export const units = [
   { id: 'unit-omsorg', label: 'Hemtjänst Centrum' },
   { id: 'unit-it', label: 'IT och digitalisering' },
 ];
+
+/** The shared header (D88) as the suite draws it: Clew's default, no connector behind it. */
+export const siteHeader = (): SiteHeaderView => ({
+  menu: { version: 1, site: { name: 'Startsidan', href: '/' }, items: [{ id: 'start', label: 'Start', href: '/' }] },
+  logo: null,
+  source: null,
+});

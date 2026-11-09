@@ -271,6 +271,8 @@ export const connectors = pgTable(
     audience: jsonb('audience').$type<ConnectorAudience>().notNull().default({ mode: 'all' }),
     scanEnabled: boolean('scan_enabled').notNull().default(true),
     toolsEnabled: boolean('tools_enabled').notNull().default(true),
+    // The one connector that gives Clew its shared header (D88), chosen by an administrator; the use case keeps it to one row.
+    headerHolder: boolean('header_holder').notNull().default(false),
     // Per capability: the narrowing switches, and `menu: true` when its view is in the menu (D40).
     capabilities: jsonb('capabilities')
       .$type<Record<string, { enabled?: false; model?: false; menu?: true }>>()

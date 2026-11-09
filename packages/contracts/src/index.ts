@@ -1171,6 +1171,8 @@ export const ConnectorPatchInput = Type.Partial(
     audience: ConnectorAudienceSchema,
     scanEnabled: Type.Boolean(),
     toolsEnabled: Type.Boolean(),
+    /** The shared header (D88): true makes this connector the one that gives it, taking it from the previous holder; false gives it up. */
+    header: Type.Boolean(),
     capabilities: Type.Record(Type.String({ maxLength: 80 }), CapabilitySwitchSchema),
     url: connectorUrl,
     /** Views in the menu (D40), by capability name: true puts the view under Verktyg, false takes it out. */
@@ -1244,6 +1246,8 @@ export interface ConnectorSummary {
   audience: ConnectorAudience;
   scanEnabled: boolean;
   toolsEnabled: boolean;
+  /** The connector that gives Clew its shared header (D88): at most one row holds it. */
+  header: boolean;
   /** Registered in the live registry right now (a remote draft with no manifest is not). */
   registered: boolean;
   counts: { capabilities: number; execute: number; tools: number };
@@ -1261,6 +1265,8 @@ export interface AuditEntryView {
 export interface ConnectorDetail extends ConnectorSummary {
   protocol: number | null;
   scan: boolean;
+  /** The read the manifest names as the header's source (D88), or null when the connector cannot give one. */
+  headerCapability: string | null;
   createdBy: string;
   updatedBy: string;
   capabilities: ConnectorCapabilityView[];
@@ -1689,5 +1695,45 @@ export interface ManifestReference {
   fields: ReferenceField[];
   rules: ReferenceRule[];
   recipes: ReferenceRecipe[];
+}
+/**
+ * The shared header (D87, D88): what a connector answers from its `header` capability and what the web app draws above
+ * its rail. The menu has the shape `@clew/site-header` reads (`SiteMenu`): the site's name and address, then the places
+ * in the band; a place's `children` are the row under the band while the place is current. An address is a path on
+ * Clew's origin (`/calendar`) or an http(s) address (the intranet's sections). Ids are stable keys a host marks the
+ * current place by. The logo, when the connector has one, is an https address or a path on Clew's origin.
+ */
+const siteLabel = Type.String({ minLength: 1, maxLength: 60, pattern: '^[^\\r\\n]+$' });
+const siteHref = Type.String({ minLength: 1, maxLength: 500, pattern: '^(/(?!/)[^\\s\\\\]*|https?://[^\\s\\\\]+)$' });
+const siteId = Type.String({ minLength: 1, maxLength: 60, pattern: '^[a-z0-9][a-z0-9-]*$' });
+export const SiteMenuLinkSchema = object({ id: siteId, label: siteLabel, href: siteHref });
+export type SiteMenuLink = Static<typeof SiteMenuLinkSchema>;
+export const SiteMenuPlaceSchema = object({
+  id: siteId,
+  label: siteLabel,
+  href: siteHref,
+  children: Type.Optional(Type.Array(SiteMenuLinkSchema, { maxItems: 20 })),
+});
+export type SiteMenuPlace = Static<typeof SiteMenuPlaceSchema>;
+export const SiteHeaderOutputSchema = object(
+  {
+    site: object({ name: siteLabel, href: siteHref }),
+    items: Type.Array(SiteMenuPlaceSchema, { minItems: 1, maxItems: 12 }),
+    logo: Type.Optional(
+      object({
+        src: Type.String({ minLength: 1, maxLength: 500, pattern: '^(/(?!/)[^\\s\\\\]*|https://[^\\s\\\\]+)$' }),
+        alt: siteLabel,
+      }),
+    ),
+  },
+  "What a connector's header capability answers (D88): the site's name and address, the places with their own pages, and the logo when the system has one. Clew validates it and draws it on every page for the people in the connector's audience.",
+);
+export type SiteHeaderOutput = Static<typeof SiteHeaderOutputSchema>;
+/** What `GET /api/header` answers a signed-in person: the header their connector gives them, or Clew's default with Start alone. */
+export interface SiteHeaderView {
+  menu: { version: 1; site: { name: string; href: string }; items: SiteMenuPlace[] };
+  logo: { src: string; alt: string } | null;
+  /** The connector the header came from, or null for the default. */
+  source: { id: string; label: string } | null;
 }
 export type { McpTool, McpResult, McpWatch, McpRegistration, McpDelivery, McpService, McpView } from './mcp';

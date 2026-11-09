@@ -31,6 +31,8 @@ export const FIXTURES: Array<[id: string, port: number]> = [
   ['communication', 4043],
   ['timesheet', 4044],
   ['payroll', 4046],
+  // The intranet (D88): the connector that gives Clew its shared header.
+  ['intranet', 4049],
 ];
 const secret = process.env.CLEW_DEV_CONNECTOR_SECRET;
 if (!secret) {

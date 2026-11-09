@@ -49,7 +49,7 @@ export interface AdminDeps {
 }
 export const governanceOf = (
   r: Pick<ConnectorRecord, 'state' | 'audience' | 'scanEnabled' | 'toolsEnabled' | 'capabilities'> &
-    Partial<Pick<ConnectorRecord, 'ordinal' | 'areas'>>,
+    Partial<Pick<ConnectorRecord, 'ordinal' | 'areas' | 'header'>>,
 ): Governance => ({
   state: r.state,
   audience: r.audience,
@@ -58,6 +58,7 @@ export const governanceOf = (
   capabilities: r.capabilities,
   ...(r.areas && Object.keys(r.areas).length ? { areas: r.areas } : {}),
   ...(r.ordinal ? { ordinal: r.ordinal } : {}),
+  ...(r.header ? { header: true } : {}),
 });
 const isManifest = (value: unknown): value is ConnectorManifest =>
   !!value && typeof value === 'object' && Array.isArray((value as ConnectorManifest).capabilities);
@@ -161,6 +162,7 @@ export function connectorUsecases(deps: AdminDeps) {
       audience: row.audience,
       scanEnabled: row.scanEnabled,
       toolsEnabled: row.toolsEnabled,
+      header: row.header,
       registered: !!live,
       counts: { capabilities: caps.length, execute: caps.filter(c => c.kind === 'execute').length, tools },
       manifestAt: row.manifestAt,
@@ -175,6 +177,7 @@ export function connectorUsecases(deps: AdminDeps) {
       ...summary(row),
       protocol: m?.protocol ?? null,
       scan: m?.scan ?? false,
+      headerCapability: m?.header?.capability ?? registry.connector(row.id)?.header ?? null,
       createdBy: row.createdBy,
       updatedBy: row.updatedBy,
       capabilities: (m?.capabilities ?? []).map(c => ({
@@ -305,6 +308,20 @@ export function connectorUsecases(deps: AdminDeps) {
       next.toolsEnabled = patch.toolsEnabled;
       changes.push({ action: 'connector.tools', details: { to: patch.toolsEnabled } });
     }
+    // The shared header (D88) is exclusive: turning it on here takes it from the connector that held it, in the same transaction.
+    let previousHolder: ConnectorRecord | undefined;
+    if (patch.header !== undefined && patch.header !== row.header) {
+      if (patch.header && !(m?.header?.capability ?? registry.connector(row.id)?.header))
+        throw new InputError(
+          'Anslutningen kan inte ge sidhuvudet: dess beskrivning pekar inte ut någon förmåga för det.',
+        );
+      next.header = patch.header;
+      if (patch.header) previousHolder = (await store.list()).find(r => r.header && r.id !== id);
+      changes.push({
+        action: 'connector.header',
+        details: { to: patch.header, ...(previousHolder ? { from: previousHolder.id } : {}) },
+      });
+    }
     if (patch.capabilities !== undefined) {
       const merged = { ...row.capabilities };
       // The two switches are replaced as sent; whether the view is in the menu is its own question (below) and stays.
@@ -368,7 +385,18 @@ export function connectorUsecases(deps: AdminDeps) {
       await tx.update(id, next, by, at);
       for (const c of changes)
         await tx.writeAudit({ actor: by, action: c.action, subject: 'connector:' + id, at, details: c.details });
+      if (previousHolder) {
+        await tx.update(previousHolder.id, { header: false }, by, at);
+        await tx.writeAudit({
+          actor: by,
+          action: 'connector.header',
+          subject: 'connector:' + previousHolder.id,
+          at,
+          details: { to: false, takenBy: id },
+        });
+      }
     });
+    if (previousHolder) applyLive((await store.read(previousHolder.id))!);
     const updated = (await store.read(id))!;
     applyLive(updated);
     return detail(updated);

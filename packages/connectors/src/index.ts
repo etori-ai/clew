@@ -25,7 +25,14 @@ import type {
 import type { Figure } from './protocol';
 import { menuEligible, menuRowOf } from './views';
 import { viewOutputProblem } from './views';
-import { DocumentBundleSchema, MAX_DOCUMENT_BYTES, type DocumentRequest, type DocumentContent } from '@clew/contracts';
+import {
+  DocumentBundleSchema,
+  MAX_DOCUMENT_BYTES,
+  SiteHeaderOutputSchema,
+  type DocumentRequest,
+  type DocumentContent,
+  type SiteHeaderOutput,
+} from '@clew/contracts';
 import { Value } from '@sinclair/typebox/value';
 import { connectorProblems } from './validation';
 export {
@@ -198,6 +205,8 @@ export interface Connector {
   facts?: FactDeclaration[];
   /** The connector's triggers: what it wants to push for this actor right now. Deterministic, no model. */
   scan?: (actor: Actor, clew: Clew) => Promise<ThreadDraft[] | ScanObservation>;
+  /** The read capability that answers the shared header (D88), when this connector gives Clew one. */
+  header?: string;
 }
 
 export class CapabilityError extends Error {
@@ -224,6 +233,8 @@ export interface Governance {
   areas?: Record<string, AreaOverride>;
   /** The row's place in the registration order (D71), for the hue of the system's mark; absent for Clew's own. */
   ordinal?: number;
+  /** The connector that gives Clew its shared header (D88): an administrator's explicit choice, one row at a time. */
+  header?: boolean;
 }
 export const openGovernance = (): Governance => ({
   state: 'enabled',
@@ -737,6 +748,34 @@ export class Registry {
       source: found.connector.source,
       chip,
     } as PanelViewSpec;
+  }
+  /**
+   * The shared header a person gets (D88): the answer of the one connector an administrator chose to give it
+   * (`Governance.header`), when it is enabled, the person is in its audience and may call its header capability, checked
+   * against the protocol's shape. Exclusive, never merged and never inferred: no holder, a person outside the holder's
+   * audience, an answer out of shape or a connector that does not answer all give null, and the page draws Clew's
+   * default; a refusal is reported through `onRefused`. The call is a read as the person: the content system lists what
+   * they may see.
+   */
+  async header(
+    actor: Actor,
+    context: RunContext = {},
+  ): Promise<{ connector: Connector; output: SiteHeaderOutput } | null> {
+    const holder = this.list().find(c => c.header && this.governance(c.id).header === true);
+    if (!holder || !this.visible(actor, holder.id) || !this.allowed(actor, holder.header!)) return null;
+    try {
+      const output = await this.run<unknown>(actor, holder.header!, {}, context);
+      if (Value.Check(SiteHeaderOutputSchema, output)) return { connector: holder, output };
+      const problem = [...Value.Errors(SiteHeaderOutputSchema, output)][0];
+      this.options.onRefused?.(
+        holder.id,
+        'header',
+        `answer is not a SiteHeaderOutput: ${problem?.path ?? '/'} ${problem?.message ?? ''}`.trim(),
+      );
+    } catch (error) {
+      this.options.onRefused?.(holder.id, 'header', error instanceof Error ? error.message : String(error));
+    }
+    return null;
   }
   /**
    * The menu rows a person gets (D40): every view an administrator put in the menu, of a capability the person may call

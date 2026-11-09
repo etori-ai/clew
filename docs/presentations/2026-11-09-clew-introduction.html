@@ -1,0 +1,642 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Clew, läget i november</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a thread (clew = nystan) runs down the left edge and ties the sections together; a sticky
+   contents rail on wide screens, one column on a phone. Each section is one "bild" when presenting. */
+:root {
+  --paper: #f7f7f4;
+  --paper-2: #eeefe9;
+  --ink: #1b2129;
+  --ink-2: #4a5360;
+  --ink-3: #7a8390;
+  --rule: #d7dad2;
+  --thread: #1d4f91;
+  --thread-soft: #dce6f5;
+  --built: #1d6b47;
+  --built-soft: #dcefe3;
+  --partial: #9a5b00;
+  --partial-soft: #fbead0;
+  --planned: #5c6572;
+  --planned-soft: #e6e8e3;
+  --open: #8a2f3d;
+  --open-soft: #f6dfe2;
+  --code-bg: #ecefe9;
+  --display: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --body: "Public Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #15191f; --paper-2: #1d2229; --ink: #e8eae4; --ink-2: #b3b9c2; --ink-3: #828a95;
+    --rule: #2f363f; --thread: #8db1ec; --thread-soft: #1f2d44; --built: #7fcfa3; --built-soft: #15301f;
+    --partial: #f0b86a; --partial-soft: #3a2a10; --planned: #a9b1bc; --planned-soft: #262c34;
+    --open: #ec93a0; --open-soft: #3b1d23; --code-bg: #1c2128; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #15191f; --paper-2: #1d2229; --ink: #e8eae4; --ink-2: #b3b9c2; --ink-3: #828a95;
+  --rule: #2f363f; --thread: #8db1ec; --thread-soft: #1f2d44; --built: #7fcfa3; --built-soft: #15301f;
+  --partial: #f0b86a; --partial-soft: #3a2a10; --planned: #a9b1bc; --planned-soft: #262c34;
+  --open: #ec93a0; --open-soft: #3b1d23; --code-bg: #1c2128; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  margin: 0; background: var(--paper); color: var(--ink);
+  font-family: var(--body); font-size: 17px; line-height: 1.55;
+  padding-block: 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+a { color: var(--thread); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible { outline: 3px solid var(--thread); outline-offset: 2px; border-radius: 2px; }
+.page { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 48px; }
+@media (max-width: 900px) { .page { grid-template-columns: minmax(0, 1fr); gap: 0; } }
+
+/* contents rail */
+.rail { position: sticky; top: env(safe-area-inset-top, 0px); align-self: start; padding-block: 40px 24px; font-size: 13.5px; }
+.rail .brand { font-family: var(--display); font-size: 22px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 4px; }
+.rail .date { color: var(--ink-3); font-family: var(--mono); font-size: 12px; margin: 0 0 20px; }
+.rail ol { list-style: none; margin: 0; padding: 0; border-left: 2px solid var(--rule); }
+.rail li a { display: block; padding: 5px 0 5px 14px; color: var(--ink-2); text-decoration: none; margin-left: -2px; border-left: 2px solid transparent; }
+.rail li a:hover { color: var(--ink); }
+.rail li a[aria-current="true"] { color: var(--thread); border-left-color: var(--thread); font-weight: 600; }
+.rail .hint { color: var(--ink-3); margin-top: 20px; font-size: 12.5px; line-height: 1.45; }
+.rail kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--rule); border-radius: 4px; padding: 0 5px; background: var(--paper-2); }
+@media (max-width: 900px) { .rail { position: static; padding-block: 28px 8px; } .rail ol { display: flex; flex-wrap: wrap; gap: 2px 12px; border: 0; } .rail li a { padding: 4px 0; border: 0; margin: 0; } .rail li a[aria-current="true"] { border: 0; } .rail .hint { display: none; } }
+
+/* sections */
+main { min-width: 0; }
+section { padding-block: 56px 48px; border-top: 1px solid var(--rule); scroll-margin-top: 12px; }
+section:first-of-type { border-top: 0; padding-top: 44px; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--thread); margin: 0 0 12px; display: flex; align-items: center; gap: 10px; }
+.eyebrow::before { content: ""; width: 28px; height: 2px; background: var(--thread); display: inline-block; }
+h1, h2, h3 { font-family: var(--display); font-weight: 600; letter-spacing: -0.015em; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(38px, 6vw, 64px); line-height: 1.02; max-width: 16ch; }
+h2 { font-size: clamp(28px, 3.6vw, 40px); line-height: 1.1; margin-bottom: 18px; }
+h3 { font-size: 20px; line-height: 1.25; margin-bottom: 8px; }
+.lede { font-size: 21px; line-height: 1.45; color: var(--ink-2); max-width: 60ch; margin: 22px 0 0; }
+p { max-width: 68ch; margin: 0 0 14px; }
+p.note { color: var(--ink-2); font-size: 15px; }
+ul, ol.steps { max-width: 72ch; }
+li { margin-bottom: 6px; }
+strong { font-weight: 600; }
+code { font-family: var(--mono); font-size: 0.86em; background: var(--code-bg); padding: 1px 5px; border-radius: 3px; }
+pre { font-family: var(--mono); font-size: 13px; line-height: 1.5; background: var(--code-bg); border: 1px solid var(--rule); padding: 16px 18px; overflow-x: auto; border-radius: 6px; margin: 0; }
+pre code { background: none; padding: 0; font-size: inherit; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px 32px; margin-top: 20px; }
+.cols > * { min-width: 0; }
+.quiet { color: var(--ink-3); }
+
+/* title */
+.title-meta { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 28px; font-family: var(--mono); font-size: 13px; color: var(--ink-2); }
+
+/* four questions */
+.four { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; margin-top: 24px; }
+.four div { border-top: 3px solid var(--thread); padding-top: 12px; min-width: 0; }
+.four .q { font-family: var(--display); font-size: 26px; font-weight: 600; line-height: 1.15; margin: 0 0 8px; }
+.four p { font-size: 15.5px; color: var(--ink-2); margin: 0; }
+
+/* two-column is / is not */
+.isnot { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px 40px; margin-top: 8px; }
+.isnot ul { padding-left: 20px; margin: 8px 0 0; }
+
+/* journey */
+ol.steps { list-style: none; counter-reset: s; padding: 0; margin: 20px 0 0; display: grid; gap: 14px; }
+ol.steps li { counter-increment: s; display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 14px; align-items: start; margin: 0; }
+ol.steps li::before { content: counter(s); font-family: var(--display); font-size: 28px; font-weight: 600; color: var(--thread); line-height: 1; padding-top: 2px; font-variant-numeric: tabular-nums; }
+ol.steps li .who { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-3); display: block; margin-bottom: 2px; }
+
+/* status table */
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 0 0 18px; font-size: 14px; color: var(--ink-2); }
+.badge { display: inline-block; font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.03em; padding: 2px 8px; border-radius: 999px; white-space: nowrap; vertical-align: middle; }
+.b-built { background: var(--built-soft); color: var(--built); }
+.b-partial { background: var(--partial-soft); color: var(--partial); }
+.b-planned { background: var(--planned-soft); color: var(--planned); }
+.b-open { background: var(--open-soft); color: var(--open); }
+.tablewrap { overflow-x: auto; margin-top: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 15px; }
+th, td { text-align: left; vertical-align: top; padding: 10px 14px 10px 0; border-top: 1px solid var(--rule); }
+th { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-3); font-weight: 500; border-top: 0; padding-top: 0; }
+td:first-child { font-weight: 600; white-space: nowrap; }
+td .badge { margin-top: 1px; }
+.status td:nth-child(2) { min-width: 120px; }
+
+/* architecture diagram */
+.arch { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 22px; }
+.box { border: 1.5px solid var(--rule); border-radius: 8px; padding: 12px 14px; min-width: 0; background: var(--paper); }
+.box .k { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-3); display: block; margin-bottom: 4px; }
+.box .n { font-weight: 600; display: block; }
+.box .d { font-size: 13.5px; color: var(--ink-2); display: block; margin-top: 4px; line-height: 1.4; }
+.box.core { border-color: var(--thread); background: var(--thread-soft); }
+.box.ext { border-style: dashed; }
+.archrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.archlabel { font-family: var(--mono); font-size: 12px; color: var(--ink-3); margin: 14px 0 6px; }
+
+/* manifest */
+.manifest { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 28px; margin-top: 20px; align-items: start; }
+@media (max-width: 760px) { .manifest { grid-template-columns: minmax(0, 1fr); } }
+.manifest dl { margin: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; font-size: 15px; }
+.manifest dt { font-family: var(--mono); font-size: 13px; color: var(--thread); }
+.manifest dd { margin: 0; color: var(--ink-2); }
+
+/* lanes */
+.lanes { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; margin-top: 22px; }
+.lane { border: 1.5px solid var(--rule); border-radius: 8px; padding: 18px 20px; min-width: 0; }
+.lane.primary { border-color: var(--thread); }
+.lane h3 { margin-bottom: 4px; }
+.lane .when { color: var(--ink-2); font-size: 14.5px; margin: 0 0 12px; }
+.lane ul { padding-left: 18px; margin: 0; font-size: 15px; }
+.lane .d { font-family: var(--mono); font-size: 12px; color: var(--ink-3); margin: 10px 0 0; }
+
+/* timing */
+.timing { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px 28px; margin-top: 22px; }
+.timing div { border-top: 1px solid var(--rule); padding-top: 12px; min-width: 0; }
+.timing .t { font-weight: 600; display: block; margin-bottom: 4px; }
+.timing .v { font-family: var(--mono); font-size: 13px; color: var(--thread); display: block; margin-bottom: 6px; }
+.timing p { font-size: 15px; color: var(--ink-2); margin: 0; }
+
+/* uncertainties */
+.unknowns { display: grid; gap: 14px; margin-top: 20px; }
+.unknown { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 6px 22px; border-top: 1px solid var(--rule); padding-top: 14px; }
+@media (max-width: 640px) { .unknown { grid-template-columns: minmax(0, 1fr); } }
+.unknown .area { font-weight: 600; }
+.unknown .area small { display: block; font-weight: 400; color: var(--ink-3); font-family: var(--mono); font-size: 12px; margin-top: 4px; }
+.unknown p { margin: 0 0 8px; font-size: 15.5px; }
+.unknown p:last-child { margin: 0; }
+.unknown .q { color: var(--open); font-weight: 500; }
+
+/* principles */
+.rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px 28px; margin-top: 20px; counter-reset: r; }
+.rules div { min-width: 0; padding-top: 10px; border-top: 1px solid var(--rule); }
+.rules .t { font-weight: 600; display: block; }
+.rules p { font-size: 15px; color: var(--ink-2); margin: 4px 0 0; }
+
+/* end */
+.read { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 28px; margin-top: 18px; font-size: 15px; }
+.read code { font-size: 13px; }
+footer { padding-block: 24px 56px; color: var(--ink-3); font-size: 13px; font-family: var(--mono); border-top: 1px solid var(--rule); }
+</style>
+</head>
+<body>
+<div class="page">
+<nav class="rail" aria-label="Innehåll">
+  <p class="brand">Clew</p>
+  <p class="date">2026-11-09 · introduktion</p>
+  <ol id="toc">
+    <li><a href="#start">Vad Clew är</a></li>
+    <li><a href="#fragor">Fyra frågor</a></li>
+    <li><a href="#granser">Är och är inte</a></li>
+    <li><a href="#resan">Resan genom Clew</a></li>
+    <li><a href="#laget">Vad som finns i dag</a></li>
+    <li><a href="#arkitektur">Delarna</a></li>
+    <li><a href="#manifest">Manifestet</a></li>
+    <li><a href="#filer">Tre vägar in</a></li>
+    <li><a href="#timing">Tid och tålamod</a></li>
+    <li><a href="#osakerheter">Det vi inte vet än</a></li>
+    <li><a href="#regler">Så arbetar vi</a></li>
+    <li><a href="#nasta">Nästa steg</a></li>
+    <li><a href="#lasa">Läs vidare</a></li>
+  </ol>
+  <p class="hint"><kbd>↓</kbd> <kbd>↑</kbd> eller <kbd>J</kbd> <kbd>K</kbd> hoppar mellan avsnitten när du presenterar.</p>
+</nav>
+
+<main>
+
+<section id="start" aria-labelledby="h-start">
+  <p class="eyebrow">Introduktion för nya kollegor</p>
+  <h1 id="h-start">Clew: ett ställe för det som behöver dig i dag</h1>
+  <p class="lede">Clew är ett öppet system som samlar en medarbetares arbete över alla verksamhetssystem i en vy: det som väntar på dig, varför, vad du kan göra åt det och vad som hände efteråt. Källsystemen fortsätter äga sina poster. Clew håller i tråden.</p>
+  <div class="title-meta">
+    <span>Öppen källkod, delas med andra kommuner och myndigheter</span>
+    <span>Offentlig sektor först, Sundsvall som första profil</span>
+    <span>Labbfas: byggt mot syntetiska system</span>
+  </div>
+</section>
+
+<section id="fragor" aria-labelledby="h-fragor">
+  <p class="eyebrow">Produktidén</p>
+  <h2 id="h-fragor">Fyra frågor som en arbetsdag ställer</h2>
+  <p>Allt i Clew finns för att besvara någon av de här fyra frågorna för en person. En funktion som inte gör det hör hemma någon annanstans.</p>
+  <div class="four">
+    <div><p class="q">Vad behöver mig?</p><p>Kort i flödet på Hem: attester, ledighetsbeslut, avvikelser, möten att svara på. Varje kort säger varför det syns, från vilket system och när.</p></div>
+    <div><p class="q">Vad behöver jag veta?</p><p>Sök och fråga över alla anslutna system i personens behörighet. Vyer visar källdata som tabell, lista, detalj, dokument eller nyckeltal.</p></div>
+    <div><p class="q">Vad kan jag göra?</p><p>Nästa steg direkt på kortet. Ett förslag förbereds, personen godkänner, Clew registrerar exakt vad som godkändes innan källsystemet kontaktas.</p></div>
+    <div><p class="q">Vad hände sen?</p><p>Kvitto per post, läst tillbaka från källan. Osäkert utfall förblir osäkert tills det finns bevis. Ångra där källan stöder det. Påminnelser och bevakningar tar arbetet tillbaka vid rätt tid.</p></div>
+  </div>
+</section>
+
+<section id="granser" aria-labelledby="h-granser">
+  <p class="eyebrow">Gränserna</p>
+  <h2 id="h-granser">Vad Clew är, och vad det medvetet inte är</h2>
+  <div class="isnot">
+    <div>
+      <h3>Clew är</h3>
+      <ul>
+        <li><strong>Mission control för en person och en enhet.</strong> Ett flöde av kort, en sökruta, en kalender, kvitton.</li>
+        <li><strong>En orkestrerare av personens arbete över system.</strong> Ett jobb kan kräva en skrivning i HR, en i tidrapportering och en bevakning i lön. Personen godkänner en gång.</li>
+        <li><strong>Ägare av sina egna kontrakt.</strong> Varje integration möter Clews protokoll. Clew ritar allt gränssnitt med Astryx. Ingen leverantör skickar frontendkod.</li>
+        <li><strong>Användbart utan AI-modell.</strong> Knappar, vyer, deterministiska läsningar och godkännandeflöden fungerar utan modell. Modellen är en accelerator som kan slås på.</li>
+        <li><strong>Självhostbart av vem som helst.</strong> Inga stängda beroenden, inga licensnycklar, ingen telemetri. Ett öppet viktat språkmodellalternativ räcker.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Clew är inte</h3>
+      <ul>
+        <li><strong>Inte ett intranät eller dokumentarkiv.</strong> Nyheter och dokument kan dyka upp som kort med länk, men skrivs inte här.</li>
+        <li><strong>Inte en sidbyggare.</strong> Operatören konfigurerar anslutna system, behörighet och tider, inte block och layout.</li>
+        <li><strong>Inte ett sökindex över andras data.</strong> Clew frågar källorna som användaren och slår ihop svaren. Indexet stannar i källan eller i Eneo.</li>
+        <li><strong>Inte en AI-plattform.</strong> Kunskapsbaser, assistentbyggare och modelladministration är Eneos produkt. Clew äger AI:n som manipulerar Clew; Eneo äger AI:n som är en produkt i sig (D14).</li>
+        <li><strong>Inte ett processverktyg eller ärendesystem.</strong> Organisationens ärende lever i ärendesystemet. Clew länkar dit och pushar därifrån.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="resan" aria-labelledby="h-resan">
+  <p class="eyebrow">Ett varv</p>
+  <h2 id="h-resan">Resan genom Clew: en chef med fakturor att attestera</h2>
+  <p>Det här flödet finns byggt och körs i dag mot den syntetiska ekonomikällan, med riktiga PDF-fakturor, avtal i DOCX och specifikationer i XLSX. Det är inte en integration mot ett driftsatt ekonomisystem.</p>
+  <ol class="steps">
+    <li><div><span class="who">Connector</span>Skannar utestående arbete under chefens behörighet och rapporterar utkast till Clew, med en stabil identitet per faktura och period.</div></li>
+    <li><div><span class="who">Clew</span>Håller ett arbetsobjekt och visar det som ett kort: skäl, berörda poster, nästa steg. Kortet öppnas i sidopanelen eller granskas rad för rad bredvid dokumentet.</div></li>
+    <li><div><span class="who">Personen</span>Granskar och godkänner. Clew skriver ned exakt vad som godkändes, krypterat, i samma transaktion som revisionsraden och utkorgen, innan något skickas.</div></li>
+    <li><div><span class="who">Connector</span>Utför den godkända operationen med ett stabilt operations-id under källans aktuella behörighet och svarar med bevis per post.</div></li>
+    <li><div><span class="who">Clew</span>Visar ett kvitto per faktura. Ett tappat svar blir aldrig "klart" av sig självt; det stannar som okänt tills en uppslagning ger bevis. Avvisade rader kan rättas och skickas om utan att bekräftade skrivningar görs om (D80).</div></li>
+  </ol>
+  <p class="note">Allt behöver inte vara ett kort. Att slå upp ett telefonnummer är en levande läsning: en katalog kan erbjuda en sökbar tabell utan att implementera skanningar, åtgärder eller tider.</p>
+</section>
+
+<section id="laget" aria-labelledby="h-laget">
+  <p class="eyebrow">Läget 2026-11-09</p>
+  <h2 id="h-laget">Vad som finns i det här kodträdet</h2>
+  <p>Källan är <code>docs/reference/status.md</code>, som granskas mot koden. Ett beslut i <code>docs/decisions/</code> är designhistorik, inte bevis på att något är byggt. Allt nedan är byggt mot fixturer och testsviter, inte mot ett verkligt system i drift.</p>
+  <div class="legend">
+    <span><span class="badge b-built">byggt</span> finns och är testat mot fixturer</span>
+    <span><span class="badge b-partial">delvis</span> kärnan finns, gränssnitt eller produktionsväg saknas</span>
+    <span><span class="badge b-planned">design</span> beslutat eller utrett, inte byggt</span>
+  </div>
+  <div class="tablewrap">
+  <table class="status">
+    <thead><tr><th scope="col">Område</th><th scope="col">Status</th><th scope="col">Vad som finns</th><th scope="col">Vad som fattas</th></tr></thead>
+    <tbody>
+      <tr><td>Identitet och behörighet</td><td><span class="badge b-built">byggt</span></td><td>OIDC-inloggning (Keycloak i utveckling), lokala användare och grants, serverside scope-kontroll vid varje anrop.</td><td>En enhet/roll per person. Ingen SCIM, inga flera samtidiga uppdrag, ingen användaradministration.</td></tr>
+      <tr><td>Connector-protokoll 2</td><td><span class="badge b-built">byggt</span></td><td>Manifest, capabilities, scan, figure, vyer, callbacks, signerad auktoritet (RS256), instansen serverar sitt eget protokoll och en torrkörning av manifest.</td><td>Ingen publicerad produktionsdistribution. Versionering bortom 2 är policy, inte kodväg.</td></tr>
+      <tr><td>Vyer och verktyg i menyn</td><td><span class="badge b-built">byggt</span></td><td>table, list, detail, text, document, record, metrics, series, activity. Öppnas i panelen eller som egen sida. PDF, DOCX och XLSX ritas i Clew.</td><td>Ingen leverantörsritad app eller iframe i den nativa filen. Inget allmänt svarsformulär.</td></tr>
+      <tr><td>Sök</td><td><span class="badge b-built">byggt</span></td><td>Sammansatt sök över varje källas <code>search</code>/<code>fetch</code>, citat, tidsbudget per källa.</td><td>Vilka källor som faktiskt kan sökas avgörs av riktiga system.</td></tr>
+      <tr><td>Godkända skrivningar</td><td><span class="badge b-built">byggt</span></td><td>Krypterad avsikt, revision, utkorg och kortprojektion i en transaktion; Temporal skickar; läs tillbaka; kompensation (ångra); rättelse och omförsök av avvisade rader.</td><td>Hela process-död-matrisen, live CalDAV på nya vägen och valet av pilotkälla.</td></tr>
+      <tr><td>Skanning och förekomster</td><td><span class="badge b-built">byggt</span></td><td>Stabil identitet per person, källa, nyckel och period; lokal avfärdning skild från källans "klar"; ofullständig skanning avslutar aldrig arbete i tysthet.</td><td>Behörighetsändringar enbart i källan behöver en väg in i Clew innan sparade skanningar slås på (D75).</td></tr>
+      <tr><td>Tider och påminnelser</td><td><span class="badge b-built">byggt</span></td><td>Absoluta tider och generationer i Postgres, Temporal väntar. Uppmärksamhetsbudget, buntfönster, tysta timmar.</td><td>Ingen allmän "säg till när X" utanför ett jobb. Ingen push eller e-post.</td></tr>
+      <tr><td>Kalender</td><td><span class="badge b-built">byggt</span></td><td>CalDAV-adapter och Microsoft 365-adapter mot ett lokalt Graph-fake; förslag, bokning, flytt, avbokning, uppföljning med tak.</td><td>Microsoft 365 har aldrig mött en riktig tenant. Inget delegerat token når den.</td></tr>
+      <tr><td>Nyckeltal (Läget)</td><td><span class="badge b-built">byggt</span></td><td>En ruta per område vars connector svarar på <code>/clew/figure</code>, fyra parallella anrop i en tvåsekundersbudget.</td><td>Riktiga aggregat och minsta gruppstorlek är källans sak.</td></tr>
+      <tr><td>Administration</td><td><span class="badge b-built">byggt</span></td><td>Anslutna system registreras i databasen med publik, manifestkontroll och audit; modeller och leverantörer administreras i produkten.</td><td>Ingen användaradministration, ingen sida för jobb-bindningar.</td></tr>
+      <tr><td>Jobb över flera system</td><td><span class="badge b-partial">delvis</span></td><td>Connectors deklarerar <code>facts</code>, <code>creates</code> och <code>follows</code>; admin binder följare; ett jobbförslag, ett godkännande, en ledgerrad per steg, bevakningar i Temporal. Testat med HR, tidrapport och lön.</td><td>Bara tunna API-rutter. Inget kort, ingen steglista, ingen adminsida. Bindningar görs med ett skript. Nästa förslag efter ett kvitto är planerat.</td></tr>
+      <tr><td>Externa MCP-tjänster i AI-chatt</td><td><span class="badge b-partial">delvis</span></td><td>Officiell MCP-klient, registrering i Postgres, två oberoende mock-leverantörer, MCP App i sandlåda, mänsklig bekräftelse med kvitto, Temporal-bevakning som levererar kort på Hem.</td><td>Ingen leverantörs-OAuth, ingen produktionssandlåda, ingen verktygsroutning i vanlig chatt, ingen attention-budget. Bara bakom utvecklingsgrinden.</td></tr>
+      <tr><td>Delegerade token</td><td><span class="badge b-partial">delvis</span></td><td>Manifestet deklarerar publik, sessionen växlas till ett token för källan (Eneo-wrappern).</td><td>Skanningar, bevakningar och varaktiga skrivningar utan session får inget token och stannar i <code>needs-session</code>.</td></tr>
+      <tr><td>Portalen</td><td><span class="badge b-partial">delvis</span></td><td>En andra webbapp över samma server, produktägarens startsidekoncept.</td><td>Utanför WCAG-sviten; flera sektioner saknar connector eller vytyp.</td></tr>
+      <tr><td>Personer via SCIM</td><td><span class="badge b-planned">design</span></td><td>D68 beskriver det.</td><td>Ingen endpoint.</td></tr>
+      <tr><td>Ändringsnotiser från källor</td><td><span class="badge b-planned">design</span></td><td>D19 föreslår CloudEvents över HTTP.</td><td>Ingen rutt. Allt bygger på skanning och läsning i dag.</td></tr>
+      <tr><td>Ärenden (SupportManagement)</td><td><span class="badge b-planned">design</span></td><td>Utredning 2026-11-04 och D35: en ärendeprofil, en connector per ärendesystem.</td><td>Ingen connector. Frågor om namnrymd, WSO2-credential och <code>X-Sent-By</code> är öppna.</td></tr>
+      <tr><td>Clew som MCP-server åt andra agenter</td><td><span class="badge b-planned">design</span></td><td>Avsikt i identitetsdesignen.</td><td>Ingen server.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="arkitektur" aria-labelledby="h-arkitektur">
+  <p class="eyebrow">Delarna</p>
+  <h2 id="h-arkitektur">En modulär monolit med fristående connectors</h2>
+  <p>Samordningen bor i en applikation med tydliga moduler och utbytbara adaptrar. Varje integration är en egen HTTP-tjänst i egen container, så att den som äger källan kan välja språk, nät och releasetakt. Inget i <code>apps/</code> eller <code>packages/</code> importerar en connector.</p>
+  <p class="archlabel">Personen möter</p>
+  <div class="archrow">
+    <div class="box core"><span class="k">Webbapp</span><span class="n">Startsidan</span><span class="d">React, Astryx-komponenter, ritar deklarerade vyer. Inga hemligheter i webbläsaren.</span></div>
+    <div class="box ext"><span class="k">Experiment</span><span class="n">Portalen</span><span class="d">Andra webbappen över samma API.</span></div>
+  </div>
+  <p class="archlabel">Samordningen</p>
+  <div class="archrow">
+    <div class="box core"><span class="k">Server / BFF</span><span class="n">Node och Hono</span><span class="d">Identitet, scope, capability-dispatch, samtal, beslut, administration. Rutter parsar, use cases äger transaktion och audit.</span></div>
+    <div class="box core"><span class="k">Sanning</span><span class="n">PostgreSQL</span><span class="d">Användare, grants, konfiguration, arbetsobjekt, godkännanden, audit, bevis, utkorg.</span></div>
+    <div class="box core"><span class="k">Väntan</span><span class="n">Temporal</span><span class="d">Varaktiga arbetsflöden för skrivningar, tider, uppföljning, jobb och MCP-bevakningar. Aldrig affärssanningen.</span></div>
+    <div class="box ext"><span class="k">Valfri</span><span class="n">Modell-endpoint</span><span class="d">OpenAI-kompatibel, även självhostad. Administreras i produkten.</span></div>
+  </div>
+  <p class="archlabel">Utanför Clew</p>
+  <div class="archrow">
+    <div class="box"><span class="k">Egen tjänst</span><span class="n">Connector</span><span class="d">Manifest och deklarerade operationer. Verifierar Clews signatur, översätter till källans API, upprätthåller källans behörighet.</span></div>
+    <div class="box"><span class="k">Ägaren</span><span class="n">Källsystem</span><span class="d">HR, ekonomi, ärenden, katalog, kalender. Äger posterna och sina rättigheter.</span></div>
+    <div class="box"><span class="k">Delad</span><span class="n">Identitetsleverantör</span><span class="d">OIDC. Clew behåller egna grants och identitetsbindningar.</span></div>
+    <div class="box ext"><span class="k">Standard</span><span class="n">MCP-tjänst</span><span class="d">Leverantörens befintliga verktyg och Apps, konsumerade i AI-chatt via den separata MCP-gatewayen.</span></div>
+  </div>
+  <p class="note" style="margin-top:18px">Utvecklingsstacken innehåller sex syntetiska källsystem (HR, ekonomi, avvikelser, kommunikation, tidrapport, lön) som fristående connectors, en telefonbok, en kalenderserver, ett Microsoft Graph-fake och två MCP-mockar. Clew kan inte skilja dem från en leverantörs connector, och det är poängen.</p>
+</section>
+
+<section id="manifest" aria-labelledby="h-manifest">
+  <p class="eyebrow">Tänket med manifest</p>
+  <h2 id="h-manifest">Connectorn beskriver vad den kan. Clew bestämmer hur det ser ut.</h2>
+  <p>Ett manifest är en deklaration, inte kod. Det säger vilka operationer som finns, vilka scheman de har, vem som får anropa dem, hur svaret får visas och om det får erbjudas modellen. Administratören registrerar tjänsten i databasen, testar manifestet och sätter publik. Ingen miljövariabel, ingen omstart.</p>
+  <div class="manifest">
+    <div>
+      <dl>
+        <dt>id, source, kind</dt><dd>Stabilt id som prefixar varje capability. <code>passthrough</code> eller <code>derived</code>; <code>core</code> är reserverat för det Clew själv äger.</dd>
+        <dt>capabilities</dt><dd>Namngivna operationer med in- och utdatascheman och scope. Tre slag: <strong>read</strong> läser, <strong>propose</strong> förbereder en ändring utan att utföra den, <strong>execute</strong> utför en godkänd ändring.</dd>
+        <dt>model</dt><dd>Om modellen får välja läsningen. En execute är alltid <code>model: false</code> och nås bara genom det mänskliga beslutet, aldrig som verktyg.</dd>
+        <dt>view</dt><dd>Hur ett svar får ritas: tabell, lista, detalj, dokument, nyckeltal. Clew ritar med Astryx. <code>modelReads: "summary"</code> håller raderna utanför modellen.</dd>
+        <dt>areas, menu</dt><dd>Grupperar stående läsningar som personen når utan ett pushat kort. Administratören väljer vad som hamnar i menyn.</dd>
+        <dt>scan, figure</dt><dd>Hittar arbete och svarar på områdets nyckeltal. Skanningen lämnar stabila förekomster och säger ärligt om den var fullständig.</dd>
+        <dt>execution, review</dt><dd>Vad källan lovar om dubbletter, uppslagning och ångra, och vilket dokument som måste granskas innan godkännande.</dd>
+        <dt>facts, follows, creates</dt><dd>Vilka fakta connectorn skapar och vilka den kan följa med egna steg, så att Clew kan sätta ihop ett jobb över flera system.</dd>
+        <dt>uses, delegation</dt><dd>Exakta beroenden på andra connectors läsningar, och om källan vill ha ett delegerat användartoken.</dd>
+      </dl>
+    </div>
+    <div>
+<pre><code>{
+  "protocol": 2,
+  "id": "phonebook",
+  "kind": "passthrough",
+  "source": "Telefonboken",
+  "areas": [{
+    "id": "kontakter", "title": "Kontakter",
+    "roles": ["manager", "employee"],
+    "standing": ["phonebook.directory"]
+  }],
+  "capabilities": [{
+    "name": "phonebook.directory",
+    "kind": "read",
+    "title": "Sök i telefonboken",
+    "model": true,
+    "scope": {},
+    "menu": { "label": "Telefonbok" },
+    "input":  { "type": "object", "properties": {
+      "query": { "type": "string", "maxLength": 80 } } },
+    "output": { "type": "object", "properties": {
+      "rows": { "type": "array", "items": { … } } } },
+    "view": {
+      "kind": "table", "ref": "ref", "title": "name",
+      "modelReads": "summary",
+      "noun": { "one": "kontakt", "other": "kontakter" },
+      "fields": [
+        { "key": "name",  "label": "Namn" },
+        { "key": "phone", "label": "Telefon", "format": "phone" }
+      ],
+      "open": { "capability": "phonebook.person",
+                "params": { "ref": "ref" } }
+    }
+  }]
+}</code></pre>
+      <p class="note" style="margin-top:10px">Förkortat ur <code>docs/generated/phonebook.manifest.json</code>. Hela fältreferensen serveras av instansen på <code>/protocol/manifest</code>.</p>
+    </div>
+  </div>
+  <h3 style="margin-top:28px">Vad som händer vid varje anrop</h3>
+  <ol class="steps">
+    <li><div>Webbläsaren anropar Clews API med sin session, eller modellen väljer en tillåten läsning under personens förfrågan.</div></li>
+    <li><div>Clew slår upp personens aktuella grant, läser om connectorns styrning (aktiv, publik, verktygsbrytare) och validerar capability och indata.</div></li>
+    <li><div>Clew skickar indata med en kortlivad signerad aktörsassertion (RS256, högst 120 sekunder) och en separat transportnyckel.</div></li>
+    <li><div>Connectorn verifierar båda, mappar den verifierade personen till källans behörighet och läser bara tillåtna poster.</div></li>
+    <li><div>Clew validerar svaret mot utdataschemat och kontrollerar behörigheten igen innan det släpps. Webbläsaren ritar vyn; modellen får bara den tillåtna representationen.</div></li>
+  </ol>
+  <p class="note">Webbläsaren och modellen får aldrig källans credentials. En ref från en tidigare läsning är en pekare, inte en behörighet.</p>
+</section>
+
+<section id="filer" aria-labelledby="h-filer">
+  <p class="eyebrow">Tre vägar in</p>
+  <h2 id="h-filer">Nativ connector, extern MCP-tjänst, eller MCP bakom en connector</h2>
+  <p>Skiljelinjen är inte viktigt mot oviktigt. Båda filerna kan hantera känsliga data. Den skiljer arbete som Clew måste samordna varaktigt över system från en självständig interaktion som leverantören äger. En leverantör kan finnas i båda, men en sorts arbete ska ha en leveransägare så att samma enkät inte dyker upp två gånger.</p>
+  <div class="lanes">
+    <div class="lane primary">
+      <h3>Nativ connector</h3>
+      <p class="when">När Clew ska äga arbetets livscykel: kort, skanning, jobb, kvitton, ångra, och när det ska fungera utan modell.</p>
+      <ul>
+        <li>Kontrakt: Clews manifest och HTTP-protokoll</li>
+        <li>Gränssnitt: Clews vykatalog, Astryx</li>
+        <li>Behörighet: connectorns auktoritet och källans adapter</li>
+        <li>Fungerar utan AI-modell: ja</li>
+      </ul>
+      <p class="d">D21, D22, D38, D44. Byggt och testat mot fixturer.</p>
+    </div>
+    <div class="lane">
+      <h3>Standard MCP-tjänst i AI-chatt</h3>
+      <p class="when">När leverantören redan har MCP-verktyg eller en MCP App och vi inte vill be en stor leverantör bygga en Clew-integration.</p>
+      <ul>
+        <li>Kontrakt: MCP discovery, tools, resources, Apps. Inget Clew-manifest</li>
+        <li>Gränssnitt: Clew runt, leverantören inuti sin sandlåda</li>
+        <li>Behörighet: leverantörens OAuth per användare, snittat med Clews policy</li>
+        <li>Fungerar utan AI-modell: nej, av produktpolicy</li>
+      </ul>
+      <p class="d">D81, 2026-11-08. Utvecklingsprototyp bakom grind.</p>
+    </div>
+    <div class="lane">
+      <h3>MCP bakom en nativ connector</h3>
+      <p class="when">När en MCP-server är det enda API:t, men arbetet ska bli nativa kort och vyer utan modell. Connectorn översätter.</p>
+      <ul>
+        <li>Clew → fristående connector → MCP-klient → leverantörens MCP-server</li>
+        <li>Connectorn äger aktörsmappning, vyer, förekomster och skrivgarantier</li>
+        <li>Verktygsscheman ger upptäckt, inte semantik</li>
+        <li>Fungerar utan AI-modell: ja</li>
+      </ul>
+      <p class="d">D4 och utredning 2026-11-09. Förslag, ingen connector finns.</p>
+    </div>
+  </div>
+  <h3 style="margin-top:28px">Det MCP ger, och det Clew ändå behöver få sagt</h3>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th scope="col">MCP ger</th><th scope="col">Clew behöver fortfarande ett uttryckligt kontrakt för</th></tr></thead>
+    <tbody>
+      <tr><td style="font-weight:400">Verktygsnamn, beskrivning, indataschema</td><td>Stabilt capability-namn, publik, indatagränser, slag (read, propose, execute)</td></tr>
+      <tr><td style="font-weight:400">Strukturerat svar, ibland utdataschema</td><td>Validerad form som får visas och får nå modellen</td></tr>
+      <tr><td style="font-weight:400">Annoteringar som <code>readOnlyHint</code></td><td>Granskad behörighet, bakgrundsläsning och återhämtningspolicy. En hint från en otrodd server är inte en behörighet</td></tr>
+      <tr><td style="font-weight:400">Ett "väntande arbete"-svar</td><td>Stabila förekomster, period, fullständighet, avslut och uppmärksamhet</td></tr>
+      <tr><td style="font-weight:400">Ett lyckat verktygsanrop</td><td>Källbevis för ett kvitto och en definierad policy för okänt utfall. Ingen påhittad idempotens eller ångra</td></tr>
+      <tr><td style="font-weight:400">En ändringsnotis</td><td>Omläsning, varaktig dedup och vem som ska få veta</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="timing" aria-labelledby="h-timing">
+  <p class="eyebrow">Tid och tålamod</p>
+  <h2 id="h-timing">Avsikten skrivs först, sen får Temporal vänta</h2>
+  <p>Grundregeln (D45, D47): en begäran lyckas när avsikten är skriven i Postgres, med absolut tid, generation, audit och utkorg i samma transaktion. Temporal sköter väntan och omförsök men kan aldrig hitta på ett godkännande. Ett tappat svar är inte ett lyckat svar. Webbläsaren pollar aldrig; servern skickar committade revisioner över SSE och webbläsaren läser om det den får se.</p>
+  <div class="timing">
+    <div><span class="t">Skanning av källor</span><span class="v">4 arbetare · 10 s per källa</span><p>Sidan visar sparade kort och begär en sammanslagen uppfriskning. En källa som inte svarar sänker sin färskhet, inte sidan. Ofullständig skanning avslutar aldrig arbete.</p></div>
+    <div><span class="t">Nyckeltal</span><span class="v">4 parallella · 2 s budget</span><p>Områdets figurer läses separat och återanvänder aldrig kortens ögonblicksbilder som bevis på dagens totaler.</p></div>
+    <div><span class="t">Signerad auktoritet</span><span class="v">≤ 120 s · nyckelöverlapp 3 min</span><p>Varje connector-anrop bär en kortlivad assertion. Callbacks till andra connectors måste ske inom samma fönster och får aldrig sparas för bakgrundsjobb.</p></div>
+    <div><span class="t">Påminnelser och snooze</span><span class="v">absolut tid · generation</span><p>En ersatt eller avbruten generation kan aldrig dyka upp igen. Fördröjd leverans förlänger inte den begärda tiden.</p></div>
+    <div><span class="t">Uppmärksamhetsbudget</span><span class="v">3 avbrott/dag · 5 min-buntar</span><p>Automatiska avbrott buntas; tysta timmar skjuter till 06:00, slut budget till 12:00, 16:00 eller nästa genomgång. Egna påminnelser går förbi budgeten. Uppskjuten uppmärksamhet gömmer aldrig arbete.</p></div>
+    <div><span class="t">Kalenderuppföljning</span><span class="v">max 2 · 2 arbetsdagar · 30 dagar</span><p>Policyn godkänns med bokningen. Varje kontroll läser om behörighet, deltagare och svar. Gamla inbjudningar utan policy pausas synligt.</p></div>
+    <div><span class="t">Bevakning i ett jobb</span><span class="v">≤ 3 kontroller · fast fönster</span><p>Den enda villkorade tiden: läser personens egen källa tills det väntade syns eller fönstret tar slut. Fönstret förlängs aldrig. Utgången bevakning lämnar ett kort.</p></div>
+    <div><span class="t">Ångra och kvitton</span><span class="v">2,5 s kvar på raden · kvitto läses tillbaka</span><p>Raden visar kvittot, går sedan till Klart med en toast som kan ångra. Ångra är en separat godkänd kompensation, aldrig radering av kvittot.</p></div>
+    <div><span class="t">MCP-bevakning</span><span class="v">30 s i utveckling · t.ex. veckovis</span><p>Intervallet styr när Clew tittar, inte hur ofta personen påminns. Stabil identitet plus regel avgör om ett kort skapas. Oförändrat läge ger inget nytt kort.</p></div>
+  </div>
+  <p class="note" style="margin-top:22px">Inte byggt: push och e-post, villkorade bevakningar utanför ett jobb ("säg till när fakturan är attesterad"), avbrytande av en pågående bevakning, en latens-SLO i drift.</p>
+</section>
+
+<section id="osakerheter" aria-labelledby="h-osakerheter">
+  <p class="eyebrow">Det vi inte vet än</p>
+  <h2 id="h-osakerheter">Osäkerheter som bara ett riktigt system kan avgöra</h2>
+  <p>Fixturerna är skrivna för att bete sig som vi hoppas att källorna beter sig. Varje punkt nedan är ett antagande som en riktig connector mot ett riktigt system kommer att bekräfta eller fälla. Ingen pilotkälla är vald, med flit: det valet kräver att frågorna nedan har en ägare.</p>
+  <div class="unknowns">
+    <div class="unknown">
+      <div class="area">Identitet och mappning<small>D44, authorization.md</small></div>
+      <div>
+        <p>Clews assertion säger vem personen är för connectorn. Den är inte ett token källan accepterar. Varje källa behöver en egen policy: tjänstekonto som snävas per person, bundet personkonto, eller delegerat token från identitetsleverantören.</p>
+        <p class="q">Hur mappas en person i Keycloak till ett AD-konto, ett kostnadsställe, en anställning? Accepterar WSO2-gatewayen växlade användartoken, eller fortsätter <code>X-Sent-By</code> från en BFF-hållen credential?</p>
+      </div>
+    </div>
+    <div class="unknown">
+      <div class="area">Behörighet i bakgrunden<small>needs-session</small></div>
+      <div>
+        <p>Skanningar, nyckeltal, bevakningar och varaktiga skrivningar körs utan en inloggad webbläsare. I dag får de inget delegerat token. En fungerande interaktiv läsning bevisar inte att en skrivning på natten går.</p>
+        <p class="q">Vilka källor tillåter bakgrundsåtkomst för en person utan session, och under vilka villkor? Hur länge lever en refresh?</p>
+      </div>
+    </div>
+    <div class="unknown">
+      <div class="area">Källornas skrivgarantier<small>execution, lookup, undo</small></div>
+      <div>
+        <p>Hela kvittomodellen vilar på att en källa kan säga vad som hände: dubblettskydd per operations-id, uppslagning efter tappat svar, villkorad skrivning på version, en exakt invers för ångra. Fixturerna gör allt detta. Ett ekonomisystem eller HR-system kanske gör inget av det.</p>
+        <p class="q">Vad gör vi när en källa bara erbjuder "skicka och hoppas"? Då blir varje tappat svar en manuell avstämning, och ångra får inte erbjudas.</p>
+      </div>
+    </div>
+    <div class="unknown">
+      <div class="area">Stabila nycklar och fullständighet<small>D47, D75</small></div>
+      <div>
+        <p>Ett kort får inte pushas två gånger och får inte försvinna för att en skanning råkade vara ofullständig. Det kräver stabila nycklar, revisioner och ett sätt att veta att listan var hel. Och när en behörighet dras in enbart i källan måste det nå Clew, annars ligger ett gammalt snapshot kvar.</p>
+        <p class="q">Levererar källorna stabila id:n över perioder? Finns tombstones eller någon "det här är hela listan"-signal? Hur får vi veta om en indragen behörighet?</p>
+      </div>
+    </div>
+    <div class="unknown">
+      <div class="area">Data, juridik, retention<small>vision.md, D79</small></div>
+      <div>
+        <p>Clew sparar samordningsdata som kan innehålla källtext: kortsammanfattningar, svar, kvitton, krypterade indata. Namn på individer ska stanna i källan. Vad som får gå till en modell utanför organisationens kontroll är inte avgjort.</p>
+        <p class="q">Vilken klassificering gäller per endpoint och vem märker den? Vilken retention, export och radering gäller för det Clew håller? Räknas en personlig vy som "inne i källsystemet"?</p>
+      </div>
+    </div>
+    <div class="unknown">
+      <div class="area">De faktiska API:erna<small>reviews 2026-11-04, 11-06</small></div>
+      <div>
+        <p>Telefonboken antar en form på katalog-API:t som ingen bekräftat; Metakatalogen är målet. SupportManagement är läst i källkod men aldrig körd mot. HR, ekonomi och lön saknar öppna kontrakt helt. Microsoft 365-adaptern har bara mött ett fake. Eneo-connectorn är testad mot inspelade svar.</p>
+        <p class="q">Vilka OpenAPI-dokument kan vi få? Vilken testnamnrymd får vi i SupportManagement? Vilken ordning: Eneo på riktigt (timmar), SupportManagement på stubb (en dag), sen ett riktigt system?</p>
+      </div>
+    </div>
+    <div class="unknown">
+      <div class="area">MCP-leverantörerna<small>review 2026-11-08</small></div>
+      <div>
+        <p>Flera leverantörer av medarbetarenkäter har MCP, men ingen av dem har i offentlig dokumentation visat just "väntande enkät plus MCP App". Det är tre separata löften att verifiera med ett riktigt konto: interaktiva verktyg, portabel App, och bakgrundsdata med stabila id:n för en bevakning.</p>
+        <p class="q">Vilken leverantör pilotar vi OAuth med? Får vi registrera en egen OAuth-klient? Finns det stabila id:n och status i svaren, eller bara fritext?</p>
+      </div>
+    </div>
+    <div class="unknown">
+      <div class="area">Drift och tillgänglighet<small>reliability-acceptance.md</small></div>
+      <div>
+        <p>Omstart, databasavbrott och processdöd är testade vid vissa gränser, inte alla. Backup och återställning är repeterade syntetiskt. WCAG-sviten är grön men en manuell skärmläsarkontroll har aldrig gjorts.</p>
+        <p class="q">Vem driftar: en leverantör eller kommunen själv? Vilka trösklar och larm gäller? När gör vi skärmläsarpassen?</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="regler" aria-labelledby="h-regler">
+  <p class="eyebrow">Så arbetar vi</p>
+  <h2 id="h-regler">Regler som håller oss ärliga</h2>
+  <div class="rules">
+    <div><span class="t">Öppen källkod, alltid</span><p>Inga stängda beroenden, inga hostade tjänster koden inte klarar sig utan. Licensen kontrolleras innan något pinnas. Standarder före leverantörs-API:er: OIDC, CalDAV, MCP, OpenAPI.</p></div>
+    <div><span class="t">Servern bestämmer</span><p>Identitet, scope, connector-status och audit upprätthålls på servern. Webbläsaren och modellen är otrodda. Varje mutation skriver sin revisionsrad i samma transaktion.</p></div>
+    <div><span class="t">Execute är aldrig ett verktyg</span><p>Modellen får läsa och föreslå. Inget når ett källsystem utom via det mänskliga beslutet. Kvittot är en tillbakaläsning, aldrig en skickad begäran.</p></div>
+    <div><span class="t">Status är sanningen</span><p><code>docs/reference/status.md</code> säger vad som finns. Ett beslut (D1–D81) är historik. En utredning (<code>docs/reviews/</code>) är ett förslag tills ett beslut tar det vidare.</p></div>
+    <div><span class="t">Astryx, och bara Astryx</span><p>Ett komponentsystem, en designcanvas som referens, ingen egen CSS. Finns en komponent, slot eller mall så är den enda tillåtna lösningen. Luckor skrivs in i beslutet som tillåter undantaget.</p></div>
+    <div><span class="t">WCAG 2.2 AA är ett krav</span><p>Tangentbord, fokus, statusmeddelanden och omflöde vid 320 px innan något är klart. Ny vy får ett test i <code>tests/a11y</code>. Grön svit är inte bevis på konformitet.</p></div>
+    <div><span class="t">Svenska i produkten, engelska överallt annars</span><p>UI-text och felmeddelanden på svenska. Identifierare, adresser, kontrakt, kod, dokumentation och commit-meddelanden på engelska.</p></div>
+    <div><span class="t">Fixturer är connectors</span><p>Utvecklingsstackens källor är fristående tjänster bakom protokollet (D61). Allt de gör som protokollet inte kan uttrycka är en lucka att dokumentera, inte kringgå.</p></div>
+    <div><span class="t">Ett nummer per beslut</span><p>Varje avgjord fråga blir en fil i <code>docs/decisions/</code>. <code>HANDOVER.md</code> bär sessionshistoriken. Den som tar över ska kunna läsa sig till varför.</p></div>
+  </div>
+</section>
+
+<section id="nasta" aria-labelledby="h-nasta">
+  <p class="eyebrow">Nästa steg</p>
+  <h2 id="h-nasta">Vad som ligger närmast, och vad som behöver ett beslut</h2>
+  <div class="cols">
+    <div>
+      <h3>Nära i kod</h3>
+      <ul>
+        <li>Eneo på riktigt: koppla den körande utvecklingsinstansen i resource-server-läge och kör tokenväxlingen. Timmar, ingen ny kod.</li>
+        <li>Jobb över system: kort, steglista och adminsida för bindningar, så att det byggda API:t går att visa.</li>
+        <li>Nästa förslag efter ett kvitto (D55): ett bekräftat utfall blir en ny fakta som följare svarar på.</li>
+        <li>MCP: leverantörs-OAuth med registrerad klient, produktionssandlåda, verktyg i vanlig chatt.</li>
+        <li>SupportManagement på stubb (WireMock över dess OpenAPI) som första riktiga ärendekälla.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Öppna produktfrågor</h3>
+      <ul>
+        <li>Vilken källa och vilken operatör blir pilot? Det är beslutet som låser upp identitet, bakgrundsåtkomst och retention.</li>
+        <li>Vilka domäner ska Clew äga själv först (utvecklingssamtal, delegationer)? Katalogen är inte en kandidat.</li>
+        <li>Är nyckeltalsraden ett löfte som ska synas direkt, eller undantagsbaserad?</li>
+        <li>Är läskvittot en efterlevnadspost? Finns aptit för stående medgivande på reversibla åtgärder (v1 säger nej)?</li>
+        <li>Får en leverantörs App öppnas från ett nativt arbetsobjekt, även utan AI? D81 begränsar den i dag till AI-chatt.</li>
+        <li>Vem äger nyheter och dokument när det nya intranätet finns?</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="lasa" aria-labelledby="h-lasa">
+  <p class="eyebrow">Läs vidare</p>
+  <h2 id="h-lasa">Läsordningen i repot</h2>
+  <div class="read">
+    <div><strong>Börja här</strong><br><code>docs/README.md</code> och <code>llms.txt</code> ger läsvägen.</div>
+    <div><strong>Produkten</strong><br><code>docs/overview.md</code>, <code>docs/vision.md</code>, <code>docs/personas.md</code>, <code>docs/reference/vocabulary.md</code>.</div>
+    <div><strong>Läget</strong><br><code>docs/reference/status.md</code> och <code>docs/reference/reliability-acceptance.md</code>.</div>
+    <div><strong>Systemet</strong><br><code>docs/architecture/overview.md</code>, <code>backend-structure.md</code>, <code>scheduled-work.md</code>, <code>working-across-connectors.md</code>.</div>
+    <div><strong>Integrationer</strong><br><code>docs/architecture/integration-paths.md</code>, <code>docs/guides/creating-a-connector.md</code>, <code>docs/guides/authorization.md</code>, <code>docs/guides/actions-and-receipts.md</code>.</div>
+    <div><strong>MCP</strong><br><code>docs/architecture/mcp-chat-services.md</code>, D81, utredningarna 2026-11-08 och 2026-11-09.</div>
+    <div><strong>Varför</strong><br><code>docs/decisions/README.md</code> (index) och <code>docs/reviews/README.md</code>.</div>
+    <div><strong>Historik</strong><br><code>HANDOVER.md</code>, en anteckning per arbetspass sedan 2026-11-03.</div>
+  </div>
+</section>
+
+<footer>Underlag: kodträdet och dokumentationen i clew den 2026-11-09. Statusen ändras varje vecka; läs status.md innan du lovar något.</footer>
+</main>
+</div>
+
+<script>
+(function () {
+  var links = Array.prototype.slice.call(document.querySelectorAll('#toc a'));
+  var sections = links.map(function (a) { return document.querySelector(a.getAttribute('href')); });
+  function setCurrent(id) {
+    links.forEach(function (a) {
+      if (a.getAttribute('href') === '#' + id) a.setAttribute('aria-current', 'true');
+      else a.removeAttribute('aria-current');
+    });
+  }
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { if (e.isIntersecting) setCurrent(e.target.id); });
+    }, { rootMargin: '-20% 0px -70% 0px' });
+    sections.forEach(function (s) { if (s) io.observe(s); });
+  }
+  function currentIndex() {
+    var y = window.scrollY + 40, idx = 0;
+    sections.forEach(function (s, i) { if (s && s.offsetTop <= y) idx = i; });
+    return idx;
+  }
+  document.addEventListener('keydown', function (ev) {
+    if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
+    var t = ev.target; if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+    var d = 0;
+    if (ev.key === 'ArrowDown' || ev.key === 'PageDown' || ev.key === 'j' || ev.key === 'J' || ev.key === ' ') d = 1;
+    if (ev.key === 'ArrowUp' || ev.key === 'PageUp' || ev.key === 'k' || ev.key === 'K') d = -1;
+    if (!d) return;
+    var i = Math.min(sections.length - 1, Math.max(0, currentIndex() + d));
+    if (sections[i]) { ev.preventDefault(); sections[i].scrollIntoView(); setCurrent(sections[i].id); }
+  });
+  if (location.hash) { var s = document.querySelector(location.hash); if (s) setCurrent(s.id); }
+})();
+</script>
+</body>
+</html>

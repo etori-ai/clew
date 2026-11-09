@@ -4,6 +4,7 @@ import { serve } from '@hono/node-server';
 import { authRoutes } from './routes/auth';
 import { api } from './routes/api';
 import { adminRoutes } from './routes/admin';
+import { headerRoutes } from './routes/header';
 import { connectorReconcile } from './composition';
 import { applyAllRows, syncBundledRows, watchConnectors } from './connectors/reconcile';
 import { connectorRoutes } from './routes/connectors';
@@ -71,6 +72,8 @@ app.use('/api/*', async (c, next) => {
 // Connector callbacks authenticate with Clew's own assertion, not a session, so they are mounted before the session guard.
 app.route('/api/connectors', connectorRoutes);
 app.route('/api/admin', adminRoutes);
+// The shared header (D88): what the person's header connector lists for them.
+app.route('/api/header', headerRoutes);
 app.route('/api/chat-services', mcpRoutes);
 app.route('/api', api);
 app.notFound(c => c.json({ error: 'Okänd adress.' }, 404));

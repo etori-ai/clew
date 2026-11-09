@@ -29,6 +29,8 @@ export const keys = {
   preview: (threadId: string, ref: string, revision?: string) => ['preview', threadId, ref, revision ?? null] as const,
   /** The manifest reference (D60): public, the same for everyone, kept for the visit. */
   manifestReference: ['protocol', 'manifest-reference'] as const,
+  /** The shared header (D88): the person's, kept for the visit. */
+  header: ['header'] as const,
   admin: {
     all: ['admin'] as const,
     connectors: ['admin', 'connectors'] as const,
