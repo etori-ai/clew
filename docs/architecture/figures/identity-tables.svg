@@ -1,0 +1,185 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="1046" viewBox="0 0 1240 1046" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="13">
+<title>Clew&#x27;s identity tables: what the provisioner writes, what the administrator writes, what Clew derives, and what a login binds</title>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#4b5563"/></marker></defs>
+<rect width="1240" height="1046" fill="#ffffff"/>
+<rect x="20" y="20" width="1200" height="382" rx="14" fill="#f3f4f6" stroke="#d1d5db"/>
+<text x="36" y="42" font-weight="600" font-size="14" fill="#374151">Written by the provisioner over SCIM (/scim/v2)</text>
+<rect x="40" y="56" width="360" height="274" rx="8" fill="#ffffff" stroke="#9ca3af"/>
+<path d="M 48 56 H 392 a 8 8 0 0 1 8 8 V 86 H 40 V 64 a 8 8 0 0 1 8 -8 Z" fill="#f3f4f6" stroke="#9ca3af"/>
+<text x="52" y="76" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-weight="600" font-size="13" fill="#111827">auth_person</text>
+<text x="52" y="104" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">id</text>
+<text x="210" y="104" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="308" y="104" font-size="10.5" font-weight="600" fill="#9a3412">PK</text>
+<text x="52" y="124" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">organisation_id</text>
+<text x="210" y="124" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="52" y="144" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">name</text>
+<text x="210" y="144" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="52" y="164" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">enabled</text>
+<text x="210" y="164" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">boolean</text>
+<text x="52" y="184" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">external_id</text>
+<text x="210" y="184" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="308" y="184" font-size="10.5" font-weight="600" fill="#9a3412">UNIQUE</text>
+<text x="52" y="204" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">user_name</text>
+<text x="210" y="204" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="308" y="204" font-size="10.5" font-weight="600" fill="#9a3412">UNIQUE</text>
+<text x="52" y="224" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">email</text>
+<text x="210" y="224" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="52" y="244" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">created_at</text>
+<text x="210" y="244" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">timestamptz</text>
+<text x="52" y="264" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">updated_at</text>
+<text x="210" y="264" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">timestamptz</text>
+<line x1="52" y1="274" x2="388" y2="274" stroke="#e5e7eb"/>
+<text x="52" y="288" font-size="10.5" fill="#6b7280">external_id: the source&#x27;s stable id</text>
+<text x="52" y="304" font-size="10.5" fill="#6b7280">user_name: what a login matches · email: the work address</text>
+<text x="52" y="320" font-size="10.5" fill="#6b7280">enabled = false after DELETE; a person is never erased</text>
+<rect x="420" y="56" width="360" height="194" rx="8" fill="#ffffff" stroke="#9ca3af"/>
+<path d="M 428 56 H 772 a 8 8 0 0 1 8 8 V 86 H 420 V 64 a 8 8 0 0 1 8 -8 Z" fill="#f3f4f6" stroke="#9ca3af"/>
+<text x="432" y="76" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-weight="600" font-size="13" fill="#111827">auth_group</text>
+<text x="432" y="104" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">id</text>
+<text x="590" y="104" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="688" y="104" font-size="10.5" font-weight="600" fill="#9a3412">PK</text>
+<text x="432" y="124" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">external_id</text>
+<text x="590" y="124" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="688" y="124" font-size="10.5" font-weight="600" fill="#9a3412">UNIQUE</text>
+<text x="432" y="144" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">display_name</text>
+<text x="590" y="144" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="432" y="164" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">created_at</text>
+<text x="590" y="164" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">timestamptz</text>
+<text x="432" y="184" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">updated_at</text>
+<text x="590" y="184" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">timestamptz</text>
+<line x1="432" y1="194" x2="768" y2="194" stroke="#e5e7eb"/>
+<text x="432" y="208" font-size="10.5" fill="#6b7280">id: Clew&#x27;s own, what a SCIM client addresses</text>
+<text x="432" y="224" font-size="10.5" fill="#6b7280">external_id carries the key: unit:, unit-manager:,</text>
+<text x="432" y="240" font-size="10.5" fill="#6b7280">capability:, protected, or any other (plain group)</text>
+<rect x="420" y="264" width="360" height="118" rx="8" fill="#ffffff" stroke="#9ca3af"/>
+<path d="M 428 264 H 772 a 8 8 0 0 1 8 8 V 294 H 420 V 272 a 8 8 0 0 1 8 -8 Z" fill="#f3f4f6" stroke="#9ca3af"/>
+<text x="432" y="284" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-weight="600" font-size="13" fill="#111827">auth_group_member</text>
+<text x="432" y="312" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">group_id</text>
+<text x="590" y="312" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="688" y="312" font-size="10.5" font-weight="600" fill="#9a3412">PK FK</text>
+<text x="432" y="332" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">person_id</text>
+<text x="590" y="332" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="688" y="332" font-size="10.5" font-weight="600" fill="#9a3412">PK FK</text>
+<line x1="432" y1="342" x2="768" y2="342" stroke="#e5e7eb"/>
+<text x="432" y="356" font-size="10.5" fill="#6b7280">group_id → auth_group.id (on delete cascade)</text>
+<text x="432" y="372" font-size="10.5" fill="#6b7280">person_id → auth_person.id</text>
+<line x1="480" y1="264" x2="480" y2="250" stroke="#4b5563" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="420" y1="320" x2="400" y2="320" stroke="#4b5563" stroke-width="1.5" marker-end="url(#a)"/>
+<rect x="800" y="56" width="360" height="130" rx="8" fill="#ffffff" stroke="#c7d7f5" stroke-dasharray="4 3"/>
+<text x="812" y="78" font-weight="600" fill="#1e3a8a">Audit</text>
+<text x="812" y="98" font-size="11.5" fill="#374151">Every change writes a row in audit</text>
+<text x="812" y="115" font-size="11.5" fill="#374151">(actor, action, subject, details jsonb):</text>
+<text x="812" y="132" font-size="11.5" fill="#374151">scim.user.*, scim.group.*, grant.derived,</text>
+<text x="812" y="149" font-size="11.5" fill="#374151">capability-map.added/removed, identity.bound.</text>
+<text x="812" y="166" font-size="11.5" fill="#374151">Login events go to auth_audit.</text>
+<rect x="20" y="424" width="1200" height="286" rx="14" fill="#eef4ff" stroke="#c7d7f5"/>
+<text x="36" y="446" font-weight="600" font-size="14" fill="#1e3a8a">Derived by Clew, in the same transaction as the change</text>
+<rect x="40" y="460" width="360" height="138" rx="8" fill="#ffffff" stroke="#1d4ed8"/>
+<path d="M 48 460 H 392 a 8 8 0 0 1 8 8 V 490 H 40 V 468 a 8 8 0 0 1 8 -8 Z" fill="#eef4ff" stroke="#1d4ed8"/>
+<text x="52" y="480" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-weight="600" font-size="13" fill="#111827">auth_unit</text>
+<text x="52" y="508" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">id</text>
+<text x="210" y="508" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="308" y="508" font-size="10.5" font-weight="600" fill="#9a3412">PK</text>
+<text x="52" y="528" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">organisation_id</text>
+<text x="210" y="528" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="52" y="548" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">label</text>
+<text x="210" y="548" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<line x1="52" y1="558" x2="388" y2="558" stroke="#e5e7eb"/>
+<text x="52" y="572" font-size="10.5" fill="#6b7280">id: the &lt;id&gt; of unit:&lt;id&gt;</text>
+<text x="52" y="588" font-size="10.5" fill="#6b7280">label: that group&#x27;s displayName</text>
+<rect x="420" y="460" width="360" height="138" rx="8" fill="#ffffff" stroke="#1d4ed8"/>
+<path d="M 428 460 H 772 a 8 8 0 0 1 8 8 V 490 H 420 V 468 a 8 8 0 0 1 8 -8 Z" fill="#eef4ff" stroke="#1d4ed8"/>
+<text x="432" y="480" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-weight="600" font-size="13" fill="#111827">auth_assignment</text>
+<text x="432" y="508" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">person_id</text>
+<text x="590" y="508" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="688" y="508" font-size="10.5" font-weight="600" fill="#9a3412">PK FK</text>
+<text x="432" y="528" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">unit_id</text>
+<text x="590" y="528" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="688" y="528" font-size="10.5" font-weight="600" fill="#9a3412">PK FK</text>
+<text x="432" y="548" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">role</text>
+<text x="590" y="548" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="688" y="548" font-size="10.5" font-weight="600" fill="#9a3412">CHECK</text>
+<line x1="432" y1="558" x2="768" y2="558" stroke="#e5e7eb"/>
+<text x="432" y="572" font-size="10.5" fill="#6b7280">one role per unit and person · role: manager | employee</text>
+<text x="432" y="588" font-size="10.5" fill="#6b7280">→ auth_person.id, → auth_unit.id</text>
+<rect x="800" y="460" width="360" height="230" rx="8" fill="#ffffff" stroke="#059669"/>
+<path d="M 808 460 H 1152 a 8 8 0 0 1 8 8 V 490 H 800 V 468 a 8 8 0 0 1 8 -8 Z" fill="#ecfdf5" stroke="#059669"/>
+<text x="812" y="480" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-weight="600" font-size="13" fill="#111827">auth_access_grant</text>
+<text x="812" y="508" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">person_id</text>
+<text x="970" y="508" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="1068" y="508" font-size="10.5" font-weight="600" fill="#9a3412">PK FK</text>
+<text x="812" y="528" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">unit_id</text>
+<text x="970" y="528" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="812" y="548" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">unit_label</text>
+<text x="970" y="548" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="812" y="568" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">role</text>
+<text x="970" y="568" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="1068" y="568" font-size="10.5" font-weight="600" fill="#9a3412">CHECK</text>
+<text x="812" y="588" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">capabilities</text>
+<text x="970" y="588" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">jsonb</text>
+<text x="812" y="608" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">version</text>
+<text x="970" y="608" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">integer</text>
+<line x1="812" y1="618" x2="1148" y2="618" stroke="#e5e7eb"/>
+<text x="812" y="632" font-size="10.5" fill="#6b7280">one row per person = the active assignment</text>
+<text x="812" y="648" font-size="10.5" fill="#6b7280">(manager first, then the lowest unit id)</text>
+<text x="812" y="664" font-size="10.5" fill="#6b7280">capabilities: string[], the union of every group&#x27;s</text>
+<text x="812" y="680" font-size="10.5" fill="#6b7280">version: part of the authority fingerprint</text>
+<line x1="420" y1="529" x2="400" y2="529" stroke="#4b5563" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="600" y1="402" x2="600" y2="422" stroke="#4b5563" stroke-width="2" marker-end="url(#a)"/>
+<text x="610" y="418" font-size="12" fill="#6b7280">memberships + mapping → derivation</text>
+<rect x="20" y="732" width="760" height="274" rx="14" fill="#fff7ed" stroke="#fdba74"/>
+<text x="36" y="754" font-weight="600" font-size="14" fill="#9a3412">Written by an administrator</text>
+<rect x="800" y="732" width="420" height="274" rx="14" fill="#f3f4f6" stroke="#d1d5db"/>
+<text x="816" y="754" font-weight="600" font-size="14" fill="#374151">Written at the first login</text>
+<rect x="40" y="768" width="360" height="134" rx="8" fill="#ffffff" stroke="#ea580c"/>
+<path d="M 48 768 H 392 a 8 8 0 0 1 8 8 V 798 H 40 V 776 a 8 8 0 0 1 8 -8 Z" fill="#fff7ed" stroke="#ea580c"/>
+<text x="52" y="788" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-weight="600" font-size="13" fill="#111827">auth_capability_map</text>
+<text x="52" y="816" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">group_external_id</text>
+<text x="210" y="816" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="308" y="816" font-size="10.5" font-weight="600" fill="#9a3412">PK</text>
+<text x="52" y="836" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">capability</text>
+<text x="210" y="836" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="308" y="836" font-size="10.5" font-weight="600" fill="#9a3412">PK</text>
+<line x1="52" y1="846" x2="388" y2="846" stroke="#e5e7eb"/>
+<text x="52" y="860" font-size="10.5" fill="#6b7280">no foreign key: the mapping outlives a removed group</text>
+<text x="52" y="876" font-size="10.5" fill="#6b7280">capability ∈ CAPABILITIES, checked in code</text>
+<text x="52" y="892" font-size="10.5" fill="#6b7280">(admin.connectors, admin.users)</text>
+<rect x="420" y="768" width="360" height="218" rx="8" fill="#ffffff" stroke="#ea580c"/>
+<path d="M 428 768 H 772 a 8 8 0 0 1 8 8 V 798 H 420 V 776 a 8 8 0 0 1 8 -8 Z" fill="#fff7ed" stroke="#ea580c"/>
+<text x="432" y="788" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-weight="600" font-size="13" fill="#111827">auth_provisioner</text>
+<text x="432" y="816" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">id</text>
+<text x="590" y="816" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="688" y="816" font-size="10.5" font-weight="600" fill="#9a3412">PK</text>
+<text x="432" y="836" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">organisation_id</text>
+<text x="590" y="836" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="432" y="856" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">label</text>
+<text x="590" y="856" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="432" y="876" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">digest</text>
+<text x="590" y="876" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="688" y="876" font-size="10.5" font-weight="600" fill="#9a3412">UNIQUE</text>
+<text x="432" y="896" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">created_by</text>
+<text x="590" y="896" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="432" y="916" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">created_at</text>
+<text x="590" y="916" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">timestamptz</text>
+<text x="432" y="936" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">revoked_at</text>
+<text x="590" y="936" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">timestamptz</text>
+<line x1="432" y1="946" x2="768" y2="946" stroke="#e5e7eb"/>
+<text x="432" y="960" font-size="10.5" fill="#6b7280">digest: sha256 of the bearer token; the token is never stored</text>
+<text x="432" y="976" font-size="10.5" fill="#6b7280">revoked_at set = the token no longer authenticates</text>
+<rect x="820" y="768" width="360" height="138" rx="8" fill="#ffffff" stroke="#9ca3af"/>
+<path d="M 828 768 H 1172 a 8 8 0 0 1 8 8 V 798 H 820 V 776 a 8 8 0 0 1 8 -8 Z" fill="#f3f4f6" stroke="#9ca3af"/>
+<text x="832" y="788" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-weight="600" font-size="13" fill="#111827">auth_identity_binding</text>
+<text x="832" y="816" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">issuer</text>
+<text x="990" y="816" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="1088" y="816" font-size="10.5" font-weight="600" fill="#9a3412">PK</text>
+<text x="832" y="836" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">subject</text>
+<text x="990" y="836" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="1088" y="836" font-size="10.5" font-weight="600" fill="#9a3412">PK</text>
+<text x="832" y="856" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">person_id</text>
+<text x="990" y="856" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
+<text x="1088" y="856" font-size="10.5" font-weight="600" fill="#9a3412">FK</text>
+<line x1="832" y1="866" x2="1168" y2="866" stroke="#e5e7eb"/>
+<text x="832" y="880" font-size="10.5" fill="#6b7280">→ auth_person.id · one subject per issuer and person</text>
+<text x="832" y="896" font-size="10.5" fill="#6b7280">written once, by the first login; a changed subject is refused</text>
+<text x="620" y="1032" text-anchor="middle" font-size="12" fill="#6b7280">PK primary key · FK foreign key · UNIQUE unique index · CHECK allowed values</text>
+</svg>
