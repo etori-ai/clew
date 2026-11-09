@@ -1045,6 +1045,15 @@
       "area": "platform"
     },
     {
+      "key": "D92-what-goes-into-the-box-enters-on-astryxs-entry-motion",
+      "number": 92,
+      "path": "docs/decisions/D92-what-goes-into-the-box-enters-on-astryxs-entry-motion.md",
+      "title": "D92 · What goes into the box enters on Astryx's entry motion",
+      "status": "accepted, built 2026-11-09 on `main`",
+      "date": "2026-11-09",
+      "area": "ui"
+    },
+    {
       "key": "D93-the-protected-key-is-refused-at-the-scim-boundary",
       "number": 93,
       "path": "docs/decisions/D93-the-protected-key-is-refused-at-the-scim-boundary.md",
@@ -2012,6 +2021,12 @@
     {
       "path": "docs/decisions/D91-one-logger-opentelemetry-export-and-the-model-turn-in-the-audit-trail.md",
       "title": "D91 · One logger, OpenTelemetry export, and the model turn in the audit trail",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D92-what-goes-into-the-box-enters-on-astryxs-entry-motion.md",
+      "title": "D92 · What goes into the box enters on Astryx's entry motion",
       "category": "decision-history",
       "headings": []
     },

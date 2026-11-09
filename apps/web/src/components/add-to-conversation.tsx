@@ -1,4 +1,14 @@
-import { AtSymbolIcon, Icon, IconButton } from '@clew/ui';
+import { AtSymbolIcon, Icon, IconButton, useEntryAnimation } from '@clew/ui';
+
+/**
+ * The check that takes the `@`'s place once the object is in the box, scaling in on Astryx's entry motion (D92) as the
+ * chip does in the drawer: the card and the box say "done" with one movement. It only mounts when the object is added,
+ * so a button that is already resting when the page is drawn shows its check at once.
+ */
+function AddedCheck() {
+  const entry = useEntryAnimation('scaleIn');
+  return <Icon icon="check" xstyle={entry ?? undefined} />;
+}
 
 /**
  * "Lägg till i samtalet" (D12) as one icon, wherever a card, a row, a source or a meeting can go into the box: the `@`
@@ -21,7 +31,7 @@ export function AddToConversation({
       variant="ghost"
       label={label}
       tooltip={label}
-      icon={<Icon icon={added ? 'check' : AtSymbolIcon} />}
+      icon={added ? <AddedCheck /> : <Icon icon={AtSymbolIcon} />}
       isDisabled={added}
       onClick={onAdd}
     />

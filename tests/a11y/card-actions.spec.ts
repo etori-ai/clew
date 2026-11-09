@@ -101,6 +101,38 @@ test.describe('a row shows the next step and Lägg till i samtalet; the rest is 
     await expect(composer(page)).toBeVisible();
     await expect(row.getByRole('button', { name: 'I samtalet' })).toBeDisabled();
   });
+
+  // D92: the chip enters the drawer on Astryx's entry motion, the field has the focus from the same click, and a screen
+  // reader hears the chip's name; under reduced motion the chip is there at once.
+  for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+    test(`a card put in the box enters the drawer, is announced, and respects ${reducedMotion} motion`, async ({
+      page,
+      api: _,
+    }) => {
+      await page.emulateMedia({ reducedMotion });
+      await open(page, '/');
+      await page.locator('#thread-omtanke').getByRole('button', { name: 'Lägg till i samtalet' }).click();
+      const remove = page.getByRole('button', { name: 'Ta bort Omtankesamtal med Anna Lindqvist' });
+      await expect(remove).toBeVisible();
+      await expect(composer(page)).toBeFocused();
+      await expect(page.getByRole('status').filter({ hasText: 'är med i samtalet' })).toContainText(
+        'Omtankesamtal med Anna Lindqvist är med i samtalet',
+      );
+      // The chip and the drawer around it, up to the box's region: what entered is animated, or nothing is.
+      const animations = await remove.evaluate(el => {
+        const out: { name: string; duration: string }[] = [];
+        for (let e = el.parentElement; e && e.getAttribute('role') !== 'region'; e = e.parentElement) {
+          const s = getComputedStyle(e);
+          out.push({ name: s.animationName, duration: s.animationDuration });
+        }
+        return out;
+      });
+      const still = (a: { name: string; duration: string }) =>
+        a.name === 'none' || a.duration.split(',').every(value => parseFloat(value) === 0);
+      if (reducedMotion === 'reduce') expect(animations.every(still)).toBe(true);
+      else expect(animations.some(a => !still(a))).toBe(true);
+    });
+  }
 });
 
 test.describe('the page says one thing at a time', () => {
