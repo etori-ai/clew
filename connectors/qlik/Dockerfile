@@ -2,7 +2,7 @@
 # Node's official image is MIT; nothing else is installed.
 FROM node:26.13.0-bookworm-slim
 WORKDIR /connector
-COPY manifest.mjs connector.mjs verification.mjs statistics.mjs qlik.mjs server.mjs ./
+COPY manifest.mjs connector.mjs verification.mjs statistics.mjs engine.mjs server.mjs ./
 ENV PORT=4048
 EXPOSE 4048
 USER node

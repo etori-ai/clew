@@ -1,4 +1,4 @@
-// Clew reads this contract to discover the absence statistics and draw their views (D82).
+// Clew reads this contract to discover what Qlik offers and draw its views (D82). Sick leave is the first area.
 // The contract describes sick-leave rates, not Qlik: another statistics source can fulfil it later (D1).
 // Only aggregates cross this boundary: a rate per unit and month, never a person.
 
@@ -53,7 +53,7 @@ const rateFields = [
 
 // The rate per unit for the latest month: the manager's own unit, or the units the operator mapped to it.
 const unitRatesCapability = {
-  name: 'absence.unitRates',
+  name: 'qlik.sickLeaveByUnit',
   kind: 'read',
   title: 'Sjukfrånvaro per enhet',
   model: true,
@@ -74,7 +74,7 @@ const unitRatesCapability = {
     kind: 'table',
     title: 'unit',
     ref: 'ref',
-    open: { capability: 'absence.trend', title: 'Utveckling', params: { unit: 'ref' } },
+    open: { capability: 'qlik.sickLeaveTrend', title: 'Utveckling', params: { unit: 'ref' } },
     empty: 'Statistiken har ingen enhet som hör till dig.',
     fields: [
       { key: 'unit', label: 'Enhet' },
@@ -89,7 +89,7 @@ const unitRatesCapability = {
 
 // The last twelve months for one unit, newest first. Opened from a unit row, or for the first of the person's units.
 const trendCapability = {
-  name: 'absence.trend',
+  name: 'qlik.sickLeaveTrend',
   kind: 'read',
   title: 'Sjukfrånvaro per månad',
   model: true,
@@ -126,16 +126,16 @@ const trendCapability = {
 
 export const manifest = {
   protocol: 2,
-  id: 'absence',
+  id: 'qlik',
   kind: 'passthrough',
-  source: 'Sjukfrånvarostatistiken',
+  source: 'Qlik',
   areas: [
     {
-      id: 'absence',
+      id: 'sick-leave',
       title: 'Sjukfrånvaro',
       icon: 'chart',
       roles: ['manager'],
-      standing: ['absence.unitRates', 'absence.trend'],
+      standing: ['qlik.sickLeaveByUnit', 'qlik.sickLeaveTrend'],
       schedules: [{ label: 'Statistiken läses om', when: 'När källan har laddats om, oftast varje natt' }],
       figure: true,
     },

@@ -1,7 +1,7 @@
 # Sick leave from Qlik: what Qlik offers and how it fits the connector architecture · 2026-11-06
 
 Status: exploration. Its recommendation for aggregates was not taken: [D82](../decisions/D82-sick-leave-statistics-come-through-an-absence-connector-that-reads-only-aggregates.md)
-reads one aggregate with a service identity instead of impersonating each person, and `connectors/absence` is built
+reads one aggregate with a service identity instead of impersonating each person, and the Qlik connector `connectors/qlik` is built
 on it. The Qlik facts come from Qlik's documentation as read on 2026-11-06 (sources at the end) and were not tried
 against a real Qlik installation. The Clew facts come from a checkout of `windows-dev-stack` based on `cdc6488`.
 
