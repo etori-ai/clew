@@ -92,6 +92,17 @@ export interface ProvisionTx {
   setGroupMembers(groupId: string, personIds: readonly string[]): Promise<void>;
   // Administration › Användare (D85).
   assignmentsOf(personId: string): Promise<Array<{ unitId: string; unitLabel: string; role: Assignment['role'] }>>;
+  // Personal (D94): everyone assigned to a unit, with their role on it; the use case sorts and excludes the reader.
+  unitPeople(unitId: string): Promise<
+    Array<{
+      id: string;
+      name: string;
+      userName: string | null;
+      email: string | null;
+      role: Assignment['role'];
+      enabled: boolean;
+    }>
+  >;
   /** Whether an identity binding exists for the person, with any issuer. */
   bound(personId: string): Promise<boolean>;
   /** Add or remove one group-capability row; true when the row changed. */

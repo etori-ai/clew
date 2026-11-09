@@ -32,6 +32,7 @@ import {
   providerDetail,
   providerReport,
   usersOverview,
+  staffOverview,
 } from './data';
 import type { ModelSummary, ProviderSummary } from '@clew/contracts';
 import { personSearch, phonebook } from './phonebook';
@@ -85,6 +86,10 @@ export class MockApi {
   users = usersOverview();
   /** The users page for someone with `admin.connectors` but not `admin.users`: the server refuses. */
   usersForbidden = false;
+  /** Personal (D94): the units the test person manages and their people. */
+  staff = staffOverview();
+  /** Personal for someone who manages no unit: the server refuses whatever the session's role says. */
+  staffForbidden = false;
   /** The shared header (D88) every page draws: Clew's default until a test gives the person a connector's header. */
   header: SiteHeaderView = siteHeader();
   connectors: ConnectorSummary[] = connectors();
@@ -139,6 +144,14 @@ export class MockApi {
     if (path === '/header') return json(this.header);
     // The MCP service inbox (D81): empty unless a spec routes it itself.
     if (path === '/chat-services') return json({ services: [], deliveries: [] });
+    // Personal (D94): the manager's units and their people, or the server's refusal.
+    if (path === '/staff')
+      return this.staffForbidden
+        ? route.fulfill({
+            status: 403,
+            json: { error: 'Sidan Personal är för den som är chef för en enhet.', code: 'denied' },
+          })
+        : json(this.staff);
     if (path.startsWith('/admin/')) {
       if (!this.admin)
         return route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } });

@@ -31,6 +31,8 @@ export const keys = {
   manifestReference: ['protocol', 'manifest-reference'] as const,
   /** The shared header (D88): the person's, kept for the visit. */
   header: ['header'] as const,
+  /** Personal (D94): the manager's units and their people. */
+  staff: ['staff'] as const,
   admin: {
     all: ['admin'] as const,
     connectors: ['admin', 'connectors'] as const,

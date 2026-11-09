@@ -26,6 +26,7 @@ import { startJobs } from './composition/jobs';
 import { mcpRoutes } from './routes/mcp';
 import { startMcpWatches } from './composition/mcp';
 import { scimRoutes } from './routes/scim';
+import { staffRoutes } from './routes/staff';
 import { scim } from './composition/people';
 
 // Local secrets written by `bun run auth:setup`. Never committed, never read by the browser bundle.
@@ -84,6 +85,8 @@ app.use('/scim/*', async (c, next) => {
 });
 app.route('/scim/v2', scimRoutes(scim));
 app.route('/api/admin', adminRoutes);
+// Personal (D94): a manager's people, scoped by the use case.
+app.route('/api/staff', staffRoutes);
 // The shared header (D88): what the person's header connector lists for them.
 app.route('/api/header', headerRoutes);
 app.route('/api/chat-services', mcpRoutes);

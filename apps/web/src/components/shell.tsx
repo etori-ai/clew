@@ -52,7 +52,7 @@ export const SubRows = ({ children }: { children: ReactNode }) => (
   </HStack>
 );
 
-export type Surface = 'start' | 'calendar' | 'admin';
+export type Surface = 'start' | 'calendar' | 'staff' | 'admin';
 /** What a surface puts in the rail: a create button on top, its sections (the places, then the conversations, D50) and the rows that stay at the foot. */
 export interface ShellNav {
   top?: ReactNode;

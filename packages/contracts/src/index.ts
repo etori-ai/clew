@@ -1243,6 +1243,26 @@ export interface UserAdminRow {
   capabilities: string[];
   groups: Array<{ externalId: string | null; label: string }>;
 }
+/** Personal (D94): a person on a unit the signed-in manager manages, as the page lists them. No token, no subject. */
+export interface StaffPerson {
+  id: string;
+  name: string;
+  userName: string | null;
+  email: string | null;
+  /** The person's role on this unit, not their active one. */
+  role: Role;
+  enabled: boolean;
+}
+export interface StaffUnit {
+  unitId: string;
+  unitLabel: string;
+  /** Everyone assigned to the unit except the manager reading, by name in Swedish order. */
+  people: StaffPerson[];
+}
+/** The units the manager manages, by label in Swedish order; the server refuses anyone who manages none. */
+export interface StaffOverview {
+  units: StaffUnit[];
+}
 /** D85: one group gives one capability. `groupLabel` is the group's name while the group is provisioned, null when only this row remains. */
 export interface GroupCapability {
   groupExternalId: string;

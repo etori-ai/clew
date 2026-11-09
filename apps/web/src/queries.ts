@@ -11,6 +11,8 @@ import { keys } from './query-keys';
 export const threadsQuery = queryOptions({ queryKey: keys.threads, queryFn: () => api.threads() });
 export const threadQuery = (id: string) => queryOptions({ queryKey: keys.thread(id), queryFn: () => api.thread(id) });
 export const areasQuery = queryOptions({ queryKey: keys.areas, queryFn: () => api.areas() });
+/** Personal (D94): the people on the units the manager manages; a 403 is the page's own state, not retried. */
+export const staffQuery = queryOptions({ queryKey: keys.staff, queryFn: () => api.staff(), retry: false });
 /** The day and the model's status are extras on the page: a failure is tolerated, never retried, never shown as the page's error. */
 export const todayQuery = queryOptions({ queryKey: keys.today, queryFn: () => api.today(), retry: false });
 export const attentionQuery = queryOptions({ queryKey: keys.attention, queryFn: () => api.attention() });

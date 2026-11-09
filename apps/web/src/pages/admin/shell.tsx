@@ -28,7 +28,7 @@ export function AdminShell({
 }) {
   const mobile = useMediaQuery(mobileQuery);
   // Only an administrator reaches this shell: `main.tsx` draws NotAdmin for anyone else.
-  const nav = useRail({ current: { surface: 'admin', section }, admin: true });
+  const nav = useRail({ current: { surface: 'admin', section }, admin: true, manager: user.role === 'manager' });
   return (
     <Shell user={user} nav={nav}>
       {/* Layout's contentWidth bounds the page and centres it in the content area, the same mechanism as the start page's

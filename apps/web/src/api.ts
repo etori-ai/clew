@@ -1,6 +1,7 @@
 import type {
   GroupCapabilityInputType,
   UsersAdminOverview,
+  StaffOverview,
   ManifestReference,
   DocumentRequest,
   ReviewEvidence,
@@ -147,6 +148,8 @@ const post = <T>(path: string, body?: unknown) => call<T>(path, { method: 'POST'
 const patch = <T>(path: string, body: unknown) => call<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
 const del = <T>(path: string) => call<T>(path, { method: 'DELETE' });
 export const api = {
+  /** Personal (D94): the people on the units the signed-in manager manages; 403 for anyone else. */
+  staff: () => call<StaffOverview>('/api/staff'),
   chatServices: () => call<{ services: McpService[]; deliveries: McpDelivery[] }>('/api/chat-services'),
   chatService: (id: string, deliveryId?: string) =>
     call<McpView>(

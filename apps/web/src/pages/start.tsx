@@ -387,7 +387,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const pageTitle = view ? view.title : conversationId ? 'Samtal' : 'Hem';
   // While the review is open its drawer names the document (D73 amended); Hem's title comes back with Hem's address.
   usePageTitle(reviewing ? null : pageTitle, view || conversationId ? false : pageTitle);
-  const nav = useRail({ current: railCurrent, admin });
+  const nav = useRail({ current: railCurrent, admin, manager: user.role === 'manager' });
 
   const openCardView = (threadId: string, actionId: string) => navigate(withAction(here, search, threadId, actionId));
   // On a phone Hem has no panel for a card (artboards 11 and 12): the threads are rows, and the card the address names
