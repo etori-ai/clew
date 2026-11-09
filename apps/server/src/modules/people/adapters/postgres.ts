@@ -51,7 +51,9 @@ const groupRecord = (r: GroupRow): GroupRecord => ({
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
 });
-const userColumn = { userName: schema.people.userName, externalId: schema.people.externalId } as const;
+/** `userName` is compared without regard to case (RFC 7643: `caseExact: false`), `externalId` exactly; as the unique indexes do. */
+const userMatch = (by: 'userName' | 'externalId', value: string) =>
+  by === 'userName' ? sql`lower(${schema.people.userName}) = lower(${value})` : eq(schema.people.externalId, value);
 const groupColumn = { externalId: schema.groups.externalId, label: schema.groups.label } as const;
 /** The provisioning tables and the grant projection (D68, D85) inside one Postgres transaction. */
 export function postgresProvisionStore(): ProvisionStore {
@@ -158,16 +160,13 @@ export function postgresProvisionStore(): ProvisionStore {
         .where(and(eq(schema.people.id, id), eq(schema.people.organisationId, organisationId)));
       return row && userRecord(row);
     },
-    async findUser(organisationId, by, value) {
-      const [row] = await tx
-        .select(userColumns)
-        .from(schema.people)
-        .where(and(eq(userColumn[by], value), eq(schema.people.organisationId, organisationId)));
+    async findUser(by, value) {
+      const [row] = await tx.select(userColumns).from(schema.people).where(userMatch(by, value));
       return row && userRecord(row);
     },
     async listUsers(organisationId, page, filter) {
       const where = filter
-        ? and(eq(schema.people.organisationId, organisationId), eq(userColumn[filter.attribute], filter.value))
+        ? and(eq(schema.people.organisationId, organisationId), userMatch(filter.attribute, filter.value))
         : eq(schema.people.organisationId, organisationId);
       const [counted] = await tx
         .select({ total: sql<number>`count(*)::int` })

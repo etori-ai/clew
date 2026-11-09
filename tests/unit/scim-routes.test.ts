@@ -104,6 +104,40 @@ describe('/scim/v2', () => {
     expect((await call('DELETE', '/Groups/id-2')).status).toBe(204);
     expect(store.state.grants.get('id-1')).toBeUndefined();
   });
+  test('a unique index that fires in a race answers the same 409 as the check, naming the attribute when Postgres names the index', async () => {
+    const violation = (constraint?: string, wrapped = false) => {
+      const raw = Object.assign(new Error('duplicate key value violates unique constraint'), {
+        code: '23505',
+        ...(constraint ? { constraint_name: constraint } : {}),
+      });
+      return wrapped ? Object.assign(new Error('Failed query'), { cause: raw }) : raw;
+    };
+    const store = memoryProvisionStore();
+    store.state.provisioners.set('digest:t', { id: 'mk', organisationId: 'sundsvall', label: 'Metakatalogen' });
+    const scim = scimUsecases({ store, clock: () => new Date(), ids: () => 'x', digest: t => 'digest:' + t });
+    const throwing = (error: Error) =>
+      scimRoutes({ ...scim, createUser: async () => Promise.reject(error) }).request('https://clew.test/Users', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer t', 'Content-Type': 'application/scim+json' },
+        body: JSON.stringify(anna),
+      });
+    const named = await throwing(violation('auth_person_user_name'));
+    expect(named.status).toBe(409);
+    expect(await named.json()).toMatchObject({
+      status: '409',
+      scimType: 'uniqueness',
+      detail: 'A resource with this userName already exists.',
+    });
+    expect(await (await throwing(violation('auth_group_external_id', true))).json()).toMatchObject({
+      status: '409',
+      detail: 'A resource with this externalId already exists.',
+    });
+    expect(await (await throwing(violation())).json()).toMatchObject({
+      status: '409',
+      detail: 'A resource with this userName or externalId already exists.',
+    });
+    expect((await throwing(new Error('something else'))).status).toBe(500);
+  });
   test('mistakes come back as the error resource: not JSON, wrong shape, unknown id, conflict, unknown address', async () => {
     const { call } = app();
     expect(await (await call('POST', '/Users', '{not json')).json()).toMatchObject({

@@ -43,6 +43,24 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
     total: rows.length,
     rows: byId(rows).slice(p.startIndex - 1, p.startIndex - 1 + p.count),
   });
+  /** `userName` is matched without regard to case (RFC 7643's default), `externalId` exactly: what the Postgres indexes do. */
+  const userMatches = (u: UserRecord, by: 'userName' | 'externalId', value: string) =>
+    by === 'userName'
+      ? u.userName !== null && u.userName.toLowerCase() === value.toLowerCase()
+      : u.externalId === value;
+  /** The unique indexes of `auth_person`, so a race the use case did not catch fails here as it does on Postgres. */
+  const assertUnique = (record: Pick<UserRecord, 'userName' | 'externalId'>, selfId: string) => {
+    for (const u of state.users.values()) {
+      if (u.id === selfId) continue;
+      const byName = record.userName !== null && userMatches(u, 'userName', record.userName),
+        byExternal = record.externalId !== null && u.externalId === record.externalId;
+      if (byName || byExternal)
+        throw Object.assign(new Error('duplicate key value violates unique constraint'), {
+          code: '23505',
+          constraint_name: byName ? 'auth_person_user_name' : 'auth_person_external_id',
+        });
+    }
+  };
   const groupsOf = (personId: string) =>
     [...state.members]
       .map(splitKey)
@@ -102,25 +120,31 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
       const u = state.users.get(id);
       return u && u.organisationId === organisationId ? { ...u } : undefined;
     },
-    async findUser(organisationId, by, value) {
-      const u = [...state.users.values()].find(u => u.organisationId === organisationId && u[by] === value);
+    async findUser(by, value) {
+      const u = [...state.users.values()].find(u => userMatches(u, by, value));
       return u && { ...u };
     },
     async listUsers(organisationId, p, filter) {
       return page(
         [...state.users.values()]
-          .filter(u => u.organisationId === organisationId && (!filter || u[filter.attribute] === filter.value))
+          .filter(
+            u => u.organisationId === organisationId && (!filter || userMatches(u, filter.attribute, filter.value)),
+          )
           .map(u => ({ ...u })),
         p,
       );
     },
     async insertUser(record) {
       if (state.users.has(record.id)) throw new Error('duplicate user id');
+      assertUnique(record, record.id);
       state.users.set(record.id, { ...record });
     },
     async updateUser(id, fields) {
       const u = state.users.get(id);
-      if (u) state.users.set(id, { ...u, ...fields });
+      if (!u) return;
+      const next = { ...u, ...fields };
+      assertUnique(next, id);
+      state.users.set(id, next);
     },
     async userGroups(personId) {
       return byId(groupsOf(personId).map(g => ({ id: g.id, externalId: g.externalId, label: g.label })));

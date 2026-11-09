@@ -54,7 +54,12 @@ export interface ProvisionTx {
   provisioner(tokenDigest: string): Promise<Provisioner | undefined>;
   // SCIM: users, always within the provisioner's organisation.
   readUser(organisationId: string, id: string): Promise<UserRecord | undefined>;
-  findUser(organisationId: string, by: 'userName' | 'externalId', value: string): Promise<UserRecord | undefined>;
+  /**
+   * Across the installation, because a login carries no organisation: a `userName` matches without regard to case
+   * (RFC 7643's default for it), an `externalId` exactly. The unique indexes of `auth_person` say the same.
+   */
+  findUser(by: 'userName' | 'externalId', value: string): Promise<UserRecord | undefined>;
+  /** The organisation's users, paged by id; a `userName` filter matches without regard to case. */
   listUsers(
     organisationId: string,
     page: Page,

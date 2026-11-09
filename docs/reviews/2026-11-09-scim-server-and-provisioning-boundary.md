@@ -214,4 +214,11 @@ it, else by its id, so the row exists before the assignment that references it; 
 re-derives the unit's managers, who carry its label without being members. The case is in the provisioning contract
 (so Postgres asserts it) and in the SCIM scenario tests. The enlarged directory was then pushed to the running
 development server over HTTP, with `unit-manager:` groups for brand-new units arriving before their `unit:` groups, and
-a second push changed nothing. Findings 2 to 9 are open.
+a second push changed nothing.
+
+Findings 2 and 3 followed the same day, when the branch met `main`'s migration `0039_thread_message_seq` and the
+identity migration had to be renumbered anyway: `userName` and `externalId` are unique across the installation, in the
+use case (409) as in the indexes, and `userName` is matched without regard to case in the filter, the uniqueness check
+and the first-login binding, with the unique index on `lower(user_name)`. A unique violation that fires before the
+check saw the other row (two requests at once) is translated by the route into the same 409 `uniqueness`, naming the
+attribute from the constraint. The memory adapter now enforces the same indexes. Findings 4 to 9 are open.

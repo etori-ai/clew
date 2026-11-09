@@ -73,6 +73,11 @@ test('the first login binds exactly one enabled person by userName and audits it
   // The same subject again: the binding stands, nothing new is written.
   expect((await bindFirstLogin(issuer, 'sub-anna', 'preferred_username', prefix + ':anna'))?.person.id).toBe(anna);
   expect(await actions()).toEqual(['identity-bound']);
+  // The claim matches without regard to case (RFC 7643's default for userName): Keycloak lowercases, Entra does not.
+  expect(
+    (await bindFirstLogin(issuer, 'sub-anna', 'preferred_username', (prefix + ':anna').toUpperCase()))?.person.id,
+  ).toBe(anna);
+  expect(await actions()).toEqual(['identity-bound']);
   // A person without a grant binds but has no access to return.
   expect(await bindFirstLogin(issuer, 'sub-bo', 'preferred_username', prefix + ':bo')).toBeUndefined();
   expect(await actions()).toEqual(['identity-bound', 'identity-bound']);

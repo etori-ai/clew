@@ -17,9 +17,32 @@ export function scimRoutes(scim: ScimUsecases) {
   const app = new Hono<Env>();
   const json = (c: Context, body: unknown, status: 200 | 201 = 200, headers: Record<string, string> = {}) =>
     c.body(JSON.stringify(body), status, { 'Content-Type': SCIM_CONTENT_TYPE, ...privateHeaders, ...headers });
+  /**
+   * A unique index that fired before the use case's own check saw the other row (two requests at once) is the
+   * standard's 409, like the check's. Postgres names the constraint; the driver may wrap the error once.
+   */
+  const UNIQUE_VIOLATION = '23505',
+    constraintAttribute: Record<string, string> = {
+      auth_person_user_name: 'userName',
+      auth_person_external_id: 'externalId',
+      auth_group_external_id: 'externalId',
+    };
+  const asScimError = (error: unknown): ScimError => {
+    if (error instanceof ScimError) return error;
+    const e = error as { code?: string; constraint_name?: string; cause?: { code?: string; constraint_name?: string } };
+    const code = e?.code ?? e?.cause?.code,
+      constraint = e?.constraint_name ?? e?.cause?.constraint_name ?? '';
+    if (code === UNIQUE_VIOLATION)
+      return new ScimError(
+        409,
+        `A resource with this ${constraintAttribute[constraint] ?? 'userName or externalId'} already exists.`,
+        'uniqueness',
+      );
+    console.error('scim', error);
+    return new ScimError(500, 'The request could not be completed.');
+  };
   const fail = (c: Context, error: unknown) => {
-    const scim = error instanceof ScimError ? error : new ScimError(500, 'The request could not be completed.');
-    if (!(error instanceof ScimError)) console.error('scim', error);
+    const scim = asScimError(error);
     return c.body(JSON.stringify(scim.body()), scim.status, { 'Content-Type': SCIM_CONTENT_TYPE, ...privateHeaders });
   };
   const base = (c: Context) => (process.env.PUBLIC_URL ?? new URL(c.req.url).origin).replace(/\/+$/, '') + '/scim/v2';

@@ -41,7 +41,12 @@ export const people = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  t => [uniqueIndex('auth_person_external_id').on(t.externalId), uniqueIndex('auth_person_user_name').on(t.userName)],
+  // Unique across the installation, because a login carries no organisation; `userName` without regard to case,
+  // RFC 7643's default for it (Keycloak lowercases account names, Entra does not).
+  t => [
+    uniqueIndex('auth_person_external_id').on(t.externalId),
+    uniqueIndex('auth_person_user_name').on(sql`lower(${t.userName})`),
+  ],
 );
 export const identityBindings = pgTable(
   'auth_identity_binding',

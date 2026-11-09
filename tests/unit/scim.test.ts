@@ -89,16 +89,30 @@ describe('SCIM users', () => {
       scim.createUser(p, { ...anna, name: { givenName: 'Anna', familyName: 'Berg' }, displayName: undefined }, BASE),
     ).resolves.toMatchObject({ displayName: 'Anna Berg' });
   });
-  test('userName and externalId are unique within the organisation', async () => {
+  test('userName and externalId are unique across the installation, userName without regard to case', async () => {
     const { scim, p } = harness();
     await scim.createUser(p, anna, BASE);
     await expect(scim.createUser(p, { ...anna, externalId: 'mk-2' }, BASE)).rejects.toMatchObject({
       status: 409,
       scimType: 'uniqueness',
+      detail: 'A user with this userName already exists.',
     });
-    await expect(scim.createUser(p, { ...anna, userName: 'other' }, BASE)).rejects.toMatchObject({ status: 409 });
+    await expect(scim.createUser(p, { ...anna, userName: 'other' }, BASE)).rejects.toMatchObject({
+      status: 409,
+      detail: 'A user with this externalId already exists.',
+    });
+    // RFC 7643 declares userName not case exact, and Keycloak lowercases what Entra may send in mixed case.
+    await expect(scim.createUser(p, { ...anna, externalId: 'mk-3', userName: 'AnnBer' }, BASE)).rejects.toMatchObject({
+      status: 409,
+      scimType: 'uniqueness',
+    });
+    expect((await scim.listUsers(p, { filter: 'userName eq "ANNBER"' }, BASE)).totalResults).toBe(1);
+    // A login carries no organisation, so neither does uniqueness.
     const elsewhere = { id: 'other', organisationId: 'timra', label: 'Other' };
-    await expect(scim.createUser(elsewhere, anna, BASE)).resolves.toMatchObject({ id: 'id-2' });
+    await expect(scim.createUser(elsewhere, anna, BASE)).rejects.toMatchObject({ status: 409 });
+    await expect(
+      scim.createUser(elsewhere, { ...anna, externalId: 'mk-9', userName: 'bo' }, BASE),
+    ).resolves.toMatchObject({ id: 'id-2' });
   });
   test('lists with the two filters and pages, and never sees another organisation', async () => {
     const { scim, p } = harness();

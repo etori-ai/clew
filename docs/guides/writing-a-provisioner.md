@@ -13,7 +13,7 @@ The repository ships one: `scripts/provisioner/`, which pushes the development s
 | Attribute | Meaning in Clew |
 |---|---|
 | `externalId` | The source's stable id for the person, never reused. Clew finds the person by it on later pushes. |
-| `userName` | What a login is matched on. Unique within the organisation. |
+| `userName` | What a login is matched on. Unique across the installation and matched without regard to case, the standard's default for `userName`; a login carries no organisation. |
 | `displayName` (or `name.formatted`) | The name shown in the product. |
 | `emails` | A work address (`type: "work"`, else the primary, else the first). Clew needs it to invite the person to a meeting. |
 | `active` | `false` deactivates. `DELETE` also deactivates, because audit rows and threads reference the person; nothing is erased. |

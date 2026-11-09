@@ -102,8 +102,9 @@ export type ProvisioningUsecases = ReturnType<typeof provisioningUsecases>;
  * The SCIM 2.0 server (RFC 7644; D68): one use case per operation, the provisioner first. Each mutation runs in one
  * transaction with its audit row (`scim.user.*`, `scim.group.*`, actor `provisioner:<id>`) and re-derives the grants
  * of everyone it touched. `DELETE` on a user deactivates, because audit rows and threads reference the person; `DELETE`
- * on a group removes it and its memberships, and the members lose what the group gave them. Users are scoped to the
- * provisioner's organisation; groups belong to the installation.
+ * on a group removes it and its memberships, and the members lose what the group gave them. Users are read and written
+ * within the provisioner's organisation, but `userName` and `externalId` are unique across the installation (a login
+ * carries no organisation); groups belong to the installation.
  */
 export interface ScimQuery {
   filter?: string;
@@ -138,9 +139,10 @@ export function scimUsecases(deps: {
     if (!group) throw new ScimError(404, `Group '${id}' not found.`);
     return group;
   };
-  const uniqueUser = async (tx: ProvisionTx, p: Provisioner, fields: UserFields, self?: string) => {
+  /** Across the installation, `userName` without regard to case (the port says why); a race past this check hits the index and the route answers the same 409. */
+  const uniqueUser = async (tx: ProvisionTx, fields: UserFields, self?: string) => {
     for (const by of ['userName', 'externalId'] as const) {
-      const other = await tx.findUser(p.organisationId, by, fields[by]);
+      const other = await tx.findUser(by, fields[by]);
       if (other && other.id !== self) throw new ScimError(409, `A user with this ${by} already exists.`, 'uniqueness');
     }
   };
@@ -184,7 +186,7 @@ export function scimUsecases(deps: {
     action: string,
     base: string,
   ) {
-    await uniqueUser(tx, p, fields, current.id);
+    await uniqueUser(tx, fields, current.id);
     const changed = changedKeys(fieldsOf(current), fields),
       at = now();
     if (changed.length) {
@@ -251,7 +253,7 @@ export function scimUsecases(deps: {
     createUser: (p: Provisioner, body: unknown, base: string): Promise<ScimUser> =>
       deps.store.transaction(async tx => {
         const fields = userFields(checked(ScimUserInputSchema, body, 'User'));
-        await uniqueUser(tx, p, fields);
+        await uniqueUser(tx, fields);
         const at = now(),
           record: UserRecord = {
             id: deps.ids(),

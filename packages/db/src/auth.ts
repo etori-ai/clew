@@ -1,4 +1,4 @@
-import { and, eq, gt, isNotNull, isNull, lte, or } from 'drizzle-orm';
+import { and, eq, gt, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 import { database } from './index';
 import {
   people,
@@ -71,7 +71,8 @@ export async function resolveSubject(issuer: string, subject: string) {
 }
 /**
  * First login (D68 item 6): the verified subject binds to the one enabled, provisioned person whose `userName` equals the
- * configured claim's value. Exactly one match, never an e-mail address, one binding per person and issuer; a subject that
+ * configured claim's value without regard to case (RFC 7643's default for `userName`; Keycloak lowercases account names,
+ * Entra does not). Exactly one match, never an e-mail address, one binding per person and issuer; a subject that
  * differs from an existing binding is refused and audited, because a change of subject needs a person's review. Returns
  * the person's access when bound, undefined when not; the caller treats undefined as a denied login.
  */
@@ -80,7 +81,7 @@ export async function bindFirstLogin(issuer: string, subject: string, claim: str
     const matches = await tx
       .select({ id: people.id, enabled: people.enabled })
       .from(people)
-      .where(eq(people.userName, value));
+      .where(sql`lower(${people.userName}) = lower(${value})`);
     const [person] = matches;
     if (matches.length !== 1 || !person || !person.enabled) {
       // The claim is the account name the IdP vouched for, not a person Clew knows; it is what an operator needs to see.

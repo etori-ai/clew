@@ -49,9 +49,12 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
       await store.transaction(async tx => {
         expect((await tx.readUser(p + '-org', a))?.userName).toBe('u:' + a);
         expect(await tx.readUser(p + '-org', other)).toBeUndefined();
-        expect((await tx.findUser(p + '-org', 'userName', 'u:' + b))?.id).toBe(b);
-        expect((await tx.findUser(p + '-org', 'externalId', 'ext:' + c))?.id).toBe(c);
-        expect(await tx.findUser(p + '-org', 'userName', 'u:' + other)).toBeUndefined();
+        expect((await tx.findUser('userName', 'u:' + b))?.id).toBe(b);
+        expect((await tx.findUser('userName', ('u:' + b).toUpperCase()))?.id).toBe(b);
+        expect((await tx.findUser('externalId', 'ext:' + c))?.id).toBe(c);
+        expect(await tx.findUser('externalId', ('ext:' + c).toUpperCase())).toBeUndefined();
+        // Across the installation: a login carries no organisation.
+        expect((await tx.findUser('userName', 'u:' + other))?.id).toBe(other);
         const all = await tx.listUsers(p + '-org', { startIndex: 1, count: 100 });
         expect(all.total).toBe(3);
         expect(all.rows.map(r => r.id)).toEqual([a, b, c]);
@@ -65,6 +68,12 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
           { attribute: 'externalId', value: 'ext:' + a },
         );
         expect(filtered.rows.map(r => r.id)).toEqual([a]);
+        const byName = await tx.listUsers(
+          p + '-org',
+          { startIndex: 1, count: 10 },
+          { attribute: 'userName', value: ('u:' + a).toUpperCase() },
+        );
+        expect(byName.rows.map(r => r.id)).toEqual([a]);
         await tx.updateUser(a, { name: 'Renamed', enabled: false, updatedAt: '2026-11-09T07:00:00.000Z' });
         expect(await tx.readUser(p + '-org', a)).toMatchObject({
           name: 'Renamed',
@@ -74,6 +83,11 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
           createdAt: T,
         });
       });
+      // The unique indexes hold without regard to case for userName, as the use case's own check does.
+      await expect(
+        store.transaction(tx => tx.insertUser(userRow(p + '-dup', p + '-org', { userName: ('u:' + b).toUpperCase() }))),
+      ).rejects.toBeDefined();
+      expect(await store.transaction(tx => tx.readUser(p + '-org', p + '-dup'))).toBeUndefined();
     });
     test('groups hold members, members list their groups, and removing a group removes the memberships', async () => {
       const { store, prefix: p } = await make();

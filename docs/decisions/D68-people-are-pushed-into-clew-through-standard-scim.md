@@ -9,7 +9,9 @@ All knowledge of a source's fields, groups and roles lives in the provisioner, w
 Nothing in Clew names Metakatalogen or any other source. Clew's own vocabulary stays `manager` and `employee`.
 
 1. **Users.** `externalId` is required: the source's stable id, never reused. `userName` is required and unique: what a
-   login is matched on. `displayName` and a work address in `emails` are required; Clew needs the address to invite a
+   login is matched on. Both are unique across the installation, and `userName` is matched without regard to case, the
+   standard's default for it, because a login carries no organisation (settled 2026-11-09 after the
+   [SCIM review](../reviews/2026-11-09-scim-server-and-provisioning-boundary.md), findings 2 and 3). `displayName` and a work address in `emails` are required; Clew needs the address to invite a
    person to a meeting. `active: false` deactivates the person. `DELETE` also deactivates, because audit rows and
    threads reference the person; nothing is erased through SCIM.
 

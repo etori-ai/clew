@@ -59,7 +59,7 @@ CREATE INDEX "auth_group_member_person" ON "auth_group_member" USING btree ("per
 CREATE UNIQUE INDEX "auth_group_external_id" ON "auth_group" USING btree ("external_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "auth_provisioner_token_digest" ON "auth_provisioner" USING btree ("token_digest");--> statement-breakpoint
 CREATE UNIQUE INDEX "auth_person_external_id" ON "auth_person" USING btree ("external_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "auth_person_user_name" ON "auth_person" USING btree ("user_name");--> statement-breakpoint
+CREATE UNIQUE INDEX "auth_person_user_name" ON "auth_person" USING btree (lower("user_name"));--> statement-breakpoint
 -- Backfill (D68): every unit the grants know becomes a unit row, and every grant the one assignment it stands for. The
 -- grant stays as the derived active assignment. Idempotent, so a rerun on a database that already has them changes nothing.
 INSERT INTO "auth_unit" ("id", "organisation_id", "label")
