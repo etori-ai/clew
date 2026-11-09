@@ -60,6 +60,7 @@ import { GenericCard, ThreadRow } from '../components/card';
 import { ReviewOverlay } from '../components/review-overlay';
 import { ReceiptNotice } from '../components/receipt-notice';
 import { BriefSkeleton } from '../components/brief';
+import { ERRANDS_AREA, MyErrands } from '../components/my-errands';
 import { AsideSkeleton, AsyncContent } from '../components/loading';
 import {
   CONVERSATION_MIN,
@@ -545,6 +546,10 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           {groupHeading('notices', `Till kännedom · ${g.kannedom.length}`, 'Inget att göra, bara att veta')}
           {records(g.kannedom, { notice: true })}
         </VStack>
+      )}
+      {/* Mina ärenden (D90): the person's errands from every case system, after the day's work; also when Ärenden is the chosen area. */}
+      {(!area || area === ERRANDS_AREA) && (
+        <MyErrands areas={areas} hrefFor={ref => viewHref(ref.capability, ref.title, ref.input)} />
       )}
       {/* Läget (D54): the areas' figures after the groups, for every area at once, so not while one area is chosen. */}
       {!area && (

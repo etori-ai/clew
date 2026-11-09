@@ -143,6 +143,38 @@ test.describe('a declared view in the side panel', () => {
     await expectNoAxeViolations(page);
   });
 
+  test('the combined errand list: rows from two systems that each open in their own, the missing system named, and no axe violations', async ({
+    page,
+    api: _,
+  }) => {
+    await open(page, `/?open=clew.errands&open-title=${title('Mina ärenden')}`);
+    const panel = page.getByRole('dialog', { name: 'Mina ärenden' });
+    await expect(panel.getByRole('listitem')).toHaveCount(3);
+    // What waits on the person is first and is the only row with a toned badge; the system is a word on every row.
+    const first = panel.getByRole('listitem').first();
+    await expect(first).toContainText('IK-26110007 · Behörighet, Beställning');
+    await expect(first).toContainText('Dig');
+    await expect(first).toContainText('Ärendesystemet');
+    await expect(panel.getByRole('listitem').nth(1)).toContainText('Bygglovssystemet');
+    // A row is a link into the connector it came from, never into the list's own.
+    await expect(panel.getByRole('link', { name: 'IK-26110007 · Behörighet, Beställning' })).toHaveAttribute(
+      'href',
+      /open=sm\.errand/,
+    );
+    await expect(panel.getByRole('link', { name: 'BYGG 2026-000317 · Bygglov, Komplettering' })).toHaveAttribute(
+      'href',
+      /open=permits\.errand/,
+    );
+    // A short list is never read as the whole truth.
+    await expect(panel.getByText('Verksamhetssystemet svarade inte.')).toBeVisible();
+    await expectNoAxeViolations(page);
+    // Keyboard: the row's link opens the errand, read live from its own system.
+    await panel.getByRole('link', { name: 'IK-26110007 · Behörighet, Beställning' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByText('Ny medarbetare behöver konto i elevregistret')).toBeVisible();
+    await expectNoAxeViolations(page);
+  });
+
   test('a list is a list, and a row goes into the box as any found thing does', async ({ page, api: _ }) => {
     await open(page, team);
     const panel = page.getByRole('dialog', { name: 'Mitt teams kontaktlista' });
@@ -338,4 +370,13 @@ test.describe('1.4.10: a declared view at 320 px', () => {
       expect(await reflowProblems(page)).toEqual([]);
       await expectNoAxeViolations(page);
     });
+  test('the combined errand list reflows, with the missing system still named', async ({ page, api: _ }) => {
+    await page.setViewportSize(narrow);
+    await open(page, `/?open=clew.errands&open-title=${title('Mina ärenden')}`);
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByRole('link', { name: 'IK-26110007 · Behörighet, Beställning' })).toBeVisible();
+    await expect(dialog.getByText('Verksamhetssystemet svarade inte.')).toBeVisible();
+    expect(await reflowProblems(page)).toEqual([]);
+    await expectNoAxeViolations(page);
+  });
 });

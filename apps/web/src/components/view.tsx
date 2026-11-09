@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
+  ViewRefSchema,
+  checkContract,
   openRef,
   viewRows,
   type Activity,
@@ -136,6 +138,11 @@ function ViewHeader({ view, count, end }: { view: PanelViewSpec; count: number |
   );
 }
 const empty = (value: unknown) => value === undefined || value === null || value === '';
+/** The systems a combined list could not reach, as the server names them. */
+const unansweredIn = (output: unknown): string[] => {
+  const names = output && typeof output === 'object' ? (output as Row).unanswered : undefined;
+  return Array.isArray(names) ? names.filter((n): n is string => typeof n === 'string' && n.length > 0) : [];
+};
 /** A number as something a phone can dial: digits and a leading plus. Too short to be a number is drawn as text. */
 const dial = (value: string) => {
   const n = value.replace(/[^\d+]/g, '').replace(/(?!^)\+/g, '');
@@ -294,8 +301,11 @@ function Rows({
   const titleField = view.fields.find(f => f.key === view.title)!;
   const others = view.fields.filter(f => f.key !== view.title);
   const opens = (row: Row) => {
-    const ref = view.open && hrefFor ? openRef(view.open, row, view.source) : undefined;
-    return ref && hrefFor ? hrefFor(ref) : undefined;
+    if (!hrefFor) return undefined;
+    // A row of Clew's own combined list opens in the system it came from (D35 item 4); any other row opens its connector's own read.
+    const own = view.rowViews && checkContract(ViewRefSchema, row.view) ? row.view : undefined;
+    const ref = own ?? (view.open ? openRef(view.open, row, view.source) : undefined);
+    return ref ? hrefFor(ref) : undefined;
   };
   const name = (row: Row) => {
     const href = opens(row);
@@ -553,11 +563,17 @@ export function DeclaredView({
     );
   }
   const rows = limit ? all!.slice(0, limit) : all!;
+  // A combined list names the systems that did not answer, so an empty or short list is never read as the whole truth.
+  const missed = view.rowViews ? unansweredIn(output) : [];
   return (
     <VStack gap={3}>
       {header}
       {rows.length === 0 ? (
-        <EmptyState isCompact headingLevel={headingLevel} title={view.empty ?? 'Inget att visa'} />
+        <EmptyState
+          isCompact
+          headingLevel={headingLevel}
+          title={missed.length > 0 ? 'Inget att visa från de system som svarade' : (view.empty ?? 'Inget att visa')}
+        />
       ) : (
         <Rows view={view} rows={rows} hrefFor={hrefFor} wide={wide && !limit} />
       )}
@@ -569,6 +585,7 @@ export function DeclaredView({
             : `${counted(rows.length)} · ${view.source}. Inget av det sparas på Startsidan.`}
         </Text>
       )}
+      {missed.length > 0 && <Text type="supporting">{missed.join(', ')} svarade inte.</Text>}
     </VStack>
   );
 }

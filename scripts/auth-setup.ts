@@ -183,6 +183,8 @@ async function audienceClient(audience: string) {
 }
 await enableTokenExchange('clew-web');
 await audienceClient('eneo');
+// The SupportManagement connector acts as the person too (D89); its fixture reads this audience.
+await audienceClient('supportmanagement');
 const testPasswords: Record<string, string> = {};
 try {
   // The development directory (scripts/provisioner/directory.ts) is the one list of people. This bootstrap gives each a

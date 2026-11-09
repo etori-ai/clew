@@ -57,7 +57,7 @@ The assertion from Clew and the source credential are different credentials. Bac
 - SCIM user/group provisioning: [D68](../decisions/D68-people-are-pushed-into-clew-through-standard-scim.md). Local users/grants and OIDC login already exist.
 - Source change notifications through CloudEvents: [D19](../decisions/D19-change-notification-is-a-clew-owned-contract.md). There is no supported `POST /api/events/<source>` route.
 - A Clew MCP server for external agents: [capability surfaces](capability-surfaces.md). A connector is not registered as an MCP server.
-- A common errand profile and SupportManagement/CaseData connectors: [D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md).
+- Errand cards on demand, errand search, errand writes and a CaseData connector: [D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md). The list profile and the combined list `clew.errands` exist, and the SupportManagement connector reads a person's errands on a fixture with the person's own token ([D89](../decisions/D89-an-errand-connector-acts-as-the-person-and-the-case-system-decides-access.md)); SupportManagement itself cannot answer that way yet.
 - General conditional watches outside a job, push/email delivery, a workflow/page designer and classification-gated model release.
 
 The original municipal source landscape and candidate integrations remain in [dated reviews](../reviews/README.md). Use the [support matrix](../reference/status.md) for current availability rather than treating an early integration plan as a supported endpoint.

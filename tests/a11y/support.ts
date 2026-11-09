@@ -36,6 +36,7 @@ import {
 import type { ModelSummary, ProviderSummary } from '@clew/contracts';
 import { personSearch, phonebook } from './phonebook';
 import { rooms, roomsSpec } from './rooms';
+import { errandsOutput, errandsSpec, smErrandOutput, smErrandSpec } from './errands';
 import { manifestReference } from '../../packages/connectors/src/reference';
 import { parseManifest } from '../../packages/connectors/src/remote';
 import { manifest as helloManifest } from '../../connectors/hello/connector.mjs';
@@ -353,6 +354,12 @@ export class MockApi {
     }
     // The calendar's rooms (D69, amended): the one calendar read with a declared view, drawn by the one renderer.
     if (path === '/cap/calendar.rooms') return json({ output: { rows: rooms }, source: 'Kalendern', view: roomsSpec });
+    // No MCP service is registered for the person here (D81); mcp.spec.ts routes its own answers over this one.
+    if (path === '/chat-services') return json({ services: [], deliveries: [] });
+    // The combined errand list (D35 item 4, D89) and one errand in the system a row came from.
+    if (path === '/cap/clew.errands') return json({ output: errandsOutput, source: 'Startsidan', view: errandsSpec });
+    if (path === '/cap/sm.errand')
+      return json({ output: smErrandOutput, source: 'Ärendesystemet', view: smErrandSpec });
     // `@` as the server answers it: with nothing typed only the context the box sends (`near`), with text everything open, the context first.
     if (path === '/objects') {
       const q = (url.searchParams.get('q') ?? '').toLowerCase(),

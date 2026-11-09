@@ -1,6 +1,6 @@
 # D35 · Errands from several case systems: one connector per system, a shared profile for the reads, and a card's buttons reach only its own connector
 
-**Status:** accepted, the card-action rule built 2026-11-05; the errand profile, `clew.errands` and the errand connectors not built · **Date:** 2026-11-05 · **Area:** integrations
+**Status:** accepted, the card-action rule built 2026-11-05; identity and the row amended by D89 (2026-11-09), which built the list profile (`<id>.errands`, `ErrandRow`), `clew.errands` and the `sm` connector's two reads on a fixture; `errandCard`, errand search, the executes and `casedata` not built · **Date:** 2026-11-05 · **Area:** integrations
 
 **Decision.** A person acts on errands from several case systems (SupportManagement, CaseData and a third municipality's
 system) through Clew as follows.

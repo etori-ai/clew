@@ -5,7 +5,9 @@ import { WireError, type Endpoint, type ModelWire } from '../ports';
  * The live OpenAI-compatible wire (D24): the only protocol, so an open-weight model on a self-hosted endpoint is a
  * complete installation and a closed provider is an operator's entry, never a dependency. `GET {base}/models` lists,
  * one tiny chat completion proves a model id and a key and that the model takes a call shaped like a turn (D84), and the
- * AI SDK's OpenAI-compatible provider runs a turn.
+ * AI SDK's OpenAI-compatible provider runs a turn. The test sets no token limit, as a turn sets none: the parameter's
+ * name differs between providers (`max_tokens`, which OpenAI's reasoning models refuse, and `max_completion_tokens`,
+ * which older servers do not know), and a limit a reasoning model spends on thinking can leave no answer at all.
  * Every failure becomes a `WireError`: no answer (network, timeout, 5xx), a refused key (401, 403), or anything else.
  */
 const headers = (e: Endpoint): Record<string, string> => ({
@@ -75,7 +77,6 @@ export function openAICompatibleWire(fetchImpl: typeof fetch = fetch): ModelWire
           method: 'POST',
           body: JSON.stringify({
             model,
-            max_tokens: 4,
             messages: [{ role: 'user', content: 'Svara med ordet ok.' }],
             ...(tools ? { tools: [probeTool] } : {}),
             ...(reasoning === 'none' ? { reasoning_effort: 'none' } : {}),

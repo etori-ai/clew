@@ -320,7 +320,7 @@
       "number": 18,
       "path": "docs/decisions/D18-errands-are-a-clew-owned-passthrough-domain.md",
       "title": "D18 · Errands are a Clew-owned pass-through domain; SupportManagement is the first adapter",
-      "status": "proposed, hosting shape replaced by D35",
+      "status": "proposed, hosting shape replaced by D35, identity replaced by D89 (2026-11-09)",
       "date": "2026-11-04",
       "area": "integrations"
     },
@@ -473,7 +473,7 @@
       "number": 35,
       "path": "docs/decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md",
       "title": "D35 · Errands from several case systems: one connector per system, a shared profile for the reads, and a card's buttons reach only its own connector",
-      "status": "accepted, the card-action rule built 2026-11-05; the errand profile, `clew.errands` and the errand connectors not built",
+      "status": "accepted, the card-action rule built 2026-11-05; identity and the row amended by D89 (2026-11-09), which built the list profile (`<id>.errands`, `ErrandRow`), `clew.errands` and the `sm` connector's two reads on a fixture; `errandCard`, errand search, the executes and `casedata` not built",
       "date": "2026-11-05",
       "area": "integrations"
     },
@@ -1016,6 +1016,24 @@
       "status": "accepted, built 2026-11-09 on `main`",
       "date": "2026-11-09",
       "area": "ui, product, integrations"
+    },
+    {
+      "key": "D89-an-errand-connector-acts-as-the-person-and-the-case-system-decides-access",
+      "number": 89,
+      "path": "docs/decisions/D89-an-errand-connector-acts-as-the-person-and-the-case-system-decides-access.md",
+      "title": "D89 · An errand connector acts as the person, and the case system decides access",
+      "status": "accepted (product owner, 2026-11-09); the `sm` connector's two reads built on a fixture, and the list profile and `clew.errands` built the same day; the scan, a card on demand, errand search, writes and every change outside this repository not built",
+      "date": "2026-11-09",
+      "area": "integrations"
+    },
+    {
+      "key": "D90-mina-arenden-is-a-section-on-hem",
+      "number": 90,
+      "path": "docs/decisions/D90-mina-arenden-is-a-section-on-hem.md",
+      "title": "D90 · Mina ärenden is a section on Hem, after the day's work",
+      "status": "accepted (product owner, 2026-11-09), built; not compared with the design canvas, which has no errand section, and not yet seen against a running stack",
+      "date": "2026-11-09",
+      "area": "ui"
     }
   ],
   "documents": [
@@ -1148,6 +1166,21 @@
       "title": "Durable synthetic reference source",
       "category": "integrator-guide",
       "headings": []
+    },
+    {
+      "path": "connectors/supportmanagement/README.md",
+      "title": "sm: a person's errands in SupportManagement, as a Clew connector",
+      "category": "integrator-guide",
+      "headings": [
+        "What a person gets",
+        "What SupportManagement has to provide",
+        "How a status becomes a state",
+        "Configuration",
+        "The fixture",
+        "Run and check",
+        "What it never does",
+        "Unverified"
+      ]
     },
     {
       "path": "connectors/timesheet/README.md",
@@ -1930,6 +1963,18 @@
     {
       "path": "docs/decisions/D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md",
       "title": "D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D89-an-errand-connector-acts-as-the-person-and-the-case-system-decides-access.md",
+      "title": "D89 · An errand connector acts as the person, and the case system decides access",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D90-mina-arenden-is-a-section-on-hem.md",
+      "title": "D90 · Mina ärenden is a section on Hem, after the day's work",
       "category": "decision-history",
       "headings": []
     },
