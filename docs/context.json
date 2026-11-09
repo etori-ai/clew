@@ -943,6 +943,15 @@
       "status": "accepted direction; prototype only",
       "date": "2026-11-08",
       "area": "integrations"
+    },
+    {
+      "key": "D82-sick-leave-statistics-come-through-an-absence-connector-that-reads-only-aggregates",
+      "number": 82,
+      "path": "docs/decisions/D82-sick-leave-statistics-come-through-an-absence-connector-that-reads-only-aggregates.md",
+      "title": "D82 · Sick-leave statistics come through an absence connector that reads only aggregates",
+      "status": "proposed 2026-11-06 (first written as D63, renumbered 2026-11-09 because `main` had taken D63 meanwhile), connector built with a fixture and a Qlik Engine adapter tested against a fake engine; not run against a real Qlik, the minimum group size and the Qlik object not yet agreed",
+      "date": "2026-11-06",
+      "area": "integrations"
     }
   ],
   "documents": [
@@ -982,6 +991,18 @@
         "Understand the platform",
         "Build a custom connector",
         "Run and contribute"
+      ]
+    },
+    {
+      "path": "connectors/absence/README.md",
+      "title": "absence: sick-leave statistics as a Clew connector",
+      "category": "integrator-guide",
+      "headings": [
+        "What a manager gets",
+        "Configuration",
+        "Before it is switched on against Qlik",
+        "What it never does",
+        "Run and check"
       ]
     },
     {
@@ -1791,6 +1812,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D82-sick-leave-statistics-come-through-an-absence-connector-that-reads-only-aggregates.md",
+      "title": "D82 · Sick-leave statistics come through an absence connector that reads only aggregates",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -2407,6 +2434,22 @@
       "headings": [
         "Findings",
         "Open, with where each belongs"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-06-sick-leave-from-qlik.md",
+      "title": "Sick leave from Qlik: what Qlik offers and how it fits the connector architecture · 2026-11-06",
+      "category": "review-history",
+      "headings": [
+        "The question",
+        "Short answer",
+        "Where the product owner's picture still fits",
+        "What Qlik offers",
+        "How it fits Clew",
+        "Open questions for the municipality",
+        "Next steps",
+        "Could not verify",
+        "Sources"
       ]
     },
     {
