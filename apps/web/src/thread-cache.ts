@@ -67,9 +67,14 @@ export async function previewThread(client: QueryClient, thread: Thread): Promis
  * request itself, and a refetch now would draw the committed intermediate state over the preview or the answer. The
  * notice waits until the mutation cache is idle. Versioned documents and review snapshots stay fixed while open;
  * a changed work-item revision opens a new preview key. Policy changes still clear the entire protected tree.
+ *
+ * The stream reconnects every time the tab becomes visible, and a new connection always starts by saying the current
+ * revision. A revision this tab has already seen is therefore no notice: the first one is what the page's own first
+ * reads answered, and the same one again means nothing was committed while the tab was away.
  */
-export function changeNotices(client: QueryClient): { arrived(): void; stop(): void } {
-  let held = false;
+export function changeNotices(client: QueryClient): { arrived(revision?: string): void; stop(): void } {
+  let held = false,
+    seen: string | undefined;
   const refresh = () =>
     client.invalidateQueries({ predicate: q => q.queryKey[0] !== 'document' && q.queryKey[0] !== 'preview' });
   const flush = () => {
@@ -79,7 +84,12 @@ export function changeNotices(client: QueryClient): { arrived(): void; stop(): v
   };
   const unsubscribe = client.getMutationCache().subscribe(flush);
   return {
-    arrived() {
+    arrived(revision) {
+      if (revision !== undefined) {
+        const known = seen;
+        seen = revision;
+        if (known === undefined || known === revision) return;
+      }
       if (client.isMutating()) held = true;
       else void refresh();
     },

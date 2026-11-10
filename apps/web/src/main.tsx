@@ -114,7 +114,7 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
               });
             })
             .catch(() => setShell('anonymous'));
-        } else notices.arrived();
+        } else notices.arrived(change.revision);
       };
     };
     connect();
