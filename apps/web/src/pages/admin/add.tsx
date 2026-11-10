@@ -20,7 +20,7 @@ import { api } from '../../api';
 import { useAdminAction } from '../../mutations';
 import { AudienceEditor } from './audience';
 import { CheckResult } from './check-result';
-import { DialogFrame } from './dialog-frame';
+import { DialogFrame } from '../../components/dialog-frame';
 import { audienceLabel } from './labels';
 
 /**

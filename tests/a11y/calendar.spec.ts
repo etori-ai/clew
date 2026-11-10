@@ -293,4 +293,29 @@ test.describe('an entry opened from the grid', () => {
     await expect(dialog).toBeHidden();
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Förslaget ligger nu'));
   });
+  // The day strip is taller than a low window: the details scroll and the actions stay where they can be reached.
+  test('in a low window the actions stay on screen and the details scroll from the keyboard', async ({
+    page,
+    api: _,
+  }) => {
+    await page.setViewportSize({ width: desktop.width, height: 600 });
+    await open(page, `/calendar?date=${NEXT_WEEK}`);
+    await page.locator('.clew-cal-event-proposal').first().click();
+    const dialog = page.getByRole('dialog', { name: 'Utvecklingssamtal' });
+    await expect(dialog.getByRole('button', { name: 'Flytta förslaget' })).toBeInViewport({ ratio: 1 });
+    await expect(dialog.getByRole('button', { name: 'Visa dagen' })).toBeInViewport({ ratio: 1 });
+    const details = dialog.getByRole('group', { name: 'Dagen och uppgifterna' });
+    await details.focus();
+    await expect(details).toBeFocused();
+    await page.keyboard.press('End');
+    await expect(dialog.getByText('Medarbetare')).toBeInViewport({ ratio: 1 });
+  });
+  test('Ny bokning keeps its actions on screen in a low window', async ({ page, api: _ }) => {
+    await page.setViewportSize({ width: desktop.width, height: 500 });
+    await open(page, '/calendar');
+    await page.getByRole('button', { name: 'Ny bokning' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Ny bokning' });
+    await expect(dialog.getByRole('button', { name: 'Boka' })).toBeInViewport({ ratio: 1 });
+    await expect(dialog.getByRole('button', { name: 'Avbryt' })).toBeInViewport({ ratio: 1 });
+  });
 });

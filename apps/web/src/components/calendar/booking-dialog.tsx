@@ -8,7 +8,6 @@ import {
   Dialog,
   DialogHeader,
   FormLayout,
-  HStack,
   List,
   ListItem,
   MultiSelector,
@@ -29,6 +28,7 @@ import { errorMessage } from '../../query-policy';
 import { keys } from '../../query-keys';
 import { mobileQuery } from '../shell';
 import { applyThread } from '../../thread-cache';
+import { DialogFrame } from '../dialog-frame';
 
 const EMPTY_MEMBERS: CalendarMember[] = [];
 const EMPTY_ROOMS: CalendarRoom[] = [];
@@ -128,101 +128,18 @@ export function BookingDialog({ isOpen, initial, onClose }: Props) {
       purpose="form"
       variant={mobile ? 'fullscreen' : 'standard'}
     >
-      <DialogHeader
-        title="Ny bokning"
-        subtitle="I din kalender, med inbjudan till dem du väljer."
-        onOpenChange={open => {
-          if (!open) close();
-        }}
-      />
-      <VStack gap={3} padding={3}>
-        <FormLayout direction="vertical" defaultOptionality="required">
-          <TextInput label="Rubrik" value={title} onChange={setTitle} isRequired placeholder="Vad handlar mötet om?" />
-          <DateTimeInput
-            label="Börjar"
-            value={start as never}
-            onChange={v => setStart(v ?? '')}
-            isRequired
-            weekStartsOn="mon"
-            timeIncrement={15}
-            presentation="adaptive-bottom-sheet"
+      <DialogFrame
+        header={
+          <DialogHeader
+            title="Ny bokning"
+            subtitle="I din kalender, med inbjudan till dem du väljer."
+            onOpenChange={open => {
+              if (!open) close();
+            }}
           />
-          <TimeInput
-            label="Slutar"
-            value={end as never}
-            onChange={v => setEnd(v ?? '')}
-            isRequired
-            increment={15}
-            status={endFirst ? { type: 'error', message: 'Sluttiden måste vara efter starttiden.' } : undefined}
-          />
-          <MultiSelector
-            label="Deltagare"
-            isOptional
-            options={members.map(m => ({ value: m.email, label: m.name }))}
-            value={participants}
-            onChange={v => setParticipants(v.slice(0, 8))}
-            placeholder={members.length ? 'Välj från din enhet' : 'Bara du själv'}
-            triggerDisplay="badges"
-            hasSearch={members.length > 6}
-            presentation="adaptive"
-            isDisabled={!members.length}
-            disabledMessage="Din enhet har inga medlemmar att bjuda in."
-          />
-          <Selector
-            label="Rum"
-            isOptional
-            options={[
-              { value: '', label: 'Inget rum' },
-              ...rooms.map(r => ({
-                value: r.ref,
-                label: r.name,
-                description: `${r.capacity} platser${r.equipment.length ? ' · ' + r.equipment.join(', ') : ''}`,
-              })),
-            ]}
-            value={room}
-            onChange={v => setRoom(v ?? '')}
-            presentation="adaptive"
-          />
-        </FormLayout>
-        {availability && (
-          <List density="compact" hasDividers aria-label="Tillgänglighet">
-            <ListItem
-              label={<Text>Du</Text>}
-              endContent={<StatusDot variant={stateDot[availability.mine]} label={stateWord[availability.mine]} />}
-            />
-            {availability.participants.map(p => (
-              <ListItem
-                key={p.email}
-                label={<Text>{p.name}</Text>}
-                endContent={<StatusDot variant={stateDot[p.state]} label={stateWord[p.state]} />}
-              />
-            ))}
-            {availability.room && (
-              <ListItem
-                label={<Text>{availability.room.name}</Text>}
-                endContent={
-                  <StatusDot variant={stateDot[availability.room.state]} label={stateWord[availability.room.state]} />
-                }
-              />
-            )}
-          </List>
-        )}
-        {error &&
-          (error.uncertain ? (
-            <Banner
-              status="warning"
-              title="Bokningsresultatet är osäkert"
-              description={error.text}
-              collapsible={false}
-            />
-          ) : (
-            <Text as="p" role="alert" color="accent">
-              {error.text}
-            </Text>
-          ))}
-        {/* A greyed button with no word about why is a dead end: what is missing is said beside it. */}
-        {!title.trim() && <Text type="supporting">Skriv en rubrik så går det att boka.</Text>}
-        <HStack gap={2} justify="between" vAlign="center" wrap="wrap">
+        }
+        error={error && !error.uncertain ? error.text : null}
+        secondary={
           <Button
             size="sm"
             variant="ghost"
@@ -230,12 +147,104 @@ export function BookingDialog({ isOpen, initial, onClose }: Props) {
             isDisabled={!startAt || !endAt || endFirst}
             clickAction={check}
           />
-          <HStack gap={2}>
+        }
+        primary={
+          <>
             <Button size="sm" variant="ghost" label="Avbryt" onClick={close} />
             <Button size="sm" variant="primary" label="Boka" isDisabled={!ready} clickAction={book} />
-          </HStack>
-        </HStack>
-      </VStack>
+          </>
+        }
+      >
+        <VStack gap={3}>
+          <FormLayout direction="vertical" defaultOptionality="required">
+            <TextInput
+              label="Rubrik"
+              value={title}
+              onChange={setTitle}
+              isRequired
+              placeholder="Vad handlar mötet om?"
+            />
+            <DateTimeInput
+              label="Börjar"
+              value={start as never}
+              onChange={v => setStart(v ?? '')}
+              isRequired
+              weekStartsOn="mon"
+              timeIncrement={15}
+              presentation="adaptive-bottom-sheet"
+            />
+            <TimeInput
+              label="Slutar"
+              value={end as never}
+              onChange={v => setEnd(v ?? '')}
+              isRequired
+              increment={15}
+              status={endFirst ? { type: 'error', message: 'Sluttiden måste vara efter starttiden.' } : undefined}
+            />
+            <MultiSelector
+              label="Deltagare"
+              isOptional
+              options={members.map(m => ({ value: m.email, label: m.name }))}
+              value={participants}
+              onChange={v => setParticipants(v.slice(0, 8))}
+              placeholder={members.length ? 'Välj från din enhet' : 'Bara du själv'}
+              triggerDisplay="badges"
+              hasSearch={members.length > 6}
+              presentation="adaptive"
+              isDisabled={!members.length}
+              disabledMessage="Din enhet har inga medlemmar att bjuda in."
+            />
+            <Selector
+              label="Rum"
+              isOptional
+              options={[
+                { value: '', label: 'Inget rum' },
+                ...rooms.map(r => ({
+                  value: r.ref,
+                  label: r.name,
+                  description: `${r.capacity} platser${r.equipment.length ? ' · ' + r.equipment.join(', ') : ''}`,
+                })),
+              ]}
+              value={room}
+              onChange={v => setRoom(v ?? '')}
+              presentation="adaptive"
+            />
+          </FormLayout>
+          {availability && (
+            <List density="compact" hasDividers aria-label="Tillgänglighet">
+              <ListItem
+                label={<Text>Du</Text>}
+                endContent={<StatusDot variant={stateDot[availability.mine]} label={stateWord[availability.mine]} />}
+              />
+              {availability.participants.map(p => (
+                <ListItem
+                  key={p.email}
+                  label={<Text>{p.name}</Text>}
+                  endContent={<StatusDot variant={stateDot[p.state]} label={stateWord[p.state]} />}
+                />
+              ))}
+              {availability.room && (
+                <ListItem
+                  label={<Text>{availability.room.name}</Text>}
+                  endContent={
+                    <StatusDot variant={stateDot[availability.room.state]} label={stateWord[availability.room.state]} />
+                  }
+                />
+              )}
+            </List>
+          )}
+          {error?.uncertain && (
+            <Banner
+              status="warning"
+              title="Bokningsresultatet är osäkert"
+              description={error.text}
+              collapsible={false}
+            />
+          )}
+          {/* A greyed button with no word about why is a dead end: what is missing is said beside it. */}
+          {!title.trim() && <Text type="supporting">Skriv en rubrik så går det att boka.</Text>}
+        </VStack>
+      </DialogFrame>
     </Dialog>
   );
 }
