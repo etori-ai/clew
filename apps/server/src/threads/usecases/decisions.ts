@@ -15,6 +15,11 @@ export interface CardDecisionsDeps {
   read(persona: AuthenticatedContext, id: string): Promise<Thread | undefined>;
   registry: Pick<Registry, 'allowed' | 'viewFor'>;
   run(persona: AuthenticatedContext, name: string, input: unknown): Promise<unknown>;
+  /**
+   * Told when a card's read has been answered, for a card whose read is its answer (D97: the introduction). It answers
+   * the card as it now is when the read changed it, and the page gets that card with the read.
+   */
+  answered?: (persona: AuthenticatedContext, threadId: string) => Promise<Thread | undefined>;
   approve(
     persona: AuthenticatedContext,
     input: {
@@ -28,7 +33,7 @@ export interface CardDecisionsDeps {
   clock: () => Date;
 }
 /** Human card decisions enter the durable execution boundary. Reads remain immediate. */
-export function cardDecisions({ read, registry, run, approve, clock, documentPreview }: CardDecisionsDeps) {
+export function cardDecisions({ read, registry, run, approve, clock, documentPreview, answered }: CardDecisionsDeps) {
   const required = async (persona: AuthenticatedContext, id: string) => {
     const t = await read(persona, id);
     if (!t) throw new InputError('Kortet finns inte.');
@@ -57,7 +62,8 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
     if (found.capability.kind !== 'execute') {
       const output = await run(persona, action.capability, payload),
         view = registry.viewFor(persona, action.capability);
-      return { kind: found.capability.kind, output, ...(view ? { view } : {}) };
+      const thread = await answered?.(persona, id);
+      return { kind: found.capability.kind, output, ...(view ? { view } : {}), ...(thread ? { thread } : {}) };
     }
     const previous = t.execution && !t.execution.compensates ? t.execution : undefined;
     if (

@@ -140,6 +140,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
         title: detail.title,
         address: detail.address,
         wide: detail.spec?.kind === 'table',
+        reads: detail.spec?.kind === 'text',
         onClose: () => navigate(toolHref(capability, input)),
         body: inline => (
           <PanelBody

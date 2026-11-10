@@ -1088,6 +1088,15 @@
       "status": "accepted, built 2026-11-10",
       "date": "2026-11-10",
       "area": "identity"
+    },
+    {
+      "key": "D97-a-new-person-gets-one-introduction-card-and-the-help-is-a-view",
+      "number": 97,
+      "path": "docs/decisions/D97-a-new-person-gets-one-introduction-card-and-the-help-is-a-view.md",
+      "title": "D97 · A new person gets one introduction card, and the help is a view built from the person's own connectors",
+      "status": "accepted (product owner, 2026-11-10: the plan was described and answered \"Ja, börja\"), built 2026-11-10 (the card with its two ways out, the help view, the row in the person dialog, the answer without a model); item 8 is a direction, not built, and its audit question is open; not compared with the design canvas, which has no artboard for it; first written as D96 and renumbered when `main` took that number the same day",
+      "date": "2026-11-10",
+      "area": "product, ui"
     }
   ],
   "documents": [
@@ -2078,6 +2087,12 @@
     {
       "path": "docs/decisions/D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md",
       "title": "D96 · A key written wrong is refused at the SCIM boundary, not stored as a plain group",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D97-a-new-person-gets-one-introduction-card-and-the-help-is-a-view.md",
+      "title": "D97 · A new person gets one introduction card, and the help is a view built from the person's own connectors",
       "category": "decision-history",
       "headings": []
     },

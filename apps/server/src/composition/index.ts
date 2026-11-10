@@ -73,12 +73,18 @@ const attentionStore = postgresAttention();
 export const threads = {
   ...threadCore,
   ensureThreads: refresh.request,
+  /** A person's own read of Hem (D97): the introduction, once per person, and then the scan. The nightly scan never introduces anyone. */
+  arrive: async (p: Parameters<typeof threadCore.introduce>[0]) => {
+    await threadCore.introduce(p);
+    await refresh.request(p);
+  },
   attentionFor: async (p: Parameters<typeof threadCore.attentionFor>[0]) => ({
     ...(await threadCore.attentionFor(p)),
     ...(await attentionStore.day(p.id, clock().toISOString())),
   }),
   ...cardDecisions({
     read: threadCore.threadFor,
+    answered: threadCore.concludeIntroduction,
     registry,
     run: runCapability,
     approve: executions.approve,

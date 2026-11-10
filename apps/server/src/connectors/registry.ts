@@ -12,6 +12,8 @@ import { searchConnector, type AnswerCards } from '../modules/search/connector';
 import { searchUsecases } from '../modules/search/usecases';
 import { errandCapabilities } from '../modules/errands/capabilities';
 import { errandUsecases } from '../modules/errands/usecases';
+import { helpCapabilities } from '../modules/help/capabilities';
+import { helpUsecases } from '../modules/help/usecases';
 import { logger } from '../logging';
 
 /**
@@ -39,10 +41,12 @@ const errands = errandUsecases({ sources: actor => registry.errandSources(actor)
  */
 const core = searchConnector(search, answerCards);
 const errandPart = errandCapabilities(errands, actor => registry.errandSources(actor).length > 0);
+/** The help (D97) is computed from what the registry lets the person see, asked again at every read. */
+const helpPart = helpCapabilities(helpUsecases({ registry }));
 const clewConnector = {
   ...core,
   areas: [...core.areas, ...errandPart.areas],
-  capabilities: [...core.capabilities, ...errandPart.capabilities],
+  capabilities: [...core.capabilities, ...errandPart.capabilities, ...helpPart.capabilities],
 };
 const bundled = [calendarConnector(calendar, events), clewConnector];
 for (const m of [...internal, ...bundled]) registry.register({ ...m, uses: ['*'] });

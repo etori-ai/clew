@@ -40,8 +40,8 @@ import { menuSource, withListing } from './sources';
  *
  * Attributes: `menu-src`, `source`, `source-root`, `source-depth` (levels fetched, 1 default: the bar draws one),
  * `source-base` (the system's origin; the page's own by default), `source-nonce` (WordPress's REST nonce for a
- * signed-in visitor), `selected` (an item id; else the page's address decides), `user-name` with `logout-href`, or
- * `login-href`; `profile` (`sundsvall` default, as the portal), `logo-src`, `logo-dark-src`, `logo-alt`, `appearance`.
+ * signed-in visitor), `selected` (an item id; else the page's address decides), `user-name` with `logout-href` and
+ * `help-href` (where "Hjälp" in the person's dialog leads, D97), or `login-href`; `profile` (`sundsvall` default, as the portal), `logo-src`, `logo-dark-src`, `logo-alt`, `appearance`.
  *
  * Colour: by default (`appearance="auto"`) the header is drawn in the person's own choice from Clew (D39), which the
  * browser keeps per origin, so on one domain the intranet's header turns dark exactly when the portal does; with no
@@ -110,6 +110,7 @@ type Settings = Readonly<{
   userName: string | null;
   loginHref: string | null;
   logoutHref: string | null;
+  helpHref: string | null;
   profile: string;
   logoSrc: string | null;
   logoDarkSrc: string | null;
@@ -243,6 +244,7 @@ function EmbeddedHeader({
     <SiteHeaderPerson
       name={settings.userName}
       onSignOut={settings.logoutHref ? () => window.location.assign(settings.logoutHref!) : undefined}
+      helpHref={settings.helpHref ?? undefined}
       appearance={chooseMode ? { mode, onChange: chooseMode } : undefined}
     />
   ) : settings.loginHref ? (
@@ -280,6 +282,7 @@ const ATTRIBUTES = [
   'user-name',
   'login-href',
   'logout-href',
+  'help-href',
   'profile',
   'logo-src',
   'logo-dark-src',
@@ -349,6 +352,7 @@ class SiteHeaderElement extends HTMLElement {
       userName: attr('user-name'),
       loginHref: attr('login-href'),
       logoutHref: attr('logout-href'),
+      helpHref: attr('help-href'),
       profile: attr('profile') ?? 'sundsvall',
       logoSrc: attr('logo-src'),
       logoDarkSrc: attr('logo-dark-src'),

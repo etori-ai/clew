@@ -295,6 +295,8 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     ...cardViewQuery(actionPanel?.threadId ?? '', actionPanel?.actionId ?? ''),
     enabled: !!actionPanel,
   });
+  /** The card a read closed by answering it (D97), kept until what the read opened is closed. */
+  const answered = useRef<Thread | null>(null);
   // What a card action answered is acted on once per answer (StrictMode replays effects): an executed thread goes into the cache, a link opens a tab.
   const acted = useRef<unknown>(null);
   useEffect(() => {
@@ -304,9 +306,30 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     if (result.kind === 'execute') {
       replace(result.thread);
       void applyThread(client, result.thread);
-    } else if (typeof (result.output as { url?: string }).url === 'string')
-      window.open((result.output as { url: string }).url, '_blank', 'noopener');
+    } else {
+      // A read that was the card's answer (D97: the introduction) closed the card. Its row stays while what it opened
+      // is read, and leaves when that is closed.
+      if (result.thread) answered.current = result.thread;
+      if (typeof (result.output as { url?: string }).url === 'string')
+        window.open((result.output as { url: string }).url, '_blank', 'noopener');
+    }
   }, [cardView.data, client, replace]);
+  // The answered card leaves once its view is closed and the focus is back on its row: `replace` then sends the focus on
+  // to the next row or the group's heading, as when a card is dismissed from the list (2.4.3). The wait covers the
+  // drawer sliding away, which is when it gives the focus back; the toast says where the card went and where the help is.
+  const actionOpen = !!actionPanel;
+  useEffect(() => {
+    if (actionOpen || !answered.current) return;
+    const timer = window.setTimeout(() => {
+      const thread = answered.current;
+      answered.current = null;
+      if (!thread) return;
+      replace(thread);
+      void applyThread(client, thread);
+      toast({ body: `${thread.title} ligger nu under Klart. Hjälpen finns alltid under ditt namn högst upp.` });
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [actionOpen, client, replace]);
   const arrived =
     capabilityView.data &&
     (!capabilityView.isPlaceholderData || capabilityView.data.view?.capability === viewPanel?.capability)
@@ -904,6 +927,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         title: view.title,
         address: capabilityShown?.address ?? here + query,
         wide: view.spec?.kind === 'table',
+        reads: view.spec?.kind === 'text',
         onClose: closePanel,
         actions: tool ? (
           <Button
