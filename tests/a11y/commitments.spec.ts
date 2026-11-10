@@ -1,5 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import {
+  announcements,
   desktop,
   expect,
   expectNoAxeViolations,
@@ -22,6 +23,9 @@ const section = (page: Page) => page.getByRole('region', { name: 'Mina åtgärds
 const notices = (page: Page) => page.getByRole('region', { name: 'Aviseringar' });
 const row = (page: Page, text: string) => section(page).getByRole('listitem').filter({ hasText: text });
 const point = (id: string): CommitmentEntry => allCommitments().find(c => c.id === id)!;
+
+/** How often a sentence was announced: the completion toast carries Ångra from the start, so it is said once. */
+const said = async (page: Page, text: string) => (await announcements(page)).filter(t => t.includes(text)).length;
 
 /** By keyboard alone: Tab until `target` has the focus. */
 async function tabTo(page: Page, target: Locator, limit = 250) {
@@ -97,6 +101,7 @@ for (const [layout, viewport] of [
       await expect(section(page).getByRole('listitem')).toHaveCount(4);
       await expect(heading(page, 2, 'Mina åtgärdspunkter · 4')).toBeVisible();
       await expect(notices(page).getByText('Åtgärdspunkten är klar.')).toBeVisible();
+      await expect.poll(() => said(page, 'Åtgärdspunkten är klar.')).toBe(1);
       // The focus is not lost with the row: it is on the next row's own control.
       await expect(section(page).getByRole('button', { name: `Klar: ${point('c-erik-1').text}` })).toBeFocused();
       expect(api.talkWrites).toEqual([{ method: 'POST', path: '/talks/commitments/c-anna-2/done', body: {} }]);
@@ -139,6 +144,33 @@ for (const [layout, viewport] of [
       const theirs = row(page, point('c-me-3').text);
       await expect(theirs).toContainText('Din chef ansvarar');
       await expect(theirs.getByRole('button')).toHaveCount(0);
+      await expectNoAxeViolations(page);
+    });
+
+    test('an employee ticks off their own by keyboard and Ångra brings it back; the manager’s has no control', async ({
+      page,
+      api,
+    }) => {
+      api.employee = true;
+      await open(page, '/');
+      const text = point('c-me-2').text;
+      const klar = section(page).getByRole('button', { name: `Klar: ${text}` });
+      await tabTo(page, klar);
+      await page.keyboard.press('Enter');
+      await expect(row(page, text)).toHaveCount(0);
+      await expect(section(page).getByRole('listitem')).toHaveCount(2);
+      await expect(notices(page).getByText('Åtgärdspunkten är klar.')).toBeVisible();
+      await expect.poll(() => said(page, 'Åtgärdspunkten är klar.')).toBe(1);
+      expect(api.talkWrites).toEqual([{ method: 'POST', path: '/talks/commitments/c-me-2/done', body: {} }]);
+      await expect(row(page, point('c-me-3').text).getByRole('button')).toHaveCount(0);
+
+      await tabTo(page, notices(page).getByRole('button', { name: 'Ångra', exact: true }));
+      await page.keyboard.press('Enter');
+      await expect(row(page, text)).toHaveCount(1);
+      await expect(section(page).getByRole('listitem')).toHaveCount(3);
+      await expect(notices(page).getByText('Åtgärdspunkten är öppen igen.')).toBeVisible();
+      await expect(klar).toBeFocused();
+      expect(api.talkWrites.at(-1)).toEqual({ method: 'DELETE', path: '/talks/commitments/c-me-2/done', body: null });
       await expectNoAxeViolations(page);
     });
 

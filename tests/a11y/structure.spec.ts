@@ -377,7 +377,7 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
     const tiles = region.locator('a, [role="group"]');
     expect(await tiles.evaluateAll(list => list.map(el => el.getAttribute('aria-label')))).toEqual([
       'Viktigt nu: Inget nytt sedan i går.',
-      'Kalender: Utvecklingssamtal bokade 14 av 23',
+      'Utvecklingssamtal: Utvecklingssamtal hållna 1 av 4. Öppnar Utvecklingssamtal',
       'Personal: Sjukfrånvaro 4,2 %, bevaka. Öppnar Frånvaro per person',
       'Budget: Förbrukat av ramen 98 %, lugnt. Öppnar Budget mot prognos',
       'Kvalitet: Öppna tillbud 3, behöver dig. Öppnar Avvikelser och tillbud',
@@ -400,7 +400,7 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
       region.locator('.astryx-clickable-card').filter({ hasText: 'Öppna tillbud' }).getByText('Behöver dig'),
     ).toBeVisible();
     await expect(region.getByRole('progressbar', { name: /^Förbrukat av ramen: 98 %/ })).toBeVisible();
-    const samtal = region.getByRole('group', { name: /^Kalender/ });
+    const samtal = region.locator('.astryx-clickable-card').filter({ hasText: 'Utvecklingssamtal hållna' });
     await expect(samtal.getByRole('progressbar')).toBeVisible();
     await expect(samtal.getByText(/^(Lugnt|Bevaka|Behöver dig)$/)).toHaveCount(0);
     await expect(region.getByRole('group', { name: /^Viktigt nu/ }).getByRole('link')).toHaveCount(0);
@@ -486,8 +486,9 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
     const tops = await lage(page)
       .locator('a, [role="group"]')
       .evaluateAll(list => list.map(el => Math.round(el.getBoundingClientRect().top)));
-    // Five tiles: two rows of two and one below.
-    expect(tops[0]).toBe(tops[1]);
+    // Five tiles: two rows of two and one below. The first row is a sentence (a group) beside a link, whose box may sit a
+    // pixel lower inside its card.
+    expect(Math.abs(tops[0]! - tops[1]!)).toBeLessThanOrEqual(1);
     expect(tops[2]).toBe(tops[3]);
     expect(tops[2]).toBeGreaterThan(tops[0]!);
     expect(tops[4]).toBeGreaterThan(tops[2]!);

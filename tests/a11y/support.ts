@@ -636,12 +636,15 @@ export class MockApi {
     }
     const body = method === 'POST' ? (request.postDataJSON() ?? {}) : null;
     this.talkWrites.push({ method, path, body });
-    if (!this.talksWritable || this.employee) return fail(403, 'Du saknar behörighet för åtgärden.');
+    if (!this.talksWritable) return fail(403, 'Du saknar behörighet för åtgärden.');
+    const done = /^\/talks\/commitments\/([^/]+)\/done$/.exec(path);
+    // The owner of an action point marks it done and opens it again whatever their role (D96 item 4); someone who
+    // manages nobody may do nothing else here.
+    if (this.employee && !done) return fail(403, 'Du saknar behörighet för åtgärden.');
     if (this.talksFail) {
       this.talksFail = false;
       return fail(400, TALKS_FAIL_ERROR);
     }
-    const done = /^\/talks\/commitments\/([^/]+)\/done$/.exec(path);
     if (done) {
       const id = decodeURIComponent(done[1]!);
       const row = this.commitments.find(c => c.id === id);

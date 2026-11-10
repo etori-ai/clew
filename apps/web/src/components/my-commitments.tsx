@@ -1,20 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import { today } from '@clew/calendar/dates';
-import {
-  Badge,
-  Button,
-  Card,
-  CompletionFeedback,
-  Heading,
-  HStack,
-  Link,
-  List,
-  ListItem,
-  Text,
-  VStack,
-  useToast,
-} from '@clew/ui';
+import { Badge, Button, Card, Heading, HStack, Link, List, ListItem, Text, VStack, useToast } from '@clew/ui';
 import { api } from '../api';
 import { useTalkAction } from '../mutations';
 import { commitmentsQuery } from '../queries';
@@ -177,28 +164,20 @@ function CommitmentRow({
   onSettled: () => void;
 }) {
   const client = useQueryClient();
-  const toast = useToast();
   const id = row.id;
   const { run, error } = useTalkAction({ ...(id ? { toastId: toastFor(id) } : {}) });
   const complete = async () => {
     if (!id) return;
     onLeave();
-    if (!(await run(() => api.talks.complete(id), DONE))) {
-      onSettled();
-      return;
-    }
-    // useTalkAction's toast has the sentence and no action; the same toast is replaced with the sentence and Ångra, which
-    // stays until it is used or closed: Hem lists no done points, so Ångra is the only way back here (2.2.1).
-    toast({
-      uniqueID: toastFor(id),
-      isAutoHide: false,
-      body: <CompletionFeedback title={DONE} />,
-      endContent: (
-        <QueryClientProvider client={client}>
-          <Reopen id={id} onBack={onBack} onSettled={onSettled} />
-        </QueryClientProvider>
-      ),
-    });
+    // The completion toast carries Ångra from the start, so its sentence is announced once. It stays until it is used or
+    // closed: Hem lists no done points, so Ångra is the only way back here (2.2.1). The toast is drawn outside the
+    // page's query client, so Ångra brings it along, as the receipt notice does.
+    const undo = (
+      <QueryClientProvider client={client}>
+        <Reopen id={id} onBack={onBack} onSettled={onSettled} />
+      </QueryClientProvider>
+    );
+    if (!(await run(() => api.talks.complete(id), DONE, { endContent: undo }))) onSettled();
   };
   const overdue = isOverdue(row, day);
   return (

@@ -351,18 +351,26 @@ export const areas: Area[] = [
   area('calendar', 'Kalender', {
     source: 'Kalendern',
     icon: 'calendar',
-    figure: {
-      label: 'Utvecklingssamtal bokade',
-      value: '14 av 23',
-      comparison: 'senast 28 november',
-      progress: { value: 14, max: 23 },
-      tone: 'none',
-      observedAt: NOW,
-    },
     needsYou: 1,
     urgency: 'soon',
     standing: [{ capability: 'calendar.today', label: 'Dagens möten', kind: 'read' }],
     schedules: [{ label: 'Bevakar utvecklingssamtalen', when: 'Måndagar 06:00' }],
+  }),
+  // The talks module's area (D96 item 7) carries the figure of talks held, which opens the round as a declared view:
+  // in the round of `talkRows()` one talk of four is held, and it is due by the round's `dueOn`.
+  area('talks', 'Utvecklingssamtal', {
+    connector: 'talks',
+    source: 'Utvecklingssamtal',
+    figure: {
+      label: 'Utvecklingssamtal hållna',
+      value: '1 av 4',
+      comparison: 'senast 30 november',
+      progress: { value: 1, max: 4 },
+      tone: 'none',
+      opens: { capability: 'talks.talks', title: 'Utvecklingssamtal' },
+      observedAt: NOW,
+    },
+    standing: [{ capability: 'talks.talks', label: 'Utvecklingssamtal', kind: 'read' }],
   }),
   area('personal', 'Personal', {
     connector: 'hr',

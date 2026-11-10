@@ -1,4 +1,4 @@
-import { createElement, useCallback, useRef, useSyncExternalStore } from 'react';
+import { createElement, useCallback, useRef, useSyncExternalStore, type ReactNode } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Thread } from '@clew/contracts';
 import { CompletionFeedback, useToast } from '@clew/ui';
@@ -170,12 +170,18 @@ export function useAdminAction({
 const TALK_KEYS: readonly QueryKey[] = [keys.talks.all, keys.staff];
 /** What it changes beside them and is re-read without waiting (D96 item 5): the action point's card in the stream and the counts and figure beside it. */
 const TALK_SIDE_KEYS: readonly QueryKey[] = [keys.threads, keys.attention, keys.areas];
-type TalkVars = { fn: Action<unknown>; done: string };
+/** What a caller may add to a talk write's completion toast. */
+export type TalkToast = {
+  /** An action at the toast's end, such as Ångra. The toast then stays until it is used or closed (2.2.1). */
+  endContent?: ReactNode;
+};
+type TalkVars = { fn: Action<unknown>; done: string; toast: TalkToast };
 
 /**
  * Run a talk write (D96: held, an action point added, ticked off or opened again). `run(fn, done)` settles, never
  * rejects, and resolves true once the write is through and the talk reads are fresh again, so a form can clear itself
- * and move the focus; then `done`, a Swedish sentence, is the completion toast. A failure resolves false and its Swedish
+ * and move the focus; then `done`, a Swedish sentence, is the completion toast, with `toast.endContent` at its end when
+ * the caller passes one (shown once, already with its action). A failure resolves false and its Swedish
  * text is `error`. While the write is in flight the mutation cache is busy, so the change stream's notice for it waits
  * (`changeNotices`) as it does for every other mutation hook. A second `run` while one is in flight is ignored.
  */
@@ -190,17 +196,18 @@ export function useTalkAction({ fallback = 'Något gick fel.', toastId }: { fall
       toast({
         body: createElement(CompletionFeedback, { title: vars.done }),
         ...(toastId ? { uniqueID: toastId } : {}),
+        ...(vars.toast.endContent ? { endContent: vars.toast.endContent, isAutoHide: false } : {}),
       });
     },
   });
   const inFlight = useRef(false);
   const { mutateAsync } = mutation;
   const run = useCallback(
-    async (fn: Action<unknown>, done: string): Promise<boolean> => {
+    async (fn: Action<unknown>, done: string, toast: TalkToast = {}): Promise<boolean> => {
       if (inFlight.current) return false;
       inFlight.current = true;
       try {
-        await mutateAsync({ fn, done });
+        await mutateAsync({ fn, done, toast });
         return true;
       } catch {
         /* the error is in the mutation's state */
