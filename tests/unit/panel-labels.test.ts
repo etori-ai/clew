@@ -34,6 +34,12 @@ describe('side panel labels (3.1.2)', () => {
     expect(statusWord('Kvitterad', false)).toBe('Inte kvitterad');
     expect(statusWord('Status', 'waiting-safety-rep')).toBe('väntar på skyddsombud');
     expect(statusWord('Status', 'Att attestera')).toBe('Att attestera');
+    // A person in the round of development talks (D96 item 2).
+    expect(['missing', 'booked', 'held'].map(state => statusWord('Status', state))).toEqual([
+      'saknas',
+      'bokat',
+      'hållet',
+    ]);
   });
   test("a count takes the view's noun, else rader; a unit follows its number (D71)", () => {
     expect(counted(3, { one: 'faktura', other: 'fakturor' })).toBe('3 fakturor');

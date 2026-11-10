@@ -133,6 +133,10 @@ export function staleLabel(stale: boolean | null | undefined, iso: string | unde
   return months >= 1 ? `${months} ${months === 1 ? 'månad' : 'månader'} sedan` : 'Kan vara inaktuell';
 }
 const values: Record<string, string> = {
+  // A person in the round of development talks (D96 item 2).
+  booked: 'bokat',
+  held: 'hållet',
+  missing: 'saknas',
   closed: 'stängd',
   done: 'klart',
   failed: 'misslyckades',

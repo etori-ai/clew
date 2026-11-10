@@ -33,6 +33,13 @@ export const keys = {
   header: ['header'] as const,
   /** Personal (D94): the manager's units and their people. */
   staff: ['staff'] as const,
+  /** Utvecklingssamtal (D96): the round, and action points per reader (`null`) or per person (their user name, else id). */
+  talks: {
+    all: ['talks'] as const,
+    round: ['talks', 'round'] as const,
+    commitmentsAll: ['talks', 'commitments'] as const,
+    commitments: (person?: string) => ['talks', 'commitments', person ?? null] as const,
+  },
   admin: {
     all: ['admin'] as const,
     connectors: ['admin', 'connectors'] as const,

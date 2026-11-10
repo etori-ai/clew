@@ -165,3 +165,56 @@ export function useAdminAction({
     reset: mutation.reset,
   };
 }
+
+/** What a talk write changes and is waited for before `busy` lets go: the round, every list of action points, Personal. */
+const TALK_KEYS: readonly QueryKey[] = [keys.talks.all, keys.staff];
+/** What it changes beside them and is re-read without waiting (D96 item 5): the action point's card in the stream and the counts and figure beside it. */
+const TALK_SIDE_KEYS: readonly QueryKey[] = [keys.threads, keys.attention, keys.areas];
+type TalkVars = { fn: Action<unknown>; done: string };
+
+/**
+ * Run a talk write (D96: held, an action point added, ticked off or opened again). `run(fn, done)` settles, never
+ * rejects, and resolves true once the write is through and the talk reads are fresh again, so a form can clear itself
+ * and move the focus; then `done`, a Swedish sentence, is the completion toast. A failure resolves false and its Swedish
+ * text is `error`. While the write is in flight the mutation cache is busy, so the change stream's notice for it waits
+ * (`changeNotices`) as it does for every other mutation hook. A second `run` while one is in flight is ignored.
+ */
+export function useTalkAction({ fallback = 'Något gick fel.', toastId }: { fallback?: string; toastId?: string } = {}) {
+  const client = useQueryClient();
+  const toast = useToast();
+  const mutation = useMutation<unknown, unknown, TalkVars>({
+    mutationFn: vars => vars.fn(),
+    onSuccess: async (_answer, vars) => {
+      TALK_SIDE_KEYS.forEach(queryKey => void client.invalidateQueries({ queryKey }));
+      await Promise.all(TALK_KEYS.map(queryKey => client.invalidateQueries({ queryKey })));
+      toast({
+        body: createElement(CompletionFeedback, { title: vars.done }),
+        ...(toastId ? { uniqueID: toastId } : {}),
+      });
+    },
+  });
+  const inFlight = useRef(false);
+  const { mutateAsync } = mutation;
+  const run = useCallback(
+    async (fn: Action<unknown>, done: string): Promise<boolean> => {
+      if (inFlight.current) return false;
+      inFlight.current = true;
+      try {
+        await mutateAsync({ fn, done });
+        return true;
+      } catch {
+        /* the error is in the mutation's state */
+        return false;
+      } finally {
+        inFlight.current = false;
+      }
+    },
+    [mutateAsync],
+  );
+  return {
+    run,
+    busy: mutation.isPending,
+    error: mutation.isError ? errorMessage(mutation.error, fallback) : null,
+    reset: mutation.reset,
+  };
+}
