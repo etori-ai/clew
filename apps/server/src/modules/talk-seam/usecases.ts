@@ -48,9 +48,13 @@ export function talkSeamUsecases(deps: TalkSeamDeps) {
     }
     throw new CapabilityError(unexpected(source.source));
   }
-  /** The round and one row per person the reader manages now, as the source answers it. */
+  /**
+   * The round and one row per person the reader manages now, as the source answers it. A source whose talks read the
+   * person may not call (often everyone but managers) answers no round and no rows, without being asked.
+   */
   async function talks(actor: Actor, _input: TalksInput, call: TalkCall): Promise<TalksResult> {
     const source = sourceFor(actor);
+    if (!source.talks) return { round: null, rows: [], writable: source.builtIn, source: source.source };
     const [answer, directory] = await Promise.all([ask(source, source.talks, {}, call), deps.directory(actor)]);
     if (!checkContract(TalksOutputSchema, answer)) throw new CapabilityError(unexpected(source.source));
     const result: TalksResult = {

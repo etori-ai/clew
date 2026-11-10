@@ -13,8 +13,8 @@ import {
 
 /**
  * One answerer of the talks profile per installation (D96 item 9): the built-in `talks` connector while the person may
- * call it, else the one other connector that declares `<id>.talks`, and none when several do, reported. No read of the
- * domain is ever a model tool (D96 item 6).
+ * call either of its reads, else the one other connector whose `<id>.talks` or `<id>.commitments` the person may call,
+ * and none when several do, reported. No read of the domain is ever a model tool (D96 item 6).
  */
 const hillevi: Actor = {
   id: 'hillevi',
@@ -25,7 +25,7 @@ const hillevi: Actor = {
 };
 const mikael: Actor = { ...hillevi, id: 'mikael', name: 'Mikael Lind', role: 'employee' };
 
-const read = (name: string): Capability => ({
+const read = (name: string, scope: Capability['scope'] = {}): Capability => ({
   name,
   kind: 'read',
   title: 'Läsning',
@@ -33,19 +33,32 @@ const read = (name: string): Capability => ({
   input: {} as never,
   output: {} as never,
   model: true,
-  scope: {},
+  scope,
   run: async () => ({ rows: [] }),
 });
-/** A connector that declares the talks profile, optionally with the action points, plus an ordinary tool. */
-function talkSystem(id: string, source: string, options: { commitments?: boolean; kind?: Connector['kind'] } = {}) {
+const managers: Capability['scope'] = { roles: ['manager'] };
+/**
+ * A connector that declares the talks profile, optionally with the action points, plus an ordinary tool. Each profile
+ * read may carry its own scope, as a system whose round only managers read.
+ */
+function talkSystem(
+  id: string,
+  source: string,
+  options: {
+    commitments?: boolean;
+    kind?: Connector['kind'];
+    talksScope?: Capability['scope'];
+    commitmentsScope?: Capability['scope'];
+  } = {},
+) {
   return {
     id,
     kind: options.kind ?? 'passthrough',
     source,
     areas: [],
     capabilities: [
-      read(id + '.talks'),
-      ...(options.commitments === false ? [] : [read(id + '.commitments')]),
+      read(id + '.talks', options.talksScope),
+      ...(options.commitments === false ? [] : [read(id + '.commitments', options.commitmentsScope)]),
       read(id + '.other'),
     ],
   } satisfies Connector;
@@ -106,8 +119,11 @@ describe('the talks profile', () => {
       source: 'Samtalssystemet',
       talks: 'appraisals.talks',
     });
-    // The built-in's read switched off by an administrator counts as absent too.
-    registry.govern(TALKS_CONNECTOR, { ...openGovernance(), capabilities: { 'talks.talks': { enabled: false } } });
+    // The built-in's reads switched off by an administrator count as absent too.
+    registry.govern(TALKS_CONNECTOR, {
+      ...openGovernance(),
+      capabilities: { 'talks.talks': { enabled: false }, 'talks.commitments': { enabled: false } },
+    });
     expect(registry.talkSource(hillevi)?.connectorId).toBe('appraisals');
     // A built-in whose audience leaves the person out does not answer for them.
     registry.govern(TALKS_CONNECTOR, { ...openGovernance(), audience: { mode: 'selected', roles: ['employee'] } });
@@ -145,6 +161,76 @@ describe('the talks profile', () => {
       capabilities: { 'appraisals.commitments': { enabled: false } },
     });
     expect(registry.talkSource(mikael)?.commitments).toBeUndefined();
+    expect(refused).toEqual([]);
+  });
+
+  test('a built-in whose round only managers read still answers an employee, with the action points alone', () => {
+    const { registry, refused } = world([
+      talkSystem(TALKS_CONNECTOR, 'Clew', { kind: 'core', talksScope: managers }),
+      talkSystem('appraisals', 'Samtalssystemet'),
+    ]);
+    expect(registry.talkSource(mikael)).toEqual({
+      builtIn: true,
+      connectorId: TALKS_CONNECTOR,
+      source: 'Clew',
+      commitments: 'talks.commitments',
+    });
+    expect(registry.talkSource(hillevi)).toEqual({
+      builtIn: true,
+      connectorId: TALKS_CONNECTOR,
+      source: 'Clew',
+      talks: 'talks.talks',
+      commitments: 'talks.commitments',
+    });
+    // The built-in's round switched off by an administrator leaves it the answerer through its action points.
+    registry.govern(TALKS_CONNECTOR, { ...openGovernance(), capabilities: { 'talks.talks': { enabled: false } } });
+    expect(registry.talkSource(hillevi)).toEqual({
+      builtIn: true,
+      connectorId: TALKS_CONNECTOR,
+      source: 'Clew',
+      commitments: 'talks.commitments',
+    });
+    expect(refused).toEqual([]);
+  });
+
+  test('one other system whose round only managers read answers an employee with the action points alone', () => {
+    const { registry, refused } = world([talkSystem('appraisals', 'Samtalssystemet', { talksScope: managers })]);
+    expect(registry.talkSource(mikael)).toEqual({
+      builtIn: false,
+      connectorId: 'appraisals',
+      source: 'Samtalssystemet',
+      commitments: 'appraisals.commitments',
+    });
+    expect(registry.talkSource(hillevi)).toEqual({
+      builtIn: false,
+      connectorId: 'appraisals',
+      source: 'Samtalssystemet',
+      talks: 'appraisals.talks',
+      commitments: 'appraisals.commitments',
+    });
+    expect(refused).toEqual([]);
+  });
+
+  test('two other systems the employee reaches only through their action points: none answers, reported', () => {
+    const { registry, refused } = world([
+      talkSystem('reviews', 'Medarbetarsystemet', { talksScope: managers }),
+      talkSystem('appraisals', 'Samtalssystemet', { talksScope: managers }),
+    ]);
+    expect(registry.talkSource(mikael)).toBeUndefined();
+    expect(refused.map(r => [r.connectorId, r.topic])).toEqual([
+      ['appraisals', 'talks'],
+      ['reviews', 'talks'],
+    ]);
+    expect(refused[0]!.problem).toContain('appraisals, reviews');
+  });
+
+  test('a person who may call neither read of any system gets none, and nothing is reported', () => {
+    const { registry, refused } = world([
+      talkSystem(TALKS_CONNECTOR, 'Clew', { kind: 'core', talksScope: managers, commitmentsScope: managers }),
+      talkSystem('appraisals', 'Samtalssystemet', { talksScope: managers, commitmentsScope: managers }),
+    ]);
+    expect(registry.talkSource(mikael)).toBeUndefined();
+    expect(registry.talkSource(hillevi)?.connectorId).toBe(TALKS_CONNECTOR);
     expect(refused).toEqual([]);
   });
 

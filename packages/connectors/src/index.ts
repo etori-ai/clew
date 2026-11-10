@@ -155,15 +155,18 @@ export const isCommitmentSource = (c: Pick<Capability, 'name' | 'kind'>, connect
   c.kind === 'read' && c.name === connectorId + '.commitments' && connectorId !== SEARCH_CONNECTOR;
 const TALK_COMPOSITE = SEARCH_CONNECTOR + '.talks';
 const COMMITMENT_COMPOSITE = SEARCH_CONNECTOR + '.commitments';
-/** The one system that answers the talks profile for a person (D96 item 9), as `Registry.talkSource` names it. */
+/**
+ * The one system that answers the talks profile for a person (D96 item 9), as `Registry.talkSource` names it. At least
+ * one of `talks` and `commitments` is present: the round is usually a manager's read, the action points everyone's.
+ */
 export interface TalkSource {
   /** Clew's own module (`TALKS_CONNECTOR`) answers, so Clew's pages can write. */
   builtIn: boolean;
   connectorId: string;
   /** The answering system as a person reads it: the connector's `source`. */
   source: string;
-  /** The `<id>.talks` read to call. */
-  talks: string;
+  /** The connector's `<id>.talks` read, when it declares one the person may call. */
+  talks?: string;
   /** The same connector's `<id>.commitments` read, when it declares one the person may call. */
   commitments?: string;
 }
@@ -749,40 +752,45 @@ export class Registry {
       }));
   }
   /**
-   * The one system that answers the talks profile for this person (D96 item 9): the built-in `TALKS_CONNECTOR` when the
-   * person may call its `talks.talks`; otherwise the single other connector with a `<id>.talks` read the person may
-   * call. When several qualify none answers, and each of them is reported through `onRefused` (topic `talks`), since an
-   * installation must choose one. As in `errandSources`, the name is tested before the scope, so the composite
-   * `clew.talks` may ask this from its own scope.
+   * The one system that answers the talks profile for this person (D96 item 9). A connector is a candidate when the
+   * person may call its `<id>.talks` or its `<id>.commitments`: the round is often a manager's read while everyone reads
+   * their own action points, so an employee gets the system through the second alone. Of the candidates the built-in
+   * `TALKS_CONNECTOR` answers; otherwise the single other one does. When several others qualify none answers, and each
+   * of them is reported through `onRefused` (topic `talks`), since an installation must choose one. The answer names
+   * only the reads the person may call. As in `errandSources`, the name is tested before the scope, so the composites
+   * `clew.talks` and `clew.commitments` may ask this from their own scope.
    */
   talkSource(actor: Actor): TalkSource | undefined {
-    const candidates = [...this.capabilities.values()].filter(
-      c => isTalkSource(c.capability, c.connector.id) && !!this.allowed(actor, c.capability.name),
-    );
-    const builtIn = candidates.find(c => c.connector.id === TALKS_CONNECTOR);
-    const others = candidates.filter(c => c.connector.id !== TALKS_CONNECTOR);
+    const reads = new Map<string, { connector: Connector; talks?: string; commitments?: string }>();
+    for (const c of this.capabilities.values()) {
+      const id = c.connector.id;
+      const which = isTalkSource(c.capability, id)
+        ? 'talks'
+        : isCommitmentSource(c.capability, id)
+          ? 'commitments'
+          : undefined;
+      if (!which || !this.allowed(actor, c.capability.name)) continue;
+      reads.set(id, { connector: c.connector, ...reads.get(id), [which]: c.capability.name });
+    }
+    const builtIn = reads.get(TALKS_CONNECTOR);
+    const others = [...reads.keys()].filter(id => id !== TALKS_CONNECTOR).sort();
     if (!builtIn && others.length > 1) {
-      const ids = others.map(c => c.connector.id).sort();
-      for (const id of ids)
+      for (const id of others)
         this.options.onRefused?.(
           id,
           'talks',
-          `several connectors answer the talks profile (${ids.join(', ')}); none is used until one remains`,
+          `several connectors answer the talks profile (${others.join(', ')}); none is used until one remains`,
         );
       return undefined;
     }
-    const chosen = builtIn ?? others[0];
+    const chosen = builtIn ?? (others[0] === undefined ? undefined : reads.get(others[0]));
     if (!chosen) return undefined;
-    const commitments = chosen.connector.id + '.commitments';
-    const listed = this.capabilities.get(commitments);
     return {
       builtIn: chosen.connector.id === TALKS_CONNECTOR,
       connectorId: chosen.connector.id,
       source: chosen.connector.source,
-      talks: chosen.capability.name,
-      ...(listed && isCommitmentSource(listed.capability, chosen.connector.id) && this.allowed(actor, commitments)
-        ? { commitments }
-        : {}),
+      ...(chosen.talks ? { talks: chosen.talks } : {}),
+      ...(chosen.commitments ? { commitments: chosen.commitments } : {}),
     };
   }
   /**

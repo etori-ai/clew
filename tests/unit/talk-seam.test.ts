@@ -77,11 +77,13 @@ interface Answers {
   delayMs?: number;
   fail?: string;
   noCommitments?: boolean;
+  /** The round is read by managers only, as a system may scope it; the action points stay everyone's. */
+  talksForManagers?: boolean;
   calls?: Array<{ name: string; input: unknown }>;
 }
 /** A system answering the talks profile as an in-process connector; its outputs are open so the seam sees what it sent. */
 function talkSystem(id: string, source: string, answers: Answers): Connector {
-  const read = (name: string, answer: () => unknown) => ({
+  const read = (name: string, answer: () => unknown, scope: Connector['capabilities'][number]['scope'] = {}) => ({
     name,
     kind: 'read' as const,
     title: name,
@@ -90,7 +92,7 @@ function talkSystem(id: string, source: string, answers: Answers): Connector {
     output: {} as never,
     // Even a source that asks to be a tool is not one (D96 item 6).
     model: true,
-    scope: {},
+    scope,
     run: async (_actor: Actor, input: unknown) => {
       answers.calls?.push({ name, input });
       if (answers.delayMs) await new Promise(r => setTimeout(r, answers.delayMs));
@@ -104,7 +106,11 @@ function talkSystem(id: string, source: string, answers: Answers): Connector {
     source,
     areas: [],
     capabilities: [
-      read(id + '.talks', () => answers.talks ?? { round, rows: [] }),
+      read(
+        id + '.talks',
+        () => answers.talks ?? { round, rows: [] },
+        answers.talksForManagers ? { roles: ['manager'] } : {},
+      ),
       ...(answers.noCommitments ? [] : [read(id + '.commitments', () => answers.commitments ?? { rows: [] })]),
     ],
   };
@@ -263,6 +269,30 @@ describe('clew.talks and clew.commitments', () => {
     // Hillevi manages both Mikael and the person without a user name, never the stranger.
     const manager = await commitments(registry, hillevi);
     expect(manager.rows.map(r => r.personId)).toEqual(['p-mikael', 'p-noname']);
+  });
+
+  test('an employee whose source keeps the round for managers gets their own action points and no round', async () => {
+    for (const [id, source, writable] of [
+      ['appraisals', 'Samtalssystemet', false],
+      [TALKS_CONNECTOR, 'Clew', true],
+    ] as const) {
+      const calls: Array<{ name: string; input: unknown }> = [];
+      const { registry } = world([
+        talkSystem(id, source, {
+          calls,
+          talksForManagers: true,
+          talks: { round, rows: [talk(id, 'mikael')] },
+          commitments: { rows: [commitment(id, 1, 'mikael', { mine: true }), commitment(id, 2, 'stranger')] },
+        }),
+      ]);
+      const points = await commitments(registry, mikael);
+      expect(points).toMatchObject({ writable, source });
+      expect(points.rows.map(r => [r.ref, r.personId])).toEqual([[`commitment:${id}:c1`, 'p-mikael']]);
+      expect(await talks(registry, mikael)).toEqual({ round: null, rows: [], writable, source });
+      expect(calls).toEqual([{ name: id + '.commitments', input: {} }]);
+      // The manager reads both.
+      expect((await talks(registry, hillevi)).round).toEqual(round);
+    }
   });
 
   test('person narrows clew.commitments and is passed to the source unchanged', async () => {
