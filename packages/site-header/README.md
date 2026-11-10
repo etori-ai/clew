@@ -36,6 +36,7 @@ Serve `dist/` (all files: the entry loads its chunks by relative path) and put t
 | `selected`                        | The current item's id. Without it the page's address decides.                                                                                                                                               |
 | `login-href`                      | "Logga in" for a visitor who is not signed in.                                                                                                                                                              |
 | `user-name`, `logout-href` | The signed-in person, as the page's own system knows them (with single sign-on, the same person Clew knows), and where "Logga ut" goes. The header never asks who is signed in. |
+| `help-href` | Where "Hjälp" in the signed-in person's dialog leads: Startsidan with its help open, `https://<startsidan>/?open=clew.help&open-title=Så%20fungerar%20Startsidan` (D97). Without it the dialog has no such row. |
 | `profile`, `logo-src`, `logo-dark-src`, `logo-alt` | The branding profile (`sundsvall` default), the logo and its variant for a dark bar. |
 | `appearance` | `auto` (default): the person's colour choice from Clew, stored in the browser for the domain, else the system's; the signed-in person can change it in their settings. `light`, `dark` or `system` fix it. |
 

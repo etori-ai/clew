@@ -57,9 +57,9 @@ import { logger } from '../logging';
 
 const {
   act,
+  arrive,
   attentionFor,
   dismissAny,
-  ensureThreads,
   listAreas,
   listThreadsFor,
   preview,
@@ -257,7 +257,7 @@ api.use('/threads/:id/*', async (c, next) => {
 });
 api.get('/threads', async c => {
   const persona = c.get('session').context;
-  await ensureThreads(persona);
+  await arrive(persona);
   const [threads, sources, deliveries] = await Promise.all([
     listThreadsFor(persona),
     refresh.statuses(persona),

@@ -20,7 +20,11 @@ const joined = (words: string[]) =>
 export function useSourceBanner() {
   const client = useQueryClient();
   const sources = useQuery(threadsQuery).data?.sources;
-  const areas = useQuery(areasQuery).data?.areas;
+  const areasQ = useQuery(areasQuery);
+  const areas = areasQ.data?.areas;
+  // The systems' names arrive with the areas. The words are spoken once, so they wait for the names: said before
+  // them, the banner was read out by the connector's id ("finance svarar inte"). A failed read of the areas does not hold them back.
+  const named = !areasQ.isPending;
   const marks = useMarks();
   const announce = useAnnounce();
   const down = (sources ?? [])
@@ -37,12 +41,12 @@ export function useSourceBanner() {
   const said = useRef(new Set<string>());
   const silent = down.map(d => d.connector).join(' ');
   useEffect(() => {
-    if (sources === undefined) return;
+    if (sources === undefined || !named) return;
     const fresh = down.filter(d => !said.current.has(d.connector));
     for (const d of fresh) said.current.add(d.connector);
     for (const c of [...said.current]) if (!down.some(d => d.connector === c)) said.current.delete(c);
     if (fresh.length) announce(fresh.map(d => `${d.title}. ${d.line}`).join(' '));
-  }, [silent]);
+  }, [silent, named]);
   if (!down.length) return null;
   return (
     <VStack gap={0}>

@@ -24,24 +24,29 @@ export type SiteHeaderAppearance = Readonly<{
  * (Samma som datorn, Ljust, Mörkt), shared by every surface on the domain, and "Logga ut". Not a `DropdownMenu`: Astryx's
  * menu finds its focused row through `document.activeElement`, which inside the intranet's shadow root is the
  * `<site-header>` element, so Enter and the arrow keys did nothing there; native radios and a native `<dialog>` work by
- * keyboard in both places. With neither a colour choice nor a way to sign out, the person is shown, not offered.
+ * keyboard in both places. "Hjälp" (D97) is a link to the help's address in Startsidan, which the host gives: the web app
+ * its own, the intranet the address of the installation. With no colour choice, no help and no way to sign out, the
+ * person is shown, not offered.
  */
 export function SiteHeaderPerson({
   name,
   description,
   onSignOut,
   appearance,
+  helpHref,
 }: {
   name: string;
   /** Under the name in the dialog: the person's unit or role, as the host knows it. */
   description?: string;
   onSignOut?: () => void;
   appearance?: SiteHeaderAppearance;
+  /** Where "Hjälp" leads (D97): Startsidan with its help open beside the page. */
+  helpHref?: string | undefined;
 }) {
   const compact = useCompactSiteHeader();
   const [isOpen, setIsOpen] = useState(false);
   const avatar = <Avatar name={name} size="sm" tooltip={false} />;
-  if (!onSignOut && !appearance)
+  if (!onSignOut && !appearance && !helpHref)
     return (
       <HStack gap={2} vAlign="center">
         {avatar}
@@ -99,6 +104,10 @@ export function SiteHeaderPerson({
             </RadioList>
           ) : null}
           <HStack gap={2} hAlign="end" wrap="wrap">
+            {helpHref ? (
+              // A link, so it is a place with an address: the dialog closes and the help opens beside the page (D83).
+              <Button label="Hjälp" variant="secondary" href={helpHref} onClick={() => setIsOpen(false)} />
+            ) : null}
             {onSignOut ? (
               <Button
                 label="Logga ut"

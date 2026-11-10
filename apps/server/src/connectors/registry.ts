@@ -16,6 +16,8 @@ import { talksConnector } from '../modules/talks/capabilities';
 import { talkSeamCapabilities } from '../modules/talk-seam/capabilities';
 import { talkSeamUsecases } from '../modules/talk-seam/usecases';
 import { talkDirectory, talks } from '../composition/talks';
+import { helpCapabilities } from '../modules/help/capabilities';
+import { helpUsecases } from '../modules/help/usecases';
 import { logger } from '../logging';
 
 /**
@@ -51,10 +53,12 @@ const talkSeam = talkSeamUsecases({ source: actor => registry.talkSource(actor),
 const core = searchConnector(search, answerCards);
 const errandPart = errandCapabilities(errands, actor => registry.errandSources(actor).length > 0);
 const talkPart = talkSeamCapabilities(talkSeam, actor => !!registry.talkSource(actor));
+/** The help (D97) is computed from what the registry lets the person see, asked again at every read. */
+const helpPart = helpCapabilities(helpUsecases({ registry }));
 const clewConnector = {
   ...core,
   areas: [...core.areas, ...errandPart.areas],
-  capabilities: [...core.capabilities, ...errandPart.capabilities, ...talkPart.capabilities],
+  capabilities: [...core.capabilities, ...errandPart.capabilities, ...talkPart.capabilities, ...helpPart.capabilities],
 };
 // The built-in talks module (D96 item 9) is bundled, not internal: it gets an administrable row, enabled by default,
 // and an administrator can switch it off so that another system answers the profile.

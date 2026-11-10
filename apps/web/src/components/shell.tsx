@@ -24,6 +24,10 @@ import { headerQuery, threadsQuery } from '../queries';
 import { useSourceBanner } from './source-banner';
 import { api } from '../api';
 import { ReminderBell } from './reminders';
+import { withView } from '../panel-address';
+
+/** The help (D97): Startsidan's own read with a text view, opened beside Hem from the person's dialog. */
+export const HELP_VIEW = { capability: 'clew.help', title: 'Så fungerar Startsidan' };
 
 /** AppShell moves the SideNav into a drawer below its `md` breakpoint (768 px); every phone decision in the app follows the same line. */
 export const mobileQuery = '(max-width: 767px)';
@@ -170,6 +174,13 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
                 name={user.name}
                 description={user.unitLabel}
                 onSignOut={() => void logout()}
+                // On Hem and in a conversation the help opens beside what is there, the address kept (D83); from any
+                // other place it opens over Hem, since only those pages have the panel.
+                helpHref={
+                  location.pathname === '/' || location.pathname.startsWith('/conversations/')
+                    ? withView(location.pathname, location.search, HELP_VIEW)
+                    : withView('/', '', HELP_VIEW)
+                }
                 appearance={{ mode, onChange: setMode, isPersistent }}
               />
             </HStack>

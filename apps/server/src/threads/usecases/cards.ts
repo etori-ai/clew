@@ -48,6 +48,10 @@ export interface ThreadDeps {
   ids: () => string;
 }
 const REOPEN_MS = 10 * 60_000;
+const DAY_MS = 24 * 60 * 60_000;
+/** How long an introduction nobody opened or dismissed stays in the stream (D97 item 4). */
+export const INTRODUCTION_DAYS = 14;
+const introductionId = (personId: string) => `introduction:${personId}`;
 /** Attention budget: pushed threads today against a fixed daily budget. The rest is bundled to lunch or the next morning. */
 export const ATTENTION_BUDGET = 3;
 const sameDraft = (t: Thread, d: ThreadDraft, items: Thread['items']) =>
@@ -551,8 +555,107 @@ export function threadUsecases(deps: ThreadDeps) {
     }
     return { threadId: id };
   }
+  /**
+   * The introduction (D97): one core-owned card per person, ever. Its id is the person's, so a card in any state, open,
+   * dismissed or handled, means the person has been introduced, and neither a changed unit nor a new authority brings it
+   * back (a scanned card's identity is per assignment, D47). It carries no source authority and admits no delivery: it
+   * is Startsidan's own, and it never interrupts. Its one step opens the help beside the page.
+   *
+   * The card does not wait for the person to find Avfärda in its menu: opening the help from it is the answer
+   * (`concludeIntroduction`), and a card nobody touched leaves by itself after INTRODUCTION_DAYS, at the person's
+   * next read of Hem.
+   */
+  async function introduce(persona: AuthenticatedContext): Promise<void> {
+    await persona.authorize();
+    const id = introductionId(persona.id);
+    const existing = await store.readThread(persona.id, id);
+    if (existing) {
+      const age = clock().getTime() - Date.parse(existing.createdAt);
+      if (existing.state === 'open' && age >= INTRODUCTION_DAYS * DAY_MS) await closeIntroduction(persona, 'expired');
+      return;
+    }
+    // Without the help there is nothing to show: an administrator who switched the read off has switched this off too.
+    if (!registry.allowed(actorOf(persona), 'clew.help')) return;
+    const at = clock().toISOString();
+    const summary =
+      'Här samlas det som behöver dig från systemen du arbetar i. Se hur sidan fungerar och vad du har här.';
+    await store.transaction(async tx => {
+      if (await tx.lockThread(persona.id, id)) return;
+      const ok = await tx.insertThread({
+        id,
+        personId: persona.id,
+        kind: 'pushed',
+        topic: 'introduction',
+        title: 'Så fungerar Startsidan',
+        state: 'open',
+        week: null,
+        connector: 'clew',
+        area: 'fragor',
+        summary,
+        items: [],
+        actions: [
+          { id: 'show', label: 'Kom igång', capability: 'clew.help', kind: 'read', role: 'primary', target: 'panel' },
+        ],
+        waitingOn: null,
+        deadline: null,
+        trigger: { reason: 'Du är ny på Startsidan. Kortet visas en gång', source: 'Startsidan', at },
+        createdAt: at,
+        updatedAt: at,
+      });
+      if (!ok) return;
+      await tx.addMessage(id, { role: 'assistant', body: summary, at });
+      await tx.writeAudit({
+        actor: 'assistant:introduction',
+        action: 'thread.introduced',
+        subject: 'thread:' + id,
+        at,
+        details: { connector: 'clew', topic: 'introduction', owner: persona.id },
+      });
+    });
+  }
+  /** Close the introduction in one transaction with its audit row; nothing happens to a card that is no longer open. */
+  async function closeIntroduction(persona: AuthenticatedContext, how: 'help-opened' | 'expired'): Promise<boolean> {
+    const id = introductionId(persona.id),
+      at = clock().toISOString();
+    return store.transaction(async tx => {
+      const locked = await tx.lockThread(persona.id, id);
+      if (!locked || locked.state !== 'open') return false;
+      // Opened is done, as a card whose step was taken; untouched is dismissed, and both stand under Redan hanterat.
+      await tx.updateThread(id, {
+        state: how === 'help-opened' ? 'handled' : 'dismissed',
+        handledAt: at,
+        snoozedUntil: null,
+        updatedAt: at,
+      });
+      if (locked.snoozedUntil) await tx.cancelTimer(`snooze:${id}`, at);
+      await tx.addMessage(
+        id,
+        how === 'help-opened'
+          ? { role: 'user', body: 'Hjälpen öppnad', at }
+          : { role: 'assistant', body: `Stängt efter ${INTRODUCTION_DAYS} dagar`, at },
+      );
+      await tx.writeAudit({
+        actor: how === 'help-opened' ? persona.principal.id : 'assistant:introduction',
+        action: 'thread.introduction_closed',
+        subject: 'thread:' + id,
+        at,
+        details: { reason: how, owner: persona.id },
+      });
+      return true;
+    });
+  }
+  /**
+   * A card's read was answered (D97 item 4): when the card is the person's introduction, its one step has been taken, so
+   * the card is done. Answers the closed card for the page to put in its place, and undefined for every other card.
+   */
+  async function concludeIntroduction(persona: AuthenticatedContext, threadId: string): Promise<Thread | undefined> {
+    if (threadId !== introductionId(persona.id)) return undefined;
+    return (await closeIntroduction(persona, 'help-opened')) ? read(persona, threadId) : undefined;
+  }
   return {
     ensureThreads,
+    introduce,
+    concludeIntroduction,
     pushDraft,
     retryRejected,
     listAreas,

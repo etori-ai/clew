@@ -20,6 +20,7 @@ import {
   LayoutContent,
   LayoutHeader,
   LayoutPanel,
+  ScrollableArea,
   List,
   ListItem,
   ResizeHandle,
@@ -315,6 +316,12 @@ export interface PanelFrame {
   actions?: ReactNode;
   /** A table: over the page it gets a wide drawer. */
   wide?: boolean;
+  /**
+   * A text to read, which may hold nothing to focus (D97, the help): the body's viewport is then a labelled
+   * `ScrollableArea`, which enters the tab order while it overflows, so a keyboard can scroll it (2.1.1). Every other
+   * body has rows, links or buttons, and tabbing through them scrolls the region.
+   */
+  reads?: boolean;
   /** A card: its name is the small label over the card, as artboard E draws "KORT"; a view keeps its title as the heading. */
   kind?: 'card' | 'view';
   /** The thing's own name for its tab when several are open beside the page (D66): a card's title; a view keeps `title`. */
@@ -698,9 +705,17 @@ export function usePanel(
                 </LayoutHeader>
               }
               content={
-                <LayoutContent>
-                  <VStack id={BODY_ID}>{panel.body(true)}</VStack>
-                </LayoutContent>
+                panel.reads ? (
+                  <LayoutContent isScrollable={false} padding={0}>
+                    <ScrollableArea label={panel.title} height="100%" padding={6}>
+                      <VStack id={BODY_ID}>{panel.body(true)}</VStack>
+                    </ScrollableArea>
+                  </LayoutContent>
+                ) : (
+                  <LayoutContent>
+                    <VStack id={BODY_ID}>{panel.body(true)}</VStack>
+                  </LayoutContent>
+                )
               }
             />
           </VStack>
@@ -712,6 +727,18 @@ export function usePanel(
   // The drawer keeps the last name while it slides away, so its heading is never empty (axe: empty-heading).
   const lastTitle = useRef<string | null>(null);
   if (panel) lastTitle.current = panel.title;
+  const overBody = (
+    <VStack gap={3}>
+      {tabRow}
+      {(panel?.actions || more) && (
+        <HStack gap={1} wrap="wrap" vAlign="center">
+          {panel?.actions}
+          {more}
+        </HStack>
+      )}
+      <VStack id={BODY_ID}>{panel?.body(false)}</VStack>
+    </VStack>
+  );
   const overlay = inline ? null : (
     <Drawer
       isOpen={panel !== null}
@@ -723,18 +750,15 @@ export function usePanel(
       <Layout
         header={<DrawerHeader title={lastTitle.current ?? 'Vy'} onOpenChange={close} />}
         content={
-          <LayoutContent>
-            <VStack gap={3}>
-              {tabRow}
-              {(panel?.actions || more) && (
-                <HStack gap={1} wrap="wrap" vAlign="center">
-                  {panel?.actions}
-                  {more}
-                </HStack>
-              )}
-              <VStack id={BODY_ID}>{panel?.body(false)}</VStack>
-            </VStack>
-          </LayoutContent>
+          panel?.reads ? (
+            <LayoutContent isScrollable={false} padding={0}>
+              <ScrollableArea label={panel.title} height="100%" padding={4}>
+                {overBody}
+              </ScrollableArea>
+            </LayoutContent>
+          ) : (
+            <LayoutContent>{overBody}</LayoutContent>
+          )
         }
       />
     </Drawer>

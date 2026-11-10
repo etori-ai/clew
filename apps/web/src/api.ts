@@ -233,10 +233,11 @@ export const api = {
   areas: () => call<{ areas: Area[]; menu?: MenuEntry[]; systems?: SystemMark[] }>('/api/areas'),
   connectors: () => call<{ connectors: unknown[]; tools: string[] }>('/api/connectors'),
   act: (id: string, actionId: string, refs?: string[], reviews?: ReviewEvidence[]) =>
-    post<{ kind: 'execute'; thread: Thread } | { kind: 'read' | 'propose'; output: unknown; view?: PanelViewSpec }>(
-      `/api/threads/${id}/act`,
-      { actionId, refs, reviews },
-    ),
+    post<
+      | { kind: 'execute'; thread: Thread }
+      /** `thread` when the read was the card's answer and closed it (D97: the introduction). */
+      | { kind: 'read' | 'propose'; output: unknown; view?: PanelViewSpec; thread?: Thread }
+    >(`/api/threads/${id}/act`, { actionId, refs, reviews }),
   undoReceipt: (id: string) => post<Thread>(`/api/threads/${id}/undo-receipt`),
   retryRejected: (id: string) => post<Thread>(`/api/threads/${id}/retry`),
   /** One item's document for the review flow (D70). */
