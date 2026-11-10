@@ -2,7 +2,7 @@ import type { AuthenticatedContext } from '@clew/contracts';
 import { bindCalendar, type CalendarBinding } from '@clew/calendar/accounts';
 import { postgresProposalStore } from '../modules/calendar/adapters/postgres';
 import { durableObligations } from '../dbos/obligations';
-import type { Notifier, PlanningRound, RoundReader, Team } from '../modules/calendar/model';
+import type { Notifier, RoundReader, Team } from '../modules/calendar/model';
 import { teamFromStaff } from '../modules/calendar/domain';
 import { ForbiddenError } from '../context';
 import { staff } from './people';
@@ -50,17 +50,10 @@ const team: Team = async persona => {
   }
 };
 /**
- * TEMPORARY: the round of talks the planner works towards until the talks module (D96) owns it. It reproduces the
- * planner's earlier fixed deadline, so with it the product behaves as before. Remove once `index.ts` fills the slot.
+ * The open round, a slot like `notifier`: `index.ts` sets `planningRound.read` to read `clew.talks` through the registry
+ * (D96 items 1-3). Until it does, there is no round, and the planner plans nothing.
  */
-export const TEMPORARY_ROUND: PlanningRound = {
-  label: 'Utvecklingssamtal 2026',
-  opensOn: '2026-09-01',
-  dueOn: '2026-11-28',
-  held: [],
-};
-/** The open round, a slot like `notifier`: `index.ts` sets `planningRound.read` to the talks module's reader. */
-export const planningRound: { read: RoundReader } = { read: async () => TEMPORARY_ROUND };
+export const planningRound: { read: RoundReader } = { read: async () => null };
 const round: RoundReader = persona => planningRound.read(persona);
 /** The follow-up card goes into an invitee's stream through the threads module, which is built after this file: `index.ts` fills the slot. */
 export const notifier: { push: Notifier } = { push: async () => undefined };

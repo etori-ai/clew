@@ -4,7 +4,7 @@ import type { TimerIntent, WorkflowStart } from './model';
 /** The `durableReminder` workflow of a timer generation (D47, D86): the id every start and cancel of it uses. */
 export const reminderWorkflowId = (timer: Pick<TimerIntent, 'id' | 'generation'>) =>
   `${timer.id}:v2:${timer.generation}`;
-/** The workflow start a reminder, snooze or obligation timer commits with its row: wait until the absolute due time, then let the ledger decide by generation. */
+/** The workflow start a reminder, snooze, obligation or action point (`due`, D96) timer commits with its row: wait until the absolute due time, then let the ledger decide by generation. */
 export const reminderStart = (timer: Pick<TimerIntent, 'id' | 'generation' | 'dueAt'>): WorkflowStart => ({
   workflow: 'durableReminder',
   id: reminderWorkflowId(timer),

@@ -12,6 +12,11 @@ import type {
 export interface UserReads {
   capabilities(personId: string): Promise<string[]>;
   directory(unitId: string): Promise<Array<{ id: string; name: string; role: string }>>;
+  /**
+   * The person's provisioned user name (D96 item 8: what another system keys a row on); null for an unknown person or
+   * one provisioned without one.
+   */
+  userName(personId: string): Promise<string | null>;
 }
 /** A SCIM client (D68): the one thing that fills the provisioning tables, scoped to one organisation. */
 export interface Provisioner {

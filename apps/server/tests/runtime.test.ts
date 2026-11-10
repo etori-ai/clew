@@ -117,3 +117,111 @@ test('Stockholm meetings keep their instant and reject skipped or repeated local
   assert.throws(() => localInstant('2026-03-29T02:30'));
   assert.throws(() => localInstant('2026-10-25T02:30'));
 });
+
+test('the talks routes (D96): thin writes over the use cases, Swedish refusals, and a 403 on every write while the built-in module does not answer', async () => {
+  const { memoryTalkStore } = await import('../src/modules/talks/adapters/memory');
+  const { talkUsecases } = await import('../src/modules/talks/usecases');
+  const { NOT_WRITABLE, talkRoutes } = await import('../src/routes/talks');
+  const personaOf = (id: string, role: 'manager' | 'employee'): AuthenticatedContext => ({
+    id,
+    name: id,
+    unitId: 'u1',
+    unitLabel: 'Enheten',
+    role,
+    organisationId: 'org',
+    principal: { id: 'person:' + id, kind: 'person' },
+    capabilities: [],
+    authorizationVersion: 'v1',
+    sessionBinding: 'test',
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    authorize: async () => ({ version: 'v1' }),
+  });
+  const personas = new Map([personaOf('boss', 'manager'), personaOf('anna', 'employee')].map(p => [p.id, p]));
+  const anna = { id: 'anna', name: 'Anna', userName: 'anna.a', email: null, role: 'employee' as const, enabled: true };
+  let n = 0;
+  const talks = talkUsecases({
+    store: memoryTalkStore({ persons: [{ id: 'anna', organisationId: 'org', name: 'Anna', userName: 'anna.a' }] }),
+    staff: async p =>
+      p.id === 'boss' ? { units: [{ unitId: 'u1', unitLabel: 'Enheten', people: [anna] }] } : { units: [] },
+    bookings: async () => new Map(),
+    clock: () => new Date('2026-11-10T09:00:00.000Z'),
+    ids: () => 'id-' + ++n,
+  });
+  await talks.openRound('operator:cli', {
+    organisationId: 'org',
+    label: 'Omgång',
+    opensOn: '2026-09-01',
+    dueOn: '2026-11-28',
+  });
+  let writable = true;
+  const app = new Hono().route(
+    '/api/talks',
+    talkRoutes({
+      talks,
+      writable: async () => writable,
+      // The session guard's part: who is signed in. The real guard also checks the cookie and the CSRF token.
+      guard: async (c, next) => {
+        c.set('session', { context: personas.get(c.req.header('x-test-person') ?? '')! } as never);
+        await next();
+      },
+    }),
+  );
+  const call = (as: string, method: string, path: string, body?: unknown) =>
+    app.request('http://clew.test/api/talks' + path, {
+      method,
+      headers: { 'x-test-person': as, 'content-type': 'application/json' },
+      ...(body === undefined ? {} : { body: typeof body === 'string' ? body : JSON.stringify(body) }),
+    });
+
+  const added = await call('boss', 'POST', '/anna/commitments', {
+    owner: 'employee',
+    text: 'Läsa boken',
+    dueOn: '2026-12-15',
+  });
+  assert.equal(added.status, 201);
+  const { id } = (await added.json()) as { id: string };
+  assert.equal(typeof id, 'string');
+  const held = await call('boss', 'POST', '/anna/held', { heldOn: '2026-11-03' });
+  assert.equal(held.status, 200);
+  assert.deepEqual(await held.json(), { id: 'id-4', heldOn: '2026-11-03' });
+  assert.equal((await call('boss', 'DELETE', '/anna/held')).status, 204);
+  assert.equal((await call('anna', 'POST', `/commitments/${id}/done`)).status, 204);
+  assert.equal((await call('boss', 'DELETE', `/commitments/${id}/done`)).status, 204);
+
+  const refused = await call('anna', 'POST', '/anna/held', {});
+  assert.equal(refused.status, 403);
+  assert.deepEqual(await refused.json(), {
+    error: 'Utvecklingssamtalen är för den som är chef för en enhet.',
+    code: 'denied',
+  });
+  for (const bad of [
+    { owner: 'employee', dueOn: '2026-12-15' },
+    { owner: 'nobody', text: 'x', dueOn: '2026-12-15' },
+    'not json',
+  ]) {
+    const response = await call('boss', 'POST', '/anna/commitments', bad);
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: 'Ogiltig förfrågan.' });
+  }
+  const blank = await call('boss', 'POST', '/anna/commitments', {
+    owner: 'employee',
+    text: '   ',
+    dueOn: '2026-12-15',
+  });
+  assert.equal(blank.status, 400);
+  assert.match(((await blank.json()) as { error: string }).error, /högst 280 tecken/);
+
+  writable = false;
+  for (const [method, path, body] of [
+    ['POST', '/anna/held', {}],
+    ['DELETE', '/anna/held', undefined],
+    ['POST', '/anna/commitments', { owner: 'employee', text: 'Läsa boken', dueOn: '2026-12-15' }],
+    ['POST', `/commitments/${id}/done`, undefined],
+    ['DELETE', `/commitments/${id}/done`, undefined],
+  ] as const) {
+    const response = await call('boss', method, path, body);
+    assert.equal(response.status, 403, `${method} ${path}`);
+    assert.deepEqual(await response.json(), { error: NOT_WRITABLE, code: 'denied' });
+  }
+  assert.equal(n, 4, 'no write reached the use cases while the built-in module did not answer');
+});

@@ -11,10 +11,17 @@ import { roomsView } from '../../apps/server/src/modules/calendar/views';
  */
 const mikael: Actor = { id: 'mikael', name: 'Mikael Lund', unitId: 'unit-it', unitLabel: 'IT', role: 'employee' };
 const never = () => Promise.reject(new Error('not called'));
-const connector = () =>
-  calendarConnector({ readToday: never, weekView: never, samtalStatus: never }, { dayView: never, listRooms: never });
+const connector = () => calendarConnector({ readToday: never, weekView: never }, { dayView: never, listRooms: never });
 
 describe('the calendar connector declares what the fixtures declare', () => {
+  test('two areas, neither with a figure: talks held is the talks module’s figure, and the planner’s area keeps its id under its own title (D96)', () => {
+    const areas = connector().areas;
+    expect(areas.map(a => [a.id, a.title])).toEqual([
+      ['calendar', 'Kalender'],
+      ['utvecklingssamtal', 'Boka utvecklingssamtal'],
+    ]);
+    expect(areas.filter(a => a.figure)).toEqual([]);
+  });
   test('every read has an output schema with properties, and only the rooms declare a view', () => {
     const reads = connector().capabilities.filter(c => c.kind === 'read');
     expect(reads.map(c => c.name)).toEqual(['calendar.today', 'calendar.week', 'calendar.day', 'calendar.rooms']);

@@ -20,6 +20,13 @@ export const postgresUserReads = (): UserReads => ({
       .innerJoin(schema.accessGrants, eq(schema.accessGrants.personId, schema.people.id))
       .where(eq(schema.accessGrants.unitId, unitId));
   },
+  async userName(personId) {
+    const [row] = await database()
+      .select({ userName: schema.people.userName })
+      .from(schema.people)
+      .where(eq(schema.people.id, personId));
+    return row?.userName ?? null;
+  },
 });
 const userColumns = {
   id: schema.people.id,

@@ -31,7 +31,10 @@ import { actorOf } from '@clew/connectors';
 import { reminderUsecases } from '../threads/usecases/reminders';
 import { threadUsecases } from '../threads/usecases/cards';
 import { clock, ids } from './ambient';
-import { calendar, events, notifier, calendarAuthority, followups } from './calendar';
+import { calendar, events, notifier, calendarAuthority, followups, planningRound } from './calendar';
+import { talks } from './talks';
+import { TALKS_CAPABILITY } from '../modules/talk-seam/capabilities';
+import type { AuthenticatedContext, TalksResult } from '@clew/contracts';
 import { systemContext } from '../system-context';
 import { cardDecisions } from '../threads/usecases/decisions';
 import { executions } from './executions';
@@ -119,10 +122,46 @@ calendarAuthority.current = async id => {
   const p = await systemContext(id, 'system:obligation');
   return p && registry.visible(p, 'calendar') ? p : undefined;
 };
+/**
+ * A fired timer goes to the module that owns its kind (D47, D85): the obligation to the calendar's follow-ups (D30), an
+ * action point's `due` to the talks module, which brings the card back while the action point is open and checks no
+ * authority on the owner's version (D96: the card stays with its owner), and the person's own reminder and snooze to
+ * the reminders, which do.
+ */
 export async function fireTimer(id: string, generation: number) {
   const timer = await store.readTimer(id);
   if (timer?.kind === 'obligation') return followups.fire(timer.threadId, generation);
+  if (timer?.kind === 'due') return talks.commitmentDue(timer.threadId, generation);
   return reminders.fire(id, generation);
+}
+const roundFailed = logPort('talks', 'error');
+/**
+ * The round the planner works towards (D96 items 1-3) is the one `clew.talks` answers for the person, from whichever
+ * system answers the talks profile, read as the person through the registry: its dates, and the people whose talk the
+ * source records as held. No round, no system that answers for this person, or a read that fails: no round, and the
+ * planner plans nothing rather than fail the stream. The built-in round asks the calendar who is booked
+ * (`samtalBookings`), which takes the period as input and never reads the round, so the two do not call each other.
+ */
+planningRound.read = async persona => {
+  if (!registry.allowed(actorOf(persona), TALKS_CAPABILITY)) return null;
+  try {
+    const result = await runCapability<TalksResult>(persona, TALKS_CAPABILITY, {});
+    if (!result.round) return null;
+    const { label, opensOn, dueOn } = result.round;
+    return { label, opensOn, dueOn, held: result.rows.filter(r => r.state === 'held').map(r => r.personId) };
+  } catch (error) {
+    roundFailed('talks: the planning round could not be read', error);
+    return null;
+  }
+};
+/**
+ * Clew writes its own talk records only while the built-in module answers the talks profile for this person (D96 item
+ * 9): not when an administrator has switched it off, nor for someone outside its audience. The rows are read first, as
+ * every API request does, so a change made on another instance counts at once.
+ */
+export async function talksWritable(persona: AuthenticatedContext) {
+  await refreshConnectors();
+  return registry.talkSource(actorOf(persona))?.builtIn === true;
 }
 // A cited answer becomes a card (D26) through the search connector's propose; the stream owns the card, so the slot is filled here.
 answerCards.create = async (actorId, input) => {
