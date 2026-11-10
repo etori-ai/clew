@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
 import { writeAudit } from '@clew/db/threads';
 import type { GroupRecord, UserRecord } from '../domain';
@@ -55,16 +55,39 @@ const groupRecord = (r: GroupRow): GroupRecord => ({
 /** `userName` is compared without regard to case (RFC 7643: `caseExact: false`), `externalId` exactly; as the unique indexes do. */
 const userMatch = (by: 'userName' | 'externalId', value: string) =>
   by === 'userName' ? sql`lower(${schema.people.userName}) = lower(${value})` : eq(schema.people.externalId, value);
+/**
+ * The lock a derivation takes on a person and a write takes on a group. `NO KEY UPDATE`, not `UPDATE`: a membership or
+ * assignment row inserted by another transaction holds a key-share lock on the person through its foreign key, and
+ * `FOR UPDATE` would wait for it while that transaction waits for this one. Two holders of this lock still exclude
+ * each other, which is all the serialisation needs (`tests/db/postgres-scim-concurrency.test.ts`).
+ */
+const ROW_LOCK = 'no key update' as const;
 const groupColumn = { externalId: schema.groups.externalId, label: schema.groups.label } as const;
+const provisionerColumns = {
+  id: schema.provisioners.id,
+  organisationId: schema.provisioners.organisationId,
+  label: schema.provisioners.label,
+  lastSeenAt: schema.provisioners.lastSeenAt,
+};
+const provisionerRecord = (r: { id: string; organisationId: string; label: string; lastSeenAt: Date | null }) => ({
+  ...r,
+  lastSeenAt: r.lastSeenAt?.toISOString() ?? null,
+});
 /** The provisioning tables and the grant projection (D68, D85) inside one Postgres transaction. */
 export function postgresProvisionStore(): ProvisionStore {
   const txOf = (tx: Transaction): ProvisionTx => ({
-    async person(id) {
+    async lockPerson(id) {
       const [row] = await tx
         .select({ id: schema.people.id, organisationId: schema.people.organisationId })
         .from(schema.people)
-        .where(eq(schema.people.id, id));
+        .where(eq(schema.people.id, id))
+        .for(ROW_LOCK);
       return row;
+    },
+    async lockUnits(unitIds) {
+      // An advisory lock, since a new unit has no row to lock yet; in id order, as people are locked.
+      for (const id of [...new Set(unitIds)].sort())
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${'clew.unit:' + id}, 0))`);
     },
     async memberships(personId) {
       const rows = await tx
@@ -143,16 +166,47 @@ export function postgresProvisionStore(): ProvisionStore {
         .onConflictDoUpdate({ target: schema.accessGrants.personId, set: values });
     },
     audit: entry => writeAudit(tx, entry),
-    async provisioner(tokenDigest) {
+    async provisioner(tokenDigest, at) {
       const [row] = await tx
-        .select({
-          id: schema.provisioners.id,
-          organisationId: schema.provisioners.organisationId,
-          label: schema.provisioners.label,
-        })
+        .select(provisionerColumns)
         .from(schema.provisioners)
-        .where(and(eq(schema.provisioners.tokenDigest, tokenDigest), isNull(schema.provisioners.revokedAt)));
-      return row;
+        .where(
+          and(
+            isNull(schema.provisioners.revokedAt),
+            or(
+              eq(schema.provisioners.tokenDigest, tokenDigest),
+              and(
+                eq(schema.provisioners.previousTokenDigest, tokenDigest),
+                gt(schema.provisioners.previousValidUntil, new Date(at)),
+              ),
+            ),
+          ),
+        );
+      return row && provisionerRecord(row);
+    },
+    async touchProvisioner(id, at, seenBefore) {
+      // A second request waits for the first one's row and then finds the time already moved.
+      const moved = await tx
+        .update(schema.provisioners)
+        .set({ lastSeenAt: new Date(at) })
+        .where(
+          and(
+            eq(schema.provisioners.id, id),
+            seenBefore === null
+              ? isNull(schema.provisioners.lastSeenAt)
+              : eq(schema.provisioners.lastSeenAt, new Date(seenBefore)),
+          ),
+        )
+        .returning({ id: schema.provisioners.id });
+      return moved.length > 0;
+    },
+    async provisioners(organisationId) {
+      const rows = await tx
+        .select(provisionerColumns)
+        .from(schema.provisioners)
+        .where(and(eq(schema.provisioners.organisationId, organisationId), isNull(schema.provisioners.revokedAt)))
+        .orderBy(schema.provisioners.id);
+      return rows.map(provisionerRecord);
     },
     async readUser(organisationId, id) {
       const [row] = await tx
@@ -205,11 +259,12 @@ export function postgresProvisionStore(): ProvisionStore {
         .where(eq(schema.groupMembers.personId, personId))
         .orderBy(schema.groups.id);
     },
-    async readGroup(organisationId, id) {
-      const [row] = await tx
+    async readGroup(organisationId, id, lock) {
+      const query = tx
         .select(groupColumns)
         .from(schema.groups)
         .where(and(eq(schema.groups.id, id), eq(schema.groups.organisationId, organisationId)));
+      const [row] = await (lock ? query.for(ROW_LOCK) : query);
       return row && groupRecord(row);
     },
     async findGroup(by, value) {

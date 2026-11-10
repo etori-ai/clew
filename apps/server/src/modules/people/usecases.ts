@@ -29,9 +29,12 @@ import {
   deriveAuthority,
   groupFields,
   groupResource,
+  leavesOut,
   pageOf,
   parseFilter,
+  project,
   sameGrant,
+  unitOfKey,
   userFields,
   userResource,
   MANAGER_KEY,
@@ -40,6 +43,7 @@ import {
   type GroupFields,
   type GroupRecord,
   type GroupCapabilityRule,
+  type Projection,
   type UserFields,
   type UserRecord,
 } from './domain';
@@ -54,23 +58,14 @@ import type { Provisioner, ProvisionStore, ProvisionTx } from './ports';
  */
 export function provisioningUsecases(deps: { store: ProvisionStore }) {
   async function deriveWithin(tx: ProvisionTx, actor: string, personId: string): Promise<Derived | undefined> {
-    const person = await tx.person(personId);
+    // Locked first: a second derivation of the same person waits here and then reads what this one committed.
+    const person = await tx.lockPerson(personId);
     if (!person) return undefined;
     const memberships = await tx.memberships(personId),
       rules = await tx.groupCapabilities();
     // Every unit the memberships name, as the unit table knows it: the label of a managed unit without a `unit:` group,
     // and the comparison that lets an unchanged derivation write nothing (a daily push replays every person).
-    const named = [
-      ...new Set(
-        memberships.flatMap(m =>
-          m.externalId.startsWith(MANAGER_KEY)
-            ? [m.externalId.slice(MANAGER_KEY.length)]
-            : m.externalId.startsWith(UNIT_KEY)
-              ? [m.externalId.slice(UNIT_KEY.length)]
-              : [],
-        ),
-      ),
-    ];
+    const named = [...new Set(memberships.flatMap(m => unitOfKey(m.externalId) ?? []))];
     const knownLabels = named.length ? await tx.unitLabels(named) : {};
     const derived = deriveAuthority(memberships, rules, knownLabels);
     const movedUnits = derived.units.filter(u => knownLabels[u.id] !== u.label);
@@ -101,15 +96,23 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
     }
     return derived;
   }
+  /**
+   * Several people in one transaction, each once and in id order: every caller locks in the same order, so two
+   * requests that touch the same people queue behind each other instead of waiting on each other.
+   */
+  async function deriveAll(tx: ProvisionTx, actor: string, personIds: Iterable<string>) {
+    for (const id of [...new Set(personIds)].sort()) await deriveWithin(tx, actor, id);
+  }
   return {
     deriveWithin,
+    deriveAll,
     /** Re-derive one person after their memberships changed. */
     derivePerson: (actor: string, personId: string) => deps.store.transaction(tx => deriveWithin(tx, actor, personId)),
     /** Re-derive every member of a group after the group's meaning changed (a group-capability row, a renamed `unit:` group). */
     deriveGroup: (actor: string, groupExternalId: string) =>
       deps.store.transaction(async tx => {
         const members = await tx.members(groupExternalId);
-        for (const id of members) await deriveWithin(tx, actor, id);
+        await deriveAll(tx, actor, members);
         return members;
       }),
   };
@@ -125,11 +128,16 @@ export type ProvisioningUsecases = ReturnType<typeof provisioningUsecases>;
  * while `userName` and a group's or a person's `externalId` are unique across the installation: a login carries no
  * organisation, and D68's keys are shared vocabulary.
  */
-export interface ScimQuery {
+export interface ScimQuery extends Projection {
   filter?: string;
   startIndex?: string;
   count?: string;
 }
+/** How often a provisioner's last-seen time is written at most: a push is thousands of requests, the mark one a minute. */
+const SEEN_INTERVAL_MS = 60_000;
+/** A provisioner seen again after this long is a new run, and a run is what the audit records (`provisioner.seen`). */
+const RUN_GAP_MS = 30 * 60_000;
+const since = (later: string, earlier: string) => Date.parse(later) - Date.parse(earlier);
 export function scimUsecases(deps: {
   store: ProvisionStore;
   clock: () => Date;
@@ -154,8 +162,8 @@ export function scimUsecases(deps: {
     return user;
   };
   /** Within the provisioner's organisation, as `userOr404`: another organisation's group does not exist for this client. */
-  const groupOr404 = async (tx: ProvisionTx, p: Provisioner, id: string) => {
-    const group = await tx.readGroup(p.organisationId, id);
+  const groupOr404 = async (tx: ProvisionTx, p: Provisioner, id: string, lock = false) => {
+    const group = await tx.readGroup(p.organisationId, id, lock);
     if (!group) throw new ScimError(404, `Group '${id}' not found.`);
     return group;
   };
@@ -175,20 +183,48 @@ export function scimUsecases(deps: {
   const membersExist = async (tx: ProvisionTx, p: Provisioner, members: readonly string[]) => {
     for (const id of members)
       if (!(await tx.readUser(p.organisationId, id)))
-        throw new ScimError(400, `Member '${id}' is not a user of this organisation.`, 'invalidValue');
+        throw new ScimError(
+          400,
+          (await tx.readGroup(p.organisationId, id))
+            ? `Member '${id}' is a group. Nested groups are not supported: send the people as members.`
+            : `Member '${id}' is not a user of this organisation.`,
+          'invalidValue',
+        );
   };
   /**
    * The managers of the unit a `unit:` group names. Their grant carries the unit's label without their being members of
    * that group, so a new or renamed unit group re-derives them too; any other group names nobody beyond its members.
    */
   const managersOfUnit = (tx: ProvisionTx, externalId: string | null): Promise<string[]> =>
-    externalId?.startsWith(UNIT_KEY)
-      ? tx.members(MANAGER_KEY + externalId.slice(UNIT_KEY.length))
-      : Promise.resolve([]);
+    externalId?.startsWith(UNIT_KEY) ? tx.members(MANAGER_KEY + unitOfKey(externalId)) : Promise.resolve([]);
+  /**
+   * A write of a `unit:` or `unit-manager:` group holds its unit first, under the key it had and the key it gets: the
+   * two groups of one unit are written one after the other, so each reads the other's members and name as committed.
+   */
+  const lockUnitsOf = async (tx: ProvisionTx, ...externalIds: Array<string | null>) => {
+    const units = externalIds.flatMap(key => unitOfKey(key) ?? []);
+    if (units.length) await tx.lockUnits(units);
+  };
+  /**
+   * A `unit:` group names its unit. The label is written before anyone is derived, so a manager, who carries the label
+   * without being a member of that group, reads the new name whatever order the people are derived in. Only for a unit
+   * somebody is assigned to once the write is done (`assigned`: its members and managers): a unit row exists per
+   * assignment, not per group.
+   */
+  const nameUnit = async (tx: ProvisionTx, p: Provisioner, fields: GroupFields, assigned: readonly string[]) => {
+    const id = fields.externalId?.startsWith(UNIT_KEY) ? unitOfKey(fields.externalId) : undefined;
+    if (!id || !assigned.length) return;
+    if ((await tx.unitLabels([id]))[id] !== fields.label)
+      await tx.writeUnits(p.organisationId, [{ id, label: fields.label }]);
+  };
   const userView = async (tx: ProvisionTx, record: UserRecord, base: string) =>
     userResource(record, await tx.userGroups(record.id), base);
-  const groupView = async (tx: ProvisionTx, record: GroupRecord, base: string) =>
-    groupResource(record, await tx.groupMembers(record.id), base);
+  /** The members are not read when the client asked to have them left out (Entra does, for large groups). */
+  const groupView = async (tx: ProvisionTx, record: GroupRecord, base: string, projection?: Projection) =>
+    project(
+      groupResource(record, leavesOut(projection, 'members') ? [] : await tx.groupMembers(record.id), base),
+      projection,
+    );
   const fieldsOf = (u: UserRecord): UserFields => ({
     externalId: u.externalId ?? '',
     userName: u.userName ?? u.id,
@@ -240,6 +276,7 @@ export function scimUsecases(deps: {
     base: string,
   ) {
     assertAcceptedKey(fields);
+    await lockUnitsOf(tx, current.externalId, fields.externalId);
     await uniqueGroup(tx, fields, current.id);
     await membersExist(tx, p, fields.members);
     const before = (await tx.groupMembers(current.id)).map(m => m.id),
@@ -270,16 +307,39 @@ export function scimUsecases(deps: {
     });
     // A renamed or re-keyed group changes what every member gets, and a unit's label what its managers carry;
     // otherwise only those who came or went.
-    const touched = renamed
-      ? [...new Set([...before, ...fields.members, ...(await managersOfUnit(tx, fields.externalId))])]
-      : [...added, ...removed];
-    for (const id of touched) await derivation.deriveWithin(tx, actorOf(p), id);
+    if (renamed) {
+      const assigned = [...fields.members, ...(await managersOfUnit(tx, fields.externalId))];
+      await nameUnit(tx, p, fields, assigned);
+      await derivation.deriveAll(tx, actorOf(p), [...before, ...assigned]);
+    } else await derivation.deriveAll(tx, actorOf(p), [...added, ...removed]);
     return groupView(tx, { ...current, ...fields, updatedAt: at }, base);
   }
   return {
     ...derivation,
-    /** The provisioner behind a bearer token, or undefined when none is active for it. */
-    authenticate: (token: string) => deps.store.transaction(tx => tx.provisioner(deps.digest(token))),
+    /**
+     * The provisioner behind a bearer token, or undefined when none is active for it. Being seen is recorded: the
+     * time at most once a minute, and an audit row (`provisioner.seen`) when a run begins, which is the one trace a
+     * push that changes nothing leaves. The time is a liveness mark, not a change to what Clew holds.
+     */
+    authenticate: (token: string): Promise<Provisioner | undefined> =>
+      deps.store.transaction(async tx => {
+        const at = now(),
+          found = await tx.provisioner(deps.digest(token), at);
+        if (!found) return undefined;
+        const { lastSeenAt, ...provisioner } = found;
+        if (lastSeenAt === null || since(at, lastSeenAt) >= SEEN_INTERVAL_MS) {
+          // Of several requests that arrive together, the one that moves the mark records the run.
+          const moved = await tx.touchProvisioner(provisioner.id, at, lastSeenAt);
+          if (moved && (lastSeenAt === null || since(at, lastSeenAt) >= RUN_GAP_MS))
+            await tx.audit({
+              actor: actorOf(provisioner),
+              action: 'provisioner.seen',
+              subject: 'provisioner:' + provisioner.id,
+              details: { previous: lastSeenAt },
+            });
+        }
+        return provisioner;
+      }),
     createUser: (p: Provisioner, body: unknown, base: string): Promise<ScimUser> =>
       deps.store.transaction(async tx => {
         const fields = userFields(checked(ScimUserInputSchema, body, 'User'));
@@ -302,8 +362,8 @@ export function scimUsecases(deps: {
         await derivation.deriveWithin(tx, actorOf(p), record.id);
         return userResource(record, [], base);
       }),
-    getUser: (p: Provisioner, id: string, base: string) =>
-      deps.store.transaction(async tx => userView(tx, await userOr404(tx, p, id), base)),
+    getUser: (p: Provisioner, id: string, base: string, projection?: Projection) =>
+      deps.store.transaction(async tx => project(await userView(tx, await userOr404(tx, p, id), base), projection)),
     listUsers: (p: Provisioner, query: ScimQuery, base: string): Promise<ScimList<ScimUser>> =>
       deps.store.transaction(async tx => {
         const filter = parseFilter(query.filter, ['userName', 'externalId']) as
@@ -311,7 +371,7 @@ export function scimUsecases(deps: {
           page = pageOf(query);
         const listed = await tx.listUsers(p.organisationId, page, filter);
         const Resources: ScimUser[] = [];
-        for (const row of listed.rows) Resources.push(await userView(tx, row, base));
+        for (const row of listed.rows) Resources.push(project(await userView(tx, row, base), query));
         return {
           schemas: [SCIM.list],
           totalResults: listed.total,
@@ -339,7 +399,7 @@ export function scimUsecases(deps: {
           tx,
           p,
           current,
-          applyUserPatch(fieldsOf(current), patch.Operations),
+          applyUserPatch(fieldsOf(current), patch.Operations, current.id),
           'scim.user.patched',
           base,
         );
@@ -362,6 +422,7 @@ export function scimUsecases(deps: {
       deps.store.transaction(async tx => {
         const fields = groupFields(checked(ScimGroupInputSchema, body, 'Group'));
         assertAcceptedKey(fields);
+        await lockUnitsOf(tx, fields.externalId);
         await uniqueGroup(tx, fields);
         await membersExist(tx, p, fields.members);
         const at = now(),
@@ -381,12 +442,13 @@ export function scimUsecases(deps: {
           subject: 'group:' + record.id,
           details: { externalId: fields.externalId, displayName: fields.label, members: fields.members.length },
         });
-        for (const id of new Set([...fields.members, ...(await managersOfUnit(tx, fields.externalId))]))
-          await derivation.deriveWithin(tx, actorOf(p), id);
+        const assigned = [...fields.members, ...(await managersOfUnit(tx, fields.externalId))];
+        await nameUnit(tx, p, fields, assigned);
+        await derivation.deriveAll(tx, actorOf(p), assigned);
         return groupView(tx, record, base);
       }),
-    getGroup: (p: Provisioner, id: string, base: string) =>
-      deps.store.transaction(async tx => groupView(tx, await groupOr404(tx, p, id), base)),
+    getGroup: (p: Provisioner, id: string, base: string, projection?: Projection) =>
+      deps.store.transaction(async tx => groupView(tx, await groupOr404(tx, p, id), base, projection)),
     listGroups: (p: Provisioner, query: ScimQuery, base: string): Promise<ScimList<ScimGroup>> =>
       deps.store.transaction(async tx => {
         // SCIM filters on displayName; the column is Clew's `label`.
@@ -398,7 +460,7 @@ export function scimUsecases(deps: {
           page = pageOf(query);
         const listed = await tx.listGroups(p.organisationId, page, filter);
         const Resources: ScimGroup[] = [];
-        for (const row of listed.rows) Resources.push(await groupView(tx, row, base));
+        for (const row of listed.rows) Resources.push(await groupView(tx, row, base, query));
         return {
           schemas: [SCIM.list],
           totalResults: listed.total,
@@ -412,7 +474,7 @@ export function scimUsecases(deps: {
         writeGroup(
           tx,
           p,
-          await groupOr404(tx, p, id),
+          await groupOr404(tx, p, id, true),
           groupFields(checked(ScimGroupInputSchema, body, 'Group')),
           'scim.group.replaced',
           base,
@@ -420,20 +482,23 @@ export function scimUsecases(deps: {
       ),
     patchGroup: (p: Provisioner, id: string, body: unknown, base: string) =>
       deps.store.transaction(async tx => {
-        const current = await groupOr404(tx, p, id),
+        // Locked before its members are read: a patch is a read and a write, and two of them must not interleave.
+        const current = await groupOr404(tx, p, id, true),
           patch = checked<{ Operations: Parameters<typeof applyGroupPatch>[1] }>(ScimPatchSchema, body, 'PatchOp'),
           members = (await tx.groupMembers(id)).map(m => m.id);
         const next = applyGroupPatch(
           { externalId: current.externalId, label: current.label, members },
           patch.Operations,
+          current.id,
         );
         return writeGroup(tx, p, current, next, 'scim.group.patched', base);
       }),
     /** Removes the group; its members are re-derived and lose what it gave them. The group-capability rows stay (D85). */
     deleteGroup: (p: Provisioner, id: string) =>
       deps.store.transaction(async tx => {
-        const current = await groupOr404(tx, p, id),
-          members = (await tx.groupMembers(id)).map(m => m.id);
+        const current = await groupOr404(tx, p, id, true);
+        await lockUnitsOf(tx, current.externalId);
+        const members = (await tx.groupMembers(id)).map(m => m.id);
         await tx.deleteGroup(id);
         await tx.audit({
           actor: actorOf(p),
@@ -441,7 +506,7 @@ export function scimUsecases(deps: {
           subject: 'group:' + id,
           details: { externalId: current.externalId, displayName: current.label, members: members.length },
         });
-        for (const member of members) await derivation.deriveWithin(tx, actorOf(p), member);
+        await derivation.deriveAll(tx, actorOf(p), members);
       }),
   };
 }
@@ -454,7 +519,12 @@ export type ScimUsecases = ReturnType<typeof scimUsecases>;
  * group is re-derived in the same transaction, so a grant never lags the row that produced it.
  */
 export const USERS_ADMIN_CAPABILITY: Capability = 'admin.users';
-export function usersAdminUsecases(deps: { store: ProvisionStore }) {
+/**
+ * D68 item 4 asks for a push at least daily, because access ends when the push arrives. A provisioner not seen for two
+ * days has missed one with a day's margin, and the page says so.
+ */
+const PROVISIONER_SILENT_MS = 48 * 60 * 60 * 1000;
+export function usersAdminUsecases(deps: { store: ProvisionStore; clock: () => Date }) {
   const derivation = provisioningUsecases({ store: deps.store });
   const require = (persona: AuthenticatedContext) => {
     if (!persona.capabilities.includes(USERS_ADMIN_CAPABILITY)) throw new ForbiddenError();
@@ -501,7 +571,14 @@ export function usersAdminUsecases(deps: { store: ProvisionStore }) {
           a.capability.localeCompare(b.capability),
       );
     users.sort((a, b) => a.name.localeCompare(b.name, 'sv') || a.id.localeCompare(b.id));
-    return { users, groupCapabilities, groups, capabilities: [...CAPABILITIES] };
+    const at = deps.clock().toISOString(),
+      provisioners = (await tx.provisioners(persona.organisationId)).map(p => ({
+        id: p.id,
+        label: p.label,
+        lastSeenAt: p.lastSeenAt,
+        silent: p.lastSeenAt === null || since(at, p.lastSeenAt) > PROVISIONER_SILENT_MS,
+      }));
+    return { users, groupCapabilities, groups, capabilities: [...CAPABILITIES], provisioners };
   }
   async function change(persona: AuthenticatedContext, input: GroupCapabilityInputType, present: boolean) {
     require(persona);
@@ -518,8 +595,7 @@ export function usersAdminUsecases(deps: { store: ProvisionStore }) {
           subject: 'group:' + input.groupExternalId,
           details: { capability: input.capability, groupLabel: group?.label ?? null },
         });
-        for (const member of await tx.members(input.groupExternalId))
-          await derivation.deriveWithin(tx, 'person:' + persona.id, member);
+        await derivation.deriveAll(tx, 'person:' + persona.id, await tx.members(input.groupExternalId));
       }
       return overviewWithin(tx, persona);
     });

@@ -276,7 +276,7 @@ try {
   }
   testPasswords.DEV_PROVISIONER_TOKEN = provisionerToken!;
   // Push the directory through the SCIM server in-process: the same routes `bun run dev:provision` reaches over HTTP.
-  const inProcess = scimRoutes(scim);
+  const inProcess = scimRoutes(scim, console.error);
   const pushed = await push(
     scimClient('http://clew.local', provisionerToken!, (input, init) => inProcess.request(input, init)),
     developmentDirectory,

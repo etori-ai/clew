@@ -15,8 +15,11 @@ export interface MemoryProvisionState {
   units: Map<string, { organisationId: string; label: string }>;
   assignments: Map<string, Assignment[]>;
   grants: Map<string, Omit<Grant, 'capabilities'> & { capabilities: string[] }>;
-  /** By token digest. */
-  provisioners: Map<string, Provisioner & { revoked?: boolean }>;
+  /** By token digest; `previous` is a rotated-out digest that still answers until `until`. */
+  provisioners: Map<
+    string,
+    Provisioner & { revoked?: boolean; lastSeenAt?: string | null; previous?: { digest: string; until: string } }
+  >;
   /** Person ids with an identity binding. */
   bindings: Set<string>;
   audit: Array<{ actor: string; action: string; subject: string; details: Record<string, unknown> }>;
@@ -67,11 +70,18 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
       .filter(([, p]) => p === personId)
       .map(([g]) => state.groups.get(g))
       .filter((g): g is GroupRecord => !!g);
+  const provisionerRow = (p: Provisioner & { lastSeenAt?: string | null }) => ({
+    id: p.id,
+    organisationId: p.organisationId,
+    label: p.label,
+    lastSeenAt: p.lastSeenAt ?? null,
+  });
   const tx: ProvisionTx = {
-    async person(id) {
+    async lockPerson(id) {
       const p = state.users.get(id);
       return p && { id: p.id, organisationId: p.organisationId };
     },
+    async lockUnits() {},
     async memberships(personId) {
       return groupsOf(personId)
         .filter(g => g.externalId !== null)
@@ -112,9 +122,26 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
     async audit(entry) {
       state.audit.push(structuredClone(entry));
     },
-    async provisioner(tokenDigest) {
-      const p = state.provisioners.get(tokenDigest);
-      return p && !p.revoked ? { id: p.id, organisationId: p.organisationId, label: p.label } : undefined;
+    async provisioner(tokenDigest, at) {
+      const p =
+        state.provisioners.get(tokenDigest) ??
+        [...state.provisioners.values()].find(o => o.previous?.digest === tokenDigest && o.previous.until > at);
+      return p && !p.revoked ? provisionerRow(p) : undefined;
+    },
+    async touchProvisioner(id, at, seenBefore) {
+      let moved = false;
+      for (const [digest, p] of state.provisioners)
+        if (p.id === id && (p.lastSeenAt ?? null) === seenBefore) {
+          state.provisioners.set(digest, { ...p, lastSeenAt: at });
+          moved = true;
+        }
+      return moved;
+    },
+    async provisioners(organisationId) {
+      return [...state.provisioners.values()]
+        .filter(p => p.organisationId === organisationId && !p.revoked)
+        .map(provisionerRow)
+        .sort((a, b) => a.id.localeCompare(b.id));
     },
     async readUser(organisationId, id) {
       const u = state.users.get(id);

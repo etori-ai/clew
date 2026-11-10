@@ -1058,7 +1058,7 @@
       "number": 93,
       "path": "docs/decisions/D93-the-protected-key-is-refused-at-the-scim-boundary.md",
       "title": "D93 · The `protected` key is refused at the SCIM boundary until Clew decides whether it may hold the fact",
-      "status": "accepted, built 2026-11-09",
+      "status": "accepted, built 2026-11-09; extended to every case of the key by [D96](D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md) (2026-11-10)",
       "date": "2026-11-09",
       "area": "identity"
     },
@@ -1079,6 +1079,15 @@
       "status": "accepted, nothing built",
       "date": "2026-11-10",
       "area": "product, integrations"
+    },
+    {
+      "key": "D96-a-key-written-wrong-is-refused-at-the-scim-boundary",
+      "number": 96,
+      "path": "docs/decisions/D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md",
+      "title": "D96 · A key written wrong is refused at the SCIM boundary, not stored as a plain group",
+      "status": "accepted, built 2026-11-10",
+      "date": "2026-11-10",
+      "area": "identity"
     }
   ],
   "documents": [
@@ -2067,6 +2076,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md",
+      "title": "D96 · A key written wrong is refused at the SCIM boundary, not stored as a plain group",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -2215,6 +2230,7 @@
       "headings": [
         "What Clew expects",
         "What a provisioner does on every run",
+        "Checking a push",
         "The example"
       ]
     },
@@ -3008,6 +3024,23 @@
         "Questions for the product owner",
         "Outcome of the discussion, 2026-11-10",
         "Sources and limits"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-10-scim-conformance-and-operability.md",
+      "title": "Review: is the SCIM server standard, and is it easy to run · 2026-11-10",
+      "category": "review-history",
+      "headings": [
+        "Question",
+        "Assessment",
+        "Method",
+        "What is standard",
+        "Where it departs from the standard",
+        "Operability",
+        "Recommended order",
+        "Verification",
+        "Outcome",
+        "Second pass"
       ]
     },
     {

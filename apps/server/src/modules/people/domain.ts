@@ -1,4 +1,4 @@
-import { isCapability, type Capability, type Role } from '@clew/contracts';
+import { CAPABILITIES, isCapability, type Capability, type Role } from '@clew/contracts';
 
 /**
  * Deriving a person's authority from what was pushed (D68) and mapped (D85). Pure: no I/O, no clock.
@@ -15,6 +15,13 @@ export const UNIT_KEY = 'unit:',
   MANAGER_KEY = 'unit-manager:',
   CAPABILITY_KEY = 'capability:',
   PROTECTED_KEY = 'protected';
+/** The unit a group's key names, whichever of the unit's two groups it is; undefined for any other key. */
+export const unitOfKey = (externalId: string | null | undefined): string | undefined =>
+  externalId?.startsWith(MANAGER_KEY)
+    ? externalId.slice(MANAGER_KEY.length)
+    : externalId?.startsWith(UNIT_KEY)
+      ? externalId.slice(UNIT_KEY.length)
+      : undefined;
 export interface Membership {
   externalId: string;
   label: string;
@@ -200,15 +207,36 @@ export function groupFields(input: ScimGroupInput): GroupFields {
   };
 }
 /**
- * D93: the `protected` key is refused at the boundary until D68's open question, whether Clew may hold that fact at
- * all, is answered. Nothing about it is stored, derived into a context or shown; a client that sends it learns why.
+ * The keys a group's `externalId` may carry, checked at the boundary so a mistake fails where it is made.
+ *
+ * D93: `protected` is refused until D68's open question, whether Clew may hold that fact at all, is answered. Nothing
+ * about it is stored, derived into a context or shown; a client that sends it learns why.
+ *
+ * D96: a key that is written wrong is refused instead of being stored as a plain group that gives nobody anything:
+ * a reserved word in another case (`Unit:skola`, `Protected`), `unit:` or `unit-manager:` without a unit id or with
+ * space around it, and `capability:` with a name outside the closed list. Any other `externalId` is a plain group.
  */
+const RESERVED_PREFIXES = [MANAGER_KEY, UNIT_KEY, CAPABILITY_KEY] as const;
+const refusedKey = (detail: string) => new ScimError(400, `${detail} The group was not stored.`, 'invalidValue');
 export function assertAcceptedKey(fields: GroupFields): void {
-  if (fields.externalId === PROTECTED_KEY)
-    throw new ScimError(
-      400,
-      `The key '${PROTECTED_KEY}' is not accepted: Clew has not decided whether it may hold that fact (D93). The group was not stored.`,
-      'invalidValue',
+  const key = fields.externalId;
+  if (key === null) return;
+  const lower = key.toLowerCase();
+  if (lower === PROTECTED_KEY)
+    throw refusedKey(
+      `The key '${PROTECTED_KEY}' is not accepted: Clew has not decided whether it may hold that fact (D93).`,
+    );
+  const prefix = RESERVED_PREFIXES.find(p => lower.startsWith(p));
+  if (!prefix) return;
+  if (!key.startsWith(prefix)) throw refusedKey(`The key '${key}' must begin with '${prefix}' in lower case (D96).`);
+  const rest = key.slice(prefix.length);
+  if (!rest || rest !== rest.trim())
+    throw refusedKey(
+      `The key '${key}' needs ${prefix === CAPABILITY_KEY ? 'a capability name' : 'a unit id'} directly after '${prefix}' (D96).`,
+    );
+  if (prefix === CAPABILITY_KEY && !isCapability(rest))
+    throw refusedKey(
+      `The key '${key}' names no capability of this installation; the capabilities are ${CAPABILITIES.join(', ')} (D96).`,
     );
 }
 /** `attribute eq "value"` on one of `attributes`, the one filter shape D68 requires; anything else is `invalidFilter`. */
@@ -230,8 +258,83 @@ export function parseFilter(
 /** `startIndex` is 1-based and `count` is capped (RFC 7644 §3.4.2.4); a missing or broken value takes the default. */
 export function pageOf(query: { startIndex?: string; count?: string }) {
   const startIndex = Math.max(1, Number.parseInt(query.startIndex ?? '1', 10) || 1),
-    count = Math.min(SCIM_MAX_RESULTS, Math.max(0, Number.parseInt(query.count ?? String(SCIM_MAX_RESULTS), 10) || 0));
+    asked = Number.parseInt(query.count ?? '', 10),
+    // A negative count reads as zero (the standard); one that is no number at all takes the default.
+    count = Number.isNaN(asked) ? SCIM_MAX_RESULTS : Math.min(SCIM_MAX_RESULTS, Math.max(0, asked));
   return { startIndex, count };
+}
+/**
+ * `attributes` and `excludedAttributes` (RFC 7644 §3.4.2.5, §3.9) on a resource this server answers: the first keeps
+ * only what it names, the second drops what it names, and `schemas` and `id` are always returned. A name may carry the
+ * core schema's URN and a sub-attribute (`members.value`, `name.formatted`), and is matched without regard to case.
+ * The result is typed as the whole resource: a caller that projects serialises it and reads nothing back from it.
+ */
+export interface Projection {
+  attributes?: string;
+  excludedAttributes?: string;
+}
+const ALWAYS_RETURNED = new Set(['schemas', 'id']);
+const projectionPaths = (list: string | undefined) =>
+  (list ?? '')
+    .split(',')
+    .map(name =>
+      name
+        .trim()
+        .toLowerCase()
+        .replace(/^urn:ietf:params:scim:schemas:core:2\.0:(user|group):/, ''),
+    )
+    .filter(Boolean)
+    .map(name => {
+      const [top, ...sub] = name.split('.');
+      return { top: top!, sub: sub.join('.') || undefined };
+    });
+/** One attribute's value with only, or without, the named sub-attributes; a multi-valued one is narrowed per element. */
+const narrow = (value: unknown, subs: readonly string[], keep: boolean): unknown => {
+  if (Array.isArray(value)) return value.map(v => narrow(v, subs, keep));
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).filter(([k]) => subs.includes(k.toLowerCase()) === keep));
+};
+export function project<T extends object>(resource: T, projection: Projection = {}): T {
+  const wanted = projectionPaths(projection.attributes),
+    excluded = projectionPaths(projection.excludedAttributes);
+  if (!wanted.length && !excluded.length) return resource;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(resource)) {
+    const k = key.toLowerCase();
+    if (ALWAYS_RETURNED.has(k)) {
+      out[key] = value;
+      continue;
+    }
+    let kept: unknown = value;
+    if (wanted.length) {
+      const named = wanted.filter(p => p.top === k);
+      if (!named.length) continue;
+      // The whole attribute when it is named without a sub-attribute; else only the sub-attributes named.
+      if (named.every(p => p.sub))
+        kept = narrow(
+          value,
+          named.map(p => p.sub!),
+          true,
+        );
+    }
+    const dropped = excluded.filter(p => p.top === k);
+    if (dropped.some(p => !p.sub)) continue;
+    if (dropped.length)
+      kept = narrow(
+        kept,
+        dropped.map(p => p.sub!),
+        false,
+      );
+    out[key] = kept;
+  }
+  return out as T;
+}
+/** Whether a projection leaves `attribute` out entirely, so the query that would fill it need not run. */
+export function leavesOut(projection: Projection | undefined, attribute: string): boolean {
+  const name = attribute.toLowerCase(),
+    wanted = projectionPaths(projection?.attributes),
+    excluded = projectionPaths(projection?.excludedAttributes);
+  return (wanted.length > 0 && !wanted.some(p => p.top === name)) || excluded.some(p => p.top === name && !p.sub);
 }
 const opOf = (operation: ScimPatchOperation) => {
   const op = operation.op.toLowerCase();
@@ -257,14 +360,69 @@ const asBoolean = (value: unknown, path: string): boolean => {
   if (value === 'false' || value === 'False') return false;
   throw new ScimError(400, `Attribute '${path}' needs a boolean.`, 'invalidValue');
 };
+type Resource = 'user' | 'group';
+const CORE_URN: Record<Resource, RegExp> = {
+  user: /^urn:ietf:params:scim:schemas:core:2\.0:user:/i,
+  group: /^urn:ietf:params:scim:schemas:core:2\.0:group:/i,
+};
+/** A path without the core schema's URN, as it was sent: a filter in it may carry an id, whose case matters. */
+const corePath = (path: string, resource: Resource) => path.trim().replace(CORE_URN[resource], '');
+/** The same in lower case, to match on: `urn:…:User:displayName` and `displayName` are one attribute. */
+const coreKey = (path: string, resource: Resource) => corePath(path, resource).toLowerCase();
+/**
+ * What only the server writes: `id`, `schemas` and `meta` on every resource, and a user's `groups`, since a membership
+ * is changed on the group. Asked in one place so a `replace` and a `remove` agree.
+ */
+const isReadOnly = (key: string, resource: Resource) =>
+  key === 'schemas' ||
+  key === 'id' ||
+  key === 'meta' ||
+  key.startsWith('meta.') ||
+  (resource === 'user' && key === 'groups');
+const readOnly = (path: string) => new ScimError(400, `Attribute '${path}' is read-only.`, 'mutability');
+/**
+ * A read-only attribute in a path-less value. Such a value is the resource as the client holds it, so what it repeats
+ * of `id`, `schemas` and `meta` is ignored, as a `PUT` ignores it (RFC 7644 §3.5.1; Okta sends the id with every
+ * path-less patch). An `id` that names another resource is a mistake about which one is being changed, and refused.
+ */
+const repeated = (key: string, value: unknown, id: string | undefined) => {
+  if (key === 'id' && id !== undefined && value !== id)
+    throw new ScimError(400, "Attribute 'id' is read-only and names another resource than the address.", 'mutability');
+};
+/** RFC 7644 §3.5.2.2: removing an attribute the schema requires answers `mutability`. */
+const required = (path: string) =>
+  new ScimError(400, `Attribute '${path}' cannot be removed; Clew requires it.`, 'mutability');
+/**
+ * Whether a path picks out an address of another type than the work one (`emails[type eq "home"].value`). Clew holds
+ * the work address alone, so such a path names nothing Clew holds, for a `replace` as for a `remove`.
+ */
+const otherAddress = (key: string) => {
+  const type = /^emails\[\s*type\s+eq\s+"([^"]*)"\s*\]/.exec(key);
+  return !!type && type[1] !== 'work';
+};
+/**
+ * What a `remove` on a user is aimed at. Clew holds five attributes and requires them all (D68 item 1); every other
+ * attribute, an extension's included, is not held, so removing it changes nothing and is accepted, as adding it is.
+ */
+const userRemoval = (key: string): 'required' | 'readOnly' | 'notHeld' => {
+  if (isReadOnly(key, 'user')) return 'readOnly';
+  if (['username', 'externalid', 'displayname', 'active', 'emails', 'emails.value'].includes(key)) return 'required';
+  return key.startsWith('emails[') && !otherAddress(key) ? 'required' : 'notHeld';
+};
 /**
  * PATCH on a user (RFC 7644 §3.5.2), as the clients Clew expects send it: a path per operation, or one operation
- * without a path whose value is an object of attributes (Entra). Removing a required attribute is refused.
+ * without a path whose value is an object of attributes (Entra, Okta). An attribute Clew does not hold is accepted and
+ * ignored whatever the operation; removing one Clew requires is refused. `id` is the resource's own, for a path-less
+ * value that repeats it.
  */
-export function applyUserPatch(current: UserFields, operations: readonly ScimPatchOperation[]): UserFields {
+export function applyUserPatch(
+  current: UserFields,
+  operations: readonly ScimPatchOperation[],
+  id?: string,
+): UserFields {
   let next = { ...current };
-  const set = (path: string, value: unknown) => {
-    const key = path.toLowerCase().replace(/^urn:ietf:params:scim:schemas:core:2\.0:user:/, '');
+  const set = (path: string, value: unknown, pathless: boolean) => {
+    const key = coreKey(path, 'user');
     if (key === 'username') next.userName = asString(value, path);
     else if (key === 'externalid') next.externalId = asString(value, path);
     else if (key === 'displayname' || key === 'name.formatted') next.name = asString(value, path);
@@ -281,76 +439,92 @@ export function applyUserPatch(current: UserFields, operations: readonly ScimPat
           .filter(e => typeof e.value === 'string') as Array<{ value: string; type?: string; primary?: boolean }>,
       );
       next.email = email ?? need('emails');
-    } else if (/^emails\[.*\]\.value$/i.test(key) || key === 'emails.value') next.email = asString(value, path);
-    else if (key === 'name') next.name = asString(asObject(value, path).formatted, 'name.formatted');
-    else if (key.startsWith('name.')) {
-      /* given and family names are not held; the formatted name is what Clew shows */
-    } else if (key === 'schemas' || key === 'id' || key === 'meta' || key === 'groups')
-      throw new ScimError(400, `Attribute '${path}' is read-only.`, 'mutability');
-    /* an extension or unknown attribute is accepted and ignored, as the standard asks */
+    } else if (/^emails\[.*\]\.value$/.test(key) || key === 'emails.value') {
+      if (!otherAddress(key)) next.email = asString(value, path);
+    } else if (key === 'name') {
+      // Given and family names are not held: a name object sets the name only through `formatted`, as the paths do.
+      const formatted = asObject(value, path).formatted;
+      if (formatted !== undefined) next.name = asString(formatted, 'name.formatted');
+    } else if (isReadOnly(key, 'user')) {
+      if (!pathless) throw readOnly(path);
+      repeated(key, value, id);
+    }
+    /* `name.givenName`, an extension or any other attribute Clew does not hold is accepted and ignored, as the standard asks */
   };
   for (const operation of operations) {
     const op = opOf(operation);
     if (op === 'remove') {
       if (!operation.path) throw new ScimError(400, 'A remove operation needs a path.', 'noTarget');
-      throw new ScimError(
-        400,
-        `Attribute '${operation.path}' cannot be removed; every attribute Clew holds is required.`,
-        'invalidValue',
-      );
+      const aim = userRemoval(coreKey(operation.path, 'user'));
+      if (aim === 'readOnly') throw readOnly(operation.path);
+      if (aim === 'required') throw required(operation.path);
+      continue;
     }
-    if (operation.path) set(operation.path, operation.value);
-    else for (const [key, value] of Object.entries(asObject(operation.value, undefined))) set(key, value);
+    if (operation.path) set(operation.path, operation.value, false);
+    else for (const [key, value] of Object.entries(asObject(operation.value, undefined))) set(key, value, true);
   }
   return next;
 }
-/** PATCH on a group: `members` added, removed (by path filter or by value list) or replaced; the name and external id replaced. */
-export function applyGroupPatch(current: GroupFields, operations: readonly ScimPatchOperation[]): GroupFields {
+/**
+ * PATCH on a group: `members` added, removed (by path filter or by value list) or replaced; the name and external id
+ * replaced; the external id removed. Anything else is not held and is ignored, a read-only attribute as for a user.
+ */
+export function applyGroupPatch(
+  current: GroupFields,
+  operations: readonly ScimPatchOperation[],
+  id?: string,
+): GroupFields {
   let members = new Set(current.members),
     next = { ...current };
   const memberIds = (value: unknown): string[] => {
     const list = Array.isArray(value) ? value : value === undefined ? [] : [value];
     return list.map(m => {
-      const id = m && typeof m === 'object' ? (m as { value?: unknown }).value : m;
-      return asString(id, 'members.value');
+      const member = m && typeof m === 'object' ? (m as { value?: unknown }).value : m;
+      return asString(member, 'members.value');
     });
   };
-  const setAttribute = (path: string, value: unknown) => {
-    const key = path.toLowerCase().replace(/^urn:ietf:params:scim:schemas:core:2\.0:group:/, '');
+  const setAttribute = (path: string, value: unknown, pathless: boolean) => {
+    const key = coreKey(path, 'group');
     if (key === 'displayname') next.label = asString(value, path);
     else if (key === 'externalid') next.externalId = asString(value, path);
     else if (key === 'members') members = new Set(memberIds(value));
-    else if (key === 'schemas' || key === 'id' || key === 'meta')
-      throw new ScimError(400, `Attribute '${path}' is read-only.`, 'mutability');
+    else if (isReadOnly(key, 'group')) {
+      if (!pathless) throw readOnly(path);
+      repeated(key, value, id);
+    }
   };
   for (const operation of operations) {
     const op = opOf(operation),
-      path = operation.path?.trim();
+      path = operation.path && corePath(operation.path, 'group'),
+      key = path?.toLowerCase();
+    // Matched on the path as it was sent: the attribute's case does not matter, the id's does.
     const filtered = path && /^members\[\s*value\s+eq\s+"((?:[^"\\]|\\.)*)"\s*\]$/i.exec(path);
     if (filtered) {
-      const id = filtered[1]!.replace(/\\(.)/g, '$1');
-      if (op === 'remove') members.delete(id);
+      if (op === 'remove') members.delete(filtered[1]!.replace(/\\(.)/g, '$1'));
       else throw new ScimError(400, `Path '${path}' supports remove only.`, 'invalidPath');
       continue;
     }
-    if (path && path.toLowerCase() === 'members') {
-      if (op === 'add') for (const id of memberIds(operation.value)) members.add(id);
+    if (key === 'members') {
+      if (op === 'add') for (const member of memberIds(operation.value)) members.add(member);
       else if (op === 'remove') {
         if (operation.value === undefined) members.clear();
-        else for (const id of memberIds(operation.value)) members.delete(id);
+        else for (const member of memberIds(operation.value)) members.delete(member);
       } else members = new Set(memberIds(operation.value));
       continue;
     }
     if (op === 'remove') {
-      if (path?.toLowerCase() === 'externalid') next.externalId = null;
-      else throw new ScimError(400, `Attribute '${path ?? ''}' cannot be removed.`, path ? 'invalidValue' : 'noTarget');
+      if (!path || !key) throw new ScimError(400, 'A remove operation needs a path.', 'noTarget');
+      if (key === 'externalid') next.externalId = null;
+      else if (key === 'displayname') throw required(path);
+      else if (isReadOnly(key, 'group')) throw readOnly(path);
       continue;
     }
-    if (path) setAttribute(path, operation.value);
+    if (path) setAttribute(path, operation.value, false);
     else
-      for (const [key, value] of Object.entries(asObject(operation.value, undefined)))
-        if (key.toLowerCase() === 'members' && op === 'add') for (const id of memberIds(value)) members.add(id);
-        else setAttribute(key, value);
+      for (const [name, value] of Object.entries(asObject(operation.value, undefined)))
+        if (name.toLowerCase() === 'members' && op === 'add')
+          for (const member of memberIds(value)) members.add(member);
+        else setAttribute(name, value, true);
   }
   return { ...next, members: [...members] };
 }
@@ -480,7 +654,7 @@ export const schemaDocuments = (base: string) => [
     id: SCIM.group,
     name: 'Group',
     description:
-      'A group; unit:, unit-manager: and capability: keys in externalId carry meaning in Clew. The key protected is refused (D93).',
+      'A group; unit:, unit-manager: and capability: keys in externalId carry meaning in Clew. The key protected is refused (D93), and so is a key written wrong (D96). Members are users; a group as a member is refused.',
     attributes: [
       attribute('displayName', 'string', { required: true }),
       attribute('externalId', 'string', { caseExact: true, uniqueness: 'server' }),

@@ -1,6 +1,6 @@
 // Telemetry first (D91): the undici instrumentation patches `fetch` at load, before any module that calls it.
 import { shutdownTelemetry, telemetry } from './telemetry';
-import { logger } from './logging';
+import { logger, logPort } from './logging';
 import { resolve } from 'node:path';
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
@@ -26,6 +26,7 @@ import { startJobs } from './composition/jobs';
 import { mcpRoutes } from './routes/mcp';
 import { startMcpWatches } from './composition/mcp';
 import { scimRoutes } from './routes/scim';
+import { SCIM_CONTENT_TYPE, ScimError } from './modules/people/contracts';
 import { staffRoutes } from './routes/staff';
 import { scim } from './composition/people';
 
@@ -80,10 +81,14 @@ app.use('/api/*', async (c, next) => {
 app.route('/api/connectors', connectorRoutes);
 // SCIM (D68) authenticates with a provisioner's token, not a session; a machine reads its answers, so they are English.
 app.use('/scim/*', async (c, next) => {
-  if (!startup.ready()) return c.json({ error: 'The service is starting. Retry shortly.' }, 503);
+  if (!startup.ready())
+    return c.body(JSON.stringify(new ScimError(503, 'The service is starting. Retry shortly.').body()), 503, {
+      'Content-Type': SCIM_CONTENT_TYPE,
+      'Retry-After': '5',
+    });
   await next();
 });
-app.route('/scim/v2', scimRoutes(scim));
+app.route('/scim/v2', scimRoutes(scim, logPort('scim', 'error')));
 app.route('/api/admin', adminRoutes);
 // Personal (D94): a manager's people, scoped by the use case.
 app.route('/api/staff', staffRoutes);

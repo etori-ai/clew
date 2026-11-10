@@ -14,7 +14,12 @@ import type { ScimQuery, ScimUsecases } from '../modules/people/usecases';
 type Env = { Variables: { provisioner: Provisioner } };
 /** Four megabytes: a group of ten thousand members, the largest resource a municipal push carries, is well under it. */
 const BODY_LIMIT = 4 * 1024 * 1024;
-export function scimRoutes(scim: ScimUsecases) {
+/**
+ * Where an unexpected failure is said (D91). Required, so that no caller swallows one by leaving it out: the server
+ * binds its log port, a script prints, and a test that expects a failure says so by handing in its own.
+ */
+export type ScimLog = (message: string, ...details: unknown[]) => void;
+export function scimRoutes(scim: ScimUsecases, log: ScimLog) {
   const app = new Hono<Env>();
   const json = (c: Context, body: unknown, status: 200 | 201 = 200, headers: Record<string, string> = {}) =>
     c.body(JSON.stringify(body), status, { 'Content-Type': SCIM_CONTENT_TYPE, ...privateHeaders, ...headers });
@@ -39,7 +44,7 @@ export function scimRoutes(scim: ScimUsecases) {
         `A resource with this ${constraintAttribute[constraint] ?? 'userName or externalId'} already exists.`,
         'uniqueness',
       );
-    console.error('scim', error);
+    log('scim: the request failed unexpectedly', error);
     return new ScimError(500, 'The request could not be completed.');
   };
   const fail = (c: Context, error: unknown) => {
@@ -108,19 +113,31 @@ export function scimRoutes(scim: ScimUsecases) {
     }),
   );
   const idOf = (c: Context) => c.req.param('id') ?? '';
+  const projection = (c: Context) => ({
+    attributes: c.req.query('attributes'),
+    excludedAttributes: c.req.query('excludedAttributes'),
+  });
   const query = (c: Context): ScimQuery => ({
     filter: c.req.query('filter'),
     startIndex: c.req.query('startIndex'),
     count: c.req.query('count'),
+    ...projection(c),
   });
   /** RFC 7644 §3.4.3: the query of a list carried in a `SearchRequest` body, for clients that keep filters out of the address. */
   const searchQuery = async (c: Context): Promise<ScimQuery> => {
     const sent = await body(c);
     if (!sent || typeof sent !== 'object' || Array.isArray(sent))
       throw new ScimError(400, 'A SearchRequest body is required.', 'invalidSyntax');
-    const s = sent as { filter?: unknown; startIndex?: unknown; count?: unknown },
+    const s = sent as Record<'filter' | 'startIndex' | 'count' | 'attributes' | 'excludedAttributes', unknown>,
+      // A SearchRequest carries the two attribute lists as arrays; `String` joins them with the comma the address uses.
       text = (v: unknown) => (v === undefined || v === null ? undefined : String(v));
-    return { filter: text(s.filter), startIndex: text(s.startIndex), count: text(s.count) };
+    return {
+      filter: text(s.filter),
+      startIndex: text(s.startIndex),
+      count: text(s.count),
+      attributes: text(s.attributes),
+      excludedAttributes: text(s.excludedAttributes),
+    };
   };
   /** RFC 7644 §3.7 and §3.11: what this server does not offer answers 501, not 404, so a client can tell the two apart. */
   const notImplemented = (what: string) =>
@@ -147,7 +164,7 @@ export function scimRoutes(scim: ScimUsecases) {
   );
   app.get(
     '/Users/:id',
-    route(async c => json(c, await scim.getUser(c.get('provisioner'), idOf(c), base(c)))),
+    route(async c => json(c, await scim.getUser(c.get('provisioner'), idOf(c), base(c), projection(c)))),
   );
   app.put(
     '/Users/:id',
@@ -181,7 +198,7 @@ export function scimRoutes(scim: ScimUsecases) {
   );
   app.get(
     '/Groups/:id',
-    route(async c => json(c, await scim.getGroup(c.get('provisioner'), idOf(c), base(c)))),
+    route(async c => json(c, await scim.getGroup(c.get('provisioner'), idOf(c), base(c), projection(c)))),
   );
   app.put(
     '/Groups/:id',

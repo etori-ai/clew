@@ -1162,6 +1162,10 @@ export const usersOverview = (): UsersAdminOverview => ({
     { id: 'S-1-5-21-rektorer', label: 'Rektorer' },
   ],
   capabilities: ['admin.connectors', 'admin.users'],
+  provisioners: [
+    { id: 'hr', label: 'HR-systemet', lastSeenAt: '2026-11-06T05:00:00.000Z', silent: true },
+    { id: 'metakatalogen', label: 'Metakatalogen', lastSeenAt: '2026-11-10T05:02:00.000Z', silent: false },
+  ],
 });
 /** Provisioned groups as the audience editor lists them (D68): the external id is what an audience stores. */
 export const groups = [

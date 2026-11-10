@@ -33,6 +33,8 @@ import { PageHeader } from '../../components/page-header';
  * "Användare" (D62, D68, D85): the people the provisioner pushed, read only, and the one thing an administrator decides
  * here: which provisioned group gives which capability. Identity, units and roles are the source's; this page shows
  * them and never edits them. A Table on a desktop, List rows on a phone, as the other administration pages (D23, D24).
+ * Above the people, the catalogue's own state: each provisioner with when it last called, and a warning when it has
+ * been silent for two days, because access a person has lost in the catalogue ends in Clew only when the push arrives.
  */
 interface Row extends Record<string, unknown> {
   id: string;
@@ -42,7 +44,22 @@ interface MapRow extends Record<string, unknown> {
   id: string;
   m: GroupCapability;
 }
-const EMPTY: UsersAdminOverview = { users: [], groupCapabilities: [], groups: [], capabilities: [] };
+const EMPTY: UsersAdminOverview = { users: [], groupCapabilities: [], groups: [], capabilities: [], provisioners: [] };
+type ProvisionerRow = UsersAdminOverview['provisioners'][number];
+const seenAt = new Intl.DateTimeFormat('sv-SE', {
+  timeZone: 'Europe/Stockholm',
+  dateStyle: 'long',
+  timeStyle: 'short',
+});
+/** When the catalogue last called (D68): the one sign on this page that people and groups are still being pushed in. */
+const lastSeen = (p: ProvisionerRow) =>
+  p.lastSeenAt ? `Senaste anrop ${seenAt.format(new Date(p.lastSeenAt))}` : 'Har aldrig anropat Clew';
+const liveness = (p: ProvisionerRow) =>
+  !p.silent
+    ? { label: 'Läser in', variant: 'success' as const }
+    : p.lastSeenAt
+      ? { label: 'Tyst i över två dygn', variant: 'warning' as const }
+      : { label: 'Inget anrop ännu', variant: 'warning' as const };
 const where = (u: UserAdminRow) =>
   u.active
     ? `${u.active.unitLabel} · ${roleOfOne[u.active.role].toLowerCase()}` +
@@ -187,6 +204,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
   const users = data?.users ?? [];
   const groupCapabilities = data?.groupCapabilities ?? [];
   const groups = data?.groups ?? [];
+  const provisioners = data?.provisioners ?? [];
   return (
     <AdminShell user={user} section="anvandare" crumbs={[{ label: 'Användare' }]} pending={query.isPending}>
       <PageHeader
@@ -207,6 +225,40 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
         <Text type="supporting" role="status">
           Läser användarna …
         </Text>
+      )}
+      {query.data && (
+        <Card padding={0}>
+          <Toolbar
+            label="Inläsning från katalogen"
+            size="sm"
+            dividers={['bottom']}
+            startContent={
+              <VStack gap={0}>
+                <Text weight="semibold">Inläsning från katalogen</Text>
+                <Text type="supporting">
+                  Katalogen ska föra in ändringar minst en gång per dygn. Den som har slutat eller bytt enhet behåller
+                  sin åtkomst i Clew tills nästa inläsning kommer.
+                </Text>
+              </VStack>
+            }
+          />
+          {provisioners.length === 0 ? (
+            <Section variant="transparent" padding={4}>
+              <Text type="supporting">Ingen katalog har fått en nyckel till Clew ännu.</Text>
+            </Section>
+          ) : (
+            <List aria-label="Inläsning från katalogen" hasDividers>
+              {provisioners.map(p => (
+                <ListItem
+                  key={p.id}
+                  label={<Text weight="semibold">{p.label}</Text>}
+                  description={<Text type="supporting">{lastSeen(p)}</Text>}
+                  endContent={<Badge variant={liveness(p).variant} label={liveness(p).label} />}
+                />
+              ))}
+            </List>
+          )}
+        </Card>
       )}
       {data && users.length === 0 && (
         <Card>
