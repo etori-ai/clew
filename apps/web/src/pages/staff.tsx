@@ -20,7 +20,7 @@ import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { talkOf } from '../talk-address';
 import { useRail } from '../components/nav';
-import { Shell, mobileQuery } from '../components/shell';
+import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { AsyncContent, ContentSkeleton } from '../components/loading';
 import { PageHeader } from '../components/page-header';
 import { TalkOverlay } from '../components/talk-overlay';
@@ -48,6 +48,7 @@ const SHOW = 'show';
  */
 export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
+  const short = useMediaQuery(shortQuery);
   const manager = user.role === 'manager';
   const nav = useRail({ current: { surface: 'staff' }, admin, manager });
   const [search] = useSearchParams();
@@ -110,14 +111,15 @@ export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }
   const silentLine = <SilentSources silent={silent} retrying={retrying} onRetry={retry} />;
 
   return (
-    <Shell user={user} nav={nav}>
+    <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
+      {/* The layout fills the window, as on a tool's page, so the list and the person beside it scroll on their own and the handle's divider stands the height of the page (Astryx's side-panels guide). On a short window nothing is pinned and the page scrolls as one (1.4.10). */}
       <Layout
-        height="auto"
+        height={short ? 'auto' : 'fill'}
         contentWidth={1216}
         padding={mobile ? 3 : 8}
         end={panel.end}
         content={
-          <LayoutContent isScrollable={false}>
+          <LayoutContent isScrollable={!short}>
             <VStack gap={5} ref={root}>
               <PageHeader
                 title="Personal"
