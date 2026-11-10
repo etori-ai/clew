@@ -165,6 +165,92 @@ describe('a remote connector in the registry', () => {
       { url: 'http://clew/api/connectors/call', auth: 'Bearer ', body: { name: 'calendar.today', input: {} } },
     ]);
   });
+  test("keeps a capability's about from the manifest (D97), and signs the person's user name into the actor the service reads", async () => {
+    const hello = helloManifest as { capabilities: object[] };
+    const withAbout = {
+      ...hello,
+      capabilities: [
+        ...hello.capabilities,
+        {
+          name: 'hello.person',
+          kind: 'read',
+          title: 'Saker per person',
+          description: 'Öppna saker per person.',
+          input: {
+            type: 'object',
+            properties: { keys: { type: 'array', items: { type: 'string' }, maxItems: 200 } },
+            required: ['keys'],
+          },
+          output: {
+            type: 'object',
+            properties: {
+              rows: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: { key: { type: 'string' }, open: { type: 'string' } },
+                  required: ['key'],
+                },
+              },
+            },
+          },
+          model: false,
+          scope: {},
+          about: { entity: 'person' },
+          view: {
+            kind: 'list',
+            title: 'open',
+            fields: [{ key: 'open', label: 'Öppna', format: 'status', tones: { '*': 'warn' } }],
+          },
+        },
+        {
+          name: 'hello.remind',
+          kind: 'propose',
+          title: 'Påminn',
+          description: 'Föreslår en påminnelse.',
+          input: { type: 'object', properties: { person: { type: 'string' } }, required: ['person'] },
+          output: {},
+          model: false,
+          scope: { roles: ['manager'] },
+          about: { entity: 'person', param: 'person' },
+        },
+      ],
+    };
+    const loaded = remoteConnector(parseManifest(withAbout, 'hello'), {
+      url: 'http://hello',
+      key: secret,
+      assert: async () => 'x',
+    });
+    const about = (name: string) => loaded.capabilities.find(c => c.name === name)!.about;
+    expect(about('hello.person')).toEqual({ entity: 'person' });
+    expect(about('hello.remind')).toEqual({ entity: 'person', param: 'person' });
+    expect(about('hello.greeting')).toBeUndefined();
+
+    const service = createConnector({ jwks: testJwks, secret });
+    const seen: Array<{ claim: unknown; body: unknown }> = [];
+    const fetch: FetchLike = (input, init) => {
+      if (init?.body)
+        seen.push({
+          claim: decodeJwt(new Headers(init.headers).get('authorization')!.slice('Bearer '.length)).actor,
+          body: JSON.parse(String(init.body)).actor,
+        });
+      return service.handle(new Request(input, init));
+    };
+    const registry = new Registry().register(
+      remoteConnector(parseManifest(helloManifest, 'hello'), {
+        url: 'http://hello',
+        key: secret,
+        assert: assertionFor('hello', secret),
+        fetch,
+      }),
+    );
+    const named: Actor = { ...hassan, userName: 'hassan.ali' };
+    expect(await registry.run(named, 'hello.greeting', {})).toMatchObject({ text: expect.stringContaining('Hassan') });
+    expect(seen.at(-1)).toEqual({ claim: named, body: named });
+    // A person provisioned without a user name is signed as before, and an existing service reads them the same way.
+    await registry.run(hassan, 'hello.greeting', {});
+    expect(seen.at(-1)).toEqual({ claim: hassan, body: hassan });
+  });
   test('refuses a call signed with another secret, on the connector side', async () => {
     const { registry, connectorFetch } = stack();
     registry.register(

@@ -1,5 +1,6 @@
 import { Type, type Static } from '@sinclair/typebox';
 import {
+  AboutSchema,
   MenuHintSchema,
   MenuIconSchema,
   PreviewOutputSchema,
@@ -32,7 +33,8 @@ import {
  * A read capability may declare a `view` (D38): how Clew draws its output (a table, a list, one record, a text), as data.
  * The connector never sends markup; a capability without a view is drawn by Clew's generic rules. A view that
  * opens without input can be a tool in Clew's menu (D40): an administrator chooses which, and `menu` on the capability
- * says what its row is called.
+ * says what its row is called. A capability may say what its rows are `about` (D97), a person or a unit: a read asked
+ * with a batch of keys, or an action that takes one. It never says where it shows; Clew places it from the declaration.
  *
  * Routes a connector serves (all JSON, all under the base URL Clew is configured with):
  *   GET  /clew/manifest                 -> ConnectorManifest
@@ -62,6 +64,14 @@ export const ActorSchema = object(
     unitId: Type.String(),
     unitLabel: Type.String(),
     role: RoleSchema,
+    userName: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 512,
+        description:
+          "The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one.",
+      }),
+    ),
   },
   'The acting person as Clew knows them. Never a token.',
 );
@@ -219,6 +229,7 @@ export const ManifestCapabilitySchema = object({
     }),
   ),
   menu: Type.Optional(MenuHintSchema),
+  about: Type.Optional(AboutSchema),
   follows: Type.Optional(
     Type.Array(FactKindName, {
       uniqueItems: true,
@@ -559,6 +570,9 @@ export const PROTOCOL_RETIRED: Readonly<Record<number, string>> = {
 const previewRoles = Type.Array(RoleSchema, {
   description: 'Who may call it: both roles when the capability names none.',
 });
+/** The places Clew gives a capability that is about an entity (D97 item 2), in the order the preview lists them. */
+export const ABOUT_PLACES = ['lens', 'mark', 'section', 'menu'] as const;
+export type AboutPlace = (typeof ABOUT_PLACES)[number];
 export const ManifestPreviewCapabilitySchema = object({
   name: Type.String(),
   kind: Type.Union([Type.Literal('read'), Type.Literal('propose'), Type.Literal('execute')]),
@@ -589,6 +603,11 @@ export const ManifestPreviewCapabilitySchema = object({
   }),
   follows: Type.Optional(Type.Array(FactKindName)),
   creates: Type.Optional(FactKindName),
+  about: Type.Optional(AboutSchema),
+  places: Type.Array(Type.Union(ABOUT_PLACES.map(p => Type.Literal(p))), {
+    description:
+      "Where Clew would show it on the entity it is about (D97), from the declaration alone: `lens` a table or list an administrator may offer under Visa on the entity's list, `mark` a `warn` or `alert` tone that marks the entity's row where an administrator chose the source, `section` a section on the opened entity, `menu` an action in the entity's menu, run after a human decision. Empty when it is about nothing.",
+  }),
 });
 export const ManifestPreviewSchema = object(
   {

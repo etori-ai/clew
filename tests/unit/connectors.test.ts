@@ -63,6 +63,58 @@ describe('registry', () => {
     expect(names).not.toContain('finance.approve');
     expect(r.tools(hassan).map(t => t.name)).not.toContain('hr.absenceOverview');
   });
+  test('a read about an entity is never a tool, whatever its registration says; an action about one keeps its own rule (D97)', () => {
+    const keyed = { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] };
+    const about: Connector = {
+      id: 'talk',
+      kind: 'core',
+      source: 'Samtal',
+      areas: [],
+      capabilities: [
+        {
+          name: 'talk.person',
+          kind: 'read',
+          title: 'Samtal',
+          description: 'Samtalet per person.',
+          input: {
+            type: 'object',
+            properties: { keys: { type: 'array', items: { type: 'string' }, maxItems: 200 } },
+            required: ['keys'],
+          } as never,
+          output: { type: 'object', properties: { rows: { type: 'array', items: keyed } } } as never,
+          model: false,
+          scope: {},
+          about: { entity: 'person' },
+          view: { kind: 'list', title: 'key', fields: [{ key: 'key', label: 'Person' }] },
+          run: async () => ({ rows: [] }),
+        },
+        {
+          name: 'talk.remind',
+          kind: 'propose',
+          title: 'Påminn',
+          description: 'Föreslår en påminnelse om samtalet.',
+          input: { type: 'object', properties: { person: { type: 'string' } }, required: ['person'] } as never,
+          output: {} as never,
+          model: true,
+          scope: {},
+          about: { entity: 'person', param: 'person' },
+          run: async () => ({}),
+        },
+      ],
+    };
+    const r = new Registry();
+    r.register(about);
+    // The loader refuses `model: true` on such a read; a declaration changed after registration is still left out.
+    r.find('talk.person')!.capability.model = true;
+    expect(r.tools(hillevi).map(t => t.name)).toEqual(['talk.remind']);
+    expect(() =>
+      new Registry().register({
+        ...about,
+        id: 'talk2',
+        capabilities: [{ ...about.capabilities[0]!, name: 'talk2.person', model: true }],
+      }),
+    ).toThrow(/never a tool/);
+  });
   test('areas follow the role and carry figures and standing actions', async () => {
     const { r } = registry();
     const manager = await r.areas(hillevi),

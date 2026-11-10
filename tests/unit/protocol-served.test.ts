@@ -1,9 +1,11 @@
-import { Registry } from '../../packages/connectors/src/index';
+import { Registry, type Connector } from '../../packages/connectors/src/index';
 import { remoteConnector } from '../../packages/connectors/src/remote';
 import { describe, expect, test } from 'bun:test';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
+import { describeBundled } from '../../apps/server/src/connectors/describe';
 import {
+  ConnectorManifestSchema,
   ManifestPreviewSchema,
   PROTOCOL_ACCEPTED,
   PROTOCOL_VERSION,
@@ -253,6 +255,189 @@ describe('the served protocol routes', () => {
     expect(script.status).toBe(200);
     expect(script.headers.get('content-type')).toContain('javascript');
     expect((await script.text()).length).toBeGreaterThan(100_000);
+  });
+});
+
+describe('a capability about an entity (D97)', () => {
+  const validPreview = ajv.compile(JSON.parse(JSON.stringify(ManifestPreviewSchema)));
+  const validManifest = ajv.compile(JSON.parse(JSON.stringify(ConnectorManifestSchema)));
+  const keys = (maxItems: unknown = 200) => ({
+    type: 'object',
+    properties: { keys: { type: 'array', items: { type: 'string' }, maxItems } },
+    required: ['keys'],
+  });
+  const rows = (items: object) => ({ type: 'object', properties: { rows: { type: 'array', items } } });
+  const keyed = {
+    type: 'object',
+    properties: { key: { type: 'string' }, state: { type: 'string' }, at: { type: 'string' } },
+    required: ['key'],
+  };
+  const talks = {
+    protocol: 2,
+    id: 'appraisals',
+    kind: 'passthrough',
+    source: 'Samtalssystemet',
+    scan: false,
+    areas: [],
+    capabilities: [
+      {
+        name: 'appraisals.person',
+        kind: 'read',
+        title: 'Utvecklingssamtal',
+        description: 'Samtalet per person.',
+        input: keys(),
+        output: rows(keyed),
+        model: false,
+        scope: {},
+        about: { entity: 'person' },
+        view: {
+          kind: 'list',
+          title: 'state',
+          fields: [
+            { key: 'state', label: 'Samtal', format: 'status', tones: { Saknas: 'warn', '*': 'none' } },
+            { key: 'at', label: 'När', format: 'instant' },
+          ],
+          open: { capability: 'appraisals.commitments', title: 'Åtgärdspunkter', params: { person: 'key' } },
+        },
+      },
+      {
+        name: 'appraisals.commitments',
+        kind: 'read',
+        title: 'Åtgärdspunkter',
+        description: 'Åtgärdspunkter för en person.',
+        input: { type: 'object', properties: { person: { type: 'string' } }, required: ['person'] },
+        output: rows({ type: 'object', properties: { text: { type: 'string' } } }),
+        model: false,
+        scope: {},
+        view: { kind: 'table', title: 'text', fields: [{ key: 'text', label: 'Punkt' }] },
+      },
+      {
+        name: 'appraisals.units',
+        kind: 'read',
+        title: 'Samtal per enhet',
+        description: 'Samtalen per enhet.',
+        input: keys(50),
+        output: { type: 'object', properties: { units: { type: 'array', items: keyed } } },
+        model: false,
+        scope: { roles: ['manager'] },
+        about: { entity: 'unit' },
+        view: { kind: 'table', rows: 'units', title: 'state', fields: [{ key: 'state', label: 'Läge' }] },
+      },
+      {
+        name: 'appraisals.book',
+        kind: 'propose',
+        title: 'Boka samtal',
+        description: 'Föreslår en tid.',
+        input: {
+          type: 'object',
+          properties: { person: { type: 'string' }, at: { type: 'string' } },
+          required: ['person'],
+        },
+        output: {},
+        model: false,
+        scope: { roles: ['manager'] },
+        about: { entity: 'person', param: 'person' },
+      },
+    ],
+  };
+  test('a read asked with keys and an action that takes one load, and the preview says where each would show', () => {
+    expect(manifestProblems(talks, 'appraisals')).toEqual([]);
+    const preview = previewManifest(talks, { id: 'appraisals' });
+    expect(validPreview(preview)).toBe(true);
+    const places = Object.fromEntries(
+      preview.manifest!.capabilities.map(c => [c.name, { about: c.about ?? null, places: c.places }]),
+    );
+    expect(places).toEqual({
+      'appraisals.person': { about: { entity: 'person' }, places: ['lens', 'mark', 'section'] },
+      'appraisals.commitments': { about: null, places: [] },
+      'appraisals.units': { about: { entity: 'unit' }, places: ['lens', 'section'] },
+      'appraisals.book': { about: { entity: 'person', param: 'person' }, places: ['menu'] },
+    });
+    // A read about a person is never a tool, and the dry run says so.
+    expect(preview.manifest!.capabilities.find(c => c.name === 'appraisals.person')!.tool).toBe(false);
+    // `*` names the tone of any other value: a field whose only tone is `*: warn` still marks the row.
+    const starred = edited(talks, m => {
+      m.capabilities[2].view.fields[0] = { key: 'state', label: 'Läge', format: 'status', tones: { '*': 'warn' } };
+    });
+    expect(previewManifest(starred).manifest!.capabilities[2]!.places).toEqual(['lens', 'mark', 'section']);
+    const registry = new Registry();
+    registry.register(remoteConnector(parseManifest(talks, 'appraisals'), { url: 'http://x', assert: async () => '' }));
+    expect(registry.find('appraisals.units')!.capability.about).toEqual({ entity: 'unit' });
+  });
+  const refused: Array<[string, (m: any) => void, RegExp]> = [
+    ['a read with a param', m => (m.capabilities[0].about.param = 'keys'), /declares no param/],
+    ['input without keys', m => (m.capabilities[0].input = { type: 'object', properties: {} }), /takes \{ keys \}/],
+    ['keys not required', m => (m.capabilities[0].input.required = []), /takes \{ keys \}/],
+    ['keys of numbers', m => (m.capabilities[0].input.properties.keys.items = { type: 'number' }), /takes \{ keys \}/],
+    ['no maxItems', m => delete m.capabilities[0].input.properties.keys.maxItems, /maxItems at most 200/],
+    ['maxItems over 200', m => (m.capabilities[0].input.properties.keys.maxItems = 201), /maxItems at most 200/],
+    ['no view', m => delete m.capabilities[0].view, /declares a table or list view/],
+    [
+      'a detail view',
+      m => (m.capabilities[0].view = { kind: 'detail', title: 'state', fields: [{ key: 'state', label: 'Samtal' }] }),
+      /declares a table or list view/,
+    ],
+    ['rows without a required key', m => (m.capabilities[0].output.properties.rows.items.required = []), /string key/],
+    [
+      'a key that is not a string',
+      m => (m.capabilities[0].output.properties.rows.items.properties.key = { type: 'integer' }),
+      /string key/,
+    ],
+    ["the view's rows missing", m => delete m.capabilities[2].output.properties.units, /output units must be/],
+    ['a tool', m => (m.capabilities[0].model = true), /never a tool/],
+    ['an action without param', m => delete m.capabilities[3].about.param, /names in param/],
+    ['a param the input lacks', m => (m.capabilities[3].about.param = 'nobody'), /names in param/],
+    [
+      'a param that is not a string',
+      m => (m.capabilities[3].input.properties.person = { type: 'integer' }),
+      /names in param/,
+    ],
+    ['a follower', m => (m.capabilities[3].follows = ['appraisals:talk']), /follows and about exclude each other/],
+    ['a profile read', m => (m.capabilities[0].name = 'appraisals.talks'), /profile read or the header/],
+    ['a search source', m => (m.capabilities[0].kinds = ['person']), /profile read or the header/],
+    ['a page from a manifest', m => (m.capabilities[0].about.page = { title: 'x', href: '/x' }), /about/],
+    ['an unknown entity', m => (m.capabilities[0].about.entity = 'room'), /about\/entity/],
+  ];
+  test('every rule refuses its break with the field named, in preview, parsing and registration alike', () => {
+    for (const [what, change, problem] of refused) {
+      const document = edited(talks, change);
+      const preview = previewManifest(document, { id: 'appraisals' });
+      expect({ what, ok: preview.ok, problems: preview.problems }).toEqual({
+        what,
+        ok: false,
+        problems: expect.arrayContaining([expect.stringMatching(problem)]),
+      });
+      expect(() => parseManifest(document, 'appraisals')).toThrow(ManifestError);
+      // Past the schema, the loader and the registry refuse with the first problem the preview lists.
+      if (validManifest(document)) {
+        expect(() => parseManifest(document, 'appraisals')).toThrow(preview.problems[0]!);
+        expect(() =>
+          new Registry().register(remoteConnector(document as never, { url: 'http://x', assert: async () => '' })),
+        ).toThrow(preview.problems[0]!);
+      }
+    }
+  });
+  test("only Clew's own connectors name a page, and the administration's manifest form leaves it out", () => {
+    const own = (kind: 'core' | 'passthrough'): Connector => ({
+      id: 'talks',
+      kind,
+      source: 'Utvecklingssamtal',
+      areas: [],
+      capabilities: [
+        {
+          ...(talks.capabilities[0] as object),
+          name: 'talks.person',
+          view: { ...(talks.capabilities[0]!.view as object), open: undefined },
+          about: { entity: 'person', page: { title: 'Öppna samtalet', href: '/personal/{id}/samtal' } },
+          run: async () => ({ rows: [] }),
+        } as never,
+      ],
+    });
+    expect(() => new Registry().register(own('core'))).not.toThrow();
+    expect(() => new Registry().register(own('passthrough'))).toThrow(/only Clew's own connectors name a page/);
+    const described = describeBundled(own('core'));
+    expect(described.capabilities[0]!.about).toEqual({ entity: 'person' });
+    expect(validManifest(described)).toBe(true);
   });
 });
 

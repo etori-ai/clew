@@ -1,12 +1,13 @@
-import { menuRowOf } from './views';
+import { menuRowOf, placesOf } from './views';
 import { manifestProblems } from './remote';
 import { PROTOCOL_ACCEPTED, PROTOCOL_VERSION, type ConnectorManifest, type ManifestPreview } from './protocol';
 
 /**
  * A dry run of a manifest document (D60): the pure part of `POST /api/protocol/manifest`. The same rules the loader
  * applies, with every problem listed rather than the first thrown, and, when the document passes, what Clew would make
- * of it: who may call what, what the model is offered, what could be a row in the menu, and what the conformance check
- * would and would not exercise. No I/O; an integrator gets this before any service exists.
+ * of it: who may call what, what the model is offered, what could be a row in the menu, where a capability about an
+ * entity would show (D97), and what the conformance check would and would not exercise. No I/O; an integrator gets
+ * this before any service exists.
  */
 export interface PreviewOptions {
   /** The id the connector will be registered with, when known. */
@@ -45,6 +46,8 @@ export function previewManifest(document: unknown, options: PreviewOptions = {})
       check,
       ...(c.follows ? { follows: c.follows } : {}),
       ...(c.creates ? { creates: c.creates } : {}),
+      ...(c.about ? { about: c.about } : {}),
+      places: placesOf(c),
     };
   });
   return {

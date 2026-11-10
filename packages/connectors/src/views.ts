@@ -1,4 +1,13 @@
-import { openRef, rowsKey, viewRows, type MenuHint, type MenuIcon, type View } from '@clew/contracts';
+import {
+  fieldTone,
+  markFields,
+  openRef,
+  rowsKey,
+  viewRows,
+  type MenuHint,
+  type MenuIcon,
+  type View,
+} from '@clew/contracts';
 import {
   ActivitySchema,
   DocumentBundleSchema,
@@ -8,8 +17,9 @@ import {
   checkContract,
 } from '@clew/contracts';
 import { Value } from '@sinclair/typebox/value';
+import type { AboutPlace } from './protocol';
 
-export { openRef, rowsKey, viewRows };
+export { fieldTone, markFields, openRef, rowsKey, viewRows };
 
 /**
  * Declared views (D38), the pure part: the rules a declaration must keep, the rows it points at, what the model is
@@ -187,3 +197,20 @@ export function viewSummary(
   };
 }
 export const readsSummary = (view: View | undefined) => view?.modelReads === 'summary';
+
+/**
+ * Where Clew would show a capability that is about an entity (D97 item 2), from the declaration alone and in the order
+ * a preview lists them: an action in the entity's menu; a read as a section on the opened entity, a lens when its view
+ * is a table or list, and a mark on the row when a field gives some value a `warn` or `alert` tone. Lenses, columns and
+ * marks still wait for an administrator's choice; nothing here is a place by itself.
+ */
+export function placesOf(subject: Pick<ViewSubject, 'kind' | 'view'> & { about?: unknown }): AboutPlace[] {
+  if (!subject.about) return [];
+  if (subject.kind !== 'read') return ['menu'];
+  const view = subject.view;
+  return [
+    ...(view?.kind === 'table' || view?.kind === 'list' ? (['lens'] as const) : []),
+    ...(markFields(view).length ? (['mark'] as const) : []),
+    'section',
+  ];
+}

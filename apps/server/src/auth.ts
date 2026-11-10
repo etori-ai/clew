@@ -295,6 +295,7 @@ export async function authenticate(raw: string | undefined) {
     unitId: access.grant.unitId,
     unitLabel: access.grant.unitLabel,
     role: access.grant.role,
+    ...(access.person.userName ? { userName: access.person.userName } : {}),
     organisationId: access.person.organisationId,
     principal: { id: 'person:' + access.person.id, kind: 'person' },
     capabilities: access.grant.capabilities,

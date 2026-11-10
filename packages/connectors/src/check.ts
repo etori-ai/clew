@@ -33,6 +33,7 @@ export const CHECK_MANAGER: Actor = {
   unitId: 'unit-check',
   unitLabel: 'Kontrollenheten',
   role: 'manager',
+  userName: 'check-manager',
 };
 export const CHECK_EMPLOYEE: Actor = {
   id: 'check-employee',
@@ -40,6 +41,7 @@ export const CHECK_EMPLOYEE: Actor = {
   unitId: 'unit-check',
   unitLabel: 'Kontrollenheten',
   role: 'employee',
+  userName: 'check-employee',
 };
 const UNAVAILABLE = /svarar inte just nu/;
 const ROLE: Record<Role, string> = { manager: 'chef', employee: 'medarbetare' };

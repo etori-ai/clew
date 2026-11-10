@@ -163,6 +163,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
     ...(c.creates ? { creates: c.creates } : {}),
     ...(c.view ? { view: c.view } : {}),
     ...(c.menu ? { menu: c.menu } : {}),
+    ...(c.about ? { about: c.about } : {}),
     run: async (actor, input, clew) => {
       const { status, json } = await post(
         transport,

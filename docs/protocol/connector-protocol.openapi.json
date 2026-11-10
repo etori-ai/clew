@@ -1319,7 +1319,7 @@
                                 ]
                               },
                               "tones": {
-                                "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                                "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). The key `*` is the tone of any other value that is present, so a count such as \"2 försenade\" can warn while an absent value stays neutral (D97). A value without one is neutral; give a tone only to the value that needs the person.",
                                 "type": "object",
                                 "patternProperties": {
                                   "^(.*)$": {
@@ -1485,7 +1485,7 @@
                                     ]
                                   },
                                   "tones": {
-                                    "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                                    "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). The key `*` is the tone of any other value that is present, so a count such as \"2 försenade\" can warn while an absent value stays neutral (D97). A value without one is neutral; give a tone only to the value that needs the person.",
                                     "type": "object",
                                     "patternProperties": {
                                       "^(.*)$": {
@@ -1642,7 +1642,7 @@
                                 ]
                               },
                               "tones": {
-                                "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                                "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). The key `*` is the tone of any other value that is present, so a count such as \"2 försenade\" can warn while an absent value stays neutral (D97). A value without one is neutral; give a tone only to the value that needs the person.",
                                 "type": "object",
                                 "patternProperties": {
                                   "^(.*)$": {
@@ -1954,7 +1954,7 @@
                                 ]
                               },
                               "tones": {
-                                "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                                "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). The key `*` is the tone of any other value that is present, so a count such as \"2 försenade\" can warn while an absent value stays neutral (D97). A value without one is neutral; give a tone only to the value that needs the person.",
                                 "type": "object",
                                 "patternProperties": {
                                   "^(.*)$": {
@@ -2260,7 +2260,7 @@
                                 ]
                               },
                               "tones": {
-                                "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                                "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). The key `*` is the tone of any other value that is present, so a count such as \"2 försenade\" can warn while an absent value stays neutral (D97). A value without one is neutral; give a tone only to the value that needs the person.",
                                 "type": "object",
                                 "patternProperties": {
                                   "^(.*)$": {
@@ -2429,6 +2429,35 @@
                     }
                   }
                 },
+                "about": {
+                  "additionalProperties": false,
+                  "description": "What the rows concern (D97). A `read` takes `{ keys }` (an array of at most 200 strings, required) and answers `rows` (or its view's rows), one per key it knows, each with a string `key` it was asked with; a key outside the caller's scope is answered as no row, never as a refusal. It declares a `table` or `list` view, is never a tool (`model: false`), and may answer `heading` and `note`, two strings beside the rows. A `propose` or `execute` names in `param` the input property that takes one key. Clew decides where it shows: an action in the entity's menu, a read as a section on the opened entity, a `warn` or `alert` tone as a mark on its row, a table or list as a lens an administrator may offer.",
+                  "type": "object",
+                  "required": [
+                    "entity"
+                  ],
+                  "properties": {
+                    "entity": {
+                      "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.",
+                      "anyOf": [
+                        {
+                          "const": "person",
+                          "type": "string"
+                        },
+                        {
+                          "const": "unit",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "param": {
+                      "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                      "maxLength": 40,
+                      "description": "On a `propose` or `execute` only: the string property of the input that takes the key of the one entity it acts on. A read takes its keys in `keys` and declares none.",
+                      "type": "string"
+                    }
+                  }
+                },
                 "follows": {
                   "uniqueItems": true,
                   "maxItems": 20,
@@ -2574,6 +2603,12 @@
                 "type": "string"
               }
             ]
+          },
+          "userName": {
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one.",
+            "type": "string"
           }
         }
       },
@@ -2622,6 +2657,12 @@
                     "type": "string"
                   }
                 ]
+              },
+              "userName": {
+                "minLength": 1,
+                "maxLength": 512,
+                "description": "The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one.",
+                "type": "string"
               }
             }
           },
@@ -2892,6 +2933,12 @@
                     "type": "string"
                   }
                 ]
+              },
+              "userName": {
+                "minLength": 1,
+                "maxLength": 512,
+                "description": "The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one.",
+                "type": "string"
               }
             }
           },
@@ -3381,6 +3428,12 @@
                     "type": "string"
                   }
                 ]
+              },
+              "userName": {
+                "minLength": 1,
+                "maxLength": 512,
+                "description": "The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one.",
+                "type": "string"
               }
             }
           }
@@ -3936,6 +3989,12 @@
                     "type": "string"
                   }
                 ]
+              },
+              "userName": {
+                "minLength": 1,
+                "maxLength": 512,
+                "description": "The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one.",
+                "type": "string"
               }
             }
           },
@@ -5127,7 +5186,7 @@
                       ]
                     },
                     "tones": {
-                      "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                      "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). The key `*` is the tone of any other value that is present, so a count such as \"2 försenade\" can warn while an absent value stays neutral (D97). A value without one is neutral; give a tone only to the value that needs the person.",
                       "type": "object",
                       "patternProperties": {
                         "^(.*)$": {
@@ -5293,7 +5352,7 @@
                           ]
                         },
                         "tones": {
-                          "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                          "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). The key `*` is the tone of any other value that is present, so a count such as \"2 försenade\" can warn while an absent value stays neutral (D97). A value without one is neutral; give a tone only to the value that needs the person.",
                           "type": "object",
                           "patternProperties": {
                             "^(.*)$": {
@@ -5450,7 +5509,7 @@
                       ]
                     },
                     "tones": {
-                      "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                      "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). The key `*` is the tone of any other value that is present, so a count such as \"2 försenade\" can warn while an absent value stays neutral (D97). A value without one is neutral; give a tone only to the value that needs the person.",
                       "type": "object",
                       "patternProperties": {
                         "^(.*)$": {
@@ -5762,7 +5821,7 @@
                       ]
                     },
                     "tones": {
-                      "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                      "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). The key `*` is the tone of any other value that is present, so a count such as \"2 försenade\" can warn while an absent value stays neutral (D97). A value without one is neutral; give a tone only to the value that needs the person.",
                       "type": "object",
                       "patternProperties": {
                         "^(.*)$": {
@@ -6068,7 +6127,7 @@
                       ]
                     },
                     "tones": {
-                      "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                      "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). The key `*` is the tone of any other value that is present, so a count such as \"2 försenade\" can warn while an absent value stays neutral (D97). A value without one is neutral; give a tone only to the value that needs the person.",
                       "type": "object",
                       "patternProperties": {
                         "^(.*)$": {
@@ -6633,7 +6692,8 @@
                     "needsInput",
                     "view",
                     "menu",
-                    "check"
+                    "check",
+                    "places"
                   ],
                   "properties": {
                     "name": {
@@ -6814,6 +6874,59 @@
                       "maxLength": 80,
                       "description": "`<connector id>:<kind>`, stable: the name is the contract.",
                       "type": "string"
+                    },
+                    "about": {
+                      "additionalProperties": false,
+                      "description": "What the rows concern (D97). A `read` takes `{ keys }` (an array of at most 200 strings, required) and answers `rows` (or its view's rows), one per key it knows, each with a string `key` it was asked with; a key outside the caller's scope is answered as no row, never as a refusal. It declares a `table` or `list` view, is never a tool (`model: false`), and may answer `heading` and `note`, two strings beside the rows. A `propose` or `execute` names in `param` the input property that takes one key. Clew decides where it shows: an action in the entity's menu, a read as a section on the opened entity, a `warn` or `alert` tone as a mark on its row, a table or list as a lens an administrator may offer.",
+                      "type": "object",
+                      "required": [
+                        "entity"
+                      ],
+                      "properties": {
+                        "entity": {
+                          "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.",
+                          "anyOf": [
+                            {
+                              "const": "person",
+                              "type": "string"
+                            },
+                            {
+                              "const": "unit",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "param": {
+                          "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                          "maxLength": 40,
+                          "description": "On a `propose` or `execute` only: the string property of the input that takes the key of the one entity it acts on. A read takes its keys in `keys` and declares none.",
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "places": {
+                      "description": "Where Clew would show it on the entity it is about (D97), from the declaration alone: `lens` a table or list an administrator may offer under Visa on the entity's list, `mark` a `warn` or `alert` tone that marks the entity's row where an administrator chose the source, `section` a section on the opened entity, `menu` an action in the entity's menu, run after a human decision. Empty when it is about nothing.",
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "const": "lens",
+                            "type": "string"
+                          },
+                          {
+                            "const": "mark",
+                            "type": "string"
+                          },
+                          {
+                            "const": "section",
+                            "type": "string"
+                          },
+                          {
+                            "const": "menu",
+                            "type": "string"
+                          }
+                        ]
+                      }
                     }
                   }
                 }

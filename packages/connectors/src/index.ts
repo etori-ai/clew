@@ -2,12 +2,14 @@ import type { TSchema } from '@sinclair/typebox';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import type {
+  About,
   Area,
   AreaFigure,
   AreaOverride,
   CapabilityOverride,
   ConnectorAudience,
   ConnectorState,
+  EntityPage,
   MenuEntry,
   MenuHint,
   MenuIcon,
@@ -37,10 +39,13 @@ import { Value } from '@sinclair/typebox/value';
 import { connectorProblems } from './validation';
 export {
   MENU_DEFAULT_ICON,
+  fieldTone,
+  markFields,
   menuEligible,
   menuProblem,
   menuRowOf,
   openRef,
+  placesOf,
   readsSummary,
   rowsKey,
   viewProblem,
@@ -60,8 +65,11 @@ export {
  */
 export type CapabilityKind = 'read' | 'propose' | 'execute';
 export type ConnectorKind = 'core' | 'passthrough' | 'derived';
-/** The caller as capabilities see it: identity and scope, never tokens. */
-export type Actor = Pick<SessionUser, 'id' | 'name' | 'unitId' | 'unitLabel' | 'role'>;
+/**
+ * The caller as capabilities see it: identity and scope, never tokens. `userName` is the person's provisioned directory
+ * user name, signed into a connector's actor (D44) as the key other systems know them by (D97); absent without one.
+ */
+export type Actor = Pick<SessionUser, 'id' | 'name' | 'unitId' | 'unitLabel' | 'role'> & { userName?: string };
 /** The actor a capability sees, cut from an authenticated context: identity and scope, never tokens. */
 export const actorOf = (persona: Actor): Actor => ({
   id: persona.id,
@@ -69,6 +77,7 @@ export const actorOf = (persona: Actor): Actor => ({
   unitId: persona.unitId,
   unitLabel: persona.unitLabel,
   role: persona.role,
+  ...(persona.userName ? { userName: persona.userName } : {}),
 });
 /**
  * Who may call a capability. Declarative so a remote manifest can carry it: no `roles` means every signed-in
@@ -135,6 +144,12 @@ export interface Capability<I = unknown, O = unknown> {
   follows?: string[];
   /** The fact kind this capability brings about (D55); one of the connector's `facts`. */
   creates?: string;
+  /**
+   * What its rows concern (D97): a read asked with a batch of keys, or a propose or execute that takes one in `param`.
+   * Only Clew's own connectors may add `page`, the owned domain's page where the person writes (D95, D96); a manifest
+   * cannot carry it, so a remote connector never claims a page inside Clew.
+   */
+  about?: About & { page?: EntityPage };
   run: (actor: Actor, input: I, clew: Clew) => Promise<O>;
 }
 /** A capability is a search source when it is named `<id>.search` and is a read (D26); the composite `clew.search` is never one itself. */
@@ -900,6 +915,8 @@ export class Registry {
    * The per-connector search sources are left out while the composite search is registered, so the model sees one search tool (D26).
    * The per-connector errand lists are left out the same way while `clew.errands` is registered (D35 item 4).
    * The talks profile and its composites are never tools, registered or not: no read of that domain reaches a model (D96 item 6).
+   * A read about an entity is never a tool either (D97 item 7): the loader refuses `model: true` on one, and this holds
+   * whatever a registration says.
    */
   tools(actor: Actor) {
     const composite = this.capabilities.has(SEARCH_CONNECTOR + '.search');
@@ -913,6 +930,7 @@ export class Registry {
       .filter(c => !(errands && isErrandSource(c.capability, c.connector.id)))
       .filter(c => !isTalkSource(c.capability, c.connector.id) && !isCommitmentSource(c.capability, c.connector.id))
       .filter(c => c.capability.name !== TALK_COMPOSITE && c.capability.name !== COMMITMENT_COMPOSITE)
+      .filter(c => !(c.capability.kind === 'read' && c.capability.about))
       .map(c => ({
         name: c.capability.name,
         title: c.capability.title,

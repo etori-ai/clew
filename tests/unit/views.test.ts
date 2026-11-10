@@ -2,6 +2,8 @@ import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import type { SearchResult, View } from '../../packages/contracts/src/index';
 import {
+  fieldTone,
+  markFields,
   openRef,
   viewProblem,
   viewRows,
@@ -258,6 +260,32 @@ describe('the rules of a declared view', () => {
       source: 'X',
     });
     expect(openRef(open, { name: 'A' }, 'X')).toBeUndefined();
+  });
+  test('a tone is the one named for the value, else the `*` tone for any other value that is present (D97); only warn and alert mark a row', () => {
+    const late = { key: 'late', label: 'Försenade', format: 'status' as const, tones: { '*': 'warn' as const } };
+    expect(fieldTone(late, '2 försenade')).toBe('warn');
+    expect(fieldTone(late, 0)).toBe('warn');
+    expect(fieldTone(late, false)).toBe('warn');
+    for (const absent of [undefined, null, '']) expect(fieldTone(late, absent)).toBe('none');
+    const state = {
+      key: 'state',
+      label: 'Samtal',
+      format: 'status' as const,
+      tones: { Saknas: 'alert' as const, Hållet: 'ok' as const, '*': 'warn' as const },
+    };
+    expect(fieldTone(state, 'Saknas')).toBe('alert');
+    expect(fieldTone(state, 'Hållet')).toBe('ok');
+    expect(fieldTone(state, 'Bokat')).toBe('warn');
+    expect(fieldTone({ tones: { true: 'warn' } }, true)).toBe('warn');
+    expect(fieldTone({ tones: { true: 'warn' } }, false)).toBe('none');
+    expect(fieldTone({}, 'any')).toBe('none');
+    const quiet = { key: 'at', label: 'När', format: 'status' as const, tones: { Bokat: 'ok' as const } };
+    expect(markFields({ kind: 'list', title: 'state', fields: [state, quiet, late] }).map(f => f.key)).toEqual([
+      'state',
+      'late',
+    ]);
+    expect(markFields({ kind: 'detail', title: 'state', fields: [state] })).toEqual([]);
+    expect(markFields(undefined)).toEqual([]);
   });
 });
 

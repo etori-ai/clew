@@ -42,6 +42,11 @@ export interface AuthenticatedContext extends SessionUser {
   capabilities: string[];
   /** The external ids of the provisioned groups the person is in (D68): what a connector audience's `groups` match. Absent means none. */
   groups?: string[];
+  /**
+   * The person's provisioned `userName` (D68): the key another system knows them by, signed into a connector's actor
+   * (D44, D97). Absent for a person provisioned without one. Never in `SessionUser`.
+   */
+  userName?: string;
   authorizationVersion: string;
   sessionBinding: string;
   expiresAt: string;
@@ -267,6 +272,9 @@ export const ViewTone = Type.Union([
   Type.Literal('alert'),
   Type.Literal('none'),
 ]);
+export type ViewTone = Static<typeof ViewTone>;
+/** The key of `tones` that gives the tone of any other value that is present (D97): "2 försenade" warns, nothing does not. */
+export const ANY_TONE = '*';
 /** A word in its singular and plural (D71 amendment): "plats" and "platser", so one row reads "1 plats" and the rest "12 platser". */
 export const ViewNounSchema = object(
   {
@@ -287,7 +295,7 @@ export const ViewFieldSchema = object({
   tones: Type.Optional(
     Type.Record(Type.String({ maxLength: 40 }), ViewTone, {
       description:
-        'For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.',
+        'For `status`: the tone per value (a yes/no value is keyed `true` and `false`). The key `*` is the tone of any other value that is present, so a count such as "2 försenade" can warn while an absent value stays neutral (D97). A value without one is neutral; give a tone only to the value that needs the person.',
     }),
   ),
   unit: Type.Optional({
@@ -297,6 +305,19 @@ export const ViewFieldSchema = object({
   }),
 });
 export type ViewField = Static<typeof ViewFieldSchema>;
+/**
+ * The tone a field gives a value (D38, D97): the tone named for the value, else the `*` tone when the value is present
+ * (not absent, null or empty), else `none`. The one reading of `tones`, for the browser and the server alike.
+ */
+export function fieldTone(field: Pick<ViewField, 'tones'>, value: unknown): ViewTone {
+  const tones = field.tones;
+  if (!tones) return 'none';
+  const named = value === undefined || value === null ? undefined : tones[String(value)];
+  if (named) return named;
+  return value === undefined || value === null || value === '' ? 'none' : (tones[ANY_TONE] ?? 'none');
+}
+/** Whether a tone means the value needs the person (D97 item 2): what makes a mark on a row. */
+export const needsPerson = (tone: ViewTone) => tone === 'warn' || tone === 'alert';
 /** What the person may type or choose above the rows: each control is bound to one property of the capability's input, and a change reads the capability again. */
 export const ViewInputSchema = object(
   {
@@ -484,6 +505,14 @@ export function viewRows(view: View, output: unknown): Record<string, unknown>[]
   if (!key || !isViewRecord(output) || !Array.isArray(output[key])) return undefined;
   return (output[key] as unknown[]).filter(isViewRecord);
 }
+/**
+ * The fields of a table or list that can mark a row (D97 item 2): those giving some value a `warn` or `alert` tone. A
+ * read about an entity with one of them can mark the entity's row where an administrator chose the source.
+ */
+export const markFields = (view: View | undefined): ViewField[] =>
+  view && (view.kind === 'table' || view.kind === 'list')
+    ? view.fields.filter(f => Object.values(f.tones ?? {}).some(needsPerson))
+    : [];
 /** The view a row (or a search hit) opens: the declared read with its input taken from the row. Undefined when the row lacks a value the read needs. */
 export function openRef(open: ViewOpen, row: Record<string, unknown>, source: string): ViewRef | undefined {
   const input: Record<string, unknown> = {};
@@ -871,6 +900,148 @@ export const CommitmentAddBodySchema = object({
   dueOn: calendarDay,
 });
 export type CommitmentAddBody = Static<typeof CommitmentAddBodySchema>;
+
+/**
+ * The entities a source's rows can be about (D97): a closed list, as `CAPABILITIES` is. A new kind is a contract change
+ * that comes with the core rule saying who may be asked about it. A person's key is their directory `userName`, compared
+ * without regard to case (a person without one cannot be asked about); a unit's key is its unit id.
+ */
+export const ENTITY_KINDS = ['person', 'unit'] as const;
+export const EntityKind = Type.Union(
+  ENTITY_KINDS.map(kind => Type.Literal(kind)),
+  {
+    description:
+      '`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.',
+  },
+);
+export type EntityKind = (typeof ENTITY_KINDS)[number];
+export const isEntityKind = (value: string): value is EntityKind => (ENTITY_KINDS as readonly string[]).includes(value);
+/** The most keys Clew sends in one call to a read about an entity (D97 item 7); a longer list is split. */
+export const ENTITY_KEYS_MAX = 200;
+/** The most columns "Alla" shows for one entity kind across the installation (D97 item 4), chosen by an administrator. */
+export const ENTITY_COLUMNS_MAX = 3;
+const entityKey = Type.String({
+  minLength: 1,
+  maxLength: 256,
+  description: "The entity's key: a person's `userName`, a unit's id.",
+});
+/**
+ * What a capability's rows concern (D97 item 1). A source says what, never where: Clew places it from the declaration.
+ * `param` only on a propose or execute: the input property that takes the key.
+ */
+export const AboutSchema = object(
+  {
+    entity: EntityKind,
+    param: Type.Optional({
+      ...viewKey,
+      description:
+        'On a `propose` or `execute` only: the string property of the input that takes the key of the one entity it acts on. A read takes its keys in `keys` and declares none.',
+    }),
+  },
+  "What the rows concern (D97). A `read` takes `{ keys }` (an array of at most 200 strings, required) and answers `rows` (or its view's rows), one per key it knows, each with a string `key` it was asked with; a key outside the caller's scope is answered as no row, never as a refusal. It declares a `table` or `list` view, is never a tool (`model: false`), and may answer `heading` and `note`, two strings beside the rows. A `propose` or `execute` names in `param` the input property that takes one key. Clew decides where it shows: an action in the entity's menu, a read as a section on the opened entity, a `warn` or `alert` tone as a mark on its row, a table or list as a lens an administrator may offer.",
+);
+export type About = Static<typeof AboutSchema>;
+/** A row that names an entity (D97 item 6): a card row, a search hit or a view field may carry one, so it links to the entity. */
+export const SubjectSchema = object({ entity: EntityKind, key: entityKey }, 'An entity a row names (D97).');
+export type Subject = Static<typeof SubjectSchema>;
+/**
+ * A page of an owned domain where the person writes about one entity (D95, D96): a core connector's in-process `about`
+ * may name one, never a remote manifest. `href` may hold `{key}` and `{id}`, which the web fills in.
+ */
+export const EntityPageSchema = object({
+  title: Type.String({ minLength: 1, maxLength: 60 }),
+  href: Type.String({ minLength: 1, maxLength: 200, pattern: '^/' }),
+});
+export type EntityPage = Static<typeof EntityPageSchema>;
+/** How one source answered for a list or a section: it answered, it did not, or not in time. */
+const entityAnswer = Type.Union([Type.Literal('ok'), Type.Literal('unavailable'), Type.Literal('timeout')]);
+/** An entity as the browser gets it (D97). `detail` is one line ("Lärare 4–6 · Bergsåkers skola") when known; `id` is Clew's own id, never sent to a connector. */
+export const EntityRefSchema = object({
+  kind: EntityKind,
+  key: entityKey,
+  name: Type.String(),
+  detail: Type.Optional(Type.String()),
+  id: Type.Optional(id),
+});
+export type EntityRef = Static<typeof EntityRefSchema>;
+/** A read about an entity kind as a lens or a section (D97): whose it is, the connector's Swedish `source`, its view, and, for Clew's own domain, the page where the person writes. */
+export const EntitySourceSchema = object({
+  capability: Type.String(),
+  connector: Type.String(),
+  source: Type.String(),
+  title: Type.String(),
+  view: ViewSchema,
+  page: Type.Optional(EntityPageSchema),
+});
+export type EntitySource = Static<typeof EntitySourceSchema>;
+/** One column on "Alla" (D97 item 4): one field of a source's view, chosen by an administrator. */
+export const EntityColumnSchema = object({
+  capability: Type.String(),
+  source: Type.String(),
+  title: Type.String(),
+  field: ViewFieldSchema,
+});
+export type EntityColumn = Static<typeof EntityColumnSchema>;
+/** An action about an entity (D97): it shows in the entity's menu and runs through the human decision as every propose and execute does. */
+export const EntityActionSchema = object({
+  capability: Type.String(),
+  connector: Type.String(),
+  source: Type.String(),
+  title: Type.String(),
+  kind: Type.Union([Type.Literal('propose'), Type.Literal('execute')]),
+  param: Type.String(),
+});
+export type EntityAction = Static<typeof EntityActionSchema>;
+/** `GET /api/entities/:kind`: the entities the reader may ask about, in groups (for a person, one per unit the reader manages), with the administrator's columns and lenses and the actions. */
+export const EntityListSchema = object({
+  kind: EntityKind,
+  groups: Type.Array(object({ id: Type.String(), label: Type.String(), entities: Type.Array(EntityRefSchema) })),
+  columns: Type.Array(EntityColumnSchema, { maxItems: ENTITY_COLUMNS_MAX }),
+  lenses: Type.Array(EntitySourceSchema),
+  actions: Type.Array(EntityActionSchema),
+});
+export type EntityList = Static<typeof EntityListSchema>;
+/** `GET /api/entities/:kind/rows?capability=`: one source over every entity the reader may ask about. Each row carries `key`; an entity without a row is absent. */
+export const EntityRowsSchema = object({
+  capability: Type.String(),
+  status: entityAnswer,
+  rows: Type.Array(Type.Record(Type.String(), Type.Unknown())),
+  heading: Type.Optional(Type.String()),
+  note: Type.Optional(Type.String()),
+});
+export type EntityRows = Static<typeof EntityRowsSchema>;
+/** A card of the reader's whose rows name the entity: "Behöver dig" on the opened entity (D97 item 5). */
+export const EntityCardSchema = object({
+  threadId: id,
+  title: Type.String(),
+  source: Type.String(),
+  kind: Type.Union([Type.Literal('act'), Type.Literal('proposal'), Type.Literal('fyi')]),
+});
+export type EntityCard = Static<typeof EntityCardSchema>;
+/** `GET /api/entities/:kind/:key`: the opened entity, how the reader stands to it, its actions, one section per source and the cards about it. */
+export const EntityDetailSchema = object({
+  entity: object({
+    ...EntityRefSchema.properties,
+    unit: Type.Optional(object({ id: Type.String(), label: Type.String() })),
+  }),
+  relation: Type.Union([
+    Type.Literal('managed'),
+    Type.Literal('self'),
+    Type.Literal('colleague'),
+    Type.Literal('member'),
+  ]),
+  actions: Type.Array(EntityActionSchema),
+  sections: Type.Array(EntitySourceSchema),
+  cards: Type.Array(EntityCardSchema),
+});
+export type EntityDetail = Static<typeof EntityDetailSchema>;
+/** `GET /api/entities/:kind/:key/section?capability=`: one source's answer for one entity. */
+export const EntitySectionSchema = object({
+  capability: Type.String(),
+  status: entityAnswer,
+  row: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+});
+export type EntitySection = Static<typeof EntitySectionSchema>;
 /** A Clew-side action the conversation proposes; executed only after the person confirms, through the thread endpoints. */
 export const ClewActionSchema = object({
   n: Type.Integer(),
@@ -1482,12 +1653,15 @@ export const CapabilitySwitchSchema = object({
 /**
  * What is stored per capability: the two narrowing switches, and `menu: true` when the administrator put the capability's
  * view in the menu (D40). The menu is a place, not access, so it is the one value that is switched on, and only for a
- * view that can be a tool.
+ * view that can be a tool. A read about an entity has two more places an administrator chooses (D97): `lens: true`
+ * offers it under Visa on the entity's list, and `column` names the one field of its view shown on "Alla".
  */
 export const CapabilityOverrideSchema = object({
   enabled: Type.Optional(Type.Literal(false)),
   model: Type.Optional(Type.Literal(false)),
   menu: Type.Optional(Type.Literal(true)),
+  lens: Type.Optional(Type.Literal(true)),
+  column: Type.Optional({ ...viewKey, description: 'The key of the field of the view shown as a column on "Alla".' }),
 });
 export type CapabilityOverride = Static<typeof CapabilityOverrideSchema>;
 /** What is stored per area of a connector (D54): `figure: false` when the administrator switched its figure off on Hem. Narrowing only. */
@@ -1511,6 +1685,10 @@ export const ConnectorPatchInput = Type.Partial(
     url: connectorUrl,
     /** Views in the menu (D40), by capability name: true puts the view under Verktyg, false takes it out. */
     menu: Type.Record(Type.String({ maxLength: 80 }), Type.Boolean()),
+    /** Lenses on an entity's list (D97), by capability name: true offers the read under Visa, false takes it out. */
+    lens: Type.Record(Type.String({ maxLength: 80 }), Type.Boolean()),
+    /** Columns on "Alla" (D97), by capability name: the key of the view field shown, null takes the column out. */
+    column: Type.Record(Type.String({ maxLength: 80 }), Type.Union([viewKey, Type.Null()])),
     /** Figures on Hem (D54), by area id: false switches the area's figure off for the connector's audience, true back on. */
     figures: Type.Record(Type.String({ maxLength: 80 }), Type.Boolean()),
   }),

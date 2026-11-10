@@ -32,6 +32,10 @@ export function describeBundled(connector: Connector): ConnectorManifest {
       scope: typeof c.scope === 'function' ? {} : c.scope.roles ? { roles: [...c.scope.roles] } : {},
       ...(c.view ? { view: c.view } : {}),
       ...(c.menu ? { menu: c.menu } : {}),
+      // The manifest form has no `page`: that is Clew's own and stays in process (D97).
+      ...(c.about
+        ? { about: { entity: c.about.entity, ...(c.about.param !== undefined ? { param: c.about.param } : {}) } }
+        : {}),
       ...(c.follows ? { follows: [...c.follows] } : {}),
       ...(c.creates ? { creates: c.creates } : {}),
     })),

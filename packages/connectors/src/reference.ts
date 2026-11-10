@@ -1,9 +1,10 @@
-import type {
-  ManifestReference,
-  ReferenceField,
-  ReferenceRecipe,
-  ReferenceRule,
-  ReferenceSection,
+import {
+  ENTITY_KEYS_MAX,
+  type ManifestReference,
+  type ReferenceField,
+  type ReferenceRecipe,
+  type ReferenceRule,
+  type ReferenceSection,
 } from '@clew/contracts';
 import { ConnectorManifestSchema, PROTOCOL_ACCEPTED, PROTOCOL_VERSION, type ConnectorManifest } from './protocol';
 /** TypeBox itself, for the test that evaluates the generated source and compares the schema it emits with the JSON it came from. */
@@ -199,6 +200,9 @@ export const HANDWRITTEN_EXAMPLES: Record<string, unknown> = {
   'capabilities[].view.input.filter.options[].value': 'open',
   'capabilities[].view.input.filter.options[].label': 'Öppna',
   'capabilities[].view.modelReads': 'summary',
+  'capabilities[].about': { entity: 'person' },
+  'capabilities[].about.entity': 'person',
+  'capabilities[].about.param': 'person',
 };
 
 /** The rules between fields, as Clew applies them. Each `loader` rule is proven by a test that breaks it and reads the problem. */
@@ -306,6 +310,54 @@ export const RULES: Rule[] = [
     text: "`creates` must name one of the manifest's `facts`, so followers know the attributes they will receive.",
   },
   {
+    id: 'about-read-keys',
+    title: 'A read about an entity is asked with a batch of keys',
+    fields: ['capabilities[].about', 'capabilities[].about.param', 'capabilities[].input'],
+    enforced: 'loader',
+    decision: 'D97',
+    text: `A \`read\` that declares \`about\` takes \`{ keys }\`: its input is an object whose required \`keys\` is an array of strings with \`maxItems\` at most ${ENTITY_KEYS_MAX}. It declares no \`param\`.`,
+  },
+  {
+    id: 'about-read-rows',
+    title: 'Each row carries the key it was asked with',
+    fields: ['capabilities[].about', 'capabilities[].output', 'capabilities[].view', 'capabilities[].view.rows'],
+    enforced: 'loader',
+    decision: 'D97',
+    text: "A read about an entity declares a `table` or `list` view, and its rows (`rows`, or the view's `rows`) are an array in the output schema whose items require a string `key`: the key the row was asked with.",
+  },
+  {
+    id: 'about-never-a-tool',
+    title: 'A read about an entity is never a tool',
+    fields: ['capabilities[].about', 'capabilities[].model'],
+    enforced: 'loader',
+    decision: 'D97',
+    text: 'A `read` that declares `about` must declare `model: false`. Clew never offers it to the model, whatever an administrator enables.',
+  },
+  {
+    id: 'about-action-param',
+    title: 'An action about an entity names the input that takes the key',
+    fields: ['capabilities[].kind', 'capabilities[].about.param', 'capabilities[].input'],
+    enforced: 'loader',
+    decision: 'D97',
+    text: "A `propose` or `execute` that declares `about` names in `param` a string property of its input schema. Clew fills it with the key of the entity the person chose the action on; it shows in that entity's menu and runs, as every action does, after a human decision.",
+  },
+  {
+    id: 'about-not-a-follower',
+    title: 'A follower is about no entity',
+    fields: ['capabilities[].about', 'capabilities[].follows'],
+    enforced: 'loader',
+    decision: 'D97',
+    text: '`follows` and `about` exclude each other: a follower is asked with a `FactEnvelope`, not with keys.',
+  },
+  {
+    id: 'about-not-a-profile',
+    title: 'A profile read and the header are about no entity',
+    fields: ['capabilities[].about', 'capabilities[].name', 'capabilities[].kinds', 'header.capability'],
+    enforced: 'loader',
+    decision: 'D97',
+    text: '`<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.talks`, `<id>.commitments`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`.',
+  },
+  {
     id: 'scan-route',
     title: 'scan: true means you serve the scan route',
     fields: ['scan', 'areas[].id'],
@@ -343,6 +395,14 @@ export const RULES: Rule[] = [
     enforced: 'call',
     decision: 'D26',
     text: "With `delegation`, Clew exchanges the person's session for a token bound to `audience` and sends it in `X-Clew-Delegated-Token` beside the assertion. Scans, figures, callbacks and sessions without an IdP token carry none; the connector then answers `denied`.",
+  },
+  {
+    id: 'about-call',
+    title: 'A read about an entity answers for the keys it may',
+    fields: ['capabilities[].about', 'capabilities[].about.entity'],
+    enforced: 'call',
+    decision: 'D97',
+    text: `Clew calls the read as the person with \`{ keys }\`: a person's provisioned \`userName\` (compare without regard to case; the caller's own is \`actor.userName\`) or a unit's id, only for entities the person may already see, at most ${ENTITY_KEYS_MAX} in one call. Answer one row per key you know, carrying \`key\` as it was asked; a key outside the person's scope is answered as no row, never as a refusal. Beside the rows you may answer \`heading\` and \`note\`, two short strings. Clew keeps nothing and decides where the rows show: a section on the opened entity, and a lens, a column or a mark on the row where an administrator chose the source.`,
   },
 ];
 

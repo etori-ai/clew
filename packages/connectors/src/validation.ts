@@ -1,11 +1,22 @@
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
+import { ENTITY_KEYS_MAX, rowsKey } from '@clew/contracts';
 import { menuProblem, viewProblem, type ViewSubject } from './views';
 
 /** Rules shared by manifest preview, remote loading and in-process registration. No installation state. */
 interface Descriptor {
   id: string;
-  capabilities: Array<ViewSubject & { model: boolean; follows?: string[]; creates?: string }>;
+  /** `core` for Clew's own connectors; a manifest says `passthrough` or `derived`. */
+  kind?: string;
+  capabilities: Array<
+    ViewSubject & {
+      model: boolean;
+      follows?: string[];
+      creates?: string;
+      kinds?: unknown[];
+      about?: { entity: string; param?: string; page?: unknown };
+    }
+  >;
   facts?: Array<{ kind: string; attributes: object }>;
   areas: Array<{ id: string; standing: string[] }>;
   documents?: unknown;
@@ -16,6 +27,60 @@ function schemaCompiler() {
   const ajv = addFormats(new Ajv({ strict: false, addUsedSchema: false }));
   return (schema: object) => ajv.compile(schema);
 }
+type Schema = { type?: unknown; properties?: Record<string, Schema>; items?: Schema; required?: unknown };
+const asSchema = (value: unknown): Schema | undefined =>
+  value && typeof value === 'object' ? (value as Schema) : undefined;
+const requires = (schema: Schema | undefined, name: string) =>
+  Array.isArray(schema?.required) && schema.required.includes(name);
+/** The names whose shape a profile of the protocol fixes (D26, D35, D89, D96): none of them is about an entity. */
+const PROFILES = ['search', 'fetch', 'errands', 'talks', 'commitments'];
+
+/**
+ * Why a capability's `about` (D97) may not be used, or undefined when it may. A read is asked with `{ keys }`, at most
+ * `ENTITY_KEYS_MAX` strings, and answers rows that each carry the string `key` they were asked with, drawn as a table or
+ * list, never a tool. An action names the string input that takes one key. A follower, a profile read and the header have
+ * shapes of their own and are about nothing.
+ */
+function aboutProblem(c: Descriptor['capabilities'][number], connector: Descriptor, header?: string) {
+  const about = c.about!;
+  if (c.follows)
+    return `Capability ${c.name}: follows and about exclude each other; a follower answers for a fact (D97).`;
+  if (c.kinds || PROFILES.some(p => c.name === `${connector.id}.${p}`) || c.name === header)
+    return `Capability ${c.name}: a profile read or the header has a shape of its own and cannot declare about (D97).`;
+  if (about.page !== undefined && connector.kind !== 'core')
+    return `Capability ${c.name}: only Clew's own connectors name a page in about (D97).`;
+  const input = asSchema(c.input);
+  if (c.kind === 'read') {
+    if (about.param !== undefined)
+      return `Capability ${c.name}: a read about an entity takes its keys in keys and declares no param (D97).`;
+    const keys = input?.properties?.keys as (Schema & { maxItems?: unknown }) | undefined;
+    if (
+      input?.type !== 'object' ||
+      !requires(input, 'keys') ||
+      keys?.type !== 'array' ||
+      asSchema(keys.items)?.type !== 'string' ||
+      typeof keys.maxItems !== 'number' ||
+      keys.maxItems > ENTITY_KEYS_MAX
+    )
+      return `Capability ${c.name}: a read about an entity takes { keys }, a required array of strings with maxItems at most ${ENTITY_KEYS_MAX} (D97).`;
+    if (c.view?.kind !== 'table' && c.view?.kind !== 'list')
+      return `Capability ${c.name}: a read about an entity declares a table or list view (D97).`;
+    const rows = rowsKey(c.view)!;
+    const items = asSchema(asSchema(c.output)?.properties?.[rows]?.items);
+    if (
+      asSchema(c.output)?.properties?.[rows]?.type !== 'array' ||
+      !requires(items, 'key') ||
+      asSchema(items?.properties?.key)?.type !== 'string'
+    )
+      return `Capability ${c.name}: a read about an entity answers each row with the key it was asked with; its output ${rows} must be an array whose items require a string key (D97).`;
+    if (c.model) return `Capability ${c.name}: a read about an entity is never a tool; declare model: false (D97).`;
+    return undefined;
+  }
+  if (about.param === undefined || asSchema(input?.properties?.[about.param])?.type !== 'string')
+    return `Capability ${c.name}: an action about an entity names in param a string property of its input that takes the key (D97).`;
+  return undefined;
+}
+
 export function connectorProblems(
   connector: Descriptor,
   compile: (schema: object) => unknown = schemaCompiler(),
@@ -24,6 +89,7 @@ export function connectorProblems(
     names = new Set<string>(),
     facts = new Set<string>(),
     areas = new Set<string>();
+  const header = typeof connector.header === 'string' ? connector.header : connector.header?.capability;
   const schemaProblem = (label: string, schema: object) => {
     try {
       compile(schema);
@@ -58,6 +124,10 @@ export function connectorProblems(
       problems.push(`Capability ${c.name}: only a propose can follow a fact (D55).`);
     if (c.creates && !connector.facts?.some(f => f.kind === c.creates))
       problems.push(`Capability ${c.name} creates ${c.creates}, which ${connector.id} does not declare (D55).`);
+    if (c.about) {
+      const about = aboutProblem(c, connector, header);
+      if (about) problems.push(about);
+    }
     schemaProblem(`Capability ${c.name} input`, c.input as object);
     schemaProblem(`Capability ${c.name} output`, c.output as object);
   }
@@ -75,10 +145,9 @@ export function connectorProblems(
       if (!names.has(s)) problems.push(`Area ${a.id} lists unknown standing capability ${s}.`);
   }
   // The shared header (D88): the capability it names must be one of the connector's reads that opens without a question.
-  if (connector.header) {
-    const name = typeof connector.header === 'string' ? connector.header : connector.header.capability;
-    const c = connector.capabilities.find(x => x.name === name);
-    if (!c) problems.push(`Header names unknown capability ${name} (D88).`);
+  if (header) {
+    const c = connector.capabilities.find(x => x.name === header);
+    if (!c) problems.push(`Header names unknown capability ${header} (D88).`);
     else if (c.kind !== 'read') problems.push(`Header capability ${c.name} must be a read (D88).`);
     else if (menuProblem({ ...c, menu: { label: 'x', icon: 'link' }, view: c.view ?? { kind: 'text', body: 'x' } }))
       problems.push(`Header capability ${c.name} must take no input (D88).`);
