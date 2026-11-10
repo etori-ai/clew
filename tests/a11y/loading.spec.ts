@@ -74,7 +74,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
 test('session verification has a named loading state without protected content', async ({ page, api: _ }) => {
   const release = await hold(page, '**/api/auth/session');
   await page.goto('/');
-  await expect(page.getByText('Hämtar sidan …', { exact: true })).toBeVisible();
+  // From Astryx 0.7.12 a spinner's label is also said in the live region: the words on the page are the ones looked for.
+  await expect(page.getByText('Hämtar sidan …', { exact: true }).and(page.locator(':not([aria-live])'))).toBeVisible();
   await expect(composer(page)).toHaveCount(0);
   release();
   await expect(composer(page)).toBeVisible();
