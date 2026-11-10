@@ -16,6 +16,8 @@ import { sql } from 'drizzle-orm';
 import type { McpWatch } from '@clew/contracts';
 import type {
   ConnectorAudience,
+  InstallationTheme,
+  LogoMediaType,
   ConnectorHealth,
   ExecutionSummary,
   MessageMeta,
@@ -783,4 +785,31 @@ export const deliveries = pgTable(
     claimedAt: timestamp('claimed_at', { withTimezone: true }),
   },
   t => [index('delivery_person_due').on(t.personId, t.dueAt)],
+);
+
+// The installation's appearance (D97): one row for the whole installation, `installation`, absent until an
+// administrator saves; the store contract's Postgres run writes rows of its own beside it and removes them. The
+// theme is the normalised colours of an uploaded theme file, never the file; a logo image is its bytes in base64, at
+// most 256 kB each, served from Clew's own origin. `revision` rises with every save and is what a browser's cached copy
+// and a logo's address are compared by.
+export const installationAppearance = pgTable(
+  'installation_appearance',
+  {
+    id: text('id').primaryKey(),
+    revision: integer('revision').notNull(),
+    theme: jsonb('theme').$type<InstallationTheme>(),
+    logoAlt: text('logo_alt'),
+    logoLightType: text('logo_light_type').$type<LogoMediaType>(),
+    logoLight: text('logo_light'),
+    logoDarkType: text('logo_dark_type').$type<LogoMediaType>(),
+    logoDark: text('logo_dark'),
+    updatedBy: text('updated_by').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  t => [
+    check(
+      'installation_appearance_logo',
+      sql`(${t.logoLight} IS NULL) = (${t.logoAlt} IS NULL) AND (${t.logoLight} IS NULL) = (${t.logoLightType} IS NULL) AND (${t.logoDark} IS NULL) = (${t.logoDarkType} IS NULL) AND (${t.logoDark} IS NULL OR ${t.logoLight} IS NOT NULL)`,
+    ),
+  ],
 );

@@ -9,10 +9,11 @@ The original black image is 492 × 904 pixels; the header contains it without cr
 with token-based clearance following the [official illustration](https://sundsvall.se/images/18.235b114b198e57425bc5b302/1674553584583/Logotyp%20frizon%202023.PNG).
 
 The dragon is Sundsvalls kommun's registered trademark (registration 257562). It is an organisation
-asset, not an open-source dependency or a grant to use the symbol for another organisation. Other
-installations choose `VITE_BRAND_PROFILE=neutral` or `custom`, and can supply their own authorised logo
-through `VITE_HEADER_LOGO_SRC` and `VITE_HEADER_LOGO_ALT`; see the repository README. Only the Sundsvall
-profile defaults to this symbol. No network request to Sundsvall is needed at runtime.
+asset, not an open-source dependency or a grant to use the symbol for another organisation. An installation
+uploads its own authorised logo on Administration › Utseende (D97); nothing in the product shows these two files by
+default. They are here for the development stack: the intranet fixture connector names them as the header's logo
+(`connectors/intranet/menu.json`), the example appearance `themes/sundsvall/appearance.json` names them as its logo,
+and the browser suite's Sundsvall fixture uploads them. No network request to
+Sundsvall is needed at runtime.
 
-The header selects the original white variant in dark mode; neither asset is filtered or recoloured.
-Other installations may set `VITE_HEADER_LOGO_DARK_SRC` alongside their own source and alt text.
+The header selects the white variant on dark ground; neither asset is filtered or recoloured.

@@ -15,8 +15,8 @@
     "./styles.css": "./src/styles.css"
   },
   "dependencies": {
-    "@astryxdesign/core": "0.7.7",
-    "@astryxdesign/theme-neutral": "0.7.7",
+    "@astryxdesign/core": "0.7.12",
+    "@astryxdesign/theme-neutral": "0.7.12",
     "@clew/calendar": "workspace:*",
     "@clew/contracts": "workspace:*",
     "@fullcalendar/react": "7.1.4",

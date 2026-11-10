@@ -43,6 +43,7 @@ describe('the synthetic provisioner', () => {
     expect(keyed('unit:')).toHaveLength(25);
     expect(keyed('unit-manager:')).toHaveLength(25);
     expect(keyed('capability:').map(g => g.externalId)).toEqual([
+      'capability:admin.appearance',
       'capability:admin.connectors',
       'capability:admin.users',
     ]);
@@ -90,7 +91,7 @@ describe('the synthetic provisioner', () => {
       created: 200,
       replaced: 0,
       deactivated: 0,
-      groupsCreated: 67,
+      groupsCreated: 68,
       groupsReplaced: 0,
       groupsRemoved: 0,
     });
@@ -104,7 +105,7 @@ describe('the synthetic provisioner', () => {
     expect(grantOf('mikael')).toMatchObject({
       unitId: 'unit-it',
       role: 'employee',
-      capabilities: ['admin.connectors', 'admin.users'],
+      capabilities: ['admin.appearance', 'admin.connectors', 'admin.users'],
     });
     // The manager of two units acts as the lowest unit id; the person in two units as the lowest too.
     const ekonomi = plan(developmentDirectory).groups.find(g => g.externalId === 'unit-manager:unit-ekonomi')!,
@@ -125,7 +126,7 @@ describe('the synthetic provisioner', () => {
       replaced: 200,
       deactivated: 0,
       groupsCreated: 0,
-      groupsReplaced: 67,
+      groupsReplaced: 68,
       groupsRemoved: 0,
     });
     expect(store.state.audit.length).toBe(audited);
@@ -140,7 +141,8 @@ describe('the synthetic provisioner', () => {
         .map(p => (p.userName === 'hillevi' ? { ...p, manager: false } : { ...p, capabilities: ['admin.connectors'] })),
     };
     const summary = await push(client, changed);
-    expect(summary).toMatchObject({ created: 0, replaced: 199, deactivated: 1, groupsRemoved: 2 });
+    // The users key group and the appearance key group lose their only holder; Hillevi's manager group its only manager.
+    expect(summary).toMatchObject({ created: 0, replaced: 199, deactivated: 1, groupsRemoved: 3 });
     expect(grantOf('hillevi')?.role).toBe('employee');
     expect(grantOf('mikael')?.capabilities).toEqual(['admin.connectors']);
     const hassan = [...store.state.users.values()].find(u => u.userName === 'hassan')!;

@@ -25,7 +25,7 @@ or the network, and CI (`.github/workflows/check.yml`) runs it without the stack
 | A connector built here (`connectors/<name>`) | Real handler over the remote protocol with deterministic source fixtures; shared conformance probes | `tests/unit/<name>-connector.test.ts`, with HTTP process scenarios in `apps/server/tests/` when needed | `bun run check`; relevant runtime lane |
 | A view, route or state in the web app | An accessibility test (axe, keyboard, reflow, announcements) | `tests/a11y/` | `sh scripts/a11y.sh`, CI `a11y.yml` |
 | A browser cache helper (`apps/web/src/thread-cache.ts`, `query-policy.ts`, D33) | Example tests against a real `QueryClient` from `@tanstack/query-core`: what is written, what is invalidated, what is retried. No DOM, no React | `tests/unit/web-*.test.ts` | `bun run check` |
-| The web build's configuration boundary (D38 branding isolation) | A focused Vite contract that packages only the small browser configuration entry and asserts its exported value under conflicting environment inputs | `apps/web/tests/branding-config.test.ts`, beside the app that owns Vite | `bun run check` |
+| The installation's theme file and appearance (D97) | Example tests of the format, the contrast pairs and the base table against Astryx's resolved tokens; scenario tests of the use cases with their audit rows on the memory store; the store contract on both adapters; the public routes over the memory store | `tests/unit/theme-file.test.ts`, `appearance-admin.test.ts`, `appearance-routes.test.ts`, `tests/appearance-store-contract.ts` | `bun run check`, `bun run test:db` |
 | Durable state across the database and worker/source boundary | Real PostgreSQL contracts and Node/DBOS workflows against an independent synthetic fault source; timer cancellation and a killed instance's takeover; workflow starts committed with their intents before the engine launches (D86); a job's watch steps through real `jobWatch` workflows; `scripts/jobs-check.ts` runs a job on the independent fixture connectors against the dev stack | `tests/db/`, `apps/server/tests/execution-runtime.test.ts`, `apps/server/tests/timer-runtime.test.ts`, `apps/server/tests/watch-runtime.test.ts` | `bun run test:db`, `bun run test:durability`, CI `reliability.yml` |
 | Upgrade and restore | Isolated databases starting at migration 0019, conservative upgrade, repeated migration and evidence comparison after pg_dump/pg_restore | `scripts/recovery-rehearsal.ts` | [operations runbook](../maintainers/reliability-operations.md), CI `reliability.yml` |
 
@@ -85,12 +85,11 @@ script or a manual pass.
 **Accessibility.** `tests/a11y` is the browser suite. A new route,
 view or state gets a test there (`CLAUDE.md`).
 
-The browser suite has an explicit ESM boundary and an isolated Vite configuration. Typed municipal
-fixtures replace all branding inputs and disable installation environment files. CI runs the Neutral default
-suite, then Sundsvall/custom branding cases sequentially, with one worker. Reports and bundles have
-separate profile directories. `apps/web/tests` proves the configuration boundary with small in-memory
-Vite bundles; it never builds the whole application or starts a server/browser. Temporary env files
-and generated modules are removed, and mutated environment variables are restored.
+The browser suite has an explicit ESM boundary and an isolated Vite configuration with no installation
+environment files. The theme and the logo are answers of the suite's mocked API (D97), so one build serves every
+saved appearance; typed fixtures (`tests/a11y/branding-fixtures.ts`) name three. CI runs the suite on Neutral, then
+the Sundsvall and custom cases of `branding.spec.ts` sequentially, with one worker. Reports have separate profile
+directories.
 
 ## Rules the tools enforce
 

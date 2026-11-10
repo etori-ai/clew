@@ -1,17 +1,15 @@
 import { resolve } from 'node:path';
 import { webConfig } from '../../apps/web/vite.config';
-import { resolveBranding } from '../../packages/ui/src/branding';
-import { a11yBrandProfile, brandingDefinitions, brandingFixtures, type A11yBrandProfile } from './branding-fixtures';
 
-export function a11yWebConfig(profile: A11yBrandProfile) {
-  resolveBranding(brandingFixtures[profile].input);
+/** One build for every spec: the theme and the logo are answers of the mocked API, not of the build (D97). */
+export function a11yWebConfig() {
   return {
     ...webConfig(),
     root: resolve(import.meta.dirname, '../../apps/web'),
     envDir: false as const,
-    define: { ...brandingDefinitions(profile), 'import.meta.env.VITE_MCP_PREVIEW': '"true"' },
-    build: { outDir: resolve(import.meta.dirname, '../../test-results/apps', profile) },
+    define: { 'import.meta.env.VITE_MCP_PREVIEW': '"true"' },
+    build: { outDir: resolve(import.meta.dirname, '../../test-results/apps/web') },
   };
 }
 
-export default () => a11yWebConfig(a11yBrandProfile(process.env.CLEW_A11Y_BRAND_PROFILE));
+export default () => a11yWebConfig();

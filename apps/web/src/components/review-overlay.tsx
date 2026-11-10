@@ -429,7 +429,8 @@ function Review({
       (
         (phone || readOnly
           ? paperHeading.current
-          : primary.current?.disabled
+          : // From Astryx 0.7.12 a disabled Button says so with aria-disabled and keeps its place in the tab order.
+            primary.current?.disabled || primary.current?.getAttribute('aria-disabled') === 'true'
             ? paperHeading.current
             : primary.current) ?? heading.current
       )?.focus(),

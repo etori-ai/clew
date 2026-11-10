@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { desktop, expectNoAxeViolations, narrow } from './support';
+import { brandingFixtures } from './branding-fixtures';
 
 /**
  * The shared header as the intranet loads it (D87): `<site-header>` on the stand-in page the web app's dev server
@@ -9,6 +10,10 @@ import { desktop, expectNoAxeViolations, narrow } from './support';
 const intranet = 'http://localhost:4175/intranat';
 
 async function openIntranet(page: Page, path: string) {
+  // The element asks the installation for its saved theme (D97); here that is Sundsvall's example theme file.
+  await page.route('**/api/appearance', route =>
+    route.fulfill({ json: { revision: 1, theme: brandingFixtures.sundsvall.theme, logo: null } }),
+  );
   await page.goto(`${intranet}${path}`);
   await expect(page.getByRole('navigation', { name: 'Huvudmeny' })).toBeVisible();
   await page.waitForLoadState('networkidle');

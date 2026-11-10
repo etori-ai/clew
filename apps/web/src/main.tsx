@@ -21,7 +21,8 @@ import { StaffPage } from './pages/staff';
 import { AdminModelPage } from './pages/admin/model';
 import { AdminProviderPage } from './pages/admin/provider';
 import { NotAdmin } from './pages/admin/shell';
-import { branding } from './branding';
+import { AdminAppearancePage } from './pages/admin/appearance';
+import { loadBranding, useBranding } from './branding';
 
 type Shell = { session: BrowserSession; user: SessionUser; admin: boolean };
 /** The cache inspector, development only: the production bundle, the a11y suite and a deployment never carry it. */
@@ -258,6 +259,12 @@ function App() {
         ))}
       />
       <Route
+        path="/admin/appearance"
+        element={admin(shell => (
+          <AdminAppearancePage user={shell.user} />
+        ))}
+      />
+      <Route
         path="/admin/models/:id"
         element={admin(shell => (
           <AdminModelPage user={shell.user} />
@@ -273,8 +280,10 @@ function App() {
 function StartRoute({ user, admin }: { user: SessionUser; admin: boolean }) {
   return <StartPage user={user} admin={admin} />;
 }
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
+/** The installation's theme (D97) around everything: a save on Utseende redraws the whole app without a reload. */
+function Root() {
+  const branding = useBranding();
+  return (
     <Providers branding={branding}>
       <BrowserRouter>
         <LinkProvider component={RouterLink}>
@@ -282,5 +291,12 @@ createRoot(document.getElementById('root')!).render(
         </LinkProvider>
       </BrowserRouter>
     </Providers>
-  </StrictMode>,
+  );
+}
+void loadBranding().then(() =>
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <Root />
+    </StrictMode>,
+  ),
 );

@@ -42,7 +42,7 @@
     "@esbuild-kit/core-utils>esbuild": "0.25.12"
   },
   "devDependencies": {
-    "@astryxdesign/cli": "0.7.7",
+    "@astryxdesign/cli": "0.7.12",
     "@axe-core/playwright": "4.14.0",
     "@clew/calendar": "workspace:*",
     "@clew/connectors": "workspace:*",

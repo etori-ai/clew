@@ -16,6 +16,7 @@ export const roleOfOne: Record<Role, string> = { manager: 'Chef', employee: 'Med
 export const capabilityLabel: Record<Capability, string> = {
   'admin.connectors': 'Administrera anslutna system',
   'admin.users': 'Administrera användare',
+  'admin.appearance': 'Administrera utseende',
 };
 export const kindLabel = {
   core: 'Startsidans egen',

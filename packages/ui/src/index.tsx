@@ -108,6 +108,8 @@ export { Breadcrumbs, BreadcrumbItem } from '@astryxdesign/core/Breadcrumbs';
 export { Toolbar } from '@astryxdesign/core/Toolbar';
 export { FormLayout } from '@astryxdesign/core/FormLayout';
 export { TextInput } from '@astryxdesign/core/TextInput';
+export { FileInput } from '@astryxdesign/core/FileInput';
+export { Theme } from '@astryxdesign/core/theme';
 export { InfoTip } from '@astryxdesign/core/InfoTip';
 export { Code } from '@astryxdesign/core/Code';
 export { Spinner } from '@astryxdesign/core/Spinner';

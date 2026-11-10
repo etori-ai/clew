@@ -1,6 +1,6 @@
 # D46 · Astryx Neutral is the default theme; Sundsvall is a profile to opt into
 
-**Status:** accepted · **Date:** 2026-11-05 · **Area:** ui
+**Status:** accepted; Neutral is still the default, and "Switching back" is now an upload of `themes/sundsvall/theme.tokens.json` on Administration › Utseende ([D97](D97-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md), 2026-11-10) · **Date:** 2026-11-05 · **Area:** ui
 
 **Decision.** An installation that chooses nothing gets Astryx Neutral: `resolveBranding` in
 `packages/ui/src/branding.ts` falls back to `neutral`, with no logo and no municipal colours.

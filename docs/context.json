@@ -500,7 +500,7 @@
       "number": 37,
       "path": "docs/decisions/D37-header-logo-is-installation-branding.md",
       "title": "D37 · The shared navigation logo is installation branding",
-      "status": "accepted, extended by [D38](D38-municipal-branding-uses-astryx-themes.md)",
+      "status": "accepted, extended by [D38](D38-municipal-branding-uses-astryx-themes.md); the build variables and \"no database, upload service or administration page\" superseded by [D97](D97-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md) (2026-11-10), the native image exception stands",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -509,7 +509,7 @@
       "number": 38,
       "path": "docs/decisions/D38-municipal-branding-uses-astryx-themes.md",
       "title": "D38 · Municipal branding uses Astryx themes",
-      "status": "accepted, extended by [D39](D39-compact-header-profile-and-reminders.md), default profile changed by [D46](D46-astryx-neutral-is-the-default-theme.md)",
+      "status": "accepted, extended by [D39](D39-compact-header-profile-and-reminders.md), default profile changed by [D46](D46-astryx-neutral-is-the-default-theme.md); the profile contract and `VITE_BRAND_PROFILE` superseded by [D97](D97-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md) (2026-11-10): a theme is an uploaded file, and Sundsvall's mapping is `themes/sundsvall/theme.tokens.json`",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -617,7 +617,7 @@
       "number": 46,
       "path": "docs/decisions/D46-astryx-neutral-is-the-default-theme.md",
       "title": "D46 · Astryx Neutral is the default theme; Sundsvall is a profile to opt into",
-      "status": "accepted",
+      "status": "accepted; Neutral is still the default, and \"Switching back\" is now an upload of `themes/sundsvall/theme.tokens.json` on Administration › Utseende ([D97](D97-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md), 2026-11-10)",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -1088,6 +1088,15 @@
       "status": "accepted, built 2026-11-10",
       "date": "2026-11-10",
       "area": "identity"
+    },
+    {
+      "key": "D97-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator",
+      "number": 97,
+      "path": "docs/decisions/D97-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md",
+      "title": "D97 · The installation's theme and logo are saved in Clew by an administrator, the theme as a design tokens file",
+      "status": "accepted, built 2026-11-10; no signed-in pass against the development identity provider and no manual screen-reader pass yet",
+      "date": "2026-11-10",
+      "area": "ui"
     }
   ],
   "documents": [
@@ -2082,6 +2091,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D97-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md",
+      "title": "D97 · The installation's theme and logo are saved in Clew by an administrator, the theme as a design tokens file",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -2248,7 +2263,9 @@
       "title": "Installation branding",
       "category": "maintainer-guide",
       "headings": [
-        "Municipal branding"
+        "Theme and logo",
+        "Where it lives",
+        "Tests"
       ]
     },
     {
@@ -3003,6 +3020,17 @@
         "Recommendation",
         "Not settled",
         "Sources"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-10-astryx-0.7.12-upgrade.md",
+      "title": "Review: Astryx 0.7.7 to 0.7.12, what is new and what it changed here · 2026-11-10",
+      "category": "review-history",
+      "headings": [
+        "Question",
+        "What is new that matters to Clew",
+        "What changed behaviour",
+        "Outcome"
       ]
     },
     {

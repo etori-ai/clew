@@ -59,6 +59,7 @@ import type {
   Verb,
 } from '@clew/contracts';
 import { sessionFetch } from '@clew/ui';
+import type { AppearanceAdminView, AppearanceLogoInputType } from '@clew/contracts';
 import type { McpDelivery, McpService, McpView, McpResult } from '@clew/contracts';
 
 import { ApiError } from './api-error';
@@ -255,6 +256,14 @@ export const api = {
       post<UsersAdminOverview>('/api/admin/users/group-capabilities', input),
     removeGroupCapability: (input: GroupCapabilityInputType) =>
       post<UsersAdminOverview>('/api/admin/users/group-capabilities/remove', input),
+    // Utseende (D97): the installation's theme file and logo.
+    appearance: () => call<AppearanceAdminView>('/api/admin/appearance'),
+    setTheme: (file: unknown) =>
+      call<AppearanceAdminView>('/api/admin/appearance/theme', { method: 'PUT', body: JSON.stringify({ file }) }),
+    clearTheme: () => del<AppearanceAdminView>('/api/admin/appearance/theme'),
+    setLogo: (input: AppearanceLogoInputType) =>
+      call<AppearanceAdminView>('/api/admin/appearance/logo', { method: 'PUT', body: JSON.stringify(input) }),
+    clearLogo: () => del<AppearanceAdminView>('/api/admin/appearance/logo'),
     connector: (id: string) => call<ConnectorDetail>(`/api/admin/connectors/${id}`),
     add: (input: AddConnectorInput) =>
       post<{ connector: ConnectorDetail; report: CheckReport }>('/api/admin/connectors', input),

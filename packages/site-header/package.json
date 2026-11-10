@@ -13,8 +13,8 @@
     "build": "vite build"
   },
   "dependencies": {
-    "@astryxdesign/core": "0.7.7",
-    "@astryxdesign/theme-neutral": "0.7.7",
+    "@astryxdesign/core": "0.7.12",
+    "@astryxdesign/theme-neutral": "0.7.12",
     "@clew/ui": "workspace:*",
     "@heroicons/react": "2.2.0",
     "react": "19.3.1",

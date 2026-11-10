@@ -71,7 +71,7 @@ export function NotAdmin() {
           <EmptyState
             headingLevel={1}
             title="Du saknar behörighet till administrationen"
-            description="Administration av anslutningar kräver behörigheten admin.connectors. Be systemförvaltaren om du behöver den."
+            description="Administrationen kräver en behörighet som systemförvaltaren delar ut. Be systemförvaltaren om du behöver den."
             actions={<Button label="Till startsidan" href="/" />}
           />
         </LayoutContent>

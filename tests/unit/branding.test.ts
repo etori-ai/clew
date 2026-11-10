@@ -1,182 +1,102 @@
 import { describe, expect, test } from 'bun:test';
-import { contrastRatio, resolveBranding, sundsvallPalette } from '../../packages/ui/src/branding';
-import { createClewTheme } from '../../packages/ui/src/theme';
+import { themeFromAccent } from '@clew/contracts';
+import { NEUTRAL_BRANDING, readBranding, type Branding } from '../../packages/ui/src/branding';
+import { createClewTheme, createHeaderBandTheme } from '../../packages/ui/src/theme';
 
-describe('installation branding (D37, D38)', () => {
-  test('an installation that chooses nothing gets Astryx Neutral without a logo (D46)', () => {
-    expect(resolveBranding()).toEqual({ profile: 'neutral', colors: null, logo: null });
-  });
+const custom: Branding = { revision: 3, theme: themeFromAccent('#5b1f78', '#d7dbf2', 'Exempelkommunen'), logo: null };
 
-  test('the Sundsvall installation uses its local dragon', () => {
-    expect(resolveBranding({ profile: 'sundsvall' })).toEqual({
-      profile: 'sundsvall',
-      colors: { accent: '#005595', accentMuted: '#daeff1' },
-      logo: {
-        src: '/branding/sundsvall-dragon.png',
-        darkSrc: '/branding/sundsvall-dragon-white.png',
-        alt: 'Sundsvalls kommun',
-      },
-    });
-  });
-
-  test('another municipality chooses its own image and accessible name', () => {
+describe('the appearance the browser draws (D97)', () => {
+  test('what the server answers is read as it is, and nothing saved is Neutral without a logo (D46)', () => {
+    expect(readBranding({ revision: 0, theme: null, logo: null })).toEqual(NEUTRAL_BRANDING);
     expect(
-      resolveBranding({ profile: 'neutral', logoSrc: ' /branding/other-municipality.svg ', logoAlt: ' Annan kommun ' })
-        .logo,
+      readBranding({
+        ...custom,
+        logo: { src: '/api/appearance/logo/light?v=3', darkSrc: '/api/appearance/logo/dark?v=3', alt: ' Exempel ' },
+        updatedBy: 'Mikael Lund',
+      }),
     ).toEqual({
-      src: '/branding/other-municipality.svg',
-      alt: 'Annan kommun',
+      ...custom,
+      logo: { src: '/api/appearance/logo/light?v=3', darkSrc: '/api/appearance/logo/dark?v=3', alt: 'Exempel' },
     });
   });
 
-  test('an installation can explicitly omit the logo', () => {
-    expect(resolveBranding({ logoSrc: '', logoAlt: '' }).logo).toBeNull();
-    expect(resolveBranding({ logoSrc: '  ' }).logo).toBeNull();
-  });
-
-  test('a custom logo must have its own accessible name', () => {
-    expect(() => resolveBranding({ logoSrc: '/branding/other.svg' })).toThrow('Set both');
-    expect(() => resolveBranding({ logoSrc: '/branding/other.svg', logoAlt: ' ' })).toThrow('Set both');
-    expect(() => resolveBranding({ logoAlt: 'Annan kommun' })).toThrow('Set both');
-  });
-
-  test('the image is served by the installation itself', () => {
-    for (const src of [
-      'https://example.org/logo.svg',
-      '//example.org/logo.svg',
-      '/\\example.org/logo.svg',
-      '/\t/example.org/logo.svg',
-      'branding/logo.svg',
-    ]) {
-      expect(() => resolveBranding({ logoSrc: src, logoAlt: 'Annan kommun' })).toThrow('same-origin path');
-    }
-  });
-
-  test('a dark logo is explicit, local and belongs to the same organisation', () => {
-    const input = {
-      profile: 'neutral',
-      logoSrc: '/branding/day.svg',
-      logoAlt: 'Annan kommun',
-      logoDarkSrc: ' /branding/night.svg ',
-    };
-    expect(resolveBranding(input).logo).toEqual({
-      src: '/branding/day.svg',
-      alt: 'Annan kommun',
-      darkSrc: '/branding/night.svg',
+  test('a kept copy is only text in a browser: anything that is not a known colour or a same-origin logo is dropped', () => {
+    expect(readBranding(null)).toEqual(NEUTRAL_BRANDING);
+    expect(readBranding('{"theme":')).toEqual(NEUTRAL_BRANDING);
+    const read = readBranding({
+      revision: 'x',
+      theme: {
+        name: 7,
+        colors: {
+          accent: ['#005595', '#DAEFF1'],
+          'on-accent': ['#fff', '#000000'],
+          'text-primary': ['url(https://example.org/x)', '#ffffff'],
+          error: ['#000000', '#000000'],
+          __proto__: ['#000000', '#000000'],
+        },
+      },
+      logo: { src: '/logo.svg', alt: 'Kommun' },
     });
-    expect(() => resolveBranding({ logoDarkSrc: '/branding/night.svg' })).toThrow('Set both');
-    expect(() => resolveBranding({ ...input, logoDarkSrc: 'https://example.org/night.svg' })).toThrow(
-      'same-origin path',
+    expect(read).toEqual({
+      revision: 0,
+      theme: { name: null, colors: { accent: ['#005595', '#daeff1'] } },
+      logo: { src: '/logo.svg', alt: 'Kommun' },
+    });
+    for (const src of ['https://example.org/logo.svg', '//example.org/logo.svg', '/\\example.org/logo.svg', 'logo.svg'])
+      expect(readBranding({ logo: { src, alt: 'Kommun' } }).logo).toBeNull();
+    expect(readBranding({ logo: { src: '/logo.svg', alt: ' ' } }).logo).toBeNull();
+    // A dark variant that is not on the origin is dropped; the logo itself stays.
+    expect(readBranding({ logo: { src: '/a.svg', darkSrc: 'https://example.org/b.svg', alt: 'Kommun' } }).logo).toEqual(
+      {
+        src: '/a.svg',
+        alt: 'Kommun',
+      },
     );
-    expect(() => resolveBranding({ ...input, logoDarkSrc: '/\\example.org/night.svg' })).toThrow('same-origin path');
   });
 
-  test('neutral and custom installations never inherit Sundsvall identity', () => {
-    expect(resolveBranding({ profile: 'neutral' })).toEqual({ profile: 'neutral', colors: null, logo: null });
-    expect(resolveBranding({ profile: 'custom', accent: ' #5B1F78 ', accentMuted: '#D7DBF2' })).toEqual({
-      profile: 'custom',
-      colors: { accent: '#5b1f78', accentMuted: '#d7dbf2' },
-      logo: null,
-    });
+  test("the shared header on another site reads the logo from the installation's own origin", () => {
+    expect(
+      readBranding(
+        { logo: { src: '/api/appearance/logo/light?v=2', alt: 'Kommun' } },
+        'https://clew.example.org/api/appearance',
+      ).logo,
+    ).toEqual({ src: 'https://clew.example.org/api/appearance/logo/light?v=2', alt: 'Kommun' });
   });
 
-  test('unknown profiles and ignored colour overrides are configuration errors', () => {
-    expect(() => resolveBranding({ profile: 'sundsval' })).toThrow('VITE_BRAND_PROFILE');
-    expect(() => resolveBranding({ profile: '' })).toThrow('VITE_BRAND_PROFILE');
-    expect(() => resolveBranding({ profile: 'neutral', accent: '#005595' })).toThrow('VITE_BRAND_PROFILE=custom');
-    expect(() => resolveBranding({ accentMuted: '#daeff1' })).toThrow('VITE_BRAND_PROFILE=custom');
-  });
-
-  test('a custom palette requires two valid colours', () => {
-    expect(() => resolveBranding({ profile: 'custom' })).toThrow('six-digit hex');
-    for (const accent of ['#fff', 'blue', 'rgb(0, 85, 149)', '#gggggg']) {
-      expect(() => resolveBranding({ profile: 'custom', accent, accentMuted: '#daeff1' })).toThrow('six-digit hex');
-    }
-  });
-
-  test('inaccessible custom colours fail before the app starts', () => {
-    for (const [accent, accentMuted] of [
-      ['#eeeeee', '#ffffff'],
-      ['#005595', '#111111'],
-      ['#666666', '#777777'],
-      ['#005595', '#aaaaaa'],
-    ]) {
-      expect(() => resolveBranding({ profile: 'custom', accent, accentMuted })).toThrow('contrast');
-    }
-  });
-});
-
-describe('Sundsvall colour contracts', () => {
-  test('contrast uses WCAG sRGB luminance', () => {
-    expect(contrastRatio('#000000', '#ffffff')).toBe(21);
-    expect(contrastRatio('#005595', '#005595')).toBe(1);
-    expect(contrastRatio('#ffffff', '#777777')).toBeCloseTo(4.478, 3);
-  });
-
-  test('primary fills support white text, pale fills support black text, and secondary text remains readable', () => {
-    const { white, black, darkGray, lightGray, ...pairs } = sundsvallPalette;
-    for (const pair of Object.values(pairs)) {
-      expect(contrastRatio(white, pair.dark)).toBeGreaterThanOrEqual(4.5);
-      expect(contrastRatio(black, pair.light)).toBeGreaterThanOrEqual(4.5);
-      expect(contrastRatio(pair.dark, pair.light)).toBeGreaterThanOrEqual(3);
-    }
-    expect(contrastRatio(darkGray, white)).toBeGreaterThanOrEqual(4.5);
-    expect(contrastRatio(darkGray, lightGray)).toBeGreaterThanOrEqual(4.5);
-  });
-
-  test('the resolved Astryx tokens carry the published colours and black text on pale surfaces', () => {
-    const theme = createClewTheme(resolveBranding({ profile: 'sundsvall' }));
-    expect(theme.tokens['--color-accent']).toContain('#005595');
-    expect(theme.tokens['--color-accent-muted']).toContain('#daeff1');
-    expect(theme.tokens['--color-on-accent']).toContain('#ffffff');
-    expect(theme.tokens['--color-text-primary']).toContain('#000000');
-    expect(theme.tokens['--color-text-secondary']).toContain('#4b4b4b');
-    expect(theme.tokens['--color-background-body']).toContain('#ffffff');
-    expect(theme.tokens['--color-text-blue']).toContain('#000000');
-    expect(theme.tokens['--color-on-info-muted']).toContain('#000000');
-    expect(theme.tokens['--color-text-accent']).toContain('--color-text-primary');
-    for (const [family, pair] of [
-      ['blue', sundsvallPalette.vattjom],
-      ['green', sundsvallPalette.gronsta],
-      ['purple', sundsvallPalette.bjornstigen],
-      ['pink', sundsvallPalette.juniskar],
-    ] as const) {
-      expect(theme.tokens[`--color-background-${family}`]).toContain(pair.light);
-      expect(theme.tokens[`--color-icon-${family}`]).toContain(pair.dark);
-    }
-  });
-
-  test('choosing another brand changes its accent while retaining shared accessibility and status semantics', () => {
-    const neutral = createClewTheme(resolveBranding({ profile: 'neutral' }));
-    const custom = createClewTheme(resolveBranding({ profile: 'custom', accent: '#5b1f78', accentMuted: '#d7dbf2' }));
-    const sundsvall = createClewTheme(resolveBranding({ profile: 'sundsvall' }));
-    expect(custom.tokens['--color-accent']).toContain('#5b1f78');
-    expect(custom.tokens['--color-background-body']).toBe(neutral.tokens['--color-background-body']);
-    expect(neutral.tokens['--color-accent']).not.toBe(sundsvall.tokens['--color-accent']);
+  test("a saved theme sets its colours as Astryx's light and dark pairs over Clew's base, the focus ring with the accent", () => {
+    const neutral = createClewTheme(NEUTRAL_BRANDING);
+    const theme = createClewTheme(custom);
+    expect(neutral.name).toBe('clew-neutral');
+    expect(theme.tokens['--color-accent']).toBe('light-dark(#5b1f78, #d7dbf2)');
+    expect(theme.tokens['--color-on-accent']).toBe('light-dark(#ffffff, #000000)');
+    expect(theme.tokens['--color-text-primary']).toBe('light-dark(#000000, #ffffff)');
+    expect(theme.tokens['--color-text-secondary']).toBe('light-dark(#4b4b4b, #ececec)');
+    expect(theme.tokens['--focus-outline-color']).toBe('light-dark(#5b1f78, #d7dbf2)');
+    // What a theme file cannot set stays the base's: surfaces it left alone, status colours, behaviour.
+    expect(theme.tokens['--color-background-body']).toBe(neutral.tokens['--color-background-body']);
+    expect(theme.tokens['--color-error']).toBe(neutral.tokens['--color-error']);
+    expect(theme.tokens['--color-warning']).toBe(neutral.tokens['--color-warning']);
     expect(neutral.components?.['chat-layout']).toEqual({ base: { scrollPaddingBottom: '240px' } });
-    for (const theme of [sundsvall, custom]) {
-      expect(theme.components?.['chat-layout']).toEqual(neutral.components?.['chat-layout']);
-      expect(theme.tokens['--color-error']).toBe(neutral.tokens['--color-error']);
-      expect(theme.tokens['--color-warning']).toBe(neutral.tokens['--color-warning']);
-    }
+    expect(theme.components?.['chat-layout']).toEqual(neutral.components?.['chat-layout']);
   });
 
-  test('dark mode swaps brand fills and foregrounds with readable published pairs', () => {
-    for (const profile of [
-      resolveBranding({ profile: 'sundsvall' }),
-      resolveBranding({ profile: 'custom', accent: '#5b1f78', accentMuted: '#d7dbf2' }),
-    ]) {
-      const tokens = createClewTheme(profile).tokens;
-      if (!profile.colors) throw new Error('The test requires a branded profile');
-      expect(tokens['--color-accent']).toBe(`light-dark(${profile.colors.accent}, ${profile.colors.accentMuted})`);
-      expect(tokens['--color-on-accent']).toBe('light-dark(#ffffff, #000000)');
-      expect(tokens['--color-text-primary']).toBe('light-dark(#000000, #ffffff)');
-      expect(tokens['--color-text-secondary']).toBe('light-dark(#4b4b4b, #ececec)');
-      expect(contrastRatio(profile.colors.accentMuted, sundsvallPalette.darkGray)).toBeGreaterThanOrEqual(4.5);
-    }
-    const dark = createClewTheme(resolveBranding({ profile: 'sundsvall' })).tokens;
-    expect(dark['--color-background-body']).toBe('light-dark(#ffffff, #000000)');
-    expect(dark['--color-background-card']).toBe('light-dark(#ffffff, #4b4b4b)');
-    expect(contrastRatio('#ececec', '#4b4b4b')).toBeGreaterThanOrEqual(4.5);
+  test('the same colours are the same theme, built once, whatever the revision or the name', () => {
+    expect(createClewTheme({ ...custom, revision: 9, theme: { ...custom.theme!, name: 'Annat namn' } })).toBe(
+      createClewTheme(custom),
+    );
+    expect(createClewTheme({ ...custom, theme: themeFromAccent('#005595', '#daeff1') }).name).not.toBe(
+      createClewTheme(custom).name,
+    );
+  });
+
+  test("the header's band is the accent with its on-accent text, and Neutral's near-black without one (D88)", () => {
+    const band = createHeaderBandTheme(custom).tokens;
+    expect(band['--color-background-surface']).toBe('#5b1f78');
+    expect(band['--color-text-primary']).toBe('#ffffff');
+    expect(band['--color-on-accent']).toBe('#5b1f78');
+    const plain = createHeaderBandTheme(NEUTRAL_BRANDING).tokens;
+    expect(plain['--color-background-surface']).not.toBe('#5b1f78');
+    expect(plain['--color-text-primary']).toBe('#ffffff');
+    expect(createHeaderBandTheme(custom)).toBe(createHeaderBandTheme({ ...custom, revision: 4 }));
   });
 });

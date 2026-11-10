@@ -24,8 +24,8 @@ import { groupThreads } from '../stream';
 import { clewIcon } from '../icons';
 import { SubRows, type ShellNav } from './shell';
 
-/** The administration's two sections, rows under Administration (D45, administration keeps the rail). */
-export type AdminSection = 'anslutningar' | 'modeller' | 'anvandare';
+/** The administration's sections, rows under Administration (D45, administration keeps the rail). */
+export type AdminSection = 'anslutningar' | 'modeller' | 'anvandare' | 'utseende';
 /** What the rail marks as current: the place, and within the start page the conversation. */
 export interface RailCurrent {
   surface: 'start' | 'calendar' | 'verktyg' | 'staff' | 'admin';
@@ -243,6 +243,7 @@ export function useRail({
           />
           <SideNavItem label="Modeller" href="/admin/models" isSelected={current.section === 'modeller'} />
           <SideNavItem label="Användare" href="/admin/users" isSelected={current.section === 'anvandare'} />
+          <SideNavItem label="Utseende" href="/admin/appearance" isSelected={current.section === 'utseende'} />
         </SubRows>
       </SideNavItem>
     ) : undefined,

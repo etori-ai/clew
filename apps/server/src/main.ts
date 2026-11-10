@@ -9,6 +9,8 @@ import { authRoutes } from './routes/auth';
 import { api } from './routes/api';
 import { adminRoutes } from './routes/admin';
 import { headerRoutes } from './routes/header';
+import { appearanceRoutes } from './routes/appearance';
+import { appearance } from './composition/appearance';
 import { connectorReconcile } from './composition';
 import { applyAllRows, syncBundledRows, watchConnectors } from './connectors/reconcile';
 import { connectorRoutes } from './routes/connectors';
@@ -71,6 +73,8 @@ app.get('/api/health', c => c.json({ ok: true }));
 app.get('/api/ready', c => c.json({ ready: startup.ready() }, startup.ready() ? 200 : 503));
 // Signing in does not expose connector data and must not depend on connector startup.
 app.route('/api/auth', authRoutes);
+// The installation's theme and logo (D97): public and needed by the sign-in page, so it waits for nothing but the database.
+app.route('/api/appearance', appearanceRoutes(appearance));
 // The protocol is a contract, not data: public, and generated from code, so it needs nothing to have started (D60).
 app.route('/api/protocol', protocolRoutes);
 app.use('/api/*', async (c, next) => {

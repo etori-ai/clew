@@ -213,7 +213,10 @@ test.describe('the panel beside the page', () => {
     const show = page.getByRole('button', { name: 'Visa panelen' });
     await expect(show).toBeFocused();
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Panelen är ihopfälld'));
-    expect((await show.boundingBox())!.x + (await show.boundingBox())!.width).toBeGreaterThan(1440 - 40);
+    // The panel slides closed (Astryx 0.7.12), so the button reaches the edge when the motion has ended.
+    await expect
+      .poll(async () => (await show.boundingBox())!.x + (await show.boundingBox())!.width)
+      .toBeGreaterThan(1440 - 40);
     // Showing it again brings the card back with the focus on its heading.
     await show.click();
     await expect(panel.locator('#card-fakturor').getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
