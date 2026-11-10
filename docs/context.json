@@ -1108,6 +1108,15 @@
       "status": "accepted, built 2026-11-10 (the round, action points, the profile and its fixture; see \"As built\"); synthetic data only until questions 6 and 11 below are answered",
       "date": "2026-11-10",
       "area": "product, integrations"
+    },
+    {
+      "key": "D97-a-source-says-what-its-rows-are-about-and-clew-places-them",
+      "number": 97,
+      "path": "docs/decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md",
+      "title": "D97 · A source says what its rows are about, and Clew places them",
+      "status": "accepted as the direction (product owner, 2026-11-10), nothing built; the items under \"Open\" are not decided",
+      "date": "2026-11-10",
+      "area": "integrations, ui"
     }
   ],
   "documents": [
@@ -2119,6 +2128,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md",
+      "title": "D97 · A source says what its rows are about, and Clew places them",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -3041,6 +3056,23 @@
         "Recommendation",
         "Not settled",
         "Sources"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-10-one-entity-many-sources.md",
+      "title": "Exploration: one entity, many sources · 2026-11-10",
+      "category": "review-history",
+      "headings": [
+        "The question",
+        "What other systems do",
+        "The pattern",
+        "Every surface a source can show on",
+        "The developer's experience",
+        "Tested against the proof of concept",
+        "Against the core",
+        "Ownership",
+        "A worked example: competence tracking",
+        "Not established"
       ]
     },
     {
