@@ -18,6 +18,7 @@ The first useful result is one authorized read shown in Clew. No scan, write, mo
 | Map a directory API, add a searchable table and contact details | [Search and views](example-custom-directory.md) |
 | Discover outstanding work and perform approved changes | [Actions and receipts](actions-and-receipts.md) |
 | Call another connector or participate in a cross-system job | [Working across connectors](../architecture/working-across-connectors.md) |
+| Show what your system knows about a person or a unit, or offer an action on one | [Say what your rows are about](creating-a-connector.md#8-say-what-your-rows-are-about) |
 | Look up exact fields, routes or compatibility rules | [Protocol reference](../reference/connector-protocol.md), [manifest reference](../generated/manifest-reference.md) |
 | Push the organisation's people, units and groups into Clew (not a connector) | [Writing a provisioner](writing-a-provisioner.md) |
 

@@ -29,6 +29,7 @@ A connector is your independently deployed HTTP service. It translates a source 
 | Verify the actor and narrow source access | [Authorization](guides/authorization.md) | [Standalone verifier](../connectors/hello/verification.mjs) |
 | Discover work and add approved actions | [Actions and receipts](guides/actions-and-receipts.md) | [Durable synthetic source](../connectors/reference/README.md) |
 | Coordinate reads, changes and follow-up across systems | [Working across connectors](architecture/working-across-connectors.md) | [Job scenario](../tests/unit/fixture-job.test.ts), [read callback](../connectors/hello/connector.mjs) |
+| Show what your system knows about a person or a unit | [Say what your rows are about](guides/creating-a-connector.md#8-say-what-your-rows-are-about) | [Appraisals fixture](../connectors/appraisals/connector.mjs) |
 | Check, register and operate the service | [Testing and deployment](guides/testing-and-deployment.md) | [Conformance checker](../packages/connectors/src/check.ts) |
 | Push people, units and groups into an installation | [Writing a provisioner](guides/writing-a-provisioner.md) | [Synthetic provisioner](../scripts/provisioner/push.ts) |
 
@@ -49,6 +50,7 @@ For tighter native integration, an independent connector can use MCP as its sour
 | Start the full development stack | [Local development](maintainers/local-development.md) |
 | Find code and understand dependency rules | [Backend structure](architecture/backend-structure.md) |
 | Understand identity, capability dispatch or scheduling | [Architecture index](architecture/README.md) |
+| Understand how sources attach what they know to a person or a unit, and where Clew shows it | [Entities](architecture/entities.md) |
 | Place and run tests | [Testing](architecture/testing.md) |
 | Configure connectors and model providers | [Connector administration](architecture/connector-administration.md) |
 | Customize colors and logo | [Branding](maintainers/branding.md) |

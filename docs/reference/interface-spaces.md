@@ -41,6 +41,21 @@ A new interaction should be reviewable by naming its **origin, space, parent, cl
 
 The catalogue and App are sibling Astryx overlays in one protected session, not native panel tabs. The optional confirmation is another small Dialog above the App. The catalogue remains available even when a completed delivery disappears; it does not automatically open provider HTML or submit anything. Existing `/chat/services` and `/labs/mcp` links redirect to the catalogue overlay over Home; `/chat/services/:id?delivery=…` links open that selected item over Home.
 
+## A person and a unit
+
+[D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md) applies rules 1 and 4 to entities ([Entities](../architecture/entities.md)). Personal is the destination; a person opened from its list is context beside it; "Öppna som sida" promotes the person to a page; a unit is always a page. No rail entry leads to a person or a unit.
+
+| User action | Origin | Space | Close target | Focus target | Address example |
+|---|---|---|---|---|---|
+| Choose a lens | "Visa: Alla" on Personal | Main page: the list becomes the lens's view | "Alla" in the same menu | Back on the Visa button, which names the lens | `/staff?show=talks.person` |
+| Open a person beside the list | A name on a row of Personal, under "Alla" or a lens, or "Just nu" with more than one card | Context panel beside the list, which is drawn compact; a drawer over it where the panel does not fit or the screen is short | ✕ or Esc: the list with its lens; on a phone "‹ Personal" | Open: the person's name; another person taking the place is said aloud; close: the row's name link | `/staff?show=talks.person&person=johan` |
+| Go into one section on a phone | A row in the person's list of sections | The same drawer | "Tillbaka", named "Tillbaka till <namn>" | In: the way back; out: the row it came from | `/staff?person=johan&person-section=hr.person` |
+| Open the person as a page | "Öppna som sida"; a section's way into the source's fuller view; a row that names the person on Hem, in search or in a view | Main page | The trail "Du är här": Personal for the reader's own people, else the page in `from` when Clew can name it (Hem, Kalender, a tool); no trail without `from` | The page title is said; on a narrow window, into a section: "Tillbaka till Om <namn>", out: the row it came from | `/people/johan?section=hr.person&from=%2Fstaff` |
+| Open a unit | "Läget på <enhet>" on Hem; the unit under a person's name; a row that names the unit | Main page | The trail to the page in `from` | The page title is said | `/units/unit-skola?from=%2F` |
+| Start an action from a person's menu | The row menu on Personal; the opened person's buttons, "Fler" or, on a phone, "Åtgärder" | Hem, with the card beside it ([D50](../decisions/D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md)) | Back: the page the action started on, with its lens and opened person | The card's heading | `/?card=<threadId>` |
+
+`section` takes a capability name or `needs-you` for "Behöver dig"; `from` holds only a path inside Clew. A person or unit the reader may not ask about is the panel's or the page's own "Personen finns inte" or "Enheten finns inte", the same answer as an unknown key. A talk is written in its existing drawer over Personal, `/staff?talk=<personId>` ([D96](../decisions/D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md)), reached from the talks section's "Öppna samtalet". The implementation is [the person beside a list](../../apps/web/src/components/person-panel.tsx), [the person page](../../apps/web/src/pages/person.tsx), [the unit page](../../apps/web/src/pages/unit.tsx), [Personal](../../apps/web/src/pages/staff.tsx) and [the addresses](../../apps/web/src/person-address.ts); the browser scenarios are [Personal](../../tests/a11y/staff.spec.ts), [the person](../../tests/a11y/person.spec.ts) and [the unit](../../tests/a11y/unit.spec.ts), on routed data. No manual screen-reader pass has been made.
+
 ## Implementation and verification
 
 - [Native panel and retained entries](../../apps/web/src/components/panel.tsx), [panel addresses](../../apps/web/src/panel-address.ts), [review overlay](../../apps/web/src/components/review-overlay.tsx).

@@ -51,7 +51,22 @@ Protocol 2 requires both:
 
 Only Clew holds the signing private key. The connector pins its trusted Clew base URL and fetches public keys from `/api/connectors/jwks`. It takes the actor from verified claims, never from an unverified body. The transport secret cannot sign identity.
 
+The signed actor is the person's id, name, unit, unit label and role and, when the person was provisioned with one, their `userName` ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md); [authority.ts](../../apps/server/src/connectors/authority.ts)). It is the key another system knows the person by, and it is read from the person's row on every request and for background work, so a renamed user name reaches the connector at once. `externalId` is not sent. The user name never reaches the browser: `SessionUser` does not carry it.
+
 The connector still maps that actor to the source's person/unit and enforces record-level access. Clew's `manager` role is not permission to read every source unit. A ref is not an access token.
+
+## Who may be asked about
+
+A read about a person or a unit ([Entities](entities.md)) sends a connector other people's keys, not only the actor's. Before any source is called, a core rule per entity kind decides which keys the reader may send (`resolve` and `listedKeys` in [the entities module](../../apps/server/src/modules/entities/usecases.ts)):
+
+| Kind | Relation | Meaning |
+|---|---|---|
+| Person | `self` | The reader, by their own user name. |
+| Person | `managed` | An active person on a unit the reader manages: the people Personal lists. |
+| Person | `colleague` | Any other active person in the reader's organisation, found by user name, when the reader opens them. |
+| Unit | `member` | A unit the reader manages or is assigned to. |
+
+A person without a user name, or deactivated, is never asked about. A key outside the rule is answered 404, like an unknown address, and no source hears of it. Inside the rule each source narrows further as the person and answers a key it may not show as no row. The rule is read from the assignments on every call and nothing about the answer is stored, so a transfer or a removed membership shows from the next read.
 
 See [the verifier](../../connectors/hello/verification.mjs), [signing authority](../../apps/server/src/connectors/authority.ts) and [authorization guide](../guides/authorization.md) for key rotation and exact claims.
 
@@ -84,7 +99,7 @@ See [D75](../decisions/D75-source-snapshots-retain-the-authority-that-produced-t
 - Switching between several assignments: a person with more than one acts as the deterministically chosen one.
 - Holding or applying a `protected` membership: the key is refused at the boundary ([D93](../decisions/D93-the-protected-key-is-refused-at-the-scim-boundary.md)) until D68's open question, whether Clew may hold that fact at all, is answered.
 - A real provisioner against a real source, and a real identity provider's claim for `OIDC_BINDING_CLAIM`; the development stack's Keycloak and synthetic directory are the only ones that have run.
-- A way for a connector to map the acting person beyond Clew's id: protocol 2's `Actor` carries neither `externalId` nor `userName`.
+- A stable key for the acting person on the wire: protocol 2's `Actor` carries `userName`, which a provisioner can rename, and not `externalId`. Which one is the person's key is open in D97.
 - Local dev-login without the IdP ([D6](../decisions/D06-dev-login-local-only.md)), a public MCP OAuth surface and cross-domain ID-JAG exchange ([D5](../decisions/D05-oidc-and-oauth-only-identification-path.md)).
 
 The early rationale is in the [identity decisions](../decisions/D05-oidc-and-oauth-only-identification-path.md) and the [SCIM review](../reviews/2026-11-06-users-groups-roles-and-scim.md); use the [status matrix](../reference/status.md) for support.

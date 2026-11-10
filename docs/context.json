@@ -1117,7 +1117,7 @@
       "number": 97,
       "path": "docs/decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md",
       "title": "D97 · A source says what its rows are about, and Clew places them",
-      "status": "accepted as the direction (product owner, 2026-11-10), nothing built; the items under \"Open\" are not decided",
+      "status": "accepted as the direction (product owner, 2026-11-10), built 2026-11-10 (see \"As built\"); the items under \"Open\" were taken provisionally for the build and are not decided",
       "date": "2026-11-10",
       "area": "integrations, ui"
     },
@@ -1372,6 +1372,24 @@
       "headings": []
     },
     {
+      "path": "docs/architecture/entities.md",
+      "title": "Entities: what sources say about a person or a unit",
+      "category": "architecture-guide",
+      "headings": [
+        "Kinds and keys",
+        "Where a source shows",
+        "Who may be asked about",
+        "How a source is asked",
+        "The administrator's choice",
+        "Cards and subjects",
+        "Actions started as cards",
+        "Erasure",
+        "What is stored",
+        "Sources in this checkout",
+        "Not built"
+      ]
+    },
+    {
       "path": "docs/architecture/identity.md",
       "title": "Identity and authorization",
       "category": "architecture-guide",
@@ -1382,6 +1400,7 @@
         "Derivation",
         "Administration › Användare",
         "Clew to a connector",
+        "Who may be asked about",
         "Connector callbacks",
         "Source authentication and background work",
         "Retained data and revocation",
@@ -1450,6 +1469,7 @@
         "Running components",
         "The central boundary: capabilities",
         "A live read",
+        "Reads about a person or a unit",
         "Discovering work without slowing the page",
         "An approved write",
         "One task across several connectors",
@@ -2249,6 +2269,7 @@
       "headings": [
         "Inbound requests",
         "Call another connector",
+        "Reads about a person or a unit",
         "Authenticate to the source",
         "Rotation and revocation",
         "Persisted cards and permission changes"
@@ -2265,7 +2286,8 @@
         "4. Implement the HTTP boundary",
         "5. Adapt the example to your system",
         "6. Test and register your connector",
-        "7. Add optional features deliberately"
+        "7. Add optional features deliberately",
+        "8. Say what your rows are about"
       ]
     },
     {
@@ -2374,6 +2396,7 @@
         "The ledger queue",
         "Restore safely",
         "Provisioning",
+        "Entities: lenses, columns and erasure",
         "Changing the authorization fingerprint",
         "Reproduce the synthetic upgrade and restore rehearsal"
       ]
@@ -2418,6 +2441,7 @@
         "Served by the instance",
         "HTTP routes",
         "Manifest semantics",
+        "Reads and actions about an entity",
         "Document and semantic views",
         "Scan observations",
         "Errors",
@@ -2434,6 +2458,7 @@
         "Where content belongs",
         "Placement and return rules",
         "MCP catalogue and App flow",
+        "A person and a unit",
         "Implementation and verification"
       ]
     },
@@ -2465,6 +2490,7 @@
         "Interface vocabulary",
         "Integration vocabulary",
         "Identity vocabulary",
+        "Entity vocabulary",
         "Naming rules",
         "Mapping to the current code"
       ]

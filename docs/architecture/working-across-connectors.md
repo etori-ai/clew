@@ -20,11 +20,11 @@ Steps 1–4 have API/ledger support and a [fixture scenario](../../tests/unit/fi
 
 ## Identity and refs
 
-The verified actor carries Clew's person and unit ids. Each adapter maps them to its source's ids using trusted integration configuration. A matching name or email at query time is not an identity proof.
+The verified actor carries Clew's person and unit ids and, when the person has one, their directory `userName`. Each adapter maps them to its source's ids using trusted integration configuration or that user name. A matching name or email at query time is not an identity proof.
 
 A ref identifies an object within its owning capability contract. Formats vary: hello uses `hello:item:1`, the phone book uses `person:<id>`. A ref does not grant access and need not encode a universal namespace. Resolve it through its owner under current authorization.
 
-The development mappings are synthetic, in connector fixtures/configuration and [calendar accounts](../../packages/calendar/src/accounts.ts). There is no general identity-mapping service or implemented SCIM feed. Do not design a real integration around fixture ids.
+The development mappings are synthetic, in connector fixtures/configuration and [calendar accounts](../../packages/calendar/src/accounts.ts). There is no general identity-mapping service; people reach Clew through its SCIM server ([identity](identity.md#provisioning)), and connectors see only the actor above. Do not design a real integration around fixture ids.
 
 ## Compose reads and proposals
 
@@ -41,7 +41,7 @@ Clew checks the originating connector, target, current actor and dependency decl
 
 Composite search is a platform example: [search use cases](../../apps/server/src/modules/search/usecases.ts) ask eligible `<id>.search` capabilities concurrently under a budget, validate results and report unavailable sources. Each source retains its search engine and access policy.
 
-Declared views have a narrower rule: a row's `open` names a read of the **same connector**. Arbitrary cross-connector view enrichment is not a supported view feature.
+Declared views have a narrower rule: a row's `open` names a read of the **same connector**, and a view never adds fields from another connector's rows. What several sources know about one person or unit comes together another way ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): each source declares that a read is `about` an entity kind and answers rows keyed by the entity's key, and Clew joins them by key on its own lists and pages, each source in its own column, lens or section on Personal, the opened person or the unit. No source sees another's rows, and a row of a source's view still opens only a read of that source. See [Entities](entities.md).
 
 ## Jobs: facts, followers and one approval
 

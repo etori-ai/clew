@@ -44,13 +44,21 @@ docker exec -w /workspace clew-app-1 bun scripts/connector-check.ts http://127.0
 
 This concrete example uses the [phone book fixture service](example-custom-directory.md). Replace the address, id and development-only secret for your service. The CLI loads the installation's local server configuration and needs its database and master key to obtain the signing authority. The connector must be able to fetch that installation's trusted public keys.
 
+A read about a person or a unit ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)) is always asked with an unknown key and with the same keys asked by the check's own people on a unit no installation has, and must answer no row and no error. To check its rows, give real keys and a person who may see them:
+
+```sh
+docker exec -w /workspace clew-app-1 bun scripts/connector-check.ts http://127.0.0.1:4051 --id appraisals --secret <transport key> --keys anna,erik --as hillevi
+```
+
+`--keys` are user names or unit ids asked in one batch; `--as` is the user name of a person in this installation's directory, signed as Clew signs them. The check then expects one row per key, each carrying a key it was asked with, and warns when the batch takes more than 1.5 seconds. An action about an entity is not called; the check confirms that its `param` is a string input and that it is not a model tool.
+
 The [shared checker](../../packages/connectors/src/check.ts), also used by Administration → Anslutna system → Testa anslutning, validates the manifest and probes with synthetic `check-manager` and `check-employee` actors. It checks callable empty-input reads/proposals, registry role filtering, rejection of a foreign signature, scans and declared views. It does not execute writes, prove source-level row access, test every JWT claim, or fully exercise reads that require input. Callback success requires real local grants for those synthetic actors. Delegation requires a user session, which this checker has no way to supply; a denied delegated call is expected. Read warnings as well as failures.
 
 The CLI prints English diagnostic `findings`, including truncated source answers; use synthetic data and handle its output accordingly. Administration receives Swedish structured `items` grouped by connection, capabilities and surfaces, without successful source-answer payloads. Both use the same probes and verdict. See [the check-result decision](../decisions/D44-the-connector-check-reads-as-a-result-not-a-log.md).
 
 ## Register a draft, then enable it
 
-An administrator with `admin.connectors` can add the URL, id and transport secret in Administration → Anslutna system, review the check, set an audience and enable the connector. The API and screens exist. Eligible views can be chosen as menu tools there.
+An administrator with `admin.connectors` can add the URL, id and transport secret in Administration → Anslutna system, review the check, set an audience and enable the connector. The API and screens exist. Eligible views can be chosen as menu tools there. A read about a person or a unit can be offered as a lens under "Visa", and one field of it chosen as a column on "Alla", under "På Personal och andra listor" on the same page; its section on the opened entity and an action's place in the entity's menu need no choice.
 
 The CLI is an operator/bootstrap alternative. It creates or updates a draft by default:
 
@@ -88,6 +96,7 @@ On manifest changes, restart/deploy the connector and use Hämta manifest igen i
 | Callback denied | Separate callback grant, exact `uses` target, actor's current assignment and target scope; no executes or cycles. |
 | Delegated call denied | Manifest audience, IdP exchange configuration, session token and source-side resource-server configuration. |
 | A view is not in the menu | It must be an eligible read with a view and no required input, selected by an administrator, within the person's access. |
+| A read about a person shows no section, lens or column | A section needs a row for that key: check that the row carries `key` as asked and that the person may be asked about. A lens or a column needs an administrator's choice. Every place needs the capability in the person's scope and audience. |
 | Unknown write outcome | Recover source evidence by operation lookup; do not retry with a new operation id to make the warning disappear. |
 
 ## Additional write verification

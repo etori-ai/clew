@@ -49,6 +49,24 @@ What to read when something is wrong. An unexpected failure of a SCIM request is
 
 Changing `OIDC_BINDING_CLAIM` after people have signed in changes nothing for them: bindings stand. It decides only how a subject not seen before finds its person.
 
+## Entities: lenses, columns and erasure
+
+What sources say about a person or a unit ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md), [Entities](../architecture/entities.md)) is read live and never stored, so there is nothing of it to back up or restore. Three things are an operator's.
+
+Migration 0045 adds `thread.subjects` and the table `thread_subject`, the index from entity to cards; `bun run db:init` applies it with the others. It fills nothing in: a card stored before it names nobody, and is indexed when its rows are next written.
+
+Lenses and columns are chosen on Administration › Anslutna system, on the connector's page under "På Personal och andra listor", by a person with `admin.connectors`. They are stored in the connector's capability overrides, audited as `connector.lens` and `connector.column`, and take effect from the next read, without a restart. At most three columns per entity kind are accepted across every connector; the count is taken outside the saving transaction, so two administrators saving at once can pass it, and the list then shows the first three. Enabling or registering a connector places nothing. `bun run dev:connectors` makes the development stack's choice only while no lens or column is chosen anywhere.
+
+To erase a person or a unit from every card in every stream, run inside the app container ([script](../../scripts/subject-erase.ts)):
+
+```sh
+docker exec -w /workspace clew-app-1 bun scripts/subject-erase.ts person <user name> --confirm
+docker exec -w /workspace clew-app-1 bun scripts/subject-erase.ts person <user name> --person <person id> --confirm   # a user name the directory no longer has
+docker exec -w /workspace clew-app-1 bun scripts/subject-erase.ts unit <unit id> --confirm
+```
+
+It removes the `subject` of every row that names the entity, the card's own `subjects` and the index rows in one transaction, and writes one `thread.subject_erased` audit row with the actor `operator:cli`, about `person:<person id>` or `unit:<id>`, holding counts only: the user name is never written to the audit trail. It cannot be undone, hence `--confirm`. The rows' text stays as the source wrote it, and a source that still names the person names them again on its next scan, so erase in the source too. Run `bun scripts/talks-erase.ts` as well to erase the person from the talks domain.
+
 ## Changing the authorization fingerprint
 
 `authorizationVersion` in `apps/server/src/auth-crypto.ts` is an HMAC over the authority in a person's access record and nothing else: enabled, organisation, unit, role, the sorted capabilities and the grant version (narrowed 2026-11-09 for [D68](../decisions/D68-people-are-pushed-into-clew-through-standard-scim.md); `tests/unit/authorization-version.test.ts` holds the list). A corrected name, a renamed unit label or a new column on the person or the grant leaves it unchanged, so directory updates do not stop work in flight.

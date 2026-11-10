@@ -58,6 +58,10 @@ For a directory table or contact detail:
 
 The browser and model never obtain a connector's source credentials. A ref returned by a previous read does not bypass the current access check.
 
+## Reads about a person or a unit
+
+A capability may declare that its rows are `about` a person or a unit ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)). The core `entities` module decides who the reader may ask about, sends each such read a batch of keys under a time budget, keeps nothing of the answer, and places the rows: a section on the opened person or unit, and a lens, a column or a mark on Personal where an administrator chose the source. A card row, a search hit or a view record that names an entity links to it, and the thread store keeps an index from entity to cards. See [Entities](entities.md).
+
 ## Discovering work without slowing the page
 
 A **scan** is a deterministic source read that returns work item drafts (`ThreadDraft`) and occurrence identities. The page presents persisted work items as cards or rows while requesting a coalesced refresh. Background workers refresh sources independently under bounded concurrency and source deadlines.

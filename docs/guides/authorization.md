@@ -15,12 +15,14 @@ Every POST must pass both checks:
 | `iss` | `clew`. The pinned key endpoint identifies the installation. |
 | `aud` | Your connector id, exactly. |
 | `sub` and `actor.id` | The same person id. |
-| `actor` | `id`, `name`, `unitId`, `unitLabel`, `role` (`manager` or `employee`). |
+| `actor` | `id`, `name`, `unitId`, `unitLabel`, `role` (`manager` or `employee`), and `userName` when the person was provisioned with one: the directory user name ([D68](../decisions/D68-people-are-pushed-into-clew-through-standard-scim.md)) your system knows them by. A callback grant carries the same actor. |
 | `iat`, `exp` | Valid numeric times; expired tokens rejected; lifetime at most 120 seconds. The sample verifier allows five seconds of future clock skew. |
 | `jti` | An assertion identifier. It is not a source-operation idempotency key. |
 | `callback` | Optional separate signed grant, present when dependencies are declared. |
 
 Use the verified actor for all work. A forged `body.actor` must not alter it. Recheck the capability's role and enforce record-level source authorization, unit boundaries and protected-record rules. A manifest role filter is coarse; `manager` alone does not authorize every unit. Validate refs and current source revisions even when a request came through Clew.
+
+Map the actor to your source by `userName` when you key people on the directory's user name, comparing without regard to case. It is optional: a person provisioned without one has none, and you then refuse or answer nothing rather than guess from the display name. D97 leaves open whether the person's key on the wire stays `userName` or becomes the stable `externalId`, which the actor does not carry.
 
 Return 401 for invalid credentials. Fail closed when the trusted key set cannot establish the signature. Use HTTPS outside local development; the sample verifier permits plain HTTP only for its explicit local hostname allowlist. In a separate container, `127.0.0.1` points at that container, not Clew. Use a reachable service name and a Clew listener bound to the appropriate interface.
 
@@ -31,6 +33,17 @@ Declare each exact target in manifest `uses`, for example `"uses": ["calendar.to
 Do not send the original request assertion as a callback credential. Clew accepts only the callback audience `clew:connector-callback`, rebuilds current person/assignment access, checks the origin and target, verifies declared dependencies, and validates the call. Callbacks allow reads and proposals, never executes. Circular calls and chains beyond the bound of eight are refused. Call within the request's two-minute authority window; do not persist the grant for a background job.
 
 See [hello's callback implementation](../../connectors/hello/connector.mjs) and [Clew's callback route](../../apps/server/src/routes/connectors.ts). `callbackFor` decodes a claim; it is safe to use only after the containing assertion was verified.
+
+## Reads about a person or a unit
+
+A read that declares `about` ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)) is asked with `{ keys }`: other people's user names, or unit ids. Clew sends only keys the acting person may be asked about under its core rule, checked before your connector is called:
+
+| Kind | The acting person may be asked about |
+|---|---|
+| Person | Themselves; anyone active on a unit they manage; any other active person in their organisation, when they open that person |
+| Unit | A unit they manage or are assigned to |
+
+That rule is Clew's floor, not your permission. A colleague's key reaches you because the person opened a colleague, not because they may read that colleague's records in your system. Narrow every key to what the verified actor may see in your source, and answer a key outside it as no row, never as an error, so a missing row stands for both "none" and "not allowed". The rule lives in [the entities module](../../apps/server/src/modules/entities/usecases.ts); [Entities](../architecture/entities.md#who-may-be-asked-about) explains it.
 
 ## Authenticate to the source
 
