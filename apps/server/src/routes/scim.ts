@@ -14,11 +14,12 @@ import type { ScimQuery, ScimUsecases } from '../modules/people/usecases';
 type Env = { Variables: { provisioner: Provisioner } };
 /** Four megabytes: a group of ten thousand members, the largest resource a municipal push carries, is well under it. */
 const BODY_LIMIT = 4 * 1024 * 1024;
-export interface ScimRouteOptions {
-  /** Where an unexpected failure is said (D91): composition binds the server's log port; a test hands in nothing. */
-  log?: (message: string, ...details: unknown[]) => void;
-}
-export function scimRoutes(scim: ScimUsecases, { log = () => {} }: ScimRouteOptions = {}) {
+/**
+ * Where an unexpected failure is said (D91). Required, so that no caller swallows one by leaving it out: the server
+ * binds its log port, a script prints, and a test that expects a failure says so by handing in its own.
+ */
+export type ScimLog = (message: string, ...details: unknown[]) => void;
+export function scimRoutes(scim: ScimUsecases, log: ScimLog) {
   const app = new Hono<Env>();
   const json = (c: Context, body: unknown, status: 200 | 201 = 200, headers: Record<string, string> = {}) =>
     c.body(JSON.stringify(body), status, { 'Content-Type': SCIM_CONTENT_TYPE, ...privateHeaders, ...headers });

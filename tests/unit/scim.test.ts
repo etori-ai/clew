@@ -386,6 +386,14 @@ describe('SCIM groups and derivation', () => {
     await scim.replaceGroup(p, unit.id, group('unit:ny', 'Nyare enheten', [b]), BASE);
     expect(store.state.grants.get(a)?.unitLabel).toBe('Nyare enheten');
   });
+  test('a group that becomes a unit group as its members leave writes no unit: a unit row is for a unit somebody is assigned to', async () => {
+    const { scim, p, store } = harness();
+    const a = (await scim.createUser(p, anna, BASE)).id;
+    const plain = await scim.createGroup(p, group('ad:projekt', 'Projekt', [a]), BASE);
+    await scim.replaceGroup(p, plain.id, group('unit:tom', 'Tom enhet', []), BASE);
+    expect(store.state.units.has('tom')).toBe(false);
+    expect(store.state.grants.has(a)).toBe(false);
+  });
   test('capabilities follow the capability key and the mapping; a renamed unit group relabels every member', async () => {
     const { scim, p, store } = harness();
     const a = (await scim.createUser(p, anna, BASE)).id;
@@ -592,6 +600,11 @@ describe('SCIM patch and filter rules', () => {
       ]),
     ).toEqual({ ...fields, name: 'New', email: 'new@x.test', enabled: false });
     expect(() => applyUserPatch(fields, [{ op: 'replace', path: 'id', value: 'x' }])).toThrow('read-only');
+    expect(() => applyUserPatch(fields, [{ op: 'replace', path: 'meta.created', value: 'x' }])).toThrow('read-only');
+    // Clew holds the work address: a path that picks out another type names nothing Clew holds.
+    expect(
+      applyUserPatch(fields, [{ op: 'replace', path: 'emails[type eq "home"].value', value: 'private@x.test' }]),
+    ).toEqual(fields);
     // A path-less value is the resource as the client holds it: what it repeats of the read-only attributes is ignored.
     expect(
       applyUserPatch(

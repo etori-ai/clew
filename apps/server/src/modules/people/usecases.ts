@@ -34,6 +34,7 @@ import {
   parseFilter,
   project,
   sameGrant,
+  unitOfKey,
   userFields,
   userResource,
   MANAGER_KEY,
@@ -64,17 +65,7 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
       rules = await tx.groupCapabilities();
     // Every unit the memberships name, as the unit table knows it: the label of a managed unit without a `unit:` group,
     // and the comparison that lets an unchanged derivation write nothing (a daily push replays every person).
-    const named = [
-      ...new Set(
-        memberships.flatMap(m =>
-          m.externalId.startsWith(MANAGER_KEY)
-            ? [m.externalId.slice(MANAGER_KEY.length)]
-            : m.externalId.startsWith(UNIT_KEY)
-              ? [m.externalId.slice(UNIT_KEY.length)]
-              : [],
-        ),
-      ),
-    ];
+    const named = [...new Set(memberships.flatMap(m => unitOfKey(m.externalId) ?? []))];
     const knownLabels = named.length ? await tx.unitLabels(named) : {};
     const derived = deriveAuthority(memberships, rules, knownLabels);
     const movedUnits = derived.units.filter(u => knownLabels[u.id] !== u.label);
@@ -205,17 +196,24 @@ export function scimUsecases(deps: {
    * that group, so a new or renamed unit group re-derives them too; any other group names nobody beyond its members.
    */
   const managersOfUnit = (tx: ProvisionTx, externalId: string | null): Promise<string[]> =>
-    externalId?.startsWith(UNIT_KEY)
-      ? tx.members(MANAGER_KEY + externalId.slice(UNIT_KEY.length))
-      : Promise.resolve([]);
+    externalId?.startsWith(UNIT_KEY) ? tx.members(MANAGER_KEY + unitOfKey(externalId)) : Promise.resolve([]);
+  /**
+   * A write of a `unit:` or `unit-manager:` group holds its unit first, under the key it had and the key it gets: the
+   * two groups of one unit are written one after the other, so each reads the other's members and name as committed.
+   */
+  const lockUnitsOf = async (tx: ProvisionTx, ...externalIds: Array<string | null>) => {
+    const units = externalIds.flatMap(key => unitOfKey(key) ?? []);
+    if (units.length) await tx.lockUnits(units);
+  };
   /**
    * A `unit:` group names its unit. The label is written before anyone is derived, so a manager, who carries the label
    * without being a member of that group, reads the new name whatever order the people are derived in. Only for a unit
-   * somebody is assigned to: a unit row exists per assignment, not per group.
+   * somebody is assigned to once the write is done (`assigned`: its members and managers): a unit row exists per
+   * assignment, not per group.
    */
   const nameUnit = async (tx: ProvisionTx, p: Provisioner, fields: GroupFields, assigned: readonly string[]) => {
-    if (!assigned.length || !fields.externalId?.startsWith(UNIT_KEY)) return;
-    const id = fields.externalId.slice(UNIT_KEY.length);
+    const id = fields.externalId?.startsWith(UNIT_KEY) ? unitOfKey(fields.externalId) : undefined;
+    if (!id || !assigned.length) return;
     if ((await tx.unitLabels([id]))[id] !== fields.label)
       await tx.writeUnits(p.organisationId, [{ id, label: fields.label }]);
   };
@@ -278,6 +276,7 @@ export function scimUsecases(deps: {
     base: string,
   ) {
     assertAcceptedKey(fields);
+    await lockUnitsOf(tx, current.externalId, fields.externalId);
     await uniqueGroup(tx, fields, current.id);
     await membersExist(tx, p, fields.members);
     const before = (await tx.groupMembers(current.id)).map(m => m.id),
@@ -308,11 +307,11 @@ export function scimUsecases(deps: {
     });
     // A renamed or re-keyed group changes what every member gets, and a unit's label what its managers carry;
     // otherwise only those who came or went.
-    const touched = renamed
-      ? [...before, ...fields.members, ...(await managersOfUnit(tx, fields.externalId))]
-      : [...added, ...removed];
-    if (renamed) await nameUnit(tx, p, fields, touched);
-    await derivation.deriveAll(tx, actorOf(p), touched);
+    if (renamed) {
+      const assigned = [...fields.members, ...(await managersOfUnit(tx, fields.externalId))];
+      await nameUnit(tx, p, fields, assigned);
+      await derivation.deriveAll(tx, actorOf(p), [...before, ...assigned]);
+    } else await derivation.deriveAll(tx, actorOf(p), [...added, ...removed]);
     return groupView(tx, { ...current, ...fields, updatedAt: at }, base);
   }
   return {
@@ -329,8 +328,9 @@ export function scimUsecases(deps: {
         if (!found) return undefined;
         const { lastSeenAt, ...provisioner } = found;
         if (lastSeenAt === null || since(at, lastSeenAt) >= SEEN_INTERVAL_MS) {
-          await tx.touchProvisioner(provisioner.id, at);
-          if (lastSeenAt === null || since(at, lastSeenAt) >= RUN_GAP_MS)
+          // Of several requests that arrive together, the one that moves the mark records the run.
+          const moved = await tx.touchProvisioner(provisioner.id, at, lastSeenAt);
+          if (moved && (lastSeenAt === null || since(at, lastSeenAt) >= RUN_GAP_MS))
             await tx.audit({
               actor: actorOf(provisioner),
               action: 'provisioner.seen',
@@ -422,6 +422,7 @@ export function scimUsecases(deps: {
       deps.store.transaction(async tx => {
         const fields = groupFields(checked(ScimGroupInputSchema, body, 'Group'));
         assertAcceptedKey(fields);
+        await lockUnitsOf(tx, fields.externalId);
         await uniqueGroup(tx, fields);
         await membersExist(tx, p, fields.members);
         const at = now(),
@@ -441,9 +442,9 @@ export function scimUsecases(deps: {
           subject: 'group:' + record.id,
           details: { externalId: fields.externalId, displayName: fields.label, members: fields.members.length },
         });
-        const touched = [...fields.members, ...(await managersOfUnit(tx, fields.externalId))];
-        await nameUnit(tx, p, fields, touched);
-        await derivation.deriveAll(tx, actorOf(p), touched);
+        const assigned = [...fields.members, ...(await managersOfUnit(tx, fields.externalId))];
+        await nameUnit(tx, p, fields, assigned);
+        await derivation.deriveAll(tx, actorOf(p), assigned);
         return groupView(tx, record, base);
       }),
     getGroup: (p: Provisioner, id: string, base: string, projection?: Projection) =>
@@ -495,8 +496,9 @@ export function scimUsecases(deps: {
     /** Removes the group; its members are re-derived and lose what it gave them. The group-capability rows stay (D85). */
     deleteGroup: (p: Provisioner, id: string) =>
       deps.store.transaction(async tx => {
-        const current = await groupOr404(tx, p, id, true),
-          members = (await tx.groupMembers(id)).map(m => m.id);
+        const current = await groupOr404(tx, p, id, true);
+        await lockUnitsOf(tx, current.externalId);
+        const members = (await tx.groupMembers(id)).map(m => m.id);
         await tx.deleteGroup(id);
         await tx.audit({
           actor: actorOf(p),

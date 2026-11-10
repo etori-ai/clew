@@ -193,7 +193,9 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         expect(await tx.provisioner('digest:' + p + ':live', T)).toEqual({ ...live, lastSeenAt: null });
         expect(await tx.provisioner('digest:' + p + ':gone', T)).toBeUndefined();
         expect(await tx.provisioner('digest:' + p + ':unknown', T)).toBeUndefined();
-        await tx.touchProvisioner(p + '-live', '2026-11-09T07:30:00.000Z');
+        // The mark moves for the caller that read the time it replaces, and for no other.
+        expect(await tx.touchProvisioner(p + '-live', '2026-11-09T07:30:00.000Z', null)).toBe(true);
+        expect(await tx.touchProvisioner(p + '-live', '2026-11-09T07:45:00.000Z', null)).toBe(false);
       });
       await h.store.transaction(async tx => {
         expect(await tx.provisioner('digest:' + p + ':live', T)).toEqual({
@@ -247,6 +249,8 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         expect(await tx.lockPerson(p + '-nobody')).toBeUndefined();
         expect((await tx.readGroup(p + '-org', p + '-g', true))?.id).toBe(p + '-g');
         expect(await tx.readGroup(p + '-elsewhere', p + '-g', true)).toBeUndefined();
+        // A unit is held whether or not it has a row, and naming one twice is one lock.
+        await tx.lockUnits([p + '-unit-without-a-row', p + '-u', p + '-u']);
       });
     });
   });

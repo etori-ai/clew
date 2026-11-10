@@ -6,7 +6,8 @@
  *   bun scripts/provisioner-token.ts revoke <id>
  * A token is printed once, here, and never stored: Clew keeps its digest. Hand it to the provisioner over a secure
  * channel. `rotate` issues a new token and lets the old one answer for the grace period (24 hours unless said, 0 ends
- * it at once), so the client is switched without a push failing; `revoke` ends every token of the provisioner now.
+ * it at once), so the client is switched without a push failing. One old token is kept: rotating again inside the
+ * grace period ends the one before, and the script says so. `revoke` ends every token of the provisioner now.
  */
 import { and, eq, isNull } from 'drizzle-orm';
 import { database, closeDatabase } from '@clew/db';
@@ -84,14 +85,17 @@ try {
     );
     console.log(token);
   } else if (command === 'rotate') {
-    const hours = Number(option('grace-hours') ?? 24);
+    // A flag without a number is refused, not read as the default: `--grace-hours` alone is easily meant as "none".
+    const hours = rest.includes('--grace-hours') ? Number(option('grace-hours') ?? NaN) : 24;
     if (!Number.isFinite(hours) || hours < 0 || hours > 24 * 30)
       throw new Error('--grace-hours is a number of hours from 0 to 720.');
     const token = randomToken(),
-      until = new Date(Date.now() + hours * 60 * 60 * 1000);
-    await database().transaction(async tx => {
+      now = new Date(),
+      until = new Date(now.getTime() + hours * 60 * 60 * 1000);
+    // One token is kept from before: a second rotation inside the grace period ends the first one's old token.
+    const cutOff = await database().transaction(async tx => {
       const [current] = await tx
-        .select({ tokenDigest: provisioners.tokenDigest })
+        .select({ tokenDigest: provisioners.tokenDigest, previousValidUntil: provisioners.previousValidUntil })
         .from(provisioners)
         .where(and(eq(provisioners.id, id!), isNull(provisioners.revokedAt)))
         .for('update');
@@ -110,6 +114,7 @@ try {
         subject: 'provisioner:' + id,
         details: { graceHours: hours, previousValidUntil: hours > 0 ? until.toISOString() : null },
       });
+      return current.previousValidUntil && current.previousValidUntil > now ? current.previousValidUntil : null;
     });
     console.log(
       hours > 0
@@ -117,6 +122,10 @@ try {
         : `Provisioner '${id}' has a new token and the previous one no longer authenticates. The new token, shown once:`,
     );
     console.log(token);
+    if (cutOff)
+      console.log(
+        `Note: the token rotated out before that one would have answered until ${when(cutOff)} and no longer does.`,
+      );
   } else {
     await database().transaction(async tx => {
       const changed = await tx

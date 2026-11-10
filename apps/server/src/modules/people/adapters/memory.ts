@@ -81,6 +81,7 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
       const p = state.users.get(id);
       return p && { id: p.id, organisationId: p.organisationId };
     },
+    async lockUnits() {},
     async memberships(personId) {
       return groupsOf(personId)
         .filter(g => g.externalId !== null)
@@ -127,9 +128,14 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
         [...state.provisioners.values()].find(o => o.previous?.digest === tokenDigest && o.previous.until > at);
       return p && !p.revoked ? provisionerRow(p) : undefined;
     },
-    async touchProvisioner(id, at) {
+    async touchProvisioner(id, at, seenBefore) {
+      let moved = false;
       for (const [digest, p] of state.provisioners)
-        if (p.id === id) state.provisioners.set(digest, { ...p, lastSeenAt: at });
+        if (p.id === id && (p.lastSeenAt ?? null) === seenBefore) {
+          state.provisioners.set(digest, { ...p, lastSeenAt: at });
+          moved = true;
+        }
+      return moved;
     },
     async provisioners(organisationId) {
       return [...state.provisioners.values()]

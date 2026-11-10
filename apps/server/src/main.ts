@@ -88,7 +88,7 @@ app.use('/scim/*', async (c, next) => {
     });
   await next();
 });
-app.route('/scim/v2', scimRoutes(scim, { log: logPort('scim', 'error') }));
+app.route('/scim/v2', scimRoutes(scim, logPort('scim', 'error')));
 app.route('/api/admin', adminRoutes);
 // Personal (D94): a manager's people, scoped by the use case.
 app.route('/api/staff', staffRoutes);

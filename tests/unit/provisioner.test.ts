@@ -21,7 +21,7 @@ function stack() {
     digest: token => 'digest:' + token,
   });
   store.state.provisioners.set('digest:dev-token', { id: 'dev', organisationId: 'poc', label: 'Development' });
-  const app = scimRoutes(scim);
+  const app = scimRoutes(scim, console.error);
   const client = scimClient('http://clew.local', 'dev-token', (input, init) => app.request(input, init));
   const grantOf = (userName: string) => {
     const user = [...store.state.users.values()].find(u => u.userName === userName);

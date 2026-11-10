@@ -204,3 +204,40 @@ order), and a run against a real source or identity provider. The page was verif
 Verification: `bun run check`; `bun run test:db`; `sh scripts/a11y.sh users.spec.ts`; the token script and the check
 script run against the development server, their rows removed afterwards.
 
+## Second pass
+
+A code review of the pull request the same day found eight things, and the first shows that "none is expected" above
+was wrong.
+
+- **A unit's two groups written at once deadlocked.** `unit:x` and `unit-manager:x` are two resources that write one
+  unit. The write of the first named the unit before it locked its people; the write of the second locked a person
+  before it wrote the unit. With one person in both groups of a new unit, Postgres reported a deadlock on the first
+  round of a new test, and one request answered 500; with the manager in neither, a manager's derivation could name
+  the unit by its id over the group's name. A write of either group now holds the unit first (`lockUnits`, an advisory
+  lock, since a new unit has no row to lock), so the two run one after the other and each reads what the other
+  committed. The guide's sentence on parallel requests now names the unit.
+- **Requests that begin a run together each wrote `provisioner.seen`.** Eight parallel requests left four rows in the
+  test. `touchProvisioner` now moves the last-seen time only for the request that read the time it replaces, and that
+  request alone writes the row.
+- **`replace emails[type eq "home"].value` overwrote the work address**, while `remove` on the same path was already
+  treated as an address Clew does not hold. Both now ask one function.
+- **`nameUnit` could write a unit nobody is assigned to**, when a group became a `unit:` group in the request that
+  emptied it. It is handed the people assigned after the write, not the people re-derived.
+- **The route's log port defaulted to doing nothing**, so the development seed, which mounts the routes in process,
+  swallowed an unexpected failure. `scimRoutes(scim, log)` requires it.
+- **Read-only attributes were decided in four places that disagreed** (`replace meta.created` was ignored and
+  `remove meta.created` refused). `isReadOnly` is the one place.
+- **A member filter was parsed twice** to recover the id's case. The schema URN is now stripped without changing case
+  and the path matched once.
+- **`rotate` hid two things.** A second rotation inside the grace period ends the first one's old token, and the
+  script now says so; `--grace-hours` without a number is refused instead of meaning 24.
+
+Not changed: `attributes` lists are parsed once per resource in a list, which costs nothing next to the query per row
+that fills a user's groups; and `scripts/provisioner/check.ts` repeats the key rules instead of importing them, since
+the provisioner's code stands outside Clew.
+
+Verification: the SCIM unit suites, `bun run test:db` (82, the two new concurrency cases among them, each seen to fail
+without its fix), the Node runtime tests, `bun run deps` and `bun run purity`. `bun run check` as a whole could not be
+run green in the working tree: another session's unfinished calendar work was in it, with type errors and two failing
+calendar tests of its own.
+

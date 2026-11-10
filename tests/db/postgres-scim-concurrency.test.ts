@@ -41,6 +41,8 @@ afterAll(async () => {
     }
     if (groups.length) await db.delete(schema.groups).where(inArray(schema.groups.id, groups));
     await db.delete(schema.units).where(like(schema.units.id, p + '%'));
+    await db.delete(schema.provisioners).where(like(schema.provisioners.id, p + '%'));
+    await db.delete(schema.audit).where(like(schema.audit.subject, 'provisioner:' + p + '%'));
     if (people.length) await db.delete(schema.people).where(inArray(schema.people.id, people));
   }
 });
@@ -186,4 +188,63 @@ test('two groups that share their members, written at once in opposite orders, b
   }
   expect((await scim.getGroup(p, one.id, BASE)).members).toHaveLength(6);
   expect((await scim.getGroup(p, two.id, BASE)).members).toHaveLength(6);
+});
+test("a new unit's two groups written at once: the unit takes the group's name and the manager's grant carries it", async () => {
+  const { prefix, p, user, scim } = stack();
+  const unitGrant = async (personId: string) => {
+    const [row] = await database()
+      .select({ role: schema.accessGrants.role, unitLabel: schema.accessGrants.unitLabel })
+      .from(schema.accessGrants)
+      .where(eq(schema.accessGrants.personId, personId));
+    return row;
+  };
+  const both = (await scim.createUser(p, user(1), BASE)).id,
+    member = (await scim.createUser(p, user(2), BASE)).id,
+    manager = (await scim.createUser(p, user(3), BASE)).id;
+  for (let round = 0; round < 8; round++) {
+    // Even rounds: the manager is also a member of the unit's group. Odd rounds: the manager is in neither.
+    const unit = `${prefix}-n${round}`,
+      leads = round % 2 ? manager : both;
+    const writes = [
+      () =>
+        scim.createGroup(
+          p,
+          { externalId: `unit:${unit}`, displayName: 'Skolan', members: [{ value: both }, { value: member }] },
+          BASE,
+        ),
+      () =>
+        scim.createGroup(
+          p,
+          { externalId: `unit-manager:${unit}`, displayName: 'Chefer', members: [{ value: leads }] },
+          BASE,
+        ),
+    ];
+    // Either may reach the unit first.
+    if (round % 4 >= 2) writes.reverse();
+    const created = await Promise.all(writes.map(write => write()));
+    const [row] = await database().select().from(schema.units).where(eq(schema.units.id, unit));
+    expect(row?.label).toBe('Skolan');
+    expect(await unitGrant(leads)).toEqual({ role: 'manager', unitLabel: 'Skolan' });
+    // The next round starts from people who manage nothing.
+    for (const group of created) await scim.deleteGroup(p, group.id);
+  }
+});
+test('requests that begin a run together leave one provisioner.seen row, not one each', async () => {
+  const { prefix, scim } = stack();
+  await database()
+    .insert(schema.provisioners)
+    .values({
+      id: prefix,
+      organisationId: prefix + '-org',
+      label: 'Race',
+      tokenDigest: prefix + '-token',
+      createdBy: 'test',
+    });
+  const seen = await Promise.all(Array.from({ length: 8 }, () => scim.authenticate(prefix + '-token')));
+  expect(seen.every(p => p?.id === prefix)).toBe(true);
+  const runs = await database()
+    .select({ id: schema.audit.id })
+    .from(schema.audit)
+    .where(eq(schema.audit.subject, 'provisioner:' + prefix));
+  expect(runs).toHaveLength(1);
 });

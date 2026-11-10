@@ -15,6 +15,13 @@ export const UNIT_KEY = 'unit:',
   MANAGER_KEY = 'unit-manager:',
   CAPABILITY_KEY = 'capability:',
   PROTECTED_KEY = 'protected';
+/** The unit a group's key names, whichever of the unit's two groups it is; undefined for any other key. */
+export const unitOfKey = (externalId: string | null | undefined): string | undefined =>
+  externalId?.startsWith(MANAGER_KEY)
+    ? externalId.slice(MANAGER_KEY.length)
+    : externalId?.startsWith(UNIT_KEY)
+      ? externalId.slice(UNIT_KEY.length)
+      : undefined;
 export interface Membership {
   externalId: string;
   label: string;
@@ -353,18 +360,25 @@ const asBoolean = (value: unknown, path: string): boolean => {
   if (value === 'false' || value === 'False') return false;
   throw new ScimError(400, `Attribute '${path}' needs a boolean.`, 'invalidValue');
 };
-/** A path without the core schema's URN, in lower case: `urn:…:User:displayName` and `displayName` are one attribute. */
-const coreKey = (path: string, resource: 'user' | 'group') =>
-  path
-    .trim()
-    .toLowerCase()
-    .replace(
-      resource === 'user'
-        ? /^urn:ietf:params:scim:schemas:core:2\.0:user:/
-        : /^urn:ietf:params:scim:schemas:core:2\.0:group:/,
-      '',
-    );
-const READ_ONLY = new Set(['schemas', 'id', 'meta', 'groups']);
+type Resource = 'user' | 'group';
+const CORE_URN: Record<Resource, RegExp> = {
+  user: /^urn:ietf:params:scim:schemas:core:2\.0:user:/i,
+  group: /^urn:ietf:params:scim:schemas:core:2\.0:group:/i,
+};
+/** A path without the core schema's URN, as it was sent: a filter in it may carry an id, whose case matters. */
+const corePath = (path: string, resource: Resource) => path.trim().replace(CORE_URN[resource], '');
+/** The same in lower case, to match on: `urn:…:User:displayName` and `displayName` are one attribute. */
+const coreKey = (path: string, resource: Resource) => corePath(path, resource).toLowerCase();
+/**
+ * What only the server writes: `id`, `schemas` and `meta` on every resource, and a user's `groups`, since a membership
+ * is changed on the group. Asked in one place so a `replace` and a `remove` agree.
+ */
+const isReadOnly = (key: string, resource: Resource) =>
+  key === 'schemas' ||
+  key === 'id' ||
+  key === 'meta' ||
+  key.startsWith('meta.') ||
+  (resource === 'user' && key === 'groups');
 const readOnly = (path: string) => new ScimError(400, `Attribute '${path}' is read-only.`, 'mutability');
 /**
  * A read-only attribute in a path-less value. Such a value is the resource as the client holds it, so what it repeats
@@ -379,19 +393,21 @@ const repeated = (key: string, value: unknown, id: string | undefined) => {
 const required = (path: string) =>
   new ScimError(400, `Attribute '${path}' cannot be removed; Clew requires it.`, 'mutability');
 /**
+ * Whether a path picks out an address of another type than the work one (`emails[type eq "home"].value`). Clew holds
+ * the work address alone, so such a path names nothing Clew holds, for a `replace` as for a `remove`.
+ */
+const otherAddress = (key: string) => {
+  const type = /^emails\[\s*type\s+eq\s+"([^"]*)"\s*\]/.exec(key);
+  return !!type && type[1] !== 'work';
+};
+/**
  * What a `remove` on a user is aimed at. Clew holds five attributes and requires them all (D68 item 1); every other
  * attribute, an extension's included, is not held, so removing it changes nothing and is accepted, as adding it is.
- * An address of another type than the work one is not the one Clew holds either.
  */
 const userRemoval = (key: string): 'required' | 'readOnly' | 'notHeld' => {
-  if (READ_ONLY.has(key) || key.startsWith('meta.')) return 'readOnly';
+  if (isReadOnly(key, 'user')) return 'readOnly';
   if (['username', 'externalid', 'displayname', 'active', 'emails', 'emails.value'].includes(key)) return 'required';
-  const filtered = /^emails\[(.*)\](?:\.[a-z]+)?$/.exec(key);
-  if (filtered) {
-    const type = /^\s*type\s+eq\s+"([^"]*)"\s*$/.exec(filtered[1]!);
-    return type && type[1] !== 'work' ? 'notHeld' : 'required';
-  }
-  return 'notHeld';
+  return key.startsWith('emails[') && !otherAddress(key) ? 'required' : 'notHeld';
 };
 /**
  * PATCH on a user (RFC 7644 §3.5.2), as the clients Clew expects send it: a path per operation, or one operation
@@ -423,12 +439,13 @@ export function applyUserPatch(
           .filter(e => typeof e.value === 'string') as Array<{ value: string; type?: string; primary?: boolean }>,
       );
       next.email = email ?? need('emails');
-    } else if (/^emails\[.*\]\.value$/.test(key) || key === 'emails.value') next.email = asString(value, path);
-    else if (key === 'name') {
+    } else if (/^emails\[.*\]\.value$/.test(key) || key === 'emails.value') {
+      if (!otherAddress(key)) next.email = asString(value, path);
+    } else if (key === 'name') {
       // Given and family names are not held: a name object sets the name only through `formatted`, as the paths do.
       const formatted = asObject(value, path).formatted;
       if (formatted !== undefined) next.name = asString(formatted, 'name.formatted');
-    } else if (READ_ONLY.has(key)) {
+    } else if (isReadOnly(key, 'user')) {
       if (!pathless) throw readOnly(path);
       repeated(key, value, id);
     }
@@ -471,20 +488,19 @@ export function applyGroupPatch(
     if (key === 'displayname') next.label = asString(value, path);
     else if (key === 'externalid') next.externalId = asString(value, path);
     else if (key === 'members') members = new Set(memberIds(value));
-    else if (READ_ONLY.has(key) && key !== 'groups') {
+    else if (isReadOnly(key, 'group')) {
       if (!pathless) throw readOnly(path);
       repeated(key, value, id);
     }
   };
   for (const operation of operations) {
     const op = opOf(operation),
-      path = operation.path?.trim(),
-      key = path ? coreKey(path, 'group') : undefined;
-    const filtered = key && /^members\[\s*value\s+eq\s+"((?:[^"\\]|\\.)*)"\s*\]$/.exec(key);
+      path = operation.path && corePath(operation.path, 'group'),
+      key = path?.toLowerCase();
+    // Matched on the path as it was sent: the attribute's case does not matter, the id's does.
+    const filtered = path && /^members\[\s*value\s+eq\s+"((?:[^"\\]|\\.)*)"\s*\]$/i.exec(path);
     if (filtered) {
-      // The id as it was sent: the key is lower-cased for matching, an id is not.
-      const sent = /"((?:[^"\\]|\\.)*)"\s*\]$/.exec(path!)![1]!.replace(/\\(.)/g, '$1');
-      if (op === 'remove') members.delete(sent);
+      if (op === 'remove') members.delete(filtered[1]!.replace(/\\(.)/g, '$1'));
       else throw new ScimError(400, `Path '${path}' supports remove only.`, 'invalidPath');
       continue;
     }
@@ -500,7 +516,7 @@ export function applyGroupPatch(
       if (!path || !key) throw new ScimError(400, 'A remove operation needs a path.', 'noTarget');
       if (key === 'externalid') next.externalId = null;
       else if (key === 'displayname') throw required(path);
-      else if (READ_ONLY.has(key) || key.startsWith('meta.')) throw readOnly(path);
+      else if (isReadOnly(key, 'group')) throw readOnly(path);
       continue;
     }
     if (path) setAttribute(path, operation.value, false);

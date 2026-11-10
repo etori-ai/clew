@@ -15,7 +15,7 @@ function app() {
   });
   store.state.provisioners.set('digest:good-token', { id: 'mk', organisationId: 'sundsvall', label: 'Metakatalogen' });
   // The sub-app alone: `hono` is not resolvable from the repository root, and the base address is derived, not mounted.
-  const hono = scimRoutes(scim);
+  const hono = scimRoutes(scim, console.error);
   const call = (method: string, path: string, body?: unknown, token = 'good-token') =>
     hono.request('https://clew.test' + path, {
       method,
@@ -108,6 +108,7 @@ describe('/scim/v2', () => {
     const { call, store } = app();
     const hono = scimRoutes(
       scimUsecases({ store, clock: () => new Date(), ids: () => 'x', digest: token => 'digest:' + token }),
+      console.error,
     );
     const declared = await hono.request('https://clew.test/Users', {
       method: 'POST',
@@ -163,11 +164,14 @@ describe('/scim/v2', () => {
     store.state.provisioners.set('digest:t', { id: 'mk', organisationId: 'sundsvall', label: 'Metakatalogen' });
     const scim = scimUsecases({ store, clock: () => new Date(), ids: () => 'x', digest: t => 'digest:' + t });
     const throwing = (error: Error) =>
-      scimRoutes({ ...scim, createUser: async () => Promise.reject(error) }).request('https://clew.test/Users', {
-        method: 'POST',
-        headers: { Authorization: 'Bearer t', 'Content-Type': 'application/scim+json' },
-        body: JSON.stringify(anna),
-      });
+      scimRoutes({ ...scim, createUser: async () => Promise.reject(error) }, () => {}).request(
+        'https://clew.test/Users',
+        {
+          method: 'POST',
+          headers: { Authorization: 'Bearer t', 'Content-Type': 'application/scim+json' },
+          body: JSON.stringify(anna),
+        },
+      );
     const named = await throwing(violation('auth_person_user_name'));
     expect(named.status).toBe(409);
     expect(await named.json()).toMatchObject({
@@ -191,10 +195,7 @@ describe('/scim/v2', () => {
     const scim = scimUsecases({ store, clock: () => new Date(), ids: () => 'x', digest: t => 'digest:' + t });
     const said: unknown[][] = [],
       cause = new Error('connection reset by the database');
-    const hono = scimRoutes(
-      { ...scim, getUser: async () => Promise.reject(cause) },
-      { log: (...line) => void said.push(line) },
-    );
+    const hono = scimRoutes({ ...scim, getUser: async () => Promise.reject(cause) }, (...line) => void said.push(line));
     const get = (path: string) => hono.request('https://clew.test' + path, { headers: { Authorization: 'Bearer t' } });
     const failed = await get('/Users/x');
     expect(failed.status).toBe(500);

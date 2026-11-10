@@ -46,7 +46,9 @@ test('an unknown address under a mounted /scim/v2 answers the SCIM error resourc
   const store = memoryProvisionStore();
   store.state.provisioners.set('digest:t', { id: 'mk', organisationId: 'sundsvall', label: 'Metakatalogen' });
   const scim = scimUsecases({ store, clock: () => new Date(), ids: () => 'x', digest: token => 'digest:' + token });
-  const parent = new Hono().route('/scim/v2', scimRoutes(scim)).notFound(c => c.json({ error: 'Okänd adress.' }, 404));
+  const parent = new Hono()
+    .route('/scim/v2', scimRoutes(scim, console.error))
+    .notFound(c => c.json({ error: 'Okänd adress.' }, 404));
   const headers = { Authorization: 'Bearer t' };
   const unknown = await parent.request('http://clew.test/scim/v2/Nothing', { headers });
   assert.equal(unknown.status, 404);

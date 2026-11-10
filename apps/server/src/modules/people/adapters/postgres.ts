@@ -84,6 +84,11 @@ export function postgresProvisionStore(): ProvisionStore {
         .for(ROW_LOCK);
       return row;
     },
+    async lockUnits(unitIds) {
+      // An advisory lock, since a new unit has no row to lock yet; in id order, as people are locked.
+      for (const id of [...new Set(unitIds)].sort())
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${'clew.unit:' + id}, 0))`);
+    },
     async memberships(personId) {
       const rows = await tx
         .select({ externalId: schema.groups.externalId, label: schema.groups.label })
@@ -179,11 +184,21 @@ export function postgresProvisionStore(): ProvisionStore {
         );
       return row && provisionerRecord(row);
     },
-    async touchProvisioner(id, at) {
-      await tx
+    async touchProvisioner(id, at, seenBefore) {
+      // A second request waits for the first one's row and then finds the time already moved.
+      const moved = await tx
         .update(schema.provisioners)
         .set({ lastSeenAt: new Date(at) })
-        .where(eq(schema.provisioners.id, id));
+        .where(
+          and(
+            eq(schema.provisioners.id, id),
+            seenBefore === null
+              ? isNull(schema.provisioners.lastSeenAt)
+              : eq(schema.provisioners.lastSeenAt, new Date(seenBefore)),
+          ),
+        )
+        .returning({ id: schema.provisioners.id });
+      return moved.length > 0;
     },
     async provisioners(organisationId) {
       const rows = await tx
