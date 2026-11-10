@@ -5,6 +5,7 @@ import {
   expect,
   expectNoAxeViolations,
   heading,
+  narrow,
   open,
   openNav,
   phone,
@@ -494,5 +495,12 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
     expect(tops[4]).toBeGreaterThan(tops[2]!);
     const overflow = await lage(page).evaluate(el => el.scrollWidth > el.clientWidth);
     expect(overflow).toBe(false);
+    // At 320 px two tiles would break the area's word inside its letters: one under the other there (1.4.10).
+    await page.setViewportSize(narrow);
+    const column = await lage(page)
+      .locator('a, [role="group"]')
+      .evaluateAll(list => list.map(el => Math.round(el.getBoundingClientRect().top)));
+    expect(column).toHaveLength(5);
+    for (let i = 1; i < column.length; i++) expect(column[i]).toBeGreaterThan(column[i - 1]! + 50);
   });
 });

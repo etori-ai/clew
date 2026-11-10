@@ -13,10 +13,17 @@ type Props = {
   unitLabel: string;
   /** Where a tile with `opens` leads: the view in the panel, in the address (D50). */
   viewHref: (capability: string, title: string) => string;
-  /** Two tiles across: a phone (artboard 11). */
+  /** At most two tiles across: a phone (artboard 11), one under the other when two would be too narrow (320 px). */
   twoAcross?: boolean;
 };
 const SKELETONS = 4;
+/**
+ * A tile's least width on a phone: two across from 356 px, so at 375 px (artboard 11, 181 px each), and one column
+ * below, where the area's chip (one line, D71) would cut "Utvecklingssamtal" with an ellipsis: in two tiles of 154 px
+ * at 320 px (1.4.10), and under the text-spacing overrides (1.4.12) in two of 168 to 171 px at 348 to 354 px. Astryx's
+ * responsive `Grid` columns, never a fixed count, which "never reflows".
+ */
+const PHONE_TILE = 172;
 
 /**
  * Läget (D54, artboard 3): one tile per area with a figure, in the order the areas come; an area whose connector
@@ -32,7 +39,7 @@ export function Lage({ areas, loading, sources, now, unitLabel, viewHref, twoAcr
       <Heading level={3} accessibilityLevel={2}>
         Läget · {unitLabel}
       </Heading>
-      <Grid columns={twoAcross ? 2 : { minWidth: 180, max: 4 }} gap={3}>
+      <Grid columns={twoAcross ? { minWidth: PHONE_TILE, max: 2 } : { minWidth: 180, max: 4 }} gap={3}>
         {loading
           ? Array.from({ length: SKELETONS }, (_, i) => <FigureTileSkeleton key={i} index={i} />)
           : figured.map(a => {
