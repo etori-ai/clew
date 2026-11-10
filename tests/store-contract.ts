@@ -167,6 +167,47 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       expect(await cancelled()).toEqual([reminderWorkflowId(first), reminderWorkflowId(second)]);
       expect((await enqueued(id)).map(s => s.id)).toEqual([`${id}:v2:1`, `${id}:v2:2`]);
     });
+    test("a system timer (`obligation`, `due`) is stored and fenced like any timer, but only the person's own are listed on the thread (D96)", async () => {
+      const {
+        store,
+        people: [a],
+        enqueued,
+        cancelled,
+      } = await make();
+      const t = draft(a);
+      await store.transaction(tx => tx.insertThread(t));
+      const timer = (kind: 'reminder' | 'obligation' | 'due', dueAt: string) => ({
+        id: `${kind}:${t.id}`,
+        personId: a,
+        threadId: t.id,
+        kind,
+        unitId: 'unit',
+        authorizationVersion: 'v1',
+        dueAt,
+        requestedAt: T0,
+      });
+      const due = await store.transaction(async tx => {
+        await tx.lockThread(a, t.id);
+        const scheduled = await tx.scheduleTimer(timer('due', plus(T0, 86400_000)));
+        await tx.enqueue(reminderStart(scheduled));
+        await tx.scheduleTimer(timer('obligation', plus(T0, 3600_000)));
+        return scheduled;
+      });
+      expect(await store.readTimer(`due:${t.id}`)).toMatchObject({ kind: 'due', state: 'active', generation: 1 });
+      expect(await enqueued(`due:${t.id}`)).toEqual([reminderStart(due)]);
+      expect((await store.readThread(a, t.id))?.timers).toBeUndefined();
+      expect((await store.listThreads(a, T0)).find(row => row.id === t.id)?.timers).toBeUndefined();
+      await store.transaction(async tx => {
+        await tx.lockThread(a, t.id);
+        await tx.scheduleTimer(timer('reminder', plus(T0, 60_000)));
+        // A new generation of the same slot replaces the old one's wait.
+        expect((await tx.scheduleTimer(timer('due', plus(T0, 2 * 86400_000)))).generation).toBe(2);
+      });
+      expect((await store.readThread(a, t.id))?.timers).toEqual([
+        { kind: 'reminder', dueAt: plus(T0, 60_000), state: 'scheduled' },
+      ]);
+      expect(await cancelled()).toEqual([reminderWorkflowId(due)]);
+    });
     test('a thread and its source authority are read back as stored, only by its owner', async () => {
       const {
         store,
