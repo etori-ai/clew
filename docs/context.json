@@ -185,7 +185,7 @@
       "number": 3,
       "path": "docs/decisions/D03-three-module-kinds.md",
       "title": "D3 · Three module kinds: core, pass-through, derived",
-      "status": "accepted",
+      "status": "accepted, refined by D95 (2026-11-10: core also holds domains Clew owns by choice, behind a capability seam)",
       "date": "2026-11-03",
       "area": "integrations"
     },
@@ -1070,6 +1070,15 @@
       "status": "accepted, built 2026-11-09 (the destination, the read, the page; notes and the utvecklingssamtal are not decided here)",
       "date": "2026-11-09",
       "area": "product, identity"
+    },
+    {
+      "key": "D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist",
+      "number": 95,
+      "path": "docs/decisions/D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist.md",
+      "title": "D95 · Clew may own a domain by choice, decided per domain with the core-or-connector checklist",
+      "status": "accepted, nothing built",
+      "date": "2026-11-10",
+      "area": "product, integrations"
     }
   ],
   "documents": [
@@ -2052,6 +2061,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist.md",
+      "title": "D95 · Clew may own a domain by choice, decided per domain with the core-or-connector checklist",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/README.md",
       "title": "Decision log",
       "category": "integrator-guide",
@@ -2218,6 +2233,21 @@
       "category": "maintainer-guide",
       "headings": [
         "Municipal branding"
+      ]
+    },
+    {
+      "path": "docs/maintainers/core-or-connector.md",
+      "title": "Core or connector: deciding what Clew owns",
+      "category": "maintainer-guide",
+      "headings": [
+        "The three outcomes",
+        "Part 1 · Is it Clew at all?",
+        "Part 2 · Hard stops",
+        "Part 3 · The test for core",
+        "Part 4 · Order among those that pass",
+        "Part 5 · What a core domain consists of",
+        "The candidates on 2026-11-10",
+        "When the answer changes"
       ]
     },
     {
@@ -2957,6 +2987,27 @@
         "Recommendation",
         "Not settled",
         "Sources"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-10-owned-domains-against-evity.md",
+      "title": "Exploration: the layer where Clew owns the feature and its data, against Evity · 2026-11-10",
+      "category": "review-history",
+      "headings": [
+        "The question",
+        "Short answer",
+        "What Evity is",
+        "What Clew has today",
+        "The line: what Clew may own",
+        "Evity's fifteen, sorted",
+        "Five building blocks, not fifteen modules",
+        "What the layer is in code",
+        "Rules that need restating",
+        "What has to exist first",
+        "A first slice",
+        "Questions for the product owner",
+        "Outcome of the discussion, 2026-11-10",
+        "Sources and limits"
       ]
     },
     {

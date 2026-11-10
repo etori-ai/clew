@@ -23,8 +23,9 @@ run it unchanged.
 communication and whatever the next procurement brings. Each system has its own inbox, its own deadlines
 and its own idea of what the person should do next. Clew reads them through its own contracts
 (`docs/architecture/integration-paths.md`), pushes one stream of threads with a reason and a deadline,
-and lets the person act from the card. The source systems stay the systems of record; Clew holds refs,
-decisions and receipts.
+and lets the person act from the card. A system the organisation keeps stays the system of record; Clew
+holds refs, decisions and receipts. The domains Clew owns itself are the paragraph "Own the domain where that
+removes a system" below.
 
 **Find, then act.** Search is the first thing employees ask for: a colleague's phone number, a document,
 a case, a room. Today that means knowing which system holds it. Clew is the place you search from: one
@@ -54,13 +55,20 @@ changed as casually. The scheduler is therefore a crucial part of the system, no
 process designer, no swimlanes, and a process that is the organisation's record of a case lives in the
 case system, which Clew links to and pushes from.
 
-**Own the model where nobody else does.** Some domains have no system of record, or one so poor that
-people keep the real state in mail and spreadsheets: who has had their utvecklingssamtal this year, which
-delegations expire when, the onboarding checklist, what was decided and when. For these Clew is not a
-pass-through but the owner: a core connector with its own tables, its own `execute` capabilities and its own
-audit. The ladder is pass-through (the source owns the record; Clew retains minimal coordination data and evidence), derived (a computed result or snapshot), core (the record lives here), and a
-domain moves up the ladder only by a numbered decision, because owning a record means owning its
-retention, erasure and export. Clew never copies a record another system owns in order to "own" it.
+**Own the domain where that removes a system.** Part of Clew's purpose is to take away third-party systems
+an organisation would otherwise buy and integrate ([D95](decisions/D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist.md),
+2026-11-10). Some work is the same in every organisation and is mostly a workflow between people: the yearly
+utvecklingssamtal and the 1:1s between them, onboarding and offboarding, the annual plan, a deviation
+report. For such a domain Clew may be the owner and not a pass-through, whether the alternative is a procured
+product or mail and spreadsheets: a core module with its own tables, its own capabilities and its own audit.
+The ladder is pass-through (the source owns the record; Clew retains minimal coordination data and evidence),
+derived (a computed result or snapshot), core (the record lives here). A domain moves up the ladder only by a
+numbered decision that answers the [core-or-connector checklist](maintainers/core-or-connector.md), because
+owning a record means owning its retention, erasure and export, and being its vendor. Three things keep this
+from turning Clew into the systems it replaces. Regulated calculations, ledgers and master data stay where
+they are: no payroll, no bookkeeping, no employee file. An owned domain answers the same capabilities a
+connector would, so an organisation that keeps its own system connects that instead and loses nothing. And
+Clew never keeps a second copy of a record whose owner is another system.
 
 **Hosted by a provider, self-hostable by anyone.** Most municipalities have no IT department of their
 own and will buy Clew as a hosted service. The open-source rule guarantees that any of them, or a region
@@ -88,6 +96,8 @@ cards, the buttons and the receipts.
 - Not an AI platform. Clew has no knowledge bases, no document ingestion, no assistant builder and no model
   administration beyond which endpoints and models the composer may use and who may pick them (D24). That
   is Eneo's product, below.
+- Not a payroll system, a ledger or an employee file. Regulated calculations and master data stay in their
+  systems, reached through connectors, however many workflow domains Clew comes to own (D95).
 - Not a process-modelling tool or a case system. Clew orchestrates a person's work across systems and
   owns the state of its own threads and obligations; the organisation's record of a case, and the design
   of its processes, live in the case system.
@@ -157,7 +167,10 @@ whether the line is right.
 
 - Classification-gated inference: whether data about identifiable people may ever go to an endpoint
   outside the organisation's control, and who marks endpoints. Not needed until a real source is connected.
-- Which core domains Clew owns first. Utvecklingssamtal records and delegations are the candidates from the
-  first use case; each needs its own decision. The employee directory is not a candidate: it stays in
-  Metakatalogen.
+- Which core domains Clew owns first. D95 names the starting candidates (medarbetarsamtal and 1:1,
+  onboarding and offboarding, the annual plan, deviation reporting) and the ones still unsure (absence
+  requests, internal errands, internal news, the phone book); each needs its own decision against the
+  checklist. The employee directory as master data is not a candidate: it stays in Metakatalogen.
+- The legal answers an owned domain needs in a municipality: whether its records are public documents, which
+  secrecy rule covers them, and what the archive rules say about keeping and weeding them.
 - Whether Clew's threads should be reachable from Eneo as a resource, not only as tools.

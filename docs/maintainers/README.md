@@ -6,6 +6,7 @@ Start with the [product overview](../overview.md) and [architecture overview](..
 |---|---|
 | Start the application and development services | [Local development](local-development.md) |
 | Configure installation colors and logo | [Branding](branding.md) |
+| Decide whether a feature is built into Clew or reached through a connector | [Core or connector](core-or-connector.md) |
 | Change backend structure | [Backend architecture](../architecture/backend-structure.md) and [repository instructions](../../CLAUDE.md) |
 | Place and run tests | [Testing](../architecture/testing.md) |
 | Upgrade, inspect reliability or rehearse recovery | [Reliability operations](reliability-operations.md), [acceptance evidence](../reference/reliability-acceptance.md) |

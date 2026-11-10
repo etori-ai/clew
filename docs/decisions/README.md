@@ -10,7 +10,7 @@ Historical numbering collisions: **D37, D38, D39, D44, D45, D46, D85** each iden
 |---|---|---|---|
 | [D1 · Clew owns every integration contract](D01-clew-owns-every-integration-contract.md) | integrations | 2026-11-03 | accepted |
 | [D2 · No OpenAPI-to-MCP conversion in the running system](D02-no-openapi-to-mcp-conversion.md) | integrations | 2026-11-03 | accepted |
-| [D3 · Three module kinds: core, pass-through, derived](D03-three-module-kinds.md) | integrations | 2026-11-03 | accepted |
+| [D3 · Three module kinds: core, pass-through, derived](D03-three-module-kinds.md) | integrations | 2026-11-03 | accepted, refined by D95 (2026-11-10: core also holds domains Clew owns by choice, behind a capability seam) |
 | [D4 · Foreign MCP servers are wrapped, not passed through](D04-foreign-mcp-servers-are-wrapped.md) | integrations | 2026-11-03 | accepted |
 | [D5 · OIDC and OAuth 2.1 with JWT access tokens are the only identification path](D05-oidc-and-oauth-only-identification-path.md) | identity | 2026-11-03 | accepted |
 | [D6 · Dev login with username and password, local only](D06-dev-login-local-only.md) | identity | 2026-11-03 | accepted, not built yet |
@@ -109,7 +109,8 @@ Historical numbering collisions: **D37, D38, D39, D44, D45, D46, D85** each iden
 | [D92 · What goes into the box enters on Astryx's entry motion](D92-what-goes-into-the-box-enters-on-astryxs-entry-motion.md) | ui | 2026-11-09 | accepted, built 2026-11-09 on `main` |
 | [D93 · The `protected` key is refused at the SCIM boundary until Clew decides whether it may hold the fact](D93-the-protected-key-is-refused-at-the-scim-boundary.md) | identity | 2026-11-09 | accepted, built 2026-11-09 |
 | [D94 · A manager has a Personal section that lists the people on the units they manage](D94-a-manager-has-a-personal-section-listing-the-people-on-their-units.md) | product, identity | 2026-11-09 | accepted, built 2026-11-09 (the destination, the read, the page; notes and the utvecklingssamtal are not decided here) |
+| [D95 · Clew may own a domain by choice, decided per domain with the core-or-connector checklist](D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist.md) | product, integrations | 2026-11-10 | accepted, nothing built |
 
 ## Add a decision
 
-Use [TEMPLATE.md](TEMPLATE.md) and a new unused number (currently D95). Include status, date, area, decision, rationale and what it replaces. Preserve earlier decision bodies; record supersession explicitly. Refer to the full filename when a number is ambiguous. Update the implementation-status guide when delivery changes, add a session note to [HANDOVER.md](../../HANDOVER.md), and run `bun run docs:generate` followed by `bun run docs:check`. The generated context map includes every record.
+Use [TEMPLATE.md](TEMPLATE.md) and a new unused number (currently D96). Include status, date, area, decision, rationale and what it replaces. Preserve earlier decision bodies; record supersession explicitly. Refer to the full filename when a number is ambiguous. Update the implementation-status guide when delivery changes, add a session note to [HANDOVER.md](../../HANDOVER.md), and run `bun run docs:generate` followed by `bun run docs:check`. The generated context map includes every record.

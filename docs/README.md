@@ -52,6 +52,7 @@ For tighter native integration, an independent connector can use MCP as its sour
 | Place and run tests | [Testing](architecture/testing.md) |
 | Configure connectors and model providers | [Connector administration](architecture/connector-administration.md) |
 | Customize colors and logo | [Branding](maintainers/branding.md) |
+| Decide whether a feature is built into Clew or reached through a connector | [Core or connector](maintainers/core-or-connector.md) |
 | Upgrade, diagnose and recover | [Reliability operations](maintainers/reliability-operations.md) |
 | Maintain these docs | [Documentation workflow](maintainers/README.md) |
 

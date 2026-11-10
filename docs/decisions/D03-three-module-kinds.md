@@ -1,6 +1,6 @@
 # D3 · Three module kinds: core, pass-through, derived
 
-**Status:** accepted · **Date:** 2026-11-03 · **Area:** integrations
+**Status:** accepted, refined by D95 (2026-11-10: core also holds domains Clew owns by choice, behind a capability seam) · **Date:** 2026-11-03 · **Area:** integrations
 
 **Decision.** Modules are sorted by who owns the data. Core (users, permissions, threads, audit, jobs) lives
 in Clew's Postgres and has no provider interface. Pass-through (calendar, Heroma, Raindance) lives in the

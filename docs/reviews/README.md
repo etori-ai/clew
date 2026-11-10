@@ -51,3 +51,4 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Building a Clew connector over an MCP server](2026-11-09-mcp-backed-native-connectors.md)
 - [Review: the SCIM server and the provisioning boundary · 2026-11-09](2026-11-09-scim-server-and-provisioning-boundary.md)
 - [A Sitevision connector: the header, search and pages from the intranet's CMS · 2026-11-09](2026-11-09-sitevision-connector.md)
+- [Exploration: the layer where Clew owns the feature and its data, against Evity · 2026-11-10](2026-11-10-owned-domains-against-evity.md)

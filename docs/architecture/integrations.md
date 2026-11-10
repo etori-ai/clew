@@ -32,6 +32,8 @@ Clew does not turn an external OpenAPI document into unrestricted model tools. I
 | `derived` | The connector supplies computed results or snapshots with an explicit purpose and provenance. | Independent connector service. |
 | `core` | Clew owns the domain and its persistence, retention and evidence. | Internal to Clew; not accepted in a remote manifest. |
 
+Whether a domain is built as `core` or reached through a connector is decided with the [core-or-connector checklist](../maintainers/core-or-connector.md) ([D95](../decisions/D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist.md)). No domain that holds business records is built as `core` yet.
+
 A pass-through integration can still produce persisted card summaries, answers and execution evidence in Clew. It does not copy ownership of the source record, and it does not promise zero storage. Use [the persistence map](overview.md#data-ownership-and-persistence) when deciding what data to return.
 
 ## Presentation belongs to Clew
