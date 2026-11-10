@@ -1126,6 +1126,15 @@
       "status": "accepted, built 2026-11-10 and tried signed in on the development stack the same day; no manual screen-reader pass yet",
       "date": "2026-11-10",
       "area": "ui"
+    },
+    {
+      "key": "D99-an-unresolved-job-step-reaches-a-person-and-is-finished-forward",
+      "number": 99,
+      "path": "docs/decisions/D99-an-unresolved-job-step-reaches-a-person-and-is-finished-forward.md",
+      "title": "D99 · An unresolved job step reaches a person and is finished forward; no connector is asked for rollback",
+      "status": "proposed (written up at the product owner's request, 2026-11-10), nothing built",
+      "date": "2026-11-10",
+      "area": "integrations, product"
     }
   ],
   "documents": [
@@ -2145,6 +2154,12 @@
     {
       "path": "docs/decisions/D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md",
       "title": "D98 · The installation's theme and logo are saved in Clew by an administrator, the theme as a design tokens file",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D99-an-unresolved-job-step-reaches-a-person-and-is-finished-forward.md",
+      "title": "D99 · An unresolved job step reaches a person and is finished forward; no connector is asked for rollback",
       "category": "decision-history",
       "headings": []
     },
