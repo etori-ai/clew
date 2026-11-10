@@ -309,6 +309,13 @@
       "when": 1794306022393,
       "tag": "0043_talks",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1794331343078,
+      "tag": "0044_installation_appearance",
+      "breakpoints": true
     }
   ]
 }

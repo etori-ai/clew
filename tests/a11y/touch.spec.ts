@@ -40,7 +40,11 @@ test.describe('a finger reaches every control at 44 px (HANDOVER §6)', () => {
     await open(page, '/calendar');
     await expect(page.getByRole('button', { name: /^Förslag/ })).toBeVisible();
     const list = await page.getByRole('group', { name: /^Vecka 45/ }).boundingBox();
-    expect(list!.y).toBeLessThan(190);
+    // Measured from the shell's bar, not from the top of the screen: the bar is the shared header's heading row since
+    // D88 (61 px with the bell and the person at touch size), and its height is not the calendar's. Two rows of 44 px
+    // controls with their gaps and the head's padding are 137 px; a third row would make it 185.
+    const bar = await page.getByRole('banner').boundingBox();
+    expect(list!.y - (bar!.y + bar!.height)).toBeLessThan(140);
   });
 
   for (const path of ['/', '/?area=personal', '/?tab=waiting', '/?tab=snoozed', '/?tab=done', '/calendar'])

@@ -5,6 +5,9 @@ import { menuRow, menuRows } from './phonebook';
 /**
  * Verktyg in the menu (D40): the calendar and the views an administrator chose as tools, one click away on every page.
  * A row leads to the tool's own page (D42), as Kalender does; the page itself is tested in `tools.spec.ts`.
+ * The test person is a manager, so Personal (D94) stands after Kalender as Clew's own second row; `staff.spec.ts` owns it.
+ * The shared header (D88) marks Start as the current place on every page of Clew, so "the current row" is asked of the
+ * rail, where one row is current at a time.
  * The phone book's rows are named by its real manifest; they are in the menu only where a test puts them, as they are in
  * the product only where an administrator chose them.
  */

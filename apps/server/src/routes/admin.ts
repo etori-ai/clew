@@ -2,6 +2,12 @@ import { Hono } from 'hono';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import {
+  AppearanceLogoInput,
+  type AppearanceLogoInputType,
+  AppearanceThemeInput,
+  type AppearanceThemeInputType,
+  type ThemeRefusal,
+  THEME_FILE_MAX_BYTES,
   GroupCapabilityInput,
   type GroupCapabilityInputType,
   AddConnectorInput,
@@ -26,6 +32,8 @@ import { InputError, protectedRoute, type Env } from '../context';
 import { connectorAdmin, models } from '../composition';
 import { usersAdmin } from '../composition/people';
 import { operations } from '../composition/operations';
+import { appearance } from '../composition/appearance';
+import { ThemeFileError } from '../modules/appearance/usecases';
 
 /**
  * Administration (D23, D24): thin routes over `connectorAdmin` and `models`. The use cases check the grant capability
@@ -44,10 +52,12 @@ const validators = {
   addModel: ajv.compile(AddModelInput),
   patchModel: ajv.compile(ModelPatchInput),
   groupCapability: ajv.compile(GroupCapabilityInput),
+  appearanceTheme: ajv.compile(AppearanceThemeInput),
+  appearanceLogo: ajv.compile(AppearanceLogoInput),
 };
-async function body<T>(request: Request, validate: (value: unknown) => boolean): Promise<T> {
+async function body<T>(request: Request, validate: (value: unknown) => boolean, limit = 16000): Promise<T> {
   const text = await request.text();
-  if (text.length > 16000) throw new InputError('För stor förfrågan.');
+  if (text.length > limit) throw new InputError('För stor förfrågan.');
   let value: unknown;
   try {
     value = text ? JSON.parse(text) : {};
@@ -80,6 +90,34 @@ adminRoutes.post('/users/group-capabilities/remove', async c =>
     ),
   ),
 );
+// Utseende (D98): the installation's theme file and logo, behind `admin.appearance`.
+adminRoutes.get('/appearance', async c => c.json(await appearance.adminRead(c.get('session').context)));
+adminRoutes.put('/appearance/theme', async c => {
+  const input = await body<AppearanceThemeInputType>(
+    c.req.raw,
+    validators.appearanceTheme,
+    THEME_FILE_MAX_BYTES + 1000,
+  );
+  try {
+    return c.json(await appearance.setTheme(c.get('session').context, input.file));
+  } catch (error) {
+    // A refused file is answered with every problem it has, so the page can list them under the upload.
+    if (error instanceof ThemeFileError)
+      return c.json({ error: error.message, problems: error.problems } satisfies ThemeRefusal, 400);
+    throw error;
+  }
+});
+adminRoutes.delete('/appearance/theme', async c => c.json(await appearance.clearTheme(c.get('session').context)));
+// Two images of at most 256 kB each, in base64, and the name.
+adminRoutes.put('/appearance/logo', async c =>
+  c.json(
+    await appearance.setLogo(
+      c.get('session').context,
+      await body<AppearanceLogoInputType>(c.req.raw, validators.appearanceLogo, 730_000),
+    ),
+  ),
+);
+adminRoutes.delete('/appearance/logo', async c => c.json(await appearance.clearLogo(c.get('session').context)));
 adminRoutes.get('/connectors', async c => c.json({ connectors: await connectorAdmin.list(c.get('session').context) }));
 adminRoutes.post('/connectors', async c =>
   c.json(await connectorAdmin.add(c.get('session').context, await body<Add>(c.req.raw, validators.add)), 201),

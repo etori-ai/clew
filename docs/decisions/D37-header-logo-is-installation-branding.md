@@ -1,6 +1,6 @@
 # D37 · The shared navigation logo is installation branding
 
-**Status:** accepted, extended by [D38](D38-municipal-branding-uses-astryx-themes.md) · **Date:** 2026-11-05 · **Area:** ui
+**Status:** accepted, extended by [D38](D38-municipal-branding-uses-astryx-themes.md); the build variables and "no database, upload service or administration page" superseded by [D98](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md) (2026-11-10), the native image exception stands · **Date:** 2026-11-05 · **Area:** ui
 
 **Decision.** `apps/web/src/components/shell.tsx` renders one municipality logo on every protected
 surface through Astryx `SideNavHeading.icon`, in the rail and its mobile heading. The product name

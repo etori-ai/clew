@@ -5,7 +5,7 @@ import { InternationalizationProvider } from '@astryxdesign/core/i18n';
 import { LayerProvider } from '@astryxdesign/core/Layer';
 import { Button } from '@astryxdesign/core/Button';
 import { Section } from '@astryxdesign/core/Section';
-import { resolveBranding } from '@clew/ui/branding';
+import { NEUTRAL_BRANDING, readBranding, type Branding } from '@clew/ui/branding';
 import { createClewTheme, createHeaderBandTheme } from '@clew/ui/theme';
 import { swedish } from '@clew/ui/locale';
 import { APPEARANCE_PREFERENCE_KEY, readAppearancePreference, type ColorMode } from '@clew/ui/appearance-preference';
@@ -41,7 +41,8 @@ import { menuSource, withListing } from './sources';
  * Attributes: `menu-src`, `source`, `source-root`, `source-depth` (levels fetched, 1 default: the bar draws one),
  * `source-base` (the system's origin; the page's own by default), `source-nonce` (WordPress's REST nonce for a
  * signed-in visitor), `selected` (an item id; else the page's address decides), `user-name` with `logout-href`, or
- * `login-href`; `profile` (`sundsvall` default, as the portal), `logo-src`, `logo-dark-src`, `logo-alt`, `appearance`.
+ * `login-href`; `appearance-src` (the installation's own `/api/appearance`, D98: its theme and logo; without it the
+ * header is Astryx Neutral), `logo-src`, `logo-dark-src`, `logo-alt` (a logo of the page's own instead), `appearance`.
  *
  * Colour: by default (`appearance="auto"`) the header is drawn in the person's own choice from Clew (D39), which the
  * browser keeps per origin, so on one domain the intranet's header turns dark exactly when the portal does; with no
@@ -110,7 +111,7 @@ type Settings = Readonly<{
   userName: string | null;
   loginHref: string | null;
   logoutHref: string | null;
-  profile: string;
+  appearanceSrc: string | null;
   logoSrc: string | null;
   logoDarkSrc: string | null;
   logoAlt: string | null;
@@ -205,14 +206,37 @@ function EmbeddedHeader({
   onTheme: (sheets: CSSStyleSheet[]) => void;
   onMode: (mode: ColorMode) => void;
 }) {
-  const branding = useMemo(
+  // The installation's saved theme and logo (D98), read from Clew itself; Neutral until it answers and if it does not.
+  const [installation, setInstallation] = useState<Branding>(NEUTRAL_BRANDING);
+  useEffect(() => {
+    if (!settings.appearanceSrc) return setInstallation(NEUTRAL_BRANDING);
+    const controller = new AbortController();
+    const src = new URL(settings.appearanceSrc, window.location.href).href;
+    fetch(src, { signal: controller.signal })
+      .then(response => {
+        if (!response.ok) throw new Error(`The appearance at ${src} answered ${response.status}.`);
+        return response.json();
+      })
+      // The logo's address is a path on the installation, so it is resolved against where the appearance came from.
+      .then(json => setInstallation(readBranding(json, src)))
+      .catch(error => {
+        if (!controller.signal.aborted) console.error(error);
+      });
+    return () => controller.abort();
+  }, [settings.appearanceSrc]);
+  const branding = useMemo<Branding>(
     () =>
-      resolveBranding({
-        profile: settings.profile,
-        ...(settings.logoSrc ? { logoSrc: settings.logoSrc, logoAlt: settings.logoAlt ?? '' } : {}),
-        ...(settings.logoDarkSrc ? { logoDarkSrc: settings.logoDarkSrc } : {}),
-      }),
-    [settings.profile, settings.logoSrc, settings.logoDarkSrc, settings.logoAlt],
+      settings.logoSrc && settings.logoAlt
+        ? {
+            ...installation,
+            logo: {
+              src: settings.logoSrc,
+              alt: settings.logoAlt,
+              ...(settings.logoDarkSrc ? { darkSrc: settings.logoDarkSrc } : {}),
+            },
+          }
+        : installation,
+    [installation, settings.logoSrc, settings.logoDarkSrc, settings.logoAlt],
   );
   const theme = useMemo(() => createClewTheme(branding), [branding]);
   const band = useMemo(() => createHeaderBandTheme(branding), [branding]);
@@ -280,7 +304,7 @@ const ATTRIBUTES = [
   'user-name',
   'login-href',
   'logout-href',
-  'profile',
+  'appearance-src',
   'logo-src',
   'logo-dark-src',
   'logo-alt',
@@ -349,7 +373,7 @@ class SiteHeaderElement extends HTMLElement {
       userName: attr('user-name'),
       loginHref: attr('login-href'),
       logoutHref: attr('logout-href'),
-      profile: attr('profile') ?? 'sundsvall',
+      appearanceSrc: attr('appearance-src'),
       logoSrc: attr('logo-src'),
       logoDarkSrc: attr('logo-dark-src'),
       logoAlt: attr('logo-alt'),

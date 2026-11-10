@@ -47,8 +47,17 @@ import {
   type CommitmentEntry,
   type TalkEntry,
 } from './data';
-import type { CommitmentAddBody, CommitmentsInput, TalkHeldBody, TalkRound } from '@clew/contracts';
-import type { ModelSummary, ProviderSummary } from '@clew/contracts';
+import type {
+  AppearanceAdminView,
+  AppearanceLogoInputType,
+  CommitmentAddBody,
+  CommitmentsInput,
+  ModelSummary,
+  ProviderSummary,
+  TalkHeldBody,
+  TalkRound,
+} from '@clew/contracts';
+import { THEME_BASE_COLORS, parseThemeFile, themeFileOf } from '../../packages/contracts/src/theme-file';
 import { personSearch, phonebook } from './phonebook';
 import { rooms, roomsSpec } from './rooms';
 import { errandsOutput, errandsSpec, smErrandOutput, smErrandSpec } from './errands';
@@ -100,6 +109,15 @@ export class MockApi {
   users = usersOverview();
   /** The users page for someone with `admin.connectors` but not `admin.users`: the server refuses. */
   usersForbidden = false;
+  /**
+   * The installation's appearance (D98): Astryx Neutral with no logo until a test saves or sets one. The public read
+   * every page makes and Administration › Utseende share it, as they share the one row on the server.
+   */
+  appearance: AppearanceAdminView = { revision: 0, theme: null, logo: null, updatedAt: null, updatedBy: null };
+  /** The logo images a test has uploaded, by variant, as the mock would serve them. */
+  logos: Partial<Record<'light' | 'dark', { mediaType: string; data: string }>> = {};
+  /** Utseende for someone without `admin.appearance`: the server refuses. */
+  appearanceForbidden = false;
   /** Personal (D94): the units the test person manages and their people. */
   staff = staffOverview();
   /** Personal for someone who manages no unit: the server refuses whatever the session's role says. */
@@ -176,6 +194,21 @@ export class MockApi {
         : route.fulfill({ status: 401, json: { error: 'Ingen session' } });
     }
     if (path === '/auth/activity') return json({ expiresAt: session.expiresAt });
+    // The installation's appearance (D98), public: the theme and the logo's address, and the logo itself.
+    if (path === '/appearance') {
+      const { revision, theme, logo } = this.appearance;
+      return json({ revision, theme, logo });
+    }
+    if (path === '/appearance/theme-file')
+      return json(
+        themeFileOf(this.appearance.theme ?? { name: 'Mall: Clews standardfärger', colors: THEME_BASE_COLORS }),
+      );
+    if (path.startsWith('/appearance/logo/')) {
+      const image = this.logos[path.endsWith('/dark') ? 'dark' : 'light'];
+      return image
+        ? route.fulfill({ status: 200, contentType: image.mediaType, body: Buffer.from(image.data, 'base64') })
+        : route.fulfill({ status: 404, json: { error: 'Logotypen finns inte.' } });
+    }
     // The shared header (D88): what the person's header connector lists for them, Clew's default until a test says otherwise.
     if (path === '/header') return json(this.header);
     // The MCP service inbox (D81): empty unless a spec routes it itself.
@@ -194,6 +227,44 @@ export class MockApi {
       const method = request.method();
       const cid = path.split('/')[3] ?? '';
       const found = () => this.connectors.find(c => c.id === cid);
+      if (path.startsWith('/admin/appearance')) {
+        if (this.appearanceForbidden)
+          return route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } });
+        const saved = (change: Partial<AppearanceAdminView>) => {
+          const revision = this.appearance.revision + 1;
+          this.appearance = { ...this.appearance, ...change, revision, updatedAt: NOW, updatedBy: 'Mikael Lund' };
+          if (this.appearance.logo)
+            this.appearance.logo = {
+              alt: this.appearance.logo.alt,
+              src: `/api/appearance/logo/light?v=${revision}`,
+              ...(this.logos.dark ? { darkSrc: `/api/appearance/logo/dark?v=${revision}` } : {}),
+            };
+          return json(this.appearance);
+        };
+        if (path === '/admin/appearance' && method === 'GET') return json(this.appearance);
+        if (path === '/admin/appearance/theme' && method === 'PUT') {
+          // The same check the server makes, so a spec sees the server's refusal for a file the page let through.
+          const parsed = parseThemeFile((request.postDataJSON() as { file: unknown }).file);
+          return parsed.ok
+            ? saved({ theme: parsed.theme })
+            : route.fulfill({
+                status: 400,
+                json: { error: 'Temafilen kan inte användas.', problems: parsed.problems },
+              });
+        }
+        if (path === '/admin/appearance/theme' && method === 'DELETE') return saved({ theme: null });
+        if (path === '/admin/appearance/logo' && method === 'PUT') {
+          const input = request.postDataJSON() as AppearanceLogoInputType;
+          if (input.light) this.logos.light = input.light;
+          if (input.dark) this.logos.dark = input.dark;
+          if (input.dark === null) delete this.logos.dark;
+          return saved({ logo: { alt: input.alt, src: '' } });
+        }
+        if (path === '/admin/appearance/logo' && method === 'DELETE') {
+          this.logos = {};
+          return saved({ logo: null });
+        }
+      }
       if (path === '/admin/units') return json({ units });
       if (path === '/admin/groups') return json({ groups });
       if (path === '/admin/users' && method === 'GET')
@@ -858,12 +929,8 @@ export async function snoozeFirst(page: Page) {
     await page.getByRole('button', { name: 'Inte nu', exact: true }).first().click();
   }
   await page.getByRole('menuitem', { name: /^I morgon/ }).click();
-  // Over the page the card is a drawer: it is let go of, so the toast and the page are reachable again.
-  const drawer = page.getByRole('dialog', { name: 'Kort', exact: true });
-  if (await drawer.isVisible()) {
-    await drawer.getByRole('button', { name: 'Stäng', exact: true }).click();
-    await expect(drawer).toBeHidden();
-  }
+  // Over the page the card is a drawer: it leaves with its row, so the toast and the page are reachable again.
+  await expect(page.getByRole('dialog', { name: 'Kort', exact: true })).toBeHidden();
 }
 export const heading = (page: Page, level: number, name: string) =>
   page.locator(`h${level}:not([aria-level]), [aria-level="${level}"]`).filter({ hasText: name });

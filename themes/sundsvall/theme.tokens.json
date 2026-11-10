@@ -1,0 +1,449 @@
+{
+  "$description": "Sundsvalls kommun",
+  "palette": {
+    "$type": "color",
+    "$description": "The published colours of Sundsvalls kommun, checked 2026-11-05 (D38).",
+    "gronsta-dark": {
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.0,
+          0.451,
+          0.2314
+        ],
+        "hex": "#00733b"
+      }
+    },
+    "gronsta-light": {
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.8784,
+          0.9647,
+          0.8706
+        ],
+        "hex": "#e0f6de"
+      }
+    },
+    "vattjom-dark": {
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.0,
+          0.3333,
+          0.5843
+        ],
+        "hex": "#005595"
+      }
+    },
+    "vattjom-light": {
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.8549,
+          0.9373,
+          0.9451
+        ],
+        "hex": "#daeff1"
+      }
+    },
+    "bjornstigen-dark": {
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.3569,
+          0.1216,
+          0.4706
+        ],
+        "hex": "#5b1f78"
+      }
+    },
+    "bjornstigen-light": {
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.8431,
+          0.8588,
+          0.949
+        ],
+        "hex": "#d7dbf2"
+      }
+    },
+    "juniskar-dark": {
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.6627,
+          0.0,
+          0.4549
+        ],
+        "hex": "#a90074"
+      }
+    },
+    "juniskar-light": {
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.9961,
+          0.8745,
+          0.8863
+        ],
+        "hex": "#fedfe2"
+      }
+    },
+    "black": {
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "hex": "#000000"
+      }
+    },
+    "dark-gray": {
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.2941,
+          0.2941,
+          0.2941
+        ],
+        "hex": "#4b4b4b"
+      }
+    },
+    "light-gray": {
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.9255,
+          0.9255,
+          0.9255
+        ],
+        "hex": "#ececec"
+      }
+    },
+    "white": {
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "hex": "#ffffff"
+      }
+    }
+  },
+  "light": {
+    "color": {
+      "$type": "color",
+      "accent": {
+        "$value": "{palette.vattjom-dark}"
+      },
+      "accent-muted": {
+        "$value": "{palette.vattjom-light}"
+      },
+      "on-accent": {
+        "$value": "{palette.white}"
+      },
+      "text-accent": {
+        "$value": "{palette.black}"
+      },
+      "icon-accent": {
+        "$value": "{palette.vattjom-dark}"
+      },
+      "text-primary": {
+        "$value": "{palette.black}"
+      },
+      "text-secondary": {
+        "$value": "{palette.dark-gray}"
+      },
+      "icon-primary": {
+        "$value": "{palette.black}"
+      },
+      "icon-secondary": {
+        "$value": "{palette.dark-gray}"
+      },
+      "background-body": {
+        "$value": "{palette.white}"
+      },
+      "background-surface": {
+        "$value": "{palette.white}"
+      },
+      "background-card": {
+        "$value": "{palette.white}"
+      },
+      "background-popover": {
+        "$value": "{palette.white}"
+      },
+      "background-muted": {
+        "$value": "{palette.light-gray}"
+      },
+      "background-inverted": {
+        "$value": "{palette.black}"
+      },
+      "neutral": {
+        "$value": "{palette.light-gray}"
+      },
+      "border": {
+        "$value": "{palette.light-gray}"
+      },
+      "border-emphasized": {
+        "$value": "{palette.dark-gray}"
+      },
+      "on-dark": {
+        "$value": "{palette.white}"
+      },
+      "on-light": {
+        "$value": "{palette.black}"
+      },
+      "info": {
+        "$value": "{palette.vattjom-dark}"
+      },
+      "info-muted": {
+        "$value": "{palette.vattjom-light}"
+      },
+      "on-info": {
+        "$value": "{palette.white}"
+      },
+      "on-info-muted": {
+        "$value": "{palette.black}"
+      },
+      "text-info": {
+        "$value": "{palette.black}"
+      },
+      "icon-info": {
+        "$value": "{palette.vattjom-dark}"
+      },
+      "border-info": {
+        "$value": "{palette.vattjom-dark}"
+      },
+      "success": {
+        "$value": "{palette.gronsta-dark}"
+      },
+      "success-muted": {
+        "$value": "{palette.gronsta-light}"
+      },
+      "on-success": {
+        "$value": "{palette.white}"
+      },
+      "on-success-muted": {
+        "$value": "{palette.black}"
+      },
+      "text-success": {
+        "$value": "{palette.black}"
+      },
+      "icon-success": {
+        "$value": "{palette.gronsta-dark}"
+      },
+      "border-success": {
+        "$value": "{palette.gronsta-dark}"
+      },
+      "background-blue": {
+        "$value": "{palette.vattjom-light}"
+      },
+      "border-blue": {
+        "$value": "{palette.vattjom-dark}"
+      },
+      "icon-blue": {
+        "$value": "{palette.vattjom-dark}"
+      },
+      "text-blue": {
+        "$value": "{palette.black}"
+      },
+      "background-green": {
+        "$value": "{palette.gronsta-light}"
+      },
+      "border-green": {
+        "$value": "{palette.gronsta-dark}"
+      },
+      "icon-green": {
+        "$value": "{palette.gronsta-dark}"
+      },
+      "text-green": {
+        "$value": "{palette.black}"
+      },
+      "background-purple": {
+        "$value": "{palette.bjornstigen-light}"
+      },
+      "border-purple": {
+        "$value": "{palette.bjornstigen-dark}"
+      },
+      "icon-purple": {
+        "$value": "{palette.bjornstigen-dark}"
+      },
+      "text-purple": {
+        "$value": "{palette.black}"
+      },
+      "background-pink": {
+        "$value": "{palette.juniskar-light}"
+      },
+      "border-pink": {
+        "$value": "{palette.juniskar-dark}"
+      },
+      "icon-pink": {
+        "$value": "{palette.juniskar-dark}"
+      },
+      "text-pink": {
+        "$value": "{palette.black}"
+      }
+    }
+  },
+  "dark": {
+    "color": {
+      "$type": "color",
+      "accent": {
+        "$value": "{palette.vattjom-light}"
+      },
+      "accent-muted": {
+        "$value": "{palette.vattjom-dark}"
+      },
+      "on-accent": {
+        "$value": "{palette.black}"
+      },
+      "text-accent": {
+        "$value": "{palette.white}"
+      },
+      "icon-accent": {
+        "$value": "{palette.vattjom-light}"
+      },
+      "text-primary": {
+        "$value": "{palette.white}"
+      },
+      "text-secondary": {
+        "$value": "{palette.light-gray}"
+      },
+      "icon-primary": {
+        "$value": "{palette.white}"
+      },
+      "icon-secondary": {
+        "$value": "{palette.light-gray}"
+      },
+      "background-body": {
+        "$value": "{palette.black}"
+      },
+      "background-surface": {
+        "$value": "{palette.black}"
+      },
+      "background-card": {
+        "$value": "{palette.dark-gray}"
+      },
+      "background-popover": {
+        "$value": "{palette.dark-gray}"
+      },
+      "background-muted": {
+        "$value": "{palette.dark-gray}"
+      },
+      "background-inverted": {
+        "$value": "{palette.white}"
+      },
+      "neutral": {
+        "$value": "{palette.dark-gray}"
+      },
+      "border": {
+        "$value": "{palette.dark-gray}"
+      },
+      "border-emphasized": {
+        "$value": "{palette.light-gray}"
+      },
+      "on-dark": {
+        "$value": "{palette.white}"
+      },
+      "on-light": {
+        "$value": "{palette.black}"
+      },
+      "info": {
+        "$value": "{palette.vattjom-light}"
+      },
+      "info-muted": {
+        "$value": "{palette.vattjom-dark}"
+      },
+      "on-info": {
+        "$value": "{palette.black}"
+      },
+      "on-info-muted": {
+        "$value": "{palette.white}"
+      },
+      "text-info": {
+        "$value": "{palette.white}"
+      },
+      "icon-info": {
+        "$value": "{palette.vattjom-light}"
+      },
+      "border-info": {
+        "$value": "{palette.vattjom-light}"
+      },
+      "success": {
+        "$value": "{palette.gronsta-light}"
+      },
+      "success-muted": {
+        "$value": "{palette.gronsta-dark}"
+      },
+      "on-success": {
+        "$value": "{palette.black}"
+      },
+      "on-success-muted": {
+        "$value": "{palette.white}"
+      },
+      "text-success": {
+        "$value": "{palette.white}"
+      },
+      "icon-success": {
+        "$value": "{palette.gronsta-light}"
+      },
+      "border-success": {
+        "$value": "{palette.gronsta-light}"
+      },
+      "background-blue": {
+        "$value": "{palette.vattjom-dark}"
+      },
+      "border-blue": {
+        "$value": "{palette.vattjom-light}"
+      },
+      "icon-blue": {
+        "$value": "{palette.vattjom-light}"
+      },
+      "text-blue": {
+        "$value": "{palette.white}"
+      },
+      "background-green": {
+        "$value": "{palette.gronsta-dark}"
+      },
+      "border-green": {
+        "$value": "{palette.gronsta-light}"
+      },
+      "icon-green": {
+        "$value": "{palette.gronsta-light}"
+      },
+      "text-green": {
+        "$value": "{palette.white}"
+      },
+      "background-purple": {
+        "$value": "{palette.bjornstigen-dark}"
+      },
+      "border-purple": {
+        "$value": "{palette.bjornstigen-light}"
+      },
+      "icon-purple": {
+        "$value": "{palette.bjornstigen-light}"
+      },
+      "text-purple": {
+        "$value": "{palette.white}"
+      },
+      "background-pink": {
+        "$value": "{palette.juniskar-dark}"
+      },
+      "border-pink": {
+        "$value": "{palette.juniskar-light}"
+      },
+      "icon-pink": {
+        "$value": "{palette.juniskar-light}"
+      },
+      "text-pink": {
+        "$value": "{palette.white}"
+      }
+    }
+  }
+}

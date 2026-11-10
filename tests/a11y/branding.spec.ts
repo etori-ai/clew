@@ -1,6 +1,6 @@
 import type { Locator } from '@playwright/test';
 import { desktop, expect, narrow, open, openNav, reflowProblems, test } from './support';
-import { a11yBrandProfile, brandingFixtures } from './branding-fixtures';
+import { a11yBrandProfile, brandingFixtures, savedBranding } from './branding-fixtures';
 
 const surfaces = [
   ['start', '/'],
@@ -9,17 +9,12 @@ const surfaces = [
 ] as const;
 const profile = a11yBrandProfile(process.env.CLEW_A11Y_BRAND_PROFILE);
 const fixture = brandingFixtures[profile];
-const expectedLogo = fixture.expected.logo;
+const expectedLogo = savedBranding(profile).appearance.logo;
 
-test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
-  test.beforeEach(async ({ page }) => {
-    if (profile === 'custom')
-      await page.route('**/branding/test-municipality.svg', route =>
-        route.fulfill({
-          contentType: 'image/svg+xml',
-          body: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><rect width="24" height="24" fill="#5b1f78"/><circle cx="12" cy="12" r="6" fill="white"/></svg>',
-        }),
-      );
+test.describe(`D98 installation logo and theme (${profile})`, () => {
+  // The theme and the logo are what the installation has saved, so they are the API's answer (D98).
+  test.beforeEach(async ({ api }) => {
+    Object.assign(api, savedBranding(profile));
   });
 
   for (const viewport of [desktop, narrow])
@@ -54,7 +49,11 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
           const logo = heading.getByRole('img', { name: expectedLogo.alt, exact: true });
           await expect(logo).toBeVisible();
           // On the band the dark variant is drawn (Sundsvall's white dragon); a logo without one keeps its own ground.
-          await expect(logo).toHaveAttribute('src', expectedLogo.darkSrc ?? expectedLogo.src);
+          // The phone's bar has no band (`shell.tsx`), so there the logo follows the appearance, light here.
+          await expect(logo).toHaveAttribute(
+            'src',
+            viewport === narrow ? expectedLogo.src : (expectedLogo.darkSrc ?? expectedLogo.src),
+          );
           await expect(logo).toHaveJSProperty('complete', true);
           const shape = await logo.evaluate((img: HTMLImageElement) => ({
             natural: img.naturalWidth / img.naturalHeight,
@@ -80,7 +79,7 @@ test.describe(`D37/D38 installation logo and theme (${profile})`, () => {
   if (expectedLogo)
     test('a failed image request leaves a named, working home link', async ({ page, api: _ }) => {
       let failedRequests = 0;
-      await page.route(`**${expectedLogo.darkSrc ?? expectedLogo.src}`, route => {
+      await page.route('**/api/appearance/logo/**', route => {
         failedRequests++;
         return route.abort();
       });

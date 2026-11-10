@@ -137,7 +137,8 @@ export function useAdminAction({
       await Promise.all(invalidate.map(queryKey => client.invalidateQueries({ queryKey })));
       if (message)
         toast({
-          body: createElement(CompletionFeedback, { title: message }),
+          // As children, so Astryx can read the words it announces (see CompletionFeedback).
+          body: createElement(CompletionFeedback, null, message),
           ...(toastId ? { uniqueID: toastId } : {}),
         });
     },

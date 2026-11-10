@@ -13,7 +13,7 @@ import type { Plugin } from 'vite';
  * would, and `/intranat/?source=wordpress` makes the element read them through the WordPress source. Development only (`apply: 'serve'`); nothing of it is in a build. No imports from
  * the package's TypeScript: this file is loaded by the Vite configuration, outside the app's bundler.
  */
-export function siteHeaderDemo(options: { startHref?: string; bff?: string; profile?: string } = {}): Plugin {
+export function siteHeaderDemo(options: { startHref?: string; bff?: string } = {}): Plugin {
   const embed = resolve(import.meta.dirname, '../src/embed.tsx');
   const page = resolve(import.meta.dirname, 'index.html');
   const fixture = resolve(import.meta.dirname, '../fixtures/site-menu.json');
@@ -180,8 +180,6 @@ export function siteHeaderDemo(options: { startHref?: string; bff?: string; prof
                   : `/@fs${embed}`,
               )
               .replace('%VISITOR%', visitor)
-              // The same branding profile as the web app it stands beside (D88), so both sites draw one header.
-              .replace('%PROFILE%', quoted(options.profile ?? 'sundsvall'))
               .replace(
                 'source="sitevision" source-root="%ROOT%"',
                 new URLSearchParams((req.url ?? '').split('?')[1]).get('source') === 'wordpress'

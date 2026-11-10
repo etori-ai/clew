@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { SessionUser } from '@clew/contracts';
@@ -19,7 +19,7 @@ import {
 } from '@clew/ui';
 import { createHeaderBandTheme } from '@clew/ui/theme';
 import { SiteHeader, SiteHeaderPerson, selectedItem, type SiteMenu } from '@clew/site-header';
-import { branding } from '../branding';
+import { useBranding } from '../branding';
 import { headerQuery, threadsQuery } from '../queries';
 import { useSourceBanner } from './source-banner';
 import { api } from '../api';
@@ -29,8 +29,6 @@ import { ReminderBell } from './reminders';
 export const mobileQuery = '(max-width: 767px)';
 /** 1.4.10: with 480 px or less in height nothing is pinned; the page scrolls as one. */
 export const shortQuery = '(max-height: 480px)';
-/** The band's theme (D88) is the installation's, so it is built once with the build's branding. */
-const bandTheme = createHeaderBandTheme(branding);
 /** Until the installation's header has arrived: the site's name and Start, so the bar keeps its height and heading. */
 const PENDING_MENU: SiteMenu = {
   version: 1,
@@ -87,7 +85,10 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   const menu = headerQ.data?.menu ?? PENDING_MENU;
   const here = window.location.origin + location.pathname + location.search;
   const selected = selectedItem(menu, here);
-  // The connector's logo when it gives one, else the installation's own (D37/D38).
+  // The band's theme (D88) is the installation's (D98), built once per saved theme.
+  const branding = useBranding();
+  const bandTheme = useMemo(() => createHeaderBandTheme(branding), [branding]);
+  // The connector's logo when it gives one, else the installation's own (D98).
   const logo = headerQ.data?.logo ?? branding.logo;
   // A system that does not answer is said at the top of every page (D8, D71 artboard 8), under the page's own banner.
   const silent = useSourceBanner();

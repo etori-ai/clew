@@ -1376,9 +1376,10 @@ export type Role = Static<typeof RoleSchema>;
 /**
  * The grant capabilities Clew enforces (D85): a closed list. A group mapping, a `capability:` group key or the development
  * seed may name nothing else; a new name is a contract change. `admin.connectors` administers connected systems (D23),
- * `admin.users` the users page and the group-to-capability mapping (D85).
+ * `admin.users` the users page and the group-to-capability mapping (D85), `admin.appearance` the installation's theme
+ * and logo (D98).
  */
-export const CAPABILITIES = ['admin.connectors', 'admin.users'] as const;
+export const CAPABILITIES = ['admin.connectors', 'admin.users', 'admin.appearance'] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 export const CapabilitySchema = Type.Union(CAPABILITIES.map(c => Type.Literal(c)));
 export const isCapability = (value: string): value is Capability => (CAPABILITIES as readonly string[]).includes(value);
@@ -2070,3 +2071,75 @@ export interface SiteHeaderView {
   source: { id: string; label: string } | null;
 }
 export type { McpTool, McpResult, McpWatch, McpRegistration, McpDelivery, McpService, McpView } from './mcp';
+
+// Named one by one: the server runs under Node through tsx, where a star re-export's names are not visible to an importer.
+export {
+  LOGO_ALT_MAX,
+  LOGO_MAX_BYTES,
+  LOGO_MEDIA_TYPES,
+  THEME_BASE_COLORS,
+  THEME_COLOR_TOKENS,
+  THEME_CONTRAST_PAIRS,
+  THEME_FILE_MAX_BYTES,
+  THEME_NAME_MAX,
+  checkThemeContrast,
+  contrastRatio,
+  isThemeHex,
+  parseThemeFile,
+  themeFileOf,
+  themeFileSchema,
+  themeFromAccent,
+  type InstallationTheme,
+  type LogoMediaType,
+  type ThemeColorPair,
+  type ThemeColorToken,
+  type ThemeColors,
+  type ThemeFileResult,
+  type ThemeMode,
+  type ThemeProblem,
+} from './theme-file';
+import type { InstallationTheme, ThemeProblem } from './theme-file';
+/**
+ * The installation's appearance (D98) as every browser reads it before a person has signed in: the theme, or null for
+ * Astryx Neutral, and the logo's addresses on Clew's own origin, or null for none. `revision` changes with every save,
+ * so a cached copy is recognised as old and a logo's address is new when its image is.
+ */
+export interface InstallationAppearance {
+  revision: number;
+  theme: InstallationTheme | null;
+  logo: { src: string; darkSrc?: string; alt: string } | null;
+}
+/** Administration › Utseende: the same appearance with who saved it and when. */
+export interface AppearanceAdminView extends InstallationAppearance {
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+/** A refused theme file names every problem found, for the page to list under the upload (D98). */
+export interface ThemeRefusal {
+  error: string;
+  problems: ThemeProblem[];
+}
+/** The parsed theme file itself; `parseThemeFile` is the validation, so the schema only bounds the envelope. */
+export const AppearanceThemeInput = Type.Object({ file: Type.Unknown() }, { additionalProperties: false });
+export type AppearanceThemeInputType = Static<typeof AppearanceThemeInput>;
+const LogoImageInput = Type.Object(
+  {
+    mediaType: Type.Union([Type.Literal('image/png'), Type.Literal('image/svg+xml')]),
+    /** The image's bytes in base64. */
+    data: Type.String({ minLength: 1, maxLength: 360_000, pattern: '^[A-Za-z0-9+/]+={0,2}$' }),
+  },
+  { additionalProperties: false },
+);
+/**
+ * A save of the logo. `light` left out keeps the stored image and only the name changes; `dark` left out keeps the
+ * stored dark variant and `null` removes it.
+ */
+export const AppearanceLogoInput = Type.Object(
+  {
+    alt: Type.String({ minLength: 1, maxLength: 120, pattern: '\\S' }),
+    light: Type.Optional(LogoImageInput),
+    dark: Type.Optional(Type.Union([LogoImageInput, Type.Null()])),
+  },
+  { additionalProperties: false },
+);
+export type AppearanceLogoInputType = Static<typeof AppearanceLogoInput>;

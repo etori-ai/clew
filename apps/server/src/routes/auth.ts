@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { LOGIN_TRANSACTION_MS, readSession, revokeSession, touchSession } from '../auth';
-import { sessionUser } from '@clew/contracts';
+import { CAPABILITIES, sessionUser } from '@clew/contracts';
 import {
   AuthError,
   authSettings,
@@ -48,7 +48,7 @@ authRoutes.get('/session', protectedRoute(), c => {
   // `admin` only decides whether the browser shows the entry point; every admin call is checked again on the server (D23).
   return c.json({
     user: sessionUser(session.context),
-    admin: ['admin.connectors', 'admin.users'].some(c => session.context.capabilities.includes(c)),
+    admin: CAPABILITIES.some(c => session.context.capabilities.includes(c)),
     csrfToken: session.csrfToken,
     sessionKey: session.sessionKey,
     expiresAt: session.context.expiresAt,

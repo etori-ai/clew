@@ -1197,6 +1197,12 @@ export function ThreadRow({
     </Text>
   ) : null;
   const reminder = thread.timers?.find(t => t.kind === 'reminder' && t.state === 'scheduled');
+  // A reminder that is not on its way says so on the row too, not only on the open card (`TimerNote`): queued work has
+  // a visible status and never reads as scheduled (reliability roadmap, phase 5A). One that was stopped needs a hand,
+  // so it is a badge after the words; one that waits to be scheduled is words on the line, and not inside the settle
+  // window, where a queued timer is not drawn (D64 item 2).
+  const timerStopped = !!thread.timers?.some(t => t.state === 'blocked');
+  const timerWaits = !timerStopped && !actions.settling && !!thread.timers?.some(t => t.state === 'queued');
   // A job across systems says how many steps in how many systems, never three glyphs (artboard 10).
   const line = [
     mark.title,
@@ -1204,6 +1210,7 @@ export function ThreadRow({
     thread.receipt ? receiptLine(thread) : thread.trigger.reason.replace(/\.$/, ''),
     thread.waitingOn ? `väntar på ${thread.waitingOn}` : '',
     thread.waitingOn && reminder ? `påminner dig ${snoozeWhen(reminder.dueAt, new Date().toISOString())}` : '',
+    timerWaits ? 'påminnelsen väntar på schemaläggning' : '',
     inConversation ? 'i samtalet' : '',
     isOpen ? 'öppet bredvid' : '',
   ]
@@ -1255,6 +1262,9 @@ export function ThreadRow({
             <AreaLine icon={mark.icon}>{line}</AreaLine>
             <ReceiptFlag thread={thread} quiet />
             <Flags thread={thread} />
+            {timerStopped && (
+              <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Påminnelsen stoppad" />
+            )}
           </HStack>
           {under && end}
           {error && (
