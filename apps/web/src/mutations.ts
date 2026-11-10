@@ -195,7 +195,8 @@ export function useTalkAction({ fallback = 'Något gick fel.', toastId }: { fall
       TALK_SIDE_KEYS.forEach(queryKey => void client.invalidateQueries({ queryKey }));
       await Promise.all(TALK_KEYS.map(queryKey => client.invalidateQueries({ queryKey })));
       toast({
-        body: createElement(CompletionFeedback, { title: vars.done }),
+        // As children, so Astryx can read the words it announces (see CompletionFeedback).
+        body: createElement(CompletionFeedback, null, vars.done),
         ...(toastId ? { uniqueID: toastId } : {}),
         ...(vars.toast.endContent ? { endContent: vars.toast.endContent, isAutoHide: false } : {}),
       });
