@@ -106,7 +106,9 @@ export const assignments = pgTable(
  * client reads and writes its own organisation's groups only), the source's stable `externalId` when the client set
  * one (unique across the installation, since D68's keys are shared vocabulary), and its name as `label` (SCIM's
  * `displayName`). Meaning comes from D68's keys in `externalId` or a mapping row; a group without an external id is a
- * plain group.
+ * plain group. A `unit:` group is a node of the organisation tree (D99): `parentUnitId` is the unit id of the node above
+ * it, null on a root and on every group that is not a `unit:` group. It names a unit id, not a row, because the parent
+ * is another pushed group; the SCIM use case checks that it exists, under the tree's lock.
  */
 export const groups = pgTable(
   'auth_group',
@@ -115,10 +117,11 @@ export const groups = pgTable(
     organisationId: text('organisation_id').notNull(),
     externalId: text('external_id'),
     label: text('label').notNull(),
+    parentUnitId: text('parent_unit_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  t => [uniqueIndex('auth_group_external_id').on(t.externalId)],
+  t => [uniqueIndex('auth_group_external_id').on(t.externalId), index('auth_group_parent_unit').on(t.parentUnitId)],
 );
 export const groupMembers = pgTable(
   'auth_group_member',

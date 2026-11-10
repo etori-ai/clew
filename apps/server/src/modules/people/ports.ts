@@ -5,6 +5,8 @@ import type {
   GroupCapabilityRule,
   GroupRecord,
   Membership,
+  Placement,
+  TreeUnit,
   UserRecord,
 } from './domain';
 
@@ -55,6 +57,13 @@ export interface ProvisionTx {
    * committed. Without it the two wait on each other, or a manager's derivation names the unit by its id.
    */
   lockUnits(unitIds: readonly string[]): Promise<void>;
+  /**
+   * Holds the organisation's tree for the rest of the transaction (D99). A write that gives a unit a parent, moves it
+   * or removes it takes this before it reads the units around it, so two such writes run one after the other: a parent
+   * cannot be removed while a child is being placed under it, and two moves cannot close a cycle between them. Taken
+   * before `lockUnits`, by every caller.
+   */
+  lockTree(organisationId: string): Promise<void>;
   /** The groups with an external id the person is in; a group without one carries no meaning. */
   memberships(personId: string): Promise<Membership[]>;
   members(groupExternalId: string): Promise<string[]>;
@@ -114,7 +123,7 @@ export interface ProvisionTx {
   insertGroup(record: GroupRecord): Promise<void>;
   updateGroup(
     id: string,
-    fields: Partial<Pick<GroupRecord, 'externalId' | 'label'>> & { updatedAt: string },
+    fields: Partial<Pick<GroupRecord, 'externalId' | 'label' | 'parentUnitId'>> & { updatedAt: string },
   ): Promise<void>;
   /** Removes the group and its memberships; its group-capability rows stay (D85). */
   deleteGroup(id: string): Promise<void>;
@@ -122,17 +131,37 @@ export interface ProvisionTx {
   setGroupMembers(groupId: string, personIds: readonly string[]): Promise<void>;
   // Administration › Användare (D85).
   assignmentsOf(personId: string): Promise<Array<{ unitId: string; unitLabel: string; role: Assignment['role'] }>>;
-  // Personal (D94): everyone assigned to a unit, with their role on it; the use case sorts and excludes the reader.
-  unitPeople(unitId: string): Promise<
-    Array<{
-      id: string;
-      name: string;
-      userName: string | null;
-      email: string | null;
-      role: Assignment['role'];
-      enabled: boolean;
-    }>
+  /**
+   * Personal (D94, D99): everyone assigned to each of the units, under the unit's id, with their role on it and by
+   * person id; a unit nobody is assigned to is absent. With `organisationId`, that organisation's people only. The use
+   * case sorts and excludes the reader.
+   */
+  unitPeople(
+    unitIds: readonly string[],
+    organisationId?: string,
+  ): Promise<
+    Record<
+      string,
+      Array<{
+        id: string;
+        name: string;
+        userName: string | null;
+        email: string | null;
+        role: Assignment['role'];
+        enabled: boolean;
+      }>
+    >
   >;
+  // The organisation tree (D99). A node is a `unit:` group; its parent is on the group.
+  /** The units directly below a unit: the `unit:` groups that name it as their parent, by unit id. */
+  childUnits(unitId: string): Promise<Array<{ id: string; label: string }>>;
+  /** Every node of the organisation's tree, by unit id. */
+  unitTree(organisationId: string): Promise<TreeUnit[]>;
+  /**
+   * Every person of the organisation with each unit they are assigned to, by person id and then unit id; a person
+   * assigned to none is one row with `unitId` and `role` null.
+   */
+  placements(organisationId: string): Promise<Placement[]>;
   /** Whether an identity binding exists for the person, with any issuer. */
   bound(personId: string): Promise<boolean>;
   /** Add or remove one group-capability row; true when the row changed. */

@@ -79,6 +79,48 @@ test.describe('Personal', () => {
       // The manager reading is never listed among their own people (the header still names them).
       await expect(page.getByRole('table').getByText('Testa Testsson')).toHaveCount(0);
     });
+    test('a manager who reports from a unit below is listed with the unit they lead, on a desktop and on a phone (D99)', async ({
+      page,
+      api,
+    }) => {
+      // The rektor's reports through the school: its own people, and the manager of the fritidshem under it.
+      api.staff.units[0]!.people.push(
+        {
+          id: 'hanna',
+          name: 'Hanna Hosseini',
+          userName: 'hanna.hosseini',
+          email: 'hanna.hosseini@clew.test',
+          role: 'manager',
+          enabled: true,
+          below: [{ unitId: 'unit-skola-fritids', unitLabel: 'Skönsmons fritidshem', role: 'manager' }],
+        },
+        {
+          id: 'olle',
+          name: 'Olle Persson',
+          userName: 'olle.persson',
+          email: null,
+          role: 'employee',
+          enabled: true,
+          below: [
+            { unitId: 'unit-a', unitLabel: 'Biblioteket', role: 'employee' },
+            { unitId: 'unit-b', unitLabel: 'Matsalen', role: 'employee' },
+          ],
+        },
+      );
+      await open(page, '/staff');
+      const school = page.getByRole('table').first();
+      await expect(school.getByRole('row', { name: /Hanna Hosseini/ })).toContainText('Chef för Skönsmons fritidshem');
+      await expect(school.getByRole('row', { name: /Olle Persson/ })).toContainText(
+        'Medarbetare på Biblioteket och Matsalen',
+      );
+      // The people assigned to the school itself are as before.
+      await expect(school.getByText('Medarbetare', { exact: true })).toHaveCount(3);
+      await expectNoAxeViolations(page);
+      await page.setViewportSize(narrow);
+      const list = page.getByRole('list', { name: 'Skönsmons skola' });
+      await expect(list.getByText('Chef för Skönsmons fritidshem · hanna.hosseini@clew.test')).toBeVisible();
+      expect(await reflowProblems(page)).toEqual([]);
+    });
     test('when the server refuses, the page says whom it is for and offers the way back', async ({ page, api }) => {
       api.staffForbidden = true;
       await open(page, '/staff');

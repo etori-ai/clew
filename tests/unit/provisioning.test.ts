@@ -90,6 +90,7 @@ provisioningContract('memory', async (): Promise<ProvisioningHarness> => {
         s.groups.set(g.externalId, {
           id: g.externalId,
           organisationId: g.organisationId ?? 'org',
+          parentUnitId: null,
           externalId: g.externalId,
           label: g.label,
           createdAt: T,

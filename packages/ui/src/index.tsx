@@ -107,6 +107,7 @@ export { MetadataList, MetadataListItem } from '@astryxdesign/core/MetadataList'
 export { RadioList, RadioListItem } from '@astryxdesign/core/RadioList';
 export { Breadcrumbs, BreadcrumbItem } from '@astryxdesign/core/Breadcrumbs';
 export { Toolbar } from '@astryxdesign/core/Toolbar';
+export { TreeList, type TreeListItemData } from '@astryxdesign/core/TreeList';
 export { FormLayout } from '@astryxdesign/core/FormLayout';
 export { TextInput } from '@astryxdesign/core/TextInput';
 export { FileInput } from '@astryxdesign/core/FileInput';

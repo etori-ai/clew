@@ -64,7 +64,12 @@ import type {
   Verb,
 } from '@clew/contracts';
 import { sessionFetch } from '@clew/ui';
-import type { AppearanceAdminView, AppearanceLogoInputType } from '@clew/contracts';
+import type {
+  AppearanceAdminView,
+  AppearanceLogoInputType,
+  OrganisationOverview,
+  OrganisationUnitPeople,
+} from '@clew/contracts';
 import type { McpDelivery, McpService, McpView, McpResult } from '@clew/contracts';
 
 import { ApiError } from './api-error';
@@ -290,6 +295,10 @@ export const api = {
       post<UsersAdminOverview>('/api/admin/users/group-capabilities', input),
     removeGroupCapability: (input: GroupCapabilityInputType) =>
       post<UsersAdminOverview>('/api/admin/users/group-capabilities/remove', input),
+    // Organisation (D99): the organisation tree as the catalogue pushed it, and the people of one unit.
+    organisation: () => call<OrganisationOverview>('/api/admin/organisation'),
+    organisationUnit: (unitId: string) =>
+      call<OrganisationUnitPeople>(`/api/admin/organisation/units/${encodeURIComponent(unitId)}`),
     // Utseende (D98): the installation's theme file and logo.
     appearance: () => call<AppearanceAdminView>('/api/admin/appearance'),
     setTheme: (file: unknown) =>

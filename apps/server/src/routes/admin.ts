@@ -30,7 +30,7 @@ import type {
 } from '@clew/contracts';
 import { InputError, protectedRoute, type Env } from '../context';
 import { connectorAdmin, models } from '../composition';
-import { usersAdmin } from '../composition/people';
+import { organisation, usersAdmin } from '../composition/people';
 import { operations } from '../composition/operations';
 import { appearance } from '../composition/appearance';
 import { ThemeFileError } from '../modules/appearance/usecases';
@@ -89,6 +89,11 @@ adminRoutes.post('/users/group-capabilities/remove', async c =>
       await body<GroupCapabilityInputType>(c.req.raw, validators.groupCapability),
     ),
   ),
+);
+// Organisation (D99): the organisation tree as the provisioner pushed it and the people of one unit, behind `admin.users`.
+adminRoutes.get('/organisation', async c => c.json(await organisation.overview(c.get('session').context)));
+adminRoutes.get('/organisation/units/:id', async c =>
+  c.json(await organisation.unit(c.get('session').context, c.req.param('id'))),
 );
 // Utseende (D98): the installation's theme file and logo, behind `admin.appearance`.
 adminRoutes.get('/appearance', async c => c.json(await appearance.adminRead(c.get('session').context)));

@@ -30,7 +30,7 @@ Clew holds one name per person. Send `displayName` (or `name.formatted`) when a 
 
 | `externalId` | A member gets | `displayName` |
 |---|---|---|
-| `unit:<unitId>` | An assignment to that unit as `employee` | The unit's name, shown in the product |
+| `unit:<unitId>` | An assignment to that unit as `employee`. The group is also the unit itself: a node of the organisation tree, which may name the unit above it (see below) | The unit's name, shown in the product |
 | `unit-manager:<unitId>` | An assignment to that unit as `manager`, which wins over `unit:` for the same unit | Free |
 | `capability:<name>` | That capability, one of the closed list (`admin.connectors`, `admin.users`) | Free |
 | `protected`, in any case | Refused with 400 `invalidValue` ([D93](../decisions/D93-the-protected-key-is-refused-at-the-scim-boundary.md)): Clew has not decided whether it may hold that fact, so do not send it | Free |
@@ -40,7 +40,26 @@ A person with no `unit:` or `unit-manager:` membership exists but can do nothing
 
 **Keys are exact, and one written wrong is refused** ([D96](../decisions/D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md)). The prefixes are lower case with the id or name directly after the colon. `Unit:skola`, `unit:` with nothing after it, `unit: skola` and `capability:` with a name outside the list answer 400 `invalidValue` with the key and the reason in `detail`, instead of becoming a plain group that gives nobody anything.
 
-**Units are flat, and a group's members are people.** Clew has no organisation tree: a manager of a förvaltning manages its enheter only where the provisioner puts them in each `unit-manager:<id>` group, so a source with a hierarchy flattens it in the provisioner. A group as a member of a group is refused with 400 `invalidValue`; send the people.
+**Units form a tree, and you push it** ([D99](../decisions/D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md)). An organisation is a tree, and Clew holds it as you send it: every unit is a `unit:` group, also a unit nobody is placed on (a heading such as "Avdelningar"), and a unit below another names the one above it in an extension schema on the group:
+
+```json
+{
+  "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group", "urn:clew:params:scim:schemas:extension:unit:2.0:Group"],
+  "externalId": "unit:9540",
+  "displayName": "Utveckling",
+  "members": [{ "value": "<the person's SCIM id>" }],
+  "urn:clew:params:scim:schemas:extension:unit:2.0:Group": { "parent": "unit:11213" }
+}
+```
+
+`parent` is the `externalId` of the unit group above, written as exactly as a key is. A root carries no extension, and an installation may have several roots (a municipality and each of its companies). Clew holds an id, a name and a parent for a unit and nothing else: no levels and no kinds, so a förvaltning, an avdelning and an enhet are all units, and the depth may differ from branch to branch. Clew never works the tree out from the people: a tree that exists only as a path on each person has to be turned into units in the provisioner, and it is better still when the source can list its units with a parent id.
+
+- **Push from the root down, remove from the leaves up.** A parent that does not exist yet answers 400 `invalidValue`, and so does a parent in another organisation, a unit as its own parent, a parent that stands below the unit (a cycle), and the extension on a group that is not a `unit:` group. `DELETE` of a unit that still has units below it answers 409 and names them.
+- **A move is a change of `parent`.** `PUT` the unit group with the new parent, or `PATCH` the path `urn:clew:params:scim:schemas:extension:unit:2.0:Group:parent` (`replace` to move, `remove` to make a root); a `PUT` without the extension also makes a root, and a unit group whose key stops being a `unit:` key (a `PATCH` that replaces or removes `externalId`) loses its parent with it. Name the extension by its URN in `attributes` or `excludedAttributes` to read or leave out the parent. Keep the unit's id through a reorganisation: everything in Clew that names the unit follows it, and a move changes nobody's access.
+- **Place a person once.** A person is a member of the `unit:` group of the unit they work in, and of `unit-manager:<id>` for a unit they lead. Do not put a manager into the manager group of every unit below their own.
+- **The reporting line follows the tree.** A person reports to the managers of the nearest unit, their own or above it, that has a manager; a manager reports to the managers of the nearest unit above their own that has one; a unit nobody leads passes the line through, and so does a unit whose only managers are deactivated. In the product a manager sees and works with their reports: the people placed with them and the managers directly below, never everyone in the branch. So a manager high up needs the managers below them to be pushed as managers of their own units, and a person on a unit with no manager on it or anywhere above it reports to nobody: the check names such a unit.
+
+**A group's members are people.** A group as a member of a group is refused with 400 `invalidValue`; send the people. The tree is the `parent` above, not nesting.
 
 **Transport.** `filter` supports one equality: `userName eq "…"` or `externalId eq "…"` on users, `externalId eq "…"` or `displayName eq "…"` on groups. `startIndex` and `count` page, at most 200 rows. `attributes` and `excludedAttributes` narrow what a read answers, in the address or in a `.search` body; `excludedAttributes=members` reads a large group without its members. `PATCH` takes a path per operation (`members`, `members[value eq "<id>"]`, `active`, `userName`, …), the schema-qualified form and the path-less object form that Microsoft Entra and Okta send. Bulk, sorting and ETags are not offered; `ServiceProviderConfig` says so. Errors are the standard's error resource with `scimType` and an English `detail`. While the server starts it answers 503 with `Retry-After`.
 
@@ -60,8 +79,8 @@ Clew records when a provisioner last called, and Administration › Användare s
 
 1. For each person in the source: `GET /Users?filter=externalId eq "<id>"`, then `POST` when absent or `PUT` when present. The server writes nothing when nothing changed.
 2. For each person Clew knows under this provisioner's `externalId` space who is no longer in the source: `PATCH` `active` to `false`.
-3. For each group that follows from the source (the units, the managers of each unit, the capability holders, the plain directory groups): `GET /Groups?filter=externalId eq "<key>"`, then `POST` or `PUT` with the full member list, as SCIM ids from step 1.
-4. For each group with a key this provisioner owns that no longer follows from the source: `DELETE`. Groups with other keys belong to somebody else and are left alone.
+3. For each group that follows from the source (the units, the managers of each unit, the capability holders, the plain directory groups): `GET /Groups?filter=externalId eq "<key>"`, then `POST` or `PUT` with the full member list, as SCIM ids from step 1. The units go first and from the root down, each with its `parent`, so that the unit above exists when the one below is written; a unit that moved is written with its new parent here.
+4. For each group with a key this provisioner owns that no longer follows from the source: `DELETE`, a unit only once no unit that is also going still stands below it. Groups with other keys belong to somebody else and are left alone.
 
 Run it at least daily: validity lives in the source (a ställföreträdare is a membership the provisioner adds when the period starts and removes when it ends), so access ends when the push arrives. A leaver's account must also be closed at the identity provider.
 
@@ -73,10 +92,10 @@ Run it at least daily: validity lives in the source (a ställföreträdare is a 
 CLEW_PROVISIONER_TOKEN=<token> bun scripts/provisioner-check.ts https://clew.example/scim/v2
 ```
 
-The check reads what the installation holds, over SCIM alone, and changes nothing: that the endpoint and the token answer, how many users and groups of each kind there are, which active users have no unit (and so no access), which managed units no `unit:` group names, which unit groups are empty, and which stored groups carry a key written wrong. It authenticates as the provisioner, so it counts as a call from it; issue the check a token under an id of its own to leave the provisioner's last-seen time alone.
+The check reads what the installation holds, over SCIM alone, and changes nothing: that the endpoint and the token answer, how many users and groups of each kind there are, which active users have no unit (and so no access), which managed units no `unit:` group names, how many roots and levels the tree has, which unit groups are empty (a unit with units below it may be a heading and is not named), which units have people and no manager on them or above them, and which stored groups carry a key written wrong. An administrator sees the same tree in the product, on Administration › Organisation. It authenticates as the provisioner, so it counts as a call from it; issue the check a token under an id of its own to leave the provisioner's last-seen time alone.
 
 ## The example
 
-`scripts/provisioner/directory.ts` is the development stack's source: two hundred people in twenty-five units under five administrations, each with a unit and a manager flag, some working in or managing a second unit, one unit with two managers, everyone in plain directory groups (`ad:…`, which mean nothing in Clew until an administrator maps or names them) that run from nobody to seventy members, a few with Clew capabilities, seven written by hand with the names a generator does not come up with (a hyphen, an apostrophe, accents, a very long name, two people with one name), and three of them personas with a Keycloak account. `push.ts` maps those facts to the groups above (`plan()`, pure) and pushes them (`push()`, idempotent), through `client.ts`, a forty-line SCIM client. `bun run auth:setup` runs it in-process after creating the Keycloak accounts; `bun run dev:provision` runs it over HTTP against a running `bun run dev`. `tests/unit/provisioner.test.ts` runs it against the routes on the memory store and is the shape a provisioner's own tests can take: no network, no vendor account.
+`scripts/provisioner/directory.ts` is the development stack's source: two hundred and ten people in thirty-four units that form a tree of five levels (the municipality, its five administrations, an area between an administration and some of its units, the units people work in, and a unit under one of those), with a manager on every level, an area nobody leads and a unit led from the one above it; each person with a unit and a manager flag, some working in or managing a second unit, one unit with two managers, everyone in plain directory groups (`ad:…`, which mean nothing in Clew until an administrator maps or names them) that run from nobody to seventy members, a few with Clew capabilities, seven written by hand with the names a generator does not come up with (a hyphen, an apostrophe, accents, a very long name, two people with one name), and three of them personas with a Keycloak account. `push.ts` maps those facts to the groups above (`plan()`, pure: the units from the root down) and pushes them (`push()`, idempotent, removing from the leaves up), through `client.ts`, a forty-line SCIM client. `bun run auth:setup` runs it in-process after creating the Keycloak accounts; `bun run dev:provision` runs it over HTTP against a running `bun run dev`. `tests/unit/provisioner.test.ts` runs it against the routes on the memory store and is the shape a provisioner's own tests can take: no network, no vendor account.
 
 To write yours, replace `directory.ts` with a reader of your source, keep `plan()`'s mapping or change the keys it emits, and point `index.ts` at your installation. Nothing in Clew changes. `check.ts` is what `scripts/provisioner-check.ts` runs.

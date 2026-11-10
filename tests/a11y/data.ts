@@ -3,6 +3,8 @@ import type {
   TalkRound,
   TalksResult,
   UsersAdminOverview,
+  OrganisationOverview,
+  OrganisationUnitPeople,
   StaffOverview,
   AssistantStatus,
   ModelDetail,
@@ -1377,3 +1379,70 @@ export const siteHeader = (): SiteHeaderView => ({
   logo: null,
   source: null,
 });
+
+/**
+ * Administration › Organisation (D99): a tree of four levels as a catalogue pushed it, with what a push can leave
+ * wrong: an administration nobody leads whose unit is led from nowhere above it either, a unit nobody is placed on, a
+ * unit people are on that no unit group names, and two people placed on no unit.
+ */
+export const organisationOverview = (): OrganisationOverview => {
+  const unit = (
+    unitId: string,
+    unitLabel: string,
+    parentId: string | null,
+    managers: string[],
+    placed: number,
+    branch: number,
+    line: 'own' | 'above' | 'none',
+    pushed = true,
+  ) => ({
+    unitId,
+    unitLabel,
+    parentId,
+    managers: managers.map(name => ({ id: name.toLowerCase().replace(/\W+/g, '-'), name })),
+    placed,
+    branch,
+    line,
+    pushed,
+  });
+  return {
+    units: [
+      unit('unit-arkiv', 'Arkivet', 'unit-kultur', [], 0, 0, 'none'),
+      unit('unit-utbildning', 'Barn och utbildning', 'unit-kommun', ['Elin Lindqvist'], 2, 9, 'own'),
+      unit('unit-skola', 'Bergsåkers skola', 'unit-grundskola', ['Hillevi Berg', 'Karin Åberg'], 3, 3, 'own'),
+      unit('unit-grundskola', 'Grundskola', 'unit-utbildning', ['Mattias Eriksson'], 1, 7, 'own'),
+      unit('unit-hagaskolan', 'Hagaskolan', 'unit-grundskola', [], 3, 3, 'above'),
+      unit('unit-hemtjanst', 'Hemtjänst', 'unit-omsorg', [], 0, 4, 'above'),
+      unit('unit-omsorg-centrum', 'Hemtjänst Centrum', 'unit-hemtjanst', ['Sara Pettersson'], 4, 4, 'own'),
+      unit('unit-kommun', 'Kommunen', null, ['Yusuf Lundgren'], 1, 15, 'own'),
+      unit('unit-kultur', 'Kultur och fritid', null, [], 2, 2, 'none'),
+      unit('unit-okand', 'unit-okand', null, ['Nils Öberg'], 1, 1, 'own', false),
+      unit('unit-omsorg', 'Vård och omsorg', 'unit-kommun', ['Amir Sjöberg'], 1, 5, 'own'),
+    ],
+    unplaced: 2,
+  };
+};
+/** The people of the units of `organisationOverview()` that a test opens; a unit not listed has nobody placed on it. */
+export const organisationPeople: Record<string, OrganisationUnitPeople['people']> = {
+  'unit-skola': [
+    {
+      id: 'anna',
+      name: 'Anna Lindqvist',
+      userName: 'anna.lindqvist',
+      email: 'anna.lindqvist@clew.test',
+      role: 'employee',
+      enabled: true,
+    },
+    {
+      id: 'hillevi',
+      name: 'Hillevi Berg',
+      userName: 'hillevi',
+      email: 'hillevi@clew.test',
+      role: 'manager',
+      enabled: true,
+    },
+    { id: 'karin', name: 'Karin Åberg', userName: 'karin.aberg', email: null, role: 'manager', enabled: true },
+    // Deactivated: listed with the mark, and not among the three the tree's row counts.
+    { id: 'vera', name: 'Vera Öst', userName: 'vera.ost', email: null, role: 'employee', enabled: false },
+  ],
+};

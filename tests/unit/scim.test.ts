@@ -659,7 +659,7 @@ describe('SCIM patch and filter rules', () => {
     expect(() => applyUserPatch(fields, [{ op: 'replace', path: 'active', value: 'maybe' }])).toThrow('boolean');
   });
   test('group patches add, remove and replace members in every form the clients use', () => {
-    const g = { externalId: 'unit:a', label: 'A', members: ['1', '2'] };
+    const g = { externalId: 'unit:a', label: 'A', parent: null, members: ['1', '2'] };
     expect(applyGroupPatch(g, [{ op: 'add', path: 'members', value: [{ value: '3' }] }]).members).toEqual([
       '1',
       '2',
@@ -672,6 +672,7 @@ describe('SCIM patch and filter rules', () => {
     expect(applyGroupPatch(g, [{ op: 'replace', value: { displayName: 'B', members: [{ value: '5' }] } }])).toEqual({
       externalId: 'unit:a',
       label: 'B',
+      parent: null,
       members: ['5'],
     });
     expect(applyGroupPatch(g, [{ op: 'remove', path: 'externalId' }]).externalId).toBeNull();

@@ -1,6 +1,6 @@
 # D96 · Talks is Clew's first owned domain: the round and action points, behind a profile a connector can answer
 
-**Status:** accepted, built 2026-11-10 (the round, action points, the profile and its fixture; see "As built"); synthetic data only until questions 6 and 11 below are answered · **Date:** 2026-11-10 · **Area:** product, integrations
+**Status:** accepted, built 2026-11-10 (the round, action points, the profile and its fixture; see "As built"); synthetic data only until questions 6 and 11 below are answered; item 1 amended by D99 (2026-11-10): a person is due a talk with the manager they report to in the organisation tree · **Date:** 2026-11-10 · **Area:** product, integrations
 
 **Decision.** Utvecklingssamtal becomes the first domain Clew owns under
 [D95](D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist.md): a module

@@ -15,6 +15,8 @@ export const SCIM = {
   serviceProviderConfig: 'urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig',
   resourceType: 'urn:ietf:params:scim:schemas:core:2.0:ResourceType',
   schema: 'urn:ietf:params:scim:schemas:core:2.0:Schema',
+  /** D99: the extension a `unit:` group carries its place in the organisation tree in. Its one attribute is `parent`. */
+  unit: 'urn:clew:params:scim:schemas:extension:unit:2.0:Group',
 } as const;
 export const SCIM_CONTENT_TYPE = 'application/scim+json; charset=utf-8';
 /** The most rows one list answers (ServiceProviderConfig `filter.maxResults`). */
@@ -135,10 +137,12 @@ export interface ScimUser {
   meta: ScimMeta;
 }
 export interface ScimGroup {
-  schemas: [typeof SCIM.group];
+  schemas: [typeof SCIM.group] | [typeof SCIM.group, typeof SCIM.unit];
   id: string;
   externalId?: string;
   displayName: string;
   members: Array<{ value: string; display: string; $ref: string }>;
+  /** D99: on a `unit:` group that has a unit above it; `parent` is that unit group's `externalId`. */
+  [SCIM.unit]?: { parent: string };
   meta: ScimMeta;
 }

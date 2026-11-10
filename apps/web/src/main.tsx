@@ -17,6 +17,7 @@ import { AdminConnectorsPage } from './pages/admin/connectors';
 import { AdminConnectorPage } from './pages/admin/connector';
 import { AdminModelsPage } from './pages/admin/models';
 import { AdminUsersPage } from './pages/admin/users';
+import { AdminOrganisationPage } from './pages/admin/organisation';
 import { StaffPage } from './pages/staff';
 import { AdminModelPage } from './pages/admin/model';
 import { AdminProviderPage } from './pages/admin/provider';
@@ -250,6 +251,12 @@ function App() {
         path="/admin/users"
         element={admin(shell => (
           <AdminUsersPage user={shell.user} />
+        ))}
+      />
+      <Route
+        path="/admin/organisation"
+        element={admin(shell => (
+          <AdminOrganisationPage user={shell.user} />
         ))}
       />
       <Route
