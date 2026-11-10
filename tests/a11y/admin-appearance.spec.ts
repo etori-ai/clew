@@ -102,7 +102,8 @@ test.describe('appearance administration', () => {
       // The saved theme is every page's, and the next visit starts in it.
       await page.getByRole('link', { name: 'Kalender', exact: true }).click();
       await expect(page).toHaveURL('/calendar');
-      expect(await accent(page)).toContain('#005595');
+      // The calendar page is a chunk of its own: its `main` is there when the chunk has loaded.
+      await expect.poll(() => accent(page)).toContain('#005595');
       await page.reload();
       await expect.poll(() => accent(page)).toContain('#005595');
     });

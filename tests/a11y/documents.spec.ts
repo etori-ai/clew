@@ -258,6 +258,11 @@ test.describe('the shared document and semantic catalogue', () => {
       );
       await refreshed;
     };
+    // A connection starts by saying the current revision, which is what the page's first reads answered and so no
+    // notice (`changeNotices`): the stand-in says it once before the three changes.
+    await page.evaluate(() =>
+      (window as unknown as { emitChange: (data: object) => void }).emitChange({ revision: '0', policy: '1:1' }),
+    );
     for (let revision = 1; revision <= 3; revision++) {
       await emit(revision);
       await expect(reading).toBeFocused();
