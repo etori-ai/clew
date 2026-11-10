@@ -321,6 +321,69 @@ const renewDelegation = {
   output: executeResult,
 };
 
+/** The most keys Clew sends in one call to a read about an entity (D97). */
+export const KEYS_MAX = 200;
+/** The word for a short sick leave on day N; the HR system counts one as short for up to 14 days. */
+export const SICK_DAYS = 14;
+export const sickOnDay = n => `Sjuk · dag ${n}`;
+/**
+ * Where each person stands today (D97): a read about a person, asked with a batch of user names, one row per employee of
+ * the manager's unit in this system, carrying the key it was asked with. Anyone else is no row. Presence is the column
+ * "Närvaro" on Personal: "I tjänst" is plain, an absence a neutral badge, so only the absences carry a tone.
+ */
+const person = {
+  name: 'hr.person',
+  kind: 'read',
+  title: 'Frånvaro',
+  description: 'Om medarbetaren är i tjänst i dag, frånvaron i dag och nästa frånvaro som är känd. Bara för chefen.',
+  model: false,
+  scope: manager,
+  about: { entity: 'person' },
+  input: object({
+    keys: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 256 }, maxItems: KEYS_MAX },
+  }),
+  output: object({
+    rows: {
+      type: 'array',
+      maxItems: KEYS_MAX,
+      items: object(
+        {
+          key: string,
+          ref: { type: 'string', pattern: '^hr:emp:[0-9]+$' },
+          presence: string,
+          today: string,
+          upcoming: string,
+        },
+        ['key', 'ref', 'presence', 'today'],
+      ),
+    },
+  }),
+  view: {
+    kind: 'list',
+    title: 'presence',
+    modelReads: 'summary',
+    noun: { one: 'medarbetare', other: 'medarbetare' },
+    empty: 'Personalsystemet har ingen uppgift om dem.',
+    fields: [
+      {
+        key: 'presence',
+        label: 'Närvaro',
+        format: 'status',
+        tones: {
+          ...Object.fromEntries(Array.from({ length: SICK_DAYS }, (_, i) => [sickOnDay(i + 1), 'none'])),
+          Sjukskriven: 'none',
+          VAB: 'none',
+          Semester: 'none',
+          Ledig: 'none',
+        },
+      },
+      { key: 'today', label: 'I dag' },
+      { key: 'upcoming', label: 'Kommande' },
+    ],
+    open: { capability: 'hr.absencePattern', title: 'Frånvaromönster', params: { ref: 'ref' } },
+  },
+};
+
 const lookup = {
   name: 'hr.lookup',
   kind: 'read',
@@ -379,5 +442,6 @@ export const manifest = {
     myBalance,
     renewDelegation,
     lookup,
+    person,
   ],
 };

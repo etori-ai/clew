@@ -12,6 +12,8 @@ export declare const DEFAULT_LINK_BASE: string;
 export declare const TalksOutput: object;
 export declare const CommitmentsInput: object;
 export declare const CommitmentsOutput: object;
+export declare const PersonInput: object;
+export declare const PersonOutput: object;
 export declare const PEOPLE: Array<{ userName: string; name: string; manager: string }>;
 export declare const MANAGERS: Array<{ userName: string; name: string }>;
 export declare const ROUND: { id: string; opensIn: number; dueIn: number };

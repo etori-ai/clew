@@ -31,9 +31,11 @@ export function previewManifest(document: unknown, options: PreviewOptions = {})
     const check =
       c.kind === 'execute'
         ? 'Not called: an execute runs only after a human decision.'
-        : needsInput
-          ? 'Not called: it needs input. Test it against your own fixture.'
-          : `Called with {} as ${roles.join(' and ')}${roles.length < 2 ? `; the other role must be refused by scope` : ''}${c.view ? `; the ${c.view.kind} view is checked against the answer` : ''}.`;
+        : c.kind === 'read' && c.about
+          ? `Called with { keys } as ${roles.join(' and ')}: an unknown key and keys asked by a person on another unit must answer no row and no error; the keys given to the check (--keys, signed --as a person who may see them) must come back one row per key, each carrying a key it was asked with, within the budget.`
+          : needsInput
+            ? 'Not called: it needs input. Test it against your own fixture.'
+            : `Called with {} as ${roles.join(' and ')}${roles.length < 2 ? `; the other role must be refused by scope` : ''}${c.view ? `; the ${c.view.kind} view is checked against the answer` : ''}.`;
     return {
       name: c.name,
       kind: c.kind,

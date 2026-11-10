@@ -355,6 +355,10 @@ describe('a capability about an entity (D97)', () => {
     });
     // A read about a person is never a tool, and the dry run says so.
     expect(preview.manifest!.capabilities.find(c => c.name === 'appraisals.person')!.tool).toBe(false);
+    // The conformance check calls a read about an entity with keys, though it needs input.
+    expect(preview.manifest!.capabilities.find(c => c.name === 'appraisals.person')!.check).toMatch(
+      /^Called with \{ keys \} as .*unknown key.*one row per key/,
+    );
     // `*` names the tone of any other value: a field whose only tone is `*: warn` still marks the row.
     const starred = edited(talks, m => {
       m.capabilities[2].view.fields[0] = { key: 'state', label: 'Läge', format: 'status', tones: { '*': 'warn' } };

@@ -2,8 +2,8 @@
 // state.mjs the store. Independently runnable with Node; imports nothing from the rest of the repository (D21).
 import { createHash } from 'node:crypto';
 import { createVerifier } from './verification.mjs';
-import { manifest, ABSENCE_FACT, CONNECTOR } from './manifest.mjs';
-import { addDays, dateIn, daysBetween, seed, shortDate, sickLeaveOf } from './fixture.mjs';
+import { manifest, ABSENCE_FACT, CONNECTOR, KEYS_MAX, SICK_DAYS, sickOnDay } from './manifest.mjs';
+import { addDays, dateIn, daysBetween, period, seed, shortDate, sickLeaveOf } from './fixture.mjs';
 import { memoryState } from './state.mjs';
 
 export { manifest };
@@ -95,6 +95,61 @@ export function createConnector({
     undoCapability: 'hr.withdrawAbsence',
     undoMinutes: 10,
   });
+  /**
+   * Every absence of one employee the HR system knows of, as periods: the recorded ones, the sick reports registered
+   * through Clew's jobs, and the leave requests not turned down (an undecided one says so). Inclusive dates.
+   */
+  function absencesOf(employee) {
+    const done = decided();
+    const leaveWord = type => (type === 'semester' ? 'Semester' : 'Ledig');
+    return [
+      ...records()
+        .absences.filter(a => a.employee === employee.ref)
+        .map(a => ({ from: a.from, to: a.to, kind: a.kind })),
+      ...Object.values(reported())
+        .filter(r => r.person === employee.ref)
+        .map(r => ({ from: r.from, to: r.to, kind: daysBetween(r.from, r.to) >= SICK_DAYS ? 'long' : 'short' })),
+      ...records()
+        .leaveRequests.filter(r => r.employee === employee.ref && done[r.ref]?.decision !== 'reject')
+        .map(r => ({ from: r.from, to: r.to, kind: 'leave', word: leaveWord(r.type), pending: !done[r.ref] })),
+    ];
+  }
+  /** What an absence is called on its `day` of it: "Sjuk · dag 1", "Sjukskriven", "VAB", "Semester". */
+  const absenceWord = (a, day) => {
+    if (a.kind === 'vab') return 'VAB';
+    if (a.kind === 'leave') return a.word;
+    const n = daysBetween(a.from, day) + 1;
+    return a.kind === 'short' && n <= SICK_DAYS ? sickOnDay(n) : 'Sjukskriven';
+  };
+  /**
+   * One employee's row for `hr.person` (D97): presence today, today in a few more words (the shift, or the absence and
+   * when it ends), and the next absence that is known, an undecided leave request saying so.
+   */
+  function presenceOf(employee, key, day = today()) {
+    const all = absencesOf(employee);
+    // A sick report or a vab outranks leave on the same day.
+    const now = all
+      .filter(a => a.from <= day && a.to >= day)
+      .sort((a, b) => Number(a.kind === 'leave') - Number(b.kind === 'leave'))[0];
+    const next = all.filter(a => a.from > day).sort((a, b) => a.from.localeCompare(b.from))[0];
+    const shift = records().shifts.find(s => s.employee === employee.ref && s.date === day);
+    const presence = now ? absenceWord(now, day) : 'I tjänst';
+    const longWord = now && now.kind === 'long' ? `${presence} · dag ${daysBetween(now.from, day) + 1}` : presence;
+    return {
+      key,
+      ref: employee.ref,
+      presence,
+      today: now
+        ? `${longWord}${now.to > day ? `, till ${period(now.to)}` : ''}`
+        : `På plats${shift ? ` ${shift.start}–${shift.end}` : ''}`,
+      ...(next
+        ? {
+            upcoming: `${next.kind === 'leave' ? next.word : absenceWord(next, next.from).replace(/ · dag \d+$/, '')} ${period(next.from, next.to)}${next.pending ? ', väntar på beslut' : ''}`,
+          }
+        : {}),
+    };
+  }
+
   const conflictRows = (refs, label) => ({
     headline: 'Posten har ändrats i personalsystemet.',
     rows: refs.map(ref => ({
@@ -179,6 +234,23 @@ export function createConnector({
       return { today: { start: mine.start, end: mine.end, ward: mine.ward, colleagues } };
     },
     'hr.myBalance': () => ({ vacationDaysLeft: 6, mustUseBy: today().slice(0, 4) + '-12-31' }),
+    // A read about a person (D97): one row per key that is an employee of the manager's unit here, by user name without
+    // regard to case, with the key as it was asked. Anyone else, an unknown key and a key asked twice are no row.
+    'hr.person': (actor, input) => {
+      const keys = input.keys;
+      if (!Array.isArray(keys) || keys.length > KEYS_MAX || keys.some(k => typeof k !== 'string' || !k))
+        throw new Invalid('Ogiltig förfrågan.');
+      const unit = managerOf(actor, unitOf(actor)) ? staff(unitOf(actor)) : [];
+      const answered = new Set();
+      const rows = [];
+      for (const key of keys) {
+        const employee = unit.find(e => e.personId.toLowerCase() === key.toLowerCase());
+        if (!employee || answered.has(employee.ref)) continue;
+        answered.add(employee.ref);
+        rows.push(presenceOf(employee, key));
+      }
+      return { rows };
+    },
     'hr.lookup': (actor, input) => {
       const op = state.get('op:' + input.operationId);
       return op && op.person === personKey(actor) ? { found: true, result: op.result } : { found: false };

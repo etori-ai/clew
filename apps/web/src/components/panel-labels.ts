@@ -45,6 +45,9 @@ export const fieldLabels: Record<string, string> = {
   title: 'Titel',
   to: 'Till',
   today: 'I dag',
+  // What a source says about a person (D97): the HR system's presence and what is coming.
+  presence: 'Närvaro',
+  upcoming: 'Kommande',
   type: 'Typ',
   undoUntil: 'Kan ångras till',
   vab: 'Vab, dagar',
@@ -92,6 +95,8 @@ export const fieldLabels: Record<string, string> = {
 export const hiddenFields = new Set([
   'recovery',
   'ref',
+  // The key a row about an entity was asked with (D97): the person's user name, never shown as a value.
+  'key',
   'url',
   // A calendar event's handles (D11): the source's id and revision, the thread a proposal belongs to, and what a write may do.
   'id',

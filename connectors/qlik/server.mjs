@@ -3,7 +3,7 @@
 //   QLIK_ADAPTER                "fixture" (default: the made-up statistics in statistics.mjs) or "engine" (Qlik)
 //   QLIK_UNIT_MAP               JSON object: Clew unit id -> array of Qlik's unit names. Required for engine
 //   QLIK_MIN_GROUP              the smallest group whose rates are shown (default 5)
-//   QLIK_SICK_LEAVE_WARN_ABOVE  optional rate in percent from which the sick-leave figure says "warn"
+//   QLIK_SICK_LEAVE_WARN_ABOVE  optional rate in percent from which the sick-leave figure says "warn" and qlik.unit "Bevaka"
 //   QLIK_CACHE_SECONDS          how long aggregates are kept in memory (default 300)
 //   QLIK_URL, QLIK_APP_ID, QLIK_TOKEN, QLIK_SICK_LEAVE_CUBE, QLIK_RATES_AS  the engine adapter (engine.mjs)
 import { createServer } from 'node:http';

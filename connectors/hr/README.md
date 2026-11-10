@@ -20,7 +20,14 @@ connector, and imports nothing from the rest of the repository (D21). Start with
 
 A manager of the unit (role `manager`, unit `unit-skola` after `FIXTURE_UNIT_MAP`) gets the area `employees`: who is at
 work, absence per person with the rehab pattern, the leave requests waiting, the figure "Sjukfrånvaro n %" against the target, opening absence per person (D54), and the cards
-the scan pushes (a rehab talk to book, each leave request to decide). An employee the HR system knows (by person id
+the scan pushes (a rehab talk to book, each leave request to decide). The same manager is answered `hr.person`, a read about a person
+([D97](../../docs/decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): asked with a batch of
+user names (`{ keys }`, at most 200), it gives one row per employee of the manager's unit here, `{ key, ref, presence,
+today, upcoming }`, the key as it was asked: "I tjänst", or the absence ("Sjuk · dag 1", "Sjukskriven", "VAB",
+"Semester") as the column Närvaro on Personal, today in a few words, and the next known absence, a leave request not yet
+decided saying so. Anyone else, an unknown key and a key asked twice are no row; an employee is refused by the scope.
+A row opens the person's absence pattern. An employee's `personId` is their user name; the people on Bergsåkers skola in
+the development directory carry the names it gives them, so every person on the manager's Personal has an answer. An employee the HR system knows (by person id
 after `FIXTURE_PERSON_MAP`) gets `my-shift`: today's shift, the balance, a delegation about to expire, the own leave
 request waiting on the manager. A manager of another unit gets the same reads over an empty unit, never a denial.
 
@@ -28,7 +35,9 @@ Every `execute` is deduplicated by Clew's operation id (`X-Clew-Operation-Id`): 
 result, a different input under the same id is refused with 409, and `hr.lookup` finds the result afterwards (D45). The
 writes are the leave decision and its undo, the rehab talk and its undo, the sick report and its withdrawal, the
 delegation renewal. `hr.proposeAbsence` follows the fact `hr:absence` (D55): one `hr.reportAbsence` step when the report
-does not exist yet, none when it does.
+does not exist yet, none when it does. It is a follower, so it cannot also be an action about a person (D97), and `hr.reportAbsence`
+takes the HR system's own employee ref (`hr:emp:N`), not the user name a person is asked about by: the fixture offers
+no "Registrera frånvaro" in a person's menu.
 
 ## Running it
 
@@ -72,5 +81,6 @@ suites run it the same way as the HR system of their scenarios. The Node lane bo
 file and finds a write again after a restart. From a running stack:
 
 ```sh
-docker exec -w /workspace clew-app-1 bun scripts/connector-check.ts http://hr:4040 --id hr --secret 'replace-with-configured-dev-secret'
+docker exec -w /workspace clew-app-1 bun scripts/connector-check.ts http://hr:4040 --id hr --secret 'replace-with-configured-dev-secret' \
+  --keys anna,erik,maria,johan,karin --as hillevi
 ```

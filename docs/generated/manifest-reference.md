@@ -1496,14 +1496,6 @@ For `status`: the tone per value (a yes/no value is keyed `true` and `false`). T
 - Type: map of string to "ok" / "warn" / "alert" / "none"
 - optional
 
-Example:
-
-```json
-{
-  "false": "warn"
-}
-```
-
 #### `capabilities[].view.fields[].unit`
 
 For `number`: the unit drawn after the value, so a row reads "12 platser" and never "Platser: 12". Only where the unit alone says what the number is.

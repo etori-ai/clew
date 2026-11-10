@@ -6,6 +6,7 @@ import type {
   CommitmentsOutput,
   StaffPerson,
   TalkHeldBody,
+  TalkState,
   TalksOutput,
 } from '@clew/contracts';
 import { ForbiddenError, InputError } from '../../context';
@@ -16,9 +17,12 @@ import {
   normaliseText,
   orderCommitmentRows,
   orderTalkRows,
+  overdueCounts,
   personKey,
+  sameUserName,
   swedishDay,
   talkRow,
+  talkState,
 } from './domain';
 import type { RoundRecord, TalkDeps, TalkExport, TalkRecord, TalkTx } from './model';
 
@@ -38,6 +42,33 @@ const BAD_DAY = 'Ange ett giltigt datum.';
 const TIMER_ACTOR = 'system:scheduler';
 /** The version of the export document (D96 item 10); a breaking change is a new version. */
 export const TALKS_EXPORT_FORMAT = 'clew.talks/1';
+/** The open round as a list about people or units names it (D97): its label and the day it is due. */
+export interface RoundHeading {
+  label: string;
+  dueOn: string;
+  /** The calendar did not answer, so a talk counted missing may be booked. */
+  bookedUnknown: boolean;
+}
+/** Where one person stands in the open round (D97, `talks.person`), keyed as they were asked about. */
+export interface PersonStanding {
+  key: string;
+  personId: string;
+  state: TalkState;
+  /** The booked instant or the held day. */
+  at?: string;
+  /** Open action points about the person, from any round. */
+  open: number;
+  /** Of those, the ones whose due day has passed. */
+  overdue: number;
+}
+/** Where the people of one unit stand in the open round (D97, `talks.unit`). */
+export interface UnitStanding {
+  key: string;
+  due: number;
+  held: number;
+  booked: number;
+  missing: number;
+}
 
 /**
  * The talks module's use cases (D96): the round of development talks and its action points. A manager's reach is
@@ -57,7 +88,7 @@ export function talkUsecases(deps: TalkDeps) {
     for (const unit of staff.units)
       for (const p of unit.people)
         if (p.id !== persona.id && p.enabled !== false && !people.has(p.id)) people.set(p.id, p);
-    return { manages: staff.units.length > 0, people };
+    return { manages: staff.units.length > 0, people, units: staff.units };
   }
   async function employeeOf(persona: AuthenticatedContext, employeeId: string) {
     const { manages, people } = await managed(persona);
@@ -71,16 +102,47 @@ export function talkUsecases(deps: TalkDeps) {
     if (!round) throw new TalkError(NO_ROUND);
     return round;
   }
-  /** The round, the talks and the open counts of the people the persona manages, read in one transaction. */
-  async function roundOf(persona: AuthenticatedContext, people: Map<string, StaffPerson>) {
+  /**
+   * The round, the talks and the open counts of the people the persona manages, read in one transaction. With
+   * `overdueOn` (today), also how many of each person's open action points are overdue.
+   */
+  async function roundOf(persona: AuthenticatedContext, people: Map<string, StaffPerson>, overdueOn?: string) {
     const ids = [...people.keys()];
     return deps.store.transaction(async tx => {
       const round = await tx.currentRound(persona.organisationId);
-      if (!round) return { round: undefined, people, talks: new Map<string, TalkRecord>(), open: new Map() };
+      if (!round)
+        return {
+          round: undefined,
+          people,
+          talks: new Map<string, TalkRecord>(),
+          open: new Map<string, number>() as ReadonlyMap<string, number>,
+          overdue: new Map<string, number>() as ReadonlyMap<string, number>,
+        };
       const talks = new Map((await tx.talks(round.id, ids)).map(t => [t.employeeId, t]));
-      return { round, people, talks, open: await tx.openCounts(ids) };
+      const overdue: ReadonlyMap<string, number> =
+        overdueOn === undefined || !ids.length
+          ? new Map()
+          : overdueCounts(await tx.commitmentsAbout(ids, round.id), overdueOn);
+      return { round, people, talks, open: await tx.openCounts(ids), overdue };
     });
   }
+  /**
+   * Where these people stand in the open round (D96 item 2): the round read, then who is booked from the calendar.
+   * Undefined when no round is open. `bookings` is undefined when the calendar did not answer.
+   */
+  async function standing(persona: AuthenticatedContext, people: Map<string, StaffPerson>, overdueOn?: string) {
+    const read = await roundOf(persona, people, overdueOn);
+    if (!read.round) return undefined;
+    const round = read.round;
+    const bookings = await deps.bookings(persona, round);
+    const stateOf = (id: string) => talkState(read.talks.get(id), bookings?.get(id));
+    return { ...read, round, bookings, stateOf };
+  }
+  const headingOf = (s: NonNullable<Awaited<ReturnType<typeof standing>>>): RoundHeading => ({
+    label: s.round.label,
+    dueOn: s.round.dueOn,
+    bookedUnknown: !s.bookings,
+  });
   /** Mark a commitment done or open again: for its owner, or for the current manager of the employee's unit. */
   async function setDone(persona: AuthenticatedContext, id: string, done: boolean) {
     const { people } = await managed(persona);
@@ -170,10 +232,9 @@ export function talkUsecases(deps: TalkDeps) {
     async round(persona: AuthenticatedContext): Promise<TalksOutput> {
       const { manages, people } = await managed(persona);
       if (!manages) throw new ForbiddenError(NOT_A_MANAGER);
-      const read = await roundOf(persona, people);
-      if (!read.round) return { round: null, rows: [] };
-      const round = read.round;
-      const bookings = await deps.bookings(persona, round);
+      const read = await standing(persona, people);
+      if (!read) return { round: null, rows: [] };
+      const { round, bookings } = read;
       const rows = [...read.people.values()].map(p =>
         talkRow(p, read.talks.get(p.id), bookings?.get(p.id), read.open.get(p.id) ?? 0),
       );
@@ -182,6 +243,67 @@ export function talkUsecases(deps: TalkDeps) {
         rows: orderTalkRows(rows),
         ...(bookings ? {} : { bookedUnknown: true }),
       };
+    },
+
+    /**
+     * `talks.person` (D97): where each person asked about stands in the open round, with their open and overdue action
+     * points. `keys` are user names, compared without regard to case; a row carries the key as it was asked. Only the
+     * people the persona plans a talk with now are answered: anyone else, a person without a user name, a key asked twice
+     * and everything when no round is open are answered as no row, never as a refusal. Reads, so no audit row.
+     */
+    async aboutPeople(
+      persona: AuthenticatedContext,
+      keys: readonly string[],
+    ): Promise<{ round: RoundHeading | null; rows: PersonStanding[] }> {
+      const { people } = await managed(persona);
+      const asked = new Map<string, StaffPerson>();
+      for (const key of keys) {
+        const p = [...people.values()].find(x => sameUserName(x.userName, key));
+        if (p && ![...asked.values()].includes(p)) asked.set(key, p);
+      }
+      const read = await standing(persona, new Map([...asked.values()].map(p => [p.id, p])), swedishDay(now()));
+      if (!read) return { round: null, rows: [] };
+      const rows = [...asked].map(([key, p]): PersonStanding => {
+        const { state, at } = read.stateOf(p.id);
+        return {
+          key,
+          personId: p.id,
+          state,
+          ...(at ? { at } : {}),
+          open: read.open.get(p.id) ?? 0,
+          overdue: read.overdue.get(p.id) ?? 0,
+        };
+      });
+      return { round: headingOf(read), rows };
+    },
+
+    /**
+     * `talks.unit` (D97): for each unit asked about that the persona manages, how many of its people are due a talk in
+     * the open round and how many of those are held, booked and missing. A unit the persona does not manage, or with
+     * nobody due, is answered as no row. Reads, so no audit row.
+     */
+    async aboutUnits(
+      persona: AuthenticatedContext,
+      keys: readonly string[],
+    ): Promise<{ round: RoundHeading | null; rows: UnitStanding[] }> {
+      const { people, units } = await managed(persona);
+      const asked = new Set(keys);
+      const chosen = units.filter(u => asked.has(u.unitId));
+      const due = (unit: (typeof units)[number]) => [
+        ...new Set(unit.people.filter(p => people.has(p.id)).map(p => p.id)),
+      ];
+      const members = new Map(chosen.flatMap(due).map(id => [id, people.get(id)!] as const));
+      const read = await standing(persona, members);
+      if (!read) return { round: null, rows: [] };
+      const rows = [...new Map(chosen.map(u => [u.unitId, u])).values()].flatMap((u): UnitStanding[] => {
+        const ids = due(u);
+        if (!ids.length) return [];
+        const count = (state: TalkState) => ids.filter(id => read.stateOf(id).state === state).length;
+        return [
+          { key: u.unitId, due: ids.length, held: count('held'), booked: count('booked'), missing: count('missing') },
+        ];
+      });
+      return { round: headingOf(read), rows };
     },
 
     /**
@@ -210,7 +332,9 @@ export function talkUsecases(deps: TalkDeps) {
       if (input.person !== undefined) {
         const { manages, people } = await managed(persona);
         if (!manages) throw new ForbiddenError(NOT_A_MANAGER);
-        about = [...people.values()].find(p => personKey(p) === input.person)?.id;
+        // A user name is compared without regard to case (D97), so a row of `talks.person` opens with its key as asked.
+        const person = input.person;
+        about = [...people.values()].find(p => sameUserName(personKey(p), person))?.id;
         if (!about) throw new ForbiddenError(NOT_YOURS);
       }
       return deps.store.transaction(async tx => {

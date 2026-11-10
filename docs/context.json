@@ -84,7 +84,8 @@
         "hr.myShift",
         "hr.myBalance",
         "hr.renewDelegation",
-        "hr.lookup"
+        "hr.lookup",
+        "hr.person"
       ]
     },
     {
@@ -158,7 +159,8 @@
       "capabilities": [
         "appraisals.talks",
         "appraisals.commitments",
-        "appraisals.round"
+        "appraisals.round",
+        "appraisals.person"
       ]
     }
   ],

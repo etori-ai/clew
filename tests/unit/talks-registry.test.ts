@@ -60,9 +60,9 @@ const persona = (
   expiresAt: '2099-01-01T00:00:00.000Z',
   authorize: async () => ({ version: 'v1' }),
 });
-// The fixture knows the manager by the user name `hillevi` and the others by their names.
-const hillevi = persona('hillevi', 'Hillevi Berg', 'manager');
-const anna = persona('p-anna', 'Anna Lindqvist', 'employee');
+// The fixture knows each person by the user name Clew signs into the assertion (D97).
+const hillevi = { ...persona('hillevi', 'Hillevi Berg', 'manager'), userName: 'hillevi' };
+const anna = { ...persona('p-anna', 'Anna Lindqvist', 'employee'), userName: 'anna' };
 const mikael = persona('mikael', 'Mikael Lund', 'employee', ['admin.connectors']);
 const staffPerson = (id: string, name: string, userName: string): StaffPerson => ({
   id,
@@ -72,12 +72,13 @@ const staffPerson = (id: string, name: string, userName: string): StaffPerson =>
   role: 'employee',
   enabled: true,
 });
+// The user names of the development directory (`scripts/provisioner/directory.ts`), which the appraisals fixture uses.
 const STAFF = [
-  staffPerson('p-anna', 'Anna Lindqvist', 'anna.lindqvist'),
-  staffPerson('p-erik', 'Erik Sandström', 'erik.sandstrom'),
-  staffPerson('p-maria', 'Maria Källström', 'maria.kallstrom'),
-  staffPerson('p-johan', 'Johan Byström', 'johan.bystrom'),
-  staffPerson('p-karin', 'Karin Lindqvist', 'karin.lindqvist'),
+  staffPerson('p-anna', 'Anna Lindqvist', 'anna'),
+  staffPerson('p-erik', 'Erik Sandström', 'erik'),
+  staffPerson('p-maria', 'Maria Källström', 'maria'),
+  staffPerson('p-johan', 'Johan Byström', 'johan'),
+  staffPerson('p-karin', 'Karin Lindqvist', 'karin'),
 ];
 const overviews = new Map<string, StaffOverview>([
   ['hillevi', { units: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', people: STAFF }] }],
@@ -231,7 +232,7 @@ describe('the talks wiring (D96 items 7 to 9)', () => {
       title: 'Utvecklingssamtal · Erik Sandström',
       start: localInstant('2026-11-20T09:00'),
       end: localInstant('2026-11-20T10:00'),
-      participants: ['erik.sandstrom@clew.test'],
+      participants: ['erik@clew.test'],
     });
     await w.talks.markHeld(hillevi, 'p-anna', { heldOn: '2026-11-03' });
     const pointId = await w.talks.addCommitment(hillevi, 'p-anna', {

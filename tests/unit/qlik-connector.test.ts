@@ -1,6 +1,6 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
-import { type Actor } from '../../packages/connectors/src/index';
+import { fieldTone, placesOf, type Actor } from '../../packages/connectors/src/index';
 import { checkConnector } from '../../packages/connectors/src/check';
 import { parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { createConnector, manifest as qlikManifest } from '../../connectors/qlik/connector.mjs';
@@ -67,11 +67,12 @@ function stack(options: Parameters<typeof createConnector>[0] = {}) {
 }
 
 describe('the qlik connector', () => {
-  test('the manifest is valid: two reads for managers, table views, an area with a figure, no scan', () => {
+  test('the manifest is valid: two reads for managers, table views, a read about a unit, an area with a figure, no scan', () => {
     const manifest = parseManifest(qlikManifest, 'qlik');
-    expect(manifest.capabilities.map(c => [c.name, c.kind, c.view?.kind, c.scope.roles])).toEqual([
-      ['qlik.sickLeaveByUnit', 'read', 'table', ['manager']],
-      ['qlik.sickLeaveTrend', 'read', 'table', ['manager']],
+    expect(manifest.capabilities.map(c => [c.name, c.kind, c.view?.kind, c.scope.roles, c.about])).toEqual([
+      ['qlik.sickLeaveByUnit', 'read', 'table', ['manager'], undefined],
+      ['qlik.sickLeaveTrend', 'read', 'table', ['manager'], undefined],
+      ['qlik.unit', 'read', 'list', ['manager'], { entity: 'unit' }],
     ]);
     expect(manifest.scan).toBe(false);
     expect(manifest.areas).toMatchObject([{ id: 'sick-leave', roles: ['manager'], figure: true }]);
@@ -148,6 +149,45 @@ describe('the qlik connector', () => {
       'Enheten finns inte bland dina enheter.',
     );
     await expect(registry.run(hillevi, 'qlik.sickLeaveTrend', { unit: 'Bergsåkers skola' })).rejects.toThrow();
+  });
+
+  test('qlik.unit says it is about a unit (D97): the manager’s own unit by Clew’s id, any other id no row', async () => {
+    const declared = parseManifest(qlikManifest, 'qlik').capabilities.find(c => c.name === 'qlik.unit')!;
+    expect([declared.model, declared.about]).toEqual([false, { entity: 'unit' }]);
+    expect(placesOf(declared)).toEqual(['lens', 'mark', 'section']);
+    const watch = declared.view?.kind === 'list' ? declared.view.fields.find(f => f.key === 'watch')! : undefined;
+    expect([fieldTone(watch!, 'Bevaka'), fieldTone(watch!, undefined)]).toEqual(['warn', 'none']);
+    const { registry } = stack();
+    expect(registry.tools(hillevi).map(t => t.name)).not.toContain('qlik.unit');
+    const unit = (actor: Actor, keys: string[]) =>
+      registry.run<{ rows: Array<Record<string, unknown>> }>(actor, 'qlik.unit', { keys });
+    const keys = ['unit-omsorg', 'unit-skola', 'unit-skola', 'unit-okand'];
+    const [row, ...more] = (await unit(hillevi, keys)).rows;
+    expect(more).toEqual([]);
+    expect(row).toEqual({
+      key: 'unit-skola',
+      ref: expect.stringMatching(/^unit:[0-9a-f]{16}$/),
+      unit: 'Bergsåkers skola',
+      month: 'oktober 2026',
+      total: 5.3,
+      lastYear: 5.5,
+      change: -0.2,
+      headcount: 46,
+    });
+    // The row opens the unit's trend by its ref.
+    const trend = await registry.run<{ unit: string }>(hillevi, 'qlik.sickLeaveTrend', { unit: row!.ref });
+    expect(trend.unit).toBe('Bergsåkers skola');
+    // Of two source units, the first with a rate to show; a manager whose unit the statistics lack gets no row.
+    expect((await unit(itChief, ['unit-it'])).rows).toMatchObject([{ key: 'unit-it', unit: 'IT och digitalisering' }]);
+    expect((await unit(elsewhere, ['unit-annan', 'unit-skola'])).rows).toEqual([]);
+    await expect(unit(hassan, ['unit-omsorg'])).rejects.toThrow();
+    // A rate to watch from is the operator's: at or above it the row says "Bevaka", and Clew marks the unit.
+    const watched = await stack({ warnAbove: 5 }).registry.run<{ rows: Array<{ watch?: string }> }>(
+      hillevi,
+      'qlik.unit',
+      { keys: ['unit-skola'] },
+    );
+    expect(watched.rows[0]!.watch).toBe('Bevaka');
   });
 
   test('a manager whose unit is not in the statistics gets no rows and no figure', async () => {

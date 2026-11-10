@@ -1,6 +1,6 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
-import { type Actor } from '../../packages/connectors/src/index';
+import { markFields, placesOf, type Actor } from '../../packages/connectors/src/index';
 import { checkConnector } from '../../packages/connectors/src/check';
 import { manifestProblems, parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { createConnector, manifest as hrManifest } from '../../connectors/hr/connector.mjs';
@@ -92,6 +92,29 @@ describe('the HR fixture connector', () => {
     });
     expect(report.findings.filter(f => f.level === 'fail')).toEqual([]);
     expect(report.ok).toBe(true);
+    // hr.person asked as Clew asks it (D97): the keys of the manager's people, signed as the manager.
+    const about = await checkConnector({
+      key: secret,
+      url: 'http://hr',
+      id: 'hr',
+      assert: sign(secret),
+      assertForeign: sign('another-secret-entirely'),
+      fetch: connectorFetch,
+      about: { keys: ['anna', 'erik', 'maria', 'johan', 'karin', 'hassan'], as: hillevi },
+    });
+    expect(about.ok).toBe(true);
+    expect(
+      about.findings
+        .filter(f => f.text.startsWith('hr.person about person, '))
+        .map(f => [f.level, f.text.split(': ')[0]!.slice('hr.person about person, '.length)]),
+    ).toEqual([
+      ['ok', 'batch'],
+      ['ok', 'key'],
+      ['ok', 'one row per key'],
+      ['ok', 'unknown key'],
+      ['ok', 'out of scope'],
+    ]);
+    expect(about.findings).toContainEqual({ level: 'ok', text: 'hr.person: employee refused by scope' });
   });
   test('the scan gives the manager the rehab talk and the leave requests, and the employee the delegation and the waiting leave', async () => {
     const { registry } = stack();
@@ -125,9 +148,10 @@ describe('the HR fixture connector', () => {
     const [myShift] = await registry.areas(hassan);
     expect(myShift!.figure).toEqual({ label: '07:00–16:00 på Björken.', tone: 'none' });
     const forManager = await registry.run<{ absent: Array<{ name: string }> }>(hillevi, 'hr.whoIsOn', {});
-    expect(forManager.absent.map(a => a.name)).toEqual(['Lena Öhman', 'Jonas Kask']);
+    // Lena's long sick leave, Jonas's vab and Erik's sick report of this morning.
+    expect(forManager.absent.map(a => a.name)).toEqual(['Lena Öhman', 'Jonas Kask', 'Erik Sandström']);
     const forEmployee = await registry.run<{ absent: Array<{ name: string }> }>(hassan, 'hr.whoIsOn', {});
-    expect(forEmployee.absent.map(a => a.name)).toEqual(['En kollega', 'En kollega']);
+    expect(forEmployee.absent.map(a => a.name)).toEqual(['En kollega', 'En kollega', 'En kollega']);
     await expect(registry.run(hassan, 'hr.absenceOverview', {})).rejects.toThrow(/behörighet/);
   });
   test('a write runs once per operation id, is read back by hr.lookup, refuses changed input under the same id, and is undone', async () => {
@@ -211,6 +235,74 @@ describe('the HR fixture connector', () => {
     expect(found.result.rows[0]?.outcome).toBe('done');
     expect(() => createConnector({ fault: 'explode' })).toThrow(/FIXTURE_FAULT/);
   });
+  test('hr.person says it is about a person (D97): presence for the manager, one row per key asked, anyone else no row', async () => {
+    const declared = parseManifest(hrManifest, 'hr').capabilities.find(c => c.name === 'hr.person')!;
+    expect([declared.kind, declared.model, declared.about, declared.scope.roles]).toEqual([
+      'read',
+      false,
+      { entity: 'person' },
+      ['manager'],
+    ]);
+    // A section and a lens; no value warns, so no mark on the row.
+    expect(placesOf(declared)).toEqual(['lens', 'section']);
+    expect(markFields(declared.view)).toEqual([]);
+    const presence = declared.view?.kind === 'list' ? declared.view.fields[0]! : undefined;
+    // "I tjänst" has no tone and is drawn plain; an absence is a neutral badge.
+    expect(presence!.tones?.['I tjänst']).toBeUndefined();
+    expect(['Sjuk · dag 1', 'Sjuk · dag 14', 'Sjukskriven', 'VAB', 'Semester'].map(v => presence!.tones?.[v])).toEqual([
+      'none',
+      'none',
+      'none',
+      'none',
+      'none',
+    ]);
+    const { registry, advance } = stack();
+    expect(registry.tools(hillevi).map(t => t.name)).not.toContain('hr.person');
+    type Row = { key: string; ref: string; presence: string; today: string; upcoming?: string };
+    const person = (actor: Actor, keys: string[]) => registry.run<{ rows: Row[] }>(actor, 'hr.person', { keys });
+    const keys = ['Erik', 'anna', 'johan', 'karin', 'lars.bergstrom', 'erik', 'nobody', 'lena', 'jonas'];
+    expect((await person(hillevi, keys)).rows).toEqual([
+      { key: 'Erik', ref: 'hr:emp:1002', presence: 'Sjuk · dag 1', today: 'Sjuk · dag 1' },
+      { key: 'anna', ref: 'hr:emp:1001', presence: 'I tjänst', today: 'På plats' },
+      {
+        key: 'johan',
+        ref: 'hr:emp:1004',
+        presence: 'I tjänst',
+        today: 'På plats',
+        upcoming: 'Semester 22–23 dec, väntar på beslut',
+      },
+      { key: 'karin', ref: 'hr:emp:1013', presence: 'I tjänst', today: 'På plats' },
+      { key: 'lars.bergstrom', ref: 'hr:emp:1014', presence: 'I tjänst', today: 'På plats' },
+      {
+        key: 'lena',
+        ref: 'hr:emp:1006',
+        presence: 'Sjukskriven',
+        today: 'Sjukskriven · dag 10, till 18 dec',
+      },
+      { key: 'jonas', ref: 'hr:emp:1011', presence: 'VAB', today: 'VAB' },
+    ]);
+    // A manager of another unit gets no row, Hassan included, and an employee is refused by the scope.
+    const omsorg: Actor = { ...stranger, unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum' };
+    expect((await person(stranger, keys)).rows).toEqual([]);
+    expect((await person(omsorg, ['hassan', 'anna'])).rows).toEqual([]);
+    await expect(person(hassan, ['hassan'])).rejects.toThrow(/behörighet/);
+    // The row opens the person's absence pattern by its ref.
+    expect((await registry.run<{ name: string }>(hillevi, 'hr.absencePattern', { ref: 'hr:emp:1002' })).name).toBe(
+      'Erik Sandström',
+    );
+    // A decided leave request is no longer "waiting"; on its first day it is the presence.
+    await registry.run(hillevi, 'hr.decideLeave', { refs: ['hr:leave:7781'], decision: 'approve' });
+    expect((await person(hillevi, ['johan'])).rows[0]!.upcoming).toBe('Semester 22–23 dec');
+    advance(48);
+    expect((await person(hillevi, ['johan'])).rows[0]).toMatchObject({
+      presence: 'Semester',
+      today: 'Semester, till 23 dec',
+    });
+    // A sick report registered through Clew's job is the presence from its first day.
+    await registry.run(hillevi, 'hr.reportAbsence', { person: 'hr:emp:1003', from: '2026-12-22' });
+    expect((await person(hillevi, ['maria'])).rows[0]!.presence).toBe('Sjuk · dag 1');
+  });
+
   test('the id maps translate a unit and a person, and a reseed moves the records to today', async () => {
     const mapped = stack({ unitMap: { 'enhet-17': 'unit-skola' }, personMap: { karin: 'hassan' } });
     const rows = await mapped.registry.run<Rows>(stranger, 'hr.leaveRequests', {});
