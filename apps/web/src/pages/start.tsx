@@ -73,6 +73,7 @@ import { ReviewOverlay } from '../components/review-overlay';
 import { ReceiptNotice } from '../components/receipt-notice';
 import { BriefSkeleton } from '../components/brief';
 import { ERRANDS_AREA, MyErrands } from '../components/my-errands';
+import { MyCommitments, TALKS_AREA } from '../components/my-commitments';
 import { AsideSkeleton, AsyncContent } from '../components/loading';
 import {
   CONVERSATION_MIN,
@@ -563,6 +564,8 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       {(!area || area === ERRANDS_AREA) && (
         <MyErrands areas={areas} hrefFor={ref => viewHref(ref.capability, ref.title, ref.input)} />
       )}
+      {/* Mina åtgärdspunkter (D96 item 7): the open action points the person owns and those about them, after Mina ärenden. */}
+      {(!area || area === TALKS_AREA) && <MyCommitments />}
       {/* Läget (D54): the areas' figures after the groups, for every area at once, so not while one area is chosen. */}
       {!area && (
         <Lage
