@@ -345,6 +345,11 @@ type Options = {
   overlayOnly?: boolean;
   /** Whether a thing may stay open as a tab (D66): a card that left the stream (Inte nu, Avfärda, done) leaves the tabs too. The current one always stays. */
   isOpen?: (id: string) => boolean;
+  /**
+   * The drawer over the page has closed and Astryx has given the focus back to what opened it. Until then the page
+   * under it is inert; a page whose opener is gone (the row of a card that was sent away) sends the focus on from here.
+   */
+  onClosed?: () => void;
 };
 /**
  * The panel (D50): the one place beside the page's column for what the person holds next to it, a view, a source or a
@@ -359,7 +364,7 @@ type Options = {
 const TYPING = 'input, textarea, [contenteditable="true"], [role="textbox"], [role="combobox"]';
 export function usePanel(
   panel: PanelFrame | null,
-  { minMain, overlayOnly = false, isOpen }: Options,
+  { minMain, overlayOnly = false, isOpen, onClosed }: Options,
 ): {
   end: ReactNode | undefined;
   overlay: ReactNode;
@@ -647,11 +652,24 @@ export function usePanel(
         </LayoutPanel>
       </>
     ) : undefined;
+  // The drawer's dialog fires `close` when it has slid away and left the top layer, after Astryx's own focus return:
+  // the moment the page under it takes focus again, and so the one a consumer's listener is given the last word at.
+  const drawer = useRef<HTMLDialogElement>(null);
+  const closed = useRef(onClosed);
+  closed.current = onClosed;
+  useEffect(() => {
+    const dialog = drawer.current;
+    if (!dialog) return;
+    const tell = () => closed.current?.();
+    dialog.addEventListener('close', tell);
+    return () => dialog.removeEventListener('close', tell);
+  }, [inline]);
   // The drawer keeps the last name while it slides away, so its heading is never empty (axe: empty-heading).
   const lastTitle = useRef<string | null>(null);
   if (panel) lastTitle.current = panel.title;
   const overlay = inline ? null : (
     <Drawer
+      ref={drawer}
       isOpen={panel !== null}
       onOpenChange={close}
       side="end"

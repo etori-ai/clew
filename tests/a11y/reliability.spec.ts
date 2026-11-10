@@ -73,10 +73,26 @@ for (const state of ['queued', 'blocked'] as const)
     api.threads = [card];
     await page.setViewportSize(narrow);
     await open(page, '/');
+    // Hem draws rows (D63): the row says the state in its own idiom, words on the line for a reminder that waits and a
+    // badge for one that was stopped, and never that it will remind.
+    const row = page.getByRole('main').locator('#thread-ledighet');
+    if (state === 'queued') await expect(row).toContainText('påminnelsen väntar på schemaläggning');
+    else await expect(row.getByText('Påminnelsen stoppad', { exact: true })).toBeVisible();
+    await expect(row).not.toContainText('påminner dig');
+    await expectNoAxeViolations(page);
+    expect(await reflowProblems(page)).toEqual([]);
+    // The whole sentence is the open card's, in the sheet at this width (artboard 12).
+    await row.getByRole('link', { name: card.title, exact: true }).click();
     await expect(
-      page.getByText(
-        state === 'queued' ? 'Påminnelsen är sparad och väntar på schemaläggning.' : /Påminnelsen stoppades eftersom/,
-      ),
+      page
+        .getByRole('dialog', { name: 'Kort: ' + card.title })
+        .getByRole('status')
+        .filter({
+          hasText:
+            state === 'queued'
+              ? 'Påminnelsen är sparad och väntar på schemaläggning.'
+              : /Påminnelsen stoppades eftersom/,
+        }),
     ).toBeVisible();
     await expectNoAxeViolations(page);
     expect(await reflowProblems(page)).toEqual([]);

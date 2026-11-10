@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { keepPreviousData, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Area, MenuEntry, SessionUser, Thread, ViewRef, PanelViewSpec } from '@clew/contracts';
@@ -133,6 +133,18 @@ const EMPTY_THREADS: Thread[] = [];
 const EMPTY_AREAS: Area[] = [];
 const EMPTY_MENU: MenuEntry[] = [];
 
+/** Where the focus lands on a row or a heading of Hem: a row's title link, the control with the ring; anything else as a whole. */
+const focusStop = (el: HTMLElement | null) =>
+  el?.matches('li') ? (el.querySelector<HTMLElement>('button, a') ?? el) : el;
+/** The row with this id, or the first heading that is on the page when the row is gone. */
+const stopAt = (id: string) =>
+  focusStop(
+    document.getElementById(id) ??
+      document.getElementById('behover-dig') ??
+      document.getElementById('senare') ??
+      document.getElementById('hem'),
+  );
+
 /**
  * The start page (D34, D50, D53). The column is where the person is and the panel is what they hold beside it. At `/`
  * the column is Hem: the greeting with the day, the box, and under it everything the assistant has pushed, with a
@@ -220,10 +232,31 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   // A card that leaves the list takes the focused button with it. Focus goes on to the next card, or the first heading when none is left (2.4.3).
   // `replace` is what every card gets as `onChange`: it runs before the cache is written (mutations.ts), so the DOM read here is still the old one.
   const focusAfter = useRef<{ card: string; next: string; at: number } | null>(null);
+  // The card that is open over the page, in the drawer or in the phone's sheet, and the way to let go of the drawer:
+  // `replace` is one callback for the page's life, so it reads the latest render's here.
+  const overPage = useRef<{ drawer: string | null; sheet: string | null; close: () => void }>({
+    drawer: null,
+    sheet: null,
+    close: () => {},
+  });
+  // A card sent away from over the page: the row after it, where the focus goes when the drawer or the sheet has closed.
+  const sentFrom = useRef<{ next: string; sheet: boolean; at: number } | null>(null);
   const replace = useCallback((thread: Thread) => {
     const cards = [...document.querySelectorAll('[id^="thread-"]')].map(el => el.id);
     const at = cards.indexOf('thread-' + thread.id);
     const after = cards[at + 1] ?? cards[at - 1] ?? 'behover-dig';
+    // Over the page the card is in a modal dialog, and the page under it takes no focus. Sent away with its own button
+    // (Avfärda, Inte nu) the card leaves with its row (D66 as amended by D70): the sheet closes by itself, and the
+    // drawer is closed here. Left open it stood between the person and both the next row and the toast's Ångra, with
+    // the focus on nothing once the card's buttons were gone (2.4.3). The focus goes on to the row after it when the
+    // dialog has slid away, since the hand-over below runs while the page is still inert.
+    const sentAway =
+      thread.state === 'dismissed' || (thread.state === 'open' && isSnoozed(thread, new Date().toISOString()));
+    const over = overPage.current;
+    if (sentAway && (over.drawer === thread.id || over.sheet === thread.id)) {
+      sentFrom.current = { next: after, sheet: over.sheet === thread.id, at: Date.now() };
+      if (over.drawer === thread.id) over.close();
+    }
     // A card in the panel keeps the focus when its own button changed it: the card is still there, in its new state.
     // When the button took the card out of the stream (Inte nu, Avfärda, done) its row is gone, and the focus goes on
     // to the row after it as from the list, even though the panel still shows the card (D66: Inte nu is among the
@@ -249,15 +282,32 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     if (!target || Date.now() - target.at > 2_000 || document.activeElement !== document.body) return;
     // A card that moved to another tab is no longer in the list; a card that only changed state is still here.
     const card = document.getElementById(target.card);
-    const next = card?.checkVisibility()
-      ? card
-      : (document.getElementById(target.next) ??
-        document.getElementById('behover-dig') ??
-        document.getElementById('senare') ??
-        document.getElementById('hem'));
-    // A row's focus goes to its title button, the control with the ring; a card is focused as a whole, as before.
-    (next?.matches('li') ? (next.querySelector<HTMLElement>('button, a') ?? next) : next)?.focus();
+    (card?.checkVisibility() ? focusStop(card) : stopAt(target.next))?.focus();
   }, [threads]);
+  // The row after a card that was just sent away from over the page, looked up when the dialog has closed: the list is
+  // drawn again in between.
+  const afterOverlay = useCallback((sheet: boolean) => {
+    const from = sentFrom.current;
+    return from && from.sheet === sheet && Date.now() - from.at <= 2_000 ? stopAt(from.next) : null;
+  }, []);
+  // The drawer has closed and Astryx has tried to give the focus back to the row that opened it, which is gone.
+  const landAfterDrawer = useCallback(() => {
+    const stop = afterOverlay(false);
+    sentFrom.current = null;
+    if (document.activeElement === document.body) stop?.focus();
+  }, [afterOverlay]);
+  // The sheet asks where to send the focus when it has closed (BottomSheet's `finalFocusRef`, read at that moment):
+  // the row after the card when the card was sent away, else nothing, and the sheet gives the focus back to what
+  // opened it as Astryx does by itself.
+  const afterSheet = useMemo<RefObject<HTMLElement | null>>(
+    () => ({
+      get current() {
+        return afterOverlay(true);
+      },
+      set current(_) {},
+    }),
+    [afterOverlay],
+  );
   // A receipt that has just arrived (D70): the row keeps its place for a moment, and a toast says where the card went,
   // with the way there and the way back. The toast stays until closed (2.2.1), as the Avfärda toast does.
   const lingering = useReceiptArrivals(threads, thread => {
@@ -952,6 +1002,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     minMain: talk.open ? CONVERSATION_MIN : HOME_MIN,
     overlayOnly: short,
     isOpen: id => !id.startsWith('card:') || inStream(id.slice(5)),
+    onClosed: landAfterDrawer,
   });
   /**
    * The card on a phone (artboard 12): Astryx's BottomSheet over the rows, with the way back to Hem and ✕ on its first
@@ -964,9 +1015,20 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const sheetShown = useRef<Thread | null>(null);
   if (sheetThread) sheetShown.current = sheetThread;
   const sheetCard = sheetShown.current;
+  // The same rule as `usePanel`'s own: beside the page where both fit and the screen is not short, else over it.
+  const panelBeside = (talk.open ? besideTranscript : panelFits) && !short;
+  const inDrawer = panelCard && !panelBeside ? panelCard.id : null;
+  const inSheet = sheetThread?.id ?? null;
+  overPage.current = { drawer: inDrawer, sheet: inSheet, close: closePanel };
+  // A card that opens over the page starts without a note of one sent away: its dialog gives the focus back to the
+  // row that opened it.
+  useEffect(() => {
+    if (inDrawer || inSheet) sentFrom.current = null;
+  }, [inDrawer, inSheet]);
   const sheet = (
     <BottomSheet
       isOpen={!!sheetThread}
+      finalFocusRef={afterSheet}
       onOpenChange={isOpen => !isOpen && closePanel()}
       label={sheetCard ? `Kort: ${sheetCard.title}` : 'Kort'}
       height="tall"

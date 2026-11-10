@@ -5,6 +5,9 @@ import { menuRow, menuRows } from './phonebook';
 /**
  * Verktyg in the menu (D40): the calendar and the views an administrator chose as tools, one click away on every page.
  * A row leads to the tool's own page (D42), as Kalender does; the page itself is tested in `tools.spec.ts`.
+ * The test person is a manager, so Personal (D94) stands after Kalender as Clew's own second row; `staff.spec.ts` owns it.
+ * The shared header (D88) marks Start as the current place on every page of Clew, so "the current row" is asked of the
+ * rail, where one row is current at a time.
  * The phone book's rows are named by its real manifest; they are in the menu only where a test puts them, as they are in
  * the product only where an administrator chose them.
  */
@@ -21,14 +24,14 @@ const tool = (label: string, n: number): MenuEntry => ({
 test.describe('Verktyg in the menu', () => {
   test.use({ viewport: desktop });
 
-  test('the section is named, holds the calendar and then the chosen views of a connector in alphabetical order, and has no axe violations', async ({
+  test("the section is named, holds Clew's own rows and then the chosen views of a connector in alphabetical order, and has no axe violations", async ({
     page,
     api,
   }) => {
     api.menu = menuRows;
     await open(page, '/');
     const section = rail(page).getByRole('group', { name: 'Verktyg' });
-    await expect(section.getByRole('link')).toHaveText(['Kalender', 'Mitt team', 'Telefonbok']);
+    await expect(section.getByRole('link')).toHaveText(['Kalender', 'Personal', 'Mitt team', 'Telefonbok']);
     await expect(section.getByRole('link', { name: 'Mitt team' })).toHaveAttribute('href', '/tools/phonebook.team');
     await expect(section.getByRole('link', { name: 'Telefonbok' })).toHaveAttribute(
       'href',
@@ -40,9 +43,15 @@ test.describe('Verktyg in the menu', () => {
     await expectNoAxeViolations(page);
   });
 
-  test('without a tool the section still holds the calendar, and nothing else', async ({ page, api: _ }) => {
+  test("without a tool the section still holds the calendar and a manager's Personal, and nothing else", async ({
+    page,
+    api: _,
+  }) => {
     await open(page, '/');
-    await expect(rail(page).getByRole('group', { name: 'Verktyg' }).getByRole('link')).toHaveText(['Kalender']);
+    await expect(rail(page).getByRole('group', { name: 'Verktyg' }).getByRole('link')).toHaveText([
+      'Kalender',
+      'Personal',
+    ]);
   });
 
   test('the row opens the tool as a page by keyboard, not in the side panel, and is marked as current', async ({
@@ -59,11 +68,11 @@ test.describe('Verktyg in the menu', () => {
     await expect(page.getByRole('searchbox', { name: 'Sök i telefonboken' })).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page).toHaveTitle('Telefonbok · Startsidan');
-    await expect(page.locator('nav a[aria-current="page"]')).toHaveText('Telefonbok');
+    await expect(rail(page).locator('a[aria-current="page"]')).toHaveText('Telefonbok');
     await expectNoAxeViolations(page);
     // Kalender is the same kind of row: one tool is current at a time.
     await rail(page).getByRole('link', { name: 'Kalender' }).click();
-    await expect(page.locator('nav a[aria-current="page"]')).toHaveText('Kalender');
+    await expect(rail(page).locator('a[aria-current="page"]')).toHaveText('Kalender');
   });
 
   test("from the calendar the row leads to the tool's page too", async ({ page, api }) => {
@@ -123,6 +132,7 @@ test.describe('Verktyg on a phone', () => {
     const drawer = await openNav(page);
     await expect(drawer.getByRole('group', { name: 'Verktyg' }).getByRole('link')).toHaveText([
       'Kalender',
+      'Personal',
       'Telefonbok',
     ]);
     await expectNoAxeViolations(page);

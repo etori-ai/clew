@@ -773,12 +773,8 @@ export async function snoozeFirst(page: Page) {
     await page.getByRole('button', { name: 'Inte nu', exact: true }).first().click();
   }
   await page.getByRole('menuitem', { name: /^I morgon/ }).click();
-  // Over the page the card is a drawer: it is let go of, so the toast and the page are reachable again.
-  const drawer = page.getByRole('dialog', { name: 'Kort', exact: true });
-  if (await drawer.isVisible()) {
-    await drawer.getByRole('button', { name: 'Stäng', exact: true }).click();
-    await expect(drawer).toBeHidden();
-  }
+  // Over the page the card is a drawer: it leaves with its row, so the toast and the page are reachable again.
+  await expect(page.getByRole('dialog', { name: 'Kort', exact: true })).toBeHidden();
 }
 export const heading = (page: Page, level: number, name: string) =>
   page.locator(`h${level}:not([aria-level]), [aria-level="${level}"]`).filter({ hasText: name });

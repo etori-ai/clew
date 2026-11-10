@@ -151,8 +151,13 @@ test.describe("a booking of one's own", () => {
 test.describe('a booking started on the grid (D58)', () => {
   /** The grid has no cells to name (see the head of this file), so a place on it is a day's column and a row's top. */
   const point = async (page: Page, day: string, time: string, down = 4) => {
+    // The grid is as tall as its hours and the page scrolls under the pinned head: with the shared header above the
+    // shell (D88) the last rows of the day lie under the fold of an 800 px window, and a mouse reaches only what is on
+    // screen. The row is scrolled up first, as a person would.
+    const slot = page.locator(`.clew-cal-slot-lane[data-time="${time}:00"]`);
+    await slot.scrollIntoViewIfNeeded();
     const column = await page.locator(`.clew-cal-day-lane[data-date="${day}"]`).boundingBox();
-    const row = await page.locator(`.clew-cal-slot-lane[data-time="${time}:00"]`).boundingBox();
+    const row = await slot.boundingBox();
     return { x: column!.x + column!.width / 2, y: row!.y + down };
   };
   const booking = async (page: Page, day: string, start: string, end: string) => {

@@ -123,6 +123,12 @@ script name goes to `playwright test`. The full suite runs on one worker and tak
 
 - Per change, run the spec files the change touches: `sh scripts/a11y.sh menu.spec.ts shell.spec.ts`. Add
   `--timeout 15000` so a red run fails in seconds instead of waiting out 30 s per test.
+- Every spec file is loaded when a run starts, so one that cannot be loaded stops the whole suite. `tests/package.json`
+  marks everything under `tests/` as an ES module for that reason: a spec may import a shared helper there
+  (`tests/fixture-connectors.ts`) and a connector's `.mjs` beside it, and Playwright must load both the same way.
+- Two runs in one checkout share `test-results/<profile>`, and each run empties it at its start: a second run started
+  meanwhile fails the first with `ENOENT` on its trace files. Give the second its own folder,
+  `sh scripts/a11y.sh menu.spec.ts --output test-results/second`.
 - During the lab phase the whole suite runs by hand: `gh workflow run a11y.yml`, or `sh scripts/a11y.sh`
   ([D59](../decisions/D59-the-wcag-suite-runs-by-hand-until-the-run-up-to-a-release.md)). Nothing waits for it before
   landing on `main`. In the run-up to a release the `push` and `pull_request` triggers in
