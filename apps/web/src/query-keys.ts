@@ -33,6 +33,15 @@ export const keys = {
   header: ['header'] as const,
   /** Personal (D94): the manager's units and their people. */
   staff: ['staff'] as const,
+  /** Entities (D97): the list per kind, one source's rows over it, one opened entity and one source's section on it. */
+  entities: {
+    all: ['entities'] as const,
+    list: (kind: string) => ['entities', kind, 'list'] as const,
+    rows: (kind: string, capability: string) => ['entities', kind, 'rows', capability] as const,
+    detail: (kind: string, key: string) => ['entities', kind, 'detail', key] as const,
+    section: (kind: string, key: string, capability: string) =>
+      ['entities', kind, 'detail', key, 'section', capability] as const,
+  },
   /** Utvecklingssamtal (D96): the round, and action points per reader (`null`) or per person (their user name, else id). */
   talks: {
     all: ['talks'] as const,

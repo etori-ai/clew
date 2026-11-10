@@ -319,6 +319,10 @@ export interface PanelFrame {
   kind?: 'card' | 'view';
   /** The thing's own name for its tab when several are open beside the page (D66): a card's title; a view keeps `title`. */
   tab?: string;
+  /** What stands before the heading, as a person's avatar does (D97, artboard C); over the page, the drawer header's start. */
+  lead?: ReactNode;
+  /** One line under the heading, as a person's role and unit (D97, artboard C). */
+  subtitle?: ReactNode;
 }
 /** One thing opened beside the page, waiting as a tab while another is current (D66). */
 type OpenTab = { id: string; name: string; search: string };
@@ -336,8 +340,18 @@ export const RAIL = 256,
  * button floats over the page beside the handle (D63 item 14, revised 2026-11-10), so it takes no width of its own.
  */
 export const PANEL_EDGE = 1;
-/** The window width from which the panel fits beside a column that needs `minMain` px. */
-export const panelBesideQuery = (minMain: number) => `(min-width: ${RAIL + minMain + PANEL}px)`;
+/** The window width from which the panel, `width` px wide, fits beside a column that needs `minMain` px. */
+export const panelBesideQuery = (minMain: number, width: number = PANEL) => `(min-width: ${RAIL + minMain + width}px)`;
+/**
+ * A panel of its own width (D97: the opened person is drawn 520 to 600 px wide, artboard C): its width at first, the
+ * narrowest and widest it can be dragged to, and the name its width is remembered under in this browser.
+ */
+export interface PanelSize {
+  default: number;
+  min: number;
+  max: number;
+  id: string;
+}
 /** What a transcript needs beside the panel: a conversation asked on a page brings the page along only where both fit (D50). */
 export const CONVERSATION_MIN = 600;
 type Options = {
@@ -352,6 +366,14 @@ type Options = {
    * under it is inert; a page whose opener is gone (the row of a card that was sent away) sends the focus on from here.
    */
   onClosed?: () => void;
+  /** The panel's own width; without it the shared panel's 440 px (320 to 560), remembered for every page. */
+  size?: PanelSize;
+  /**
+   * One thing at a time (D97: one person beside a list): what is opened from the page takes the place of what was open,
+   * and the link it was opened with is where the focus goes back to on close. Without it the first opener keeps that role
+   * while the others wait as tabs (D66).
+   */
+  replaces?: boolean;
 };
 /**
  * The panel (D50): the one place beside the page's column for what the person holds next to it, a view, a source or a
@@ -366,14 +388,15 @@ type Options = {
 const TYPING = 'input, textarea, [contenteditable="true"], [role="textbox"], [role="combobox"]';
 export function usePanel(
   panel: PanelFrame | null,
-  { minMain, overlayOnly = false, isOpen, onClosed }: Options,
+  { minMain, overlayOnly = false, isOpen, onClosed, size, replaces = false }: Options,
 ): {
   end: ReactNode | undefined;
   overlay: ReactNode;
   /** Whether the panel takes width beside the page: something is open in it, or the person is looking at it empty. */
   occupied: boolean;
 } {
-  const fits = useMediaQuery(panelBesideQuery(minMain));
+  const width = size?.default ?? PANEL;
+  const fits = useMediaQuery(panelBesideQuery(minMain, width));
   const inline = fits && !overlayOnly;
   const announce = useAnnounce();
   const navigate = useNavigate();
@@ -412,11 +435,11 @@ export function usePanel(
     else edge.hide();
   }, [inline]);
   const resizable = useResizable({
-    defaultSize: PANEL,
-    minSize: 320,
-    maxSize: 560,
+    defaultSize: width,
+    minSize: size?.min ?? 320,
+    maxSize: size?.max ?? 560,
     collapsible: true,
-    autoSaveId: 'clew-panel-width',
+    autoSaveId: size?.id ?? 'clew-panel-width',
     isCollapsed: collapsed,
     onCollapseChange: setCollapsed,
   });
@@ -491,7 +514,8 @@ export function usePanel(
     const was = lastId.current;
     lastId.current = id;
     if (id !== null) {
-      if (!address || !name) return;
+      // One thing at a time keeps no tabs: what is opened takes the place of what was open.
+      if (!address || !name || replaces) return;
       const current = tabsRef.current;
       const search = searchOf(address);
       const i = current.findIndex(t => t.id === id);
@@ -541,6 +565,12 @@ export function usePanel(
       return;
     }
     if (from?.id === id) return;
+    // One thing at a time: a link on the page that opened another thing in its place is the new way back.
+    if (from && replaces && inline) {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && active !== document.body && !region.current?.contains(active))
+        opener.current = active;
+    }
     if (!from) {
       const active = document.activeElement;
       if (!inline || (active instanceof HTMLElement && active.matches(TYPING))) return;
@@ -642,6 +672,31 @@ export function usePanel(
       />
     </VStack>
   );
+  const titleHeading = panel && (
+    <Heading
+      ref={heading}
+      tabIndex={-1}
+      level={panel.kind === 'card' ? 4 : 2}
+      accessibilityLevel={2}
+      color={panel.kind === 'card' ? 'secondary' : 'primary'}
+    >
+      {panel.title}
+    </Heading>
+  );
+  // What stands before the heading and the line under it, when the frame has them (D97, artboard C): a person's avatar
+  // beside their name, their role and unit under it.
+  const titleBlock =
+    panel && (panel.lead || panel.subtitle) ? (
+      <HStack gap={3} vAlign="center">
+        {panel.lead}
+        <VStack gap={0}>
+          {titleHeading}
+          {panel.subtitle && <Text type="supporting">{panel.subtitle}</Text>}
+        </VStack>
+      </HStack>
+    ) : (
+      titleHeading
+    );
   const end = inline ? (
     <>
       {toggle}
@@ -676,18 +731,8 @@ export function usePanel(
               /* A heading and a button, not a toolbar: the heading takes the focus when the panel opens, and a toolbar would offer its arrow keys there. With several things open the menu of them stands where the heading stood, and ✕ beside it closes the one it names. */
               header={
                 <LayoutHeader hasDivider={panel.kind !== 'card' || !!tabRow}>
-                  <HStack justify="between" vAlign="center" gap={2}>
-                    {tabRow ?? (
-                      <Heading
-                        ref={heading}
-                        tabIndex={-1}
-                        level={panel.kind === 'card' ? 4 : 2}
-                        accessibilityLevel={2}
-                        color={panel.kind === 'card' ? 'secondary' : 'primary'}
-                      >
-                        {panel.title}
-                      </Heading>
-                    )}
+                  <HStack justify="between" vAlign={panel.lead || panel.subtitle ? 'start' : 'center'} gap={2}>
+                    {tabRow ?? titleBlock}
                     <HStack gap={1} vAlign="center">
                       {panel.actions}
                       {more}
@@ -735,11 +780,18 @@ export function usePanel(
       isOpen={panel !== null}
       onOpenChange={close}
       side="end"
-      width={panel?.wide ? 'min(1100px, 100vw)' : PANEL}
+      width={panel?.wide ? 'min(1100px, 100vw)' : width}
       label={lastTitle.current ?? 'Vy'}
     >
       <Layout
-        header={<DrawerHeader title={lastTitle.current ?? 'Vy'} onOpenChange={close} />}
+        header={
+          <DrawerHeader
+            title={lastTitle.current ?? 'Vy'}
+            onOpenChange={close}
+            {...(panel?.lead ? { startContent: panel.lead } : {})}
+            {...(panel?.subtitle ? { subtitle: panel.subtitle } : {})}
+          />
+        }
         content={
           <LayoutContent>
             <VStack gap={3}>

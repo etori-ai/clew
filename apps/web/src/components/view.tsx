@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
+  ANY_TONE,
   ViewRefSchema,
   checkContract,
+  fieldTone,
   openRef,
   viewRows,
   type Activity,
@@ -12,7 +14,9 @@ import {
   type ViewField,
   type ViewInput,
   type ViewRef,
+  type ViewTone,
 } from '@clew/contracts';
+import { displayDate, shortDayLabel, timeLabel } from '@clew/calendar/dates';
 import {
   AreaChip,
   MetricView,
@@ -82,7 +86,30 @@ export interface DeclaredViewProps {
 
 const dateOnly = new Intl.DateTimeFormat('sv-SE', { dateStyle: 'long' });
 const tone = { ok: 'success', warn: 'warning', alert: 'error', none: 'neutral' } as const;
-const toneOf = (field: ViewField, value: unknown) => field.tones?.[String(value)] ?? 'none';
+/** The Astryx Badge variant a view's tone is drawn in: only what needs the person has a status colour. */
+export const badgeVariant = (t: ViewTone) => tone[t];
+/** The tone a field gives a value, by the one reading of `tones` the server shares (`fieldTone`, so `*` counts). */
+const toneOf = (field: ViewField, value: unknown) => fieldTone(field, value);
+/** Whether the view gives this value a tone of its own: named for it, or `*` for any value that is present (D97). */
+const hasTone = (field: ViewField, value: unknown) => {
+  const tones = field.tones;
+  if (!tones || value === undefined || value === null) return false;
+  const own = (key: string) => Object.prototype.hasOwnProperty.call(tones, key);
+  return own(String(value)) || (value !== '' && own(ANY_TONE));
+};
+/**
+ * A moment as the lists say it: the short weekday, the day, the month and the time, in Swedish time ("tors 12 nov. kl.
+ * 09:00"). A calendar day without a time ("2026-11-04", a talk held that day) is the day alone ("ons 4 nov.").
+ */
+export function instantText(value: string): string | null {
+  if (Number.isNaN(Date.parse(value))) return null;
+  try {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return shortDayLabel(value);
+    return `${shortDayLabel(displayDate(value))} kl. ${timeLabel(value)}`;
+  } catch {
+    return null;
+  }
+}
 /** A number as Swedish digits, its unit after it when the field declares one: "12 platser", "11 200 kr". */
 const amount = (field: ViewField, value: unknown) =>
   typeof value === 'number'
@@ -92,9 +119,10 @@ const amount = (field: ViewField, value: unknown) =>
     : `${String(value)}${field.unit ? ` ${field.unit.other}` : ''}`;
 /**
  * A status is a badge only where it is a state with a word of its own (D71): a bare yes or no, which takes the field's
- * label as its word, or a value the view gives a tone because it needs the person. Any other status is supporting text.
+ * label as its word, or a value the view gives a tone, which a source does for the value that needs the person or, with
+ * the tone `none`, for a state it wants drawn as a neutral badge ("Bokat"). Any other status is supporting text.
  */
-const badged = (field: ViewField, value: unknown) => typeof value === 'boolean' || toneOf(field, value) !== 'none';
+export const isBadged = (field: ViewField, value: unknown) => typeof value === 'boolean' || hasTone(field, value);
 /** The one word in its tone: only the state that needs the person has a status colour, the other is neutral, and a yes carries its check. */
 function StatusBadge({ field, value }: { field: ViewField; value: unknown }) {
   return (
@@ -152,7 +180,10 @@ const isMail = (value: string) => /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/.test(
 const isWeb = (value: string) => /^https?:\/\/[^\s]+$/i.test(value);
 const linked = (field: ViewField) => field.format === 'phone' || field.format === 'email' || field.format === 'link';
 
-/** One value, drawn by its declared format. What cannot be drawn as the format says is drawn as plain text, never as a broken link. */
+/**
+ * One value, drawn by its declared format. What cannot be drawn as the format says is drawn as plain text, never as a
+ * broken link. Exported as `FieldValue` for a page that places one field of one row itself (Personal's columns, D97).
+ */
 function Value({ field, value }: { field: ViewField; value: unknown }): ReactNode {
   if (empty(value)) return <Text type="supporting">–</Text>;
   const text = String(value);
@@ -187,10 +218,12 @@ function Value({ field, value }: { field: ViewField; value: unknown }): ReactNod
       const at = Date.parse(text);
       return <Text>{Number.isNaN(at) ? text : dateOnly.format(at)}</Text>;
     }
+    case 'instant':
+      return <Text>{instantText(text) ?? text}</Text>;
     case 'number':
       return <Text hasTabularNumbers>{amount(field, value)}</Text>;
     case 'status':
-      return badged(field, value) ? (
+      return isBadged(field, value) ? (
         <StatusBadge field={field} value={value} />
       ) : (
         <Text type="supporting">{statusWord(field.label, value)}</Text>
@@ -198,6 +231,25 @@ function Value({ field, value }: { field: ViewField; value: unknown }): ReactNod
     default:
       return <Text>{fieldValue(value)}</Text>;
   }
+}
+
+export { Value as FieldValue };
+/**
+ * One field of a row as a line of words says it (D71): a status its word, a number with its unit ("40 platser") or its
+ * label ("Perioder: 3"), a date or a moment with its label, a bare yes or no with its label, any other text as given.
+ */
+export function fieldWord(f: ViewField, value: unknown): string {
+  if (f.format === 'status') return statusWord(f.label, value);
+  if (f.format === 'number') return f.unit ? amount(f, value) : `${f.label}: ${amount(f, value)}`;
+  if (f.format === 'date' && !Number.isNaN(Date.parse(String(value))))
+    return `${f.label}: ${dateOnly.format(Date.parse(String(value)))}`;
+  if (f.format === 'instant') {
+    const at = instantText(String(value));
+    if (at) return `${f.label}: ${at}`;
+  }
+  // A bare yes or no is said with its label, never as "Ja · Ja".
+  const labelled = (f.format && f.format !== 'text') || typeof value === 'boolean';
+  return labelled ? `${f.label}: ${fieldValue(value)}` : fieldValue(value);
 }
 
 /** The view's own controls: a search field and a choice, each bound to one input of the capability. Typing asks again after a pause, Enter at once. */
@@ -370,20 +422,10 @@ function Rows({
       {rows.map((row, i) => {
         const shown = others.filter(f => !empty(row[f.key]));
         // The meta line holds the words, the badges stand at the row's end, the links under the line (D71: the row level).
-        const marks = shown.filter(f => f.format === 'status' && badged(f, row[f.key])),
+        const marks = shown.filter(f => f.format === 'status' && isBadged(f, row[f.key])),
           links = shown.filter(linked),
           words = shown.filter(f => !linked(f) && !marks.includes(f));
-        const word = (f: ViewField) => {
-          const value = row[f.key];
-          if (f.format === 'status') return statusWord(f.label, value);
-          // A number with its unit says what it is ("40 platser"); one without keeps its label ("Perioder: 3").
-          if (f.format === 'number') return f.unit ? amount(f, value) : `${f.label}: ${amount(f, value)}`;
-          if (f.format === 'date' && !Number.isNaN(Date.parse(String(value))))
-            return `${f.label}: ${dateOnly.format(Date.parse(String(value)))}`;
-          // A bare yes or no is said with its label, never as "Ja · Ja".
-          const labelled = (f.format && f.format !== 'text') || typeof value === 'boolean';
-          return labelled ? `${f.label}: ${fieldValue(value)}` : fieldValue(value);
-        };
+        const word = (f: ViewField) => fieldWord(f, row[f.key]);
         // The numbers and the address share a line and wrap where they must, so a long address never pushes the row sideways (1.4.10) and a person takes three lines, not five.
         return (
           <ListItem

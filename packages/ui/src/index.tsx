@@ -50,6 +50,7 @@ export { useLayer } from '@astryxdesign/core/Layer';
 export {
   DropdownMenu,
   DropdownMenuDivider,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,

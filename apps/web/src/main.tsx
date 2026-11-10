@@ -18,6 +18,7 @@ import { AdminConnectorPage } from './pages/admin/connector';
 import { AdminModelsPage } from './pages/admin/models';
 import { AdminUsersPage } from './pages/admin/users';
 import { StaffPage } from './pages/staff';
+import { PersonPage } from './pages/person';
 import { AdminModelPage } from './pages/admin/model';
 import { AdminProviderPage } from './pages/admin/provider';
 import { NotAdmin } from './pages/admin/shell';
@@ -221,6 +222,11 @@ function App() {
       <Route
         path="/staff"
         element={<Protected>{shell => <StaffPage user={shell.user} admin={shell.admin} />}</Protected>}
+      />
+      {/* A person as a page (D97 item 5): "Öppna som sida" from the person beside a list; `section` is the chosen source. */}
+      <Route
+        path="/people/:key"
+        element={<Protected>{shell => <PersonPage user={shell.user} admin={shell.admin} />}</Protected>}
       />
       <Route
         path="/admin"

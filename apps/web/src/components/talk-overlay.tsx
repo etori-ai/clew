@@ -34,6 +34,7 @@ import { api } from '../api';
 import { commitmentsQuery, staffQuery, talksQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { useTalkAction } from '../mutations';
+import { usePageTitle } from '../page-title';
 import { talkOf, withoutTalk } from '../talk-address';
 import {
   dueText,
@@ -88,6 +89,9 @@ export function TalkOverlay({ opener }: { opener: (personId: string) => HTMLElem
   const found = !!person && !!talks;
   const title = talksQ.isError ? 'Samtal' : found ? person.name : 'Samtalet finns inte';
   const label = found ? `Samtal med ${person.name}` : title;
+  // The open talk names the tab (2.4.2); the list under it yields while the address names a talk (D97: Personal knows
+  // no talk), and with no drawer to show the tab is the list's. Focus moving into the drawer says the name.
+  usePageTitle(talkId && settled ? (isOpen && found ? label : 'Personal') : null, false);
 
   const onOpenChange = (open: boolean) => {
     if (!open) navigate(withoutTalk(search), { replace: true });

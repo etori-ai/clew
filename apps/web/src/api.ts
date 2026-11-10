@@ -66,6 +66,7 @@ import type {
 import { sessionFetch } from '@clew/ui';
 import type { AppearanceAdminView, AppearanceLogoInputType } from '@clew/contracts';
 import type { McpDelivery, McpService, McpView, McpResult } from '@clew/contracts';
+import type { EntityDetail, EntityKind, EntityList, EntityRows, EntitySection } from '@clew/contracts';
 
 import { ApiError } from './api-error';
 export { ApiError };
@@ -161,6 +162,22 @@ const commitmentPath = (id: string) => `/api/talks/commitments/${encodeURICompon
 export const api = {
   /** Personal (D94): the people on the units the signed-in manager manages; 403 for anyone else. */
   staff: () => call<StaffOverview>('/api/staff'),
+  /**
+   * Entities (D97): what sources say about a person or a unit, placed by Clew. `list` is the page's people or units with
+   * the administrator's columns, lenses and the actions; `rows` is one source over all of them (a lens, a column, the
+   * marks); `detail` is one opened entity; `section` is one source's answer for it. A key the reader may not ask about
+   * answers 404.
+   */
+  entities: {
+    list: (kind: EntityKind) => call<EntityList>(`/api/entities/${kind}`),
+    rows: (kind: EntityKind, capability: string) =>
+      call<EntityRows>(`/api/entities/${kind}/rows?capability=${encodeURIComponent(capability)}`),
+    detail: (kind: EntityKind, key: string) => call<EntityDetail>(`/api/entities/${kind}/${encodeURIComponent(key)}`),
+    section: (kind: EntityKind, key: string, capability: string) =>
+      call<EntitySection>(
+        `/api/entities/${kind}/${encodeURIComponent(key)}/section?capability=${encodeURIComponent(capability)}`,
+      ),
+  },
   /**
    * Utvecklingssamtal (D96 items 7 to 9): the two composites of Clew's core connector and the built-in module's writes.
    * A person without a talks system has the reads refused; `queries.ts` turns that refusal into `null`. The writes are

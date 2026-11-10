@@ -33,6 +33,10 @@ import {
   providerReport,
   usersOverview,
   staffOverview,
+  entityDetail,
+  entityList,
+  entityRows,
+  SILENT_SECTION,
   TALKS_FAIL_ERROR,
   TODAY,
   USER_NAME,
@@ -52,6 +56,9 @@ import type {
   AppearanceLogoInputType,
   CommitmentAddBody,
   CommitmentsInput,
+  EntityList,
+  EntityRows,
+  EntitySection,
   ModelSummary,
   ProviderSummary,
   TalkHeldBody,
@@ -122,6 +129,20 @@ export class MockApi {
   staff = staffOverview();
   /** Personal for someone who manages no unit: the server refuses whatever the session's role says. */
   staffForbidden = false;
+  /**
+   * Entities (D97): the list of people, each source's rows over them, and the opened person, as `data.ts` draws the
+   * canvas. A test may replace any of them.
+   */
+  entityList: EntityList = entityList();
+  entityRows: Record<string, EntityRows> = entityRows();
+  /** The reader may ask about nobody (manages no unit): the list answers with no groups, as the server does. */
+  entitiesEmpty = false;
+  /** Sources that do not answer, by capability: their rows and sections come back with this status and nothing else. */
+  entitySilent: Record<string, 'unavailable' | 'timeout'> = { [SILENT_SECTION]: 'unavailable' };
+  /** How long one source's rows take, by capability, so a test can see the page while a lens loads. */
+  entityRowsDelay: Record<string, number> = {};
+  /** Every entities read that reached the mock, as path and query, in order. */
+  entityReads: string[] = [];
   /**
    * The session person is an employee who manages nobody: the session's role is `employee`, Personal is refused, the
    * round lists nobody and their own action points are only the ones about them. For Hem without Personal.
@@ -213,6 +234,9 @@ export class MockApi {
     if (path === '/header') return json(this.header);
     // The MCP service inbox (D81): empty unless a spec routes it itself.
     if (path === '/chat-services') return json({ services: [], deliveries: [] });
+    // Entities (D97): the people the reader may ask about, one source over them, the opened person and one source's
+    // answer for them. A key the reader may not ask about answers 404 as if it did not exist.
+    if (path.startsWith('/entities/') && !post) return this.entities(route, path, url);
     // Personal (D94): the manager's units and their people, or the server's refusal.
     if (path === '/staff')
       return this.staffForbidden || this.employee
@@ -670,6 +694,43 @@ export class MockApi {
     if (path.startsWith('/threads/') && !post) return json(this.threads.find(t => t.id === id));
     this.unmocked.push(`${request.method()} ${path}`);
     return route.fulfill({ status: 500, json: { error: 'Inte mockat' } });
+  }
+  /**
+   * Entities (D97), answered as the `entities` module would: only `person` is listed here; a person outside the list is
+   * a 404, a source in `entitySilent` answers with that status and no rows, and someone who manages nobody gets a list
+   * with no groups (no refusal).
+   */
+  private async entities(route: Route, path: string, url: URL) {
+    const json = (body: unknown) => route.fulfill({ json: body });
+    const missing = () => route.fulfill({ status: 404, json: { error: 'Personen finns inte.', code: 'not_found' } });
+    this.entityReads.push(path + url.search);
+    const [, , kind, key, sub] = path.split('/');
+    if (kind !== 'person') return route.fulfill({ status: 404, json: { error: 'Sidan finns inte.' } });
+    const list: EntityList = this.entitiesEmpty || this.employee ? { ...this.entityList, groups: [] } : this.entityList;
+    const capability = url.searchParams.get('capability') ?? '';
+    const silent = this.entitySilent[capability];
+    if (key === undefined) return json(list);
+    if (key === 'rows') {
+      const delay = this.entityRowsDelay[capability];
+      if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+      const known = new Set(list.groups.flatMap(g => g.entities.map(e => e.key)));
+      const rows = this.entityRows[capability];
+      const answer: EntityRows = silent
+        ? { capability, status: silent, rows: [] }
+        : rows
+          ? { ...rows, rows: rows.rows.filter(r => known.has(String(r.key))) }
+          : { capability, status: 'ok', rows: [] };
+      return json(answer);
+    }
+    const detail = entityDetail(list, decodeURIComponent(key));
+    if (!detail) return missing();
+    if (sub === undefined) return json(detail);
+    if (sub !== 'section' || !detail.sections.some(s => s.capability === capability)) return missing();
+    const row = this.entityRows[capability]?.rows.find(r => r.key === detail.entity.key);
+    const section: EntitySection = silent
+      ? { capability, status: silent }
+      : { capability, status: 'ok', ...(row ? { row } : {}) };
+    return json(section);
   }
   /**
    * Utvecklingssamtal (D96), answered as the server would: the reads through the capability route (refused for a person
