@@ -185,6 +185,57 @@ describe('/scim/v2', () => {
     });
     expect((await throwing(new Error('something else'))).status).toBe(500);
   });
+  test('an unexpected failure answers 500 without its cause and says it on the log port, and a known mistake logs nothing (D91)', async () => {
+    const store = memoryProvisionStore();
+    store.state.provisioners.set('digest:t', { id: 'mk', organisationId: 'sundsvall', label: 'Metakatalogen' });
+    const scim = scimUsecases({ store, clock: () => new Date(), ids: () => 'x', digest: t => 'digest:' + t });
+    const said: unknown[][] = [],
+      cause = new Error('connection reset by the database');
+    const hono = scimRoutes(
+      { ...scim, getUser: async () => Promise.reject(cause) },
+      { log: (...line) => void said.push(line) },
+    );
+    const get = (path: string) => hono.request('https://clew.test' + path, { headers: { Authorization: 'Bearer t' } });
+    const failed = await get('/Users/x');
+    expect(failed.status).toBe(500);
+    expect(await failed.json()).toEqual({
+      schemas: ['urn:ietf:params:scim:api:messages:2.0:Error'],
+      status: '500',
+      detail: 'The request could not be completed.',
+    });
+    expect(said).toEqual([['scim: the request failed unexpectedly', cause]]);
+    expect((await get('/Groups/nobody')).status).toBe(404);
+    expect(said).toHaveLength(1);
+  });
+  test('attributes and excludedAttributes are read from the address and from a search request, where they are lists', async () => {
+    const { call } = app();
+    await call('POST', '/Users', anna);
+    await call('POST', '/Groups', { displayName: 'Skola', externalId: 'unit:skola', members: [{ value: 'id-1' }] });
+    const group = await (await call('GET', '/Groups/id-2?excludedAttributes=members')).json();
+    expect(group).toMatchObject({ id: 'id-2', displayName: 'Skola' });
+    expect('members' in group).toBe(false);
+    const listed = await (await call('GET', '/Users?attributes=userName,active')).json();
+    expect(listed.Resources).toEqual([
+      { schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'], id: 'id-1', userName: 'annber', active: true },
+    ]);
+    const searched = await (
+      await call('POST', '/Groups/.search', {
+        schemas: ['urn:ietf:params:scim:api:messages:2.0:SearchRequest'],
+        filter: 'displayName eq "Skola"',
+        attributes: ['displayName', 'members.value'],
+      })
+    ).json();
+    expect(searched.Resources).toEqual([
+      {
+        schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'],
+        id: 'id-2',
+        displayName: 'Skola',
+        members: [{ value: 'id-1' }],
+      },
+    ]);
+    // A count that is no number takes the default instead of answering an empty page.
+    expect((await (await call('GET', '/Users?count=abc')).json()).itemsPerPage).toBe(1);
+  });
   test('mistakes come back as the error resource: not JSON, wrong shape, unknown id, conflict, unknown address', async () => {
     const { call } = app();
     expect(await (await call('POST', '/Users', '{not json')).json()).toMatchObject({

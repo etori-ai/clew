@@ -140,10 +140,17 @@ scimStoreContract('postgres', async () => {
   return {
     store: postgresProvisionStore(),
     prefix,
-    async seedProvisioner(p, digest, revoked) {
+    async seedProvisioner(p, digest, revoked, previous) {
       await database()
         .insert(schema.provisioners)
-        .values({ ...p, tokenDigest: digest, createdBy: 'test', revokedAt: revoked ? new Date() : null });
+        .values({
+          ...p,
+          tokenDigest: digest,
+          createdBy: 'test',
+          revokedAt: revoked ? new Date() : null,
+          previousTokenDigest: previous?.digest ?? null,
+          previousValidUntil: previous ? new Date(previous.until) : null,
+        });
     },
     async bind(personId) {
       await database()

@@ -1,6 +1,6 @@
 # D93 · The `protected` key is refused at the SCIM boundary until Clew decides whether it may hold the fact
 
-**Status:** accepted, built 2026-11-09 · **Date:** 2026-11-09 · **Area:** identity
+**Status:** accepted, built 2026-11-09; extended to every case of the key by [D96](D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md) (2026-11-10) · **Date:** 2026-11-09 · **Area:** identity
 
 **Decision.** A group whose `externalId` is `protected` (D68 item 2) is refused by the SCIM server with 400
 `invalidValue` and a detail that names this decision, on `POST`, `PUT` and `PATCH` alike. Nothing about a protected

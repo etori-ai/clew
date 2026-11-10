@@ -1275,6 +1275,11 @@ export interface UsersAdminOverview {
   /** The provisioned groups with an external id, as the editor offers them. */
   groups: Array<{ id: string; label: string }>;
   capabilities: Capability[];
+  /**
+   * The clients that push people into this organisation (D68) and when each was last heard from. `silent` is the
+   * server's reading of that time: never seen, or not for two days, where a push is due daily.
+   */
+  provisioners: Array<{ id: string; label: string; lastSeenAt: string | null; silent: boolean }>;
 }
 export const GroupCapabilityInput = Type.Object(
   { groupExternalId: Type.String({ minLength: 1, maxLength: 512 }), capability: CapabilitySchema },

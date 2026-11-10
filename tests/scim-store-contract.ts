@@ -10,7 +10,13 @@ import type { Provisioner, ProvisionStore } from '../apps/server/src/modules/peo
 export interface ScimStoreHarness {
   store: ProvisionStore;
   prefix: string;
-  seedProvisioner(p: Provisioner, digest: string, revoked?: boolean): Promise<void>;
+  /** `previous` is a rotated-out token's digest that still answers until the instant given. */
+  seedProvisioner(
+    p: Provisioner,
+    digest: string,
+    revoked?: boolean,
+    previous?: { digest: string; until: string },
+  ): Promise<void>;
   /** An identity binding for the person, as a first login would write it. */
   bind(personId: string): Promise<void>;
 }
@@ -169,7 +175,7 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         expect((await tx.groupCapabilities()).filter(m => m.groupExternalId === p + ':g')).toEqual([]);
       });
     });
-    test('a provisioner is found by the digest of its token while the token is not revoked', async () => {
+    test('a provisioner is found by the digest of its token while the token is not revoked, and remembers when it was last seen', async () => {
       const h = await make(),
         p = h.prefix;
       await h.seedProvisioner({ id: p + '-live', organisationId: p + '-org', label: 'Live' }, 'digest:' + p + ':live');
@@ -178,14 +184,69 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         'digest:' + p + ':gone',
         true,
       );
+      await h.seedProvisioner(
+        { id: p + '-other', organisationId: p + '-elsewhere', label: 'Other' },
+        'digest:' + p + ':o',
+      );
+      const live = { id: p + '-live', organisationId: p + '-org', label: 'Live' };
       await h.store.transaction(async tx => {
-        expect(await tx.provisioner('digest:' + p + ':live')).toEqual({
-          id: p + '-live',
-          organisationId: p + '-org',
-          label: 'Live',
+        expect(await tx.provisioner('digest:' + p + ':live', T)).toEqual({ ...live, lastSeenAt: null });
+        expect(await tx.provisioner('digest:' + p + ':gone', T)).toBeUndefined();
+        expect(await tx.provisioner('digest:' + p + ':unknown', T)).toBeUndefined();
+        await tx.touchProvisioner(p + '-live', '2026-11-09T07:30:00.000Z');
+      });
+      await h.store.transaction(async tx => {
+        expect(await tx.provisioner('digest:' + p + ':live', T)).toEqual({
+          ...live,
+          lastSeenAt: '2026-11-09T07:30:00.000Z',
         });
-        expect(await tx.provisioner('digest:' + p + ':gone')).toBeUndefined();
-        expect(await tx.provisioner('digest:' + p + ':unknown')).toBeUndefined();
+        // The organisation's own, without the revoked one, by id.
+        expect(await tx.provisioners(p + '-org')).toEqual([{ ...live, lastSeenAt: '2026-11-09T07:30:00.000Z' }]);
+        expect((await tx.provisioners(p + '-elsewhere')).map(o => o.id)).toEqual([p + '-other']);
+      });
+    });
+    test('a rotated-out token answers until its grace period ends and not after, and never for a revoked provisioner', async () => {
+      const h = await make(),
+        p = h.prefix,
+        until = '2026-11-10T06:00:00.000Z';
+      await h.seedProvisioner(
+        { id: p + '-r', organisationId: p + '-org', label: 'Rotated' },
+        'digest:' + p + ':new',
+        false,
+        {
+          digest: 'digest:' + p + ':old',
+          until,
+        },
+      );
+      await h.seedProvisioner(
+        { id: p + '-x', organisationId: p + '-org', label: 'Revoked' },
+        'digest:' + p + ':x',
+        true,
+        {
+          digest: 'digest:' + p + ':x-old',
+          until,
+        },
+      );
+      await h.store.transaction(async tx => {
+        expect((await tx.provisioner('digest:' + p + ':new', T))?.id).toBe(p + '-r');
+        expect((await tx.provisioner('digest:' + p + ':old', '2026-11-10T05:59:59.000Z'))?.id).toBe(p + '-r');
+        expect(await tx.provisioner('digest:' + p + ':old', until)).toBeUndefined();
+        expect(await tx.provisioner('digest:' + p + ':old', '2026-11-11T00:00:00.000Z')).toBeUndefined();
+        expect((await tx.provisioner('digest:' + p + ':new', '2026-11-11T00:00:00.000Z'))?.id).toBe(p + '-r');
+        expect(await tx.provisioner('digest:' + p + ':x-old', T)).toBeUndefined();
+      });
+    });
+    test('a locked person and a locked group read as they do unlocked', async () => {
+      const { store, prefix: p } = await make();
+      await store.transaction(async tx => {
+        await tx.insertUser(userRow(p + '-a', p + '-org'));
+        await tx.insertGroup(groupRow(p + '-g', p + '-org'));
+      });
+      await store.transaction(async tx => {
+        expect(await tx.lockPerson(p + '-a')).toEqual({ id: p + '-a', organisationId: p + '-org' });
+        expect(await tx.lockPerson(p + '-nobody')).toBeUndefined();
+        expect((await tx.readGroup(p + '-org', p + '-g', true))?.id).toBe(p + '-g');
+        expect(await tx.readGroup(p + '-elsewhere', p + '-g', true)).toBeUndefined();
       });
     });
   });

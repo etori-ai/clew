@@ -23,7 +23,7 @@ Nothing in Clew names Metakatalogen or any other source. Clew's own vocabulary s
    | `unit-manager:<unitId>` | An assignment to that unit as `manager`, which wins over `unit:` for the same unit | Free |
    | `capability:<name>` | That capability, such as `capability:admin.connectors` | Free |
    | `protected` | Refused with 400 `invalidValue` by [D93](D93-the-protected-key-is-refused-at-the-scim-boundary.md) until Clew decides whether it may hold the fact; was to mean exclusion from every list another person can see | Free |
-   | Anything else | Nothing in authorization; a plain group for connector audiences (D23) | Free |
+   | Anything else | Nothing in authorization; a plain group for connector audiences (D23). A key above written wrong (another case, no id, a capability outside the list) is refused, not stored as a plain group ([D96](D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md)) | Free |
 
    A person with no `unit:` or `unit-manager:` membership is provisioned but has no access, so a mapping error fails
    closed. Membership is the only authority: Clew derives every role and capability from it, and an administrator

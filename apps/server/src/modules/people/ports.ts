@@ -36,7 +36,13 @@ export interface Listed<T> {
  */
 export interface ProvisionTx {
   // Derivation.
-  person(id: string): Promise<{ id: string; organisationId: string } | undefined>;
+  /**
+   * The person, with the row locked for the rest of the transaction: two derivations of one person run one after the
+   * other, and the later one reads the memberships the earlier one committed. Without it two requests that each change
+   * a membership of the same person would each derive from their own view, and the last writer's grant would miss the
+   * other's change. Callers lock several people in id order, so two transactions never wait on each other.
+   */
+  lockPerson(id: string): Promise<{ id: string; organisationId: string } | undefined>;
   /** The groups with an external id the person is in; a group without one carries no meaning. */
   memberships(personId: string): Promise<Membership[]>;
   members(groupExternalId: string): Promise<string[]>;
@@ -50,8 +56,15 @@ export interface ProvisionTx {
   writeGrant(personId: string, grant: Grant | undefined): Promise<void>;
   audit(entry: { actor: string; action: string; subject: string; details: Record<string, unknown> }): Promise<void>;
   // SCIM: who is calling.
-  /** The provisioner whose token has this digest and is not revoked. */
-  provisioner(tokenDigest: string): Promise<Provisioner | undefined>;
+  /**
+   * The provisioner whose token has this digest and is not revoked, with the last time it was seen. A token that was
+   * rotated out still answers until its grace period ends (`at` is now), so a client can be switched without a gap.
+   */
+  provisioner(tokenDigest: string, at: string): Promise<(Provisioner & { lastSeenAt: string | null }) | undefined>;
+  /** Record that the provisioner authenticated at `at`: the one sign an operator has that pushes still arrive. */
+  touchProvisioner(id: string, at: string): Promise<void>;
+  /** The organisation's provisioners that are not revoked, by id, for Administration › Användare. */
+  provisioners(organisationId: string): Promise<Array<Provisioner & { lastSeenAt: string | null }>>;
   // SCIM: users, always within the provisioner's organisation.
   readUser(organisationId: string, id: string): Promise<UserRecord | undefined>;
   /**
@@ -73,7 +86,8 @@ export interface ProvisionTx {
   userGroups(personId: string): Promise<Array<{ id: string; externalId: string | null; label: string }>>;
   // SCIM: groups. A group belongs to the organisation of the provisioner that pushed it, as its members do, so a client
   // reads, lists and writes its own organisation's groups only; `externalId` is unique across the installation.
-  readGroup(organisationId: string, id: string): Promise<GroupRecord | undefined>;
+  /** `lock` holds the group's row for the rest of the transaction, so two writes of one group run one after the other. */
+  readGroup(organisationId: string, id: string, lock?: boolean): Promise<GroupRecord | undefined>;
   /** Across the installation, for the uniqueness check and the mapping (an `externalId` is shared vocabulary). */
   findGroup(by: 'externalId' | 'label', value: string): Promise<GroupRecord | undefined>;
   listGroups(

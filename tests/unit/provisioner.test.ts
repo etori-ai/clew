@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { scimUsecases } from '../../apps/server/src/modules/people/usecases';
 import { scimRoutes } from '../../apps/server/src/routes/scim';
+import { checkProvisioning } from '../../scripts/provisioner/check';
 import { scimClient } from '../../scripts/provisioner/client';
 import { developmentDirectory, type Directory } from '../../scripts/provisioner/directory';
 import { plan, push } from '../../scripts/provisioner/push';
@@ -26,7 +27,7 @@ function stack() {
     const user = [...store.state.users.values()].find(u => u.userName === userName);
     return user && store.state.grants.get(user.id);
   };
-  return { store, client, grantOf };
+  return { store, client, grantOf, app };
 }
 /** Clew's id for the person the directory knows by `externalId`. */
 const ekonomiId = (store: ReturnType<typeof stack>['store'], externalId: string) =>
@@ -144,5 +145,78 @@ describe('the synthetic provisioner', () => {
     expect(store.state.groups.has('foreign')).toBe(true);
     const broken: Directory = { ...developmentDirectory, people: [{ ...developmentDirectory.people[0]!, email: '' }] };
     await expect(push(client, broken)).rejects.toMatchObject({ status: 400, scimType: 'invalidSyntax' });
+  });
+  test('the check reads what the installation holds: counts when the push did what it meant, and names who is left without a unit', async () => {
+    const { client, app, store } = stack();
+    const anonymous = (input: string, init?: RequestInit) => app.request(input, init);
+    await push(client, developmentDirectory);
+    const clean = await checkProvisioning('http://clew.local', client, anonymous);
+    expect(clean.filter(f => f.level !== 'ok')).toEqual([]);
+    expect(clean.map(f => f.text)).toEqual([
+      'Without a token the endpoint answers 401 with the SCIM error resource.',
+      'The token is accepted. PATCH yes, filter yes (at most 200 rows a page), bulk no, sort no, ETags no.',
+      '50 users: 50 active, 0 deactivated.',
+      expect.stringMatching(
+        /^\d+ groups: 11 unit, \d+ unit-manager, \d+ capability, \d+ plain \(0 without an externalId\)\.$/,
+      ),
+      'Every active user is in a unit.',
+    ]);
+    // A person the mapping forgot, a managed unit nobody named, an emptied unit and a key stored before D96.
+    await client.request('POST', '/Users', {
+      externalId: 'dev:lost',
+      userName: 'lost',
+      displayName: 'Lost Person',
+      emails: [{ value: 'lost@clew.test', type: 'work' }],
+    });
+    const hillevi = [...store.state.users.values()].find(u => u.userName === 'hillevi')!.id;
+    await client.request('POST', '/Groups', {
+      externalId: 'unit-manager:unit-nameless',
+      displayName: 'Chefer',
+      members: [{ value: hillevi }],
+    });
+    await client.request('POST', '/Groups', { externalId: 'unit:unit-empty', displayName: 'Tom enhet' });
+    store.state.groups.set('legacy', {
+      id: 'legacy',
+      organisationId: 'poc',
+      externalId: 'Unit:old',
+      label: 'Stored before D96',
+      createdAt: '2026-11-09T06:00:00.000Z',
+      updatedAt: '2026-11-09T06:00:00.000Z',
+    });
+    // It only reads: nothing it does is a change, so the audit is as long afterwards as before.
+    const audited = store.state.audit.length;
+    const warned = await checkProvisioning('http://clew.local', client, anonymous);
+    expect(store.state.audit.length).toBe(audited);
+    expect(warned.filter(f => f.level === 'fail')).toEqual([]);
+    expect(warned.filter(f => f.level === 'warn').map(f => f.text)).toEqual([
+      '1 active user has no unit: or unit-manager: group and can do nothing in Clew: lost.',
+      '1 unit has a unit-manager: group and no unit: group, so the unit is shown by its id instead of a name: unit-nameless.',
+      '1 unit or unit-manager group has no members: unit:unit-empty.',
+      "1 group carries a key that is written wrong and gives nobody anything: 'Unit:old'.",
+    ]);
+  });
+  test('the check fails on a refused token and on an address that is not a SCIM server, and reads nothing further', async () => {
+    const { app } = stack();
+    const anonymous = (input: string, init?: RequestInit) => app.request(input, init);
+    const refused = await checkProvisioning(
+      'http://clew.local',
+      scimClient('http://clew.local', 'wrong', anonymous),
+      anonymous,
+    );
+    expect(refused).toEqual([
+      { level: 'ok', text: 'Without a token the endpoint answers 401 with the SCIM error resource.' },
+      {
+        level: 'fail',
+        text: 'The token was refused: it is mistyped, revoked, or rotated out and past its grace period.',
+      },
+    ]);
+    const elsewhere = async () =>
+      new Response('<html></html>', { status: 200, headers: { 'Content-Type': 'text/html' } });
+    const wrong = await checkProvisioning(
+      'http://clew.local',
+      scimClient('http://clew.local', 'x', anonymous),
+      elsewhere,
+    );
+    expect(wrong[0]).toMatchObject({ level: 'fail', text: expect.stringContaining('answered 200 (text/html)') });
   });
 });

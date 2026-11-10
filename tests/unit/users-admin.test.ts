@@ -86,12 +86,33 @@ function stack() {
   });
   return {
     store,
-    usecases: usersAdminUsecases({ store }),
+    usecases: usersAdminUsecases({ store, clock: () => new Date('2026-11-10T06:00:00.000Z') }),
     admin: persona(['admin.users']),
     other: persona(['admin.connectors']),
   };
 }
 describe('Användare', () => {
+  test("the overview names the organisation's provisioners with when each was last seen, and says which have gone silent", async () => {
+    const { usecases, admin, store } = stack();
+    const p = (id: string, lastSeenAt: string | null, organisationId = 'poc') => ({
+      id,
+      organisationId,
+      label: 'Label ' + id,
+      lastSeenAt,
+    });
+    store.state.provisioners.set('d:1', p('a-fresh', '2026-11-10T05:00:00.000Z'));
+    store.state.provisioners.set('d:2', p('b-two-days', '2026-11-08T06:00:00.000Z'));
+    store.state.provisioners.set('d:3', p('c-late', '2026-11-08T05:59:59.000Z'));
+    store.state.provisioners.set('d:4', p('d-never', null));
+    store.state.provisioners.set('d:5', { ...p('e-revoked', null), revoked: true });
+    store.state.provisioners.set('d:6', p('f-elsewhere', null, 'other-organisation'));
+    expect((await usecases.overview(admin)).provisioners).toEqual([
+      { id: 'a-fresh', label: 'Label a-fresh', lastSeenAt: '2026-11-10T05:00:00.000Z', silent: false },
+      { id: 'b-two-days', label: 'Label b-two-days', lastSeenAt: '2026-11-08T06:00:00.000Z', silent: false },
+      { id: 'c-late', label: 'Label c-late', lastSeenAt: '2026-11-08T05:59:59.000Z', silent: true },
+      { id: 'd-never', label: 'Label d-never', lastSeenAt: null, silent: true },
+    ]);
+  });
   test('the overview lists people by name with unit, role, groups, capabilities and whether they signed in; the mapping offers the groups with an external id', async () => {
     const { usecases, admin } = stack();
     const o = await usecases.overview(admin);

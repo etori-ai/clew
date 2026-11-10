@@ -140,6 +140,11 @@ export const provisioners = pgTable(
     createdBy: text('created_by').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    /** The last time the provisioner authenticated, written at most once a minute: how an operator sees that pushes arrive. */
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+    /** A rotated-out token's digest, which still authenticates until `previousValidUntil`, so a client switches without a gap. */
+    previousTokenDigest: text('previous_token_digest'),
+    previousValidUntil: timestamp('previous_valid_until', { withTimezone: true }),
   },
   t => [uniqueIndex('auth_provisioner_token_digest').on(t.tokenDigest)],
 );

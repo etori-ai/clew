@@ -12,6 +12,6 @@ export const userReads = postgresUserReads();
 export const scim = scimUsecases({ store: postgresProvisionStore(), clock, ids, digest: tokenDigest });
 export const provisioning = scim;
 /** Administration › Användare (D85): the overview and the group-to-capability mapping. */
-export const usersAdmin = usersAdminUsecases({ store: postgresProvisionStore() });
+export const usersAdmin = usersAdminUsecases({ store: postgresProvisionStore(), clock });
 /** Personal (D94): the people on the units the signed-in manager manages, read only. */
 export const staff = staffUsecases({ store: postgresProvisionStore() });

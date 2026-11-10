@@ -51,6 +51,40 @@ test.describe('users administration', () => {
       await expect(people.getByText('Ingen åtkomst', { exact: true })).toBeVisible();
       await expect(page.getByRole('table').nth(1).getByText('IT-personal')).toBeVisible();
     });
+    test('the page says when each catalogue last called and warns about one that has gone silent', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/users');
+      const pushes = page.getByRole('list', { name: 'Inläsning från katalogen' });
+      const rows = pushes.getByRole('listitem');
+      await expect(rows).toHaveCount(2);
+      await expect(rows.nth(0)).toContainText('HR-systemet');
+      await expect(rows.nth(0)).toContainText('Senaste anrop 6 november 2026');
+      await expect(rows.nth(0)).toContainText('Tyst i över två dygn');
+      await expect(rows.nth(1)).toContainText('Metakatalogen');
+      await expect(rows.nth(1)).toContainText('Senaste anrop 10 november 2026 kl. 06:02');
+      await expect(rows.nth(1)).toContainText('Läser in');
+      // Read, not operated: the rows add no focus stop.
+      await expect(pushes.getByRole('button')).toHaveCount(0);
+      await expect(pushes.getByRole('link')).toHaveCount(0);
+    });
+    test('a catalogue that has never called and an installation without one are both said in words', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      api.users.provisioners = [{ id: 'ny', label: 'Ny katalog', lastSeenAt: null, silent: true }];
+      await open(page, '/admin/users');
+      const row = page.getByRole('list', { name: 'Inläsning från katalogen' }).getByRole('listitem');
+      await expect(row).toContainText('Har aldrig anropat Clew');
+      await expect(row).toContainText('Inget anrop ännu');
+      api.users.provisioners = [];
+      await page.reload();
+      await expect(page.getByText('Ingen katalog har fått en nyckel till Clew ännu.')).toBeVisible();
+      await expectNoAxeViolations(page);
+    });
     test('a group is mapped to a capability by keyboard, said aloud, and taken back again', async ({ page, api }) => {
       api.admin = true;
       await open(page, '/admin/users');
@@ -88,6 +122,7 @@ test.describe('users administration', () => {
       await page.setViewportSize(narrow);
       await open(page, '/admin/users');
       await expect(page.getByRole('list', { name: 'Personer' })).toBeVisible();
+      await expect(page.getByRole('list', { name: 'Inläsning från katalogen' })).toContainText('Tyst i över två dygn');
       expect(await reflowProblems(page)).toEqual([]);
     });
   });
