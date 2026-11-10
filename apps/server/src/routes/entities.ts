@@ -1,17 +1,21 @@
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
-import { isEntityKind, type EntityKind } from '@clew/contracts';
+import { isEntityKind, type EntityActionInput, type EntityKind } from '@clew/contracts';
 import { failure, InputError, privateHeaders, protectedRoute, type Env } from '../context';
 import type { EntityUsecases } from '../modules/entities/usecases';
+import type { EntityActions } from '../modules/entities/actions';
 
 /**
  * Entities (D97): a person or a unit and what the sources about it say, for the web. Four reads, each parsing the
  * address, calling one use case and answering what it returns. A kind Clew does not have, a key outside the rule and a
  * source the reader may not use (or that nobody placed, for the list) all answer the same 404 as an unknown address, so
  * the answer never tells which. A person who manages nobody gets a list without groups, not a refusal: the web decides
- * what to draw.
+ * what to draw. One write: an action from the entity's menu becomes a card (D8), and the same 404 answers an action the
+ * entity does not offer the reader.
  */
 export interface EntityRouteDeps {
   entities: Pick<EntityUsecases, 'list' | 'rows' | 'detail' | 'section'>;
+  /** Starting an action about an entity; without it the routes only read. */
+  actions?: Pick<EntityActions, 'start'>;
   /** The session guard; a test passes its own. */
   guard?: MiddlewareHandler<Env>;
 }
@@ -21,6 +25,20 @@ const notFound = (c: Context) => c.json({ error: 'Okänd adress.' }, 404, privat
 function capabilityOf(value: string | undefined) {
   if (!value || !CAPABILITY.test(value)) throw new InputError('Ogiltig förfrågan.');
   return value;
+}
+/** The body of a start: `{ capability }` and nothing else. */
+async function actionInput(request: Request): Promise<EntityActionInput> {
+  const text = await request.text();
+  let value: unknown;
+  try {
+    value = text.length <= 400 ? JSON.parse(text) : undefined;
+  } catch {
+    value = undefined;
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).join() !== 'capability')
+    throw new InputError('Ogiltig förfrågan.');
+  const capability = (value as { capability: unknown }).capability;
+  return { capability: capabilityOf(typeof capability === 'string' ? capability : undefined) };
 }
 
 export function entityRoutes(deps: EntityRouteDeps) {
@@ -56,6 +74,14 @@ export function entityRoutes(deps: EntityRouteDeps) {
     const capability = capabilityOf(c.req.query('capability'));
     return answer(c, await entities.section(c.get('session').context, kind, c.req.param('key'), capability));
   });
+  const { actions } = deps;
+  if (actions)
+    routes.post('/:kind/:key/actions', async c => {
+      const kind = kindOf(c);
+      if (!kind) return notFound(c);
+      const { capability } = await actionInput(c.req.raw);
+      return answer(c, await actions.start(c.get('session').context, kind, c.req.param('key'), capability));
+    });
   routes.onError((error, c) => failure(c, error));
   return routes;
 }

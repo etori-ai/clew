@@ -26,7 +26,7 @@ export { fieldTone, markFields, openRef, rowsKey, viewRows };
  * handed instead of the content, and the view a row opens. No I/O. The registry holds bundled connectors to the rules
  * when they register, the manifest loader holds remote ones to them, and the browser draws from the same declaration.
  */
-type Schema = { properties?: Record<string, Schema>; items?: Schema };
+type Schema = { properties?: Record<string, Schema>; items?: Schema; type?: unknown };
 /** What the rules need to know about a capability: its name, kind, schemas and view. */
 export interface ViewSubject {
   name: string;
@@ -91,6 +91,12 @@ export function viewProblem(subject: ViewSubject, siblings: ViewSubject[]): stri
   if (record)
     for (const key of view.kind === 'detail' || view.kind === 'record' ? [view.title, ...keys] : keys)
       if (!record[key]) return `${subject.name}: view field "${key}" is not in the output schema`;
+  // The entity a record names (D97 item 6): a string property of the record, holding a person's user name or a unit's id.
+  if ((view.kind === 'table' || view.kind === 'list' || view.kind === 'detail') && view.subject && record) {
+    const property = record[view.subject.key];
+    if (!property) return `${subject.name}: view subject "${view.subject.key}" is not in the output schema`;
+    if (property.type !== 'string') return `${subject.name}: view subject "${view.subject.key}" is not a string`;
+  }
   if (view.kind === 'record') {
     for (const key of [view.document, view.recovery, view.metrics, view.series, view.activity, view.items?.rows].filter(
       Boolean,

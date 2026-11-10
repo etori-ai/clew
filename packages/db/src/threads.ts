@@ -55,6 +55,7 @@ export function toThread(
     area: row.area,
     summary: row.summary,
     items: row.items,
+    ...(row.subjects?.length ? { subjects: row.subjects } : {}),
     actions: row.actions,
     waitingOn: row.waitingOn,
     deadline: row.deadline,
@@ -70,36 +71,16 @@ export function toThread(
     proposals: proposalRows.filter(p => p.status !== 'superseded').map(toProposal),
   };
 }
-/** Every unresolved work card plus bounded conversation/handled history. History can never displace work. */
-export async function listThreads(personId: string, now = new Date()): Promise<Thread[]> {
-  const since = new Date(now.getTime() - 7 * 86400_000);
-  const unresolved = and(
-    eq(threads.kind, 'pushed'),
-    or(
-      eq(threads.state, 'open'),
-      sql`coalesce(${threads.execution}->>'state' IN ('pending','running','unknown','partial','failed'), false)`,
-    ),
-  )!;
-  const [work, history] = await Promise.all([
-    database()
-      .select()
-      .from(threads)
-      .where(and(eq(threads.personId, personId), unresolved))
-      .orderBy(desc(threads.createdAt)),
-    database()
-      .select()
-      .from(threads)
-      .where(
-        and(
-          eq(threads.personId, personId),
-          not(unresolved),
-          or(eq(threads.state, 'open'), gte(threads.updatedAt, since)),
-        ),
-      )
-      .orderBy(desc(threads.createdAt))
-      .limit(50),
-  ]);
-  const rows = [...work, ...history].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+/** Unresolved work: a pushed card that is open, or whose execution has not settled. */
+const unresolved = and(
+  eq(threads.kind, 'pushed'),
+  or(
+    eq(threads.state, 'open'),
+    sql`coalesce(${threads.execution}->>'state' IN ('pending','running','unknown','partial','failed'), false)`,
+  ),
+)!;
+/** Threads with their messages, proposals and timers, in the order of the rows given. */
+async function hydrate(rows: ThreadRow[]): Promise<Thread[]> {
   if (!rows.length) return [];
   const ids = rows.map(r => r.id);
   const [messages, proposalRows, timerRows] = await Promise.all([
@@ -119,6 +100,40 @@ export async function listThreads(personId: string, now = new Date()): Promise<T
       timerRows.filter(t => t.threadId === row.id),
     ),
   );
+}
+/** The person's unresolved work cards among these ids (as `listThreads` lists work), newest first; another person's id is left out. */
+export async function unresolvedThreads(personId: string, ids: readonly string[]): Promise<Thread[]> {
+  if (!ids.length) return [];
+  const rows = await database()
+    .select()
+    .from(threads)
+    .where(and(eq(threads.personId, personId), inArray(threads.id, [...ids]), unresolved))
+    .orderBy(desc(threads.createdAt));
+  return hydrate(rows);
+}
+/** Every unresolved work card plus bounded conversation/handled history. History can never displace work. */
+export async function listThreads(personId: string, now = new Date()): Promise<Thread[]> {
+  const since = new Date(now.getTime() - 7 * 86400_000);
+  const [work, history] = await Promise.all([
+    database()
+      .select()
+      .from(threads)
+      .where(and(eq(threads.personId, personId), unresolved))
+      .orderBy(desc(threads.createdAt)),
+    database()
+      .select()
+      .from(threads)
+      .where(
+        and(
+          eq(threads.personId, personId),
+          not(unresolved),
+          or(eq(threads.state, 'open'), gte(threads.updatedAt, since)),
+        ),
+      )
+      .orderBy(desc(threads.createdAt))
+      .limit(50),
+  ]);
+  return hydrate([...work, ...history].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
 }
 export async function readThread(personId: string, id: string, tx?: Transaction) {
   const db = tx ?? database();

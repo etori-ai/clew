@@ -146,6 +146,48 @@ describe('the rules of a declared view', () => {
       ]),
     ).toMatch(/not a read/);
   });
+  test("a record names an entity by a string property it holds: a row's for a table or list, the record's own for a detail (D97 item 6)", () => {
+    const people = {
+      type: 'object',
+      properties: {
+        rows: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              phone: {},
+              userName: { type: 'string' },
+              count: { type: 'number' },
+            },
+          },
+        },
+      },
+    };
+    const subject = (key: string) => ({ ...table, subject: { entity: 'person', key } });
+    expect(viewProblem(read({ output: people, view: subject('userName') }), [])).toBeUndefined();
+    expect(viewProblem(read({ output: people, view: subject('nobody') }), [])).toMatch(
+      /view subject "nobody" is not in the output schema/,
+    );
+    expect(viewProblem(read({ output: people, view: subject('count') }), [])).toMatch(
+      /view subject "count" is not a string/,
+    );
+    // An output that does not say what it holds is checked when a real answer is read, as every other key is.
+    expect(viewProblem(read({ output: {}, view: subject('anything') }), [])).toBeUndefined();
+    const detail = {
+      kind: 'detail',
+      title: 'name',
+      fields: [{ key: 'name', label: 'Namn' }],
+      subject: { entity: 'unit', key: 'unitId' },
+    };
+    const record = (unitId: unknown) => ({
+      type: 'object',
+      properties: { name: { type: 'string' }, ...(unitId ? { unitId } : {}) },
+    });
+    expect(viewProblem(read({ output: record({ type: 'string' }), view: detail }), [])).toBeUndefined();
+    expect(viewProblem(read({ output: record(undefined), view: detail }), [])).toMatch(/view subject "unitId"/);
+    expect(viewProblem(read({ output: record({ type: 'integer' }), view: detail }), [])).toMatch(/is not a string/);
+  });
   test('the manifest loader and the registry refuse a connector whose view breaks a rule; markup is not a thing a view can carry', () => {
     expect(parseManifest(phonebookManifest, 'phonebook').capabilities[0]!.view?.kind).toBe('table');
     expect(() =>

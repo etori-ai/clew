@@ -1482,6 +1482,7 @@ const entityPerson = (key: string, name: string, detail: string): EntityRef => (
 /** `GET /api/entities/person`: the directory's order, which is the list's order on "Alla". */
 export const entityList = (): EntityList => ({
   kind: 'person',
+  attention: [],
   groups: [
     {
       ...ENTITY_UNIT,

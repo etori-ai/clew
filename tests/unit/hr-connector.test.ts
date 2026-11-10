@@ -1,11 +1,14 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
-import { markFields, placesOf, type Actor } from '../../packages/connectors/src/index';
+import { markFields, placesOf, type Actor, type ThreadDraft } from '../../packages/connectors/src/index';
 import { checkConnector } from '../../packages/connectors/src/check';
 import { manifestProblems, parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { createConnector, manifest as hrManifest } from '../../connectors/hr/connector.mjs';
 import { memoryState } from '../../connectors/hr/state.mjs';
 import { assertionFor, testJwks } from '../connector-authority';
+import { ThreadDraftSchema } from '../../packages/connectors/src/protocol';
+import Ajv from 'ajv';
+import addFormats from 'ajv-formats';
 
 /**
  * The HR fixture connector run over the protocol with its memory store: the scan's cards, the deduplicated writes and
@@ -74,6 +77,17 @@ describe('the HR fixture connector', () => {
     expect([follower.kind, follower.follows, follower.creates]).toEqual(['propose', ['hr:absence'], 'hr:absence']);
     for (const c of m.capabilities.filter(c => c.kind === 'execute'))
       expect(c.execution).toEqual({ strategy: 'deduplicated', retentionSeconds: 86400, lookup: 'hr.lookup' });
+    // The action about a person (D97): a propose that takes the user name alone, in the person's menu, no tool, no fact.
+    const prepare = m.capabilities.find(c => c.name === 'hr.prepareAbsence')!;
+    expect([prepare.kind, prepare.model, prepare.about, prepare.scope.roles, prepare.creates]).toEqual([
+      'propose',
+      false,
+      { entity: 'person', param: 'person' },
+      ['manager'],
+      undefined,
+    ]);
+    expect((prepare.input as { required: string[] }).required).toEqual(['person']);
+    expect(placesOf(prepare)).toEqual(['menu']);
     expect(m.areas.map(a => [a.id, a.roles])).toEqual([
       ['employees', ['manager']],
       ['my-shift', ['employee']],
@@ -115,6 +129,12 @@ describe('the HR fixture connector', () => {
       ['ok', 'out of scope'],
     ]);
     expect(about.findings).toContainEqual({ level: 'ok', text: 'hr.person: employee refused by scope' });
+    // The action about a person: takes the key, is no tool, and an employee is refused before anything is prepared.
+    expect(about.findings.filter(f => f.text.startsWith('hr.prepareAbsence'))).toEqual([
+      { level: 'ok', text: 'hr.prepareAbsence: employee refused by scope' },
+      { level: 'ok', text: 'hr.prepareAbsence about person, propose, input: takes person' },
+      { level: 'ok', text: 'hr.prepareAbsence about person, propose, model tool: not offered to the model' },
+    ]);
   });
   test('the scan gives the manager the rehab talk and the leave requests, and the employee the delegation and the waiting leave', async () => {
     const { registry } = stack();
@@ -124,6 +144,14 @@ describe('the HR fixture connector', () => {
     expect(topics.filter(t => t.startsWith('hr:leave:'))).toHaveLength(2);
     expect(manager.every(d => d.area === 'employees')).toBe(true);
     expect(manager.find(d => d.topic === 'hr:rehab:hr:emp:1001')?.deadline).toBe('2026-11-16');
+    // A row about one employee names them by user name (D97), so the card shows on that person; the text keeps no name.
+    expect(
+      manager.flatMap(d => (d.items ?? []).map(i => [d.topic.split(':').slice(0, 2).join(':'), i.label, i.subject])),
+    ).toEqual([
+      ['hr:rehab', 'Medarbetare', { entity: 'person', key: 'anna' }],
+      ['hr:leave', 'Ansökan', { entity: 'person', key: 'johan' }],
+      ['hr:leave', 'Ansökan', { entity: 'person', key: 'hassan' }],
+    ]);
     const employee = await registry.scan(hassan);
     expect(employee.map(d => d.area)).not.toContain('employees');
     expect(employee.find(d => d.topic === 'hr:delegation:hr:deleg:301')?.actions[0]?.capability).toBe(
@@ -301,6 +329,72 @@ describe('the HR fixture connector', () => {
     // A sick report registered through Clew's job is the presence from its first day.
     await registry.run(hillevi, 'hr.reportAbsence', { person: 'hr:emp:1003', from: '2026-12-22' });
     expect((await person(hillevi, ['maria'])).rows[0]!.presence).toBe('Sjuk · dag 1');
+  });
+
+  test('"Registrera frånvaro" prepares the sick report as a card for an employee of the manager\'s unit, writes nothing, and refuses anyone else', async () => {
+    const { registry, state } = stack();
+    const isDraft = addFormats(new Ajv({ strict: false })).compile(JSON.parse(JSON.stringify(ThreadDraftSchema)));
+    const prepare = (actor: Actor, input: Record<string, unknown>) =>
+      registry.run<ThreadDraft>(actor, 'hr.prepareAbsence', input);
+    // The user name in any case, as hr.person takes it; the row names the employee and carries the key as asked.
+    const draft = await prepare(hillevi, { person: 'Maria' });
+    expect(isDraft(draft)).toBe(true);
+    expect(registry.draftProblem('hr', draft)).toBeUndefined();
+    expect(draft).toMatchObject({
+      topic: 'hr:absence-draft:hr:emp:1003:2026-11-04',
+      area: 'employees',
+      title: 'Sjukanmälan att registrera',
+      items: [
+        {
+          ref: 'hr:emp:1003',
+          label: 'Maria Källström',
+          detail: 'Sjuk 4 nov · 100 %',
+          subject: { entity: 'person', key: 'Maria' },
+        },
+      ],
+    });
+    // The card's button is the existing write with its whole payload: today, one day, full time; the pattern beside it.
+    expect(draft.actions.map(a => [a.id, a.capability, a.kind, a.role, a.input])).toEqual([
+      [
+        'report',
+        'hr.reportAbsence',
+        'execute',
+        'primary',
+        { person: 'hr:emp:1003', from: '2026-11-04', to: '2026-11-04', extent: 100 },
+      ],
+      ['pattern', 'hr.absencePattern', 'read', 'secondary', { ref: 'hr:emp:1003' }],
+    ]);
+    // Preparing wrote nothing.
+    expect(state.get('reported-absences', {})).toEqual({});
+    expect(
+      (await registry.run<{ rows: Array<{ presence: string }> }>(hillevi, 'hr.person', { keys: ['maria'] })).rows[0]!
+        .presence,
+    ).toBe('I tjänst');
+    // Another day when the menu's caller says so.
+    expect((await prepare(hillevi, { person: 'maria', from: '2026-11-06' })).actions[0]!.input).toMatchObject({
+      from: '2026-11-06',
+      to: '2026-11-06',
+    });
+    // A manager of another unit, a person the HR system does not know, an employee, and a day the person is already away.
+    const omsorg: Actor = { ...stranger, unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum' };
+    await expect(prepare(stranger, { person: 'maria' })).rejects.toThrow('Medarbetaren finns inte i din enhet.');
+    await expect(prepare(omsorg, { person: 'hassan' })).rejects.toThrow('Medarbetaren finns inte i din enhet.');
+    await expect(prepare(hillevi, { person: 'nobody' })).rejects.toThrow('Medarbetaren finns inte i din enhet.');
+    await expect(prepare(hassan, { person: 'hassan' })).rejects.toThrow(/behörighet/);
+    await expect(prepare(hillevi, { person: 'erik' })).rejects.toThrow('Erik Sandström är redan frånvarande 4 nov.');
+    // The decision runs the card's write as every write runs: once per operation id, then she is away and it is refused.
+    const result = await registry.run<Result>(hillevi, 'hr.reportAbsence', draft.actions[0]!.input, {
+      operationId: 'card-op-1',
+    });
+    expect(result).toMatchObject({
+      rows: [{ ref: 'hr:absence:1003:2026-11-04', outcome: 'done' }],
+      undoCapability: 'hr.withdrawAbsence',
+    });
+    expect(
+      (await registry.run<{ rows: Array<{ presence: string }> }>(hillevi, 'hr.person', { keys: ['maria'] })).rows[0]!
+        .presence,
+    ).toBe('Sjuk · dag 1');
+    await expect(prepare(hillevi, { person: 'maria' })).rejects.toThrow('redan frånvarande');
   });
 
   test('the id maps translate a unit and a person, and a reseed moves the records to today', async () => {

@@ -9,6 +9,7 @@ import type {
 } from '@clew/contracts';
 import {
   actionOf,
+  attentionOf,
   checkRows,
   chunk,
   columnsOf,
@@ -157,7 +158,10 @@ export function entityUsecases(deps: EntityDeps) {
     };
   }
 
-  /** The reader's people or units in groups, with the administrator's columns and lenses and the actions. */
+  /**
+   * The reader's people or units in groups, with the administrator's columns and lenses, the actions, and "Just nu": the
+   * reader's cards about each entity of the list, from one read of the index for the whole list (D97 item 5).
+   */
   async function list(persona: AuthenticatedContext, kind: EntityKind): Promise<EntityList> {
     const actor = actorOf(persona);
     const [reach, reads, actions] = await Promise.all([
@@ -165,12 +169,21 @@ export function entityUsecases(deps: EntityDeps) {
       deps.sources.reads(actor, kind),
       deps.sources.actions(actor, kind),
     ]);
+    const keys = listedKeys(kind, reach);
+    const cards =
+      deps.cardsNaming && keys.length
+        ? await deps.cardsNaming(
+            persona,
+            keys.map(key => ({ entity: kind, key })),
+          )
+        : [];
     return {
       kind,
       groups: groupsOf(kind, reach),
       columns: columnsOf(reads),
       lenses: lensesOf(reads),
       actions: actions.map(actionOf),
+      attention: attentionOf(keys, cards),
     };
   }
 

@@ -35,9 +35,20 @@ Every `execute` is deduplicated by Clew's operation id (`X-Clew-Operation-Id`): 
 result, a different input under the same id is refused with 409, and `hr.lookup` finds the result afterwards (D45). The
 writes are the leave decision and its undo, the rehab talk and its undo, the sick report and its withdrawal, the
 delegation renewal. `hr.proposeAbsence` follows the fact `hr:absence` (D55): one `hr.reportAbsence` step when the report
-does not exist yet, none when it does. It is a follower, so it cannot also be an action about a person (D97), and `hr.reportAbsence`
-takes the HR system's own employee ref (`hr:emp:N`), not the user name a person is asked about by: the fixture offers
-no "Registrera frånvaro" in a person's menu.
+does not exist yet, none when it does. A follower cannot also be an action about a person (D97), and `hr.reportAbsence`
+takes the HR system's own employee ref (`hr:emp:N`), so the person's menu gets its own propose.
+
+`hr.prepareAbsence` is "Registrera frånvaro" in a manager's menu on a person (D97): `about: { entity: 'person', param:
+'person' }`, and `person`, the user name, is the only input it requires (`from`, the first day, is optional and today
+when absent). It finds the employee as `hr.person` does, on the manager's own unit only, and refuses anyone else in
+Swedish ("Medarbetaren finns inte i din enhet."), as it refuses a day the employee is already away. It writes nothing:
+it answers a `ThreadDraft`, the card the manager reads before deciding, whose row names the employee (with the key as
+`subject`) and whose button is `hr.reportAbsence` with the whole payload (that day, one day, 100 %), run after the
+decision with the write safety above, undone by `hr.withdrawAbsence`. It declares no `creates`: the card is one write in
+this system; telling time reporting and payroll is the job the fact `hr:absence` starts.
+
+The scan's rows about one employee (the rehab talk, a leave request) carry `subject: { entity: 'person', key }`, the
+employee's user name (D97 item 6), so the card shows on that person for the manager; their text still names nobody.
 
 ## Running it
 

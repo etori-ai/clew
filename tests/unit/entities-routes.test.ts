@@ -21,7 +21,7 @@ function stack() {
   const entities: Pick<EntityUsecases, 'list' | 'rows' | 'detail' | 'section'> = {
     list: async (p, kind) => {
       calls.push(['list', p.id, kind]);
-      return { kind, groups: [], columns: [], lenses: [], actions: [] };
+      return { kind, groups: [], columns: [], lenses: [], actions: [], attention: [] };
     },
     rows: async (p, kind, capability) => {
       calls.push(['rows', p.id, kind, capability]);

@@ -37,6 +37,8 @@ import { TALKS_CAPABILITY } from '../modules/talk-seam/capabilities';
 import type { AuthenticatedContext, TalksResult } from '@clew/contracts';
 import { systemContext } from '../system-context';
 import { cardDecisions } from '../threads/usecases/decisions';
+import { startedCards } from '../threads/usecases/started';
+import { createHash } from 'node:crypto';
 import { executions } from './executions';
 import { reviewDocuments } from './documents';
 import { visibleThread } from '../threads/access';
@@ -87,6 +89,15 @@ export const threads = {
     approve: executions.approve,
     clock,
     documentPreview: reviewDocuments.preview,
+  }),
+  // A card the person starts without the model (D8, D97): a propose's draft, or an execute behind its decision.
+  ...startedCards({
+    store,
+    registry,
+    run: runCapability,
+    digest: value => createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 32),
+    clock,
+    ids,
   }),
 };
 export const attention = {

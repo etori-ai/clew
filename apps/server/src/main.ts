@@ -31,7 +31,7 @@ import { scimRoutes } from './routes/scim';
 import { SCIM_CONTENT_TYPE, ScimError } from './modules/people/contracts';
 import { staffRoutes } from './routes/staff';
 import { entityRoutes } from './routes/entities';
-import { entities } from './composition/entities';
+import { entities, entityActions } from './composition/entities';
 import { scim } from './composition/people';
 import { talkRoutes } from './routes/talks';
 import { talks } from './composition/talks';
@@ -100,8 +100,9 @@ app.route('/scim/v2', scimRoutes(scim, logPort('scim', 'error')));
 app.route('/api/admin', adminRoutes);
 // Personal (D94): a manager's people, scoped by the use case.
 app.route('/api/staff', staffRoutes);
-// Entities (D97): a person or a unit and what the sources about it say, behind the core rule of who may be asked about.
-app.route('/api/entities', entityRoutes({ entities }));
+// Entities (D97): a person or a unit and what the sources about it say, behind the core rule of who may be asked about,
+// and an action from its menu, which becomes a card (D8).
+app.route('/api/entities', entityRoutes({ entities, actions: entityActions }));
 // The talks module's writes (D96), only while Clew's own module answers the talks profile for the person.
 app.route('/api/talks', talkRoutes({ talks, writable: talksWritable }));
 // The shared header (D88): what the person's header connector lists for them.

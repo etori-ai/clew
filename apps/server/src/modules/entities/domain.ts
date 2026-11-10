@@ -4,6 +4,7 @@ import {
   ENTITY_KEYS_MAX,
   viewRows,
   type EntityAction,
+  type EntityAttention,
   type EntityColumn,
   type EntityKind,
   type EntityList,
@@ -11,7 +12,7 @@ import {
   type EntitySource,
   type View,
 } from '@clew/contracts';
-import type { DirectoryPerson, DirectoryUnit, Reach } from './model';
+import type { DirectoryPerson, DirectoryUnit, NamedCard, Reach } from './model';
 
 /**
  * The pure part of the entities module (D97): who may be asked about, which keys a source is sent, and what of its
@@ -111,6 +112,8 @@ function drawn(view: View): Set<string> {
   keys.add(view.title);
   for (const f of view.fields) keys.add(f.key);
   if (view.ref) keys.add(view.ref);
+  // The entity a row names (D97 item 6): the web links the row's title with it.
+  if (view.subject) keys.add(view.subject.key);
   for (const from of Object.values(view.open?.params ?? {})) keys.add(from);
   return keys;
 }
@@ -193,6 +196,29 @@ export function columnsOf(reads: AboutRead[]): EntityColumn[] {
       return field ? [{ capability: r.name, source: r.source, title: r.title, field }] : [];
     })
     .slice(0, ENTITY_COLUMNS_MAX);
+}
+/**
+ * "Just nu" (D97 item 5): per entity of the list, in its order, how many of the reader's cards name it that wait for the
+ * reader's decision and how many are Clew's proposals, with the card when there is exactly one of those. A card only for
+ * information counts for neither, and an entity that no such card names is absent.
+ */
+export function attentionOf(keys: readonly string[], cards: readonly NamedCard[]): EntityAttention[] {
+  const counted = new Map<string, { act: number; proposals: number; threads: string[] }>();
+  for (const card of cards) {
+    if (card.kind === 'fyi') continue;
+    for (const { key } of card.subjects) {
+      const c = counted.get(key) ?? { act: 0, proposals: 0, threads: [] };
+      if (card.kind === 'act') c.act++;
+      else c.proposals++;
+      if (!c.threads.includes(card.threadId)) c.threads.push(card.threadId);
+      counted.set(key, c);
+    }
+  }
+  return keys.flatMap(key => {
+    const c = counted.get(key);
+    if (!c) return [];
+    return [{ key, act: c.act, proposals: c.proposals, ...(c.threads.length === 1 ? { threadId: c.threads[0] } : {}) }];
+  });
 }
 /** A read the list may call over every entity: one an administrator placed as a lens or a column. Nobody's choice, no call. */
 export const placed = (reads: AboutRead[], capability: string) =>

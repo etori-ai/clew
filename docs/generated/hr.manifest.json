@@ -1045,6 +1045,171 @@
       }
     },
     {
+      "name": "hr.prepareAbsence",
+      "kind": "propose",
+      "title": "Registrera frånvaro",
+      "description": "Förbereder en sjukanmälan för en medarbetare i chefens enhet, från i dag och en dag, som chefen läser och beslutar om på ett kort.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "about": {
+        "entity": "person",
+        "param": "person"
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "person": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "Medarbetarens användarnamn i katalogen."
+          },
+          "from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Första frånvarodagen; i dag när den saknas."
+          }
+        },
+        "required": [
+          "person"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string"
+                },
+                "selectable": {
+                  "type": "boolean"
+                },
+                "selected": {
+                  "type": "boolean"
+                },
+                "subject": {
+                  "type": "object",
+                  "properties": {
+                    "entity": {
+                      "const": "person"
+                    },
+                    "key": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  },
+                  "required": [
+                    "entity",
+                    "key"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "ref",
+                "label",
+                "detail",
+                "selectable",
+                "selected"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "capability": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
+                  "maxLength": 80
+                },
+                "kind": {
+                  "enum": [
+                    "read",
+                    "propose",
+                    "execute"
+                  ]
+                },
+                "role": {
+                  "enum": [
+                    "primary",
+                    "secondary",
+                    "overflow"
+                  ]
+                },
+                "target": {
+                  "enum": [
+                    "panel",
+                    "link"
+                  ]
+                },
+                "input": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "capability",
+                "kind",
+                "role"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "topic",
+          "area",
+          "title",
+          "summary",
+          "reason",
+          "items",
+          "actions"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "hr.withdrawAbsence",
       "kind": "execute",
       "title": "Ta bort sjukanmälan",

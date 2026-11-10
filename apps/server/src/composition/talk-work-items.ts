@@ -23,7 +23,9 @@ import type { WorkItemTx } from '../modules/talks/model';
  * or through the talks use case that checks the action point is still open first.
  *
  * The card carries no action-point text and no other person's name in its title, summary, trigger or messages, since
- * those are what the assistant reads; the audit rows carry ids only. The card is `core` (the `talks` connector) and has
+ * those are what the assistant reads; the audit rows carry ids only. The employee of the talk is the card's own
+ * `subjects` (D97 item 6), a key that is never drawn on the card and never read by the assistant, so the card shows under
+ * "Behöver dig" on that person for its owner. The card is `core` (the `talks` connector) and has
  * no `sourceAuthorization`, so it stays with its owner when they change unit; the timer records the owner's unit and
  * authorisation version as every timer does, but nothing blocks a `due` timer on them (D96).
  */
@@ -92,7 +94,7 @@ export function talkWorkItems(tx: Transaction, thread: ThreadTx, options: TalkWo
     await thread.cancelTimer(`reminder:${threadId}`, at);
   }
   return {
-    async open({ threadId, personId, commitmentId, dueOn, at }) {
+    async open({ threadId, personId, commitmentId, dueOn, at, subject }) {
       const summary = summaryFor(dueOn);
       const inserted = await thread.insertThread({
         id: threadId,
@@ -106,6 +108,8 @@ export function talkWorkItems(tx: Transaction, thread: ThreadTx, options: TalkWo
         area: TALKS_CONNECTOR,
         summary,
         items: [],
+        // The employee of the talk, by key, on the thread and never on a row (D96 item 6, D97 item 6).
+        ...(subject ? { subjects: [subject] } : {}),
         actions: [ACTION],
         waitingOn: null,
         deadline: dueOn,

@@ -276,6 +276,54 @@ export function createConnector({
         ],
       };
     },
+    // An action about a person (D97): the employee by user name, as hr.person finds them, on the manager's own unit only;
+    // anyone else is refused, as hr.absencePattern refuses. Nothing is written: the card's button is hr.reportAbsence
+    // with this payload, run after the manager's decision. A day the employee is already away is refused.
+    'hr.prepareAbsence': (actor, input) => {
+      const key = input.person;
+      const unit = managerOf(actor, unitOf(actor)) ? staff(unitOf(actor)) : [];
+      const employee = typeof key === 'string' && unit.find(e => e.personId.toLowerCase() === key.toLowerCase());
+      if (!employee) throw new Invalid('Medarbetaren finns inte i din enhet.');
+      const from = input.from ?? today();
+      if (absencesOf(employee).some(a => a.kind !== 'leave' && a.from <= from && a.to >= from))
+        throw new Invalid(`${employee.name} är redan frånvarande ${period(from)}.`);
+      return {
+        topic: `hr:absence-draft:${employee.ref}:${from}`,
+        area: 'employees',
+        title: 'Sjukanmälan att registrera',
+        summary: `Registreras i personalsystemet när du beslutar: sjukfrånvaro ${period(from)}, en dag, heltid.`,
+        reason: 'Chefen valde Registrera frånvaro',
+        items: [
+          {
+            ref: employee.ref,
+            label: employee.name,
+            detail: `Sjuk ${period(from)} · 100 %`,
+            selectable: false,
+            selected: true,
+            subject: { entity: 'person', key },
+          },
+        ],
+        actions: [
+          {
+            id: 'report',
+            label: 'Registrera sjukanmälan',
+            capability: 'hr.reportAbsence',
+            kind: 'execute',
+            role: 'primary',
+            input: { person: employee.ref, from, to: from, extent: 100 },
+          },
+          {
+            id: 'pattern',
+            label: 'Se mönstret i personalsystemet',
+            capability: 'hr.absencePattern',
+            kind: 'read',
+            role: 'secondary',
+            target: 'panel',
+            input: { ref: employee.ref },
+          },
+        ],
+      };
+    },
   };
 
   // Each write is one transaction in the source. The fault `conflict` is the source answering that the record moved.
@@ -449,6 +497,8 @@ export function createConnector({
             'Tredje korta sjukfrånvaron på sex månader. Kommunens rehabrutin 4.2 säger samtal inom två veckor. Namnet visas i personalsystemet, inte här.',
           reason: `Rutinens tvåveckorsgräns går ut ${shortDate(dueBy)}`,
           deadline: dueBy,
+          // The row names the employee by key only (D97): the card shows on that person for the manager, and the text
+          // keeps the name in the HR system.
           items: [
             {
               ref: c.employee.ref,
@@ -456,6 +506,7 @@ export function createConnector({
               detail: `${c.periods.length} korta perioder sedan ${shortDate(c.periods[0].from)}`,
               selectable: false,
               selected: true,
+              subject: { entity: 'person', key: c.employee.personId },
             },
           ],
           actions: [
@@ -483,6 +534,7 @@ export function createConnector({
       const open = records().leaveRequests.filter(r => !done[r.ref] && unit.includes(r.employee));
       for (const r of open) {
         const clash = open.some(o => o.ref !== r.ref && o.from <= r.to && o.to >= r.from);
+        const asker = records().employees.find(e => e.ref === r.employee);
         drafts.push({
           topic: `hr:leave:${r.ref}`,
           area: 'employees',
@@ -490,7 +542,8 @@ export function createConnector({
           summary: `${r.days} dagar ${r.type}. ${clash ? 'En kollega har sökt samma period.' : 'Ingen annan i arbetslaget är ledig då'} och saldot räcker.`,
           reason: `Ansökan kom ${new Date(r.submittedAt).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' })}`,
           deadline: null,
-          // Names stay inside the source system: the card says what and when, "Se i personalsystemet" says who.
+          // The card says what and when; the row names who by key only (D97), so the card shows on that person, and
+          // "Se i personalsystemet" shows the source's record.
           items: [
             {
               ref: r.ref,
@@ -498,6 +551,7 @@ export function createConnector({
               detail: `${shortDate(r.from)}–${shortDate(r.to)} · ${r.days} dagar ${r.type}`,
               selectable: false,
               selected: true,
+              ...(asker ? { subject: { entity: 'person', key: asker.personId } } : {}),
             },
           ],
           actions: [

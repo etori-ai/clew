@@ -1055,6 +1055,7 @@ Example:
   - **A view belongs to a read.** Only a `read` may declare a view. A propose or execute with one is refused. ([D38](../decisions/README.md))
   - **Only a propose follows a fact.** `follows` may be declared only on a `propose`. Its input is a `FactEnvelope` and its output a `FollowResponse` whose steps name this connector only. ([D55](../decisions/D55-a-job-is-assembled-from-what-connectors-follow-approved-once-and-run-per-system.md))
   - **An action about an entity names the input that takes the key.** A `propose` or `execute` that declares `about` names in `param` a string property of its input schema. Clew fills it with the key of the entity the person chose the action on; it shows in that entity's menu and runs, as every action does, after a human decision. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
+  - **An action about an entity becomes a card.** When the person chooses the action in an entity's menu, Clew starts it without the model, as the person, with `{ <param>: key }`. A `propose` answers a `ThreadDraft`, the shape a scan pushes: its actions name capabilities of this connector, it prepares and writes nothing, and it becomes the person's card. Clew writes the card's reason itself (the person chose it), so your `reason` is not shown. Refuse a key outside the person's scope in Swedish, as any call is refused. An `execute` is not called: Clew makes a card whose button is the human decision, and the execute runs only after it, with its write safety. The same request while the card is open gives the same card. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
 
 Example:
 
@@ -1101,6 +1102,7 @@ JSON Schema of the input. Clew validates a call against it before the connector 
   - **A menu row is a view that opens without a question.** `menu` may be declared only on a `read` that has a `view` and whose input accepts `{}` (nothing `required`). The administrator still chooses which eligible views go in the menu; `menu` says what the row is called and marked with. ([D40](../decisions/D40-views-can-be-tools-in-the-menu-and-an-administrator-chooses-which.md))
   - **A read about an entity is asked with a batch of keys.** A `read` that declares `about` takes `{ keys }`: its input is an object whose required `keys` is an array of strings with `maxItems` at most 200. It declares no `param`. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
   - **An action about an entity names the input that takes the key.** A `propose` or `execute` that declares `about` names in `param` a string property of its input schema. Clew fills it with the key of the entity the person chose the action on; it shows in that entity's menu and runs, as every action does, after a human decision. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
+  - **An action about an entity starts with the key alone.** On a `propose` or `execute` that declares `about`, `param` is the one property the input requires. Anything else is optional, with a default the source chooses, so the entity's menu can start the action without asking a question (D8). ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
 
 Example:
 
@@ -1120,6 +1122,7 @@ JSON Schema of the output. Clew validates the answer against it; where it declar
 - required
 - Pairs with:
   - **A view names what the output declares.** Where the output schema declares `properties`, the view's `rows`, `title`, every field `key`, `ref` and `body` must be among them (the record's properties for a table or list). `title` must also be one of `fields`. An output without declared properties is not checked until the conformance check reads a real answer. ([D38](../decisions/README.md))
+  - **A record names an entity by a string it holds.** Where the output schema declares `properties`, `subject.key` is one of the record's properties (a row's for a table or list) and its type is `string`: a person's provisioned `userName` or a unit's id. The record's title then links to that person or unit for a reader who may open it; Clew never checks that the key exists, and a record without the value links nowhere. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
   - **Each row carries the key it was asked with.** A read about an entity declares a `table` or `list` view, and its rows (`rows`, or the view's `rows`) are an array in the output schema whose items require a string `key`: the key the row was asked with. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
 
 Example:
@@ -1283,7 +1286,8 @@ Example:
 
 ```json
 {
-  "entity": "person"
+  "entity": "person",
+  "param": "person"
 }
 ```
 
@@ -1312,6 +1316,8 @@ On a `propose` or `execute` only: the string property of the input that takes th
 - Pairs with:
   - **A read about an entity is asked with a batch of keys.** A `read` that declares `about` takes `{ keys }`: its input is an object whose required `keys` is an array of strings with `maxItems` at most 200. It declares no `param`. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
   - **An action about an entity names the input that takes the key.** A `propose` or `execute` that declares `about` names in `param` a string property of its input schema. Clew fills it with the key of the entity the person chose the action on; it shows in that entity's menu and runs, as every action does, after a human decision. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
+  - **An action about an entity starts with the key alone.** On a `propose` or `execute` that declares `about`, `param` is the one property the input requires. Anything else is optional, with a default the source chooses, so the entity's menu can start the action without asking a question (D8). ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
+  - **An action about an entity becomes a card.** When the person chooses the action in an entity's menu, Clew starts it without the model, as the person, with `{ <param>: key }`. A `propose` answers a `ThreadDraft`, the shape a scan pushes: its actions name capabilities of this connector, it prepares and writes nothing, and it becomes the person's card. Clew writes the card's reason itself (the person chose it), so your `reason` is not shown. Refuse a key outside the person's scope in Swedish, as any call is refused. An `execute` is not called: Clew makes a card whose button is the human decision, and the execute runs only after it, with its write safety. The same request while the card is open gives the same card. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
 
 Example:
 
@@ -1914,6 +1920,53 @@ Example:
 }
 ```
 
+#### `capabilities[].view.subject`
+
+The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it; a record without the property links nowhere.
+
+- Type: object
+- optional (table, list, detail only)
+- Pairs with:
+  - **A record names an entity by a string it holds.** Where the output schema declares `properties`, `subject.key` is one of the record's properties (a row's for a table or list) and its type is `string`: a person's provisioned `userName` or a unit's id. The record's title then links to that person or unit for a reader who may open it; Clew never checks that the key exists, and a record without the value links nowhere. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
+
+Example:
+
+```json
+{
+  "entity": "person",
+  "key": "person"
+}
+```
+
+#### `capabilities[].view.subject.entity`
+
+`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.
+
+- Type: "person" / "unit"
+- required
+
+Example:
+
+```json
+"person"
+```
+
+#### `capabilities[].view.subject.key`
+
+The record property holding the entity's key, a string: a person's provisioned `userName`, a unit's id.
+
+- Type: string
+- required
+- Constraints: matches `^[A-Za-z][A-Za-z0-9]*$`; at most 40 characters
+- Pairs with:
+  - **A record names an entity by a string it holds.** Where the output schema declares `properties`, `subject.key` is one of the record's properties (a row's for a table or list) and its type is `string`: a person's provisioned `userName` or a unit's id. The record's title then links to that person or unit for a reader who may open it; Clew never checks that the key exists, and a record without the value links nowhere. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
+
+Example:
+
+```json
+"person"
+```
+
 #### `capabilities[].view.input`
 
 What the person may type or choose above the rows. Each control binds to one property of the capability's input, and a change reads the capability again.
@@ -2240,6 +2293,7 @@ Where Clew applies each: when the manifest is loaded, when the connector is regi
 - **A view names what the output declares** (loader; `capabilities[].output`, `capabilities[].view.rows`, `capabilities[].view.title`, `capabilities[].view.fields[].key`, `capabilities[].view.ref`, `capabilities[].view.body`) ([D38](../decisions/README.md)): Where the output schema declares `properties`, the view's `rows`, `title`, every field `key`, `ref` and `body` must be among them (the record's properties for a table or list). `title` must also be one of `fields`. An output without declared properties is not checked until the conformance check reads a real answer.
 - **A view's controls bind to the input** (loader; `capabilities[].input`, `capabilities[].view.input.query.key`, `capabilities[].view.input.filter.key`) ([D38](../decisions/README.md)): The query and the filter each bind to a property the input schema declares, and not to the same one.
 - **A row opens a read of the same connector** (loader; `capabilities[].view.open.capability`, `capabilities[].view.open.params`) ([D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md)): `open.capability` is a `read` of this manifest, and every key of `params` is an input property of that read, taken from a property the row has. A card's buttons and a row's link stay within one system.
+- **A record names an entity by a string it holds** (loader; `capabilities[].output`, `capabilities[].view.subject`, `capabilities[].view.subject.key`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): Where the output schema declares `properties`, `subject.key` is one of the record's properties (a row's for a table or list) and its type is `string`: a person's provisioned `userName` or a unit's id. The record's title then links to that person or unit for a reader who may open it; Clew never checks that the key exists, and a record without the value links nowhere.
 - **A menu row is a view that opens without a question** (loader; `capabilities[].menu`, `capabilities[].view`, `capabilities[].input`) ([D40](../decisions/D40-views-can-be-tools-in-the-menu-and-an-administrator-chooses-which.md)): `menu` may be declared only on a `read` that has a `view` and whose input accepts `{}` (nothing `required`). The administrator still chooses which eligible views go in the menu; `menu` says what the row is called and marked with.
 - **Standing actions are capabilities of this manifest** (loader; `areas[].standing`, `capabilities[].name`): Every name under an area's `standing` must be a capability declared in the same manifest.
 - **Only a propose follows a fact** (loader; `capabilities[].kind`, `capabilities[].follows`) ([D55](../decisions/D55-a-job-is-assembled-from-what-connectors-follow-approved-once-and-run-per-system.md)): `follows` may be declared only on a `propose`. Its input is a `FactEnvelope` and its output a `FollowResponse` whose steps name this connector only.
@@ -2248,6 +2302,7 @@ Where Clew applies each: when the manifest is loaded, when the connector is regi
 - **Each row carries the key it was asked with** (loader; `capabilities[].about`, `capabilities[].output`, `capabilities[].view`, `capabilities[].view.rows`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): A read about an entity declares a `table` or `list` view, and its rows (`rows`, or the view's `rows`) are an array in the output schema whose items require a string `key`: the key the row was asked with.
 - **A read about an entity is never a tool** (loader; `capabilities[].about`, `capabilities[].model`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): A `read` that declares `about` must declare `model: false`. Clew never offers it to the model, whatever an administrator enables.
 - **An action about an entity names the input that takes the key** (loader; `capabilities[].kind`, `capabilities[].about.param`, `capabilities[].input`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): A `propose` or `execute` that declares `about` names in `param` a string property of its input schema. Clew fills it with the key of the entity the person chose the action on; it shows in that entity's menu and runs, as every action does, after a human decision.
+- **An action about an entity starts with the key alone** (loader; `capabilities[].about.param`, `capabilities[].input`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): On a `propose` or `execute` that declares `about`, `param` is the one property the input requires. Anything else is optional, with a default the source chooses, so the entity's menu can start the action without asking a question (D8).
 - **A follower is about no entity** (loader; `capabilities[].about`, `capabilities[].follows`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): `follows` and `about` exclude each other: a follower is asked with a `FactEnvelope`, not with keys.
 - **A profile read and the header are about no entity** (loader; `capabilities[].about`, `capabilities[].name`, `capabilities[].kinds`, `header.capability`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): `<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.talks`, `<id>.commitments`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`.
 - **scan: true means you serve the scan route** (check; `scan`, `areas[].id`) ([D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md)): With `scan: true` Clew posts `/clew/scan` per person, nightly and on first visit. Each draft names an `area` of this manifest, its `topic` is the same for the same occurrence, and its actions name capabilities of this connector only. The conformance check runs the scan twice and compares.
@@ -2256,3 +2311,4 @@ Where Clew applies each: when the manifest is loaded, when the connector is regi
 - **search and fetch make a search source** (call; `capabilities[].kinds`, `capabilities[].name`) ([D26](../decisions/D26-questions-over-documents-are-search-not-knowledge.md)): A `read` named `<id>.search` with `kinds` is a source of Clew's composite search: its output is a `SearchOutput`, and `<id>.fetch` takes one of its refs back and returns one `SearchHit`.
 - **Delegation brings the person's own token** (call; `delegation.audience`) ([D26](../decisions/D26-questions-over-documents-are-search-not-knowledge.md)): With `delegation`, Clew exchanges the person's session for a token bound to `audience` and sends it in `X-Clew-Delegated-Token` beside the assertion. Scans, figures, callbacks and sessions without an IdP token carry none; the connector then answers `denied`.
 - **A read about an entity answers for the keys it may** (call; `capabilities[].about`, `capabilities[].about.entity`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): Clew calls the read as the person with `{ keys }`: a person's provisioned `userName` (compare without regard to case; the caller's own is `actor.userName`) or a unit's id, only for entities the person may already see, at most 200 in one call. Answer one row per key you know, carrying `key` as it was asked; a key outside the person's scope is answered as no row, never as a refusal. Beside the rows you may answer `heading` and `note`, two short strings. Clew keeps nothing and decides where the rows show: a section on the opened entity, and a lens, a column or a mark on the row where an administrator chose the source.
+- **An action about an entity becomes a card** (call; `capabilities[].kind`, `capabilities[].about.param`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): When the person chooses the action in an entity's menu, Clew starts it without the model, as the person, with `{ <param>: key }`. A `propose` answers a `ThreadDraft`, the shape a scan pushes: its actions name capabilities of this connector, it prepares and writes nothing, and it becomes the person's card. Clew writes the card's reason itself (the person chose it), so your `reason` is not shown. Refuse a key outside the person's scope in Swedish, as any call is refused. An `execute` is not called: Clew makes a card whose button is the human decision, and the execute runs only after it, with its write safety. The same request while the card is open gives the same card.

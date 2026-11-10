@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { Thread } from '../packages/contracts/src/index';
+import type { Subject, Thread } from '../packages/contracts/src/index';
 import type { AuditEntry, NewThread, ThreadStore, WorkflowStart } from '../apps/server/src/threads/model';
 import { reminderStart, reminderWorkflowId } from '../apps/server/src/threads/domain';
 
@@ -414,6 +414,121 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
         execution: { state: 'unknown', compensates: 'original' },
       });
       expect(listed.filter(row => row.kind === 'question')).toHaveLength(50);
+    });
+    test('the index from entity to cards follows the rows it is written with: owner only, case, open work only (D97)', async () => {
+      const {
+        store,
+        people: [a, b],
+      } = await make();
+      const run = unique();
+      const anna = { entity: 'person' as const, key: `Anna.L-${run}` },
+        erik = { entity: 'person' as const, key: `erik-${run}` },
+        maria = { entity: 'person' as const, key: `maria-${run}` },
+        skola = { entity: 'unit' as const, key: `unit-Skola-${run}` };
+      const row = (ref: string, subject?: Subject) => ({
+        ref,
+        label: 'En rad',
+        detail: 'som källan skrev den',
+        selectable: false,
+        selected: false,
+        ...(subject ? { subject } : {}),
+      });
+      const rows = draft(a, { items: [row('r:1', anna), row('r:2', skola), row('r:3')], createdAt: plus(T0, 1000) });
+      const own = draft(a, { items: [], subjects: [erik], createdAt: plus(T0, 2000) });
+      const handled = draft(a, { items: [row('r:4', anna)], createdAt: plus(T0, 3000) });
+      const theirs = draft(b, { items: [row('r:5', anna)] });
+      await store.transaction(async tx => {
+        for (const t of [rows, own, handled, theirs]) await tx.insertThread(t);
+        await tx.updateThread(handled.id, { state: 'handled', handledAt: plus(T0, 3000) });
+      });
+      const ids = async (person: string, subjects: Subject[]) =>
+        (await store.threadsNaming(person, subjects)).map(n => [n.thread.id, n.subjects]);
+      // A person's key without regard to case, in the spelling asked; a unit's id exactly; the thread's own subject too.
+      expect(await ids(a, [{ ...anna, key: anna.key.toLowerCase() }])).toEqual([
+        [rows.id, [{ ...anna, key: anna.key.toLowerCase() }]],
+      ]);
+      expect(await ids(a, [anna, erik, { ...skola, key: skola.key.toLowerCase() }])).toEqual([
+        [own.id, [erik]],
+        [rows.id, [anna]],
+      ]);
+      expect(await ids(a, [skola, anna])).toEqual([[rows.id, [skola, anna]]]);
+      expect(await ids(b, [anna])).toEqual([[theirs.id, [anna]]]);
+      expect(await ids(a, [maria])).toEqual([]);
+      expect(await store.threadsNaming(a, [])).toEqual([]);
+      // Read back as written: the row's subject and the thread's own.
+      expect((await store.readThread(a, rows.id))!.items.map(i => i.subject)).toEqual([anna, skola, undefined]);
+      expect((await store.readThread(a, own.id))!.subjects).toEqual([erik]);
+      // New rows, new index; a card open again is work again.
+      await store.transaction(async tx => {
+        await tx.updateThread(rows.id, { items: [row('r:1', maria)] });
+        await tx.updateThread(handled.id, { state: 'open', handledAt: null });
+      });
+      expect(await ids(a, [anna])).toEqual([[handled.id, [anna]]]);
+      expect(await ids(a, [maria, skola])).toEqual([[rows.id, [maria]]]);
+      // A rolled-back write leaves the index as it was.
+      await expect(
+        store.transaction(async tx => {
+          await tx.updateThread(rows.id, { items: [row('r:1', anna)] });
+          throw new Error('rollback');
+        }),
+      ).rejects.toThrow('rollback');
+      expect(await ids(a, [maria])).toEqual([[rows.id, [maria]]]);
+    });
+    test('erasing an entity takes it off every row and thread of every person, leaves the text and rolls back with the transaction (D97)', async () => {
+      const {
+        store,
+        people: [a, b],
+        auditFor,
+      } = await make();
+      const run = unique();
+      const gone = { entity: 'person' as const, key: `Erik.S-${run}` },
+        kept = { entity: 'person' as const, key: `maria-${run}` };
+      const row = (ref: string, subject: typeof gone) => ({
+        ref,
+        label: 'Erik Sund sjuk 10–11 nov',
+        detail: '2 pass berörs',
+        selectable: true,
+        selected: true,
+        subject,
+      });
+      const mine = draft(a, { items: [row('r:1', gone), row('r:2', kept)], subjects: [gone, kept] });
+      const theirs = draft(b, { items: [row('r:3', { ...gone, key: gone.key.toLowerCase() })] });
+      await store.transaction(async tx => {
+        await tx.insertThread(mine);
+        await tx.insertThread(theirs);
+      });
+      const entry = { actor: 'operator:cli', action: 'thread.subject_erased', subject: 'thread:' + mine.id, at: T0 };
+      await expect(
+        store.transaction(async tx => {
+          await tx.eraseSubject(gone);
+          await tx.writeAudit(entry);
+          throw new Error('after the audit row');
+        }),
+      ).rejects.toThrow('after the audit row');
+      expect((await store.threadsNaming(a, [gone])).map(n => n.thread.id)).toEqual([mine.id]);
+      expect((await store.readThread(b, theirs.id))!.items[0]!.subject).toEqual({
+        ...gone,
+        key: gone.key.toLowerCase(),
+      });
+      expect(await auditFor('thread:' + mine.id)).toEqual([]);
+      expect(await store.transaction(tx => tx.eraseSubject({ ...gone, key: gone.key.toUpperCase() }))).toEqual({
+        cards: 2,
+        rows: 2,
+        cardSubjects: 1,
+      });
+      expect(await store.threadsNaming(a, [gone])).toEqual([]);
+      expect(await store.threadsNaming(b, [gone])).toEqual([]);
+      expect((await store.threadsNaming(a, [kept])).map(n => n.thread.id)).toEqual([mine.id]);
+      const read = (await store.readThread(a, mine.id))!;
+      expect(read.items).toEqual([
+        { ref: 'r:1', label: 'Erik Sund sjuk 10–11 nov', detail: '2 pass berörs', selectable: true, selected: true },
+        row('r:2', kept),
+      ]);
+      expect(read.subjects).toEqual([kept]);
+      // Nothing the person decided on moves.
+      expect(read.updatedAt).toBe(mine.updatedAt);
+      expect((await store.readThread(b, theirs.id))!.items[0]!.subject).toBeUndefined();
+      expect(await store.transaction(tx => tx.eraseSubject(gone))).toEqual({ cards: 0, rows: 0, cardSubjects: 0 });
     });
     test('an audit row and a job commit with the writes they belong to, and roll back with them', async () => {
       const {

@@ -1,4 +1,4 @@
-import type { AuthenticatedContext, CommitmentOwner, StaffOverview } from '@clew/contracts';
+import type { AuthenticatedContext, CommitmentOwner, StaffOverview, Subject } from '@clew/contracts';
 
 /**
  * The ports of the talks module (D96, D25): Clew's first owned domain, the round of development talks and the action
@@ -107,9 +107,18 @@ export interface WorkItemTx {
    * Insert the owner's open card `threadId`, admit its delivery, write its message and its `thread.pushed` audit row, and
    * schedule its `due` timer for 06:00 Europe/Stockholm on the day after `dueOn` (with this commit, D86). The timer
    * carries the owner's current unit and authorisation version, read in the same transaction. Call it before the action
-   * point that names `threadId` is inserted, since that row refers to the card.
+   * point that names `threadId` is inserted, since that row refers to the card. `subject` is the employee the talk is
+   * with, by user name (D97 item 6): the card is about them, so it shows under "Behöver dig" on that person for its
+   * owner, while nothing drawn on the card or read by the assistant names them (item 6).
    */
-  open(input: { threadId: string; personId: string; commitmentId: string; dueOn: string; at: string }): Promise<void>;
+  open(input: {
+    threadId: string;
+    personId: string;
+    commitmentId: string;
+    dueOn: string;
+    at: string;
+    subject?: Subject;
+  }): Promise<void>;
   /** Mark the card handled and cancel its `due` timer. A card that no longer exists is no error. */
   close(threadId: string, at: string): Promise<void>;
   /**

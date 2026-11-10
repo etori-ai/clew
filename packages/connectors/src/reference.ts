@@ -200,6 +200,9 @@ export const HANDWRITTEN_EXAMPLES: Record<string, unknown> = {
   'capabilities[].view.input.filter.options[].value': 'open',
   'capabilities[].view.input.filter.options[].label': 'Öppna',
   'capabilities[].view.modelReads': 'summary',
+  'capabilities[].view.subject': { entity: 'person', key: 'person' },
+  'capabilities[].view.subject.entity': 'person',
+  'capabilities[].view.subject.key': 'person',
   'capabilities[].about': { entity: 'person' },
   'capabilities[].about.entity': 'person',
   'capabilities[].about.param': 'person',
@@ -279,6 +282,14 @@ export const RULES: Rule[] = [
     text: "`open.capability` is a `read` of this manifest, and every key of `params` is an input property of that read, taken from a property the row has. A card's buttons and a row's link stay within one system.",
   },
   {
+    id: 'view-subject-is-a-string',
+    title: 'A record names an entity by a string it holds',
+    fields: ['capabilities[].output', 'capabilities[].view.subject', 'capabilities[].view.subject.key'],
+    enforced: 'loader',
+    decision: 'D97',
+    text: "Where the output schema declares `properties`, `subject.key` is one of the record's properties (a row's for a table or list) and its type is `string`: a person's provisioned `userName` or a unit's id. The record's title then links to that person or unit for a reader who may open it; Clew never checks that the key exists, and a record without the value links nowhere.",
+  },
+  {
     id: 'menu-needs-open-view',
     title: 'A menu row is a view that opens without a question',
     fields: ['capabilities[].menu', 'capabilities[].view', 'capabilities[].input'],
@@ -342,6 +353,14 @@ export const RULES: Rule[] = [
     text: "A `propose` or `execute` that declares `about` names in `param` a string property of its input schema. Clew fills it with the key of the entity the person chose the action on; it shows in that entity's menu and runs, as every action does, after a human decision.",
   },
   {
+    id: 'about-action-key-alone',
+    title: 'An action about an entity starts with the key alone',
+    fields: ['capabilities[].about.param', 'capabilities[].input'],
+    enforced: 'loader',
+    decision: 'D97',
+    text: "On a `propose` or `execute` that declares `about`, `param` is the one property the input requires. Anything else is optional, with a default the source chooses, so the entity's menu can start the action without asking a question (D8).",
+  },
+  {
     id: 'about-not-a-follower',
     title: 'A follower is about no entity',
     fields: ['capabilities[].about', 'capabilities[].follows'],
@@ -403,6 +422,14 @@ export const RULES: Rule[] = [
     enforced: 'call',
     decision: 'D97',
     text: `Clew calls the read as the person with \`{ keys }\`: a person's provisioned \`userName\` (compare without regard to case; the caller's own is \`actor.userName\`) or a unit's id, only for entities the person may already see, at most ${ENTITY_KEYS_MAX} in one call. Answer one row per key you know, carrying \`key\` as it was asked; a key outside the person's scope is answered as no row, never as a refusal. Beside the rows you may answer \`heading\` and \`note\`, two short strings. Clew keeps nothing and decides where the rows show: a section on the opened entity, and a lens, a column or a mark on the row where an administrator chose the source.`,
+  },
+  {
+    id: 'about-action-start',
+    title: 'An action about an entity becomes a card',
+    fields: ['capabilities[].kind', 'capabilities[].about.param'],
+    enforced: 'call',
+    decision: 'D97',
+    text: "When the person chooses the action in an entity's menu, Clew starts it without the model, as the person, with `{ <param>: key }`. A `propose` answers a `ThreadDraft`, the shape a scan pushes: its actions name capabilities of this connector, it prepares and writes nothing, and it becomes the person's card. Clew writes the card's reason itself (the person chose it), so your `reason` is not shown. Refuse a key outside the person's scope in Swedish, as any call is refused. An `execute` is not called: Clew makes a card whose button is the human decision, and the execute runs only after it, with its write safety. The same request while the card is open gives the same card.",
   },
 ];
 

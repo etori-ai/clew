@@ -24,6 +24,7 @@ import type {
   MessageMeta,
   ProviderHealth,
   Receipt,
+  Subject,
   ThreadAction,
   ThreadItem,
 } from '@clew/contracts';
@@ -229,6 +230,8 @@ export const threads = pgTable(
     area: text('area').notNull().default('calendar'),
     summary: text('summary').notNull().default(''),
     items: jsonb('items').$type<ThreadItem[]>().notNull().default([]),
+    // The entities a card of Clew's own is about while no row may name them (D97 item 6): never drawn, never read by the assistant.
+    subjects: jsonb('subjects').$type<Subject[]>().notNull().default([]),
     actions: jsonb('actions').$type<ThreadAction[]>().notNull().default([]),
     waitingOn: text('waiting_on'),
     deadline: text('deadline'),
@@ -269,6 +272,25 @@ export const threadMessages = pgTable(
   t => [
     index('thread_message_thread').on(t.threadId, t.createdAt, t.seq),
     check('thread_message_role', sql`${t.role} IN ('assistant', 'user')`),
+  ],
+);
+// The index from entity to cards (D97 item 6): one row per thread and entity its rows (or the thread itself) name, with
+// the key as Clew compares it (a person's in lower case). Written by the thread store in the transaction that writes the
+// thread's items, gone with the thread. `person_id` is the thread's owner, so "my cards about Anna" is one index lookup.
+export const threadSubjects = pgTable(
+  'thread_subject',
+  {
+    threadId: text('thread_id')
+      .notNull()
+      .references(() => threads.id, { onDelete: 'cascade' }),
+    personId: text('person_id').notNull(),
+    entity: text('entity').$type<Subject['entity']>().notNull(),
+    key: text('key').notNull(),
+  },
+  t => [
+    primaryKey({ columns: [t.threadId, t.entity, t.key] }),
+    index('thread_subject_owner').on(t.personId, t.entity, t.key),
+    index('thread_subject_entity').on(t.entity, t.key),
   ],
 );
 // A proposal is the assistant's suggestion; it becomes a calendar event only through the human decision endpoint.

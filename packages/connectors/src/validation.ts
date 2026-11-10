@@ -38,8 +38,9 @@ const PROFILES = ['search', 'fetch', 'errands', 'talks', 'commitments'];
 /**
  * Why a capability's `about` (D97) may not be used, or undefined when it may. A read is asked with `{ keys }`, at most
  * `ENTITY_KEYS_MAX` strings, and answers rows that each carry the string `key` they were asked with, drawn as a table or
- * list, never a tool. An action names the string input that takes one key. A follower, a profile read and the header have
- * shapes of their own and are about nothing.
+ * list, never a tool. An action names the string input that takes one key, and requires nothing else, so it can be started
+ * from the entity's menu without a question. A follower, a profile read and the header have shapes of their own and are
+ * about nothing.
  */
 function aboutProblem(c: Descriptor['capabilities'][number], connector: Descriptor, header?: string) {
   const about = c.about!;
@@ -78,6 +79,10 @@ function aboutProblem(c: Descriptor['capabilities'][number], connector: Descript
   }
   if (about.param === undefined || asSchema(input?.properties?.[about.param])?.type !== 'string')
     return `Capability ${c.name}: an action about an entity names in param a string property of its input that takes the key (D97).`;
+  // The entity's menu starts the action with the key alone (D97, D8): nothing else may be required.
+  const required = new Set(Array.isArray(input?.required) ? (input.required as unknown[]) : []);
+  if (required.size !== 1 || !required.has(about.param))
+    return `Capability ${c.name}: an action about an entity requires ${about.param} and nothing else in its input, so the entity's menu can start it with the key alone; anything more is optional with a default the source chooses (D97).`;
   return undefined;
 }
 

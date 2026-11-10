@@ -80,6 +80,7 @@
         "hr.undecideLeave",
         "hr.proposeAbsence",
         "hr.reportAbsence",
+        "hr.prepareAbsence",
         "hr.withdrawAbsence",
         "hr.myShift",
         "hr.myBalance",

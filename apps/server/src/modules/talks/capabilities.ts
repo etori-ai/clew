@@ -48,6 +48,8 @@ export const talksView: View = {
     { key: 'at', label: 'När' },
     { key: 'openCommitments', label: 'Öppna åtgärdspunkter', format: 'number' },
   ],
+  // A row is one of the manager's people, by user name (D97 item 6): the name links to the person.
+  subject: { entity: 'person', key: 'userName' },
 };
 /** The reader's action points, the ones they own and the ones about them: what the owner's card opens with no input. */
 export const commitmentsView: View = {

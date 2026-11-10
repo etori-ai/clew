@@ -235,7 +235,10 @@ describe('the field list', () => {
             properties: {
               rows: {
                 type: 'array',
-                items: { type: 'object', properties: { name: { type: 'string' }, state: { type: 'string' } } },
+                items: {
+                  type: 'object',
+                  properties: { name: { type: 'string' }, state: { type: 'string' }, person: { type: 'string' } },
+                },
               },
             },
           },
@@ -244,6 +247,8 @@ describe('the field list', () => {
           view: {
             kind: 'table',
             title: 'name',
+            // The person a case is about (D97 item 6): the case's name links to them.
+            subject: HANDWRITTEN_EXAMPLES['capabilities[].view.subject'],
             fields: [
               { key: 'name', label: 'Namn' },
               {
@@ -270,6 +275,8 @@ describe('the field list', () => {
     expect(byPath['capabilities[].about.param']!.rules.map(r => r.id)).toEqual([
       'about-read-keys',
       'about-action-param',
+      'about-action-key-alone',
+      'about-action-start',
     ]);
   });
   test('the job recipe is a working exchange: three manifests that load, an envelope and answers that validate, steps that name their own connector', () => {
@@ -361,6 +368,12 @@ describe('the rules', () => {
       }),
       'phonebook',
     ],
+    'view-subject-is-a-string': [
+      broken(phonebook, m => {
+        m.capabilities[0].view.subject = { entity: 'person', key: 'nowhere' };
+      }),
+      'phonebook',
+    ],
     'menu-needs-open-view': [
       broken(phonebook, m => {
         m.capabilities[0].input = { type: 'object', properties: { q: { type: 'string' } }, required: ['q'] };
@@ -406,6 +419,13 @@ describe('the rules', () => {
     'about-action-param': [
       broken(aboutManifest, m => {
         m.capabilities[1].about.param = 'nobody';
+      }),
+      'hr',
+    ],
+    'about-action-key-alone': [
+      broken(aboutManifest, m => {
+        m.capabilities[1].input.properties.when = { type: 'string' };
+        m.capabilities[1].input.required.push('when');
       }),
       'hr',
     ],

@@ -62,6 +62,7 @@ const rows: EntityRows = {
 };
 const list: EntityList = {
   kind: 'person',
+  attention: [],
   groups: [{ id: 'unit-skola', label: 'Bergsåkers skola', entities: people }],
   columns: [
     { capability: presence.capability, source: presence.source, title: presence.title, field: presenceField },

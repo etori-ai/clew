@@ -308,6 +308,7 @@ describe('action points', () => {
     });
     expect(store.state.commitments.get(forBoss)).toMatchObject({ ownerRole: 'manager', ownerId: 'boss' });
     const threadId = store.state.commitments.get(forAnna)!.threadId!;
+    // Either card is about the employee of the talk, by user name (D97 item 6), whoever owns it.
     expect(store.calls()[0]).toEqual({
       op: 'open',
       threadId,
@@ -315,8 +316,14 @@ describe('action points', () => {
       commitmentId: forAnna,
       dueOn: '2026-12-15',
       at: at(),
+      subject: { entity: 'person', key: 'anna.a' },
     });
-    expect(store.calls()[1]).toMatchObject({ op: 'open', personId: 'boss', commitmentId: forBoss });
+    expect(store.calls()[1]).toMatchObject({
+      op: 'open',
+      personId: 'boss',
+      commitmentId: forBoss,
+      subject: { entity: 'person', key: 'anna.a' },
+    });
     expect(store.audit().filter(a => a.action === 'talks.commitment_added')).toEqual([
       {
         actor: 'person:boss',
@@ -334,6 +341,10 @@ describe('action points', () => {
       },
     ]);
     expect((await talks.round(boss)).rows.find(r => r.userName === 'anna.a')?.openCommitments).toBe(2);
+    // Someone provisioned without a user name cannot be asked about, so their action point's card names nobody.
+    await talks.addCommitment(boss, 'bo', { owner: 'manager', text: 'Boka ett möte', dueOn: '2027-01-15' });
+    expect(store.calls()[2]).toMatchObject({ op: 'open', personId: 'boss' });
+    expect(store.calls()[2]).not.toHaveProperty('subject');
   });
 
   test('a blank or too long text, no round, an employee and a manager of another unit are refused, and nothing is written', async () => {

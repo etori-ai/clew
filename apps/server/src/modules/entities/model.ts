@@ -53,6 +53,13 @@ export type SourceRead = (
 ) => Promise<unknown>;
 /** "Behöver dig" (D97 item 5): the reader's cards whose rows name this entity. */
 export type Cards = (persona: AuthenticatedContext, subject: Subject) => Promise<EntityCard[]>;
+/** A card of the reader's with the entities it names among those asked, in the asked spelling. */
+export type NamedCard = EntityCard & { subjects: Subject[] };
+/**
+ * "Just nu" on the list (D97 item 5): the reader's cards still asking for them whose rows name any of these entities,
+ * read once for the whole list (composition: the thread store's index from entity to cards).
+ */
+export type CardsNaming = (persona: AuthenticatedContext, subjects: Subject[]) => Promise<NamedCard[]>;
 export interface EntityBudget {
   /** Milliseconds one source gets for all its calls on one request; what has not answered by then is `timeout`. */
   totalMs: number;
@@ -64,6 +71,8 @@ export interface EntityDeps {
   sources: Sources;
   read: SourceRead;
   cards: Cards;
+  /** Absent: the list counts no cards (`attention` is empty). */
+  cardsNaming?: CardsNaming;
   budget?: Partial<EntityBudget>;
   /** A source that failed or answered out of shape, by capability and outcome; never a key or a row. */
   log?: (message: string, ...details: unknown[]) => void;

@@ -1,9 +1,11 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray, or } from 'drizzle-orm';
+import { foldEntityKey, type EntityKind, type Subject, type ThreadItem } from '@clew/contracts';
 import { database, schema, type Transaction } from '@clew/db';
-import { listThreads, toThread } from '@clew/db/threads';
+import { listThreads, toThread, unresolvedThreads } from '@clew/db/threads';
 import { scheduleJob } from '@clew/db/jobs';
 import { enqueueWorkflow, type DurableQueue } from '@clew/db/durable';
 import type { ThreadPatch, ThreadStore, ThreadTx } from '../model';
+import { namedAmong, namedSubjects, withoutSubject } from '../domain';
 import { readTimer, timerTx } from './timer-postgres';
 import { attentionTx } from './attention-postgres';
 import { logger } from '../../logging';
@@ -18,7 +20,35 @@ export interface ThreadStoreOptions {
   durable: DurableQueue;
   cancel?: (workflowId: string) => Promise<void>;
 }
-const { threads, threadMessages, proposals, audit } = schema;
+const { threads, threadMessages, proposals, audit, threadSubjects } = schema;
+/**
+ * The index from entity to cards (D97 item 6), kept in step with a thread's items in the transaction that writes them:
+ * the thread's rows are replaced by what its items and own subjects name now. A deleted thread takes its rows with it.
+ */
+async function indexSubjects(
+  tx: Transaction,
+  thread: { id: string; personId: string; items: ThreadItem[]; subjects?: Subject[] },
+  replace: boolean,
+) {
+  if (replace) await tx.delete(threadSubjects).where(eq(threadSubjects.threadId, thread.id));
+  const named = namedSubjects(thread);
+  if (named.length)
+    await tx
+      .insert(threadSubjects)
+      .values(named.map(s => ({ threadId: thread.id, personId: thread.personId, entity: s.entity, key: s.key })))
+      .onConflictDoNothing();
+}
+/** The index rows naming any of these entities, one condition per kind. */
+const naming = (subjects: readonly Subject[]) => {
+  const byKind = new Map<EntityKind, Set<string>>();
+  for (const s of subjects)
+    byKind.set(s.entity, (byKind.get(s.entity) ?? new Set()).add(foldEntityKey(s.entity, s.key)));
+  return or(
+    ...[...byKind].map(([entity, keys]) =>
+      and(eq(threadSubjects.entity, entity), inArray(threadSubjects.key, [...keys])),
+    ),
+  );
+};
 const date = (value: string | null | undefined) =>
   value === undefined ? undefined : value === null ? null : new Date(value);
 const toRow = (patch: ThreadPatch) => {
@@ -87,6 +117,7 @@ export const threadTx = (tx: Transaction, options: ThreadStoreOptions, ended?: s
         area: t.area,
         summary: t.summary,
         items: t.items,
+        subjects: t.subjects ?? [],
         actions: t.actions,
         waitingOn: t.waitingOn,
         deadline: t.deadline,
@@ -98,10 +129,63 @@ export const threadTx = (tx: Transaction, options: ThreadStoreOptions, ended?: s
       })
       .onConflictDoNothing()
       .returning({ id: threads.id });
+    if (inserted.length) await indexSubjects(tx, { ...t, personId }, false);
     return inserted.length > 0;
   },
   async updateThread(id, patch) {
-    await tx.update(threads).set(toRow(patch)).where(eq(threads.id, id));
+    if (patch.items === undefined) {
+      await tx.update(threads).set(toRow(patch)).where(eq(threads.id, id));
+      return;
+    }
+    // New rows may name other entities: the index follows in the same transaction.
+    const [row] = await tx
+      .update(threads)
+      .set(toRow(patch))
+      .where(eq(threads.id, id))
+      .returning({ id: threads.id, personId: threads.personId, items: threads.items, subjects: threads.subjects });
+    if (row) await indexSubjects(tx, row, true);
+  },
+  async eraseSubject(subject) {
+    const erased = { cards: 0, rows: 0, cardSubjects: 0 };
+    const where = and(
+      eq(threadSubjects.entity, subject.entity),
+      eq(threadSubjects.key, foldEntityKey(subject.entity, subject.key)),
+    );
+    const named = await tx.selectDistinct({ id: threadSubjects.threadId }).from(threadSubjects).where(where);
+    if (!named.length) return erased;
+    // The threads first, in id order, then their index rows, as a write of a thread's items takes them: two erasures, or
+    // an erasure and a scan, cannot deadlock. A card that names the entity first after this read is left whole, index
+    // and all, for the next erasure.
+    const rows = await tx
+      .select({ id: threads.id, items: threads.items, subjects: threads.subjects })
+      .from(threads)
+      .where(
+        inArray(
+          threads.id,
+          named.map(n => n.id),
+        ),
+      )
+      .orderBy(threads.id)
+      .for('update');
+    if (!rows.length) return erased;
+    for (const row of rows) {
+      const left = withoutSubject(row, subject);
+      if (!left) continue;
+      await tx.update(threads).set({ items: left.items, subjects: left.subjects }).where(eq(threads.id, row.id));
+      erased.cards++;
+      erased.rows += left.erased.rows;
+      erased.cardSubjects += left.erased.cardSubjects;
+    }
+    await tx.delete(threadSubjects).where(
+      and(
+        where,
+        inArray(
+          threadSubjects.threadId,
+          rows.map(r => r.id),
+        ),
+      ),
+    );
+    return erased;
   },
   async addMessage(threadId, message) {
     await tx.insert(threadMessages).values({
@@ -155,6 +239,18 @@ export function postgresThreadStore(options: ThreadStoreOptions): ThreadStore {
     readThreadById: id => read(database(), eq(threads.id, id)),
     async openThread(personId, topic) {
       return read(database(), and(eq(threads.personId, personId), eq(threads.topic, topic), eq(threads.state, 'open')));
+    },
+    async threadsNaming(personId, subjects) {
+      if (!subjects.length) return [];
+      const rows = await database()
+        .select({ threadId: threadSubjects.threadId, entity: threadSubjects.entity, key: threadSubjects.key })
+        .from(threadSubjects)
+        .where(and(eq(threadSubjects.personId, personId), naming(subjects)));
+      if (!rows.length) return [];
+      const named = new Map<string, Subject[]>();
+      for (const r of rows) named.set(r.threadId, [...(named.get(r.threadId) ?? []), { entity: r.entity, key: r.key }]);
+      const found = await unresolvedThreads(personId, [...named.keys()]);
+      return found.map(thread => ({ thread, subjects: namedAmong(named.get(thread.id)!, subjects) }));
     },
     transaction: fn => withThreadTx(options, (_, tx) => fn(tx)),
   };

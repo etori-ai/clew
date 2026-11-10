@@ -1757,6 +1757,36 @@
                             }
                           }
                         },
+                        "subject": {
+                          "additionalProperties": false,
+                          "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it; a record without the property links nowhere.",
+                          "type": "object",
+                          "required": [
+                            "entity",
+                            "key"
+                          ],
+                          "properties": {
+                            "entity": {
+                              "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.",
+                              "anyOf": [
+                                {
+                                  "const": "person",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "unit",
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "key": {
+                              "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                              "maxLength": 40,
+                              "description": "The record property holding the entity's key, a string: a person's provisioned `userName`, a unit's id.",
+                              "type": "string"
+                            }
+                          }
+                        },
                         "input": {
                           "additionalProperties": false,
                           "description": "What the person may type or choose above the rows. Each control binds to one property of the capability's input, and a change reads the capability again.",
@@ -2069,6 +2099,36 @@
                             }
                           }
                         },
+                        "subject": {
+                          "additionalProperties": false,
+                          "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it; a record without the property links nowhere.",
+                          "type": "object",
+                          "required": [
+                            "entity",
+                            "key"
+                          ],
+                          "properties": {
+                            "entity": {
+                              "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.",
+                              "anyOf": [
+                                {
+                                  "const": "person",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "unit",
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "key": {
+                              "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                              "maxLength": 40,
+                              "description": "The record property holding the entity's key, a string: a person's provisioned `userName`, a unit's id.",
+                              "type": "string"
+                            }
+                          }
+                        },
                         "input": {
                           "additionalProperties": false,
                           "description": "What the person may type or choose above the rows. Each control binds to one property of the capability's input, and a change reads the capability again.",
@@ -2308,6 +2368,36 @@
                                   }
                                 }
                               }
+                            }
+                          }
+                        },
+                        "subject": {
+                          "additionalProperties": false,
+                          "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it; a record without the property links nowhere.",
+                          "type": "object",
+                          "required": [
+                            "entity",
+                            "key"
+                          ],
+                          "properties": {
+                            "entity": {
+                              "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.",
+                              "anyOf": [
+                                {
+                                  "const": "person",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "unit",
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "key": {
+                              "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                              "maxLength": 40,
+                              "description": "The record property holding the entity's key, a string: a person's provisioned `userName`, a unit's id.",
+                              "type": "string"
                             }
                           }
                         },
@@ -3544,6 +3634,36 @@
                       },
                       "selected": {
                         "type": "boolean"
+                      },
+                      "subject": {
+                        "additionalProperties": false,
+                        "description": "The person or unit the row is about (D97 item 6): the web links the row to it, and the card shows on that entity for its owner. A key, never a name; the row's text stays the source's. Clew does not check that the key exists.",
+                        "type": "object",
+                        "required": [
+                          "entity",
+                          "key"
+                        ],
+                        "properties": {
+                          "entity": {
+                            "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.",
+                            "anyOf": [
+                              {
+                                "const": "person",
+                                "type": "string"
+                              },
+                              {
+                                "const": "unit",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "key": {
+                            "minLength": 1,
+                            "maxLength": 256,
+                            "description": "The entity's key: a person's `userName`, a unit's id.",
+                            "type": "string"
+                          }
+                        }
                       }
                     }
                   }
@@ -3828,6 +3948,36 @@
                 },
                 "selected": {
                   "type": "boolean"
+                },
+                "subject": {
+                  "additionalProperties": false,
+                  "description": "The person or unit the row is about (D97 item 6): the web links the row to it, and the card shows on that entity for its owner. A key, never a name; the row's text stays the source's. Clew does not check that the key exists.",
+                  "type": "object",
+                  "required": [
+                    "entity",
+                    "key"
+                  ],
+                  "properties": {
+                    "entity": {
+                      "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.",
+                      "anyOf": [
+                        {
+                          "const": "person",
+                          "type": "string"
+                        },
+                        {
+                          "const": "unit",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "key": {
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "description": "The entity's key: a person's `userName`, a unit's id.",
+                      "type": "string"
+                    }
+                  }
                 }
               }
             }
@@ -4255,6 +4405,36 @@
           },
           "score": {
             "type": "number"
+          },
+          "subject": {
+            "additionalProperties": false,
+            "description": "An entity a row names (D97): the web links the row to it. Clew never checks that the key exists; a reader only ever reaches an entity they may ask about.",
+            "type": "object",
+            "required": [
+              "entity",
+              "key"
+            ],
+            "properties": {
+              "entity": {
+                "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.",
+                "anyOf": [
+                  {
+                    "const": "person",
+                    "type": "string"
+                  },
+                  {
+                    "const": "unit",
+                    "type": "string"
+                  }
+                ]
+              },
+              "key": {
+                "minLength": 1,
+                "maxLength": 256,
+                "description": "The entity's key: a person's `userName`, a unit's id.",
+                "type": "string"
+              }
+            }
           }
         }
       },
@@ -4348,6 +4528,36 @@
                 },
                 "score": {
                   "type": "number"
+                },
+                "subject": {
+                  "additionalProperties": false,
+                  "description": "An entity a row names (D97): the web links the row to it. Clew never checks that the key exists; a reader only ever reaches an entity they may ask about.",
+                  "type": "object",
+                  "required": [
+                    "entity",
+                    "key"
+                  ],
+                  "properties": {
+                    "entity": {
+                      "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.",
+                      "anyOf": [
+                        {
+                          "const": "person",
+                          "type": "string"
+                        },
+                        {
+                          "const": "unit",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "key": {
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "description": "The entity's key: a person's `userName`, a unit's id.",
+                      "type": "string"
+                    }
+                  }
                 }
               }
             }
@@ -5624,6 +5834,36 @@
                   }
                 }
               },
+              "subject": {
+                "additionalProperties": false,
+                "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it; a record without the property links nowhere.",
+                "type": "object",
+                "required": [
+                  "entity",
+                  "key"
+                ],
+                "properties": {
+                  "entity": {
+                    "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.",
+                    "anyOf": [
+                      {
+                        "const": "person",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unit",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "key": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                    "maxLength": 40,
+                    "description": "The record property holding the entity's key, a string: a person's provisioned `userName`, a unit's id.",
+                    "type": "string"
+                  }
+                }
+              },
               "input": {
                 "additionalProperties": false,
                 "description": "What the person may type or choose above the rows. Each control binds to one property of the capability's input, and a change reads the capability again.",
@@ -5936,6 +6176,36 @@
                   }
                 }
               },
+              "subject": {
+                "additionalProperties": false,
+                "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it; a record without the property links nowhere.",
+                "type": "object",
+                "required": [
+                  "entity",
+                  "key"
+                ],
+                "properties": {
+                  "entity": {
+                    "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.",
+                    "anyOf": [
+                      {
+                        "const": "person",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unit",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "key": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                    "maxLength": 40,
+                    "description": "The record property holding the entity's key, a string: a person's provisioned `userName`, a unit's id.",
+                    "type": "string"
+                  }
+                }
+              },
               "input": {
                 "additionalProperties": false,
                 "description": "What the person may type or choose above the rows. Each control binds to one property of the capability's input, and a change reads the capability again.",
@@ -6175,6 +6445,36 @@
                         }
                       }
                     }
+                  }
+                }
+              },
+              "subject": {
+                "additionalProperties": false,
+                "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it; a record without the property links nowhere.",
+                "type": "object",
+                "required": [
+                  "entity",
+                  "key"
+                ],
+                "properties": {
+                  "entity": {
+                    "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.",
+                    "anyOf": [
+                      {
+                        "const": "person",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unit",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "key": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                    "maxLength": 40,
+                    "description": "The record property holding the entity's key, a string: a person's provisioned `userName`, a unit's id.",
+                    "type": "string"
                   }
                 }
               },

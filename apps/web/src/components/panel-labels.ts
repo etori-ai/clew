@@ -122,6 +122,20 @@ export const hiddenFields = new Set([
   'path',
   'equals',
   'within',
+  // A propose's card draft (D97) is Clew's input, drawn as a card, never as panel fields.
+  'topic',
+  'area',
+  'summary',
+  'reason',
+  'items',
+  'selectable',
+  'selected',
+  'subject',
+  'entity',
+  'actions',
+  'capability',
+  'role',
+  'target',
 ]);
 const dateOnly = new Intl.DateTimeFormat('sv-SE', { dateStyle: 'long' });
 /** "granskad 12 mars 2026", or nothing when the source gives no date. */

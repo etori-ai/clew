@@ -9,6 +9,7 @@ import type {
   TalkState,
   TalksOutput,
 } from '@clew/contracts';
+import { SubjectSchema } from '@clew/contracts';
 import { ForbiddenError, InputError } from '../../context';
 import {
   commitmentRow,
@@ -38,6 +39,8 @@ const NOT_YOURS = 'Personen finns inte bland dem du är chef för.';
 const NO_ROUND = 'Det finns ingen öppen omgång av utvecklingssamtal.';
 const NOT_ALLOWED = 'Du kan inte ändra den här åtgärdspunkten.';
 const BAD_DAY = 'Ange ett giltigt datum.';
+/** The longest key a card may name a person by (D97, `SubjectSchema`): a longer user name names nobody. */
+const SUBJECT_KEY_MAX = SubjectSchema.properties.key.maxLength ?? 256;
 /** The actor of a row written because a `due` timer fired; the convention of the other timer-driven rows. */
 const TIMER_ACTOR = 'system:scheduler';
 /** The version of the export document (D96 item 10); a breaking change is a new version. */
@@ -424,7 +427,7 @@ export function talkUsecases(deps: TalkDeps) {
      * the action point's id.
      */
     async addCommitment(persona: AuthenticatedContext, employeeId: string, body: CommitmentAddBody): Promise<string> {
-      await employeeOf(persona, employeeId);
+      const employee = await employeeOf(persona, employeeId);
       const text = normaliseText(body.text);
       if (!text) throw new TalkError('Skriv åtgärdspunkten på en rad, högst 280 tecken.');
       if (!isCalendarDay(body.dueOn)) throw new TalkError(BAD_DAY);
@@ -434,7 +437,17 @@ export function talkUsecases(deps: TalkDeps) {
         threadId = deps.ids();
       return deps.store.transaction(async tx => {
         const round = await openRoundOf(tx, persona.organisationId);
-        await tx.workItems.open({ threadId, personId: ownerId, commitmentId: id, dueOn: body.dueOn, at });
+        // The card is about the employee (D97 item 6), by the key another system knows them by; nobody without one.
+        await tx.workItems.open({
+          threadId,
+          personId: ownerId,
+          commitmentId: id,
+          dueOn: body.dueOn,
+          at,
+          ...(employee.userName && employee.userName.length <= SUBJECT_KEY_MAX
+            ? { subject: { entity: 'person' as const, key: employee.userName } }
+            : {}),
+        });
         await tx.insertCommitment({
           id,
           roundId: round.id,

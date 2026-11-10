@@ -33,6 +33,8 @@ import {
   ENTITY_KEYS_MAX,
   MAX_DOCUMENT_BYTES,
   SiteHeaderOutputSchema,
+  SubjectSchema,
+  isEntityKind,
   type DocumentRequest,
   type DocumentContent,
   type SiteHeaderOutput,
@@ -220,6 +222,8 @@ export interface AboutAction {
 }
 /** Plain ordering of ids and names, the same in every locale. */
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+/** The longest key a card row may name an entity by (`SubjectSchema`). */
+const SUBJECT_KEY_MAX = SubjectSchema.properties.key.maxLength ?? 256;
 /** What an execute capability returns: the source system's answer, row by row, read back. */
 export interface ExecuteResult {
   headline: string;
@@ -707,7 +711,17 @@ export class Registry {
    * it names a capability of the connector that pushed it, with that capability's own kind. Otherwise a connector could put
    * another system's execute on its card, or call an execute a read so the card would run it without a receipt or an audit row.
    */
-  draftProblem(connectorId: string, draft: Pick<ThreadDraft, 'actions'>): string | undefined {
+  draftProblem(connectorId: string, draft: Pick<ThreadDraft, 'actions' | 'items'>): string | undefined {
+    // A row may name the person or unit it is about (D97 item 6): a known kind and a key that fits. Clew does not check
+    // that the key exists; the index from entity to cards only ever answers for an entity the reader may ask about.
+    for (const item of draft.items ?? []) {
+      const subject = item.subject as { entity?: unknown; key?: unknown } | undefined;
+      if (subject === undefined) continue;
+      if (typeof subject?.entity !== 'string' || !isEntityKind(subject.entity))
+        return `row ${item.ref} names an entity of an unknown kind`;
+      if (typeof subject.key !== 'string' || !subject.key.length || subject.key.length > SUBJECT_KEY_MAX)
+        return `row ${item.ref} names a ${subject.entity} without a key of 1 to ${SUBJECT_KEY_MAX} characters`;
+    }
     for (const a of draft.actions) {
       const found = this.capabilities.get(a.capability);
       if (!found || found.connector.id !== connectorId)
