@@ -48,7 +48,7 @@ test.describe('a tool as a page', () => {
     await expect(page.getByRole('link', { name: '0980-319 203' })).toHaveAttribute('href', 'tel:0980319203');
     await expect(page.getByText('14 rader · Telefonboken')).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(page.locator('nav a[aria-current="page"]')).toHaveText('Telefonbok');
+    await expect(rail(page).locator('a[aria-current="page"]')).toHaveText('Telefonbok');
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(wide.width);
     await expectNoAxeViolations(page);
   });
@@ -152,7 +152,7 @@ test.describe('a tool as a page', () => {
     await expect(page.getByRole('table')).toHaveCount(0);
     await expect(page.getByRole('searchbox', { name: 'Sök i telefonboken' })).toHaveCount(0);
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Mitt team'));
-    await expect(page.locator('nav a[aria-current="page"]')).toHaveText('Mitt team');
+    await expect(rail(page).locator('a[aria-current="page"]')).toHaveText('Mitt team');
     await expectNoAxeViolations(page);
   });
 

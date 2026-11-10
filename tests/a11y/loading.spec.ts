@@ -161,11 +161,22 @@ test('reduced motion disables the content entrance', async ({ page, api: _ }) =>
 
 test('a background refresh preserves content, focus and the composer draft', async ({ page, api: _ }) => {
   await page.addInitScript(() => {
+    // The stand-in speaks as the server's stream does: a connection starts by saying the current revision, which
+    // invalidates nothing, and a later revision is a change.
     class Changes {
-      onmessage: ((event: { data: string }) => void) | null = null;
+      private listener: ((event: { data: string }) => void) | null = null;
       constructor() {
-        (window as unknown as { refresh(): void }).refresh = () =>
-          this.onmessage?.({ data: JSON.stringify({ revision: 'new', policy: '1:1' }) });
+        (window as unknown as { refresh(): void }).refresh = () => this.say('new');
+      }
+      get onmessage() {
+        return this.listener;
+      }
+      set onmessage(listener: ((event: { data: string }) => void) | null) {
+        this.listener = listener;
+        this.say('opened');
+      }
+      private say(revision: string) {
+        this.listener?.({ data: JSON.stringify({ revision, policy: '1:1' }) });
       }
       close() {}
     }
