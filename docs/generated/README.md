@@ -16,6 +16,7 @@ The manifest field by field, with examples and the rules between fields, is [man
 - [communication manifest](communication.manifest.json), from [connector.mjs](../../connectors/communication/connector.mjs): 3 capabilities; scan enabled.
 - [timesheet manifest](timesheet.manifest.json), from [connector.mjs](../../connectors/timesheet/connector.mjs): 5 capabilities; no scan.
 - [payroll manifest](payroll.manifest.json), from [connector.mjs](../../connectors/payroll/connector.mjs): 3 capabilities; no scan.
+- [appraisals manifest](appraisals.manifest.json), from [connector.mjs](../../connectors/appraisals/connector.mjs): 3 capabilities; no scan.
 
 These JSON files are complete, generated inputs, not abbreviated pseudocode. They contain no credentials. The [signed walkthrough](../../scripts/docs-smoke.ts) runs the phone book fixture; the [quickstart](../guides/creating-a-connector.md) explains how to adapt it.
 

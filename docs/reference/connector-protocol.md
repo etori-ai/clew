@@ -68,6 +68,8 @@ A successful execute's `output` has the `ExecuteResult` shape: a headline, per-r
 | Profile | Contract and guide |
 |---|---|
 | Search | `<id>.search` and `<id>.fetch`, `$defs.SearchOutput` and `$defs.SearchHit`; [walkthrough](../guides/example-custom-directory.md). |
+| Errands | `<id>.errands`, `$defs.ErrandsOutput` and `$defs.ErrandRow`; every case system in the person's scope is shown as one list, `clew.errands` ([D89](../decisions/D89-an-errand-connector-acts-as-the-person-and-the-case-system-decides-access.md)). |
+| Talks | `<id>.talks` (the round and one row per person a manager is due a talk with) and `<id>.commitments` (action points), `$defs.TalksOutput`, `$defs.TalkRow`, `$defs.CommitmentsOutput`, `$defs.CommitmentRow`. Rows are keyed on the SCIM user name. One system answers per installation: Clew's own module while it is enabled, otherwise the single connector that declares either read; Clew then shows that system read-only and a row opens its `link`. Neither read is ever a model tool. `<id>.talks` may be limited to managers; `<id>.commitments` must be callable by everyone. [D96](../decisions/D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md); example [connectors/appraisals](../../connectors/appraisals/README.md). |
 | Views and menu tools | `$defs.View` and `$defs.Menu`; [walkthrough](../guides/example-custom-directory.md). Menu placement is an administrator choice. |
 | Callbacks | `uses: string[]`, `$defs.CallbackRequest`, a separate callback grant; [authorization](../guides/authorization.md). |
 | User delegation | `$defs.Delegation`, `X-Clew-Delegated-Token`; [authorization](../guides/authorization.md). |

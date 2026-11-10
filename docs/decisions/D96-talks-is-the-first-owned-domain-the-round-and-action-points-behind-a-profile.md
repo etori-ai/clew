@@ -1,6 +1,6 @@
 # D96 · Talks is Clew's first owned domain: the round and action points, behind a profile a connector can answer
 
-**Status:** accepted, nothing built; synthetic data only until questions 6 and 11 below are answered · **Date:** 2026-11-10 · **Area:** product, integrations
+**Status:** accepted, built 2026-11-10 (the round, action points, the profile and its fixture; see "As built"); synthetic data only until questions 6 and 11 below are answered · **Date:** 2026-11-10 · **Area:** product, integrations
 
 **Decision.** Utvecklingssamtal becomes the first domain Clew owns under
 [D95](D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist.md): a module
@@ -90,14 +90,41 @@ round for their own unit: rejected, HR sets the period and per-unit rounds would
 profile later, when a second system is real (the review's first advice): withdrawn by D95; the fixture is the second
 implementation.
 
-**Not established.** Nothing is built. The answers to questions 6 and 11. What a pilot organisation uses today. An
-assignment has no period or history and there is no acting manager, so "the current manager reads it" is as far as
-access goes. There is no way in the calendar to book one person from their row. The employee cannot add an action
-point. Competences and certificates are not part of this domain: they are read from the system that holds them,
-beside the talk, when that is built.
+**As built, 2026-11-10.** Where the code settled something the items above left open, or differs from them:
+
+- Item 1: `bun scripts/talk-round.ts` opens a round; `bun run dev:connectors` opens the development round when none
+  is open. The round's organisation is the directory's (`poc` on the development stack).
+- Item 4: read without a person, an action point list holds the ones the reader owns and the ones about the reader,
+  so an employee also sees what their manager took on. On Personal a manager ticks off only their own; the use case
+  would also let the current manager tick off the employee's, which no page offers.
+- Item 5: the timer is due at 06:00 Swedish time the morning after the date. It carries no check on the owner's
+  authorisation version, so the card stays with its owner when they change unit.
+- Item 6: the declared views of `talks.talks` and `talks.commitments` name no row ref, so a row cannot be added to a
+  conversation.
+- Item 7: the calendar's planning area is retitled **Boka utvecklingssamtal**, since this domain's area is
+  **Utvecklingssamtal**. The talk on Personal opens only for a person with a row in the open round. The section on
+  Hem is not reserved while it loads (unlike D76's sections), since most people have none.
+- Item 8: a person provisioned without a user name is keyed on their id. `<id>.talks` may be limited to managers;
+  `<id>.commitments` is for everyone.
+- Item 9: the answering system is chosen from either read, so an employee has one although the round is a manager's
+  read. Clew's own writes go through `/api/talks`, which refuses unless the built-in module answers for the person.
+  While the built-in connector is switched off its cards are hidden (a card is shown only while its connector is
+  visible to the person); they return when it is switched on, and their timers fire unseen in between.
+- The planner's round is read through `clew.talks`, so it follows whichever system answers.
+
+**Not established.** The answers to questions 6 and 11. What a pilot organisation uses today. An assignment has no
+period or history and there is no acting manager, so "the current manager reads it" is as far as access goes. There
+is no way in the calendar to book one person from their row. The employee cannot add an action point. Competences
+and certificates are not part of this domain: they are read from the system that holds them, beside the talk, when
+that is built. A system behind a connector is told who is calling by Clew's person id, not by the user name its rows
+are keyed on, so it needs an operator's map from one to the other; putting the user name in the connector assertion
+is a protocol change (D44) not made here. The planner's round read shares the composite's four-second budget with a
+calendar read. The browser tells "no talks system" from "the system failed" by the refusal's sentence, since the
+capability route gives a refusal no code. No screen-reader pass has been made on Personal's talk or the section on
+Hem.
 
 **Replaces.** The constants `DEADLINE` and the fixture team in `apps/server/src/modules/calendar/usecases/samtal.ts`
-and the calendar area's figure, once built. The line in UC-KIM-8 (`docs/personas.md`) that said no conversation
+and the calendar area's figure. The line in UC-KIM-8 (`docs/personas.md`) that said no conversation
 notes are stored, rewritten with this decision. Refines
 [D94](D94-a-manager-has-a-personal-section-listing-the-people-on-their-units.md) item 3: a click into a person now
 opens their talk.
