@@ -145,6 +145,28 @@ export const SEARCH_CONNECTOR = 'clew';
 /** A capability is an errand source when it is named `<id>.errands` and is a read (D35, D89); the composite `clew.errands` is never one itself. */
 export const isErrandSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId: string) =>
   c.kind === 'read' && c.name === connectorId + '.errands' && connectorId !== SEARCH_CONNECTOR;
+/** The built-in connector of the talks domain (D96 item 9): Clew's own module, which answers the talks profile while it is enabled. */
+export const TALKS_CONNECTOR = 'talks';
+/** A capability answers the talks profile when it is named `<id>.talks` and is a read (D96 item 8); the composite `clew.talks` never does. */
+export const isTalkSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId: string) =>
+  c.kind === 'read' && c.name === connectorId + '.talks' && connectorId !== SEARCH_CONNECTOR;
+/** A capability lists action points when it is named `<id>.commitments` and is a read (D96 item 8); the composite `clew.commitments` never does. */
+export const isCommitmentSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId: string) =>
+  c.kind === 'read' && c.name === connectorId + '.commitments' && connectorId !== SEARCH_CONNECTOR;
+const TALK_COMPOSITE = SEARCH_CONNECTOR + '.talks';
+const COMMITMENT_COMPOSITE = SEARCH_CONNECTOR + '.commitments';
+/** The one system that answers the talks profile for a person (D96 item 9), as `Registry.talkSource` names it. */
+export interface TalkSource {
+  /** Clew's own module (`TALKS_CONNECTOR`) answers, so Clew's pages can write. */
+  builtIn: boolean;
+  connectorId: string;
+  /** The answering system as a person reads it: the connector's `source`. */
+  source: string;
+  /** The `<id>.talks` read to call. */
+  talks: string;
+  /** The same connector's `<id>.commitments` read, when it declares one the person may call. */
+  commitments?: string;
+}
 /** What an execute capability returns: the source system's answer, row by row, read back. */
 export interface ExecuteResult {
   headline: string;
@@ -727,6 +749,43 @@ export class Registry {
       }));
   }
   /**
+   * The one system that answers the talks profile for this person (D96 item 9): the built-in `TALKS_CONNECTOR` when the
+   * person may call its `talks.talks`; otherwise the single other connector with a `<id>.talks` read the person may
+   * call. When several qualify none answers, and each of them is reported through `onRefused` (topic `talks`), since an
+   * installation must choose one. As in `errandSources`, the name is tested before the scope, so the composite
+   * `clew.talks` may ask this from its own scope.
+   */
+  talkSource(actor: Actor): TalkSource | undefined {
+    const candidates = [...this.capabilities.values()].filter(
+      c => isTalkSource(c.capability, c.connector.id) && !!this.allowed(actor, c.capability.name),
+    );
+    const builtIn = candidates.find(c => c.connector.id === TALKS_CONNECTOR);
+    const others = candidates.filter(c => c.connector.id !== TALKS_CONNECTOR);
+    if (!builtIn && others.length > 1) {
+      const ids = others.map(c => c.connector.id).sort();
+      for (const id of ids)
+        this.options.onRefused?.(
+          id,
+          'talks',
+          `several connectors answer the talks profile (${ids.join(', ')}); none is used until one remains`,
+        );
+      return undefined;
+    }
+    const chosen = builtIn ?? others[0];
+    if (!chosen) return undefined;
+    const commitments = chosen.connector.id + '.commitments';
+    const listed = this.capabilities.get(commitments);
+    return {
+      builtIn: chosen.connector.id === TALKS_CONNECTOR,
+      connectorId: chosen.connector.id,
+      source: chosen.connector.source,
+      talks: chosen.capability.name,
+      ...(listed && isCommitmentSource(listed.capability, chosen.connector.id) && this.allowed(actor, commitments)
+        ? { commitments }
+        : {}),
+    };
+  }
+  /**
    * Every registered `propose` that follows a fact kind (D55), whether or not this person may call it: the job assembler
    * classifies an administrator's binding against it, so a follower that went away or out of scope is named, never silently skipped.
    */
@@ -832,6 +891,7 @@ export class Registry {
    * Tool definitions for the model: `model: true` capabilities the person may call, from connectors whose tools are on (D8).
    * The per-connector search sources are left out while the composite search is registered, so the model sees one search tool (D26).
    * The per-connector errand lists are left out the same way while `clew.errands` is registered (D35 item 4).
+   * The talks profile and its composites are never tools, registered or not: no read of that domain reaches a model (D96 item 6).
    */
   tools(actor: Actor) {
     const composite = this.capabilities.has(SEARCH_CONNECTOR + '.search');
@@ -843,6 +903,8 @@ export class Registry {
       })
       .filter(c => !(composite && isSearchSource(c.capability, c.connector.id)))
       .filter(c => !(errands && isErrandSource(c.capability, c.connector.id)))
+      .filter(c => !isTalkSource(c.capability, c.connector.id) && !isCommitmentSource(c.capability, c.connector.id))
+      .filter(c => c.capability.name !== TALK_COMPOSITE && c.capability.name !== COMMITMENT_COMPOSITE)
       .map(c => ({
         name: c.capability.name,
         title: c.capability.title,
