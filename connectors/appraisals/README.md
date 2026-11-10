@@ -12,7 +12,7 @@ system by its link. It is a fixture with synthetic data, not an integration with
 | Capability | Input | Output |
 |---|---|---|
 | `appraisals.talks` | `{}` | The profile's `TalksOutput`: the open round (`label`, `opensOn`, `dueOn`) and one row per person the caller is manager of in this system, `missing`, `booked` (with the booked instant) or `held` (with the day), the number of open action points and a link to the talk. A caller who manages nobody gets the round and no rows. |
-| `appraisals.commitments` | `{ person?: userName }` | The profile's `CommitmentsOutput`. With `person`: that employee's action points, for their manager (or the employee); anyone else gets none. Without: the caller's own, the ones they are to do as the employee or as the employee's manager. Open ones from the last round are `carried` and listed first. |
+| `appraisals.commitments` | `{ person?: userName }` | The profile's `CommitmentsOutput`. With `person`: that employee's action points, for their manager (or the employee); anyone else gets none. Without: the caller's, the ones they are to do as the employee or as the employee's manager and the ones about them (their manager's in their own talk), the caller's own first. Open ones from the last round are `carried` and listed first. |
 | `appraisals.round` | `{}` | Not part of the profile: the round as a table with the state in Swedish (Saknas, Bokat, Hållet), for managers, so the system can be used from the menu on its own. |
 
 All three are `model: false`: no read of this domain is offered to a model (D96 item 6). Their views carry no `ref`,

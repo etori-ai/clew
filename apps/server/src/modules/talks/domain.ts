@@ -71,11 +71,16 @@ export function orderTalkRows<T extends Pick<TalkRow, 'state' | 'name' | 'ref'>>
       TALK_STATES.indexOf(a.state) - TALK_STATES.indexOf(b.state) || sv(a.name, b.name) || a.ref.localeCompare(b.ref),
   );
 }
-/** Action points as listed (D96 item 4): carried over first, then the open ones by due date, then the done ones. */
-export function orderCommitmentRows<T extends Pick<CommitmentRow, 'carried' | 'done' | 'dueOn' | 'ref'>>(
+/**
+ * Action points as listed (D96 item 4): carried over first, then the open ones by due date, then the done ones. With
+ * `mineFirst` (the reader's own list) the open ones the reader owns come before the open ones about them that someone
+ * else owns, each group carried first; the done ones stay last.
+ */
+export function orderCommitmentRows<T extends Pick<CommitmentRow, 'carried' | 'done' | 'dueOn' | 'ref' | 'mine'>>(
   rows: T[],
+  options: { mineFirst?: boolean } = {},
 ): T[] {
-  const rank = (r: T) => (r.carried ? 0 : r.done ? 2 : 1);
+  const rank = (r: T) => (r.done ? 4 : (options.mineFirst && !r.mine ? 2 : 0) + (r.carried ? 0 : 1));
   return [...rows].sort((a, b) => rank(a) - rank(b) || a.dueOn.localeCompare(b.dueOn) || a.ref.localeCompare(b.ref));
 }
 

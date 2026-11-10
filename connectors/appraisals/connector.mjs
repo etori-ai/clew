@@ -123,7 +123,7 @@ export const manifest = {
       kind: 'read',
       title: 'Åtgärdspunkter',
       description:
-        'Åtgärdspunkter från utvecklingssamtalen: en medarbetares, för medarbetarens chef, eller utan medarbetare de som är dina.',
+        'Åtgärdspunkter från utvecklingssamtalen: en medarbetares, för medarbetarens chef, eller utan medarbetare de som är dina och de som gäller dig.',
       model: false,
       scope: {},
       input: CommitmentsInput,
@@ -240,6 +240,8 @@ const commitmentOrder = (a, b) =>
   Number(a.done) - Number(b.done) ||
   a.dueOn.localeCompare(b.dueOn) ||
   a.ref.localeCompare(b.ref);
+/** The caller's own list: the open ones they are to do first, then the open ones about them, each carried first; done last. */
+const ownOrder = (a, b) => Number(a.done) - Number(b.done) || Number(b.mine) - Number(a.mine) || commitmentOrder(a, b);
 
 class Invalid extends Error {}
 
@@ -292,17 +294,20 @@ export function createConnector({
       const { commitments, managerOf } = recordsFor(today(), linkBase);
       const rows =
         person === undefined
-          ? // The caller's own: those they are to do, as the employee or as the employee's manager.
+          ? // The caller's: those they are to do, as the employee or as the employee's manager, and those about them.
             commitments
-              .filter(c => (c.owner === 'employee' ? c.userName === caller : managerOf(c.userName) === caller))
-              .map(c => ({ ...c, mine: true }))
+              .map(c => ({
+                ...c,
+                mine: c.owner === 'employee' ? c.userName === caller : managerOf(c.userName) === caller,
+              }))
+              .filter(c => c.mine || c.userName === caller)
           : // One employee's, for their manager or the employee; nobody else sees them.
             managerOf(person) === caller || person === caller
             ? commitments
                 .filter(c => c.userName === person)
                 .map(c => ({ ...c, mine: c.owner === (person === caller ? 'employee' : 'manager') }))
             : [];
-      return { rows: rows.sort(commitmentOrder) };
+      return { rows: rows.sort(person === undefined ? ownOrder : commitmentOrder) };
     },
     'appraisals.round': caller => {
       const { talks } = recordsFor(today(), linkBase);

@@ -10,7 +10,7 @@ import {
 import { menuEligible, viewProblem, type Actor } from '../../packages/connectors/src/index';
 import { ForbiddenError } from '../../apps/server/src/context';
 import { memoryTalkStore, type MemoryTalkStore } from '../../apps/server/src/modules/talks/adapters/memory';
-import { talksConnector } from '../../apps/server/src/modules/talks/capabilities';
+import { commitmentsView, talksConnector, talksView } from '../../apps/server/src/modules/talks/capabilities';
 import { swedishDayAndMonth, normaliseText, orderCommitmentRows } from '../../apps/server/src/modules/talks/domain';
 import { TalkError, talkUsecases, type TalkUsecases } from '../../apps/server/src/modules/talks/usecases';
 import { Registry } from '../registry';
@@ -398,7 +398,7 @@ describe('action points', () => {
     expect(store.state.commitments.get(id)?.doneAt).toBeNull();
   });
 
-  test('the lists: a person by user name or id for their manager, and the reader own ones; open ones carry over into the next round', async () => {
+  test('the lists: a person by user name or id for their manager, and the reader’s own; open ones carry over into the next round', async () => {
     await open();
     const mine = await talks.addCommitment(boss, 'anna', {
       owner: 'manager',
@@ -428,9 +428,11 @@ describe('action points', () => {
     await expect(talks.commitments(boss, { person: 'eve.e' })).rejects.toBeInstanceOf(ForbiddenError);
     await expect(talks.commitments(asAnna, { person: 'anna.a' })).rejects.toBeInstanceOf(ForbiddenError);
 
+    // Anna reads hers and the one her manager took on in her talk; the manager reads only the one they own.
     const annasOwn = await talks.commitments(asAnna);
     expect(annasOwn.rows.map(r => [r.ref, r.mine])).toEqual([
       ['commitment:talks:' + annas, true],
+      ['commitment:talks:' + mine, false],
       ['commitment:talks:' + done, true],
     ]);
     expect((await talks.commitments(boss)).rows.map(r => r.ref)).toEqual(['commitment:talks:' + mine]);
@@ -451,6 +453,51 @@ describe('action points', () => {
       ['commitment:talks:' + fresh, false],
     ]);
     expect((await talks.round(boss)).rows.find(r => r.userName === 'anna.a')?.openCommitments).toBe(3);
+  });
+
+  test('without person the reader gets what they own and what is about them, each once: an employee sees their manager’s point in their talk', async () => {
+    await open();
+    const hers = await talks.addCommitment(boss, 'anna', {
+      owner: 'employee',
+      text: 'Läsa boken',
+      dueOn: '2026-12-15',
+    });
+    const bosses = await talks.addCommitment(boss, 'anna', {
+      owner: 'manager',
+      text: 'Ordna en mentor',
+      dueOn: '2026-12-01',
+    });
+    await talks.addCommitment(boss, 'dan', { owner: 'employee', text: 'Uppdatera rutinen', dueOn: '2026-12-01' });
+    const out = await talks.commitments(asAnna);
+    expect(checkContract(CommitmentsOutputSchema, out)).toBe(true);
+    // Her own first even though the manager's is due earlier; she both owns and is the subject of hers, listed once.
+    expect(out.rows.map(r => [r.ref, r.owner, r.mine, r.userName])).toEqual([
+      ['commitment:talks:' + hers, 'employee', true, 'anna.a'],
+      ['commitment:talks:' + bosses, 'manager', false, 'anna.a'],
+    ]);
+    expect(new Set(out.rows.map(r => r.ref)).size).toBe(out.rows.length);
+  });
+
+  test('a manager’s own list has the points they own about several employees and none that those employees own', async () => {
+    await open();
+    const aboutAnna = await talks.addCommitment(boss, 'anna', {
+      owner: 'manager',
+      text: 'Ordna en mentor',
+      dueOn: '2026-12-20',
+    });
+    const aboutDan = await talks.addCommitment(boss, 'dan', {
+      owner: 'manager',
+      text: 'Boka en genomgång',
+      dueOn: '2026-12-10',
+    });
+    await talks.addCommitment(boss, 'anna', { owner: 'employee', text: 'Läsa boken', dueOn: '2026-12-15' });
+    await talks.addCommitment(boss, 'dan', { owner: 'employee', text: 'Uppdatera rutinen', dueOn: '2026-12-01' });
+    const out = await talks.commitments(boss);
+    expect(checkContract(CommitmentsOutputSchema, out)).toBe(true);
+    expect(out.rows.map(r => [r.ref, r.mine, r.userName])).toEqual([
+      ['commitment:talks:' + aboutDan, true, 'dan.d'],
+      ['commitment:talks:' + aboutAnna, true, 'anna.a'],
+    ]);
   });
 
   test('the due timer brings an open card back once, and does nothing for a done one or a stale generation', async () => {
@@ -549,7 +596,13 @@ describe('domain', () => {
     expect(normaliseText('å'.repeat(280))).toHaveLength(280);
     expect(normaliseText('å'.repeat(281))).toBeUndefined();
     expect(swedishDayAndMonth('2026-11-28')).toBe('28 november');
-    const row = (ref: string, carried: boolean, done: boolean, dueOn: string) => ({ ref, carried, done, dueOn });
+    const row = (ref: string, carried: boolean, done: boolean, dueOn: string, mine = true) => ({
+      ref,
+      carried,
+      done,
+      dueOn,
+      mine,
+    });
     expect(
       orderCommitmentRows([
         row('d', false, true, '2026-01-01'),
@@ -558,6 +611,19 @@ describe('domain', () => {
         row('c', false, false, '2026-11-01'),
       ]).map(r => r.ref),
     ).toEqual(['a', 'c', 'b', 'd']);
+    // The reader's own list: their own first (carried, then open by date), then the others the same way, done last.
+    expect(
+      orderCommitmentRows(
+        [
+          row('done', false, true, '2026-01-01'),
+          row('other-open', false, false, '2026-10-01', false),
+          row('other-carried', true, false, '2026-09-01', false),
+          row('mine-open', false, false, '2026-12-01'),
+          row('mine-carried', true, false, '2027-01-01'),
+        ],
+        { mineFirst: true },
+      ).map(r => r.ref),
+    ).toEqual(['mine-carried', 'mine-open', 'other-carried', 'other-open', 'done']);
   });
 });
 
@@ -591,7 +657,10 @@ describe('the built-in connector', () => {
     for (const c of reads) {
       expect(viewProblem(c, reads)).toBeUndefined();
       expect(menuEligible(c)).toBe(true);
+      // No row can be added to a conversation as a chip: the text never reaches a model (D96 item 6).
+      expect(c.view && 'ref' in c.view).toBe(false);
     }
+    expect('ref' in talksView || 'ref' in commitmentsView).toBe(false);
   });
 
   test('the figure counts held out of everyone due and opens the round; nothing for an employee or without a round', async () => {

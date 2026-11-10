@@ -201,7 +201,8 @@ export function talkUsecases(deps: TalkDeps) {
 
     /**
      * `talks.commitments` (D96 items 4 and 8). With `person` (a user name, or the id of a person provisioned without
-     * one): that employee's action points, for the current manager of their unit. Without: the ones the reader owns.
+     * one): that employee's action points, for the current manager of their unit. Without: the reader's, since both
+     * see them: every one the reader owns and every one about the reader, each once, the reader's own listed first.
      * Either way every one added in the open round and every open one from earlier rounds.
      */
     async commitments(persona: AuthenticatedContext, input: CommitmentsInput = {}): Promise<CommitmentsOutput> {
@@ -217,7 +218,14 @@ export function talkUsecases(deps: TalkDeps) {
         const roundId = round?.id ?? null;
         const records = about
           ? await tx.commitmentsAbout([about], roundId)
-          : await tx.commitmentsOwnedBy(persona.id, roundId);
+          : [
+              ...new Map(
+                [
+                  ...(await tx.commitmentsOwnedBy(persona.id, roundId)),
+                  ...(await tx.commitmentsAbout([persona.id], roundId)),
+                ].map(c => [c.id, c] as const),
+              ).values(),
+            ];
         const persons = new Map(
           (await tx.persons([...new Set(records.map(c => c.employeeId))])).map(p => [p.id, p] as const),
         );
@@ -225,7 +233,7 @@ export function talkUsecases(deps: TalkDeps) {
           const employee = persons.get(c.employeeId);
           return employee ? [commitmentRow(c, employee, persona.id, roundId)] : [];
         });
-        return { rows: orderCommitmentRows(rows) };
+        return { rows: orderCommitmentRows(rows, { mineFirst: !about }) };
       });
     },
 

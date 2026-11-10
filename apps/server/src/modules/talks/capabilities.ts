@@ -16,15 +16,15 @@ import type { TalkUsecases } from './usecases';
 /**
  * The talks module as Clew's built-in connector (D96 items 7 to 9): it answers the talks profile, `talks.talks` and
  * `talks.commitments`, while an administrator keeps it enabled, and declares the area whose figure is the share of
- * talks held. No read is a model tool (item 6): the text of an action point is free text about a person. Writes are
- * use cases behind Clew's own routes, never capabilities. The use cases come built from composition (D25).
+ * talks held. No read is a model tool, and neither view declares a `ref`, so no row can be added to a conversation as
+ * a chip (item 6): the text of an action point is free text about a person. Writes are use cases behind Clew's own
+ * routes, never capabilities. The use cases come built from composition (D25).
  */
 export const TALKS_SOURCE = 'Utvecklingssamtal';
 /** The manager's round, one row per person: the figure opens it. */
 export const talksView: View = {
   kind: 'table',
   title: 'name',
-  ref: 'ref',
   noun: { one: 'person', other: 'personer' },
   empty: 'Det finns ingen öppen omgång, eller ingen att hålla samtal med.',
   fields: [
@@ -35,11 +35,10 @@ export const talksView: View = {
     { key: 'openCommitments', label: 'Öppna åtgärdspunkter', format: 'number' },
   ],
 };
-/** The reader's own action points: what the owner's card opens with no input. */
+/** The reader's action points, the ones they own and the ones about them: what the owner's card opens with no input. */
 export const commitmentsView: View = {
   kind: 'list',
   title: 'text',
-  ref: 'ref',
   noun: { one: 'åtgärdspunkt', other: 'åtgärdspunkter' },
   empty: 'Du har inga åtgärdspunkter.',
   fields: [

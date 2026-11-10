@@ -826,7 +826,7 @@ export const CommitmentRowSchema = object(
 export type CommitmentRow = Static<typeof CommitmentRowSchema>;
 /**
  * What `<id>.commitments` takes: `person`, a user name, asks for that employee's action points, for a manager of their
- * unit; without it, the reader's own, the ones they own.
+ * unit; without it, the reader's: the ones the reader owns and the ones about the reader (D96 item 4: both see them).
  */
 export const CommitmentsInputSchema = object({ person: Type.Optional(userName) });
 export type CommitmentsInput = Static<typeof CommitmentsInputSchema>;

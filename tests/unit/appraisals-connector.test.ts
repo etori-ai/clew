@@ -112,7 +112,7 @@ describe('the appraisals connector answers the talks profile (D96)', () => {
     expect((await commitments(registry, lone)).rows).toEqual([]);
   });
 
-  test('without person the caller gets their own action points; with person, that employee’s for their manager', async () => {
+  test('without person the caller gets the action points they own and those about them; with person, that employee’s for their manager', async () => {
     const { registry } = stack();
     const own = await commitments(registry, hillevi);
     expect(checkContract(CommitmentsOutputSchema, own)).toBe(true);
@@ -134,11 +134,14 @@ describe('the appraisals connector answers the talks profile (D96)', () => {
     ]);
     expect(annas.rows.find(r => r.done)?.doneAt).toBeString();
 
-    // The employee sees the ones they own; another manager sees nothing of hers.
+    // The employee sees the ones they own and the one their manager took on in her talk, her own first, each once;
+    // another manager sees nothing of hers.
     const hers = await commitments(registry, anna);
-    expect(hers.rows.map(r => [r.ref, r.mine, r.done])).toEqual([
-      ['commitment:appraisals:ap-201', true, false],
-      ['commitment:appraisals:ap-103', true, true],
+    expect(checkContract(CommitmentsOutputSchema, hers)).toBe(true);
+    expect(hers.rows.map(r => [r.ref, r.owner, r.mine, r.done])).toEqual([
+      ['commitment:appraisals:ap-201', 'employee', true, false],
+      ['commitment:appraisals:ap-202', 'manager', false, false],
+      ['commitment:appraisals:ap-103', 'employee', true, true],
     ]);
     expect((await commitments(registry, lone, { person: 'anna.lindqvist' })).rows).toEqual([]);
   });
