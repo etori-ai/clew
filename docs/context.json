@@ -159,7 +159,8 @@
     "D44",
     "D45",
     "D46",
-    "D85"
+    "D85",
+    "D96"
   ],
   "decisions": [
     {
@@ -1088,6 +1089,15 @@
       "status": "accepted, built 2026-11-10",
       "date": "2026-11-10",
       "area": "identity"
+    },
+    {
+      "key": "D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile",
+      "number": 96,
+      "path": "docs/decisions/D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md",
+      "title": "D96 · Talks is Clew's first owned domain: the round and action points, behind a profile a connector can answer",
+      "status": "accepted, nothing built; synthetic data only until questions 6 and 11 below are answered",
+      "date": "2026-11-10",
+      "area": "product, integrations"
     }
   ],
   "documents": [
@@ -2078,6 +2088,12 @@
     {
       "path": "docs/decisions/D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md",
       "title": "D96 · A key written wrong is refused at the SCIM boundary, not stored as a plain group",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md",
+      "title": "D96 · Talks is Clew's first owned domain: the round and action points, behind a profile a connector can answer",
       "category": "decision-history",
       "headings": []
     },

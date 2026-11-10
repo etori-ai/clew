@@ -4,7 +4,7 @@
 
 These records preserve why choices were made. The status below is copied from each original record, not inferred from code. An accepted decision may be partly implemented, and an older status may lag delivery. Use [implementation status](../reference/status.md) and the [current protocol](../reference/connector-protocol.md) when building a connector.
 
-Historical numbering collisions: **D37, D38, D39, D44, D45, D46, D85** each identify more than one file. The full filename is the unique key. Keep existing filenames and links; never interpret a bare collided number without its title. No decisions were renumbered or accepted by this index.
+Historical numbering collisions: **D37, D38, D39, D44, D45, D46, D85, D96** each identify more than one file. The full filename is the unique key. Keep existing filenames and links; never interpret a bare collided number without its title. No decisions were renumbered or accepted by this index.
 
 | Record | Area | Date | Recorded status |
 |---|---|---|---|
@@ -111,6 +111,7 @@ Historical numbering collisions: **D37, D38, D39, D44, D45, D46, D85** each iden
 | [D94 · A manager has a Personal section that lists the people on the units they manage](D94-a-manager-has-a-personal-section-listing-the-people-on-their-units.md) | product, identity | 2026-11-09 | accepted, built 2026-11-09 (the destination, the read, the page; notes and the utvecklingssamtal are not decided here) |
 | [D95 · Clew may own a domain by choice, decided per domain with the core-or-connector checklist](D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist.md) | product, integrations | 2026-11-10 | accepted, nothing built |
 | [D96 · A key written wrong is refused at the SCIM boundary, not stored as a plain group](D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md) | identity | 2026-11-10 | accepted, built 2026-11-10 |
+| [D96 · Talks is Clew's first owned domain: the round and action points, behind a profile a connector can answer](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) | product, integrations | 2026-11-10 | accepted, nothing built; synthetic data only until questions 6 and 11 below are answered |
 
 ## Add a decision
 
