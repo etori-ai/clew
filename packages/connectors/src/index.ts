@@ -9,6 +9,7 @@ import type {
   CapabilityOverride,
   ConnectorAudience,
   ConnectorState,
+  EntityKind,
   EntityPage,
   MenuEntry,
   MenuHint,
@@ -29,6 +30,7 @@ import { menuEligible, menuRowOf } from './views';
 import { viewOutputProblem } from './views';
 import {
   DocumentBundleSchema,
+  ENTITY_KEYS_MAX,
   MAX_DOCUMENT_BYTES,
   SiteHeaderOutputSchema,
   type DocumentRequest,
@@ -185,6 +187,39 @@ export interface TalkSource {
   /** The same connector's `<id>.commitments` read, when it declares one the person may call. */
   commitments?: string;
 }
+/**
+ * A read about an entity kind as `Registry.aboutReads` names it for one person (D97): what the entities module needs to
+ * offer it as a lens, a column or a section, and to call it.
+ */
+export interface AboutRead {
+  name: string;
+  connectorId: string;
+  /** The source as a person reads it: the connector's `source`. */
+  source: string;
+  title: string;
+  /** The declared table or list, with a row's `open` only when the person may call that read. */
+  view: View;
+  /** The page of Clew's own domain where the person writes about one entity (D95, D96), from a core connector. */
+  page?: EntityPage;
+  /** The most keys one call takes: the read's own `maxItems`, never more than `ENTITY_KEYS_MAX`. */
+  batch: number;
+  /** The administrator offers it under Visa on the entity's list (D97 item 3). */
+  lens: boolean;
+  /** The field of its view the administrator shows as a column on "Alla" (D97 item 4). */
+  column?: string;
+}
+/** A propose or execute about an entity kind as `Registry.aboutActions` names it for one person (D97). */
+export interface AboutAction {
+  name: string;
+  connectorId: string;
+  source: string;
+  title: string;
+  kind: 'propose' | 'execute';
+  /** The input property that takes the entity's key. */
+  param: string;
+}
+/** Plain ordering of ids and names, the same in every locale. */
+const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 /** What an execute capability returns: the source system's answer, row by row, read back. */
 export interface ExecuteResult {
   headline: string;
@@ -765,6 +800,69 @@ export class Registry {
         source: c.connector.source,
         ...(this.opens(actor, c.capability) ? { open: this.opens(actor, c.capability)! } : {}),
       }));
+  }
+  /**
+   * The reads about an entity kind a person may call (D97), connector by connector and by name within one, with what the
+   * entities module places them by: the view as the person gets it (a row's `open` only when they may call that read),
+   * how many keys one call takes, and the administrator's lens and column (a column only while its field is in the
+   * view). As in `errandSources`, `about` is tested before the scope and Clew's core connector is skipped: a core
+   * capability's scope may ask the registry, and must never be asked from here.
+   */
+  aboutReads(actor: Actor, entity: EntityKind): AboutRead[] {
+    return this.aboutCapabilities(actor, entity, true).flatMap(({ connector, capability }) => {
+      const view = capability.view;
+      if (view?.kind !== 'table' && view?.kind !== 'list') return [];
+      const { open: _open, ...rest } = view;
+      const open = this.opens(actor, capability);
+      const choice = this.governance(connector.id).capabilities[capability.name];
+      const column = choice?.column && view.fields.some(f => f.key === choice.column) ? choice.column : undefined;
+      const declared = (capability.input as { properties?: { keys?: { maxItems?: unknown } } }).properties?.keys
+        ?.maxItems;
+      return [
+        {
+          name: capability.name,
+          connectorId: connector.id,
+          source: connector.source,
+          title: capability.title,
+          view: { ...rest, ...(open ? { open } : {}) } as View,
+          ...(capability.about?.page ? { page: capability.about.page } : {}),
+          batch:
+            typeof declared === 'number' && declared >= 1
+              ? Math.min(ENTITY_KEYS_MAX, Math.floor(declared))
+              : ENTITY_KEYS_MAX,
+          lens: choice?.lens === true,
+          ...(column ? { column } : {}),
+        },
+      ];
+    });
+  }
+  /** The proposes and executes about an entity kind a person may call (D97), in the order of `aboutReads`, each with the input property that takes the key. */
+  aboutActions(actor: Actor, entity: EntityKind): AboutAction[] {
+    return this.aboutCapabilities(actor, entity, false).flatMap(({ connector, capability }) =>
+      capability.kind !== 'read' && capability.about?.param
+        ? [
+            {
+              name: capability.name,
+              connectorId: connector.id,
+              source: connector.source,
+              title: capability.title,
+              kind: capability.kind,
+              param: capability.about.param,
+            },
+          ]
+        : [],
+    );
+  }
+  private aboutCapabilities(actor: Actor, entity: EntityKind, reads: boolean) {
+    return [...this.capabilities.values()]
+      .filter(
+        c =>
+          c.capability.about?.entity === entity &&
+          (c.capability.kind === 'read') === reads &&
+          c.connector.id !== SEARCH_CONNECTOR &&
+          !!this.allowed(actor, c.capability.name),
+      )
+      .sort((a, b) => compare(a.connector.id, b.connector.id) || compare(a.capability.name, b.capability.name));
   }
   /**
    * The one system that answers the talks profile for this person (D96 item 9). A connector is a candidate when the

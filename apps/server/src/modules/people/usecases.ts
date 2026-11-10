@@ -6,6 +6,7 @@ import {
   type Capability,
   type GroupCapabilityInputType,
   type GroupCapability,
+  type Role,
   type StaffOverview,
   type StaffUnit,
   type UserAdminRow,
@@ -621,21 +622,66 @@ export type UsersAdminUsecases = ReturnType<typeof usersAdminUsecases>;
  */
 export function staffUsecases(deps: { store: ProvisionStore }) {
   const sv = (a: string, b: string) => a.localeCompare(b, 'sv');
+  /** The people on each of these units except the reader, by name; the units by label. */
+  async function peopleOn(
+    tx: ProvisionTx,
+    persona: AuthenticatedContext,
+    managed: Array<{ unitId: string; unitLabel: string }>,
+  ): Promise<StaffUnit[]> {
+    const units: StaffUnit[] = [];
+    for (const unit of managed)
+      units.push({
+        unitId: unit.unitId,
+        unitLabel: unit.unitLabel,
+        people: (await tx.unitPeople(unit.unitId))
+          .filter(p => p.id !== persona.id)
+          .sort((a, b) => sv(a.name, b.name) || a.id.localeCompare(b.id)),
+      });
+    return units.sort((a, b) => sv(a.unitLabel, b.unitLabel) || a.unitId.localeCompare(b.unitId));
+  }
   return {
     overview: (persona: AuthenticatedContext): Promise<StaffOverview> =>
       deps.store.transaction(async tx => {
         const managed = (await tx.assignmentsOf(persona.id)).filter(a => a.role === 'manager');
         if (!managed.length) throw new ForbiddenError('Sidan Personal är för den som är chef för en enhet.');
-        const units: StaffUnit[] = [];
-        for (const unit of managed)
-          units.push({
-            unitId: unit.unitId,
-            unitLabel: unit.unitLabel,
-            people: (await tx.unitPeople(unit.unitId))
-              .filter(p => p.id !== persona.id)
-              .sort((a, b) => sv(a.name, b.name) || a.id.localeCompare(b.id)),
-          });
-        return { units: units.sort((a, b) => sv(a.unitLabel, b.unitLabel) || a.unitId.localeCompare(b.unitId)) };
+        return { units: await peopleOn(tx, persona, managed) };
+      }),
+    /**
+     * Where the reader stands (D97, who may be asked about): every unit they are assigned to with their role there, and
+     * the units they manage with the people on them as `overview` lists them. It refuses nobody: someone who manages no
+     * unit has nothing under `managed`.
+     */
+    reach: (
+      persona: AuthenticatedContext,
+    ): Promise<{ units: Array<{ unitId: string; unitLabel: string; role: Role }>; managed: StaffUnit[] }> =>
+      deps.store.transaction(async tx => {
+        const units = await tx.assignmentsOf(persona.id);
+        return {
+          units,
+          managed: await peopleOn(
+            tx,
+            persona,
+            units.filter(a => a.role === 'manager'),
+          ),
+        };
+      }),
+    /**
+     * Another person in the reader's organisation, found by user name without regard to case (D97: a colleague is
+     * anyone active in the directory), with the unit they act in; undefined for nobody, someone in another organisation
+     * or a deactivated person. Read on every call, never cached.
+     */
+    colleague: (persona: AuthenticatedContext, userName: string) =>
+      deps.store.transaction(async tx => {
+        const found = await tx.findUser('userName', userName);
+        if (!found || found.organisationId !== persona.organisationId || !found.enabled) return undefined;
+        const grant = await tx.grant(found.id);
+        return {
+          id: found.id,
+          name: found.name,
+          userName: found.userName,
+          enabled: true as const,
+          unit: grant ? { unitId: grant.unitId, unitLabel: grant.unitLabel } : null,
+        };
       }),
   };
 }

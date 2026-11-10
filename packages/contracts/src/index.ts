@@ -1732,6 +1732,16 @@ export interface ConnectorCapabilityView {
   tool: boolean;
   /** The row this capability's view would be in the menu (D40) and whether it is there; null when it cannot be a tool (not a read with a view that opens without input). */
   menu: { label: string; icon: MenuIcon; on: boolean } | null;
+  /** The entity kind its rows concern (D97); absent when it declares no `about`. */
+  about?: EntityKind;
+  /** A read about an entity offered under Visa on the entity's list (D97 item 3) and whether it is; absent when it cannot be a lens. */
+  lens?: { on: boolean };
+  /**
+   * A read about an entity as a column on "Alla" (D97 item 4): the fields of its view it may give and the one shown, null
+   * for none; absent when it cannot give a column. At most `ENTITY_COLUMNS_MAX` are shown for one entity kind across the
+   * installation, which the server enforces.
+   */
+  column?: { fields: Array<{ key: string; label: string }>; on: string | null };
 }
 export interface ConnectorAreaView {
   id: string;
