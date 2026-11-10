@@ -1140,6 +1140,17 @@
       ]
     },
     {
+      "path": "connectors/appraisals/README.md",
+      "title": "Appraisals connector (fixture)",
+      "category": "integrator-guide",
+      "headings": [
+        "What it answers",
+        "The records",
+        "Environment",
+        "Run and register"
+      ]
+    },
+    {
       "path": "connectors/communication/README.md",
       "title": "communication: a generic internal communication system, as a fixture connector",
       "category": "integrator-guide",
