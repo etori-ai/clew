@@ -40,6 +40,15 @@ export async function signOut() {
   window.location.replace(url);
 }
 
+/** How often an open page asks whether its session still stands. */
+const POLL = 15_000;
+/**
+ * How old the last confirmation may be when the window gets the focus back without the page being hidden for the
+ * check: the poll's interval and some slack for its round trip. A page that has kept the focus shows content confirmed
+ * that long ago too, so a return within it shows nothing the poll would not.
+ */
+const FRESH = POLL + 5_000;
+
 /** Memory only: no session/user content in browser storage. Children unmount on invalidation; `onEnded` is told afterwards. */
 export function SessionBoundary({
   session,
@@ -64,7 +73,8 @@ export function SessionBoundary({
     const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('clew-session');
     let ended = false,
       checking = false,
-      lastActivity = 0;
+      lastActivity = 0,
+      confirmed = 0;
     // Opacity, never visibility: a hidden document drops keyboard focus, so every return to the window would lose the person's place (2.4.3).
     const conceal = () => {
       document.documentElement.style.opacity = '0';
@@ -90,6 +100,7 @@ export function SessionBoundary({
         if (ended) return;
         if (current.sessionKey !== session.sessionKey) return end();
         deadline.current = Date.parse(current.expiresAt);
+        confirmed = Date.now();
         setState('active');
         reveal();
       } catch {
@@ -115,7 +126,16 @@ export function SessionBoundary({
       }
     };
     const invalidate = () => end();
+    // The window got the focus back: the session is asked about at once, and the page is hidden meanwhile only when
+    // its last confirmation is older than the poll keeps it (a tab whose timers were held back while it was away).
+    // Hiding it on every return made the whole page blink each time the person came back from another window.
     const focus = () => {
+      if (ended) return;
+      if (Date.now() - confirmed > FRESH) conceal();
+      void check();
+    };
+    // A page shown again from the browser's back/forward cache may be one a sign-out left behind: always hidden first.
+    const pageshow = () => {
       if (!ended) {
         conceal();
         void check();
@@ -127,7 +147,7 @@ export function SessionBoundary({
     const timer = setInterval(() => {
       if (Date.now() >= deadline.current) end();
       else void check();
-    }, 15_000);
+    }, POLL);
     const expiry = setInterval(() => {
       if (Date.now() >= deadline.current) end();
     }, 1000);
@@ -140,7 +160,7 @@ export function SessionBoundary({
       window.addEventListener(name, activity, { passive: true });
     window.addEventListener('clew-session-ended', invalidate);
     window.addEventListener('focus', focus);
-    window.addEventListener('pageshow', focus);
+    window.addEventListener('pageshow', pageshow);
     window.addEventListener('pagehide', pagehide);
     void check();
     return () => {
@@ -154,7 +174,7 @@ export function SessionBoundary({
       for (const name of ['pointerdown', 'keydown', 'wheel', 'touchmove']) window.removeEventListener(name, activity);
       window.removeEventListener('clew-session-ended', invalidate);
       window.removeEventListener('focus', focus);
-      window.removeEventListener('pageshow', focus);
+      window.removeEventListener('pageshow', pageshow);
       window.removeEventListener('pagehide', pagehide);
       reveal();
       if (transport?.controller === controller) transport = undefined;

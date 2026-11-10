@@ -81,6 +81,26 @@ test('session verification has a named loading state without protected content',
   await expect(page.getByText('Hämtar sidan …', { exact: true })).toHaveCount(0);
 });
 
+test('coming back to the window asks about the session without hiding a page confirmed moments ago', async ({
+  page,
+  api: _,
+}) => {
+  await open(page, '/');
+  const opacity = () => page.evaluate(() => document.documentElement.style.opacity);
+  // The answer is held, so a page hidden for the check would stay hidden until it is released.
+  const release = await hold(page, '**/api/auth/session');
+  const asked = page.waitForRequest('**/api/auth/session');
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await asked;
+  expect(await opacity()).toBe('');
+  await expect(composer(page)).toBeVisible();
+  // A page the browser brings back from its back/forward cache is hidden until the session has answered.
+  await page.evaluate(() => window.dispatchEvent(new Event('pageshow')));
+  expect(await opacity()).toBe('0');
+  release();
+  await expect.poll(opacity).toBe('');
+});
+
 for (const tab of ['waiting', 'snoozed', 'done']) {
   test(`the ${tab} tab does not claim to be empty before its first response`, async ({ page, api: _ }) => {
     const release = await hold(page, '**/api/threads');
