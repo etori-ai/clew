@@ -244,7 +244,7 @@
       "number": 8,
       "path": "docs/decisions/D08-every-action-works-without-the-model.md",
       "title": "D8 · Every action works without the model",
-      "status": "accepted",
+      "status": "accepted, refined by D104 (2026-11-10, provisional: the model is the main way work gets done, a floor of core features holds without it, and the assistant may act alone within governed limits; nothing is built, so the rules below still bind what is built)",
       "date": "2026-11-03",
       "area": "product"
     },
@@ -301,6 +301,15 @@
       "status": "provisional (2026-11-10; built and tested on the memory and Postgres adapters; accepted when the Approval loop of D101 has run signed in on the development stack with real exchanged tokens)",
       "date": "2026-11-10",
       "area": "identity, integrations"
+    },
+    {
+      "key": "D104-the-model-does-the-work-a-floor-holds-without-it-and-the-assistant-may-act-alone-within-limits",
+      "number": 104,
+      "path": "docs/decisions/D104-the-model-does-the-work-a-floor-holds-without-it-and-the-assistant-may-act-alone-within-limits.md",
+      "title": "D104 · The model does the work: a floor holds without it, and the assistant may act alone within governed limits",
+      "status": "provisional (product owner, 2026-11-10; the direction is chosen, the governance is not designed and nothing is built; accepted when one action has been carried out by the assistant alone, under a level an administrator set, against a source that was not written for Clew)",
+      "date": "2026-11-10",
+      "area": "product, platform"
     },
     {
       "key": "D11-one-calendar-contract-two-adapters",
@@ -1681,6 +1690,12 @@
     {
       "path": "docs/decisions/D103-the-session-that-asked-stands-behind-delegated-work.md",
       "title": "D103 · The session that asked stands behind delegated work: an approved write, and a scan while the person is present",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D104-the-model-does-the-work-a-floor-holds-without-it-and-the-assistant-may-act-alone-within-limits.md",
+      "title": "D104 · The model does the work: a floor holds without it, and the assistant may act alone within governed limits",
       "category": "decision-history",
       "headings": []
     },

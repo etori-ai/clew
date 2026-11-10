@@ -1,6 +1,6 @@
 # D8 · Every action works without the model
 
-**Status:** accepted · **Date:** 2026-11-03 · **Area:** product
+**Status:** accepted, refined by D104 (2026-11-10, provisional: the model is the main way work gets done, a floor of core features holds without it, and the assistant may act alone within governed limits; nothing is built, so the rules below still bind what is built) · **Date:** 2026-11-03 · **Area:** product
 
 **Decision.** The model is an accelerator, never a dependency. Every capability in the registry (D1) is
 reachable through a deterministic path: a REST route the UI calls directly, a button in a thread, or a
