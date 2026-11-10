@@ -1366,6 +1366,16 @@
                                     "type": "string"
                                   }
                                 }
+                              },
+                              "beside": {
+                                "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                                "const": true,
+                                "type": "boolean"
+                              },
+                              "compact": {
+                                "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                                "const": true,
+                                "type": "boolean"
                               }
                             }
                           }
@@ -1532,6 +1542,16 @@
                                         "type": "string"
                                       }
                                     }
+                                  },
+                                  "beside": {
+                                    "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                                    "const": true,
+                                    "type": "boolean"
+                                  },
+                                  "compact": {
+                                    "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                                    "const": true,
+                                    "type": "boolean"
                                   }
                                 }
                               }
@@ -1689,6 +1709,16 @@
                                     "type": "string"
                                   }
                                 }
+                              },
+                              "beside": {
+                                "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                                "const": true,
+                                "type": "boolean"
+                              },
+                              "compact": {
+                                "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                                "const": true,
+                                "type": "boolean"
                               }
                             }
                           }
@@ -2031,6 +2061,16 @@
                                     "type": "string"
                                   }
                                 }
+                              },
+                              "beside": {
+                                "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                                "const": true,
+                                "type": "boolean"
+                              },
+                              "compact": {
+                                "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                                "const": true,
+                                "type": "boolean"
                               }
                             }
                           }
@@ -2367,6 +2407,16 @@
                                     "type": "string"
                                   }
                                 }
+                              },
+                              "beside": {
+                                "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                                "const": true,
+                                "type": "boolean"
+                              },
+                              "compact": {
+                                "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                                "const": true,
+                                "type": "boolean"
                               }
                             }
                           }
@@ -5443,6 +5493,16 @@
                           "type": "string"
                         }
                       }
+                    },
+                    "beside": {
+                      "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "compact": {
+                      "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                      "const": true,
+                      "type": "boolean"
                     }
                   }
                 }
@@ -5609,6 +5669,16 @@
                               "type": "string"
                             }
                           }
+                        },
+                        "beside": {
+                          "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "compact": {
+                          "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                          "const": true,
+                          "type": "boolean"
                         }
                       }
                     }
@@ -5766,6 +5836,16 @@
                           "type": "string"
                         }
                       }
+                    },
+                    "beside": {
+                      "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "compact": {
+                      "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                      "const": true,
+                      "type": "boolean"
                     }
                   }
                 }
@@ -6108,6 +6188,16 @@
                           "type": "string"
                         }
                       }
+                    },
+                    "beside": {
+                      "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "compact": {
+                      "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                      "const": true,
+                      "type": "boolean"
                     }
                   }
                 }
@@ -6444,6 +6534,16 @@
                           "type": "string"
                         }
                       }
+                    },
+                    "beside": {
+                      "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "compact": {
+                      "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                      "const": true,
+                      "type": "boolean"
                     }
                   }
                 }
@@ -6880,7 +6980,8 @@
         "required": [
           "ok",
           "protocol",
-          "problems"
+          "problems",
+          "issues"
         ],
         "properties": {
           "ok": {
@@ -6912,6 +7013,56 @@
             "type": "array",
             "items": {
               "type": "string"
+            }
+          },
+          "issues": {
+            "description": "The same problems in the same order, each placed: its path in the document, its manifest reference entry and the rule it breaks. Empty when ok.",
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "description": "One problem, placed.",
+              "type": "object",
+              "required": [
+                "problem",
+                "path",
+                "field",
+                "anchor"
+              ],
+              "properties": {
+                "problem": {
+                  "description": "The problem as `problems` lists it.",
+                  "type": "string"
+                },
+                "path": {
+                  "description": "Where in the document, with indices: `capabilities[0].output.properties.rows.items`. Empty for the document as a whole.",
+                  "type": "string"
+                },
+                "field": {
+                  "description": "The manifest reference entry the path falls under, without indices: `capabilities[].output`. Empty when none does.",
+                  "type": "string"
+                },
+                "anchor": {
+                  "description": "The element id on the manifest reference page (`/protocol/manifest#<anchor>`): the rule when there is one, else the field.",
+                  "type": "string"
+                },
+                "rule": {
+                  "additionalProperties": false,
+                  "description": "The rule between fields it breaks, as the manifest reference names it; absent for a problem of the schema's own.",
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "title"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
             }
           },
           "manifest": {
@@ -6993,7 +7144,9 @@
                     "view",
                     "menu",
                     "check",
-                    "places"
+                    "places",
+                    "openedFrom",
+                    "audience"
                   ],
                   "properties": {
                     "name": {
@@ -7226,6 +7379,69 @@
                             "type": "string"
                           }
                         ]
+                      }
+                    },
+                    "openedFrom": {
+                      "description": "The reads of this manifest whose rows open it (their view's `open`). Opened from a read about an entity, it is drawn under that read's section and in full on the entity's page; from any other read, a row opens it beside the list. Empty when nothing opens it.",
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "audience": {
+                      "description": "Who would see a capability about an entity, place by place (D97), from its scope and the declaration alone: the lens and the mark reach a person who has a list of that kind once an administrator chooses the source, the section anyone who opens an entity the connector answers a row for, the menu anyone who opens one and may call the action; `tool` says whether the model is offered it. Empty when it is about nothing.",
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "places",
+                          "who"
+                        ],
+                        "properties": {
+                          "places": {
+                            "minItems": 1,
+                            "type": "array",
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "const": "lens",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "mark",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "section",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "menu",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "tool",
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          "who": {
+                            "description": "Who would see it there, in a sentence.",
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "samples": {
+                      "description": "For a read about an entity: rows made from the declaration alone, to draw its places with before any service runs. Each carries a synthetic `key`; a status field takes in turn each value its view gives a tone, an instant a fixed time, any other field a value its output schema allows or a placeholder. Samples, never data: no connector is called.",
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "patternProperties": {
+                          "^(.*)$": {}
+                        }
                       }
                     }
                   }

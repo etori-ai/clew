@@ -13,12 +13,14 @@ import { CalendarPage } from './pages/calendar';
 import { ToolPage } from './pages/tool';
 import { LoginPage } from './pages/login';
 import { ManifestReferencePage } from './pages/protocol';
+import { ManifestPreviewPage } from './pages/protocol-preview';
 import { AdminConnectorsPage } from './pages/admin/connectors';
 import { AdminConnectorPage } from './pages/admin/connector';
 import { AdminModelsPage } from './pages/admin/models';
 import { AdminUsersPage } from './pages/admin/users';
 import { StaffPage } from './pages/staff';
 import { PersonPage } from './pages/person';
+import { UnitPage } from './pages/unit';
 import { AdminModelPage } from './pages/admin/model';
 import { AdminProviderPage } from './pages/admin/provider';
 import { NotAdmin } from './pages/admin/shell';
@@ -210,6 +212,8 @@ function App() {
       <Route path="/login" element={<LoginPage returnTo="/" />} />
       {/* Integrator documentation, public like the login (D60): the manifest field by field, drawn from the instance's own schema. */}
       <Route path="/protocol/manifest" element={<ManifestReferencePage />} />
+      {/* What Clew would do with a manifest, before anything is registered (D60, D97): public, the document posted to the dry run. */}
+      <Route path="/protocol/preview" element={<ManifestPreviewPage />} />
       <Route
         path="/calendar"
         element={<Protected>{shell => <CalendarPage user={shell.user} admin={shell.admin} />}</Protected>}
@@ -227,6 +231,11 @@ function App() {
       <Route
         path="/people/:key"
         element={<Protected>{shell => <PersonPage user={shell.user} admin={shell.admin} />}</Protected>}
+      />
+      {/* A unit as a page (D97 items 5 and 6): reached from Läget on Hem and any row that names the unit; no rail entry. */}
+      <Route
+        path="/units/:id"
+        element={<Protected>{shell => <UnitPage user={shell.user} admin={shell.admin} />}</Protected>}
       />
       <Route
         path="/admin"

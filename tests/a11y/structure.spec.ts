@@ -135,7 +135,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(first).toBeVisible();
     expect((await first.boundingBox())!.y).toBeGreaterThan(box.y + box.height);
     // Läget follows the groups (D53, D54).
-    const lage = heading(page, 2, 'Läget · Skönsmons skola');
+    const lage = heading(page, 2, 'Läget på Skönsmons skola');
     await expect(lage).toBeVisible();
     expect((await lage.boundingBox())!.y).toBeGreaterThan((await first.boundingBox())!.y);
     await expect(page.getByRole('list', { name: 'Det som behöver dig' })).toHaveCount(0);
@@ -367,6 +367,8 @@ test.describe('D30 the obligation', () => {
 
 test.describe('D54 Läget: the areas’ figures from their connectors', () => {
   const lage = (page: Page) => page.getByRole('region', { name: 'Läget' });
+  /** The tiles: a link or a group each, not the unit's name in the heading, which links to the unit's page (D97). */
+  const TILES = 'a:not([href^="/units/"]), [role="group"]';
   test('one tile per area with a figure, in the areas’ order, none for an area without; the name carries the value and the tone’s word', async ({
     page,
     api,
@@ -375,7 +377,7 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
     await open(page, '/');
     const region = lage(page);
     // A tile with `opens` is a link to the view in the panel (D50); the others are groups, the sentence among them.
-    const tiles = region.locator('a, [role="group"]');
+    const tiles = region.locator(TILES);
     expect(await tiles.evaluateAll(list => list.map(el => el.getAttribute('aria-label')))).toEqual([
       'Viktigt nu: Inget nytt sedan i går.',
       'Utvecklingssamtal: Utvecklingssamtal hållna 1 av 4. Öppnar Utvecklingssamtal',
@@ -470,7 +472,7 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
     await expect(since.getByText('Prognosen ligger under budget.')).toHaveCount(1);
     await expect(since.getByText('Sjukfrånvaro', { exact: true })).toHaveCount(1);
     await expect(since.getByText('Öppna tillbud', { exact: true })).toHaveCount(1);
-    await expect(lage(page).locator('a, [role="group"]')).toHaveCount(5);
+    await expect(lage(page).locator(TILES)).toHaveCount(5);
   });
   test('while the areas are read the tiles keep their shape', async ({ page, api }) => {
     api.areasDelay = 1500;
@@ -485,7 +487,7 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
     await page.setViewportSize(phone);
     await open(page, '/');
     const tops = await lage(page)
-      .locator('a, [role="group"]')
+      .locator(TILES)
       .evaluateAll(list => list.map(el => Math.round(el.getBoundingClientRect().top)));
     // Five tiles: two rows of two and one below. The first row is a sentence (a group) beside a link, whose box may sit a
     // pixel lower inside its card.
@@ -498,7 +500,7 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
     // At 320 px two tiles would break the area's word inside its letters: one under the other there (1.4.10).
     await page.setViewportSize(narrow);
     const column = await lage(page)
-      .locator('a, [role="group"]')
+      .locator(TILES)
       .evaluateAll(list => list.map(el => Math.round(el.getBoundingClientRect().top)));
     expect(column).toHaveLength(5);
     for (let i = 1; i < column.length; i++) expect(column[i]).toBeGreaterThan(column[i - 1]! + 50);

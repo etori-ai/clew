@@ -322,10 +322,10 @@ describe('the list of people or units', () => {
         field: { key: 'state', label: 'Status', format: 'status', tones: { Försenat: 'warn' } },
       },
     ]);
-    // Connector by connector, then by name: the appraisals before the HR system, whatever was registered first.
+    // By the source's name in Swedish order (no source here is Clew's own), whatever was registered first.
     expect(list.lenses.map(l => [l.connector, l.capability, l.source])).toEqual([
-      ['appraisals', 'appraisals.round', 'Utvecklingssamtal'],
       ['hr', 'hr.absence', 'Personalsystemet'],
+      ['appraisals', 'appraisals.round', 'Utvecklingssamtal'],
     ]);
     expect(list.actions).toEqual([
       {
@@ -342,7 +342,7 @@ describe('the list of people or units', () => {
     const { entities, people } = standard();
     const list = await entities.list(people.persona('hassan'), 'person');
     expect(list.groups).toEqual([]);
-    expect(list.lenses.map(l => l.capability)).toEqual(['appraisals.round', 'hr.absence']);
+    expect(list.lenses.map(l => l.capability)).toEqual(['hr.absence', 'appraisals.round']);
     expect(list.actions).toEqual([]);
   });
   test("another unit's manager sees their own people and none of the colleague's", async () => {
@@ -559,9 +559,9 @@ describe('the opened person or unit', () => {
       relation: 'managed',
       actions: [expect.objectContaining({ capability: 'hr.book', param: 'person' })],
       sections: [
-        expect.objectContaining({ capability: 'appraisals.round', source: 'Utvecklingssamtal' }),
         expect.objectContaining({ capability: 'hr.absence', source: 'Personalsystemet' }),
         expect.objectContaining({ capability: 'hr.skills', source: 'Personalsystemet', title: 'Kompetenser' }),
+        expect.objectContaining({ capability: 'appraisals.round', source: 'Utvecklingssamtal' }),
       ],
       cards: [{ threadId: 'thread-1', title: 'Sjukanmälan', source: 'Personalsystemet', kind: 'act' }],
     });
@@ -580,7 +580,7 @@ describe('the opened person or unit', () => {
       relation: 'colleague',
       entity: { key: 'Erik.S', name: 'Erik Sund', detail: 'Bergsåkers skola', unit: { id: 'unit-skola' } },
     });
-    expect(colleague?.sections.map(s => s.capability)).toEqual(['appraisals.round', 'hr.absence', 'hr.skills']);
+    expect(colleague?.sections.map(s => s.capability)).toEqual(['hr.absence', 'hr.skills', 'appraisals.round']);
   });
   test('an unknown key, a deactivated person, someone without a user name and another organisation are all not there', async () => {
     const { entities, people } = standard();
@@ -724,5 +724,54 @@ describe('the registry names the sources about an entity', () => {
     const actor: Actor = { id: 'm', name: 'M', unitId: 'u', unitLabel: 'U', role: 'manager' };
     expect(registry.aboutReads(actor, 'person')).toEqual([]);
     expect(asked).toBe(0);
+  });
+});
+
+describe("Clew's own domain among the sources", () => {
+  /** The standard sources and a core connector of Clew's (as the talks module is), with a read and an action about a person. */
+  function withOwn() {
+    const w = world([
+      connector('hr', 'Personalsystemet', [aboutRead('hr.absence', 'Frånvaro'), bookTalk]),
+      connector('appraisals', 'Utvecklingssamtal', [aboutRead('appraisals.round', 'Samtal')]),
+      {
+        id: 'talks',
+        kind: 'core',
+        source: 'Utvecklingssamtal',
+        areas: [],
+        capabilities: [aboutRead('talks.person', 'Utvecklingssamtal'), { ...bookTalk, name: 'talks.book' }],
+      },
+    ]);
+    w.choose('hr', { 'hr.absence': { lens: true, column: 'state' } });
+    w.choose('appraisals', { 'appraisals.round': { lens: true } });
+    w.choose('talks', { 'talks.person': { lens: true, column: 'state' } });
+    return w;
+  }
+  test('a source of a core connector is marked own, as its column and its action are, and comes first', async () => {
+    const { entities, people } = withOwn();
+    const hillevi = people.persona('hillevi');
+    const list = await entities.list(hillevi, 'person');
+    expect(list.lenses.map(l => [l.capability, l.own ?? false])).toEqual([
+      ['talks.person', true],
+      ['hr.absence', false],
+      ['appraisals.round', false],
+    ]);
+    // The columns keep the connectors' order: an administrator's columns read left to right as chosen.
+    expect(list.columns.map(c => [c.capability, c.source, c.own ?? false])).toEqual([
+      ['hr.absence', 'Personalsystemet', false],
+      ['talks.person', 'Utvecklingssamtal', true],
+    ]);
+    expect(list.actions.map(a => [a.capability, a.own ?? false])).toEqual([
+      ['hr.book', false],
+      ['talks.book', true],
+    ]);
+    // The source keeps its own name: the web captions an own section "Clew" and keeps the name for the column and menu.
+    expect(list.lenses[0]).toMatchObject({ source: 'Utvecklingssamtal', connector: 'talks', own: true });
+    const detail = await entities.detail(hillevi, 'person', 'anna');
+    expect(detail?.sections.map(s => [s.capability, s.own ?? false])).toEqual([
+      ['talks.person', true],
+      ['hr.absence', false],
+      ['appraisals.round', false],
+    ]);
+    expect(detail?.sections[1]).not.toHaveProperty('own');
   });
 });

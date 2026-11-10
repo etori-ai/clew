@@ -639,6 +639,16 @@
                                   "type": "string"
                                 }
                               }
+                            },
+                            "beside": {
+                              "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                              "const": true,
+                              "type": "boolean"
+                            },
+                            "compact": {
+                              "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                              "const": true,
+                              "type": "boolean"
                             }
                           }
                         }
@@ -805,6 +815,16 @@
                                       "type": "string"
                                     }
                                   }
+                                },
+                                "beside": {
+                                  "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                                  "const": true,
+                                  "type": "boolean"
+                                },
+                                "compact": {
+                                  "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                                  "const": true,
+                                  "type": "boolean"
                                 }
                               }
                             }
@@ -962,6 +982,16 @@
                                   "type": "string"
                                 }
                               }
+                            },
+                            "beside": {
+                              "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                              "const": true,
+                              "type": "boolean"
+                            },
+                            "compact": {
+                              "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                              "const": true,
+                              "type": "boolean"
                             }
                           }
                         }
@@ -1304,6 +1334,16 @@
                                   "type": "string"
                                 }
                               }
+                            },
+                            "beside": {
+                              "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                              "const": true,
+                              "type": "boolean"
+                            },
+                            "compact": {
+                              "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                              "const": true,
+                              "type": "boolean"
                             }
                           }
                         }
@@ -1640,6 +1680,16 @@
                                   "type": "string"
                                 }
                               }
+                            },
+                            "beside": {
+                              "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                              "const": true,
+                              "type": "boolean"
+                            },
+                            "compact": {
+                              "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                              "const": true,
+                              "type": "boolean"
                             }
                           }
                         }
@@ -4716,6 +4766,16 @@
                         "type": "string"
                       }
                     }
+                  },
+                  "beside": {
+                    "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                    "const": true,
+                    "type": "boolean"
+                  },
+                  "compact": {
+                    "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                    "const": true,
+                    "type": "boolean"
                   }
                 }
               }
@@ -4882,6 +4942,16 @@
                             "type": "string"
                           }
                         }
+                      },
+                      "beside": {
+                        "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "compact": {
+                        "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                        "const": true,
+                        "type": "boolean"
                       }
                     }
                   }
@@ -5039,6 +5109,16 @@
                         "type": "string"
                       }
                     }
+                  },
+                  "beside": {
+                    "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                    "const": true,
+                    "type": "boolean"
+                  },
+                  "compact": {
+                    "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                    "const": true,
+                    "type": "boolean"
                   }
                 }
               }
@@ -5381,6 +5461,16 @@
                         "type": "string"
                       }
                     }
+                  },
+                  "beside": {
+                    "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                    "const": true,
+                    "type": "boolean"
+                  },
+                  "compact": {
+                    "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                    "const": true,
+                    "type": "boolean"
                   }
                 }
               }
@@ -5717,6 +5807,16 @@
                         "type": "string"
                       }
                     }
+                  },
+                  "beside": {
+                    "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                    "const": true,
+                    "type": "boolean"
+                  },
+                  "compact": {
+                    "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                    "const": true,
+                    "type": "boolean"
                   }
                 }
               }

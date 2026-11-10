@@ -3,7 +3,10 @@ import { useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query
 import {
   fieldTone,
   openRef,
+  viewRows,
   type EntityCard,
+  type EntityDetail,
+  type EntityKind,
   type EntitySection,
   type EntitySource,
   type View,
@@ -28,7 +31,9 @@ import {
 } from '@clew/ui';
 import { entitySectionQuery, viewQuery } from '../queries';
 import { withCard } from '../panel-address';
-import { DeclaredView, FieldValue } from './view';
+import { unitPageHref } from '../person-address';
+import { compactField, groupFields, present, rowGroups, wholeRow, type FieldGroup } from '../view-fields';
+import { DeclaredView, FieldCell, FieldValue, fieldText, isBadged } from './view';
 
 /**
  * The opened person's content (D97 item 5, artboards C, C2, D and G): "Behöver dig" with the reader's cards about them,
@@ -47,7 +52,6 @@ export interface SectionAnswer {
 /** The value Behöver dig takes in the address (`?section=`): never a capability's name, which always has a dot. */
 export const NEEDS_YOU = 'needs-you';
 const rowsView = (view: View): RowsView | null => (view.kind === 'table' || view.kind === 'list' ? view : null);
-const empty = (value: unknown) => value === undefined || value === null || value === '';
 /** The source answered, and had no row for this person: the section is left out. */
 export const rowless = (a: SectionAnswer) => a.query.data?.status === 'ok' && !a.query.data.row;
 /** The source did not answer (or not in time), or the request failed. */
@@ -57,14 +61,56 @@ export const rowOf = (a: SectionAnswer): Row | undefined =>
   a.query.data?.status === 'ok' ? a.query.data.row : undefined;
 /** The sections that are drawn: every one but those that answered without a row. */
 export const drawnSections = (answers: SectionAnswer[]) => answers.filter(a => !rowless(a));
+/** Whose a source is, as a section names it (D97, artboards B and C): Clew's own domain as Clew, any other by its name. */
+export const sourceCaption = (source: Pick<EntitySource, 'source' | 'own'>) => (source.own ? 'Clew' : source.source);
+
+/**
+ * The line under a person's name (artboards C, C2 and D): their role and unit as the directory says it, the unit a link
+ * to the unit's page (D97) with the page they were opened from as its way back, but only for a unit the reader may open:
+ * one they manage (`managed`) or their own (`self`). A colleague's unit is plain text.
+ */
+export function PersonLine({
+  entity,
+  relation,
+  from,
+}: {
+  entity: EntityDetail['entity'];
+  relation: EntityDetail['relation'];
+  from?: string | null;
+}) {
+  const { detail, unit } = entity;
+  if (!unit || (relation !== 'managed' && relation !== 'self'))
+    return detail || unit ? <>{detail ?? unit?.label}</> : null;
+  const link = (
+    <Link href={unitPageHref(unit.id, { from: from ?? null })} hasUnderline>
+      {unit.label}
+    </Link>
+  );
+  const suffix = ` · ${unit.label}`;
+  const before =
+    !detail || detail === unit.label ? '' : detail.endsWith(suffix) ? detail.slice(0, -suffix.length) : detail;
+  return before ? (
+    <>
+      {before}
+      {' · '}
+      {link}
+    </>
+  ) : (
+    link
+  );
+}
 
 /**
  * Every source's answer for the person, each its own read (artboard C: "Kompetenssystemet svarade inte" while the
  * rest stand). A source that does not answer is said aloud once per answer, as the section's text says it (4.1.3).
  */
-export function useSectionAnswers(key: string | undefined, sources: EntitySource[]): SectionAnswer[] {
+export function useSectionAnswers(
+  key: string | undefined,
+  sources: EntitySource[],
+  kind: EntityKind = 'person',
+): SectionAnswer[] {
   const queries = useQueries({
-    queries: sources.map(s => ({ ...entitySectionQuery('person', key ?? '', s.capability), enabled: !!key })),
+    queries: sources.map(s => ({ ...entitySectionQuery(kind, key ?? '', s.capability), enabled: !!key })),
   });
   const answers = sources.map((source, i) => ({ source, query: queries[i]! }));
   const announce = useAnnounce();
@@ -83,50 +129,65 @@ export function useSectionAnswers(key: string | undefined, sources: EntitySource
 }
 
 /**
- * Whether a source's row is a state with its time (artboard C, Utvecklingssamtal: "Bokat" and "tors 12 nov kl. 09:00"):
- * its view names a status as the row's title and has a time beside it. Any other row is a set of labelled facts
- * (Frånvaro, Kontakt), drawn as label and value.
+ * One cell of a section's row (D97): its first value as ordinary text or its badge, then what the view puts beside it on
+ * the same line ("Bokat" and "tors 12 nov kl. 09:00", "3 öppna" and "2 försenade").
  */
-const isStateLine = (view: RowsView) =>
-  view.fields.some(f => f.key === view.title && f.format === 'status') &&
-  view.fields.some(f => f.key !== view.title && (f.format === 'instant' || f.format === 'date'));
-
-/** One source's row for the person, drawn by the source's declared view (D38): the state line or the labelled facts. */
-export function SectionRow({ source, row }: { source: EntitySource; row: Row }) {
-  const view = rowsView(source.view);
-  if (!view) return null;
-  const present = view.fields.filter(f => !empty(row[f.key]));
-  if (present.length === 0) return <Text type="supporting">Inget att visa.</Text>;
-  if (isStateLine(view)) {
-    const title = present.filter(f => f.key === view.title);
-    const others = present.filter(f => f.key !== view.title);
-    return (
-      <HStack gap={2} vAlign="center" wrap="wrap">
-        {[...title, ...others].map(f => (
-          <FieldValue key={f.key} field={f} value={row[f.key]} />
-        ))}
-      </HStack>
-    );
-  }
+function SectionCell({ group, row }: { group: FieldGroup; row: Row }) {
+  const value = row[group.lead.key];
   return (
-    <MetadataList label={{ position: 'start', width: 140 }}>
-      {present.map(f => (
-        <MetadataListItem key={f.key} label={f.label}>
-          <FieldValue field={f} value={row[f.key]} />
-        </MetadataListItem>
-      ))}
-    </MetadataList>
+    <FieldCell
+      group={group}
+      row={row}
+      {...(present(value) ? { lead: <FieldValue field={group.lead} value={value} text="ordinary" /> } : {})}
+    />
   );
 }
 
-/** One line about a section, for the list of sections (artboards C2 and D): the row's title value and every value with a tone. */
+/**
+ * One source's row for the person, drawn by the source's declared view (D38, D97): the whole row, so the compact field
+ * is left out and a field beside another shares its line. A title that is a state stands first as a line of its own
+ * (artboard C, Utvecklingssamtal: "Bokat" and its time); every other cell is a labelled fact (Frånvaro: "I dag" and
+ * "Kommande"; Kontakt).
+ */
+export function SectionRow({ source, row }: { source: EntitySource; row: Row }) {
+  const view = rowsView(source.view);
+  if (!view) return null;
+  const groups = rowGroups(view.fields).filter(g => groupFields(g).some(f => present(row[f.key])));
+  if (groups.length === 0) return <Text type="supporting">Inget att visa.</Text>;
+  const state = groups.find(g => g.lead.key === view.title && g.lead.format === 'status');
+  const facts = groups.filter(g => g !== state);
+  return (
+    <VStack gap={3}>
+      {/* In a row of its own the state is as wide as its badge and its time, not the section's width. */}
+      {state && (
+        <HStack>
+          <SectionCell group={state} row={row} />
+        </HStack>
+      )}
+      {facts.length > 0 && (
+        <MetadataList label={{ position: 'start', width: 140 }}>
+          {facts.map(g => (
+            <MetadataListItem key={g.lead.key} label={g.lead.label}>
+              <SectionCell group={g} row={row} />
+            </MetadataListItem>
+          ))}
+        </MetadataList>
+      )}
+    </VStack>
+  );
+}
+
+/**
+ * One line about a section, for the list of sections (artboards C2 and D): the row's state, the row in one value where
+ * the view declares one (D97: "tors 12 nov"), and every other value with a tone ("2 försenade"), each once.
+ */
 export function SectionSummary({ source, row }: { source: EntitySource; row: Row }) {
   const view = rowsView(source.view);
   if (!view) return null;
-  const said = (f: ViewField) =>
-    !empty(row[f.key]) && (f.key === view.title || (f.format === 'status' && fieldTone(f, row[f.key]) !== 'none'));
-  const shown = [...view.fields.filter(f => f.key === view.title), ...view.fields.filter(f => f.key !== view.title)]
-    .filter(said)
+  const title = view.fields.find(f => f.key === view.title);
+  const toned = view.fields.filter(f => f.format === 'status' && fieldTone(f, row[f.key]) !== 'none');
+  const shown = [title, compactField(view.fields), ...toned]
+    .filter((f): f is ViewField => !!f && present(row[f.key]))
     .filter((f, i, all) => all.findIndex(x => x.key === f.key) === i);
   if (shown.length === 0) return <Text type="supporting">Inget att visa.</Text>;
   // The line sits in a row that is itself a link: an address, a number or a link out is said as text there.
@@ -134,11 +195,9 @@ export function SectionSummary({ source, row }: { source: EntitySource; row: Row
     <HStack gap={2} vAlign="center" wrap="wrap">
       {shown.map(f =>
         f.format === 'email' || f.format === 'phone' || f.format === 'link' ? (
-          <Text key={f.key} type="supporting">
-            {String(row[f.key])}
-          </Text>
+          <Text key={f.key}>{String(row[f.key])}</Text>
         ) : (
-          <FieldValue key={f.key} field={f} value={row[f.key]} />
+          <FieldValue key={f.key} field={f} value={row[f.key]} text="ordinary" />
         ),
       )}
     </HStack>
@@ -211,6 +270,72 @@ export function OpenRead({
       {...(limit ? { limit } : {})}
       {...(tableQuery ? { tableQuery } : {})}
     />
+  );
+}
+
+/** At most this many of a source's fuller rows stand under its section (artboard C: three action points). */
+const INLINE_ROWS = 5;
+/**
+ * The fuller read under a section (artboard C: the talk's action points under its state), as a plain short list: up to
+ * five rows of a table or a list, each the row's title and, at the end of its line, what else the whole row draws in
+ * supporting text with its badges (D97), and nothing around them: no header, no count, no footer. A read of any other
+ * kind (a detail, a text) is not drawn here; the section's way in leads to it.
+ */
+export function InlineRead({ source, row }: { source: EntitySource; row: Row }) {
+  const ref = openOf(source, row);
+  const read = useQuery({
+    ...viewQuery(ref?.capability ?? '', ref ? JSON.stringify(ref.input) : null),
+    enabled: !!ref,
+    retry: false,
+  });
+  if (!ref) return null;
+  if (read.isPending) return <Skeleton height={48} width="100%" />;
+  if (read.isError || !read.data.view)
+    return (
+      <HStack gap={3} vAlign="center" justify="between" wrap="wrap">
+        <Text>{source.source} svarade inte.</Text>
+        <Button
+          size="sm"
+          variant="secondary"
+          label="Försök igen"
+          isLoading={read.isFetching}
+          onClick={() => void read.refetch()}
+        />
+      </HStack>
+    );
+  const view = read.data.view;
+  if (view.kind !== 'table' && view.kind !== 'list') return null;
+  const rows = (viewRows(view, read.data.output) ?? []).slice(0, INLINE_ROWS);
+  const title = view.fields.find(f => f.key === view.title);
+  if (!rows.length || !title) return null;
+  const rest = wholeRow(view.fields).filter(f => f.key !== view.title);
+  return (
+    <List density="compact" edge="flush" aria-label={ref.title}>
+      {rows.map((r, i) => {
+        const shown = rest.filter(f => present(r[f.key]));
+        const badges = shown.filter(f => f.format === 'status' && isBadged(f, r[f.key]));
+        const words = shown.filter(f => !badges.includes(f)).map(f => fieldText(f, r[f.key]));
+        return (
+          // The rest stands at the end of the line where there is room and under the text where there is not.
+          <ListItem
+            key={view.ref && typeof r[view.ref] === 'string' ? (r[view.ref] as string) : i}
+            label={
+              <HStack gap={2} vAlign="center" justify="between" wrap="wrap">
+                <FieldValue field={title} value={r[title.key]} text="ordinary" />
+                {(words.length > 0 || badges.length > 0) && (
+                  <HStack gap={2} vAlign="center" wrap="wrap">
+                    {words.length > 0 && <Text type="supporting">{words.join(' · ')}</Text>}
+                    {badges.map(f => (
+                      <FieldValue key={f.key} field={f} value={r[f.key]} />
+                    ))}
+                  </HStack>
+                )}
+              </HStack>
+            }
+          />
+        );
+      })}
+    </List>
   );
 }
 
@@ -290,8 +415,11 @@ export function CardList({ cards }: { cards: EntityCard[] }) {
   );
 }
 
-/** The ways into a source's fuller view: its `open` read on the person's page, and the source's own page in Clew. */
-function WaysIn({
+/**
+ * The one way into a source's fuller view (artboard C: "Öppna samtalet"): the source's own page in Clew when it has one,
+ * otherwise its `open` read, by that read's title, as the person's page with this section chosen. Never both.
+ */
+function WayIn({
   answer,
   row,
   fullerHref,
@@ -303,41 +431,43 @@ function WaysIn({
   page: string | null;
 }) {
   const view = rowsView(answer.source.view);
-  const fuller =
-    view?.open && openOf(answer.source, row) && fullerHref ? { title: view.open.title, href: fullerHref } : null;
-  if (!fuller && !page) return null;
+  const way =
+    page && answer.source.page
+      ? { title: answer.source.page.title, href: page }
+      : view?.open && openOf(answer.source, row) && fullerHref
+        ? { title: view.open.title, href: fullerHref }
+        : null;
+  if (!way) return null;
   return (
-    <HStack gap={4} wrap="wrap" vAlign="center">
-      {fuller && (
-        <Link href={fuller.href} weight="semibold" isStandalone>
-          {fuller.title}
-        </Link>
-      )}
-      {page && answer.source.page && (
-        <Link href={page} weight="semibold" isStandalone>
-          {answer.source.page.title}
-        </Link>
-      )}
+    <HStack>
+      <Link href={way.href} weight="semibold" isStandalone>
+        {way.title}
+      </Link>
     </HStack>
   );
 }
 
-/** One source's section on the opened person: its row, the fuller read under it, and the ways in. */
+/**
+ * One source's section on the opened person or unit: its row, the fuller read under it as a short list, and the way in.
+ * Its heading is level 3 under the person's name in the panel, level 2 on a page whose sections stand under its h1.
+ */
 export function SourceSection({
   answer,
   personKey,
   personId,
   fullerHref,
+  headingLevel = 3,
 }: {
   answer: SectionAnswer;
   personKey: string;
   personId: string | undefined;
   /** The person's page with this section chosen. */
   fullerHref?: string;
+  headingLevel?: 2 | 3;
 }) {
   const row = rowOf(answer);
   return (
-    <SectionFrame title={answer.source.title} caption={answer.source.source}>
+    <SectionFrame title={answer.source.title} caption={sourceCaption(answer.source)} headingLevel={headingLevel}>
       {answer.query.isPending ? (
         <VStack gap={2}>
           <Skeleton height={20} width="60%" />
@@ -348,8 +478,8 @@ export function SourceSection({
       ) : (
         <VStack gap={3}>
           <SectionRow source={answer.source} row={row} />
-          <OpenRead source={answer.source} row={row} limit={3} />
-          <WaysIn
+          <InlineRead source={answer.source} row={row} />
+          <WayIn
             answer={answer}
             row={row}
             page={pageHref(answer.source, personKey, personId)}
@@ -362,9 +492,9 @@ export function SourceSection({
 }
 
 /** Behöver dig: the cards about the person, first, named after the place they come from (Clew). */
-export function NeedsYouSection({ cards }: { cards: EntityCard[] }) {
+export function NeedsYouSection({ cards, headingLevel = 3 }: { cards: EntityCard[]; headingLevel?: 2 | 3 }) {
   return (
-    <SectionFrame title="Behöver dig" caption="Clew">
+    <SectionFrame title="Behöver dig" caption="Clew" headingLevel={headingLevel}>
       <CardList cards={cards} />
     </SectionFrame>
   );
@@ -471,7 +601,7 @@ export function sectionNavRows(
     rows.push({
       id: a.source.capability,
       title: a.source.title,
-      source: a.source.source,
+      source: sourceCaption(a.source),
       summary: a.query.isPending ? (
         <Skeleton height={16} width={160} />
       ) : failed || !row ? (

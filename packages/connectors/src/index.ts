@@ -209,6 +209,8 @@ export interface AboutRead {
   lens: boolean;
   /** The field of its view the administrator shows as a column on "Alla" (D97 item 4). */
   column?: string;
+  /** The connector is one of Clew's own (`kind: 'core'`): the source is Clew's own domain (D97). */
+  core?: true;
 }
 /** A propose or execute about an entity kind as `Registry.aboutActions` names it for one person (D97). */
 export interface AboutAction {
@@ -219,6 +221,8 @@ export interface AboutAction {
   kind: 'propose' | 'execute';
   /** The input property that takes the entity's key. */
   param: string;
+  /** The connector is one of Clew's own (`kind: 'core'`). */
+  core?: true;
 }
 /** Plain ordering of ids and names, the same in every locale. */
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
@@ -846,6 +850,7 @@ export class Registry {
               : ENTITY_KEYS_MAX,
           lens: choice?.lens === true,
           ...(column ? { column } : {}),
+          ...(connector.kind === 'core' ? { core: true as const } : {}),
         },
       ];
     });
@@ -862,6 +867,7 @@ export class Registry {
               title: capability.title,
               kind: capability.kind,
               param: capability.about.param,
+              ...(connector.kind === 'core' ? { core: true as const } : {}),
             },
           ]
         : [],

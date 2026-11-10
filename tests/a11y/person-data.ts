@@ -1,4 +1,5 @@
 import type { Page, Route } from '@playwright/test';
+import type { MockApi } from './support';
 import type { EntityDetail, EntitySection, EntitySource, PanelViewSpec, View } from '@clew/contracts';
 import { PRESENCE_LENS, SILENT_SECTION, TALK_LENS, entityDetail, entityList, entityRows, talkSource } from './data';
 
@@ -132,7 +133,9 @@ export class People {
             : undefined;
     return { capability, status: 'ok', ...(row ? { row } : {}) };
   }
-  async route(page: Page) {
+  /** `api`, when given, starts an action from the person's menu against this person's actions, as the server does. */
+  async route(page: Page, api?: MockApi) {
+    if (api) api.entityDetailOf = key => this.detail(key);
     const handle = async (route: Route) => {
       const url = new URL(route.request().url());
       const [, , , , key, sub] = url.pathname.split('/');

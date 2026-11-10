@@ -28,7 +28,7 @@ import { areasQuery, entityDetailQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { useEntityAction } from '../entity-actions';
-import { insideClew, originLabel, personPageHref } from '../person-address';
+import { insideClew, originOf, personPageHref, toolOf } from '../person-address';
 import { useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery } from '../components/shell';
 import { PageHeader } from '../components/page-header';
@@ -38,6 +38,7 @@ import {
   CardList,
   NEEDS_YOU,
   OpenRead,
+  PersonLine,
   SectionNav,
   SectionRow,
   Unanswered,
@@ -46,6 +47,7 @@ import {
   pageHref,
   rowOf,
   sectionNavRows,
+  sourceCaption,
   unanswered,
   useSectionAnswers,
   type SectionAnswer,
@@ -55,15 +57,6 @@ import {
 const narrowQuery = '(max-width: 768px)';
 /** The fuller view's table needs the page beside the list of sections. */
 const tableQuery = '(min-width: 1280px)';
-
-/** Where the page was opened from, as the way back names it; a tool's page is named by its row in the menu. */
-function useOrigin(from: string | null): { label: string; href: string } | null {
-  const menu = useQuery(areasQuery).data?.menu;
-  if (!from) return null;
-  const tool = /^\/tools\/([^/?]+)/.exec(from)?.[1];
-  const label = originLabel(from) ?? (tool ? menu?.find(m => m.capability === decodeURIComponent(tool))?.label : null);
-  return label ? { label, href: from } : null;
-}
 
 /** The chosen source's fuller view (artboard C2): its name, where it was read and when, its actions, then its read in full. */
 function ChosenSection({
@@ -75,12 +68,12 @@ function ChosenSection({
   answer: SectionAnswer;
   level: 'page' | 'drill';
 }) {
-  const start = useEntityAction();
-  const { key, name, id } = detail.entity;
+  const { start, error } = useEntityAction();
+  const { kind, key, name, id } = detail.entity;
   const row = rowOf(answer);
   const page = pageHref(answer.source, key, id);
   const own = detail.actions.filter(a => a.connector === answer.source.connector);
-  const run = (a: EntityAction) => start(a, { key, name });
+  const run = (a: EntityAction) => start(a, { kind, key, name });
   const read = answer.query.dataUpdatedAt;
   return (
     <VStack gap={5}>
@@ -88,7 +81,7 @@ function ChosenSection({
         <VStack gap={0}>
           {level === 'page' && <Heading level={2}>{answer.source.title}</Heading>}
           <Text type="supporting">
-            {answer.source.source}
+            {sourceCaption(answer.source)}
             {row && read ? (
               <>
                 {' · hämtat '}
@@ -110,6 +103,8 @@ function ChosenSection({
           </HStack>
         )}
       </HStack>
+      {/* A source's refusal of an action started here, said aloud as it came (entity-actions.ts). */}
+      {error && <Text as="p">{error}</Text>}
       {answer.query.isPending ? (
         <Card>
           <VStack gap={2}>
@@ -166,26 +161,23 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
   const detail = read.data;
   const missing = read.isError && read.error instanceof ApiError && read.error.status === 404;
   const answers = useSectionAnswers(detail?.entity.key, detail?.sections ?? []);
-  const origin = useOrigin(from);
-  const tool = from ? /^\/tools\/([^/?]+)/.exec(from)?.[1] : undefined;
-  // The rail marks the place the person was opened from: Personal for the reader's own people.
-  const current: RailCurrent =
-    detail?.relation === 'managed' || from?.startsWith('/staff')
-      ? { surface: 'staff' }
-      : tool
-        ? { surface: 'verktyg', view: decodeURIComponent(tool) }
-        : from === '/' || from?.startsWith('/?')
-          ? { surface: 'start' }
+  const origin = originOf(from, useQuery(areasQuery).data?.menu);
+  const tool = toolOf(from);
+  // The rail marks the place the person was opened from; without one, Personal for the reader's own people.
+  const current: RailCurrent = from?.startsWith('/staff')
+    ? { surface: 'staff' }
+    : tool
+      ? { surface: 'verktyg', view: tool }
+      : from === '/' || from?.startsWith('/?')
+        ? { surface: 'start' }
+        : !from && detail?.relation === 'managed'
+          ? { surface: 'staff' }
           : { surface: 'verktyg', view: null };
   const nav = useRail({ current, admin, manager: user.role === 'manager' });
   usePageTitle(detail ? detail.entity.name : missing ? 'Personen finns inte' : null);
-  // The trail (artboard C2): Personal for the reader's own people, else the place they came from when it is known.
-  const back =
-    detail?.relation === 'managed'
-      ? { label: 'Personal', href: from?.startsWith('/staff') ? from : '/staff' }
-      : detail
-        ? origin
-        : null;
+  // The trail (artboard C2): the place the person was opened from, by its name ("Personal", "Hem", a tool's row), and
+  // none for an address without one (D83 rule 4: no prior page is guessed).
+  const back = detail ? origin : null;
   const drawn = drawnSections(answers);
   const fallback = detail ? (detail.cards.length > 0 ? NEEDS_YOU : drawn[0]?.source.capability) : undefined;
   const chosenId = section ?? (narrow ? undefined : fallback);
@@ -253,7 +245,19 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
           title={name}
           icon={<Avatar name={name} size={60} tooltip={false} aria-hidden />}
           end={<PersonActions detail={detail} mobile={mobile} />}
-          {...(detail.entity.detail ? { meta: <Text color="secondary">{detail.entity.detail}</Text> } : {})}
+          {...(detail.entity.detail || detail.entity.unit
+            ? {
+                meta: (
+                  <Text color="secondary">
+                    <PersonLine
+                      entity={detail.entity}
+                      relation={detail.relation}
+                      from={personPageHref(key, { from })}
+                    />
+                  </Text>
+                ),
+              }
+            : {})}
         />
         {detail.cards.length === 0 && drawn.length === 0 && answers.every(a => !a.query.isPending) ? (
           <EmptyState isCompact headingLevel={2} title={`Inget mer att visa om ${name}`} />

@@ -13,6 +13,7 @@ import {
   type SnoozePreset,
   type Thread,
   type ThreadAction,
+  type ThreadItem,
 } from '@clew/contracts';
 import {
   AreaChip,
@@ -61,6 +62,7 @@ import { useMarks, type Mark, type Marks } from '../marks';
 import { AddToConversation } from './add-to-conversation';
 import { returnedSelection, reviewHref } from '../review-address';
 import { canUndoReceipt, receiptComplete } from '../receipt-state';
+import { entityHref } from '../person-address';
 
 const outcomeDot = {
   done: { variant: 'success', label: 'Klart' },
@@ -877,6 +879,19 @@ function Flags({ thread }: { thread: Thread }) {
     </>
   );
 }
+/**
+ * A row's name (D97 item 6): the source's own words, and a link to the person or unit the row names when it names one,
+ * with the page it was opened on as the way back. Never a name the row did not have.
+ */
+function ItemLabel({ item, from }: { item: ThreadItem; from: string }) {
+  return item.subject ? (
+    <Link href={entityHref(item.subject, from)} weight="semibold" hasUnderline>
+      {item.label}
+    </Link>
+  ) : (
+    <Text weight="semibold">{item.label}</Text>
+  );
+}
 type Props = ActionProps & {
   position?: string;
   headingLevel?: 2 | 3 | 4;
@@ -918,6 +933,7 @@ export function GenericCard({
   const mark = marks.ofThread(thread);
   const systems = rowSystems(thread, marks);
   const rowChipped = (ref: string) => conversation.chipped.includes(ref);
+  const { pathname, search } = useLocation();
   const inConversation = rowChipped('thread:' + thread.id) || thread.items.some(i => rowChipped(i.ref));
   const open = thread.state === 'open';
   const level = attentionLevel(thread, today());
@@ -980,7 +996,7 @@ export function GenericCard({
                   key={i.ref}
                   value={i.ref}
                   align="start"
-                  label={<Text weight="semibold">{i.label}</Text>}
+                  label={<ItemLabel item={i} from={pathname + search} />}
                   description={
                     systems.multi ? (
                       <SystemLine mark={systems.of.get(i.ref)} words={i.detail} />
@@ -997,7 +1013,7 @@ export function GenericCard({
                 <ListItem
                   key={i.ref}
                   isSelected={rowChipped(i.ref)}
-                  label={<Text weight="semibold">{i.label}</Text>}
+                  label={<ItemLabel item={i} from={pathname + search} />}
                   description={
                     systems.multi ? (
                       <SystemLine mark={systems.of.get(i.ref)} words={i.detail} />

@@ -11,8 +11,10 @@ import {
   PROTOCOL_VERSION,
   openApiDocument,
   protocolSchema,
+  type ManifestIssue,
 } from '../../packages/connectors/src/protocol';
 import { previewManifest } from '../../packages/connectors/src/preview';
+import { RULES, manifestReference } from '../../packages/connectors/src/reference';
 import { ManifestError, manifestProblems, parseManifest } from '../../packages/connectors/src/remote';
 import { protocolRoutes } from '../../apps/server/src/routes/protocol';
 import { manifest as hello } from '../../connectors/hello/connector.mjs';
@@ -420,6 +422,221 @@ describe('a capability about an entity (D97)', () => {
         ).toThrow(preview.problems[0]!);
       }
     }
+  });
+  test('the preview says which read opens which, who would see each place, and rows to draw them with', () => {
+    const preview = previewManifest(talks, { id: 'appraisals' });
+    expect(validPreview(preview)).toBe(true);
+    const byName = Object.fromEntries(preview.manifest!.capabilities.map(c => [c.name, c]));
+    // The action points open from a row of the read about a person: drawn under its section, not placed of their own.
+    expect(byName['appraisals.commitments']!.openedFrom).toEqual(['appraisals.person']);
+    expect(byName['appraisals.person']!.openedFrom).toEqual([]);
+    expect(byName['appraisals.person']!.audience).toEqual([
+      {
+        places: ['lens', 'mark'],
+        who: expect.stringMatching(/^A person who has a list of people: a manager on Personal/),
+      },
+      { places: ['section'], who: 'Anyone who opens a person the connector answers a row for.' },
+      { places: ['tool'], who: 'No. A read about a person is never offered to the model.' },
+    ]);
+    // A read whose scope names managers only says so; one without a tone that needs the reader has no mark.
+    expect(byName['appraisals.units']!.audience[0]).toEqual({
+      places: ['lens'],
+      who: 'A manager who has a list of units, once an administrator chooses the source.',
+    });
+    expect(byName['appraisals.book']!.audience).toEqual([
+      { places: ['menu'], who: expect.stringMatching(/^A manager who opens a person .*after their decision\.$/) },
+      { places: ['tool'], who: 'No. It declares model: false.' },
+    ]);
+    expect(byName['appraisals.commitments']!.audience).toEqual([]);
+    // A list of people is a manager's: a read about a person for employees only reaches nobody there.
+    const employees = edited(talks, m => (m.capabilities[0].scope = { roles: ['employee'] }));
+    expect(previewManifest(employees).manifest!.capabilities[0]!.audience[0]!.who).toMatch(/^Nobody yet/);
+    // Samples: each toned value in turn (`*` gets one more), a fixed time for an instant, a synthetic key per row.
+    expect(byName['appraisals.person']!.samples).toEqual([
+      { state: 'Saknas', at: '2026-11-12T08:00:00.000Z', key: 'exempel-1' },
+      { state: 'Exempel', at: '2026-11-12T08:00:00.000Z', key: 'exempel-2' },
+    ]);
+    const enumerated = edited(talks, m => {
+      m.capabilities[0].output.properties.rows.items.properties.state = { type: 'string', enum: ['Saknas', 'Bokat'] };
+      m.capabilities[0].view.fields.push({ key: 'overdue', label: 'Försenade', format: 'number' });
+      m.capabilities[0].output.properties.rows.items.properties.overdue = { type: 'integer' };
+    });
+    expect(previewManifest(enumerated).manifest!.capabilities[0]!.samples).toEqual([
+      { state: 'Saknas', at: '2026-11-12T08:00:00.000Z', overdue: 2, key: 'exempel-1' },
+      { state: 'Bokat', at: '2026-11-12T08:00:00.000Z', overdue: 2, key: 'exempel-2' },
+    ]);
+    expect(byName['appraisals.units']!.samples).toEqual([{ state: 'Exempel', key: 'exempel-1' }]);
+    for (const name of ['appraisals.commitments', 'appraisals.book']) expect(byName[name]!.samples).toBeUndefined();
+  });
+  test('every problem is placed: its path in the document, its reference entry and the rule it breaks', () => {
+    const fields = new Set(manifestReference([]).fields.map(f => f.path));
+    const cases: Array<[string, unknown, Partial<ManifestIssue>, string?]> = [
+      [
+        'the row without key (artboard J)',
+        edited(talks, m => (m.capabilities[0].output.properties.rows.items.required = [])),
+        {
+          path: 'capabilities[0].output.properties.rows.items',
+          field: 'capabilities[].output',
+          anchor: 'rule-about-read-rows',
+          rule: { id: 'about-read-rows', title: 'Each row carries the key it was asked with' },
+        },
+      ],
+      [
+        'a kind the contract does not know',
+        edited(talks, m => (m.capabilities[0].about.entity = 'room')),
+        {
+          path: 'capabilities[0].about.entity',
+          field: 'capabilities[].about.entity',
+          anchor: 'field-capabilities-about-entity',
+        },
+      ],
+      [
+        'a retired protocol',
+        edited(talks, m => (m.protocol = 1)),
+        { path: 'protocol', anchor: 'rule-protocol-accepted' },
+      ],
+      ['another id', talks, { path: 'id', anchor: 'rule-id-matches' }, 'other'],
+      [
+        'a name of another connector',
+        edited(talks, m => (m.capabilities[2].name = 'other.units')),
+        { path: 'capabilities[2].name', anchor: 'rule-name-prefixed' },
+      ],
+      [
+        'an execute offered to the model',
+        edited(talks, m => Object.assign(m.capabilities[3], { kind: 'execute', model: true })),
+        { path: 'capabilities[3].model', anchor: 'rule-execute-never-a-tool' },
+      ],
+      [
+        'a view on an action',
+        edited(
+          talks,
+          m => (m.capabilities[3].view = { kind: 'table', title: 'person', fields: [{ key: 'person', label: 'P' }] }),
+        ),
+        { path: 'capabilities[3].view', anchor: 'rule-view-on-a-read' },
+      ],
+      [
+        'a field the output lacks',
+        edited(talks, m => m.capabilities[1].view.fields.push({ key: 'missing', label: 'Saknas' })),
+        { path: 'capabilities[1].view.fields[1].key', anchor: 'rule-view-keys-in-output' },
+      ],
+      [
+        'a query the input lacks',
+        edited(talks, m => (m.capabilities[1].view.input = { query: { key: 'q', label: 'Sök' } })),
+        { path: 'capabilities[1].view.input', anchor: 'rule-view-input-in-input' },
+      ],
+      [
+        'a row that opens another system',
+        edited(talks, m => (m.capabilities[0].view.open.capability = 'appraisals.nothing')),
+        { path: 'capabilities[0].view.open.capability', anchor: 'rule-row-opens-own-read' },
+      ],
+      [
+        'a subject the record lacks',
+        edited(talks, m => (m.capabilities[1].view.subject = { entity: 'person', key: 'missing' })),
+        { path: 'capabilities[1].view.subject.key', anchor: 'rule-view-subject-is-a-string' },
+      ],
+      [
+        'a first field beside nothing',
+        edited(talks, m => (m.capabilities[0].view.fields[0].beside = true)),
+        { path: 'capabilities[0].view.fields[0].beside', anchor: 'rule-view-beside-follows' },
+      ],
+      [
+        'two compact fields',
+        edited(talks, m => m.capabilities[0].view.fields.forEach((f: any) => (f.compact = true))),
+        { path: 'capabilities[0].view.fields', anchor: 'rule-view-compact-once' },
+      ],
+      [
+        'a menu row that needs input',
+        edited(talks, m => (m.capabilities[1].menu = { label: 'Punkter', icon: 'document' })),
+        { path: 'capabilities[1].menu', anchor: 'rule-menu-needs-open-view' },
+      ],
+      [
+        'a standing action that does not exist',
+        edited(
+          talks,
+          m =>
+            (m.areas = [
+              { id: 'talks', title: 'Samtal', roles: ['manager'], standing: ['appraisals.gone'], schedules: [] },
+            ]),
+        ),
+        { path: 'areas[0].standing[0]', anchor: 'rule-standing-exists' },
+      ],
+      [
+        'a read that follows a fact',
+        edited(talks, m => (m.capabilities[1].follows = ['appraisals:held'])),
+        { path: 'capabilities[1].follows', anchor: 'rule-follows-on-a-propose' },
+      ],
+      [
+        'a fact the manifest does not declare',
+        edited(talks, m => (m.capabilities[3].creates = 'appraisals:held')),
+        { path: 'capabilities[3].creates', anchor: 'rule-creates-declared' },
+      ],
+      [
+        'keys without a bound',
+        edited(talks, m => delete m.capabilities[0].input.properties.keys.maxItems),
+        { path: 'capabilities[0].input', anchor: 'rule-about-read-keys' },
+      ],
+      [
+        'a param on a read',
+        edited(talks, m => (m.capabilities[0].about.param = 'keys')),
+        { path: 'capabilities[0].about.param', anchor: 'rule-about-read-keys' },
+      ],
+      [
+        'a read about a person as a tool',
+        edited(talks, m => (m.capabilities[0].model = true)),
+        { path: 'capabilities[0].model', anchor: 'rule-about-never-a-tool' },
+      ],
+      [
+        'an action without its param',
+        edited(talks, m => delete m.capabilities[3].about.param),
+        { path: 'capabilities[3].about.param', anchor: 'rule-about-action-param' },
+      ],
+      [
+        'an action that asks more than the key',
+        edited(talks, m => (m.capabilities[3].input.required = ['person', 'at'])),
+        {
+          path: 'capabilities[3].input.required',
+          field: 'capabilities[].input',
+          anchor: 'rule-about-action-key-alone',
+        },
+      ],
+      [
+        'a follower about a person',
+        edited(talks, m => (m.capabilities[3].follows = ['appraisals:held'])),
+        { path: 'capabilities[3].about', anchor: 'rule-about-not-a-follower' },
+      ],
+      [
+        'a profile read about a person',
+        edited(talks, m => (m.capabilities[0].name = 'appraisals.talks')),
+        { path: 'capabilities[0].about', anchor: 'rule-about-not-a-profile' },
+      ],
+    ];
+    const placed = new Set<string>();
+    for (const [what, document, expected, id] of cases) {
+      const preview = previewManifest(document, { id: id ?? 'appraisals' });
+      expect({ what, issues: preview.issues.length }).toEqual({ what, issues: preview.problems.length });
+      expect({ what, problems: preview.issues.map(i => i.problem) }).toEqual({ what, problems: preview.problems });
+      expect({ what, issues: preview.issues }).toEqual({
+        what,
+        issues: expect.arrayContaining([expect.objectContaining(expected)]),
+      });
+      expect(validPreview(preview)).toBe(true);
+      for (const issue of preview.issues) {
+        // The anchor is an entry the reference page draws: a rule by its id, else a field it has.
+        if (issue.rule) expect(RULES.map(r => r.id)).toContain(issue.rule.id);
+        else expect(issue.field === '' || fields.has(issue.field)).toBe(true);
+        if (issue.rule) placed.add(issue.rule.id);
+      }
+    }
+    // A loader rule that a sentence of the loader cannot be traced back to fails here: add it to preview.ts's table.
+    expect(
+      RULES.filter(r => r.enforced === 'loader')
+        .map(r => r.id)
+        .filter(id => !placed.has(id)),
+    ).toEqual([]);
+    // A document that is not an object is placed at its root, under the reference's fields.
+    expect(previewManifest('manifest').issues[0]).toEqual(
+      expect.objectContaining({ path: '', field: '', anchor: 'fields' }),
+    );
   });
   test("only Clew's own connectors name a page, and the administration's manifest form leaves it out", () => {
     const own = (kind: 'core' | 'passthrough'): Connector => ({

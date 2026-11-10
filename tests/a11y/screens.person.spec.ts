@@ -34,7 +34,7 @@ test.describe('screens', () => {
     await page.waitForTimeout(500);
     await page.screenshot({ path: out('person-phone-390') });
     await open(page, '/staff?person=johan&person-section=clew.talkPeople');
-    await page.getByRole('dialog', { name: 'Johan Byström' }).getByText('Alla åtgärdspunkter').waitFor();
+    await page.getByRole('dialog', { name: 'Johan Byström' }).getByText('Öppna samtalet').waitFor();
     await page.waitForTimeout(500);
     await page.screenshot({ path: out('person-phone-section-390') });
   });

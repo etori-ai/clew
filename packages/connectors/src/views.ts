@@ -7,6 +7,7 @@ import {
   type MenuHint,
   type MenuIcon,
   type View,
+  type ViewField,
 } from '@clew/contracts';
 import {
   ActivitySchema,
@@ -38,6 +39,18 @@ export interface ViewSubject {
   review?: string;
 }
 const props = (schema: unknown): Record<string, Schema> | undefined => (schema as Schema | undefined)?.properties;
+/**
+ * Why a list of fields may not be drawn as declared (D97): a field `beside` the one before it needs one before it, and
+ * only one field can be the row in one value (`compact`).
+ */
+function placementProblem(name: string, fields: readonly ViewField[]): string | undefined {
+  const first = fields[0];
+  if (first?.beside) return `${name}: view field "${first.key}" is beside nothing: the first field cannot be beside`;
+  const compact = fields.filter(f => f.compact);
+  if (compact.length > 1)
+    return `${name}: view fields ${compact.map(f => `"${f.key}"`).join(', ')} are all compact: at most one field is the row in one value`;
+  return undefined;
+}
 
 /**
  * Why a capability's view may not be used, or undefined when it may. A view belongs to a read; its input controls bind
@@ -61,6 +74,8 @@ export function viewProblem(subject: ViewSubject, siblings: ViewSubject[]): stri
   if (new Set(keys).size !== keys.length) return `${subject.name}: a view field is listed twice`;
   const unitless = view.fields.find(f => f.unit && f.format !== 'number');
   if (unitless) return `${subject.name}: view field "${unitless.key}" has a unit but is not a number`;
+  const placement = placementProblem(subject.name, view.fields);
+  if (placement) return placement;
   let record = props(subject.output);
   if (view.kind === 'table' || view.kind === 'list') {
     if (!keys.includes(view.title)) return `${subject.name}: view title "${view.title}" must be one of its fields`;
@@ -108,6 +123,8 @@ export function viewProblem(subject: ViewSubject, siblings: ViewSubject[]): stri
         return `${subject.name}: item title must name a displayed field`;
       if (new Set(items.fields.map(f => f.key)).size !== items.fields.length)
         return `${subject.name}: item fields must be unique`;
+      const itemPlacement = placementProblem(subject.name, items.fields);
+      if (itemPlacement) return itemPlacement;
       const item = record?.[items.rows]?.items?.properties;
       for (const field of items.fields) {
         if (item && !item[field.key]) return `${subject.name}: unknown item field "${field.key}"`;

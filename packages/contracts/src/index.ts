@@ -335,6 +335,18 @@ export const ViewFieldSchema = object({
     description:
       'For `number`: the unit drawn after the value, so a row reads "12 platser" and never "Platser: 12". Only where the unit alone says what the number is.',
   }),
+  beside: Type.Optional(
+    Type.Literal(true, {
+      description:
+        'Drawn in the same cell or on the same line as the field before it, under that field\'s label: a state and its time ("Bokat", "tors 12 nov kl. 09:00"), a count and what is late in it ("3 öppna", "2 försenade"). Never on the first field (D97).',
+    }),
+  ),
+  compact: Type.Optional(
+    Type.Literal(true, {
+      description:
+        'The row in one value ("tors 12 nov", "Inte bokat"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).',
+    }),
+  ),
 });
 export type ViewField = Static<typeof ViewFieldSchema>;
 /**
@@ -995,6 +1007,11 @@ export const EntityRefSchema = object({
   id: Type.Optional(id),
 });
 export type EntityRef = Static<typeof EntityRefSchema>;
+/**
+ * The source is Clew's own domain (D97): a core connector of Clew's, such as the talks module. A section and a lens's
+ * fact line then name it "Clew", while a column's second line and the row menu's group keep its `source`.
+ */
+const own = Type.Optional(Type.Literal(true));
 /** A read about an entity kind as a lens or a section (D97): whose it is, the connector's Swedish `source`, its view, and, for Clew's own domain, the page where the person writes. */
 export const EntitySourceSchema = object({
   capability: Type.String(),
@@ -1003,6 +1020,7 @@ export const EntitySourceSchema = object({
   title: Type.String(),
   view: ViewSchema,
   page: Type.Optional(EntityPageSchema),
+  own,
 });
 export type EntitySource = Static<typeof EntitySourceSchema>;
 /** One column on "Alla" (D97 item 4): one field of a source's view, chosen by an administrator. */
@@ -1011,6 +1029,7 @@ export const EntityColumnSchema = object({
   source: Type.String(),
   title: Type.String(),
   field: ViewFieldSchema,
+  own,
 });
 export type EntityColumn = Static<typeof EntityColumnSchema>;
 /** An action about an entity (D97): it shows in the entity's menu and runs through the human decision as every propose and execute does. */
@@ -1021,6 +1040,7 @@ export const EntityActionSchema = object({
   title: Type.String(),
   kind: Type.Union([Type.Literal('propose'), Type.Literal('execute')]),
   param: Type.String(),
+  own,
 });
 export type EntityAction = Static<typeof EntityActionSchema>;
 /** `GET /api/entities/:kind`: the entities the reader may ask about, in groups (for a person, one per unit the reader manages), with the administrator's columns and lenses and the actions. */

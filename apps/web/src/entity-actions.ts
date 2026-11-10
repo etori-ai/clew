@@ -1,12 +1,16 @@
 import { useCallback, type ComponentProps } from 'react';
-import type { EntityAction } from '@clew/contracts';
-import type { MoreMenu } from '@clew/ui';
-import { useConversation } from './components/conversation-context';
+import { useNavigate } from 'react-router';
+import type { EntityAction, EntityKind } from '@clew/contracts';
+import { useAnnounce, type MoreMenu } from '@clew/ui';
+import { api } from './api';
+import { useEntityStart } from './mutations';
+import { withCard } from './panel-address';
 
 /** One entry of an Astryx action menu (`MoreMenu`, `DropdownMenu`), as the data array takes it. */
 type MenuOption = ComponentProps<typeof MoreMenu>['items'][number];
-/** The entity an action is about: its key on the wire and the name a person reads. */
+/** The entity an action is about: its kind (a person unless said), its key on the wire and the name a person reads. */
 export interface ActionSubject {
+  kind?: EntityKind;
   key: string;
   name: string;
 }
@@ -31,21 +35,38 @@ export function actionMenuItems(actions: EntityAction[], start: (action: EntityA
   }));
 }
 
+/** Starting an action about an entity, and the source's refusal of the last one when it refused. */
+export interface EntityActionStart {
+  start: (action: EntityAction, subject: ActionSubject) => void;
+  /** The source's Swedish sentence, shown beside what started it until the next start. */
+  error: string | null;
+  busy: boolean;
+}
 /**
- * Starting an action about an entity (D97): a `propose` or `execute` runs through the human decision as every standing
- * action does ("Gör själv" asks in the box, and the answer is a card the person confirms). The web has no other way to
- * start a write with an input: the question names the action and the person, the person's key in brackets for the
- * action's `param`, and carries the capability as a chip, as a tool's page asks about its view. Nothing runs before the
- * person confirms on the card.
+ * Starting an action about an entity (D97, D8): the server starts it on the entity's key without the model and answers
+ * the card the person decides on; nothing reaches the source's write before that decision. The card opens as Hem opens
+ * a card (`/?card=<threadId>`, the panel beside Hem's column, D50, D73): Hem is where a card and its decision live, with
+ * its receipt, its settling and its next step, and Personal's own panel holds one person at a time (D83). The page the
+ * action was started on stays one step back in the history, with its lens and its opened person, and the focus lands on
+ * the card's heading as on every card opened beside Hem. A refusal is said aloud once per start (4.1.3) and stays as
+ * `error` for the page to show beside the control.
  */
-export function useEntityAction(): (action: EntityAction, subject: ActionSubject) => void {
-  const talk = useConversation();
-  return useCallback(
-    (action: EntityAction, subject: ActionSubject) =>
-      talk.ask(`${action.title} för ${subject.name} (${subject.key})`, {
-        chips: [{ ref: `capability:${action.capability}`, kind: 'capability', label: action.title }],
-        search: '',
-      }),
-    [talk],
+export function useEntityAction(): EntityActionStart {
+  const navigate = useNavigate();
+  const announce = useAnnounce();
+  const { start, busy, error } = useEntityStart();
+  const run = useCallback(
+    (action: EntityAction, subject: ActionSubject) => {
+      const kind = subject.kind ?? 'person';
+      void start(() => api.entities.start(kind, subject.key, action.capability), { kind, key: subject.key }).then(
+        started => {
+          if (!started) return;
+          if ('threadId' in started) navigate(withCard('/', '', started.threadId));
+          else announce(started.error);
+        },
+      );
+    },
+    [start, navigate, announce],
   );
+  return { start: run, error, busy };
 }

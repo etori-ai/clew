@@ -1669,7 +1669,8 @@
               "VAB": "none",
               "Semester": "none",
               "Ledig": "none"
-            }
+            },
+            "compact": true
           },
           {
             "key": "today",

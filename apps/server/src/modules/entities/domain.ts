@@ -161,6 +161,8 @@ export function combine(answers: Checked[]): Checked {
   };
 }
 
+/** Clew's own domain (D97): a source of a core connector is captioned "Clew" where a section or a lens names it. */
+const ownOf = (from: { core?: true }) => (from.core ? { own: true as const } : {});
 export const sourceOf = (read: AboutRead): EntitySource => ({
   capability: read.name,
   connector: read.connectorId,
@@ -168,6 +170,7 @@ export const sourceOf = (read: AboutRead): EntitySource => ({
   title: read.title,
   view: read.view,
   ...(read.page ? { page: read.page } : {}),
+  ...ownOf(read),
 });
 export const actionOf = (action: AboutAction): EntityAction => ({
   capability: action.name,
@@ -176,16 +179,28 @@ export const actionOf = (action: AboutAction): EntityAction => ({
   title: action.title,
   kind: action.kind,
   param: action.param,
+  ...ownOf(action),
 });
+const plain = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const ordered = (reads: AboutRead[]) =>
+  [...reads].sort((a, b) => plain(a.connectorId, b.connectorId) || plain(a.name, b.name));
+/**
+ * Sources as a person meets them (D97, artboards A2 and C): Clew's own domain first, then the others by the name of
+ * their source in Swedish order, and by title and name within one source.
+ */
+export const bySource = (reads: AboutRead[]): AboutRead[] =>
   [...reads].sort(
     (a, b) =>
-      (a.connectorId < b.connectorId ? -1 : a.connectorId > b.connectorId ? 1 : 0) ||
-      (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
+      (a.core ? 0 : 1) - (b.core ? 0 : 1) ||
+      a.source.localeCompare(b.source, 'sv') ||
+      a.title.localeCompare(b.title, 'sv') ||
+      plain(a.name, b.name),
   );
-/** The lenses an administrator offers (D97 item 3), connector by connector and by name within one. */
-export const lensesOf = (reads: AboutRead[]): EntitySource[] => ordered(reads.filter(r => r.lens)).map(sourceOf);
-/** The columns on "Alla" (D97 item 4) in the same order, at most `ENTITY_COLUMNS_MAX`. */
+/** The lenses an administrator offers (D97 item 3), in the order of `bySource`, as the Visa menu lists them. */
+export const lensesOf = (reads: AboutRead[]): EntitySource[] => bySource(reads.filter(r => r.lens)).map(sourceOf);
+/** The sections of an opened entity (D97 item 5), in the order of `bySource`. */
+export const sectionsOf = (reads: AboutRead[]): EntitySource[] => bySource(reads).map(sourceOf);
+/** The columns on "Alla" (D97 item 4), connector by connector and by name within one, at most `ENTITY_COLUMNS_MAX`. */
 export function columnsOf(reads: AboutRead[]): EntityColumn[] {
   return ordered(reads)
     .flatMap(r => {
@@ -193,7 +208,7 @@ export function columnsOf(reads: AboutRead[]): EntityColumn[] {
         r.column !== undefined && (r.view.kind === 'table' || r.view.kind === 'list')
           ? r.view.fields.find(f => f.key === r.column)
           : undefined;
-      return field ? [{ capability: r.name, source: r.source, title: r.title, field }] : [];
+      return field ? [{ capability: r.name, source: r.source, title: r.title, field, ...ownOf(r) }] : [];
     })
     .slice(0, ENTITY_COLUMNS_MAX);
 }

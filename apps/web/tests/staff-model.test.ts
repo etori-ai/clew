@@ -3,6 +3,7 @@ import type { EntityList, EntityRef, EntityRows, EntitySource, View, ViewField }
 import {
   answerOf,
   byNeed,
+  cardLinkTexts,
   lensNeed,
   markText,
   marksFor,
@@ -15,13 +16,17 @@ import {
   valueCounts,
   type Answer,
 } from '../src/pages/staff-model';
+import { compactField, groupFields, rowGroups, wholeRow } from '../src/view-fields';
 
-/** Personal (D97): a lens over five people, as the talks module declares its read about a person. */
+/**
+ * Personal (D97): a lens over five people, as the talks module declares its read about a person: the next talk is the
+ * row in one value, the overdue points stand beside the open ones.
+ */
 const [state, next, open, overdue, risk]: ViewField[] = [
   { key: 'state', label: 'Samtal', format: 'status', tones: { Saknas: 'warn', Bokat: 'none', Hållet: 'ok' } },
-  { key: 'next', label: 'Nästa samtal', format: 'status', tones: { 'Inte bokat': 'warn' } },
+  { key: 'next', label: 'Nästa samtal', format: 'status', tones: { 'Inte bokat': 'warn' }, compact: true },
   { key: 'open', label: 'Åtgärdspunkter' },
-  { key: 'overdue', label: 'Försenade', format: 'status', tones: { '*': 'warn' } },
+  { key: 'overdue', label: 'Försenade', format: 'status', tones: { '*': 'warn' }, beside: true },
   { key: 'risk', label: 'Risk', format: 'status', tones: { Hög: 'alert' } },
 ];
 const view: View = { kind: 'list', title: 'state', fields: [state!, next!, open!, overdue!, risk!] };
@@ -89,15 +94,36 @@ describe('Personal (D97)', () => {
   test('the page reads every lens and every column once, lenses first', () => {
     expect(sourcesRead(list)).toEqual(['talks.person', 'hr.person']);
   });
-  test('under a lens alert comes first, then warn, then the rest, then nobody the source knows, each in order', () => {
+  test('under a lens a state that needs the reader comes first, then another field that does, then the rest, then nobody the source knows', () => {
+    // Karin's talk is missing; Erik's risk and Johan's late points need the reader in another field; directory order within.
     expect(byNeed(people, lens, answerOf(rows, false)).map(p => p.key)).toEqual([
+      'karin',
       'erik',
       'johan',
-      'karin',
       'anna',
       'maria',
       'omar',
     ]);
+    // An alert in the state goes before a warning in it.
+    const alarmed: View = {
+      ...view,
+      fields: [{ ...state!, tones: { ...state!.tones, Akut: 'alert' } }, ...view.fields.slice(1)],
+    };
+    const akut = { ...rows, rows: [...rows.rows.filter(r => r.key !== 'maria'), { key: 'maria', state: 'Akut' }] };
+    expect(
+      byNeed(people, { ...lens, view: alarmed }, answerOf(akut, false))
+        .map(p => p.key)
+        .slice(0, 2),
+    ).toEqual(['maria', 'karin']);
+    // The compact field is not drawn under the lens, so it does not sort a row up by itself.
+    const onlyNext = {
+      ...rows,
+      rows: [
+        { key: 'anna', state: 'Bokat', next: 'Inte bokat' },
+        { key: 'erik', state: 'Bokat' },
+      ],
+    };
+    expect(byNeed(people.slice(0, 2), lens, answerOf(onlyNext, false)).map(p => p.key)).toEqual(['anna', 'erik']);
   });
   test('the Visa menu counts the rows that need the reader, in the strongest tone, and nothing when none do', () => {
     expect(lensNeed(lens, answerOf(rows, false))).toEqual({ count: 3, tone: 'alert' });
@@ -106,8 +132,8 @@ describe('Personal (D97)', () => {
     expect(lensNeed(lens, answerOf({ ...rows, status: 'unavailable', rows: [] }, false))).toBeNull();
     expect(lensNeed(lens, undefined)).toBeNull();
   });
-  test('the counts per state follow the order of the tones and leave out what no row has', () => {
-    expect(valueCounts(view, rows.rows)).toBe('1 saknas, 3 bokat, 1 hållet');
+  test('the counts per state put what is done first, then the plain, then what needs the reader, and leave out what no row has', () => {
+    expect(valueCounts(view, rows.rows)).toBe('1 hållet, 3 bokat, 1 saknas');
     expect(
       valueCounts(
         view,
@@ -121,9 +147,15 @@ describe('Personal (D97)', () => {
     expect(markText(view, overdue!, '2 försenade')).toBe('2 försenade');
   });
   test('marks are the fields that need the reader and are not a column already', () => {
-    const marks = marksFor(list, answers(answerOf(rows, false)), 'karin');
-    // "Inte bokat" is the column Nästa samtal; the missing talk is a mark.
-    expect(marks.map(m => m.text)).toEqual(['Samtal saknas']);
+    // "Inte bokat" in the column Nästa samtal already says it for the talk: no "Samtal saknas" beside it.
+    expect(marksFor(list, answers(answerOf(rows, false)), 'karin')).toEqual([]);
+    // Without that column the missing talk is a mark.
+    const noColumn = { ...list, columns: list.columns.filter(c => c.capability !== lens.capability) };
+    expect(marksFor(noColumn, answers(answerOf(rows, false)), 'karin').map(m => m.text)).toEqual([
+      'Samtal saknas',
+      'Inte bokat',
+    ]);
+    // A plain value in the column ("tors 12 nov") leaves the late points as a mark.
     expect(marksFor(list, answers(answerOf(rows, false)), 'johan').map(m => m.text)).toEqual(['2 försenade']);
     expect(marksFor(list, answers(answerOf(rows, false)), 'erik')).toEqual([
       { id: 'talks.person:risk', tone: 'alert', text: 'Hög' },
@@ -162,10 +194,56 @@ describe('Personal (D97)', () => {
     ]);
     expect(silentOf(list, answers({ status: 'pending' }), sourcesRead(list))).toEqual([]);
   });
+  test('"Just nu" links the cards that wait for the reader and the proposals, to the one card when there is one', () => {
+    const withCards: EntityList = {
+      ...list,
+      attention: [
+        { key: 'erik', act: 1, proposals: 0, threadId: 't-erik' },
+        { key: 'johan', act: 2, proposals: 1 },
+        { key: 'karin', act: 0, proposals: 1, threadId: 't-karin' },
+      ],
+    };
+    expect(cardLinkTexts(withCards, 'ERIK')).toEqual([{ id: 'act', text: '1 att agera på', threadId: 't-erik' }]);
+    expect(cardLinkTexts(withCards, 'johan')).toEqual([
+      { id: 'act', text: '2 att agera på' },
+      { id: 'proposals', text: '1 förslag' },
+    ]);
+    expect(cardLinkTexts(withCards, 'karin')).toEqual([{ id: 'proposals', text: '1 förslag', threadId: 't-karin' }]);
+    expect(cardLinkTexts(withCards, 'anna')).toEqual([]);
+  });
   test('the count line names the unit, or how many units there are', () => {
     expect(peopleLine(list.groups)).toBe('6 medarbetare på Bergsåkers skola');
     expect(peopleLine([...list.groups, { id: 'u2', label: 'Fritids', entities: [person('lena')] }])).toBe(
       '7 medarbetare på 2 enheter',
     );
+  });
+});
+
+describe('the whole row and the row in one value (D97)', () => {
+  test('a field beside another shares its cell, the compact one is left out, and the first of each cell names it', () => {
+    const groups = rowGroups(view.kind === 'list' ? view.fields : []);
+    expect(groups.map(g => groupFields(g).map(f => f.key))).toEqual([['state'], ['open', 'overdue'], ['risk']]);
+    expect(groups.map(g => g.lead.label)).toEqual(['Samtal', 'Åtgärdspunkter', 'Risk']);
+    expect(compactField(view.kind === 'list' ? view.fields : [])?.key).toBe('next');
+    expect(wholeRow(view.kind === 'list' ? view.fields : []).map(f => f.key)).toEqual([
+      'state',
+      'open',
+      'overdue',
+      'risk',
+    ]);
+  });
+  test('a field beside one that is left out starts its own cell, and a declared title is always its own cell', () => {
+    const [a, b, c] = [
+      { key: 'a', label: 'A', compact: true as const },
+      { key: 'b', label: 'B', beside: true as const },
+      { key: 'c', label: 'C', beside: true as const },
+    ];
+    expect(rowGroups([a, b, c]).map(g => groupFields(g).map(f => f.key))).toEqual([['b', 'c']]);
+    const title = { key: 't', label: 'T' };
+    expect(
+      rowGroups([{ key: 'x', label: 'X' }, { ...title, beside: true as const }, c], { lead: 't' }).map(g =>
+        groupFields(g).map(f => f.key),
+      ),
+    ).toEqual([['x'], ['t', 'c']]);
   });
 });

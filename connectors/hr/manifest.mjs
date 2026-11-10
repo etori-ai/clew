@@ -391,7 +391,8 @@ export const sickOnDay = n => `Sjuk · dag ${n}`;
 /**
  * Where each person stands today (D97): a read about a person, asked with a batch of user names, one row per employee of
  * the manager's unit in this system, carrying the key it was asked with. Anyone else is no row. Presence is the column
- * "Närvaro" on Personal: "I tjänst" is plain, an absence a neutral badge, so only the absences carry a tone.
+ * "Närvaro" on Personal: "I tjänst" is plain, an absence a neutral badge, so only the absences carry a tone. It is the
+ * row in one value (`compact`): where the whole row is drawn, a section reads "I dag" and "Kommande".
  */
 const person = {
   name: 'hr.person',
@@ -438,6 +439,7 @@ const person = {
           Semester: 'none',
           Ledig: 'none',
         },
+        compact: true,
       },
       { key: 'today', label: 'I dag' },
       { key: 'upcoming', label: 'Kommande' },

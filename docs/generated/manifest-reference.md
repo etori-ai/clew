@@ -1546,6 +1546,36 @@ Example:
 "dagar"
 ```
 
+#### `capabilities[].view.fields[].beside`
+
+Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time ("Bokat", "tors 12 nov kl. 09:00"), a count and what is late in it ("3 öppna", "2 försenade"). Never on the first field (D97).
+
+- Type: true
+- optional
+- Pairs with:
+  - **A field beside another follows one.** `beside` draws a field in the same cell or on the same line as the field before it, under that field's label: a state and its time, a count and what is late in it. It is never on the first field of a view or of a record's items. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
+
+Example:
+
+```json
+true
+```
+
+#### `capabilities[].view.fields[].compact`
+
+The row in one value ("tors 12 nov", "Inte bokat"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).
+
+- Type: true
+- optional
+- Pairs with:
+  - **One field is the row in one value.** At most one field of a view (or of a record's items) is `compact`: the row in one value, drawn where there is room for one value (a column on a list, a one-line summary) and left out where the whole row is drawn (a lens, a section, a detail). ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
+
+Example:
+
+```json
+true
+```
+
 #### `capabilities[].view.document`
 
 A property name in the capability's output (or input).
@@ -1782,6 +1812,20 @@ Example:
 ```json
 "kr"
 ```
+
+#### `capabilities[].view.items.fields[].beside`
+
+Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time ("Bokat", "tors 12 nov kl. 09:00"), a count and what is late in it ("3 öppna", "2 försenade"). Never on the first field (D97).
+
+- Type: true
+- optional
+
+#### `capabilities[].view.items.fields[].compact`
+
+The row in one value ("tors 12 nov", "Inte bokat"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).
+
+- Type: true
+- optional
 
 #### `capabilities[].view.rows`
 
@@ -2294,6 +2338,8 @@ Where Clew applies each: when the manifest is loaded, when the connector is regi
 - **A view's controls bind to the input** (loader; `capabilities[].input`, `capabilities[].view.input.query.key`, `capabilities[].view.input.filter.key`) ([D38](../decisions/README.md)): The query and the filter each bind to a property the input schema declares, and not to the same one.
 - **A row opens a read of the same connector** (loader; `capabilities[].view.open.capability`, `capabilities[].view.open.params`) ([D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md)): `open.capability` is a `read` of this manifest, and every key of `params` is an input property of that read, taken from a property the row has. A card's buttons and a row's link stay within one system.
 - **A record names an entity by a string it holds** (loader; `capabilities[].output`, `capabilities[].view.subject`, `capabilities[].view.subject.key`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): Where the output schema declares `properties`, `subject.key` is one of the record's properties (a row's for a table or list) and its type is `string`: a person's provisioned `userName` or a unit's id. The record's title then links to that person or unit for a reader who may open it; Clew never checks that the key exists, and a record without the value links nowhere.
+- **A field beside another follows one** (loader; `capabilities[].view.fields[].beside`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): `beside` draws a field in the same cell or on the same line as the field before it, under that field's label: a state and its time, a count and what is late in it. It is never on the first field of a view or of a record's items.
+- **One field is the row in one value** (loader; `capabilities[].view.fields[].compact`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): At most one field of a view (or of a record's items) is `compact`: the row in one value, drawn where there is room for one value (a column on a list, a one-line summary) and left out where the whole row is drawn (a lens, a section, a detail).
 - **A menu row is a view that opens without a question** (loader; `capabilities[].menu`, `capabilities[].view`, `capabilities[].input`) ([D40](../decisions/D40-views-can-be-tools-in-the-menu-and-an-administrator-chooses-which.md)): `menu` may be declared only on a `read` that has a `view` and whose input accepts `{}` (nothing `required`). The administrator still chooses which eligible views go in the menu; `menu` says what the row is called and marked with.
 - **Standing actions are capabilities of this manifest** (loader; `areas[].standing`, `capabilities[].name`): Every name under an area's `standing` must be a capability declared in the same manifest.
 - **Only a propose follows a fact** (loader; `capabilities[].kind`, `capabilities[].follows`) ([D55](../decisions/D55-a-job-is-assembled-from-what-connectors-follow-approved-once-and-run-per-system.md)): `follows` may be declared only on a `propose`. Its input is a `FactEnvelope` and its output a `FollowResponse` whose steps name this connector only.

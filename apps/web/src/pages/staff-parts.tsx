@@ -1,7 +1,7 @@
-import { useEffect, useRef, type ComponentProps, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, type ComponentProps, type ReactNode } from 'react';
 import { useLocation } from 'react-router';
 import type { AnimatedLayout } from '@clew/ui';
-import type { EntityCard, EntityColumn, EntityList, EntityRef, EntitySource, ViewField } from '@clew/contracts';
+import type { EntityColumn, EntityList, EntityRef, EntitySource, ViewField } from '@clew/contracts';
 import {
   Avatar,
   Badge,
@@ -26,11 +26,14 @@ import {
   proportional,
   useAnnounce,
 } from '@clew/ui';
-import { FieldValue, badgeVariant, fieldWord, isBadged } from '../components/view';
+import { FieldCell, FieldValue, badgeVariant, fieldText, fieldWord, isBadged } from '../components/view';
 import { personHref } from '../components/person-panel';
-import { useEntityAction } from '../entity-actions';
+import type { EntityActionStart } from '../entity-actions';
+import { withCard } from '../panel-address';
+import { groupFields, present, rowGroups, type FieldGroup } from '../view-fields';
 import {
   byNeed,
+  cardLinkTexts,
   columnValue,
   lensNeed,
   marksFor,
@@ -40,6 +43,7 @@ import {
   titleField,
   viewFields,
   type Answer,
+  type Row,
   type Silent,
 } from './staff-model';
 
@@ -53,11 +57,15 @@ type MenuItems = ComponentProps<typeof MoreMenu>['items'];
 type Answers = ReadonlyMap<string, Answer>;
 /** Each person's link to themselves, by Clew's id, so the talk's drawer can give the focus back after a reload. */
 export type Openers = (id: string | undefined) => (el: HTMLElement | null) => void;
-/** What every part needs from the page: the list as the API gave it, each source's answer, and the people's links. */
+/**
+ * What every part needs from the page: the list as the API gave it, each source's answer, the people's links, and the
+ * page's one way to start an action (its refusal is shown once, at the top of the list).
+ */
 export interface Context {
   list: EntityList;
   answers: Answers;
   openers: Openers;
+  start: EntityActionStart['start'];
 }
 
 /** The value "Alla" has in the Visa menu; a lens's value is its capability, which always holds a dot. */
@@ -116,10 +124,11 @@ export function ShowMenu({
 /**
  * One person's menu (artboard A3): every action about a person, one section per system with the system as its title,
  * and a source's page as a way in under that source ("Öppna samtalet"). Under a lens its own source comes first. An
- * action starts as every standing action does (`useEntityAction`): nothing runs before the person confirms.
+ * action starts on the server without the model (`useEntityAction`) and opens its card; nothing reaches the source's
+ * write before the person decides on the card.
  */
-export function RowMenu({ entity, list, lens }: { entity: EntityRef; list: EntityList; lens?: EntitySource }) {
-  const start = useEntityAction();
+export function RowMenu({ entity, ctx, lens }: { entity: EntityRef; ctx: Context; lens?: EntitySource }) {
+  const { list, start } = ctx;
   const location = useLocation();
   const here = { pathname: location.pathname, search: location.search };
   const sections = new Map<string, Array<MenuItems[number]>>();
@@ -144,12 +153,16 @@ export function RowMenu({ entity, list, lens }: { entity: EntityRef; list: Entit
 }
 
 /**
- * The person's cards as links in "Just nu" ("1 att agera på", "1 förslag", artboard A2). SEAM: the cards about a person
- * come with the slice that gives card rows a subject (D97 items 5 and 6); the list carries none yet, so this draws
- * nothing. It takes the cards as `EntityDetail.cards` gives them and returns their links.
+ * The person's cards as links in "Just nu" (artboard A2, D97 item 5): "1 att agera på" and "1 förslag" (or "N …"), each
+ * opening the card as Hem opens one when the server named the one card there is, and otherwise the person beside the
+ * list, where Behöver dig lists their cards.
  */
-export function cardLinks(_cards: EntityCard[] | undefined): ReactNode[] {
-  return [];
+export function cardLinks(list: EntityList, entity: EntityRef, opensPerson: string): ReactNode[] {
+  return cardLinkTexts(list, entity.key).map(link => (
+    <Link key={link.id} href={link.threadId ? withCard('/', '', link.threadId) : opensPerson} hasUnderline>
+      {link.text}
+    </Link>
+  ));
 }
 
 /** The person's name as the way to open them beside the list (D83 rule 1), with their initials before it. */
@@ -177,10 +190,11 @@ const columnHeader = (column: EntityColumn) => (
     </Text>
   </VStack>
 );
-/** "Just nu": the marks of every chosen source as badges with the source's words, then the person's cards. */
+/** "Just nu" (artboard A2): the person's cards as links, then the marks of every chosen source with the source's words. */
 function Marks({ entity, ctx }: { entity: EntityRef; ctx: Context }) {
+  const location = useLocation();
   const marks = marksFor(ctx.list, ctx.answers, entity.key);
-  const links = cardLinks(undefined);
+  const links = cardLinks(ctx.list, entity, personHref(location.pathname, location.search, entity.key));
   if (!marks.length && !links.length) return null;
   return (
     <HStack gap={2} vAlign="center" wrap="wrap">
@@ -233,7 +247,26 @@ function labelledWord(f: ViewField, value: unknown): string {
   const word = fieldWord(f, value);
   return typeof value === 'boolean' || word.startsWith(`${f.label}: `) ? word : `${f.label}: ${word}`;
 }
-const present = (value: unknown) => value !== undefined && value !== null && value !== '';
+/**
+ * A row under a lens as a phone says it (D97): each cell of the lens, the states that are badges as badges, the rest as
+ * words, the cell's label before the first word ("Åtgärdspunkter: 3 öppna") and a word beside another after it without
+ * one ("tors 12 nov. kl. 09:00").
+ */
+function phoneParts(groups: FieldGroup[], row: Row): { badges: ViewField[]; words: string[] } {
+  const badges: ViewField[] = [],
+    words: string[] = [];
+  for (const g of groups) {
+    const said: string[] = [];
+    for (const f of groupFields(g)) {
+      const value = row[f.key];
+      if (!present(value)) continue;
+      if (f.format === 'status' && isBadged(f, value)) badges.push(f);
+      else said.push(f === g.lead ? labelledWord(f, value) : fieldText(f, value));
+    }
+    if (said.length) words.push(said.join(' '));
+  }
+  return { badges, words };
+}
 /**
  * One person as a row on a phone (the shape the page had before D97): the initials and the name, which opens them,
  * the states that are badges, the rest as one line of words, and the row's menu at the end.
@@ -243,12 +276,15 @@ function PhoneRow({
   ctx,
   badges,
   words,
+  links = [],
   menu,
 }: {
   entity: EntityRef;
   ctx: Context;
   badges: ReactNode[];
   words: string[];
+  /** "Just nu"'s links, at the end of the line of words: a link in a line of text, not a target beside the name. */
+  links?: ReactNode[];
   menu: ReactNode;
 }) {
   const location = useLocation();
@@ -267,14 +303,23 @@ function PhoneRow({
         </Link>
       }
       description={
-        badges.length || words.length ? (
+        badges.length || words.length || links.length ? (
           <VStack gap={1} hAlign="start">
             {badges.length > 0 && (
               <HStack gap={2} wrap="wrap">
                 {badges}
               </HStack>
             )}
-            {words.length > 0 && <Text type="supporting">{words.join(' · ')}</Text>}
+            {(words.length > 0 || links.length > 0) && (
+              <Text type="supporting">
+                {[...words, ...links].map((part, i) => (
+                  <Fragment key={i}>
+                    {i > 0 && ' · '}
+                    {part}
+                  </Fragment>
+                ))}
+              </Text>
+            )}
           </VStack>
         ) : undefined
       }
@@ -292,7 +337,7 @@ const menuColumn = (ctx: Context, lens?: EntitySource) => ({
   key: 'menu',
   header: <VisuallyHidden>Åtgärder</VisuallyHidden>,
   width: pixel(60),
-  renderCell: (r: TableRow) => <RowMenu entity={r.entity} list={ctx.list} {...(lens ? { lens } : {})} />,
+  renderCell: (r: TableRow) => <RowMenu entity={r.entity} ctx={ctx} {...(lens ? { lens } : {})} />,
 });
 
 /**
@@ -310,6 +355,7 @@ export function AllUnit({
   mobile: boolean;
   animatedLayout: AnimatedLayout;
 }) {
+  const location = useLocation();
   return (
     <UnitCard group={group}>
       {mobile ? (
@@ -324,6 +370,7 @@ export function AllUnit({
                 key={e.key}
                 entity={e}
                 ctx={ctx}
+                links={cardLinks(ctx.list, e, personHref(location.pathname, location.search, e.key))}
                 badges={[
                   ...toned.map(({ c, value }) => (
                     <FieldValue key={`${c.capability}:${c.field.key}`} field={c.field} value={value} />
@@ -333,7 +380,7 @@ export function AllUnit({
                   )),
                 ]}
                 words={values.filter(v => !toned.includes(v)).map(({ c, value }) => labelledWord(c.field, value))}
-                menu={<RowMenu entity={e} list={ctx.list} />}
+                menu={<RowMenu entity={e} ctx={ctx} />}
               />
             );
           })}
@@ -348,9 +395,10 @@ export function AllUnit({
               key: `column:${c.capability}:${c.field.key}`,
               header: columnHeader(c),
               width: proportional(1, { minWidth: 160 }),
+              // A value without a tone is ordinary text, as the artboard draws "I tjänst" and "mån 16 nov".
               renderCell: (r: TableRow) => {
                 const row = rowOf(ctx.answers.get(c.capability), r.entity.key);
-                return row ? <FieldValue field={c.field} value={row[c.field.key]} /> : null;
+                return row ? <FieldValue field={c.field} value={row[c.field.key]} text="ordinary" /> : null;
               },
             })),
             {
@@ -370,9 +418,25 @@ export function AllUnit({
 }
 
 /**
- * A unit under a lens (artboard B): Person, one column per field of the lens's view drawn as the view says, and the
- * row's menu; the people sorted by need, those the source has no row for last with nothing in its columns. On a phone
- * the same rows with the badges and the words under the name.
+ * One cell of a lens (artboard B): the cell's first value as ordinary text or its badge, and what the view puts beside
+ * it after it, in supporting text unless it is a badge ("Bokat" and "tors 12 nov. kl. 09:00", "3 öppna" and "2
+ * försenade").
+ */
+function LensCell({ group, row }: { group: FieldGroup; row: Row }) {
+  const value = row[group.lead.key];
+  return (
+    <FieldCell
+      group={group}
+      row={row}
+      {...(present(value) ? { lead: <FieldValue field={group.lead} value={value} text="ordinary" /> } : {})}
+    />
+  );
+}
+
+/**
+ * A unit under a lens (artboard B): Person, one column per cell of the lens's view (a field and what it puts beside it,
+ * the compact one left out, D97), and the row's menu; the people sorted by need, those the source has no row for last
+ * with nothing in its columns. On a phone the same rows with the badges and the words under the name.
  */
 export function LensUnit({
   group,
@@ -388,7 +452,7 @@ export function LensUnit({
   animatedLayout: AnimatedLayout;
 }) {
   const answer = ctx.answers.get(lens.capability);
-  const fields = viewFields(lens.view);
+  const groups = rowGroups(viewFields(lens.view));
   const people = byNeed(group.entities, lens, answer);
   return (
     <UnitCard group={group}>
@@ -396,18 +460,17 @@ export function LensUnit({
         <List aria-label={group.label} hasDividers animatedLayout={animatedLayout}>
           {people.map(e => {
             const row = rowOf(answer, e.key);
-            const shown = row ? fields.filter(f => present(row[f.key])) : [];
-            const toned = shown.filter(f => f.format === 'status' && isBadged(f, row![f.key]));
+            const parts = row ? phoneParts(groups, row) : { badges: [], words: [] };
             return (
               <PhoneRow
                 key={e.key}
                 entity={e}
                 ctx={ctx}
-                badges={toned.map(f => (
+                badges={parts.badges.map(f => (
                   <FieldValue key={f.key} field={f} value={row![f.key]} />
                 ))}
-                words={shown.filter(f => !toned.includes(f)).map(f => labelledWord(f, row![f.key]))}
-                menu={<RowMenu entity={e} list={ctx.list} lens={lens} />}
+                words={parts.words}
+                menu={<RowMenu entity={e} ctx={ctx} lens={lens} />}
               />
             );
           })}
@@ -418,15 +481,17 @@ export function LensUnit({
           idKey="id"
           columns={[
             personColumn(ctx),
-            ...fields.map(f => ({
-              key: `field:${f.key}`,
-              header: f.label,
-              // A moment with its time ("tors 12 nov. kl. 09:00") stays on one line.
-              width: proportional(1, { minWidth: f.format === 'instant' ? 190 : 140 }),
-              ...(f.format === 'number' ? { align: 'end' as const } : {}),
+            ...groups.map(g => ({
+              key: `field:${g.lead.key}`,
+              header: g.lead.label,
+              // A state with its moment ("Bokat", "tors 12 nov. kl. 09:00") has room for both on one line.
+              width: proportional(1, {
+                minWidth: groupFields(g).some(f => f.format === 'instant') ? 240 : g.beside.length ? 200 : 140,
+              }),
+              ...(g.lead.format === 'number' && !g.beside.length ? { align: 'end' as const } : {}),
               renderCell: (r: TableRow) => {
                 const row = rowOf(answer, r.entity.key);
-                return row ? <FieldValue field={f} value={row[f.key]} /> : null;
+                return row ? <LensCell group={g} row={row} /> : null;
               },
             })),
             menuColumn(ctx, lens),
@@ -469,13 +534,11 @@ export function CompactUnit({
             <ListItem
               key={e.key}
               itemKey={e.key}
-              label={e.name}
+              label={<Text weight="semibold">{e.name}</Text>}
               href={personHref(location.pathname, location.search, e.key)}
               isSelected={!!opened && opened.toLowerCase() === e.key.toLowerCase()}
               endContent={
-                title && value !== undefined && value !== null && value !== '' ? (
-                  <FieldValue field={title} value={value} />
-                ) : undefined
+                title && present(value) ? <FieldValue field={title} value={value} text="ordinary" /> : undefined
               }
             />
           );

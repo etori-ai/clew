@@ -10,8 +10,10 @@ import {
   type EntitySource,
   type View,
   type ViewField,
+  type ViewTone,
 } from '@clew/contracts';
 import { statusWord } from '../components/panel-labels';
+import { wholeRow } from '../view-fields';
 
 /**
  * Personal as D97 places it (artboards A2, B, A3): what the page reads from the sources an administrator chose, as pure
@@ -84,17 +86,23 @@ export function needOf(fields: ViewField[], row: Row | undefined): 'alert' | 'wa
   }
   return need;
 }
+/** The fields a lens draws that can need the reader: the marking fields of its whole row, the compact one left out (D97). */
+const lensMarks = (view: View): ViewField[] => wholeRow(markFields(view));
 /**
- * The people under a lens, sorted by need (artboard B): the rows with an `alert` first, then `warn`, then the rest, and
- * last the people the source has no row for. Inside each the directory's order stands.
+ * The people under a lens, sorted by need (artboard B): first a row whose title value needs the reader (`alert`, then
+ * `warn`: "Saknas"), then a row where another field the lens draws does ("2 försenade"), then the rest, and last the
+ * people the source has no row for. Inside each the directory's order stands.
  */
 export function byNeed(entities: EntityRef[], lens: EntitySource, answer: Answer | undefined): EntityRef[] {
-  const fields = markFields(lens.view);
+  const title = titleField(lens.view);
+  const others = lensMarks(lens.view).filter(f => f.key !== title?.key);
   const rank = (e: EntityRef) => {
     const row = rowOf(answer, e.key);
-    if (!row) return 3;
-    const need = needOf(fields, row);
-    return need === 'alert' ? 0 : need === 'warn' ? 1 : 2;
+    if (!row) return 4;
+    const own = title ? fieldTone(title, row[title.key]) : 'none';
+    if (own === 'alert') return 0;
+    if (own === 'warn') return 1;
+    return needOf(others, row) ? 2 : 3;
   };
   return entities
     .map((e, i) => ({ e, i, r: rank(e) }))
@@ -103,15 +111,15 @@ export function byNeed(entities: EntityRef[], lens: EntitySource, answer: Answer
 }
 
 /**
- * What a lens holds that needs the reader, for its row in the Visa menu: how many rows have a field toned `warn` or
- * `alert`, and the strongest tone among them. Null when none does or the lens has not answered.
+ * What a lens holds that needs the reader, for its row in the Visa menu: how many rows have a field the lens draws toned
+ * `warn` or `alert`, and the strongest tone among them. Null when none does or the lens has not answered.
  */
 export function lensNeed(
   lens: EntitySource,
   answer: Answer | undefined,
 ): { count: number; tone: 'warn' | 'alert' } | null {
   if (answer?.status !== 'ok') return null;
-  const fields = markFields(lens.view);
+  const fields = lensMarks(lens.view);
   let count = 0,
     alert = false;
   for (const row of answer.all) {
@@ -124,10 +132,13 @@ export function lensNeed(
 
 /** A status word as it reads inside a sentence: "Hållet" becomes "hållet". */
 const lowered = (word: string) => word.charAt(0).toLocaleLowerCase('sv-SE') + word.slice(1);
+/** Where a value's count stands on the lens's fact line: what is done first, then the plain, then what needs the reader. */
+const countOrder: Record<ViewTone, number> = { ok: 0, none: 1, warn: 2, alert: 3 };
 /**
- * The lens's counts per value of its title field (artboard B: "1 hållet, 3 bokat, 1 saknas"), in the order the view
- * names the values in its tones and then as they first appear; empty when the title field is not a status. The words are
- * the source's; Clew does not inflect them.
+ * The lens's counts per value of its title field (artboard B: "1 hållet, 3 bokat, 1 saknas"): the values toned `ok`
+ * first, then those without a tone or toned `none`, then `warn` and `alert`; within each in the order the view names the
+ * values in its tones and then as they first appear. Empty when the title field is not a status. The words are the
+ * source's, lower-cased; Clew does not inflect them.
  */
 export function valueCounts(view: View, rows: Row[]): string {
   const field = titleField(view);
@@ -140,7 +151,11 @@ export function valueCounts(view: View, rows: Row[]): string {
     const name = String(value);
     counts.set(name, (counts.get(name) ?? 0) + 1);
   }
+  const typed = (name: string): unknown => (name === 'true' ? true : name === 'false' ? false : name);
   return [...counts]
+    .map(([name, n], i) => ({ name, n, i, rank: countOrder[fieldTone(field, typed(name))] }))
+    .sort((a, b) => a.rank - b.rank || a.i - b.i)
+    .map(({ name, n }) => [name, n] as const)
     .filter(([, n]) => n > 0)
     .map(
       ([value, n]) =>
@@ -161,8 +176,9 @@ export function markText(view: View, field: ViewField, value: unknown): string {
 }
 /**
  * The marks on one person's row on "Alla" (D97 item 2): for every chosen source, a lens or a column, each field of the
- * person's row toned `warn` or `alert`, unless the field is already a column. A source known only by its column has
- * no view here, so only its column is drawn.
+ * person's row toned `warn` or `alert`, unless the field is already a column. A source whose column already shows this
+ * person a value that needs the reader says it there and marks nothing more ("Inte bokat" in the column, no "Samtal
+ * saknas" beside it). A source known only by its column has no view here, so only its column is drawn.
  */
 export function marksFor(list: EntityList, answers: ReadonlyMap<string, Answer>, key: string): Mark[] {
   const shown = (c: string, f: string) => list.columns.some(col => col.capability === c && col.field.key === f);
@@ -170,6 +186,10 @@ export function marksFor(list: EntityList, answers: ReadonlyMap<string, Answer>,
   for (const source of list.lenses) {
     const row = rowOf(answers.get(source.capability), key);
     if (!row) continue;
+    const said = list.columns.some(
+      col => col.capability === source.capability && needsPerson(fieldTone(col.field, row[col.field.key])),
+    );
+    if (said) continue;
     for (const f of markFields(source.view)) {
       if (shown(source.capability, f.key)) continue;
       const tone = fieldTone(f, row[f.key]);
@@ -182,6 +202,27 @@ export function marksFor(list: EntityList, answers: ReadonlyMap<string, Answer>,
 /** The column's value for a person: the field of their row in the column's source, if it answered and knows them. */
 export const columnValue = (column: EntityColumn, answers: ReadonlyMap<string, Answer>, key: string): unknown =>
   rowOf(answers.get(column.capability), key)?.[column.field.key];
+
+/** One link in "Just nu" (artboard A2): the words, and the card it opens when there is exactly one. */
+export interface CardLink {
+  id: 'act' | 'proposals';
+  text: string;
+  threadId?: string;
+}
+/**
+ * "Just nu"'s links for one person (D97 item 5): "1 att agera på" or "N att agera på" for the cards that wait for the
+ * reader's decision, "1 förslag" or "N förslag" for Clew's proposals. Each opens the card when the server named the one
+ * card there is, and otherwise the person beside the list, where Behöver dig lists them.
+ */
+export function cardLinkTexts(list: EntityList, key: string): CardLink[] {
+  const a = list.attention.find(x => keyOf(x.key) === keyOf(key));
+  if (!a) return [];
+  const thread = a.threadId ? { threadId: a.threadId } : {};
+  return [
+    ...(a.act > 0 ? [{ id: 'act' as const, text: `${a.act} att agera på`, ...thread }] : []),
+    ...(a.proposals > 0 ? [{ id: 'proposals' as const, text: `${a.proposals} förslag`, ...thread }] : []),
+  ];
+}
 
 /**
  * A source's page way in for one entity (D97, D95): `{key}` and `{id}` filled in. On the page the person is on, the

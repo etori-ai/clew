@@ -20,6 +20,7 @@ import {
   LayoutContent,
   LayoutHeader,
   LayoutPanel,
+  Link,
   List,
   ListItem,
   ResizeHandle,
@@ -42,6 +43,7 @@ import { AddToConversation } from './add-to-conversation';
 import { DeclaredView } from './view';
 import { useMarks } from '../marks';
 import { areasQuery } from '../queries';
+import { entityHref } from '../person-address';
 
 const plain = (address: string) => {
   try {
@@ -92,10 +94,13 @@ const NEVER = 'not all';
 /**
  * Found text as objects (D12, D26): every hit is numbered as the answer cites it, opens where it lives and can be added to
  * the conversation as a chip. The row itself is not interactive, so its two buttons are the only stops (Astryx's rule).
+ * A hit about a person or a unit (D97 item 6, artboard P) leads to them instead of to one source's record: its name is
+ * the link, and a hit several sources answered for names them all at the end of its line.
  */
 function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((view: ViewRef) => string) | undefined }) {
   const talk = useConversation();
   const marks = useMarks();
+  const { pathname, search } = useLocation();
   const missed = result.sources.filter(s => s.status !== 'ok');
   return (
     <VStack gap={3}>
@@ -110,35 +115,53 @@ function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((vie
             const reviewed = r.reviewedAt ?? r.updatedAt;
             const note = r.kind === 'document' ? staleLabel(r.stale, reviewed) : '';
             const mark = marks.ofObject(`document:${r.connector}:`);
+            const title = `${r.label}${r.section ? ` · ${r.section}` : ''}`;
+            // Every source that answered for the same entity, the hit's own first: said once, on the hit's line.
+            const merged = r.sources?.map(s => s.source).join(' · ');
+            const meta = [merged ? '' : r.source, r.owner, reviewLabel(reviewed), r.stale ? '' : note.toLowerCase()]
+              .filter(Boolean)
+              .join(' · ');
             return (
               <ListItem
                 key={ref}
                 align="start"
                 startContent={<Badge variant="neutral" label={String(i + 1)} />}
                 label={
-                  <Text weight="semibold">
-                    {r.label}
-                    {r.section ? ` · ${r.section}` : ''}
-                  </Text>
+                  r.subject || merged ? (
+                    <HStack gap={2} justify="between" vAlign="center" wrap="wrap">
+                      {r.subject ? (
+                        <Link href={entityHref(r.subject, pathname + search)} weight="semibold" hasUnderline>
+                          {title}
+                        </Link>
+                      ) : (
+                        <Text weight="semibold">{title}</Text>
+                      )}
+                      {merged && <Text type="supporting">{merged}</Text>}
+                    </HStack>
+                  ) : (
+                    <Text weight="semibold">{title}</Text>
+                  )
                 }
                 description={
                   <VStack gap={1}>
                     <Text type="supporting">{r.snippet}</Text>
                     {/* The meta line starts with the source's glyph and word, so an answer from three systems shows where each hit came from. */}
-                    <HStack gap={2} vAlign="center" wrap="wrap">
-                      <AreaLine {...(mark?.icon ? { icon: mark.icon } : {})}>
-                        {[r.source, r.owner, reviewLabel(reviewed), r.stale ? '' : note.toLowerCase()]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </AreaLine>
-                      {r.stale && note && <Badge variant="warning" label={note} />}
-                    </HStack>
+                    {(meta || (r.stale && note)) && (
+                      <HStack gap={2} vAlign="center" wrap="wrap">
+                        {merged ? (
+                          meta && <Text type="supporting">{meta}</Text>
+                        ) : (
+                          <AreaLine {...(mark?.icon ? { icon: mark.icon } : {})}>{meta}</AreaLine>
+                        )}
+                        {r.stale && note && <Badge variant="warning" label={note} />}
+                      </HStack>
+                    )}
                     <HStack gap={1} wrap="wrap">
-                      {/* A hit whose source declares its view (D38) opens here, drawn by Startsidan; the link still leads to the source. */}
-                      {r.view && hrefFor && (
+                      {/* A hit whose source declares its view (D38) opens here, drawn by Startsidan; the link still leads to the source. A hit about an entity leads to the entity instead. */}
+                      {!r.subject && r.view && hrefFor && (
                         <Button size="sm" variant="secondary" label={r.view.title} href={hrefFor(r.view)} />
                       )}
-                      {r.link && (
+                      {!r.subject && r.link && (
                         <Button
                           size="sm"
                           variant="secondary"

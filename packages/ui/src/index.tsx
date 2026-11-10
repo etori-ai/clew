@@ -111,6 +111,8 @@ export { Toolbar } from '@astryxdesign/core/Toolbar';
 export { FormLayout } from '@astryxdesign/core/FormLayout';
 export { TextInput } from '@astryxdesign/core/TextInput';
 export { FileInput } from '@astryxdesign/core/FileInput';
+// The manifest preview (D60, D97): a manifest is pasted as a document of many lines.
+export { TextArea } from '@astryxdesign/core/TextArea';
 export { Theme } from '@astryxdesign/core/theme';
 export { InfoTip } from '@astryxdesign/core/InfoTip';
 export { Code } from '@astryxdesign/core/Code';

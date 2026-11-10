@@ -114,8 +114,10 @@ export const UnitTalksOutputSchema = Type.Object(
 );
 /**
  * One person's place in the round (artboards A2, B and C): the state as a badge (only a missing talk warns, a held one
- * is done, a booked one is a neutral badge), when, the next talk as a column reads it (only "Inte bokat" warns, a date
- * is plain), and the action points, the overdue ones warning. A row opens the person's action points.
+ * is done, a booked one is a neutral badge) with its time beside it, the next talk as one value where only one has room
+ * (a column, a one-line summary; only "Inte bokat" warns, a date is plain), and the action points with the overdue ones
+ * beside them, warning. A lens and a section draw two cells, "Samtal" and "Åtgärdspunkter" (D97). A row opens the
+ * person's action points.
  */
 export const personTalksView: View = {
   kind: 'list',
@@ -124,10 +126,10 @@ export const personTalksView: View = {
   empty: 'Ingen av dem är med i den öppna omgången.',
   fields: [
     { key: 'state', label: 'Samtal', format: 'status', tones: { Saknas: 'warn', Bokat: 'none', Hållet: 'ok' } },
-    { key: 'at', label: 'När', format: 'instant' },
-    { key: 'next', label: 'Nästa samtal', format: 'status', tones: { 'Inte bokat': 'warn' } },
+    { key: 'at', label: 'När', format: 'instant', beside: true },
+    { key: 'next', label: 'Nästa samtal', format: 'status', tones: { 'Inte bokat': 'warn' }, compact: true },
     { key: 'open', label: 'Åtgärdspunkter' },
-    { key: 'overdue', label: 'Försenade', format: 'status', tones: { '*': 'warn' } },
+    { key: 'overdue', label: 'Försenade', format: 'status', tones: { '*': 'warn' }, beside: true },
   ],
   open: { capability: TALKS_CONNECTOR + '.commitments', title: 'Åtgärdspunkter', params: { person: 'key' } },
 };

@@ -624,6 +624,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           sources={sources}
           now={now}
           unitLabel={user.unitLabel}
+          unitId={user.unitId || undefined}
           viewHref={(capability, title) => viewHref(capability, title)}
           twoAcross={mobile}
         />
@@ -771,7 +772,15 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
                 <BriefSkeleton compact={mobile} />
               </VStack>
               {tab === 'needs-you' && !area && (
-                <Lage areas={[]} loading now={now} unitLabel={user.unitLabel} viewHref={() => ''} twoAcross={mobile} />
+                <Lage
+                  areas={[]}
+                  loading
+                  now={now}
+                  unitLabel={user.unitLabel}
+                  unitId={user.unitId || undefined}
+                  viewHref={() => ''}
+                  twoAcross={mobile}
+                />
               )}
             </VStack>
           }

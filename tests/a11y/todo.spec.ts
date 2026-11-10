@@ -445,3 +445,107 @@ test.describe('asking from a page on a narrower screen', () => {
     expect(api.asked.map(a => a.conversationId ?? null)).toEqual([null, null]);
   });
 });
+
+/**
+ * D97 item 6, artboards M and N: a card row that names a person is a link to them, in the source's own words. From Hem
+ * the person opens as their page with Hem's address (the card still open beside it) as the way back.
+ */
+test.describe('a card row that names a person', () => {
+  test.use({ viewport: wide });
+
+  test('the name is a link in the order the card is read, it leads to the person, and Back returns to the card', async ({
+    page,
+    api,
+  }) => {
+    api.threads = api.threads.map(t =>
+      t.id === 'omtanke'
+        ? {
+            ...t,
+            items: [
+              {
+                ref: 'hr:person:anna',
+                label: 'Anna Lindqvist',
+                detail: 'Tre sjukperioder sedan juni',
+                selectable: false,
+                selected: false,
+                subject: { entity: 'person', key: 'anna' },
+              },
+            ],
+          }
+        : t,
+    );
+    await open(page, '/?card=omtanke');
+    const card = page.getByRole('complementary', { name: 'Kort' }).locator('#card-omtanke');
+    const name = card.getByRole('link', { name: 'Anna Lindqvist', exact: true });
+    await expect(name).toHaveAttribute('href', '/people/anna?from=%2F%3Fcard%3Domtanke');
+    await expect(card.getByText('Tre sjukperioder sedan juni')).toBeVisible();
+    await expectNoAxeViolations(page);
+    // From the card's heading the name comes before the card's next step.
+    await card.getByRole('heading', { name: 'Omtankesamtal med Anna Lindqvist' }).focus();
+    const order: string[] = [];
+    for (let i = 0; i < 12 && !order.includes('Boka samtalet'); i++) {
+      await page.keyboard.press('Tab');
+      order.push(await page.evaluate(() => document.activeElement?.textContent?.trim() ?? ''));
+    }
+    expect(order.indexOf('Anna Lindqvist')).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf('Anna Lindqvist')).toBeLessThan(order.indexOf('Boka samtalet'));
+    await name.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/people\/anna\?from=%2F%3Fcard%3Domtanke$/);
+    await expect(heading(page, 1, 'Anna Lindqvist')).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL(/\/\?card=omtanke$/);
+    await expect(page.getByRole('complementary', { name: 'Kort' }).locator('#card-omtanke')).toBeVisible();
+  });
+
+  test('a row the person ticks keeps its checkbox, named by the row, and the name inside it is a link of its own', async ({
+    page,
+    api,
+  }) => {
+    const base = api.threads.find(t => t.id === 'fakturor')!;
+    api.threads = [
+      {
+        ...base,
+        id: 'sjuk',
+        topic: 'sjuk',
+        title: 'Sjukanmälan att godkänna',
+        connector: 'hr',
+        area: 'personal',
+        summary: 'Personalsystemet tog emot en sjukanmälan.',
+        items: [
+          {
+            ref: 'hr:sick:1',
+            label: 'Erik Sandström',
+            detail: 'sjuk 10–11 nov · 2 pass berörs',
+            selectable: true,
+            selected: true,
+            subject: { entity: 'person', key: 'erik' },
+          },
+        ],
+        actions: [
+          {
+            id: 'approve',
+            label: 'Godkänn',
+            capability: 'hr.approveSick',
+            kind: 'execute',
+            role: 'primary',
+            usesItems: true,
+          },
+        ],
+      },
+      ...api.threads,
+    ];
+    await open(page, '/?card=sjuk');
+    const card = page.getByRole('complementary', { name: 'Kort' }).locator('#card-sjuk');
+    const box = card.getByRole('checkbox', { name: /Erik Sandström/ });
+    await expect(box).toBeChecked();
+    const name = card.getByRole('link', { name: 'Erik Sandström', exact: true });
+    await expect(name).toHaveAttribute('href', '/people/erik?from=%2F%3Fcard%3Dsjuk');
+    await expectNoAxeViolations(page);
+    // Pressing the link leads away; it does not tick the row.
+    await name.click();
+    await expect(page).toHaveURL(/\/people\/erik\?/);
+    await page.goBack();
+    await expect(card.getByRole('checkbox', { name: /Erik Sandström/ })).toBeChecked();
+  });
+});

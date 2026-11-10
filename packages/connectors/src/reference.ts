@@ -183,6 +183,8 @@ export const HANDWRITTEN_EXAMPLES: Record<string, unknown> = {
   'capabilities[].view.empty': 'Inga träffar.',
   'capabilities[].view.fields[].format': 'status',
   'capabilities[].view.fields[].tones': { open: 'warn', closed: 'ok' },
+  'capabilities[].view.fields[].beside': true,
+  'capabilities[].view.fields[].compact': true,
   'capabilities[].view.input.filter': {
     key: 'state',
     label: 'Status',
@@ -288,6 +290,22 @@ export const RULES: Rule[] = [
     enforced: 'loader',
     decision: 'D97',
     text: "Where the output schema declares `properties`, `subject.key` is one of the record's properties (a row's for a table or list) and its type is `string`: a person's provisioned `userName` or a unit's id. The record's title then links to that person or unit for a reader who may open it; Clew never checks that the key exists, and a record without the value links nowhere.",
+  },
+  {
+    id: 'view-beside-follows',
+    title: 'A field beside another follows one',
+    fields: ['capabilities[].view.fields[].beside'],
+    enforced: 'loader',
+    decision: 'D97',
+    text: "`beside` draws a field in the same cell or on the same line as the field before it, under that field's label: a state and its time, a count and what is late in it. It is never on the first field of a view or of a record's items.",
+  },
+  {
+    id: 'view-compact-once',
+    title: 'One field is the row in one value',
+    fields: ['capabilities[].view.fields[].compact'],
+    enforced: 'loader',
+    decision: 'D97',
+    text: "At most one field of a view (or of a record's items) is `compact`: the row in one value, drawn where there is room for one value (a column on a list, a one-line summary) and left out where the whole row is drawn (a lens, a section, a detail).",
   },
   {
     id: 'menu-needs-open-view',

@@ -66,7 +66,14 @@ import type {
 import { sessionFetch } from '@clew/ui';
 import type { AppearanceAdminView, AppearanceLogoInputType } from '@clew/contracts';
 import type { McpDelivery, McpService, McpView, McpResult } from '@clew/contracts';
-import type { EntityDetail, EntityKind, EntityList, EntityRows, EntitySection } from '@clew/contracts';
+import type {
+  EntityActionStarted,
+  EntityDetail,
+  EntityKind,
+  EntityList,
+  EntityRows,
+  EntitySection,
+} from '@clew/contracts';
 
 import { ApiError } from './api-error';
 export { ApiError };
@@ -177,6 +184,12 @@ export const api = {
       call<EntitySection>(
         `/api/entities/${kind}/${encodeURIComponent(key)}/section?capability=${encodeURIComponent(capability)}`,
       ),
+    /**
+     * Start one of the entity's actions from its menu, without the model (D97, D8): the answer is the card the person
+     * decides on. A refusal is the source's Swedish sentence (400); an action the entity does not offer is a 404.
+     */
+    start: (kind: EntityKind, key: string, capability: string) =>
+      post<EntityActionStarted>(`/api/entities/${kind}/${encodeURIComponent(key)}/actions`, { capability }),
   },
   /**
    * Utvecklingssamtal (D96 items 7 to 9): the two composites of Clew's core connector and the built-in module's writes.

@@ -1397,18 +1397,20 @@ export const TALK_LENS = 'clew.talkPeople';
 export const PRESENCE_LENS = 'hr.presence';
 /** A source an opened person has that never answers in the suite. */
 export const SILENT_SECTION = 'competence.skills';
+/** As `talks.person` declares it (D97): the time beside the state, the late points beside the open ones, the next talk the row in one value. */
 const talkView: View = {
   kind: 'list',
   title: 'state',
   noun: { one: 'person', other: 'personer' },
   fields: [
     { key: 'state', label: 'Samtal', format: 'status', tones: { Saknas: 'warn', Bokat: 'none', Hållet: 'ok' } },
-    { key: 'at', label: 'När', format: 'instant' },
-    { key: 'next', label: 'Nästa samtal', format: 'status', tones: { 'Inte bokat': 'warn' } },
+    { key: 'at', label: 'När', format: 'instant', beside: true },
+    { key: 'next', label: 'Nästa samtal', format: 'status', tones: { 'Inte bokat': 'warn' }, compact: true },
     { key: 'open', label: 'Åtgärdspunkter' },
-    { key: 'overdue', label: 'Försenade', format: 'status', tones: { '*': 'warn' } },
+    { key: 'overdue', label: 'Försenade', format: 'status', tones: { '*': 'warn' }, beside: true },
   ],
 };
+/** As `hr.person` declares it: presence is the row in one value, so a section reads "I dag" and "Kommande". */
 const presenceView: View = {
   kind: 'list',
   title: 'presence',
@@ -1419,6 +1421,7 @@ const presenceView: View = {
       label: 'Närvaro',
       format: 'status',
       tones: { 'Sjuk · dag 1': 'none', 'Sjuk · dag 2': 'none', Sjukskriven: 'none', VAB: 'none', Semester: 'none' },
+      compact: true,
     },
     { key: 'today', label: 'I dag' },
     { key: 'upcoming', label: 'Kommande' },
@@ -1439,6 +1442,8 @@ export const talkSource: EntitySource = {
   title: 'Utvecklingssamtal',
   view: talkView,
   page: { title: 'Öppna samtalet', href: '/staff?talk={id}' },
+  // Clew's own domain (a core connector): its section and its lens are captioned "Clew".
+  own: true,
 };
 export const presenceSource: EntitySource = {
   capability: PRESENCE_LENS,
@@ -1462,6 +1467,7 @@ export const entityActions = (): EntityAction[] => [
     title: 'Boka samtal',
     kind: 'propose',
     param: 'person',
+    own: true,
   },
   {
     capability: 'hr.registerAbsence',
@@ -1479,10 +1485,17 @@ const entityPerson = (key: string, name: string, detail: string): EntityRef => (
   detail: `${detail} · ${ENTITY_UNIT.label}`,
   id: key,
 });
-/** `GET /api/entities/person`: the directory's order, which is the list's order on "Alla". */
+/**
+ * `GET /api/entities/person`: the directory's order, which is the list's order on "Alla". "Just nu" as artboard A2:
+ * Erik and Johan each have a card to act on, Karin one of Clew's proposals; each is the one card, so its link opens it.
+ */
 export const entityList = (): EntityList => ({
   kind: 'person',
-  attention: [],
+  attention: [
+    { key: 'erik', act: 1, proposals: 0, threadId: 'omtanke' },
+    { key: 'johan', act: 1, proposals: 0, threadId: 'samtal-svar' },
+    { key: 'karin', act: 0, proposals: 1, threadId: 'samtal' },
+  ],
   groups: [
     {
       ...ENTITY_UNIT,
@@ -1497,7 +1510,7 @@ export const entityList = (): EntityList => ({
   ],
   columns: [
     { capability: PRESENCE_LENS, source: 'Personalsystemet', title: 'Frånvaro', field: presenceView.fields[0]! },
-    { capability: TALK_LENS, source: TALKS_SOURCE, title: 'Utvecklingssamtal', field: talkView.fields[2]! },
+    { capability: TALK_LENS, source: TALKS_SOURCE, title: 'Utvecklingssamtal', field: talkView.fields[2]!, own: true },
   ],
   lenses: [talkSource, presenceSource],
   actions: entityActions(),

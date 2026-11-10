@@ -24,7 +24,7 @@ import {
   personKey,
   personRef,
   placed,
-  sourceOf,
+  sectionsOf,
   unitRef,
   type Checked,
 } from './domain';
@@ -222,7 +222,7 @@ export function entityUsecases(deps: EntityDeps) {
       deps.sources.actions(actor, kind),
       deps.cards(persona, { entity: kind, key: found.entity.key }),
     ]);
-    return { ...found, actions: actions.map(actionOf), sections: reads.map(sourceOf), cards };
+    return { ...found, actions: actions.map(actionOf), sections: sectionsOf(reads), cards };
   }
 
   /** One source's answer for one entity: any read about the kind the reader may call. */

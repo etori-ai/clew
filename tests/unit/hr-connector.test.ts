@@ -275,8 +275,12 @@ describe('the HR fixture connector', () => {
     expect(placesOf(declared)).toEqual(['lens', 'section']);
     expect(markFields(declared.view)).toEqual([]);
     const presence = declared.view?.kind === 'list' ? declared.view.fields[0]! : undefined;
-    // "I tjänst" has no tone and is drawn plain; an absence is a neutral badge.
+    // "I tjänst" has no tone and is drawn plain; an absence is a neutral badge. Presence is the row in one value, the
+    // column on "Alla"; where the whole row is drawn the section reads "I dag" and "Kommande" (D97, artboard C).
     expect(presence!.tones?.['I tjänst']).toBeUndefined();
+    expect(declared.view?.kind === 'list' ? declared.view.fields.filter(f => f.compact).map(f => f.key) : []).toEqual([
+      'presence',
+    ]);
     expect(['Sjuk · dag 1', 'Sjuk · dag 14', 'Sjukskriven', 'VAB', 'Semester'].map(v => presence!.tones?.[v])).toEqual([
       'none',
       'none',

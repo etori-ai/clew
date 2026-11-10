@@ -25,6 +25,7 @@ import { AsyncContent, ContentSkeleton } from '../components/loading';
 import { PageHeader } from '../components/page-header';
 import { TalkOverlay } from '../components/talk-overlay';
 import { usePersonPanel } from '../components/person-panel';
+import { useEntityAction } from '../entity-actions';
 import { answerOf, peopleLine, silentOf, sourcesRead, valueCounts, type Answer } from './staff-model';
 import { AllUnit, CompactUnit, LensUnit, SilentSources, ShowMenu, type Context, type Openers } from './staff-parts';
 
@@ -42,7 +43,8 @@ const SHOW = 'show';
  *
  * Someone who manages nobody gets an empty list from the server, and the page says whom it is for. One person's
  * utvecklingssamtal stays a drawer over this list at `/staff?talk=<personId>` (D96), reached from its source's page way
- * in ("Öppna samtalet"); the drawer reads its own data.
+ * in ("Öppna samtalet"); the drawer reads its own data. An action from a row's menu starts on the server and opens its
+ * card on Hem (`entity-actions.ts`); a source's refusal is said aloud and stands over the list until the next action.
  */
 export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
@@ -58,12 +60,18 @@ export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }
   const lens = list?.lenses.find(l => l.capability === search.get(SHOW));
   const panel = usePersonPanel();
   const groups = list?.groups ?? [];
+  const action = useEntityAction();
 
   // The open talk names the tab itself (the drawer, D96); the list's name is not spoken again when the focus comes back.
+  // A person open beside the list names the tab with the list ("Johan Byström · Personal"); the panel's heading takes
+  // the focus and says the name, so neither is spoken again.
   const talkId = talkOf(search);
   const sawTalk = useRef(false);
-  if (talkId) sawTalk.current = true;
-  usePageTitle(talkId ? null : 'Personal', sawTalk.current ? false : 'Personal');
+  if (talkId || panel.person) sawTalk.current = true;
+  usePageTitle(
+    talkId ? null : panel.name ? `${panel.name} · Personal` : 'Personal',
+    sawTalk.current ? false : 'Personal',
+  );
 
   const openerEls = useRef(new Map<string, HTMLElement>());
   const openers = useCallback<Openers>(
@@ -91,7 +99,7 @@ export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }
   const unanswered = read.flatMap((c, i) => (shown.includes(c) && answers.get(c)?.status !== 'ok' ? [rowsQs[i]] : []));
   const retry = () => unanswered.forEach(q => void q?.refetch());
   const retrying = unanswered.some(q => q?.isFetching);
-  const ctx: Context | null = list ? { list, answers, openers } : null;
+  const ctx: Context | null = list ? { list, answers, openers, start: action.start } : null;
 
   // The list glides when a lens reorders it or the content swaps (Astryx's useAnimatedLayout), within the page.
   const root = useRef<HTMLDivElement>(null);
@@ -113,13 +121,14 @@ export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }
             <VStack gap={5} ref={root}>
               <PageHeader
                 title="Personal"
-                end={
-                  list && groups.length > 0 && list.lenses.length > 0 ? (
-                    <ShowMenu lenses={list.lenses} answers={answers} lens={lens} onChoose={choose} />
-                  ) : undefined
-                }
                 meta={!compact && groups.length > 0 ? <Text type="supporting">{peopleLine(groups)}</Text> : undefined}
               />
+              {/* The Visa menu under the title, where the list it changes starts (artboards A2, B and C). */}
+              {list && groups.length > 0 && list.lenses.length > 0 && (
+                <HStack>
+                  <ShowMenu lenses={list.lenses} answers={answers} lens={lens} onChoose={choose} />
+                </HStack>
+              )}
               {listQ.isError ? (
                 <VStack gap={2}>
                   <Text as="p" role="alert">
@@ -137,6 +146,8 @@ export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }
                 </VStack>
               ) : (
                 <AsyncContent pending={pending} fallback={<ContentSkeleton />} gap={5}>
+                  {/* A source's refusal of an action from a row's menu, said aloud as it came (entity-actions.ts). */}
+                  {action.error && <Text as="p">{action.error}</Text>}
                   {ctx && groups.length === 0 ? (
                     <Card>
                       <EmptyState
@@ -168,7 +179,8 @@ export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }
                           {[
                             lensAnswer?.status === 'ok' ? lensAnswer.note : undefined,
                             lensAnswer?.status === 'ok' ? valueCounts(lens.view, lensAnswer.all) : undefined,
-                            lens.source,
+                            // Clew's own domain is named as Clew (artboard B), any other source by its name.
+                            lens.own ? 'Clew' : lens.source,
                           ]
                             .filter(Boolean)
                             .join(' · ')}

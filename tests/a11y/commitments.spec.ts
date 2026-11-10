@@ -56,7 +56,7 @@ for (const [layout, viewport] of [
       // After the day's work and before Läget, as Mina ärenden (D90).
       const work = heading(page, 2, 'Nu · 1'),
         own = heading(page, 2, 'Mina åtgärdspunkter'),
-        lage = heading(page, 2, 'Läget · Skönsmons skola');
+        lage = heading(page, 2, 'Läget på Skönsmons skola');
       expect((await own.boundingBox())!.y).toBeGreaterThan((await work.boundingBox())!.y);
       expect((await lage.boundingBox())!.y).toBeGreaterThan((await own.boundingBox())!.y);
 
@@ -69,6 +69,13 @@ for (const [layout, viewport] of [
       // A manager's own point concerns an employee and names them; one from an earlier talk and overdue says so.
       await expect(row(page, point('c-anna-2').text)).toContainText(`Samtal med ${point('c-anna-2').name}`);
       await expect(row(page, point('c-anna-2').text)).toContainText('Senast fre 27 nov.');
+      // The employee's name leads to them (D97 item 6, artboard M): their user name is the key, Hem the way back.
+      await expect(
+        row(page, point('c-anna-2').text).getByRole('link', { name: point('c-anna-2').name, exact: true }),
+      ).toHaveAttribute('href', `/people/${point('c-anna-2').userName}?from=%2F`);
+      // A point about the reader names nobody, so nothing in it is a link.
+      await expect(row(page, point('c-me-2').text).getByRole('link')).toHaveCount(0);
+      await expect(row(page, point('c-me-3').text).getByRole('link')).toHaveCount(0);
       const erik = row(page, point('c-erik-1').text);
       await expect(erik).toContainText('Från tidigare samtal');
       await expect(erik).toContainText('Försenad');
@@ -187,7 +194,10 @@ for (const [layout, viewport] of [
         'href',
         'https://personal.clew.test/atgarder/c-anna-2',
       );
-      await expect(mine.getByRole('link')).toHaveCount(5);
+      await expect(mine.locator('a[href^="https://personal.clew.test/"]')).toHaveCount(5);
+      // Besides those, only the employees a manager's own points name lead anywhere: to the person (D97 item 6).
+      await expect(mine.getByRole('link')).toHaveCount(7);
+      await expect(mine.locator('a[href^="/people/"]')).toHaveCount(2);
       await expect(mine.getByText(TALKS_READ_ONLY_SOURCE, { exact: true })).toHaveCount(1);
       await expectNoAxeViolations(page);
     });

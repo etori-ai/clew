@@ -256,7 +256,11 @@ describe('the field list', () => {
                 label: 'Status',
                 format: HANDWRITTEN_EXAMPLES['capabilities[].view.fields[].format'],
                 tones: HANDWRITTEN_EXAMPLES['capabilities[].view.fields[].tones'],
+                // The status is the case in one value where one value has room (D97).
+                compact: HANDWRITTEN_EXAMPLES['capabilities[].view.fields[].compact'],
               },
+              // The person in the status's cell (D97).
+              { key: 'person', label: 'Person', beside: HANDWRITTEN_EXAMPLES['capabilities[].view.fields[].beside'] },
             ],
             input: { filter: HANDWRITTEN_EXAMPLES['capabilities[].view.input.filter'] },
             empty: HANDWRITTEN_EXAMPLES['capabilities[].view.empty'],
@@ -371,6 +375,19 @@ describe('the rules', () => {
     'view-subject-is-a-string': [
       broken(phonebook, m => {
         m.capabilities[0].view.subject = { entity: 'person', key: 'nowhere' };
+      }),
+      'phonebook',
+    ],
+    'view-beside-follows': [
+      broken(phonebook, m => {
+        m.capabilities[0].view.fields[0].beside = true;
+      }),
+      'phonebook',
+    ],
+    'view-compact-once': [
+      broken(phonebook, m => {
+        m.capabilities[0].view.fields[1].compact = true;
+        m.capabilities[0].view.fields[2].compact = true;
       }),
       'phonebook',
     ],

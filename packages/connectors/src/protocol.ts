@@ -608,7 +608,55 @@ export const ManifestPreviewCapabilitySchema = object({
     description:
       "Where Clew would show it on the entity it is about (D97), from the declaration alone: `lens` a table or list an administrator may offer under Visa on the entity's list, `mark` a `warn` or `alert` tone that marks the entity's row where an administrator chose the source, `section` a section on the opened entity, `menu` an action in the entity's menu, run after a human decision. Empty when it is about nothing.",
   }),
+  openedFrom: Type.Array(Type.String(), {
+    description:
+      "The reads of this manifest whose rows open it (their view's `open`). Opened from a read about an entity, it is drawn under that read's section and in full on the entity's page; from any other read, a row opens it beside the list. Empty when nothing opens it.",
+  }),
+  audience: Type.Array(
+    object({
+      places: Type.Array(Type.Union([...ABOUT_PLACES.map(p => Type.Literal(p)), Type.Literal('tool')]), {
+        minItems: 1,
+      }),
+      who: Type.String({ description: 'Who would see it there, in a sentence.' }),
+    }),
+    {
+      description:
+        'Who would see a capability about an entity, place by place (D97), from its scope and the declaration alone: the lens and the mark reach a person who has a list of that kind once an administrator chooses the source, the section anyone who opens an entity the connector answers a row for, the menu anyone who opens one and may call the action; `tool` says whether the model is offered it. Empty when it is about nothing.',
+    },
+  ),
+  samples: Type.Optional(
+    Type.Array(Type.Record(Type.String(), Type.Unknown()), {
+      description:
+        'For a read about an entity: rows made from the declaration alone, to draw its places with before any service runs. Each carries a synthetic `key`; a status field takes in turn each value its view gives a tone, an instant a fixed time, any other field a value its output schema allows or a placeholder. Samples, never data: no connector is called.',
+    }),
+  ),
 });
+/** The places a problem points at (D60, D97): the field in the document, its entry in the manifest reference, the rule it breaks. */
+export const ManifestIssueSchema = object(
+  {
+    problem: Type.String({ description: 'The problem as `problems` lists it.' }),
+    path: Type.String({
+      description:
+        'Where in the document, with indices: `capabilities[0].output.properties.rows.items`. Empty for the document as a whole.',
+    }),
+    field: Type.String({
+      description:
+        'The manifest reference entry the path falls under, without indices: `capabilities[].output`. Empty when none does.',
+    }),
+    anchor: Type.String({
+      description:
+        'The element id on the manifest reference page (`/protocol/manifest#<anchor>`): the rule when there is one, else the field.',
+    }),
+    rule: Type.Optional(
+      object(
+        { id: Type.String(), title: Type.String() },
+        "The rule between fields it breaks, as the manifest reference names it; absent for a problem of the schema's own.",
+      ),
+    ),
+  },
+  'One problem, placed.',
+);
+export type ManifestIssue = Static<typeof ManifestIssueSchema>;
 export const ManifestPreviewSchema = object(
   {
     ok: Type.Boolean({ description: 'Whether Clew would load the document.' }),
@@ -618,6 +666,10 @@ export const ManifestPreviewSchema = object(
     ),
     problems: Type.Array(Type.String(), {
       description: 'Every reason the document would be refused, in the order Clew finds them. Empty when ok.',
+    }),
+    issues: Type.Array(ManifestIssueSchema, {
+      description:
+        'The same problems in the same order, each placed: its path in the document, its manifest reference entry and the rule it breaks. Empty when ok.',
     }),
     manifest: Type.Optional(
       object(

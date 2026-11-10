@@ -56,6 +56,7 @@ import type {
   AppearanceLogoInputType,
   CommitmentAddBody,
   CommitmentsInput,
+  EntityDetail,
   EntityList,
   EntityRows,
   EntitySection,
@@ -69,6 +70,7 @@ import { personSearch, phonebook } from './phonebook';
 import { rooms, roomsSpec } from './rooms';
 import { errandsOutput, errandsSpec, smErrandOutput, smErrandSpec } from './errands';
 import { manifestReference } from '../../packages/connectors/src/reference';
+import { previewManifest } from '../../packages/connectors/src/preview';
 import { parseManifest } from '../../packages/connectors/src/remote';
 import { manifest as helloManifest } from '../../connectors/hello/connector.mjs';
 import { manifest as phonebookManifest } from '../../connectors/phonebook/connector.mjs';
@@ -143,6 +145,12 @@ export class MockApi {
   entityRowsDelay: Record<string, number> = {};
   /** Every entities read that reached the mock, as path and query, in order. */
   entityReads: string[] = [];
+  /** Every action started from an entity's menu (D97), as person key and capability, in order. */
+  entityStarts: Array<{ key: string; capability: string }> = [];
+  /** Actions the source refuses, by capability, with its Swedish sentence (a 400, as the server passes it on). */
+  entityRefusals: Record<string, string> = {};
+  /** The opened person whose actions a start is checked against; a spec that answers the person itself sets it. */
+  entityDetailOf?: (key: string) => EntityDetail | undefined;
   /**
    * The session person is an employee who manages nobody: the session's role is `employee`, Personal is refused, the
    * round lists nobody and their own action points are only the ones about them. For Hem without Personal.
@@ -205,6 +213,16 @@ export class MockApi {
     const json = (body: unknown) => route.fulfill({ json: body });
     const id = path.split('/')[2] ?? '';
     if (path === '/protocol/manifest-reference.json') return json(reference);
+    // The manifest dry run (D60, D97) as the server runs it: the real preview over the posted document.
+    if (path === '/protocol/manifest' && post) {
+      let document: unknown;
+      try {
+        document = JSON.parse(request.postData() ?? '');
+      } catch {
+        return route.fulfill({ status: 400, json: { error: 'The body is not JSON.' } });
+      }
+      return json(previewManifest(document, url.searchParams.get('id') ? { id: url.searchParams.get('id')! } : {}));
+    }
     if (path === '/changes')
       return route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'retry: 60000\n\n' });
     if (path === `/threads/${id}/execution/check`) return json(this.threads.find(t => t.id === id));
@@ -237,6 +255,7 @@ export class MockApi {
     // Entities (D97): the people the reader may ask about, one source over them, the opened person and one source's
     // answer for them. A key the reader may not ask about answers 404 as if it did not exist.
     if (path.startsWith('/entities/') && !post) return this.entities(route, path, url);
+    if (path.startsWith('/entities/') && post) return this.entityStart(route, path);
     // Personal (D94): the manager's units and their people, or the server's refusal.
     if (path === '/staff')
       return this.staffForbidden || this.employee
@@ -700,6 +719,48 @@ export class MockApi {
    * a 404, a source in `entitySilent` answers with that status and no rows, and someone who manages nobody gets a list
    * with no groups (no refusal).
    */
+  /**
+   * An action from an entity's menu (D97, D8), answered as the server would: an action the opened person does not offer
+   * is a 404, a refusal is the source's sentence as a 400, and otherwise the card it became, which joins the stream and
+   * is opened on Hem. The same start while that card is open gives the same card.
+   */
+  private entityStart(route: Route, path: string) {
+    const [, , kind, key = '', sub] = path.split('/');
+    const capability = (route.request().postDataJSON() as { capability?: string } | null)?.capability ?? '';
+    const opened = decodeURIComponent(key);
+    const detail =
+      kind === 'person' && sub === 'actions'
+        ? (this.entityDetailOf?.(opened) ?? entityDetail(this.entityList, opened))
+        : undefined;
+    const action = detail?.actions.find(a => a.capability === capability);
+    if (!detail || !action) return route.fulfill({ status: 404, json: { error: 'Okänd adress.' } });
+    this.entityStarts.push({ key: detail.entity.key, capability });
+    const refusal = this.entityRefusals[capability];
+    if (refusal) return route.fulfill({ status: 400, json: { error: refusal } });
+    const id = `entity-${capability.replace(/\W/g, '-')}-${detail.entity.key}`;
+    if (!this.threads.some(t => t.id === id))
+      this.threads.push({
+        ...this.threads[0]!,
+        id,
+        topic: id,
+        connector: action.connector,
+        area: 'personal',
+        title: `${action.title}: ${detail.entity.name}`,
+        trigger: {
+          ...this.threads[0]!.trigger,
+          reason: `Du valde ${action.title} för ${detail.entity.name}`,
+          source: action.source,
+        },
+        summary: 'Inget har gjorts ännu. Du bestämmer på kortet.',
+        state: 'open',
+        items: [],
+        actions: [],
+        proposals: [],
+        receipt: null,
+        deadline: null,
+      });
+    return route.fulfill({ json: { threadId: id } });
+  }
   private async entities(route: Route, path: string, url: URL) {
     const json = (body: unknown) => route.fulfill({ json: body });
     const missing = () => route.fulfill({ status: 404, json: { error: 'Personen finns inte.', code: 'not_found' } });

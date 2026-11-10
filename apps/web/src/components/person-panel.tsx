@@ -32,6 +32,7 @@ import { mobileQuery, shortQuery } from './shell';
 import {
   NEEDS_YOU,
   NeedsYouSection,
+  PersonLine,
   PersonSections,
   SectionNav,
   SourceSection,
@@ -53,6 +54,8 @@ export interface PersonPanelSlot {
   occupied: boolean;
   /** The key in the address, whether or not the panel fits beside the page. */
   person: string | undefined;
+  /** The opened person's name once it has arrived, for the page's title. */
+  name: string | undefined;
 }
 /** The address of a person opened beside the list at `pathname`, keeping the list's own selection (`search`). */
 export const personHref = (pathname: string, search: string, key: string): string => {
@@ -69,7 +72,8 @@ const LIST_MIN = 440;
 /**
  * The opened person's actions (artboard C): the first two as buttons, the rest under Fler grouped by the system they
  * act in, as the row menu on Personal is (artboard A3), and the way to the person's page. On a phone one button,
- * Åtgärder, holds them all (artboard D). An action starts the human decision (`entity-actions.ts`); nothing runs here.
+ * Åtgärder, the width of the drawer, holds them all (artboard D). An action starts on the server and opens its card
+ * (`entity-actions.ts`); a source's refusal is said aloud and stands under the buttons until the next action.
  */
 export function PersonActions({
   detail,
@@ -80,24 +84,34 @@ export function PersonActions({
   mobile: boolean;
   pageHref?: string;
 }) {
-  const start = useEntityAction();
-  const { key, name } = detail.entity;
-  const run = (a: EntityAction) => start(a, { key, name });
+  const { start, error } = useEntityAction();
+  const { kind, key, name } = detail.entity;
+  const run = (a: EntityAction) => start(a, { kind, key, name });
   const actions = detail.actions;
+  const refusal = error ? <Text as="p">{error}</Text> : null;
   if (mobile)
     return actions.length > 0 ? (
-      <DropdownMenu
-        renderTrigger={trigger => (
-          <Button {...trigger} variant="secondary" label="Åtgärder" aria-label={`Åtgärder för ${name}`} />
-        )}
-        presentation="adaptive"
-        items={actionMenuItems(actions, run)}
-      />
+      <VStack gap={2}>
+        <DropdownMenu
+          renderTrigger={trigger => (
+            <Button
+              {...trigger}
+              variant="secondary"
+              label="Åtgärder"
+              aria-label={`Åtgärder för ${name}`}
+              width="100%"
+            />
+          )}
+          presentation="adaptive"
+          items={actionMenuItems(actions, run)}
+        />
+        {refusal}
+      </VStack>
     ) : null;
   const shown = actions.slice(0, 2),
     rest = actions.slice(2);
   if (shown.length === 0 && !pageHref) return null;
-  return (
+  const buttons = (
     <HStack gap={2} wrap="wrap" vAlign="center">
       {shown.map(a => (
         <Button key={a.capability} variant="secondary" label={a.title} onClick={() => run(a)} />
@@ -118,6 +132,13 @@ export function PersonActions({
         </Link>
       )}
     </HStack>
+  );
+  // One shape with or without a refusal, so the button that was pressed keeps the focus when the refusal appears.
+  return (
+    <VStack gap={2}>
+      {buttons}
+      {refusal}
+    </VStack>
   );
 }
 
@@ -247,6 +268,8 @@ export function usePersonPanel(): PersonPanelSlot {
   const answers = useSectionAnswers(detail?.entity.key, detail?.sections ?? []);
   const missing = !!key && read.isError && read.error instanceof ApiError && read.error.status === 404;
   const list = withoutPerson(pathname, search);
+  // The unit's page leads back here, with the person still open (D83 rule 4).
+  const here = search.toString() ? `${pathname}?${search.toString()}` : pathname;
   const close = () => navigate(list);
   const origin = originLabel(pathname) ?? 'listan';
   const frame: PanelFrame | null = !key
@@ -255,7 +278,8 @@ export function usePersonPanel(): PersonPanelSlot {
       ? {
           id: `person:${detail.entity.key}`,
           title: detail.entity.name,
-          // On a phone the drawer's start is the way back, named after where the person was opened (artboard D).
+          // On a phone the drawer's start is the way back, a link to the list named after where the person was opened
+          // ("‹ Personal", artboard D).
           lead: mobile ? (
             <Button
               size="sm"
@@ -263,12 +287,14 @@ export function usePersonPanel(): PersonPanelSlot {
               label={origin}
               aria-label={`Tillbaka till ${origin}`}
               icon={<Icon icon="chevronLeft" />}
-              onClick={close}
+              href={list}
             />
           ) : (
             <Avatar name={detail.entity.name} size={48} tooltip={false} aria-hidden />
           ),
-          ...(detail.entity.detail ? { subtitle: detail.entity.detail } : {}),
+          ...(detail.entity.detail || detail.entity.unit
+            ? { subtitle: <PersonLine entity={detail.entity} relation={detail.relation} from={here} /> }
+            : {}),
           // The address of the link that opened the person: a list drawn compact beside the panel draws its rows
           // anew, so the focus finds the row by where it leads when the person is closed.
           address: personHref(pathname, withoutPerson('', search), detail.entity.key),
@@ -324,5 +350,5 @@ export function usePersonPanel(): PersonPanelSlot {
   const slot = usePanel(frame, { minMain: LIST_MIN, size: PERSON_PANEL, replaces: true, overlayOnly: short });
   // The list is drawn whole again in the same step as the person closes, so the row that opened them is there to
   // take the focus back.
-  return { ...slot, occupied: slot.occupied && !!key, person: key };
+  return { ...slot, occupied: slot.occupied && !!key, person: key, name: key ? detail?.entity.name : undefined };
 }

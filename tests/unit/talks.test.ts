@@ -732,6 +732,12 @@ describe('the built-in connector', () => {
     ]);
     expect(placesOf(connector.capabilities.find(c => c.name === 'talks.unit')!)).toEqual(['lens', 'mark', 'section']);
     expect(registry().tools(actor(boss))).toEqual([]);
+    // Where the whole row is drawn (a lens, a section) it is two cells, "Samtal" with its time and "Åtgärdspunkter" with
+    // the late ones; the next talk is the row in one value, for a column or a one-line summary (D97, artboards A2 and B).
+    const fields = personTalksView.kind === 'list' ? personTalksView.fields : [];
+    expect(fields.filter(f => f.beside).map(f => f.key)).toEqual(['at', 'overdue']);
+    expect(fields.filter(f => f.compact).map(f => f.key)).toEqual(['next']);
+    expect(viewProblem({ ...person, view: personTalksView }, connector.capabilities)).toBeUndefined();
   });
 
   test('talks.person answers one row per person the manager plans a talk with, keyed as asked; anyone else is no row', async () => {
