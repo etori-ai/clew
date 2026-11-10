@@ -152,7 +152,12 @@ export interface Placement {
   unitId: string | null;
   role: Role | null;
 }
-const bySwedish = (a: string, b: string) => a.localeCompare(b, 'sv');
+export const bySwedish = (a: string, b: string) => a.localeCompare(b, 'sv');
+/**
+ * Who leads a unit (D99 item 4): its managers who are active. A deactivated manager leads nobody, so a unit whose only
+ * manager is deactivated passes the line through as a unit without one does. Everything that reads the line asks here.
+ */
+export const leadsUnit = (p: { role: Role | null; enabled: boolean }) => p.enabled && p.role === 'manager';
 /**
  * The tree an administrator reads. A unit people are assigned to without a `unit:` group is drawn as a root that was
  * not pushed, named as the unit table knows it; a parent that names no node is read as no parent, so every node is
@@ -178,8 +183,7 @@ export function organisationOf(
   for (const p of active) {
     if (p.unitId === null) continue;
     placed.set(p.unitId, (placed.get(p.unitId) ?? 0) + 1);
-    if (p.role === 'manager')
-      managers.set(p.unitId, [...(managers.get(p.unitId) ?? []), { id: p.personId, name: p.name }]);
+    if (leadsUnit(p)) managers.set(p.unitId, [...(managers.get(p.unitId) ?? []), { id: p.personId, name: p.name }]);
   }
   // Each placement counts on its unit and on every unit above it, a person once however many units of the branch they
   // are on; `seen` ends the walk if a stored chain were ever a cycle.
@@ -439,6 +443,10 @@ const projectionPaths = (list: string | undefined) =>
     )
     .filter(Boolean)
     .map(name => {
+      // The unit extension (D99) is named by its URN, which has a dot of its own ('2.0'): the URN is the attribute, and
+      // what follows it the sub-attribute.
+      if (name === UNIT_EXTENSION || name.startsWith(UNIT_EXTENSION + ':'))
+        return { top: UNIT_EXTENSION, sub: name.slice(UNIT_EXTENSION.length + 1) || undefined };
       const [top, ...sub] = name.split('.');
       return { top: top!, sub: sub.join('.') || undefined };
     });
@@ -622,8 +630,9 @@ export function applyUserPatch(
 /**
  * PATCH on a group: `members` added, removed (by path filter or by value list) or replaced; the name and external id
  * replaced; the external id removed; the unit extension's `parent` set or removed (D99), by its schema-qualified path
- * or as the extension's object in a path-less value. Anything else is not held and is ignored, a read-only attribute
- * as for a user.
+ * or as the extension's object in a path-less value. A group whose key stops being a `unit:` key stops being a node,
+ * so the parent it had goes with the key; a parent the patch itself names is kept, and refused where it stands.
+ * Anything else is not held and is ignored, a read-only attribute as for a user.
  */
 export function applyGroupPatch(
   current: GroupFields,
@@ -631,7 +640,8 @@ export function applyGroupPatch(
   id?: string,
 ): GroupFields {
   let members = new Set(current.members),
-    next = { ...current };
+    next = { ...current },
+    placed = false;
   const memberIds = (value: unknown): string[] => {
     const list = Array.isArray(value) ? value : value === undefined ? [] : [value];
     return list.map(m => {
@@ -642,8 +652,10 @@ export function applyGroupPatch(
   const setAttribute = (path: string, value: unknown, pathless: boolean) => {
     const key = coreKey(path, 'group'),
       extension = unitExtensionTarget(path);
-    if (extension) next.parent = extension === 'parent' ? parentUnitOf(value) : parentInExtension(value, path);
-    else if (key === 'displayname') next.label = asString(value, path);
+    if (extension) {
+      next.parent = extension === 'parent' ? parentUnitOf(value) : parentInExtension(value, path);
+      placed = true;
+    } else if (key === 'displayname') next.label = asString(value, path);
     else if (key === 'externalid') next.externalId = asString(value, path);
     else if (key === 'members') members = new Set(memberIds(value));
     else if (isReadOnly(key, 'group')) {
@@ -685,6 +697,7 @@ export function applyGroupPatch(
           for (const member of memberIds(value)) members.add(member);
         else setAttribute(name, value, true);
   }
+  if (!placed && unitGroupOf(next.externalId) === undefined) next.parent = null;
   return { ...next, members: [...members] };
 }
 export function userResource(

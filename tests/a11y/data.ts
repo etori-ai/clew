@@ -1441,6 +1441,8 @@ export const organisationPeople: Record<string, OrganisationUnitPeople['people']
       role: 'manager',
       enabled: true,
     },
-    { id: 'karin', name: 'Karin Åberg', userName: 'karin.aberg', email: null, role: 'manager', enabled: false },
+    { id: 'karin', name: 'Karin Åberg', userName: 'karin.aberg', email: null, role: 'manager', enabled: true },
+    // Deactivated: listed with the mark, and not among the three the tree's row counts.
+    { id: 'vera', name: 'Vera Öst', userName: 'vera.ost', email: null, role: 'employee', enabled: false },
   ],
 };

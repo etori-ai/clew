@@ -266,6 +266,25 @@ describe('the synthetic provisioner', () => {
     });
     expect([...branch.store.state.groups.values()].map(g => g.externalId)).toEqual(['unit:a']);
   });
+  test('a reorganisation is one push: a unit with units below it under a new id, two units that change places, and a level that is taken away (D99)', async () => {
+    const { client, store } = stack(),
+      unit = (id: string, parent?: string) => ({ id, label: id, ...(parent ? { parent } : {}) }),
+      reorganise = (units: Directory['units']) => push(client, { units, groups: [], people: [] }),
+      tree = () =>
+        Object.fromEntries(
+          [...store.state.groups.values()].map(g => [g.externalId!.slice('unit:'.length), g.parentUnitId]),
+        );
+    await reorganise([unit('kommun'), unit('skola', 'kommun'), unit('fritids', 'skola'), unit('kok', 'fritids')]);
+    // The source gives the school a new id: the new unit is created, the unit below moves to it, and the old one goes.
+    await reorganise([unit('kommun'), unit('skola-2', 'kommun'), unit('fritids', 'skola-2'), unit('kok', 'fritids')]);
+    expect(tree()).toEqual({ kommun: null, 'skola-2': 'kommun', fritids: 'skola-2', kok: 'fritids' });
+    // Two units change places, which neither move could do alone without the other being written first.
+    await reorganise([unit('kommun'), unit('skola-2', 'kommun'), unit('kok', 'skola-2'), unit('fritids', 'kok')]);
+    expect(tree()).toEqual({ kommun: null, 'skola-2': 'kommun', kok: 'skola-2', fritids: 'kok' });
+    // A level is taken away: what stood under it moves up, and it goes last.
+    await reorganise([unit('kommun'), unit('kok', 'kommun'), unit('fritids', 'kok')]);
+    expect(tree()).toEqual({ kommun: null, kok: 'kommun', fritids: 'kok' });
+  });
   test('a group with a foreign key is left alone, and a refused push surfaces the SCIM detail', async () => {
     const { store, client } = stack();
     store.state.groups.set('foreign', {
@@ -349,6 +368,29 @@ describe('the synthetic provisioner', () => {
       '1 unit has people and no manager, on the unit or on any unit above it, so its people report to nobody: unit:unit-adrift-below.',
       "1 group carries a key that is written wrong and gives nobody anything: 'Unit:old'.",
     ]);
+    // A manager who is deactivated leads nobody, as Administration › Organisation reads the same tree.
+    const person = (userName: string) =>
+      client.request('POST', '/Users', {
+        externalId: 'dev:' + userName,
+        userName,
+        displayName: userName,
+        emails: [{ value: userName + '@clew.test', type: 'work' }],
+      });
+    const former = await person('former'),
+      stranded = await person('stranded');
+    await client.request('DELETE', '/Users/' + former.body.id);
+    await client.request('POST', '/Groups', {
+      externalId: 'unit:unit-vacant',
+      displayName: 'Vakant',
+      members: [{ value: stranded.body.id }],
+    });
+    await client.request('POST', '/Groups', {
+      externalId: 'unit-manager:unit-vacant',
+      displayName: 'Chefer',
+      members: [{ value: former.body.id }],
+    });
+    const vacant = await checkProvisioning('http://clew.local', client, anonymous);
+    expect(vacant.find(f => f.text.includes('report to nobody'))?.text).toContain('unit:unit-vacant');
   });
   test('the check fails on a refused token and on an address that is not a SCIM server, and reads nothing further', async () => {
     const { app } = stack();

@@ -1,7 +1,7 @@
 import { and, eq, gt, inArray, isNotNull, isNull, like, or, sql } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
 import { writeAudit } from '@clew/db/threads';
-import type { GroupRecord, UserRecord } from '../domain';
+import { UNIT_KEY, unitGroupOf, type GroupRecord, type UserRecord } from '../domain';
 import type { ProvisionStore, ProvisionTx, UserReads } from '../ports';
 
 /** Read the local user/grant tables; directory access is restricted to the actor's unit. */
@@ -48,10 +48,8 @@ const groupColumns = {
   createdAt: schema.groups.createdAt,
   updatedAt: schema.groups.updatedAt,
 };
-/** D99: a node of the tree is a `unit:` group; the unit id is what follows the key. */
-const UNIT_KEY = 'unit:';
+/** D99: a node of the tree is a `unit:` group; the unit id is what follows the key (`unitGroupOf`). */
 const isUnitGroup = like(schema.groups.externalId, UNIT_KEY + '%');
-const unitIdOf = (externalId: string | null) => (externalId ?? '').slice(UNIT_KEY.length);
 type UserRow = Omit<UserRecord, 'createdAt' | 'updatedAt'> & { createdAt: Date; updatedAt: Date };
 type GroupRow = Omit<GroupRecord, 'createdAt' | 'updatedAt'> & { createdAt: Date; updatedAt: Date };
 const userRecord = (r: UserRow): UserRecord => ({
@@ -342,9 +340,11 @@ export function postgresProvisionStore(): ProvisionStore {
         .where(eq(schema.assignments.personId, personId))
         .orderBy(schema.assignments.unitId);
     },
-    async unitPeople(unitId) {
-      return tx
+    async unitPeople(unitIds, organisationId) {
+      if (!unitIds.length) return {};
+      const rows = await tx
         .select({
+          unitId: schema.assignments.unitId,
           id: schema.people.id,
           name: schema.people.name,
           userName: schema.people.userName,
@@ -354,8 +354,16 @@ export function postgresProvisionStore(): ProvisionStore {
         })
         .from(schema.assignments)
         .innerJoin(schema.people, eq(schema.people.id, schema.assignments.personId))
-        .where(eq(schema.assignments.unitId, unitId))
+        .where(
+          and(
+            inArray(schema.assignments.unitId, [...unitIds]),
+            organisationId === undefined ? undefined : eq(schema.people.organisationId, organisationId),
+          ),
+        )
         .orderBy(schema.people.id);
+      const byUnit: Awaited<ReturnType<ProvisionTx['unitPeople']>> = {};
+      for (const { unitId, ...person } of rows) (byUnit[unitId] ??= []).push(person);
+      return byUnit;
     },
     async childUnits(unitId) {
       const rows = await tx
@@ -363,7 +371,7 @@ export function postgresProvisionStore(): ProvisionStore {
         .from(schema.groups)
         .where(and(eq(schema.groups.parentUnitId, unitId), isUnitGroup))
         .orderBy(schema.groups.externalId);
-      return rows.map(r => ({ id: unitIdOf(r.externalId), label: r.label }));
+      return rows.map(r => ({ id: unitGroupOf(r.externalId)!, label: r.label }));
     },
     async unitTree(organisationId) {
       const rows = await tx
@@ -375,7 +383,7 @@ export function postgresProvisionStore(): ProvisionStore {
         .from(schema.groups)
         .where(and(eq(schema.groups.organisationId, organisationId), isUnitGroup))
         .orderBy(schema.groups.externalId);
-      return rows.map(r => ({ id: unitIdOf(r.externalId), label: r.label, parentId: r.parentUnitId }));
+      return rows.map(r => ({ id: unitGroupOf(r.externalId)!, label: r.label, parentId: r.parentUnitId }));
     },
     async placements(organisationId) {
       return tx

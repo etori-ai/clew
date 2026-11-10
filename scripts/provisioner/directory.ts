@@ -5,7 +5,7 @@ import type { Capability } from '@clew/contracts';
  * people. A person has a unit and a manager flag, the two facts the provisioner turns into D68's `unit:` and
  * `unit-manager:` groups; may work in or manage further units; may be in plain directory groups, which mean nothing in
  * Clew until an administrator maps one to a capability (D85) or names it in an audience (D23); and may hold Clew
- * capabilities that become `capability:` groups. Two hundred and ten people in thirty-five units: three personas with
+ * capabilities that become `capability:` groups. Two hundred and ten people in thirty-four units: three personas with
  * a Keycloak account (`login`), seven written by hand for the names a real directory holds, and the rest generated
  * deterministically, so every manager has a team, the users page has something to page and a group has anything from
  * no members to seventy.

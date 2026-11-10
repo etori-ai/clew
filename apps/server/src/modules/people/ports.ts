@@ -131,16 +131,26 @@ export interface ProvisionTx {
   setGroupMembers(groupId: string, personIds: readonly string[]): Promise<void>;
   // Administration › Användare (D85).
   assignmentsOf(personId: string): Promise<Array<{ unitId: string; unitLabel: string; role: Assignment['role'] }>>;
-  // Personal (D94): everyone assigned to a unit, with their role on it; the use case sorts and excludes the reader.
-  unitPeople(unitId: string): Promise<
-    Array<{
-      id: string;
-      name: string;
-      userName: string | null;
-      email: string | null;
-      role: Assignment['role'];
-      enabled: boolean;
-    }>
+  /**
+   * Personal (D94, D99): everyone assigned to each of the units, under the unit's id, with their role on it and by
+   * person id; a unit nobody is assigned to is absent. With `organisationId`, that organisation's people only. The use
+   * case sorts and excludes the reader.
+   */
+  unitPeople(
+    unitIds: readonly string[],
+    organisationId?: string,
+  ): Promise<
+    Record<
+      string,
+      Array<{
+        id: string;
+        name: string;
+        userName: string | null;
+        email: string | null;
+        role: Assignment['role'];
+        enabled: boolean;
+      }>
+    >
   >;
   // The organisation tree (D99). A node is a `unit:` group; its parent is on the group.
   /** The units directly below a unit: the `unit:` groups that name it as their parent, by unit id. */

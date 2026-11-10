@@ -24,6 +24,13 @@ everyone in the branch.
    - the attribute on a group that is not a `unit:` group;
    - a new key on a unit group that still has units below it.
 
+   A unit group whose key stops being a `unit:` key gives up its parent with the key, since a group that is no node
+   has no place: the write is taken and audited with the parent before and after, and it is refused only when the
+   same request names a parent for the new key (product owner, 2026-11-10: the interface takes what a reorganisation
+   sends without the client having to know Clew's order of operations). A reorganisation is then one ordinary push,
+   root down and leaves up: a unit under a new id is a new unit that the units below move to before the old one goes,
+   two units change places, and a level is taken away.
+
    `DELETE` of a unit that still has units below it answers 409 and names them, so a tree is removed from the leaves
    up. A move is a change of `parent` on the unit. The unit's id stays, so everything that names the unit follows it
    through a reorganisation. It writes its audit row with the parent before and after, and re-derives nobody: a
@@ -41,7 +48,9 @@ everyone in the branch.
    - a person placed on a unit as `employee` reports to the managers of the nearest unit, their own or above it, that
      has a manager;
    - a person who is `manager` of a unit reports to the managers of the nearest unit strictly above it that has one;
-   - a unit with no manager passes the line through; a person with no managed unit above them reports to nobody.
+   - a unit with no manager passes the line through; a person with no managed unit above them reports to nobody;
+   - a deactivated manager leads nobody, so a unit whose only managers are deactivated has no manager (`leadsUnit` in
+     `domain.ts`, asked by Personal's walk and by the tree an administrator reads; the check mirrors it).
 
    A manager's **reports** are the people who report to them by these rules: the people placed with them and the
    managers of the nearest managed units below, not the people those managers lead. Managers of the same unit are
@@ -130,6 +139,14 @@ technology, because the row's text already names the managers. And axe's rule fo
 the row is named. The spec checks the criterion in its place, row by row (`expectRowsNamedByWhatTheyShow`). Astryx has
 not been sent a report (the product owner's standing decision). The focus ring of a tree row is drawn on the row
 inside the focused list item, which the suite's walk now reads.
+
+After the review of the pull request, 2026-11-10: the line has one rule for who leads a unit (`leadsUnit`), so a
+deactivated manager no longer stops it in Personal while the tree said otherwise, and the check counts active managers
+only. A unit group whose key stops being a `unit:` key by `PATCH` loses its parent with the key instead of being
+refused for a parent the client never sent. `attributes` and `excludedAttributes` name the extension by its URN.
+`unitPeople` reads several units at once and within an organisation, so Personal reads the tree once and the people a
+level at a time, and the overlay reads one unit instead of the organisation. The overlay counts as the row does,
+deactivated people named beside the count.
 
 **Not done.** A manual pass with a screen reader, which the suite does not replace. Personal looked at signed in as a
 manager with a report from below (the use case was read against the development database; the page was run on

@@ -66,6 +66,15 @@ const withoutUnit = (search: URLSearchParams) => {
 };
 const names = new Intl.ListFormat('sv', { type: 'conjunction' });
 const people = (n: number) => `${n} ${n === 1 ? 'person' : 'personer'}`;
+/** The units above a unit, nearest first; the walk ends at a root, and at the tree's size if a chain were ever a ring. */
+const ancestorsOf = (units: ReadonlyMap<string, OrganisationUnit>, unitId: string | null) => {
+  const above: OrganisationUnit[] = [];
+  for (let at = unitId ? units.get(unitId) : undefined; at?.parentId && above.length < units.size;) {
+    at = units.get(at.parentId);
+    if (at) above.push(at);
+  }
+  return above;
+};
 /** "Chef: Karin Berg · 2 personer, 86 med enheterna under": who leads the unit and how many it holds. */
 const describe = (u: OrganisationUnit) => {
   const led = u.managers.length
@@ -110,11 +119,8 @@ export function AdminOrganisationPage({ user }: { user: SessionUser }) {
   // The units the address has asked to have open: every unit above one it named. Kept once shown, so the tree does not
   // fold a branch away under the person when the overlay closes; what they fold or open themselves is the tree's own.
   const [shown, setShown] = useState<ReadonlySet<string>>(() => new Set());
-  const above: string[] = [];
-  for (let at = units.find(u => u.unitId === selected)?.parentId; at && above.length < units.length;) {
-    above.push(at);
-    at = units.find(u => u.unitId === at)?.parentId;
-  }
+  const byId = useMemo(() => new Map(units.map(u => [u.unitId, u])), [units]);
+  const above = ancestorsOf(byId, selected).map(u => u.unitId);
   if (above.some(id => !shown.has(id))) setShown(new Set([...shown, ...above]));
   const items = useMemo(() => {
     const below = new Map<string | null, OrganisationUnit[]>();
@@ -234,7 +240,7 @@ export function AdminOrganisationPage({ user }: { user: SessionUser }) {
           <TreeList ref={tree} aria-label="Organisationsträd" items={items} />
         </Card>
       )}
-      <UnitPeople units={units} settled={query.data !== undefined || query.isError} focusBack={focusTree} />
+      <UnitPeople units={byId} settled={query.data !== undefined || query.isError} focusBack={focusTree} />
     </AdminShell>
   );
 }
@@ -249,7 +255,7 @@ function UnitPeople({
   settled,
   focusBack,
 }: {
-  units: OrganisationUnit[];
+  units: ReadonlyMap<string, OrganisationUnit>;
   settled: boolean;
   focusBack: () => void;
 }) {
@@ -261,16 +267,12 @@ function UnitPeople({
   const [shownId, setShownId] = useState<string | null>(unitId);
   if (unitId && unitId !== shownId) setShownId(unitId);
   const query = useQuery({ ...adminQueries.organisationUnit(shownId ?? ''), enabled: !!shownId });
-  const unit = units.find(u => u.unitId === shownId);
+  const unit = shownId ? units.get(shownId) : undefined;
   const title = unit?.unitLabel ?? query.data?.unitLabel ?? 'Enheten finns inte';
   // The units above, outermost first: where in the organisation the unit is.
-  const path: string[] = [];
-  for (let at = unit?.parentId, hops = 0; at && hops < units.length; hops++) {
-    const above = units.find(u => u.unitId === at);
-    if (!above) break;
-    path.unshift(above.unitLabel);
-    at = above.parentId;
-  }
+  const path = ancestorsOf(units, shownId)
+    .map(u => u.unitLabel)
+    .reverse();
   const onOpenChange = (open: boolean) => {
     if (!open) navigate(withoutUnit(search), { replace: true });
   };
@@ -309,6 +311,8 @@ function UnitPeople({
     <DrawerHeader title={title} {...(subtitle ? { subtitle } : {})} onOpenChange={onOpenChange} />
   );
   const placed = query.data?.people ?? [];
+  // Counted as the tree's row counts them: deactivated people are listed, with their mark, but are not among the placed.
+  const off = placed.filter(p => !p.enabled).length;
   const content = query.isError ? (
     <Banner
       status="error"
@@ -336,7 +340,7 @@ function UnitPeople({
       ) : (
         <>
           <Text type="supporting" role="status">
-            {people(placed.length)} på enheten
+            {`${people(placed.length - off)} på enheten${off ? `, ${off} ${off === 1 ? 'avstängd' : 'avstängda'}` : ''}`}
           </Text>
           <List aria-label={`Personer på ${title}`} hasDividers>
             {placed.map(p => (

@@ -131,12 +131,14 @@ test.describe('organisation', () => {
       await expect(people.getByRole('heading', { name: 'Bergsåkers skola' })).toBeVisible();
       // Where the unit is: the units above it, outermost first.
       await expect(people.getByText('Kommunen › Barn och utbildning › Grundskola')).toBeVisible();
-      await expect(people.getByRole('status').filter({ hasText: 'personer' })).toHaveText('3 personer på enheten');
+      await expect(people.getByRole('status').filter({ hasText: 'personer' })).toHaveText(
+        '3 personer på enheten, 1 avstängd',
+      );
       const rows = people.getByRole('list', { name: 'Personer på Bergsåkers skola' }).getByRole('listitem');
-      await expect(rows).toHaveCount(3);
+      await expect(rows).toHaveCount(4);
       await expect(rows.nth(1)).toContainText('Hillevi Berg');
       await expect(rows.nth(1)).toContainText('Chef · hillevi@clew.test');
-      await expect(rows.nth(2)).toContainText('Avstängd');
+      await expect(rows.nth(3)).toContainText('Avstängd');
       await expect(row(/Bergsåkers skola/)).toHaveAttribute('aria-selected', 'true');
       await page.keyboard.press('Escape');
       await expect(people).toBeHidden();

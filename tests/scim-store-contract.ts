@@ -157,10 +157,16 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         await tx.replaceAssignments(a, [{ unitId: p + '-u1', role: 'manager' }]);
         expect(await tx.assignmentsOf(a)).toEqual([{ unitId: p + '-u1', unitLabel: 'Enhet 1', role: 'manager' }]);
         // Personal (D94): the unit's people with their role on it, as the manager's page reads them.
-        expect(await tx.unitPeople(p + '-u1')).toEqual([
-          { id: a, name: 'Name ' + a, userName: 'u:' + a, email: a + '@example.test', role: 'manager', enabled: true },
-        ]);
-        expect(await tx.unitPeople(p + '-nowhere')).toEqual([]);
+        const person = { id: a, name: 'Name ' + a, userName: 'u:' + a, email: a + '@example.test', enabled: true };
+        expect(await tx.unitPeople([p + '-u1'])).toEqual({ [p + '-u1']: [{ ...person, role: 'manager' }] });
+        // A unit nobody is assigned to is absent, as is every unit when none is asked for.
+        expect(await tx.unitPeople([p + '-nowhere'])).toEqual({});
+        expect(await tx.unitPeople([])).toEqual({});
+        // Within one organisation only when it is named: another organisation's people are not on the unit.
+        expect(await tx.unitPeople([p + '-u1', p + '-nowhere'], p + '-org')).toEqual({
+          [p + '-u1']: [{ ...person, role: 'manager' }],
+        });
+        expect(await tx.unitPeople([p + '-u1'], p + '-elsewhere')).toEqual({});
         expect(await tx.bound(a)).toBe(false);
       });
       await h.bind(a);
@@ -280,6 +286,14 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         ]);
         expect(await tx.childUnits(root)).toEqual([{ id: mid, label: 'Unit ' + mid }]);
         expect(await tx.childUnits(leaf)).toEqual([]);
+        // Several units in one read (D99): each under its own id, by person id, a deactivated person included.
+        const read = await tx.unitPeople([mid, leaf, root]);
+        expect(Object.keys(read).sort()).toEqual([leaf, mid].sort());
+        expect(read[mid]!.map(q => [q.id, q.role])).toEqual([[a, 'manager']]);
+        expect(read[leaf]!.map(q => [q.id, q.role, q.enabled])).toEqual([
+          [a, 'employee', true],
+          [b, 'employee', false],
+        ]);
         expect(await tx.placements(org)).toEqual([
           { personId: a, name: 'Name ' + a, enabled: true, unitId: leaf, role: 'employee' },
           { personId: a, name: 'Name ' + a, enabled: true, unitId: mid, role: 'manager' },

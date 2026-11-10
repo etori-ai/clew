@@ -133,9 +133,12 @@ export async function checkProvisioning(baseUrl: string, client: ScimClient, fet
       `${plural(empty.length, 'unit or unit-manager group has', 'unit or unit-manager groups have')} no members: ${some(empty.map(g => g.externalId!))}.`,
     );
   // Who the people on a unit report to is the manager of that unit or of the nearest unit above with one (D99).
-  const led = new Set(managers.filter(g => membersOf.get(g.id)).map(g => g.externalId!.slice(MANAGER.length)));
+  // Deactivated people lead nobody and are counted nowhere, as Administration › Organisation reads the same tree.
+  const activeIn = new Map<string, number>();
+  for (const u of active) for (const g of u.groups ?? []) activeIn.set(g.value, (activeIn.get(g.value) ?? 0) + 1);
+  const led = new Set(managers.filter(g => activeIn.get(g.id)).map(g => g.externalId!.slice(MANAGER.length)));
   const leaderless = units.filter(g => {
-    if (!membersOf.get(g.id)) return false;
+    if (!activeIn.get(g.id)) return false;
     let at: string | undefined = g.externalId!.slice(UNIT.length);
     for (let hops = 0; at !== undefined && hops <= above.size; at = above.get(at), hops++)
       if (led.has(at)) return false;

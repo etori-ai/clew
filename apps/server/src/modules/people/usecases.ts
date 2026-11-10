@@ -30,10 +30,12 @@ import {
   applyUserPatch,
   assertAcceptedKey,
   assertAcceptedParent,
+  bySwedish,
   closesCycle,
   deriveAuthority,
   groupFields,
   groupResource,
+  leadsUnit,
   leavesOut,
   organisationOf,
   pageOf,
@@ -51,6 +53,7 @@ import {
   type GroupRecord,
   type GroupCapabilityRule,
   type Projection,
+  type TreeUnit,
   type UserFields,
   type UserRecord,
 } from './domain';
@@ -247,7 +250,7 @@ export function scimUsecases(deps: {
    * assignment, not per group.
    */
   const nameUnit = async (tx: ProvisionTx, p: Provisioner, fields: GroupFields, assigned: readonly string[]) => {
-    const id = fields.externalId?.startsWith(UNIT_KEY) ? unitOfKey(fields.externalId) : undefined;
+    const id = unitGroupOf(fields.externalId);
     if (!id || !assigned.length) return;
     if ((await tx.unitLabels([id]))[id] !== fields.label)
       await tx.writeUnits(p.organisationId, [{ id, label: fields.label }]);
@@ -688,51 +691,60 @@ export type UsersAdminUsecases = ReturnType<typeof usersAdminUsecases>;
  * Personal (D94, D99): a manager's reports, read only. The scope is the server's: the actor must manage at least one
  * unit, and the units come from the actor's own assignments, never from the request. Under each unit they manage: the
  * people assigned to it, with their role on it and never the reader; then, down the tree, the managers of the nearest
- * units that have one, and the people placed on a unit nobody leads, since the line passes through such a unit. The
- * walk stops at a unit with a manager, so the people that manager leads are not listed, and at a unit the reader
- * manages too, which has its own card. Nothing is written, so there is no audit row.
+ * units that have one, and the people placed on a unit nobody leads, since the line passes through such a unit. Who
+ * leads is `leadsUnit`: a deactivated manager does not, so the line passes through their unit too. The walk stops at a
+ * unit with a manager, so the people that manager leads are not listed, and at a unit the reader manages too, which
+ * has its own card. The tree is read once and the people a level at a time, so a wide layer is one read. Nothing is
+ * written, so there is no audit row.
  */
 export function staffUsecases(deps: { store: ProvisionStore }) {
-  const sv = (a: string, b: string) => a.localeCompare(b, 'sv');
-  const byName = (a: StaffPerson, b: StaffPerson) => sv(a.name, b.name) || a.id.localeCompare(b.id);
+  const byName = (a: StaffPerson, b: StaffPerson) => bySwedish(a.name, b.name) || a.id.localeCompare(b.id);
   return {
     overview: (persona: AuthenticatedContext): Promise<StaffOverview> =>
       deps.store.transaction(async tx => {
         const managed = (await tx.assignmentsOf(persona.id)).filter(a => a.role === 'manager');
         if (!managed.length) throw new ForbiddenError('Sidan Personal är för den som är chef för en enhet.');
+        const below = new Map<string, TreeUnit[]>();
+        for (const u of await tx.unitTree(persona.organisationId))
+          if (u.parentId !== null) below.set(u.parentId, [...(below.get(u.parentId) ?? []), u]);
         const own = new Set(managed.map(u => u.unitId)),
+          placed = await tx.unitPeople([...own]),
           units: StaffUnit[] = [];
         for (const unit of managed) {
           const people = new Map<string, StaffPerson>();
-          for (const p of await tx.unitPeople(unit.unitId)) if (p.id !== persona.id) people.set(p.id, p);
-          // Breadth first, each unit once: `seen` also ends the walk if a stored chain were ever a cycle.
-          const seen = new Set([unit.unitId]),
-            queue = await tx.childUnits(unit.unitId);
-          for (let next = queue.shift(); next; next = queue.shift()) {
-            if (seen.has(next.id) || own.has(next.id)) continue;
-            seen.add(next.id);
-            const there = await tx.unitPeople(next.id),
-              leads = there.filter(p => p.role === 'manager'),
-              report = leads.length ? leads : there;
-            for (const p of report) {
-              if (p.id === persona.id) continue;
-              const held = people.get(p.id) ?? { ...p, below: [] },
-                from = { unitId: next.id, unitLabel: next.label, role: p.role };
-              // Assigned to the managed unit itself: the row stays as it is. Else the units they report from, a led one first in the role.
-              if (!held.below) continue;
-              people.set(p.id, {
-                ...held,
-                role: held.role === 'manager' || p.role === 'manager' ? 'manager' : 'employee',
-                below: [...held.below, from].sort(
-                  (a, b) => sv(a.unitLabel, b.unitLabel) || a.unitId.localeCompare(b.unitId),
-                ),
-              });
+          for (const p of placed[unit.unitId] ?? []) if (p.id !== persona.id) people.set(p.id, p);
+          // Level by level, each unit once: `seen` also ends the walk if a stored chain were ever a cycle.
+          const seen = new Set([unit.unitId]);
+          for (let level = below.get(unit.unitId) ?? []; level.length;) {
+            const visit = level.filter(u => !seen.has(u.id) && !own.has(u.id));
+            if (!visit.length) break;
+            for (const u of visit) seen.add(u.id);
+            const placedBelow = await tx.unitPeople(visit.map(u => u.id));
+            level = [];
+            for (const next of visit) {
+              const there = placedBelow[next.id] ?? [],
+                leads = there.filter(leadsUnit),
+                report = leads.length ? leads : there;
+              for (const p of report) {
+                if (p.id === persona.id) continue;
+                const held = people.get(p.id) ?? { ...p, below: [] },
+                  from = { unitId: next.id, unitLabel: next.label, role: p.role };
+                // Assigned to the managed unit itself: the row stays as it is. Else the units they report from, a led one first in the role.
+                if (!held.below) continue;
+                people.set(p.id, {
+                  ...held,
+                  role: held.role === 'manager' || p.role === 'manager' ? 'manager' : 'employee',
+                  below: [...held.below, from].sort(
+                    (a, b) => bySwedish(a.unitLabel, b.unitLabel) || a.unitId.localeCompare(b.unitId),
+                  ),
+                });
+              }
+              if (!leads.length) level.push(...(below.get(next.id) ?? []));
             }
-            if (!leads.length) queue.push(...(await tx.childUnits(next.id)));
           }
           units.push({ unitId: unit.unitId, unitLabel: unit.unitLabel, people: [...people.values()].sort(byName) });
         }
-        return { units: units.sort((a, b) => sv(a.unitLabel, b.unitLabel) || a.unitId.localeCompare(b.unitId)) };
+        return { units: units.sort((a, b) => bySwedish(a.unitLabel, b.unitLabel) || a.unitId.localeCompare(b.unitId)) };
       }),
   };
 }
@@ -770,16 +782,12 @@ export function organisationUsecases(deps: { store: ProvisionStore }) {
       return deps.store.transaction(async tx => {
         const group = await tx.findGroup('externalId', UNIT_KEY + unitId),
           node = group?.organisationId === persona.organisationId ? group : undefined,
-          here = new Set(
-            (await tx.placements(persona.organisationId)).filter(p => p.unitId === unitId).map(p => p.personId),
-          );
-        if (!node && !here.size) throw new InputError('Enheten finns inte.');
+          people = (await tx.unitPeople([unitId], persona.organisationId))[unitId] ?? [];
+        if (!node && !people.length) throw new InputError('Enheten finns inte.');
         return {
           unitId,
           unitLabel: node?.label ?? (await tx.unitLabels([unitId]))[unitId] ?? unitId,
-          people: (await tx.unitPeople(unitId))
-            .filter(p => here.has(p.id))
-            .sort((a, b) => a.name.localeCompare(b.name, 'sv') || a.id.localeCompare(b.id)),
+          people: people.sort((a, b) => bySwedish(a.name, b.name) || a.id.localeCompare(b.id)),
         };
       });
     },

@@ -274,18 +274,59 @@ describe('the organisation tree over SCIM (D99)', () => {
     await scim.deleteGroup(p, groups.get('hr')!);
     await scim.deleteGroup(p, groups.get('ksk')!);
     expect(store.state.groups.size).toBe(0);
-    // A unit that leaves the tree for a plain key gives up its place with it, or is refused.
+    // A unit that leaves the tree for a plain key gives up its place with it: the client named no parent, so none is
+    // refused. A patch that names one for the plain key is refused where it stands.
     await unit('ksk', 'Kommunstyrelsekontoret', null);
     await unit('it', 'IT', 'ksk');
-    const plain = await refusal(
-      scim.patchGroup(
-        p,
-        groups.get('it')!,
-        { schemas: [SCIM.patch], Operations: [{ op: 'replace', path: 'externalId', value: 'ad:it' }] },
-        BASE,
-      ),
+    const rekey = (Operations: Array<{ op: string; path?: string; value?: unknown }>) =>
+      scim.patchGroup(p, groups.get('it')!, { schemas: [SCIM.patch], Operations }, BASE);
+    const named = await refusal(
+      rekey([
+        { op: 'replace', path: 'externalId', value: 'ad:it' },
+        { op: 'replace', path: SCIM.unit + ':parent', value: 'unit:ksk' },
+      ]),
     );
-    expect(plain.detail).toContain("carried by a 'unit:' group only");
+    expect(named.detail).toContain("carried by a 'unit:' group only");
+    expect(store.state.groups.get(groups.get('it')!)?.parentUnitId).toBe('ksk');
+    const plain = await rekey([{ op: 'replace', path: 'externalId', value: 'ad:it' }]);
+    expect(plain.externalId).toBe('ad:it');
+    expect(plain[SCIM.unit]).toBeUndefined();
+    expect(store.state.groups.get(groups.get('it')!)?.parentUnitId).toBeNull();
+    expect(store.state.audit.at(-1)).toMatchObject({
+      action: 'scim.group.patched',
+      details: { externalId: 'ad:it', parent: { before: 'ksk', after: null } },
+    });
+    // Another unit key is still a node, and keeps its place.
+    await unit('hr', 'HR', 'ksk');
+    const moved = await scim.patchGroup(
+      p,
+      groups.get('hr')!,
+      { schemas: [SCIM.patch], Operations: [{ op: 'replace', path: 'externalId', value: 'unit:personal' }] },
+      BASE,
+    );
+    expect(moved[SCIM.unit]).toEqual({ parent: 'unit:ksk' });
+    const removed = await scim.patchGroup(
+      p,
+      groups.get('hr')!,
+      { schemas: [SCIM.patch], Operations: [{ op: 'remove', path: 'externalId' }] },
+      BASE,
+    );
+    expect(removed[SCIM.unit]).toBeUndefined();
+  });
+  test('attributes and excludedAttributes name the extension by its URN, whole or by its parent', async () => {
+    const { scim, p, unit, groups } = harness();
+    await unit('ksk', 'Kommunstyrelsekontoret', null);
+    await unit('it', 'IT', 'ksk');
+    const read = (projection: { attributes?: string; excludedAttributes?: string }) =>
+      scim.getGroup(p, groups.get('it')!, BASE, projection);
+    for (const attributes of [SCIM.unit, `externalId,${SCIM.unit}:parent`, SCIM.unit.toUpperCase() + ':parent']) {
+      const got = await read({ attributes });
+      expect(got[SCIM.unit]).toEqual({ parent: 'unit:ksk' });
+      expect('displayName' in got).toBe(false);
+    }
+    const without = await read({ excludedAttributes: SCIM.unit });
+    expect(SCIM.unit in without).toBe(false);
+    expect(without.displayName).toBe('IT');
   });
   test('discovery names the extension on Group and describes its one attribute', () => {
     expect(resourceTypes(BASE).find(r => r.id === 'Group')?.schemaExtensions).toEqual([
@@ -343,6 +384,24 @@ describe('a manager works with their direct reports (D99)', () => {
         ],
       },
     ]);
+  });
+  test('a deactivated manager leads nobody: the line passes through their unit, and the tree says the same', async () => {
+    const h = await organisation();
+    // The directory deactivates David; his memberships, and so his assignment as manager of IT, stay.
+    await h.scim.deleteUser(h.p, h.id('david'));
+    const [ksk] = await h.reports('karin');
+    expect(ksk!.people).toEqual([
+      'David manager Digitalisering och IT:manager',
+      'Hanna employee HR:employee',
+      'Ida employee Digitalisering och IT:employee',
+      'Lars manager Lön:manager',
+      'Olle employee KSK Avdelningar:employee',
+      'Stina employee',
+      'Ulla manager Utveckling:manager',
+      'Uno manager Utveckling:manager',
+    ]);
+    const tree = await organisationUsecases({ store: h.store }).overview(h.persona('karin', ['admin.users']));
+    expect(tree.units.find(u => u.unitId === 'it')).toMatchObject({ managers: [], placed: 1, line: 'above' });
   });
   test('a manager in the middle sees their own people and the managers of the unit below, and a manager at the edge sees what they saw before', async () => {
     const { reports } = await organisation();
