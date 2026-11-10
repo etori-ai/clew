@@ -1,0 +1,33 @@
+{
+  "description": "Mikael, not an approver and without access, sends the etag Hillevi sees: 400 with the outdated-content error.",
+  "as": "mikael",
+  "request": {
+    "method": "PUT",
+    "path": "/ocs/v2.php/apps/approval/api/v1/approve/627",
+    "headers": {
+      "Authorization": "Bearer <exchanged access token, aud nextcloud, mikael>",
+      "OCS-APIRequest": "true",
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "body": "{\"etag\":\"31d19d46ff3881c5f960a1de9c079a7c\"}"
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "ocs": {
+        "meta": {
+          "status": "failure",
+          "statuscode": 400,
+          "message": ""
+        },
+        "data": {
+          "error": "Filen eller mappen som du försökte godkänna har inaktuellt innehåll. Läs in den igen och granska den på nytt."
+        }
+      }
+    }
+  }
+}

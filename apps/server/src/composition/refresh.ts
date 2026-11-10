@@ -8,13 +8,21 @@ import { clock } from './ambient';
 import { ledger } from './durable';
 import { cancelDurable } from '../dbos/start';
 import { logger } from '../logging';
+import { standingSession } from '../auth';
+import { openSecret, sealSecret } from '../auth-crypto';
 
 export const refresh = refreshUsecases({
-  store: postgresRefreshStore({ durable: ledger, cancel: cancelDurable }),
+  store: postgresRefreshStore({
+    durable: ledger,
+    cancel: cancelDurable,
+    sealer: { seal: sealSecret, open: openSecret },
+  }),
   clock,
   ids: randomUUID,
   key: x => createHash('sha256').update(JSON.stringify(x)).digest('hex'),
   current: id => systemContext(id, 'system:refresh'),
+  // The person's own session that asked for a refresh, while it is active (D26): what a delegated connector's scan runs with.
+  session: standingSession,
   sources: async p => {
     await registry.refreshGovernance();
     return registry
@@ -27,7 +35,9 @@ export const refresh = refreshUsecases({
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([
-        id === 'calendar' ? calendar.ensureProposalThread(p).then(() => ({ drafts: [] })) : registry.scanOne(p, id),
+        id === 'calendar'
+          ? calendar.ensureProposalThread(p).then(() => ({ drafts: [] }))
+          : registry.scanOne(p, id, p.delegate ? { delegate: p.delegate } : {}),
         new Promise<never>((_resolve, reject) => {
           timer = setTimeout(() => reject(new Error('Source deadline exceeded')), 10_000);
           timer.unref();

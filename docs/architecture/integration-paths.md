@@ -39,7 +39,7 @@ These are combinations of existing protocol fields, not separate protocol versio
 | A bound personal account | Resolve a trusted person-to-source mapping and use that person's credential. |
 | A delegated token from the IdP | Declare the source audience and require the token on supported session-backed calls. |
 
-The assertion from Clew and the source credential are different credentials. Background scans, figures and callbacks have no delegated session token. Generic durable remote actions declaring delegation stop with `needs-session`; a working delegated read does not establish action support. Read [authorization](../guides/authorization.md) before choosing a source.
+The assertion from Clew and the source credential are different credentials. Figures, callbacks and the nightly scan have no delegated session token. On a connector that declares delegation, an approved write and a scan run with the token of the person's own session that approved or asked for them, and only while that session is active (a scan also only while the person has been active in it within the last 15 minutes); otherwise the write stops with `needs-session` and the scan with `authorization-required`. Work that must happen while the person is away still needs the source's own background authorization. Read [authorization](../guides/authorization.md#work-the-persons-own-session-stands-behind) before choosing a source.
 
 ## Examples and their evidence
 

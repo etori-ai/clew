@@ -26,6 +26,13 @@ export function postgresExecutionStore(
   hooks: ExecutionProjection | ExecutionProjection['project'] = {},
 ): ExecutionStore {
   const { project, pushCard } = typeof hooks === 'function' ? { project: hooks } : hooks;
+  // A session binding names one of the person's signed-in sessions (D26): sealed like the payload and bound to its row and
+  // role, so the database alone never says which session stands behind which write.
+  const sessionPurpose = (id: string, role: 'approving' | 'checking') => `execution:session:${role}:${id}`;
+  const openSession = (value: string | null, id: string, role: 'approving' | 'checking') =>
+    value ? sealer.open(value, sessionPurpose(id, role)) : null;
+  const sealSession = (value: string | null, id: string, role: 'approving' | 'checking') =>
+    value ? sealer.seal(value, sessionPurpose(id, role)) : null;
   const fromRow = (r: Row): Execution => ({
     ...r,
     ...(r.presentation ? { presentation: r.presentation } : { presentation: undefined }),
@@ -38,6 +45,8 @@ export function postgresExecutionStore(
     expiresAt: r.expiresAt.toISOString(),
     dispatchedAt: r.dispatchedAt?.toISOString() ?? null,
     leaseUntil: r.leaseUntil?.toISOString() ?? null,
+    approvingSession: openSession(r.approvingSession, r.id, 'approving'),
+    checkingSession: openSession(r.checkingSession, r.id, 'checking'),
   });
   const toRow = (e: Execution): typeof table.$inferInsert => ({
     ...e,
@@ -48,6 +57,8 @@ export function postgresExecutionStore(
     expiresAt: new Date(e.expiresAt),
     dispatchedAt: date(e.dispatchedAt),
     leaseUntil: date(e.leaseUntil),
+    approvingSession: sealSession(e.approvingSession, e.id, 'approving'),
+    checkingSession: sealSession(e.checkingSession, e.id, 'checking'),
   });
   // A job's steps carry a watch's read input and expectation, approved content like a payload: sealed as one column.
   const fromJob = (r: JobRow): Job => ({
@@ -106,6 +117,12 @@ export function postgresExecutionStore(
           async update(e) {
             await tx.update(table).set(toRow(e)).where(eq(table.id, e.id));
             await project?.(tx, e, 'update');
+          },
+          async keepCheckingSession(id, binding) {
+            await tx
+              .update(table)
+              .set({ checkingSession: sealSession(binding, id, 'checking') })
+              .where(eq(table.id, id));
           },
           enqueue: start => enqueueWorkflow(tx, durable, start),
           async audit(e) {

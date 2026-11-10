@@ -185,6 +185,10 @@ await enableTokenExchange('clew-web');
 await audienceClient('eneo');
 // The SupportManagement connector acts as the person too (D89); its fixture reads this audience.
 await audienceClient('supportmanagement');
+// Nextcloud's Approval app (D101) is called as the person too: the development Nextcloud's user_oidc provider has this
+// client id, accepts a bearer token whose `aud` holds it, and maps `preferred_username` to the existing account
+// (`sh scripts/calendar.sh seed`).
+await audienceClient('nextcloud');
 const testPasswords: Record<string, string> = {};
 try {
   // The development directory (scripts/provisioner/directory.ts) is the one list of people. This bootstrap gives each

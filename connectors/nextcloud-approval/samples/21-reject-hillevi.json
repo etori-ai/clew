@@ -1,0 +1,31 @@
+{
+  "description": "Reject with the fresh etag and a message: 200, empty data.",
+  "as": "hillevi",
+  "request": {
+    "method": "PUT",
+    "path": "/ocs/v2.php/apps/approval/api/v1/reject/626",
+    "headers": {
+      "Authorization": "Bearer <exchanged access token, aud nextcloud, hillevi>",
+      "OCS-APIRequest": "true",
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "body": "{\"etag\":\"0da42acd7c4199eebc0f21150dc72fb7\",\"message\":\"Flytta passet efter lunch.\"}"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "ocs": {
+        "meta": {
+          "status": "ok",
+          "statuscode": 200,
+          "message": "OK"
+        },
+        "data": []
+      }
+    }
+  }
+}

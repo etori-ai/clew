@@ -1,6 +1,12 @@
 import type { AuthenticatedContext } from '@clew/contracts';
 import type { ScanObservation, ThreadDraft } from '@clew/connectors';
-import { projectionVersion, type Occurrence, type RefreshDeps, type RefreshRequest } from '../refresh-model';
+import {
+  PRESENCE_MS,
+  projectionVersion,
+  type Occurrence,
+  type RefreshDeps,
+  type RefreshRequest,
+} from '../refresh-model';
 
 const assignment = (p: AuthenticatedContext) => p.unitId + ':' + p.role;
 /**
@@ -20,11 +26,14 @@ const canonical = (value: unknown): unknown =>
         )
       : value;
 /** Reads request work and return immediately; only leased workers wait for a source. */
-export function refreshUsecases({ store, clock, ids, key, current, sources, system, scan }: RefreshDeps) {
+export function refreshUsecases({ store, clock, ids, key, current, sources, system, scan, session }: RefreshDeps) {
   async function request(persona: AuthenticatedContext) {
     await persona.authorize();
     const at = clock().toISOString(),
-      scope = assignment(persona);
+      scope = assignment(persona),
+      // The signed-in session that asks stands behind the scans of connectors that act as the person (D26); a request
+      // without one (the nightly scan) has none.
+      binding = session && persona.delegate ? persona.sessionBinding : null;
     for (const connector of await sources(persona))
       await store.request({
         id: key([persona.id, connector, scope, persona.authorizationVersion]),
@@ -40,13 +49,19 @@ export function refreshUsecases({ store, clock, ids, key, current, sources, syst
         lastSuccess: null,
         observedAt: null,
         error: null,
+        session: binding,
       });
   }
+  /**
+   * `session`: how the person's own session took part in the scan (D26), which the audit row says, never the binding:
+   * `true` when it was asked for a token, `'idle'` when it stood but its person had not been active within `PRESENCE_MS`.
+   */
   async function finish(
     job: RefreshRequest,
     baseline: Record<string, string>,
     result: ScanObservation | undefined,
     failure?: string,
+    session?: true | 'idle',
   ) {
     const at = clock().toISOString(),
       observation = result?.observation;
@@ -54,13 +69,15 @@ export function refreshUsecases({ store, clock, ids, key, current, sources, syst
       const row = await tx.lockRequest(job.id);
       if (!row || row.attempt !== job.attempt || row.state !== 'running') return;
       const observedAt = observation?.observedAt ?? at;
-      let error =
-        failure ??
-        (observation?.completeness === 'unavailable' || observation?.completeness === 'authorization-required'
-          ? observation.completeness
-          : null);
+      // An observation that says nothing was read (no session or token behind the scan, the source away) carries no
+      // content that could be stale, so the ordering rule does not judge it; like every failure it leaves `observedAt`
+      // as it was. Its time may be stamped by another clock than the last read's (the registry stamps a refusal itself).
+      const nothingRead =
+        observation?.completeness === 'unavailable' || observation?.completeness === 'authorization-required';
+      let error = failure ?? (nothingRead ? observation.completeness : null);
       if (
         observation &&
+        !nothingRead &&
         (observation.scope !== job.assignment ||
           !Number.isFinite(Date.parse(observedAt)) ||
           Date.parse(observedAt) > Date.parse(at) + 300_000 ||
@@ -80,7 +97,11 @@ export function refreshUsecases({ store, clock, ids, key, current, sources, syst
           action: 'refresh.failed',
           subject: `refresh:${job.id}`,
           at,
-          details: { reason: error ?? 'unavailable', connector: job.connector },
+          details: {
+            reason: error ?? 'unavailable',
+            connector: job.connector,
+            ...(session ? { session } : {}),
+          },
         });
         return;
       }
@@ -313,7 +334,12 @@ export function refreshUsecases({ store, clock, ids, key, current, sources, syst
         action: 'refresh.completed',
         subject: `refresh:${job.id}`,
         at,
-        details: { connector: job.connector, complete, count: result.drafts.length },
+        details: {
+          connector: job.connector,
+          complete,
+          count: result.drafts.length,
+          ...(session ? { session } : {}),
+        },
       });
     });
   }
@@ -322,7 +348,7 @@ export function refreshUsecases({ store, clock, ids, key, current, sources, syst
       job = await store.claim(at, new Date(Date.parse(at) + 30_000).toISOString());
     if (!job) return false;
     const baseline = await store.baseline(job);
-    let result: ScanObservation | undefined, error: string | undefined;
+    let result: ScanObservation | undefined, error: string | undefined, backing: true | 'idle' | undefined;
     try {
       const persona = await current(job.personId);
       if (
@@ -334,7 +360,30 @@ export function refreshUsecases({ store, clock, ids, key, current, sources, syst
         error = 'authorization-required';
       else {
         await persona.authorize();
-        result = await scan(persona, job.connector);
+        // A connector that acts as the person is scanned with the token of the session that asked, while it is active,
+        // still theirs and its person was active in it within PRESENCE_MS (D26, D100); otherwise with none, and it answers
+        // `authorization-required`, which blocks the request and never reads as the work being gone. The session is looked
+        // up only when a connector asks for the token, so a scan of any other connector never depends on it. The current
+        // grant was checked above; the session adds no authority.
+        const binding = job.session;
+        result = await scan(
+          binding && session
+            ? {
+                ...persona,
+                delegate: async audience => {
+                  const standing = await session(binding);
+                  if (standing?.personId !== job.personId) return undefined;
+                  if (Date.parse(standing.lastActiveAt) < clock().getTime() - PRESENCE_MS) {
+                    backing = 'idle';
+                    return undefined;
+                  }
+                  backing = true;
+                  return standing.delegate(audience);
+                },
+              }
+            : persona,
+          job.connector,
+        );
         const latest = await current(job.personId);
         if (
           !latest ||
@@ -346,7 +395,7 @@ export function refreshUsecases({ store, clock, ids, key, current, sources, syst
     } catch {
       error = 'unavailable';
     }
-    await finish(job, baseline, result, error);
+    await finish(job, baseline, result, error, backing);
     return true;
   }
   async function statuses(persona: AuthenticatedContext) {

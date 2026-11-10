@@ -287,8 +287,19 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
     capabilities,
     ...(manifest.scan
       ? {
-          scan: async (actor: Actor) => {
-            const { status, json } = await post(transport, source, '/clew/scan', actor, { actor });
+          // A connector that acts as the person gets their token on a scan their live session asked for (D26).
+          scan: async (actor: Actor, clew: Clew) => {
+            const { status, json } = await post(
+              transport,
+              source,
+              '/clew/scan',
+              actor,
+              { actor },
+              await delegated(manifest, clew, source),
+              clew.chain,
+              undefined,
+              clew.signal,
+            );
             if (status >= 400 || !Value.Check(ScanResponseSchema, json)) throw unavailable(source);
             return json;
           },

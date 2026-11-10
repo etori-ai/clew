@@ -271,6 +271,35 @@ const delegation = delegationFor({
 });
 /** The exchanged token for a session and an audience, for `scripts/auth-exchange-check.ts`; the routes reach it through `context.delegate`. */
 export const delegatedToken = (digest: string, audience: string) => delegation.token(digest, audience);
+/**
+ * The signed-in session a binding names, for work the person's own session stands behind outside a request (D26): an
+ * approved write while the session that approved it is active, a scan the session asked for. Undefined when the session
+ * has ended or was revoked, belongs to another installation's issuer or client, or its subject no longer resolves to its
+ * person. The delegate reads the session again before every token, so a session revoked after this answer (logout,
+ * back-channel logout, a failed refresh, expiry) yields no further token even while one is cached; refreshing the IdP
+ * token is the same as for a request, and nothing here extends the session's idle or absolute expiry. Whether this
+ * session may stand behind the work (whose it is, which binding the work kept, whether the person was active in it
+ * recently enough) is the caller's use case to decide.
+ */
+export async function standingSession(binding: string) {
+  const settings = authSettings();
+  const row = await readSession(binding);
+  if (!row || row.issuer !== settings.issuer || row.clientId !== settings.clientId) return undefined;
+  const access = await resolveSubject(row.issuer, row.subject);
+  if (!access || access.person.id !== row.personId) return undefined;
+  const personId = row.personId;
+  return {
+    personId,
+    // When the person was last active in this session: sign-in, or the last `POST /api/auth/activity` (`touchSession`
+    // sets the idle expiry to that moment plus IDLE_MS). A use case decides what recent enough means.
+    lastActiveAt: new Date(row.idleExpiresAt.getTime() - IDLE_MS).toISOString(),
+    async delegate(audience: string) {
+      const current = await readSession(binding);
+      if (!current || current.personId !== personId) throw new AuthError(401, 'expired');
+      return delegation.token(binding, audience);
+    },
+  };
+}
 export type Session = Awaited<ReturnType<typeof authenticate>>;
 export async function authenticate(raw: string | undefined) {
   if (!raw) throw new AuthError(401, 'expired');

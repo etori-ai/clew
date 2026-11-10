@@ -122,6 +122,9 @@ services:
       - ${CLEW_HOST_WORKSPACE:-..}/.devcontainer/calendar:/opt/clew-calendar:ro
     ports:
       - "127.0.0.1:3021:80"
+    # user_oidc fetches the realm's discovery document and keys from the issuer in the tokens it validates (D101).
+    extra_hosts:
+      - "keycloak.orb.local:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -249,6 +252,24 @@ services:
       - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
     ports:
       - "127.0.0.1:4051:4051"
+  # Nextcloud's Approval app (D101), the first source not written for Clew. The connector calls Nextcloud as the person,
+  # with the token Clew exchanges for the audience `nextcloud`, and holds no credential of its own; so it is in the
+  # calendar profile, beside the Nextcloud it needs. Stateless. Not registered by `dev:connectors`: the command is in
+  # connectors/nextcloud-approval/README.md. Links open the file on the host's published Nextcloud. 4052: 4051 is taken.
+  nextcloud-approval:
+    <<: *fixture
+    profiles: ["calendar"]
+    working_dir: /workspace/connectors/nextcloud-approval
+    volumes:
+      - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
+    environment:
+      <<: *fixture-environment
+      NEXTCLOUD_ADAPTER: nextcloud
+      NEXTCLOUD_URL: http://calendar
+      NEXTCLOUD_ALLOW_HTTP: "true"
+      NEXTCLOUD_PUBLIC_URL: http://localhost:3021
+    ports:
+      - "127.0.0.1:4052:4052"
 
 volumes:
   node_modules:

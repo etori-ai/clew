@@ -431,7 +431,7 @@ export const RULES: Rule[] = [
     fields: ['delegation.audience'],
     enforced: 'call',
     decision: 'D26',
-    text: "With `delegation`, Clew exchanges the person's session for a token bound to `audience` and sends it in `X-Clew-Delegated-Token` beside the assertion. Scans, figures, callbacks and sessions without an IdP token carry none; the connector then answers `denied`.",
+    text: "With `delegation`, Clew exchanges the person's session for a token bound to `audience` and sends it in `X-Clew-Delegated-Token` beside the assertion: on a request, on an approved write while the session that approved it is active, and on a scan the person's active session asked for (Clew does not call the scan without one). Figures, callbacks and sessions without an IdP token carry none; the connector then answers `denied`.",
   },
   {
     id: 'about-call',

@@ -109,7 +109,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "description": "The person's own token for the connector's system (D26), present only when the manifest declares `delegation` and a session is behind the call."
+              "description": "The person's own token for the connector's system (D26), present only when the manifest declares `delegation` and one of the person's live sessions is behind the call: the request's own, the session that approved a write, or the session that asked for a scan."
             }
           }
         ],
@@ -198,11 +198,22 @@
         ],
         "operationId": "scan",
         "summary": "Drafts for the person's cards",
-        "description": "Only when the manifest says `scan: true`. Called nightly and on first visit per person; must be idempotent: the same occurrence gives the same topic.",
+        "description": "Only when the manifest says `scan: true`. Called nightly and on first visit per person; must be idempotent: the same occurrence gives the same topic. A manifest that declares `delegation` is scanned only while a live session of the person asked for it, with their token; otherwise Clew does not call it.",
         "security": [
           {
             "clewAssertion": [],
             "connectorKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Clew-Delegated-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "The person's own token for the connector's system (D26), present only when the manifest declares `delegation` and one of the person's live sessions is behind the call: the request's own, the session that approved a write, or the session that asked for a scan."
+            }
           }
         ],
         "requestBody": {
@@ -284,7 +295,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "description": "The person's own token for the connector's system (D26), present only when the manifest declares `delegation` and a session is behind the call."
+              "description": "The person's own token for the connector's system (D26), present only when the manifest declares `delegation` and one of the person's live sessions is behind the call: the request's own, the session that approved a write, or the session that asked for a scan."
             }
           }
         ],

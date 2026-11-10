@@ -547,6 +547,10 @@ export const executions = pgTable(
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
     leaseUntil: timestamp('lease_until', { withTimezone: true }),
+    // The person's own signed-in sessions behind a write on a connector that acts as them (D26), sealed by the adapter:
+    // the one that approved it (dispatch, replay, read-back) and the one that last asked to check it (read-back only).
+    approvingSession: text('approving_session'),
+    checkingSession: text('checking_session'),
   },
   t => [
     uniqueIndex('execution_decision').on(t.personId, t.decisionId),
@@ -714,6 +718,9 @@ export const refreshRequests = pgTable(
     lastSuccess: timestamp('last_success', { withTimezone: true }),
     observedAt: timestamp('observed_at', { withTimezone: true }),
     error: text('error'),
+    // The signed-in session that last asked for this refresh, sealed by the adapter: what a scan of a connector that acts
+    // as the person runs with while it is active (D26). Null when no session asked since the last request without one.
+    session: text('session'),
   },
   t => [index('refresh_due').on(t.nextAt)],
 );

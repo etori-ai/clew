@@ -56,6 +56,10 @@ export function memoryExecutionStore() {
           async update(e) {
             r.set(e.id, structuredClone(e));
           },
+          async keepCheckingSession(id, binding) {
+            const e = r.get(id);
+            if (e) r.set(id, { ...e, checkingSession: binding });
+          },
           async enqueue(start) {
             if (!o.has(start.id)) o.set(start.id, structuredClone(start));
           },

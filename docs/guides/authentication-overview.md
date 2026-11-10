@@ -38,8 +38,8 @@ The Clew assertion identifies the person to the connector. It is not a credentia
 
 This is where "OAuth" fits the native lane: standard OIDC and token exchange against the municipality's own identity provider, not a per-vendor authorization dance. Delegation has a cost to weigh before choosing it for a case system:
 
-- A delegated token exists only while the person has a live session. Scans, figures, connector callbacks and durable executions run without one.
-- A connector that declares delegation is recorded as needing a session. An approved execute on it can stop with `needs-session` before dispatch ([executions composition](../../apps/server/src/composition/executions.ts)), and there is no sign-in-and-resume flow yet.
+- A delegated token exists only while the person has a live session. Figures, connector callbacks and the nightly scan run without one.
+- On a connector that declares delegation, an approved execute is dispatched with the token of the session that approved it, and a scan with the token of the session that asked for it, while that session is active. Without one the execute stops with `needs-session` before dispatch and the scan answers `authorization-required` ([executions composition](../../apps/server/src/composition/executions.ts), [refresh composition](../../apps/server/src/composition/refresh.ts)); there is no sign-in-and-resume flow for a write left pending.
 - A service credential with actor-scoped queries keeps scans and background writes possible. Prove the case system's background authorization path before promising either.
 
 ## 4. A note on a case is a human decision, never a tool

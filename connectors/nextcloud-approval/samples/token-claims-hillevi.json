@@ -1,0 +1,26 @@
+{
+  "exp": 1794345322,
+  "iat": 1794345262,
+  "auth_time": 1794345262,
+  "iss": "http://keycloak.orb.local:8090/realms/clew",
+  "aud": "nextcloud",
+  "sub": "c7505833-b832-4511-b74c-c28f60052a1f",
+  "typ": "Bearer",
+  "azp": "clew-web",
+  "acr": "1",
+  "realm_access": {
+    "roles": [
+      "default-roles-clew",
+      "offline_access",
+      "uma_authorization"
+    ]
+  },
+  "resource_access": {},
+  "scope": "profile email nextcloud-audience",
+  "email_verified": true,
+  "name": "Hillevi Berg",
+  "preferred_username": "hillevi",
+  "given_name": "Hillevi",
+  "family_name": "Berg",
+  "email": "hillevi@clew.test"
+}

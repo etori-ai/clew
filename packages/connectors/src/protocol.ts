@@ -774,7 +774,7 @@ export function openApiDocument(options: OpenApiOptions = {}) {
     in: 'header',
     required: false,
     schema: text(
-      "The person's own token for the connector's system (D26), present only when the manifest declares `delegation` and a session is behind the call.",
+      "The person's own token for the connector's system (D26), present only when the manifest declares `delegation` and one of the person's live sessions is behind the call: the request's own, the session that approved a write, or the session that asked for a scan.",
     ),
   };
   return {
@@ -853,8 +853,9 @@ export function openApiDocument(options: OpenApiOptions = {}) {
           operationId: 'scan',
           summary: "Drafts for the person's cards",
           description:
-            'Only when the manifest says `scan: true`. Called nightly and on first visit per person; must be idempotent: the same occurrence gives the same topic.',
+            'Only when the manifest says `scan: true`. Called nightly and on first visit per person; must be idempotent: the same occurrence gives the same topic. A manifest that declares `delegation` is scanned only while a live session of the person asked for it, with their token; otherwise Clew does not call it.',
           security: signed,
+          parameters: [delegated],
           requestBody: body('ScanRequest'),
           responses: { '200': json('ScanResponse', 'Drafts and, optionally, what was observed.'), ...refused },
         },

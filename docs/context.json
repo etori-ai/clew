@@ -294,6 +294,15 @@
       "area": "platform"
     },
     {
+      "key": "D103-the-session-that-asked-stands-behind-delegated-work",
+      "number": 103,
+      "path": "docs/decisions/D103-the-session-that-asked-stands-behind-delegated-work.md",
+      "title": "D103 · The session that asked stands behind delegated work: an approved write, and a scan while the person is present",
+      "status": "provisional (2026-11-10; built and tested on the memory and Postgres adapters; accepted when the Approval loop of D101 has run signed in on the development stack with real exchanged tokens)",
+      "date": "2026-11-10",
+      "area": "identity, integrations"
+    },
+    {
       "key": "D11-one-calendar-contract-two-adapters",
       "number": 11,
       "path": "docs/decisions/D11-one-calendar-contract-two-adapters.md",
@@ -1272,6 +1281,34 @@
       "headings": []
     },
     {
+      "path": "connectors/nextcloud-approval/README.md",
+      "title": "nextcloud-approval: files waiting for a person's approval in Nextcloud, as a Clew connector",
+      "category": "integrator-guide",
+      "headings": [
+        "What a person gets",
+        "The card",
+        "A decision and its receipt",
+        "Identity",
+        "Configuration",
+        "The stand-in",
+        "Run and check",
+        "Checked against the development Nextcloud",
+        "What the protocol could not say",
+        "What it never does",
+        "Unverified"
+      ]
+    },
+    {
+      "path": "connectors/nextcloud-approval/samples/README.md",
+      "title": "Nextcloud Approval: recorded requests and responses",
+      "category": "integrator-guide",
+      "headings": [
+        "The setup that makes it work",
+        "The API",
+        "The calls"
+      ]
+    },
+    {
       "path": "connectors/payroll/README.md",
       "title": "payroll: a generic payroll system, as a fixture connector",
       "category": "integrator-guide",
@@ -1638,6 +1675,12 @@
     {
       "path": "docs/decisions/D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md",
       "title": "D102 · A decision is provisional until something outside the repository has tested it, and small adjustments are not numbered",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D103-the-session-that-asked-stands-behind-delegated-work.md",
+      "title": "D103 · The session that asked stands behind delegated work: an approved write, and a scan while the person is present",
       "category": "decision-history",
       "headings": []
     },
@@ -3258,6 +3301,18 @@
         "Verification",
         "Outcome",
         "Second pass"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-10-what-the-first-real-integration-showed.md",
+      "title": "Review: what the first real integration showed · 2026-11-10",
+      "category": "review-history",
+      "headings": [
+        "What works",
+        "What the product is really like",
+        "Where Clew's protocol did not fit",
+        "What it found in Clew itself",
+        "What is left before the freeze lifts"
       ]
     },
     {

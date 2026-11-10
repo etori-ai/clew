@@ -1,0 +1,29 @@
+{
+  "description": "Hillevi's list once all three are decided: empty.",
+  "as": "hillevi",
+  "request": {
+    "method": "GET",
+    "path": "/ocs/v2.php/apps/approval/api/v1/pendings",
+    "headers": {
+      "Authorization": "Bearer <exchanged access token, aud nextcloud, hillevi>",
+      "OCS-APIRequest": "true",
+      "Accept": "application/json"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "ocs": {
+        "meta": {
+          "status": "ok",
+          "statuscode": 200,
+          "message": "OK"
+        },
+        "data": []
+      }
+    }
+  }
+}

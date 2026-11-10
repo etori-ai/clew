@@ -57,3 +57,4 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Exploration: the layer where Clew owns the feature and its data, against a commercial HR system · 2026-11-10](2026-11-10-owned-domains-against-a-commercial-hr-system.md)
 - [Review: the project, its vision, its state, and other ways to reach the vision · 2026-11-10](2026-11-10-project-review-and-alternative-paths.md)
 - [Review: is the SCIM server standard, and is it easy to run · 2026-11-10](2026-11-10-scim-conformance-and-operability.md)
+- [Review: what the first real integration showed · 2026-11-10](2026-11-10-what-the-first-real-integration-showed.md)

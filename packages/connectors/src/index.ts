@@ -103,9 +103,10 @@ export interface Clew {
   /** Run another connector's `read` or `propose` as the same actor. Scope applies; `execute` is refused. */
   call<O = unknown>(name: string, input?: unknown): Promise<O>;
   /**
-   * The person's IdP token for an audience, by token exchange from the session behind this call (D26). Missing when no
-   * session is behind the run (a scan, a figure, a connector's callback); resolves undefined under a session without IdP
-   * tokens. Never logged, never in an output.
+   * The person's IdP token for an audience, by token exchange from the session behind this call (D26): the request's own,
+   * or, for an approved write and a scan, the person's session that approved or asked for it while it is active. Missing
+   * when no session is behind the run (a figure, a connector's callback, a scan no live session asked for); resolves
+   * undefined under a session without IdP tokens. Never logged, never in an output.
    */
   delegate?: (audience: string) => Promise<string | undefined>;
 }
@@ -765,12 +766,17 @@ export class Registry {
     }
     return drafts;
   }
-  async scanOne(actor: Actor, connectorId: string): Promise<ScanObservation> {
+  /**
+   * One connector's scan for one actor. A connector that acts as the person (D26) is scanned only with a token from the
+   * person's own session, obtained here first: without a delegate in `context`, or when the session yields no token, it
+   * answers `authorization-required` and is never called. The delegate travels into the scan like any run's (`clewFor`).
+   */
+  async scanOne(actor: Actor, connectorId: string, context: RunContext = {}): Promise<ScanObservation> {
     await this.refresh();
     const m = this.connectors.get(connectorId);
     if (!m?.scan || !this.visible(actor, connectorId) || !this.governance(connectorId).scanEnabled)
       throw new CapabilityError(UNKNOWN);
-    if (m.delegation)
+    if (m.delegation && !(context.delegate && (await context.delegate(m.delegation.audience))))
       return {
         drafts: [],
         observation: {
@@ -781,7 +787,7 @@ export class Registry {
           exhausted: false,
         },
       };
-    const value = await m.scan(actor, this.clewFor(actor, {}, m.id));
+    const value = await m.scan(actor, this.clewFor(actor, context, m.id));
     const result = Array.isArray(value) ? { drafts: value } : value;
     const drafts = result.drafts.filter(d => !this.draftProblem(m.id, d));
     return {

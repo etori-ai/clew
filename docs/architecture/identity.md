@@ -82,7 +82,7 @@ A source can use a service credential narrowed to the actor, a bound personal cr
 
 For interactive calls, a connector declaring `delegation` can receive `X-Clew-Delegated-Token` after session-backed IdP token exchange. The source must accept that issuer/audience and enforce its own permissions.
 
-Background work uses [systemContext](../../apps/server/src/system-context.ts), built from the person's current local grant. It carries no session tokens. Scans, figures and callbacks do not receive a delegated token. Generic durable execution records a connector declaring delegation as needing a session and can remain pending with `needs-session`; there is no complete sign-in-and-resume action path.
+Background work uses [systemContext](../../apps/server/src/system-context.ts), built from the person's current local grant. It carries no session tokens. Figures, callbacks and the nightly scan do not receive a delegated token. On a connector declaring delegation, an approved write and a scan the person asked for get the token of the person's own session that approved or asked for them, through `standingSession` in [auth.ts](../../apps/server/src/auth.ts), only while that session is active and still theirs; otherwise the write remains pending with `needs-session` and the scan answers `authorization-required`. There is no sign-in-and-resume path for a write left pending ([authorization](../guides/authorization.md#work-the-persons-own-session-stands-behind)).
 
 A valid delegated search therefore does not prove the source can support unattended scans, watches or actions. Establish and test the source's background authorization arrangement before enabling those features.
 

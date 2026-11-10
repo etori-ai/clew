@@ -12,6 +12,8 @@ $appManager = OC::$server->getAppManager();
 $required = array_merge($appManager->getAlwaysEnabledApps(), [
     'calendar', 'roomvox', 'dav', 'files', 'settings', 'provisioning_api',
     'theming', 'bruteforcesettings', 'password_policy',
+    // Approval (D101): files reach an approver through a share, and user_oidc accepts the person's token.
+    'files_sharing', 'user_oidc', 'approval',
 ]);
 foreach ($appManager->getEnabledApps() as $app) {
     if (!in_array($app, $required, true)) $appManager->disableApp($app);

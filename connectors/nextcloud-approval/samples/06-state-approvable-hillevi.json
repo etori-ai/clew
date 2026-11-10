@@ -1,0 +1,59 @@
+{
+  "description": "State of a file waiting for Hillevi: 4 (approvable by me), with the request activity.",
+  "as": "hillevi",
+  "request": {
+    "method": "GET",
+    "path": "/ocs/v2.php/apps/approval/api/v1/state/625",
+    "headers": {
+      "Authorization": "Bearer <exchanged access token, aud nextcloud, hillevi>",
+      "OCS-APIRequest": "true",
+      "Accept": "application/json"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "ocs": {
+        "meta": {
+          "status": "ok",
+          "statuscode": 200,
+          "message": "OK"
+        },
+        "data": {
+          "state": 4,
+          "rule": {
+            "id": 1,
+            "tagPending": "1",
+            "tagApproved": "2",
+            "tagRejected": "3",
+            "description": "Underlag att godkänna",
+            "approvers": [
+              {
+                "entityId": "hillevi",
+                "type": "user"
+              },
+              {
+                "entityId": "hassan",
+                "type": "user"
+              }
+            ],
+            "requesters": [
+              {
+                "entityId": "calendar-staff",
+                "type": "group"
+              }
+            ],
+            "unapproveWhenModified": false
+          },
+          "userId": "erik",
+          "userName": "Erik Sandström",
+          "timestamp": 1794345257,
+          "message": ""
+        }
+      }
+    }
+  }
+}

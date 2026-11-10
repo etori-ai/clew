@@ -1,4 +1,10 @@
-import { projectionVersion, type Occurrence, type RefreshRequest, type RefreshStore } from '../refresh-model';
+import {
+  projectionVersion,
+  requestChange,
+  type Occurrence,
+  type RefreshRequest,
+  type RefreshStore,
+} from '../refresh-model';
 import { memoryThreadStore } from './memory';
 
 export function memoryRefreshStore(threads = memoryThreadStore()) {
@@ -8,20 +14,16 @@ export function memoryRefreshStore(threads = memoryThreadStore()) {
   const store: RefreshStore = {
     async request(r) {
       await threads.transaction(async tx => {
-        const old = requests.get(r.id);
-        if (!old || (['complete', 'failed', 'blocked'].includes(old.state) && old.nextAt <= r.requestedAt)) {
-          await tx.writeAudit({
-            actor: `person:${r.personId}`,
-            action: 'refresh.requested',
-            subject: `refresh:${r.id}`,
-            at: r.requestedAt,
-            details: { connector: r.connector, assignment: r.assignment },
-          });
-          requests.set(
-            r.id,
-            old ? { ...old, state: 'pending', requestedAt: r.requestedAt, nextAt: r.nextAt } : copy(r),
-          );
-        }
+        const changed = requestChange(requests.get(r.id), r);
+        if (!changed) return;
+        await tx.writeAudit({
+          actor: `person:${r.personId}`,
+          action: 'refresh.requested',
+          subject: `refresh:${r.id}`,
+          at: r.requestedAt,
+          details: { connector: r.connector, assignment: r.assignment, ...(r.session ? { session: true } : {}) },
+        });
+        requests.set(r.id, copy(changed));
       });
     },
     async claim(at, until) {
@@ -85,5 +87,9 @@ export function memoryRefreshStore(threads = memoryThreadStore()) {
         return result;
       }),
   };
-  return Object.assign(store, { threads, dump: () => copy([...occurrences.values()]) });
+  return Object.assign(store, {
+    threads,
+    dump: () => copy([...occurrences.values()]),
+    requests: () => copy([...requests.values()]),
+  });
 }

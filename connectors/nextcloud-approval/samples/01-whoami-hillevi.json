@@ -1,0 +1,88 @@
+{
+  "description": "Which Nextcloud account the token resolves to (provisioning API, OCS).",
+  "as": "hillevi",
+  "request": {
+    "method": "GET",
+    "path": "/ocs/v2.php/cloud/user",
+    "headers": {
+      "Authorization": "Bearer <exchanged access token, aud nextcloud, hillevi>",
+      "OCS-APIRequest": "true",
+      "Accept": "application/json"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "ocs": {
+        "meta": {
+          "status": "ok",
+          "statuscode": 200,
+          "message": "OK"
+        },
+        "data": {
+          "enabled": true,
+          "id": "hillevi",
+          "firstLoginTimestamp": 1793705296,
+          "lastLoginTimestamp": 1794345221,
+          "lastLogin": 1794345221000,
+          "backend": "Database",
+          "subadmin": [],
+          "quota": {
+            "free": -3,
+            "used": 62458312,
+            "total": -3,
+            "relative": 0,
+            "quota": -3
+          },
+          "manager": "",
+          "avatarScope": "v2-federated",
+          "email": "hillevi@clew.test",
+          "emailScope": "v2-federated",
+          "additional_mail": [],
+          "additional_mailScope": [],
+          "displayname": "Hillevi Berg",
+          "display-name": "Hillevi Berg",
+          "displaynameScope": "v2-federated",
+          "phone": "",
+          "phoneScope": "v2-local",
+          "address": "",
+          "addressScope": "v2-local",
+          "website": "",
+          "websiteScope": "v2-local",
+          "twitter": "",
+          "twitterScope": "v2-local",
+          "bluesky": "",
+          "blueskyScope": "v2-local",
+          "fediverse": "",
+          "fediverseScope": "v2-local",
+          "organisation": "",
+          "organisationScope": "v2-local",
+          "role": "",
+          "roleScope": "v2-local",
+          "headline": "",
+          "headlineScope": "v2-local",
+          "biography": "",
+          "biographyScope": "v2-local",
+          "profile_enabled": "1",
+          "profile_enabledScope": "v2-local",
+          "pronouns": "",
+          "pronounsScope": "v2-federated",
+          "groups": [
+            "calendar-staff"
+          ],
+          "language": "sv",
+          "locale": "",
+          "timezone": "",
+          "notify_email": null,
+          "backendCapabilities": {
+            "setDisplayName": true,
+            "setPassword": true
+          }
+        }
+      }
+    }
+  }
+}

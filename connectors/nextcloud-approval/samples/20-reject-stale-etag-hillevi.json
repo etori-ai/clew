@@ -1,0 +1,33 @@
+{
+  "description": "Reject with the etag read before the file changed: 400 with the outdated-content error.",
+  "as": "hillevi",
+  "request": {
+    "method": "PUT",
+    "path": "/ocs/v2.php/apps/approval/api/v1/reject/626",
+    "headers": {
+      "Authorization": "Bearer <exchanged access token, aud nextcloud, hillevi>",
+      "OCS-APIRequest": "true",
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "body": "{\"etag\":\"aafcea6477f4cc8ccdeaabf7906f1e7f\",\"message\":\"Flytta passet efter lunch.\"}"
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "ocs": {
+        "meta": {
+          "status": "failure",
+          "statuscode": 400,
+          "message": ""
+        },
+        "data": {
+          "error": "Filen eller mappen som du försökte avvisa har inaktuellt innehåll. Läs in den igen och granska den på nytt."
+        }
+      }
+    }
+  }
+}

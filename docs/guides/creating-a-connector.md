@@ -188,7 +188,7 @@ The [testing and deployment guide](testing-and-deployment.md) covers this from a
 
 For a connector that participates in multi-system tasks, declare the fact kinds it creates and the facts its proposal capabilities follow. Clew assembles those offered steps into a job for one approval after an administrator binds them. Each connector supplies only its own writes or watches; Clew coordinates their progress. [The job design](../architecture/working-across-connectors.md#jobs-facts-followers-and-one-approval) also explains the planned next proposal after a confirmed result.
 
-A delegated interactive read does not establish background authorization. Scans/figures/callbacks do not get session tokens, and generic durable remote actions can remain pending with `needs-session`. Resolve that source constraint before adding them.
+A delegated interactive read does not establish background authorization. Figures and callbacks do not get session tokens. Approved writes and scans on a delegating connector get the person's token only while the session that approved or asked for them is active; otherwise a write remains pending with `needs-session` and Clew does not call the scan. Resolve the source's own background authorization before promising work that must happen while the person is away.
 
 Keep deployment versions independent of protocol `2`. The current manifest has no `version` or `deprecated` field. [Implementation status](../reference/status.md) is the guide to supported features.
 

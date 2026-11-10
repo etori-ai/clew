@@ -8,7 +8,13 @@ import { sealSecret, openSecret } from '../auth-crypto';
 import { postgresExecutionStore } from '../modules/executions/adapters/postgres';
 import { retainsAuthority } from '../modules/executions/domain';
 import { executionUsecases } from '../modules/executions/usecases';
-import { ExecutionError, type ExecutionSource, type WatchSource } from '../modules/executions/model';
+import {
+  ExecutionError,
+  type ExecutionSessions,
+  type ExecutionSource,
+  type WatchSource,
+} from '../modules/executions/model';
+import { standingSession } from '../auth';
 import { clock } from './ambient';
 import { ledger } from './durable';
 import { reviewDocuments } from './documents';
@@ -56,10 +62,14 @@ const source: ExecutionSource = {
     return { connector: found.connector.id, safety, needsSession: !!found.connector.delegation };
   },
   current: id => systemContext(id, 'system:execution'),
+  // The persona carries a delegate only when the ledger found the person's own live session behind this execution (D26).
   async execute(persona, e) {
     if (e.connector === 'calendar' && calendarOperations.includes(e.operation as (typeof calendarOperations)[number]))
       return calendarSource.execute(persona, e);
-    const result = await registry.run<ExecuteResult>(actorOf(persona), e.operation, e.payload, { operationId: e.id });
+    const result = await registry.run<ExecuteResult>(actorOf(persona), e.operation, e.payload, {
+      operationId: e.id,
+      ...(persona.delegate ? { delegate: persona.delegate } : {}),
+    });
     if (!Value.Check(ExecuteResultSchema, result)) throw new Error('Invalid execution result');
     return result;
   },
@@ -70,13 +80,28 @@ const source: ExecutionSource = {
     const found = registry.allowed(actorOf(persona), e.safety.lookup);
     if (!found || found.connector.id !== e.connector || found.capability.kind !== 'read')
       throw new Error('Lookup revoked');
-    const response = await registry.run<{ found: boolean; result?: ExecuteResult }>(actorOf(persona), e.safety.lookup, {
-      operationId: e.id,
-    });
+    const response = await registry.run<{ found: boolean; result?: ExecuteResult }>(
+      actorOf(persona),
+      e.safety.lookup,
+      { operationId: e.id },
+      persona.delegate ? { delegate: persona.delegate } : {},
+    );
     if (response.found === false) return undefined;
     if (response.found !== true || !Value.Check(ExecuteResultSchema, response.result))
       throw new Error('Unverified lookup result');
     return response.result;
+  },
+};
+/**
+ * The person's own live session behind a write on a connector that acts as them (D26): `find` is the auth module's
+ * reading of a kept binding; `ready` asks the session's delegate for the token of the connector's declared audience once,
+ * before dispatch is recorded, so the call that follows takes it from the session's short cache.
+ */
+const sessions: ExecutionSessions = {
+  find: standingSession,
+  async ready(persona, e) {
+    const audience = registry.connector(e.connector)?.delegation?.audience;
+    return !!audience && !!persona.delegate && !!(await persona.delegate(audience));
   },
 };
 /** A watch step's read (D55): a `read` the person may call, run as the person; never an execute. */
@@ -92,6 +117,7 @@ export const executions = executionUsecases({
   review: reviewDocuments.validate,
   store: executionStore,
   source,
+  sessions,
   watch,
   clock,
   ids: randomUUID,
