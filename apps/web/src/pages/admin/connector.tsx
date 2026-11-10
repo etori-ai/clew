@@ -58,7 +58,7 @@ import {
 } from './labels';
 import { AdminShell } from './shell';
 import { PageHeader } from '../../components/page-header';
-import { DialogFrame } from './dialog-frame';
+import { DialogFrame } from '../../components/dialog-frame';
 
 /** One connector (D23): overview and actions, capabilities with their switches, areas, who sees it, and its history. */
 type TabId = 'oversikt' | 'formagor' | 'omraden' | 'publik' | 'historik';

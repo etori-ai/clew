@@ -25,7 +25,7 @@ import { api } from '../../api';
 import { adminQueries } from '../../queries';
 import { useAdminAction } from '../../mutations';
 import { LevelDot } from './check-result';
-import { DialogFrame } from './dialog-frame';
+import { DialogFrame } from '../../components/dialog-frame';
 
 /**
  * Adding models (D24). Both dialogs follow Astryx's `form-wizard-dialog` composition: a Layout that fills the dialog,

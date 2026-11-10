@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Thread } from '@clew/contracts';
 import {
@@ -8,7 +8,6 @@ import {
   DayStrip,
   Dialog,
   DialogHeader,
-  HStack,
   MetadataList,
   MetadataListItem,
   Text,
@@ -24,6 +23,7 @@ import { useThreadAction } from '../../mutations';
 import { keys } from '../../query-keys';
 import { mobileQuery } from '../shell';
 import { AddToConversation } from '../add-to-conversation';
+import { DialogFrame } from '../dialog-frame';
 
 type Mode = 'view' | 'move' | 'cancel';
 type Props = {
@@ -44,7 +44,8 @@ const hhmm = (instant: string) => localClock(instant).slice(11, 16);
 /**
  * An entry opened from the calendar (D32): the day around it, its details, and what the person may do with it. An own
  * booking can be moved or cancelled; a drawn proposal can be moved, which is the keyboard path to what drag does (D27 §4).
- * Cancelling confirms inline, never in a second dialog. Everything else is read-only.
+ * Cancelling confirms inline, never in a second dialog. Everything else is read-only. The day and the details scroll
+ * between the title and the actions (`DialogFrame`), so a low window never cuts the actions off.
  */
 export function EventDialog({ item, dayItems, onClose, onChanged, onOpenDay, onAddChip }: Props) {
   const mobile = useMediaQuery(mobileQuery);
@@ -64,6 +65,14 @@ export function EventDialog({ item, dayItems, onClose, onChanged, onOpenDay, onA
       setEnd(hhmm(item.end));
     }
   }, [item?.id]);
+  const startField = useRef<HTMLInputElement>(null);
+  const cancelNote = useRef<HTMLDivElement>(null);
+  // What a choice opens sits under the day, which a low window scrolls out of sight: the new time takes focus and the
+  // question is brought into view.
+  useEffect(() => {
+    if (mode === 'move') startField.current?.focus();
+    if (mode === 'cancel') cancelNote.current?.scrollIntoView({ block: 'nearest' });
+  }, [mode]);
   if (!item)
     return (
       <Dialog isOpen={false} onOpenChange={onClose}>
@@ -123,134 +132,146 @@ export function EventDialog({ item, dayItems, onClose, onChanged, onOpenDay, onA
       width={520}
       purpose={mode === 'view' ? 'info' : 'form'}
     >
-      <DialogHeader
-        title={item.title}
-        subtitle={when}
-        onOpenChange={open => {
-          if (!open) onClose();
-        }}
-      />
-      <VStack gap={3} padding={3}>
-        {!mobile && (
-          <DayStrip
-            date={day}
-            items={dayItems}
-            selectedId={item.id}
-            dayHeadingLevel={3}
-            accessiblePath="Uppgifterna står under dagen."
+      <DialogFrame
+        header={
+          <DialogHeader
+            title={item.title}
+            subtitle={when}
+            onOpenChange={open => {
+              if (!open) onClose();
+            }}
           />
-        )}
-        <MetadataList>
-          <MetadataListItem label="Tid">{when}</MetadataListItem>
-          <MetadataListItem label="Typ">{kindLabel[item.kind]}</MetadataListItem>
-          {event?.room && <MetadataListItem label="Rum">{event.room}</MetadataListItem>}
-          {event && event.participants.length > 0 && (
-            <MetadataListItem label="Deltagare">{event.participants.join(', ')}</MetadataListItem>
-          )}
-          {event && <MetadataListItem label="Arrangör">{event.organizer}</MetadataListItem>}
-          {proposal && <MetadataListItem label="Medarbetare">{proposal.participant.name}</MetadataListItem>}
-        </MetadataList>
-        {mode === 'move' && (
-          <VStack gap={2} as="section" aria-label="Ny tid">
-            <DateTimeInput
-              label={proposal ? 'Ny starttid' : 'Börjar'}
-              value={start as never}
-              onChange={v => setStart(v ?? '')}
-              isRequired
-              weekStartsOn="mon"
-              timeIncrement={15}
-              presentation="adaptive-bottom-sheet"
-            />
-            {proposal ? (
-              <Text type="supporting">Samtalet är {minutes(item)} minuter och behåller sin längd.</Text>
-            ) : (
-              <TimeInput
-                label="Slutar"
-                value={end as never}
-                onChange={v => setEnd(v ?? '')}
-                isRequired
-                increment={15}
-                status={endFirst ? { type: 'error', message: 'Sluttiden måste vara efter starttiden.' } : undefined}
-              />
+        }
+        error={error}
+        scrollLabel={mobile ? 'Uppgifterna' : 'Dagen och uppgifterna'}
+        primary={
+          <>
+            {mode === 'view' && (
+              <>
+                {onOpenDay && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    label="Visa dagen"
+                    onClick={() => {
+                      onClose();
+                      onOpenDay(day);
+                    }}
+                  />
+                )}
+                {onAddChip && (
+                  <AddToConversation
+                    onAdd={() => {
+                      onAddChip(item);
+                      onClose();
+                    }}
+                  />
+                )}
+                {own && <Button size="sm" variant="secondary" label="Ställ in" onClick={() => setMode('cancel')} />}
+                {movable && (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    label={proposal ? 'Flytta förslaget' : 'Flytta'}
+                    onClick={() => setMode('move')}
+                  />
+                )}
+              </>
             )}
-          </VStack>
-        )}
-        {mode === 'cancel' && (
-          <Banner
-            status="warning"
-            title="Ställ in mötet?"
-            description="Mötet tas bort ur din kalender och ur deltagarnas."
-            collapsible={false}
-          />
-        )}
-        {error && (
-          <Text as="p" role="alert" color="accent">
-            {error}
-          </Text>
-        )}
-        <HStack gap={2} justify="end" wrap="wrap">
-          {mode === 'view' && (
-            <>
-              {onOpenDay && (
+            {mode === 'move' && (
+              <>
                 <Button
                   size="sm"
                   variant="ghost"
-                  label="Visa dagen"
+                  label="Avbryt"
                   onClick={() => {
-                    onClose();
-                    onOpenDay(day);
+                    setMode('view');
+                    reset();
                   }}
                 />
-              )}
-              {onAddChip && (
-                <AddToConversation
-                  onAdd={() => {
-                    onAddChip(item);
-                    onClose();
-                  }}
-                />
-              )}
-              {own && <Button size="sm" variant="secondary" label="Ställ in" onClick={() => setMode('cancel')} />}
-              {movable && (
                 <Button
                   size="sm"
                   variant="primary"
-                  label={proposal ? 'Flytta förslaget' : 'Flytta'}
-                  onClick={() => setMode('move')}
+                  label="Spara"
+                  isDisabled={!newStart || endFirst}
+                  clickAction={save}
+                />
+              </>
+            )}
+            {mode === 'cancel' && (
+              <>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  label="Avbryt"
+                  onClick={() => {
+                    setMode('view');
+                    reset();
+                  }}
+                />
+                <Button size="sm" variant="destructive" label="Ja, ställ in" clickAction={cancel} />
+              </>
+            )}
+          </>
+        }
+      >
+        <VStack gap={3}>
+          {!mobile && (
+            <DayStrip
+              date={day}
+              items={dayItems}
+              selectedId={item.id}
+              dayHeadingLevel={3}
+              accessiblePath="Uppgifterna står under dagen."
+            />
+          )}
+          <MetadataList>
+            <MetadataListItem label="Tid">{when}</MetadataListItem>
+            <MetadataListItem label="Typ">{kindLabel[item.kind]}</MetadataListItem>
+            {event?.room && <MetadataListItem label="Rum">{event.room}</MetadataListItem>}
+            {event && event.participants.length > 0 && (
+              <MetadataListItem label="Deltagare">{event.participants.join(', ')}</MetadataListItem>
+            )}
+            {event && <MetadataListItem label="Arrangör">{event.organizer}</MetadataListItem>}
+            {proposal && <MetadataListItem label="Medarbetare">{proposal.participant.name}</MetadataListItem>}
+          </MetadataList>
+          {mode === 'move' && (
+            <VStack gap={2} as="section" aria-label="Ny tid">
+              <DateTimeInput
+                ref={startField}
+                label={proposal ? 'Ny starttid' : 'Börjar'}
+                value={start as never}
+                onChange={v => setStart(v ?? '')}
+                isRequired
+                weekStartsOn="mon"
+                timeIncrement={15}
+                presentation="adaptive-bottom-sheet"
+              />
+              {proposal ? (
+                <Text type="supporting">Samtalet är {minutes(item)} minuter och behåller sin längd.</Text>
+              ) : (
+                <TimeInput
+                  label="Slutar"
+                  value={end as never}
+                  onChange={v => setEnd(v ?? '')}
+                  isRequired
+                  increment={15}
+                  status={endFirst ? { type: 'error', message: 'Sluttiden måste vara efter starttiden.' } : undefined}
                 />
               )}
-            </>
-          )}
-          {mode === 'move' && (
-            <>
-              <Button
-                size="sm"
-                variant="ghost"
-                label="Avbryt"
-                onClick={() => {
-                  setMode('view');
-                  reset();
-                }}
-              />
-              <Button size="sm" variant="primary" label="Spara" isDisabled={!newStart || endFirst} clickAction={save} />
-            </>
+            </VStack>
           )}
           {mode === 'cancel' && (
-            <>
-              <Button
-                size="sm"
-                variant="ghost"
-                label="Avbryt"
-                onClick={() => {
-                  setMode('view');
-                  reset();
-                }}
-              />
-              <Button size="sm" variant="destructive" label="Ja, ställ in" clickAction={cancel} />
-            </>
+            <Banner
+              ref={cancelNote}
+              status="warning"
+              title="Ställ in mötet?"
+              description="Mötet tas bort ur din kalender och ur deltagarnas."
+              collapsible={false}
+            />
           )}
-        </HStack>
-      </VStack>
+        </VStack>
+      </DialogFrame>
     </Dialog>
   );
 }
