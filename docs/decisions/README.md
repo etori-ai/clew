@@ -4,6 +4,8 @@
 
 These records preserve why choices were made. The status below is copied from each original record, not inferred from code. An accepted decision may be partly implemented, and an older status may lag delivery. Use [implementation status](../reference/status.md) and the [current protocol](../reference/connector-protocol.md) when building a connector.
 
+Since [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md) a record is `proposed`, `provisional` (chosen, but tested by nothing outside the repository) or `accepted`; a one-screen adjustment is not a numbered record; and a number is taken from this index on the day the change lands on `main`.
+
 Historical numbering collisions: **D37, D38, D39, D44, D45, D46, D85, D96** each identify more than one file. The full filename is the unique key. Keep existing filenames and links; never interpret a bare collided number without its title. No decisions were renumbered or accepted by this index.
 
 | Record | Area | Date | Recorded status |
@@ -17,7 +19,10 @@ Historical numbering collisions: **D37, D38, D39, D44, D45, D46, D85, D96** each
 | [D7 · Bun is the server runtime](D07-bun-is-the-server-runtime.md) | platform | 2026-11-03 | superseded by D16 (2026-11-04) |
 | [D8 · Every action works without the model](D08-every-action-works-without-the-model.md) | product | 2026-11-03 | accepted |
 | [D9 · The side panel holds conversation, Clew views and MCP App views](D09-side-panel-holds-views-and-apps.md) | ui | 2026-11-03 | accepted, the app half replaced by D38 (2026-11-05): a connector declares its view as data and Clew draws it; nothing is rendered by a connector |
-| [D10 · Integrations fulfil Clew's API; adapters are the fallback](D10-integrations-fulfil-clews-api-first.md) | integrations | 2026-11-03 | accepted |
+| [D10 · Integrations fulfil Clew's API; adapters are the fallback](D10-integrations-fulfil-clews-api-first.md) | integrations | 2026-11-03 | accepted, order of work amended by [D100](D100-the-vision-is-narrowed-to-what-clew-can-keep-today.md) (2026-11-10: an adapter is the normal case; asking the system's owner first is no longer a fixed step) |
+| [D100 · The vision is narrowed to what Clew can keep today: the open page, adapters as the norm, a closed view catalogue](D100-the-vision-is-narrowed-to-what-clew-can-keep-today.md) | product, integrations, ui | 2026-11-10 | accepted (product owner, 2026-11-10); the schema-drawn default view is not built |
+| [D101 · The first real integration is Nextcloud's Approval app, and new surface waits until its loop works](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) | product, integrations | 2026-11-10 | provisional (product owner, 2026-11-10; nothing built, the product's behaviour is read from documentation only) |
+| [D102 · A decision is provisional until something outside the repository has tested it, and small adjustments are not numbered](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md) | platform | 2026-11-10 | accepted (product owner, 2026-11-10) |
 | [D11 · One calendar contract, CalDAV and Microsoft 365 as adapters](D11-one-calendar-contract-two-adapters.md) | integrations | 2026-11-03 | accepted, `microsoft365` adapter built against a local fake (D69) and bound to one development persona beside CalDAV (D69, amended), not yet run against a tenant |
 | [D12 · Objects, chips, proposals: the general interaction pattern](D12-objects-chips-proposals.md) | ui | 2026-11-03 | accepted |
 | [D13 · The conversation lives in the composer's drawer; the dim is an Astryx Overlay](D13-conversation-in-the-composer-drawer.md) | ui | 2026-11-03 | superseded by D31 |
@@ -118,4 +123,4 @@ Historical numbering collisions: **D37, D38, D39, D44, D45, D46, D85, D96** each
 
 ## Add a decision
 
-Use [TEMPLATE.md](TEMPLATE.md) and a new unused number (currently D100). Include status, date, area, decision, rationale and what it replaces. Preserve earlier decision bodies; record supersession explicitly. Refer to the full filename when a number is ambiguous. Update the implementation-status guide when delivery changes, add a session note to [HANDOVER.md](../../HANDOVER.md), and run `bun run docs:generate` followed by `bun run docs:check`. The generated context map includes every record.
+Use [TEMPLATE.md](TEMPLATE.md) and a new unused number (currently D103). Include status, date, area, decision, rationale and what it replaces. Preserve earlier decision bodies; record supersession explicitly. Refer to the full filename when a number is ambiguous. Update the implementation-status guide when delivery changes, add a session note to [HANDOVER.md](../../HANDOVER.md), and run `bun run docs:generate` followed by `bun run docs:check`. The generated context map includes every record.

@@ -17,7 +17,11 @@ phone, an ekonom with invoices to attest, a new employee in their first week, a 
 the thing running. The personas in `docs/personas.md` are the test: a feature that only serves one of them
 is fine, a feature that makes the page worse for the others is not. Public sector first, municipality
 first, but nothing in a contract or an identifier is municipal; another agency or region must be able to
-run it unchanged.
+run it unchanged. For now the promise is to the employee who opens Clew in a browser, at a desk or on a phone
+([D100](decisions/D100-the-vision-is-narrowed-to-what-clew-can-keep-today.md)): work reaches a person
+through an open page, and delivery outside the browser (a push notification, e-mail, an installed app) is
+deferred. Until it exists, the personas on a shift test that the page works on a phone; they are not a claim
+that Clew reaches them there.
 
 **Tie subsystems together.** The employee's work is spread across HR, finance, calendar, case handling,
 communication and whatever the next procurement brings. Each system has its own inbox, its own deadlines
@@ -85,9 +89,14 @@ cards, the buttons and the receipts.
 ## What Clew is not
 
 - Not an intranet, a news site or a document store. Editorial content can appear as a card with a link;
-  it is not authored here.
+  it is not authored here. Clew may draw the installation's shared header, whose places and pages come from
+  a connector (D88); it authors and hosts none of that content.
 - Not a page builder. There is no operator-composed layout; the page is the stream, the areas and the
-  composer. Operators configure connectors, scopes and bundle times, not blocks.
+  composer. A connector says what its data is from a closed catalogue of view kinds and Clew draws it; an
+  administrator chooses which declared reads appear in Clew's fixed places (a menu row, a figure, a lens, a
+  column), never a block or a layout. The catalogue is closed (D100): a read without a declared view is to
+  be drawn from its output schema, and a new view kind or presentation field needs two sources that were
+  not written for Clew to need it, and a numbered decision.
 - Not a search index over other systems' content. Clew is the place you search from; the index stays in
   the source system or in Eneo, and Clew asks them as the user.
 - Not a data warehouse or a federated query engine. Clew does not run queries across sources; a connector
@@ -106,8 +115,11 @@ cards, the buttons and the receipts.
 
 1. **Open source, always.** No closed dependency, no required hosted service, an open-weight model is enough.
    Full rule in `CLAUDE.md`.
-2. **Clew owns every contract the model or the UI sees** (D1). Integrations are asked to meet it; adapters
-   are the fallback (D10).
+2. **Clew owns what the model and the UI see** (D1). An adapter is the normal way a system meets that
+   contract, written by the Clew team, a municipality or an integrator; a vendor that implements it itself
+   is welcome, not expected (D10, amended by D100). A vendor's standard MCP service is accepted as it is in
+   the chat lane (D81). Which wire format a connector speaks is open until one adapter to a product that was
+   not written for Clew has been built both ways.
 3. **The server decides.** Identity, scope, connector state and audit are enforced server-side; the browser
    and the model are untrusted.
 4. **Every mutation is audited in the same transaction.** Every receipt is a read-back, never a sent request.
@@ -174,3 +186,8 @@ whether the line is right.
 - The legal answers an owned domain needs in a municipality: whether its records are public documents, which
   secrecy rule covers them, and what the archive rules say about keeping and weeding them.
 - Whether Clew's threads should be reachable from Eneo as a resource, not only as tools.
+- How work reaches a person whose browser is closed: a push notification, e-mail or an installed app.
+  Deferred by D100; until it is settled the promise is to the person who opens Clew.
+- The wire format of a connector: Clew's own protocol, or MCP with Clew's additions carried as optional
+  metadata. To be decided from one adapter built both ways
+  ([review](reviews/2026-11-10-project-review-and-alternative-paths.md)), not before.

@@ -1,6 +1,9 @@
 # D<nn> · <Title in one line>
 
-**Status:** proposed · **Date:** YYYY-MM-DD · **Area:** <integrations | identity | platform | product | ui>
+**Status:** proposed | provisional (what would make it accepted) | accepted · **Date:** YYYY-MM-DD · **Area:** <integrations | identity | platform | product | ui>
+
+<!-- D102: provisional = chosen, but untested by anything outside the repository. A one-screen adjustment is not a
+numbered record. Take the number from the generated index on the day the change lands on main. -->
 
 **Decision.** What was decided, in terms a reader can act on. Name the files, packages or components it
 binds. Link to the design in `docs/architecture/` if there is one.

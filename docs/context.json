@@ -262,9 +262,36 @@
       "number": 10,
       "path": "docs/decisions/D10-integrations-fulfil-clews-api-first.md",
       "title": "D10 · Integrations fulfil Clew's API; adapters are the fallback",
-      "status": "accepted",
+      "status": "accepted, order of work amended by [D100](D100-the-vision-is-narrowed-to-what-clew-can-keep-today.md) (2026-11-10: an adapter is the normal case; asking the system's owner first is no longer a fixed step)",
       "date": "2026-11-03",
       "area": "integrations"
+    },
+    {
+      "key": "D100-the-vision-is-narrowed-to-what-clew-can-keep-today",
+      "number": 100,
+      "path": "docs/decisions/D100-the-vision-is-narrowed-to-what-clew-can-keep-today.md",
+      "title": "D100 · The vision is narrowed to what Clew can keep today: the open page, adapters as the norm, a closed view catalogue",
+      "status": "accepted (product owner, 2026-11-10); the schema-drawn default view is not built",
+      "date": "2026-11-10",
+      "area": "product, integrations, ui"
+    },
+    {
+      "key": "D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it",
+      "number": 101,
+      "path": "docs/decisions/D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md",
+      "title": "D101 · The first real integration is Nextcloud's Approval app, and new surface waits until its loop works",
+      "status": "provisional (product owner, 2026-11-10; nothing built, the product's behaviour is read from documentation only)",
+      "date": "2026-11-10",
+      "area": "product, integrations"
+    },
+    {
+      "key": "D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it",
+      "number": 102,
+      "path": "docs/decisions/D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md",
+      "title": "D102 · A decision is provisional until something outside the repository has tested it, and small adjustments are not numbered",
+      "status": "accepted (product owner, 2026-11-10)",
+      "date": "2026-11-10",
+      "area": "platform"
     },
     {
       "key": "D11-one-calendar-contract-two-adapters",
@@ -1593,6 +1620,24 @@
     {
       "path": "docs/decisions/D10-integrations-fulfil-clews-api-first.md",
       "title": "D10 · Integrations fulfil Clew's API; adapters are the fallback",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D100-the-vision-is-narrowed-to-what-clew-can-keep-today.md",
+      "title": "D100 · The vision is narrowed to what Clew can keep today: the open page, adapters as the norm, a closed view catalogue",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md",
+      "title": "D101 · The first real integration is Nextcloud's Approval app, and new surface waits until its loop works",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md",
+      "title": "D102 · A decision is provisional until something outside the repository has tested it, and small adjustments are not numbered",
       "category": "decision-history",
       "headings": []
     },
@@ -3120,6 +3165,20 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-10-an-open-source-product-as-the-first-real-integration.md",
+      "title": "Comparison: an open-source product as the first real integration · 2026-11-10",
+      "category": "review-history",
+      "headings": [
+        "What the product has to test",
+        "The candidates",
+        "Recommendation",
+        "What it will and will not prove",
+        "Risks and unknowns",
+        "Sources",
+        "Outcome"
+      ]
+    },
+    {
       "path": "docs/reviews/2026-11-10-astryx-0.7.12-upgrade.md",
       "title": "Review: Astryx 0.7.7 to 0.7.12, what is new and what it changed here · 2026-11-10",
       "category": "review-history",
@@ -3166,6 +3225,22 @@
         "Questions for the product owner",
         "Outcome of the discussion, 2026-11-10",
         "Sources and limits"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-10-project-review-and-alternative-paths.md",
+      "title": "Review: the project, its vision, its state, and other ways to reach the vision · 2026-11-10",
+      "category": "review-history",
+      "headings": [
+        "Verdict",
+        "What was looked at",
+        "The vision",
+        "The current state",
+        "The question: let go of the path without a model, and build on MCP only?",
+        "Other paths",
+        "Recommendation",
+        "Decisions this review calls for",
+        "Outcome"
       ]
     },
     {

@@ -154,6 +154,7 @@ generated.set(
   banner +
     '# Decision log\n\n' +
     'These records preserve why choices were made. The status below is copied from each original record, not inferred from code. An accepted decision may be partly implemented, and an older status may lag delivery. Use [implementation status](../reference/status.md) and the [current protocol](../reference/connector-protocol.md) when building a connector.\n\n' +
+    'Since [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md) a record is `proposed`, `provisional` (chosen, but tested by nothing outside the repository) or `accepted`; a one-screen adjustment is not a numbered record; and a number is taken from this index on the day the change lands on `main`.\n\n' +
     `Historical numbering collisions: **${duplicates.join(', ')}** each identify more than one file. The full filename is the unique key. Keep existing filenames and links; never interpret a bare collided number without its title. No decisions were renumbered or accepted by this index.\n\n` +
     '| Record | Area | Date | Recorded status |\n|---|---|---|---|\n' +
     decisions
