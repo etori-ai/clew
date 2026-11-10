@@ -8,7 +8,7 @@ import type {
 import type { ExecuteResult } from '@clew/connectors';
 import { CalendarError, type EventOccurrence, type MeetingInput } from '@clew/calendar/model';
 import { InputError } from '../../../context';
-import type { CalendarBinder, ProposalStore } from '../model';
+import type { CalendarBinder, ProposalStore, Team } from '../model';
 import { SAMTAL_TITLE } from './reads';
 
 export type CalendarItem = { id: string; proposalId?: string; label: string } & (
@@ -39,6 +39,8 @@ export interface CalendarApproval {
 export interface CalendarDecisionDeps {
   store: ProposalStore;
   bind: CalendarBinder;
+  /** Whom a booking may invite: the manager's team (D96 item 3). */
+  team: Team;
   clock: () => Date;
   ids: () => string;
   approve(persona: AuthenticatedContext, input: CalendarApproval): Promise<unknown>;
@@ -64,7 +66,7 @@ const window = (start: string, end: string) => {
 const active = (t: Thread) => t.execution && ['pending', 'running', 'unknown'].includes(t.execution.state);
 
 /** Human routes prepare immutable commands. No calendar write is reachable through a model tool. */
-export function calendarDecisions({ store, bind, clock, approve, previous }: CalendarDecisionDeps) {
+export function calendarDecisions({ store, bind, team, clock, approve, previous }: CalendarDecisionDeps) {
   const required = async (p: AuthenticatedContext, id: string) => {
     const t = await store.readThread(p.id, id);
     if (!t) throw new InputError('Kortet finns inte.');
@@ -118,7 +120,8 @@ export function calendarDecisions({ store, bind, clock, approve, previous }: Cal
     const b = bind(p);
     if (!b.provider.capabilities.create) throw new CalendarError('Din kalender tar inte emot bokningar härifrån.');
     const participants = [...new Set(input.participants.map(e => e.toLowerCase()))];
-    if (participants.some(e => !b.members.some(m => m.email.toLowerCase() === e)))
+    const members = await team(p);
+    if (participants.some(e => !members.some(m => m.email.toLowerCase() === e)))
       throw new InputError('Deltagarna måste tillhöra din enhet.');
     if (input.room && !(await b.provider.resources()).some(r => r.ref === input.room))
       throw new CalendarError('Du får inte boka det valda rummet.');
@@ -236,14 +239,15 @@ export function calendarDecisions({ store, bind, clock, approve, previous }: Cal
 }
 
 /** Conditional source boundary: stable UID per approved item, exact revisions, and readback before evidence. */
-export function calendarExecutionSource(bind: CalendarBinder) {
+export function calendarExecutionSource(bind: CalendarBinder, team: Team) {
   async function authorize(p: AuthenticatedContext, operation: string, value: unknown) {
     if (!calendarOperations.includes(operation as (typeof calendarOperations)[number]))
       throw new InputError('Okänd kalenderåtgärd.');
     const command = value as CalendarCommand;
     if (!Array.isArray(command?.items) || !command.items.length || command.items.length > 32)
       throw new InputError('Ogiltigt kalenderbeslut.');
-    const b = bind(p);
+    const b = bind(p),
+      members = command.items.some(i => i.action === 'create') ? await team(p) : [];
     for (const item of command.items) {
       if (!item.id || !['create', 'move', 'cancel'].includes(item.action))
         throw new InputError('Ogiltigt kalenderbeslut.');
@@ -251,7 +255,7 @@ export function calendarExecutionSource(bind: CalendarBinder) {
         window(item.input.start, item.input.end);
         if (
           !b.provider.capabilities.create ||
-          item.input.participants.some(e => !b.members.some(m => m.email.toLowerCase() === e.toLowerCase()))
+          item.input.participants.some(e => !members.some(m => m.email.toLowerCase() === e.toLowerCase()))
         )
           throw new InputError('Deltagarna måste tillhöra din enhet.');
       } else if (!item.ref || !item.revision) throw new InputError('Ogiltig kalenderrevision.');
@@ -300,7 +304,7 @@ export function calendarExecutionSource(bind: CalendarBinder) {
       try {
         if (write) {
           if (item.action === 'create') {
-            const targets = b.members
+            const targets = (await team(p))
               .filter(m => item.input.participants.some(email => email.toLowerCase() === m.email.toLowerCase()))
               .map(m => ({ ref: m.ref, email: m.email }));
             const [own, busy] = await Promise.all([

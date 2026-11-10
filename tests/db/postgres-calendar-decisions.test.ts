@@ -75,15 +75,14 @@ async function world() {
     authorize: async () => ({ version: 'v1' }),
   } as AuthenticatedContext;
   const provider = memoryCalendar({ ref: 'test', email: 'owner@example.test', name: 'Test' });
-  const bind = () => ({
-    provider,
-    members: [1, 2].map(n => ({
+  const bind = () => ({ provider });
+  const team = async () =>
+    [1, 2].map(n => ({
       ref: 'guest' + n,
       personId: 'guest' + n,
       email: `guest${n}@example.test`,
       name: 'Guest ' + n,
-    })),
-  });
+    }));
   let failCommit = false;
   const project = projectExecution(testDurable);
   const store = postgresExecutionStore({ seal: sealSecret, open: openSecret }, testDurable, async (tx, e, stage) => {
@@ -95,7 +94,7 @@ async function world() {
   });
   const uc = executionUsecases({
     store,
-    source: { ...calendarExecutionSource(bind), current: async () => actor },
+    source: { ...calendarExecutionSource(bind, team), current: async () => actor },
     clock: () => new Date(at),
     ids: randomUUID,
     digest: x => JSON.stringify(canonical(x)),
@@ -104,6 +103,7 @@ async function world() {
   const decisions = calendarDecisions({
     store: proposals,
     bind,
+    team,
     clock: () => new Date(at),
     ids: randomUUID,
     approve: uc.approve,

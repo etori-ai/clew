@@ -23,10 +23,12 @@ $config = OC::$server->getConfig();
 $dav = OC::$server->get(OCA\DAV\CalDAV\CalDavBackend::class);
 if (!$groups->groupExists('calendar-staff')) $groups->createGroup('calendar-staff');
 // Synthetic people. Hillevi (rektor), Hassan (undersköterska) and Mikael (systemförvaltare) are the three personas
-// that can sign in; every persona gets a calendar. The rest are Hillevi's unit.
+// that can sign in; every persona gets a calendar. The rest are Hillevi's unit, the same five people with the same
+// addresses as Bergsåkers skola in scripts/provisioner/directory.ts.
 $people = [
     'hillevi' => 'Hillevi Berg', 'hassan' => 'Hassan Ali', 'mikael' => 'Mikael Lund',
     'anna' => 'Anna Lindqvist', 'erik' => 'Erik Sandström', 'maria' => 'Maria Källström', 'johan' => 'Johan Byström',
+    'karin' => 'Karin Lindqvist',
 ];
 foreach ($people as $id => $name) {
     $user = $users->get($id) ?? $users->createUser($id, 'calendar-' . $id . '-local-only');

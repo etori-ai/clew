@@ -40,10 +40,10 @@ function world() {
     now = Date.parse(at);
   const provider = memoryCalendar({ ref: 'a', email: 'a@clew.test', name: 'A' });
   const source = {
-    ...calendarExecutionSource(() => ({
-      provider,
-      members: [{ ref: 'guest', personId: 'guest', email: 'guest@clew.test', name: 'Guest' }],
-    })),
+    ...calendarExecutionSource(
+      () => ({ provider }),
+      async () => [{ ref: 'guest', personId: 'guest', email: 'guest@clew.test', name: 'Guest' }],
+    ),
     current: async () => person,
   };
   const store = memoryExecutionStore();

@@ -2,7 +2,10 @@ import type { AuthenticatedContext } from '@clew/contracts';
 import { bindCalendar, type CalendarBinding } from '@clew/calendar/accounts';
 import { postgresProposalStore } from '../modules/calendar/adapters/postgres';
 import { durableObligations } from '../dbos/obligations';
-import type { Notifier } from '../modules/calendar/model';
+import type { Notifier, PlanningRound, RoundReader, Team } from '../modules/calendar/model';
+import { teamFromStaff } from '../modules/calendar/domain';
+import { ForbiddenError } from '../context';
+import { staff } from './people';
 import { systemContext } from '../system-context';
 import { calendarUsecases } from '../modules/calendar/usecases/samtal';
 import { eventUsecases } from '../modules/calendar/usecases/events';
@@ -32,6 +35,33 @@ const bind: CalendarBinder = (persona: AuthenticatedContext) => {
   }
   return cached.binding;
 };
+/**
+ * The people a manager plans for and may invite (D96 item 3): everyone provisioned on the units they manage, read
+ * through Personal's overview (D94) on every call, so a person who joins or leaves a unit counts at once. Not cached by
+ * authorization version as the binding is: a colleague joining the unit does not change the manager's version. A person
+ * who manages no unit has no team.
+ */
+const team: Team = async persona => {
+  try {
+    return teamFromStaff(await staff.overview(persona), persona.id);
+  } catch (error) {
+    if (error instanceof ForbiddenError) return [];
+    throw error;
+  }
+};
+/**
+ * TEMPORARY: the round of talks the planner works towards until the talks module (D96) owns it. It reproduces the
+ * planner's earlier fixed deadline, so with it the product behaves as before. Remove once `index.ts` fills the slot.
+ */
+export const TEMPORARY_ROUND: PlanningRound = {
+  label: 'Utvecklingssamtal 2026',
+  opensOn: '2026-09-01',
+  dueOn: '2026-11-28',
+  held: [],
+};
+/** The open round, a slot like `notifier`: `index.ts` sets `planningRound.read` to the talks module's reader. */
+export const planningRound: { read: RoundReader } = { read: async () => TEMPORARY_ROUND };
+const round: RoundReader = persona => planningRound.read(persona);
 /** The follow-up card goes into an invitee's stream through the threads module, which is built after this file: `index.ts` fills the slot. */
 export const notifier: { push: Notifier } = { push: async () => undefined };
 const store = postgresProposalStore(ledger);
@@ -44,15 +74,18 @@ export const calendarApproval: Pick<CalendarDecisionDeps, 'approve' | 'previous'
 const decisions = calendarDecisions({
   store,
   bind,
+  team,
   clock,
   ids,
   approve: (p, input) => calendarApproval.approve(p, input),
   previous: (p, id) => calendarApproval.previous(p, id),
 });
-export const calendarSource = calendarExecutionSource(bind);
+export const calendarSource = calendarExecutionSource(bind, team);
 const core = calendarUsecases({
   store,
   bind,
+  team,
+  round,
   clock,
   ids,
   people: { personaFor: id => systemContext(id, 'system:obligation') },
@@ -64,7 +97,7 @@ export const calendarAuthority: { current: (id: string) => Promise<Authenticated
 };
 export const followups = followupUsecases({
   store: postgresFollowupStore({ durable: ledger, cancel: cancelDurable }),
-  bind,
+  team,
   clock,
   current: id => calendarAuthority.current(id),
   readReplies: core.readReplies,
@@ -89,7 +122,7 @@ export const calendar = {
 };
 /** A person's own bookings and proposal moves (D28), over the same store and bindings. */
 export const events = {
-  ...eventUsecases({ store, bind, clock, ids }),
+  ...eventUsecases({ store, bind, team, clock, ids }),
   createEvent: decisions.createEvent,
   rescheduleEvent: decisions.rescheduleEvent,
   cancelEvent: decisions.cancelEvent,

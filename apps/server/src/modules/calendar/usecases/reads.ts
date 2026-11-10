@@ -1,14 +1,20 @@
 import type { CalendarEvent } from '@clew/contracts';
 import type { CalendarBinding } from '@clew/calendar/accounts';
 import type { EventOccurrence } from '@clew/calendar/model';
+import type { UnitMember } from '../model';
 
 /** Pure projections of calendar events for the use cases in `samtal.ts`. */
 export const SAMTAL_TITLE = 'Utvecklingssamtal';
-/** Projection for the browser: participants are display names, resolved from the unit directory, never raw addresses. */
-export function toEvent(event: EventOccurrence, binding: CalendarBinding, ownName: string): CalendarEvent {
+/** Projection for the browser: participants are display names, resolved from the person's team, never raw addresses. */
+export function toEvent(
+  event: EventOccurrence,
+  binding: CalendarBinding,
+  ownName: string,
+  team: readonly UnitMember[],
+): CalendarEvent {
   const names = new Map<string, string>([
     [binding.provider.account.email.toLowerCase(), ownName],
-    ...binding.members.map(m => [m.email.toLowerCase(), m.name] as const),
+    ...team.map(m => [m.email.toLowerCase(), m.name] as const),
   ]);
   const mine = event.organizer.toLowerCase() === binding.provider.account.email.toLowerCase();
   return {

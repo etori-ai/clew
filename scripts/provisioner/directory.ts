@@ -238,6 +238,19 @@ const FAMILY = [
   'Karlsson',
   'Lundgren',
 ];
+/**
+ * Hillevi's school starts with named people, not generated ones: the same five people with the same user names and
+ * addresses as the calendar accounts in `packages/calendar/src/accounts.ts` and `.devcontainer/calendar/seed.php`, so
+ * the people the planner proposes talks for (D96 item 3) have calendars. The generator's counter still advances past
+ * them, so every other unit keeps its people, and the rest of the school is generated.
+ */
+const SCHOOL: Array<Pick<DirectoryPerson, 'userName' | 'givenName' | 'familyName'>> = [
+  { userName: 'anna', givenName: 'Anna', familyName: 'Lindqvist' },
+  { userName: 'erik', givenName: 'Erik', familyName: 'Sandström' },
+  { userName: 'maria', givenName: 'Maria', familyName: 'Källström' },
+  { userName: 'johan', givenName: 'Johan', familyName: 'Byström' },
+  { userName: 'karin', givenName: 'Karin', familyName: 'Lindqvist' },
+];
 const ascii = (s: string) => s.toLowerCase().replace(/[åä]/g, 'a').replace(/ö/g, 'o').replace(/é/g, 'e');
 /**
  * The `k`th generated name. Each given name meets each family name once in two hundred, and the family name moves on
@@ -261,8 +274,9 @@ function generated(): DirectoryPerson[] {
       managers = unit.managedBy || placed.some(p => p.manager) ? 0 : (unit.managers ?? 1),
       alsoManages = UNITS.filter(u => u.managedBy === unit.id).map(u => u.id);
     for (let n = 0; n < unit.size - placed.length; n++, k++) {
-      const { givenName, familyName } = nameOf(k),
-        userName = ascii(givenName) + '.' + ascii(familyName),
+      const named = unit.id === 'unit-skola' ? SCHOOL[n] : undefined,
+        { givenName, familyName } = named ?? nameOf(k),
+        userName = named?.userName ?? ascii(givenName) + '.' + ascii(familyName),
         seat: Seat = { unit, n, manager: n < managers },
         groups = MEMBERSHIPS.filter(([, when]) => when(seat)).map(([group]) => group);
       people.push({
