@@ -77,3 +77,19 @@ D74 put Hem on every surface's 32 px gutter, the same day): RAIL 256 + 64 + 1024
 draws is 260 px, not the 256 `RAIL` says, so at 1829 to 1832 px the side column is a pixel or two under 320; `RAIL` is left as it is because `panelBesideQuery` (D50's 1336 px) uses it too.
 `tests/a11y/todo.spec.ts` covers the rest, the open panel, the fold and the last close as the Tests paragraph says;
 `tests/a11y/screens.hem.spec.ts` gains a screenshot at 1900 px with a card open (A3).
+
+**Revised 2026-11-10: the panel's button is always there.** Item 1 said there is no handle and no fold button while
+nothing is open, so ✕ on the last card took the button away with the panel (the product owner: "I guess the toggle
+handle should always be visible. Now it only shows when a card is clicked. If I then press the X in sidebar it
+disappears"). Asked what the button should do with nothing open, the product owner chose an empty panel over
+reopening the last thing closed and over leaving item 1 as it was. Wherever the panel fits beside the page the handle
+and the floating button ([D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) item 14, revised the same day) are drawn
+from the first load. At rest the panel is folded away and is no landmark, so Hem still stands as artboard A1 draws it,
+with the day beside the day's work. "Visa panelen" shows it with the heading "Öppet bredvid" and an Astryx
+`EmptyState` that says "Inget är öppet bredvid sidan"; the day then folds under the work as for an open card; the
+button or Esc folds it again. Opening a card or a view shows the panel as before (never taking the focus from a field
+the person is typing in), and closing the last thing folds it away and leaves the button. The day and Sedan i går
+stay the page's: the panel still holds only what was opened, or says that nothing is. `usePanel` returns `occupied`
+(something is open, or the empty panel is shown), which Hem reads instead of the `end` slot's presence to choose its
+tracks. Under the width where the panel fits there is no button, as before: the panel is a drawer there.
+`tests/a11y/todo.spec.ts` covers the button at rest, the empty panel, Esc and the last close.

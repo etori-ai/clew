@@ -121,8 +121,8 @@ const GRID_GAP = 32,
  * Where the day stays beside the day's work with the panel open too (D72, artboard A3). `Grid columns={3}` draws three
  * equal tracks, the work spanning two and the gap between them, the day one: a track needs
  * max(ASIDE, (HOME_MIN - GRID_GAP) / 2) = max(320, 304) = 320 px, the grid three tracks and two gaps (1024 px), the page
- * its padding on both sides (1088 px). Beside it stand the rail (256), the fold button and the handle on the panel's
- * edge (PANEL_EDGE, 45) and the panel at its default width (440): RAIL + 1088 + PANEL_EDGE + PANEL = 1829 px. A panel
+ * its padding on both sides (1088 px). Beside it stand the rail (256), the handle on the panel's edge (PANEL_EDGE, 1)
+ * and the panel at its default width (440): RAIL + 1088 + PANEL_EDGE + PANEL = 1785 px. A panel
  * dragged wider than its default squeezes the tracks rather than moving the breakpoint, as for `panelBesideQuery` itself.
  */
 const TRACK = Math.max(ASIDE, (HOME_MIN - GRID_GAP) / 2);
@@ -850,7 +850,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     // fold under it with I dag and Sedan i går side by side (A2); under 1024 px and on a phone they end the page.
     // From 1024 px it is one Grid whatever is open, so the day's work keeps its place in the tree and a row that opened
     // a card is still the same element to give the focus back to when the card closes (2.4.3).
-    const beside = !slot.end || threeTracks;
+    const beside = !slot.occupied || threeTracks;
     return (
       <VStack gap={6}>
         <VStack gap={mobile ? 3 : 6} as="section" aria-label="Vad vill du göra">
