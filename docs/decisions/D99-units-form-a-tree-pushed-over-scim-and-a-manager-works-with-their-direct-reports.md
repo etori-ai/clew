@@ -74,12 +74,19 @@ everyone in the branch.
    focus on the row. `scripts/provisioner-check.ts` reports the tree and the units whose people report to nobody over
    SCIM.
 
-7. **The development stack.** `scripts/provisioner/directory.ts` is a tree of five levels: the municipality, its five
-   administrations, an area between an administration and some of its units, the twenty-five units people work in, and
-   a unit under one of those; managers on every level, an area nobody leads, and a unit led from the one above it. Two
-   hundred and ten people in thirty-four units. `push.ts` pushes the units from the root down and removes from the
-   leaves up. `docs/guides/writing-a-provisioner.md` is rewritten for the tree: it is what an installation's operations
-   are handed.
+7. **The development stack.** `scripts/provisioner/directory.ts` is a municipality's line organisation as a tree of
+   six levels at its deepest: the municipality and its director, five administrations with a head each, departments
+   under three of them with a head each (the managers below the managers), an area under a department, the units
+   people work in, and a group under a unit; a manager on every level, a department nobody leads, a unit led from the
+   one above it, and two administrations with their units directly under them, since depth differs between branches.
+   Two hundred and fifty people in forty-eight units (first built as two hundred and ten in thirty-four over five
+   levels; grown 2026-11-10 on the product owner's word that the development stack should simulate a large
+   organisation with managers, managers below them and employees, so that the synthetic provisioner pushes what a
+   real one would). The people who were there keep their ids and names; the forty new ones are the heads of the
+   departments and the people of six further units. `push.ts` pushes the units from the root down and removes from
+   the leaves up. `docs/guides/writing-a-provisioner.md` is rewritten for the tree: it is what an installation's
+   operations are handed. The size is held where it is by the unit suite, which pushes the whole directory through
+   the memory store several times.
 
 **Why.** The product owner, 2026-11-10, before asking Sundsvall's operations for a provisioner: the organisation is a
 tree ("det är så vår organisation ser ut") and Clew has to hold it. The example was one person's record from the
@@ -129,7 +136,7 @@ nobody leads) and Personal says "Chef för Bergsåkers fritidshem" in the role c
 `tests/unit/organisation-tree.test.ts` (each with its audit row where something is written), the provisioner's, the
 store contract on memory and Postgres, a Postgres case for a placement against a removal and for two moves that would
 close a ring, `tests/a11y/organisation.spec.ts` and a Personal case in `staff.spec.ts`. On the development stack the
-municipality's director has five reports of two hundred and ten people.
+municipality's director has five reports of two hundred and ten people (of two hundred and fifty since the directory grew to six levels, item 7).
 
 Two things about the page were settled by its spec. The row's label holds the unit's name, who leads it, the counts
 and the marks, so the row's accessible name is all a person sees on it; the avatars are hidden from assistive
