@@ -5,7 +5,7 @@ import { createClewTheme, createHeaderBandTheme } from '../../packages/ui/src/th
 
 const custom: Branding = { revision: 3, theme: themeFromAccent('#5b1f78', '#d7dbf2', 'Exempelkommunen'), logo: null };
 
-describe('the appearance the browser draws (D97)', () => {
+describe('the appearance the browser draws (D98)', () => {
   test('what the server answers is read as it is, and nothing saved is Neutral without a logo (D46)', () => {
     expect(readBranding({ revision: 0, theme: null, logo: null })).toEqual(NEUTRAL_BRANDING);
     expect(

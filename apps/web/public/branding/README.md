@@ -10,7 +10,7 @@ with token-based clearance following the [official illustration](https://sundsva
 
 The dragon is Sundsvalls kommun's registered trademark (registration 257562). It is an organisation
 asset, not an open-source dependency or a grant to use the symbol for another organisation. An installation
-uploads its own authorised logo on Administration › Utseende (D97); nothing in the product shows these two files by
+uploads its own authorised logo on Administration › Utseende (D98); nothing in the product shows these two files by
 default. They are here for the development stack: the intranet fixture connector names them as the header's logo
 (`connectors/intranet/menu.json`), the example appearance `themes/sundsvall/appearance.json` names them as its logo,
 and the browser suite's Sundsvall fixture uploads them. No network request to

@@ -9,7 +9,7 @@ import {
 
 export type HeaderLogo = Readonly<{ src: string; alt: string; darkSrc?: string }>;
 /**
- * The installation's appearance as the browser draws it (D97): the theme an administrator saved, or null for Astryx
+ * The installation's appearance as the browser draws it (D98): the theme an administrator saved, or null for Astryx
  * Neutral, and the header's logo, or null for none. One value for both the Astryx provider and the shared header.
  */
 export type Branding = Readonly<{ revision: number; theme: InstallationTheme | null; logo: HeaderLogo | null }>;

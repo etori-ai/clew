@@ -115,7 +115,7 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
               });
             })
             .catch(() => setShell('anonymous'));
-        } else notices.arrived();
+        } else notices.arrived(change.revision);
       };
     };
     connect();
@@ -280,7 +280,7 @@ function App() {
 function StartRoute({ user, admin }: { user: SessionUser; admin: boolean }) {
   return <StartPage user={user} admin={admin} />;
 }
-/** The installation's theme (D97) around everything: a save on Utseende redraws the whole app without a reload. */
+/** The installation's theme (D98) around everything: a save on Utseende redraws the whole app without a reload. */
 function Root() {
   const branding = useBranding();
   return (

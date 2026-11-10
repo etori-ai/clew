@@ -12,7 +12,7 @@ import {
 } from '../../apps/server/src/modules/appearance/usecases';
 
 /**
- * Administration › Utseende (D97) on the memory store: who may change the installation's theme and logo, what a save
+ * Administration › Utseende (D98) on the memory store: who may change the installation's theme and logo, what a save
  * stores and answers, and the audit row each change writes in its transaction.
  */
 const T = '2026-11-10T08:00:00.000Z';

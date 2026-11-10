@@ -189,7 +189,7 @@ none draws nothing.
    house badges, with module augmentation of `CardVariantMap` in `figure.tsx`. ClickableCard composes Card, so both take it.
 5. **The bar is neutral.** Artboard 3 draws the bar in the text colour; Astryx's `ProgressBar` has no such variant, and
    accent is the assistant's blue, so the bar is `neutral`.
-   **Amended 2026-11-10 ([D97](D97-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md)).** The
+   **Amended 2026-11-10 ([D98](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md)).** The
    variant stays `neutral`, and Clew's base theme now draws it as the artboard does: the fill is `--color-text-primary`
    and the track `--color-track` (`packages/ui/src/theme.ts`). As Astryx Neutral ships it the neutral fill is
    `--color-text-disabled` on a track of `--color-border-emphasized`, measured at 2.1:1 in the light appearance and

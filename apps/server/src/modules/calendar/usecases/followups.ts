@@ -1,5 +1,5 @@
 import type { AuthenticatedContext, Thread } from '@clew/contracts';
-import type { AuditEntry, CalendarBinder, ProposalRecord } from '../model';
+import type { AuditEntry, ProposalRecord, Team } from '../model';
 import { InputError } from '../../../context';
 import { nextCheck, nextReminderAt, returnAt, waitingOnInvitee } from './obligation';
 
@@ -39,7 +39,8 @@ export interface FollowupStore {
 export function followupUsecases(deps: {
   store: FollowupStore;
   current(id: string): Promise<AuthenticatedContext | undefined>;
-  bind: CalendarBinder;
+  /** Who may receive a reminder: the manager's team (D96 item 3). */
+  team: Team;
   readReplies(id: string): Promise<unknown>;
   clock: () => Date;
 }) {
@@ -74,7 +75,7 @@ export function followupUsecases(deps: {
         }
       }
     }
-    const members = allowed ? deps.bind(persona!).members : [];
+    const members = allowed ? await deps.team(persona!) : [];
     await store.transaction(async tx => {
       const current = await tx.load(threadId);
       if (
@@ -158,7 +159,7 @@ export function followupUsecases(deps: {
   async function remindNow(persona: AuthenticatedContext, threadId: string) {
     await persona.authorize();
     const at = clock().toISOString(),
-      members = deps.bind(persona).members;
+      members = await deps.team(persona);
     await store.transaction(async tx => {
       const current = await tx.load(threadId);
       if (!current || current.policy?.personId !== persona.id)

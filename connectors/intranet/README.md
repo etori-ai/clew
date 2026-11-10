@@ -14,7 +14,7 @@ places with their own pages, in the protocol's `SiteHeaderOutput` shape; a place
 is listed to that role only. Edit the file, or point `INTRANET_MENU_FILE` at another, and restart the service
 (`sh scripts/compose.sh restart intranet` in the development stack). The logo is a path on Clew's origin
 (`/branding/…`, served from `apps/web/public`) or an https address. The band's colour is not in this file: that is the
-installation's saved theme (Administration › Utseende, D97), since a connector may not choose the page's colours (D88).
+installation's saved theme (Administration › Utseende, D98), since a connector may not choose the page's colours (D88).
 
 Run it beside Clew with the development stack (`bun run dev:connectors` registers it on port 4049), or on its own:
 

@@ -98,6 +98,26 @@ and never quietly dropped. The comparison is
     opened while the panel is folded still shows it; a closed tab's neighbour taking its place does not. Letting go
     of everything is [D66](D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md) item 3's Stäng alla. Not on the canvas; the departure is this
     item's.
+    **Revised 2026-11-10: the button floats, it has no column.** The `VStack` in the `end` slot was a row item, so it
+    stood the height of the page, 44 px wide, for one 28 px button, between the page's scrollbar and the handle, open
+    and folded alike (the product owner, with the column marked in the inspector: "why does the handle now render in a
+    full vertical box"). A first change put the button in the panel's header while the panel was open and kept the
+    strip only while it was folded; the product owner's answer was "I want the button to float to the left of the
+    sidebar". The button is now an Astryx layer (`useLayer`, context mode, `placement: 'start'`,
+    `alignment: 'start'`, 20 px off the handle) anchored to the `ResizeHandle`: a manual popover in the top layer,
+    so it takes no width from the page or the panel, follows the handle as the panel is dragged or folded, and is at
+    the window's top right corner when the panel has no width. It is one button in both states, so folding keeps the
+    focus on it as before; its place in the document is still before the handle, so the tab order is unchanged; it
+    has no light dismiss and no Esc. Its first place, 4 px off the handle at the height of the panel's header, lay
+    over the top of the page's scrollbar wherever a scrollbar takes space (a mouse on macOS, Windows; the product
+    owner the same day: "The icon is on top of the scrollbar"). **Astryx gap:** nothing in Astryx says how wide the
+    page's scrollbar is or whether the page has one, and measuring it by hand is not Clew's to write. So the button
+    stands where neither can matter: 20 px in from the handle, clear of a 15 to 17 px scrollbar, and 4 px down, inside
+    the 32 px every page keeps free above its header ([D74](D74-one-page-header-for-every-surface.md)), so it lies over no content whether or
+    not the page scrolls. `PANEL_EDGE` is
+    the handle's 1 px alone, so [D72](D72-the-day-is-the-pages-and-the-panel-holds-only-what-was-opened.md)'s three-track breakpoint is 256 + 1088 + 1 + 440 = 1785 px, not 1829.
+    `tests/a11y/todo.spec.ts` asserts that the button is outside the panel, 18 to 24 px from its edge, above Hem's
+    heading and inside an open popover.
 15. **The tints** are tokens: `--color-background-red` and `--color-border-red` take the artboard's faint red and
     red border, `--color-background-green` and `--color-border-green` its faint green, in the light appearance; the dark
     appearance keeps Neutral's values.

@@ -1,6 +1,6 @@
 /**
  * Runs inside the devcontainer against the dev stack: a real Keycloak login for the synthetic administrator, then
- * Administration › Utseende (D97) end to end through the API on that session: the public read, the guards (no session,
+ * Administration › Utseende (D98) end to end through the API on that session: the public read, the guards (no session,
  * no CSRF token, a person without `admin.appearance`), a theme file saved and refused, a logo saved and refused, the
  * audit rows, and the removal. The appearance the installation had before the run is put back, also when a step fails.
  * Passwords are read from the ignored .auth-test.env and never printed.

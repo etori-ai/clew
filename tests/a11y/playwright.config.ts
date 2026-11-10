@@ -36,7 +36,7 @@ export default defineConfig({
     },
     {
       // The shared header's embed on the intranet stand-in (D87, D88), served by the web app's dev server: `/intranat/…`.
-      // The stand-in names Sundsvall's dragon itself and asks Clew for the theme (D97); the spec answers that request.
+      // The stand-in names Sundsvall's dragon itself and asks Clew for the theme (D98); the spec answers that request.
       command: 'node_modules/.bin/vite --port 4175 --strictPort --logLevel warn',
       cwd: '../../apps/web',
       url: 'http://localhost:4175/intranat/',

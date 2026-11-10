@@ -199,11 +199,16 @@ export function reminderUsecases(deps: ReminderDeps) {
       return 'surfaced';
     });
   }
+  /**
+   * Only the person's own timers come back through here. An `obligation` (D30) or an action point's `due` timer (D96)
+   * is the system's: its module fires it, it must never be worded "Du bad … om en påminnelse", and it is not blocked by
+   * the owner's authority changing. Should one be routed here anyway, it is skipped and nothing is written.
+   */
   async function fire(id: string, generation: number): Promise<'surfaced' | 'skipped'> {
     const timer = await store.readTimer(id);
     if (
       !timer ||
-      timer.kind === 'obligation' ||
+      (timer.kind !== 'reminder' && timer.kind !== 'snooze') ||
       timer.generation !== generation ||
       timer.state !== 'active' ||
       timer.dueAt > deps.clock().toISOString()

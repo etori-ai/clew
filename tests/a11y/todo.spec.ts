@@ -182,10 +182,13 @@ test.describe('the panel beside the page', () => {
     const panel = page.getByRole('complementary', { name: 'Kort' });
     const aside = page.getByRole('complementary', { name: 'Bredvid' });
     const work = page.getByRole('tab', { name: /^Behöver dig/ });
-    // At rest Hem has no panel (D72): no region for what was opened, no fold, and the day beside the day's work.
+    // At rest the panel is folded away (D72, revised 2026-11-10): no region for what was opened, the day beside the
+    // day's work, and the one button in the page's corner saying the way to the panel.
     await expect(panel).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Fäll ihop panelen' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Visa panelen' })).toHaveCount(0);
+    const atRest = page.getByRole('button', { name: 'Visa panelen' });
+    await expect(atRest).toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'Öppet bredvid' })).toHaveCount(0);
     await expect(aside.getByRole('region', { name: 'I dag' })).toBeVisible();
     const besideWork = async () => {
       const w = (await work.boundingBox())!,
@@ -193,16 +196,36 @@ test.describe('the panel beside the page', () => {
       return a.x >= w.x + w.width;
     };
     expect(await besideWork()).toBe(true);
+    // Shown with nothing open the panel says so, with the focus on its heading; Esc folds it and gives the focus to
+    // the button, and the day is beside the work again.
+    await atRest.click();
+    const empty = page.getByRole('complementary', { name: 'Öppet bredvid' });
+    await expect(empty.getByRole('heading', { name: 'Inget är öppet bredvid sidan' })).toBeVisible();
+    await expect(empty.locator('[aria-level="2"]').filter({ hasText: 'Öppet bredvid' })).toBeFocused();
+    await expect(page).toHaveURL(/\/$/);
+    await expectNoAxeViolations(page);
+    await page.keyboard.press('Escape');
+    await expect(empty).toHaveCount(0);
+    await expect(atRest).toBeFocused();
+    await expect.poll(besideWork).toBe(true);
     // A card opened brings the panel with it alone; the day stays on the page, under the day's work at this width (A2).
     await page.getByRole('link', { name: 'Attestera 3 fakturor, 48 200 kr', exact: true }).click();
     await expect(panel.locator('#card-fakturor').getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
     await expect(aside.getByRole('region', { name: 'I dag' })).toBeVisible();
     await expect(aside.getByRole('region', { name: 'Sedan i går' })).toBeVisible();
     expect(await besideWork()).toBe(false);
-    // The button stands on the handle's content side, outside the panel, so it is there when the panel is folded away.
+    // The button floats over the page's top right corner beside the panel's inner edge, outside the panel, so it is
+    // there when the panel is folded away, and in a layer of its own, so no column of the page's is kept for it. It
+    // stands clear of a scrollbar that takes space (17 px at most) and above the page's header, in the 32 px the page
+    // keeps free (D63 item 14, revised 2026-11-10).
     const fold = page.getByRole('button', { name: 'Fäll ihop panelen' });
-    expect((await fold.boundingBox())!.x).toBeLessThan((await panel.boundingBox())!.x);
     await expect(panel.getByRole('button', { name: 'Fäll ihop panelen' })).toHaveCount(0);
+    const gap = (await panel.boundingBox())!.x - ((await fold.boundingBox())!.x + (await fold.boundingBox())!.width);
+    expect(gap).toBeGreaterThanOrEqual(18);
+    expect(gap).toBeLessThanOrEqual(24);
+    const foldBox = (await fold.boundingBox())!;
+    expect(foldBox.y + foldBox.height).toBeLessThanOrEqual((await page.locator('#hem').boundingBox())!.y);
+    expect(await fold.evaluate(el => el.closest(':popover-open') !== null)).toBe(true);
     await fold.click();
     // Folding hides and nothing more (D63 item 14, revised): the address, the row and the box keep the card, and the
     // focus stays on the button, which now says the way back, at the window's edge.
@@ -217,6 +240,7 @@ test.describe('the panel beside the page', () => {
     await expect
       .poll(async () => (await show.boundingBox())!.x + (await show.boundingBox())!.width)
       .toBeGreaterThan(1440 - 40);
+    expect((await show.boundingBox())!.x + (await show.boundingBox())!.width).toBeLessThanOrEqual(1440 - 18);
     // Showing it again brings the card back with the focus on its heading.
     await show.click();
     await expect(panel.locator('#card-fakturor').getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
@@ -234,7 +258,7 @@ test.describe('the panel beside the page', () => {
     await expect(page).toHaveURL(/\/$/);
     await expect(panel).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Fäll ihop panelen' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Visa panelen' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Visa panelen' })).toBeVisible();
     await expect(aside.getByRole('region', { name: 'I dag' })).toBeVisible();
     await expect.poll(besideWork).toBe(true);
   });

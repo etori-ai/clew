@@ -36,9 +36,15 @@ export function memoryThreadStore(): MemoryThreadStore {
   const copy = <T>(value: T): T => structuredClone(value);
   const withTimers = (thread: Thread): Thread => {
     const timers = [...timerRows.values()]
-      .filter(t => t.threadId === thread.id && t.kind !== 'obligation' && ['active', 'blocked'].includes(t.state))
+      // Only the person's own timers are theirs to see and cancel; `obligation` and `due` are the system's (D30, D96).
+      .filter(
+        (t): t is TimerIntent & { kind: 'reminder' | 'snooze' } =>
+          t.threadId === thread.id &&
+          (t.kind === 'reminder' || t.kind === 'snooze') &&
+          ['active', 'blocked'].includes(t.state),
+      )
       .map(t => ({
-        kind: t.kind as 'reminder' | 'snooze',
+        kind: t.kind,
         dueAt: t.dueAt,
         // The start commits with the row (D86), so an active timer is scheduled; `queued` is the retired outbox's state.
         state: (t.state === 'blocked' ? 'blocked' : 'scheduled') as 'blocked' | 'scheduled' | 'queued',

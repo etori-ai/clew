@@ -41,7 +41,7 @@ import { menuSource, withListing } from './sources';
  * Attributes: `menu-src`, `source`, `source-root`, `source-depth` (levels fetched, 1 default: the bar draws one),
  * `source-base` (the system's origin; the page's own by default), `source-nonce` (WordPress's REST nonce for a
  * signed-in visitor), `selected` (an item id; else the page's address decides), `user-name` with `logout-href`, or
- * `login-href`; `appearance-src` (the installation's own `/api/appearance`, D97: its theme and logo; without it the
+ * `login-href`; `appearance-src` (the installation's own `/api/appearance`, D98: its theme and logo; without it the
  * header is Astryx Neutral), `logo-src`, `logo-dark-src`, `logo-alt` (a logo of the page's own instead), `appearance`.
  *
  * Colour: by default (`appearance="auto"`) the header is drawn in the person's own choice from Clew (D39), which the
@@ -206,7 +206,7 @@ function EmbeddedHeader({
   onTheme: (sheets: CSSStyleSheet[]) => void;
   onMode: (mode: ColorMode) => void;
 }) {
-  // The installation's saved theme and logo (D97), read from Clew itself; Neutral until it answers and if it does not.
+  // The installation's saved theme and logo (D98), read from Clew itself; Neutral until it answers and if it does not.
   const [installation, setInstallation] = useState<Branding>(NEUTRAL_BRANDING);
   useEffect(() => {
     if (!settings.appearanceSrc) return setInstallation(NEUTRAL_BRANDING);

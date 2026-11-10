@@ -150,6 +150,16 @@
         "payroll.absenceStatus",
         "payroll.followAbsence"
       ]
+    },
+    {
+      "id": "appraisals",
+      "source": "connectors/appraisals/connector.mjs",
+      "manifest": "docs/generated/appraisals.manifest.json",
+      "capabilities": [
+        "appraisals.talks",
+        "appraisals.commitments",
+        "appraisals.round"
+      ]
     }
   ],
   "duplicateDecisionNumbers": [
@@ -159,7 +169,8 @@
     "D44",
     "D45",
     "D46",
-    "D85"
+    "D85",
+    "D96"
   ],
   "decisions": [
     {
@@ -500,7 +511,7 @@
       "number": 37,
       "path": "docs/decisions/D37-header-logo-is-installation-branding.md",
       "title": "D37 · The shared navigation logo is installation branding",
-      "status": "accepted, extended by [D38](D38-municipal-branding-uses-astryx-themes.md); the build variables and \"no database, upload service or administration page\" superseded by [D97](D97-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md) (2026-11-10), the native image exception stands",
+      "status": "accepted, extended by [D38](D38-municipal-branding-uses-astryx-themes.md); the build variables and \"no database, upload service or administration page\" superseded by [D98](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md) (2026-11-10), the native image exception stands",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -509,7 +520,7 @@
       "number": 38,
       "path": "docs/decisions/D38-municipal-branding-uses-astryx-themes.md",
       "title": "D38 · Municipal branding uses Astryx themes",
-      "status": "accepted, extended by [D39](D39-compact-header-profile-and-reminders.md), default profile changed by [D46](D46-astryx-neutral-is-the-default-theme.md); the profile contract and `VITE_BRAND_PROFILE` superseded by [D97](D97-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md) (2026-11-10): a theme is an uploaded file, and Sundsvall's mapping is `themes/sundsvall/theme.tokens.json`",
+      "status": "accepted, extended by [D39](D39-compact-header-profile-and-reminders.md), default profile changed by [D46](D46-astryx-neutral-is-the-default-theme.md); the profile contract and `VITE_BRAND_PROFILE` superseded by [D98](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md) (2026-11-10): a theme is an uploaded file, and Sundsvall's mapping is `themes/sundsvall/theme.tokens.json`",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -617,7 +628,7 @@
       "number": 46,
       "path": "docs/decisions/D46-astryx-neutral-is-the-default-theme.md",
       "title": "D46 · Astryx Neutral is the default theme; Sundsvall is a profile to opt into",
-      "status": "accepted; Neutral is still the default, and \"Switching back\" is now an upload of `themes/sundsvall/theme.tokens.json` on Administration › Utseende ([D97](D97-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md), 2026-11-10)",
+      "status": "accepted; Neutral is still the default, and \"Switching back\" is now an upload of `themes/sundsvall/theme.tokens.json` on Administration › Utseende ([D98](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md), 2026-11-10)",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -1090,11 +1101,29 @@
       "area": "identity"
     },
     {
-      "key": "D97-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator",
+      "key": "D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile",
+      "number": 96,
+      "path": "docs/decisions/D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md",
+      "title": "D96 · Talks is Clew's first owned domain: the round and action points, behind a profile a connector can answer",
+      "status": "accepted, built 2026-11-10 (the round, action points, the profile and its fixture; see \"As built\"); synthetic data only until questions 6 and 11 below are answered",
+      "date": "2026-11-10",
+      "area": "product, integrations"
+    },
+    {
+      "key": "D97-a-source-says-what-its-rows-are-about-and-clew-places-them",
       "number": 97,
-      "path": "docs/decisions/D97-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md",
-      "title": "D97 · The installation's theme and logo are saved in Clew by an administrator, the theme as a design tokens file",
-      "status": "accepted, built 2026-11-10; no signed-in pass against the development identity provider and no manual screen-reader pass yet",
+      "path": "docs/decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md",
+      "title": "D97 · A source says what its rows are about, and Clew places them",
+      "status": "accepted as the direction (product owner, 2026-11-10), nothing built; the items under \"Open\" are not decided",
+      "date": "2026-11-10",
+      "area": "integrations, ui"
+    },
+    {
+      "key": "D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator",
+      "number": 98,
+      "path": "docs/decisions/D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md",
+      "title": "D98 · The installation's theme and logo are saved in Clew by an administrator, the theme as a design tokens file",
+      "status": "accepted, built 2026-11-10 and tried signed in on the development stack the same day; no manual screen-reader pass yet",
       "date": "2026-11-10",
       "area": "ui"
     }
@@ -1136,6 +1165,17 @@
         "Understand the platform",
         "Build a custom connector",
         "Run and contribute"
+      ]
+    },
+    {
+      "path": "connectors/appraisals/README.md",
+      "title": "Appraisals connector (fixture)",
+      "category": "integrator-guide",
+      "headings": [
+        "What it answers",
+        "The records",
+        "Environment",
+        "Run and register"
       ]
     },
     {
@@ -2091,8 +2131,20 @@
       "headings": []
     },
     {
-      "path": "docs/decisions/D97-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md",
-      "title": "D97 · The installation's theme and logo are saved in Clew by an administrator, the theme as a design tokens file",
+      "path": "docs/decisions/D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md",
+      "title": "D96 · Talks is Clew's first owned domain: the round and action points, behind a profile a connector can answer",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md",
+      "title": "D97 · A source says what its rows are about, and Clew places them",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md",
+      "title": "D98 · The installation's theme and logo are saved in Clew by an administrator, the theme as a design tokens file",
       "category": "decision-history",
       "headings": []
     },
@@ -2289,6 +2341,7 @@
       "category": "maintainer-guide",
       "headings": [
         "Run it",
+        "Utvecklingssamtal: the round, and switching the answering system",
         "Reset fixture data deliberately",
         "Source of runtime versions"
       ]
@@ -3034,16 +3087,33 @@
       ]
     },
     {
-      "path": "docs/reviews/2026-11-10-owned-domains-against-evity.md",
-      "title": "Exploration: the layer where Clew owns the feature and its data, against Evity · 2026-11-10",
+      "path": "docs/reviews/2026-11-10-one-entity-many-sources.md",
+      "title": "Exploration: one entity, many sources · 2026-11-10",
+      "category": "review-history",
+      "headings": [
+        "The question",
+        "What other systems do",
+        "The pattern",
+        "Every surface a source can show on",
+        "The developer's experience",
+        "Tested against the proof of concept",
+        "Against the core",
+        "Ownership",
+        "A worked example: competence tracking",
+        "Not established"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-10-owned-domains-against-a-commercial-hr-system.md",
+      "title": "Exploration: the layer where Clew owns the feature and its data, against a commercial HR system · 2026-11-10",
       "category": "review-history",
       "headings": [
         "The question",
         "Short answer",
-        "What Evity is",
+        "What the reference product is",
         "What Clew has today",
         "The line: what Clew may own",
-        "Evity's fifteen, sorted",
+        "The reference product's fifteen, sorted",
         "Five building blocks, not fifteen modules",
         "What the layer is in code",
         "Rules that need restating",

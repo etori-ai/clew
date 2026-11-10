@@ -8,7 +8,7 @@ import { roomsMenu, roomsView } from './views';
 
 /**
  * The calendar as a connector. The provider interface stays the contract (D11); this wraps the module's reads as
- * capabilities, with the outputs typed as the browser's contracts, and declares the two areas. Today, the week and a day
+ * capabilities, with the outputs typed as the browser's contracts, and declares the two areas, neither with a figure. Today, the week and a day
  * are drawn by the calendar family (D32); the rooms declare a view and can be a tool in the menu (D38, D40). Proposals
  * keep their own path: the human decision endpoint is not a capability and never a tool. The use cases come built from
  * `composition/calendar.ts` (D25).
@@ -20,7 +20,7 @@ async function personaFor(actorId: string) {
   return persona;
 }
 export function calendarConnector(
-  calendar: Pick<CalendarUsecases, 'readToday' | 'weekView' | 'samtalStatus'>,
+  calendar: Pick<CalendarUsecases, 'readToday' | 'weekView'>,
   events: Pick<EventUsecases, 'dayView' | 'listRooms'>,
 ): Connector {
   return {
@@ -35,26 +35,12 @@ export function calendarConnector(
         roles: ['manager', 'employee'],
         standing: ['calendar.today', 'calendar.week'],
         schedules: [],
-        // Läget's calendar tile (D54, artboard 3): the unit's development talks booked out of everyone due one, for the
-        // manager; the day itself is I dag beside the column. A unit without members has no figure. A throw is the
-        // registry's warning figure.
-        figure: async actor => {
-          if (actor.role !== 'manager') return null;
-          const s = await calendar.samtalStatus(await personaFor(actor.id));
-          if (!s.members) return null;
-          const done = s.held + s.booked;
-          return {
-            label: 'Utvecklingssamtal bokade',
-            value: `${done} av ${s.members}`,
-            comparison: `senast ${s.deadline}`,
-            progress: { value: done, max: s.members },
-            tone: 'none',
-          };
-        },
       },
       {
+        // The planner's area; its id is what its threads are counted by. The talks module's area carries the title
+        // "Utvecklingssamtal" and the figure of talks held (D96 item 7), so this one is named for what it does.
         id: 'utvecklingssamtal',
-        title: 'Utvecklingssamtal',
+        title: 'Boka utvecklingssamtal',
         roles: ['manager'],
         standing: [],
         schedules: [{ label: 'Samtal utan tid före deadline', when: 'Varje vardag 06:00' }],

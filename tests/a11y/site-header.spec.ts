@@ -10,7 +10,7 @@ import { brandingFixtures } from './branding-fixtures';
 const intranet = 'http://localhost:4175/intranat';
 
 async function openIntranet(page: Page, path: string) {
-  // The element asks the installation for its saved theme (D97); here that is Sundsvall's example theme file.
+  // The element asks the installation for its saved theme (D98); here that is Sundsvall's example theme file.
   await page.route('**/api/appearance', route =>
     route.fulfill({ json: { revision: 1, theme: brandingFixtures.sundsvall.theme, logo: null } }),
   );

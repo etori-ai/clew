@@ -5,7 +5,7 @@ import { appearanceUsecases } from '../../apps/server/src/modules/appearance/use
 import { appearanceRoutes } from '../../apps/server/src/routes/appearance';
 
 /**
- * The public appearance routes (D97) over the memory store: what a browser that has not signed in is answered, and
+ * The public appearance routes (D98) over the memory store: what a browser that has not signed in is answered, and
  * the headers a stored logo is served under.
  */
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><rect width="8" height="8"/></svg>';

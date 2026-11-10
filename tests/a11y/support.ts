@@ -33,8 +33,30 @@ import {
   providerReport,
   usersOverview,
   staffOverview,
+  TALKS_FAIL_ERROR,
+  TODAY,
+  USER_NAME,
+  allCommitments,
+  commitmentsFor,
+  myCommitments,
+  readOnlyCommitments,
+  readOnlyTalks,
+  talkRound,
+  talkRows,
+  talksResult,
+  type CommitmentEntry,
+  type TalkEntry,
 } from './data';
-import type { AppearanceAdminView, AppearanceLogoInputType, ModelSummary, ProviderSummary } from '@clew/contracts';
+import type {
+  AppearanceAdminView,
+  AppearanceLogoInputType,
+  CommitmentAddBody,
+  CommitmentsInput,
+  ModelSummary,
+  ProviderSummary,
+  TalkHeldBody,
+  TalkRound,
+} from '@clew/contracts';
 import { THEME_BASE_COLORS, parseThemeFile, themeFileOf } from '../../packages/contracts/src/theme-file';
 import { personSearch, phonebook } from './phonebook';
 import { rooms, roomsSpec } from './rooms';
@@ -88,7 +110,7 @@ export class MockApi {
   /** The users page for someone with `admin.connectors` but not `admin.users`: the server refuses. */
   usersForbidden = false;
   /**
-   * The installation's appearance (D97): Astryx Neutral with no logo until a test saves or sets one. The public read
+   * The installation's appearance (D98): Astryx Neutral with no logo until a test saves or sets one. The public read
    * every page makes and Administration › Utseende share it, as they share the one row on the server.
    */
   appearance: AppearanceAdminView = { revision: 0, theme: null, logo: null, updatedAt: null, updatedBy: null };
@@ -100,6 +122,28 @@ export class MockApi {
   staff = staffOverview();
   /** Personal for someone who manages no unit: the server refuses whatever the session's role says. */
   staffForbidden = false;
+  /**
+   * The session person is an employee who manages nobody: the session's role is `employee`, Personal is refused, the
+   * round lists nobody and their own action points are only the ones about them. For Hem without Personal.
+   */
+  employee = false;
+  /** Utvecklingssamtal (D96). False: the person has no talks system, so both reads are refused as the registry refuses them. */
+  talksOffered = true;
+  /** False: another system answers the profile; the reads are read-only (no `id`, a `link` on every row) and the writes refused. */
+  talksWritable = true;
+  /** The open round; null for none (the round then lists nobody). */
+  talksRound: TalkRound | null = talkRound();
+  /** The calendar did not answer: booked rows read as missing and the answer says `bookedUnknown`. */
+  talksBookedUnknown = false;
+  /** The next talk write answers 400 with `TALKS_FAIL_ERROR`; it resets itself after that one. */
+  talksFail = false;
+  /** The round's rows and every action point, as the writes leave them. A test may replace either. */
+  talkRows: Array<Omit<TalkEntry, 'openCommitments'>> = talkRows();
+  commitments: CommitmentEntry[] = allCommitments();
+  /** Every talk write that reached the mock, in order. */
+  talkWrites: Array<{ method: string; path: string; body: unknown }> = [];
+  private heldBefore = new Map<string, Omit<TalkEntry, 'openCommitments'>>();
+  private nextCommitment = 1;
   /** The shared header (D88) every page draws: Clew's default until a test gives the person a connector's header. */
   header: SiteHeaderView = siteHeader();
   connectors: ConnectorSummary[] = connectors();
@@ -146,11 +190,11 @@ export class MockApi {
     if (path === '/auth/session') {
       if (this.sessionDelay) await new Promise(resolve => setTimeout(resolve, this.sessionDelay));
       return this.signedIn
-        ? json({ ...session, admin: this.admin })
+        ? json({ ...session, ...(this.employee ? { user: { ...user, role: 'employee' } } : {}), admin: this.admin })
         : route.fulfill({ status: 401, json: { error: 'Ingen session' } });
     }
     if (path === '/auth/activity') return json({ expiresAt: session.expiresAt });
-    // The installation's appearance (D97), public: the theme and the logo's address, and the logo itself.
+    // The installation's appearance (D98), public: the theme and the logo's address, and the logo itself.
     if (path === '/appearance') {
       const { revision, theme, logo } = this.appearance;
       return json({ revision, theme, logo });
@@ -171,7 +215,7 @@ export class MockApi {
     if (path === '/chat-services') return json({ services: [], deliveries: [] });
     // Personal (D94): the manager's units and their people, or the server's refusal.
     if (path === '/staff')
-      return this.staffForbidden
+      return this.staffForbidden || this.employee
         ? route.fulfill({
             status: 403,
             json: { error: 'Sidan Personal är för den som är chef för en enhet.', code: 'denied' },
@@ -436,6 +480,9 @@ export class MockApi {
     if (path === '/cap/clew.errands') return json({ output: errandsOutput, source: 'Startsidan', view: errandsSpec });
     if (path === '/cap/sm.errand')
       return json({ output: smErrandOutput, source: 'Ärendesystemet', view: smErrandSpec });
+    // Utvecklingssamtal (D96): the two composites and the built-in module's writes.
+    if (path === '/cap/clew.talks' || path === '/cap/clew.commitments' || path.startsWith('/talks/'))
+      return this.handleTalks(route, path, url);
     // `@` as the server answers it: with nothing typed only the context the box sends (`near`), with text everything open, the context first.
     if (path === '/objects') {
       const q = (url.searchParams.get('q') ?? '').toLowerCase(),
@@ -623,6 +670,115 @@ export class MockApi {
     if (path.startsWith('/threads/') && !post) return json(this.threads.find(t => t.id === id));
     this.unmocked.push(`${request.method()} ${path}`);
     return route.fulfill({ status: 500, json: { error: 'Inte mockat' } });
+  }
+  /**
+   * Utvecklingssamtal (D96), answered as the server would: the reads through the capability route (refused for a person
+   * without a talks system, read-only when another system answers), and the five writes over the mock's own state, so a
+   * spec sees the lists change on the next read.
+   */
+  private handleTalks(route: Route, path: string, url: URL) {
+    const request = route.request(),
+      method = request.method();
+    const json = (body: unknown, status = 200) => route.fulfill({ status, json: body });
+    const fail = (status: number, error: string) => route.fulfill({ status, json: { error } });
+    const empty = () => route.fulfill({ status: 204, body: '' });
+    // The registry's own refusal for a capability outside the person's scope: a 400 with its sentence and no code.
+    if (!this.talksOffered) return fail(path.startsWith('/cap/') ? 400 : 403, 'Du saknar behörighet för åtgärden.');
+    if (path === '/cap/clew.talks') {
+      const result = talksResult({
+        round: this.talksRound,
+        rows: this.employee ? [] : this.talkRows,
+        commitments: this.commitments,
+        bookedUnknown: this.talksBookedUnknown,
+      });
+      return json({ output: this.talksWritable ? result : readOnlyTalks(result), source: result.source });
+    }
+    if (path === '/cap/clew.commitments') {
+      const input = JSON.parse(url.searchParams.get('input') ?? '{}') as CommitmentsInput;
+      // `person` is a user name (or an id for someone without one); an employee reads nobody's but their own.
+      const about =
+        this.staff.units.flatMap(u => u.people).find(p => (p.userName ?? p.id) === input.person)?.id ??
+        (input.person === USER_NAME ? user.id : null);
+      const result =
+        input.person === undefined
+          ? myCommitments(this.commitments, this.employee)
+          : commitmentsFor(about && (!this.employee || about === user.id) ? about : '', this.commitments);
+      return json({ output: this.talksWritable ? result : readOnlyCommitments(result), source: result.source });
+    }
+    const body = method === 'POST' ? (request.postDataJSON() ?? {}) : null;
+    this.talkWrites.push({ method, path, body });
+    if (!this.talksWritable) return fail(403, 'Du saknar behörighet för åtgärden.');
+    const done = /^\/talks\/commitments\/([^/]+)\/done$/.exec(path);
+    // The owner of an action point marks it done and opens it again whatever their role (D96 item 4); someone who
+    // manages nobody may do nothing else here.
+    if (this.employee && !done) return fail(403, 'Du saknar behörighet för åtgärden.');
+    if (this.talksFail) {
+      this.talksFail = false;
+      return fail(400, TALKS_FAIL_ERROR);
+    }
+    if (done) {
+      const id = decodeURIComponent(done[1]!);
+      const row = this.commitments.find(c => c.id === id);
+      if (!row) return fail(400, 'Åtgärdspunkten finns inte.');
+      if (!row.mine) return fail(403, 'Bara den som äger åtgärdspunkten kan markera den som klar.');
+      this.commitments = this.commitments.map(c => {
+        if (c.id !== id) return c;
+        if (method === 'POST') return { ...c, done: true, doneAt: NOW };
+        const { doneAt: _doneAt, ...open } = c;
+        return { ...open, done: false };
+      });
+      return empty();
+    }
+    const [, , personId = '', what] = path.split('/').map(decodeURIComponent);
+    const row = this.talkRows.find(r => r.personId === personId);
+    if (what === 'held') {
+      if (!row) return fail(400, 'Personen finns inte i samtalsomgången.');
+      if (method === 'POST') {
+        const heldOn = (body as TalkHeldBody).heldOn ?? TODAY;
+        if (row.state !== 'held') this.heldBefore.set(personId, row);
+        this.talkRows = this.talkRows.map(r => (r.personId === personId ? { ...r, state: 'held', at: heldOn } : r));
+        return json({ id: `held-${personId}`, heldOn });
+      }
+      if (row.state !== 'held') return fail(400, 'Samtalet är inte markerat som hållet.');
+      const { at: _at, ...missing } = row;
+      const before = this.heldBefore.get(personId) ?? { ...missing, state: 'missing' as const };
+      this.heldBefore.delete(personId);
+      this.talkRows = this.talkRows.map(r => (r.personId === personId ? before : r));
+      return empty();
+    }
+    if (what === 'commitments' && method === 'POST') {
+      const staff = this.staff.units.flatMap(u => u.people).find(p => p.id === personId);
+      if (!staff) return fail(400, 'Personen finns inte på dina enheter.');
+      const input = body as Partial<CommitmentAddBody>;
+      const text = typeof input.text === 'string' ? input.text.trim() : '';
+      if (!text) return fail(400, 'Skriv vad åtgärdspunkten gäller.');
+      if (
+        text.length > 280 ||
+        !['employee', 'manager'].includes(input.owner ?? '') ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(input.dueOn ?? '')
+      )
+        return fail(400, 'Ogiltig förfrågan.');
+      const id = `c-new-${this.nextCommitment++}`;
+      this.commitments = [
+        ...this.commitments,
+        {
+          id,
+          ref: `commitment:talks:${id}`,
+          personId,
+          userName: staff.userName ?? staff.id,
+          name: staff.name,
+          owner: input.owner!,
+          mine: input.owner === 'manager',
+          text,
+          dueOn: input.dueOn!,
+          done: false,
+          carried: false,
+        },
+      ];
+      return json({ id }, 201);
+    }
+    this.unmocked.push(`${method} ${path}`);
+    return fail(500, 'Inte mockat');
   }
   /** Modeller (D24), answered as the server would: the list, one model or provider, the writes, and a test that lists three models. */
   private handleModels(route: Route, method: string, path: string) {

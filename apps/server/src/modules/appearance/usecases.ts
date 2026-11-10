@@ -14,7 +14,7 @@ import { isLogoProblem, logoImageOf } from './domain';
 import type { AppearanceRecord, AppearanceStore, LogoImage } from './ports';
 
 /**
- * The installation's appearance (D97): the theme every page is drawn in and the logo in the header, chosen by an
+ * The installation's appearance (D98): the theme every page is drawn in and the logo in the header, chosen by an
  * administrator in the product and stored in Clew's own database, not in the build.
  *
  * `read` and `logo` are what any browser asks before a person has signed in, so they take no actor and answer nothing

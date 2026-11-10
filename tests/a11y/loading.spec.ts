@@ -81,6 +81,26 @@ test('session verification has a named loading state without protected content',
   await expect(page.getByText('Hämtar sidan …', { exact: true })).toHaveCount(0);
 });
 
+test('coming back to the window asks about the session without hiding a page confirmed moments ago', async ({
+  page,
+  api: _,
+}) => {
+  await open(page, '/');
+  const opacity = () => page.evaluate(() => document.documentElement.style.opacity);
+  // The answer is held, so a page hidden for the check would stay hidden until it is released.
+  const release = await hold(page, '**/api/auth/session');
+  const asked = page.waitForRequest('**/api/auth/session');
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await asked;
+  expect(await opacity()).toBe('');
+  await expect(composer(page)).toBeVisible();
+  // A page the browser brings back from its back/forward cache is hidden until the session has answered.
+  await page.evaluate(() => window.dispatchEvent(new Event('pageshow')));
+  expect(await opacity()).toBe('0');
+  release();
+  await expect.poll(opacity).toBe('');
+});
+
 for (const tab of ['waiting', 'snoozed', 'done']) {
   test(`the ${tab} tab does not claim to be empty before its first response`, async ({ page, api: _ }) => {
     const release = await hold(page, '**/api/threads');
@@ -141,11 +161,22 @@ test('reduced motion disables the content entrance', async ({ page, api: _ }) =>
 
 test('a background refresh preserves content, focus and the composer draft', async ({ page, api: _ }) => {
   await page.addInitScript(() => {
+    // The stand-in speaks as the server's stream does: a connection starts by saying the current revision, which
+    // invalidates nothing, and a later revision is a change.
     class Changes {
-      onmessage: ((event: { data: string }) => void) | null = null;
+      private listener: ((event: { data: string }) => void) | null = null;
       constructor() {
-        (window as unknown as { refresh(): void }).refresh = () =>
-          this.onmessage?.({ data: JSON.stringify({ revision: 'new', policy: '1:1' }) });
+        (window as unknown as { refresh(): void }).refresh = () => this.say('new');
+      }
+      get onmessage() {
+        return this.listener;
+      }
+      set onmessage(listener: ((event: { data: string }) => void) | null) {
+        this.listener = listener;
+        this.say('opened');
+      }
+      private say(revision: string) {
+        this.listener?.({ data: JSON.stringify({ revision, policy: '1:1' }) });
       }
       close() {}
     }

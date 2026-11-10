@@ -5,7 +5,7 @@ import { postgresAppearanceStore } from '../../apps/server/src/modules/appearanc
 import { appearanceStoreContract } from '../appearance-store-contract';
 
 /**
- * The appearance store contract against Postgres (D25, D97). `bun run test:db` inside the devcontainer. Each case
+ * The appearance store contract against Postgres (D25, D98). `bun run test:db` inside the devcontainer. Each case
  * writes a row of its own beside the installation's, so the appearance a developer has saved is never touched.
  */
 if (!process.env.DATABASE_URL)

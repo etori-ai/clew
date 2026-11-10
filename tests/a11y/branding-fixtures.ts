@@ -22,7 +22,7 @@ function exampleTheme(path: string): InstallationTheme {
 }
 
 /**
- * What an installation has saved (D97), as the mocked API answers it: a theme and a logo are the server's answers, not
+ * What an installation has saved (D98), as the mocked API answers it: a theme and a logo are the server's answers, not
  * the build's, so one build serves every profile and a spec chooses by setting the answer.
  */
 export const brandingFixtures: Readonly<Record<A11yBrandProfile, BrandingFixture>> = {

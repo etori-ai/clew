@@ -19,5 +19,5 @@ export function webConfig() {
 }
 
 // Published Astryx packages are pre-compiled; the plain CSS path needs no StyleX plugin (astryx docs styling-overview plain).
-// The build carries no branding: the theme and the logo are the installation's, read from Clew at run time (D97).
+// The build carries no branding: the theme and the logo are the installation's, read from Clew at run time (D98).
 export default defineConfig(() => webConfig());

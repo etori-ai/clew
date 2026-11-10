@@ -73,7 +73,9 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
   const run = <O>(p: AuthenticatedContext, name: string, input: unknown) => registry.run<O>(actorOf(p), name, input);
   const calendar = calendarUsecases({
     store: proposals,
-    bind: p => ({ provider: cal, members: p.role === 'manager' ? members : [] }),
+    bind: () => ({ provider: cal }),
+    team: async p => (p.role === 'manager' ? members : []),
+    round: async () => ({ label: 'Utvecklingssamtal 2026', opensOn: '2026-09-01', dueOn: '2026-11-28', held: [] }),
     clock,
     ids,
     people: { personaFor: async () => undefined },

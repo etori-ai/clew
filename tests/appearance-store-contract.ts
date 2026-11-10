@@ -7,7 +7,7 @@ import {
 } from '../apps/server/src/modules/appearance/ports';
 
 /**
- * The appearance store contract (D25, D97): one suite, two adapters. `tests/unit/appearance-store.test.ts` runs it
+ * The appearance store contract (D25, D98): one suite, two adapters. `tests/unit/appearance-store.test.ts` runs it
  * against the memory adapter, `tests/db/postgres-appearance-store.test.ts` against Postgres.
  */
 export interface AppearanceStoreHarness {

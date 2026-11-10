@@ -1,5 +1,5 @@
 /**
- * The installation's theme file (D97): colours for Clew's semantic roles, written in the Design Tokens Community
+ * The installation's theme file (D98): colours for Clew's semantic roles, written in the Design Tokens Community
  * Group format (Format Module 2025.10, `.tokens.json`). An administrator uploads one; Clew reads the two groups
  * `light.color` and `dark.color`, whose token names are Astryx's colour tokens without the `--color-` prefix, and
  * nothing else in the file is drawn. Any other group is the file's own (a palette, say) and may be referenced as
@@ -10,7 +10,7 @@
  * colours that carry a warning or an error stay Clew's (D38), which is why those tokens are not in the list.
  */
 
-/** Astryx's semantic colour tokens a theme file may set, without the `--color-` prefix. A closed list (D97). */
+/** Astryx's semantic colour tokens a theme file may set, without the `--color-` prefix. A closed list (D98). */
 export const THEME_COLOR_TOKENS = [
   'accent',
   'accent-muted',
@@ -383,7 +383,7 @@ export function themeFileSchema(): Record<string, unknown> {
 }
 export const isThemeHex = (value: string) => HEX.test(value.trim().toLowerCase());
 
-/** The logo an installation shows in its header: stored by Clew and served from its own origin (D97). */
+/** The logo an installation shows in its header: stored by Clew and served from its own origin (D98). */
 export const LOGO_MEDIA_TYPES = ['image/png', 'image/svg+xml'] as const;
 export type LogoMediaType = (typeof LOGO_MEDIA_TYPES)[number];
 export const LOGO_MAX_BYTES = 256_000;

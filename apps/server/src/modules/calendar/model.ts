@@ -96,8 +96,35 @@ export interface ProposalStore {
   activeProposals(personId: string): Promise<ProposalRecord[]>;
   transaction<T>(fn: (tx: ProposalTx) => Promise<T>): Promise<T>;
 }
-/** A person's calendar and unit: the provider (D11) plus the members a manager plans for. The live one caches per authorization version. */
+/** A person's calendar: the provider (D11). The live one caches per authorization version. */
 export type CalendarBinder = (persona: AuthenticatedContext) => CalendarBinding;
+/**
+ * A person the manager plans for and may invite (D96 item 3): who they are in Clew, the address their calendar answers
+ * to, and the ref free-busy results are matched on.
+ */
+export interface UnitMember {
+  personId: string;
+  ref: string;
+  email: string;
+  name: string;
+}
+/**
+ * The people a manager plans for, from the assignments (D68) on the units they manage, never the manager. Empty for a
+ * person who manages no unit. Composition fills it from the people module; the calendar never imports that module.
+ */
+export type Team = (persona: AuthenticatedContext) => Promise<UnitMember[]>;
+/**
+ * The round of development talks the planner works towards (D96 items 1-3): dates are `YYYY-MM-DD`, `held` the person
+ * ids whose talk is recorded as held. The calendar's own small shape; composition maps whatever owns the round to it.
+ */
+export interface PlanningRound {
+  label: string;
+  opensOn: string;
+  dueOn: string;
+  held: readonly string[];
+}
+/** The open round for this person's organisation, or null when none is open: then nothing is planned. */
+export type RoundReader = (persona: AuthenticatedContext) => Promise<PlanningRound | null>;
 /** A card for someone else's stream (D30): the follow-up an invitee gets. The threads module pushes it; the calendar never imports it. */
 export interface NotifyDraft {
   topic: string;

@@ -4,7 +4,7 @@ import { scimUsecases } from '../../apps/server/src/modules/people/usecases';
 import { scimRoutes } from '../../apps/server/src/routes/scim';
 import { checkProvisioning } from '../../scripts/provisioner/check';
 import { scimClient } from '../../scripts/provisioner/client';
-import { developmentDirectory, type Directory } from '../../scripts/provisioner/directory';
+import { developmentDirectory, fullName, type Directory } from '../../scripts/provisioner/directory';
 import { plan, push } from '../../scripts/provisioner/push';
 
 /**
@@ -69,6 +69,18 @@ describe('the synthetic provisioner', () => {
     expect(by('unit:unit-skola').members).toHaveLength(12);
     expect(by('unit:unit-skola').members[0]).toBe('dev:hillevi');
     expect(by('unit-manager:unit-skola').members).toEqual(['dev:hillevi']);
+    // Hillevi's school starts with the calendar fixture's people with their calendar addresses (D96 item 3); the rest
+    // of the school is generated, as every other unit is.
+    const users = (externalIds: readonly string[]) =>
+      externalIds.map(id => developmentDirectory.people.find(u => u.externalId === id)!);
+    expect(users(by('unit:unit-skola').members.slice(1, 6)).map(u => [u.userName, fullName(u), u.email])).toEqual([
+      ['anna', 'Anna Lindqvist', 'anna@clew.test'],
+      ['erik', 'Erik Sandström', 'erik@clew.test'],
+      ['maria', 'Maria Källström', 'maria@clew.test'],
+      ['johan', 'Johan Byström', 'johan@clew.test'],
+      ['karin', 'Karin Lindqvist', 'karin@clew.test'],
+    ]);
+    for (const u of users(by('unit:unit-skola').members.slice(6))) expect(u.userName).toContain('.');
     // A manager of two units, a unit with two managers, a person who works in two, and each member listed once.
     expect(by('unit-manager:unit-hr').members).toEqual(by('unit-manager:unit-ekonomi').members);
     expect(by('unit-manager:unit-fritidshem').members).toEqual(by('unit-manager:unit-skola-nacksta').members);

@@ -24,7 +24,8 @@ const tool = (label: string, n: number): MenuEntry => ({
 test.describe('Verktyg in the menu', () => {
   test.use({ viewport: desktop });
 
-  test("the section is named, holds Clew's own rows and then the chosen views of a connector in alphabetical order, and has no axe violations", async ({
+  // The suite's person is a manager, so Personal (D94) stands under the calendar, before the chosen views.
+  test("the section is named, holds the calendar, a manager's Personal and then the chosen views of a connector in alphabetical order, and has no axe violations", async ({
     page,
     api,
   }) => {
@@ -32,6 +33,7 @@ test.describe('Verktyg in the menu', () => {
     await open(page, '/');
     const section = rail(page).getByRole('group', { name: 'Verktyg' });
     await expect(section.getByRole('link')).toHaveText(['Kalender', 'Personal', 'Mitt team', 'Telefonbok']);
+    await expect(section.getByRole('link', { name: 'Personal' })).toHaveAttribute('href', '/staff');
     await expect(section.getByRole('link', { name: 'Mitt team' })).toHaveAttribute('href', '/tools/phonebook.team');
     await expect(section.getByRole('link', { name: 'Telefonbok' })).toHaveAttribute(
       'href',

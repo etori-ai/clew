@@ -1,4 +1,9 @@
 import type {
+  CommitmentAddBody,
+  CommitmentsInput,
+  CommitmentsResult,
+  TalkHeldBody,
+  TalksResult,
   GroupCapabilityInputType,
   UsersAdminOverview,
   StaffOverview,
@@ -148,9 +153,38 @@ async function converseStream(
 const post = <T>(path: string, body?: unknown) => call<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}) });
 const patch = <T>(path: string, body: unknown) => call<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
 const del = <T>(path: string) => call<T>(path, { method: 'DELETE' });
+/** A read capability's output alone, through the same route the panel's views use (`/api/cap/<name>?input=`). */
+const read = <T>(name: string, input: unknown) =>
+  call<{ output: T }>(`/api/cap/${name}?input=${encodeURIComponent(JSON.stringify(input))}`).then(r => r.output);
+const talkPath = (personId: string) => `/api/talks/${encodeURIComponent(personId)}`;
+const commitmentPath = (id: string) => `/api/talks/commitments/${encodeURIComponent(id)}`;
 export const api = {
   /** Personal (D94): the people on the units the signed-in manager manages; 403 for anyone else. */
   staff: () => call<StaffOverview>('/api/staff'),
+  /**
+   * Utvecklingssamtal (D96 items 7 to 9): the two composites of Clew's core connector and the built-in module's writes.
+   * A person without a talks system has the reads refused; `queries.ts` turns that refusal into `null`. The writes are
+   * only offered when a read said `writable`.
+   */
+  talks: {
+    /** `clew.talks`: the open round and one row per person on the reader's units. */
+    round: () => read<TalksResult>('clew.talks', {}),
+    /** `clew.commitments`: without `person` the reader's own and those about the reader; with it one employee's (their user name, else their id). */
+    commitments: (person?: string) =>
+      read<CommitmentsResult>('clew.commitments', (person ? { person } : {}) satisfies CommitmentsInput),
+    /** Marks the person's talk held, today in Swedish time unless `heldOn` says another day. */
+    markHeld: (personId: string, body: TalkHeldBody = {}) =>
+      post<{ id: string; heldOn: string }>(`${talkPath(personId)}/held`, body),
+    /** Undoes a held mark. */
+    unmarkHeld: (personId: string) => del<void>(`${talkPath(personId)}/held`),
+    /** Adds an action point in the person's talk, for the employee or the manager. */
+    addCommitment: (personId: string, body: CommitmentAddBody) =>
+      post<{ id: string }>(`${talkPath(personId)}/commitments`, body),
+    /** Marks an action point done (its owner only). */
+    complete: (id: string) => post<void>(`${commitmentPath(id)}/done`),
+    /** Opens a done action point again. */
+    reopen: (id: string) => del<void>(`${commitmentPath(id)}/done`),
+  },
   chatServices: () => call<{ services: McpService[]; deliveries: McpDelivery[] }>('/api/chat-services'),
   chatService: (id: string, deliveryId?: string) =>
     call<McpView>(
@@ -256,7 +290,7 @@ export const api = {
       post<UsersAdminOverview>('/api/admin/users/group-capabilities', input),
     removeGroupCapability: (input: GroupCapabilityInputType) =>
       post<UsersAdminOverview>('/api/admin/users/group-capabilities/remove', input),
-    // Utseende (D97): the installation's theme file and logo.
+    // Utseende (D98): the installation's theme file and logo.
     appearance: () => call<AppearanceAdminView>('/api/admin/appearance'),
     setTheme: (file: unknown) =>
       call<AppearanceAdminView>('/api/admin/appearance/theme', { method: 'PUT', body: JSON.stringify({ file }) }),

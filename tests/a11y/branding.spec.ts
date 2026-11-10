@@ -11,8 +11,8 @@ const profile = a11yBrandProfile(process.env.CLEW_A11Y_BRAND_PROFILE);
 const fixture = brandingFixtures[profile];
 const expectedLogo = savedBranding(profile).appearance.logo;
 
-test.describe(`D97 installation logo and theme (${profile})`, () => {
-  // The theme and the logo are what the installation has saved, so they are the API's answer (D97).
+test.describe(`D98 installation logo and theme (${profile})`, () => {
+  // The theme and the logo are what the installation has saved, so they are the API's answer (D98).
   test.beforeEach(async ({ api }) => {
     Object.assign(api, savedBranding(profile));
   });

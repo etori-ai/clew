@@ -90,7 +90,7 @@ adminRoutes.post('/users/group-capabilities/remove', async c =>
     ),
   ),
 );
-// Utseende (D97): the installation's theme file and logo, behind `admin.appearance`.
+// Utseende (D98): the installation's theme file and logo, behind `admin.appearance`.
 adminRoutes.get('/appearance', async c => c.json(await appearance.adminRead(c.get('session').context)));
 adminRoutes.put('/appearance/theme', async c => {
   const input = await body<AppearanceThemeInputType>(

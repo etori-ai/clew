@@ -1,5 +1,5 @@
 {
-  "id": "ada864bc-5c50-4790-8626-5c915bafa457",
+  "id": "6de9024a-1d3d-49d9-a432-1e2b3b88e39a",
   "prevId": "71adcca2-9182-4a48-8645-226f291defed",
   "version": "7",
   "dialect": "postgresql",
@@ -1508,84 +1508,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.installation_appearance": {
-      "name": "installation_appearance",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "revision": {
-          "name": "revision",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "theme": {
-          "name": "theme",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "logo_alt": {
-          "name": "logo_alt",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "logo_light_type": {
-          "name": "logo_light_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "logo_light": {
-          "name": "logo_light",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "logo_dark_type": {
-          "name": "logo_dark_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "logo_dark": {
-          "name": "logo_dark",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "installation_appearance_logo": {
-          "name": "installation_appearance_logo",
-          "value": "(\"installation_appearance\".\"logo_light\" IS NULL) = (\"installation_appearance\".\"logo_alt\" IS NULL) AND (\"installation_appearance\".\"logo_light\" IS NULL) = (\"installation_appearance\".\"logo_light_type\" IS NULL) AND (\"installation_appearance\".\"logo_dark\" IS NULL) = (\"installation_appearance\".\"logo_dark_type\" IS NULL) AND (\"installation_appearance\".\"logo_dark\" IS NULL OR \"installation_appearance\".\"logo_light\" IS NOT NULL)"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.job": {
       "name": "job",
       "schema": "",
@@ -3033,6 +2955,442 @@
             "id"
           ],
           "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.talk_commitment": {
+      "name": "talk_commitment",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "round_id": {
+          "name": "round_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner_role": {
+          "name": "owner_role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "text_sealed": {
+          "name": "text_sealed",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "due_on": {
+          "name": "due_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "done_at": {
+          "name": "done_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "done_by": {
+          "name": "done_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "talk_commitment_employee": {
+          "name": "talk_commitment_employee",
+          "columns": [
+            {
+              "expression": "employee_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "talk_commitment_thread": {
+          "name": "talk_commitment_thread",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "talk_commitment_owner_open": {
+          "name": "talk_commitment_owner_open",
+          "columns": [
+            {
+              "expression": "owner_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"talk_commitment\".\"done_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "talk_commitment_round_id_talk_round_id_fk": {
+          "name": "talk_commitment_round_id_talk_round_id_fk",
+          "tableFrom": "talk_commitment",
+          "tableTo": "talk_round",
+          "columnsFrom": [
+            "round_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "talk_commitment_employee_id_auth_person_id_fk": {
+          "name": "talk_commitment_employee_id_auth_person_id_fk",
+          "tableFrom": "talk_commitment",
+          "tableTo": "auth_person",
+          "columnsFrom": [
+            "employee_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "talk_commitment_owner_id_auth_person_id_fk": {
+          "name": "talk_commitment_owner_id_auth_person_id_fk",
+          "tableFrom": "talk_commitment",
+          "tableTo": "auth_person",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "talk_commitment_done_by_auth_person_id_fk": {
+          "name": "talk_commitment_done_by_auth_person_id_fk",
+          "tableFrom": "talk_commitment",
+          "tableTo": "auth_person",
+          "columnsFrom": [
+            "done_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "talk_commitment_created_by_auth_person_id_fk": {
+          "name": "talk_commitment_created_by_auth_person_id_fk",
+          "tableFrom": "talk_commitment",
+          "tableTo": "auth_person",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "talk_commitment_thread_id_thread_id_fk": {
+          "name": "talk_commitment_thread_id_thread_id_fk",
+          "tableFrom": "talk_commitment",
+          "tableTo": "thread",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "talk_commitment_owner_role": {
+          "name": "talk_commitment_owner_role",
+          "value": "\"talk_commitment\".\"owner_role\" IN ('employee', 'manager')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.talk_round": {
+      "name": "talk_round",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organisation_id": {
+          "name": "organisation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "opens_on": {
+          "name": "opens_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "due_on": {
+          "name": "due_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "closed_at": {
+          "name": "closed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "talk_round_open": {
+          "name": "talk_round_open",
+          "columns": [
+            {
+              "expression": "organisation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"talk_round\".\"closed_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "talk_round_kind": {
+          "name": "talk_round_kind",
+          "value": "\"talk_round\".\"kind\" IN ('development')"
+        },
+        "talk_round_period": {
+          "name": "talk_round_period",
+          "value": "\"talk_round\".\"due_on\" >= \"talk_round\".\"opens_on\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.talk": {
+      "name": "talk",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "round_id": {
+          "name": "round_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "held_on": {
+          "name": "held_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "held_by": {
+          "name": "held_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "talk_round_employee": {
+          "name": "talk_round_employee",
+          "columns": [
+            {
+              "expression": "round_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "employee_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "talk_round_id_talk_round_id_fk": {
+          "name": "talk_round_id_talk_round_id_fk",
+          "tableFrom": "talk",
+          "tableTo": "talk_round",
+          "columnsFrom": [
+            "round_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "talk_employee_id_auth_person_id_fk": {
+          "name": "talk_employee_id_auth_person_id_fk",
+          "tableFrom": "talk",
+          "tableTo": "auth_person",
+          "columnsFrom": [
+            "employee_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "talk_held_by_auth_person_id_fk": {
+          "name": "talk_held_by_auth_person_id_fk",
+          "tableFrom": "talk",
+          "tableTo": "auth_person",
+          "columnsFrom": [
+            "held_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

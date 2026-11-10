@@ -85,10 +85,10 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   const menu = headerQ.data?.menu ?? PENDING_MENU;
   const here = window.location.origin + location.pathname + location.search;
   const selected = selectedItem(menu, here);
-  // The band's theme (D88) is the installation's (D97), built once per saved theme.
+  // The band's theme (D88) is the installation's (D98), built once per saved theme.
   const branding = useBranding();
   const bandTheme = useMemo(() => createHeaderBandTheme(branding), [branding]);
-  // The connector's logo when it gives one, else the installation's own (D97).
+  // The connector's logo when it gives one, else the installation's own (D98).
   const logo = headerQ.data?.logo ?? branding.logo;
   // A system that does not answer is said at the top of every page (D8, D71 artboard 8), under the page's own banner.
   const silent = useSourceBanner();

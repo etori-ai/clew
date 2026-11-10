@@ -1,6 +1,6 @@
 # D38 · Municipal branding uses Astryx themes
 
-**Status:** accepted, extended by [D39](D39-compact-header-profile-and-reminders.md), default profile changed by [D46](D46-astryx-neutral-is-the-default-theme.md); the profile contract and `VITE_BRAND_PROFILE` superseded by [D97](D97-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md) (2026-11-10): a theme is an uploaded file, and Sundsvall's mapping is `themes/sundsvall/theme.tokens.json` · **Date:** 2026-11-05 · **Area:** ui
+**Status:** accepted, extended by [D39](D39-compact-header-profile-and-reminders.md), default profile changed by [D46](D46-astryx-neutral-is-the-default-theme.md); the profile contract and `VITE_BRAND_PROFILE` superseded by [D98](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md) (2026-11-10): a theme is an uploaded file, and Sundsvall's mapping is `themes/sundsvall/theme.tokens.json` · **Date:** 2026-11-05 · **Area:** ui
 
 **Decision.** Keep Astryx as the component system. Extend the existing Neutral-based theme in
 `packages/ui/src/theme.ts`; the shared ChatLayout focus-clearance override from D31 remains in every

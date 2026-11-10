@@ -31,7 +31,7 @@ const sundsvall = JSON.parse(
   readFileSync(new URL('../../themes/sundsvall/theme.tokens.json', import.meta.url), 'utf8'),
 );
 
-describe('the theme file and the base it is checked against (D97)', () => {
+describe('the theme file and the base it is checked against (D98)', () => {
   const resolved = {
     light: resolveClewTokens(NEUTRAL_BRANDING, 'light'),
     dark: resolveClewTokens(NEUTRAL_BRANDING, 'dark'),

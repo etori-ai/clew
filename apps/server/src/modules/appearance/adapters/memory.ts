@@ -1,7 +1,7 @@
 import { EMPTY_APPEARANCE, type AppearanceAuditEntry, type AppearanceRecord, type AppearanceStore } from '../ports';
 
 /**
- * The appearance store in memory (D25, D97): the unit tests' adapter, held to Postgres by
+ * The appearance store in memory (D25, D98): the unit tests' adapter, held to Postgres by
  * `tests/appearance-store-contract.ts`. A transaction is a snapshot; a throw rolls the record and its audit row back.
  */
 export interface MemoryAppearanceStore extends AppearanceStore {

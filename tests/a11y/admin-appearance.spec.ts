@@ -16,7 +16,7 @@ import {
 import { savedBranding } from './branding-fixtures';
 
 /**
- * Utseende (D97): the installation's theme and logo, chosen by an administrator. A theme file is read and checked in the
+ * Utseende (D98): the installation's theme and logo, chosen by an administrator. A theme file is read and checked in the
  * page, shown in both appearances and saved, and the whole app is redrawn at once; a file that does not hold names every
  * problem and saves nothing; a logo is uploaded with the name a screen reader reads. Keyboard, structure, announcements,
  * axe and reflow, at desktop, phone and 320 px.

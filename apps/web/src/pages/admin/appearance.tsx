@@ -52,7 +52,7 @@ import { PageHeader } from '../../components/page-header';
 import { AdminShell } from './shell';
 
 /**
- * "Utseende" (D97): the installation's theme and the logo in the header, chosen here and stored in Clew's database.
+ * "Utseende" (D98): the installation's theme and the logo in the header, chosen here and stored in Clew's database.
  * A theme is a file of colours in the Design Tokens format, or two colours this page makes the same kind of theme from;
  * either is read and checked in the browser with the code the server refuses a file with (`parseThemeFile`), shown in
  * both appearances, and saved only when it holds. A save redraws the whole app at once. Only Astryx: the preview is a

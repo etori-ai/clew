@@ -2,6 +2,7 @@ import { queryOptions } from '@tanstack/react-query';
 import type { Role, DocumentRequest } from '@clew/contracts';
 import { api } from './api';
 import { keys } from './query-keys';
+import { unlessRefused } from './query-policy';
 
 /**
  * Every read the browser makes, as query options (D33): the key from `query-keys.ts`, the call from `api.ts`, and the
@@ -13,6 +14,23 @@ export const threadQuery = (id: string) => queryOptions({ queryKey: keys.thread(
 export const areasQuery = queryOptions({ queryKey: keys.areas, queryFn: () => api.areas() });
 /** Personal (D94): the people on the units the manager manages; a 403 is the page's own state, not retried. */
 export const staffQuery = queryOptions({ queryKey: keys.staff, queryFn: () => api.staff(), retry: false });
+/**
+ * Utvecklingssamtal (D96): the round, and action points. `null` means the person has no talks system (the capability is
+ * refused, not offered): nothing to show and no error. Any other failure stays an error the page shows with Försök igen.
+ * Not retried, as the staff and errand reads are not.
+ */
+export const talksQuery = queryOptions({
+  queryKey: keys.talks.round,
+  queryFn: () => unlessRefused(api.talks.round()),
+  retry: false,
+});
+/** Without `person`: the reader's own action points and those about the reader (Hem). With it: one employee's (the drawer on Personal), by `userName ?? id`. */
+export const commitmentsQuery = (person?: string) =>
+  queryOptions({
+    queryKey: keys.talks.commitments(person),
+    queryFn: () => unlessRefused(api.talks.commitments(person)),
+    retry: false,
+  });
 /** The day and the model's status are extras on the page: a failure is tolerated, never retried, never shown as the page's error. */
 export const todayQuery = queryOptions({ queryKey: keys.today, queryFn: () => api.today(), retry: false });
 export const attentionQuery = queryOptions({ queryKey: keys.attention, queryFn: () => api.attention() });

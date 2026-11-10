@@ -11,7 +11,7 @@ export interface StoredLogo {
   dark: LogoImage | null;
 }
 /**
- * The installation's appearance as stored (D97): one record for the whole installation. An installation nobody has
+ * The installation's appearance as stored (D98): one record for the whole installation. An installation nobody has
  * configured has no row and reads as revision 0 with no theme and no logo, which is Astryx Neutral.
  */
 export interface AppearanceRecord {

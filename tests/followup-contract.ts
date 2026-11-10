@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import type { AuthenticatedContext } from '../packages/contracts/src';
-import type { CalendarBinder } from '../apps/server/src/modules/calendar/model';
+import type { Team } from '../apps/server/src/modules/calendar/model';
 import {
   followupUsecases,
   type FollowupSnapshot,
@@ -80,15 +80,20 @@ export function followupContract(name: string, make: () => Promise<Harness>) {
       principal: { id: 'person:' + h.id },
       authorize: async () => ({ version }),
     } as AuthenticatedContext;
-    const bind = (() => ({
-      members: [{ personId: h.id + ':invitee', email: 'invitee@example.test', name: 'Invitee' }],
-    })) as unknown as CalendarBinder;
+    const team: Team = async () => [
+      {
+        personId: h.id + ':invitee',
+        ref: 'mailto:invitee@example.test',
+        email: 'invitee@example.test',
+        name: 'Invitee',
+      },
+    ];
     return {
       actor,
       uc: followupUsecases({
         store: h.store,
         current: async () => actor,
-        bind,
+        team,
         clock: () => new Date(at),
         readReplies: async () => {},
       }),

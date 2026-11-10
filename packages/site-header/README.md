@@ -36,7 +36,7 @@ Serve `dist/` (all files: the entry loads its chunks by relative path) and put t
 | `selected`                        | The current item's id. Without it the page's address decides.                                                                                                                                               |
 | `login-href`                      | "Logga in" for a visitor who is not signed in.                                                                                                                                                              |
 | `user-name`, `logout-href` | The signed-in person, as the page's own system knows them (with single sign-on, the same person Clew knows), and where "Logga ut" goes. The header never asks who is signed in. |
-| `appearance-src` | The installation's own `/api/appearance` (D97): the saved theme and logo. Any origin may read it. Without it the header is Astryx Neutral with no logo. |
+| `appearance-src` | The installation's own `/api/appearance` (D98): the saved theme and logo. Any origin may read it. Without it the header is Astryx Neutral with no logo. |
 | `logo-src`, `logo-dark-src`, `logo-alt` | A logo of the page's own, in place of the installation's, and its variant for a dark bar. |
 | `appearance` | `auto` (default): the person's colour choice from Clew, stored in the browser for the domain, else the system's; the signed-in person can change it in their settings. `light`, `dark` or `system` fix it. |
 

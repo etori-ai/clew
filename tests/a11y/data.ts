@@ -1,4 +1,7 @@
 import type {
+  CommitmentsResult,
+  TalkRound,
+  TalksResult,
   UsersAdminOverview,
   StaffOverview,
   AssistantStatus,
@@ -348,18 +351,26 @@ export const areas: Area[] = [
   area('calendar', 'Kalender', {
     source: 'Kalendern',
     icon: 'calendar',
-    figure: {
-      label: 'Utvecklingssamtal bokade',
-      value: '14 av 23',
-      comparison: 'senast 28 november',
-      progress: { value: 14, max: 23 },
-      tone: 'none',
-      observedAt: NOW,
-    },
     needsYou: 1,
     urgency: 'soon',
     standing: [{ capability: 'calendar.today', label: 'Dagens möten', kind: 'read' }],
     schedules: [{ label: 'Bevakar utvecklingssamtalen', when: 'Måndagar 06:00' }],
+  }),
+  // The talks module's area (D96 item 7) carries the figure of talks held, which opens the round as a declared view:
+  // in the round of `talkRows()` one talk of four is held, and it is due by the round's `dueOn`.
+  area('talks', 'Utvecklingssamtal', {
+    connector: 'talks',
+    source: 'Utvecklingssamtal',
+    figure: {
+      label: 'Utvecklingssamtal hållna',
+      value: '1 av 4',
+      comparison: 'senast 30 november',
+      progress: { value: 1, max: 4 },
+      tone: 'none',
+      opens: { capability: 'talks.talks', title: 'Utvecklingssamtal' },
+      observedAt: NOW,
+    },
+    standing: [{ capability: 'talks.talks', label: 'Utvecklingssamtal', kind: 'read' }],
   }),
   area('personal', 'Personal', {
     connector: 'hr',
@@ -1090,6 +1101,193 @@ export const staffOverview = (): StaffOverview => ({
       ],
     },
   ],
+});
+/**
+ * Utvecklingssamtal (D96), as `clew.talks` and `clew.commitments` answer them over the people of `staffOverview()`
+ * (the same ids). Anna's talk is held, Erik's and Lena's are booked, Sara's is missing; Omar, the fritidshem's
+ * co-manager, is not in the round, so a page also meets a person without a row. Action points: Anna has one carried
+ * over, two open this round and one done; Erik one carried over (overdue) and one done from an earlier round; the test
+ * person, as an employee in their own talk, has their own and one their manager owns.
+ */
+export type TalkEntry = TalksResult['rows'][number];
+export type CommitmentEntry = CommitmentsResult['rows'][number];
+/** The built-in module answers: Clew can write. */
+export const TALKS_SOURCE = 'Utvecklingssamtal';
+/** Another system answers the profile: the pages are read-only and every row opens that system. */
+export const TALKS_READ_ONLY_SOURCE = 'Personalsystemet';
+/** What a write answers with `talksFail` set. */
+export const TALKS_FAIL_ERROR = 'Ändringen kunde inte sparas. Försök igen.';
+/** The day a talk is marked held when the body names none: today in Swedish time, by the frozen clock. */
+export const TODAY = '2026-11-04';
+/** The test person's user name, what `clew.commitments` takes as `person` for them. */
+export const USER_NAME = 'testa.testsson';
+export const talkRound = (): TalkRound => ({
+  label: 'Utvecklingssamtal hösten 2026',
+  opensOn: '2026-09-01',
+  dueOn: '2026-11-30',
+});
+const person = (id: string) => {
+  const p = staffOverview()
+    .units.flatMap(u => u.people)
+    .find(x => x.id === id);
+  return p
+    ? { personId: p.id, userName: p.userName ?? p.id, name: p.name }
+    : { personId: user.id, userName: USER_NAME, name: user.name };
+};
+/** One row per person in the round, without the open count, which follows the action points. */
+export const talkRows = (): Array<Omit<TalkEntry, 'openCommitments'>> =>
+  [
+    { id: 'anna', state: 'held' as const, at: '2026-11-03' },
+    { id: 'erik', state: 'booked' as const, at: '2026-11-11T08:00:00.000Z' },
+    { id: 'sara', state: 'missing' as const },
+    { id: 'lena', state: 'booked' as const, at: '2026-11-12T13:30:00.000Z' },
+  ].map(({ id, ...row }) => ({ ...person(id), ref: `talk:talks:${id}`, ...row }));
+const commitment = (
+  id: string,
+  about: string,
+  row: Pick<CommitmentEntry, 'owner' | 'mine' | 'text' | 'dueOn'> & Partial<CommitmentEntry>,
+): CommitmentEntry => ({
+  ...person(about),
+  id,
+  ref: `commitment:talks:${id}`,
+  done: false,
+  carried: false,
+  ...row,
+});
+/** Every action point the mock holds, writable (with `id`), in the order the server lists them. */
+export const allCommitments = (): CommitmentEntry[] => [
+  commitment('c-anna-1', 'anna', {
+    owner: 'employee',
+    mine: false,
+    text: 'Gå kursen i handledning',
+    dueOn: '2026-06-30',
+    carried: true,
+  }),
+  commitment('c-anna-2', 'anna', {
+    owner: 'manager',
+    mine: true,
+    text: 'Boka in auskultation i årskurs 4',
+    dueOn: '2026-11-27',
+  }),
+  commitment('c-anna-3', 'anna', {
+    owner: 'employee',
+    mine: false,
+    text: 'Uppdatera den individuella utvecklingsplanen',
+    dueOn: '2026-11-20',
+  }),
+  commitment('c-anna-4', 'anna', {
+    owner: 'employee',
+    mine: false,
+    text: 'Läsa in sig på den nya kursplanen',
+    dueOn: '2026-11-03',
+    done: true,
+    doneAt: '2026-11-03T14:00:00.000Z',
+  }),
+  commitment('c-erik-1', 'erik', {
+    owner: 'manager',
+    mine: true,
+    text: 'Se över schemat för rastvakter',
+    dueOn: '2026-05-29',
+    carried: true,
+  }),
+  commitment('c-erik-2', 'erik', {
+    owner: 'employee',
+    mine: false,
+    text: 'Hospitera hos specialpedagogen',
+    dueOn: '2026-04-30',
+    done: true,
+    doneAt: '2026-04-28T10:00:00.000Z',
+  }),
+  commitment('c-me-1', user.id, {
+    owner: 'employee',
+    mine: true,
+    text: 'Delta i nätverket för skolledare',
+    dueOn: '2026-03-31',
+    carried: true,
+  }),
+  commitment('c-me-2', user.id, {
+    owner: 'employee',
+    mine: true,
+    text: 'Gå den sista kursen i rektorsprogrammet',
+    dueOn: '2026-12-15',
+  }),
+  commitment('c-me-3', user.id, {
+    owner: 'manager',
+    mine: false,
+    text: 'Ta fram en plan för kompetensutveckling',
+    dueOn: '2026-11-30',
+  }),
+  commitment('c-me-4', user.id, {
+    owner: 'employee',
+    mine: true,
+    text: 'Skriva verksamhetsberättelsen',
+    dueOn: '2026-10-31',
+    done: true,
+    doneAt: '2026-10-28T09:00:00.000Z',
+  }),
+];
+/**
+ * `clew.talks` as the built-in module answers it: the round, one row per person with the open count from `commitments`.
+ * `bookedUnknown` is the answer when the calendar did not answer: no row is booked, and a missing one may be.
+ */
+export function talksResult({
+  round = talkRound(),
+  rows = talkRows(),
+  commitments = allCommitments(),
+  bookedUnknown = false,
+}: {
+  round?: TalkRound | null;
+  rows?: Array<Omit<TalkEntry, 'openCommitments'>>;
+  commitments?: CommitmentEntry[];
+  bookedUnknown?: boolean;
+} = {}): TalksResult {
+  return {
+    round,
+    rows: round
+      ? rows.map(row => {
+          const open = commitments.filter(c => c.personId === row.personId && !c.done).length;
+          if (!bookedUnknown || row.state !== 'booked') return { ...row, openCommitments: open };
+          const { at: _at, ...rest } = row;
+          return { ...rest, state: 'missing' as const, openCommitments: open };
+        })
+      : [],
+    ...(bookedUnknown ? { bookedUnknown: true } : {}),
+    writable: true,
+    source: TALKS_SOURCE,
+  };
+}
+/** An action point as answered: `carried` means from an earlier round and still open, so a done one is never carried. */
+const answered = (row: CommitmentEntry): CommitmentEntry => ({ ...row, carried: row.carried && !row.done });
+/** `clew.commitments` with `person`: one employee's action points, as their manager reads them. */
+export const commitmentsFor = (personId: string, commitments = allCommitments()): CommitmentsResult => ({
+  rows: commitments.filter(c => c.personId === personId).map(answered),
+  writable: true,
+  source: TALKS_SOURCE,
+});
+/**
+ * `clew.commitments` without `person`: the reader's own list, the action points about the reader (their own and the
+ * ones their manager owns, `mine: false`) and, for a manager, the ones the reader owns in their people's talks.
+ * `employee` leaves out the latter, as for someone who manages nobody.
+ */
+export const myCommitments = (commitments = allCommitments(), employee = false): CommitmentsResult => ({
+  rows: commitments.filter(c => c.personId === user.id || (!employee && c.mine)).map(answered),
+  writable: true,
+  source: TALKS_SOURCE,
+});
+/** Another system answers (D96 item 9): read-only, no `id`, and every row opens that system by its link. */
+export const readOnlyTalks = (result: TalksResult): TalksResult => ({
+  ...result,
+  rows: result.rows.map(row => ({ ...row, link: `https://personal.clew.test/samtal/${row.personId}` })),
+  writable: false,
+  source: TALKS_READ_ONLY_SOURCE,
+});
+export const readOnlyCommitments = (result: CommitmentsResult): CommitmentsResult => ({
+  rows: result.rows.map(({ id: _id, ...row }) => ({
+    ...row,
+    link: `https://personal.clew.test/atgarder/${row.ref.split(':').at(-1)}`,
+  })),
+  writable: false,
+  source: TALKS_READ_ONLY_SOURCE,
 });
 export const usersOverview = (): UsersAdminOverview => ({
   users: [

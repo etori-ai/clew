@@ -2,7 +2,7 @@ import { LOGO_MAX_BYTES, type LogoMediaType } from '@clew/contracts';
 import type { LogoImage } from './ports';
 
 /**
- * What an uploaded logo must be (D97). A PNG is recognised by its signature. An SVG is text a browser may run, so one
+ * What an uploaded logo must be (D98). A PNG is recognised by its signature. An SVG is text a browser may run, so one
  * that could carry script, load something from elsewhere or embed foreign markup is refused whole rather than cleaned:
  * a municipality's mark exported from a drawing tool has none of it. The header draws the logo through `img`, where an
  * SVG cannot run script, and the route serves it under a sandboxing policy; this check is the third lock, not the only one.

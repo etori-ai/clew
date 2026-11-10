@@ -11,7 +11,7 @@ import { adminRoutes } from './routes/admin';
 import { headerRoutes } from './routes/header';
 import { appearanceRoutes } from './routes/appearance';
 import { appearance } from './composition/appearance';
-import { connectorReconcile } from './composition';
+import { connectorReconcile, talksWritable } from './composition';
 import { applyAllRows, syncBundledRows, watchConnectors } from './connectors/reconcile';
 import { connectorRoutes } from './routes/connectors';
 import { protocolRoutes } from './routes/protocol';
@@ -31,6 +31,8 @@ import { scimRoutes } from './routes/scim';
 import { SCIM_CONTENT_TYPE, ScimError } from './modules/people/contracts';
 import { staffRoutes } from './routes/staff';
 import { scim } from './composition/people';
+import { talkRoutes } from './routes/talks';
+import { talks } from './composition/talks';
 
 // Local secrets written by `bun run auth:setup`. Never committed, never read by the browser bundle.
 for (const file of ['.env.local']) {
@@ -73,7 +75,7 @@ app.get('/api/health', c => c.json({ ok: true }));
 app.get('/api/ready', c => c.json({ ready: startup.ready() }, startup.ready() ? 200 : 503));
 // Signing in does not expose connector data and must not depend on connector startup.
 app.route('/api/auth', authRoutes);
-// The installation's theme and logo (D97): public and needed by the sign-in page, so it waits for nothing but the database.
+// The installation's theme and logo (D98): public and needed by the sign-in page, so it waits for nothing but the database.
 app.route('/api/appearance', appearanceRoutes(appearance));
 // The protocol is a contract, not data: public, and generated from code, so it needs nothing to have started (D60).
 app.route('/api/protocol', protocolRoutes);
@@ -96,6 +98,8 @@ app.route('/scim/v2', scimRoutes(scim, logPort('scim', 'error')));
 app.route('/api/admin', adminRoutes);
 // Personal (D94): a manager's people, scoped by the use case.
 app.route('/api/staff', staffRoutes);
+// The talks module's writes (D96), only while Clew's own module answers the talks profile for the person.
+app.route('/api/talks', talkRoutes({ talks, writable: talksWritable }));
 // The shared header (D88): what the person's header connector lists for them.
 app.route('/api/header', headerRoutes);
 app.route('/api/chat-services', mcpRoutes);

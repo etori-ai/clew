@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { NEUTRAL_BRANDING, readBranding, type Branding } from '@clew/ui/branding';
 
 /**
- * The installation's appearance in the browser (D97). It is read from `GET /api/appearance`, which is public, because
+ * The installation's appearance in the browser (D98). It is read from `GET /api/appearance`, which is public, because
  * the sign-in page is drawn with it. A copy is kept in the browser so that the next visit is drawn in the right colours
  * from its first frame; the copy is colours, a name and the logo's address, nothing about a person, and it is read back
  * through `readBranding`, which drops anything that is not a known colour token or a same-origin logo.

@@ -20,21 +20,38 @@ import {
   localClock,
 } from '@clew/calendar/dates';
 import { collides, freeGaps, planWeek, unplacedReasons, type Interval, type PlanInput } from '@clew/calendar/proposals';
-import type { ParticipantResponse } from '@clew/calendar/model';
+import type { CalendarProvider, EventOccurrence, ParticipantResponse } from '@clew/calendar/model';
 import { FOLLOW_UP, obligationPlan, returnAt, stepOf, waitingOnInvitee, type ObligationPlan } from './obligation';
 import { CalendarError } from '@clew/calendar/model';
 import { InputError } from '../../../context';
-import type { CalendarBinder, Notifier, ObligationTimers, People, ProposalRecord, ProposalStore } from '../model';
+import type {
+  CalendarBinder,
+  Notifier,
+  ObligationTimers,
+  People,
+  PlanningRound,
+  ProposalRecord,
+  ProposalStore,
+  RoundReader,
+  Team,
+  UnitMember,
+} from '../model';
+import { chunks, dueLabel } from '../domain';
 import { heldAddresses, SAMTAL_TITLE, toEvent } from './reads';
 
 /**
  * The calendar's use cases (D20, D25): the person's day and week, and the utvecklingssamtal proposal thread from
  * the nightly draw to the human decision, undo and the timer that makes a confirmation final. Built by a factory over
- * ports; `composition/calendar.ts` hands in Postgres and the real calendar bindings, the tests hand in memory.
+ * ports; `composition/calendar.ts` hands in Postgres and the real calendar bindings, the tests hand in memory. Who is
+ * planned for and by when come from the team and the round (D96 item 3), never from constants here.
  */
 export interface CalendarDeps {
   store: ProposalStore;
   bind: CalendarBinder;
+  /** The people the manager plans for, from the assignments. */
+  team: Team;
+  /** The open round of talks; none means nothing is planned. */
+  round: RoundReader;
   clock: () => Date;
   ids: () => string;
   /** The obligation's follow-ups (D30): who a thread belongs to, how to put a card in an invitee's stream, and the workflow timers. */
@@ -43,9 +60,36 @@ export interface CalendarDeps {
   obligations: ObligationTimers;
 }
 export const TOPIC = 'utvecklingssamtal';
-export const DEADLINE = '2026-11-28';
 export const UNDO_MS = 10 * 60_000;
 const SAMTAL_MINUTES = 60;
+/** A provider reads at most 32 days at a time; longer spans are read in windows of this many days. */
+const READ_DAYS = 31;
+/** A provider answers free-busy for at most eight people per request. */
+const FREE_BUSY_TARGETS = 8;
+const isoDate = /^\d{4}-\d{2}-\d{2}$/;
+/** Events from one date up to (not including) another, in windows the provider accepts, each event once. */
+async function listSpan(provider: CalendarProvider, from: string, to: string) {
+  const seen = new Map<string, EventOccurrence>();
+  for (let day = from; day < to; day = addDays(day, READ_DAYS)) {
+    const end = addDays(day, READ_DAYS) < to ? addDays(day, READ_DAYS) : to;
+    for (const e of await provider.list(dayStart(day), dayStart(end))) seen.set(e.id, e);
+  }
+  return [...seen.values()];
+}
+/** Free-busy for any number of people, asked in requests of at most eight, the answers merged in order. */
+async function freeBusyOf(provider: CalendarProvider, start: string, end: string, members: readonly UnitMember[]) {
+  const answers = await Promise.all(
+    chunks(members, FREE_BUSY_TARGETS).map(part =>
+      provider.freeBusy(
+        start,
+        end,
+        part.map(m => ({ ref: m.ref, email: m.email })),
+      ),
+    ),
+  );
+  return answers.flat();
+}
+const BOOKED = ['confirmed', 'final', 'accepted'];
 const interval = (p: { start: string; end: string }): Interval => ({ start: p.start, end: p.end });
 const toProposal = (p: ProposalRecord): Proposal => ({
   id: p.id,
@@ -90,7 +134,7 @@ const weekStartMismatch = (week: string) => {
 };
 
 export function calendarUsecases(deps: CalendarDeps) {
-  const { store, bind, clock, ids, people, notify, obligations } = deps;
+  const { store, bind, team, round, clock, ids, people, notify, obligations } = deps;
   const principal = (persona: AuthenticatedContext) => persona.principal.id;
   const todayDate = () => displayDate(clock().toISOString());
   const thread = async (persona: Pick<AuthenticatedContext, 'id'>, threadId: string) =>
@@ -98,8 +142,11 @@ export function calendarUsecases(deps: CalendarDeps) {
 
   async function listWeek(persona: AuthenticatedContext, from: string, days = 7) {
     const binding = bind(persona);
-    const events = await binding.provider.list(dayStart(from), dayStart(addDays(from, days)));
-    return { binding, events, view: events.map(e => toEvent(e, binding, persona.name)) };
+    const [events, members] = await Promise.all([
+      binding.provider.list(dayStart(from), dayStart(addDays(from, days))),
+      team(persona),
+    ]);
+    return { binding, events, view: events.map(e => toEvent(e, binding, persona.name, members)) };
   }
   async function readToday(persona: AuthenticatedContext): Promise<TodayView> {
     const date = todayDate();
@@ -122,36 +169,83 @@ export function calendarUsecases(deps: CalendarDeps) {
   async function weekOverview(persona: AuthenticatedContext, from?: string): Promise<WeekView> {
     return { ...(await weekView(persona, from)), proposals: (await store.activeProposals(persona.id)).map(toProposal) };
   }
-  /** Utvecklingssamtal already in the calendar between this week and the deadline, by participant address. */
-  async function heldSamtal(persona: AuthenticatedContext) {
+  /** Utvecklingssamtal already in the calendar between this week and the round's due date, by participant address. */
+  async function heldSamtal(persona: AuthenticatedContext, current: PlanningRound) {
     const binding = bind(persona);
-    // The provider caps a read at 32 days: from the start of this week to the day after the deadline.
-    const events = await binding.provider.list(dayStart(weekStart(todayDate())), dayStart(addDays(DEADLINE, 1)));
+    // From the start of this week to the day after the due date, in windows the provider accepts.
+    const events = await listSpan(binding.provider, weekStart(todayDate()), addDays(current.dueOn, 1));
     return { binding, done: heldAddresses(events) };
   }
-  /** What the nightly scan knows: who still lacks a samtal, and which proposals already exist. */
-  async function remaining(persona: AuthenticatedContext) {
-    const { binding, done } = await heldSamtal(persona);
-    const booked = await store.activeProposals(persona.id);
+  /**
+   * What the nightly scan knows: the team, who still lacks a samtal, and which proposals already exist. Held is the
+   * round's record (person ids) or a samtal in the calendar.
+   */
+  async function remaining(persona: AuthenticatedContext, current: PlanningRound) {
+    const { binding, done } = await heldSamtal(persona, current);
+    const [everyone, booked] = await Promise.all([team(persona), store.activeProposals(persona.id)]);
+    const recorded = new Set(current.held);
+    const isHeld = (m: UnitMember) => recorded.has(m.personId) || done.has(m.email.toLowerCase());
     const bookedEmails = new Set(
       booked.filter(p => p.status !== 'proposed').map(p => p.participant.email.toLowerCase()),
     );
-    const members = binding.members.filter(
-      m => !done.has(m.email.toLowerCase()) && !bookedEmails.has(m.email.toLowerCase()),
-    );
-    return { binding, members, done, booked };
+    const members = everyone.filter(m => !isHeld(m) && !bookedEmails.has(m.email.toLowerCase()));
+    return { binding, everyone, members, done, booked, isHeld };
   }
+  /** Held and booked out of the team before the round's due date; nothing to plan (`members: 0`) without a round. */
   async function samtalStatus(persona: AuthenticatedContext) {
-    const { binding, done, booked } = await remaining(persona);
-    const held = binding.members.filter(m => done.has(m.email.toLowerCase())).length;
+    const current = await round(persona);
+    if (!current) return { held: 0, booked: 0, members: 0, deadline: '' };
+    const { everyone, done, booked, isHeld } = await remaining(persona, current);
+    const heldEmails = new Set(everyone.filter(isHeld).map(m => m.email.toLowerCase()));
     const pending = booked
-      .filter(p => p.status === 'confirmed' || p.status === 'final' || p.status === 'accepted')
-      .filter(p => !done.has(p.participant.email.toLowerCase())).length;
-    return { held, booked: pending, members: binding.members.length, deadline: '28 november' };
+      .filter(p => BOOKED.includes(p.status))
+      .filter(
+        p => !done.has(p.participant.email.toLowerCase()) && !heldEmails.has(p.participant.email.toLowerCase()),
+      ).length;
+    return { held: heldEmails.size, booked: pending, members: everyone.length, deadline: dueLabel(current.dueOn) };
+  }
+  /**
+   * The booked talks of the manager's team inside a period (D96 item 2): per person id, the start of a samtal in the
+   * manager's calendar or of a confirmed proposal, the next one to come when there are several, else the latest.
+   * Undefined when the calendar cannot be read; whether a talk was held is the round's record, not this read's.
+   */
+  async function samtalBookings(
+    persona: AuthenticatedContext,
+    period: { opensOn: string; dueOn: string },
+  ): Promise<Map<string, { at: string }> | undefined> {
+    if (!isoDate.test(period.opensOn) || !isoDate.test(period.dueOn)) throw new InputError('Ogiltig period.');
+    const everyone = await team(persona);
+    const bookings = new Map<string, { at: string }>();
+    if (!everyone.length || period.opensOn > period.dueOn) return bookings;
+    let events: EventOccurrence[];
+    try {
+      events = await listSpan(bind(persona).provider, period.opensOn, addDays(period.dueOn, 1));
+    } catch {
+      return undefined;
+    }
+    const byEmail = new Map(everyone.map(m => [m.email.toLowerCase(), m]));
+    const starts = new Map<string, string[]>();
+    const add = (email: string, start: string) => {
+      const member = byEmail.get(email.toLowerCase()),
+        day = displayDate(start);
+      if (!member || day < period.opensOn || day > period.dueOn) return;
+      starts.set(member.personId, [...(starts.get(member.personId) ?? []), start]);
+    };
+    for (const e of events)
+      if (!e.allDay && e.title.startsWith(SAMTAL_TITLE))
+        for (const p of e.participants) if (!p.resource && p.response !== 'declined') add(p.email, e.start);
+    for (const p of await store.activeProposals(persona.id))
+      if (BOOKED.includes(p.status)) add(p.participant.email, p.start);
+    const now = clock().getTime();
+    for (const [personId, list] of starts) {
+      const sorted = list.sort((a, b) => Date.parse(a) - Date.parse(b));
+      bookings.set(personId, { at: sorted.find(s => Date.parse(s) >= now) ?? sorted.at(-1)! });
+    }
+    return bookings;
   }
   /** Draw proposals for one week. Reads the manager's calendar and the unit's free-busy, nothing is written to any source. */
-  async function draw(persona: AuthenticatedContext, week: string, excludeThread?: string) {
-    const { binding, members } = await remaining(persona);
+  async function draw(persona: AuthenticatedContext, current: PlanningRound, week: string, excludeThread?: string) {
+    const { binding, members } = await remaining(persona, current);
     if (!members.length)
       return {
         members,
@@ -162,11 +256,7 @@ export function calendarUsecases(deps: CalendarDeps) {
       end = dayStart(addDays(week, 5));
     const [events, busy, existing] = await Promise.all([
       binding.provider.list(start, end),
-      binding.provider.freeBusy(
-        start,
-        end,
-        members.map(m => ({ ref: m.ref, email: m.email })),
-      ),
+      freeBusyOf(binding.provider, start, end, members),
       store.activeProposals(persona.id),
     ]);
     const managerBusy: Interval[] = [
@@ -184,9 +274,9 @@ export function calendarUsecases(deps: CalendarDeps) {
     const planned = planWeek(input);
     return { members, planned, unplaced: unplacedReasons(input, planned) };
   }
-  function explain(week: string, planned: number, members: number) {
-    const daysLeft = Math.ceil((Date.parse(dayStart(DEADLINE)) - clock().getTime()) / 86400000);
-    const head = `${members} utvecklingssamtal återstår före 28 november, om ${daysLeft} dagar.`;
+  function explain(current: PlanningRound, week: string, planned: number, members: number) {
+    const daysLeft = Math.ceil((Date.parse(dayStart(current.dueOn)) - clock().getTime()) / 86400000);
+    const head = `${members} utvecklingssamtal återstår före ${dueLabel(current.dueOn)}, om ${daysLeft} dagar.`;
     if (!planned)
       return `${head} Vecka ${weekNumber(week)} har inga lediga timmar som passar både dig och medarbetarna. Prova en annan vecka.`;
     const tail =
@@ -217,8 +307,18 @@ export function calendarUsecases(deps: CalendarDeps) {
       remindedAt: null,
     }));
   /**
-   * The nightly scan (and the first visit): one open thread per topic. Re-running refreshes the proposals of an
-   * untouched thread; it never silently changes confirmed ones.
+   * The planning thread that belongs to this round: the newest one when it is still open or was created since the round
+   * opened, else an older one that is open again. A thread handled in an earlier round does not count.
+   */
+  async function roundThread(persona: AuthenticatedContext, current: PlanningRound) {
+    const latest = await store.latestThread(persona.id, TOPIC);
+    if (latest && (latest.thread.state === 'open' || displayDate(latest.thread.createdAt) >= current.opensOn))
+      return latest;
+    return store.openThread(persona.id, TOPIC);
+  }
+  /**
+   * The nightly scan (and the first visit): one open thread per topic and round. Re-running refreshes the proposals of
+   * an untouched thread; it never silently changes confirmed ones. Without an open round nothing is planned.
    */
   async function ensureProposalThread(
     persona: AuthenticatedContext,
@@ -226,7 +326,9 @@ export function calendarUsecases(deps: CalendarDeps) {
   ): Promise<Thread | undefined> {
     if (persona.role !== 'manager') return undefined;
     await persona.authorize();
-    const existing = await store.latestThread(persona.id, TOPIC);
+    const current = await round(persona);
+    if (!current) return undefined;
+    const existing = await roundThread(persona, current);
     if (existing) {
       // A thread drawn before rows existed gets them now, so the card and the conversation see one draft mechanism.
       const proposed = existing.proposals.filter(p => p.status === 'proposed');
@@ -250,13 +352,13 @@ export function calendarUsecases(deps: CalendarDeps) {
       return existing.thread;
     }
     const week = nextWeekStart(todayDate());
-    const { members, planned, unplaced } = await draw(persona, week);
+    const { members, planned, unplaced } = await draw(persona, current, week);
     if (!members.length) return undefined;
     const at = clock().toISOString(),
       id = ids();
     await persona.authorize();
     const inserted = await store.transaction(async tx => {
-      const summary = explain(week, planned.length, members.length);
+      const summary = explain(current, week, planned.length, members.length);
       const created = await tx.insertThread({
         id,
         personId: persona.id,
@@ -265,7 +367,7 @@ export function calendarUsecases(deps: CalendarDeps) {
         week,
         area: 'utvecklingssamtal',
         summary,
-        trigger: { reason: `${members.length} samtal saknar tid före 28 november`, source, at },
+        trigger: { reason: `${members.length} samtal saknar tid före ${dueLabel(current.dueOn)}`, source, at },
         createdAt: at,
         updatedAt: at,
       });
@@ -291,7 +393,9 @@ export function calendarUsecases(deps: CalendarDeps) {
     if (!current || current.thread.state !== 'open') throw new InputError('Kortet är redan hanterat.');
     if (Date.parse(dayStart(week)) < Date.parse(dayStart(todayDate())) || weekStartMismatch(week))
       throw new InputError('Välj en kommande vecka.');
-    const { members, planned, unplaced } = await draw(persona, week, threadId);
+    const open = await round(persona);
+    if (!open) throw new InputError('Det finns ingen omgång av utvecklingssamtal att planera just nu.');
+    const { members, planned, unplaced } = await draw(persona, open, week, threadId);
     const at = clock().toISOString();
     await store.transaction(async tx => {
       const locked = await tx.lockThread(persona.id, threadId);
@@ -311,7 +415,11 @@ export function calendarUsecases(deps: CalendarDeps) {
         updatedAt: at,
       });
       await tx.addMessage(threadId, { role: 'user', body: `Vecka ${weekNumber(week)} i stället`, at });
-      await tx.addMessage(threadId, { role: 'assistant', body: explain(week, planned.length, members.length), at });
+      await tx.addMessage(threadId, {
+        role: 'assistant',
+        body: explain(open, week, planned.length, members.length),
+        at,
+      });
       await tx.writeAudit({
         actor: principal(persona),
         action: 'proposals.replanned',
@@ -361,12 +469,13 @@ export function calendarUsecases(deps: CalendarDeps) {
       }
     }
     if (!accepted.length && !declined.length) return { accepted: [], declined: [] };
+    const everyone = declined.length ? await team(persona) : [];
     const now = clock(),
       at = now.toISOString();
     // Two alternatives per no, drawn like any proposal: the person's own busy time and the manager's, this week or the next.
     const alternatives: ProposalRecord[] = [];
     for (const p of declined) {
-      const member = binding.members.find(m => m.email.toLowerCase() === p.participant.email.toLowerCase());
+      const member = everyone.find(m => m.email.toLowerCase() === p.participant.email.toLowerCase());
       const week =
         Date.parse(dayStart(current.thread.week ?? todayDate())) > now.getTime()
           ? current.thread.week!
@@ -375,9 +484,7 @@ export function calendarUsecases(deps: CalendarDeps) {
         end = dayStart(addDays(week, 5));
       const [events, busy, existing] = await Promise.all([
         binding.provider.list(start, end),
-        member
-          ? binding.provider.freeBusy(start, end, [{ ref: member.ref, email: member.email }])
-          : Promise.resolve([]),
+        member ? freeBusyOf(binding.provider, start, end, [member]) : Promise.resolve([]),
         store.activeProposals(persona.id),
       ]);
       const periods = busy[0];
@@ -544,6 +651,7 @@ export function calendarUsecases(deps: CalendarDeps) {
     weekView,
     weekOverview,
     samtalStatus,
+    samtalBookings,
     ensureProposalThread,
     replan,
     closeUndoWindow,

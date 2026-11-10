@@ -32,8 +32,10 @@ export function toThread(
   proposalRows: ProposalRow[],
   timerRows: Array<typeof timerIntents.$inferSelect> = [],
 ): Thread {
+  // Only the person's own timers (`reminder`, `snooze`) are theirs to see and cancel; an `obligation` (D30) or an action
+  // point's `due` timer (D96) is the system's and never listed.
   const timers = timerRows
-    .filter(t => t.kind !== 'obligation' && ['active', 'blocked'].includes(t.state))
+    .filter(t => (t.kind === 'reminder' || t.kind === 'snooze') && ['active', 'blocked'].includes(t.state))
     .map(t => ({
       kind: t.kind as 'reminder' | 'snooze',
       dueAt: t.dueAt.toISOString(),

@@ -10,7 +10,7 @@ const { red, green, white, neutral } = neutralPalettes;
  * Every brand inherits Astryx Neutral with shared component overrides (D31 item 8, D39): ChatLayout docks the composer on a sticky
  * surface and sets no scroll padding, so a control the browser scrolls to the bottom edge would land under the dock
  * (WCAG 2.4.11). The padding is the height of the tallest dock the start page draws (the piles row and the compact
- * composer with its drawer open). An installation's theme changes colour tokens, not behaviour (D38, D97). Runtime
+ * composer with its drawer open). An installation's theme changes colour tokens, not behaviour (D38, D98). Runtime
  * rather than built: the page renders after its JavaScript anyway, so first paint is the same.
  */
 const clewBaseTheme = defineTheme({
@@ -80,7 +80,7 @@ const clewBaseTheme = defineTheme({
     'side-nav-heading': { base: { paddingBlock: 'var(--spacing-1)' } },
     // Progress bars (D71 item 5, amended 2026-11-10). Neutral draws the track in `--color-border-emphasized` and the
     // `neutral` variant fills with `--color-text-disabled`: 2.1:1 in the light appearance and the same grey as the track
-    // in the dark one, and an installation's theme may make its emphasized border any colour (D97). The track is
+    // in the dark one, and an installation's theme may make its emphasized border any colour (D98). The track is
     // Astryx's own track colour, which Slider and Spinner read, and the neutral fill is the text colour, as artboard 3
     // draws the bar: 13.9:1 and 6.5:1, held for a theme file by the `text-primary` on `track` pair.
     'progress-bar': { base: { '--color-background-muted': 'var(--color-track)' } },
@@ -100,7 +100,7 @@ const themes = new Map<string, ClewTheme>(),
   bands = new Map<string, ClewTheme>();
 
 /**
- * The installation's theme (D97): Clew's base with the colours an administrator saved, each as Astryx's own
+ * The installation's theme (D98): Clew's base with the colours an administrator saved, each as Astryx's own
  * `[light, dark]` pair. The colours arrive validated (known tokens, opaque hex, contrast held against the base); the
  * focus ring follows the accent, as it does in Neutral. No theme saved is the base itself, Astryx Neutral (D46).
  */
@@ -166,6 +166,6 @@ export function createHeaderBandTheme(branding: Branding): ClewTheme {
   return theme;
 }
 
-/** The values a theme's tokens resolve to in one appearance, without React: what `THEME_BASE_COLORS` is held to (D97). */
+/** The values a theme's tokens resolve to in one appearance, without React: what `THEME_BASE_COLORS` is held to (D98). */
 export const resolveClewTokens = (branding: Branding, mode: 'light' | 'dark') =>
   resolveThemeTokens(createClewTheme(branding), { mode }) as Record<string, string>;

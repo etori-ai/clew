@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { AppearanceUsecases } from '../modules/appearance/usecases';
 
 /**
- * The installation's appearance (D97), public: the sign-in page is drawn with it, and so is the shared header on
+ * The installation's appearance (D98), public: the sign-in page is drawn with it, and so is the shared header on
  * another site, which is why any origin may read it. It carries colours, a name and the logo's address, nothing about
  * a person, and the browser asks again on every visit (`no-cache`) so a change by an administrator is seen at once.
  */

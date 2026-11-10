@@ -183,6 +183,7 @@ The [testing and deployment guide](testing-and-deployment.md) covers this from a
 | Scans and figures | The source can report outstanding occurrences or a meaningful area figure | [Actions](actions-and-receipts.md), [protocol](../reference/connector-protocol.md) |
 | Writes and undo | Source permissions, preconditions, evidence and recovery are established | [Actions and receipts](actions-and-receipts.md) |
 | Callbacks and jobs | A read needs another source, or one task needs changes/follow-up in several systems | [Working across connectors](../architecture/working-across-connectors.md) |
+| The talks profile | Your system holds utvecklingssamtal and their action points, and an installation uses it instead of Clew's own module | Reads `<id>.talks` and `<id>.commitments` in the [protocol](../reference/connector-protocol.md#related-profiles), [D96](../decisions/D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md), the fixture [connectors/appraisals](../../connectors/appraisals/README.md) |
 
 For a connector that participates in multi-system tasks, declare the fact kinds it creates and the facts its proposal capabilities follow. Clew assembles those offered steps into a job for one approval after an administrator binds them. Each connector supplies only its own writes or watches; Clew coordinates their progress. [The job design](../architecture/working-across-connectors.md#jobs-facts-followers-and-one-approval) also explains the planned next proposal after a confirmed result.
 

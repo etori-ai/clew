@@ -5,7 +5,7 @@ For the administrator of an installation. Connector authors declare semantic vie
 ## Theme and logo
 
 An installation's colours and its header logo are saved in Clew, on **Administration › Utseende**, by a person with
-the grant capability `admin.appearance` ([D97](../decisions/D97-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md)).
+the grant capability `admin.appearance` ([D98](../decisions/D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md)).
 A save applies at once, to every page and every person, the sign-in page included. Nothing is configured in the
 build or the environment, and nothing needs a restart. An installation nobody has configured is Astryx Neutral
 with no logo ([D46](../decisions/D46-astryx-neutral-is-the-default-theme.md)).

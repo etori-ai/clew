@@ -2,9 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
 import { memoryCalendar, occurrence } from '../../packages/calendar/src/memory';
 import { localInstant } from '../../packages/calendar/src/dates';
-import type { UnitMember } from '../../packages/calendar/src/accounts';
 import { memoryObligations, memoryProposalStore } from '../../apps/server/src/modules/calendar/adapters/memory';
-import type { NotifyDraft } from '../../apps/server/src/modules/calendar/model';
+import type { NotifyDraft, PlanningRound, UnitMember } from '../../apps/server/src/modules/calendar/model';
 import {
   FOLLOW_UP,
   nextCheck,
@@ -15,6 +14,7 @@ import {
 import { dayLoad, unplacedReasons, planWeek } from '../../packages/calendar/src/proposals';
 import { obligationStep, replySummary } from '../../packages/contracts/src/index';
 import { calendarUsecases, TOPIC } from '../../apps/server/src/modules/calendar/usecases/samtal';
+import { chunks, dueLabel, teamFromStaff } from '../../apps/server/src/modules/calendar/domain';
 
 /**
  * The utvecklingssamtal path end to end without Nextcloud or Postgres (D25): the real planner over a calendar in
@@ -59,16 +59,21 @@ function fakeClock(start = T0) {
     },
   });
 }
-function world() {
+/** The round the planner works towards in these tests: the deadline the planner had before D96. */
+const ROUND: PlanningRound = { label: 'Utvecklingssamtal 2026', opensOn: '2026-09-01', dueOn: '2026-11-28', held: [] };
+function world(options: { round?: PlanningRound | null; team?: UnitMember[] } = {}) {
   const calendar = memoryCalendar(account),
     store = memoryProposalStore(),
     clock = fakeClock(),
     obligations = memoryObligations();
   const notified: Array<{ personId: string; draft: NotifyDraft }> = [];
   let n = 0;
+  const setting = { round: options.round === undefined ? ROUND : options.round, team: options.team ?? members };
   const deps = {
     store,
-    bind: (p: AuthenticatedContext) => ({ provider: calendar, members: p.role === 'manager' ? members : [] }),
+    bind: () => ({ provider: calendar }),
+    team: async (p: AuthenticatedContext) => (p.role === 'manager' ? setting.team : []),
+    round: async () => setting.round,
     clock,
     ids: () => `id-${++n}`,
     people: { personaFor: async (id: string) => (id === 'hillevi' ? hillevi : undefined) },
@@ -79,7 +84,7 @@ function world() {
     obligations,
   };
   const usecases = calendarUsecases(deps);
-  return { calendar, store, clock, obligations, notified, deps, ...usecases };
+  return { calendar, store, clock, obligations, notified, deps, setting, ...usecases };
 }
 async function seedConfirmed(w: ReturnType<typeof world>, threadId: string, ids: string[]) {
   const current = (await w.store.readThread(hillevi.id, threadId))!;
@@ -444,5 +449,146 @@ describe('the obligation (D30)', () => {
       { participant: free, reason: 'dina lediga timmar räckte inte' },
     ]);
     expect(FOLLOW_UP.maxReminders).toBe(2);
+  });
+});
+
+describe('the round and the team (D96 item 3)', () => {
+  test('without an open round nothing is planned: no thread, no audit row, nothing to count', async () => {
+    const w = world({ round: null });
+    expect(await w.ensureProposalThread(hillevi)).toBeUndefined();
+    expect(await w.store.latestThread(hillevi.id, TOPIC)).toBeUndefined();
+    expect(w.store.audit).toEqual([]);
+    expect(await w.samtalStatus(hillevi)).toEqual({ held: 0, booked: 0, members: 0, deadline: '' });
+  });
+  test('a person whose talk the round records as held is not planned for and counts as held', async () => {
+    const anna = members.find(m => m.name === 'Anna Lindqvist')!;
+    const w = world({ round: { ...ROUND, held: [anna.personId] } });
+    const t = (await w.ensureProposalThread(hillevi))!;
+    expect(t.proposals.map(p => p.participant.name).sort()).toEqual([
+      'Erik Sandström',
+      'Johan Byström',
+      'Maria Källström',
+    ]);
+    expect(t.trigger.reason).toBe('3 samtal saknar tid före 28 november');
+    expect(await w.samtalStatus(hillevi)).toEqual({ held: 1, booked: 0, members: 4, deadline: '28 november' });
+  });
+  test("the deadline in every text is the round's due date, and a long span is read in windows the provider accepts", async () => {
+    const w = world({ round: { ...ROUND, dueOn: '2026-12-18' } });
+    const windows: number[] = [];
+    const list = w.calendar.list.bind(w.calendar);
+    w.calendar.list = async (start, end) => {
+      windows.push((Date.parse(end) - Date.parse(start)) / 86_400_000);
+      return list(start, end);
+    };
+    const t = (await w.ensureProposalThread(hillevi))!;
+    expect(t.trigger.reason).toBe('4 samtal saknar tid före 18 december');
+    expect(t.summary).toContain('4 utvecklingssamtal återstår före 18 december, om 44 dagar.');
+    expect(await w.samtalStatus(hillevi)).toMatchObject({ members: 4, deadline: '18 december' });
+    expect(windows.length).toBeGreaterThan(2);
+    expect(windows.every(days => days <= 32)).toBe(true);
+  });
+  test('a thread handled before the round opened does not block a new one; one created since the round opened does', async () => {
+    const w = world({ round: { ...ROUND, opensOn: '2026-11-01' } });
+    const first = (await w.ensureProposalThread(hillevi))!;
+    await w.dismiss(hillevi, first.id);
+    // Created on 4 November, inside the round that opened on 1 November: handled, it still counts for this round.
+    expect((await w.ensureProposalThread(hillevi))!.id).toBe(first.id);
+    expect(w.store.audit.filter(e => e.action === 'thread.pushed')).toHaveLength(1);
+    // The next round opens the day after: the handled thread belongs to the earlier round and a new one is drawn.
+    w.clock.advance(24 * 60 * MINUTE);
+    w.setting.round = { ...ROUND, label: 'Nästa omgång', opensOn: '2026-11-05', dueOn: '2026-12-04' };
+    const next = (await w.ensureProposalThread(hillevi))!;
+    expect(next.id).not.toBe(first.id);
+    expect(next).toMatchObject({ state: 'open', trigger: { reason: '4 samtal saknar tid före 4 december' } });
+    expect(w.store.audit.filter(e => e.action === 'thread.pushed')).toHaveLength(2);
+    expect((await w.ensureProposalThread(hillevi))!.id).toBe(next.id);
+  });
+  test('a team larger than eight is asked for free-busy in requests of at most eight', async () => {
+    const team: UnitMember[] = Array.from({ length: 11 }, (_, i) => ({
+      personId: 'p' + i,
+      ref: 'mailto:p' + i + '@clew.test',
+      email: 'p' + i + '@clew.test',
+      name: 'Person ' + i,
+    }));
+    const w = world({ team });
+    const asked: number[] = [];
+    const freeBusy = w.calendar.freeBusy.bind(w.calendar);
+    w.calendar.freeBusy = async (start, end, targets) => {
+      if (targets.length > 8) throw new Error('more than eight targets');
+      asked.push(targets.length);
+      return freeBusy(start, end, targets);
+    };
+    const t = (await w.ensureProposalThread(hillevi))!;
+    expect(asked.sort((a, b) => b - a)).toEqual([8, 3]);
+    expect(t.proposals.length + t.items.filter(i => i.ref.startsWith('unplaced:')).length).toBe(11);
+    expect(t.trigger.reason).toBe('11 samtal saknar tid före 28 november');
+  });
+  test("the booked talks of the team: each person's start inside the period, undefined when the calendar fails", async () => {
+    const w = world();
+    const t = (await w.ensureProposalThread(hillevi))!;
+    const booked = t.proposals.filter(p => ['anna@clew.test', 'erik@clew.test'].includes(p.participant.email));
+    await seedConfirmed(
+      w,
+      t.id,
+      booked.map(p => p.id),
+    );
+    const period = { opensOn: ROUND.opensOn, dueOn: ROUND.dueOn };
+    const bookings = (await w.samtalBookings(hillevi, period))!;
+    expect(Object.fromEntries(bookings)).toEqual({
+      anna: { at: booked.find(p => p.participant.email === 'anna@clew.test')!.start },
+      erik: { at: booked.find(p => p.participant.email === 'erik@clew.test')!.start },
+    });
+    // Outside the period nothing is booked; an employee has no team.
+    expect((await w.samtalBookings(hillevi, { opensOn: '2026-12-01', dueOn: '2026-12-20' }))!.size).toBe(0);
+    expect((await w.samtalBookings(hassan, period))!.size).toBe(0);
+    w.calendar.list = async () => {
+      throw new Error('The calendar did not answer.');
+    };
+    expect(await w.samtalBookings(hillevi, period)).toBeUndefined();
+  });
+});
+
+describe('the team from the assignments', () => {
+  const person = (id: string, email: string | null, enabled = true) => ({
+    id,
+    name: 'Namn ' + id,
+    userName: id,
+    email,
+    role: 'employee' as const,
+    enabled,
+  });
+  test('everyone on the managed units but the manager, once, active and with an address, as a mailto ref', () => {
+    const team = teamFromStaff(
+      {
+        units: [
+          {
+            unitId: 'unit-a',
+            unitLabel: 'A',
+            people: [person('anna', 'anna@clew.test'), person('hillevi', 'hillevi@clew.test'), person('ola', null)],
+          },
+          {
+            unitId: 'unit-b',
+            unitLabel: 'B',
+            people: [
+              person('anna', 'anna@clew.test'),
+              person('bo', 'bo@clew.test', false),
+              person('eva', 'eva@clew.test'),
+            ],
+          },
+        ],
+      },
+      'hillevi',
+    );
+    expect(team).toEqual([
+      { personId: 'anna', ref: 'mailto:anna@clew.test', email: 'anna@clew.test', name: 'Namn anna' },
+      { personId: 'eva', ref: 'mailto:eva@clew.test', email: 'eva@clew.test', name: 'Namn eva' },
+    ]);
+    expect(teamFromStaff({ units: [] }, 'hillevi')).toEqual([]);
+  });
+  test('a due date reads as a Swedish day and month, and lists are cut in slices', () => {
+    expect(dueLabel('2026-11-28')).toBe('28 november');
+    expect(dueLabel('2027-01-05')).toBe('5 januari');
+    expect(chunks([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
+    expect(chunks([], 8)).toEqual([]);
   });
 });

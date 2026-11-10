@@ -1,5 +1,5 @@
 /**
- * Set the installation's theme and logo (D97) from the command line, as an alternative to Administration › Utseende.
+ * Set the installation's theme and logo (D98) from the command line, as an alternative to Administration › Utseende.
  * Runs inside the app container with the server's local settings (DATABASE_URL). The work is the appearance use cases'
  * `operator` side: the same checks of the theme file and the images as an upload meets, the same audit rows, with
  * `bootstrap:appearance` as the actor. Every browser reads the change on its next visit; nothing is restarted.
