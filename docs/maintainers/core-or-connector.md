@@ -6,7 +6,8 @@ domain Clew owns, reached through a connector to a system that keeps owning it, 
 Decided in [D95](../decisions/D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist.md)
 (2026-11-10): part of Clew's purpose is to remove third-party dependencies, so Clew may own a domain by choice. The
 hard stops and the questions on this page change only together with a numbered decision. The reasoning is in the
-exploration [the layer where Clew owns the feature and its data](../reviews/2026-11-10-owned-domains-against-evity.md);
+exploration
+[the layer where Clew owns the feature and its data](../reviews/2026-11-10-owned-domains-against-a-commercial-hr-system.md);
 the product rule is in the [vision](../vision.md), "Own the domain where that removes a system". No owned domain is
 built yet.
 

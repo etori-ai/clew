@@ -3022,16 +3022,16 @@
       ]
     },
     {
-      "path": "docs/reviews/2026-11-10-owned-domains-against-evity.md",
-      "title": "Exploration: the layer where Clew owns the feature and its data, against Evity · 2026-11-10",
+      "path": "docs/reviews/2026-11-10-owned-domains-against-a-commercial-hr-system.md",
+      "title": "Exploration: the layer where Clew owns the feature and its data, against a commercial HR system · 2026-11-10",
       "category": "review-history",
       "headings": [
         "The question",
         "Short answer",
-        "What Evity is",
+        "What the reference product is",
         "What Clew has today",
         "The line: what Clew may own",
-        "Evity's fifteen, sorted",
+        "The reference product's fifteen, sorted",
         "Five building blocks, not fifteen modules",
         "What the layer is in code",
         "Rules that need restating",

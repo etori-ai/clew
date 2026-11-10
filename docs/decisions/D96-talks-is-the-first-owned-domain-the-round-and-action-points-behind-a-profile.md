@@ -55,7 +55,7 @@ record of the talk itself (preparation, notes, approval) is not decided here.
 
 | Question | Answer |
 |---|---|
-| 1. It removes something | The talk feature of an HR system (the reference is Evity's medarbetarsamtal) or the mail and document template used instead. What Sundsvall uses today is unconfirmed |
+| 1. It removes something | The talk feature of an HR system (the reference is the medarbetarsamtal feature of a commercial HR system) or the mail and document template used instead. What Sundsvall uses today is unconfirmed |
 | 2. The same everywhere | Yes. What differs is a period and a due date, which are data |
 | 3. Work between people who use Clew | Yes. Every action point is a work item in its owner's stream |
 | 4. Small | Yes. The round is D30's obligation with its constants made data; an action point is a thread with a timer; one new timer kind |
@@ -75,11 +75,11 @@ this domain runs on the development stack's synthetic directory and nowhere else
 booking, reminders and follow-up are built and Personal is where it sits; it serves every manager and every
 employee; and it builds the two blocks the other candidates need (the round for the annual plan, the commitment for
 onboarding's checklist). It loses on the weight of its record, which is why this decision takes the round and the
-action points and leaves the notes. Evity's pages for the three candidates were read on 2026-11-10: its onboarding
-runs on employment dates Clew does not hold, reaches a person with no account before the first day and needs form
-steps; its annual plan starts talk rounds and so comes after them. From Evity's talks feature this takes the status
-per period, action points with an owner and a date that carry over, and the record belonging to the employee; it
-leaves the template editor, the pay talk (the pay hard stop) and the employee file.
+action points and leaves the notes. The reference product's pages for the three candidates were read on 2026-11-10:
+its onboarding runs on employment dates Clew does not hold, reaches a person with no account before the first day
+and needs form steps; its annual plan starts talk rounds and so comes after them. From the reference product's talks
+feature this takes the status per period, action points with an owner and a date that carry over, and the record
+belonging to the employee; it leaves the template editor, the pay talk (the pay hard stop) and the employee file.
 
 Alternatives weighed. Storing booked in this module: rejected, every confirm, decline and move in the calendar would
 have to write here, and it would copy a record the calendar owns. The action point's text on the card: rejected by

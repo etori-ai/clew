@@ -73,7 +73,7 @@ describe('the talks profile', () => {
     const { registry, refused } = world([
       talkSystem(TALKS_CONNECTOR, 'Clew', { kind: 'core' }),
       talkSystem('appraisals', 'Samtalssystemet'),
-      talkSystem('evity', 'Evity'),
+      talkSystem('reviews', 'Medarbetarsystemet'),
     ]);
     expect(registry.talkSource(hillevi)).toEqual({
       builtIn: true,
@@ -119,18 +119,18 @@ describe('the talks profile', () => {
   test('two other systems with the built-in off means none answers, and the registry reports it', () => {
     const { registry, refused } = world([
       talkSystem(TALKS_CONNECTOR, 'Clew', { kind: 'core' }),
-      talkSystem('evity', 'Evity'),
+      talkSystem('reviews', 'Medarbetarsystemet'),
       talkSystem('appraisals', 'Samtalssystemet'),
     ]);
     registry.govern(TALKS_CONNECTOR, { ...openGovernance(), state: 'disabled' });
     expect(registry.talkSource(hillevi)).toBeUndefined();
     expect(refused.map(r => [r.connectorId, r.topic])).toEqual([
       ['appraisals', 'talks'],
-      ['evity', 'talks'],
+      ['reviews', 'talks'],
     ]);
-    expect(refused[0]!.problem).toContain('appraisals, evity');
+    expect(refused[0]!.problem).toContain('appraisals, reviews');
     // Once one is out of the person's reach, the other answers.
-    registry.govern('evity', { ...openGovernance(), audience: { mode: 'selected', units: ['unit-hr'] } });
+    registry.govern('reviews', { ...openGovernance(), audience: { mode: 'selected', units: ['unit-hr'] } });
     expect(registry.talkSource(hillevi)?.connectorId).toBe('appraisals');
   });
 
