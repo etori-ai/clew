@@ -47,6 +47,8 @@ export const keys = {
     units: ['admin', 'units'] as const,
     groups: ['admin', 'groups'] as const,
     users: ['admin', 'users'] as const,
+    organisation: ['admin', 'organisation'] as const,
+    organisationUnit: (unitId: string) => ['admin', 'organisation', 'unit', unitId] as const,
     appearance: ['admin', 'appearance'] as const,
     preview: (id: string, role: string) => ['admin', 'preview', id, role] as const,
     models: ['admin', 'models'] as const,

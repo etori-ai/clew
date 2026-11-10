@@ -32,6 +32,8 @@ import {
   providerDetail,
   providerReport,
   usersOverview,
+  organisationOverview,
+  organisationPeople,
   staffOverview,
   TALKS_FAIL_ERROR,
   TODAY,
@@ -109,6 +111,8 @@ export class MockApi {
   users = usersOverview();
   /** The users page for someone with `admin.connectors` but not `admin.users`: the server refuses. */
   usersForbidden = false;
+  /** Organisation (D99): the tree the organisation page shows; it shares `usersForbidden`, as the two share a capability. */
+  organisation = organisationOverview();
   /**
    * The installation's appearance (D98): Astryx Neutral with no logo until a test saves or sets one. The public read
    * every page makes and Administration › Utseende share it, as they share the one row on the server.
@@ -271,6 +275,18 @@ export class MockApi {
         return this.usersForbidden
           ? route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } })
           : json(this.users);
+      if (path === '/admin/organisation' && method === 'GET')
+        return this.usersForbidden
+          ? route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } })
+          : json(this.organisation);
+      const unitPeople = /^\/admin\/organisation\/units\/([^/]+)$/.exec(path);
+      if (unitPeople && method === 'GET') {
+        const unitId = decodeURIComponent(unitPeople[1]!),
+          unit = this.organisation.units.find(u => u.unitId === unitId);
+        return unit
+          ? json({ unitId, unitLabel: unit.unitLabel, people: organisationPeople[unitId] ?? [] })
+          : route.fulfill({ status: 400, json: { error: 'Enheten finns inte.', code: 'invalid' } });
+      }
       if (path === '/admin/users/group-capabilities' && method === 'POST') {
         const input = request.postDataJSON() as {
           groupExternalId: string;
@@ -960,10 +976,17 @@ export async function open(page: Page, path: string) {
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
 }
 
-/** Every rule tagged for WCAG 2.0, 2.1 and 2.2 A and AA, plus axe's best practices: landmarks, headings and regions. */
-export async function expectNoAxeViolations(page: Page) {
+/**
+ * Every rule tagged for WCAG 2.0, 2.1 and 2.2 A and AA, plus axe's best practices: landmarks, headings and regions.
+ * `without` leaves a rule out for a page where the rule cannot read the structure; the spec that passes it says why and
+ * checks the criterion itself in the rule's place.
+ */
+export async function expectNoAxeViolations(page: Page, { without = [] }: { without?: string[] } = {}) {
   const tags = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'];
-  const { violations } = await new AxeBuilder({ page }).withTags(tags).disableRules(['target-size']).analyze();
+  const { violations } = await new AxeBuilder({ page })
+    .withTags(tags)
+    .disableRules(['target-size', ...without])
+    .analyze();
   // 2.5.8 is about the targets themselves: measured with the dock in the flow, so a row that has scrolled under the sticky dock is not read as too close to its buttons.
   const undock = (on: boolean) =>
     page.evaluate(on => {
@@ -1086,7 +1109,18 @@ export async function hiddenFocusStops(page: Page, limit = 150) {
           ring(el.parentElement, depth + 1)
         );
       };
-      if (!ring(active, 0)) unmarked.push(name);
+      // A tree row (Astryx TreeList) takes the focus on its list item and draws the ring on the row inside it, so that
+      // the ring goes round the row and not round the rows nested under it.
+      const ownRow =
+        active.getAttribute('role') === 'treeitem'
+          ? active.querySelector(':scope > [data-astryx-pressable], :scope > * > [data-astryx-pressable]')
+          : null;
+      const drawn = (el: Element | null) => {
+        if (!el) return false;
+        const s = getComputedStyle(el);
+        return s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0;
+      };
+      if (!ring(active, 0) && !drawn(ownRow)) unmarked.push(name);
       const box = {
         left: Math.max(r.left, 0),
         right: Math.min(r.right, innerWidth),

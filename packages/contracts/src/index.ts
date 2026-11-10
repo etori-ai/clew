@@ -1405,19 +1405,64 @@ export interface StaffPerson {
   name: string;
   userName: string | null;
   email: string | null;
-  /** The person's role on this unit, not their active one. */
+  /**
+   * The person's role on this unit, not their active one. For a person who reports here from a unit below (D99), the
+   * role they hold there: `manager` when they lead one of those units.
+   */
   role: Role;
   enabled: boolean;
+  /**
+   * D99: set for a person who is not assigned to this unit but reports to its manager through the tree: the units
+   * below it that they lead, or are placed on where nobody leads, by label in Swedish order. Absent for a person
+   * assigned to the unit itself.
+   */
+  below?: Array<{ unitId: string; unitLabel: string; role: Role }>;
 }
 export interface StaffUnit {
   unitId: string;
   unitLabel: string;
-  /** Everyone assigned to the unit except the manager reading, by name in Swedish order. */
+  /**
+   * The manager's reports through this unit (D99), by name in Swedish order: everyone assigned to the unit except the
+   * manager reading, then the managers of the nearest units below that have one, and the people placed on a unit
+   * below that nobody leads. Never the people those managers lead.
+   */
   people: StaffPerson[];
 }
 /** The units the manager manages, by label in Swedish order; the server refuses anyone who manages none. */
 export interface StaffOverview {
   units: StaffUnit[];
+}
+/**
+ * Administration › Organisation (D99): one node of the organisation tree as the provisioner pushed it. Deactivated
+ * people are counted nowhere here.
+ */
+export interface OrganisationUnit {
+  unitId: string;
+  unitLabel: string;
+  /** The unit above, null on a root. */
+  parentId: string | null;
+  /** The people who lead the unit, by name in Swedish order. */
+  managers: Array<{ id: string; name: string }>;
+  /** How many people are assigned to the unit itself, its managers included. */
+  placed: number;
+  /** How many people are assigned to the unit or to a unit below it, each person once. */
+  branch: number;
+  /** Who the people placed here report to: the unit's own managers, the managers of a unit above, or nobody. */
+  line: 'own' | 'above' | 'none';
+  /** False when people are assigned to the unit but no `unit:` group names it, so it has no name and no place. */
+  pushed: boolean;
+}
+export interface OrganisationOverview {
+  /** Every unit, by label in Swedish order; the tree is `parentId`. */
+  units: OrganisationUnit[];
+  /** People who are provisioned and active but placed on no unit, so they can do nothing (D68). */
+  unplaced: number;
+}
+/** The people assigned to one unit, by name in Swedish order, as the tree shows them beside a selected unit. */
+export interface OrganisationUnitPeople {
+  unitId: string;
+  unitLabel: string;
+  people: StaffPerson[];
 }
 /** D85: one group gives one capability. `groupLabel` is the group's name while the group is provisioned, null when only this row remains. */
 export interface GroupCapability {

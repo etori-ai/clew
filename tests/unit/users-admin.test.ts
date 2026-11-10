@@ -27,6 +27,7 @@ function stack() {
   s.groups.set('g-skola', {
     id: 'g-skola',
     organisationId: 'poc',
+    parentUnitId: null,
     externalId: 'unit:unit-skola',
     label: 'Bergsåkers skola',
     createdAt: T,
@@ -35,6 +36,7 @@ function stack() {
   s.groups.set('g-it', {
     id: 'g-it',
     organisationId: 'poc',
+    parentUnitId: null,
     externalId: 'unit:unit-it',
     label: 'IT',
     createdAt: T,
@@ -43,6 +45,7 @@ function stack() {
   s.groups.set('g-ad', {
     id: 'g-ad',
     organisationId: 'poc',
+    parentUnitId: null,
     externalId: 'S-1-5-21-it-staff',
     label: 'IT-personal',
     createdAt: T,
@@ -51,6 +54,7 @@ function stack() {
   s.groups.set('g-plain', {
     id: 'g-plain',
     organisationId: 'poc',
+    parentUnitId: null,
     externalId: null,
     label: 'No external id',
     createdAt: T,

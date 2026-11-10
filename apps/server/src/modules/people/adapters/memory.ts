@@ -1,4 +1,4 @@
-import type { Assignment, Grant, GroupCapabilityRule, GroupRecord, UserRecord } from '../domain';
+import type { Assignment, Grant, GroupCapabilityRule, GroupRecord, Placement, UserRecord } from '../domain';
 import type { Provisioner, ProvisionStore, ProvisionTx } from '../ports';
 
 /**
@@ -82,6 +82,7 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
       return p && { id: p.id, organisationId: p.organisationId };
     },
     async lockUnits() {},
+    async lockTree() {},
     async memberships(personId) {
       return groupsOf(personId)
         .filter(g => g.externalId !== null)
@@ -231,6 +232,30 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
           return u ? [{ id: u.id, name: u.name, userName: u.userName, email: u.email, role, enabled: u.enabled }] : [];
         })
         .sort((a, b) => a.id.localeCompare(b.id));
+    },
+    async childUnits(unitId) {
+      return [...state.groups.values()]
+        .filter(g => g.parentUnitId === unitId && g.externalId?.startsWith('unit:'))
+        .map(g => ({ id: g.externalId!.slice('unit:'.length), label: g.label }))
+        .sort((a, b) => a.id.localeCompare(b.id));
+    },
+    async unitTree(organisationId) {
+      return [...state.groups.values()]
+        .filter(g => g.organisationId === organisationId && g.externalId?.startsWith('unit:'))
+        .map(g => ({ id: g.externalId!.slice('unit:'.length), label: g.label, parentId: g.parentUnitId }))
+        .sort((a, b) => a.id.localeCompare(b.id));
+    },
+    async placements(organisationId) {
+      return [...state.users.values()]
+        .filter(u => u.organisationId === organisationId)
+        .sort((a, b) => a.id.localeCompare(b.id))
+        .flatMap((u): Placement[] => {
+          const person = { personId: u.id, name: u.name, enabled: u.enabled },
+            held = [...(state.assignments.get(u.id) ?? [])].sort((a, b) => a.unitId.localeCompare(b.unitId));
+          return held.length
+            ? held.map(a => ({ ...person, unitId: a.unitId, role: a.role }))
+            : [{ ...person, unitId: null, role: null }];
+        });
     },
     async bound(personId) {
       return state.bindings.has(personId);

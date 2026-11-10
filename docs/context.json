@@ -835,7 +835,7 @@
       "number": 68,
       "path": "docs/decisions/D68-people-are-pushed-into-clew-through-standard-scim.md",
       "title": "D68 · People are pushed into Clew through standard SCIM, and mapping happens outside Clew",
-      "status": "accepted, built 2026-11-09 (the SCIM server, the derivation, the synthetic provisioner, binding at first login, Administration › Användare); the group keys are proposed until a real provisioner has used them; item 2 amended by D85 (2026-11-09): capabilities are mapped from groups in Clew, units and manager roles keep these keys",
+      "status": "accepted, built 2026-11-09 (the SCIM server, the derivation, the synthetic provisioner, binding at first login, Administration › Användare); the group keys are proposed until a real provisioner has used them; item 2 amended by D85 (2026-11-09): capabilities are mapped from groups in Clew, units and manager roles keep these keys; amended by D99 (2026-11-10): units form a tree, a `unit:` group names the unit above it and the provisioner no longer flattens a hierarchy",
       "date": "2026-11-06",
       "area": "identity"
     },
@@ -1078,7 +1078,7 @@
       "number": 94,
       "path": "docs/decisions/D94-a-manager-has-a-personal-section-listing-the-people-on-their-units.md",
       "title": "D94 · A manager has a Personal section that lists the people on the units they manage",
-      "status": "accepted, built 2026-11-09 (the destination, the read, the page; notes and the utvecklingssamtal are not decided here)",
+      "status": "accepted, built 2026-11-09 (the destination, the read, the page; notes and the utvecklingssamtal are not decided here); item 2 amended by D99 (2026-11-10): Personal lists a manager's reports, which adds the managers directly below in the organisation tree",
       "date": "2026-11-09",
       "area": "product, identity"
     },
@@ -1105,7 +1105,7 @@
       "number": 96,
       "path": "docs/decisions/D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md",
       "title": "D96 · Talks is Clew's first owned domain: the round and action points, behind a profile a connector can answer",
-      "status": "accepted, built 2026-11-10 (the round, action points, the profile and its fixture; see \"As built\"); synthetic data only until questions 6 and 11 below are answered",
+      "status": "accepted, built 2026-11-10 (the round, action points, the profile and its fixture; see \"As built\"); synthetic data only until questions 6 and 11 below are answered; item 1 amended by D99 (2026-11-10): a person is due a talk with the manager they report to in the organisation tree",
       "date": "2026-11-10",
       "area": "product, integrations"
     },
@@ -1126,6 +1126,15 @@
       "status": "accepted, built 2026-11-10 and tried signed in on the development stack the same day; no manual screen-reader pass yet",
       "date": "2026-11-10",
       "area": "ui"
+    },
+    {
+      "key": "D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports",
+      "number": 99,
+      "path": "docs/decisions/D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md",
+      "title": "D99 · Units form a tree pushed over SCIM, and a manager works with their direct reports",
+      "status": "accepted (product owner, 2026-11-10: units form a tree, the tree is pushed as resources of its own, a manager works with their direct reports and not with everyone below), built 2026-11-10 (the parent on the unit group, the SCIM extension and its refusals, the reporting line in Personal, talks and the calendar's team, the development directory as a tree, the check, Administration › Organisation; see \"As built\"); the transport in item 2 is proposed until a real provisioner has used it, the branch of item 5 has no user yet, and the items under \"Open\" are not decided",
+      "date": "2026-11-10",
+      "area": "identity, product"
     }
   ],
   "documents": [
@@ -1369,6 +1378,7 @@
         "Provisioning",
         "Derivation",
         "Administration › Användare",
+        "Administration › Organisation",
         "Clew to a connector",
         "Connector callbacks",
         "Source authentication and background work",
@@ -2145,6 +2155,12 @@
     {
       "path": "docs/decisions/D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md",
       "title": "D98 · The installation's theme and logo are saved in Clew by an administrator, the theme as a design tokens file",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md",
+      "title": "D99 · Units form a tree pushed over SCIM, and a manager works with their direct reports",
       "category": "decision-history",
       "headings": []
     },

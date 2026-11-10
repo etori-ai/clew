@@ -35,8 +35,9 @@ import { TalkOverlay } from '../components/talk-overlay';
 import { roleOfOne } from './admin/labels';
 
 /**
- * Personal (D94): the people on the units the signed-in manager manages, as the directory pushed them: name, user
- * name, role on the unit, address, and a mark when the directory has deactivated someone. One card per unit, a Table
+ * Personal (D94, D99): the signed-in manager's reports, as the directory pushed them: the people on the units they
+ * manage and, down the organisation tree, the managers directly below, each with the unit they lead; name, user name,
+ * role, address, and a mark when the directory has deactivated someone. One card per unit, a Table
  * on a desktop and List rows on a phone, as Användare (D85), in the same Layout as the administration (D74). Read
  * only; the scope is the server's, which answers 403 to anyone who manages no unit, and the page says so.
  *
@@ -70,9 +71,25 @@ const who = (p: StaffPerson) => (
     </VStack>
   </HStack>
 );
+const unitNames = new Intl.ListFormat('sv', { type: 'conjunction' });
+/**
+ * The role as the list says it. A person assigned to the unit has their role on it; one who reports here from below
+ * (D99) is named by the units they lead, or are placed on where nobody leads: "Chef för Utveckling".
+ */
+const roleText = (p: StaffPerson) => {
+  const below = p.below ?? [];
+  if (!below.length) return roleOfOne[p.role];
+  const led = below.filter(b => b.role === 'manager');
+  return `${led.length ? 'Chef för' : 'Medarbetare på'} ${unitNames.format((led.length ? led : below).map(b => b.unitLabel))}`;
+};
 const columns = [
   { key: 'person', header: 'Person', width: proportional(2, { minWidth: 240 }), renderCell: (r: Row) => who(r.p) },
-  { key: 'role', header: 'Roll', width: pixel(140), renderCell: (r: Row) => <Text>{roleOfOne[r.p.role]}</Text> },
+  {
+    key: 'role',
+    header: 'Roll',
+    width: proportional(1, { minWidth: 140 }),
+    renderCell: (r: Row) => <Text>{roleText(r.p)}</Text>,
+  },
   {
     key: 'email',
     header: 'E-post',
@@ -217,7 +234,7 @@ function UnitCard({
                       {p.userName ?? p.id}
                     </Text>
                     <Text type="supporting">
-                      {roleOfOne[p.role]}
+                      {roleText(p)}
                       {p.email ? ` · ${p.email}` : ''}
                     </Text>
                     {talk && (
@@ -294,8 +311,8 @@ export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }
                 title="Personal"
                 meta={
                   <Text as="p" color="secondary">
-                    Medarbetarna på enheterna du är chef för, med roll och kontaktuppgift, som katalogen har fört in
-                    dem.
+                    De som rapporterar till dig: medarbetarna på enheterna du är chef för och cheferna närmast under,
+                    med roll och kontaktuppgift, som katalogen har fört in dem.
                   </Text>
                 }
               />

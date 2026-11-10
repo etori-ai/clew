@@ -137,6 +137,12 @@ export const adminQueries = {
   units: queryOptions({ queryKey: keys.admin.units, queryFn: () => api.admin.units() }),
   groups: queryOptions({ queryKey: keys.admin.groups, queryFn: () => api.admin.groups() }),
   users: queryOptions({ queryKey: keys.admin.users, queryFn: () => api.admin.users() }),
+  organisation: queryOptions({ queryKey: keys.admin.organisation, queryFn: () => api.admin.organisation() }),
+  organisationUnit: (unitId: string) =>
+    queryOptions({
+      queryKey: keys.admin.organisationUnit(unitId),
+      queryFn: () => api.admin.organisationUnit(unitId),
+    }),
   appearance: queryOptions({ queryKey: keys.admin.appearance, queryFn: () => api.admin.appearance() }),
   connector: (id: string) =>
     queryOptions({ queryKey: keys.admin.connector(id), queryFn: () => api.admin.connector(id) }),

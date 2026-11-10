@@ -248,3 +248,67 @@ test('requests that begin a run together leave one provisioner.seen row, not one
     .where(eq(schema.audit.subject, 'provisioner:' + prefix));
   expect(runs).toHaveLength(1);
 });
+test('a unit placed under a parent while the parent is removed, and two moves that would close a cycle between them: the tree stays whole (D99)', async () => {
+  const { prefix, p, scim } = stack();
+  const UNIT = 'urn:clew:params:scim:schemas:extension:unit:2.0:Group';
+  const unit = (id: string, parent?: string) =>
+    scim.createGroup(
+      p,
+      {
+        externalId: `unit:${prefix}-${id}`,
+        displayName: id,
+        ...(parent ? { [UNIT]: { parent: `unit:${prefix}-${parent}` } } : {}),
+      },
+      BASE,
+    );
+  const outcome = (attempt: Promise<unknown>) =>
+    attempt.then(
+      () => 'done' as const,
+      () => 'refused' as const,
+    );
+  const nodes = async () =>
+    Object.fromEntries(
+      (
+        await database()
+          .select({ externalId: schema.groups.externalId, parent: schema.groups.parentUnitId })
+          .from(schema.groups)
+          .where(like(schema.groups.id, prefix + '%'))
+      ).map(r => [r.externalId!.slice(`unit:${prefix}-`.length), r.parent?.slice(prefix.length + 1) ?? null]),
+    );
+  for (let round = 0; round < 6; round++) {
+    const parent = await unit('top' + round);
+    const writes = [() => unit('leaf' + round, 'top' + round), () => scim.deleteGroup(p, parent.id)];
+    if (round % 2) writes.reverse();
+    const [first, second] = await Promise.all(writes.map(write => outcome(write())));
+    // Whichever came first, the other was refused: no unit names a parent that is gone.
+    expect([first, second].sort()).toEqual(['done', 'refused']);
+    const left = await nodes();
+    if ('leaf' + round in left) expect(left['top' + round]).toBeNull();
+    else expect('top' + round in left).toBe(false);
+  }
+  // a → b and c → d stand; b under c and d under a at once would make a ring of the four.
+  const a = await unit('a'),
+    c = await unit('c'),
+    b = await unit('b', 'a'),
+    d = await unit('d', 'c');
+  const move = (group: { id: string }, parent: string) =>
+    scim.patchGroup(
+      p,
+      group.id,
+      {
+        schemas: [],
+        Operations: [{ op: 'replace', path: UNIT + ':parent', value: `unit:${prefix}-${parent}` }],
+      },
+      BASE,
+    );
+  const moves = await Promise.all([outcome(move(a, 'd')), outcome(move(c, 'b'))]);
+  expect(moves.sort()).toEqual(['done', 'refused']);
+  const tree = await nodes();
+  for (const start of ['a', 'b', 'c', 'd']) {
+    let at: string | null = start,
+      hops = 0;
+    while (at !== null && hops++ < 10) at = tree[at] ?? null;
+    expect(at).toBeNull();
+  }
+  expect(b.id).not.toBe(d.id);
+});
