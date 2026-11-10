@@ -6,6 +6,7 @@ import {
   jsonb,
   bigserial,
   boolean,
+  date,
   timestamp,
   check,
   primaryKey,
@@ -783,4 +784,84 @@ export const deliveries = pgTable(
     claimedAt: timestamp('claimed_at', { withTimezone: true }),
   },
   t => [index('delivery_person_due').on(t.personId, t.dueAt)],
+);
+
+// Talks (D96): Clew's first owned domain. A round is the period in which everyone on a unit is due a talk with the
+// unit's manager, one open per organisation; who is in it is computed from the assignments when it is read. Booked is
+// never stored here (it is the calendar's). Dates are calendar days in Swedish time, read and written as `YYYY-MM-DD`.
+export const talkRounds = pgTable(
+  'talk_round',
+  {
+    id: text('id').primaryKey(),
+    organisationId: text('organisation_id').notNull(),
+    kind: text('kind').$type<'development'>().notNull(),
+    label: text('label').notNull(),
+    opensOn: date('opens_on', { mode: 'string' }).notNull(),
+    dueOn: date('due_on', { mode: 'string' }).notNull(),
+    // An actor string (`operator:cli`, the seed's), not a person: an operator opens a round.
+    createdBy: text('created_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+  },
+  t => [
+    check('talk_round_kind', sql`${t.kind} IN ('development')`),
+    check('talk_round_period', sql`${t.dueOn} >= ${t.opensOn}`),
+    uniqueIndex('talk_round_open')
+      .on(t.organisationId, t.kind)
+      .where(sql`${t.closedAt} IS NULL`),
+  ],
+);
+/** One employee's talk in a round: held is Clew's own record, marked by the manager and undone by clearing it. */
+export const talks = pgTable(
+  'talk',
+  {
+    id: text('id').primaryKey(),
+    roundId: text('round_id')
+      .notNull()
+      .references(() => talkRounds.id),
+    employeeId: text('employee_id')
+      .notNull()
+      .references(() => people.id, { onDelete: 'cascade' }),
+    heldOn: date('held_on', { mode: 'string' }),
+    heldBy: text('held_by').references(() => people.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  t => [uniqueIndex('talk_round_employee').on(t.roundId, t.employeeId)],
+);
+/**
+ * An action point (åtgärdspunkt, D96 items 4-6): a line about the employee, an owner who is the employee or the
+ * manager, a due date, done or open. The text is a sealed envelope (purpose `talk:commitment:<id>`), never plain. Its
+ * owner's card is `thread_id`; erasing the owner removes the card and nulls the pointer. Person columns other than the
+ * employee are nulled by erasure, so the row stays with the employee it is about.
+ */
+export const talkCommitments = pgTable(
+  'talk_commitment',
+  {
+    id: text('id').primaryKey(),
+    roundId: text('round_id')
+      .notNull()
+      .references(() => talkRounds.id),
+    employeeId: text('employee_id')
+      .notNull()
+      .references(() => people.id, { onDelete: 'cascade' }),
+    ownerRole: text('owner_role').$type<'employee' | 'manager'>().notNull(),
+    ownerId: text('owner_id').references(() => people.id, { onDelete: 'set null' }),
+    textSealed: text('text_sealed').notNull(),
+    dueOn: date('due_on', { mode: 'string' }).notNull(),
+    doneAt: timestamp('done_at', { withTimezone: true }),
+    doneBy: text('done_by').references(() => people.id, { onDelete: 'set null' }),
+    createdBy: text('created_by').references(() => people.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    threadId: text('thread_id').references(() => threads.id, { onDelete: 'set null' }),
+  },
+  t => [
+    check('talk_commitment_owner_role', sql`${t.ownerRole} IN ('employee', 'manager')`),
+    index('talk_commitment_employee').on(t.employeeId),
+    // The `due` timer knows only the card; erasing a card nulls its pointer.
+    index('talk_commitment_thread').on(t.threadId),
+    index('talk_commitment_owner_open')
+      .on(t.ownerId)
+      .where(sql`${t.doneAt} IS NULL`),
+  ],
 );

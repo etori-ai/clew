@@ -257,7 +257,7 @@
               "name": {
                 "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
                 "maxLength": 80,
-                "description": "`<connector id>.<verb>`, stable. Two names are profiles Clew combines across connectors: `<id>.search` (D26, see `kinds`), and `<id>.errands` (D35, D89), a read that takes `{ view?: \"assigned\" | \"reported\" }` and answers an ErrandsOutput with the errands the case system lets the person see. Its view's `open` names the read that shows one errand, by convention `<id>.errand`. Clew lists every `<id>.errands` in the person's scope as `clew.errands`.",
+                "description": "`<connector id>.<verb>`, stable. Two names are profiles Clew combines across connectors: `<id>.search` (D26, see `kinds`), and `<id>.errands` (D35, D89), a read that takes `{ view?: \"assigned\" | \"reported\" }` and answers an ErrandsOutput with the errands the case system lets the person see. Its view's `open` names the read that shows one errand, by convention `<id>.errand`. Clew lists every `<id>.errands` in the person's scope as `clew.errands`. Two more are the talks profile (D96), answered by one system per installation rather than combined: `<id>.talks`, a read that takes `{}` and answers a TalksOutput (the open round of development talks and one row per person the reader manages, keyed on the SCIM `userName`), and `<id>.commitments`, a read that takes `{ person?: <userName> }` and answers a CommitmentsOutput (that employee's action points for a manager of their unit, or without `person` the ones the reader owns and the ones about the reader). `<id>.talks` may be limited to managers; `<id>.commitments` should be callable by everyone who owns action points or is their subject. Clew's built-in `talks` connector answers while either of its reads is enabled for the person; otherwise the one connector whose `<id>.talks` or `<id>.commitments` the person may call does, and with several none does. Neither is ever offered to the model.",
                 "type": "string"
               },
               "kind": {
@@ -3752,6 +3752,397 @@
                 "maxLength": 1000,
                 "description": "The errand in its own system.",
                 "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "TalkRow": {
+      "additionalProperties": false,
+      "description": "One person in the round of development talks (D96).",
+      "type": "object",
+      "required": [
+        "ref",
+        "userName",
+        "name",
+        "state",
+        "openCommitments"
+      ],
+      "properties": {
+        "ref": {
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^talk:[a-z][a-z0-9-]*:[A-Za-z0-9:_.-]+$",
+          "description": "`talk:<connector id>:<the system's own identity>`, stable. Clew treats it as opaque.",
+          "type": "string"
+        },
+        "userName": {
+          "minLength": 1,
+          "maxLength": 512,
+          "type": "string",
+          "description": "The employee the talk is with, by their provisioned user name."
+        },
+        "name": {
+          "minLength": 1,
+          "maxLength": 512,
+          "description": "The employee's name.",
+          "type": "string"
+        },
+        "state": {
+          "description": "`missing`: no talk is booked or held. `booked`: a talk is in the calendar. `held`: the manager has marked it held.",
+          "anyOf": [
+            {
+              "const": "missing",
+              "type": "string"
+            },
+            {
+              "const": "booked",
+              "type": "string"
+            },
+            {
+              "const": "held",
+              "type": "string"
+            }
+          ]
+        },
+        "at": {
+          "description": "When the talk is booked (an instant), or the day it was held (a date). Absent when missing.",
+          "anyOf": [
+            {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "maxLength": 10,
+              "type": "string"
+            },
+            {
+              "format": "date-time",
+              "maxLength": 40,
+              "type": "string"
+            }
+          ]
+        },
+        "openCommitments": {
+          "minimum": 0,
+          "description": "How many action points with this employee are open, from this round and earlier ones.",
+          "type": "integer"
+        },
+        "link": {
+          "maxLength": 1000,
+          "pattern": "^https?://[^\\s]+$",
+          "type": "string",
+          "description": "The talk in its own system."
+        }
+      }
+    },
+    "TalksOutput": {
+      "additionalProperties": false,
+      "description": "What `<id>.talks` returns: the open round and one row per person the reader manages a talk with.",
+      "type": "object",
+      "required": [
+        "round",
+        "rows"
+      ],
+      "properties": {
+        "round": {
+          "description": "The open round; null when none is open.",
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "description": "The open round of development talks (D96 item 1).",
+              "type": "object",
+              "required": [
+                "label",
+                "opensOn",
+                "dueOn"
+              ],
+              "properties": {
+                "label": {
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "description": "Swedish. The round as a person reads it.",
+                  "type": "string"
+                },
+                "opensOn": {
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "maxLength": 10,
+                  "type": "string",
+                  "description": "The first day of the round."
+                },
+                "dueOn": {
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "maxLength": 10,
+                  "type": "string",
+                  "description": "The day every talk of the round is due."
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rows": {
+          "maxItems": 500,
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "description": "One person in the round of development talks (D96).",
+            "type": "object",
+            "required": [
+              "ref",
+              "userName",
+              "name",
+              "state",
+              "openCommitments"
+            ],
+            "properties": {
+              "ref": {
+                "minLength": 1,
+                "maxLength": 200,
+                "pattern": "^talk:[a-z][a-z0-9-]*:[A-Za-z0-9:_.-]+$",
+                "description": "`talk:<connector id>:<the system's own identity>`, stable. Clew treats it as opaque.",
+                "type": "string"
+              },
+              "userName": {
+                "minLength": 1,
+                "maxLength": 512,
+                "type": "string",
+                "description": "The employee the talk is with, by their provisioned user name."
+              },
+              "name": {
+                "minLength": 1,
+                "maxLength": 512,
+                "description": "The employee's name.",
+                "type": "string"
+              },
+              "state": {
+                "description": "`missing`: no talk is booked or held. `booked`: a talk is in the calendar. `held`: the manager has marked it held.",
+                "anyOf": [
+                  {
+                    "const": "missing",
+                    "type": "string"
+                  },
+                  {
+                    "const": "booked",
+                    "type": "string"
+                  },
+                  {
+                    "const": "held",
+                    "type": "string"
+                  }
+                ]
+              },
+              "at": {
+                "description": "When the talk is booked (an instant), or the day it was held (a date). Absent when missing.",
+                "anyOf": [
+                  {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "maxLength": 10,
+                    "type": "string"
+                  },
+                  {
+                    "format": "date-time",
+                    "maxLength": 40,
+                    "type": "string"
+                  }
+                ]
+              },
+              "openCommitments": {
+                "minimum": 0,
+                "description": "How many action points with this employee are open, from this round and earlier ones.",
+                "type": "integer"
+              },
+              "link": {
+                "maxLength": 1000,
+                "pattern": "^https?://[^\\s]+$",
+                "type": "string",
+                "description": "The talk in its own system."
+              }
+            }
+          }
+        },
+        "bookedUnknown": {
+          "description": "True when the system could not tell who is booked (the calendar did not answer), so a `missing` row may be booked.",
+          "type": "boolean"
+        }
+      }
+    },
+    "CommitmentRow": {
+      "additionalProperties": false,
+      "description": "One action point from a development talk (D96).",
+      "type": "object",
+      "required": [
+        "ref",
+        "userName",
+        "name",
+        "owner",
+        "mine",
+        "text",
+        "dueOn",
+        "done",
+        "carried"
+      ],
+      "properties": {
+        "ref": {
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^commitment:[a-z][a-z0-9-]*:[A-Za-z0-9:_.-]+$",
+          "description": "`commitment:<connector id>:<the system's own identity>`, stable. Clew treats it as opaque.",
+          "type": "string"
+        },
+        "userName": {
+          "minLength": 1,
+          "maxLength": 512,
+          "type": "string",
+          "description": "The employee the talk is with, by their provisioned user name."
+        },
+        "name": {
+          "minLength": 1,
+          "maxLength": 512,
+          "description": "That employee's name.",
+          "type": "string"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "const": "employee",
+              "type": "string"
+            },
+            {
+              "const": "manager",
+              "type": "string"
+            }
+          ]
+        },
+        "mine": {
+          "description": "The reader is the owner.",
+          "type": "boolean"
+        },
+        "text": {
+          "minLength": 1,
+          "maxLength": 280,
+          "type": "string",
+          "description": "The action point as written. Free text about a person."
+        },
+        "dueOn": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "maxLength": 10,
+          "type": "string",
+          "description": "The day it is due."
+        },
+        "done": {
+          "type": "boolean"
+        },
+        "doneAt": {
+          "format": "date-time",
+          "maxLength": 40,
+          "type": "string",
+          "description": "When it was marked done."
+        },
+        "carried": {
+          "description": "From an earlier round and still open.",
+          "type": "boolean"
+        },
+        "link": {
+          "maxLength": 1000,
+          "pattern": "^https?://[^\\s]+$",
+          "type": "string",
+          "description": "The action point in its own system."
+        }
+      }
+    },
+    "CommitmentsOutput": {
+      "additionalProperties": false,
+      "description": "What `<id>.commitments` returns: the action points the reader may see, as the system lets them see them.",
+      "type": "object",
+      "required": [
+        "rows"
+      ],
+      "properties": {
+        "rows": {
+          "maxItems": 500,
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "description": "One action point from a development talk (D96).",
+            "type": "object",
+            "required": [
+              "ref",
+              "userName",
+              "name",
+              "owner",
+              "mine",
+              "text",
+              "dueOn",
+              "done",
+              "carried"
+            ],
+            "properties": {
+              "ref": {
+                "minLength": 1,
+                "maxLength": 200,
+                "pattern": "^commitment:[a-z][a-z0-9-]*:[A-Za-z0-9:_.-]+$",
+                "description": "`commitment:<connector id>:<the system's own identity>`, stable. Clew treats it as opaque.",
+                "type": "string"
+              },
+              "userName": {
+                "minLength": 1,
+                "maxLength": 512,
+                "type": "string",
+                "description": "The employee the talk is with, by their provisioned user name."
+              },
+              "name": {
+                "minLength": 1,
+                "maxLength": 512,
+                "description": "That employee's name.",
+                "type": "string"
+              },
+              "owner": {
+                "anyOf": [
+                  {
+                    "const": "employee",
+                    "type": "string"
+                  },
+                  {
+                    "const": "manager",
+                    "type": "string"
+                  }
+                ]
+              },
+              "mine": {
+                "description": "The reader is the owner.",
+                "type": "boolean"
+              },
+              "text": {
+                "minLength": 1,
+                "maxLength": 280,
+                "type": "string",
+                "description": "The action point as written. Free text about a person."
+              },
+              "dueOn": {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "maxLength": 10,
+                "type": "string",
+                "description": "The day it is due."
+              },
+              "done": {
+                "type": "boolean"
+              },
+              "doneAt": {
+                "format": "date-time",
+                "maxLength": 40,
+                "type": "string",
+                "description": "When it was marked done."
+              },
+              "carried": {
+                "description": "From an earlier round and still open.",
+                "type": "boolean"
+              },
+              "link": {
+                "maxLength": 1000,
+                "pattern": "^https?://[^\\s]+$",
+                "type": "string",
+                "description": "The action point in its own system."
               }
             }
           }

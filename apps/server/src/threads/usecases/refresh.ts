@@ -3,6 +3,22 @@ import type { ScanObservation, ThreadDraft } from '@clew/connectors';
 import { projectionVersion, type Occurrence, type RefreshDeps, type RefreshRequest } from '../refresh-model';
 
 const assignment = (p: AuthenticatedContext) => p.unitId + ':' + p.role;
+/**
+ * A value in one order whatever wrote it: object keys sorted and absent properties left out. The stored card comes back
+ * from a JSON column, which keeps neither the connector's key order nor an `undefined`, so comparing it with a fresh
+ * draft as written would call every unchanged card changed and rewrite it on every scan.
+ */
+const canonical = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(canonical)
+    : value && typeof value === 'object'
+      ? Object.fromEntries(
+          Object.entries(value)
+            .filter(([, v]) => v !== undefined)
+            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+            .map(([k, v]) => [k, canonical(v)]),
+        )
+      : value;
 /** Reads request work and return immediately; only leased workers wait for a source. */
 export function refreshUsecases({ store, clock, ids, key, current, sources, system, scan }: RefreshDeps) {
   async function request(persona: AuthenticatedContext) {
@@ -191,8 +207,16 @@ export function refreshUsecases({ store, clock, ids, key, current, sources, syst
             items.push(...thread.items.filter(i => !items.some(x => x.ref === i.ref)));
           if (
             changed ||
-            key([thread.title, thread.summary, thread.items, thread.actions, thread.deadline, thread.waitingOn]) !==
-              key([d.title, d.summary, items, d.actions, d.deadline ?? null, d.waitingOn ?? null])
+            key(
+              canonical([
+                thread.title,
+                thread.summary,
+                thread.items,
+                thread.actions,
+                thread.deadline ?? null,
+                thread.waitingOn ?? null,
+              ]),
+            ) !== key(canonical([d.title, d.summary, items, d.actions, d.deadline ?? null, d.waitingOn ?? null]))
           ) {
             await tx.updateThread(thread.id, {
               title: d.title,

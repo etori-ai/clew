@@ -146,7 +146,7 @@ Department with four verksamhetsområden and ~60 enhetschefer under them. Needs 
 - **Trigger:** The unit prepares for development conversations.
 - **Flow:** Identify authorized employees whose conversations lack a booking or preparation, and development activities needing follow-up. Open the permitted plan or booking workflow; progress changes only when its owning source confirms it.
 - **Data:** Development-plan/training source, permitted calendar evidence, current employee/manager relations.
-- **Exercises:** B20, C11–C15; scoped progress, separation of booking from preparation/completion, source-denial handling and no stored protected conversation notes.
+- **Exercises:** B20, C11–C15; scoped progress, separation of booking from preparation/completion and source-denial handling. Where the installation uses Clew's own talks module (D96), the round and the action points are Clew's records; conversation notes are not stored until their own decision.
 
 ---
 

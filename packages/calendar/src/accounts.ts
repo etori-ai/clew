@@ -1,14 +1,13 @@
 import type { AuthenticatedContext } from '@clew/contracts';
-import { CalendarError, type CalendarAccount, type CalendarProvider } from './model';
+import { CalendarError, type CalendarProvider } from './model';
 import { createCalendarProvider, type CalendarAdapterKind, type CalendarCredential } from './adapters';
 
 /**
- * Synthetic directory for the POC. The real system would resolve a person's calendar account and
- * unit membership from the directory; here the bindings are explicit and local-only.
+ * Synthetic calendar accounts for the POC. The real system would resolve a person's calendar account from the
+ * directory; here the bindings are explicit and local-only. Who a manager plans for is not here: that is the people
+ * provisioned on the units they manage (D96 item 3), and the colleagues below are the same people with the same
+ * addresses as Bergsåkers skola in `scripts/provisioner/directory.ts`.
  */
-export interface UnitMember extends CalendarAccount {
-  personId: string;
-}
 const calendarUrl = () => process.env.CALENDAR_URL ?? 'http://calendar';
 const graphUrl = () => process.env.GRAPH_URL ?? 'http://graph:4010/v1.0';
 /**
@@ -37,27 +36,24 @@ const names: Record<string, string> = { hillevi: 'Hillevi Berg', hassan: 'Hassan
 const accounts = Object.fromEntries(
   Object.entries(names).map(([user, name]) => [user, { name, credential: credential(user, name) }]),
 );
-const units: Record<string, UnitMember[]> = {
-  'unit-skola': [
-    { personId: 'anna', ref: 'nextcloud:account:anna', email: 'anna@clew.test', name: 'Anna Lindqvist' },
-    { personId: 'erik', ref: 'nextcloud:account:erik', email: 'erik@clew.test', name: 'Erik Sandström' },
-    { personId: 'maria', ref: 'nextcloud:account:maria', email: 'maria@clew.test', name: 'Maria Källström' },
-    { personId: 'johan', ref: 'nextcloud:account:johan', email: 'johan@clew.test', name: 'Johan Byström' },
-  ],
+/** Calendar accounts without a sign-in: Hillevi's school, as `.devcontainer/calendar/seed.php` creates them. */
+const colleagues: Record<string, string> = {
+  anna: 'Anna Lindqvist',
+  erik: 'Erik Sandström',
+  maria: 'Maria Källström',
+  johan: 'Johan Byström',
+  karin: 'Karin Lindqvist',
 };
+/** A person's own calendar (D11). */
 export interface CalendarBinding {
   provider: CalendarProvider;
-  members: UnitMember[];
 }
-export function bindCalendar(persona: Pick<AuthenticatedContext, 'id' | 'unitId' | 'role'>): CalendarBinding {
+export function bindCalendar(persona: Pick<AuthenticatedContext, 'id'>): CalendarBinding {
   if (process.env.CLEW_POC !== 'true')
     throw new Error('CLEW_POC=true is required: the calendar bindings are synthetic development fixtures.');
   const account = accounts[persona.id];
   if (!account) throw new CalendarError('Ditt konto har ingen kalender kopplad.');
-  return {
-    provider: createCalendarProvider(account.credential),
-    members: persona.role === 'manager' ? (units[persona.unitId] ?? []) : [],
-  };
+  return { provider: createCalendarProvider(account.credential) };
 }
 /** Seed-only access to a member's own calendar, for fixtures. Never used by the application. */
 export function fixtureProvider(user: string) {
@@ -65,15 +61,9 @@ export function fixtureProvider(user: string) {
 }
 /** Which adapter the directory binds a user to, for scripts that say where a seed went. */
 export const fixtureAdapter = (user: string) => adapterFor(user);
-export const unitMembers = (unitId: string) => units[unitId] ?? [];
 /** The same synthetic people and rooms as the Nextcloud seed, for the local fake of Microsoft Graph (D69). */
 export const fixtureDirectory = () => ({
-  people: [
-    ...Object.entries(names).map(([user, name]) => ({ email: `${user}@clew.test`, name })),
-    ...Object.values(units)
-      .flat()
-      .map(({ email, name }) => ({ email, name })),
-  ],
+  people: Object.entries({ ...names, ...colleagues }).map(([user, name]) => ({ email: `${user}@clew.test`, name })),
   rooms: [
     { name: 'Granen', email: 'granen@clew.test', capacity: 2, equipment: ['skärm'] },
     { name: 'Aspen', email: 'aspen@clew.test', capacity: 4, equipment: ['skärm', 'video'] },

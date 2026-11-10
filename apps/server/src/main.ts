@@ -9,7 +9,7 @@ import { authRoutes } from './routes/auth';
 import { api } from './routes/api';
 import { adminRoutes } from './routes/admin';
 import { headerRoutes } from './routes/header';
-import { connectorReconcile } from './composition';
+import { connectorReconcile, talksWritable } from './composition';
 import { applyAllRows, syncBundledRows, watchConnectors } from './connectors/reconcile';
 import { connectorRoutes } from './routes/connectors';
 import { protocolRoutes } from './routes/protocol';
@@ -29,6 +29,8 @@ import { scimRoutes } from './routes/scim';
 import { SCIM_CONTENT_TYPE, ScimError } from './modules/people/contracts';
 import { staffRoutes } from './routes/staff';
 import { scim } from './composition/people';
+import { talkRoutes } from './routes/talks';
+import { talks } from './composition/talks';
 
 // Local secrets written by `bun run auth:setup`. Never committed, never read by the browser bundle.
 for (const file of ['.env.local']) {
@@ -92,6 +94,8 @@ app.route('/scim/v2', scimRoutes(scim, logPort('scim', 'error')));
 app.route('/api/admin', adminRoutes);
 // Personal (D94): a manager's people, scoped by the use case.
 app.route('/api/staff', staffRoutes);
+// The talks module's writes (D96), only while Clew's own module answers the talks profile for the person.
+app.route('/api/talks', talkRoutes({ talks, writable: talksWritable }));
 // The shared header (D88): what the person's header connector lists for them.
 app.route('/api/header', headerRoutes);
 app.route('/api/chat-services', mcpRoutes);

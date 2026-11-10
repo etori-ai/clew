@@ -33,9 +33,13 @@ export async function routeFixed(
     const thread =
       persona.role === 'manager' ? await deps.calendar.ensureProposalThread(persona, 'Din fråga') : undefined;
     const open = thread?.proposals.filter(p => p.status === 'proposed').length ?? 0;
+    // The team and the round come from the status (D96 item 3); with neither there is nothing to count.
+    const missing = Math.max(0, status.members - status.held - status.booked);
     return {
       title: 'Utvecklingssamtal',
-      body: `${status.held} hållna, ${status.booked} bokade, ${Math.max(0, 4 - status.held - status.booked)} saknar tid före ${status.deadline}.${open ? ` ${open} förslag väntar i kortet för vecka ${weekNumber(nextWeekStart(displayDate(now)))} under Behöver dig.` : ''}`,
+      body: status.members
+        ? `${status.held} hållna, ${status.booked} bokade, ${missing} saknar tid före ${status.deadline}.${open ? ` ${open} förslag väntar i kortet för vecka ${weekNumber(nextWeekStart(displayDate(now)))} under Behöver dig.` : ''}`
+        : 'Det finns inga utvecklingssamtal att planera just nu.',
       reason: 'Du frågade om utvecklingssamtalen',
       source: 'Kalendern',
       ...(open && thread ? { forslagThreadId: thread.id } : {}),

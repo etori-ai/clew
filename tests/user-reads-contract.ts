@@ -7,6 +7,11 @@ export const userReadActors = (prefix: string): [Actor, Actor] => [
   { id: prefix + '-a', name: 'User A', role: 'manager', unitId: prefix + '-one', unitLabel: 'One' },
   { id: prefix + '-b', name: 'User B', role: 'employee', unitId: prefix + '-two', unitLabel: 'Two' },
 ];
+/** The user names the contract expects: the first actor has one, the second was provisioned without. */
+export const userReadNames = (actors: [Actor, Actor]): Record<string, string | null> => ({
+  [actors[0].id]: actors[0].id + '.login',
+  [actors[1].id]: null,
+});
 
 /** The same scoped read contract runs on a memory port and the real local-user tables. */
 export function userReadsContract(label: string, prepare: () => Promise<{ reads: UserReads; actors: [Actor, Actor] }>) {
@@ -29,5 +34,11 @@ export function userReadsContract(label: string, prepare: () => Promise<{ reads:
     }
     expect(await reads.capabilities('missing-' + actors[0].id)).toEqual([]);
     expect(await reads.directory('missing-' + actors[0].unitId)).toEqual([]);
+  });
+  test(label + ": a person's user name, null when they have none or are unknown (D96 item 8)", async () => {
+    const { reads, actors } = await prepare();
+    expect(await reads.userName(actors[0].id)).toBe(actors[0].id + '.login');
+    expect(await reads.userName(actors[1].id)).toBeNull();
+    expect(await reads.userName('missing-' + actors[0].id)).toBeNull();
   });
 }

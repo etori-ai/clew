@@ -53,9 +53,10 @@ off for that installation, not mirrored.
 
 **Why.** The product owner, 2026-11-10: "some of the connector systems should be part of clew. Part of clew project
 is to get rid of some third party dependencies." The review
-[the layer where Clew owns the feature and its data](../reviews/2026-11-10-owned-domains-against-evity.md) compared
-Clew with Evity, an HR system whose medarbetarsamtal, onboarding and annual plan are small, generic features
-surrounded by plumbing Clew already has (booking, reminders, follow-up, work items, audit). It also found that the
+[the layer where Clew owns the feature and its data](../reviews/2026-11-10-owned-domains-against-a-commercial-hr-system.md)
+compared Clew with a commercial HR system for small and medium-sized companies, whose medarbetarsamtal, onboarding
+and annual plan are small, generic features surrounded by plumbing Clew already has (booking, reminders, follow-up,
+work items, audit). It also found that the
 narrower rule had left the ladder's top rung unbuilt: no module owns a business record, and utvecklingssamtal, the
 fullest flow in the product, lives in the calendar module and ends when the invitation is answered. For
 municipalities that share an open-source system, each owned domain is one procurement and one integration fewer.

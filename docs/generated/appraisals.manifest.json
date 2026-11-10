@@ -1,0 +1,401 @@
+{
+  "protocol": 2,
+  "id": "appraisals",
+  "kind": "passthrough",
+  "source": "Samtalssystemet",
+  "areas": [],
+  "uses": [],
+  "scan": false,
+  "capabilities": [
+    {
+      "name": "appraisals.talks",
+      "kind": "read",
+      "title": "Utvecklingssamtal",
+      "description": "Den öppna omgången utvecklingssamtal och en rad per medarbetare som du är chef för: inget samtal, bokat eller hållet, och hur många åtgärdspunkter som är öppna.",
+      "model": false,
+      "scope": {},
+      "input": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "round": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "opensOn": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "maxLength": 10
+                  },
+                  "dueOn": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "maxLength": 10
+                  }
+                },
+                "required": [
+                  "label",
+                  "opensOn",
+                  "dueOn"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "^talk:[a-z][a-z0-9-]*:[A-Za-z0-9:_.-]+$"
+                },
+                "userName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "missing",
+                    "booked",
+                    "held"
+                  ]
+                },
+                "at": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                      "maxLength": 10
+                    },
+                    {
+                      "type": "string",
+                      "format": "date-time",
+                      "maxLength": 40
+                    }
+                  ]
+                },
+                "openCommitments": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "link": {
+                  "type": "string",
+                  "maxLength": 1000,
+                  "pattern": "^https?://[^\\s]+$"
+                }
+              },
+              "required": [
+                "ref",
+                "userName",
+                "name",
+                "state",
+                "openCommitments"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 500
+          },
+          "bookedUnknown": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "round",
+          "rows"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "appraisals.commitments",
+      "kind": "read",
+      "title": "Åtgärdspunkter",
+      "description": "Åtgärdspunkter från utvecklingssamtalen: en medarbetares, för medarbetarens chef, eller utan medarbetare de som är dina och de som gäller dig.",
+      "model": false,
+      "scope": {},
+      "input": {
+        "type": "object",
+        "properties": {
+          "person": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "^commitment:[a-z][a-z0-9-]*:[A-Za-z0-9:_.-]+$"
+                },
+                "userName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "owner": {
+                  "type": "string",
+                  "enum": [
+                    "employee",
+                    "manager"
+                  ]
+                },
+                "mine": {
+                  "type": "boolean"
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 280
+                },
+                "dueOn": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "maxLength": 10
+                },
+                "done": {
+                  "type": "boolean"
+                },
+                "doneAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "maxLength": 40
+                },
+                "carried": {
+                  "type": "boolean"
+                },
+                "link": {
+                  "type": "string",
+                  "maxLength": 1000,
+                  "pattern": "^https?://[^\\s]+$"
+                }
+              },
+              "required": [
+                "ref",
+                "userName",
+                "name",
+                "owner",
+                "mine",
+                "text",
+                "dueOn",
+                "done",
+                "carried"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 500
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "list",
+        "title": "text",
+        "modelReads": "summary",
+        "noun": {
+          "one": "åtgärdspunkt",
+          "other": "åtgärdspunkter"
+        },
+        "empty": "Inga åtgärdspunkter.",
+        "fields": [
+          {
+            "key": "text",
+            "label": "Åtgärdspunkt"
+          },
+          {
+            "key": "name",
+            "label": "Medarbetare"
+          },
+          {
+            "key": "dueOn",
+            "label": "Klar senast",
+            "format": "date"
+          },
+          {
+            "key": "done",
+            "label": "Klar",
+            "format": "status"
+          },
+          {
+            "key": "carried",
+            "label": "Från förra omgången",
+            "format": "status",
+            "tones": {
+              "true": "warn"
+            }
+          },
+          {
+            "key": "link",
+            "label": "Öppna i samtalssystemet",
+            "format": "link"
+          }
+        ]
+      }
+    },
+    {
+      "name": "appraisals.round",
+      "kind": "read",
+      "title": "Samtalsomgången",
+      "description": "Var varje medarbetare som du är chef för står i den öppna omgången utvecklingssamtal.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "Saknas",
+                    "Bokat",
+                    "Hållet"
+                  ]
+                },
+                "bookedAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "maxLength": 40
+                },
+                "heldOn": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "maxLength": 10
+                },
+                "openCommitments": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "link": {
+                  "type": "string",
+                  "maxLength": 1000,
+                  "pattern": "^https?://[^\\s]+$"
+                }
+              },
+              "required": [
+                "ref",
+                "name",
+                "status",
+                "openCommitments",
+                "link"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "table",
+        "title": "name",
+        "modelReads": "summary",
+        "noun": {
+          "one": "medarbetare",
+          "other": "medarbetare"
+        },
+        "empty": "Du är inte chef för någon i den här omgången.",
+        "fields": [
+          {
+            "key": "name",
+            "label": "Medarbetare"
+          },
+          {
+            "key": "status",
+            "label": "Samtal",
+            "format": "status",
+            "tones": {
+              "Saknas": "warn"
+            }
+          },
+          {
+            "key": "bookedAt",
+            "label": "Bokat",
+            "format": "instant"
+          },
+          {
+            "key": "heldOn",
+            "label": "Hållet",
+            "format": "date"
+          },
+          {
+            "key": "openCommitments",
+            "label": "Öppna åtgärdspunkter",
+            "format": "number"
+          },
+          {
+            "key": "link",
+            "label": "Öppna i samtalssystemet",
+            "format": "link"
+          }
+        ]
+      }
+    }
+  ]
+}

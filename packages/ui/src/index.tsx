@@ -46,6 +46,7 @@ export {
 } from '@astryxdesign/core/Layout';
 export { SideNav, SideNavItem, SideNavSection, SideNavHeading } from '@astryxdesign/core/SideNav';
 export { ResizeHandle, useResizable } from '@astryxdesign/core/Resizable';
+export { useLayer } from '@astryxdesign/core/Layer';
 export {
   DropdownMenu,
   DropdownMenuDivider,

@@ -150,6 +150,16 @@
         "payroll.absenceStatus",
         "payroll.followAbsence"
       ]
+    },
+    {
+      "id": "appraisals",
+      "source": "connectors/appraisals/connector.mjs",
+      "manifest": "docs/generated/appraisals.manifest.json",
+      "capabilities": [
+        "appraisals.talks",
+        "appraisals.commitments",
+        "appraisals.round"
+      ]
     }
   ],
   "duplicateDecisionNumbers": [
@@ -159,7 +169,8 @@
     "D44",
     "D45",
     "D46",
-    "D85"
+    "D85",
+    "D96"
   ],
   "decisions": [
     {
@@ -1090,6 +1101,15 @@
       "area": "identity"
     },
     {
+      "key": "D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile",
+      "number": 96,
+      "path": "docs/decisions/D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md",
+      "title": "D96 · Talks is Clew's first owned domain: the round and action points, behind a profile a connector can answer",
+      "status": "accepted, built 2026-11-10 (the round, action points, the profile and its fixture; see \"As built\"); synthetic data only until questions 6 and 11 below are answered",
+      "date": "2026-11-10",
+      "area": "product, integrations"
+    },
+    {
       "key": "D97-a-new-person-gets-one-introduction-card-and-the-help-is-a-view",
       "number": 97,
       "path": "docs/decisions/D97-a-new-person-gets-one-introduction-card-and-the-help-is-a-view.md",
@@ -1136,6 +1156,17 @@
         "Understand the platform",
         "Build a custom connector",
         "Run and contribute"
+      ]
+    },
+    {
+      "path": "connectors/appraisals/README.md",
+      "title": "Appraisals connector (fixture)",
+      "category": "integrator-guide",
+      "headings": [
+        "What it answers",
+        "The records",
+        "Environment",
+        "Run and register"
       ]
     },
     {
@@ -2091,6 +2122,12 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md",
+      "title": "D96 · Talks is Clew's first owned domain: the round and action points, behind a profile a connector can answer",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/D97-a-new-person-gets-one-introduction-card-and-the-help-is-a-view.md",
       "title": "D97 · A new person gets one introduction card, and the help is a view built from the person's own connectors",
       "category": "decision-history",
@@ -2287,6 +2324,7 @@
       "category": "maintainer-guide",
       "headings": [
         "Run it",
+        "Utvecklingssamtal: the round, and switching the answering system",
         "Reset fixture data deliberately",
         "Source of runtime versions"
       ]
@@ -3021,16 +3059,16 @@
       ]
     },
     {
-      "path": "docs/reviews/2026-11-10-owned-domains-against-evity.md",
-      "title": "Exploration: the layer where Clew owns the feature and its data, against Evity · 2026-11-10",
+      "path": "docs/reviews/2026-11-10-owned-domains-against-a-commercial-hr-system.md",
+      "title": "Exploration: the layer where Clew owns the feature and its data, against a commercial HR system · 2026-11-10",
       "category": "review-history",
       "headings": [
         "The question",
         "Short answer",
-        "What Evity is",
+        "What the reference product is",
         "What Clew has today",
         "The line: what Clew may own",
-        "Evity's fifteen, sorted",
+        "The reference product's fifteen, sorted",
         "Five building blocks, not fifteen modules",
         "What the layer is in code",
         "Rules that need restating",

@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
 import { memoryCalendar, occurrence } from '../../packages/calendar/src/memory';
 import { localInstant } from '../../packages/calendar/src/dates';
-import type { UnitMember } from '../../packages/calendar/src/accounts';
 import { memoryObligations, memoryProposalStore } from '../../apps/server/src/modules/calendar/adapters/memory';
+import type { UnitMember } from '../../apps/server/src/modules/calendar/model';
 import { calendarUsecases } from '../../apps/server/src/modules/calendar/usecases/samtal';
 import { eventUsecases } from '../../apps/server/src/modules/calendar/usecases/events';
 
@@ -54,18 +54,21 @@ function world() {
     store = memoryProposalStore(),
     clock = fakeClock();
   let n = 0;
-  const bind = (p: AuthenticatedContext) => ({ provider: calendar, members: p.role === 'manager' ? members : [] });
+  const bind = () => ({ provider: calendar });
+  const team = async (p: AuthenticatedContext) => (p.role === 'manager' ? members : []);
   const ids = () => `id-${++n}`;
   const samtal = calendarUsecases({
     store,
     bind,
+    team,
+    round: async () => ({ label: 'Utvecklingssamtal 2026', opensOn: '2026-09-01', dueOn: '2026-11-28', held: [] }),
     clock,
     ids,
     people: { personaFor: async () => hillevi },
     notify: async () => undefined,
     obligations: memoryObligations(),
   });
-  return { calendar, store, clock, samtal, ...eventUsecases({ store, bind, clock, ids }) };
+  return { calendar, store, clock, samtal, ...eventUsecases({ store, bind, team, clock, ids }) };
 }
 const booking = {
   title: 'Ledningsgrupp',

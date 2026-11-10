@@ -12,6 +12,10 @@ import { searchConnector, type AnswerCards } from '../modules/search/connector';
 import { searchUsecases } from '../modules/search/usecases';
 import { errandCapabilities } from '../modules/errands/capabilities';
 import { errandUsecases } from '../modules/errands/usecases';
+import { talksConnector } from '../modules/talks/capabilities';
+import { talkSeamCapabilities } from '../modules/talk-seam/capabilities';
+import { talkSeamUsecases } from '../modules/talk-seam/usecases';
+import { talkDirectory, talks } from '../composition/talks';
 import { helpCapabilities } from '../modules/help/capabilities';
 import { helpUsecases } from '../modules/help/usecases';
 import { logger } from '../logging';
@@ -36,19 +40,29 @@ const internal = [userCapabilities(userReads)];
 /** The combined errand list (D35 item 4, D89) lists its case systems from the registry the same way. */
 const errands = errandUsecases({ sources: actor => registry.errandSources(actor) });
 /**
+ * The talks seam (D96 items 8 and 9): `clew.talks` and `clew.commitments` ask the one system that answers the talks
+ * profile for the person, chosen from the registry at call time, so switching the built-in module off on Anslutna system
+ * or enabling another system changes who answers from the next read on. Offered only while some system answers.
+ */
+const talkSeam = talkSeamUsecases({ source: actor => registry.talkSource(actor), directory: talkDirectory });
+/**
  * Clew's own connector is assembled here, the only file that names connectors: the composite search owns the id and the
- * question area, and the errand list adds its read and its area. The two modules never import each other (D20).
+ * question area, the errand list adds its read and its area, and the talks seam its two reads. The modules never import
+ * each other (D20).
  */
 const core = searchConnector(search, answerCards);
 const errandPart = errandCapabilities(errands, actor => registry.errandSources(actor).length > 0);
+const talkPart = talkSeamCapabilities(talkSeam, actor => !!registry.talkSource(actor));
 /** The help (D97) is computed from what the registry lets the person see, asked again at every read. */
 const helpPart = helpCapabilities(helpUsecases({ registry }));
 const clewConnector = {
   ...core,
   areas: [...core.areas, ...errandPart.areas],
-  capabilities: [...core.capabilities, ...errandPart.capabilities, ...helpPart.capabilities],
+  capabilities: [...core.capabilities, ...errandPart.capabilities, ...talkPart.capabilities, ...helpPart.capabilities],
 };
-const bundled = [calendarConnector(calendar, events), clewConnector];
+// The built-in talks module (D96 item 9) is bundled, not internal: it gets an administrable row, enabled by default,
+// and an administrator can switch it off so that another system answers the profile.
+const bundled = [calendarConnector(calendar, events), clewConnector, talksConnector(talks)];
 for (const m of [...internal, ...bundled]) registry.register({ ...m, uses: ['*'] });
 export const internalIds = internal.map(m => m.id);
 /** The connectors that live in this process: they get a `connector` row at boot so an administrator can govern them too (D23). */

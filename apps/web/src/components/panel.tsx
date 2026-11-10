@@ -11,6 +11,7 @@ import {
   EventList,
   DrawerHeader,
   DropdownMenu,
+  EmptyState,
   Heading,
   HStack,
   Icon,
@@ -29,6 +30,7 @@ import {
   VStack,
   agendaItems,
   useAnnounce,
+  useLayer,
   useMediaQuery,
   useResizable,
   worstWord,
@@ -337,10 +339,10 @@ const searchOf = (address: string) => {
 export const RAIL = 256,
   PANEL = 440;
 /**
- * What stands on the panel's inner edge beside its width: the fold button's column (`paddingInlineStart={1}`, a 28 px
- * `sm` IconButton, `paddingInlineEnd={3}`: 4 + 28 + 12) and the 1 px resize handle, as measured in the browser.
+ * What stands on the panel's inner edge beside its width: the 1 px resize handle, as measured in the browser. The fold
+ * button floats over the page beside the handle (D63 item 14, revised 2026-11-10), so it takes no width of its own.
  */
-export const PANEL_EDGE = 45;
+export const PANEL_EDGE = 1;
 /** The window width from which the panel fits beside a column that needs `minMain` px. */
 export const panelBesideQuery = (minMain: number) => `(min-width: ${RAIL + minMain + PANEL}px)`;
 /** What a transcript needs beside the panel: a conversation asked on a page brings the page along only where both fit (D50). */
@@ -370,6 +372,8 @@ export function usePanel(
 ): {
   end: ReactNode | undefined;
   overlay: ReactNode;
+  /** Whether the panel takes width beside the page: something is open in it, or the person is looking at it empty. */
+  occupied: boolean;
 } {
   const fits = useMediaQuery(panelBesideQuery(minMain));
   const inline = fits && !overlayOnly;
@@ -391,10 +395,24 @@ export function usePanel(
     setTabsState(next);
   };
   // Beside the page the panel is Astryx's resizable region: dragged by its handle, or folded away and brought back
-  // with the one button that stands on the handle's content side, at the top, so it rides the panel's edge in and
-  // out (the product owner, 2026-11-06: an icon in the top right corner, never a button among the page's own). The
-  // width is remembered per browser; the fold is not, so a card opened later is seen.
-  const [collapsed, setCollapsed] = useState(false);
+  // with the one button that floats over the page on the panel's inner edge, at the top, so it rides that edge in and
+  // out (the product owner, 2026-11-06: an icon in the top right corner, never a button among the page's own;
+  // 2026-11-10: "float to the left of the sidebar", after the button's own column had stood the height of the page
+  // beside the panel). It is an Astryx layer anchored to the resize handle (`useLayer`: a manual popover, so no light
+  // dismiss and no Esc), which takes no width from the page or the panel and is there when the panel has none. It
+  // stands in the page's top right corner, inside the 32 px every page keeps free above its header (D74) and 20 px
+  // in from the handle, so it lies over neither the page's content nor a scrollbar that takes space (15 to 17 px),
+  // whether or not the page scrolls: Astryx has no way to ask how wide the page's scrollbar is. The width is
+  // remembered per browser; the fold is not, so a card opened later is seen. The button is there wherever the panel
+  // fits beside the page, also while nothing is open (the product owner, 2026-11-10, revising D72 item 1): at rest
+  // the panel is folded away, and shown it says that nothing is open.
+  const [collapsed, setCollapsed] = useState(panel === null);
+  const edge = useLayer({ mode: 'context' });
+  const fold = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (inline) edge.show();
+    else edge.hide();
+  }, [inline]);
   const resizable = useResizable({
     defaultSize: PANEL,
     minSize: 320,
@@ -424,9 +442,11 @@ export function usePanel(
     setTabs([]);
     panel?.onClose();
   };
-  const toggle = (
-    <VStack paddingBlockStart={6} paddingInlineStart={1} paddingInlineEnd={3}>
+  /** The layer beside the handle, on the page's side: the button in the corner the page's own padding leaves free. */
+  const toggle = edge.render(
+    <VStack paddingBlockStart={1}>
       <IconButton
+        ref={fold}
         size="sm"
         variant="ghost"
         label={collapsed ? 'Visa panelen' : 'Fäll ihop panelen'}
@@ -434,7 +454,8 @@ export function usePanel(
         icon={<Icon icon={collapsed ? 'chevronsLeft' : 'chevronsRight'} />}
         onClick={collapsed ? expand : collapse}
       />
-    </VStack>
+    </VStack>,
+    { placement: 'start', alignment: 'start', offset: 20 },
   );
   const opener = useRef<HTMLElement | null>(null);
   const shown = useRef<{ id: string; address: string | undefined } | null>(null);
@@ -456,8 +477,12 @@ export function usePanel(
     if (id !== null && collapsed && !reveal) {
       resizable.expand();
       setCollapsed(false);
-      // The heading mounts with the next paint, after the focus rule below has run.
-      requestAnimationFrame(() => start()?.focus());
+      // The heading mounts with the next paint, after the focus rule below has run. Never away from a field the
+      // person is typing in: the box keeps the focus when a conversation brings its panel along.
+      requestAnimationFrame(() => {
+        const active = document.activeElement;
+        if (!(active instanceof HTMLElement && active.matches(TYPING))) start()?.focus();
+      });
     }
   }, [id]);
   // The tabs follow the address (D66): what it names joins the row, or keeps its place with a fresh search; when the
@@ -486,6 +511,10 @@ export function usePanel(
     if (next) {
       revealing.current = true;
       navigate(pathname + next.search, { replace: true });
+    } else {
+      // The last thing was closed: the panel folds away and its button stays, saying the way back.
+      resizable.collapse();
+      setCollapsed(true);
     }
   }, [id, address, name]);
   // A thing that is no longer open beside the page (the page's word: a card snoozed, dismissed or done) leaves the row.
@@ -583,85 +612,118 @@ export function usePanel(
   const close = (open: boolean) => {
     if (!open) panel?.onClose();
   };
-  const end =
-    inline && panel ? (
-      <>
-        {toggle}
-        <ResizeHandle isReversed hasDivider resizable={resizable.props} label="Ändra panelens bredd" />
-        <LayoutPanel
-          resizable={resizable.props}
-          hasDivider={false}
-          role="complementary"
-          label={panel.title}
-          padding={0}
-          isScrollable={false}
-        >
-          {!collapsed && (
-            <VStack
-              ref={region}
-              height="100%"
-              onKeyDown={e => {
-                // Esc inside a menu, a list or a dialog is theirs; a bare Esc lets go of the panel and never reaches the conversation behind it.
-                if (
-                  e.key !== 'Escape' ||
-                  (e.target as HTMLElement).closest('[role="menu"], [role="listbox"], [role="dialog"], dialog')
-                )
-                  return;
-                e.stopPropagation();
-                panel.onClose();
-              }}
-            >
-              <Layout
-                height="fill"
-                padding={6}
-                /* A heading and a button, not a toolbar: the heading takes the focus when the panel opens, and a toolbar would offer its arrow keys there. With several things open the menu of them stands where the heading stood, and ✕ beside it closes the one it names. */
-                header={
-                  <LayoutHeader hasDivider={panel.kind !== 'card' || !!tabRow}>
-                    <HStack justify="between" vAlign="center" gap={2}>
-                      {tabRow ?? (
-                        <Heading
-                          ref={heading}
-                          tabIndex={-1}
-                          level={panel.kind === 'card' ? 4 : 2}
-                          accessibilityLevel={2}
-                          color={panel.kind === 'card' ? 'secondary' : 'primary'}
-                        >
-                          {panel.title}
-                        </Heading>
-                      )}
-                      <HStack gap={1} vAlign="center">
-                        {panel.actions}
-                        {more}
-                        <IconButton
-                          size="sm"
-                          variant="ghost"
-                          label={closeLabel}
-                          icon={<Icon icon="close" />}
-                          onClick={panel.onClose}
-                        />
-                      </HStack>
+  /**
+   * With nothing open the panel says so, under the name the rows use for what is in it. Its button folds it; so does
+   * Esc, which gives the focus to the button.
+   */
+  const rest = (
+    <VStack
+      height="100%"
+      onKeyDown={e => {
+        if (e.key !== 'Escape') return;
+        e.stopPropagation();
+        collapse();
+        fold.current?.focus();
+      }}
+    >
+      <Layout
+        height="fill"
+        padding={6}
+        header={
+          <LayoutHeader>
+            <Heading ref={heading} tabIndex={-1} level={4} accessibilityLevel={2} color="secondary">
+              Öppet bredvid
+            </Heading>
+          </LayoutHeader>
+        }
+        content={
+          <LayoutContent>
+            <EmptyState title="Inget är öppet bredvid sidan" isCompact headingLevel={3} />
+          </LayoutContent>
+        }
+      />
+    </VStack>
+  );
+  const end = inline ? (
+    <>
+      {toggle}
+      <ResizeHandle ref={edge.ref} isReversed hasDivider resizable={resizable.props} label="Ändra panelens bredd" />
+      <LayoutPanel
+        resizable={resizable.props}
+        hasDivider={false}
+        // Folded away it has no width and nothing in it: not a landmark to land on.
+        {...(collapsed ? {} : { role: 'complementary' as const, label: panel?.title ?? 'Öppet bredvid' })}
+        padding={0}
+        isScrollable={false}
+      >
+        {!collapsed && !panel && rest}
+        {!collapsed && panel && (
+          <VStack
+            ref={region}
+            height="100%"
+            onKeyDown={e => {
+              // Esc inside a menu, a list or a dialog is theirs; a bare Esc lets go of the panel and never reaches the conversation behind it.
+              if (
+                e.key !== 'Escape' ||
+                (e.target as HTMLElement).closest('[role="menu"], [role="listbox"], [role="dialog"], dialog')
+              )
+                return;
+              e.stopPropagation();
+              panel.onClose();
+            }}
+          >
+            <Layout
+              height="fill"
+              padding={6}
+              /* A heading and a button, not a toolbar: the heading takes the focus when the panel opens, and a toolbar would offer its arrow keys there. With several things open the menu of them stands where the heading stood, and ✕ beside it closes the one it names. */
+              header={
+                <LayoutHeader hasDivider={panel.kind !== 'card' || !!tabRow}>
+                  <HStack justify="between" vAlign="center" gap={2}>
+                    {tabRow ?? (
+                      <Heading
+                        ref={heading}
+                        tabIndex={-1}
+                        level={panel.kind === 'card' ? 4 : 2}
+                        accessibilityLevel={2}
+                        color={panel.kind === 'card' ? 'secondary' : 'primary'}
+                      >
+                        {panel.title}
+                      </Heading>
+                    )}
+                    <HStack gap={1} vAlign="center">
+                      {panel.actions}
+                      {more}
+                      <IconButton
+                        size="sm"
+                        variant="ghost"
+                        label={closeLabel}
+                        icon={<Icon icon="close" />}
+                        onClick={panel.onClose}
+                      />
                     </HStack>
-                  </LayoutHeader>
-                }
-                content={
-                  panel.reads ? (
-                    <LayoutContent isScrollable={false} padding={0}>
-                      <ScrollableArea label={panel.title} height="100%" padding={6}>
-                        <VStack id={BODY_ID}>{panel.body(true)}</VStack>
-                      </ScrollableArea>
-                    </LayoutContent>
-                  ) : (
-                    <LayoutContent>
+                  </HStack>
+                </LayoutHeader>
+              }
+              content={
+                panel.reads ? (
+                  <LayoutContent isScrollable={false} padding={0}>
+                    <ScrollableArea label={panel.title} height="100%" padding={6}>
                       <VStack id={BODY_ID}>{panel.body(true)}</VStack>
-                    </LayoutContent>
-                  )
-                }
-              />
-            </VStack>
-          )}
-        </LayoutPanel>
-      </>
-    ) : undefined;
+                    </ScrollableArea>
+                  </LayoutContent>
+                ) : (
+                  <LayoutContent>
+                    <VStack id={BODY_ID}>{panel.body(true)}</VStack>
+                  </LayoutContent>
+                )
+              }
+            />
+          </VStack>
+        )}
+      </LayoutPanel>
+    </>
+  ) : undefined;
+  const occupied = inline && (panel !== null || !collapsed);
   // The drawer keeps the last name while it slides away, so its heading is never empty (axe: empty-heading).
   const lastTitle = useRef<string | null>(null);
   if (panel) lastTitle.current = panel.title;
@@ -701,5 +763,5 @@ export function usePanel(
       />
     </Drawer>
   );
-  return { end, overlay };
+  return { end, overlay, occupied };
 }

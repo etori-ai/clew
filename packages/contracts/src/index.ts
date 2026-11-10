@@ -716,6 +716,161 @@ export const ErrandsResultSchema = object({
   unanswered: Type.Array(Type.String()),
 });
 export type ErrandsResult = Static<typeof ErrandsResultSchema>;
+/** A calendar day, `YYYY-MM-DD`, read in Swedish time: a round's dates, the day a talk was held, an action point's due date. */
+const calendarDay = Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$', maxLength: 10 });
+/** A user's account name as provisioned (SCIM `userName`, D68): what another system knows a person by, since it cannot know Clew's ids. */
+const userName = Type.String({ minLength: 1, maxLength: 512 });
+/** A link into the answering system. Absolute http(s) only, so a page can put it in an `href`. */
+const sourceLink = Type.String({ maxLength: 1000, pattern: '^https?://[^\\s]+$' });
+/**
+ * Where one person stands in the round of development talks (D96 item 2): no talk yet, a talk in the calendar, or held.
+ * The order here is the order a list is drawn in.
+ */
+export const TALK_STATES = ['missing', 'booked', 'held'] as const;
+export const TalkState = Type.Union(
+  TALK_STATES.map(state => Type.Literal(state)),
+  {
+    description:
+      '`missing`: no talk is booked or held. `booked`: a talk is in the calendar. `held`: the manager has marked it held.',
+  },
+);
+export type TalkState = (typeof TALK_STATES)[number];
+/** The period in which every person on a unit is due a talk with the unit's manager (D96 item 1). */
+export const TalkRoundSchema = object(
+  {
+    label: Type.String({ minLength: 1, maxLength: 120, description: 'Swedish. The round as a person reads it.' }),
+    opensOn: { ...calendarDay, description: 'The first day of the round.' },
+    dueOn: { ...calendarDay, description: 'The day every talk of the round is due.' },
+  },
+  'The open round of development talks (D96 item 1).',
+);
+export type TalkRound = Static<typeof TalkRoundSchema>;
+/**
+ * One person in the round as the answering system lists them for a manager (D96 items 2 and 8): who, where they stand
+ * and how many action points are open. Keyed on the user name; nothing of the talk's content.
+ */
+export const TalkRowSchema = object(
+  {
+    ref: Type.String({
+      minLength: 1,
+      maxLength: 200,
+      pattern: '^talk:[a-z][a-z0-9-]*:[A-Za-z0-9:_.-]+$',
+      description: "`talk:<connector id>:<the system's own identity>`, stable. Clew treats it as opaque.",
+    }),
+    userName: { ...userName, description: 'The employee the talk is with, by their provisioned user name.' },
+    name: Type.String({ minLength: 1, maxLength: 512, description: "The employee's name." }),
+    state: TalkState,
+    at: Type.Optional(
+      Type.Union([calendarDay, instant], {
+        description: 'When the talk is booked (an instant), or the day it was held (a date). Absent when missing.',
+      }),
+    ),
+    openCommitments: Type.Integer({
+      minimum: 0,
+      description: 'How many action points with this employee are open, from this round and earlier ones.',
+    }),
+    link: Type.Optional({ ...sourceLink, description: 'The talk in its own system.' }),
+  },
+  'One person in the round of development talks (D96).',
+);
+export type TalkRow = Static<typeof TalkRowSchema>;
+/** What `<id>.talks` takes: nothing; the round and the people are the answering system's for the reader. */
+export const TalksInputSchema = object({});
+export type TalksInput = Static<typeof TalksInputSchema>;
+/** What `<id>.talks` returns. */
+export const TalksOutputSchema = object(
+  {
+    round: Type.Union([TalkRoundSchema, Type.Null()], { description: 'The open round; null when none is open.' }),
+    rows: Type.Array(TalkRowSchema, { maxItems: 500 }),
+    bookedUnknown: Type.Optional(
+      Type.Boolean({
+        description:
+          'True when the system could not tell who is booked (the calendar did not answer), so a `missing` row may be booked.',
+      }),
+    ),
+  },
+  'What `<id>.talks` returns: the open round and one row per person the reader manages a talk with.',
+);
+export type TalksOutput = Static<typeof TalksOutputSchema>;
+/** Who an action point is for (D96 item 4): the employee the talk is with, or their manager. */
+export const COMMITMENT_OWNERS = ['employee', 'manager'] as const;
+export const CommitmentOwner = Type.Union(COMMITMENT_OWNERS.map(owner => Type.Literal(owner)));
+export type CommitmentOwner = (typeof COMMITMENT_OWNERS)[number];
+/** The text of an action point: one short line, never in a card, an audit row or a model's context (D96 item 6). */
+const commitmentText = Type.String({ minLength: 1, maxLength: 280 });
+/**
+ * One action point (åtgärdspunkt, D96 item 4) as the answering system lists it: a short line, an owner, a due date and
+ * done or open, tied to the employee the talk is with. Open ones from earlier rounds are listed, marked `carried`.
+ */
+export const CommitmentRowSchema = object(
+  {
+    ref: Type.String({
+      minLength: 1,
+      maxLength: 200,
+      pattern: '^commitment:[a-z][a-z0-9-]*:[A-Za-z0-9:_.-]+$',
+      description: "`commitment:<connector id>:<the system's own identity>`, stable. Clew treats it as opaque.",
+    }),
+    userName: { ...userName, description: 'The employee the talk is with, by their provisioned user name.' },
+    name: Type.String({ minLength: 1, maxLength: 512, description: "That employee's name." }),
+    owner: CommitmentOwner,
+    mine: Type.Boolean({ description: 'The reader is the owner.' }),
+    text: { ...commitmentText, description: 'The action point as written. Free text about a person.' },
+    dueOn: { ...calendarDay, description: 'The day it is due.' },
+    done: Type.Boolean(),
+    doneAt: Type.Optional({ ...instant, description: 'When it was marked done.' }),
+    carried: Type.Boolean({ description: 'From an earlier round and still open.' }),
+    link: Type.Optional({ ...sourceLink, description: 'The action point in its own system.' }),
+  },
+  'One action point from a development talk (D96).',
+);
+export type CommitmentRow = Static<typeof CommitmentRowSchema>;
+/**
+ * What `<id>.commitments` takes: `person`, a user name, asks for that employee's action points, for a manager of their
+ * unit; without it, the reader's: the ones the reader owns and the ones about the reader (D96 item 4: both see them).
+ */
+export const CommitmentsInputSchema = object({ person: Type.Optional(userName) });
+export type CommitmentsInput = Static<typeof CommitmentsInputSchema>;
+/** What `<id>.commitments` returns. */
+export const CommitmentsOutputSchema = object(
+  { rows: Type.Array(CommitmentRowSchema, { maxItems: 500 }) },
+  'What `<id>.commitments` returns: the action points the reader may see, as the system lets them see them.',
+);
+export type CommitmentsOutput = Static<typeof CommitmentsOutputSchema>;
+/**
+ * What the composite `clew.talks` returns to Clew's own pages (D96 item 8): the one source's answer, checked against
+ * the shape, each row mapped to a person on the reader's own units (`personId`), with whether Clew can write
+ * (`writable`: the built-in module answered) and the answering system as a person reads it (`source`).
+ */
+export const TalksResultSchema = object({
+  round: TalksOutputSchema.properties.round,
+  rows: Type.Array(object({ ...TalkRowSchema.properties, personId: id }), { maxItems: 500 }),
+  bookedUnknown: TalksOutputSchema.properties.bookedUnknown,
+  writable: Type.Boolean(),
+  source: Type.String(),
+});
+export type TalksResult = Static<typeof TalksResultSchema>;
+/**
+ * What the composite `clew.commitments` returns (D96 item 8): as `clew.talks`, each row with `personId` (the employee)
+ * and, only when `writable`, `id`: the built-in module's own id of the action point, which its write routes take.
+ */
+export const CommitmentsResultSchema = object({
+  rows: Type.Array(object({ ...CommitmentRowSchema.properties, personId: id, id: Type.Optional(id) }), {
+    maxItems: 500,
+  }),
+  writable: Type.Boolean(),
+  source: Type.String(),
+});
+export type CommitmentsResult = Static<typeof CommitmentsResultSchema>;
+/** Marking a talk held (D96 item 2): the day it was held, today in Swedish time when absent. */
+export const TalkHeldBodySchema = object({ heldOn: Type.Optional(calendarDay) });
+export type TalkHeldBody = Static<typeof TalkHeldBodySchema>;
+/** A manager adds an action point in a person's talk (D96 item 4). The text must not be blank, which the domain checks. */
+export const CommitmentAddBodySchema = object({
+  owner: CommitmentOwner,
+  text: commitmentText,
+  dueOn: calendarDay,
+});
+export type CommitmentAddBody = Static<typeof CommitmentAddBodySchema>;
 /** A Clew-side action the conversation proposes; executed only after the person confirms, through the thread endpoints. */
 export const ClewActionSchema = object({
   n: Type.Integer(),

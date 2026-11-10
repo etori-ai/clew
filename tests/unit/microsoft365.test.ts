@@ -114,7 +114,10 @@ async function approved(w: ReturnType<typeof world>, input: MeetingInput) {
   };
   const members = [{ ref: 'anna', personId: 'anna', email: 'anna@clew.test', name: 'Anna' }];
   const source = {
-    ...calendarExecutionSource(() => ({ provider: w.hillevi, members })),
+    ...calendarExecutionSource(
+      () => ({ provider: w.hillevi }),
+      async () => members,
+    ),
     current: async () => actor,
   };
   let n = 0;

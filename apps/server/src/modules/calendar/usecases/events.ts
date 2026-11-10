@@ -16,7 +16,7 @@ import { addDays, dayStart, displayDate, shortDayLabel, timeRange } from '@clew/
 import { collides, type Interval } from '@clew/calendar/proposals';
 import { CalendarError, type EventOccurrence } from '@clew/calendar/model';
 import { InputError } from '../../../context';
-import type { CalendarBinder, ProposalRecord, ProposalStore } from '../model';
+import type { CalendarBinder, ProposalRecord, ProposalStore, Team } from '../model';
 import { toEvent } from './reads';
 
 /**
@@ -26,6 +26,8 @@ import { toEvent } from './reads';
 export interface EventDeps {
   store: ProposalStore;
   bind: CalendarBinder;
+  /** The people a manager may invite, from the assignments (D96 item 3). */
+  team: Team;
   clock: () => Date;
   ids: () => string;
 }
@@ -45,7 +47,7 @@ const toProposal = (p: ProposalRecord): Thread['proposals'][number] => ({
 const interval = (p: { start: string; end: string }): Interval => ({ start: p.start, end: p.end });
 const isoDate = /^\d{4}-\d{2}-\d{2}$/;
 
-export function eventUsecases({ store, bind, clock, ids }: EventDeps) {
+export function eventUsecases({ store, bind, team, clock, ids }: EventDeps) {
   const principal = (persona: AuthenticatedContext) => persona.principal.id;
   const window = (start: string, end: string) => {
     const from = Date.parse(start),
@@ -62,9 +64,9 @@ export function eventUsecases({ store, bind, clock, ids }: EventDeps) {
     details: Record<string, unknown>,
   ) => store.transaction(tx => tx.writeAudit({ actor: principal(persona), action, subject, at, details }));
 
-  /** The people a booking may invite: the unit's members, by name and address, never anyone else. */
+  /** The people a booking may invite: the manager's team, by name and address, never anyone else. */
   async function listMembers(persona: AuthenticatedContext): Promise<CalendarMember[]> {
-    return bind(persona).members.map(m => ({ name: m.name, email: m.email }));
+    return (await team(persona)).map(m => ({ name: m.name, email: m.email }));
   }
   async function listRooms(persona: AuthenticatedContext): Promise<CalendarRoom[]> {
     const rooms = await bind(persona).provider.resources();
@@ -74,11 +76,14 @@ export function eventUsecases({ store, bind, clock, ids }: EventDeps) {
   async function dayView(persona: AuthenticatedContext, date: string): Promise<DayView> {
     if (!isoDate.test(date)) throw new InputError('Ogiltigt datum.');
     const binding = bind(persona);
-    const events = await binding.provider.list(dayStart(date), dayStart(addDays(date, 1)));
+    const [events, members] = await Promise.all([
+      binding.provider.list(dayStart(date), dayStart(addDays(date, 1))),
+      team(persona),
+    ]);
     const proposals = (await store.activeProposals(persona.id))
       .filter(p => displayDate(p.start) === date)
       .map(toProposal);
-    return { from: date, events: events.map(e => toEvent(e, binding, persona.name)), proposals };
+    return { from: date, events: events.map(e => toEvent(e, binding, persona.name, members)), proposals };
   }
   /** Free or busy for the person, the chosen members and the room over one window; "unknown" when a source cannot answer. */
   async function checkAvailability(
@@ -86,9 +91,10 @@ export function eventUsecases({ store, bind, clock, ids }: EventDeps) {
     input: AvailabilityInput,
   ): Promise<AvailabilityResult> {
     window(input.start, input.end);
-    const binding = bind(persona);
+    const binding = bind(persona),
+      everyone = await team(persona);
     const members = input.participants
-      .map(email => binding.members.find(m => m.email.toLowerCase() === email.toLowerCase()))
+      .map(email => everyone.find(m => m.email.toLowerCase() === email.toLowerCase()))
       .filter((m): m is NonNullable<typeof m> => !!m);
     const room = input.room ? (await binding.provider.resources()).find(r => r.ref === input.room) : undefined;
     const targets = [
@@ -137,7 +143,7 @@ export function eventUsecases({ store, bind, clock, ids }: EventDeps) {
       ...others.filter(p => p.id !== proposal.id).map(interval),
     ];
     if (collides(interval(input), taken)) throw new InputError(`Tiden ${when} krockar med din kalender.`);
-    const member = binding.members.find(m => m.email.toLowerCase() === proposal.participant.email.toLowerCase());
+    const member = (await team(persona)).find(m => m.email.toLowerCase() === proposal.participant.email.toLowerCase());
     if (member) {
       const [busy] = await binding.provider.freeBusy(dayStart(day), dayStart(addDays(day, 1)), [
         { ref: member.ref, email: member.email },

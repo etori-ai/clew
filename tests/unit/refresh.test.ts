@@ -84,6 +84,28 @@ test("a scanned card's trigger names the system in words, the id stays on the th
   await w.uc.tick();
   expect(w.store.threads.dump()[0]!.thread.trigger.source).toBe('Ärendesystemet');
 });
+test('an unchanged card is not rewritten when its stored copy has another key order or lacks an absent property', async () => {
+  const w = world();
+  const action = { id: 'open', label: 'Öppna', capability: 'source.open', kind: 'read' };
+  w.set([{ ...draft(), actions: [action] } as ThreadDraft]);
+  await w.uc.request(actor);
+  await w.uc.tick();
+  // What a JSON column hands back: the same action, keys in its own order; the draft now also names an absent property.
+  w.advance();
+  w.set([
+    {
+      ...draft(),
+      actions: [{ kind: 'read', capability: 'source.open', label: 'Öppna', id: 'open', input: undefined }],
+    } as ThreadDraft,
+  ]);
+  await w.uc.tick();
+  expect(w.store.threads.audit.filter(a => a.action === 'thread.refreshed')).toEqual([]);
+  // A real difference is still written.
+  w.advance();
+  w.set([{ ...draft(), actions: [{ ...action, label: 'Visa' }] } as ThreadDraft]);
+  await w.uc.tick();
+  expect(w.store.threads.audit.filter(a => a.action === 'thread.refreshed')).toHaveLength(1);
+});
 test('dismissal suppresses unchanged work, a changed revision explains its return, and a new period is distinct', async () => {
   const w = world();
   w.set([draft()]);

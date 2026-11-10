@@ -1,9 +1,9 @@
-# Exploration: the layer where Clew owns the feature and its data, against Evity · 2026-11-10
+# Exploration: the layer where Clew owns the feature and its data, against a commercial HR system · 2026-11-10
 
 **Date:** 2026-11-10 · **Asked by:** the product owner ("We might have taken the modularity a bit too far. […] a lot
-of features like the ones evity.hr provide is standard for all organizations, 1-on-1 with employees etc. So now we
-need to explore the layer where clew takes ownership of the feature and data, and how it relates to what we have
-already built") · **Outcome:** the discussion the same day widened the premise; see
+of features like the ones [a commercial HR system] provide is standard for all organizations, 1-on-1 with employees
+etc. So now we need to explore the layer where clew takes ownership of the feature and data, and how it relates to
+what we have already built") · **Outcome:** the discussion the same day widened the premise; see
 [Outcome of the discussion](#outcome-of-the-discussion-2026-11-10) at the end, which replaces the line and the sorting
 below with a checklist for maintainers ([core or connector](../maintainers/core-or-connector.md)). Recorded as
 [D95](../decisions/D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist.md).
@@ -25,16 +25,17 @@ is already built carries over?
    work items, attention, audit, effects in other systems) is already there, which is why the owned layer can be thin.
 3. **Own the work between people, never the facts about a person.** A conversation held, what was agreed, a checklist
    and who did which item: Clew may own. Employment, pay, absence, competence: stays in the HR system, read through a
-   connector. This keeps Clew from growing an employee file, which is the centre of Evity and of every HR system.
-4. **Of Evity's fifteen features, three fit now**: medarbetarsamtal and 1:1, on- and offboarding checklists, and the
-   annual plan. They reduce to five building blocks, four of which Clew partly has.
+   connector. This keeps Clew from growing an employee file, which is the centre of the reference product and of
+   every HR system.
+4. **Of the reference product's fifteen features, three fit now**: medarbetarsamtal and 1:1, on- and offboarding
+   checklists, and the annual plan. They reduce to five building blocks, four of which Clew partly has.
 5. **Start by giving utvecklingssamtal a home of its own.** Today the flow ends when the invitation is answered.
    The first owned domain is the rest of it: the round, the record and the action points.
 
-## What Evity is
+## What the reference product is
 
-Evity is a Swedish HR system sold per employee to small and medium-sized companies; the site names no public-sector
-customer and no AI feature. It lists fifteen features in four groups.
+The reference product is a Swedish commercial HR system for small and medium-sized companies; its site names no
+public-sector customer and no AI feature. It lists fifteen features in four groups.
 
 | Group | Features |
 |---|---|
@@ -53,8 +54,8 @@ Three observations matter for Clew:
   Retention is set per template and deletion is automatic. The record follows the employee, so it survives a change
   of manager.
 - **Much of the rest is plumbing Clew already has.** Reminders the day before, reminders on overdue action points,
-  calendar sync to Outlook and Google, tasks pushed to Microsoft To Do, notices to Slack. Evity integrates outwards
-  to reach the place where the person works. Clew is that place.
+  calendar sync, tasks pushed to a task app, notices in a chat tool. The product integrates outwards to reach the
+  place where the person works. Clew is that place.
 
 ## What Clew has today
 
@@ -99,7 +100,7 @@ features, and it settles the personkort: Clew does not have one. An owned record
 period or occurrence. What a manager sees about an employee beside a talk (absence pattern, expiring certificate)
 is read live from the HR connector, as UC-KIM-2 already describes.
 
-## Evity's fifteen, sorted
+## The reference product's fifteen, sorted
 
 | Feature | Verdict | Why |
 |---|---|---|
@@ -129,9 +130,9 @@ is read live from the HR connector, as UC-KIM-2 already describes.
 
 The plan (årshjul) is rounds and checklists on a recurrence, which the durable engine already runs.
 
-This is where Clew can be better than a stand-alone HR tool and not only equal to it. An Evity onboarding item is a
-checkbox someone ticks. A Clew onboarding item can be an approved execution in the IT system, or a watch that
-closes itself when the account exists.
+This is where Clew can be better than a stand-alone HR tool and not only equal to it. The reference product's
+onboarding item is a checkbox someone ticks. A Clew onboarding item can be an approved execution in the IT system,
+or a watch that closes itself when the account exists.
 
 ## What the layer is in code
 
@@ -180,8 +181,8 @@ Owning a record changes the meaning of five existing rules. A decision has to sa
   pilot cannot.
 - **Retention, export and erasure, per domain.** The vision ties ownership to these three. For a municipality there
   is more than GDPR: whether a talk record is a public document, which secrecy rule covers it, and what the archive
-  rules say about keeping and weeding it. Evity's customers do not have that question, and this review has not
-  answered it. It needs the municipality's lawyer and archivist before real data is entered.
+  rules say about keeping and weeding it. The reference product's customers do not have that question, and this
+  review has not answered it. It needs the municipality's lawyer and archivist before real data is entered.
 - **Sealing at rest.** Approved execution input is already encrypted. Talk notes need at least the same.
 
 ## A first slice
@@ -266,8 +267,8 @@ the legal answers per domain.
 
 ## Sources and limits
 
-- Evity: the homepage and the pages for medarbetarsamtal, medarbetarundersökningar, integrations, pricing and
-  customers were read on 2026-11-10. The other thirteen features are described from the homepage's taglines only.
+- The reference product: its homepage and its pages for medarbetarsamtal, medarbetarundersökningar, integrations,
+  pricing and customers were read on 2026-11-10. The other thirteen features are described from the homepage's taglines only.
   All claims are the vendor's own.
 - What municipalities have and lack for each feature is an assumption drawn from the personas and the vision, not a
   survey. Sundsvall's actual tools for medarbetarsamtal, onboarding and the annual plan should be confirmed before

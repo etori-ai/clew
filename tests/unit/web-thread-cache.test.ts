@@ -174,6 +174,24 @@ describe('the stream cache (D33)', () => {
     expect(c.getQueryState(documentKey)?.isInvalidated).toBe(false);
     notices.stop();
   });
+  test('a revision the tab has already seen is no notice: the first one and a reconnect that repeats it', () => {
+    const c = client();
+    c.setQueryData(keys.threads, { threads: [] });
+    const notices = changeNotices(c);
+    // The stream's first word after the page's own first reads.
+    notices.arrived('7');
+    expect(c.getQueryState(keys.threads)?.isInvalidated).toBe(false);
+    // The tab was hidden and shown again: the new connection repeats the revision.
+    notices.arrived('7');
+    expect(c.getQueryState(keys.threads)?.isInvalidated).toBe(false);
+    // Something was committed.
+    notices.arrived('8');
+    expect(c.getQueryState(keys.threads)?.isInvalidated).toBe(true);
+    c.setQueryData(keys.threads, { threads: [] });
+    notices.arrived('8');
+    expect(c.getQueryState(keys.threads)?.isInvalidated).toBe(false);
+    notices.stop();
+  });
   test('the calendar page picks the open proposal thread, else the latest one, else none', () => {
     const handled = thread({ id: 'old', topic: 'utvecklingssamtal', state: 'handled' });
     const open = thread({ id: 'new', topic: 'utvecklingssamtal' });
