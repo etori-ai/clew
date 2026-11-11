@@ -1,0 +1,9 @@
+/*
+ * The theme centres the whole page in 1440 px and lets the sidebar's panel fill everything to the left of it, so on
+ * a wide screen the panel grows with the window: 385 px at 1680, 825 px at 2560, most of it empty. With no limit
+ * on the layout the sidebar keeps its own width at the left edge, the outline stands at the right edge and the
+ * text stays centred between them at the width it had.
+ */
+:root {
+  --vp-layout-max-width: 100%;
+}

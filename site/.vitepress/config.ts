@@ -20,46 +20,14 @@ const base = (process.env.DOCS_BASE ?? '').replace(/\/?$/, '/');
 const unpublished = ['reviews/', 'history/', 'presentations/', 'decisions/TEMPLATE.md'];
 const isPage = (path: string) => !unpublished.some(entry => path === entry || path.startsWith(entry));
 
-const { nav, sidebar, sv } = navigation(docsDir, isPage);
+const { nav, sidebar } = navigation(docsDir, isPage);
 // A text link, not the theme's brand icon: the icon data it would be read from is not under an OSI-approved licence.
 nav.push({ text: 'GitHub', link: repositoryUrl });
-sv.nav.push({ text: 'GitHub', link: repositoryUrl });
-const editPattern = `${repositoryUrl}/blob/${branch}/docs/:path`;
 
 export default defineConfig({
+  lang: 'en',
   title: 'Clew',
   description: "An employee's work across systems in one workspace: product, architecture, connectors and decisions.",
-  // The documentation is English. The pages under `docs/sv/` are Swedish translations (D106, the amendment): a locale
-  // of their own, so that the page says which language it is in and the theme's own words are Swedish around them.
-  locales: {
-    root: { label: 'English', lang: 'en' },
-    sv: {
-      label: 'Svenska',
-      lang: 'sv',
-      description:
-        'En medarbetares arbete över flera system på en plats: de sidor av dokumentationen som finns på svenska.',
-      themeConfig: {
-        nav: sv.nav,
-        sidebar: sv.sidebar,
-        outline: { level: [2, 3], label: 'På den här sidan' },
-        editLink: { pattern: editPattern, text: 'Visa sidan på GitHub' },
-        docFooter: { prev: 'Föregående sida', next: 'Nästa sida' },
-        darkModeSwitchLabel: 'Utseende',
-        lightModeSwitchTitle: 'Byt till ljust läge',
-        darkModeSwitchTitle: 'Byt till mörkt läge',
-        sidebarMenuLabel: 'Meny',
-        returnToTopLabel: 'Till sidans början',
-        langMenuLabel: 'Byt språk',
-        skipToContentLabel: 'Hoppa till innehållet',
-        notFound: {
-          title: 'Sidan finns inte',
-          quote: 'Adressen leder inte till någon sida. Bara några sidor finns på svenska; resten står på engelska.',
-          linkLabel: 'Till sidorna på svenska',
-          linkText: 'Till sidorna på svenska',
-        },
-      },
-    },
-  },
   base,
   srcDir: '../docs',
   srcExclude: unpublished.map(entry => (entry.endsWith('/') ? `${entry}**` : entry)),
@@ -77,36 +45,8 @@ export default defineConfig({
     nav,
     sidebar,
     outline: { level: [2, 3] },
-    // Few pages have a translation, so the language menu leads to the other language's index, not to the same path.
-    i18nRouting: false,
-    search: {
-      provider: 'local',
-      options: {
-        locales: {
-          sv: {
-            translations: {
-              button: { buttonText: 'Sök', buttonAriaLabel: 'Sök' },
-              modal: {
-                displayDetails: 'Visa detaljerad lista',
-                resetButtonTitle: 'Rensa sökningen',
-                backButtonTitle: 'Stäng sökningen',
-                noResultsText: 'Inga träffar för',
-                footer: {
-                  selectText: 'välj',
-                  selectKeyAriaLabel: 'retur',
-                  navigateText: 'flytta',
-                  navigateUpKeyAriaLabel: 'pil upp',
-                  navigateDownKeyAriaLabel: 'pil ned',
-                  closeText: 'stäng',
-                  closeKeyAriaLabel: 'escape',
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-    editLink: { pattern: editPattern, text: 'View this page on GitHub' },
+    search: { provider: 'local' },
+    editLink: { pattern: `${repositoryUrl}/blob/${branch}/docs/:path`, text: 'View this page on GitHub' },
   },
   vite: {
     // The documents live outside this folder, so the development server has to be allowed to read them.
