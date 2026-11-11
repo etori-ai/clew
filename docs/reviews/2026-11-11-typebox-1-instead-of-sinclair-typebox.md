@@ -22,7 +22,8 @@ move does to Clew, measured on the code, and what it does not.
   `Type.Transform`, `TypeCompiler`, `TypeRegistry`, `Type.Date` and `Value.Cast` also changed, and Clew uses none of
   them.
 
-Four things the migration note does not say were found by measuring, and each would have changed behaviour silently:
+Five things the migration note does not say would each have changed behaviour silently. Four were found by measuring;
+the fifth was found by the review of the pull request, with both lines run side by side:
 
 1. **`Type.Partial` and `Type.Omit` no longer carry the options of the object they are given.** Five schemas lost
    `additionalProperties: false`: `SnoozeInput`, `ConnectorPatchInput`, `ProviderPatchInput`, `ModelPatchInput` and
@@ -37,6 +38,13 @@ Four things the migration note does not say were found by measuring, and each wo
 4. **TypeBox now ships checks for twenty-one string formats, and an unknown format passes.** In 0.34 a format nobody
    had registered failed. Clew registered its own `date-time` only `if (!FormatRegistry.Has('date-time'))`; ported as
    written, TypeBox's own check (lower-case `t` and an RFC 9557 suffix allowed) would have replaced Clew's.
+5. **A string's length is counted in Unicode code points**, where 0.34 counted UTF-16 units. `maxLength: 1` refuses
+   one emoji on 0.34.52 and accepts it on 1.4.6, and `minLength: 2` goes the other way. The generated values held no
+   character outside the basic plane, so the measurement below did not see it. 1.x is kept: it is what JSON Schema
+   says and what Ajv, which validates every route body, has always done. What had to follow is the code that compares
+   a length with the same limit beside a schema, so that a value the schema accepts is not dropped a line later: a
+   card row's key (`Registry.draftProblem`), a talk's subject key, and the entity module's `isKey` and unit id now
+   count `[...value].length`, as `talks/domain.ts` and `competence/domain.ts` already did.
 
 ## What was measured, and how
 
@@ -75,6 +83,12 @@ the literal string `^(.*)$`, would notice; nothing in the repository does.
   there because nobody had registered `email`, and 1.4.6 checks it. Both are validated by Ajv in `routes/api.ts` and
   never by `Value.Check`, so nothing a person meets changes. TypeBox and Ajv now agree on them.
 - Clew's `date-time` is registered unconditionally and replaces TypeBox's, so an instant is checked as before.
+- Not in the generated values, and found by the review: `Value.Check` now counts a string's length in code points
+  (item 5 above), which brings it in line with Ajv. It also accepts a `Date` where a `Type.Record` is expected and an
+  array with holes, both of which 0.34 refused. Neither can arrive as JSON; only a value built in process can be
+  either, and no code was changed for it.
+- TypeBox 1.x is ES modules only, so there is one copy and one format registry. The hazard the old comment on
+  `checkContract` described, Node loading an ESM and a CommonJS copy with a registry each, is gone.
 - `Value.Check` interprets the schema as it did. Code generation (`new Function`) is only behind `Compile`, which Clew
   does not call, so nothing changes for a content security policy.
 
@@ -95,6 +109,9 @@ the readers are administrators, connector authors and operators.
 Over the 31 094 generated values: 28 441 lists are identical line for line and in order, 2 653 are identical but for
 that repeated line, none differs otherwise, and the first problem (the only one SCIM and the header name) never
 differs.
+
+The review of the pull request ran five faulty manifests through the old and the new code on its own and got the
+same lines in the same order, less the repeated one.
 
 For comparison, the library's own words, which the code would give if it were ported as written: a missing `source`
 is `/: must have required properties source`, so the dry-run page can no longer link the problem to the `source`
@@ -121,10 +138,14 @@ unit tests fail on those paths.
 - `packages/contracts`, `packages/connectors` and `apps/server` pin `typebox` 1.4.6; 25 files change their import.
 - `packages/contracts/src/index.ts`: `literals(list)` for a union of literals from a closed list (the schema is the
   same `anyOf`); `closed` passed again to the five derived bodies; `ENTITY_KEY_MAX` instead of reading `maxLength`
-  back off a schema, which 1.x's types no longer show; `Format.Set('date-time', …)`; `contractProblems`.
+  back off a schema, which 1.x's types no longer show; `Format.Set('date-time', …)`; `contractProblems`, which takes
+  a limit: the SCIM `detail` and the header refusal name only the first problem and ask for one, so the library stops
+  looking there instead of walking a large body to its end (0.34's `.First()` did the same), while a manifest's
+  problems are still all listed. It words the keywords the schemas use and leaves any other to the library.
 - `packages/connectors/src/protocol.ts`: `FactEnvelope` as a type, instead of `.static` on the schema.
-- `tests/unit/contract-problems.test.ts`: the words and paths, every problem listed past eight, the five bodies
-  closed, Clew's `date-time`, and `literals`.
+- `tests/unit/contract-problems.test.ts`: the words and paths for every keyword the schemas use, every problem listed
+  past eight, the first problems under a limit, the five bodies closed, Clew's `date-time`, a string's length in code
+  points, and `literals`.
 - The web bundle's main chunk grows from 2 634.50 kB to 2 652.39 kB (810.38 to 817.41 kB gzipped).
 
 ## Recommendation
@@ -132,7 +153,7 @@ unit tests fail on those paths.
 Move now. The 0.x line is maintained, so there is no urgency from upstream; the reason is cost. The move has a
 contract in it (the published schema's bytes, the words of a manifest's problems, the package the reference teaches),
 and that is cheapest to change before the first installation and the first connector written outside the team. The
-four silent differences above are found and each is now held by a test or by the type checker. Staying costs nothing
+five silent differences above are found and each is now held by a test or by the type checker. Staying costs nothing
 today and more with every schema and every outside author added.
 
 ## The choice, and its answer
@@ -155,13 +176,15 @@ In the devcontainer, Node 26.13.0 and Bun 1.4.4, after the rebase onto the depen
 before the rebase on `main`'s versions and PostgreSQL 17.11.
 
 - `bun install --frozen-lockfile` from the regenerated lockfile, and `bun run check` (format, typecheck, dependency
-  rules over 672 modules, purity, 1 115 unit and web tests, the 10 Node runtime tests, documentation): pass. The ten
-  new tests are `tests/unit/contract-problems.test.ts`.
+  rules over 672 modules, purity, 1 119 unit and web tests, the 10 Node runtime tests, documentation): pass. The
+  thirteen new tests are `tests/unit/contract-problems.test.ts`.
 - `bun run test:db` (136 tests) and `bun run test:durability` (3) against a throwaway PostgreSQL 18.6 on a memory
   disk, migrated with `bun run db:init` and removed afterwards; the shared development database was not written to.
 - `bun scripts/connector-check.ts` against `hr`, `finance`, `incidents`, `communication`, `timesheet`, `payroll` and
-  `intranet`: all checks pass; before the rebase the output was compared with `main`'s and was identical.
+  `intranet`: all checks pass, after the review's fixes too; before the rebase the output was compared with
+  `main`'s and was identical.
 - `bun run build`: passes. `bun audit`: no known vulnerabilities (524 packages).
 - The WCAG specs for the two protocol pages (`sh scripts/a11y.sh`'s command on `protocol.spec.ts` and
   `screens.protocol.spec.ts`, on Playwright 1.65.0 in a compose project of its own so it installs from this
-  lockfile): 6 pass, the screen capture is skipped by the suite's own condition. The whole suite was not run.
+  lockfile): 6 pass, the screen capture is skipped by the suite's own condition. Run before the review's fixes, which
+  touch no page. The whole suite was not run.

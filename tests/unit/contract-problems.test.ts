@@ -13,7 +13,9 @@ import {
   contractProblems,
   literals,
 } from '../../packages/contracts/src/index';
-import { ConnectorManifestSchema } from '../../packages/connectors/src/protocol';
+import { ConnectorManifestSchema, ExecuteResultSchema, FigureSchema } from '../../packages/connectors/src/protocol';
+import { ScimPatchSchema } from '../../apps/server/src/modules/people/contracts';
+import { isKey } from '../../apps/server/src/modules/entities/domain';
 import { manifest as hello } from '../../connectors/hello/connector.mjs';
 import { manifest as phonebook } from '../../connectors/phonebook/connector.mjs';
 
@@ -121,6 +123,33 @@ describe('the problems of a value that fails a contract', () => {
       ),
     ).toEqual(['/scan: Expected boolean']);
   });
+  test('a list, a number and a format are said as they always were', () => {
+    const roles = (value: unknown) => edited(hello, m => void (m.capabilities[0].scope.roles = value));
+    expect(lines(ConnectorManifestSchema, roles(['manager', 'manager']))).toEqual([
+      '/capabilities/0/scope/roles: Expected array elements to be unique',
+    ]);
+    expect(lines(ScimPatchSchema, { schemas: ['x'], Operations: [] })).toEqual([
+      '/Operations: Expected array length to be greater or equal to 1',
+    ]);
+    const operations = Array.from({ length: 501 }, () => ({ op: 'add' }));
+    expect(lines(ScimPatchSchema, { schemas: ['x'], Operations: operations })).toEqual([
+      '/Operations: Expected array length to be less or equal to 500',
+    ]);
+    const result = (undoMinutes: number) => ({ headline: 'Klart', rows: [], undoMinutes });
+    expect(lines(ExecuteResultSchema, result(0))).toEqual([
+      '/undoMinutes: Expected integer to be greater or equal to 1',
+    ]);
+    expect(lines(ExecuteResultSchema, result(1441))).toEqual([
+      '/undoMinutes: Expected integer to be less or equal to 1440',
+    ]);
+    expect(lines(ExecuteResultSchema, result(1.5))).toEqual(['/undoMinutes: Expected integer']);
+    expect(lines(FigureSchema, { label: 'x', value: 'y', tone: 'none', progress: { value: -1, max: 0 } })).toEqual([
+      '/progress/value: Expected number to be greater or equal to 0',
+      '/progress/max: Expected number to be greater than 0',
+    ]);
+    expect(lines(SnoozeInput, { until: 'tomorrow' })).toEqual(["/until: Expected string to match 'date-time' format"]);
+    expect(lines(SnoozeInput, { preset: '' })).toEqual(['/preset: Expected string length greater or equal to 1']);
+  });
   test('every problem is listed, however many there are (D60)', () => {
     // The library stops at eight errors by default, and one failed union of many literals is more than that.
     const many = edited(phonebook, m => {
@@ -133,6 +162,38 @@ describe('the problems of a value that fails a contract', () => {
     expect(problems).toContain('/source: Expected required property');
     expect(problems).toContain('/extra19: Unexpected property');
     expect(problems).toContain('/capabilities/0/view: Expected union value');
+  });
+  test('a caller that names only the first problems gets the same ones, without the rest being looked for', () => {
+    const values = [
+      edited(hello, m => {
+        for (let i = 0; i < 20; i++) m['extra' + i] = i;
+        delete m.source;
+        m.protocol = '2';
+      }),
+      // Twenty errors of the library that are no problem by themselves come before the one that names the properties.
+      edited(hello, m => {
+        for (let i = 0; i < 20; i++) m['extra' + i] = i;
+      }),
+      // The type error is followed by the literal's, which replaces it.
+      edited(hello, m => void (m.protocol = '2')),
+      edited(phonebook, m => void (m.capabilities[0].view.fields[0].format = 'hologram')),
+      {},
+      null,
+    ];
+    for (const value of values) {
+      const all = lines(ConnectorManifestSchema, value);
+      for (const limit of [1, 2, 3, 9])
+        expect(contractProblems(ConnectorManifestSchema, value, limit).map(p => `${p.path}: ${p.message}`)).toEqual(
+          all.slice(0, limit),
+        );
+    }
+    expect(contractProblems(ConnectorManifestSchema, hello, 1)).toEqual([]);
+    // The limit is the call's own: the next caller is still told everything.
+    expect(lines(ConnectorManifestSchema, values[0])).toHaveLength(22);
+    const large = { schemas: ['x'], Operations: Array.from({ length: 20_000 }, () => ({ op: 1 })) };
+    expect(contractProblems(ScimPatchSchema, large, 1)).toEqual([
+      { path: '/Operations/0/op', message: 'Expected string' },
+    ]);
   });
   test('the first problem of a header answer is the one the refusal names', () => {
     expect(lines(SiteHeaderOutputSchema, { site: { name: 'x' }, items: [] })[0]).toBe(
@@ -173,6 +234,18 @@ describe('what the schemas say after they are built', () => {
     expect(at('2026-11-09T06:00:00Z[Europe/Stockholm]')).toBe(false);
     expect(at('2026-11-09T06:00:00')).toBe(false);
     expect(at('2026-11-09')).toBe(false);
+  });
+  test('a string’s length is counted in Unicode code points, by the schema, by Ajv and by the code beside them', () => {
+    // 0.34 counted UTF-16 units, so forty of these, eighty units, did not fit in forty characters.
+    const fits = '😀'.repeat(40),
+      long = '😀'.repeat(41);
+    expect(checkContract(SnoozeInput, { preset: fits })).toBe(true);
+    expect(checkContract(SnoozeInput, { preset: long })).toBe(false);
+    expect(ajv.compile(SnoozeInput)({ preset: fits })).toBe(true);
+    expect(ajv.compile(SnoozeInput)({ preset: long })).toBe(false);
+    expect(isKey('😀'.repeat(256))).toBe(true);
+    expect(isKey('😀'.repeat(257))).toBe(false);
+    expect(isKey('')).toBe(false);
   });
   test('a union of literals from a list is one branch per value, in the list’s order', () => {
     expect(JSON.parse(JSON.stringify(literals(['a', 'b', 3], { description: 'x' })))).toEqual({

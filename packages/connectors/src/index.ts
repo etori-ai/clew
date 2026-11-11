@@ -727,7 +727,7 @@ export class Registry {
       if (subject === undefined) continue;
       if (typeof subject?.entity !== 'string' || !isEntityKind(subject.entity))
         return `row ${item.ref} names an entity of an unknown kind`;
-      if (typeof subject.key !== 'string' || !subject.key.length || subject.key.length > SUBJECT_KEY_MAX)
+      if (typeof subject.key !== 'string' || !subject.key.length || [...subject.key].length > SUBJECT_KEY_MAX)
         return `row ${item.ref} names a ${subject.entity} without a key of 1 to ${SUBJECT_KEY_MAX} characters`;
     }
     for (const a of draft.actions) {
@@ -1005,7 +1005,7 @@ export class Registry {
     try {
       const output = await this.run<unknown>(actor, holder.header!, {}, context);
       if (Value.Check(SiteHeaderOutputSchema, output)) return { connector: holder, output };
-      const problem = contractProblems(SiteHeaderOutputSchema, output)[0];
+      const problem = contractProblems(SiteHeaderOutputSchema, output, 1)[0];
       this.options.onRefused?.(
         holder.id,
         'header',

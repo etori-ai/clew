@@ -1,6 +1,7 @@
 import type { AboutAction, AboutRead } from '@clew/connectors';
 import {
   ENTITY_COLUMNS_MAX,
+  ENTITY_KEY_MAX,
   ENTITY_KEYS_MAX,
   viewRows,
   type EntityAction,
@@ -19,9 +20,8 @@ import type { DirectoryPerson, DirectoryUnit, NamedCard, Reach } from './model';
  * answer is kept. No I/O and no clock: everything depends on the directory and the answer handed in.
  */
 
-/** The longest key on the wire (`SubjectSchema` in `@clew/contracts`). */
-const KEY_MAX = 256;
-export const isKey = (value: string) => value.length >= 1 && value.length <= KEY_MAX;
+/** A key that fits on the wire (`SubjectSchema` in `@clew/contracts`), its length counted as the schema counts it. */
+export const isKey = (value: string) => value.length >= 1 && [...value].length <= ENTITY_KEY_MAX;
 /** A person's key is their user name, compared without regard to case (RFC 7643's default); a unit's is its id, exactly. */
 export const foldKey = (kind: EntityKind, key: string) => (kind === 'person' ? key.toLowerCase() : key);
 
@@ -39,7 +39,7 @@ export const unitRef = (unit: DirectoryUnit): EntityRef => ({
   kind: 'unit',
   key: unit.unitId,
   name: unit.unitLabel,
-  ...(unit.unitId.length <= 80 ? { id: unit.unitId } : {}),
+  ...([...unit.unitId].length <= 80 ? { id: unit.unitId } : {}),
 });
 /** A person who can be asked about: active, with a user name that fits a key. */
 export const askable = (person: DirectoryPerson): person is DirectoryPerson & { userName: string } =>

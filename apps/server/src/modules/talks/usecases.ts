@@ -444,7 +444,7 @@ export function talkUsecases(deps: TalkDeps) {
           commitmentId: id,
           dueOn: body.dueOn,
           at,
-          ...(employee.userName && employee.userName.length <= SUBJECT_KEY_MAX
+          ...(employee.userName && [...employee.userName].length <= SUBJECT_KEY_MAX
             ? { subject: { entity: 'person' as const, key: employee.userName } }
             : {}),
         });

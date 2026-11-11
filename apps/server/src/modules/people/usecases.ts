@@ -180,7 +180,7 @@ export function scimUsecases(deps: {
   const now = () => deps.clock().toISOString();
   const checked = <T>(schema: TSchema, body: unknown, name: string): T => {
     if (Value.Check(schema, body)) return body as T;
-    const first = contractProblems(schema, body)[0];
+    const first = contractProblems(schema, body, 1)[0];
     throw new ScimError(
       400,
       `The request body does not match the ${name} schema${first ? ` at '${first.path.replace(/^\//, '').replace(/\//g, '.')}'` : ''}.`,

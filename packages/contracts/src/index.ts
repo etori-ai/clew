@@ -118,18 +118,27 @@ const schemaAt = (schema: unknown, schemaPath: string) =>
  * Every way a value fails a contract, in Clew's own words, so that what an administrator or a connector author reads
  * does not change with the validation library. A missing or an unexpected property is named at its own path, a value
  * that fits no branch of a union is one problem at the union, and a path is given one reason once. Empty when the value
- * passes.
+ * passes. Every problem is listed (D60); a caller that names only the first passes `limit`, and the library then stops
+ * looking early instead of walking a large body to its end.
  */
-export function contractProblems(schema: TSchema, value: unknown): ContractProblem[] {
-  // TypeBox stops at eight errors unless told otherwise, and one union that fails gives several: every problem is listed (D60).
+export function contractProblems(schema: TSchema, value: unknown, limit = Number.MAX_SAFE_INTEGER): ContractProblem[] {
+  // TypeBox stops at `maxErrors`, eight unless told otherwise, and several of its errors can be one problem or none.
+  // So the budget starts above the limit and grows until the limit is met or the library found nothing more.
   const { maxErrors } = Settings.Get();
-  Settings.Set({ maxErrors: Number.MAX_SAFE_INTEGER });
-  let errors;
   try {
-    errors = Value.Errors(schema, value);
+    for (let budget = Math.min(Number.MAX_SAFE_INTEGER, Math.max(8, limit * 8)); ; budget *= 8) {
+      Settings.Set({ maxErrors: budget });
+      const errors = Value.Errors(schema, value);
+      const cut = errors.length >= budget;
+      // A type error may be followed by the literal's own, which replaces it: cut off there, it is not worded alone.
+      const problems = worded(schema, cut && errors.at(-1)?.keyword === 'type' ? errors.slice(0, -1) : errors);
+      if (!cut || problems.length >= limit) return problems.slice(0, limit);
+    }
   } finally {
     Settings.Set({ maxErrors });
   }
+}
+function worded(schema: TSchema, errors: ReturnType<typeof Value.Errors>): ContractProblem[] {
   const literal = new Set(errors.filter(e => e.keyword === 'const').map(e => e.instancePath + ' ' + e.schemaPath));
   const problems: ContractProblem[] = [];
   const said = new Set<string>();
@@ -190,15 +199,11 @@ export function contractProblems(schema: TSchema, value: unknown): ContractProbl
         break;
       case 'minimum':
       case 'maximum':
-      case 'exclusiveMinimum':
-      case 'exclusiveMaximum': {
+      case 'exclusiveMinimum': {
         const noun = schemaAt(schema, schemaPath)?.type === 'integer' ? 'integer' : 'number';
-        const than = {
-          minimum: 'greater or equal to',
-          maximum: 'less or equal to',
-          exclusiveMinimum: 'greater than',
-          exclusiveMaximum: 'less than',
-        }[error.keyword];
+        const than = { minimum: 'greater or equal to', maximum: 'less or equal to', exclusiveMinimum: 'greater than' }[
+          error.keyword
+        ];
         add(path, `Expected ${noun} to be ${than} ${error.params.limit}`);
         break;
       }
@@ -381,7 +386,10 @@ export const EntityKind = literals(ENTITY_KINDS, {
 });
 export type EntityKind = (typeof ENTITY_KINDS)[number];
 export const isEntityKind = (value: string): value is EntityKind => (ENTITY_KINDS as readonly string[]).includes(value);
-/** The longest key an entity may be named by: a longer one names nobody. */
+/**
+ * The longest key an entity may be named by: a longer one names nobody. Counted as the schema counts it, in Unicode code
+ * points (`[...key].length`), so the code beside the schema keeps every key the schema accepts.
+ */
 export const ENTITY_KEY_MAX = 256;
 const entityKey = Type.String({
   minLength: 1,
