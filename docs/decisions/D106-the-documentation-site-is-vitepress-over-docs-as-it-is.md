@@ -1,9 +1,9 @@
 # D106 · The documentation site is VitePress over `docs/` as it is, published to GitHub Pages
 
-**Status:** provisional (product owner chose the generator, 2026-11-11; accepted when the site has been published from `main` and read there); item 8 added 2026-11-11 (product owner: the page for operations is in English and Swedish, and the reader chooses) · **Date:** 2026-11-11 · **Area:** platform
+**Status:** provisional (product owner chose the generator, 2026-11-11; accepted when the site has been published from `main` and read there) · **Date:** 2026-11-11 · **Area:** platform
 
 **Decision.** The documentation gets a static site, so that the decisions and the patterns can be searched and
-read in order. Eight rules bind it.
+read in order. Seven rules bind it.
 
 1. **VitePress, in `site/`.** `vitepress` is pinned exactly in `site/package.json`, which has its own lockfile and
    is outside the Bun workspace. Nothing in `apps/`, `packages/` or `connectors/` depends on it, and its
@@ -24,14 +24,6 @@ read in order. Eight rules bind it.
 6. **Search is the index built into the site.** No hosted search, no analytics, no account.
 7. **The site is VitePress's own theme.** The Astryx rule binds the product's interface, not this site, and the
    site carries no installation's colours or logo.
-8. **English, and Swedish for a page whose readers are outside the team.** The documentation is English. A page
-   written for people who do not work on Clew (the first is what an installation's operations deliver for
-   provisioning) may also have a Swedish translation, at the same path under `docs/sv/`. The English page is the
-   source: both change in the same change, and `docs:check` fails on a Swedish page with no English page at its
-   path or with other headings than it. On the site `sv` is a locale, so a Swedish page says that it is Swedish
-   (`lang`), the theme's own words around it are Swedish and the language menu leads to `docs/sv/README.md`, the
-   list of what is translated; each of the two pages links to the other in its first line. Decisions, reviews,
-   architecture and reference pages are not translated.
 
 How to build and publish it: `docs/maintainers/documentation-site.md`.
 
@@ -54,11 +46,9 @@ and nothing here claims it for the site.
 One dependency of VitePress carries a licence the OSI has not approved (an icon data package under CC0-1.0); it
 is in the licence record and among the open questions, and nothing from it is in the built site.
 
-**Why item 8.** The page for operations is sent to people who order and run things for a Swedish municipality and
-who do not otherwise read this repository; the product owner asked for it in both languages. A sibling file with
-a link would have been enough to read, but the page would then have told a screen reader that Swedish text is
-English, and the menus around it would have been English. The language menu cannot lead to the same page in the
-other language, because VitePress builds that link for every page and almost none has a translation.
+**Tried and taken out, 2026-11-11.** The guide to what operations deliver for provisioning was published in English
+and Swedish for an hour, with `sv` as a locale of the site and a translation under `docs/sv/`. The product owner
+took it out the same day: every other guide is English only, and so is this one. The documentation has one language.
 
 **Replaces.** No numbered decision. It changes the product owner's call of 2026-11-05 that decisions and reviews
 stay off any public site: the repository has been made public since, so the records are readable there already,

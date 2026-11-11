@@ -14,7 +14,7 @@
   <rect x="250" y="60" width="200" height="80" rx="10" fill="#f3f4f6" stroke="#9ca3af"/>
   <text x="350" y="86" text-anchor="middle" font-weight="600" fill="#111827">The municipality's SSO</text>
   <text x="350" y="108" text-anchor="middle" fill="#374151">OIDC: Keycloak, Entra, …</text>
-  <text x="350" y="128" text-anchor="middle" font-size="12" fill="#6b7280">vouches for sub and preferred_username</text>
+  <text x="350" y="128" text-anchor="middle" font-size="12" fill="#6b7280">sub and preferred_username</text>
   <line x1="200" y1="100" x2="248" y2="100" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
   <!-- Clew decision -->
   <rect x="500" y="40" width="470" height="120" rx="10" fill="#eef4ff" stroke="#1d4ed8"/>
