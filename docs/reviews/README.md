@@ -55,3 +55,4 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Exploration: one entity, many sources · 2026-11-10](2026-11-10-one-entity-many-sources.md)
 - [Exploration: the layer where Clew owns the feature and its data, against a commercial HR system · 2026-11-10](2026-11-10-owned-domains-against-a-commercial-hr-system.md)
 - [Review: is the SCIM server standard, and is it easy to run · 2026-11-10](2026-11-10-scim-conformance-and-operability.md)
+- [Review: the SCIM flow end to end, people and the organisation tree · 2026-11-11](2026-11-11-scim-flow-people-and-organisation.md)

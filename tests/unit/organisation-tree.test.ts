@@ -98,6 +98,21 @@ function harness() {
   return { store, scim, p, person, id, unit, managers, groups, persona, refusal };
 }
 
+/** A manager of `ORG` signed in, by person id. */
+const harnessPersona = (personId: string): AuthenticatedContext => ({
+  id: personId,
+  name: personId,
+  unitId: 'unit',
+  unitLabel: 'Unit',
+  role: 'manager',
+  organisationId: ORG,
+  principal: { id: 'person:' + personId, kind: 'person' },
+  capabilities: [],
+  authorizationVersion: 'v1',
+  sessionBinding: 'test',
+  expiresAt: '2026-11-10T18:00:00.000Z',
+  authorize: async () => ({ version: 'v1' }),
+});
 describe('the organisation tree over SCIM (D99)', () => {
   test('a tree is pushed from the root down, a node nobody is placed on included, and a unit answers the unit above it', async () => {
     const { scim, p, unit, person, store } = harness();
@@ -124,6 +139,84 @@ describe('the organisation tree over SCIM (D99)', () => {
       details: { externalId: 'unit:ksk-it', parent: 'ksk-avd', members: 1 },
     });
     expect(store.state.audit.find(a => a.subject === 'group:' + root.id)?.details).not.toHaveProperty('parent');
+  });
+  test("a manager of a unit nobody is placed on carries the unit group's name, and its new name when it is renamed (D101)", async () => {
+    const { scim, p, unit, managers, person, id, store } = harness();
+    await person('chef');
+    await person('anna');
+    // The unit first and empty, then its manager group: no unit row names it yet, and the head is no member of it.
+    const forv = await unit('forv', 'Vård- och omsorgsförvaltningen', null);
+    await unit('hemtjanst', 'Hemtjänst', 'forv', ['anna']);
+    await managers('forv', ['chef']);
+    expect(store.state.grants.get(id('chef'))).toEqual({
+      unitId: 'forv',
+      unitLabel: 'Vård- och omsorgsförvaltningen',
+      role: 'manager',
+      capabilities: [],
+    });
+    expect(store.state.units.get('forv')).toEqual({ organisationId: ORG, label: 'Vård- och omsorgsförvaltningen' });
+    expect(store.state.audit.filter(a => a.subject === 'person:' + id('chef')).at(-1)).toMatchObject({
+      actor: 'provisioner:metakatalogen',
+      action: 'grant.derived',
+      details: { unitId: 'forv', role: 'manager', assignments: 1 },
+    });
+    const staff = staffUsecases({ store });
+    expect((await staff.overview(harnessPersona(id('chef')))).units.map(u => u.unitLabel)).toEqual([
+      'Vård- och omsorgsförvaltningen',
+    ]);
+    await scim.patchGroup(
+      p,
+      forv.id,
+      { schemas: [SCIM.patch], Operations: [{ op: 'replace', path: 'displayName', value: 'Omsorgsförvaltningen' }] },
+      BASE,
+    );
+    expect(store.state.grants.get(id('chef'))?.unitLabel).toBe('Omsorgsförvaltningen');
+    expect(store.state.audit.at(-1)).toMatchObject({ action: 'grant.derived', subject: 'person:' + id('chef') });
+  });
+  test('a unit belongs to the organisation that pushed it: another organisation names no manager of it and no unit for its managers, and Personal reads its own organisation (D101)', async () => {
+    const { scim, unit, managers, person, id, refusal, store } = harness();
+    await person('anna');
+    await person('karin');
+    await unit('it', 'IT', null, ['anna']);
+    await managers('it', ['karin']);
+    await unit('hr', 'HR', null, ['anna']);
+    await managers('ekonomi', ['karin']);
+    const other = { id: 'other', organisationId: 'timra', label: 'Timrå' };
+    const olle = await scim.createUser(
+      other,
+      { externalId: 'tm-olle', userName: 'olle', displayName: 'Olle', emails: [{ value: 'olle@timra.test' }] },
+      BASE,
+    );
+    const audited = store.state.audit.length,
+      stored = store.state.groups.size;
+    // The unit's other key is free, and it is the same unit: neither is theirs to take.
+    for (const externalId of ['unit-manager:hr', 'unit:ekonomi']) {
+      const taken = await refusal(
+        scim.createGroup(other, { externalId, displayName: 'Tagen', members: [{ value: olle.id }] }, BASE),
+      );
+      expect(taken).toMatchObject({ status: 400, scimType: 'invalidValue' });
+      expect(taken.detail).toContain('is not a unit of this organisation (D101). The group was not stored.');
+    }
+    // Nor by giving a group of their own the key afterwards.
+    const plain = await scim.createGroup(other, { externalId: 'ad:timra', displayName: 'Timrå', members: [] }, BASE);
+    const rekeyed = await refusal(
+      scim.patchGroup(
+        other,
+        plain.id,
+        { schemas: [SCIM.patch], Operations: [{ op: 'replace', path: 'externalId', value: 'unit-manager:hr' }] },
+        BASE,
+      ),
+    );
+    expect(rekeyed.detail).toContain("The unit 'hr' is not a unit of this organisation (D101)");
+    expect(store.state.groups.size).toBe(stored + 1);
+    expect(store.state.audit.slice(audited).map(a => a.action)).toEqual(['scim.group.created']);
+    expect(store.state.grants.get(olle.id)).toBeUndefined();
+    // An assignment stored before the rule held: the unit's manager is still shown their own organisation's people only.
+    store.state.assignments.set(olle.id, [{ unitId: 'it', role: 'employee' }]);
+    const staff = staffUsecases({ store });
+    expect(
+      (await staff.overview(harnessPersona(id('karin')))).units.find(u => u.unitId === 'it')?.people.map(q => q.name),
+    ).toEqual(['Anna']);
   });
   test('a parent that does not exist, is written wrong, belongs to another organisation or stands on another kind of group is refused, and nothing is stored', async () => {
     const { scim, p, unit, refusal, store } = harness();

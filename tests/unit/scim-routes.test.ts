@@ -155,6 +155,9 @@ describe('/scim/v2', () => {
     const measured = await call('POST', '/Users', '{"userName":"' + 'x'.repeat(4 * 1024 * 1024) + '"}');
     expect(measured.status).toBe(413);
     expect(await measured.json()).toMatchObject({ status: '413', detail: 'The request body is too large.' });
+    // Measured in bytes: fewer characters than the limit, more bytes than it.
+    const accented = await call('POST', '/Users', '{"userName":"' + 'å'.repeat(2.5 * 1024 * 1024) + '"}');
+    expect(accented.status).toBe(413);
     expect(store.state.users.size).toBeLessThanOrEqual(1);
   });
   test('what the server does not offer answers 501, a search request lists like GET, and an unknown address is the error resource', async () => {

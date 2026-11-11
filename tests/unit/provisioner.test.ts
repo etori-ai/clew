@@ -271,9 +271,9 @@ describe('the synthetic provisioner', () => {
     expect(parentOf('unit-hemtjanst')).toBeUndefined();
     // Three moves and a removal, and nobody's grant follows from any of them.
     expect(store.state.audit.slice(audited).map(a => [a.action, a.details.externalId, a.details.parent])).toEqual([
-      ['scim.group.replaced', 'unit:unit-omsorg', { before: 'unit-hemtjanst', after: 'unit-forvaltning-omsorg' }],
-      ['scim.group.replaced', 'unit:unit-omsorg-norr', { before: 'unit-hemtjanst', after: 'unit-forvaltning-omsorg' }],
-      ['scim.group.replaced', 'unit:unit-skola-fritids', { before: 'unit-skola', after: 'unit-skola-haga' }],
+      ['scim.group.patched', 'unit:unit-omsorg', { before: 'unit-hemtjanst', after: 'unit-forvaltning-omsorg' }],
+      ['scim.group.patched', 'unit:unit-omsorg-norr', { before: 'unit-hemtjanst', after: 'unit-forvaltning-omsorg' }],
+      ['scim.group.patched', 'unit:unit-skola-fritids', { before: 'unit-skola', after: 'unit-skola-haga' }],
       ['scim.group.removed', 'unit:unit-hemtjanst', undefined],
     ]);
     // A whole branch that leaves the directory goes child first, whatever order the server lists it in.
@@ -309,6 +309,56 @@ describe('the synthetic provisioner', () => {
     await reorganise([unit('kommun'), unit('kok', 'kommun'), unit('fritids', 'kok')]);
     expect(tree()).toEqual({ kommun: null, kok: 'kommun', fritids: 'kok' });
   });
+  test('a person who moves between two units is never on neither, so the grant is not taken away on the way (D101)', async () => {
+    const { store, client, grantOf } = stack();
+    await push(client, developmentDirectory);
+    // From a unit that is written before the one he moves to: with a group's removals sent along with its additions
+    // he would have had no unit, and so no grant, from the one write to the other.
+    const moved: Directory = {
+      ...developmentDirectory,
+      people: developmentDirectory.people.map(p =>
+        p.userName === 'hassan' ? { ...p, department: 'unit-aldreboende-natt' } : p,
+      ),
+    };
+    const audited = store.state.audit.length;
+    await push(client, moved);
+    expect(grantOf('hassan')).toMatchObject({ unitId: 'unit-aldreboende-natt', role: 'employee' });
+    const hassan = [...store.state.users.values()].find(u => u.userName === 'hassan')!.id,
+      derived = store.state.audit
+        .slice(audited)
+        .filter(a => a.subject === 'person:' + hassan && a.action === 'grant.derived');
+    expect(derived.map(a => a.details)).toEqual([
+      { unitId: 'unit-aldreboende-natt', role: 'employee', capabilities: [], assignments: 2 },
+    ]);
+    expect(store.state.assignments.get(hassan)).toEqual([{ unitId: 'unit-aldreboende-natt', role: 'employee' }]);
+    // The groups are patched, the one he joins before the one he leaves.
+    expect(
+      store.state.audit
+        .slice(audited)
+        .filter(a => a.action.startsWith('scim.group'))
+        .map(a => [a.action, a.details.externalId, a.details.added, a.details.removed]),
+    ).toEqual([
+      ['scim.group.patched', 'unit:unit-aldreboende-natt', 1, 0],
+      ['scim.group.patched', 'unit:unit-omsorg', 0, 1],
+    ]);
+  });
+  test('a push from an empty or truncated source is refused before anything is written, unless a person has decided it (D101)', async () => {
+    const { store, client } = stack();
+    await push(client, developmentDirectory);
+    const audited = store.state.audit.length;
+    await expect(push(client, { units: [], groups: [], people: [] })).rejects.toThrow(
+      'The source lists 0 people and Clew holds 250 active ones from it, so this push would deactivate 250. Nothing was written.',
+    );
+    // Truncated: more than a fifth of the people are missing from the export.
+    const truncated: Directory = { ...developmentDirectory, people: developmentDirectory.people.slice(0, 190) };
+    await expect(push(client, truncated)).rejects.toThrow('would deactivate 60. Nothing was written.');
+    expect(store.state.audit.length).toBe(audited);
+    expect([...store.state.users.values()].every(u => u.enabled)).toBe(true);
+    expect(store.state.grants.size).toBe(250);
+    // A person may decide that the source is right.
+    expect(await push(client, truncated, 'dev:', () => {}, { force: true })).toMatchObject({ deactivated: 60 });
+    expect([...store.state.users.values()].filter(u => !u.enabled)).toHaveLength(60);
+  });
   test('a group with a foreign key is left alone, and a refused push surfaces the SCIM detail', async () => {
     const { store, client } = stack();
     store.state.groups.set('foreign', {
@@ -322,7 +372,10 @@ describe('the synthetic provisioner', () => {
     });
     await push(client, developmentDirectory);
     expect(store.state.groups.has('foreign')).toBe(true);
-    const broken: Directory = { ...developmentDirectory, people: [{ ...developmentDirectory.people[0]!, email: '' }] };
+    const broken: Directory = {
+      ...developmentDirectory,
+      people: developmentDirectory.people.map((p, i) => (i === 0 ? { ...p, email: '' } : p)),
+    };
     await expect(push(client, broken)).rejects.toMatchObject({ status: 400, scimType: 'invalidSyntax' });
   });
   test('the check reads what the installation holds: counts when the push did what it meant, and names who is left without a unit', async () => {
@@ -343,6 +396,9 @@ describe('the synthetic provisioner', () => {
       // The area nobody is placed on has units below it, so it is a heading and not an emptied unit (D99).
       'The units form a tree: 1 root, 6 levels deep.',
     ]);
+    expect(
+      (await checkProvisioning('http://clew.local', client, anonymous, { roots: 1 })).filter(f => f.level !== 'ok'),
+    ).toEqual([]);
     // A person the mapping forgot, a managed unit nobody named, an emptied unit and a key stored before D96.
     await client.request('POST', '/Users', {
       externalId: 'dev:lost',
@@ -392,6 +448,14 @@ describe('the synthetic provisioner', () => {
       '1 unit has people and no manager, on the unit or on any unit above it, so its people report to nobody: unit:unit-adrift-below.',
       "1 group carries a key that is written wrong and gives nobody anything: 'Unit:old'.",
     ]);
+    // More roots than the source has: a unit written without its parent became one (D99).
+    expect(
+      (await checkProvisioning('http://clew.local', client, anonymous, { roots: 1 }))
+        .filter(f => f.level === 'warn')
+        .map(f => f.text),
+    ).toContain(
+      'The tree has 3 roots where 1 was expected; a unit written without its parent becomes a root: unit:unit-kommun, unit:unit-empty, unit:unit-adrift.',
+    );
     // A manager who is deactivated leads nobody, as Administration › Organisation reads the same tree.
     const person = (userName: string) =>
       client.request('POST', '/Users', {

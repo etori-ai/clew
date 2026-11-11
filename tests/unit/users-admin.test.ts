@@ -278,6 +278,21 @@ describe('Användare', () => {
       'grant.derived',
     ]);
   });
+  test("another organisation's group is not there to map or unmap, and its rows are not shown (D101)", async () => {
+    const { usecases, admin, store } = stack();
+    const elsewhere: AuthenticatedContext = { ...admin, organisationId: 'timra' },
+      row = { groupExternalId: 'S-1-5-21-it-staff', capability: 'admin.connectors' as const };
+    await expect(usecases.addGroupCapability(elsewhere, row)).rejects.toThrow('Gruppen finns inte');
+    expect(store.state.audit).toEqual([]);
+    await usecases.addGroupCapability(admin, row);
+    await expect(usecases.removeGroupCapability(elsewhere, row)).rejects.toThrow('Gruppen finns inte');
+    expect((await usecases.overview(elsewhere)).groupCapabilities).toEqual([]);
+    expect((await usecases.overview(admin)).groupCapabilities).toEqual([
+      { groupExternalId: 'S-1-5-21-it-staff', groupLabel: 'IT-personal', capability: 'admin.connectors' },
+    ]);
+    expect(store.state.grants.get('mikael')?.capabilities).toEqual(['admin.connectors']);
+    expect(store.state.audit.map(a => a.action)).toEqual(['group-capability.added', 'grant.derived']);
+  });
   test('a group that is not provisioned cannot be mapped, but a stale mapping can be removed; an unknown capability is refused', async () => {
     const { usecases, admin, store } = stack();
     await expect(

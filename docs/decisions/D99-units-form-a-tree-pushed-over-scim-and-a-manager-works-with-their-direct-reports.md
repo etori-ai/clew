@@ -1,6 +1,6 @@
 # D99 · Units form a tree pushed over SCIM, and a manager works with their direct reports
 
-**Status:** accepted (product owner, 2026-11-10: units form a tree, the tree is pushed as resources of its own, a manager works with their direct reports and not with everyone below), built 2026-11-10 (the parent on the unit group, the SCIM extension and its refusals, the reporting line in Personal, talks and the calendar's team, the development directory as a tree, the check, Administration › Organisation; see "As built"); the transport in item 2 is proposed until a real provisioner has used it, the branch of item 5 has no user yet, and the items under "Open" are not decided · **Date:** 2026-11-10 · **Area:** identity, product
+**Status:** accepted (product owner, 2026-11-10: units form a tree, the tree is pushed as resources of its own, a manager works with their direct reports and not with everyone below), built 2026-11-10 (the parent on the unit group, the SCIM extension and its refusals, the reporting line in Personal, talks and the calendar's team, the development directory as a tree, the check, Administration › Organisation; see "As built"); the transport in item 2 is proposed until a real provisioner has used it, the branch of item 5 has no user yet, and the items under "Open" are not decided; the order of a push and whose a unit is are D101 (2026-11-11) · **Date:** 2026-11-10 · **Area:** identity, product
 
 **Decision.** A unit in Clew has at most one parent, so the units of an installation form a tree, or several. The
 provisioner pushes the tree explicitly; Clew never infers it from the people that arrive. Who a manager works with
@@ -119,7 +119,7 @@ rejected, they are the source's vocabulary and differ between organisations.
   organisation are other hierarchies and stay with their sources. Not yet confirmed by the product owner.
 - The source: what the manager flag in Sundsvall's records refers to and where a manager is placed (in the unit they
   lead or the one above), whether unit ids survive a reorganisation, whether the units can be delivered as a list of
-  their own with a parent id, and whether a second placement or an acting manager exists anywhere.
+  their own with a parent id (answered 2026-11-11, D101: they can), and whether a second placement or an acting manager exists anywhere.
 - A photograph of a manager. Clew holds none; it would be new personal data with a source and an origin to decide.
 - Who besides an administrator sees the tree. A tree with names is a list of other people, and whether Clew may hold
   the fact that a person is protected is still unanswered (D93).
