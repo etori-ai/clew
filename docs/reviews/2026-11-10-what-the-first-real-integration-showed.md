@@ -68,11 +68,38 @@ waits for a second source that needs it.
 - Before the change, a session-backed scan would have run every minute for eight hours with the page closed; D103
   bounds it to fifteen minutes after the person's last activity.
 
+## The signed-in pass, 2026-11-11
+
+After the merge to `main`: migration 0046 applied, the `nextcloud-approval` service started, checked and registered
+with `connector-add --enable`, and Hem opened signed in as Hillevi on `localhost:3020`.
+
+| Step | On the page | In Clew's audit | In Nextcloud's own table |
+|---|---|---|---|
+| The visit | Three cards under Godkännanden, one per file | `refresh.requested` and `refresh.completed` with `session: true`, three `thread.pushed` | |
+| Godkänn on "Plan för klassresa.txt" | The row turns to its receipt, a toast says "Filen är godkänd i Nextcloud" | `execution.approved`, `claimed`, `dispatched`, `succeeded` with `session: 'approving'` and `['done']` | File 627, state approved, by `hillevi`, the same second |
+| Avvisa on "Inköp av läsplattor.txt" (under Fler val, after its confirmation) | "Filen är avvisad i Nextcloud" | The same four rows | File 625, state rejected, by `hillevi` |
+| The next scan | Two cards, then one | `refresh.completed` with the lower count | |
+
+This is the first time the loop ran through the running server, Postgres, the durable engine and the page. What the
+page showed that the tests had not:
+
+- **The card promises an undo that does not exist.** The footer reads "… läses tillbaka som kvitto. Ångra i 10
+  minuter." for every card (`apps/web/src/components/card.tsx`), whether or not the source declares one. Approval has
+  none. Removed the same day in commit `591fbdf`: whether a write can be undone is said by its receipt.
+- **The source's name is written in lower case** in that footer, in the row's meta line ("nextcloud svarade 06:57")
+  and in Sedan i går, which suits a generic word like "ekonomisystemet" and is wrong for a product's name. Also changed in `591fbdf`: the name is written as the source gave it.
+- **A confirmation is the browser's own dialog** (`window.confirm`), not an Astryx one. The automated browser could
+  not answer it, so the pass answered it by script; a person would have seen the sentence "Avvisa filen? Ditt beslut
+  gäller för alla som kan godkänna den."
+
+Not done on the page: a second person, a person whose access was taken away, and a failed decision. Those are shown
+through the use cases, the harness and the recorded exchanges above.
+
 ## What is left before the freeze lifts
 
-D101 item 5, in order: merge to `main` and look at the loop signed in on the development stack (the worktree cannot
-serve `localhost:3020`); two people and a revoked person on the page, not only in the harness; one manual pass with a
-screen reader; the second build as an MCP server and the comparison of the two. Not started: Frappe HR.
+D101 item 5: the loop signed in on the development stack is done for one person (above). Still open: two people
+and a revoked person on the page, not only in the harness; one manual pass with a screen reader; the second build as
+an MCP server and the comparison of the two. Not started: Frappe HR.
 
 Open on the stack itself: the running Nextcloud container needs to be recreated once to pick up the compose change
 that lets it reach Keycloak (a hosts line was added by hand meanwhile), and running the calendar seed from `main`
