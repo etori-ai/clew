@@ -239,7 +239,8 @@ test.describe('Administration › Kompetens', () => {
       await expectNoAxeViolations(page);
       api.competenceTypes = [];
       await page.reload();
-      await expect(page.getByText('Katalogen är tom')).toBeVisible();
+      // By role: the empty state's words are also spoken (4.1.3), and while they sit in the live region the text matches twice.
+      await expect(page.getByRole('heading', { name: 'Katalogen är tom' })).toBeVisible();
       await expect(page.getByRole('link', { name: 'Lägg till kompetens' })).toBeVisible();
       await settled(page);
       await expectNoAxeViolations(page);

@@ -354,6 +354,23 @@ test.describe("the view's header and its values (D71, artboards 4 and 7)", () =>
     await expect(page.getByRole('button', { name: 'Försök igen' })).toBeVisible();
     await expectNoAxeViolations(page);
   });
+
+  test("the spoken words wait for the system's name when the areas answer after the statuses", async ({
+    page,
+    api,
+  }) => {
+    api.sources = [
+      { connector: 'finance', state: 'idle', lastSuccess: '2026-11-04T05:00:00.000Z', error: 'unavailable' },
+    ];
+    api.areasDelay = 600;
+    await open(page, '/');
+    await expect(page.getByText('Ekonomisystemet svarar inte sedan 06:00', { exact: true })).toBeVisible();
+    await expect
+      .poll(() => announcements(page))
+      .toContainEqual(expect.stringContaining('Ekonomisystemet svarar inte sedan 06:00'));
+    // Spoken once, so never with the connector's id in the name's place.
+    expect((await announcements(page)).filter(text => text.includes('finance svarar inte'))).toEqual([]);
+  });
 });
 
 test.describe('1.4.10: a declared view at 320 px', () => {
