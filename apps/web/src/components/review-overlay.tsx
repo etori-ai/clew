@@ -72,7 +72,7 @@ const REVIEW_WIDTH = 1040;
  * `/cards/:threadId/review` draws Hem with the card beside the column (or in its sheet), as `/?card=` does, and this
  * overlay over it; `threadId` is the card the route names, null on every other start route. The step is the address's
  * `step`, rewritten in place. Closing (✕, Esc, the scrim, a swipe on the sheet) keeps the decisions: the overlay slides
- * away first and then leads to `/?card=<threadId>` with them as the card's selection, so the page (or the card's sheet)
+ * away first and then leads to `/?card=<threadId>` with them laid over the card's selection, so the page (or the card's sheet)
  * is no longer inert when the card puts the focus back on its "Granska N". The decisions live here, above the surface,
  * so a resize across the phone's width swaps the drawer for the sheet without losing them. The card comes from the
  * threads list, the cache Hem's cards are drawn from (D33). A card that is not reviewed, or a step it does not have,
@@ -148,18 +148,17 @@ export function ReviewOverlay({ threadId }: { threadId: string | null }) {
   usePageTitle(isOpen && (shown || missing) ? title : null, false);
 
   const approved = items.filter(i => decisions[i.ref] === 'approve').map(i => i.ref);
+  const left = items.filter(i => decisions[i.ref] === 'leave').map(i => i.ref);
   /** Back to the card beside Hem, or to Hem when the card is not there; with the decisions when there was a step to take them on. */
   const leave = (state?: ReviewReturn) =>
     setLeaving({ to: live ? cardAddress(live.id) : '/', ...(state ? { state } : {}) });
   // ✕, Esc and the scrim save and close, as "Spara och stäng" did (D73 item 3); nothing closes while Skicka waits on the source.
   const onOpenChange = (open: boolean) => {
     if (open || sending || leaving) return;
+    // A sent card's review is read, not decided: it hands back no decisions, only the way back to "Granska N".
     leave(
       shown && step !== null
-        ? reviewReturn(
-            shown.thread.id,
-            readOnly ? shown.thread.items.filter(i => i.selected).map(i => i.ref) : approved,
-          )
+        ? reviewReturn(shown.thread.id, readOnly ? [] : approved, readOnly ? [] : left)
         : undefined,
     );
   };

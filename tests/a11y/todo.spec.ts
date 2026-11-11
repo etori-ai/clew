@@ -182,6 +182,13 @@ test.describe('the panel beside the page', () => {
     const panel = page.getByRole('complementary', { name: 'Kort' });
     const aside = page.getByRole('complementary', { name: 'Bredvid' });
     const work = page.getByRole('tab', { name: /^Behöver dig/ });
+    // The page never scrolls sideways (1.4.10): the folded panel's handle once stood on the window's edge with half of
+    // its grab zone past it, which made the shell's main area 8 px wider inside than it shows. The handle is there
+    // only while the panel is shown.
+    const sideways = () => page.getByRole('main').evaluate(el => el.scrollWidth - el.clientWidth);
+    const handle = page.getByRole('separator', { name: 'Ändra panelens bredd' });
+    expect(await sideways()).toBe(0);
+    await expect(handle).toHaveCount(0);
     // At rest the panel is folded away (D72, revised 2026-11-10): no region for what was opened, the day beside the
     // day's work, and the one button in the page's corner saying the way to the panel.
     await expect(panel).toHaveCount(0);
@@ -203,10 +210,14 @@ test.describe('the panel beside the page', () => {
     await expect(empty.getByRole('heading', { name: 'Inget är öppet bredvid sidan' })).toBeVisible();
     await expect(empty.locator('[aria-level="2"]').filter({ hasText: 'Öppet bredvid' })).toBeFocused();
     await expect(page).toHaveURL(/\/$/);
+    await expect(handle).toBeVisible();
+    expect(await sideways()).toBe(0);
     await expectNoAxeViolations(page);
     await page.keyboard.press('Escape');
     await expect(empty).toHaveCount(0);
     await expect(atRest).toBeFocused();
+    await expect(handle).toHaveCount(0);
+    expect(await sideways()).toBe(0);
     await expect.poll(besideWork).toBe(true);
     // A card opened brings the panel with it alone; the day stays on the page, under the day's work at this width (A2).
     await page.getByRole('link', { name: 'Attestera 3 fakturor, 48 200 kr', exact: true }).click();
@@ -226,6 +237,8 @@ test.describe('the panel beside the page', () => {
     const foldBox = (await fold.boundingBox())!;
     expect(foldBox.y + foldBox.height).toBeLessThanOrEqual((await page.locator('#hem').boundingBox())!.y);
     expect(await fold.evaluate(el => el.closest(':popover-open') !== null)).toBe(true);
+    await expect(handle).toBeVisible();
+    expect(await sideways()).toBe(0);
     await fold.click();
     // Folding hides and nothing more (D63 item 14, revised): the address, the row and the box keep the card, and the
     // focus stays on the button, which now says the way back, at the window's edge.
@@ -236,11 +249,13 @@ test.describe('the panel beside the page', () => {
     const show = page.getByRole('button', { name: 'Visa panelen' });
     await expect(show).toBeFocused();
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Panelen är ihopfälld'));
-    // The panel slides closed (Astryx 0.7.12), so the button reaches the edge when the motion has ended.
+    // The button stands at the window's edge with the folded panel, the handle is gone and nothing scrolls sideways.
     await expect
       .poll(async () => (await show.boundingBox())!.x + (await show.boundingBox())!.width)
       .toBeGreaterThan(1440 - 40);
     expect((await show.boundingBox())!.x + (await show.boundingBox())!.width).toBeLessThanOrEqual(1440 - 18);
+    await expect(handle).toHaveCount(0);
+    expect(await sideways()).toBe(0);
     // Showing it again brings the card back with the focus on its heading.
     await show.click();
     await expect(panel.locator('#card-fakturor').getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();

@@ -359,10 +359,13 @@ const searchOf = (address: string) => {
 export const RAIL = 256,
   PANEL = 440;
 /**
- * What stands on the panel's inner edge beside its width: the 1 px resize handle, as measured in the browser. The fold
- * button floats over the page beside the handle (D63 item 14, revised 2026-11-10), so it takes no width of its own.
+ * What stands on the panel's inner edge beside its width while it is shown: the 1 px resize handle, as measured in the
+ * browser. The fold button floats over the page beside it (D63 item 14, revised 2026-11-10), so it takes no width of
+ * its own.
  */
 export const PANEL_EDGE = 1;
+/** How far in from the panel's own edge the fold button stands: 20 px in from the handle, which is on that edge while the panel is shown. */
+const FOLD_OFFSET = 20 + PANEL_EDGE;
 /** The window width from which the panel, `width` px wide, fits beside a column that needs `minMain` px. */
 export const panelBesideQuery = (minMain: number, width: number = PANEL) => `(min-width: ${RAIL + minMain + width}px)`;
 /**
@@ -442,11 +445,12 @@ export function usePanel(
   // with the one button that floats over the page on the panel's inner edge, at the top, so it rides that edge in and
   // out (the product owner, 2026-11-06: an icon in the top right corner, never a button among the page's own;
   // 2026-11-10: "float to the left of the sidebar", after the button's own column had stood the height of the page
-  // beside the panel). It is an Astryx layer anchored to the resize handle (`useLayer`: a manual popover, so no light
+  // beside the panel). It is an Astryx layer anchored to the panel's inner edge (`useLayer`: a manual popover, so no light
   // dismiss and no Esc), which takes no width from the page or the panel and is there when the panel has none. It
   // stands in the page's top right corner, inside the 32 px every page keeps free above its header (D74) and 20 px
   // in from the handle, so it lies over neither the page's content nor a scrollbar that takes space (15 to 17 px),
-  // whether or not the page scrolls: Astryx has no way to ask how wide the page's scrollbar is. The width is
+  // whether or not the page scrolls: Astryx has no way to ask how wide the page's scrollbar is. The layer is anchored
+  // to the panel itself, which is in the layout at no width while it is folded; the handle is not (see `end`). The width is
   // remembered per browser; the fold is not, so a card opened later is seen. The button is there wherever the panel
   // fits beside the page, also while nothing is open (the product owner, 2026-11-10, revising D72 item 1): at rest
   // the panel is folded away, and shown it says that nothing is open.
@@ -499,7 +503,7 @@ export function usePanel(
         onClick={collapsed ? expand : collapse}
       />
     </VStack>,
-    { placement: 'start', alignment: 'start', offset: 20 },
+    { placement: 'start', alignment: 'start', offset: FOLD_OFFSET },
   );
   const opener = useRef<HTMLElement | null>(null);
   const shown = useRef<{ id: string; address: string | undefined } | null>(null);
@@ -720,15 +724,29 @@ export function usePanel(
     ) : (
       titleHeading
     );
+  // The handle stands between the page and the panel only while the panel is shown, as Astryx's `ai-chat` template
+  // mounts its handle with the open panel. A folded panel has no width to change, and its handle would stand on the
+  // window's edge with half of its 16 px grab zone past it: Astryx keeps the whole zone for a folded region, the
+  // shell's main area then scrolled sideways by those 8 px, and a scrollbar stood at the foot of every page with a
+  // panel (the product owner, 2026-11-11). The fold button is the way back; it needs no second one on the edge.
+  // Folded, the panel is a plain one of no width, there for the fold button's layer to stand beside: the region sizes
+  // it only while its handle is there. Left to the region without the handle, the emptied panel kept its width over
+  // the page for most of a second after a fold, and the button with it (measured).
   const end = inline ? (
     <>
       {toggle}
-      <ResizeHandle ref={edge.ref} isReversed hasDivider resizable={resizable.props} label="Ändra panelens bredd" />
+      {!collapsed && <ResizeHandle isReversed hasDivider resizable={resizable.props} label="Ändra panelens bredd" />}
       <LayoutPanel
-        resizable={resizable.props}
+        ref={edge.ref}
         hasDivider={false}
         // Folded away it has no width and nothing in it: not a landmark to land on.
-        {...(collapsed ? {} : { role: 'complementary' as const, label: panel?.title ?? 'Öppet bredvid' })}
+        {...(collapsed
+          ? { width: 0 }
+          : {
+              resizable: resizable.props,
+              role: 'complementary' as const,
+              label: panel?.title ?? 'Öppet bredvid',
+            })}
         padding={0}
         isScrollable={false}
       >

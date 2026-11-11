@@ -273,10 +273,45 @@ test.describe('the review where the card stands beside Hem (D73 amended)', () =>
     await expectNoAxeViolations(page);
     await page.keyboard.press('Escape');
     await expect(page).toHaveURL('/?card=fakturor');
+    // The approved row is ticked; the rows the review never judged are as the source marked them (amended 2026-11-11).
     const card = page.getByRole('complementary', { name: 'Kort' });
     await expect(card.getByRole('checkbox').nth(1)).toBeChecked();
-    await expect(card.getByRole('checkbox').nth(0)).not.toBeChecked();
+    await expect(card.getByRole('checkbox').nth(0)).toBeChecked();
+    await expect(card.getByRole('checkbox').nth(2)).not.toBeChecked();
     await expect(card.getByRole('link', { name: 'Granska 3' })).toBeFocused();
+  });
+
+  test('a review opened and closed with nothing judged leaves the card as it was, and a row left behind loses its tick', async ({
+    page,
+    api,
+  }) => {
+    reviewed(api);
+    await open(page, '/?card=fakturor');
+    const card = page.getByRole('complementary', { name: 'Kort' });
+    const boxes = card.getByRole('checkbox');
+    // The source marks the two rows that match an order.
+    await expect(boxes.nth(0)).toBeChecked();
+    await expect(boxes.nth(1)).toBeChecked();
+    await expect(boxes.nth(2)).not.toBeChecked();
+    await card.getByRole('link', { name: 'Granska 3' }).click();
+    const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
+    await expect(review).toBeVisible();
+    await review.getByRole('button', { name: 'Stäng', exact: true }).click();
+    await expect(page).toHaveURL('/?card=fakturor');
+    await expect(review).toHaveCount(0);
+    await expect(boxes.nth(0)).toBeChecked();
+    await expect(boxes.nth(1)).toBeChecked();
+    await expect(boxes.nth(2)).not.toBeChecked();
+    await expect(card.getByRole('link', { name: 'Granska 3' })).toBeFocused();
+    // A tick the person set on the card stands through a review too; a row left behind in it loses its own.
+    await boxes.nth(2).check();
+    await card.getByRole('link', { name: 'Granska 3' }).click();
+    await review.getByRole('button', { name: 'Lämna kvar' }).click();
+    await page.keyboard.press('Escape');
+    await expect(page).toHaveURL('/?card=fakturor');
+    await expect(boxes.nth(0)).not.toBeChecked();
+    await expect(boxes.nth(1)).toBeChecked();
+    await expect(boxes.nth(2)).toBeChecked();
   });
 });
 

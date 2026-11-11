@@ -118,6 +118,23 @@ and never quietly dropped. The comparison is
     the handle's 1 px alone, so [D72](D72-the-day-is-the-pages-and-the-panel-holds-only-what-was-opened.md)'s three-track breakpoint is 256 + 1088 + 1 + 440 = 1785 px, not 1829.
     `tests/a11y/todo.spec.ts` asserts that the button is outside the panel, 18 to 24 px from its edge, above Hem's
     heading and inside an open popover.
+    **Revised 2026-11-11: the handle is there only while the panel is shown, and nothing slides.** The product owner
+    saw a horizontal scrollbar at the foot of Hem. A folded region's `ResizeHandle` stood on the window's edge, and
+    Astryx keeps the whole 16 px grab zone for a folded region, centred on the handle's 1 px line, so 8 px of it lay
+    past the edge and the shell's main area scrolled sideways by those 8 px wherever the panel fits beside the page.
+    **Astryx gap:** `ResizeHandle` has no documented way to keep its grab zone inside the region's container, so a
+    collapsible region in the `end` slot cannot rest folded on the edge of a scrolling container. Nothing custom is
+    written around it: the handle is now rendered only while the panel is shown, as Astryx's `ai-chat` template mounts
+    its handle with the open panel, and the folded panel is a plain `LayoutPanel` of no width that the fold button's
+    layer is anchored to (21 px off the panel, the same pixels as 20 px off the handle). The region's slide went
+    with the handle: opening, folding, showing and closing now land in one frame, the page, the panel, the handle and
+    the button together. Before, measured frame by frame, the page and the panel's content took their final place
+    in one frame and the handle and the button then travelled the panel's width on their own, and on a fold the
+    content was gone before the emptied surface slid away. Whether the panel should move at all, and as what, is the
+    product owner's to choose ([review](../reviews/2026-11-11-the-panel-beside-the-page-against-what-astryx-ships.md),
+    [open questions](../maintainers/open-questions.md)). `tests/a11y/todo.spec.ts` asserts that the main area is no
+    wider inside than it shows at rest, shown empty, with a card and folded, and that the handle is there only while
+    the panel is.
 15. **The tints** are tokens: `--color-background-red` and `--color-border-red` take the artboard's faint red and
     red border, `--color-background-green` and `--color-border-green` its faint green, in the light appearance; the dark
     appearance keeps Neutral's values.

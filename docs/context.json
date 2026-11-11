@@ -3562,6 +3562,22 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-11-the-panel-beside-the-page-against-what-astryx-ships.md",
+      "title": "Review: the panel beside the page against what Astryx ships · 2026-11-11",
+      "category": "review-history",
+      "headings": [
+        "What was reported",
+        "What was measured",
+        "What Astryx ships",
+        "How Clew composes it",
+        "What was changed",
+        "Options",
+        "Recommendation",
+        "Against the canvas",
+        "Not verified"
+      ]
+    },
+    {
       "path": "docs/reviews/README.md",
       "title": "Reviews and explorations",
       "category": "review-history",

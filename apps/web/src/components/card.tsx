@@ -62,7 +62,7 @@ import { useConversation } from './conversation-context';
 import { executionStatus } from '../execution-status';
 import { useMarks, type Mark, type Marks } from '../marks';
 import { AddToConversation } from './add-to-conversation';
-import { returnedSelection, reviewHref } from '../review-address';
+import { returnedReview, reviewHref, selectionAfterReview } from '../review-address';
 import { canUndoReceipt, receiptComplete } from '../receipt-state';
 import { entityHref } from '../person-address';
 
@@ -536,27 +536,31 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
     lastStatus.current = status;
     announce(status ?? thread.receipt?.headline ?? 'Åtgärden är kontrollerad.');
   }, [status, settling, announce, thread.receipt?.headline]);
-  // Back from the review's drawer with ✕, Esc or the scrim (D73), the card starts from the rows the review approved;
-  // otherwise from what the connector marked. A change to the thread starts it over from the connector's marks. The card
-  // usually stood under the drawer all along (D73 amended), so the selection is taken again for each entry that hands
-  // one back, not only when the card is drawn.
+  // The card starts from the rows the connector marked. Back from the review's drawer with ✕, Esc or the scrim (D73),
+  // the review's decisions are laid over the selection: a row chosen for approval is ticked, a row left behind is not,
+  // and a row the review never judged keeps the tick it had, so a review opened and closed again changes nothing (it
+  // used to hand back the approved rows as the whole selection, which cleared the connector's marks; the product owner,
+  // 2026-11-11). A change to the thread starts it over from the connector's marks. The card usually stood under the
+  // drawer all along (D73 amended), so the decisions are taken for each entry that hands them back, not only when the
+  // card is drawn.
   const { state, key } = useLocation();
-  const returned = returnedSelection(state, thread.id);
+  const returned = returnedReview(state, thread.id);
   const returnedAt = returned ? key : null;
-  const [selected, setSelected] = useState<string[]>(
-    () => returned ?? thread.items.filter(i => i.selected).map(i => i.ref),
+  const marked = () => thread.items.filter(i => i.selected).map(i => i.ref);
+  const [selected, setSelected] = useState<string[]>(() =>
+    returned ? selectionAfterReview(marked(), returned) : marked(),
   );
   const seededReturn = useRef(returnedAt);
   useEffect(() => {
     if (!returned || seededReturn.current === returnedAt) return;
     seededReturn.current = returnedAt;
-    setSelected(returned);
+    setSelected(current => selectionAfterReview(current, returned));
   }, [returnedAt]);
   const seededAt = useRef(thread.updatedAt);
   useEffect(() => {
     if (seededAt.current === thread.updatedAt) return;
     seededAt.current = thread.updatedAt;
-    setSelected(thread.items.filter(i => i.selected).map(i => i.ref));
+    setSelected(marked());
   }, [thread.updatedAt]);
   const client = useQueryClient();
   const leave = useLeaveWithUndo(apply);
