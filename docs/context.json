@@ -3631,6 +3631,23 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-11-navigation-where-things-open.md",
+      "title": "Review: where things open, and a proposal for one place per thing · 2026-11-11",
+      "category": "review-history",
+      "headings": [
+        "Why",
+        "What was changed before the review",
+        "What the inventory shows",
+        "Proposal: one place per thing",
+        "What the proposal would change in the code",
+        "Choices that are the product owner's",
+        "The inventory",
+        "Part 1: inventory",
+        "Part 2: what a connector author declares, and where it opens",
+        "Part 3: the navigation patterns that exist today"
+      ]
+    },
+    {
       "path": "docs/reviews/2026-11-11-scim-flow-people-and-organisation.md",
       "title": "Review: the SCIM flow end to end, people and the organisation tree · 2026-11-11",
       "category": "review-history",
