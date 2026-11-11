@@ -354,6 +354,29 @@ test.describe("the view's header and its values (D71, artboards 4 and 7)", () =>
     await expect(page.getByRole('button', { name: 'Försök igen' })).toBeVisible();
     await expectNoAxeViolations(page);
   });
+
+  test("the banner waits for the system's name when the areas answer after the statuses", async ({ page, api }) => {
+    api.sources = [
+      { connector: 'finance', state: 'idle', lastSuccess: '2026-11-04T05:00:00.000Z', error: 'unavailable' },
+    ];
+    api.areasDelay = 600;
+    // Every moment the page shows the connector's id in the name's place, however short.
+    await page.addInitScript(() => {
+      const shown: string[] = [];
+      Object.assign(window, { idShown: shown });
+      new MutationObserver(() => {
+        if (document.body?.textContent?.includes('finance svarar inte')) shown.push('finance svarar inte');
+      }).observe(document, { subtree: true, childList: true, characterData: true });
+    });
+    await open(page, '/');
+    await expect(page.getByText('Ekonomisystemet svarar inte sedan 06:00', { exact: true })).toBeVisible();
+    await expect
+      .poll(() => announcements(page))
+      .toContainEqual(expect.stringContaining('Ekonomisystemet svarar inte sedan 06:00'));
+    // Drawn and spoken once, so never with the connector's id.
+    expect(await page.evaluate(() => (window as unknown as { idShown: string[] }).idShown)).toEqual([]);
+    expect((await announcements(page)).filter(text => text.includes('finance svarar inte'))).toEqual([]);
+  });
 });
 
 test.describe('1.4.10: a declared view at 320 px', () => {

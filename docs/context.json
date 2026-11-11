@@ -2664,6 +2664,7 @@
       "category": "maintainer-guide",
       "headings": [
         "Run it",
+        "A stack made before PostgreSQL 18 and Nextcloud 35",
         "Utvecklingssamtal: the round, and switching the answering system",
         "Reset fixture data deliberately",
         "Source of runtime versions"
@@ -3645,6 +3646,22 @@
         "What it found in Clew itself",
         "The signed-in pass, 2026-11-11",
         "What is left before the freeze lifts"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-11-dependency-refresh.md",
+      "title": "Dependency refresh: every package and image to its newest release · 2026-11-11",
+      "category": "review-history",
+      "headings": [
+        "Outcome",
+        "Findings",
+        "postgres.js 4 under Drizzle",
+        "PostgreSQL 18",
+        "Nextcloud 35",
+        "The seed, from nothing",
+        "Not taken",
+        "Validation",
+        "Not verified"
       ]
     },
     {

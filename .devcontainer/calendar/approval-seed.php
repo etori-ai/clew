@@ -26,7 +26,7 @@ set_exception_handler(function (Throwable $error): never {
 });
 $reset = in_array('reset', array_slice($argv, 1), true);
 foreach (['files_sharing', 'approval'] as $app) {
-    if (!in_array($app, OC::$server->getAppManager()->getEnabledApps(), true)) {
+    if (!in_array($app, OC::$server->get(OCP\App\IAppManager::class)->getEnabledApps(), true)) {
         throw new RuntimeException("Enable $app first");
     }
 }
@@ -85,6 +85,9 @@ foreach ($files as [$owner, $approver, $name, $text]) {
     }
     $requests[] = [(string)$file->getId(), $owner, $name];
 }
+// From Nextcloud 35 creating a share sets up the recipient's file system then and there, with the shares so far, so an
+// approver would reach the first file alone. Drop what this process has mounted; the requests mount it again, complete.
+OC::$server->get(OC\Files\SetupManager::class)->tearDown();
 foreach ($requests as [$id, $owner, $name]) {
     $tags = array_map('strval', $mapper->getTagIdsForObjects([$id], 'files')[$id] ?? []);
     $decided = array_values(array_intersect([$approved, $rejected], $tags));
