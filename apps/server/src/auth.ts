@@ -19,8 +19,10 @@ import {
   revokeSession,
   sessions,
   authenticationAudit,
+  people,
   type SessionRecord,
 } from '@clew/db/auth';
+import { and, eq, inArray } from 'drizzle-orm';
 import {
   authorizationVersion,
   decryptTokens,
@@ -80,6 +82,10 @@ export function authSettings() {
     callback: base.origin + '/api/auth/callback',
     // The ID token claim a first login is matched on (D68 item 6): the account name the provisioner sets as userName.
     bindingClaim: process.env.OIDC_BINDING_CLAIM ?? 'preferred_username',
+    scope:
+      process.env.OIDC_REQUEST_OFFLINE_ACCESS === 'true'
+        ? 'openid profile email offline_access'
+        : 'openid profile email',
   };
 }
 export function cookieOptions() {
@@ -125,7 +131,7 @@ export async function beginLogin(returnTo: string | null) {
     });
   const url = oidc.buildAuthorizationUrl(config, {
     redirect_uri: settings.callback,
-    scope: 'openid profile email',
+    scope: settings.scope,
     state,
     nonce,
     code_challenge: await oidc.calculatePKCECodeChallenge(verifier),
@@ -152,6 +158,14 @@ export async function completeLogin(currentUrl: URL, cookie: string | undefined)
     idTokenExpected: true,
     maxAge: 0,
   });
+  return { ...(await openSession(tokens, 'login')), returnTo: transaction.returnTo };
+}
+/**
+ * The session for tokens the provider has just issued: the subject resolves or binds to its person, and the session row
+ * and its audit row are written together. The audit action says how the person signed in.
+ */
+async function openSession(tokens: oidc.TokenEndpointResponse & oidc.TokenEndpointResponseHelpers, action: string) {
+  const settings = authSettings();
   const claims = tokens.claims();
   if (!claims || !tokens.refresh_token || !tokens.id_token || typeof claims.sub !== 'string')
     throw new AuthError(401, 'invalid');
@@ -186,9 +200,69 @@ export async function completeLogin(currentUrl: URL, cookie: string | undefined)
       idleExpiresAt: new Date(now + IDLE_MS),
       expiresAt: new Date(now + ABSOLUTE_MS),
     });
-    await tx.insert(authenticationAudit).values({ action: 'login', actor: 'person:' + access.person.id });
+    await tx.insert(authenticationAudit).values({ action, actor: 'person:' + access.person.id });
   });
-  return { cookie: raw, returnTo: transaction.returnTo };
+  return { cookie: raw };
+}
+/**
+ * Development sign-in (D6): `AUTH_DEV_LOGIN=true` and the personas' Keycloak accounts in `AUTH_DEV_ACCOUNTS`
+ * (`userName:password,…`, written by `bun run auth:setup`). Only on the local stack: the server refuses to start with the
+ * flag set anywhere else.
+ */
+function devAccounts(): Map<string, string> | undefined {
+  if (process.env.AUTH_DEV_LOGIN !== 'true') return undefined;
+  let local = false;
+  try {
+    local = authSettings().local;
+  } catch {
+    /* not configured */
+  }
+  if (!local) throw new Error('AUTH_DEV_LOGIN=true is allowed only on the local development stack (D6)');
+  return new Map(
+    (process.env.AUTH_DEV_ACCOUNTS ?? '').split(',').flatMap(entry => {
+      const at = entry.indexOf(':');
+      return at > 0 ? [[entry.slice(0, at).trim(), entry.slice(at + 1).trim()] as const] : [];
+    }),
+  );
+}
+/** Throws at startup when the development sign-in is switched on outside the local stack (D6). */
+export function checkDevLogin() {
+  devAccounts();
+}
+/** The personas the sign-in page lists, by name; undefined when the development sign-in is off. */
+export async function listDevAccounts() {
+  const accounts = devAccounts();
+  if (!accounts) return undefined;
+  const names = [...accounts.keys()];
+  if (!names.length) return [];
+  const rows = await database()
+    .select({ userName: people.userName, name: people.name })
+    .from(people)
+    .where(and(inArray(people.userName, names), eq(people.enabled, true)));
+  return names.flatMap(userName =>
+    rows.filter(row => row.userName === userName).map(row => ({ userName, name: row.name })),
+  );
+}
+/**
+ * Signs in as a persona without the provider's form: the BFF asks the local Keycloak for the persona's tokens with its test
+ * password (a direct grant, enabled on `clew-web` in the development realm only). The tokens are real, so binding,
+ * refresh, delegation and logout are those of any session; the audit row says `login-dev`.
+ */
+export async function devLogin(userName: string, returnTo: string | null) {
+  const password = devAccounts()?.get(userName);
+  if (!password) throw new AuthError(401, 'invalid');
+  const config = await oidcConfiguration();
+  let tokens;
+  try {
+    tokens = await oidc.genericGrantRequest(config, 'password', {
+      username: userName,
+      password,
+      scope: 'openid profile email',
+    });
+  } catch {
+    throw new AuthError(401, 'invalid');
+  }
+  return { ...(await openSession(tokens, 'login-dev')), returnTo: localReturnTo(returnTo) };
 }
 async function refreshSession(row: SessionRecord): Promise<SessionRecord> {
   if (row.tokenExpiresAt.getTime() > Date.now() + 15_000) return row;

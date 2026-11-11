@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**105 in force**: 100 accepted and 5 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 8 proposed and not decided. 5 no longer in force.
+**106 in force**: 99 accepted and 7 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 10 proposed and not decided. 5 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -57,10 +57,9 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | Decision | Date | Standing | Read with |
 |---|---|---|---|
 | [D5 · OIDC and OAuth 2.1 with JWT access tokens are the only identification path](D05-oidc-and-oauth-only-identification-path.md) | 2026-11-03 | accepted |  |
-| [D6 · Dev login with username and password, local only](D06-dev-login-local-only.md) | 2026-11-03 | accepted |  |
 | [D44 · Authorized reads and Clew-signed connector authority](D44-authorized-reads-and-clew-signed-connector-authority.md) | 2026-11-05 | accepted |  |
 | [D62 · Users are core entities, not connected systems](D62-users-are-core-entities-not-connected-systems.md) | 2026-11-06 | accepted |  |
-| [D68 · People are pushed into Clew through standard SCIM, and mapping happens outside Clew](D68-people-are-pushed-into-clew-through-standard-scim.md) | 2026-11-06 | accepted | [D85](README.md), [D99](README.md) |
+| [D68 · People are pushed into Clew through standard SCIM, and mapping happens outside Clew](D68-people-are-pushed-into-clew-through-standard-scim.md) | 2026-11-06 | accepted | [D85](README.md), [D99](README.md), [D109](D109-a-provisioner-sends-a-change-when-it-happens-and-reconciles-the-whole-source-daily.md) |
 | [D75 · Source snapshots retain the authority that produced them](D75-source-snapshots-retain-the-authority-that-produced-them.md) | 2026-11-07 | accepted |  |
 | [D85 · Capabilities are mapped from provisioned groups in Clew; units and manager roles keep D68's keys](D85-capabilities-are-mapped-from-provisioned-groups-in-clew.md) | 2026-11-09 | accepted |  |
 | [D93 · The `protected` key is refused at the SCIM boundary until Clew decides whether it may hold the fact](D93-the-protected-key-is-refused-at-the-scim-boundary.md) | 2026-11-09 | accepted | [D96](README.md) |
@@ -68,6 +67,8 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D99 · Units form a tree pushed over SCIM, and a manager works with their direct reports](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md) | 2026-11-10 | accepted | [D101](README.md) |
 | [D101 · A provisioner pushes the organisation first and adds before it removes, and a unit belongs to one organisation](D101-a-provisioner-pushes-the-organisation-first-and-adds-before-it-removes-and-a-unit-belongs-to-one-organisation.md) | 2026-11-11 | accepted |  |
 | [D103 · The session that asked stands behind delegated work: an approved write, and a scan while the person is present](D103-the-session-that-asked-stands-behind-delegated-work.md) | 2026-11-10 | provisional | [D101](README.md) |
+| [D107 · An administrator issues, replaces and takes back a provisioner's key on the users page](D107-an-administrator-issues-replaces-and-takes-back-a-provisioners-key-on-the-users-page.md) | 2026-11-11 | provisional |  |
+| [D109 · A provisioner sends a change when it happens, and reconciles the whole source at least daily](D109-a-provisioner-sends-a-change-when-it-happens-and-reconciles-the-whole-source-daily.md) | 2026-11-11 | provisional |  |
 
 ## Platform
 
@@ -142,6 +143,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 
 | Decision | Area | Date | Read with |
 |---|---|---|---|
+| [D6 · Dev login with username and password, local only](D06-dev-login-local-only.md) | identity | 2026-11-03 |  |
 | [D18 · Errands are a Clew-owned pass-through domain; SupportManagement is the first adapter](D18-errands-are-a-clew-owned-passthrough-domain.md) | integrations | 2026-11-04 | [D35](D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md), [D89](D89-an-errand-connector-acts-as-the-person-and-the-case-system-decides-access.md) |
 | [D19 · Change notification is a Clew-owned contract: payload-free CloudEvents over HTTP](D19-change-notification-is-a-clew-owned-contract.md) | integrations | 2026-11-04 |  |
 | [D26 · Questions answered from documents are a search fan-out with citations, not a knowledge module](D26-questions-over-documents-are-search-not-knowledge.md) | product | 2026-11-04 |  |
@@ -150,6 +152,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D82 · Sick-leave statistics come through an absence connector that reads only aggregates](D82-sick-leave-statistics-come-through-an-absence-connector-that-reads-only-aggregates.md) | integrations | 2026-11-06 | [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) |
 | [D87 · One header shared by the portal and the intranet, built with Astryx and embedded as a custom element](D87-one-header-shared-by-the-portal-and-the-intranet.md) | ui | 2026-11-09 | [D88](D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md) |
 | [D99 · An unresolved job step reaches a person and is finished forward; no connector is asked for rollback](D99-an-unresolved-job-step-reaches-a-person-and-is-finished-forward.md) | integrations, product | 2026-11-10 |  |
+| [D108 · Competence is an owned domain: one holding for competences and certificates, typed against a catalogue](D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md) | product, identity, integrations | 2026-11-11 | [D101](README.md) |
 
 ## No longer in force
 

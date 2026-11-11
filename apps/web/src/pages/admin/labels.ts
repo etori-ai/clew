@@ -13,6 +13,16 @@ import type {
 export const roleLabel: Record<Role, string> = { manager: 'Chefer', employee: 'Medarbetare' };
 /** A person's role in one unit, singular. */
 export const roleOfOne: Record<Role, string> = { manager: 'Chef', employee: 'Medarbetare' };
+const instant = new Intl.DateTimeFormat('sv-SE', {
+  timeZone: 'Europe/Stockholm',
+  dateStyle: 'long',
+  timeStyle: 'short',
+});
+/**
+ * An instant as the administration writes it inside a sentence: "10 november 2026 kl. 06:02", in Swedish time whatever
+ * zone the browser is in. One wording for the page: Astryx's Timestamp writes the same instant "10 nov. 2026 6:02".
+ */
+export const instantText = (iso: string) => instant.format(new Date(iso));
 const unitNames = new Intl.ListFormat('sv', { type: 'conjunction' });
 /**
  * The role as a list of people says it. A person assigned to the unit has their role on it; one who reports there from
@@ -29,6 +39,7 @@ export const capabilityLabel: Record<Capability, string> = {
   'admin.connectors': 'Administrera anslutna system',
   'admin.users': 'Administrera användare',
   'admin.appearance': 'Administrera utseende',
+  'admin.competence': 'Administrera kompetenskatalogen',
 };
 export const kindLabel = {
   core: 'Startsidans egen',

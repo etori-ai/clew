@@ -29,6 +29,7 @@ import { AdminModelPage } from './pages/admin/model';
 import { AdminProviderPage } from './pages/admin/provider';
 import { NotAdmin } from './pages/admin/shell';
 import { AdminAppearancePage } from './pages/admin/appearance';
+import { AdminCompetencePage } from './pages/admin/competence';
 import { loadBranding, useBranding } from './branding';
 
 type Shell = { session: BrowserSession; user: SessionUser; admin: boolean };
@@ -259,6 +260,12 @@ function App() {
         path="/admin/appearance"
         element={admin(shell => (
           <AdminAppearancePage user={shell.user} />
+        ))}
+      />
+      <Route
+        path="/admin/competence"
+        element={admin(shell => (
+          <AdminCompetencePage user={shell.user} />
         ))}
       />
       <Route

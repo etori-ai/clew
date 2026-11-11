@@ -9,7 +9,7 @@ import type {
   TalkState,
   TalksOutput,
 } from '@clew/contracts';
-import { SubjectSchema } from '@clew/contracts';
+import { ENTITY_KEY_MAX } from '@clew/contracts';
 import { ForbiddenError, InputError } from '../../context';
 import {
   commitmentRow,
@@ -40,7 +40,7 @@ const NO_ROUND = 'Det finns ingen öppen omgång av utvecklingssamtal.';
 const NOT_ALLOWED = 'Du kan inte ändra den här åtgärdspunkten.';
 const BAD_DAY = 'Ange ett giltigt datum.';
 /** The longest key a card may name a person by (D97, `SubjectSchema`): a longer user name names nobody. */
-const SUBJECT_KEY_MAX = SubjectSchema.properties.key.maxLength ?? 256;
+const SUBJECT_KEY_MAX = ENTITY_KEY_MAX;
 /** The actor of a row written because a `due` timer fired; the convention of the other timer-driven rows. */
 const TIMER_ACTOR = 'system:scheduler';
 /** The version of the export document (D96 item 10); a breaking change is a new version. */
@@ -444,7 +444,7 @@ export function talkUsecases(deps: TalkDeps) {
           commitmentId: id,
           dueOn: body.dueOn,
           at,
-          ...(employee.userName && employee.userName.length <= SUBJECT_KEY_MAX
+          ...(employee.userName && [...employee.userName].length <= SUBJECT_KEY_MAX
             ? { subject: { entity: 'person' as const, key: employee.userName } }
             : {}),
         });

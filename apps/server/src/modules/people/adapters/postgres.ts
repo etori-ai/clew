@@ -128,6 +128,13 @@ const provisionerColumns = {
   label: schema.provisioners.label,
   lastSeenAt: schema.provisioners.lastSeenAt,
 };
+const previousColumns = {
+  previousTokenDigest: schema.provisioners.previousTokenDigest,
+  previousValidUntil: schema.provisioners.previousValidUntil,
+};
+/** Until when a rotated-out token answers, as stored: null when there is none. Whether that is still ahead is the use case's to say. */
+const previousUntil = (digest: string | null, until: Date | null) =>
+  digest !== null && until !== null ? until.toISOString() : null;
 const provisionerRecord = (r: { id: string; organisationId: string; label: string; lastSeenAt: Date | null }) => ({
   ...r,
   lastSeenAt: r.lastSeenAt?.toISOString() ?? null,
@@ -264,17 +271,90 @@ export function postgresProvisionStore(): ProvisionStore {
     },
     async provisioners(organisationId) {
       const rows = await tx
-        .select(provisionerColumns)
+        .select({ ...provisionerColumns, ...previousColumns })
         .from(schema.provisioners)
         .where(and(eq(schema.provisioners.organisationId, organisationId), isNull(schema.provisioners.revokedAt)))
         .orderBy(schema.provisioners.id);
-      return rows.map(provisionerRecord);
+      return rows.map(({ previousTokenDigest, previousValidUntil, ...row }) => ({
+        ...provisionerRecord(row),
+        previousValidUntil: previousUntil(previousTokenDigest, previousValidUntil),
+      }));
     },
-    async readUser(organisationId, id) {
+    async provisionerById(id) {
       const [row] = await tx
+        .select({
+          id: schema.provisioners.id,
+          organisationId: schema.provisioners.organisationId,
+          label: schema.provisioners.label,
+          revokedAt: schema.provisioners.revokedAt,
+          ...previousColumns,
+        })
+        .from(schema.provisioners)
+        .where(eq(schema.provisioners.id, id))
+        .for('update');
+      return (
+        row && {
+          id: row.id,
+          organisationId: row.organisationId,
+          label: row.label,
+          revoked: row.revokedAt !== null,
+          previousValidUntil: previousUntil(row.previousTokenDigest, row.previousValidUntil),
+        }
+      );
+    },
+    async issueProvisioner({ id, createdAt, ...record }) {
+      const fresh = {
+        ...record,
+        createdAt: new Date(createdAt),
+        revokedAt: null,
+        lastSeenAt: null,
+        previousTokenDigest: null,
+        previousValidUntil: null,
+      };
+      // A new row, or else the organisation's own revoked row. The insert waits for another transaction that is
+      // writing the same id and then does nothing, so of two issues at once one is taken and the other is not.
+      const inserted = await tx
+        .insert(schema.provisioners)
+        .values({ id, ...fresh })
+        .onConflictDoNothing({ target: schema.provisioners.id })
+        .returning({ id: schema.provisioners.id });
+      if (inserted.length) return true;
+      const reissued = await tx
+        .update(schema.provisioners)
+        .set(fresh)
+        .where(
+          and(
+            eq(schema.provisioners.id, id),
+            isNotNull(schema.provisioners.revokedAt),
+            eq(schema.provisioners.organisationId, record.organisationId),
+          ),
+        )
+        .returning({ id: schema.provisioners.id });
+      return reissued.length > 0;
+    },
+    async rotateProvisioner(id, tokenDigest, previousValidUntil) {
+      await tx
+        .update(schema.provisioners)
+        .set({
+          tokenDigest,
+          // The column on the right is the row as it was: the digest this write replaces.
+          previousTokenDigest: previousValidUntil === null ? null : sql`${schema.provisioners.tokenDigest}`,
+          previousValidUntil: previousValidUntil === null ? null : new Date(previousValidUntil),
+        })
+        .where(eq(schema.provisioners.id, id));
+    },
+    async revokeProvisioner(id, at) {
+      await tx
+        .update(schema.provisioners)
+        .set({ revokedAt: new Date(at), previousTokenDigest: null, previousValidUntil: null })
+        .where(eq(schema.provisioners.id, id));
+    },
+    async readUser(organisationId, id, lock) {
+      const query = tx
         .select(userColumns)
         .from(schema.people)
         .where(and(eq(schema.people.id, id), eq(schema.people.organisationId, organisationId)));
+      const [row] = await (lock ? query.for(ROW_LOCK) : query);
       return row && userRecord(row);
     },
     async findUser(by, value) {

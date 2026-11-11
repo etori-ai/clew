@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { actorOf, type ExecuteResult } from '@clew/connectors';
-import { Value } from '@sinclair/typebox/value';
+import { Value } from 'typebox/value';
 import { ExecuteResultSchema } from '@clew/connectors/protocol';
 import { registry } from '../connectors/registry';
 import { systemContext } from '../system-context';

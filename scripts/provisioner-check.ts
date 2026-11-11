@@ -3,7 +3,7 @@
  *
  *   CLEW_PROVISIONER_TOKEN=<token> bun scripts/provisioner-check.ts https://clew.example/scim/v2
  *   bun scripts/provisioner-check.ts http://127.0.0.1:3000/scim/v2 --token <token>
- *   bun scripts/provisioner-check.ts <url> --roots 1   # warn when the tree has more roots than the source has
+ *   bun scripts/provisioner-check.ts <url> --roots 1   # warn when the root count differs from the source
  *
  * The environment variable keeps the token out of the shell history. The check authenticates as the provisioner, so
  * it counts as a call from it and moves its last-seen time: to leave that alone, issue the check a token under an id
@@ -21,7 +21,7 @@ const option = (name: string) => {
 const url = args.find((a, i) => !a.startsWith('--') && !args[i - 1]?.startsWith('--'))?.replace(/\/+$/, '');
 const token = option('token') ?? process.env.CLEW_PROVISIONER_TOKEN;
 const roots = option('roots') === undefined ? undefined : Number(option('roots'));
-if (!url || !token || (roots !== undefined && !Number.isInteger(roots))) {
+if (!url || !token || (roots !== undefined && (!Number.isInteger(roots) || roots < 0))) {
   console.error(
     'Usage: CLEW_PROVISIONER_TOKEN=<token> bun scripts/provisioner-check.ts <url ending in /scim/v2> [--token <token>] [--roots <n>]',
   );

@@ -27,7 +27,7 @@ import { pageLocation } from '../page-location';
 import { SubRows, type ShellNav } from './shell';
 
 /** The administration's sections, rows under Administration (D45, administration keeps the rail). */
-export type AdminSection = 'anslutningar' | 'modeller' | 'anvandare' | 'organisation' | 'utseende';
+export type AdminSection = 'anslutningar' | 'modeller' | 'anvandare' | 'organisation' | 'utseende' | 'kompetens';
 /** What the rail marks as current: the place, and within the start page the conversation. */
 export interface RailCurrent {
   surface: 'start' | 'calendar' | 'verktyg' | 'staff' | 'admin';
@@ -254,6 +254,7 @@ export function useRail({
             isSelected={current.section === 'organisation'}
           />
           <SideNavItem label="Utseende" href="/admin/appearance" isSelected={current.section === 'utseende'} />
+          <SideNavItem label="Kompetens" href="/admin/competence" isSelected={current.section === 'kompetens'} />
         </SubRows>
       </SideNavItem>
     ) : undefined,

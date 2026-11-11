@@ -5,6 +5,9 @@ import type {
   TalkHeldBody,
   TalksResult,
   GroupCapabilityInputType,
+  ProvisionerIssueInputType,
+  ProvisionerKeyIssued,
+  ProvisionerRotateInputType,
   UsersAdminOverview,
   UsersAdminPage,
   UsersAdminQueryType,
@@ -73,6 +76,11 @@ import type {
   OrganisationUnitPeople,
 } from '@clew/contracts';
 import type {
+  CompetenceHoldingBody,
+  CompetenceTypeBody,
+  CompetenceTypePatch,
+  CompetenceTypesOutput,
+  CompetenceValidityImpact,
   EntityActionStarted,
   EntityDetail,
   EntityKind,
@@ -221,6 +229,30 @@ export const api = {
     /** Opens a done action point again. */
     reopen: (id: string) => del<void>(`${commitmentPath(id)}/done`),
   },
+  /**
+   * Kompetens (D108): the built-in module's own routes. They are refused while the module is switched off for the
+   * person, and the catalogue is refused to someone who neither manages anyone nor administers it; `queries.ts` turns
+   * that refusal into `null`.
+   */
+  competence: {
+    /** The competence types a certificate can be registered for. */
+    types: () => call<CompetenceTypesOutput>('/api/competence/types'),
+    /** An administrator of the catalogue adds a type. */
+    addType: (body: CompetenceTypeBody) => post<{ id: string }>('/api/competence/types', body),
+    /** Changes a type: what the body does not name is kept; `validityMonths: null` removes the employer's rule. */
+    updateType: (id: string, body: CompetenceTypePatch) =>
+      patch<void>(`/api/competence/types/${encodeURIComponent(id)}`, body),
+    /** Archives a type: it takes no new holdings and keeps the ones it has. */
+    archiveType: (id: string) => post<void>(`/api/competence/types/${encodeURIComponent(id)}/archive`),
+    /** What a new validity would do to the holdings counted from the type's rule, before it is saved. */
+    validityImpact: (id: string, months: number | null) =>
+      call<CompetenceValidityImpact>(
+        `/api/competence/types/${encodeURIComponent(id)}/validity?months=${months === null ? 'none' : months}`,
+      ),
+    /** A manager registers a certificate for a person who reports to them. */
+    register: (personId: string, body: CompetenceHoldingBody) =>
+      post<{ id: string }>(`/api/competence/people/${encodeURIComponent(personId)}/holdings`, body),
+  },
   /** The manifest field by field (D60): a public document, read with the plain fetch since no session or token belongs on it. */
   manifestReference: async () => {
     const response = await fetch('/api/protocol/manifest-reference.json');
@@ -316,6 +348,13 @@ export const api = {
       post<UsersAdminOverview>('/api/admin/users/group-capabilities', input),
     removeGroupCapability: (input: GroupCapabilityInputType) =>
       post<UsersAdminOverview>('/api/admin/users/group-capabilities/remove', input),
+    // The catalogues' keys (D107). The answer to issuing or rotating one carries the key, once.
+    issueProvisioner: (input: ProvisionerIssueInputType) =>
+      post<ProvisionerKeyIssued>('/api/admin/users/provisioners', input),
+    rotateProvisioner: (id: string, input: ProvisionerRotateInputType) =>
+      post<ProvisionerKeyIssued>(`/api/admin/users/provisioners/${encodeURIComponent(id)}/rotate`, input),
+    revokeProvisioner: (id: string) =>
+      post<UsersAdminOverview>(`/api/admin/users/provisioners/${encodeURIComponent(id)}/revoke`),
     // Organisation (D99): the organisation tree as the catalogue pushed it, and the people of one unit.
     organisation: () => call<OrganisationOverview>('/api/admin/organisation'),
     organisationUnit: (unitId: string) =>

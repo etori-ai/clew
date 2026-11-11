@@ -46,6 +46,10 @@ and nothing here claims it for the site.
 One dependency of VitePress carries a licence the OSI has not approved (an icon data package under CC0-1.0); it
 is in the licence record and among the open questions, and nothing from it is in the built site.
 
+**Tried and taken out, 2026-11-11.** The guide to what operations deliver for provisioning was published in English
+and Swedish for an hour, with `sv` as a locale of the site and a translation under `docs/sv/`. The product owner
+took it out the same day: every other guide is English only, and so is this one. The documentation has one language.
+
 **Replaces.** No numbered decision. It changes the product owner's call of 2026-11-05 that decisions and reviews
 stay off any public site: the repository has been made public since, so the records are readable there already,
 and following them is what the site is for. Reviews and history stay off it as before.

@@ -137,10 +137,10 @@ export async function checkProvisioning(
   } else if (units.length) say('ok', 'No unit names a unit above it: the organisation is flat.');
   // A unit group written without the extension is a root (D99), so a client that replaces a unit's members and
   // leaves its parent out flattens the tree one unit at a time. Only the source knows how many roots there should be.
-  if (expected.roots !== undefined && roots.length > expected.roots)
+  if (expected.roots !== undefined && roots.length !== expected.roots)
     say(
       'warn',
-      `The tree has ${plural(roots.length, 'root', 'roots')} where ${expected.roots} ${expected.roots === 1 ? 'was' : 'were'} expected; a unit written without its parent becomes a root: ${some(roots.map(id => UNIT + id))}.`,
+      `The tree has ${plural(roots.length, 'root', 'roots')} where ${expected.roots} ${expected.roots === 1 ? 'was' : 'were'} expected. Check the parent links. Roots: ${some(roots.map(id => UNIT + id)) || 'none'}.`,
     );
   // A unit with units below it may be a heading nobody is placed on; one without is a unit somebody should be in.
   const empty = [...units.filter(g => !hasBelow.has(g.externalId!.slice(UNIT.length))), ...managers].filter(

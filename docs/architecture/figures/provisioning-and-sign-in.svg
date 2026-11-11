@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="556" viewBox="0 0 760 556" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14">
+  <title>Two paths into Clew: the provisioner sends each person with a user name, and the identity provider sends the account name at sign-in; Clew matches the two</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4b5563"/>
+    </marker>
+  </defs>
+  <rect width="760" height="556" fill="#ffffff"/>
+  <!-- Regions -->
+  <rect x="16" y="16" width="320" height="524" rx="14" fill="#f3f4f6" stroke="#d1d5db"/>
+  <text x="176" y="44" text-anchor="middle" font-weight="600" fill="#374151">The organisation</text>
+  <rect x="464" y="16" width="280" height="524" rx="14" fill="#eef4ff" stroke="#c7d7f5"/>
+  <text x="604" y="44" text-anchor="middle" font-weight="600" fill="#1e3a8a">Clew · the hosting team</text>
+
+  <!-- Provisioning: the source and the provisioner -->
+  <rect x="36" y="62" width="280" height="84" rx="10" fill="#ffffff" stroke="#9ca3af"/>
+  <text x="176" y="90" text-anchor="middle" font-weight="600" fill="#111827">The source</text>
+  <text x="176" y="112" text-anchor="middle" fill="#374151">a directory or an HR system</text>
+  <text x="176" y="132" text-anchor="middle" font-size="13" fill="#4b5563">the directory team</text>
+  <line x1="176" y1="146" x2="176" y2="178" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="36" y="180" width="280" height="108" rx="10" fill="#ffffff" stroke="#9ca3af"/>
+  <text x="176" y="208" text-anchor="middle" font-weight="600" fill="#111827">Provisioner</text>
+  <text x="176" y="230" text-anchor="middle" fill="#374151">sends each change as it happens</text>
+  <text x="176" y="250" text-anchor="middle" fill="#374151">compares everything daily</text>
+  <text x="176" y="272" text-anchor="middle" font-size="13" fill="#4b5563">the directory team</text>
+
+  <!-- Sign-in: the person and the identity provider -->
+  <rect x="36" y="330" width="280" height="64" rx="10" fill="#ffffff" stroke="#9ca3af"/>
+  <text x="176" y="358" text-anchor="middle" font-weight="600" fill="#111827">A person</text>
+  <text x="176" y="380" text-anchor="middle" fill="#374151">signs in with their work account</text>
+  <line x1="176" y1="394" x2="176" y2="426" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="36" y="428" width="280" height="84" rx="10" fill="#ffffff" stroke="#9ca3af"/>
+  <text x="176" y="456" text-anchor="middle" font-weight="600" fill="#111827">Identity provider</text>
+  <text x="176" y="478" text-anchor="middle" fill="#374151">vouches for the account</text>
+  <text x="176" y="498" text-anchor="middle" font-size="13" fill="#4b5563">the identity provider team</text>
+
+  <!-- Clew -->
+  <rect x="484" y="62" width="240" height="84" rx="10" fill="#ffffff" stroke="#93b4ee" stroke-dasharray="4 3"/>
+  <text x="604" y="90" text-anchor="middle" font-weight="600" fill="#1e3a8a">Clew never</text>
+  <text x="604" y="112" text-anchor="middle" fill="#374151">reads the source, or</text>
+  <text x="604" y="132" text-anchor="middle" fill="#374151">creates a person at sign-in</text>
+
+  <rect x="484" y="186" width="240" height="96" rx="10" fill="#ffffff" stroke="#1d4ed8"/>
+  <text x="604" y="216" text-anchor="middle" font-weight="600" fill="#1e3a8a">SCIM server</text>
+  <text x="604" y="240" text-anchor="middle" fill="#374151">/scim/v2</text>
+  <text x="604" y="262" text-anchor="middle" fill="#374151">people · units · groups</text>
+  <line x1="316" y1="234" x2="482" y2="234" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="400" y="222" text-anchor="middle" font-size="13" fill="#4b5563">HTTPS + key</text>
+
+  <rect x="484" y="310" width="240" height="84" rx="10" fill="#ecfdf5" stroke="#059669"/>
+  <text x="604" y="338" text-anchor="middle" font-weight="600" fill="#065f46">The person in Clew</text>
+  <text x="604" y="360" text-anchor="middle" fill="#374151">userName: anna.berg</text>
+  <text x="604" y="380" text-anchor="middle" fill="#374151">unit · role · capabilities</text>
+  <line x1="604" y1="282" x2="604" y2="308" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="484" y="422" width="240" height="96" rx="10" fill="#ffffff" stroke="#1d4ed8"/>
+  <text x="604" y="452" text-anchor="middle" font-weight="600" fill="#1e3a8a">Sign-in</text>
+  <text x="604" y="476" text-anchor="middle" fill="#374151">OpenID Connect</text>
+  <text x="604" y="498" text-anchor="middle" fill="#374151">account name = userName</text>
+  <line x1="604" y1="422" x2="604" y2="396" stroke="#059669" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="316" y1="470" x2="482" y2="470" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="400" y="458" text-anchor="middle" font-size="13" fill="#4b5563">ID token:</text>
+  <text x="400" y="490" text-anchor="middle" font-size="13" fill="#4b5563">anna.berg</text>
+</svg>

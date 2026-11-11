@@ -60,5 +60,5 @@
   <!-- outcome -->
   <rect x="40" y="468" width="920" height="50" rx="10" fill="#ecfdf5" stroke="#059669"/>
   <text x="500" y="490" text-anchor="middle" font-weight="600" fill="#065f46">Anna is in unit:skola, unit-manager:skola and the AD group mapped to admin.connectors</text>
-  <text x="500" y="509" text-anchor="middle" fill="#374151">→ her grant: Bergsåkers skola · manager · [admin.connectors]. Several units: manager before employee, then the lowest unit id is the active one.</text>
+  <text x="500" y="509" text-anchor="middle" fill="#374151">→ her grant: Bergsåkers skola · manager · [admin.connectors]. With several units: manager first, then the lowest unit id.</text>
 </svg>

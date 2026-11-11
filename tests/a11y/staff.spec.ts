@@ -94,6 +94,9 @@ test.describe('Personal', () => {
         const menu = page.getByRole('menu');
         await expect(menu.getByRole('menuitemradio', { name: 'Alla' })).toHaveAttribute('aria-checked', 'true');
         await expect(menu.getByText('Visa medarbetarna efter')).toBeVisible();
+        // The menu takes the focus a moment after it is drawn. An arrow pressed before that goes to the button and
+        // moves nothing, which failed this test about one run in sixteen: the key is pressed once the focus is in.
+        await expect(menu.getByRole('menuitemradio', { name: 'Alla' })).toBeFocused();
         await page.keyboard.press('ArrowDown');
         await expect(menu.getByRole('menuitemradio', { name: /^Utvecklingssamtal/ })).toBeFocused();
         await page.keyboard.press('Enter');

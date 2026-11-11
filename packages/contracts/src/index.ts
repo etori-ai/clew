@@ -1,5 +1,7 @@
-import { FormatRegistry, Type, type Static, type TSchema } from '@sinclair/typebox';
-import { Value } from '@sinclair/typebox/value';
+import { Type, type Static, type TLiteral, type TSchema, type TSchemaOptions, type TUnion } from 'typebox';
+import { Format } from 'typebox/format';
+import { Settings } from 'typebox/system';
+import { Value } from 'typebox/value';
 import { DocumentReviewSchema, ReviewEvidenceSchema } from './presentation';
 // Explicit exports keep these names visible to the Node ESM server through this package's CommonJS boundary.
 export {
@@ -62,20 +64,155 @@ export const sessionUser = (c: SessionUser): SessionUser => ({
   role: c.role,
 });
 
-const object = <T extends Record<string, import('@sinclair/typebox').TSchema>>(properties: T, description?: string) =>
+const object = <T extends Record<string, TSchema>>(properties: T, description?: string) =>
   Type.Object(properties, { additionalProperties: false, ...(description ? { description } : {}) });
+/** `Type.Partial` and `Type.Omit` return a new object without the options of the one they were given, so a derived body says again that it is closed. */
+const closed = { additionalProperties: false } as const;
+/**
+ * A union of literals drawn from a closed list, one `anyOf` branch per value. TypeBox reads a union's static type from a
+ * tuple and `map` returns an array, so the list's member type is stated here.
+ */
+export const literals = <const V extends string | number>(values: readonly V[], options?: TSchemaOptions) =>
+  Type.Union(
+    values.map(value => Type.Literal(value)),
+    options,
+  ) as unknown as TUnion<[TLiteral<V>]>;
 const instant = Type.String({ format: 'date-time', maxLength: 40 });
-// TypeBox's own `Value.Check` knows no formats until one is registered; Ajv (the routes) has its own. One definition, here, so every schema with an instant checks the same way.
-if (!FormatRegistry.Has('date-time'))
-  FormatRegistry.Set(
-    'date-time',
-    value =>
-      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(value) &&
-      !Number.isNaN(Date.parse(value)),
-  );
-/** Validate with this package's format registry: Node's ESM and CommonJS TypeBox copies have separate registries. */
+// TypeBox ships a `date-time` of its own (RFC 3339, lower-case `t` and an RFC 9557 suffix allowed). Clew's replaces it, so every schema with an instant is checked as it always was; Ajv (the routes) has its own.
+Format.Set(
+  'date-time',
+  value =>
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(value) &&
+    !Number.isNaN(Date.parse(value)),
+);
+/** Whether a value fits a contract, checked with the `date-time` registered above. */
 export const checkContract = <T extends TSchema>(schema: T, value: unknown): value is Static<T> =>
   Value.Check(schema, value);
+/** One way a value fails a contract: where, as a JSON Pointer into the value (empty for the value itself), and why. */
+export interface ContractProblem {
+  path: string;
+  message: string;
+}
+const pointerKey = (key: string) => key.replace(/~/g, '~0').replace(/\//g, '~1');
+/** How many steps into the value a schema path takes: a property, an item or a record value is one, a union branch none. */
+const valueDepth = (schemaPath: string) => {
+  const steps = schemaPath.split('/').slice(1);
+  let depth = 0;
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    if (step === 'properties' || step === 'patternProperties') (depth++, i++);
+    else if (step === 'items' || step === 'additionalProperties') depth++;
+    else if (step === 'anyOf') i++;
+  }
+  return depth;
+};
+const schemaAt = (schema: unknown, schemaPath: string) =>
+  schemaPath
+    .split('/')
+    .slice(1)
+    .reduce<unknown>(
+      (at, step) => (at as Record<string, unknown> | undefined)?.[step.replace(/~1/g, '/').replace(/~0/g, '~')],
+      schema,
+    ) as { type?: string } | undefined;
+/**
+ * Every way a value fails a contract, in Clew's own words, so that what an administrator or a connector author reads
+ * does not change with the validation library. A missing or an unexpected property is named at its own path, a value
+ * that fits no branch of a union is one problem at the union, and a path is given one reason once. Empty when the value
+ * passes. Every problem is listed (D60); a caller that names only the first passes `limit`, and the library then stops
+ * looking early instead of walking a large body to its end.
+ */
+export function contractProblems(schema: TSchema, value: unknown, limit = Number.MAX_SAFE_INTEGER): ContractProblem[] {
+  // TypeBox stops at `maxErrors`, eight unless told otherwise, and several of its errors can be one problem or none.
+  // So the budget starts above the limit and grows until the limit is met or the library found nothing more.
+  const { maxErrors } = Settings.Get();
+  try {
+    for (let budget = Math.min(Number.MAX_SAFE_INTEGER, Math.max(8, limit * 8)); ; budget *= 8) {
+      Settings.Set({ maxErrors: budget });
+      const errors = Value.Errors(schema, value);
+      const cut = errors.length >= budget;
+      // A type error may be followed by the literal's own, which replaces it: cut off there, it is not worded alone.
+      const problems = worded(schema, cut && errors.at(-1)?.keyword === 'type' ? errors.slice(0, -1) : errors);
+      if (!cut || problems.length >= limit) return problems.slice(0, limit);
+    }
+  } finally {
+    Settings.Set({ maxErrors });
+  }
+}
+function worded(schema: TSchema, errors: ReturnType<typeof Value.Errors>): ContractProblem[] {
+  const literal = new Set(errors.filter(e => e.keyword === 'const').map(e => e.instancePath + ' ' + e.schemaPath));
+  const problems: ContractProblem[] = [];
+  const said = new Set<string>();
+  const add = (path: string, message: string) => {
+    if (said.has(path + ' ' + message)) return;
+    said.add(path + ' ' + message);
+    problems.push({ path, message });
+  };
+  for (const error of errors) {
+    const { instancePath: path, schemaPath } = error;
+    const branch = schemaPath.search(/\/anyOf\/\d+/);
+    if (branch >= 0 || error.keyword === 'anyOf') {
+      const union = branch >= 0 ? schemaPath.slice(0, branch) : schemaPath;
+      const steps = path.split('/').slice(0, valueDepth(union) + 1);
+      add(steps.join('/'), 'Expected union value');
+      continue;
+    }
+    switch (error.keyword) {
+      case 'required':
+        for (const key of error.params.requiredProperties)
+          add(`${path}/${pointerKey(key)}`, 'Expected required property');
+        break;
+      case 'additionalProperties':
+        for (const key of error.params.additionalProperties) add(`${path}/${pointerKey(key)}`, 'Unexpected property');
+        break;
+      case 'boolean':
+        // The schema `false` that closes an object: `additionalProperties` names the same property.
+        if (!schemaPath.endsWith('/additionalProperties')) add(path, 'Unexpected value');
+        break;
+      case 'type':
+        if (!literal.has(path + ' ' + schemaPath)) add(path, `Expected ${[error.params.type].flat().join(' or ')}`);
+        break;
+      case 'const': {
+        const allowed = error.params.allowedValue;
+        add(path, `Expected ${typeof allowed === 'string' ? `'${allowed}'` : String(allowed)}`);
+        break;
+      }
+      case 'minLength':
+        add(path, `Expected string length greater or equal to ${error.params.limit}`);
+        break;
+      case 'maxLength':
+        add(path, `Expected string length less or equal to ${error.params.limit}`);
+        break;
+      case 'pattern':
+        add(path, `Expected string to match '${error.params.pattern}'`);
+        break;
+      case 'format':
+        add(path, `Expected string to match '${error.params.format}' format`);
+        break;
+      case 'minItems':
+        add(path, `Expected array length to be greater or equal to ${error.params.limit}`);
+        break;
+      case 'maxItems':
+        add(path, `Expected array length to be less or equal to ${error.params.limit}`);
+        break;
+      case 'uniqueItems':
+        add(path, 'Expected array elements to be unique');
+        break;
+      case 'minimum':
+      case 'maximum':
+      case 'exclusiveMinimum': {
+        const noun = schemaAt(schema, schemaPath)?.type === 'integer' ? 'integer' : 'number';
+        const than = { minimum: 'greater or equal to', maximum: 'less or equal to', exclusiveMinimum: 'greater than' }[
+          error.keyword
+        ];
+        add(path, `Expected ${noun} to be ${than} ${error.params.limit}`);
+        break;
+      }
+      default:
+        add(path, error.message);
+    }
+  }
+  return problems;
+}
 const id = Type.String({ minLength: 1, maxLength: 80 });
 
 /** A calendar occurrence as the browser sees it. Participant names stay inside the calendar surface. */
@@ -151,7 +288,7 @@ export const WeekViewSchema = object({
   proposals: Type.Array(ProposalSchema),
 });
 export type WeekView = Static<typeof WeekViewSchema>;
-export const WeekEventsSchema = Type.Omit(WeekViewSchema, ['proposals']);
+export const WeekEventsSchema = Type.Omit(WeekViewSchema, ['proposals'], closed);
 /** One day with the person's live proposals: the side panel's day view and the dialog's day strip (D28). */
 export const DayViewSchema = WeekViewSchema;
 export type DayView = WeekView;
@@ -243,18 +380,20 @@ export type ViewRef = Static<typeof ViewRefSchema>;
  * without regard to case (a person without one cannot be asked about); a unit's key is its unit id.
  */
 export const ENTITY_KINDS = ['person', 'unit'] as const;
-export const EntityKind = Type.Union(
-  ENTITY_KINDS.map(kind => Type.Literal(kind)),
-  {
-    description:
-      '`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.',
-  },
-);
+export const EntityKind = literals(ENTITY_KINDS, {
+  description:
+    '`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.',
+});
 export type EntityKind = (typeof ENTITY_KINDS)[number];
 export const isEntityKind = (value: string): value is EntityKind => (ENTITY_KINDS as readonly string[]).includes(value);
+/**
+ * The longest key an entity may be named by: a longer one names nobody. Counted as the schema counts it, in Unicode code
+ * points (`[...key].length`), so the code beside the schema keeps every key the schema accepts.
+ */
+export const ENTITY_KEY_MAX = 256;
 const entityKey = Type.String({
   minLength: 1,
-  maxLength: 256,
+  maxLength: ENTITY_KEY_MAX,
   description: "The entity's key: a person's `userName`, a unit's id.",
 });
 /** A row that names an entity (D97 item 6): a card row, a search hit or a view field may carry one, so it links to the entity. */
@@ -614,10 +753,9 @@ export const MENU_ICONS = [
   'calendar',
   'bell',
 ] as const;
-export const MenuIconSchema = Type.Union(
-  MENU_ICONS.map(name => Type.Literal(name)),
-  { description: "One of Clew's icons. The connector sends a name, never a drawing." },
-);
+export const MenuIconSchema = literals(MENU_ICONS, {
+  description: "One of Clew's icons. The connector sends a name, never a drawing.",
+});
 export type MenuIcon = (typeof MENU_ICONS)[number];
 export const MenuHintSchema = Type.Object(
   {
@@ -737,13 +875,10 @@ export type SearchResult = Static<typeof SearchResultSchema>;
  * several systems are ordered together. The order here is the order a list is drawn in.
  */
 export const ERRAND_STATES = ['waiting-on-me', 'new', 'active', 'waiting-on-others', 'closed'] as const;
-export const ErrandState = Type.Union(
-  ERRAND_STATES.map(state => Type.Literal(state)),
-  {
-    description:
-      '`waiting-on-me`: the person has to act. `new`: nobody has started. `active`: being handled. `waiting-on-others`: someone else has to act. `closed`: finished.',
-  },
-);
+export const ErrandState = literals(ERRAND_STATES, {
+  description:
+    '`waiting-on-me`: the person has to act. `new`: nobody has started. `active`: being handled. `waiting-on-others`: someone else has to act. `closed`: finished.',
+});
 export type ErrandState = (typeof ERRAND_STATES)[number];
 /**
  * One errand as a case system's connector lists it (D35, D89): what Clew needs to list, order and make a card of, and
@@ -822,13 +957,10 @@ const sourceLink = Type.String({ maxLength: 1000, pattern: '^https?://[^\\s]+$' 
  * The order here is the order a list is drawn in.
  */
 export const TALK_STATES = ['missing', 'booked', 'held'] as const;
-export const TalkState = Type.Union(
-  TALK_STATES.map(state => Type.Literal(state)),
-  {
-    description:
-      '`missing`: no talk is booked or held. `booked`: a talk is in the calendar. `held`: the manager has marked it held.',
-  },
-);
+export const TalkState = literals(TALK_STATES, {
+  description:
+    '`missing`: no talk is booked or held. `booked`: a talk is in the calendar. `held`: the manager has marked it held.',
+});
 export type TalkState = (typeof TALK_STATES)[number];
 /** The period in which every person on a unit is due a talk with the unit's manager (D96 item 1). */
 export const TalkRoundSchema = object(
@@ -889,7 +1021,7 @@ export const TalksOutputSchema = object(
 export type TalksOutput = Static<typeof TalksOutputSchema>;
 /** Who an action point is for (D96 item 4): the employee the talk is with, or their manager. */
 export const COMMITMENT_OWNERS = ['employee', 'manager'] as const;
-export const CommitmentOwner = Type.Union(COMMITMENT_OWNERS.map(owner => Type.Literal(owner)));
+export const CommitmentOwner = literals(COMMITMENT_OWNERS);
 export type CommitmentOwner = (typeof COMMITMENT_OWNERS)[number];
 /** The text of an action point: one short line, never in a card, an audit row or a model's context (D96 item 6). */
 const commitmentText = Type.String({ minLength: 1, maxLength: 280 });
@@ -1119,6 +1251,121 @@ export type EntityActionInput = Static<typeof EntityActionInputSchema>;
  */
 export const EntityActionStartedSchema = object({ threadId: id });
 export type EntityActionStarted = Static<typeof EntityActionStartedSchema>;
+/**
+ * What a competence type is (D108 item 2). A closed list: a certificate and a competence are one record, a holding, and
+ * the kind says which the type is.
+ */
+export const COMPETENCE_KINDS = ['certificate', 'degree', 'course', 'authorisation'] as const;
+export const CompetenceKind = literals(COMPETENCE_KINDS, {
+  description:
+    '`certificate`: a certificate with an issuer. `degree`: an examination. `course`: a completed course. `authorisation`: a right to perform a task, such as a delegation.',
+});
+export type CompetenceKind = (typeof COMPETENCE_KINDS)[number];
+/**
+ * Where a holding stands on a day (D108 item 4), computed when read and never stored. The order here is the order a
+ * list is drawn in: what needs a person first.
+ */
+export const COMPETENCE_STATUSES = ['expired', 'expiring', 'valid'] as const;
+export const CompetenceStatus = literals(COMPETENCE_STATUSES, {
+  description:
+    '`expired`: the end date has passed. `expiring`: it ends within 90 days. `valid`: it ends later, or never.',
+});
+export type CompetenceStatus = (typeof COMPETENCE_STATUSES)[number];
+/** How a holding is attested (D108 items 7 and 9): read from a system, registered by a manager, or the person's own word. */
+export const COMPETENCE_EVIDENCE = ['system', 'manager', 'self'] as const;
+export type CompetenceEvidence = (typeof COMPETENCE_EVIDENCE)[number];
+const competenceName = Type.String({ minLength: 1, maxLength: 120 });
+const competenceArea = Type.String({ minLength: 1, maxLength: 80 });
+const validityMonths = Type.Integer({ minimum: 1, maximum: 600 });
+/** One row of the catalogue (D108 item 2) as the administration and the registration form list it. */
+export const CompetenceTypeSchema = object(
+  {
+    id: id,
+    name: { ...competenceName, description: 'Swedish. The type as a person reads it: "Heta arbeten".' },
+    area: { ...competenceArea, description: 'Swedish. The group the type is listed under: "Säkerhet".' },
+    kind: CompetenceKind,
+    validityMonths: Type.Optional({
+      ...validityMonths,
+      description: "The employer's rule: a holding ends this many months after it was issued. Absent: no rule.",
+    }),
+    archived: Type.Boolean({ description: 'An archived type takes no new holdings; the ones it has stay.' }),
+  },
+  'A competence type in the catalogue (D108).',
+);
+export type CompetenceType = Static<typeof CompetenceTypeSchema>;
+export const CompetenceTypesOutputSchema = object({ rows: Type.Array(CompetenceTypeSchema, { maxItems: 2000 }) });
+export type CompetenceTypesOutput = Static<typeof CompetenceTypesOutputSchema>;
+/** One holding as a read lists it (D108): who, what, since when, until when and where it stands today. */
+export const CompetenceHoldingRowSchema = object(
+  {
+    ref: Type.String({
+      minLength: 1,
+      maxLength: 200,
+      pattern: '^holding:[a-z][a-z0-9-]*:[A-Za-z0-9:_.-]+$',
+      description: "`holding:<connector id>:<the system's own identity>`, stable. Clew treats it as opaque.",
+    }),
+    userName: { ...userName, description: 'The person who holds it, by their provisioned user name.' },
+    name: Type.String({ minLength: 1, maxLength: 512, description: "The person's name." }),
+    competence: { ...competenceName, description: "The type's name." },
+    area: competenceArea,
+    kind: CompetenceKind,
+    issuedOn: { ...calendarDay, description: 'The day it was issued.' },
+    expiresOn: Type.Optional({
+      ...calendarDay,
+      description: "The last day it is valid: the issuer's date, else the employer's rule. Absent: it does not end.",
+    }),
+    status: CompetenceStatus,
+    evidence: literals(COMPETENCE_EVIDENCE),
+  },
+  'One holding of one person (D108).',
+);
+export type CompetenceHoldingRow = Static<typeof CompetenceHoldingRowSchema>;
+/** What `competence.holdings` takes: a person the reader manages, by user name (or id when they have none); absent for the reader's own. */
+export const CompetenceHoldingsInputSchema = object({ person: Type.Optional(userName) });
+export type CompetenceHoldingsInput = Static<typeof CompetenceHoldingsInputSchema>;
+export const CompetenceHoldingsOutputSchema = object(
+  { rows: Type.Array(CompetenceHoldingRowSchema, { maxItems: 500 }) },
+  'The holdings of one person: for each type the one that decides its status, what needs the person first.',
+);
+export type CompetenceHoldingsOutput = Static<typeof CompetenceHoldingsOutputSchema>;
+/** What `competence.attention` takes: nothing; the people are the reader's reports. */
+export const CompetenceAttentionInputSchema = object({});
+export type CompetenceAttentionInput = Static<typeof CompetenceAttentionInputSchema>;
+export const CompetenceAttentionOutputSchema = object(
+  { rows: Type.Array(CompetenceHoldingRowSchema, { maxItems: 500 }) },
+  "What has expired or expires within 90 days among the reader's reports (D108 item 11), the expired first.",
+);
+export type CompetenceAttentionOutput = Static<typeof CompetenceAttentionOutputSchema>;
+/** An administrator adds a type to the catalogue (D108 item 2). */
+export const CompetenceTypeBodySchema = object({
+  name: competenceName,
+  area: competenceArea,
+  kind: CompetenceKind,
+  validityMonths: Type.Optional(Type.Union([validityMonths, Type.Null()])),
+});
+export type CompetenceTypeBody = Static<typeof CompetenceTypeBodySchema>;
+/** A change of a type: what is absent is kept; `validityMonths: null` removes the employer's rule. */
+export const CompetenceTypePatchSchema = object({
+  name: Type.Optional(competenceName),
+  area: Type.Optional(competenceArea),
+  kind: Type.Optional(CompetenceKind),
+  validityMonths: Type.Optional(Type.Union([validityMonths, Type.Null()])),
+});
+export type CompetenceTypePatch = Static<typeof CompetenceTypePatchSchema>;
+/** What a change of a type's validity would do to the holdings counted from it (D108 item 3), before it is confirmed. */
+export interface CompetenceValidityImpact {
+  /** Holdings that end by the rule: the ones with no date of the issuer's. */
+  holdings: number;
+  expiredBefore: number;
+  expiredAfter: number;
+}
+/** A manager registers a certificate for a person who reports to them (D108 item 7). */
+export const CompetenceHoldingBodySchema = object({
+  typeId: id,
+  issuedOn: calendarDay,
+  expiresOn: Type.Optional(calendarDay),
+});
+export type CompetenceHoldingBody = Static<typeof CompetenceHoldingBodySchema>;
 /** A Clew-side action the conversation proposes; executed only after the person confirms, through the thread endpoints. */
 export const ClewActionSchema = object({
   n: Type.Integer(),
@@ -1517,6 +1764,7 @@ export const SnoozeInput = Type.Partial(
     text: Type.String({ minLength: 1, maxLength: 80 }),
     until: instant,
   }),
+  closed,
 );
 export type SnoozeInput = Static<typeof SnoozeInput>;
 export const MAX_SNOOZE_DAYS = 30;
@@ -1636,11 +1884,11 @@ export type Role = Static<typeof RoleSchema>;
  * The grant capabilities Clew enforces (D85): a closed list. A group mapping, a `capability:` group key or the development
  * seed may name nothing else; a new name is a contract change. `admin.connectors` administers connected systems (D23),
  * `admin.users` the users page and the group-to-capability mapping (D85), `admin.appearance` the installation's theme
- * and logo (D98).
+ * and logo (D98), `admin.competence` the catalogue of competence types (D108 item 8).
  */
-export const CAPABILITIES = ['admin.connectors', 'admin.users', 'admin.appearance'] as const;
+export const CAPABILITIES = ['admin.connectors', 'admin.users', 'admin.appearance', 'admin.competence'] as const;
 export type Capability = (typeof CAPABILITIES)[number];
-export const CapabilitySchema = Type.Union(CAPABILITIES.map(c => Type.Literal(c)));
+export const CapabilitySchema = literals(CAPABILITIES);
 export const isCapability = (value: string): value is Capability => (CAPABILITIES as readonly string[]).includes(value);
 /** Administration › Användare (D62, D68, D85): a provisioned person as the page lists them. No token, no subject. */
 export interface UserAdminRow {
@@ -1746,9 +1994,50 @@ export interface UsersAdminOverview {
   units: Array<{ id: string; label: string; parentLabel: string | null }>;
   /**
    * The clients that push people into this organisation (D68) and when each was last heard from. `silent` is the
-   * server's reading of that time: never seen, or not for two days, where a push is due daily.
+   * server's reading of that time: never seen, or not for two days, where a reconciliation is due daily (D109).
    */
-  provisioners: Array<{ id: string; label: string; lastSeenAt: string | null; silent: boolean }>;
+  provisioners: ProvisionerAdminRow[];
+}
+/**
+ * D107: one client that pushes people into the organisation, as Administration › Användare lists it. `id` is what the
+ * audit names it by. `previousValidUntil` is set while the key that was replaced last still answers. Never the key.
+ */
+export interface ProvisionerAdminRow {
+  id: string;
+  label: string;
+  lastSeenAt: string | null;
+  silent: boolean;
+  previousValidUntil: string | null;
+}
+/** D107: the name a provisioner is issued under, as `scripts/provisioner-token.ts` takes it. */
+export const PROVISIONER_ID_PATTERN = '^[a-z0-9][a-z0-9-]{1,63}$';
+export const PROVISIONER_LABEL_MAX = 120;
+/** D107: how long the key that is replaced may still answer, in hours; 0 ends it at once. */
+export const PROVISIONER_GRACE_HOURS = [24, 168, 0] as const;
+export const ProvisionerIssueInput = Type.Object(
+  {
+    id: Type.String({ pattern: PROVISIONER_ID_PATTERN }),
+    label: Type.String({ minLength: 1, maxLength: PROVISIONER_LABEL_MAX }),
+  },
+  { additionalProperties: false },
+);
+export type ProvisionerIssueInputType = Static<typeof ProvisionerIssueInput>;
+export const ProvisionerRotateInput = Type.Object(
+  { graceHours: literals(PROVISIONER_GRACE_HOURS) },
+  { additionalProperties: false },
+);
+export type ProvisionerRotateInputType = Static<typeof ProvisionerRotateInput>;
+/**
+ * D107: the answer to issuing or rotating a provisioner's key. `token` is the key itself, in this answer and nowhere
+ * else: Clew keeps its digest and cannot show it again.
+ */
+export interface ProvisionerKeyIssued {
+  /** The provisioner the key is for; its row is in `overview`. */
+  id: string;
+  token: string;
+  /** Where the provisioner sends the key: the address the SCIM server answers at, as the server knows it. */
+  address: string;
+  overview: UsersAdminOverview;
 }
 /**
  * D100: what a person's row says about their access, as the people list narrows by it. `disabled` is a deactivated
@@ -1775,10 +2064,10 @@ export const UsersAdminQuery = Type.Object(
     text: Type.Optional(Type.String({ maxLength: USERS_QUERY_LIMITS.text })),
     unitId: Type.Optional(Type.String({ minLength: 1, maxLength: USERS_QUERY_LIMITS.unitId })),
     role: Type.Optional(RoleSchema),
-    status: Type.Optional(Type.Union(USER_STATUSES.map(s => Type.Literal(s)))),
+    status: Type.Optional(literals(USER_STATUSES)),
     capability: Type.Optional(CapabilitySchema),
     page: Type.Optional(Type.Integer({ minimum: 1, maximum: USERS_QUERY_LIMITS.page })),
-    pageSize: Type.Optional(Type.Union(USERS_PAGE_SIZES.map(n => Type.Literal(n)))),
+    pageSize: Type.Optional(literals(USERS_PAGE_SIZES)),
   },
   { additionalProperties: false },
 );
@@ -1878,6 +2167,7 @@ export const ConnectorPatchInput = Type.Partial(
     /** Figures on Hem (D54), by area id: false switches the area's figure off for the connector's audience, true back on. */
     figures: Type.Record(Type.String({ maxLength: 80 }), Type.Boolean()),
   }),
+  closed,
 );
 export type ConnectorPatchInput = Static<typeof ConnectorPatchInput>;
 export const RotateSecretInput = object({ secret: connectorSecret });
@@ -2038,7 +2328,7 @@ export const AddProviderInput = object({
   apiKey: Type.Optional(providerKey),
 });
 export type AddProviderInput = Static<typeof AddProviderInput>;
-export const ProviderPatchInput = Type.Partial(object({ title: adminTitle, baseUrl: endpointUrl }));
+export const ProviderPatchInput = Type.Partial(object({ title: adminTitle, baseUrl: endpointUrl }), closed);
 export type ProviderPatchInput = Static<typeof ProviderPatchInput>;
 export const ProviderKeyInput = object({ apiKey: providerKey });
 export type ProviderKeyInput = Static<typeof ProviderKeyInput>;
@@ -2060,6 +2350,7 @@ export const ModelPatchInput = Type.Partial(
     isDefault: Type.Boolean(),
     tools: Type.Boolean(),
   }),
+  closed,
 );
 export type ModelPatchInput = Static<typeof ModelPatchInput>;
 /** The person's own pick in the composer; null goes back to the default. */

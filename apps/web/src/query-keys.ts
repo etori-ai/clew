@@ -40,6 +40,10 @@ export const keys = {
     section: (kind: string, key: string, capability: string) =>
       ['entities', kind, 'detail', key, 'section', capability] as const,
   },
+  /** Kompetens (D108): the catalogue a certificate is registered from, and the administrator's whole catalogue. */
+  competenceTypes: ['competence', 'types'] as const,
+  competenceCatalogue: ['competence', 'catalogue'] as const,
+  competenceAll: ['competence'] as const,
   /** Utvecklingssamtal (D96): the round, and action points per reader (`null`) or per person (their user name, else id). */
   talks: {
     all: ['talks'] as const,

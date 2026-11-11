@@ -113,6 +113,7 @@ export { Pagination } from '@astryxdesign/core/Pagination';
 export { TreeList, type TreeListItemData } from '@astryxdesign/core/TreeList';
 export { FormLayout } from '@astryxdesign/core/FormLayout';
 export { TextInput } from '@astryxdesign/core/TextInput';
+export { NumberInput } from '@astryxdesign/core/NumberInput';
 export { FileInput } from '@astryxdesign/core/FileInput';
 // The manifest preview (D60, D97): a manifest is pasted as a document of many lines.
 export { TextArea } from '@astryxdesign/core/TextArea';

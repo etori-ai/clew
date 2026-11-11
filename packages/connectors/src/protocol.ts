@@ -1,4 +1,4 @@
-import { Type, type Static } from '@sinclair/typebox';
+import { Type, type Static } from 'typebox';
 import {
   AboutSchema,
   MenuHintSchema,
@@ -22,6 +22,7 @@ import {
   MetricsSchema,
   SeriesSchema,
   ActivitySchema,
+  literals,
 } from '@clew/contracts';
 
 /**
@@ -47,7 +48,7 @@ import {
  * in `uses`. See docs/guides/authorization.md and docs/reference/connector-protocol.md.
  */
 export const PROTOCOL_VERSION = 2;
-const object = <T extends Record<string, import('@sinclair/typebox').TSchema>>(properties: T, description?: string) =>
+const object = <T extends Record<string, import('typebox').TSchema>>(properties: T, description?: string) =>
   Type.Object(properties, { additionalProperties: false, ...(description ? { description } : {}) });
 const swedish = (description: string) => Type.String({ minLength: 1, maxLength: 200, description });
 /** Any JSON Schema document. Clew validates inputs with it before calling the connector. */
@@ -120,6 +121,7 @@ export const FactEnvelopeSchema = object(
   },
   'The input of every `follows` capability.',
 );
+export type FactEnvelope = Static<typeof FactEnvelopeSchema>;
 /**
  * One step a follower proposes for a job (D55). It names a capability of the follower's own connector only: an `execute`
  * with its approved payload, or a `watch`, a read Clew repeats within a bounded window until `expect` holds. A follower
@@ -418,9 +420,7 @@ export const ScanResponseSchema = object({
       observedAt: Type.String({ format: 'date-time' }),
       version: Type.String(),
       exhausted: Type.Boolean(),
-      completeness: Type.Union(
-        (['complete', 'delta', 'partial', 'unavailable', 'authorization-required'] as const).map(v => Type.Literal(v)),
-      ),
+      completeness: literals(['complete', 'delta', 'partial', 'unavailable', 'authorization-required']),
       tombstones: Type.Optional(Type.Array(object({ key: Type.String(), period: Type.String() }))),
     }),
   ),
@@ -587,9 +587,15 @@ export const ManifestPreviewCapabilitySchema = object({
   }),
   view: Type.Union(
     [
-      ...(['table', 'list', 'detail', 'text', 'document', 'record', 'metrics', 'series', 'activity'] as const).map(k =>
-        Type.Literal(k),
-      ),
+      Type.Literal('table'),
+      Type.Literal('list'),
+      Type.Literal('detail'),
+      Type.Literal('text'),
+      Type.Literal('document'),
+      Type.Literal('record'),
+      Type.Literal('metrics'),
+      Type.Literal('series'),
+      Type.Literal('activity'),
       Type.Null(),
     ],
     { description: 'How Clew draws its output, or null for the generic rules.' },
@@ -604,7 +610,7 @@ export const ManifestPreviewCapabilitySchema = object({
   follows: Type.Optional(Type.Array(FactKindName)),
   creates: Type.Optional(FactKindName),
   about: Type.Optional(AboutSchema),
-  places: Type.Array(Type.Union(ABOUT_PLACES.map(p => Type.Literal(p))), {
+  places: Type.Array(literals(ABOUT_PLACES), {
     description:
       "Where Clew would show it on the entity it is about (D97), from the declaration alone: `lens` a table or list an administrator may offer under Visa on the entity's list, `mark` a `warn` or `alert` tone that marks the entity's row where an administrator chose the source, `section` a section on the opened entity, `menu` an action in the entity's menu, run after a human decision. Empty when it is about nothing.",
   }),
@@ -614,7 +620,7 @@ export const ManifestPreviewCapabilitySchema = object({
   }),
   audience: Type.Array(
     object({
-      places: Type.Array(Type.Union([...ABOUT_PLACES.map(p => Type.Literal(p)), Type.Literal('tool')]), {
+      places: Type.Array(literals([...ABOUT_PLACES, 'tool']), {
         minItems: 1,
       }),
       who: Type.String({ description: 'Who would see it there, in a sentence.' }),

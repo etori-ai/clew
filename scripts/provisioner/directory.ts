@@ -31,6 +31,7 @@ export interface DirectoryGroup {
   label: string;
 }
 export interface DirectoryPerson {
+  active: boolean;
   /** The source's stable id, never reused. `dev:` marks the development stack's people. */
   externalId: string;
   /** What a login is matched on; the Keycloak username in development. */
@@ -53,6 +54,8 @@ export interface DirectoryPerson {
   login?: boolean;
 }
 export interface Directory {
+  /** Set only after the reader validates the final page of every source collection, including memberships. */
+  complete: boolean;
   units: DirectoryUnit[];
   groups: DirectoryGroup[];
   people: DirectoryPerson[];
@@ -236,6 +239,7 @@ const MEMBERSHIPS: Array<[group: string, when: (seat: Seat) => boolean]> = [
 // systemförvaltare persona: administration is a capability, not a work role (D23, D85).
 const personas: DirectoryPerson[] = [
   {
+    active: true,
     externalId: 'dev:hillevi',
     userName: 'hillevi',
     givenName: 'Hillevi',
@@ -248,6 +252,7 @@ const personas: DirectoryPerson[] = [
     login: true,
   },
   {
+    active: true,
     externalId: 'dev:hassan',
     userName: 'hassan',
     givenName: 'Hassan',
@@ -259,6 +264,7 @@ const personas: DirectoryPerson[] = [
     login: true,
   },
   {
+    active: true,
     externalId: 'dev:mikael',
     userName: 'mikael',
     givenName: 'Mikael',
@@ -267,7 +273,7 @@ const personas: DirectoryPerson[] = [
     department: 'unit-it',
     manager: false,
     groups: ['ad:intranat-redaktorer'],
-    capabilities: ['admin.connectors', 'admin.users', 'admin.appearance'],
+    capabilities: ['admin.connectors', 'admin.users', 'admin.appearance', 'admin.competence'],
     login: true,
   },
 ];
@@ -277,6 +283,7 @@ const personas: DirectoryPerson[] = [
  * name as somebody else (the first Anna Lindqvist is generated). Employees without a login.
  */
 const named = (givenName: string, familyName: string, userName: string, department: string): DirectoryPerson => ({
+  active: true,
   externalId: 'dev:' + userName,
   userName,
   givenName,
@@ -418,6 +425,7 @@ function generated(): DirectoryPerson[] {
             : []
           : MEMBERSHIPS.filter(([, when]) => when(seat)).map(([group]) => group);
       people.push({
+        active: true,
         externalId: 'dev:' + userName,
         userName,
         givenName,
@@ -447,7 +455,19 @@ const inArea = (p: DirectoryPerson): DirectoryPerson => {
 /** A unit that names no unit above it stands under its administration. */
 const parentOf = (unit: UnitPlan) =>
   unit.parent ?? (unit.area && unit.id !== areaUnit(unit.area) ? areaUnit(unit.area) : undefined);
+/** The installation assigns these namespaces to the development writer. */
+export const developmentScope = {
+  userPrefix: 'dev:',
+  groupPrefixes: ['unit:unit-', 'unit-manager:unit-', 'ad:'],
+  groupKeys: [
+    'capability:admin.users',
+    'capability:admin.connectors',
+    'capability:admin.appearance',
+    'capability:admin.competence',
+  ],
+};
 export const developmentDirectory: Directory = {
+  complete: true,
   units: UNITS.map(unit => {
     const parent = parentOf(unit);
     return { id: unit.id, label: unit.label, ...(parent ? { parent } : {}) };

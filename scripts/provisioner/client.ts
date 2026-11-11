@@ -14,6 +14,7 @@ export class ScimClientError extends Error {
     readonly status: number,
     readonly scimType: string | undefined,
     detail: string,
+    readonly retryAfter: string | null,
   ) {
     super(detail);
     this.name = 'ScimClientError';
@@ -35,14 +36,19 @@ export function scimClient(baseUrl: string, token: string, fetchImpl: Fetch = fe
         body: body === undefined ? undefined : JSON.stringify(body),
       });
       const text = await response.text();
-      const parsed = text ? JSON.parse(text) : undefined;
-      if (!response.ok)
-        throw new ScimClientError(
-          response.status,
-          parsed?.scimType,
-          parsed?.detail ?? `${method} ${path} answered ${response.status}.`,
-        );
-      return { status: response.status, body: parsed };
+      if (!response.ok) {
+        let detail = `${method} ${path} answered ${response.status}.`;
+        let scimType: string | undefined;
+        try {
+          const error = JSON.parse(text);
+          if (typeof error?.detail === 'string') detail = error.detail;
+          if (typeof error?.scimType === 'string') scimType = error.scimType;
+        } catch {
+          // A proxy can return HTML or an empty error body.
+        }
+        throw new ScimClientError(response.status, scimType, detail, response.headers.get('retry-after'));
+      }
+      return { status: response.status, body: text ? JSON.parse(text) : undefined };
     },
   };
 }

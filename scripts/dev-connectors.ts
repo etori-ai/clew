@@ -1,9 +1,9 @@
 /**
  * The development chain (D61): registers the fixture connectors that `.devcontainer/compose.yaml` runs beside Clew,
  * enabling each except the ones `FIXTURES` marks `enable: false` (added as drafts), binds their followers of `hr:absence` (D55), and opens the
- * development organisation's round of talks when it has none (D96, `talk-round.ts`), idempotently. Runs inside the app container, where the
- * services are reachable by name; `postCreateCommand` runs it after the migrations, and `bun run dev:connectors` runs it
- * again to fill missing registrations. Existing configuration is preserved; refresh manifests explicitly in administration. The transport secret is the one compose gives the services, CLEW_DEV_CONNECTOR_SECRET.
+ * development organisation's round of talks when it has none (D96, `talk-round.ts`) and seeds its competence catalogue and holdings where they are missing (D108, `competence-seed.ts`), idempotently. Runs inside the app container, where the
+ * services are reachable by name, after `bun run auth:setup`: that creates the key the secrets are sealed with and the
+ * people the holdings are for. `bun run dev:connectors` again fills missing registrations. Existing configuration is preserved; refresh manifests explicitly in administration. The transport secret is the one compose gives the services, CLEW_DEV_CONNECTOR_SECRET.
  * Last it makes the administrator's choice for Personal (D97) that the canvas draws, while nobody has chosen any:
  * `ENTITY_CHOICE`, through the same use case as Administration › Anslutna system.
  *
@@ -17,13 +17,14 @@ import type { AuthenticatedContext } from '@clew/contracts';
 import { registerConnector, listConnectors } from './connector-registry';
 import { bindFixtureFollowers, describeBinding } from './job-bindings';
 import { DEVELOPMENT_ROUND, openTalkRound } from './talk-round';
-import { bundledIds, internalIds, registry } from '../apps/server/src/connectors/registry';
+import { bundledIds, internalIds, offAtFirstBoot, registry } from '../apps/server/src/connectors/registry';
 import { postgresConnectorStore, postgresGroups, postgresUnits } from '../apps/server/src/connectors/adapters/postgres';
 import { connectorUsecases } from '../apps/server/src/connectors/usecases/admin';
 import { syncBundledRows } from '../apps/server/src/connectors/reconcile';
 import { secretPurpose } from '../apps/server/src/connectors/remote';
 import { openSecret, sealSecret } from '../apps/server/src/auth-crypto';
 import { fetchManifest } from '../packages/connectors/src/remote';
+import { seedCompetence } from './competence-seed';
 
 try {
   process.loadEnvFile(resolve(import.meta.dir, '../apps/server/.env.local'));
@@ -83,7 +84,16 @@ async function chooseForPersonal() {
   const live = { register: () => undefined, unregister: () => undefined };
   const clock = () => new Date();
   // The built-in talks connector's row and its described capabilities, as the BFF writes them at boot.
-  await syncBundledRows({ registry, store, secrets, live, bundled: bundledIds, internal: internalIds, clock });
+  await syncBundledRows({
+    registry,
+    store,
+    secrets,
+    live,
+    bundled: bundledIds,
+    internal: internalIds,
+    offAtFirstBoot,
+    clock,
+  });
   const rows = await store.list();
   if (rows.some(r => Object.values(r.capabilities).some(c => c.lens || c.column))) {
     console.log('entities       kept the lenses and columns an administrator chose');
@@ -179,6 +189,12 @@ try {
     round.kept
       ? `talks          kept the open round ${round.kept} of organisation "${DEVELOPMENT_ROUND.organisationId}"`
       : `talks          opened round ${round.opened} for organisation "${DEVELOPMENT_ROUND.organisationId}" (${DEVELOPMENT_ROUND.opensOn} to ${DEVELOPMENT_ROUND.dueOn})`,
+  );
+  // The competence module's catalogue and holdings (D108): the types the development organisation lacks and holdings
+  // for the people who have none. The module itself stays off until an administrator switches it on (item 13).
+  const seeded = await seedCompetence(DEVELOPMENT_ROUND.organisationId);
+  console.log(
+    `competence     seeded ${seeded.types} new types and ${seeded.holdings} holdings for ${seeded.people} people of organisation "${DEVELOPMENT_ROUND.organisationId}"`,
   );
   await chooseForPersonal();
 } finally {

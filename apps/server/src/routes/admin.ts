@@ -36,10 +36,13 @@ import { organisation, usersAdmin } from '../composition/people';
 import { operations } from '../composition/operations';
 import { appearance } from '../composition/appearance';
 import { ThemeFileError } from '../modules/appearance/usecases';
+import { provisionerKeyRoutes } from './provisioner-keys';
 
 /**
  * Administration (D23, D24): thin routes over `connectorAdmin` and `models`. The use cases check the grant capability
- * and the step-up; these parse, validate and map. No response here ever carries a secret or a key.
+ * and the step-up; these parse, validate and map. No response here ever carries a secret or a key, with one exception:
+ * the answer that issues or rotates a provisioner's key carries that key, once (D107, `routes/provisioner-keys.ts`).
+ * Clew keeps its digest, so there is no other moment to hand it over.
  */
 const ajv = addFormats(new Ajv({ allErrors: false }));
 const validators = {
@@ -102,6 +105,8 @@ adminRoutes.post('/users/group-capabilities/remove', async c =>
     ),
   ),
 );
+// The provisioners' keys (D107), behind `admin.users` and the guard above: `routes/provisioner-keys.ts`.
+adminRoutes.route('/users/provisioners', provisionerKeyRoutes(usersAdmin));
 // Organisation (D99): the organisation tree as the provisioner pushed it and the people of one unit, behind `admin.users`.
 adminRoutes.get('/organisation', async c => c.json(await organisation.overview(c.get('session').context)));
 adminRoutes.get('/organisation/units/:id', async c =>

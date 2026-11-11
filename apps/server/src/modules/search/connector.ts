@@ -1,4 +1,4 @@
-import { Type } from '@sinclair/typebox';
+import { Type } from 'typebox';
 import { CapabilityError, SEARCH_CONNECTOR, type Connector } from '@clew/connectors';
 import { SearchHitSchema, SearchKind, SearchResultSchema } from '@clew/contracts';
 import { FetchInputSchema, SearchInputSchema, type FetchInput, type SearchInput } from './contracts';

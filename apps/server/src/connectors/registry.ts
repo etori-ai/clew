@@ -1,7 +1,7 @@
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import type { AuthenticatedContext } from '@clew/contracts';
-import { actorOf, CapabilityError, Registry } from '@clew/connectors';
+import { actorOf, CapabilityError, COMPETENCE_CONNECTOR, Registry } from '@clew/connectors';
 import { InputError } from '../context';
 import { calendarConnector } from '../modules/calendar/connector';
 import { calendar, events } from '../composition/calendar';
@@ -16,6 +16,8 @@ import { talksConnector } from '../modules/talks/capabilities';
 import { talkSeamCapabilities } from '../modules/talk-seam/capabilities';
 import { talkSeamUsecases } from '../modules/talk-seam/usecases';
 import { talkDirectory, talks } from '../composition/talks';
+import { competenceConnector } from '../modules/competence/capabilities';
+import { competence } from '../composition/competence';
 import { logger } from '../logging';
 
 /**
@@ -45,7 +47,7 @@ const errands = errandUsecases({ sources: actor => registry.errandSources(actor)
 const talkSeam = talkSeamUsecases({ source: actor => registry.talkSource(actor), directory: talkDirectory });
 /**
  * Clew's own connector is assembled here, the only file that names connectors: the composite search owns the id and the
- * question area, the errand list adds its read and its area, and the talks seam its two reads. The modules never import
+ * question area, the errand list adds its read and its area, the talks seam its two reads. The modules never import
  * each other (D20).
  */
 const core = searchConnector(search, answerCards);
@@ -58,11 +60,20 @@ const clewConnector = {
 };
 // The built-in talks module (D96 item 9) is bundled, not internal: it gets an administrable row, enabled by default,
 // and an administrator can switch it off so that another system answers the profile.
-const bundled = [calendarConnector(calendar, events), clewConnector, talksConnector(talks)];
+// The competence module (D108 item 13) is bundled too, and is the one bundled connector an installation switches on
+// itself: its row is created disabled (`offAtFirstBoot`), so nothing of the domain shows until an administrator enables it.
+const bundled = [
+  calendarConnector(calendar, events),
+  clewConnector,
+  talksConnector(talks),
+  competenceConnector(competence),
+];
 for (const m of [...internal, ...bundled]) registry.register({ ...m, uses: ['*'] });
 export const internalIds = internal.map(m => m.id);
 /** The connectors that live in this process: they get a `connector` row at boot so an administrator can govern them too (D23). */
 export const bundledIds = bundled.map(m => m.id);
+/** The bundled connectors whose row is created disabled: an administrator switches them on (D108 item 13). */
+export const offAtFirstBoot: readonly string[] = [COMPETENCE_CONNECTOR];
 export { actorOf };
 
 const ajv = addFormats(new Ajv({ allErrors: false, strict: false }));

@@ -24,6 +24,7 @@ import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { AsyncContent, ContentSkeleton } from '../components/loading';
 import { PageHeader } from '../components/page-header';
 import { TalkOverlay } from '../components/talk-overlay';
+import { RegisterHolding } from '../components/register-holding';
 import { usePagePanel } from '../components/page-panel';
 import { panelBesideQuery } from '../components/panel';
 import { useEntityAction } from '../entity-actions';
@@ -243,6 +244,8 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
       />
       {panel.overlay}
       {manager && <TalkOverlay opener={opener} back="Tillbaka till Personal" />}
+      {/* Registrera intyg (D108 item 7): the competence module's page for one person, a dialog over the list. */}
+      {manager && <RegisterHolding />}
     </Shell>
   );
 }

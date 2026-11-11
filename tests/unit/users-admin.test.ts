@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import type { AuthenticatedContext } from '@clew/contracts';
+import type { AuthenticatedContext, UsersAdminOverview } from '@clew/contracts';
 import { memoryProvisionStore, memberKey } from '../../apps/server/src/modules/people/adapters/memory';
-import { usersAdminUsecases } from '../../apps/server/src/modules/people/usecases';
+import { scimUsecases, usersAdminUsecases } from '../../apps/server/src/modules/people/usecases';
 
 /**
  * Administration › Användare (D85, D100): the overview, the people a page at a time with what narrows them, and the
@@ -77,6 +77,7 @@ function stack() {
   s.grants.set('hillevi', { unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager', capabilities: [] });
   s.grants.set('mikael', { unitId: 'unit-it', unitLabel: 'IT', role: 'employee', capabilities: [] });
   s.bindings.add('hillevi');
+  let tokens = 0;
   const persona = (capabilities: string[]): AuthenticatedContext => ({
     id: 'mikael',
     name: 'Mikael Lund',
@@ -93,11 +94,22 @@ function stack() {
   });
   return {
     store,
-    usecases: usersAdminUsecases({ store, clock: () => new Date('2026-11-10T06:00:00.000Z') }),
+    usecases: usersAdminUsecases({
+      store,
+      clock: () => new Date('2026-11-10T06:00:00.000Z'),
+      token: () => 'token-' + ++tokens,
+      digest: token => 'digest:' + token,
+    }),
+    /** The SCIM server over the same store, at the instant given: what a provisioner's key meets. */
+    scimAt: (at: string) =>
+      scimUsecases({ store, clock: () => new Date(at), ids: () => 'x', digest: token => 'digest:' + token }),
     admin: persona(['admin.users']),
     other: persona(['admin.connectors']),
   };
 }
+/** The row of the provisioner a key was made for, as the page finds it in the answer. */
+const rowOf = (issued: { id: string; overview: UsersAdminOverview }) =>
+  issued.overview.provisioners.find(p => p.id === issued.id);
 describe('Användare', () => {
   test("the overview names the organisation's provisioners with when each was last seen, and says which have gone silent", async () => {
     const { usecases, admin, store } = stack();
@@ -113,11 +125,33 @@ describe('Användare', () => {
     store.state.provisioners.set('d:4', p('d-never', null));
     store.state.provisioners.set('d:5', { ...p('e-revoked', null), revoked: true });
     store.state.provisioners.set('d:6', p('f-elsewhere', null, 'other-organisation'));
+    const row = (id: string, lastSeenAt: string | null, silent: boolean) => ({
+      id,
+      label: 'Label ' + id,
+      lastSeenAt,
+      silent,
+      previousValidUntil: null,
+    });
     expect((await usecases.overview(admin)).provisioners).toEqual([
-      { id: 'a-fresh', label: 'Label a-fresh', lastSeenAt: '2026-11-10T05:00:00.000Z', silent: false },
-      { id: 'b-two-days', label: 'Label b-two-days', lastSeenAt: '2026-11-08T06:00:00.000Z', silent: false },
-      { id: 'c-late', label: 'Label c-late', lastSeenAt: '2026-11-08T05:59:59.000Z', silent: true },
-      { id: 'd-never', label: 'Label d-never', lastSeenAt: null, silent: true },
+      row('a-fresh', '2026-11-10T05:00:00.000Z', false),
+      row('b-two-days', '2026-11-08T06:00:00.000Z', false),
+      row('c-late', '2026-11-08T05:59:59.000Z', true),
+      row('d-never', null, true),
+    ]);
+    // A key that was rotated out is named while it still answers, and not after.
+    store.state.provisioners.set('d:1', {
+      ...p('a-fresh', '2026-11-10T05:00:00.000Z'),
+      previous: { digest: 'd:old', until: '2026-11-10T09:00:00.000Z' },
+    });
+    store.state.provisioners.set('d:2', {
+      ...p('b-two-days', '2026-11-08T06:00:00.000Z'),
+      previous: { digest: 'd:older', until: '2026-11-10T06:00:00.000Z' },
+    });
+    expect((await usecases.overview(admin)).provisioners.map(o => o.previousValidUntil)).toEqual([
+      '2026-11-10T09:00:00.000Z',
+      null,
+      null,
+      null,
     ]);
   });
   test('a page lists people by name with unit, role, capabilities and whether they signed in', async () => {
@@ -236,7 +270,7 @@ describe('Användare', () => {
       { id: 'S-1-5-21-it-staff', label: 'IT-personal' },
     ]);
     expect(o.groupCapabilities).toEqual([]);
-    expect(o.capabilities).toEqual(['admin.connectors', 'admin.users', 'admin.appearance']);
+    expect(o.capabilities).toEqual(['admin.connectors', 'admin.users', 'admin.appearance', 'admin.competence']);
   });
   test('only admin.users may look or change', async () => {
     const { usecases, other } = stack();
@@ -292,6 +326,127 @@ describe('Användare', () => {
     ]);
     expect(store.state.grants.get('mikael')?.capabilities).toEqual(['admin.connectors']);
     expect(store.state.audit.map(a => a.action)).toEqual(['group-capability.added', 'grant.derived']);
+  });
+  test('an administrator issues a provisioner its key: answered once, kept as a digest, audited without it, and it opens the SCIM server (D107)', async () => {
+    const { usecases, admin, other, store, scimAt } = stack();
+    await expect(usecases.issueProvisioner(other, { id: 'metakatalogen', label: 'Metakatalogen' })).rejects.toThrow(
+      'behörighet',
+    );
+    const issued = await usecases.issueProvisioner(admin, { id: 'metakatalogen', label: ' Metakatalogen ' });
+    expect(issued.token).toBe('token-1');
+    expect(issued.id).toBe('metakatalogen');
+    expect(rowOf(issued)).toEqual({
+      id: 'metakatalogen',
+      label: 'Metakatalogen',
+      lastSeenAt: null,
+      silent: true,
+      previousValidUntil: null,
+    });
+    expect(issued.overview.provisioners).toHaveLength(1);
+    // The key is nowhere but in the answer: the store holds its digest, and the audit names the provisioner.
+    expect([...store.state.provisioners.keys()]).toEqual(['digest:token-1']);
+    expect(JSON.stringify([...store.state.provisioners.values()])).not.toContain('token-1');
+    expect(store.state.audit).toEqual([
+      {
+        actor: 'person:mikael',
+        action: 'provisioner.added',
+        subject: 'provisioner:metakatalogen',
+        details: { organisationId: 'poc', label: 'Metakatalogen' },
+      },
+    ]);
+    expect(JSON.stringify(await usecases.overview(admin))).not.toContain('token-1');
+    // An id that is in use is refused with the same words, from this organisation and from another.
+    await expect(usecases.issueProvisioner(admin, { id: 'metakatalogen', label: 'Igen' })).rejects.toThrow(
+      'Det finns redan en katalog med det id:t.',
+    );
+    await expect(
+      usecases.issueProvisioner({ ...admin, organisationId: 'timra' }, { id: 'metakatalogen', label: 'Timrå' }),
+    ).rejects.toThrow('Det finns redan en katalog med det id:t.');
+    await expect(usecases.issueProvisioner(admin, { id: 'tom', label: '   ' })).rejects.toThrow('behöver ett namn');
+    expect(store.state.audit).toHaveLength(1);
+    expect(await scimAt('2026-11-10T07:00:00.000Z').authenticate('token-1')).toEqual({
+      id: 'metakatalogen',
+      organisationId: 'poc',
+      label: 'Metakatalogen',
+    });
+    expect(await scimAt('2026-11-10T07:00:00.000Z').authenticate('token-2')).toBeUndefined();
+  });
+  test('a key is rotated with a grace period in which the old one still answers, or at once; a second rotation ends the first old key, and the audit says so (D107)', async () => {
+    const { usecases, admin, other, store, scimAt } = stack();
+    await usecases.issueProvisioner(admin, { id: 'metakatalogen', label: 'Metakatalogen' });
+    await expect(usecases.rotateProvisioner(other, 'metakatalogen', { graceHours: 24 })).rejects.toThrow('behörighet');
+    const rotated = await usecases.rotateProvisioner(admin, 'metakatalogen', { graceHours: 24 });
+    expect(rotated.token).toBe('token-2');
+    expect(rowOf(rotated)?.previousValidUntil).toBe('2026-11-11T06:00:00.000Z');
+    expect(store.state.audit.at(-1)).toEqual({
+      actor: 'person:mikael',
+      action: 'provisioner.rotated',
+      subject: 'provisioner:metakatalogen',
+      details: { graceHours: 24, previousValidUntil: '2026-11-11T06:00:00.000Z' },
+    });
+    // Both answer inside the grace period, the new one alone after it.
+    const during = scimAt('2026-11-10T12:00:00.000Z'),
+      after = scimAt('2026-11-11T06:00:01.000Z');
+    expect((await during.authenticate('token-1'))?.id).toBe('metakatalogen');
+    expect((await during.authenticate('token-2'))?.id).toBe('metakatalogen');
+    expect(await after.authenticate('token-1')).toBeUndefined();
+    expect((await after.authenticate('token-2'))?.id).toBe('metakatalogen');
+    // At once, inside the first grace period: the key before the one replaced now stops answering too.
+    const audited = store.state.audit.length;
+    const again = await usecases.rotateProvisioner(admin, 'metakatalogen', { graceHours: 0 });
+    expect(again.token).toBe('token-3');
+    expect(rowOf(again)?.previousValidUntil).toBeNull();
+    expect(store.state.audit.slice(audited)).toEqual([
+      {
+        actor: 'person:mikael',
+        action: 'provisioner.rotated',
+        subject: 'provisioner:metakatalogen',
+        details: { graceHours: 0, previousValidUntil: null, endedEarlier: '2026-11-11T06:00:00.000Z' },
+      },
+    ]);
+    expect(await during.authenticate('token-1')).toBeUndefined();
+    expect(await during.authenticate('token-2')).toBeUndefined();
+    expect((await during.authenticate('token-3'))?.id).toBe('metakatalogen');
+    expect(JSON.stringify(store.state.audit)).not.toContain('token-');
+    // Another organisation's provisioner, and one that is not there, are the same refusal.
+    const elsewhere = { ...admin, organisationId: 'timra' };
+    await expect(usecases.rotateProvisioner(elsewhere, 'metakatalogen', { graceHours: 0 })).rejects.toThrow(
+      'Katalogen finns inte.',
+    );
+    await expect(usecases.rotateProvisioner(admin, 'okand', { graceHours: 0 })).rejects.toThrow(
+      'Katalogen finns inte.',
+    );
+  });
+  test('a revoked provisioner opens nothing and is gone from the page, and its id may be issued again (D107)', async () => {
+    const { usecases, admin, other, store, scimAt } = stack(),
+      scim = scimAt('2026-11-10T07:00:00.000Z'),
+      elsewhere = { ...admin, organisationId: 'timra' };
+    await usecases.issueProvisioner(admin, { id: 'metakatalogen', label: 'Metakatalogen' });
+    await usecases.rotateProvisioner(admin, 'metakatalogen', { graceHours: 24 });
+    await expect(usecases.revokeProvisioner(other, 'metakatalogen')).rejects.toThrow('behörighet');
+    await expect(usecases.revokeProvisioner(elsewhere, 'metakatalogen')).rejects.toThrow('Katalogen finns inte.');
+    expect((await scim.authenticate('token-2'))?.id).toBe('metakatalogen');
+    const audited = store.state.audit.length;
+    expect((await usecases.revokeProvisioner(admin, 'metakatalogen')).provisioners).toEqual([]);
+    expect(store.state.audit.slice(audited)).toEqual([
+      { actor: 'person:mikael', action: 'provisioner.revoked', subject: 'provisioner:metakatalogen', details: {} },
+    ]);
+    // Neither the key nor the one in its grace period.
+    expect(await scim.authenticate('token-2')).toBeUndefined();
+    expect(await scim.authenticate('token-1')).toBeUndefined();
+    await expect(usecases.revokeProvisioner(admin, 'metakatalogen')).rejects.toThrow('Katalogen finns inte.');
+    await expect(usecases.rotateProvisioner(admin, 'metakatalogen', { graceHours: 0 })).rejects.toThrow(
+      'Katalogen finns inte.',
+    );
+    expect(store.state.audit).toHaveLength(audited + 1);
+    // Another organisation cannot take the id, the one that held it can: a new key, and the old ones stay dead.
+    await expect(usecases.issueProvisioner(elsewhere, { id: 'metakatalogen', label: 'Timrå' })).rejects.toThrow(
+      'Det finns redan',
+    );
+    const reissued = await usecases.issueProvisioner(admin, { id: 'metakatalogen', label: 'Metakatalogen 2' });
+    expect(rowOf(reissued)).toMatchObject({ label: 'Metakatalogen 2', lastSeenAt: null, silent: true });
+    expect((await scim.authenticate(reissued.token))?.label).toBe('Metakatalogen 2');
+    expect(await scim.authenticate('token-2')).toBeUndefined();
   });
   test('a group that is not provisioned cannot be mapped, but a stale mapping can be removed; an unknown capability is refused', async () => {
     const { usecases, admin, store } = stack();

@@ -1,4 +1,4 @@
-import { Type, type Static } from '@sinclair/typebox';
+import { Type, type Static } from 'typebox';
 import { ConnectorAudienceSchema } from '@clew/contracts';
 import { FactEnvelopeSchema, FactKindName, StepDraftSchema } from '@clew/connectors/protocol';
 

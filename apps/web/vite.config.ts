@@ -12,7 +12,11 @@ export function webConfig() {
       port: 5173,
       strictPort: true,
       // Same origin for the browser: the BFF is reached through this proxy, so cookies and the OIDC callback share PUBLIC_URL.
-      proxy: { '/api': { target: 'http://127.0.0.1:3000', changeOrigin: false } },
+      // `/scim` too: the address the key dialog hands a provisioner (D107) is PUBLIC_URL's, which is this server's.
+      proxy: {
+        '/api': { target: 'http://127.0.0.1:3000', changeOrigin: false },
+        '/scim': { target: 'http://127.0.0.1:3000', changeOrigin: false },
+      },
       allowedHosts: ['localhost', 'host.docker.internal'],
     },
   };

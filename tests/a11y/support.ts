@@ -57,6 +57,11 @@ import {
 } from './data';
 import type {
   AppearanceAdminView,
+  CompetenceHoldingBody,
+  CompetenceType,
+  CompetenceTypeBody,
+  CompetenceTypePatch,
+  CompetenceValidityImpact,
   AppearanceLogoInputType,
   CommitmentAddBody,
   CommitmentsInput,
@@ -73,6 +78,7 @@ import type {
 import { THEME_BASE_COLORS, parseThemeFile, themeFileOf } from '../../packages/contracts/src/theme-file';
 import { personSearch, phonebook } from './phonebook';
 import { rooms, roomsSpec } from './rooms';
+import { holdingsOutput, holdingsSpec } from './competence';
 import { errandsOutput, errandsSpec, smErrandOutput, smErrandSpec } from './errands';
 import { manifestReference } from '../../packages/connectors/src/reference';
 import { previewManifest } from '../../packages/connectors/src/preview';
@@ -117,6 +123,8 @@ export class MockApi {
   mutationFails = false;
   sessionDelay = 0;
   signedIn = true;
+  /** The development sign-in (D6): the personas the sign-in page lists, or undefined for the server's 404 when it is off. */
+  devAccounts: { userName: string; name: string }[] | undefined = undefined;
   /** The session says the person may administer connectors (D23). Off by default so the other suites see the ordinary page. */
   admin = false;
   /** Användare (D85): the people and the group-capability rows the users page shows; the rows change with the page's actions. */
@@ -173,6 +181,21 @@ export class MockApi {
    * round lists nobody and their own action points are only the ones about them. For Hem without Personal.
    */
   employee = false;
+  /**
+   * Kompetens (D108): the catalogue a certificate is registered from. Null: the module is switched off for the person,
+   * so its routes are refused and Personal offers no registration.
+   */
+  competenceTypes: CompetenceType[] | null = null;
+  /** Every write to the catalogue, in order: the method, the path and the body. */
+  catalogueWrites: Array<{ method: string; path: string; body?: unknown }> = [];
+  /** What the server answers a new validity would do. */
+  validityImpact: CompetenceValidityImpact = { holdings: 3, expiredBefore: 0, expiredAfter: 2 };
+  /** The next write to the catalogue answers 400 with this sentence; it resets itself after that one. */
+  catalogueFail: string | null = null;
+  /** What the registrations sent, in order. */
+  registered: Array<{ personId: string; body: CompetenceHoldingBody }> = [];
+  /** The next registration answers 400 with this sentence; it resets itself after that one. */
+  registerFail: string | null = null;
   /** Utvecklingssamtal (D96). False: the person has no talks system, so both reads are refused as the registry refuses them. */
   talksOffered = true;
   /** False: another system answers the profile; the reads are read-only (no `id`, a `link` on every row) and the writes refused. */
@@ -256,6 +279,8 @@ export class MockApi {
         : route.fulfill({ status: 401, json: { error: 'Ingen session' } });
     }
     if (path === '/auth/activity') return json({ expiresAt: session.expiresAt });
+    if (path === '/auth/dev')
+      return this.devAccounts ? json({ accounts: this.devAccounts }) : route.fulfill({ status: 404, body: '' });
     // The installation's appearance (D98), public: the theme and the logo's address, and the logo itself.
     if (path === '/appearance') {
       const { revision, theme, logo } = this.appearance;
@@ -381,6 +406,47 @@ export class MockApi {
               reports: organisationReports[unitId] ?? [],
             })
           : route.fulfill({ status: 400, json: { error: 'Enheten finns inte.', code: 'invalid' } });
+      }
+      // The catalogues' keys (D107): the answer that issues or rotates one carries the key, once.
+      if (path === '/admin/users/provisioners' && method === 'POST') {
+        const input = request.postDataJSON() as { id: string; label: string };
+        if (this.users.provisioners.some(p => p.id === input.id))
+          return route.fulfill({
+            status: 400,
+            json: { error: 'Det finns redan en katalog med det id:t.', code: 'invalid' },
+          });
+        const provisioner = {
+          id: input.id,
+          label: input.label,
+          lastSeenAt: null,
+          silent: true,
+          previousValidUntil: null,
+        };
+        this.users.provisioners.push(provisioner);
+        return json({
+          id: input.id,
+          token: 'a11y-key-' + input.id,
+          address: 'https://clew.test/scim/v2',
+          overview: this.users,
+        });
+      }
+      const keyed = /^\/admin\/users\/provisioners\/([^/]+)\/(rotate|revoke)$/.exec(path);
+      if (keyed && method === 'POST') {
+        const provisioner = this.users.provisioners.find(p => p.id === decodeURIComponent(keyed[1]!));
+        if (!provisioner)
+          return route.fulfill({ status: 400, json: { error: 'Katalogen finns inte.', code: 'invalid' } });
+        if (keyed[2] === 'revoke') {
+          this.users.provisioners = this.users.provisioners.filter(p => p !== provisioner);
+          return json(this.users);
+        }
+        const { graceHours } = request.postDataJSON() as { graceHours: number };
+        provisioner.previousValidUntil = graceHours ? '2026-11-12T05:00:00.000Z' : null;
+        return json({
+          id: provisioner.id,
+          token: 'a11y-key-rotated',
+          address: 'https://clew.test/scim/v2',
+          overview: this.users,
+        });
       }
       if (path === '/admin/users/group-capabilities' && method === 'POST') {
         const input = request.postDataJSON() as {
@@ -589,6 +655,73 @@ export class MockApi {
     if (path === '/cap/clew.errands') return json({ output: errandsOutput, source: 'Startsidan', view: errandsSpec });
     if (path === '/cap/sm.errand')
       return json({ output: smErrandOutput, source: 'Ärendesystemet', view: smErrandSpec });
+    // Kompetens (D108): the catalogue and a manager's registration.
+    if (path.startsWith('/competence/') && !this.competenceTypes)
+      return route.fulfill({
+        status: 403,
+        json: { error: 'Kompetens är inte påslaget i den här installationen.', code: 'denied' },
+      });
+    if (path === '/competence/types' && route.request().method() === 'GET') return json({ rows: this.competenceTypes });
+    const typePath = /^\/competence\/types(?:\/([^/]+))?(\/archive|\/validity)?$/.exec(path);
+    if (typePath && this.competenceTypes && path !== '/competence/types') {
+      const id = decodeURIComponent(typePath[1]!),
+        method = route.request().method();
+      if (typePath[2] === '/validity') return json(this.validityImpact);
+      const found = this.competenceTypes.find(t => t.id === id);
+      if (!found) return route.fulfill({ status: 400, json: { error: 'Kompetensen finns inte i katalogen.' } });
+      if (this.catalogueFail) {
+        const error = this.catalogueFail;
+        this.catalogueFail = null;
+        return route.fulfill({ status: 400, json: { error } });
+      }
+      if (typePath[2] === '/archive' && method === 'POST') {
+        found.archived = true;
+        this.catalogueWrites.push({ method, path });
+        return route.fulfill({ status: 204, body: '' });
+      }
+      if (method === 'PATCH') {
+        const body = route.request().postDataJSON() as CompetenceTypePatch;
+        const { validityMonths, ...rest } = body;
+        Object.assign(found, rest);
+        if (validityMonths === null) delete found.validityMonths;
+        else if (validityMonths !== undefined) found.validityMonths = validityMonths;
+        this.catalogueWrites.push({ method, path, body });
+        return route.fulfill({ status: 204, body: '' });
+      }
+    }
+    if (path === '/competence/types' && this.competenceTypes && route.request().method() === 'POST') {
+      if (this.catalogueFail) {
+        const error = this.catalogueFail;
+        this.catalogueFail = null;
+        return route.fulfill({ status: 400, json: { error } });
+      }
+      const body = route.request().postDataJSON() as CompetenceTypeBody;
+      const id = 't-new-' + (this.catalogueWrites.length + 1);
+      this.competenceTypes.push({
+        id,
+        name: body.name,
+        area: body.area,
+        kind: body.kind,
+        ...(body.validityMonths ? { validityMonths: body.validityMonths } : {}),
+        archived: false,
+      });
+      this.catalogueWrites.push({ method: 'POST', path, body });
+      return route.fulfill({ status: 201, json: { id } });
+    }
+    const registering = /^\/competence\/people\/([^/]+)\/holdings$/.exec(path);
+    if (registering && route.request().method() === 'POST') {
+      if (this.registerFail) {
+        const error = this.registerFail;
+        this.registerFail = null;
+        return route.fulfill({ status: 400, json: { error } });
+      }
+      const body = route.request().postDataJSON() as CompetenceHoldingBody;
+      this.registered.push({ personId: decodeURIComponent(registering[1]!), body });
+      return route.fulfill({ status: 201, json: { id: 'holding-' + this.registered.length } });
+    }
+    // Kompetens (D108): one person's holdings, the view the person's section opens.
+    if (path === '/cap/competence.holdings')
+      return json({ output: holdingsOutput, source: 'Kompetens', view: holdingsSpec });
     // Utvecklingssamtal (D96): the two composites and the built-in module's writes.
     if (path === '/cap/clew.talks' || path === '/cap/clew.commitments' || path.startsWith('/talks/'))
       return this.handleTalks(route, path, url);
@@ -1158,10 +1291,27 @@ export async function open(page: Page, path: string) {
 /**
  * Every rule tagged for WCAG 2.0, 2.1 and 2.2 A and AA, plus axe's best practices: landmarks, headings and regions.
  * `without` leaves a rule out for a page where the rule cannot read the structure; the spec that passes it says why and
- * checks the criterion itself in the rule's place.
+ * checks the criterion itself in the rule's place. The page is read once its running entrances have ended.
  */
 export async function expectNoAxeViolations(page: Page, { without = [] }: { without?: string[] } = {}) {
   const tags = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'];
+  // A dialog still fading in is not a contrast fault: axe reads the text half transparent and reports it one run in
+  // a few. The animations that are running and will end are let end first, for a second at most: an entrance is over
+  // well inside it, and a notice's countdown or a paused animation is not waited for at all or not for long, so no
+  // page can hold a check up.
+  await page.evaluate(
+    limit =>
+      Promise.race([
+        Promise.all(
+          document
+            .getAnimations()
+            .filter(a => a.playState === 'running' && a.effect?.getComputedTiming().iterations !== Infinity)
+            .map(a => a.finished.catch(() => undefined)),
+        ),
+        new Promise(resolve => setTimeout(resolve, limit)),
+      ]).then(() => undefined),
+    1000,
+  );
   const { violations } = await new AxeBuilder({ page })
     .withTags(tags)
     .disableRules(['target-size', ...without])

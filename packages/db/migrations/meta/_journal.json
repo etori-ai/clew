@@ -344,6 +344,13 @@
       "when": 1794381417322,
       "tag": "0048_drop_mcp_chat_services",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1794389155297,
+      "tag": "0049_competence",
+      "breakpoints": true
     }
   ]
 }

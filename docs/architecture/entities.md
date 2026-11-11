@@ -93,6 +93,7 @@ The thread store keeps an index from entity to cards, the table `thread_subject`
 |---|---|---|---|
 | `talks.person` | Clew's talks module ([capabilities.ts](../../apps/server/src/modules/talks/capabilities.ts)) | person | Section, lens, column, marks; the section's way in is the talk, `?talk={id}`, laid over the page it is drawn on (D110 rule 5) |
 | `talks.unit` | Clew's talks module | unit | Section on the unit page; its way in is the lens on Personal |
+| `competence.person` | Clew's competence module ([capabilities.ts](../../apps/server/src/modules/competence/capabilities.ts)), proposed in D108 and switched off until an administrator enables it | person | Section, lens, column, a mark for "Utgånget" and "Går ut snart"; the section's way in is the registration form at `/staff?register={id}` |
 | `hr.person` | The HR fixture ([manifest](../../connectors/hr/manifest.mjs)) | person | Section, lens, column; no field warns, so no mark |
 | `hr.prepareAbsence` | The HR fixture | person | Menu: "Registrera frånvaro", a propose |
 | `appraisals.person` | The talks-system fixture ([connector](../../connectors/appraisals/connector.mjs)), registered as a draft | person | Section, lens, column, a mark for "Saknas" |
@@ -102,7 +103,7 @@ No page lists units, so a read about a unit shows only as a section on the unit 
 
 ## Not built
 
-- No source for Kompetenser, Introduktion, access cards, or cases per person or unit. Rooms are not an entity kind.
+- No source for Introduktion, access cards, or cases per person or unit. Rooms are not an entity kind.
 - No calendar action about a person ("Boka möte"): the calendar connector has no propose capability. The calendar's planning card names nobody by subject, so it is not indexed.
 - No source in this repository sets `subject` on a search hit (the phone book's people hits carry none), so one hit per entity is covered by tests only and has not been seen on a live stack.
 - A read about an entity is never a model tool, and no assistant answer lists rows from two sources.

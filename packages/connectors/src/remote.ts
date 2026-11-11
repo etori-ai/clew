@@ -1,5 +1,5 @@
-import { Value } from '@sinclair/typebox/value';
-import { MAX_DOCUMENT_BYTES, type DocumentContent } from '@clew/contracts';
+import { Value } from 'typebox/value';
+import { MAX_DOCUMENT_BYTES, contractProblems, type DocumentContent } from '@clew/contracts';
 import { CapabilityError, type Actor, type Capability, type Clew, type Connector } from './index';
 import { connectorProblems } from './validation';
 import {
@@ -43,7 +43,7 @@ export class ManifestError extends Error {
  * as a literal mismatch. `previewManifest` shows the whole list; `parseManifest` throws on it.
  */
 export function manifestProblems(document: unknown, expectedId?: string): string[] {
-  const errors = [...Value.Errors(ConnectorManifestSchema, document)];
+  const errors = contractProblems(ConnectorManifestSchema, document);
   if (errors.length) {
     const protocol = (document as { protocol?: unknown } | null)?.protocol;
     return errors.map(e =>
