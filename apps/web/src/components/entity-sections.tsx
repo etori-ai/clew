@@ -429,7 +429,8 @@ export function CardList({ cards }: { cards: EntityCard[] }) {
  * system they act in, as the row menu on Personal is (artboard A3). On a phone one button, Åtgärder, the width of its
  * column, holds them all (artboard D). An action starts on the server and its card opens beside the page it was started
  * on (`entity-actions.ts`); a source's refusal is said aloud and stands under the buttons until the next action. They
- * hold what can be done about the entity, never a choice of where Clew shows it (D107 rule 7).
+ * hold what can be done about the entity, never a choice of where Clew shows it (D107 rule 7), and are the one place
+ * the page draws them: a section shows only what its source read (D97, amended 2026-11-11).
  */
 export function EntityActions({ detail, mobile }: { detail: EntityDetail; mobile: boolean }) {
   const { start, error } = useEntityAction();

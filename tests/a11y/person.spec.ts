@@ -242,6 +242,40 @@ test.describe('the person as a page', () => {
     await expectNoAxeViolations(page);
   });
 
+  test('an action about the person is drawn once, beside the name, whichever section is open; its refusal stands there', async ({
+    page,
+    api,
+  }) => {
+    // Frånvaro is Personalsystemet's, which offers Registrera frånvaro; Utvecklingssamtal is Clew's, which offers Boka
+    // samtal under Fler. Neither section draws them again (D97, amended 2026-11-11).
+    const refusal = 'Personalsystemet hittar ingen anställning för Johan Byström.';
+    api.entityRefusals['hr.registerAbsence'] = refusal;
+    await new People().route(page, api);
+    await open(page, `/people/johan?from=%2Fstaff&section=${PRESENCE_LENS}`);
+    const main = page.getByRole('main');
+    await expect(page.getByRole('heading', { level: 2, name: 'Frånvaro' })).toBeVisible();
+    await expect(main.getByText(/Personalsystemet · hämtat/)).toBeVisible();
+    const button = page.getByRole('button', { name: 'Registrera frånvaro', exact: true });
+    await expect(button).toHaveCount(1);
+    await button.click();
+    await expect(main.getByText(refusal, { exact: true })).toHaveCount(1);
+    await expect(main.getByText(refusal, { exact: true })).toBeVisible();
+    await expect.poll(() => said(page, refusal)).toBe(1);
+    await expect(button).toBeFocused();
+    await expectNoAxeViolations(page);
+    await open(page, `/people/johan?from=%2Fstaff&section=${TALK_LENS}`);
+    await expect(page.getByRole('heading', { level: 2, name: 'Utvecklingssamtal' })).toBeVisible();
+    await expect(page.getByText('Skicka underlag om schemaläggning')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Öppna samtalet' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Boka samtal', exact: true })).toHaveCount(0);
+    await main.getByRole('button', { name: 'Fler åtgärder för Johan Byström' }).click();
+    await expect(
+      page
+        .getByRole('button', { name: 'Boka samtal', exact: true })
+        .or(page.getByRole('menuitem', { name: 'Boka samtal' })),
+    ).toHaveCount(1);
+  });
+
   test('a source that does not answer says so in its own place, once aloud, and Försök igen asks it alone', async ({
     page,
     api: _,
@@ -299,6 +333,24 @@ test.describe('the person on a phone', () => {
     await expect(
       page.getByRole('navigation', { name: 'Om Johan Byström' }).getByRole('link', { name: /Utvecklingssamtal/ }),
     ).toBeFocused();
+  });
+
+  test('in an opened section the action about the person is only under Åtgärder beside the name', async ({
+    page,
+    api: _,
+  }) => {
+    await new People().route(page);
+    await open(page, `/people/johan?from=%2Fstaff&section=${PRESENCE_LENS}`);
+    await expect(page.getByRole('heading', { level: 2, name: 'Frånvaro' })).toBeVisible();
+    await expect(page.getByRole('main').getByText(/Personalsystemet · hämtat/)).toBeVisible();
+    const control = page
+      .getByRole('button', { name: 'Registrera frånvaro', exact: true })
+      .or(page.getByRole('menuitem', { name: 'Registrera frånvaro' }));
+    await expect(control).toHaveCount(0);
+    await page.getByRole('main').getByRole('button', { name: 'Åtgärder för Johan Byström' }).click();
+    const menu = page.getByRole('menu', { name: 'Åtgärder för Johan Byström' });
+    await expect(menu.getByRole('menuitem', { name: 'Registrera frånvaro' })).toBeVisible();
+    await expect(control).toHaveCount(1);
   });
 
   test('the page drills into a section and back on a narrow window', async ({ page, api: _ }) => {

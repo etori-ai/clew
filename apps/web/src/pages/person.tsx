@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { EntityAction, EntityDetail, SessionUser } from '@clew/contracts';
+import type { EntityDetail, SessionUser } from '@clew/contracts';
 import {
   Avatar,
   BreadcrumbItem,
@@ -28,7 +28,6 @@ import { areasQuery, entityDetailQuery } from '../queries';
 import { keys } from '../query-keys';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
-import { useEntityAction } from '../entity-actions';
 import { keepingPanel } from '../panel-address';
 import { insideClew, originOf, personPageHref, toolOf } from '../person-address';
 import { useRail, type RailCurrent } from '../components/nav';
@@ -70,7 +69,11 @@ const CHOSEN_MIN = 300;
 const COLUMN = 1216 - 2 * 32;
 const PERSON_MIN = SECTIONS_WIDTH + 32 + CHOSEN_MIN + 2 * 32;
 
-/** The chosen source's fuller view (artboard C2): its name, where it was read and when, its actions, then its read in full. */
+/**
+ * The chosen source's fuller view (artboard C2): its name, where it was read and when, the way to its own page, then its
+ * read in full. It shows only what was read: an action about the person is drawn once, beside their name, whichever
+ * section is open (D97, amended 2026-11-11), so its refusal stands there too.
+ */
 function ChosenSection({
   detail,
   answer,
@@ -82,12 +85,9 @@ function ChosenSection({
   level: 'page' | 'drill';
   tableQuery: string;
 }) {
-  const { start, error } = useEntityAction();
-  const { kind, key, name, id } = detail.entity;
+  const { key, id } = detail.entity;
   const row = rowOf(answer);
   const page = pageHref(answer.source, key, id);
-  const own = detail.actions.filter(a => a.connector === answer.source.connector);
-  const run = (a: EntityAction) => start(a, { kind, key, name });
   const read = answer.query.dataUpdatedAt;
   return (
     <VStack gap={5}>
@@ -104,21 +104,12 @@ function ChosenSection({
             ) : null}
           </Text>
         </VStack>
-        {(own.length > 0 || page) && (
-          <HStack gap={2} wrap="wrap" vAlign="center">
-            {own.map(a => (
-              <Button key={a.capability} variant="secondary" label={a.title} onClick={() => run(a)} />
-            ))}
-            {page && answer.source.page && (
-              <Link href={page} weight="semibold" isStandalone>
-                {answer.source.page.title}
-              </Link>
-            )}
-          </HStack>
+        {page && answer.source.page && (
+          <Link href={page} weight="semibold" isStandalone>
+            {answer.source.page.title}
+          </Link>
         )}
       </HStack>
-      {/* A source's refusal of an action started here, said aloud as it came (entity-actions.ts). */}
-      {error && <Text as="p">{error}</Text>}
       {answer.query.isPending ? (
         <Card>
           <VStack gap={2}>
@@ -160,8 +151,8 @@ function ChosenCards({ detail, level }: { detail: EntityDetail; level: 'page' | 
 /**
  * The person as a page (D97 item 5, artboard C2), at `/people/:key`, the one way a person is shown (D107 rule 3),
  * reached from a name on Personal or on any row that names them: the trail back to the list, the person's name with
- * their actions, the list of sections ("Om <namn>", each with its source and one line) and beside it the chosen
- * source's fuller view, `?section=` in the address. On a narrow window the two are the `settings-sidebar` template's
+ * their actions (the one place they are drawn, whichever section is open), the list of sections ("Om <namn>", each with
+ * its source and one line) and beside it the chosen source's fuller view, `?section=` in the address. On a narrow window the two are the `settings-sidebar` template's
  * drill-in: the list, then the chosen section with the way back to the list. A person the reader may not ask about is
  * the page's own "finns inte" (the server answers 404 for both).
  *

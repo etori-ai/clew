@@ -186,3 +186,7 @@ over it elsewhere, and closing an action's card gives the focus back to the row'
 no longer offer "Öppna som sida". This replaces item 5's person beside the list and the sentences of the amendments
 above that keep the person beside the list where "Just nu" counts several cards, that open an action's card over the
 person, and that leave open whether a person is shown beside a list at all.
+
+**Amended 2026-11-11: actions are drawn once, beside the name.** Actions about a person or a unit are drawn once,
+beside the name, whichever section is open, and are no longer repeated in the opened section, which shows only what its
+source read (the product owner saw "Registrera frånvaro" twice on a person's page).
