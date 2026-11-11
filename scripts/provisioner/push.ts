@@ -9,7 +9,8 @@ import { fullName, type Directory, type DirectoryPerson } from './directory';
  *
  * The order is D101's: the organisation first, as nodes without people; then the people; then who is placed where,
  * everybody added before anybody is removed, so a person who moves between two units is never on neither; then what
- * left the source. A push that would deactivate a large share of the people is refused before anything is written.
+ * left the source. A push that would withdraw a large share of the people, or of a kind of group, is refused before
+ * anything is written.
  */
 const SCIM_USER = 'urn:ietf:params:scim:schemas:core:2.0:User',
   SCIM_GROUP = 'urn:ietf:params:scim:schemas:core:2.0:Group',
@@ -120,8 +121,21 @@ export interface PushOptions {
   /** An operator confirmed these withdrawals against a complete source export. */
   force?: boolean;
 }
-/** A larger withdrawal requires the operator to confirm the complete snapshot. */
+/**
+ * A withdrawal an operator confirms against the complete snapshot before it is sent: everything Clew holds of a kind
+ * at once, which is what an empty export looks like, or more than one row and more than this share of them. One row
+ * is an ordinary day in a source of any size, so a source of three people can lose one of them without `force`.
+ */
 const withdrawalShare = 0.2;
+const excessive = (withdrawn: number, held: number) =>
+  withdrawn > 0 && (withdrawn === held || withdrawn > Math.max(1, held * withdrawalShare));
+/** What a push has counted so far, kept from the attempt a 503 interrupted to the one that follows it. */
+interface Tally {
+  summary: PushSummary;
+  /** The `externalId` of every user and group already counted as created or replaced. */
+  users: Set<string>;
+  groups: Set<string>;
+}
 const eq = (attribute: string, value: string) =>
   `?filter=${encodeURIComponent(`${attribute} eq "${value.replace(/(["\\])/g, '\\$1')}"`)}`;
 async function* page(client: ScimClient, path: string) {
@@ -145,16 +159,22 @@ export async function push(
   scope: SourceScope,
   options: PushOptions = {},
 ): Promise<PushSummary> {
+  const tally: Tally = {
+    summary: { created: 0, replaced: 0, deactivated: 0, groupsCreated: 0, groupsReplaced: 0, groupsRemoved: 0 },
+    users: new Set(),
+    groups: new Set(),
+  };
   try {
-    return await reconcile(client, directory, scope, options);
+    return await reconcile(client, directory, scope, options, tally);
   } catch (error) {
     if (!(error instanceof ScimClientError) || error.status !== 503 || !error.retryAfter) throw error;
     const header = error.retryAfter.trim();
     const delay = /^\d+$/.test(header) ? Number(header) * 1000 : Date.parse(header) - Date.now();
     if (!Number.isFinite(delay) || delay > 60_000) throw error;
     await new Promise(resolve => setTimeout(resolve, Math.max(0, delay)));
-    // Re-read by external ID in case the service committed a POST before the proxy returned 503.
-    return reconcile(client, directory, scope, options);
+    // Everything is read again, in case the service committed a write before the proxy answered 503. The summary
+    // goes on from what the first attempt counted, so it says what the push did and not what its second half did.
+    return reconcile(client, directory, scope, options, tally);
   }
 }
 
@@ -163,6 +183,7 @@ async function reconcile(
   directory: Directory,
   scope: SourceScope,
   options: PushOptions,
+  tally: Tally,
 ): Promise<PushSummary> {
   if (directory.complete !== true) throw new Error('Incomplete source snapshot. Nothing was written.');
   if (!scope.userPrefix || scope.groupPrefixes.some(prefix => !prefix))
@@ -170,14 +191,7 @@ async function reconcile(
   const ownsGroup = (key: string) =>
     scope.groupKeys.includes(key) || scope.groupPrefixes.some(prefix => key.startsWith(prefix));
   const planned = plan(directory),
-    summary: PushSummary = {
-      created: 0,
-      replaced: 0,
-      deactivated: 0,
-      groupsCreated: 0,
-      groupsReplaced: 0,
-      groupsRemoved: 0,
-    };
+    { summary } = tally;
   for (const u of planned.users)
     if (!u.externalId.startsWith(scope.userPrefix))
       throw new Error(`User '${u.externalId}' is outside the source namespace.`);
@@ -190,11 +204,13 @@ async function reconcile(
     own = held.filter(u => u.externalId?.startsWith(scope.userPrefix) && u.active !== false),
     leavers = own.filter(u => !wanted.has(u.externalId!)),
     withdrawing = own.filter(u => wanted.get(u.externalId!) !== true).length;
-  if (!options.force && withdrawing > own.length * withdrawalShare)
+  if (!options.force && excessive(withdrawing, own.length))
     throw new Error(
       `The source lists ${planned.users.length} people and Clew holds ${own.length} active ones from it, so this push would deactivate ${withdrawing}. Nothing was written. An empty or truncated export looks like this; push again with force once a person has decided that the source is right.`,
     );
+  // What Clew holds of this writer's groups, read once as well: which to remove, and each unit as it stands.
   const keep = new Set(planned.groups.map(g => g.externalId)),
+    listed = new Map<string, { id: string; displayName: string; parent?: string }>(),
     gone: Array<{ id: string; externalId: string; parent?: string }> = [];
   const counts = new Map<string, { held: number; removed: number }>();
   for await (const g of page(client, '/Groups?excludedAttributes=members')) {
@@ -205,26 +221,25 @@ async function reconcile(
       : g.externalId.startsWith('unit-manager:') || g.externalId.startsWith('capability:')
         ? 'role groups'
         : 'directory groups';
-    const count = counts.get(kind) ?? { held: 0, removed: 0 };
+    const count = counts.get(kind) ?? { held: 0, removed: 0 },
+      parent: string | undefined = g[SCIM_UNIT]?.parent;
     count.held++;
+    listed.set(g.externalId, { id: g.id, displayName: g.displayName, parent });
     if (!keep.has(g.externalId)) {
       count.removed++;
-      gone.push({ id: g.id, externalId: g.externalId, parent: g[SCIM_UNIT]?.parent });
+      gone.push({ id: g.id, externalId: g.externalId, parent });
     }
     counts.set(kind, count);
   }
   for (const [kind, count] of counts)
-    if (!options.force && count.removed > count.held * withdrawalShare)
+    if (!options.force && excessive(count.removed, count.held))
       throw new Error(
         `The source would remove ${count.removed} of ${count.held} owned ${kind}. Nothing was written. Confirm the complete export before using force.`,
       );
   // 1. The organisation, from the root down (D99): each unit as a node with its name and the unit above it, and
   // nobody on it yet. A unit that moved or was renamed is patched, so the people on it are left as they are.
-  const fresh = new Set<string>();
   for (const unit of planned.groups.filter(g => g.externalId.startsWith(UNIT))) {
-    const found = (
-      await client.request('GET', '/Groups' + eq('externalId', unit.externalId) + '&excludedAttributes=members')
-    ).body.Resources?.[0];
+    const found = listed.get(unit.externalId);
     if (!found) {
       await client.request('POST', '/Groups', {
         schemas: unit.parent ? [SCIM_GROUP, SCIM_UNIT] : [SCIM_GROUP],
@@ -232,7 +247,7 @@ async function reconcile(
         displayName: unit.displayName,
         ...(unit.parent ? { [SCIM_UNIT]: { parent: unit.parent } } : {}),
       });
-      fresh.add(unit.externalId);
+      tally.groups.add(unit.externalId);
       summary.groupsCreated++;
       options.log?.(`created group ${unit.externalId}`);
       continue;
@@ -240,7 +255,7 @@ async function reconcile(
     const operations: unknown[] = [];
     if (found.displayName !== unit.displayName)
       operations.push({ op: 'replace', path: 'displayName', value: unit.displayName });
-    if (found[SCIM_UNIT]?.parent !== unit.parent)
+    if (found.parent !== unit.parent)
       operations.push(
         unit.parent
           ? { op: 'replace', path: SCIM_UNIT + ':parent', value: unit.parent }
@@ -259,13 +274,16 @@ async function reconcile(
       if (rehire) rehires.push(id);
       await client.request('PUT', '/Users/' + id, rehire ? { ...user.body, active: false } : user.body);
       if (!user.body.active && !disabled.has(id)) summary.deactivated++;
-      summary.replaced++;
-    } else {
+      if (!tally.users.has(user.externalId)) summary.replaced++;
+    } else if (user.body.active) {
       const { body } = await client.request('POST', '/Users', user.body);
       ids.set(user.externalId, body.id);
       summary.created++;
       options.log?.(`created ${user.body.userName}`);
     }
+    // Else the source keeps a person who left before Clew ever held them. Nothing is created: a disabled row would
+    // only hold their `userName` against the next person who is given it, and that push would stop on a 409.
+    tally.users.add(user.externalId);
   }
   for (const user of leavers) {
     await patch(client, '/Users/' + user.id, [{ op: 'replace', path: 'active', value: false }]);
@@ -286,11 +304,13 @@ async function reconcile(
         displayName: group.displayName,
         members: asMembers(members),
       });
+      tally.groups.add(group.externalId);
       summary.groupsCreated++;
       options.log?.(`created group ${group.externalId}`);
       continue;
     }
-    if (!fresh.has(group.externalId)) summary.groupsReplaced++;
+    if (!tally.groups.has(group.externalId)) summary.groupsReplaced++;
+    tally.groups.add(group.externalId);
     const has = new Set<string>((found.members ?? []).map((m: { value: string }) => m.value)),
       wants = new Set(members),
       gained = members.filter(id => !has.has(id)),

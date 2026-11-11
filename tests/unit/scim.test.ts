@@ -150,6 +150,15 @@ describe('SCIM users', () => {
       status: 400,
       scimType: 'invalidValue',
     });
+    // An address was sent, so the answer says which kind is taken and not that the attribute is missing.
+    await expect(
+      scim.createUser(p, { ...anna, emails: [{ value: 'other@example.org', type: 'other', primary: true }] }, BASE),
+    ).rejects.toMatchObject({
+      status: 400,
+      scimType: 'invalidValue',
+      detail:
+        "Attribute 'emails' needs a work address: one with type 'work', or one without a type. An address of another type is not stored as the work address.",
+    });
     const created = await scim.createUser(p, { ...anna, emails: [home, { value: 'selected@example.org' }] }, BASE);
     expect(created.emails[0]?.value).toBe('selected@example.org');
     await expect(

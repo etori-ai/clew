@@ -213,8 +213,8 @@ Removing a person's last placement before adding the new one leaves a gap. A pro
 The order matters; the reasons are in [Writing a provisioner](writing-a-provisioner.md#what-a-provisioner-does-on-every-reconciliation).
 
 1. Validate the source's final pages or export manifest for people, units, directory groups and memberships. Set `complete` only when every part succeeds. An incomplete snapshot stops even with `force`.
-2. Check the writer's user prefix, group prefixes and exact group keys. Before writing, the example stops if more than one fifth of its active people would be disabled, or more than one fifth of its units, plain directory groups or combined manager and capability groups would disappear. It checks each of these group counts separately. A human can approve a large verified change with `--force`.
-3. Send units from roots to leaves. Send people with an explicit active state, including inactive people retained by HR. Disable absent people in the writer's namespace.
+2. Check the writer's user prefix, group prefixes and exact group keys. Before writing, the example stops if all of its active people would be disabled, or more than one of them and more than one fifth. It applies the same rule to its units, its plain directory groups and its manager and capability groups together, each counted separately. One person or one group is always let through, so the school of three can lose Omar without `--force`. A human can approve a large verified change with `--force`.
+3. Send units from roots to leaves. Send people with an explicit active state, including inactive people retained by HR whom Clew already holds. An inactive person Clew has never held is not created. Disable absent people in the writer's namespace.
 4. Add memberships across all groups before removing old ones. Delete obsolete owned groups from leaves to roots. Re-enable returning people after reconciling current duties.
 5. Use one ordered writer for a snapshot and its change stream. Capture the change cursor with the snapshot, apply the snapshot, then replay subsequent events in source order. Persist the cursor only after success. On restart, recover by stable ID and resume from the last confirmed cursor. If the source cannot supply a consistent snapshot cursor, serialize comparison and replay and read current source state for each queued change.
 
@@ -231,7 +231,8 @@ Every refusal is the standard's error resource, with the reason in `detail`. Not
 | A unit whose parent has not been sent yet | 400 `invalidValue` | `The parent 'unit:120' is not a unit of this organisation; a tree is pushed from the root down (D99). The group was not stored.` |
 | A capability Clew does not have | 400 `invalidValue` | `The key 'capability:admin.everything' names no capability of this installation; the capabilities are …`, followed by the list |
 | The key `protected` | 400 `invalidValue` | `The key 'protected' is not accepted: Clew has not decided whether it may hold that fact (D93). The group was not stored.` |
-| A person without a work address | 400 `invalidValue` | `Attribute 'emails' is required.` |
+| A person without an address | 400 `invalidValue` | `Attribute 'emails' is required.` |
+| A person whose only addresses have another type than `work`, such as `home` | 400 `invalidValue` | `Attribute 'emails' needs a work address: one with type 'work', or one without a type. An address of another type is not stored as the work address.` |
 | A person whose account name somebody already has, in any case, also a person who has left | 409 `uniqueness` | `A user with this userName already exists.` |
 | A group as a member of a group | 400 `invalidValue` | `Member '<id>' is a group. Nested groups are not supported: send the people as members.` |
 | Removing a unit that still has units below it | 409 | `The unit '110' still has 2 units below it ('unit:111', 'unit:112'); move or remove them first, a tree is removed from the leaves up (D99). The group was not removed.` |

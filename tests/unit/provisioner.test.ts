@@ -488,6 +488,66 @@ describe('the synthetic provisioner', () => {
     );
     await expect(proxy.request('GET', '/Users')).rejects.toMatchObject({ status: 503, retryAfter: '120' });
   });
+  test('the summary of a push that a 503 interrupted counts what both attempts did, once', async () => {
+    const { client } = stack();
+    const unit = (id: string, parent?: string) => ({ id, label: id, ...(parent ? { parent } : {}) });
+    const snapshot: Directory = { complete: true, units: [unit('a'), unit('b', 'a')], groups: [], people: [] };
+    let creates = 0;
+    const interrupted: ScimClient = {
+      async request(method, path, body) {
+        // The second create never reaches the service; the first one was counted before it.
+        if (method === 'POST' && ++creates === 2) throw new ScimClientError(503, undefined, 'Unavailable', '0');
+        return client.request(method, path, body);
+      },
+    };
+    expect(await push(interrupted, snapshot)).toMatchObject({ groupsCreated: 2, groupsReplaced: 0 });
+  });
+  test('a small source loses one person without force, and a leaver Clew never held is not created', async () => {
+    const { client, store } = stack();
+    // The school of the operations guide: three people, two manager groups and one capability group.
+    const source = {
+      userPrefix: 'e-',
+      groupPrefixes: ['unit:1', 'unit-manager:1'],
+      groupKeys: ['capability:admin.users'],
+    };
+    const people = developmentDirectory.people.slice(0, 3).map((p, i) => ({
+      ...p,
+      externalId: 'e-' + i,
+      department: i === 0 ? '110' : '111',
+      manager: i < 2,
+      groups: [],
+      alsoIn: [],
+      alsoManages: [],
+      capabilities: i === 0 ? ['admin.users' as const] : [],
+    }));
+    const directory: Directory = {
+      complete: true,
+      units: [
+        { id: '110', label: 'Utbildning' },
+        { id: '111', label: 'Centralskolan', parent: '110' },
+      ],
+      groups: [],
+      people,
+    };
+    await reconcile(client, directory, source);
+    // The manager of the school leaves: one person of three, and one role group of three with them.
+    const without = { ...directory, people: [people[0]!, people[2]!] };
+    expect(await reconcile(client, without, source)).toMatchObject({ deactivated: 1, groupsRemoved: 1 });
+    expect(store.state.users.get(ekonomiId(store, 'e-1'))?.enabled).toBe(false);
+    // Everybody at once is what an empty export looks like, in a source of any size.
+    await expect(reconcile(client, { ...directory, people: [] }, source)).rejects.toThrow('deactivate 2');
+    // HR keeps a row for somebody who left before Clew held them, and their account name has a new owner.
+    const name = { userName: 'vikarie', email: 'vikarie@example.org' };
+    const kept = { ...people[2]!, ...name, externalId: 'e-8', active: false },
+      hired = { ...people[2]!, ...name, externalId: 'e-9' };
+    expect(await reconcile(client, { ...without, people: [...without.people, kept, hired] }, source)).toMatchObject({
+      created: 1,
+      deactivated: 0,
+    });
+    const held = [...store.state.users.values()];
+    expect(held.some(u => u.externalId === 'e-8')).toBe(false);
+    expect(held.find(u => u.externalId === 'e-9')).toMatchObject({ userName: 'vikarie', enabled: true });
+  });
   test('incomplete snapshots, unowned writes and disproportionate withdrawals stop before mutation', async () => {
     const { client, store } = stack();
     const source = { userPrefix: 'dev:', groupPrefixes: ['unit:mine-', 'ad:mine-'], groupKeys: [] };
@@ -816,7 +876,13 @@ test('the published school walkthrough produces the printed output and the promi
   const run = async (shell: string) => {
     const child = Bun.spawn(['bash', '-c', shell], {
       cwd: fileURLToPath(new URL('../../', import.meta.url)),
-      env: { ...process.env, CLEW: new URL('/scim/v2', server.url).href, CLEW_PROVISIONER_TOKEN: 'dev-token' },
+      // What the guide asks for and nothing else of this process: its commands are text from a document.
+      env: {
+        PATH: process.env.PATH,
+        HOME: process.env.HOME,
+        CLEW: new URL('/scim/v2', server.url).href,
+        CLEW_PROVISIONER_TOKEN: 'dev-token',
+      },
       stdout: 'pipe',
       stderr: 'pipe',
     });

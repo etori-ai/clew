@@ -312,6 +312,31 @@ describe('the organisation tree over SCIM (D99)', () => {
       status: 400,
       scimType: 'invalidPath',
     });
+    // The same whatever the order of the keys: a bare parent beside the key that makes a plain group a unit is refused,
+    // where it would otherwise leave a root behind an answer that says the place was stored.
+    const plain = await scim.createGroup(
+      p,
+      { schemas: [SCIM.group], externalId: 'ad:lokal', displayName: 'Lokal' },
+      BASE,
+    );
+    const onPlain = (operation: { op: string; path?: string; value?: unknown }) =>
+      scim.patchGroup(p, plain.id, { schemas: [SCIM.patch], Operations: [operation] }, BASE);
+    for (const value of [
+      { parent: 'unit:ksk', externalId: 'unit:lokal' },
+      { externalId: 'unit:lokal', parent: 'unit:ksk' },
+    ])
+      await expect(onPlain({ op: 'replace', value })).rejects.toMatchObject({ status: 400, scimType: 'invalidPath' });
+    // On a group that is no unit it is an attribute Clew does not hold, accepted and ignored as any other.
+    expect((await onPlain({ op: 'replace', path: 'parent', value: 'unit:ksk' })).externalId).toBe('ad:lokal');
+    // A body is read the same way, with the bare parent before or after the extension.
+    for (const body of [
+      { externalId: 'unit:ny', displayName: 'Ny', [SCIM.unit]: { parent: 'unit:ksk' }, parent: 'unit:bou' },
+      { externalId: 'unit:ny', displayName: 'Ny', parent: 'unit:bou', [SCIM.unit]: { parent: 'unit:ksk' } },
+    ])
+      await expect(scim.createGroup(p, { schemas: [SCIM.group, SCIM.unit], ...body }, BASE)).rejects.toMatchObject({
+        status: 400,
+        scimType: 'invalidPath',
+      });
     // A patch of something else leaves the place alone; the URN is matched without regard to case.
     expect(await patch([{ op: 'replace', path: 'displayName', value: 'Skolan' }])).toEqual({ parent: 'unit:ksk' });
     expect(await patch([{ op: 'remove', path: SCIM.unit.toUpperCase() + ':parent' }])).toBeUndefined();

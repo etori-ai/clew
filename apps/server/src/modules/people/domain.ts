@@ -311,7 +311,11 @@ export interface GroupFields {
 const need = (attribute: string): never => {
   throw new ScimError(400, `Attribute '${attribute}' is required.`, 'invalidValue');
 };
-/** Accept a work address or an untyped address the provisioner selected for work. */
+/**
+ * The work address: `type: "work"` first; otherwise an address without a type, the primary before the first. An
+ * address of any other type (`home`, `other`) is never taken, so a private address is not stored as the work one;
+ * `otherAddress` reads a PATCH path the same way.
+ */
 export function workEmail(emails: ScimUserInput['emails']): string | undefined {
   const list = emails ?? [];
   const untyped = list.filter(email => !email.type);
@@ -321,6 +325,15 @@ export function workEmail(emails: ScimUserInput['emails']): string | undefined {
     untyped[0]
   )?.value;
 }
+/** No address at all is a missing attribute; addresses of other types alone are a value Clew does not take. */
+const noWorkEmail = (emails: readonly unknown[] | undefined): never => {
+  if (!emails?.length) return need('emails');
+  throw new ScimError(
+    400,
+    "Attribute 'emails' needs a work address: one with type 'work', or one without a type. An address of another type is not stored as the work address.",
+    'invalidValue',
+  );
+};
 /** A full user representation (POST, PUT) to the fields Clew holds, with D68's requirements checked by name. */
 export function userFields(input: ScimUserInput): UserFields {
   const name =
@@ -331,7 +344,7 @@ export function userFields(input: ScimUserInput): UserFields {
     externalId: input.externalId ?? need('externalId'),
     userName: input.userName,
     name: name || need('displayName'),
-    email: workEmail(input.emails) ?? need('emails'),
+    email: workEmail(input.emails) ?? noWorkEmail(input.emails),
     enabled: input.active ?? true,
   };
 }
@@ -343,15 +356,17 @@ const UNIT_EXTENSION = SCIM.unit.toLowerCase();
  * What a name aims at in the unit extension (D99), without regard to case as a schema URN is: the extension as a
  * whole (its value is an object with `parent`), its `parent` attribute, or nothing.
  */
-const unitExtensionTarget = (
-  name: string,
-  externalId: GroupFields['externalId'] | undefined,
-): 'extension' | 'parent' | undefined => {
+const unitExtensionTarget = (name: string): 'extension' | 'parent' | undefined => {
   const key = name.trim().toLowerCase();
-  if (key === 'parent' && unitGroupOf(externalId) !== undefined)
-    throw new ScimError(400, `Use '${SCIM.unit}:parent' for the parent of a unit.`, 'invalidPath');
   return key === UNIT_EXTENSION ? 'extension' : key === UNIT_EXTENSION + ':parent' ? 'parent' : undefined;
 };
+/**
+ * A `parent` named without the extension's URN. On any other group it is an attribute Clew does not hold. On a unit
+ * group it is refused: ignoring it would answer that a move was stored while the unit stays where it stood. Asked of
+ * the group as the request leaves it, so the order of the keys in a body or of the operations in a patch never decides.
+ */
+const isBareParent = (name: string) => name.trim().toLowerCase() === 'parent';
+const bareParent = () => new ScimError(400, `Use '${SCIM.unit}:parent' for the parent of a unit.`, 'invalidPath');
 /**
  * The parent a client sent, as a unit id. It is the `externalId` of the parent's `unit:` group, written as exactly as
  * a key is (D96); null, or nothing, makes the unit a root.
@@ -370,7 +385,8 @@ export function parentUnitOf(value: unknown): string | null {
 const parentInExtension = (value: unknown, path: string | undefined) =>
   value === undefined || value === null ? null : parentUnitOf(asObject(value, path).parent);
 export function groupFields(input: ScimGroupInput): GroupFields {
-  const extension = Object.entries(input).find(([name]) => unitExtensionTarget(name, input.externalId) === 'extension');
+  if (unitGroupOf(input.externalId) !== undefined && Object.keys(input).some(isBareParent)) throw bareParent();
+  const extension = Object.entries(input).find(([name]) => unitExtensionTarget(name) === 'extension');
   return {
     externalId: input.externalId ?? null,
     label: input.displayName,
@@ -635,16 +651,14 @@ export function applyUserPatch(
     else if (key === 'active') next.enabled = asBoolean(value, path);
     else if (key === 'emails') {
       const list = Array.isArray(value) ? value : [value];
-      const email = workEmail(
-        list
-          .map(e =>
-            e && typeof e === 'object'
-              ? (e as { value?: string; type?: string; primary?: boolean })
-              : { value: String(e) },
-          )
-          .filter(e => typeof e.value === 'string') as Array<{ value: string; type?: string; primary?: boolean }>,
-      );
-      next.email = email ?? need('emails');
+      const sent = list
+        .map(e =>
+          e && typeof e === 'object'
+            ? (e as { value?: string; type?: string; primary?: boolean })
+            : { value: String(e) },
+        )
+        .filter(e => typeof e.value === 'string') as Array<{ value: string; type?: string; primary?: boolean }>;
+      next.email = workEmail(sent) ?? noWorkEmail(sent);
     } else if (/^emails\[.*\]\.value$/.test(key) || key === 'emails.value') {
       if (!otherAddress(key)) next.email = asString(value, path);
     } else if (key === 'name') {
@@ -685,7 +699,8 @@ export function applyGroupPatch(
 ): GroupFields {
   let members = new Set(current.members),
     next = { ...current },
-    placed = false;
+    placed = false,
+    bare = false;
   const memberIds = (value: unknown): string[] => {
     const list = Array.isArray(value) ? value : value === undefined ? [] : [value];
     return list.map(m => {
@@ -695,8 +710,9 @@ export function applyGroupPatch(
   };
   const setAttribute = (path: string, value: unknown, pathless: boolean) => {
     const key = coreKey(path, 'group'),
-      extension = unitExtensionTarget(path, next.externalId);
-    if (extension) {
+      extension = unitExtensionTarget(path);
+    if (isBareParent(key)) bare = true;
+    else if (extension) {
       next.parent = extension === 'parent' ? parentUnitOf(value) : parentInExtension(value, path);
       placed = true;
     } else if (key === 'displayname') next.label = asString(value, path);
@@ -728,7 +744,8 @@ export function applyGroupPatch(
     }
     if (op === 'remove') {
       if (!path || !key) throw new ScimError(400, 'A remove operation needs a path.', 'noTarget');
-      if (unitExtensionTarget(path, next.externalId)) next.parent = null;
+      if (isBareParent(key)) bare = true;
+      else if (unitExtensionTarget(path)) next.parent = null;
       else if (key === 'externalid') next.externalId = null;
       else if (key === 'displayname') throw required(path);
       else if (isReadOnly(key, 'group')) throw readOnly(path);
@@ -741,6 +758,7 @@ export function applyGroupPatch(
           for (const member of memberIds(value)) members.add(member);
         else setAttribute(name, value, true);
   }
+  if (bare && unitGroupOf(next.externalId) !== undefined) throw bareParent();
   if (!placed && unitGroupOf(next.externalId) === undefined) next.parent = null;
   return { ...next, members: [...members] };
 }
