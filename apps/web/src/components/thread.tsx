@@ -144,12 +144,17 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
   const events = week.data?.events ?? EMPTY_EVENTS;
   const chipRef = 'thread:' + thread.id;
   const inConversation = talk.chipped.includes(chipRef);
-  const addItem = {
-    id: 'add',
-    label: inConversation ? 'I samtalet' : 'Lägg till i samtalet',
-    isDisabled: inConversation,
-    onClick: () => talk.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id }),
-  };
+  // The menus' first item where the page has a question box, and no item where it has none (D107 rule 6).
+  const addItems = talk.hasBox
+    ? [
+        {
+          id: 'add',
+          label: inConversation ? 'I samtalet' : 'Lägg till i samtalet',
+          isDisabled: inConversation,
+          onClick: () => talk.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id }),
+        },
+      ]
+    : [];
   const draft = thread.messages.at(-1)?.meta?.draft;
   useEffect(() => {
     setSelected(seed());
@@ -367,7 +372,7 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
             label="Fler val"
             size="sm"
             variant="ghost"
-            items={[addItem, { id: 'why', label: 'Varför ser jag detta?', onClick: () => setWhy(v => !v) }]}
+            items={[...addItems, { id: 'why', label: 'Varför ser jag detta?', onClick: () => setWhy(v => !v) }]}
           />
         </HStack>
       )}
@@ -396,7 +401,7 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
               size="sm"
               variant="ghost"
               items={[
-                addItem,
+                ...addItems,
                 {
                   id: 'dismiss',
                   label: 'Avfärda · inte aktuellt',

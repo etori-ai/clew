@@ -187,6 +187,9 @@ test.describe('the unit as a page', () => {
     await expect(panel.getByText(`${unitAction.title}: ${ENTITY_UNIT.label}`).first()).toBeVisible();
     await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
     await expect(heading(page, 1, ENTITY_UNIT.label)).toBeVisible();
+    // The unit's page has no question box, so the card offers no way into one (D107 rule 6).
+    await expect(panel.getByRole('button', { name: 'Inte nu', exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(page).toHaveURL(`${school}?from=%2F`);
     await expect(button).toBeFocused();

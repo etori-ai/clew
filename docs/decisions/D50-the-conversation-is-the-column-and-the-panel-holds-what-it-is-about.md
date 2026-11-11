@@ -93,3 +93,15 @@ that is also a tool ([D107](D107-where-something-opens-is-decided-by-what-it-is.
 no control chooses a surface). The tool stays in the rail where an administrator put it, and "Stäng samtalet" still
 leads back to a tool's page when the question was asked there. The other part of this record that D107 replaces, the
 box asking about the open card by opening it, is changed separately.
+
+**Amended 2026-11-11 (D107 rule 6): opening is not asking.** A card opened beside Hem is no longer put in the question
+box ([D107](D107-where-something-opens-is-decided-by-what-it-is.md) rule 6, the product owner's answer 3). Hem's box
+says nothing of the open card: no "Om kortet" scope line, no "Fråga om kortet …" placeholder, no token for it and no
+"Ny fråga i stället" for it; the same on every width. A card goes into the box only with "Lägg till i samtalet", as a
+chip like any other, and its verbs are offered under the box when it is the one chip and nothing is typed. That control
+is drawn only where the page has a box, Hem, a conversation and a tool's page (answer 4): not on Personal, a person's or
+a unit's page, Kalender or Administration, nor on a card or view in the drawer over them, and it no longer leads to
+Hem. Asking still carries what the person was looking at: a question sent on Hem with a card or a view open beside the
+column opens the conversation with it beside the transcript, and "Stäng samtalet" returns to Hem as it stood, the card
+or view still open; the card is the question's subject only when the person added it. On a tool's page item 5 is
+unchanged: the placeholder names the tool ("Fråga om Telefonbok …") and its view goes with the question as a chip.

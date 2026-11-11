@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -34,9 +35,10 @@ export interface Conversation {
   messages: ThreadMessage[];
 }
 /**
- * Where a question was asked when it was not asked on the landing or in a conversation (D50): what the page was showing,
- * as chips for the question, and as the panel's part of the address the conversation opens at, so what the person was
- * looking at is beside the transcript.
+ * Where a question was asked when it was not asked in a conversation (D50): what the page asks about as chips for the
+ * question (a tool's view; nothing on Hem, where a card open beside the column is not the question's subject until the
+ * person adds it, D107 rule 6), and the panel's part of the address the conversation opens at, so what the person was
+ * looking at is beside the transcript. Asking from it also marks the page as the one "Stäng samtalet" leads back to.
  */
 export interface AskFrom {
   chips: ChipRef[];
@@ -71,6 +73,13 @@ export interface ConversationState {
   value: string;
   verbs: Verb[];
   input: RefObject<ChatComposerInputHandle | null>;
+  /**
+   * A question box is on the page (Hem, a conversation, a tool's page). "Lägg till i samtalet" is offered only then
+   * (D107 rule 6): where nothing shows the chip, the control is not drawn at all.
+   */
+  hasBox: boolean;
+  /** The box says it is on the page while it is mounted; the returned function says it has gone. */
+  claimBox(): () => void;
   setValue(value: string): void;
   addChip(chip: ChipRef): void;
   removeChip(ref: string): void;
@@ -107,6 +116,8 @@ export const ConversationContext = createContext<ConversationState>({
   value: '',
   verbs: [],
   input: { current: null },
+  hasBox: false,
+  claimBox: () => noop,
   setValue: noop,
   addChip: noop,
   removeChip: noop,
@@ -124,6 +135,16 @@ export const ConversationContext = createContext<ConversationState>({
   setThreadListener: noop,
 });
 export const useConversation = () => useContext(ConversationContext);
+/**
+ * Called by the box: the page has a box for as long as one is mounted. A layout effect, so the controls that depend on
+ * it are drawn or left out before the browser paints: no frame of Hem's rows without "Lägg till i samtalet", and none
+ * of another page's cards with it. The box moving between Hem's landing and a conversation's dock is one unmount and
+ * one mount in the same commit, so the count never reads none in between.
+ */
+export function useClaimBox() {
+  const { claimBox } = useConversation();
+  useLayoutEffect(() => claimBox(), [claimBox]);
+}
 /** A conversation's title is the question as it was typed; as a title it starts with a capital. */
 export const titled = (question: string) => question.charAt(0).toLocaleUpperCase('sv-SE') + question.slice(1);
 
@@ -172,6 +193,14 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     listener.current?.(thread);
   }, []);
   const input = useRef<ChatComposerInputHandle>(null);
+  // How many boxes are mounted (`useClaimBox`): state, not the input's ref, so the controls that add to the box are
+  // drawn again when one comes or goes.
+  const [boxes, setBoxes] = useState(0);
+  const claimBox = useCallback(() => {
+    setBoxes(n => n + 1);
+    return () => setBoxes(n => n - 1);
+  }, []);
+  const hasBox = boxes > 0;
   const announce = useAnnounce();
   const known = useRef(new Map<string, ChipRef>());
   const [chips, setChips] = useState<ChipRef[]>([]);
@@ -230,18 +259,13 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       ...(o.threadId ? { threadId: o.threadId } : {}),
     });
   }, []);
-  // On a page without a box (Personal, with a card beside the list) the chip is taken to Hem's box: the person chose
-  // the conversation, and a chip added where nothing shows it would leave the pressed button resting with the focus on
-  // nothing (2.4.3).
-  const addChip = useCallback(
-    (chip: ChipRef) => {
-      known.current.set(chip.ref, chip);
-      setChips(list => (list.some(c => c.ref === chip.ref) ? list : [...list, chip]));
-      if (input.current) input.current.focus();
-      else if (!where.current.here) navigate('/');
-    },
-    [navigate],
-  );
+  // The box takes the focus from the pressed button, which rests as "I samtalet" (2.4.3). The control is drawn only
+  // where a box is (`hasBox`, D107 rule 6), so adding never takes the person to another page.
+  const addChip = useCallback((chip: ChipRef) => {
+    known.current.set(chip.ref, chip);
+    setChips(list => (list.some(c => c.ref === chip.ref) ? list : [...list, chip]));
+    input.current?.focus();
+  }, []);
   // The removed chip's neighbour takes the focus, or the field when the drawer is empty (2.4.3).
   const removeChip = useCallback((ref: string) => {
     setChips(list => list.filter(c => c.ref !== ref));
@@ -353,8 +377,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       setPending({ text, chips: sent, at: new Date().toISOString(), steps: [], answer: '' });
       setValue('');
       setShown(true);
-      // Asked about something on a page (D50, D53): the conversation takes the column at once, with what the page showed
-      // beside it, and "Stäng samtalet" leads back to the page as it stood. On Hem the transcript takes the column in place.
+      // Asked on a page or on Hem (D50, D107 rule 6): the conversation takes the column at once, with what the page
+      // showed beside it, and "Stäng samtalet" leads back to the page as it stood. On Hem the transcript takes the column
+      // in place, and the address it gets once answered keeps the card or view open beside it (`onConversation`).
       if (!current && from) {
         origin.current = window.location.pathname + window.location.search;
         if (!where.current.here) navigate(`/conversations/new${from.search}`);
@@ -479,6 +504,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       value,
       verbs,
       input,
+      hasBox,
+      claimBox,
       setValue,
       addChip,
       removeChip,
@@ -507,6 +534,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       open,
       value,
       verbs,
+      hasBox,
+      claimBox,
       addChip,
       removeChip,
       rememberObject,

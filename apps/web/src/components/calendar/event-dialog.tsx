@@ -23,6 +23,7 @@ import { useThreadAction } from '../../mutations';
 import { keys } from '../../query-keys';
 import { mobileQuery } from '../shell';
 import { AddToConversation } from '../add-to-conversation';
+import { useConversation } from '../conversation-context';
 import { DialogFrame } from '../dialog-frame';
 
 type Mode = 'view' | 'move' | 'cancel';
@@ -50,6 +51,7 @@ const hhmm = (instant: string) => localClock(instant).slice(11, 16);
 export function EventDialog({ item, dayItems, onClose, onChanged, onOpenDay, onAddChip }: Props) {
   const mobile = useMediaQuery(mobileQuery);
   const announce = useAnnounce();
+  const { hasBox } = useConversation();
   const [mode, setMode] = useState<Mode>('view');
   const [decisionId, setDecisionId] = useState(() => crypto.randomUUID());
   const [start, setStart] = useState('');
@@ -159,7 +161,8 @@ export function EventDialog({ item, dayItems, onClose, onChanged, onOpenDay, onA
                     }}
                   />
                 )}
-                {onAddChip && (
+                {/* Only where the page has a question box (D107 rule 6): Kalender has none. */}
+                {onAddChip && hasBox && (
                   <AddToConversation
                     onAdd={() => {
                       onAddChip(item);

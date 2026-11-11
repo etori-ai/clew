@@ -48,7 +48,7 @@ import { groupThreads } from '../stream';
 import { useReceiptArrivals } from '../linger';
 import { withAction, withCard, withView, withoutPanel } from '../panel-address';
 import { reviewOf } from '../review-address';
-import { Composer, Suggestions, type ComposerAbout } from '../components/composer';
+import { Composer, Suggestions } from '../components/composer';
 import { PageHeader } from '../components/page-header';
 import { titled, useConversation, type ConversationState } from '../components/conversation-context';
 import { Transcript } from '../components/conversation';
@@ -141,11 +141,12 @@ const stopAt = (id: string) =>
  * the column is Hem: the greeting with the day, the box, and under it everything the assistant has pushed, with a
  * card's state as the tabs (Behöver dig, Väntar på andra, Inte nu, Klart), the areas as a filter, and on a quiet day
  * the person's areas with what they can start. The day and what happened since yesterday are the page's own, beside the
- * day's work, and the panel exists only while a card, a view or a card's read is open in it (D72); the box then asks
- * about the open card.
+ * day's work, and the panel exists only while a card, a view or a card's read is open in it (D72); opening one is not
+ * asking about it, so the box is unchanged until the person adds it (D107 rule 6).
  * A conversation takes the column at `/conversations/:id` (D31), with what it is about in the panel: the view an answer
- * names, the card or the page it was asked on. The address is the state throughout (`panel-address.ts`). Every card
- * comes from a connector through the registry; the calendar's proposal card keeps its specialised rendering.
+ * names, the card or view that was open when it was asked, or the page it was asked on. The address is the state
+ * throughout (`panel-address.ts`). Every card comes from a connector through the registry; the calendar's proposal
+ * card keeps its specialised rendering.
  */
 export function StartPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
@@ -153,8 +154,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const short = useMediaQuery(shortQuery);
   const twoColumns = useMediaQuery(twoColumnQuery);
   const threeTracks = useMediaQuery(threeTrackQuery);
-  // Where a transcript and the panel fit side by side, a conversation asked on a page brings what the page showed along (D50).
-  const besideTranscript = useMediaQuery(panelBesideQuery(CONVERSATION_MIN));
   // Every read is a query (D33): one cache shared by the page, the cards, the rail and the conversation. A mutation writes the thread it returns into it (thread-cache.ts).
   const client = useQueryClient();
   const threadsQ = useQuery(threadsQuery);
@@ -358,10 +357,10 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   /**
    * The panel (D50): the view the address names, a card's own read, or a card. A view that is also a tool offers no
    * way to its page (D107 rule 7: no control chooses a surface); the tool is in the rail where an administrator put it.
-   * In a conversation the card beside the transcript is the one the question was asked about; on a phone Hem draws its
-   * cards in the sheet, so a card has no panel there. With nothing open there is no panel: the day and what happened
-   * since yesterday are Hem's own (D72). Hem says a read that failed in its own alert, and a done card leads on to the
-   * next one in the stream.
+   * In a conversation the card beside the transcript is the one that was open when the question was asked; on a phone
+   * Hem draws its cards in the sheet, so a card has no panel there. With nothing open there is no panel: the day and
+   * what happened since yesterday are Hem's own (D72). Hem says a read that failed in its own alert, and a done card
+   * leads on to the next one in the stream.
    */
   const slot = usePagePanel({
     minMain: talk.open ? CONVERSATION_MIN : HOME_MIN,
@@ -800,7 +799,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         }
       />
     );
-    const box = <Composer place="landing" near={near} about={about} />;
+    const box = <Composer place="landing" near={near} />;
     const menarDu = <Suggestions viewHref={viewHref} cardHref={cardHref} />;
     const column = <VStack gap={6}>{work()}</VStack>;
     // One flow from the top on every screen: the greeting and the box (docked at the foot on a phone), then the day's work
@@ -873,16 +872,12 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       )}
     </BottomSheet>
   );
-  /** What Hem's box asks about: the open card, which the conversation then keeps beside the transcript; "Ny fråga i stället" lets go of it. */
+  /**
+   * The card open beside the column. Opening it is not asking about it (D107 rule 6): Hem's box says nothing of it,
+   * and it is the question's subject only once the person adds it with "Lägg till i samtalet". A question asked with it
+   * open takes it along beside the transcript, where it is not drawn again.
+   */
   const panelCard = slot.card;
-  const about: ComposerAbout | undefined = panelCard
-    ? {
-        label: `kortet ${panelCard.title}`,
-        search: besideTranscript ? `?card=${encodeURIComponent(panelCard.id)}` : '',
-        chips: [{ ref: 'thread:' + panelCard.id, kind: 'thread', label: panelCard.title, threadId: panelCard.id }],
-        clearHref: withoutPanel(here, search),
-      }
-    : undefined;
 
   /** When the person asked the conversation's first question: H1's line beside the title. "Nytt samtal i stället" sits in the box's scope line. */
   const started = (state: ConversationState) => {
@@ -1000,7 +995,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
                   composer={
                     <VStack gap={2}>
                       <Suggestions viewHref={viewHref} cardHref={cardHref} />
-                      <Composer place="landing" near={near} about={about} />
+                      <Composer place="landing" near={near} />
                     </VStack>
                   }
                 >

@@ -459,10 +459,12 @@ function Rows({
       <Text weight="semibold">{label}</Text>
     );
   };
-  // A row with a ref of a connector that can read it back can go into the box (D12), as a search hit can.
+  // A row with a ref of a connector that can read it back can go into the box (D12), as a search hit can, where the
+  // page has a box (D107 rule 6); without one neither the `@` nor its column is drawn.
+  const chips = view.chip && !!view.ref && talk.hasBox;
   const chip = (row: Row) => {
     const ref =
-      view.chip && view.ref && typeof row[view.ref] === 'string' ? `document:${view.connector}:${row[view.ref]}` : null;
+      chips && view.ref && typeof row[view.ref] === 'string' ? `document:${view.connector}:${row[view.ref]}` : null;
     return ref ? (
       <AddToConversation
         added={talk.chipped.includes(ref)}
@@ -494,7 +496,7 @@ function Rows({
         ...(f.format === 'number' && !beside.length ? { align: 'end' as const } : {}),
         renderCell: (r: TableRow) => <Cell group={{ lead: f, beside }} row={r.row} />,
       })),
-      ...(view.chip && view.ref
+      ...(chips
         ? [{ key: 'clew-chip', header: 'Samtal', width: pixel(66), renderCell: (r: TableRow) => chip(r.row) }]
         : []),
       // One cell cannot be two links: a row whose name opens a read has the entity it names in a column of its own.

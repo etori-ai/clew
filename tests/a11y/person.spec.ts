@@ -10,7 +10,7 @@ import {
   test,
 } from './support';
 import { PRESENCE_LENS, SILENT_SECTION, TALK_LENS } from './data';
-import { CONTACT, People } from './person-data';
+import { CONTACT, POINTS, People, pointsOutput, pointsSpec } from './person-data';
 
 /**
  * The opened person (D97 item 5, D107 rule 3: a person is a page only): as a page (artboard C2), on a phone (D) and read
@@ -161,6 +161,44 @@ test.describe('the person as a page', () => {
     await page.keyboard.press('Escape');
     await expect(page).toHaveURL('/people/johan?from=%2Fstaff');
     await expect(button).toBeFocused();
+  });
+
+  test('the page has no question box, so nothing offers Lägg till i samtalet: not a card beside it, its menu, or a row of a section', async ({
+    page,
+    api,
+  }) => {
+    await new People().route(page, api);
+    // The action points as rows that could go into the box on a page that has one (D12): each with a ref the source
+    // reads back. Registered after the person's routes, so this answer is the one the section gets.
+    await page.route(
+      url => url.pathname === `/api/cap/${POINTS}`,
+      route =>
+        route.fulfill({
+          json: {
+            output: { rows: pointsOutput.rows.map((r, i) => ({ ...r, ref: `point-${i}` })) },
+            source: 'Utvecklingssamtal',
+            view: { ...pointsSpec, chip: true, ref: 'ref' },
+          },
+        }),
+    );
+    await open(page, `/people/johan?section=${TALK_LENS}&from=%2Fstaff`);
+    await expect(page.getByText('Skicka underlag om schemaläggning')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
+    await expect(page.getByRole('columnheader', { name: 'Samtal' })).toHaveCount(0);
+    // A card the page started: its own buttons, and none that leads into a box.
+    await page.getByRole('main').getByRole('button', { name: 'Boka möte', exact: true }).click();
+    const panel = page.getByRole('complementary', { name: 'Kort' });
+    await expect(panel.getByRole('button', { name: 'Inte nu', exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
+    // A proposal's card: its menu keeps its other items and has no "Lägg till i samtalet".
+    await open(page, '/people/johan?section=needs-you&from=%2Fstaff&card=samtal-svar');
+    await expect(panel.getByRole('article', { name: 'Kort: Planera utvecklingssamtal vecka 45' })).toBeVisible();
+    await panel.getByRole('button', { name: 'Fler val', exact: true }).click();
+    const menu = page.getByRole('menu');
+    await expect(menu.getByRole('menuitem', { name: 'Varför ser jag detta?' })).toBeVisible();
+    await expect(menu.getByRole('menuitem')).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
   });
 
   test('the first two actions are buttons and the rest are under Fler by system; no control chooses where the person is shown', async ({

@@ -99,3 +99,9 @@ shouldn't need a background, could be floating on top of content"). Hem on a pho
 frosted-glass layer the page scrolls under, with no scroll-to-bottom button since Hem is read from the top, inside a
 `VStack height="100%"` so the layout owns the scroll. The focus checks of `tests/a11y/reflow.spec.ts` (2.4.11) hold:
 every stop scrolls into view above the dock.
+
+**Amended 2026-11-11 (D107 rule 6): item 7 is withdrawn.** The box no longer asks about the card open beside Hem
+([D107](D107-where-something-opens-is-decided-by-what-it-is.md), the product owner's answer 3; the details are in
+[D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md)'s amendment of the same day). A card
+goes into the box only with "Lägg till i samtalet". A question sent with the card open still takes it along beside the
+transcript, and "Stäng samtalet" still leads back to Hem with the card open.

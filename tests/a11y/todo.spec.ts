@@ -14,12 +14,15 @@ import { menuRow } from './phonebook';
 
 /** Wide enough for the panel to stand beside the page's column (D50); at the suite's desktop width it lies over it. */
 const wide = { width: 1440, height: 900 };
+/** Hem's box as it is with nothing added: also with a card open beside it (D107 rule 6). */
+const HEM_PLACEHOLDER = 'Skriv eller säg vad du vill göra …';
 
 /**
  * D50: the column is where the person is, the panel is what they hold beside it, and the conversation is never in the
  * panel. Hem (D53) is the one page with a card's state as tabs and the areas as a filter; a row opens its card in the
- * panel, which holds only what was opened, while the day and what happened since yesterday stay the page's own (D72);
- * the box asks about what is open beside it, and the answer opens as a conversation with that beside the transcript.
+ * panel, which holds only what was opened, while the day and what happened since yesterday stay the page's own (D72).
+ * Opening is not asking (D107 rule 6): a card goes into the box only with "Lägg till i samtalet", and a question asked
+ * with something open beside Hem opens as a conversation with that beside the transcript.
  */
 test.describe("Hem: the day's work", () => {
   test.use({ viewport: desktop });
@@ -240,12 +243,13 @@ test.describe('the panel beside the page', () => {
     await expect(handle).toBeVisible();
     expect(await sideways()).toBe(0);
     await fold.click();
-    // Folding hides and nothing more (D63 item 14, revised): the address, the row and the box keep the card, and the
-    // focus stays on the button, which now says the way back, at the window's edge.
+    // Folding hides and nothing more (D63 item 14, revised): the address and the row keep the card, the box is as it
+    // was (opening is not asking, D107 rule 6), and the focus stays on the button, which now says the way back, at the
+    // window's edge.
     await expect(panel.locator('#card-fakturor')).toHaveCount(0);
     await expect(page).toHaveURL(/\/\?card=fakturor$/);
     await expect(page.locator('#thread-fakturor')).toContainText('öppet bredvid');
-    await expect(page.getByText('Om kortet', { exact: true })).toBeVisible();
+    await expect(page.getByText(HEM_PLACEHOLDER, { exact: true })).toBeVisible();
     const show = page.getByRole('button', { name: 'Visa panelen' });
     await expect(show).toBeFocused();
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Panelen är ihopfälld'));
@@ -278,20 +282,52 @@ test.describe('the panel beside the page', () => {
     await expect.poll(besideWork).toBe(true);
   });
 
-  test("the card's token in the box has an X that lets go of the card, like Ny fråga i stället", async ({
+  test('opening a card leaves the box as it was; Lägg till i samtalet puts it in, with its verbs, and its X lets go of the chip, not of the card', async ({
     page,
     api: _,
   }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
+    // The card's verbs, so the test sees when they show: only for the chip, never for the card merely open (D107 rule 6).
+    await page.route('**/api/threads/fakturor/verbs', route =>
+      route.fulfill({ json: { verbs: [{ id: 'why', label: 'Varför nu?', kind: 'why', threadId: 'fakturor' }] } }),
+    );
+    await page.setViewportSize(wide);
     await open(page, '/?card=fakturor');
-    await page.getByRole('button', { name: 'Ta bort Attestera 3 fakturor, 48 200 kr' }).click();
-    await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByText('Om kortet')).toHaveCount(0);
-    await expect(page.getByRole('complementary', { name: 'Kort' })).toHaveCount(0);
-    await expect(page.locator('#thread-fakturor')).not.toContainText('öppet bredvid');
+    const panel = page.getByRole('complementary', { name: 'Kort' });
+    const card = panel.locator('#card-fakturor');
+    await expect(card.getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
+    // Opening is not asking: no scope line, no placeholder about the card, no token, no verbs, no "Ny fråga i stället".
+    await expect(page.getByText(HEM_PLACEHOLDER, { exact: true })).toBeVisible();
+    await expect(page.getByText('Om kortet', { exact: true })).toHaveCount(0);
+    await expect(page.getByText(/^Fråga om kortet/)).toHaveCount(0);
+    await expect(page.getByRole('group', { name: 'Objekt i samtalet' })).toHaveCount(0);
+    await expect(page.getByRole('group', { name: 'Om kortet' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Ny fråga i stället' })).toHaveCount(0);
+    expect(await announcements(page)).not.toContainEqual(expect.stringContaining('Om kortet'));
+    // "Lägg till i samtalet" is the one way in: the chip enters the drawer, the box has the focus, the chip is said aloud,
+    // and with nothing typed the card's verbs are offered under the box.
+    await card.getByRole('button', { name: 'Lägg till i samtalet' }).click();
+    const remove = page.getByRole('button', { name: 'Ta bort Attestera 3 fakturor, 48 200 kr' });
+    await expect(remove).toBeVisible();
+    await expect(composer(page)).toBeFocused();
+    await expect(page.getByRole('status').filter({ hasText: 'är med i samtalet' })).toContainText(
+      'Attestera 3 fakturor, 48 200 kr är med i samtalet',
+    );
+    await expect(card.getByRole('button', { name: 'I samtalet' })).toBeDisabled();
+    await expect(
+      page.getByRole('group', { name: 'Om kortet' }).getByRole('button', { name: 'Varför nu?' }),
+    ).toBeVisible();
+    await expectNoAxeViolations(page);
+    // The chip's X lets go of the chip and gives the focus to the field; the card stays open beside Hem.
+    await remove.click();
+    await expect(remove).toHaveCount(0);
+    await expect(composer(page)).toBeFocused();
+    await expect(page.getByRole('group', { name: 'Om kortet' })).toHaveCount(0);
+    await expect(page).toHaveURL(/\/\?card=fakturor$/);
+    await expect(card.getByRole('button', { name: 'Lägg till i samtalet' })).toBeVisible();
+    await expect(page.locator('#thread-fakturor')).toContainText('öppet bredvid');
   });
 
-  test("beside Hem the day and what happened since yesterday are the page's own; a row's card opens in the panel without taking their place, the box asks about the card, and Esc gives it all back", async ({
+  test("beside Hem the day and what happened since yesterday are the page's own; a row's card opens in the panel without taking their place, the box is left as it was, and Esc gives it all back", async ({
     page,
     api: _,
   }) => {
@@ -314,18 +350,18 @@ test.describe('the panel beside the page', () => {
     // The day is not the panel's to give way (D72): it stays on the page, one landmark wherever it stands.
     await expect(aside.getByRole('region', { name: 'I dag' })).toBeVisible();
     await expect(page.getByRole('region', { name: 'I dag' })).toHaveCount(1);
-    // Hem is still the column, and its box now asks about the card, with the way to a new question beside it (artboard E).
+    // Hem is still the column, and its box is as it was: opening is not asking (D107 rule 6).
     await expect(heading(page, 1, 'Hej Testa')).toBeVisible();
-    await expect(page.getByText('Fråga om kortet Attestera 3 fakturor, 48 200 kr …')).toBeVisible();
-    await expect(page.getByText('Om kortet', { exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Ny fråga i stället' })).toHaveAttribute('href', '/');
+    await expect(page.getByText(HEM_PLACEHOLDER, { exact: true })).toBeVisible();
+    await expect(page.getByText('Om kortet', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Ny fråga i stället' })).toHaveCount(0);
     await expectNoAxeViolations(page);
     await page.keyboard.press('Escape');
     await expect(panel).toHaveCount(0);
     await expect(page).toHaveURL(/\/$/);
     await expect(title).toBeFocused();
     await expect(aside).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Ny fråga i stället' })).toHaveCount(0);
+    await expect(page.getByText(HEM_PLACEHOLDER, { exact: true })).toBeVisible();
   });
 
   test("a card's own read lies over the card: closing the view leaves the card", async ({ page, api: _ }) => {
@@ -340,12 +376,13 @@ test.describe('the panel beside the page', () => {
     await expect(page).toHaveURL(/\/\?card=omtanke$/);
   });
 
-  test('the box on Hem asks about the open card: the conversation takes the column, the card stays beside it, and closing leads back', async ({
+  test('a question asked on Hem with a card open: the conversation takes the column with the card beside it, the card is its subject only once added, and closing leads back', async ({
     page,
     api,
   }) => {
     await open(page, '/?card=fakturor');
-    await expect(page.getByText('Fråga om kortet Attestera 3 fakturor, 48 200 kr …')).toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'Kort' }).locator('#card-fakturor')).toBeVisible();
+    await expect(page.getByText(HEM_PLACEHOLDER, { exact: true })).toBeVisible();
     api.answerDelay = 300;
     const box = composer(page);
     await box.fill('Vem är på plats?');
@@ -359,11 +396,21 @@ test.describe('the panel beside the page', () => {
     await expect(page).toHaveURL(/\/conversations\/[^/?]+\?card=fakturor$/);
     await expect(page).not.toHaveURL(/\/conversations\/new/);
     await expectNoAxeViolations(page);
-    // The card went along as what the question is about.
-    expect(api.asked.at(-1)?.chips?.map(c => c.ref)).toEqual(['thread:fakturor']);
+    // What the person was looking at went along beside the transcript, but not as what the question is about.
+    expect(api.asked.at(-1)?.chips ?? []).toEqual([]);
+    // "Stäng samtalet" leads back to Hem as it stood, with the card open beside it.
     await page.getByRole('button', { name: 'Stäng samtalet' }).click();
     await expect(page).toHaveURL(/\/\?card=fakturor$/);
     await expect(heading(page, 1, 'Hej Testa')).toBeVisible();
+    const card = page.getByRole('complementary', { name: 'Kort' }).locator('#card-fakturor');
+    await expect(card).toBeVisible();
+    // Added with "Lägg till i samtalet", the card is the question's subject, as a chip like any other.
+    await card.getByRole('button', { name: 'Lägg till i samtalet' }).click();
+    await expect(composer(page)).toBeFocused();
+    await composer(page).fill('Vilka fakturor är det?');
+    await composer(page).press('Enter');
+    await expect(page).toHaveURL(/\/conversations\/[^/?]+\?card=fakturor$/);
+    expect(api.asked.at(-1)?.chips?.map(c => c.ref)).toEqual(['thread:fakturor']);
   });
 
   test('a view an answer names opens beside the transcript, the conversation stays, and a view that is a tool offers no page', async ({

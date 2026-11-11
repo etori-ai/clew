@@ -1,5 +1,6 @@
 import {
   announcements,
+  composer,
   desktop,
   expect,
   expectNoAxeViolations,
@@ -137,6 +138,26 @@ test.describe('a tool as a page', () => {
     await page.goBack();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.getByRole('row')).toHaveCount(15);
+  });
+
+  test('the page has a question box, so a card beside it and its rows offer Lägg till i samtalet, which puts the card in the box', async ({
+    page,
+    api,
+  }) => {
+    api.menu = menuRows;
+    // Wide enough for a card beside the table (the table keeps 1060 px), so the box is not under a drawer.
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await open(page, `${directory}?card=fakturor`);
+    await expect(
+      page.getByRole('row').filter({ hasText: 'Anna Lindqvist' }).getByRole('button', { name: 'Lägg till i samtalet' }),
+    ).toBeVisible();
+    const card = page.getByRole('complementary', { name: 'Kort' }).locator('#card-fakturor');
+    await expect(card.getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
+    await card.getByRole('button', { name: 'Lägg till i samtalet' }).click();
+    await expect(composer(page)).toBeFocused();
+    await expect(page.getByRole('button', { name: 'Ta bort Attestera 3 fakturor, 48 200 kr' })).toBeVisible();
+    await expect(card.getByRole('button', { name: 'I samtalet' })).toBeDisabled();
+    await expect(page).toHaveURL(`${directory}?card=fakturor`);
   });
 
   test("another tool takes the page: its name is the heading and is said aloud, and its rows replace the first tool's", async ({

@@ -632,7 +632,8 @@ type Actions = ReturnType<typeof useThreadActions>;
  * "Lägg till i samtalet" and the next step, nothing more: Inte nu, Avfärda and "Varför nu?" belong to the open card.
  * Beside a panel (`compact`) a row keeps the next step alone. On a phone (artboards 11 and 12) a row's next step fills
  * the line under it with "Lägg till i samtalet" as the `@` beside it (`phone`), and the card in the sheet stands its
- * next step and secondary actions full width above the rest (`stacked`).
+ * next step and secondary actions full width above the rest (`stacked`). "Lägg till i samtalet" is drawn only where the
+ * page has a question box (D107 rule 6).
  */
 function ActionRow({
   thread,
@@ -714,7 +715,8 @@ function ActionRow({
   ) : null;
   const addChip = () =>
     conversation.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id });
-  const addToConversation = phone ? (
+  // Only where the page has a box (D107 rule 6): a card beside Personal, a person or a unit, or over Kalender has none.
+  const addToConversation = !conversation.hasBox ? null : phone ? (
     <AddToConversation size="md" added={inConversation} onAdd={addChip} />
   ) : (
     <Button
@@ -781,27 +783,28 @@ function ActionRow({
         )}
         {viewReview}
         <Text type="supporting">{pending}</Text>
-        <DropdownMenu
-          renderTrigger={trigger => (
-            <IconButton
-              {...trigger}
-              size={size === 'lg' ? 'md' : size}
-              variant="ghost"
-              label="Fler val"
-              tooltip="Fler val"
-              icon={<Icon icon="moreHorizontal" />}
+        {/* The menu's one item is "Lägg till i samtalet": where the page has no box there is no menu (D107 rule 6). */}
+        {conversation.hasBox && (
+          <DropdownMenu
+            renderTrigger={trigger => (
+              <IconButton
+                {...trigger}
+                size={size === 'lg' ? 'md' : size}
+                variant="ghost"
+                label="Fler val"
+                tooltip="Fler val"
+                icon={<Icon icon="moreHorizontal" />}
+              />
+            )}
+            alignment="end"
+          >
+            <DropdownMenuItem
+              label={inConversation ? 'I samtalet' : 'Lägg till i samtalet'}
+              isDisabled={inConversation}
+              onClick={addChip}
             />
-          )}
-          alignment="end"
-        >
-          <DropdownMenuItem
-            label={inConversation ? 'I samtalet' : 'Lägg till i samtalet'}
-            isDisabled={inConversation}
-            onClick={() =>
-              conversation.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id })
-            }
-          />
-        </DropdownMenu>
+          </DropdownMenu>
+        )}
       </HStack>
     );
   // In the Inte nu pile (D28): the way back is the first button; nothing else is due until the card is back.

@@ -305,6 +305,8 @@ test.describe('the panel over a page that has none of its own', () => {
     const drawer = page.getByRole('dialog', { name: 'Kort' });
     await expect(drawer.locator('#card-fakturor').getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
     await expect.poll(() => drawer.evaluate(el => el.contains(document.activeElement))).toBe(true);
+    // Kalender has no question box, so the card offers no way into one (D107 rule 6).
+    await expect(drawer.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
     // Kalender stays the page under it: its heading, its title and its path.
     await expect(week).toBeAttached();
     await expect(page).toHaveTitle(title);
@@ -322,6 +324,8 @@ test.describe('the panel over a page that has none of its own', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Hej Testa' })).toBeVisible();
     await expect(drawer.locator('#card-fakturor')).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(1);
+    // Hem has the box, and the same card offers it again.
+    await expect(drawer.locator('#card-fakturor').getByRole('button', { name: 'Lägg till i samtalet' })).toBeVisible();
   });
 
   test('opened by its address the card is there after a load, and ✕ leaves Kalender without the card', async ({

@@ -92,8 +92,9 @@ const rowTitle = ['name', 'title', 'label', 'supplier'];
 const NEVER = 'not all';
 
 /**
- * Found text as objects (D12, D26): every hit is numbered as the answer cites it, opens where it lives and can be added to
- * the conversation as a chip. The row itself is not interactive, so its two buttons are the only stops (Astryx's rule).
+ * Found text as objects (D12, D26): every hit is numbered as the answer cites it, opens where it lives and, where the
+ * page has a box, can be added to the conversation as a chip. The row itself is not interactive, so its buttons are the
+ * only stops (Astryx's rule).
  * A hit about a person or a unit (D97 item 6, artboard P) leads to them instead of to one source's record: its name is
  * the link, and a hit several sources answered for names them all at the end of its line.
  */
@@ -121,6 +122,11 @@ function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((vie
             const meta = [merged ? '' : r.source, r.owner, reviewLabel(reviewed), r.stale ? '' : note.toLowerCase()]
               .filter(Boolean)
               .join(' · ');
+            // A hit whose source declares its view (D38) opens here, drawn by Startsidan; the link still leads to the
+            // source. A hit about an entity leads to the entity instead. "Lägg till i samtalet" only where the page has
+            // a box (D107 rule 6); a hit with none of the three has no line of buttons.
+            const viewHref = !r.subject && r.view && hrefFor ? hrefFor(r.view) : null;
+            const link = !r.subject && r.link ? r.link : null;
             return (
               <ListItem
                 key={ref}
@@ -156,25 +162,28 @@ function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((vie
                         {r.stale && note && <Badge variant="warning" label={note} />}
                       </HStack>
                     )}
-                    <HStack gap={1} wrap="wrap">
-                      {/* A hit whose source declares its view (D38) opens here, drawn by Startsidan; the link still leads to the source. A hit about an entity leads to the entity instead. */}
-                      {!r.subject && r.view && hrefFor && (
-                        <Button size="sm" variant="secondary" label={r.view.title} href={hrefFor(r.view)} />
-                      )}
-                      {!r.subject && r.link && (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          label={r.view ? `Öppna i ${r.source}` : 'Öppna'}
-                          href={r.link}
-                          target="_blank"
-                        />
-                      )}
-                      <AddToConversation
-                        added={inConversation}
-                        onAdd={() => talk.addChip({ ref, kind: 'document', label: r.label })}
-                      />
-                    </HStack>
+                    {(viewHref || link || talk.hasBox) && (
+                      <HStack gap={1} wrap="wrap">
+                        {viewHref && r.view && (
+                          <Button size="sm" variant="secondary" label={r.view.title} href={viewHref} />
+                        )}
+                        {link && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            label={r.view ? `Öppna i ${r.source}` : 'Öppna'}
+                            href={link}
+                            target="_blank"
+                          />
+                        )}
+                        {talk.hasBox && (
+                          <AddToConversation
+                            added={inConversation}
+                            onAdd={() => talk.addChip({ ref, kind: 'document', label: r.label })}
+                          />
+                        )}
+                      </HStack>
+                    )}
                   </VStack>
                 }
               />

@@ -333,6 +333,9 @@ test.describe('Personal', () => {
       await expect(panel.getByText('Tre korta sjukperioder sedan juni.', { exact: false })).toBeVisible();
       await expect(panel.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
       await expect(panel.getByRole('button', { name: 'Se mönstret' })).toBeVisible();
+      // Personal has no question box, so nothing offers to add the card to one (D107 rule 6).
+      await expect(panel.getByRole('button', { name: 'Inte nu', exact: true }).first()).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
       // Beside the card the list is whole, as it was.
       await expect(page.getByRole('table')).toBeVisible();
       await expect(row(page, 'Erik Sandström').getByText('Sjuk · dag 1', { exact: true })).toBeVisible();
