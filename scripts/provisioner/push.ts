@@ -105,6 +105,8 @@ const userBody = (p: DirectoryPerson) => ({
   displayName: fullName(p),
   name: { formatted: fullName(p), givenName: p.givenName, familyName: p.familyName },
   emails: [{ value: p.email, type: 'work', primary: true }],
+  // D110: the standard attribute, sent when the source holds one. A `PUT` without it clears the title in Clew.
+  ...(p.title ? { title: p.title } : {}),
   active: p.active,
 });
 export interface PushSummary {

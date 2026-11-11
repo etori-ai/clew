@@ -16,8 +16,9 @@ import type { Locator, Page } from '@playwright/test';
 /**
  * Användare (D62, D68, D85, D100): the provisioned people a page at a time with unit, role, capabilities and whether
  * they have signed in, narrowed by a search and four filters, and the mapping from a group to a capability that an
- * administrator adds and removes, and the catalogues' keys: one is issued, replaced and taken back (D107). Keyboard,
- * structure, announcements, axe and reflow, at desktop, phone and 320 px.
+ * administrator adds and removes, and the catalogues' keys: one is issued, replaced and taken back (D107). A person's
+ * title stands under the name when the catalogue sent one (D110). Keyboard, structure, announcements, axe and reflow,
+ * at desktop, phone and 320 px.
  */
 /** The line over the list that counts the people: Astryx's own live regions repeat other words about them. */
 const readout = (page: Page) => page.getByRole('status').filter({ hasText: /^\d+ (av \d+ )?person(er)?$/ });
@@ -174,6 +175,27 @@ test.describe('users administration', () => {
       await search.fill('x'.repeat(300));
       await expect(search).toHaveValue('x'.repeat(200));
       await expect(readout(page)).toHaveText('0 av 4 personer');
+    });
+    test('a title from the catalogue stands under the name, a person without one has none, and the search finds it (D110)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/users');
+      const people = page.getByRole('table').first(),
+        cells = (name: RegExp) => people.getByRole('row', { name }).getByRole('cell');
+      await expect(
+        cells(/Hillevi Berg/)
+          .first()
+          .getByText('Rektor', { exact: true }),
+      ).toBeVisible();
+      // The title is the catalogue's word and the role is Clew's: both are on the row, and neither stands in for the other.
+      await expect(cells(/Hillevi Berg/).nth(2)).toHaveText('Chef');
+      // A catalogue that sends no title leaves the name and the user name, and no words about what is missing.
+      await expect(cells(/Omar Ny/).first()).toHaveText('Omar Nyomar');
+      await filters(page).getByRole('searchbox', { name: 'Sök person' }).pressSequentially('rektor');
+      await expect(readout(page)).toHaveText('1 av 4 personer');
+      await expect(people.locator('tbody tr')).toHaveText([/Hillevi Berg/]);
     });
     test('a name typed on a later page is one question, from the first page', async ({ page, api }) => {
       api.admin = true;
@@ -452,7 +474,8 @@ test.describe('users administration', () => {
       api.people = [...usersPeople(), ...manyPeople()];
       await open(page, '/admin/users?role=manager');
       const people = page.getByRole('list', { name: 'Personer' }).getByRole('listitem');
-      await expect(people).toHaveText([/Hillevi Berg.*Bergsåkers skola · chef/]);
+      // The title first, as the catalogue words it (D110), then where the person is placed and what they are there.
+      await expect(people).toHaveText([/Hillevi Berg.*Rektor.*Bergsåkers skola · chef/]);
       await page.getByRole('button', { name: 'Rensa filter' }).click();
       await expect(readout(page)).toHaveText('64 personer');
       await expect(people).toHaveCount(25);
@@ -475,6 +498,8 @@ test.describe('users administration', () => {
       await expect(filters(page).getByRole('combobox', { name: 'Status' })).toContainText('Status: Inte inloggad ännu');
       await expect(pager(page)).toContainText('Sida 1 av 3');
       await expect(page.getByRole('list', { name: 'Inläsning från katalogen' })).toContainText('Tyst i över två dygn');
+      // A title longer than the column wraps inside its row (D110).
+      await expect(page.getByRole('list', { name: 'Personer' })).toContainText('digitalisering och välfärdsteknik');
       expect(await reflowProblems(page)).toEqual([]);
     });
     test('the dialog that shows a key reflows at 320 px, the key wrapped inside it (D107)', async ({ page, api }) => {

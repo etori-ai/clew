@@ -102,6 +102,46 @@ const settled = (promise: Promise<unknown>) => {
   );
   return () => done;
 };
+test('a title PostgreSQL cannot hold does not stop the deactivation beside it, and a name it cannot hold is refused by name (D110)', async () => {
+  const { p, user, scim } = stack();
+  const { id } = await scim.createUser(p, { ...user(1), title: 'Fritids\u0000ledare' }, BASE);
+  const row = async () =>
+    (
+      await database()
+        .select({ title: schema.people.title, enabled: schema.people.enabled, name: schema.people.name })
+        .from(schema.people)
+        .where(eq(schema.people.id, id))
+    )[0];
+  expect(await row()).toEqual({ title: 'Fritids ledare', enabled: true, name: 'Person 1' });
+  // The directory sends the leaver's last title with the deactivation, as Entra does: the row is written.
+  await scim.patchUser(
+    p,
+    id,
+    {
+      schemas: [PATCH],
+      Operations: [
+        { op: 'replace', path: 'title', value: '\u0000Rektor\u0000\n(vik.)\u0000' },
+        { op: 'replace', path: 'active', value: false },
+      ],
+    },
+    BASE,
+  );
+  expect(await row()).toEqual({ title: 'Rektor (vik.)', enabled: false, name: 'Person 1' });
+  // A name is required, so one the store cannot hold is the client's to correct: a 400 that names it, not a 500.
+  await expect(
+    scim.patchUser(
+      p,
+      id,
+      { schemas: [PATCH], Operations: [{ op: 'replace', path: 'displayName', value: 'Bo\u0000 Ek' }] },
+      BASE,
+    ),
+  ).rejects.toMatchObject({
+    status: 400,
+    scimType: 'invalidValue',
+    detail: "Attribute 'displayName' holds a NUL character, which cannot be stored.",
+  });
+  expect((await row())?.name).toBe('Person 1');
+});
 test('concurrent user patches preserve the name and the deactivation', async () => {
   const { deps, p, store, user, scim } = stack();
   const { id } = await scim.createUser(p, user(1), BASE);

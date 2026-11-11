@@ -1,0 +1,1 @@
+ALTER TABLE "auth_person" ADD COLUMN "title" text;

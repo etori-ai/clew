@@ -82,6 +82,7 @@ provisioningContract('memory', async (): Promise<ProvisioningHarness> => {
           userName: p.id,
           name: p.id,
           email: p.id + '@example.test',
+          title: null,
           enabled: true,
           createdAt: T,
           updatedAt: T,

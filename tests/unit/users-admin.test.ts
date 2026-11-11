@@ -19,6 +19,7 @@ function stack() {
       userName: id,
       name,
       email: id + '@x.test',
+      title: null,
       enabled: true,
       createdAt: T,
       updatedAt: T,
@@ -170,6 +171,15 @@ describe('Användare', () => {
     expect(o.rows[1]).not.toHaveProperty('groups');
     expect(o.rows[2]).toMatchObject({ enabled: false, active: null, assignments: [] });
     // Reading writes nothing, so nothing is audited.
+    expect(store.state.audit).toEqual([]);
+  });
+  test("a person's title is on the row and is one of the things the words are looked for in (D110)", async () => {
+    const { usecases, admin, store } = stack();
+    store.state.users.get('hillevi')!.title = 'Rektor';
+    expect((await usecases.people(admin)).rows.map(u => u.title)).toEqual(['Rektor', null, null]);
+    expect((await usecases.people(admin, { text: 'REKTOR' })).rows.map(u => [u.name, u.title])).toEqual([
+      ['Hillevi Berg', 'Rektor'],
+    ]);
     expect(store.state.audit).toEqual([]);
   });
   test('the list is narrowed by words, role, status and capability, and says how many match of how many there are', async () => {

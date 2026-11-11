@@ -31,6 +31,7 @@ function directory() {
       userName: p.userName,
       name: p.name,
       email: null,
+      title: null,
       enabled: p.enabled ?? true,
       createdAt: T0,
       updatedAt: T0,

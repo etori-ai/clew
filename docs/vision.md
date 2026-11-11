@@ -36,8 +36,9 @@ a case, a room. Today that means knowing which system holds it. Clew is the plac
 box, results from every connector in the person's scope, each result an object (D12) that can be opened,
 added to the conversation or turned into a card. Clew does not own the employee directory. It holds only
 what it needs to identify and scope a person (subject, name, user name, work e-mail, units, roles and
-group memberships, pushed in through SCIM; D68); everything else about
-a colleague, such as phone, title, location and manager, is read from the organisation's directory as a
+group memberships, pushed in through SCIM; D68) and the one line a list of people is unreadable without, the
+person's title (D110, a person's title is pushed as SCIM's `title`); everything else about
+a colleague, such as phone, location and manager, is read from the organisation's directory as a
 pass-through connector. In Sundsvall that is Metakatalogen, the established system where all employee data
 is kept. Documents and cases are found
 where they live, through the source's own search as the user, and through Eneo's retrieval over indexed
