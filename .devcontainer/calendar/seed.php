@@ -25,13 +25,26 @@ $config = OC::$server->getConfig();
 $dav = OC::$server->get(OCA\DAV\CalDAV\CalDavBackend::class);
 if (!$groups->groupExists('calendar-staff')) $groups->createGroup('calendar-staff');
 // Synthetic people. Hillevi (rektor), Hassan (undersköterska) and Mikael (systemförvaltare) are the three personas
-// that can sign in; every persona gets a calendar. The rest are Hillevi's unit, the same five people with the same
-// addresses as Bergsåkers skola in scripts/provisioner/directory.ts.
+// that can sign in; every persona gets a calendar. The rest are Hillevi's unit: the five named people of Bergsåkers
+// skola in scripts/provisioner/directory.ts, and whoever else the directory puts on the unit, handed over by
+// `calendar.sh seed` in CLEW_CALENDAR_UNIT_PEOPLE as {"<user>": "<name>"}. The planner refuses to plan when one person
+// on the unit has no readable calendar, so the accounts follow the directory.
 $people = [
     'hillevi' => 'Hillevi Berg', 'hassan' => 'Hassan Ali', 'mikael' => 'Mikael Lund',
     'anna' => 'Anna Lindqvist', 'erik' => 'Erik Sandström', 'maria' => 'Maria Källström', 'johan' => 'Johan Byström',
     'karin' => 'Karin Lindqvist',
 ];
+$handed = getenv('CLEW_CALENDAR_UNIT_PEOPLE');
+if ($handed !== false && $handed !== '') {
+    $unit = json_decode($handed, true, 4, JSON_THROW_ON_ERROR);
+    if (!is_array($unit)) throw new RuntimeException('CLEW_CALENDAR_UNIT_PEOPLE is not an object');
+    foreach ($unit as $id => $name) {
+        if (!is_string($id) || !is_string($name) || !preg_match('/^[a-z][a-z0-9.-]{0,62}$/', $id) || $name === '') {
+            throw new RuntimeException('CLEW_CALENDAR_UNIT_PEOPLE holds an entry that is not a user name and a name');
+        }
+        $people[$id] ??= $name;
+    }
+}
 foreach ($people as $id => $name) {
     $user = $users->get($id) ?? $users->createUser($id, 'calendar-' . $id . '-local-only');
     $user->setEMailAddress($id . '@clew.test');

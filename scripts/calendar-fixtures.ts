@@ -6,6 +6,21 @@
  */
 import type { CalendarProvider } from '@clew/calendar/model';
 import { addDays, localInstant, today, weekStart } from '@clew/calendar/dates';
+import { developmentDirectory, fullName } from './provisioner/directory';
+
+/**
+ * Everyone the planner may propose a talk for (D96 item 3): the people provisioned on the units Hillevi manages, read
+ * from the development directory itself. The planner refuses to plan when one of them has no readable calendar, so
+ * both development calendars give each of them an account from this list, however many the directory generates.
+ */
+export function unitCalendarPeople(manager = 'hillevi'): Array<{ user: string; name: string; email: string }> {
+  const people = developmentDirectory.people;
+  const who = people.find(p => p.userName === manager);
+  const units = who ? [...(who.manager ? [who.department] : []), ...(who.alsoManages ?? [])] : [];
+  return people
+    .filter(p => p.userName !== manager && [p.department, ...(p.alsoIn ?? [])].some(u => units.includes(u)))
+    .map(p => ({ user: p.userName, name: fullName(p), email: p.email }));
+}
 
 export type CalendarFixture = {
   user: string;

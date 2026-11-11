@@ -23,7 +23,12 @@ SQL
     docker exec -u www-data -w /var/www/html "$nc" php occ app:enable calendar roomvox files_sharing user_oidc approval
     docker exec -u www-data -w /var/www/html "$nc" php occ config:app:set roomvox telemetry_enabled --value=false
     docker exec -u www-data -w /var/www/html "$nc" php occ config:app:set dav sendInvitations --value=yes
-    docker exec -u www-data -w /var/www/html "$nc" php /opt/clew-calendar/seed.php
+    # Everyone on Hillevi's unit gets a calendar account (the planner refuses to plan around an unreadable one), and
+    # who that is comes from the development directory: the app container prints the list, the seed creates the rest.
+    app=$(compose ps -q app)
+    unit_people=''
+    if [ -n "$app" ]; then unit_people=$(docker exec -w /workspace "$app" bun scripts/calendar-seed.ts --unit-people); fi
+    docker exec -u www-data -w /var/www/html -e CLEW_CALENDAR_UNIT_PEOPLE="$unit_people" "$nc" php /opt/clew-calendar/seed.php
     # Approval (D101) is called as the person with the token Clew exchanges for the audience `nextcloud`
     # (scripts/auth-setup.ts). user_oidc checks its signature, issuer, expiry and that `aud` holds the client id, and
     # names the existing account by `preferred_username`; with auto_provision off a token naming no account is refused
@@ -34,7 +39,6 @@ SQL
       --discoveryuri=http://keycloak.orb.local:8090/realms/clew/.well-known/openid-configuration \
       --check-bearer=1 --bearer-provisioning=0 --unique-uid=0 --mapping-uid=preferred_username
     docker exec -u www-data -w /var/www/html "$nc" php /opt/clew-calendar/approval-seed.php
-    app=$(compose ps -q app)
     if [ -n "$app" ]; then docker exec -w /workspace "$app" bun scripts/calendar-seed.ts; fi
     ;;
   stop) compose stop calendar calendar-mail ;;
