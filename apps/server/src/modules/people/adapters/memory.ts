@@ -1,4 +1,5 @@
 import {
+  bySwedish,
   unitGroupOf,
   type Assignment,
   type Grant,
@@ -226,6 +227,32 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
     async setGroupMembers(groupId, personIds) {
       for (const key of [...state.members]) if (splitKey(key)[0] === groupId) state.members.delete(key);
       for (const p of personIds) state.members.add(memberKey(groupId, p));
+    },
+    async searchUsers(organisationId, search, p) {
+      const folded = (value: string | null) => (value ?? '').toLocaleLowerCase('sv');
+      const matching = [...state.users.values()]
+        .filter(u => {
+          if (u.organisationId !== organisationId) return false;
+          const granted = state.grants.has(u.id),
+            bound = state.bindings.has(u.id),
+            status = !u.enabled ? 'disabled' : !granted ? 'no-access' : bound ? 'signed-in' : 'not-signed-in';
+          return (
+            (search.words ?? []).every(word =>
+              [u.name, u.userName, u.email].some(value => folded(value).includes(folded(word))),
+            ) &&
+            (!(search.unitIds || search.role) ||
+              (state.assignments.get(u.id) ?? []).some(
+                a => (!search.unitIds || search.unitIds.includes(a.unitId)) && (!search.role || a.role === search.role),
+              )) &&
+            (!search.status || search.status === status) &&
+            (search.capability === undefined || !!state.grants.get(u.id)?.capabilities.includes(search.capability))
+          );
+        })
+        .sort((a, b) => bySwedish(a.name, b.name) || a.id.localeCompare(b.id));
+      return {
+        total: matching.length,
+        rows: matching.slice(p.startIndex - 1, p.startIndex - 1 + p.count).map(u => ({ ...u })),
+      };
     },
     async assignmentsOf(personId) {
       return (state.assignments.get(personId) ?? [])

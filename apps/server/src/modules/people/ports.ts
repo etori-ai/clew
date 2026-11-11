@@ -8,6 +8,7 @@ import type {
   Placement,
   TreeUnit,
   UserRecord,
+  UserSearch,
 } from './domain';
 
 /** Clew's own user records; identity and unit are always taken from the authenticated actor. */
@@ -129,7 +130,12 @@ export interface ProvisionTx {
   deleteGroup(id: string): Promise<void>;
   groupMembers(groupId: string): Promise<Array<{ id: string; name: string }>>;
   setGroupMembers(groupId: string, personIds: readonly string[]): Promise<void>;
-  // Administration › Användare (D85).
+  // Administration › Användare (D85, D100).
+  /**
+   * The organisation's users that match the search, by name in Swedish order and then id: one page of them and how
+   * many match in all. A `count` of 0 counts and reads no rows.
+   */
+  searchUsers(organisationId: string, search: UserSearch, page: Page): Promise<Listed<UserRecord>>;
   assignmentsOf(personId: string): Promise<Array<{ unitId: string; unitLabel: string; role: Assignment['role'] }>>;
   /**
    * Personal (D94, D99): everyone assigned to each of the units, under the unit's id, with their role on it and by

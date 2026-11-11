@@ -1,7 +1,7 @@
-import { and, eq, gt, inArray, isNotNull, isNull, like, or, sql } from 'drizzle-orm';
+import { and, eq, gt, ilike, inArray, isNotNull, isNull, like, not, or, sql, type SQL } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
 import { writeAudit } from '@clew/db/threads';
-import { UNIT_KEY, unitGroupOf, type GroupRecord, type UserRecord } from '../domain';
+import { UNIT_KEY, unitGroupOf, type GroupRecord, type UserRecord, type UserSearch } from '../domain';
 import type { ProvisionStore, ProvisionTx, UserReads } from '../ports';
 
 /** Read the local user/grant tables; directory access is restricted to the actor's unit. */
@@ -73,6 +73,50 @@ const userMatch = (by: 'userName' | 'externalId', value: string) =>
  */
 const ROW_LOCK = 'no key update' as const;
 const groupColumn = { externalId: schema.groups.externalId, label: schema.groups.label } as const;
+/**
+ * D100: the people list's search as conditions on `auth_person`. A word is matched as written, so `%` and `_` in it
+ * are escaped; `ilike` folds case by the database's own rules, which cover Swedish in a UTF-8 database.
+ */
+const personHas = (table: SQL, ...conditions: Array<SQL | undefined>) =>
+  sql`exists (select 1 from ${table} where ${and(...conditions)})`;
+function userSearchConditions(search: UserSearch): Array<SQL | undefined> {
+  const granted = personHas(sql`${schema.accessGrants}`, eq(schema.accessGrants.personId, schema.people.id)),
+    bound = personHas(sql`${schema.identityBindings}`, eq(schema.identityBindings.personId, schema.people.id));
+  return [
+    ...(search.words ?? []).map(word => {
+      const pattern = '%' + word.replace(/[\\%_]/g, '\\$&') + '%';
+      return or(
+        ilike(schema.people.name, pattern),
+        ilike(schema.people.userName, pattern),
+        ilike(schema.people.email, pattern),
+      );
+    }),
+    search.unitIds || search.role
+      ? personHas(
+          sql`${schema.assignments}`,
+          eq(schema.assignments.personId, schema.people.id),
+          search.unitIds ? inArray(schema.assignments.unitId, [...search.unitIds]) : undefined,
+          search.role ? eq(schema.assignments.role, search.role) : undefined,
+        )
+      : undefined,
+    search.status === 'disabled'
+      ? eq(schema.people.enabled, false)
+      : search.status === 'no-access'
+        ? and(eq(schema.people.enabled, true), not(granted))
+        : search.status === 'signed-in'
+          ? and(eq(schema.people.enabled, true), granted, bound)
+          : search.status === 'not-signed-in'
+            ? and(eq(schema.people.enabled, true), granted, not(bound))
+            : undefined,
+    search.capability === undefined
+      ? undefined
+      : personHas(
+          sql`${schema.accessGrants}`,
+          eq(schema.accessGrants.personId, schema.people.id),
+          sql`${schema.accessGrants.capabilities} @> ${JSON.stringify([search.capability])}::jsonb`,
+        ),
+  ];
+}
 const provisionerColumns = {
   id: schema.provisioners.id,
   organisationId: schema.provisioners.organisationId,
@@ -331,6 +375,24 @@ export function postgresProvisionStore(): ProvisionStore {
       await tx.delete(schema.groupMembers).where(eq(schema.groupMembers.groupId, groupId));
       if (personIds.length)
         await tx.insert(schema.groupMembers).values([...new Set(personIds)].map(personId => ({ groupId, personId })));
+    },
+    async searchUsers(organisationId, search, page) {
+      const where = and(eq(schema.people.organisationId, organisationId), ...userSearchConditions(search));
+      const [counted] = await tx
+        .select({ total: sql<number>`count(*)::int` })
+        .from(schema.people)
+        .where(where);
+      // Swedish order (å, ä and ö after z) from the ICU collation, which every build of PostgreSQL with ICU carries.
+      const rows = page.count
+        ? await tx
+            .select(userColumns)
+            .from(schema.people)
+            .where(where)
+            .orderBy(sql`${schema.people.name} collate "sv-x-icu"`, schema.people.id)
+            .limit(page.count)
+            .offset(page.startIndex - 1)
+        : [];
+      return { total: counted?.total ?? 0, rows: rows.map(userRecord) };
     },
     async assignmentsOf(personId) {
       return tx

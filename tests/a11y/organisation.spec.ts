@@ -90,7 +90,11 @@ test.describe('organisation', () => {
       api.admin = true;
       await open(page, '/admin/organisation');
       await expect(page.getByText('2 personer saknar enhet')).toBeVisible();
-      await expect(page.getByRole('link', { name: 'Till Användare' })).toHaveAttribute('href', '/admin/users');
+      // The link lands on the people it is about: the list narrowed to those without access (D100).
+      await expect(page.getByRole('link', { name: 'Till Användare' })).toHaveAttribute(
+        'href',
+        '/admin/users?status=no-access',
+      );
       await expect(page.getByText('1 enhet har personer men ingen chef')).toBeVisible();
       await expect(page.getByText('1 enhet saknar enhetsgrupp')).toBeVisible();
       const tree = page.getByRole('tree', { name: 'Organisationsträd' });

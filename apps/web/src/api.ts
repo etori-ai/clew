@@ -6,6 +6,8 @@ import type {
   TalksResult,
   GroupCapabilityInputType,
   UsersAdminOverview,
+  UsersAdminPage,
+  UsersAdminQueryType,
   StaffOverview,
   ManifestReference,
   DocumentRequest,
@@ -291,6 +293,8 @@ export const api = {
     groups: () => call<{ groups: Array<{ id: string; label: string }> }>('/api/admin/groups'),
     // Användare (D62, D85): the provisioned people and the group-capability rows.
     users: () => call<UsersAdminOverview>('/api/admin/users'),
+    // One page of the people (D100). A read sent as a body, so a searched name is in no address.
+    usersPage: (query: UsersAdminQueryType) => post<UsersAdminPage>('/api/admin/users/search', query),
     addGroupCapability: (input: GroupCapabilityInputType) =>
       post<UsersAdminOverview>('/api/admin/users/group-capabilities', input),
     removeGroupCapability: (input: GroupCapabilityInputType) =>

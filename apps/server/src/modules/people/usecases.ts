@@ -13,6 +13,9 @@ import {
   type StaffUnit,
   type UserAdminRow,
   type UsersAdminOverview,
+  type UsersAdminPage,
+  type UsersAdminQueryType,
+  USERS_PAGE_SIZES,
 } from '@clew/contracts';
 import { ForbiddenError, InputError } from '../../context';
 import {
@@ -30,6 +33,7 @@ import {
   applyUserPatch,
   assertAcceptedKey,
   assertAcceptedParent,
+  branchOf,
   bySwedish,
   closesCycle,
   deriveAuthority,
@@ -42,6 +46,7 @@ import {
   parseFilter,
   project,
   sameGrant,
+  searchWords,
   unitGroupOf,
   unitOfKey,
   userFields,
@@ -56,6 +61,7 @@ import {
   type TreeUnit,
   type UserFields,
   type UserRecord,
+  type UserSearch,
 } from './domain';
 import type { Provisioner, ProvisionStore, ProvisionTx } from './ports';
 
@@ -591,6 +597,10 @@ export type ScimUsecases = ReturnType<typeof scimUsecases>;
  * units and roles are read only here; they come from the provisioner. The one thing written is D85's rows, a group gives
  * a capability: audited per row (`group-capability.added`, `group-capability.removed`), and every current member of the
  * group is re-derived in the same transaction, so a grant never lags the row that produced it.
+ *
+ * The people are read a page at a time (D100): the store narrows, orders and counts, and only the rows of the page are
+ * filled in with unit, grant, groups and binding, so a page costs the same in an organisation of two hundred and one of
+ * twenty thousand. A read writes nothing, so it has no audit row.
  */
 export const USERS_ADMIN_CAPABILITY: Capability = 'admin.users';
 /**
@@ -604,29 +614,28 @@ export function usersAdminUsecases(deps: { store: ProvisionStore; clock: () => D
     if (!persona.capabilities.includes(USERS_ADMIN_CAPABILITY)) throw new ForbiddenError();
   };
   const sorted = (capabilities: readonly string[]) => [...capabilities].filter(isCapability).sort();
+  async function rowOf(tx: ProvisionTx, u: UserRecord): Promise<UserAdminRow> {
+    const grant = await tx.grant(u.id);
+    return {
+      id: u.id,
+      name: u.name,
+      userName: u.userName,
+      externalId: u.externalId,
+      email: u.email,
+      enabled: u.enabled,
+      bound: await tx.bound(u.id),
+      assignments: await tx.assignmentsOf(u.id),
+      active: grant ? { unitId: grant.unitId, unitLabel: grant.unitLabel, role: grant.role } : null,
+      capabilities: grant ? sorted(grant.capabilities) : [],
+      groups: (await tx.userGroups(u.id)).map(g => ({ externalId: g.externalId, label: g.label })),
+    };
+  }
   async function overviewWithin(tx: ProvisionTx, persona: AuthenticatedContext): Promise<UsersAdminOverview> {
-    const users: UserAdminRow[] = [];
-    for (let startIndex = 1; ;) {
-      const page = await tx.listUsers(persona.organisationId, { startIndex, count: 200 });
-      for (const u of page.rows) {
-        const grant = await tx.grant(u.id);
-        users.push({
-          id: u.id,
-          name: u.name,
-          userName: u.userName,
-          externalId: u.externalId,
-          email: u.email,
-          enabled: u.enabled,
-          bound: await tx.bound(u.id),
-          assignments: await tx.assignmentsOf(u.id),
-          active: grant ? { unitId: grant.unitId, unitLabel: grant.unitLabel, role: grant.role } : null,
-          capabilities: grant ? sorted(grant.capabilities) : [],
-          groups: (await tx.userGroups(u.id)).map(g => ({ externalId: g.externalId, label: g.label })),
-        });
-      }
-      startIndex += page.rows.length;
-      if (!page.rows.length || startIndex > page.total) break;
-    }
+    const tree = await tx.unitTree(persona.organisationId),
+      unitLabel = new Map(tree.map(n => [n.id, n.label])),
+      units = tree
+        .map(n => ({ id: n.id, label: n.label, parentLabel: (n.parentId && unitLabel.get(n.parentId)) || null }))
+        .sort((a, b) => bySwedish(a.label, b.label) || a.id.localeCompare(b.id));
     const groups = (await tx.listGroups(persona.organisationId, { startIndex: 1, count: 10_000 })).rows
       .filter(g => g.externalId)
       .map(g => ({ id: g.externalId!, label: g.label }))
@@ -644,7 +653,6 @@ export function usersAdminUsecases(deps: { store: ProvisionStore; clock: () => D
           (a.groupLabel ?? a.groupExternalId).localeCompare(b.groupLabel ?? b.groupExternalId, 'sv') ||
           a.capability.localeCompare(b.capability),
       );
-    users.sort((a, b) => a.name.localeCompare(b.name, 'sv') || a.id.localeCompare(b.id));
     const at = deps.clock().toISOString(),
       provisioners = (await tx.provisioners(persona.organisationId)).map(p => ({
         id: p.id,
@@ -652,7 +660,7 @@ export function usersAdminUsecases(deps: { store: ProvisionStore; clock: () => D
         lastSeenAt: p.lastSeenAt,
         silent: p.lastSeenAt === null || since(at, p.lastSeenAt) > PROVISIONER_SILENT_MS,
       }));
-    return { users, groupCapabilities, groups, capabilities: [...CAPABILITIES], provisioners };
+    return { groupCapabilities, groups, capabilities: [...CAPABILITIES], units, provisioners };
   }
   async function change(persona: AuthenticatedContext, input: GroupCapabilityInputType, present: boolean) {
     require(persona);
@@ -678,6 +686,36 @@ export function usersAdminUsecases(deps: { store: ProvisionStore; clock: () => D
     async overview(persona: AuthenticatedContext) {
       require(persona);
       return deps.store.transaction(tx => overviewWithin(tx, persona));
+    },
+    /**
+     * One page of the organisation's people (D100), by name in Swedish order. A unit is asked for with everything
+     * below it in the tree, so the count is the one Organisation gives the unit's branch, deactivated people included
+     * here. A page past the end, which a list that became shorter leaves behind, answers with the last page.
+     */
+    async people(persona: AuthenticatedContext, query: UsersAdminQueryType = {}): Promise<UsersAdminPage> {
+      require(persona);
+      const pageSize = query.pageSize ?? USERS_PAGE_SIZES[0];
+      return deps.store.transaction(async tx => {
+        const search: UserSearch = {
+          words: searchWords(query.text),
+          ...(query.unitId === undefined
+            ? {}
+            : { unitIds: branchOf(await tx.unitTree(persona.organisationId), query.unitId) }),
+          ...(query.role === undefined ? {} : { role: query.role }),
+          ...(query.status === undefined ? {} : { status: query.status }),
+          ...(query.capability === undefined ? {} : { capability: query.capability }),
+        };
+        const read = (page: number) =>
+          tx.searchUsers(persona.organisationId, search, { startIndex: (page - 1) * pageSize + 1, count: pageSize });
+        let page = query.page ?? 1,
+          listed = await read(page);
+        if (!listed.rows.length && listed.total) listed = await read((page = Math.ceil(listed.total / pageSize)));
+        if (!listed.total) page = 1;
+        const rows: UserAdminRow[] = [];
+        for (const u of listed.rows) rows.push(await rowOf(tx, u));
+        const all = (await tx.searchUsers(persona.organisationId, {}, { startIndex: 1, count: 0 })).total;
+        return { rows, total: listed.total, all, page, pageSize };
+      });
     },
     addGroupCapability: (persona: AuthenticatedContext, input: GroupCapabilityInputType) =>
       change(persona, input, true),
