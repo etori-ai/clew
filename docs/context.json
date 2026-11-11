@@ -1228,7 +1228,7 @@
       "number": 106,
       "path": "docs/decisions/D106-the-documentation-site-is-vitepress-over-docs-as-it-is.md",
       "title": "D106 · The documentation site is VitePress over `docs/` as it is, published to GitHub Pages",
-      "status": "provisional (product owner chose the generator, 2026-11-11; accepted when the site has been published from `main` and read there)",
+      "status": "provisional (product owner chose the generator, 2026-11-11; accepted when the site has been published from `main` and read there); item 8 added 2026-11-11 (product owner: the page for operations is in English and Swedish, and the reader chooses)",
       "date": "2026-11-11",
       "area": "platform"
     },
@@ -2540,6 +2540,20 @@
       ]
     },
     {
+      "path": "docs/guides/provisioning-for-operations.md",
+      "title": "Provisioning: what operations deliver",
+      "category": "integrator-guide",
+      "headings": [
+        "Who delivers what",
+        "Answer these before anything is built",
+        "The directory team: a provisioner",
+        "The identity provider team: sign-in",
+        "The hosting team: address, key and environments",
+        "What Clew gives back",
+        "Not decided yet"
+      ]
+    },
+    {
       "path": "docs/guides/testing-and-deployment.md",
       "title": "Test, register and operate a connector",
       "category": "integrator-guide",
@@ -2638,6 +2652,7 @@
       "headings": [
         "What is published",
         "How a document becomes a page",
+        "Swedish pages",
         "Build and look at it",
         "Publishing",
         "Upgrading"
@@ -3697,6 +3712,26 @@
       "title": "Reviews and explorations",
       "category": "review-history",
       "headings": []
+    },
+    {
+      "path": "docs/sv/README.md",
+      "title": "Clew på svenska",
+      "category": "integrator-guide",
+      "headings": []
+    },
+    {
+      "path": "docs/sv/guides/provisioning-for-operations.md",
+      "title": "Inläsning av personer och organisation: vad driften levererar",
+      "category": "integrator-guide",
+      "headings": [
+        "Vem levererar vad",
+        "Svara på det här innan något byggs",
+        "Katalogteamet: en provisionerare",
+        "Inloggning: IdP-teamet",
+        "Drift: adress, nyckel och testinstallation",
+        "Vad Clew ger tillbaka",
+        "Inte avgjort ännu"
+      ]
     },
     {
       "path": "docs/vision.md",

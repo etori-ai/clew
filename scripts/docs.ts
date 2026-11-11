@@ -390,6 +390,15 @@ for (const path of docPaths) {
     }
   }
 }
+/** A Swedish page translates the English page at its path (D106 item 8): there is one, with the same headings. */
+const headingLevels = (path: string) =>
+  [...withoutFences(read(path)).matchAll(/^(#{1,6})\s/gm)].map(match => match[1]!.length).join(' ');
+for (const path of docPaths.filter(p => p.startsWith('docs/sv/') && p !== 'docs/sv/README.md')) {
+  const english = path.replace('docs/sv/', 'docs/');
+  if (!existsSync(resolve(root, english))) failures.push(`${path}: there is no ${english} for it to translate`);
+  else if (headingLevels(path) !== headingLevels(english))
+    failures.push(`${path}: its headings differ in number or level from ${english}; change both pages together`);
+}
 for (const path of [...Object.values(canonical), ...entrypoints])
   if (!existsSync(resolve(root, path))) failures.push(`Missing canonical source: ${path}`);
 if (failures.length) {
