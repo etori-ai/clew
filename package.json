@@ -36,7 +36,8 @@
     "check": "bun run format:check && bun run typecheck && bun run deps && bun run purity && bun run test && bun run test:node && bun run docs:check",
     "docs:generate": "bun scripts/docs.ts",
     "docs:smoke": "bun scripts/docs-smoke.ts",
-    "docs:check": "bun scripts/docs.ts --check && bun run docs:smoke"
+    "docs:check": "bun scripts/docs.ts --check && bun run docs:smoke",
+    "docs:site": "bun install --cwd site --frozen-lockfile && bun run --cwd site build"
   },
   "overrides": {
     "@esbuild-kit/core-utils>esbuild": "0.25.12"

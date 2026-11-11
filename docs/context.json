@@ -1192,6 +1192,15 @@
       "status": "accepted (product owner, 2026-11-11)",
       "date": "2026-11-11",
       "area": "platform"
+    },
+    {
+      "key": "D106-the-documentation-site-is-vitepress-over-docs-as-it-is",
+      "number": 106,
+      "path": "docs/decisions/D106-the-documentation-site-is-vitepress-over-docs-as-it-is.md",
+      "title": "D106 · The documentation site is VitePress over `docs/` as it is, published to GitHub Pages",
+      "status": "provisional (product owner chose the generator, 2026-11-11; accepted when the site has been published from `main` and read there)",
+      "date": "2026-11-11",
+      "area": "platform"
     }
   ],
   "documents": [
@@ -1691,6 +1700,12 @@
     {
       "path": "docs/decisions/D105-the-repository-explains-itself-without-a-handover-file.md",
       "title": "D105 · The repository explains itself without a handover file",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D106-the-documentation-site-is-vitepress-over-docs-as-it-is.md",
+      "title": "D106 · The documentation site is VitePress over `docs/` as it is, published to GitHub Pages",
       "category": "decision-history",
       "headings": []
     },
@@ -2517,6 +2532,18 @@
         "Part 5 · What a core domain consists of",
         "The candidates on 2026-11-10",
         "When the answer changes"
+      ]
+    },
+    {
+      "path": "docs/maintainers/documentation-site.md",
+      "title": "Documentation site",
+      "category": "maintainer-guide",
+      "headings": [
+        "What is published",
+        "How a document becomes a page",
+        "Build and look at it",
+        "Publishing",
+        "Upgrading"
       ]
     },
     {

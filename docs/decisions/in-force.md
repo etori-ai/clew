@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**100 in force**: 97 accepted and 3 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 8 proposed and not decided. 5 no longer in force.
+**101 in force**: 97 accepted and 4 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 8 proposed and not decided. 5 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -86,6 +86,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D91 · One logger, OpenTelemetry export, and the model turn in the audit trail](D91-one-logger-opentelemetry-export-and-the-model-turn-in-the-audit-trail.md) | 2026-11-09 | accepted |  |
 | [D102 · A decision is provisional until something outside the repository has tested it, and small adjustments are not numbered](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md) | 2026-11-10 | accepted |  |
 | [D105 · The repository explains itself without a handover file](D105-the-repository-explains-itself-without-a-handover-file.md) | 2026-11-11 | accepted |  |
+| [D106 · The documentation site is VitePress over `docs/` as it is, published to GitHub Pages](D106-the-documentation-site-is-vitepress-over-docs-as-it-is.md) | 2026-11-11 | provisional |  |
 
 ## Interface
 

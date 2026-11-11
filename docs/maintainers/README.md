@@ -15,6 +15,7 @@ Start with the [product overview](../overview.md) and [architecture overview](..
 | See which decisions bind today | [Decisions in force](../decisions/in-force.md) |
 | Recover rationale | [Decision index](../decisions/README.md), [reviews](../reviews/README.md), frozen [history](../history/README.md) |
 | See what is undecided | [Open questions](open-questions.md) |
+| Build, preview or publish the documentation site | [Documentation site](documentation-site.md) |
 | Record a licence check | [Licence record](../reference/licences.md) |
 | Find a design canvas | [Design canvases](../reference/design-canvases.md) |
 
