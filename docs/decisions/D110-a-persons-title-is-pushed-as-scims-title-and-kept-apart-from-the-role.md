@@ -56,6 +56,8 @@
    the five required attributes of a user, and a group's name, key, parent and members, a NUL is now a 400
    `invalidValue` that names the attribute, where it was a 500 that named nothing.
 
+Items 8 and 9 were the first two of a class. [The full review of the SCIM server](../reviews/2026-11-11-scim-full-review.md) found the rest, and [D111](D111-a-deactivation-is-never-refused-for-what-stands-beside-it.md) records the rules that came of it: one way of reading a request, no yes to what the server did not do, and no deactivation refused for what stands beside it.
+
 **What this changes in earlier records.**
 
 - [D97](D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md) item 9 said "No employee file: title,

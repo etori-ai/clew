@@ -47,7 +47,9 @@ test('a person holds several assignments, the units are listed by label, and a g
       .insert(schema.groups)
       .values({ id: group, organisationId: 'test', externalId: group, label: 'Any directory group' });
     await tx.insert(schema.groupMembers).values({ groupId: group, personId: lena });
-    await tx.insert(schema.groupCapabilities).values({ groupExternalId: group, capability: 'admin.users' });
+    await tx
+      .insert(schema.groupCapabilities)
+      .values({ organisationId: 'test', groupExternalId: group, capability: 'admin.users' });
   });
   const held = await database().select().from(schema.assignments).where(eq(schema.assignments.personId, lena));
   expect(held.map(a => a.role).sort()).toEqual(['employee', 'manager']);

@@ -1,10 +1,11 @@
 import { Type, type Static } from 'typebox';
 
 /**
- * The SCIM 2.0 contract Clew serves (RFC 7643, RFC 7644; D68): what a provisioner may send. Inputs are permissive on
- * purpose, as the standard requires: unknown attributes and extension schemas are accepted and ignored. What D68 needs
- * beyond the standard (`externalId`, a display name, a work address) is checked in the use case, not the schema, so the
- * error can name the attribute. Error texts are English: a machine reads them, never a person in the product.
+ * The SCIM 2.0 contract Clew serves (RFC 7643, RFC 7644; D68): the names, the error and the resources it answers.
+ * What a provisioner may send is read in `domain.ts`, attribute by attribute and the same way for a full
+ * representation and for a patch, so every refusal names the attribute; unknown attributes and extension schemas are
+ * accepted and ignored, as the standard requires. Error texts are English: a machine reads them, never a person in
+ * the product.
  */
 export const SCIM = {
   user: 'urn:ietf:params:scim:schemas:core:2.0:User',
@@ -22,66 +23,14 @@ export const SCIM_CONTENT_TYPE = 'application/scim+json; charset=utf-8';
 /** The most rows one list answers (ServiceProviderConfig `filter.maxResults`). */
 export const SCIM_MAX_RESULTS = 200;
 
-const text = Type.String({ minLength: 1, maxLength: 512 });
-export const ScimEmailSchema = Type.Object(
-  { value: text, type: Type.Optional(Type.String()), primary: Type.Optional(Type.Boolean()) },
-  { additionalProperties: true },
-);
-export const ScimUserInputSchema = Type.Object(
-  {
-    schemas: Type.Optional(Type.Array(Type.String())),
-    externalId: Type.Optional(text),
-    userName: text,
-    displayName: Type.Optional(text),
-    name: Type.Optional(
-      Type.Object(
-        {
-          formatted: Type.Optional(Type.String()),
-          givenName: Type.Optional(Type.String()),
-          familyName: Type.Optional(Type.String()),
-        },
-        { additionalProperties: true },
-      ),
-    ),
-    emails: Type.Optional(Type.Array(ScimEmailSchema)),
-    // D110: optional, and never a reason to refuse a person, so any value passes the schema and `titleOf` reads it.
-    title: Type.Optional(Type.Unknown()),
-    active: Type.Optional(Type.Boolean()),
-  },
-  { additionalProperties: true },
-);
-export type ScimUserInput = Static<typeof ScimUserInputSchema>;
-export const ScimMemberSchema = Type.Object(
-  { value: text, display: Type.Optional(Type.String()), $ref: Type.Optional(Type.String()) },
-  { additionalProperties: true },
-);
-export const ScimGroupInputSchema = Type.Object(
-  {
-    schemas: Type.Optional(Type.Array(Type.String())),
-    externalId: Type.Optional(text),
-    displayName: text,
-    members: Type.Optional(Type.Array(ScimMemberSchema)),
-  },
-  { additionalProperties: true },
-);
-export type ScimGroupInput = Static<typeof ScimGroupInputSchema>;
-export const ScimPatchSchema = Type.Object(
-  {
-    schemas: Type.Array(Type.String()),
-    Operations: Type.Array(
-      Type.Object(
-        { op: Type.String(), path: Type.Optional(Type.String()), value: Type.Optional(Type.Unknown()) },
-        { additionalProperties: true },
-      ),
-      { minItems: 1, maxItems: 500 },
-    ),
-  },
-  { additionalProperties: true },
-);
-export type ScimPatch = Static<typeof ScimPatchSchema>;
-export type ScimPatchOperation = ScimPatch['Operations'][number];
+/** One operation of a PatchOp message, as `patchOperations` in the domain reads it out of a request body. */
+export interface ScimPatchOperation {
+  op: string;
+  path?: string;
+  value?: unknown;
+}
 
-export type ScimStatus = 400 | 401 | 403 | 404 | 409 | 413 | 500 | 501 | 503;
+export type ScimStatus = 400 | 401 | 403 | 404 | 405 | 409 | 413 | 500 | 501 | 503;
 /** RFC 7644 §3.12: `scimType` for a 400 names the kind of mistake; `detail` says which attribute. */
 export type ScimType =
   | 'invalidFilter'

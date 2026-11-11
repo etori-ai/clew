@@ -31,3 +31,9 @@ const summary = await push(scimClient(url, token), developmentDirectory, develop
 console.log(
   `Pushed the development directory to ${url}: ${summary.created} users created, ${summary.replaced} replaced, ${summary.deactivated} deactivated; ${summary.groupsCreated} groups created, ${summary.groupsReplaced} replaced, ${summary.groupsRemoved} removed.`,
 );
+if (summary.refused.length) {
+  console.error(`Clew refused ${summary.refused.length} of the people. Everybody else was sent.`);
+  for (const refused of summary.refused)
+    console.error(`  ${refused.userName} (${refused.externalId}): ${refused.detail}`);
+  process.exitCode = 1;
+}

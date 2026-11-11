@@ -57,6 +57,12 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
       });
       await store.transaction(async tx => {
         expect((await tx.readUser(p + '-org', a))?.userName).toBe('u:' + a);
+        // Which of many ids are users of the organisation, in one read: its own people, deactivated ones too, and
+        // nobody else's.
+        expect((await tx.usersAmong(p + '-org', [c, other, a, p + '-nobody'])).sort()).toEqual([a, c]);
+        expect(await tx.usersAmong(p + '-org', [])).toEqual([]);
+        const many = Array.from({ length: 2500 }, (_, i) => p + '-missing-' + i);
+        expect(await tx.usersAmong(p + '-org', [...many, b])).toEqual([b]);
         expect(await tx.readUser(p + '-org', other)).toBeUndefined();
         expect((await tx.readUser(p + '-org', a, true))?.id).toBe(a);
         expect(await tx.readUser(p + '-org', other, true)).toBeUndefined();
@@ -165,6 +171,14 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
       await h.store.transaction(async tx => {
         await tx.insertUser(userRow(a, p + '-org'));
         await tx.writeUnits(p + '-org', [{ id: p + '-u1', label: 'Enhet 1' }]);
+        // A unit row is the organisation's that wrote it (D101): another organisation does not read its label, and
+        // one that writes the unit after the first has left it takes the row over, organisation and label.
+        expect(await tx.unitLabels([p + '-u1', p + '-nowhere'], p + '-org')).toEqual({ [p + '-u1']: 'Enhet 1' });
+        expect(await tx.unitLabels([p + '-u1'], p + '-elsewhere')).toEqual({});
+        await tx.writeUnits(p + '-elsewhere', [{ id: p + '-u1', label: 'Annans enhet' }]);
+        expect(await tx.unitLabels([p + '-u1'], p + '-org')).toEqual({});
+        expect(await tx.unitLabels([p + '-u1'], p + '-elsewhere')).toEqual({ [p + '-u1']: 'Annans enhet' });
+        await tx.writeUnits(p + '-org', [{ id: p + '-u1', label: 'Enhet 1' }]);
         await tx.replaceAssignments(a, [{ unitId: p + '-u1', role: 'manager' }]);
         expect(await tx.assignmentsOf(a)).toEqual([{ unitId: p + '-u1', unitLabel: 'Enhet 1', role: 'manager' }]);
         // Personal (D94): the unit's people with their role on it, as the manager's page reads them.
@@ -183,14 +197,20 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
       await h.bind(a);
       await h.store.transaction(async tx => {
         expect(await tx.bound(a)).toBe(true);
-        expect(await tx.setGroupCapability(p + ':g', 'admin.users', true)).toBe(true);
-        expect(await tx.setGroupCapability(p + ':g', 'admin.users', true)).toBe(false);
-        expect((await tx.groupCapabilities()).filter(m => m.groupExternalId === p + ':g')).toEqual([
-          { groupExternalId: p + ':g', capability: 'admin.users' },
-        ]);
-        expect(await tx.setGroupCapability(p + ':g', 'admin.users', false)).toBe(true);
-        expect(await tx.setGroupCapability(p + ':g', 'admin.users', false)).toBe(false);
-        expect((await tx.groupCapabilities()).filter(m => m.groupExternalId === p + ':g')).toEqual([]);
+        const [org, elsewhere] = [p + '-org', p + '-elsewhere'];
+        expect(await tx.setGroupCapability(org, p + ':g', 'admin.users', true)).toBe(true);
+        expect(await tx.setGroupCapability(org, p + ':g', 'admin.users', true)).toBe(false);
+        expect(await tx.groupCapabilities(org)).toEqual([{ groupExternalId: p + ':g', capability: 'admin.users' }]);
+        // A row is the organisation's that wrote it (D101): another organisation neither reads it nor removes it,
+        // and may hold a row of its own on the same id.
+        expect(await tx.groupCapabilities(elsewhere)).toEqual([]);
+        expect(await tx.setGroupCapability(elsewhere, p + ':g', 'admin.users', false)).toBe(false);
+        expect(await tx.setGroupCapability(elsewhere, p + ':g', 'admin.users', true)).toBe(true);
+        expect(await tx.setGroupCapability(org, p + ':g', 'admin.users', false)).toBe(true);
+        expect(await tx.setGroupCapability(org, p + ':g', 'admin.users', false)).toBe(false);
+        expect(await tx.groupCapabilities(org)).toEqual([]);
+        expect(await tx.groupCapabilities(elsewhere)).toHaveLength(1);
+        expect(await tx.setGroupCapability(elsewhere, p + ':g', 'admin.users', false)).toBe(true);
       });
     });
     test('a provisioner is found by the digest of its token while the token is not revoked, and remembers when it was last seen', async () => {

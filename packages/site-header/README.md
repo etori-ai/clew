@@ -25,20 +25,20 @@ Serve `dist/` (all files: the entry loads its chunks by relative path) and put t
 ></site-header>
 ```
 
-| Attribute                         | Meaning                                                                                                                                                                                                     |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `menu-src`                        | The static menu (JSON, see `fixtures/site-menu.json`). Served to everyone, so it must be the public one. An inline `<script type="application/json">` child is read instead when present.                   |
-| `source`                          | Which content system lists the places: `sitevision` or `wordpress` (`src/sources/index.ts`). Without it the static menu is all there is.                                                                    |
-| `source-root`                     | The start page's id in that system: a Sitevision node id, a WordPress page id (`0` for the top level). The element asks the system's API, with the visitor's own session, which pages this visitor may see. |
-| `source-depth`                    | Levels fetched under the root, 1 to 3 (default 1; the bar draws one).                                                                                                                                       |
-| `source-base`                     | The system's origin when it is not the page's own (then it needs CORS with credentials).                                                                                                                    |
-| `source-nonce`                    | WordPress's REST nonce (`wp_create_nonce('wp_rest')`), without which WordPress treats a signed-in visitor as anonymous.                                                                                     |
-| `selected`                        | The current item's id. Without it the page's address decides.                                                                                                                                               |
-| `login-href`                      | "Logga in" for a visitor who is not signed in.                                                                                                                                                              |
-| `user-name`, `logout-href` | The signed-in person, as the page's own system knows them (with single sign-on, the same person Clew knows), and where "Logga ut" goes. The header never asks who is signed in. |
-| `appearance-src` | The installation's own `/api/appearance` (D98): the saved theme and logo. Any origin may read it. Without it the header is Astryx Neutral with no logo. |
-| `logo-src`, `logo-dark-src`, `logo-alt` | A logo of the page's own, in place of the installation's, and its variant for a dark bar. |
-| `appearance` | `auto` (default): the person's colour choice from Clew, stored in the browser for the domain, else the system's; the signed-in person can change it in their settings. `light`, `dark` or `system` fix it. |
+| Attribute                               | Meaning                                                                                                                                                                                                     |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `menu-src`                              | The static menu (JSON, see `fixtures/site-menu.json`). Served to everyone, so it must be the public one. An inline `<script type="application/json">` child is read instead when present.                   |
+| `source`                                | Which content system lists the places: `sitevision` or `wordpress` (`src/sources/index.ts`). Without it the static menu is all there is.                                                                    |
+| `source-root`                           | The start page's id in that system: a Sitevision node id, a WordPress page id (`0` for the top level). The element asks the system's API, with the visitor's own session, which pages this visitor may see. |
+| `source-depth`                          | Levels fetched under the root, 1 to 3 (default 1; the bar draws one).                                                                                                                                       |
+| `source-base`                           | The system's origin when it is not the page's own (then it needs CORS with credentials).                                                                                                                    |
+| `source-nonce`                          | WordPress's REST nonce (`wp_create_nonce('wp_rest')`), without which WordPress treats a signed-in visitor as anonymous.                                                                                     |
+| `selected`                              | The current item's id. Without it the page's address decides.                                                                                                                                               |
+| `login-href`                            | "Logga in" for a visitor who is not signed in.                                                                                                                                                              |
+| `user-name`, `logout-href`              | The signed-in person, as the page's own system knows them (with single sign-on, the same person Clew knows), and where "Logga ut" goes. The header never asks who is signed in.                             |
+| `appearance-src`                        | The installation's own `/api/appearance` (D98): the saved theme and logo. Any origin may read it. Without it the header is Astryx Neutral with no logo.                                                     |
+| `logo-src`, `logo-dark-src`, `logo-alt` | A logo of the page's own, in place of the installation's, and its variant for a dark bar.                                                                                                                   |
+| `appearance`                            | `auto` (default): the person's colour choice from Clew, stored in the browser for the domain, else the system's; the signed-in person can change it in their settings. `light`, `dark` or `system` fix it.  |
 
 The header renders in a shadow root: the page's CSS does not reach it and its CSS does not reach the page.
 

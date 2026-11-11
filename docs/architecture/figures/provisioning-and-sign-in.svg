@@ -47,7 +47,7 @@
   <text x="604" y="240" text-anchor="middle" fill="#374151">/scim/v2</text>
   <text x="604" y="262" text-anchor="middle" fill="#374151">people · units · groups</text>
   <line x1="316" y1="234" x2="482" y2="234" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
-  <text x="400" y="222" text-anchor="middle" font-size="13" fill="#4b5563">HTTPS + key</text>
+  <text x="400" y="222" text-anchor="middle" font-size="13" fill="#4b5563">HTTPS + token</text>
 
   <rect x="484" y="310" width="240" height="84" rx="10" fill="#ecfdf5" stroke="#059669"/>
   <text x="604" y="338" text-anchor="middle" font-weight="600" fill="#065f46">The person in Clew</text>

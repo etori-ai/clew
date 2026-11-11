@@ -1,6 +1,6 @@
 # D85 · Capabilities are mapped from provisioned groups in Clew; units and manager roles keep D68's keys
 
-**Status:** accepted, built 2026-11-09 (the mapping table, the closed list `CAPABILITIES` with `admin.connectors` and `admin.users`, the derivation, the editor on Administration › Användare) · **Date:** 2026-11-09 · **Area:** identity
+**Status:** accepted, built 2026-11-09 (the mapping table, the closed list `CAPABILITIES` with `admin.connectors` and `admin.users`, the derivation, the editor on Administration › Användare); amended 2026-11-11 after [the full SCIM review](../reviews/2026-11-11-scim-full-review.md): a row belongs to the organisation whose administrator wrote it (`organisation_id`, migration 0051) and applies to that organisation's groups alone, so a row left by a group that is gone is not picked up by another organisation's group of the same id · **Date:** 2026-11-09 · **Area:** identity
 
 **Decision.** The SCIM server of [D68](D68-people-are-pushed-into-clew-through-standard-scim.md) accepts every group a
 client pushes, and Clew, not the provisioner, decides which of those groups carry a capability. D68's keys for units,

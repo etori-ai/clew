@@ -13,6 +13,7 @@ interface UserRow {
   id: string;
   userName: string;
   active: boolean;
+  title?: string;
   groups?: Array<{ value: string }>;
 }
 /** D99: the extension a `unit:` group names the unit above it in. */
@@ -78,7 +79,7 @@ export async function checkProvisioning(
     'ok',
     `The token is accepted. PATCH ${config.patch?.supported ? 'yes' : 'no'}, filter ${config.filter?.supported ? `yes (at most ${config.filter.maxResults} rows a page)` : 'no'}, bulk ${config.bulk?.supported ? 'yes' : 'no'}, sort ${config.sort?.supported ? 'yes' : 'no'}, ETags ${config.etag?.supported ? 'yes' : 'no'}.`,
   );
-  const users = await all<UserRow>(client, '/Users', 'attributes=userName,active,groups.value'),
+  const users = await all<UserRow>(client, '/Users', 'attributes=userName,active,title,groups.value'),
     groups = await all<GroupRow>(client, '/Groups', 'excludedAttributes=members');
   const active = users.filter(u => u.active),
     keyOf = new Map(groups.map(g => [g.id, g.externalId ?? ''])),
@@ -110,6 +111,16 @@ export async function checkProvisioning(
       `${plural(unassigned.length, 'active user has', 'active users have')} no unit: or unit-manager: group and can do nothing in Clew: ${some(unassigned.map(u => u.userName))}.`,
     );
   else if (active.length) say('ok', 'Every active user is in a unit.');
+  // A title Clew cannot read is left out and never refused (D110), so a mapping that sends none, or sends something
+  // else in its place, shows here and nowhere else.
+  const titled = active.filter(u => u.title).length;
+  if (active.length)
+    say(
+      'ok',
+      titled
+        ? `${titled} of ${plural(active.length, 'active user', 'active users')} ${titled === 1 ? 'has' : 'have'} a title.`
+        : 'No active user has a title: the source sends none, or sends one Clew could not read as text.',
+    );
   const named = new Set(units.map(g => g.externalId!.slice(UNIT.length)));
   const unnamed = managers.map(g => g.externalId!.slice(MANAGER.length)).filter(id => !named.has(id));
   if (unnamed.length)

@@ -204,7 +204,7 @@ test('two membership changes for one person at once: the second derivation waits
   const plain = await scim.createGroup(p, { externalId: `${prefix}:admins`, displayName: 'Admins' }, BASE);
   await database()
     .insert(schema.groupCapabilities)
-    .values({ groupExternalId: `${prefix}:admins`, capability: 'admin.users' });
+    .values({ organisationId: prefix + '-org', groupExternalId: `${prefix}:admins`, capability: 'admin.users' });
   expect(await grant(person)).toEqual({ role: 'manager', capabilities: [] });
   // The first request takes the manager role away and stops between reading the memberships and writing the grant.
   const slow = paused(store);

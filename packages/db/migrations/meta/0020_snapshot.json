@@ -52,12 +52,8 @@
           "name": "auth_access_grant_person_id_auth_person_id_fk",
           "tableFrom": "auth_access_grant",
           "tableTo": "auth_person",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["person_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -449,12 +445,8 @@
           "name": "dispatch_outbox_execution_id_execution_id_fk",
           "tableFrom": "dispatch_outbox",
           "tableTo": "execution",
-          "columnsFrom": [
-            "execution_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["execution_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -653,12 +645,8 @@
           "name": "execution_person_id_auth_person_id_fk",
           "tableFrom": "execution",
           "tableTo": "auth_person",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["person_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -725,12 +713,8 @@
           "name": "auth_identity_binding_person_id_auth_person_id_fk",
           "tableFrom": "auth_identity_binding",
           "tableTo": "auth_person",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["person_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -738,10 +722,7 @@
       "compositePrimaryKeys": {
         "auth_identity_binding_issuer_subject_pk": {
           "name": "auth_identity_binding_issuer_subject_pk",
-          "columns": [
-            "issuer",
-            "subject"
-          ]
+          "columns": ["issuer", "subject"]
         }
       },
       "uniqueConstraints": {},
@@ -930,10 +911,7 @@
       "compositePrimaryKeys": {
         "auth_logout_receipt_issuer_jti_pk": {
           "name": "auth_logout_receipt_issuer_jti_pk",
-          "columns": [
-            "issuer",
-            "jti"
-          ]
+          "columns": ["issuer", "jti"]
         }
       },
       "uniqueConstraints": {},
@@ -971,12 +949,8 @@
           "name": "model_choice_person_id_auth_person_id_fk",
           "tableFrom": "model_choice",
           "tableTo": "auth_person",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["person_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -984,12 +958,8 @@
           "name": "model_choice_model_id_model_id_fk",
           "tableFrom": "model_choice",
           "tableTo": "model",
-          "columnsFrom": [
-            "model_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["model_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1223,12 +1193,8 @@
           "name": "model_provider_id_model_provider_id_fk",
           "tableFrom": "model",
           "tableTo": "model_provider",
-          "columnsFrom": [
-            "provider_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["provider_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1283,10 +1249,7 @@
       "compositePrimaryKeys": {
         "module_state_module_key_pk": {
           "name": "module_state_module_key_pk",
-          "columns": [
-            "module",
-            "key"
-          ]
+          "columns": ["module", "key"]
         }
       },
       "uniqueConstraints": {},
@@ -1538,12 +1501,8 @@
           "name": "proposal_thread_id_thread_id_fk",
           "tableFrom": "proposal",
           "tableTo": "thread",
-          "columnsFrom": [
-            "thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["thread_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1551,12 +1510,8 @@
           "name": "proposal_person_id_auth_person_id_fk",
           "tableFrom": "proposal",
           "tableTo": "auth_person",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["person_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1687,12 +1642,8 @@
           "name": "auth_session_person_id_auth_person_id_fk",
           "tableFrom": "auth_session",
           "tableTo": "auth_person",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["person_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1773,12 +1724,8 @@
           "name": "thread_message_thread_id_thread_id_fk",
           "tableFrom": "thread_message",
           "tableTo": "thread",
-          "columnsFrom": [
-            "thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["thread_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1995,12 +1942,8 @@
           "name": "thread_person_id_auth_person_id_fk",
           "tableFrom": "thread",
           "tableTo": "auth_person",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["person_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2165,12 +2108,8 @@
           "name": "timer_intent_person_id_auth_person_id_fk",
           "tableFrom": "timer_intent",
           "tableTo": "auth_person",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["person_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2178,12 +2117,8 @@
           "name": "timer_intent_thread_id_thread_id_fk",
           "tableFrom": "timer_intent",
           "tableTo": "thread",
-          "columnsFrom": [
-            "thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["thread_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }

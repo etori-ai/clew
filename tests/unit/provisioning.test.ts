@@ -98,7 +98,7 @@ provisioningContract('memory', async (): Promise<ProvisioningHarness> => {
           updatedAt: T,
         });
       for (const m of seed.members) s.members.add(memberKey(m.group, m.person));
-      s.groupCapabilities = [...(seed.groupCapabilities ?? [])];
+      s.groupCapabilities = (seed.groupCapabilities ?? []).map(row => ({ organisationId: 'org', ...row }));
       for (const u of seed.units ?? []) s.units.set(u.id, { organisationId: u.organisationId, label: u.label });
     },
     async setMembers(members) {
@@ -106,7 +106,7 @@ provisioningContract('memory', async (): Promise<ProvisioningHarness> => {
       for (const m of members) s.members.add(memberKey(m.group, m.person));
     },
     async setGroupCapabilities(rows) {
-      s.groupCapabilities = [...rows];
+      s.groupCapabilities = rows.map(row => ({ organisationId: 'org', ...row }));
     },
     async legacyGrant(id, grant) {
       s.grants.set(id, { ...grant });

@@ -463,7 +463,11 @@ describe('Användare', () => {
     await expect(
       usecases.addGroupCapability(admin, { groupExternalId: 'S-1-5-21-gone', capability: 'admin.users' }),
     ).rejects.toThrow('Gruppen finns inte');
-    store.state.groupCapabilities.push({ groupExternalId: 'S-1-5-21-gone', capability: 'admin.users' });
+    store.state.groupCapabilities.push({
+      organisationId: 'poc',
+      groupExternalId: 'S-1-5-21-gone',
+      capability: 'admin.users',
+    });
     expect((await usecases.overview(admin)).groupCapabilities).toEqual([
       { groupExternalId: 'S-1-5-21-gone', groupLabel: null, capability: 'admin.users' },
     ]);

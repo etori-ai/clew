@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { privateHeaders } from '../context';
 import { SCIM_CONTENT_TYPE, ScimError } from '../modules/people/contracts';
-import { resourceTypes, schemaDocuments, serviceProviderConfig } from '../modules/people/domain';
+import { project, resourceTypes, schemaDocuments, serviceProviderConfig } from '../modules/people/domain';
 import type { Provisioner } from '../modules/people/ports';
 import type { ScimQuery, ScimUsecases } from '../modules/people/usecases';
 
@@ -30,6 +30,13 @@ export function scimRoutes(scim: ScimUsecases, log: ScimLog) {
   const json = (c: Context, body: unknown, status: 200 | 201 = 200, headers: Record<string, string> = {}) =>
     c.body(JSON.stringify(body), status, { 'Content-Type': SCIM_CONTENT_TYPE, ...privateHeaders, ...headers });
   /**
+   * The resource a write answers, with the caller's `attributes` and `excludedAttributes` applied (RFC 7644 §3.9: they
+   * hold for every operation that returns a resource). A client that changes one member of a large group asks to have
+   * the members left out of the answer.
+   */
+  const written = <T extends { meta: { location: string } }>(c: Context, resource: T, status: 200 | 201 = 200) =>
+    json(c, project(resource, projection(c)), status, status === 201 ? { Location: resource.meta.location } : {});
+  /**
    * A unique index that fired before the use case's own check saw the other row (two requests at once) is the
    * standard's 409, like the check's. Postgres names the constraint; the driver may wrap the error once.
    */
@@ -53,9 +60,13 @@ export function scimRoutes(scim: ScimUsecases, log: ScimLog) {
     log('scim: the request failed unexpectedly', error);
     return new ScimError(500, 'The request could not be completed.');
   };
-  const fail = (c: Context, error: unknown) => {
+  const fail = (c: Context, error: unknown, headers: Record<string, string> = {}) => {
     const scim = asScimError(error);
-    return c.body(JSON.stringify(scim.body()), scim.status, { 'Content-Type': SCIM_CONTENT_TYPE, ...privateHeaders });
+    return c.body(JSON.stringify(scim.body()), scim.status, {
+      'Content-Type': SCIM_CONTENT_TYPE,
+      ...privateHeaders,
+      ...headers,
+    });
   };
   const base = (c: Context) => scimAddress(c.req.url);
   const body = async (c: Context): Promise<unknown> => {
@@ -63,9 +74,20 @@ export function scimRoutes(scim: ScimUsecases, log: ScimLog) {
     // chunked body that declares none.
     if (Number(c.req.header('content-length') ?? 0) > BODY_LIMIT)
       throw new ScimError(413, 'The request body is too large.');
-    const text = await c.req.raw.text();
-    // In bytes, as the limit is: a body of names with å, ä and ö is longer than its characters.
-    if (new TextEncoder().encode(text).length > BODY_LIMIT) throw new ScimError(413, 'The request body is too large.');
+    // Read a piece at a time and stopped at the limit, in bytes as the limit is: a body that declares no length is
+    // not held in memory whole before it is measured.
+    const pieces: Uint8Array[] = [];
+    let size = 0;
+    const reader = c.req.raw.body?.getReader();
+    for (let piece = await reader?.read(); piece && !piece.done; piece = await reader!.read()) {
+      size += piece.value.byteLength;
+      if (size > BODY_LIMIT) {
+        await reader!.cancel();
+        throw new ScimError(413, 'The request body is too large.');
+      }
+      pieces.push(piece.value);
+    }
+    const text = new TextDecoder().decode(Buffer.concat(pieces));
     try {
       return JSON.parse(text);
     } catch {
@@ -80,8 +102,19 @@ export function scimRoutes(scim: ScimUsecases, log: ScimLog) {
     }
   };
   app.use('*', async (c, next) => {
-    const header = c.req.header('authorization') ?? '';
-    const provisioner = header.startsWith('Bearer ') ? await scim.authenticate(header.slice(7).trim()) : undefined;
+    // The scheme's name is read without regard to case (RFC 9110 §11.1): `bearer` is `Bearer`.
+    const token = /^bearer\s+(\S.*)$/i.exec(c.req.header('authorization') ?? '')?.[1]?.trim();
+    let provisioner: Provisioner | undefined;
+    try {
+      provisioner = token ? await scim.authenticate(token) : undefined;
+    } catch (error) {
+      // The store did not answer. Said as the standard's error, with a time to try again, and not by whatever the
+      // application around this one answers a failure with.
+      log('scim: a token could not be checked', error);
+      return fail(c, new ScimError(503, 'The service cannot check the token now. Retry shortly.'), {
+        'Retry-After': '5',
+      });
+    }
     if (!provisioner)
       return c.body(
         JSON.stringify(new ScimError(401, 'A bearer token issued to a provisioner is required.').body()),
@@ -135,15 +168,17 @@ export function scimRoutes(scim: ScimUsecases, log: ScimLog) {
     const sent = await body(c);
     if (!sent || typeof sent !== 'object' || Array.isArray(sent))
       throw new ScimError(400, 'A SearchRequest body is required.', 'invalidSyntax');
-    const s = sent as Record<'filter' | 'startIndex' | 'count' | 'attributes' | 'excludedAttributes', unknown>,
+    // Names without regard to case, as every attribute name is (RFC 7643 §2.1): `Filter` read as no filter answered
+    // every row to a client that asked whether one existed.
+    const s = Object.fromEntries(Object.entries(sent).map(([name, value]) => [name.toLowerCase(), value])),
       // A SearchRequest carries the two attribute lists as arrays; `String` joins them with the comma the address uses.
       text = (v: unknown) => (v === undefined || v === null ? undefined : String(v));
     return {
       filter: text(s.filter),
-      startIndex: text(s.startIndex),
+      startIndex: text(s.startindex),
       count: text(s.count),
       attributes: text(s.attributes),
-      excludedAttributes: text(s.excludedAttributes),
+      excludedAttributes: text(s.excludedattributes),
     };
   };
   /** RFC 7644 §3.7 and §3.11: what this server does not offer answers 501, not 404, so a client can tell the two apart. */
@@ -151,14 +186,16 @@ export function scimRoutes(scim: ScimUsecases, log: ScimLog) {
     route(async () => {
       throw new ScimError(501, `${what} is not supported by this server.`);
     });
+  // An address that exists, asked with a method it does not take (RFC 9110 §15.5.6): 405 and what it does take.
+  const notAllowed = (allow: string) => (c: Context) =>
+    fail(c, new ScimError(405, `This address takes ${allow}.`), { Allow: allow });
   app.all('/Bulk', notImplemented('Bulk'));
   app.all('/Me', notImplemented('/Me'));
   app.all('/.search', notImplemented('A search across resource types'));
   app.post(
     '/Users',
     route(async c => {
-      const user = await scim.createUser(c.get('provisioner'), await body(c), base(c));
-      return json(c, user, 201, { Location: user.meta.location });
+      return written(c, await scim.createUser(c.get('provisioner'), await body(c), base(c)), 201);
     }),
   );
   app.get(
@@ -169,17 +206,19 @@ export function scimRoutes(scim: ScimUsecases, log: ScimLog) {
     '/Users/.search',
     route(async c => json(c, await scim.listUsers(c.get('provisioner'), await searchQuery(c), base(c)))),
   );
+  // Before `/:id`, which would read `.search` as the id of a resource.
+  app.all('/Users/.search', notAllowed('POST'));
   app.get(
     '/Users/:id',
     route(async c => json(c, await scim.getUser(c.get('provisioner'), idOf(c), base(c), projection(c)))),
   );
   app.put(
     '/Users/:id',
-    route(async c => json(c, await scim.replaceUser(c.get('provisioner'), idOf(c), await body(c), base(c)))),
+    route(async c => written(c, await scim.replaceUser(c.get('provisioner'), idOf(c), await body(c), base(c)))),
   );
   app.patch(
     '/Users/:id',
-    route(async c => json(c, await scim.patchUser(c.get('provisioner'), idOf(c), await body(c), base(c)))),
+    route(async c => written(c, await scim.patchUser(c.get('provisioner'), idOf(c), await body(c), base(c)))),
   );
   app.delete(
     '/Users/:id',
@@ -191,8 +230,7 @@ export function scimRoutes(scim: ScimUsecases, log: ScimLog) {
   app.post(
     '/Groups',
     route(async c => {
-      const group = await scim.createGroup(c.get('provisioner'), await body(c), base(c));
-      return json(c, group, 201, { Location: group.meta.location });
+      return written(c, await scim.createGroup(c.get('provisioner'), await body(c), base(c)), 201);
     }),
   );
   app.get(
@@ -203,17 +241,19 @@ export function scimRoutes(scim: ScimUsecases, log: ScimLog) {
     '/Groups/.search',
     route(async c => json(c, await scim.listGroups(c.get('provisioner'), await searchQuery(c), base(c)))),
   );
+  // Before `/:id`, which would read `.search` as the id of a resource.
+  app.all('/Groups/.search', notAllowed('POST'));
   app.get(
     '/Groups/:id',
     route(async c => json(c, await scim.getGroup(c.get('provisioner'), idOf(c), base(c), projection(c)))),
   );
   app.put(
     '/Groups/:id',
-    route(async c => json(c, await scim.replaceGroup(c.get('provisioner'), idOf(c), await body(c), base(c)))),
+    route(async c => written(c, await scim.replaceGroup(c.get('provisioner'), idOf(c), await body(c), base(c)))),
   );
   app.patch(
     '/Groups/:id',
-    route(async c => json(c, await scim.patchGroup(c.get('provisioner'), idOf(c), await body(c), base(c)))),
+    route(async c => written(c, await scim.patchGroup(c.get('provisioner'), idOf(c), await body(c), base(c)))),
   );
   app.delete(
     '/Groups/:id',
@@ -224,6 +264,11 @@ export function scimRoutes(scim: ScimUsecases, log: ScimLog) {
   );
   // A handler, not `notFound`: Hono does not carry a sub-app's not-found handler through `app.route()`, so the parent's
   // Swedish JSON 404 answered here before. The token middleware above runs first, so an unknown address still needs one.
+  // What is left of an address that exists is a method it does not take.
+  for (const collection of ['/Users', '/Groups']) {
+    app.all(collection, notAllowed('GET, POST'));
+    app.all(collection + '/:id', notAllowed('GET, PUT, PATCH, DELETE'));
+  }
   app.all('*', c => fail(c, new ScimError(404, 'No such SCIM resource.')));
   return app;
 }

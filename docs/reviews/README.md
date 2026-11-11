@@ -63,5 +63,6 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Comparison: Frappe HR's appraisal cycle against the talks profile · 2026-11-11](2026-11-11-frappe-hr-appraisals-against-the-talks-profile.md)
 - [Operations handover for SCIM, people and the organisation](2026-11-11-provisioning-operations-guide-and-source-lifecycle.md)
 - [Review: the SCIM flow end to end, people and the organisation tree · 2026-11-11](2026-11-11-scim-flow-people-and-organisation.md)
+- [Review: the SCIM server in full, and the guides a provisioner is written from · 2026-11-11](2026-11-11-scim-full-review.md)
 - [Review: the panel beside the page against what Astryx ships · 2026-11-11](2026-11-11-the-panel-beside-the-page-against-what-astryx-ships.md)
 - [Review: `typebox` 1.x instead of `@sinclair/typebox` 0.34 · 2026-11-11](2026-11-11-typebox-1-instead-of-sinclair-typebox.md)

@@ -160,15 +160,18 @@ export const provisioners = pgTable(
 /**
  * D85: a group gives its members a capability. Keyed on the group's external id without a foreign key, so the row
  * outlives a group the source removes and applies again when the same group returns; the capability is one of
- * `CAPABILITIES` in `@clew/contracts`, checked where the row is written.
+ * `CAPABILITIES` in `@clew/contracts`, checked where the row is written. The row belongs to the organisation whose
+ * administrator wrote it and applies to that organisation's groups alone (D101): a row left behind by a group that is
+ * gone is not picked up by another organisation's group that takes the same id.
  */
 export const groupCapabilities = pgTable(
   'auth_group_capability',
   {
+    organisationId: text('organisation_id').notNull(),
     groupExternalId: text('group_external_id').notNull(),
     capability: text('capability').notNull(),
   },
-  t => [primaryKey({ columns: [t.groupExternalId, t.capability] })],
+  t => [primaryKey({ columns: [t.organisationId, t.groupExternalId, t.capability] })],
 );
 export const loginTransactions = pgTable('auth_login_transaction', {
   digest: text('digest').primaryKey(),
