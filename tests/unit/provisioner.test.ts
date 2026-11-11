@@ -1,16 +1,23 @@
+import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'bun:test';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
-import { scimUsecases } from '../../apps/server/src/modules/people/usecases';
+import { scimUsecases, staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { scimRoutes } from '../../apps/server/src/routes/scim';
 import { checkProvisioning } from '../../scripts/provisioner/check';
-import { scimClient, type ScimClient } from '../../scripts/provisioner/client';
+import { scimClient, ScimClientError, type ScimClient } from '../../scripts/provisioner/client';
 import {
   developmentDirectory,
+  developmentScope,
   fullName,
   type Directory,
   type DirectoryPerson,
 } from '../../scripts/provisioner/directory';
-import { plan, push } from '../../scripts/provisioner/push';
+import { plan, push as reconcile, type PushOptions } from '../../scripts/provisioner/push';
+
+// This isolated organisation belongs to the test writer.
+const scope = { userPrefix: 'dev:', groupPrefixes: ['unit:', 'unit-manager:', 'ad:', 'capability:'], groupKeys: [] };
+const push = (client: ScimClient, directory: Directory, options?: PushOptions) =>
+  reconcile(client, directory, scope, options);
 
 /**
  * The synthetic provisioner against the SCIM routes (D68 item 7): the development directory becomes users, units,
@@ -166,16 +173,16 @@ describe('the synthetic provisioner', () => {
       p.groups.find(g => g.externalId === 'unit-manager:unit-ekonomi')!.members,
     );
     const unit = (id: string, parent?: string) => ({ id, label: id, ...(parent ? { parent } : {}) });
-    expect(() => plan({ units: [unit('a', 'missing')], groups: [], people: [] })).toThrow(
+    expect(() => plan({ complete: true, units: [unit('a', 'missing')], groups: [], people: [] })).toThrow(
       "The unit 'a' has parent 'missing', which the directory does not list.",
     );
-    expect(() => plan({ units: [unit('a', 'b'), unit('b', 'a')], groups: [], people: [] })).toThrow(
+    expect(() => plan({ complete: true, units: [unit('a', 'b'), unit('b', 'a')], groups: [], people: [] })).toThrow(
       "The units a → b → a are each other's parents.",
     );
   });
   test('a first push creates everything, grants follow, and a second push is silent', async () => {
     const { store, client, grantOf } = stack();
-    const first = await push(client, developmentDirectory);
+    const first = await reconcile(client, developmentDirectory, developmentScope);
     expect(first).toEqual({
       created: 250,
       replaced: 0,
@@ -286,12 +293,15 @@ describe('the synthetic provisioner', () => {
     const branch = stack(),
       unit = (id: string, parent?: string) => ({ id, label: id, ...(parent ? { parent } : {}) });
     await push(branch.client, {
+      complete: true,
       units: [unit('a'), unit('b', 'a'), unit('c', 'b'), unit('d', 'c')],
       groups: [],
       people: [],
     });
     expect(branch.store.state.groups.size).toBe(4);
-    expect(await push(branch.client, { units: [unit('a')], groups: [], people: [] })).toMatchObject({
+    expect(
+      await push(branch.client, { complete: true, units: [unit('a')], groups: [], people: [] }, { force: true }),
+    ).toMatchObject({
       groupsRemoved: 3,
     });
     expect([...branch.store.state.groups.values()].map(g => g.externalId)).toEqual(['unit:a']);
@@ -299,7 +309,8 @@ describe('the synthetic provisioner', () => {
   test('a reorganisation is one push: a unit with units below it under a new id, two units that change places, and a level that is taken away (D99)', async () => {
     const { client, store } = stack(),
       unit = (id: string, parent?: string) => ({ id, label: id, ...(parent ? { parent } : {}) }),
-      reorganise = (units: Directory['units']) => push(client, { units, groups: [], people: [] }),
+      reorganise = (units: Directory['units']) =>
+        push(client, { complete: true, units, groups: [], people: [] }, { force: true }),
       tree = () =>
         Object.fromEntries(
           [...store.state.groups.values()].map(g => [g.externalId!.slice('unit:'.length), g.parentUnitId]),
@@ -352,7 +363,7 @@ describe('the synthetic provisioner', () => {
     const { store, client } = stack();
     await push(client, developmentDirectory);
     const audited = store.state.audit.length;
-    await expect(push(client, { units: [], groups: [], people: [] })).rejects.toThrow(
+    await expect(push(client, { complete: true, units: [], groups: [], people: [] })).rejects.toThrow(
       'The source lists 0 people and Clew holds 250 active ones from it, so this push would deactivate 250. Nothing was written.',
     );
     // Truncated: more than a fifth of the people are missing from the export.
@@ -362,7 +373,7 @@ describe('the synthetic provisioner', () => {
     expect([...store.state.users.values()].every(u => u.enabled)).toBe(true);
     expect(store.state.grants.size).toBe(250);
     // A person may decide that the source is right.
-    expect(await push(client, truncated, 'dev:', () => {}, { force: true })).toMatchObject({ deactivated: 60 });
+    expect(await push(client, truncated, { force: true })).toMatchObject({ deactivated: 60 });
     expect([...store.state.users.values()].filter(u => !u.enabled)).toHaveLength(60);
   });
   test('a group with a foreign key is left alone, and a refused push surfaces the SCIM detail', async () => {
@@ -383,6 +394,141 @@ describe('the synthetic provisioner', () => {
       people: developmentDirectory.people.map((p, i) => (i === 0 ? { ...p, email: '' } : p)),
     };
     await expect(push(client, broken)).rejects.toMatchObject({ status: 400, scimType: 'invalidSyntax' });
+  });
+  test('retained and absent leavers stay disabled with installation IDs across reconciliations', async () => {
+    const { client, store } = stack();
+    const source = {
+      userPrefix: 'e-',
+      groupPrefixes: ['unit:school', 'unit-manager:school'],
+      groupKeys: ['capability:admin.users'],
+    };
+    const people = developmentDirectory.people.slice(0, 10).map((p, i) => ({
+      ...p,
+      externalId: 'e-' + i,
+      department: 'school',
+      manager: i === 0,
+      groups: [],
+      alsoIn: [],
+      alsoManages: [],
+      capabilities: i === 0 ? ['admin.users' as const] : [],
+    }));
+    const directory: Directory = { complete: true, units: [{ id: 'school', label: 'School' }], groups: [], people };
+    await reconcile(client, directory, source);
+    const retired = { ...directory, people: people.slice(0, -1).map((p, i) => ({ ...p, active: i !== 0 })) };
+    // Removing the two role groups is intentional.
+    expect((await reconcile(client, retired, source, { force: true })).deactivated).toBe(2);
+    expect((await reconcile(client, retired, source, { force: true })).deactivated).toBe(0);
+    for (const key of ['e-0', 'e-9']) {
+      const id = ekonomiId(store, key);
+      expect(store.state.users.get(id)?.enabled).toBe(false);
+      expect(store.state.grants.get(id)).toBeUndefined();
+    }
+    const returning = {
+      ...retired,
+      people: retired.people.map(p => ({ ...p, active: true, manager: false, capabilities: [] })),
+    };
+    await reconcile(client, returning, source);
+    expect(store.state.grants.get(ekonomiId(store, 'e-0'))).toMatchObject({ role: 'employee', capabilities: [] });
+    expect(store.state.users.get(ekonomiId(store, 'e-9'))?.enabled).toBe(false);
+  });
+  test('a rehire stays disabled through an interrupted removal of old duties', async () => {
+    const { client, store } = stack();
+    const manager = {
+      ...developmentDirectory.people[0]!,
+      department: 'school',
+      manager: true,
+      groups: [],
+      alsoIn: [],
+      alsoManages: [],
+      capabilities: ['admin.users' as const],
+    };
+    const directory: Directory = {
+      complete: true,
+      units: [{ id: 'school', label: 'School' }],
+      groups: [],
+      people: [manager],
+    };
+    await push(client, directory);
+    const id = ekonomiId(store, manager.externalId);
+    await client.request('PATCH', '/Users/' + id, {
+      schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+      Operations: [{ op: 'replace', path: 'active', value: false }],
+    });
+    const returning: Directory = { ...directory, people: [{ ...manager, manager: false, capabilities: [] }] };
+    const interrupted: ScimClient = {
+      request(method, path, body) {
+        if (method === 'DELETE') throw new Error('Group cleanup interrupted');
+        return client.request(method, path, body);
+      },
+    };
+    await expect(push(interrupted, returning, { force: true })).rejects.toThrow('Group cleanup interrupted');
+    expect(store.state.users.get(id)?.enabled).toBe(false);
+    await push(client, returning, { force: true });
+    expect(store.state.users.get(id)?.enabled).toBe(true);
+    expect(store.state.grants.get(id)).toMatchObject({ role: 'employee', capabilities: [] });
+  });
+  test('a 503 after a committed create resumes reconciliation by external ID', async () => {
+    const { client, store } = stack();
+    const snapshot: Directory = { complete: true, units: [{ id: 'test', label: 'Test' }], groups: [], people: [] };
+    let creates = 0;
+    const interrupted: ScimClient = {
+      async request(method, path, body) {
+        const result = await client.request(method, path, body);
+        if (method === 'POST' && ++creates === 1) throw new ScimClientError(503, undefined, 'Unavailable', '0');
+        return result;
+      },
+    };
+    await push(interrupted, snapshot);
+    expect(creates).toBe(1);
+    expect([...store.state.groups.values()].map(g => g.externalId)).toEqual(['unit:test']);
+    const proxy = scimClient(
+      'http://clew.local',
+      'token',
+      () => new Response('Service unavailable', { status: 503, headers: { 'Retry-After': '120' } }),
+    );
+    await expect(proxy.request('GET', '/Users')).rejects.toMatchObject({ status: 503, retryAfter: '120' });
+  });
+  test('incomplete snapshots, unowned writes and disproportionate withdrawals stop before mutation', async () => {
+    const { client, store } = stack();
+    const source = { userPrefix: 'dev:', groupPrefixes: ['unit:mine-', 'ad:mine-'], groupKeys: [] };
+    const directory: Directory = {
+      complete: true,
+      units: [{ id: 'mine-u', label: 'School' }],
+      groups: ['a', 'b', 'c'].map(id => ({ id: 'ad:mine-' + id, label: id })),
+      people: developmentDirectory.people.slice(0, 3).map(p => ({
+        ...p,
+        department: 'mine-u',
+        manager: false,
+        groups: [],
+        capabilities: [],
+        alsoIn: [],
+        alsoManages: [],
+      })),
+    };
+    await reconcile(client, directory, source);
+    const foreign = (
+      await client.request('POST', '/Groups', {
+        externalId: 'unit:other-u',
+        displayName: 'Other',
+        members: [{ value: ekonomiId(store, directory.people[0]!.externalId) }],
+      })
+    ).body;
+    const audited = store.state.audit.length;
+    await expect(
+      reconcile(client, { ...directory, complete: false, groups: [] }, source, { force: true }),
+    ).rejects.toThrow('Incomplete source');
+    await expect(reconcile(client, { ...directory, people: directory.people.slice(0, 1) }, source)).rejects.toThrow(
+      'deactivate 2',
+    );
+    await expect(reconcile(client, { ...directory, groups: directory.groups.slice(0, 1) }, source)).rejects.toThrow(
+      'remove 2 of 3',
+    );
+    await expect(
+      reconcile(client, { ...directory, units: [...directory.units, { id: 'other-u', label: 'Changed' }] }, source),
+    ).rejects.toThrow('outside the source namespace');
+    expect(store.state.audit.length).toBe(audited);
+    await reconcile(client, { ...directory, groups: [] }, source, { force: true });
+    expect((await client.request('GET', '/Groups/' + foreign.id)).body).toEqual(foreign);
   });
   test('the check reads what the installation holds: counts when the push did what it meant, and names who is left without a unit', async () => {
     const { client, app, store } = stack();
@@ -405,6 +551,10 @@ describe('the synthetic provisioner', () => {
     expect(
       (await checkProvisioning('http://clew.local', client, anonymous, { roots: 1 })).filter(f => f.level !== 'ok'),
     ).toEqual([]);
+    expect(await checkProvisioning('http://clew.local', client, anonymous, { roots: 2 })).toContainEqual({
+      level: 'warn',
+      text: 'The tree has 1 root where 2 were expected. Check the parent links. Roots: unit:unit-kommun.',
+    });
     // A person the mapping forgot, a managed unit nobody named, an emptied unit and a key stored before D96.
     await client.request('POST', '/Users', {
       externalId: 'dev:lost',
@@ -460,7 +610,7 @@ describe('the synthetic provisioner', () => {
         .filter(f => f.level === 'warn')
         .map(f => f.text),
     ).toContain(
-      'The tree has 3 roots where 1 was expected; a unit written without its parent becomes a root: unit:unit-kommun, unit:unit-empty, unit:unit-adrift.',
+      'The tree has 3 roots where 1 was expected. Check the parent links. Roots: unit:unit-kommun, unit:unit-empty, unit:unit-adrift.',
     );
     // A manager who is deactivated leads nobody, as Administration › Organisation reads the same tree.
     const person = (userName: string) =>
@@ -520,6 +670,7 @@ describe('the synthetic provisioner', () => {
 describe('a run that is interrupted', () => {
   const unit = (id: string, label: string, parent?: string) => ({ id, label, ...(parent ? { parent } : {}) });
   const person = (name: string, department: string, extra: Partial<DirectoryPerson> = {}): DirectoryPerson => ({
+    active: true,
     externalId: 'dev:' + name,
     userName: name,
     givenName: name,
@@ -531,6 +682,7 @@ describe('a run that is interrupted', () => {
     ...extra,
   });
   const before: Directory = {
+    complete: true,
     units: [
       unit('kommun', 'Kommunen'),
       unit('skola', 'Skolan', 'kommun'),
@@ -553,6 +705,7 @@ describe('a run that is interrupted', () => {
   // person who moves each way between two units; a manager who is one no longer and one who gains a unit; a
   // capability taken back; a plain group renamed.
   const after: Directory = {
+    complete: true,
     units: [
       unit('kommun', 'Kommunen'),
       unit('skola', 'Skolan', 'kommun'),
@@ -618,22 +771,98 @@ describe('a run that is interrupted', () => {
       };
       const whole = await begin();
       let requests = 0;
-      await push({ request: (...args) => (requests++, whole.client.request(...args)) }, to);
+      await push({ request: (...args) => (requests++, whole.client.request(...args)) }, to, { force: true });
       const expected = held(whole.store);
       expect(requests).toBeGreaterThan(30);
       for (const lost of ['request', 'response'] as const)
         for (let at = 1; at <= requests; at++) {
           const s = await begin();
-          await expect(push(cut(s.client, at, lost), to)).rejects.toThrow('connection lost');
-          await push(s.client, to);
+          await expect(push(cut(s.client, at, lost), to, { force: true })).rejects.toThrow('connection lost');
+          await push(s.client, to, { force: true });
           expect([`the ${lost} of call ${at} lost`, held(s.store)]).toEqual([
             `the ${lost} of call ${at} lost`,
             expected,
           ]);
           // And the run after that has nothing left to do.
           const audited = s.store.state.audit.length;
-          await push(s.client, to);
+          await push(s.client, to, { force: true });
           expect(s.store.state.audit.length).toBe(audited);
         }
     });
 });
+
+test('the published school walkthrough produces the printed output and the promised organisation', async () => {
+  const { store, app, grantOf } = stack();
+  const guide = await Bun.file(new URL('../../docs/guides/provisioning-for-operations.md', import.meta.url)).text();
+  const excerpt = guide.slice(
+    guide.indexOf('### Try it by hand first'),
+    guide.indexOf('### What the daily comparison does'),
+  );
+  const blocks = (lang: string) =>
+    [...excerpt.matchAll(new RegExp('```' + lang + '\\n([\\s\\S]*?)\\n```', 'g'))].map(match => match[1]!);
+  const commands = blocks('bash'),
+    output = blocks('text');
+  expect(commands).toHaveLength(4);
+  expect(output).toHaveLength(2);
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    fetch(req) {
+      const url = new URL(req.url);
+      url.pathname = url.pathname.slice('/scim/v2'.length);
+      return app.fetch(new Request(url, req));
+    },
+  });
+  const run = async (shell: string) => {
+    const child = Bun.spawn(['bash', '-c', shell], {
+      cwd: fileURLToPath(new URL('../../', import.meta.url)),
+      env: { ...process.env, CLEW: new URL('/scim/v2', server.url).href, CLEW_PROVISIONER_TOKEN: 'dev-token' },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const [status, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    if (status !== 0) throw new Error('Guide command failed: ' + stderr + stdout);
+    return stdout;
+  };
+  try {
+    expect(await run(commands.slice(0, 3).join('\n'))).toBe(output[0] + '\n');
+    const units = [...store.state.groups.values()].filter(g => g.externalId?.startsWith('unit:'));
+    expect(Object.fromEntries(units.map(g => [g.externalId, g.parentUnitId]))).toEqual({
+      'unit:100': null,
+      'unit:110': '100',
+      'unit:111': '110',
+      'unit:112': '110',
+    });
+    expect(grantOf('anna.berg')).toMatchObject({ role: 'manager', capabilities: ['admin.users'] });
+    const staff = staffUsecases({ store });
+    for (const [sourceId, expected] of [
+      ['e-1001', 'Omar Ali'],
+      ['e-1002', 'Lena Holm'],
+    ] as const) {
+      const id = ekonomiId(store, sourceId);
+      const grant = store.state.grants.get(id)!;
+      const overview = await staff.overview({
+        ...grant,
+        id,
+        name: sourceId,
+        organisationId: 'poc',
+        principal: { id: 'person:' + id, kind: 'person' },
+        capabilities: [],
+        authorizationVersion: 'v1',
+        sessionBinding: 'test',
+        expiresAt: '2099-01-01T00:00:00Z',
+        authorize: async () => ({ version: 'v1' }),
+      });
+      expect(overview.units.flatMap(u => u.people.map(p => p.name))).toEqual([expected]);
+    }
+    expect(await run([commands[0], commands[3]].join('\n'))).toBe(output[1] + '\n');
+    expect(grantOf('lena.holm')?.unitId).toBe('112');
+    expect(store.state.users.get(ekonomiId(store, 'e-1002'))?.enabled).toBe(false);
+  } finally {
+    await server.stop(true);
+  }
+}, 15000);

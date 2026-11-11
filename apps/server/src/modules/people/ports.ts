@@ -121,8 +121,8 @@ export interface ProvisionTx {
   rotateProvisioner(id: string, tokenDigest: string, previousValidUntil: string | null): Promise<void>;
   /** Ends every token of the provisioner at `at`. */
   revokeProvisioner(id: string, at: string): Promise<void>;
-  // SCIM: users, always within the provisioner's organisation.
-  readUser(organisationId: string, id: string): Promise<UserRecord | undefined>;
+  /** The organisation scopes both reads. A mutation locks the row before reading the fields it will change. */
+  readUser(organisationId: string, id: string, lock?: boolean): Promise<UserRecord | undefined>;
   /**
    * Across the installation, because a login carries no organisation: a `userName` matches without regard to case
    * (RFC 7643's default for it), an `externalId` exactly. The unique indexes of `auth_person` say the same.

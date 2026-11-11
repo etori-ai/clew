@@ -82,6 +82,10 @@ export function authSettings() {
     callback: base.origin + '/api/auth/callback',
     // The ID token claim a first login is matched on (D68 item 6): the account name the provisioner sets as userName.
     bindingClaim: process.env.OIDC_BINDING_CLAIM ?? 'preferred_username',
+    scope:
+      process.env.OIDC_REQUEST_OFFLINE_ACCESS === 'true'
+        ? 'openid profile email offline_access'
+        : 'openid profile email',
   };
 }
 export function cookieOptions() {
@@ -127,7 +131,7 @@ export async function beginLogin(returnTo: string | null) {
     });
   const url = oidc.buildAuthorizationUrl(config, {
     redirect_uri: settings.callback,
-    scope: 'openid profile email',
+    scope: settings.scope,
     state,
     nonce,
     code_challenge: await oidc.calculatePKCECodeChallenge(verifier),

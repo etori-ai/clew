@@ -57,6 +57,8 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
       await store.transaction(async tx => {
         expect((await tx.readUser(p + '-org', a))?.userName).toBe('u:' + a);
         expect(await tx.readUser(p + '-org', other)).toBeUndefined();
+        expect((await tx.readUser(p + '-org', a, true))?.id).toBe(a);
+        expect(await tx.readUser(p + '-org', other, true)).toBeUndefined();
         expect((await tx.findUser('userName', 'u:' + b))?.id).toBe(b);
         expect((await tx.findUser('userName', ('u:' + b).toUpperCase()))?.id).toBe(b);
         expect((await tx.findUser('externalId', 'ext:' + c))?.id).toBe(c);

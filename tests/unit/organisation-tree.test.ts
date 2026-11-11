@@ -308,6 +308,10 @@ describe('the organisation tree over SCIM (D99)', () => {
     expect(await patch([{ op: 'replace', path: SCIM.unit, value: { parent: 'unit:ksk' } }])).toEqual({
       parent: 'unit:ksk',
     });
+    await expect(patch([{ op: 'replace', path: 'parent', value: 'unit:ksk' }])).rejects.toMatchObject({
+      status: 400,
+      scimType: 'invalidPath',
+    });
     // A patch of something else leaves the place alone; the URN is matched without regard to case.
     expect(await patch([{ op: 'replace', path: 'displayName', value: 'Skolan' }])).toEqual({ parent: 'unit:ksk' });
     expect(await patch([{ op: 'remove', path: SCIM.unit.toUpperCase() + ':parent' }])).toBeUndefined();

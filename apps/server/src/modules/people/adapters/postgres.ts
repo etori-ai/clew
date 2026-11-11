@@ -349,11 +349,12 @@ export function postgresProvisionStore(): ProvisionStore {
         .set({ revokedAt: new Date(at), previousTokenDigest: null, previousValidUntil: null })
         .where(eq(schema.provisioners.id, id));
     },
-    async readUser(organisationId, id) {
-      const [row] = await tx
+    async readUser(organisationId, id, lock) {
+      const query = tx
         .select(userColumns)
         .from(schema.people)
         .where(and(eq(schema.people.id, id), eq(schema.people.organisationId, organisationId)));
+      const [row] = await (lock ? query.for(ROW_LOCK) : query);
       return row && userRecord(row);
     },
     async findUser(by, value) {

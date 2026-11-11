@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
-import { ScimError } from '../../apps/server/src/modules/people/contracts';
+import { SCIM, ScimError } from '../../apps/server/src/modules/people/contracts';
 import {
   applyGroupPatch,
   applyUserPatch,
@@ -142,6 +142,25 @@ describe('SCIM users', () => {
     await expect(
       scim.createUser(p, { ...anna, name: { givenName: 'Anna', familyName: 'Berg' }, displayName: undefined }, BASE),
     ).resolves.toMatchObject({ displayName: 'Anna Berg' });
+  });
+  test('only a work or source-selected untyped address becomes the work address', async () => {
+    const { scim, p } = harness();
+    const home = { value: 'home@example.org', type: 'home', primary: true };
+    await expect(scim.createUser(p, { ...anna, emails: [home] }, BASE)).rejects.toMatchObject({
+      status: 400,
+      scimType: 'invalidValue',
+    });
+    const created = await scim.createUser(p, { ...anna, emails: [home, { value: 'selected@example.org' }] }, BASE);
+    expect(created.emails[0]?.value).toBe('selected@example.org');
+    await expect(
+      scim.patchUser(
+        p,
+        created.id,
+        { schemas: [SCIM.patch], Operations: [{ op: 'replace', path: 'emails', value: [home] }] },
+        BASE,
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+    expect((await scim.getUser(p, created.id, BASE)).emails).toEqual(created.emails);
   });
   test('userName and externalId are unique across the installation, userName without regard to case', async () => {
     const { scim, p } = harness();

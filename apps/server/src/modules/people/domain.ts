@@ -311,10 +311,15 @@ export interface GroupFields {
 const need = (attribute: string): never => {
   throw new ScimError(400, `Attribute '${attribute}' is required.`, 'invalidValue');
 };
-/** The work address: `type: "work"` first, then the primary, then the first one given. */
+/** Accept a work address or an untyped address the provisioner selected for work. */
 export function workEmail(emails: ScimUserInput['emails']): string | undefined {
   const list = emails ?? [];
-  return (list.find(e => e.type?.toLowerCase() === 'work') ?? list.find(e => e.primary) ?? list[0])?.value;
+  const untyped = list.filter(email => !email.type);
+  return (
+    list.find(email => email.type?.toLowerCase() === 'work') ??
+    untyped.find(email => email.primary) ??
+    untyped[0]
+  )?.value;
 }
 /** A full user representation (POST, PUT) to the fields Clew holds, with D68's requirements checked by name. */
 export function userFields(input: ScimUserInput): UserFields {
@@ -338,8 +343,13 @@ const UNIT_EXTENSION = SCIM.unit.toLowerCase();
  * What a name aims at in the unit extension (D99), without regard to case as a schema URN is: the extension as a
  * whole (its value is an object with `parent`), its `parent` attribute, or nothing.
  */
-const unitExtensionTarget = (name: string): 'extension' | 'parent' | undefined => {
+const unitExtensionTarget = (
+  name: string,
+  externalId: GroupFields['externalId'] | undefined,
+): 'extension' | 'parent' | undefined => {
   const key = name.trim().toLowerCase();
+  if (key === 'parent' && unitGroupOf(externalId) !== undefined)
+    throw new ScimError(400, `Use '${SCIM.unit}:parent' for the parent of a unit.`, 'invalidPath');
   return key === UNIT_EXTENSION ? 'extension' : key === UNIT_EXTENSION + ':parent' ? 'parent' : undefined;
 };
 /**
@@ -360,7 +370,7 @@ export function parentUnitOf(value: unknown): string | null {
 const parentInExtension = (value: unknown, path: string | undefined) =>
   value === undefined || value === null ? null : parentUnitOf(asObject(value, path).parent);
 export function groupFields(input: ScimGroupInput): GroupFields {
-  const extension = Object.entries(input).find(([name]) => unitExtensionTarget(name) === 'extension');
+  const extension = Object.entries(input).find(([name]) => unitExtensionTarget(name, input.externalId) === 'extension');
   return {
     externalId: input.externalId ?? null,
     label: input.displayName,
@@ -685,7 +695,7 @@ export function applyGroupPatch(
   };
   const setAttribute = (path: string, value: unknown, pathless: boolean) => {
     const key = coreKey(path, 'group'),
-      extension = unitExtensionTarget(path);
+      extension = unitExtensionTarget(path, next.externalId);
     if (extension) {
       next.parent = extension === 'parent' ? parentUnitOf(value) : parentInExtension(value, path);
       placed = true;
@@ -718,7 +728,7 @@ export function applyGroupPatch(
     }
     if (op === 'remove') {
       if (!path || !key) throw new ScimError(400, 'A remove operation needs a path.', 'noTarget');
-      if (unitExtensionTarget(path)) next.parent = null;
+      if (unitExtensionTarget(path, next.externalId)) next.parent = null;
       else if (key === 'externalid') next.externalId = null;
       else if (key === 'displayname') throw required(path);
       else if (isReadOnly(key, 'group')) throw readOnly(path);
