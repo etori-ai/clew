@@ -1,6 +1,6 @@
 # D101 · The first real integration is Nextcloud's Approval app, and new surface waits until its loop works
 
-**Status:** provisional (product owner, 2026-11-10; nothing built, the product's behaviour is read from documentation only) · **Date:** 2026-11-10 · **Area:** product, integrations
+**Status:** provisional (product owner, 2026-11-10; the connector is built and the loop has run signed in as one person on the development stack, the remaining conditions are in the implementation status; amended 2026-11-11: the second build as an MCP server and the comparison of the two builds are dropped from the freeze) · **Date:** 2026-11-10 · **Area:** product, integrations
 
 **Decision.**
 
@@ -30,6 +30,19 @@
    whose access was taken away sees none; a rejected or lost write is shown as what it is; the flow has had
    one manual pass with a screen reader; and the comparison of the two builds is a review in
    `docs/reviews/`.
+
+**Amended 2026-11-11 (product owner): the second build is dropped.** Item 2's MCP server was to be reached
+through the gateway in `apps/server/src/mcp/`. That gateway left the code the same day with the external MCP
+lane ([closing note](../reviews/2026-11-11-external-mcp-chat-services-exploration.md)), because external MCP
+servers are not a use case now. Asked whether the freeze should still wait for the MCP build, the product
+owner dropped it. The loop is built once, as a connector on protocol 2. Item 5 now reads: the freeze lifts
+when the loop works signed in on the development stack; two people see different pending files and a person
+whose access was taken away sees none; a rejected or lost write is shown as what it is; and the flow has had
+one manual pass with a screen reader; all of it written in `docs/reference/status.md`. No comparison of two
+builds is required. Item 3 keeps Frappe HR as the second source, for work in the background as the person;
+the test of a vendor's own MCP service there is not planned while Clew has no MCP lane. Which wire format a
+connector speaks stays an open question in `docs/vision.md` and in D100 item 2, without a date and without a
+gate.
 
 **Why.** The review `docs/reviews/2026-11-10-project-review-and-alternative-paths.md` found that the
 fixtures, the protocol, the tests and the reviews form a closed loop, and that two earlier reviews had

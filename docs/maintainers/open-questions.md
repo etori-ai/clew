@@ -46,16 +46,6 @@ holds new surface until the first real integration works end to end. What remain
 [Nextcloud Approval entry](../reference/status/connectors.md#nextcloud-approval) of the implementation status; it is not
 repeated here.
 
-One condition needs the product owner's word (stated 2026-11-11). D101 item 2 builds the Nextcloud loop a second time
-as an MCP server "reached through the gateway in `apps/server/src/mcp/`", and item 5 lifts the freeze only when the
-loop works in both builds and their comparison is a review. That gateway left the code on 2026-11-11 with the external
-MCP lane ([closing note](../reviews/2026-11-11-external-mcp-chat-services-exploration.md)). Does the freeze still require
-the MCP build? If it does, the gateway is rebuilt or restored from history when that build starts. D101 item 3, a
-vendor's own MCP service tested on the second source, hangs on the same answer, and a second read of that source could
-not confirm its MCP endpoint, PKCE or refresh tokens
-([not established](../reviews/2026-11-11-frappe-hr-appraisals-against-the-talks-profile.md#not-established)). D101 is
-unchanged until the owner decides.
-
 ## Accessibility
 
 No manual screen-reader pass has been made on any flow (stated in the project review of 2026-11-10 and on the status

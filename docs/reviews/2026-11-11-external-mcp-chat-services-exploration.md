@@ -10,9 +10,9 @@ One decision still names the removed gateway.
 builds the Nextcloud Approval loop a second time as an MCP server "reached through the gateway in
 `apps/server/src/mcp/`", and item 5 lifts the freeze on new surface only when the loop works in both builds. That is
 a different question from this one (which wire format a connector written here should speak, not whether a vendor's
-own service can be consumed), but it would have used the same gateway. Whether the freeze still requires that build
-is the product owner's to settle and is listed in [open questions](../maintainers/open-questions.md); D101 is not
-changed by this note.
+own service can be consumed), but it would have used the same gateway. Asked the same day, the product owner
+dropped that build from the freeze: D101 is amended, the loop is built once as a connector, and which wire format a
+connector speaks stays an open question without a gate.
 
 ## What was asked
 

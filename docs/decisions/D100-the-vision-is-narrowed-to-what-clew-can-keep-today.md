@@ -1,6 +1,6 @@
 # D100 · The vision is narrowed to what Clew can keep today: the open page, adapters as the norm, a closed view catalogue
 
-**Status:** accepted (product owner, 2026-11-10); the schema-drawn default view is not built · **Date:** 2026-11-10 · **Area:** product, integrations, ui
+**Status:** accepted (product owner, 2026-11-10); the schema-drawn default view is not built; in item 2 the chat lane for a vendor's MCP service left with D81 (withdrawn 2026-11-11), and building one adapter both ways is no longer a condition of D101's freeze (amended 2026-11-11), so the wire-format question stays open without a date · **Date:** 2026-11-10 · **Area:** product, integrations, ui
 
 **Decision.** Four places where `docs/vision.md` promised more than the product does, or said the opposite of
 what it does, are settled. The vision page carries the new wording.
