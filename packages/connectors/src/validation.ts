@@ -5,7 +5,7 @@ import { menuProblem, viewProblem, type ViewSubject } from './views';
 /** Rules shared by manifest preview, remote loading and in-process registration. No installation state. */
 interface Descriptor {
   id: string;
-  capabilities: Array<ViewSubject & { model: boolean; follows?: string[]; creates?: string }>;
+  capabilities: Array<ViewSubject & { model: boolean; follows?: string[]; creates?: string; about?: string }>;
   facts?: Array<{ kind: string; attributes: object }>;
   areas: Array<{ id: string; standing: string[] }>;
   documents?: unknown;
@@ -54,6 +54,8 @@ export function connectorProblems(
       )
         problems.push(`Capability ${c.name}: review must name a document read of the same connector.`);
     }
+    if (c.about && c.kind === 'read' && (c.model || !c.view))
+      problems.push(`Capability ${c.name}: a read about an entity declares a view and is never a tool (D97).`);
     if (c.follows && c.kind !== 'propose')
       problems.push(`Capability ${c.name}: only a propose can follow a fact (D55).`);
     if (c.creates && !connector.facts?.some(f => f.kind === c.creates))

@@ -29,6 +29,7 @@ export const capabilityLabel: Record<Capability, string> = {
   'admin.connectors': 'Administrera anslutna system',
   'admin.users': 'Administrera användare',
   'admin.appearance': 'Administrera utseende',
+  'admin.competence': 'Administrera kompetenskatalogen',
 };
 export const kindLabel = {
   core: 'Startsidans egen',

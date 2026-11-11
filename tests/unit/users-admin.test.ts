@@ -137,7 +137,7 @@ describe('Användare', () => {
       { id: 'S-1-5-21-it-staff', label: 'IT-personal' },
     ]);
     expect(o.groupCapabilities).toEqual([]);
-    expect(o.capabilities).toEqual(['admin.connectors', 'admin.users', 'admin.appearance']);
+    expect(o.capabilities).toEqual(['admin.connectors', 'admin.users', 'admin.appearance', 'admin.competence']);
   });
   test('only admin.users may look or change', async () => {
     const { usecases, other } = stack();

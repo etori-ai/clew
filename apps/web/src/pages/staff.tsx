@@ -1,7 +1,15 @@
-import { useCallback, useRef } from 'react';
-import { useSearchParams } from 'react-router';
+import { useCallback, useMemo, useRef } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import type { SessionUser, StaffPerson, StaffUnit, TalksResult } from '@clew/contracts';
+import {
+  ABOUT_KEYS_MAX,
+  type AboutResult,
+  type SessionUser,
+  type StaffPerson,
+  type StaffUnit,
+  type TalksResult,
+  type ViewRef,
+} from '@clew/contracts';
 import {
   Avatar,
   Badge,
@@ -14,6 +22,7 @@ import {
   Link,
   List,
   ListItem,
+  MoreMenu,
   Table,
   Text,
   Toolbar,
@@ -22,16 +31,22 @@ import {
   proportional,
   useMediaQuery,
 } from '@clew/ui';
-import { staffQuery, talksQuery } from '../queries';
+import { aboutQuery, competenceTypesQuery, staffQuery, talksQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { talkHref, talkOf } from '../talk-address';
+import { withView, withoutPanel } from '../panel-address';
+import { marksFor, unanswered, type Mark } from '../about';
+import { registerHref } from '../register-address';
+import { RegisterHolding } from '../components/register-holding';
 import { dayText, talkAtText, talkFor, talkStatus, type TalkEntry } from '../talks';
 import { useRail } from '../components/nav';
 import { Shell, mobileQuery } from '../components/shell';
 import { AsyncContent, ContentSkeleton } from '../components/loading';
 import { PageHeader } from '../components/page-header';
 import { TalkOverlay } from '../components/talk-overlay';
+import { PanelBody, usePanel, type PanelFrame } from '../components/panel';
+import { useView } from '../components/use-view';
 import { roleText } from './admin/labels';
 
 /**
@@ -46,11 +61,68 @@ import { roleText } from './admin/labels';
  * this list at `/staff?talk=<personId>` (`TalkOverlay`); a missing talk also has Boka, to the calendar's week. When
  * another system answers the profile, the same columns are read-only and Samtal opens that system. No talks system, or
  * no open round, and the page is as D94 drew it.
+ *
+ * What the sources say about a person (D97 items 2 and 5): the page asks `clew.about` once for everyone it lists. Where
+ * a source gives a status a warning or an alert tone, the person's row has a mark under Behöver dig: the status as a
+ * badge and the source's name as a link that opens the source's own view of that person in the panel, over the list
+ * (D83: a record opened from a tool keeps the tool underneath; the address names it, `?open=…`). The page knows no
+ * source by name. With no source about people the column is not there; a source that did not answer is named once.
+ *
+ * Registrera intyg (D101 item 7): while Clew's own competence module is on for the manager and its catalogue has a type,
+ * each person who is not deactivated has a menu of actions with it, which opens the form as a dialog over the list at
+ * `?register=<personId>` (`RegisterHolding`). The menu is the person's one place for actions (D97 item 2), not a button
+ * per feature on the row.
  */
 interface Row extends Record<string, unknown> {
   id: string;
   p: StaffPerson;
   talk: TalkEntry | null;
+  marks: Mark[];
+}
+/** The address that registers a certificate for this person, or undefined when that is not offered to the reader. */
+type RegisterHref = ((personId: string) => string) | undefined;
+/** A person's actions: one menu named for the person, there only when there is an action for them. */
+function PersonMenu({ person, registerFor }: { person: StaffPerson; registerFor: RegisterHref }) {
+  if (!registerFor || !person.enabled) return null;
+  return (
+    <MoreMenu
+      label={`Åtgärder för ${person.name}`}
+      size="sm"
+      alignment="end"
+      presentation="adaptive"
+      items={[{ label: 'Registrera intyg', href: registerFor(person.id) }]}
+    />
+  );
+}
+/** The address of the page with a source's view of one person in the panel. */
+type MarkHref = (view: ViewRef) => string;
+const markTone = { warn: 'warning', alert: 'error' } as const;
+/**
+ * A person's marks: for each, the status as a badge and the source as the way in, named for the person so that a row
+ * of them is told apart by a screen reader. A mark whose source declares no fuller view is the badge and the name.
+ */
+function Marks({ person, marks, hrefFor }: { person: StaffPerson; marks: Mark[]; hrefFor: MarkHref }) {
+  if (!marks.length) return null;
+  return (
+    <VStack gap={2} hAlign="start">
+      {marks.map(m => (
+        <HStack key={m.id} gap={2} vAlign="center" wrap="wrap">
+          <Badge variant={markTone[m.tone]} label={m.word} />
+          {m.view ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              label={m.title}
+              aria-label={`${m.title} för ${person.name}: ${m.word}`}
+              href={hrefFor(m.view)}
+            />
+          ) : (
+            <Text type="supporting">{m.title}</Text>
+          )}
+        </HStack>
+      ))}
+    </VStack>
+  );
 }
 /** What the list knows of the round: the answer while a round is open, null otherwise (no talks system, no round). */
 type Round = TalksResult & { round: NonNullable<TalksResult['round']> };
@@ -155,14 +227,32 @@ function UnitCard({
   round,
   search,
   openers,
+  about,
+  markHref,
+  registerFor,
 }: {
   unit: StaffUnit;
   mobile: boolean;
   round: Round | null;
   search: URLSearchParams;
   openers: Openers;
+  /** What the sources answered about the people listed; null when no source about people answers for the reader. */
+  about: AboutResult | null;
+  markHref: MarkHref;
+  registerFor: RegisterHref;
 }) {
   const n = unit.people.length;
+  // The column is there when a source about people is: a list where nobody needs the manager says so by being empty.
+  const markColumns = about?.sections?.length
+    ? [
+        {
+          key: 'marks',
+          header: 'Behöver dig',
+          width: proportional(2, { minWidth: 200 }),
+          renderCell: (r: Row) => <Marks person={r.p} marks={r.marks} hrefFor={markHref} />,
+        },
+      ]
+    : [];
   const links = (p: StaffPerson, talk: TalkEntry) =>
     round && <TalkLinks person={p} talk={talk} round={round} search={search} opener={openers(p.id)} />;
   // The round's columns, only while a round is open; a person outside the round has empty cells there, no badge.
@@ -186,6 +276,17 @@ function UnitCard({
           width: pixel(140),
           align: 'end' as const,
           renderCell: (r: Row) => r.talk && <Text hasTabularNumbers>{r.talk.openCommitments}</Text>,
+        },
+      ]
+    : [];
+  const actionColumns = registerFor
+    ? [
+        {
+          key: 'actions',
+          header: 'Åtgärder',
+          width: pixel(96),
+          align: 'end' as const,
+          renderCell: (r: Row) => <PersonMenu person={r.p} registerFor={registerFor} />,
         },
       ]
     : [];
@@ -235,18 +336,30 @@ function UnitCard({
                         {links(p, talk)}
                       </>
                     )}
+                    <Marks person={p} marks={marksFor(about, p.id)} hrefFor={markHref} />
                   </VStack>
                 }
-                endContent={!p.enabled ? <Badge variant="neutral" label="Avstängd" /> : undefined}
+                endContent={
+                  !p.enabled ? (
+                    <Badge variant="neutral" label="Avstängd" />
+                  ) : registerFor ? (
+                    <PersonMenu person={p} registerFor={registerFor} />
+                  ) : undefined
+                }
               />
             );
           })}
         </List>
       ) : (
         <Table<Row>
-          data={unit.people.map(p => ({ id: p.id, p, talk: round ? talkFor(p.id, round) : null }))}
+          data={unit.people.map(p => ({
+            id: p.id,
+            p,
+            talk: round ? talkFor(p.id, round) : null,
+            marks: marksFor(about, p.id),
+          }))}
           idKey="id"
-          columns={[...columns, ...talkColumns]}
+          columns={[...columns, ...markColumns, ...talkColumns, ...actionColumns]}
           density="balanced"
           hasHover
         />
@@ -259,12 +372,68 @@ export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }
   const manager = user.role === 'manager';
   const nav = useRail({ current: { surface: 'staff' }, admin, manager });
   const [search] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
   // Someone who is not a manager gets the page's own answer without a call the server would refuse anyway.
   const query = useQuery({ ...staffQuery, enabled: manager });
   // Null is no talks system: the page is as before, with no error. A failure says so beside the list, which stays.
   const talksQ = useQuery({ ...talksQuery, enabled: manager });
   const units = query.data?.units ?? [];
   const people = units.reduce((sum, u) => sum + u.people.length, 0);
+  // Everyone listed, each once, asked about in one read (D97 item 7); the server drops whom the reader may not see.
+  const listed = useMemo(
+    () => [...new Set((query.data?.units ?? []).flatMap(u => u.people.map(p => p.id)))].slice(0, ABOUT_KEYS_MAX),
+    [query.data],
+  );
+  // Null is no source about people: no column and no error. A failure says so beside the list, which stays.
+  const aboutQ = useQuery({ ...aboutQuery(listed), enabled: manager && listed.length > 0 });
+  const about = aboutQ.data ?? null;
+  const silent = unanswered(about);
+  // Null is the module switched off, or not the reader's to register in: no menu and no error.
+  const typesQ = useQuery({ ...competenceTypesQuery, enabled: manager });
+  const types = useMemo(() => (typesQ.data?.rows ?? []).filter(t => !t.archived), [typesQ.data]);
+  const registerFor = useMemo<RegisterHref>(
+    () => (types.length ? personId => registerHref(location.pathname, personId, search) : undefined),
+    [types.length, location.pathname, search],
+  );
+  const registrable = useMemo(
+    () => (query.data?.units ?? []).flatMap(u => u.people).filter(p => p.enabled),
+    [query.data],
+  );
+  // A source's view of one person, opened from a mark: in the panel over the list, named in the address.
+  const opened = manager ? search.get('open') : null;
+  const side = useView(opened, search.get('open-input'), {
+    title: search.get('open-title') ?? opened ?? '',
+    via: search.get('via') === '1',
+    address: location.pathname + location.search,
+  });
+  const detail = side.shown;
+  const markHref = useCallback<MarkHref>(
+    view => withView(location.pathname, search, view),
+    [location.pathname, search],
+  );
+  const frame: PanelFrame | null = detail
+    ? {
+        id: `view:${detail.capability}`,
+        title: detail.title,
+        address: detail.address,
+        wide: detail.spec?.kind === 'table',
+        onClose: () => navigate(withoutPanel(location.pathname, search)),
+        body: inline => (
+          <PanelBody
+            output={detail.output}
+            view={detail.spec}
+            input={detail.input}
+            isLoading={side.isLoading}
+            inline={inline}
+            hrefFor={v => withView(location.pathname, search, v, true)}
+            onBack={detail.via ? () => navigate(-1) : undefined}
+          />
+        ),
+      }
+    : null;
+  // The list keeps its width: what a mark opens lies over it, as the panel does wherever both do not fit (D83).
+  const slot = usePanel(frame, { minMain: 1060, overlayOnly: true });
   const talkId = talkOf(search);
   const talkPerson = talkId ? units.flatMap(u => u.people).find(p => p.id === talkId) : undefined;
   // The open talk names the tab; the overlay says its own name when the focus enters it, and the list's name is not
@@ -341,6 +510,21 @@ export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }
                       )}
                     </VStack>
                   )}
+                  {aboutQ.isError && (
+                    <Text as="p" role="alert">
+                      {errorMessage(aboutQ.error, 'Det gick inte att hämta vad som behöver dig på listan.')}
+                    </Text>
+                  )}
+                  {silent.length > 0 && (
+                    <Text type="supporting" role="status">
+                      {silent.join(', ')} svarade inte, så listan kan sakna markeringar därifrån.
+                    </Text>
+                  )}
+                  {side.failed && (
+                    <Text as="p" role="alert">
+                      {errorMessage(side.failed, 'Det gick inte att öppna.')}
+                    </Text>
+                  )}
                   {talksQ.isError && (
                     <VStack gap={2}>
                       <Text as="p" role="alert">
@@ -358,7 +542,17 @@ export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }
                     </VStack>
                   )}
                   {units.map(u => (
-                    <UnitCard key={u.unitId} unit={u} mobile={mobile} round={round} search={search} openers={openers} />
+                    <UnitCard
+                      key={u.unitId}
+                      unit={u}
+                      mobile={mobile}
+                      round={round}
+                      search={search}
+                      openers={openers}
+                      about={about}
+                      markHref={markHref}
+                      registerFor={registerFor}
+                    />
                   ))}
                 </AsyncContent>
               )}
@@ -367,6 +561,8 @@ export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }
         }
       />
       {manager && <TalkOverlay opener={opener} />}
+      {slot.overlay}
+      {manager && <RegisterHolding pathname={location.pathname} people={registrable} types={types} />}
     </Shell>
   );
 }

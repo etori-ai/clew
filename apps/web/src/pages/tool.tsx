@@ -1,7 +1,6 @@
-import { useMemo, useRef } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import type { PanelViewSpec, SessionUser } from '@clew/contracts';
+import { useQuery } from '@tanstack/react-query';
+import type { SessionUser } from '@clew/contracts';
 import {
   Banner,
   Button,
@@ -13,13 +12,14 @@ import {
   VStack,
   useMediaQuery,
 } from '@clew/ui';
-import { areasQuery, viewQuery } from '../queries';
+import { areasQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { withView } from '../panel-address';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { toolHref, useRail } from '../components/nav';
 import { DeclaredView } from '../components/view';
+import { useView } from '../components/use-view';
 import { CONVERSATION_MIN, PanelBody, panelBesideQuery, usePanel, type PanelFrame } from '../components/panel';
 import { Composer, type ComposerAbout } from '../components/composer';
 import { PageHeader } from '../components/page-header';
@@ -27,63 +27,6 @@ import { ContentArrival, ContentSkeleton } from '../components/loading';
 
 /** The table needs 970 px beside the rail, so a 1280 px laptop gets it, with a scrollbar too; a narrower window draws the same rows as a list. */
 const tableQuery = '(min-width: 1280px)';
-const parse = (json: string | null): Record<string, unknown> => {
-  try {
-    const v: unknown = json ? JSON.parse(json) : {};
-    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
-};
-type Shown = {
-  capability: string;
-  title: string;
-  output: unknown;
-  spec: PanelViewSpec | undefined;
-  input: Record<string, unknown>;
-  via: boolean;
-  address: string;
-};
-
-/**
- * One view read for an address. What is on screen stays until the next answer has arrived: typing in a view's own field
- * keeps its rows, and a view that takes another's place does so with its title, in one step.
- */
-function useView(
-  capability: string | null,
-  inputJson: string | null,
-  at: { title: string; via: boolean; address: string },
-) {
-  const query = useQuery({
-    ...viewQuery(capability ?? '', inputJson),
-    enabled: !!capability,
-    placeholderData: keepPreviousData,
-  });
-  const input = useMemo(() => parse(inputJson), [inputJson]);
-  const shown = useRef<Shown | null>(null);
-  const arrived =
-    query.data && (!query.isPlaceholderData || query.data.view?.capability === capability) ? query.data : undefined;
-  if (!capability || query.isError) shown.current = null;
-  else if (arrived)
-    shown.current = {
-      capability,
-      title: at.title,
-      output: arrived.output,
-      spec: arrived.view,
-      input,
-      via: at.via,
-      address: at.address,
-    };
-  return {
-    shown: capability ? shown.current : null,
-    isLoading: query.isFetching && query.isPlaceholderData,
-    failed: query.isError ? query.error : null,
-    retry: () => {
-      void query.refetch();
-    },
-  };
-}
-
 /**
  * A tool as a page (D42): a view an administrator has chosen for the menu (D40) is opened at `/tools/:capability`,
  * inside the one shell, as Kalender is. The page follows Astryx's `table-page` template and the one page header (D74):

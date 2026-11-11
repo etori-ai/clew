@@ -264,6 +264,15 @@
       "area": "integrations"
     },
     {
+      "key": "D101-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue",
+      "number": 101,
+      "path": "docs/decisions/D101-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md",
+      "title": "D101 · Competence is an owned domain: one holding for competences and certificates, typed against a catalogue",
+      "status": "proposed; the direction below was set in a working session on 2026-11-11 and is not yet confirmed by the product owner, so the record is not accepted until it is (decided in that session: a core module shipped with Clew and switched on per installation, competences and certificates in it, a position on the person, the catalogue with the main administrator, search for HR and staffing, a person's own registration approved by their manager, erasure a period after deactivation, the matrix as a page of its own, a review by an HR practitioner before real data); the items marked \"proposed\" are the author's and were not discussed, the items under \"Open\" are not decided; the first slice built 2026-11-11 on synthetic data (the catalogue, a manager's registration, the computed status, two reads, the figure, the scan, erasure and export; see \"As built\"), the rest not built",
+      "date": "2026-11-11",
+      "area": "product, identity, integrations"
+    },
+    {
       "key": "D11-one-calendar-contract-two-adapters",
       "number": 11,
       "path": "docs/decisions/D11-one-calendar-contract-two-adapters.md",
@@ -1114,7 +1123,7 @@
       "number": 97,
       "path": "docs/decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md",
       "title": "D97 · A source says what its rows are about, and Clew places them",
-      "status": "accepted as the direction (product owner, 2026-11-10), nothing built; the items under \"Open\" are not decided",
+      "status": "accepted as the direction (product owner, 2026-11-10); the server half of items 1 and 7 and the mark on the row of item 2 built 2026-11-11 for sources in Clew's own process (see \"As built\"), the section, the lens and the menu not; the items under \"Open\" are not decided",
       "date": "2026-11-10",
       "area": "integrations, ui"
     },
@@ -1571,6 +1580,12 @@
     {
       "path": "docs/decisions/D10-integrations-fulfil-clews-api-first.md",
       "title": "D10 · Integrations fulfil Clew's API; adapters are the fallback",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D101-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md",
+      "title": "D101 · Competence is an owned domain: one holding for competences and certificates, typed against a catalogue",
       "category": "decision-history",
       "headings": []
     },

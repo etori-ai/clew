@@ -1,6 +1,6 @@
 # D97 · A source says what its rows are about, and Clew places them
 
-**Status:** accepted as the direction (product owner, 2026-11-10), nothing built; the items under "Open" are not decided · **Date:** 2026-11-10 · **Area:** integrations, ui
+**Status:** accepted as the direction (product owner, 2026-11-10); the server half of items 1 and 7 and the mark on the row of item 2 built 2026-11-11 for sources in Clew's own process (see "As built"), the section, the lens and the menu not; the items under "Open" are not decided · **Date:** 2026-11-10 · **Area:** integrations, ui
 
 **Decision.** A feature that belongs on top of an entity (a person, a unit, later a room) is not written into the
 entity's page. Its source, a connector or a module Clew owns, declares what its rows are **about**, and Clew decides
@@ -80,6 +80,34 @@ keeping a copy of what sources say about a person: a second record with its own 
 (https://claude.ai/artifact/Muchzp6aRAx9uxokwFLAfj) was written but not rendered and checked, is drawn in plain
 markup, and shows sources Clew does not have. The Astryx components for the Visa menu and the person's panel and
 page have not been looked up. The pattern is unproven beyond people and units. No HR practitioner has seen it.
+
+**As built.** 2026-11-11, branch `competence-module`, built with [D101](D101-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md)
+in the same working session, without the author of this record; only what the items above already decide, and
+nothing under "Open". Item 1: `ENTITY_KINDS` (`person`, `unit`) in `@clew/contracts`, and `about` on a capability in
+`@clew/connectors`; a read that declares it takes `AboutInputSchema` (up to 200 keys), answers at most one row per key
+and must declare a view and not be a model tool (`connectorProblems`). Item 7: `modules/about` and the composite
+`clew.about`, joined into the core connector as the errand list is: every read about the kind that the reader may call
+is asked with the same keys at once, each under its own budget inside one for the whole; a key outside the reader's
+reach is dropped without a word; a source that is late, fails, or answers a key it was not asked or one key twice says
+so in its own section. Who may be asked about a person is `aboutReach` in `composition/about.ts`: the reader and the
+people who report to them (D99 item 4); a unit has no rule yet. The first source is `competence.standing`.
+
+The mark of item 2, on Personal (`apps/web/src/pages/staff.tsx`, `apps/web/src/about.ts`): the page asks
+`clew.about` once for everyone it lists and knows no source by name. Where a source gives a status field a `warn` or
+`alert` tone, the person's row has, under a column **Behöver dig**, the status as a badge and the source's title as a
+link named for the person, which opens the read the source's view declares under `open` in the context panel, over
+the list (D83: origin the mark, space the panel as its drawer, parent the list, address `?open=…&open-input=…`, close
+back to the list with the focus on the mark). With no source about people the column is not there; a source that did
+not answer is named once in a status line. The panel is always over the list here, never beside it, since the page
+scrolls as a whole and the table needs its width.
+
+Not built: the section when a person is opened, the lens and the menu of item 2, items 3 to 6, and item 8 beyond the
+reach rule: there is no person panel or page, and Personal still has its hard-wired talk columns beside the marks. A remote connector cannot declare `about`,
+since the manifest does not carry it while the key on the wire is open; for a source in process the key of a person is
+Clew's person id. A read about a person runs with the reader's current scope through the registry, but not yet "as a
+figure does under D75" with cancellation. Tests: `tests/unit/about.test.ts`, `apps/web/tests/about.test.ts` and
+`tests/a11y/staff-about.spec.ts` (keyboard, focus return, axe and reflow at desktop, phone and 320 px); not seen
+signed in on the development stack, and no manual pass with a screen reader.
 
 **Replaces.** Nothing yet. When built it refines
 [D94](D94-a-manager-has-a-personal-section-listing-the-people-on-their-units.md) item 3 (a person gets a panel and a

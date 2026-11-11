@@ -896,3 +896,62 @@ export const talkCommitments = pgTable(
       .where(sql`${t.doneAt} IS NULL`),
   ],
 );
+/**
+ * The catalogue of competence types (D101 item 2): rows per installation, never an enumeration in code. Archived, never
+ * deleted; one name per organisation among the types that are not archived, without regard to case.
+ */
+export const competenceTypes = pgTable(
+  'competence_type',
+  {
+    id: text('id').primaryKey(),
+    organisationId: text('organisation_id').notNull(),
+    name: text('name').notNull(),
+    area: text('area').notNull(),
+    kind: text('kind').$type<'certificate' | 'degree' | 'course' | 'authorisation'>().notNull(),
+    // The employer's rule (item 3): months from the issue date. Null: no rule.
+    validityMonths: integer('validity_months'),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    // An actor string (a person's principal id, `operator:cli`), not a person.
+    createdBy: text('created_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  t => [
+    check('competence_type_kind', sql`${t.kind} IN ('certificate', 'degree', 'course', 'authorisation')`),
+    check('competence_type_validity', sql`${t.validityMonths} IS NULL OR ${t.validityMonths} BETWEEN 1 AND 600`),
+    uniqueIndex('competence_type_name')
+      .on(t.organisationId, sql`lower(${t.name})`)
+      .where(sql`${t.archivedAt} IS NULL`),
+  ],
+);
+/**
+ * What one person holds of one type (D101 item 1): a competence and a certificate are the same record. Where it stands
+ * is computed when read and never stored (item 4). `expires_on` is the issuer's own date only (item 3). The person's
+ * rows go with the person; the people who registered or revoked a row are nulled by erasure.
+ */
+export const competenceHoldings = pgTable(
+  'competence_holding',
+  {
+    id: text('id').primaryKey(),
+    personId: text('person_id')
+      .notNull()
+      .references(() => people.id, { onDelete: 'cascade' }),
+    typeId: text('type_id')
+      .notNull()
+      .references(() => competenceTypes.id),
+    issuedOn: date('issued_on', { mode: 'string' }).notNull(),
+    expiresOn: date('expires_on', { mode: 'string' }),
+    evidence: text('evidence').$type<'system' | 'manager' | 'self'>().notNull(),
+    state: text('state').$type<'pending' | 'valid' | 'rejected' | 'revoked'>().notNull(),
+    registeredBy: text('registered_by').references(() => people.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    revokedBy: text('revoked_by').references(() => people.id, { onDelete: 'set null' }),
+  },
+  t => [
+    check('competence_holding_evidence', sql`${t.evidence} IN ('system', 'manager', 'self')`),
+    check('competence_holding_state', sql`${t.state} IN ('pending', 'valid', 'rejected', 'revoked')`),
+    check('competence_holding_period', sql`${t.expiresOn} IS NULL OR ${t.expiresOn} >= ${t.issuedOn}`),
+    index('competence_holding_person').on(t.personId),
+    index('competence_holding_type').on(t.typeId),
+  ],
+);

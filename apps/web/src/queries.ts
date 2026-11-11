@@ -31,6 +31,26 @@ export const commitmentsQuery = (person?: string) =>
     queryFn: () => unlessRefused(api.talks.commitments(person)),
     retry: false,
   });
+/**
+ * What the sources say about the people on a list (D97): `null` when no source about people answers for the reader
+ * (the capability is refused, not offered), which is nothing to show and no error. Not retried: the list stands
+ * without its marks, and says so.
+ */
+export const aboutQuery = (people: string[]) =>
+  queryOptions({
+    queryKey: keys.about(people),
+    queryFn: () => unlessRefused(api.about(people)),
+    retry: false,
+  });
+/**
+ * Kompetens (D101): the types a certificate can be registered for. `null` when the module is switched off for the
+ * person or they may not register: nothing is offered then, and it is no error. Not retried.
+ */
+export const competenceTypesQuery = queryOptions({
+  queryKey: keys.competenceTypes,
+  queryFn: () => unlessRefused(api.competence.types()),
+  retry: false,
+});
 /** The day and the model's status are extras on the page: a failure is tolerated, never retried, never shown as the page's error. */
 export const todayQuery = queryOptions({ queryKey: keys.today, queryFn: () => api.today(), retry: false });
 export const attentionQuery = queryOptions({ queryKey: keys.attention, queryFn: () => api.attention() });
@@ -132,6 +152,15 @@ export const cardViewQuery = (threadId: string, actionId: string) =>
 /** Administration (D23). The detail read keeps its 400 for the page to turn into "Anslutningen finns inte". */
 /** The shared header (D88): what the person's header connector lists for them, read once per visit. */
 export const headerQuery = queryOptions({ queryKey: keys.header, queryFn: () => api.header(), staleTime: Infinity });
+/**
+ * Administration › Kompetens (D101): the whole catalogue, archived types included, for an administrator of it. A
+ * refusal is the page's own state (the module is off, or the capability is missing), so it is not retried.
+ */
+export const competenceCatalogueQuery = queryOptions({
+  queryKey: keys.competenceCatalogue,
+  queryFn: () => api.competence.types(),
+  retry: false,
+});
 export const adminQueries = {
   connectors: queryOptions({ queryKey: keys.admin.connectors, queryFn: () => api.admin.connectors() }),
   units: queryOptions({ queryKey: keys.admin.units, queryFn: () => api.admin.units() }),

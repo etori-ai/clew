@@ -110,6 +110,7 @@ export { Toolbar } from '@astryxdesign/core/Toolbar';
 export { TreeList, type TreeListItemData } from '@astryxdesign/core/TreeList';
 export { FormLayout } from '@astryxdesign/core/FormLayout';
 export { TextInput } from '@astryxdesign/core/TextInput';
+export { NumberInput } from '@astryxdesign/core/NumberInput';
 export { FileInput } from '@astryxdesign/core/FileInput';
 export { Theme } from '@astryxdesign/core/theme';
 export { InfoTip } from '@astryxdesign/core/InfoTip';

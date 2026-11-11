@@ -51,7 +51,13 @@ import {
   type TalkEntry,
 } from './data';
 import type {
+  AboutResult,
   AppearanceAdminView,
+  CompetenceHoldingBody,
+  CompetenceType,
+  CompetenceTypeBody,
+  CompetenceTypePatch,
+  CompetenceValidityImpact,
   AppearanceLogoInputType,
   CommitmentAddBody,
   CommitmentsInput,
@@ -63,6 +69,7 @@ import type {
 import { THEME_BASE_COLORS, parseThemeFile, themeFileOf } from '../../packages/contracts/src/theme-file';
 import { personSearch, phonebook } from './phonebook';
 import { rooms, roomsSpec } from './rooms';
+import { holdingsOutput, holdingsSpec } from './about';
 import { errandsOutput, errandsSpec, smErrandOutput, smErrandSpec } from './errands';
 import { manifestReference } from '../../packages/connectors/src/reference';
 import { parseManifest } from '../../packages/connectors/src/remote';
@@ -132,6 +139,28 @@ export class MockApi {
    * round lists nobody and their own action points are only the ones about them. For Hem without Personal.
    */
   employee = false;
+  /**
+   * What the sources say about people (D97): what `clew.about` answers. Null: no source about people answers for the
+   * person, so the read is refused as the registry refuses it and Personal is as it was.
+   */
+  about: AboutResult | null = null;
+  /** The next read of `clew.about` fails as a source that broke would, once. */
+  aboutFail = false;
+  /**
+   * Kompetens (D101): the catalogue a certificate is registered from. Null: the module is switched off for the person,
+   * so its routes are refused and Personal offers no registration.
+   */
+  competenceTypes: CompetenceType[] | null = null;
+  /** Every write to the catalogue, in order: the method, the path and the body. */
+  catalogueWrites: Array<{ method: string; path: string; body?: unknown }> = [];
+  /** What the server answers a new validity would do. */
+  validityImpact: CompetenceValidityImpact = { holdings: 3, expiredBefore: 0, expiredAfter: 2 };
+  /** The next write to the catalogue answers 400 with this sentence; it resets itself after that one. */
+  catalogueFail: string | null = null;
+  /** What the registrations sent, in order. */
+  registered: Array<{ personId: string; body: CompetenceHoldingBody }> = [];
+  /** The next registration answers 400 with this sentence; it resets itself after that one. */
+  registerFail: string | null = null;
   /** Utvecklingssamtal (D96). False: the person has no talks system, so both reads are refused as the registry refuses them. */
   talksOffered = true;
   /** False: another system answers the profile; the reads are read-only (no `id`, a `link` on every row) and the writes refused. */
@@ -502,6 +531,82 @@ export class MockApi {
     if (path === '/cap/clew.errands') return json({ output: errandsOutput, source: 'Startsidan', view: errandsSpec });
     if (path === '/cap/sm.errand')
       return json({ output: smErrandOutput, source: 'Ärendesystemet', view: smErrandSpec });
+    // Kompetens (D101): the catalogue and a manager's registration.
+    if (path.startsWith('/competence/') && !this.competenceTypes)
+      return route.fulfill({
+        status: 403,
+        json: { error: 'Kompetens är inte påslaget i den här installationen.', code: 'denied' },
+      });
+    if (path === '/competence/types' && route.request().method() === 'GET') return json({ rows: this.competenceTypes });
+    const typePath = /^\/competence\/types(?:\/([^/]+))?(\/archive|\/validity)?$/.exec(path);
+    if (typePath && this.competenceTypes && path !== '/competence/types') {
+      const id = decodeURIComponent(typePath[1]!),
+        method = route.request().method();
+      if (typePath[2] === '/validity') return json(this.validityImpact);
+      const found = this.competenceTypes.find(t => t.id === id);
+      if (!found) return route.fulfill({ status: 400, json: { error: 'Kompetensen finns inte i katalogen.' } });
+      if (this.catalogueFail) {
+        const error = this.catalogueFail;
+        this.catalogueFail = null;
+        return route.fulfill({ status: 400, json: { error } });
+      }
+      if (typePath[2] === '/archive' && method === 'POST') {
+        found.archived = true;
+        this.catalogueWrites.push({ method, path });
+        return route.fulfill({ status: 204, body: '' });
+      }
+      if (method === 'PATCH') {
+        const body = route.request().postDataJSON() as CompetenceTypePatch;
+        const { validityMonths, ...rest } = body;
+        Object.assign(found, rest);
+        if (validityMonths === null) delete found.validityMonths;
+        else if (validityMonths !== undefined) found.validityMonths = validityMonths;
+        this.catalogueWrites.push({ method, path, body });
+        return route.fulfill({ status: 204, body: '' });
+      }
+    }
+    if (path === '/competence/types' && this.competenceTypes && route.request().method() === 'POST') {
+      if (this.catalogueFail) {
+        const error = this.catalogueFail;
+        this.catalogueFail = null;
+        return route.fulfill({ status: 400, json: { error } });
+      }
+      const body = route.request().postDataJSON() as CompetenceTypeBody;
+      const id = 't-new-' + (this.catalogueWrites.length + 1);
+      this.competenceTypes.push({
+        id,
+        name: body.name,
+        area: body.area,
+        kind: body.kind,
+        ...(body.validityMonths ? { validityMonths: body.validityMonths } : {}),
+        archived: false,
+      });
+      this.catalogueWrites.push({ method: 'POST', path, body });
+      return route.fulfill({ status: 201, json: { id } });
+    }
+    const registering = /^\/competence\/people\/([^/]+)\/holdings$/.exec(path);
+    if (registering && route.request().method() === 'POST') {
+      if (this.registerFail) {
+        const error = this.registerFail;
+        this.registerFail = null;
+        return route.fulfill({ status: 400, json: { error } });
+      }
+      const body = route.request().postDataJSON() as CompetenceHoldingBody;
+      this.registered.push({ personId: decodeURIComponent(registering[1]!), body });
+      return route.fulfill({ status: 201, json: { id: 'holding-' + this.registered.length } });
+    }
+    // What the sources say about people (D97) and the view a mark opens.
+    if (path === '/cap/clew.about') {
+      if (this.aboutFail) {
+        this.aboutFail = false;
+        return route.fulfill({ status: 502, json: { error: 'Källorna svarar inte just nu.' } });
+      }
+      return this.about
+        ? json({ output: this.about, source: 'Clew' })
+        : route.fulfill({ status: 400, json: { error: 'Du saknar behörighet för åtgärden.' } });
+    }
+    if (path === '/cap/competence.holdings')
+      return json({ output: holdingsOutput, source: 'Kompetens', view: holdingsSpec });
     // Utvecklingssamtal (D96): the two composites and the built-in module's writes.
     if (path === '/cap/clew.talks' || path === '/cap/clew.commitments' || path.startsWith('/talks/'))
       return this.handleTalks(route, path, url);

@@ -71,6 +71,15 @@ import type {
   OrganisationUnitPeople,
 } from '@clew/contracts';
 import type { McpDelivery, McpService, McpView, McpResult } from '@clew/contracts';
+import type {
+  AboutQuery,
+  AboutResult,
+  CompetenceHoldingBody,
+  CompetenceTypeBody,
+  CompetenceTypePatch,
+  CompetenceTypesOutput,
+  CompetenceValidityImpact,
+} from '@clew/contracts';
 
 import { ApiError } from './api-error';
 export { ApiError };
@@ -189,6 +198,35 @@ export const api = {
     complete: (id: string) => post<void>(`${commitmentPath(id)}/done`),
     /** Opens a done action point again. */
     reopen: (id: string) => del<void>(`${commitmentPath(id)}/done`),
+  },
+  /**
+   * What the sources say about people (D97): `clew.about`, one section per source that declares a read about a person.
+   * A person with no such source has the read refused; `queries.ts` turns that refusal into `null`.
+   */
+  about: (keys: string[]) => read<AboutResult>('clew.about', { kind: 'person', keys } satisfies AboutQuery),
+  /**
+   * Kompetens (D101): the built-in module's own routes. They are refused while the module is switched off for the
+   * person, and the catalogue is refused to someone who neither manages anyone nor administers it; `queries.ts` turns
+   * that refusal into `null`.
+   */
+  competence: {
+    /** The competence types a certificate can be registered for. */
+    types: () => call<CompetenceTypesOutput>('/api/competence/types'),
+    /** An administrator of the catalogue adds a type. */
+    addType: (body: CompetenceTypeBody) => post<{ id: string }>('/api/competence/types', body),
+    /** Changes a type: what the body does not name is kept; `validityMonths: null` removes the employer's rule. */
+    updateType: (id: string, body: CompetenceTypePatch) =>
+      patch<void>(`/api/competence/types/${encodeURIComponent(id)}`, body),
+    /** Archives a type: it takes no new holdings and keeps the ones it has. */
+    archiveType: (id: string) => post<void>(`/api/competence/types/${encodeURIComponent(id)}/archive`),
+    /** What a new validity would do to the holdings counted from the type's rule, before it is saved. */
+    validityImpact: (id: string, months: number | null) =>
+      call<CompetenceValidityImpact>(
+        `/api/competence/types/${encodeURIComponent(id)}/validity?months=${months === null ? 'none' : months}`,
+      ),
+    /** A manager registers a certificate for a person who reports to them. */
+    register: (personId: string, body: CompetenceHoldingBody) =>
+      post<{ id: string }>(`/api/competence/people/${encodeURIComponent(personId)}/holdings`, body),
   },
   chatServices: () => call<{ services: McpService[]; deliveries: McpDelivery[] }>('/api/chat-services'),
   chatService: (id: string, deliveryId?: string) =>

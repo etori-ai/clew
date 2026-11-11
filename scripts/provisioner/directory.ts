@@ -267,7 +267,7 @@ const personas: DirectoryPerson[] = [
     department: 'unit-it',
     manager: false,
     groups: ['ad:intranat-redaktorer'],
-    capabilities: ['admin.connectors', 'admin.users', 'admin.appearance'],
+    capabilities: ['admin.connectors', 'admin.users', 'admin.appearance', 'admin.competence'],
     login: true,
   },
 ];

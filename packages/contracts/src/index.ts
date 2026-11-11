@@ -716,6 +716,60 @@ export const ErrandsResultSchema = object({
   unanswered: Type.Array(Type.String()),
 });
 export type ErrandsResult = Static<typeof ErrandsResultSchema>;
+/**
+ * What a capability's rows may be about (D97 item 1): a closed list. A source declares the kind and never where its
+ * rows show; Clew places them.
+ */
+export const ENTITY_KINDS = ['person', 'unit'] as const;
+export const EntityKind = Type.Union(ENTITY_KINDS.map(kind => Type.Literal(kind)));
+export type EntityKind = (typeof ENTITY_KINDS)[number];
+/** A row about an entity: the key it was asked with and the source's own properties. */
+export type AboutRow = { key: string } & Record<string, unknown>;
+const aboutRow = Type.Unsafe<AboutRow>(Type.Object({ key: id }, { additionalProperties: true }));
+/** The most entities one read about them is asked for at a time (D97 item 7). */
+export const ABOUT_KEYS_MAX = 200;
+/**
+ * What a read that declares `about` takes (D97 items 1 and 7): the keys of the entities the reader may already see. For
+ * a connector in Clew's own process the key of a person is Clew's person id; the key on the wire to a remote connector
+ * is not decided.
+ */
+export const AboutInputSchema = object({
+  keys: Type.Array(id, { minItems: 1, maxItems: ABOUT_KEYS_MAX, uniqueItems: true }),
+});
+export type AboutInput = Static<typeof AboutInputSchema>;
+/**
+ * What such a read answers, as far as Clew checks it: at most one row per key it was asked with, each carrying that
+ * key. An entity the source has nothing about, or that is outside the caller's scope there, is answered as no row,
+ * never as a refusal. The other properties are the source's own, drawn by its declared view.
+ */
+export const AboutOutputSchema = Type.Object(
+  { rows: Type.Array(aboutRow, { maxItems: ABOUT_KEYS_MAX }) },
+  { additionalProperties: true },
+);
+export type AboutOutput = Static<typeof AboutOutputSchema>;
+/** What the composite `clew.about` takes: the kind and the entities; keys outside what the reader may see are dropped. */
+export const AboutQuerySchema = object({
+  kind: EntityKind,
+  keys: Type.Array(id, { minItems: 1, maxItems: ABOUT_KEYS_MAX }),
+});
+export type AboutQuery = Static<typeof AboutQuerySchema>;
+/**
+ * What `clew.about` returns (D97 items 2, 5 and 7): one section per source that declares a read about the kind and is
+ * visible to the reader, in the order of the sources' names. A source that did not answer in time or answered what it
+ * was not asked says so in its own section and the rest stand.
+ */
+export const AboutSectionSchema = object({
+  connector: id,
+  source: Type.String({ description: 'Swedish. The source as a person reads it.' }),
+  capability: Type.String({ description: 'The read that answered, by full name.' }),
+  title: Type.String({ description: "Swedish. The read's title." }),
+  view: Type.Unsafe<View>(Type.Unknown({ description: "The read's declared view (D38), which draws a row." })),
+  status: Type.Union([Type.Literal('ok'), Type.Literal('timeout'), Type.Literal('unavailable')]),
+  rows: Type.Array(aboutRow, { maxItems: ABOUT_KEYS_MAX }),
+});
+export type AboutSection = Static<typeof AboutSectionSchema>;
+export const AboutResultSchema = object({ kind: EntityKind, sections: Type.Array(AboutSectionSchema) });
+export type AboutResult = Static<typeof AboutResultSchema>;
 /** A calendar day, `YYYY-MM-DD`, read in Swedish time: a round's dates, the day a talk was held, an action point's due date. */
 const calendarDay = Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$', maxLength: 10 });
 /** A user's account name as provisioned (SCIM `userName`, D68): what another system knows a person by, since it cannot know Clew's ids. */
@@ -871,6 +925,150 @@ export const CommitmentAddBodySchema = object({
   dueOn: calendarDay,
 });
 export type CommitmentAddBody = Static<typeof CommitmentAddBodySchema>;
+/**
+ * What a competence type is (D101 item 2). A closed list: a certificate and a competence are one record, a holding, and
+ * the kind says which the type is.
+ */
+export const COMPETENCE_KINDS = ['certificate', 'degree', 'course', 'authorisation'] as const;
+export const CompetenceKind = Type.Union(
+  COMPETENCE_KINDS.map(kind => Type.Literal(kind)),
+  {
+    description:
+      '`certificate`: a certificate with an issuer. `degree`: an examination. `course`: a completed course. `authorisation`: a right to perform a task, such as a delegation.',
+  },
+);
+export type CompetenceKind = (typeof COMPETENCE_KINDS)[number];
+/**
+ * Where a holding stands on a day (D101 item 4), computed when read and never stored. The order here is the order a
+ * list is drawn in: what needs a person first.
+ */
+export const COMPETENCE_STATUSES = ['expired', 'expiring', 'valid'] as const;
+export const CompetenceStatus = Type.Union(
+  COMPETENCE_STATUSES.map(status => Type.Literal(status)),
+  {
+    description:
+      '`expired`: the end date has passed. `expiring`: it ends within 90 days. `valid`: it ends later, or never.',
+  },
+);
+export type CompetenceStatus = (typeof COMPETENCE_STATUSES)[number];
+/** How a holding is attested (D101 items 7 and 9): read from a system, registered by a manager, or the person's own word. */
+export const COMPETENCE_EVIDENCE = ['system', 'manager', 'self'] as const;
+export type CompetenceEvidence = (typeof COMPETENCE_EVIDENCE)[number];
+const competenceName = Type.String({ minLength: 1, maxLength: 120 });
+const competenceArea = Type.String({ minLength: 1, maxLength: 80 });
+const validityMonths = Type.Integer({ minimum: 1, maximum: 600 });
+/** One row of the catalogue (D101 item 2) as the administration and the registration form list it. */
+export const CompetenceTypeSchema = object(
+  {
+    id: id,
+    name: { ...competenceName, description: 'Swedish. The type as a person reads it: "Heta arbeten".' },
+    area: { ...competenceArea, description: 'Swedish. The group the type is listed under: "Säkerhet".' },
+    kind: CompetenceKind,
+    validityMonths: Type.Optional({
+      ...validityMonths,
+      description: "The employer's rule: a holding ends this many months after it was issued. Absent: no rule.",
+    }),
+    archived: Type.Boolean({ description: 'An archived type takes no new holdings; the ones it has stay.' }),
+  },
+  'A competence type in the catalogue (D101).',
+);
+export type CompetenceType = Static<typeof CompetenceTypeSchema>;
+export const CompetenceTypesOutputSchema = object({ rows: Type.Array(CompetenceTypeSchema, { maxItems: 2000 }) });
+export type CompetenceTypesOutput = Static<typeof CompetenceTypesOutputSchema>;
+/** One holding as a read lists it (D101): who, what, since when, until when and where it stands today. */
+export const CompetenceHoldingRowSchema = object(
+  {
+    ref: Type.String({
+      minLength: 1,
+      maxLength: 200,
+      pattern: '^holding:[a-z][a-z0-9-]*:[A-Za-z0-9:_.-]+$',
+      description: "`holding:<connector id>:<the system's own identity>`, stable. Clew treats it as opaque.",
+    }),
+    userName: { ...userName, description: 'The person who holds it, by their provisioned user name.' },
+    name: Type.String({ minLength: 1, maxLength: 512, description: "The person's name." }),
+    competence: { ...competenceName, description: "The type's name." },
+    area: competenceArea,
+    kind: CompetenceKind,
+    issuedOn: { ...calendarDay, description: 'The day it was issued.' },
+    expiresOn: Type.Optional({
+      ...calendarDay,
+      description: "The last day it is valid: the issuer's date, else the employer's rule. Absent: it does not end.",
+    }),
+    status: CompetenceStatus,
+    evidence: Type.Union(COMPETENCE_EVIDENCE.map(e => Type.Literal(e))),
+  },
+  'One holding of one person (D101).',
+);
+export type CompetenceHoldingRow = Static<typeof CompetenceHoldingRowSchema>;
+/** What `competence.holdings` takes: a person the reader manages, by user name (or id when they have none); absent for the reader's own. */
+export const CompetenceHoldingsInputSchema = object({ person: Type.Optional(userName) });
+export type CompetenceHoldingsInput = Static<typeof CompetenceHoldingsInputSchema>;
+export const CompetenceHoldingsOutputSchema = object(
+  { rows: Type.Array(CompetenceHoldingRowSchema, { maxItems: 500 }) },
+  'The holdings of one person: for each type the one that decides its status, what needs the person first.',
+);
+export type CompetenceHoldingsOutput = Static<typeof CompetenceHoldingsOutputSchema>;
+/** What `competence.attention` takes: nothing; the people are the reader's reports. */
+export const CompetenceAttentionInputSchema = object({});
+export type CompetenceAttentionInput = Static<typeof CompetenceAttentionInputSchema>;
+export const CompetenceAttentionOutputSchema = object(
+  { rows: Type.Array(CompetenceHoldingRowSchema, { maxItems: 500 }) },
+  "What has expired or expires within 90 days among the reader's reports (D101 item 11), the expired first.",
+);
+export type CompetenceAttentionOutput = Static<typeof CompetenceAttentionOutputSchema>;
+/**
+ * Where one person stands as `competence.standing` answers it, a read about a person (D97 item 1): the worst status
+ * among their holdings and how many have run out or soon will. A person with no holding has no row.
+ */
+export const CompetenceStandingRowSchema = object(
+  {
+    key: { ...id, description: 'The person the row is about, by the key it was asked with.' },
+    person: {
+      ...userName,
+      description: "The person's user name, or their id when they have none: what `competence.holdings` takes.",
+    },
+    status: CompetenceStatus,
+    expired: Type.Integer({ minimum: 0, description: 'Holdings whose end date has passed.' }),
+    expiring: Type.Integer({ minimum: 0, description: 'Holdings that end within 90 days.' }),
+    holdings: Type.Integer({ minimum: 1, description: 'Holdings that count, one per type.' }),
+  },
+  'Where one person stands (D101, D97).',
+);
+export type CompetenceStandingRow = Static<typeof CompetenceStandingRowSchema>;
+export const CompetenceStandingOutputSchema = object({
+  rows: Type.Array(CompetenceStandingRowSchema, { maxItems: ABOUT_KEYS_MAX }),
+});
+export type CompetenceStandingOutput = Static<typeof CompetenceStandingOutputSchema>;
+/** An administrator adds a type to the catalogue (D101 item 2). */
+export const CompetenceTypeBodySchema = object({
+  name: competenceName,
+  area: competenceArea,
+  kind: CompetenceKind,
+  validityMonths: Type.Optional(Type.Union([validityMonths, Type.Null()])),
+});
+export type CompetenceTypeBody = Static<typeof CompetenceTypeBodySchema>;
+/** A change of a type: what is absent is kept; `validityMonths: null` removes the employer's rule. */
+export const CompetenceTypePatchSchema = object({
+  name: Type.Optional(competenceName),
+  area: Type.Optional(competenceArea),
+  kind: Type.Optional(CompetenceKind),
+  validityMonths: Type.Optional(Type.Union([validityMonths, Type.Null()])),
+});
+export type CompetenceTypePatch = Static<typeof CompetenceTypePatchSchema>;
+/** What a change of a type's validity would do to the holdings counted from it (D101 item 3), before it is confirmed. */
+export interface CompetenceValidityImpact {
+  /** Holdings that end by the rule: the ones with no date of the issuer's. */
+  holdings: number;
+  expiredBefore: number;
+  expiredAfter: number;
+}
+/** A manager registers a certificate for a person who reports to them (D101 item 7). */
+export const CompetenceHoldingBodySchema = object({
+  typeId: id,
+  issuedOn: calendarDay,
+  expiresOn: Type.Optional(calendarDay),
+});
+export type CompetenceHoldingBody = Static<typeof CompetenceHoldingBodySchema>;
 /** A Clew-side action the conversation proposes; executed only after the person confirms, through the thread endpoints. */
 export const ClewActionSchema = object({
   n: Type.Integer(),
@@ -1377,9 +1575,9 @@ export type Role = Static<typeof RoleSchema>;
  * The grant capabilities Clew enforces (D85): a closed list. A group mapping, a `capability:` group key or the development
  * seed may name nothing else; a new name is a contract change. `admin.connectors` administers connected systems (D23),
  * `admin.users` the users page and the group-to-capability mapping (D85), `admin.appearance` the installation's theme
- * and logo (D98).
+ * and logo (D98), `admin.competence` the catalogue of competence types (D101 item 8).
  */
-export const CAPABILITIES = ['admin.connectors', 'admin.users', 'admin.appearance'] as const;
+export const CAPABILITIES = ['admin.connectors', 'admin.users', 'admin.appearance', 'admin.competence'] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 export const CapabilitySchema = Type.Union(CAPABILITIES.map(c => Type.Literal(c)));
 export const isCapability = (value: string): value is Capability => (CAPABILITIES as readonly string[]).includes(value);

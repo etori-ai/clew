@@ -3,6 +3,7 @@ import {
   answerCards,
   bundledIds,
   internalIds,
+  offAtFirstBoot,
   registry,
   runCapability,
 } from '../connectors/registry';
@@ -27,7 +28,7 @@ import { createScheduler } from '../scheduler/usecases';
 import { postgresThreadStore } from '../threads/adapters/postgres';
 import { cancelDurable } from '../dbos/start';
 import { ledger } from './durable';
-import { actorOf } from '@clew/connectors';
+import { actorOf, COMPETENCE_CONNECTOR } from '@clew/connectors';
 import { reminderUsecases } from '../threads/usecases/reminders';
 import { threadUsecases } from '../threads/usecases/cards';
 import { clock, ids } from './ambient';
@@ -163,6 +164,14 @@ export async function talksWritable(persona: AuthenticatedContext) {
   await refreshConnectors();
   return registry.talkSource(actorOf(persona))?.builtIn === true;
 }
+/**
+ * Clew writes competence records only while the built-in module is switched on and visible to this person (D101 item
+ * 13). The rows are read first, as every API request does, so a change made on another instance counts at once.
+ */
+export async function competenceWritable(persona: AuthenticatedContext) {
+  await refreshConnectors();
+  return registry.visible(actorOf(persona), COMPETENCE_CONNECTOR);
+}
 // A cited answer becomes a card (D26) through the search connector's propose; the stream owns the card, so the slot is filled here.
 answerCards.create = async (actorId, input) => {
   const persona = await systemContext(actorId, 'system:answer-card');
@@ -257,6 +266,7 @@ export const connectorReconcile: ConnectorReconcileDeps = {
   live: connectorLive,
   bundled: bundledIds,
   internal: internalIds,
+  offAtFirstBoot,
   clock,
   log: logPort('connectors'),
 };

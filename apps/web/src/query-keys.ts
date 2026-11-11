@@ -33,6 +33,13 @@ export const keys = {
   header: ['header'] as const,
   /** Personal (D94): the manager's units and their people. */
   staff: ['staff'] as const,
+  /** What the sources say about these people (D97), by their ids in the order asked. */
+  about: (keys: readonly string[]) => ['about', 'person', keys.join(',')] as const,
+  aboutAll: ['about'] as const,
+  /** Kompetens (D101): the catalogue a certificate is registered from. */
+  competenceTypes: ['competence', 'types'] as const,
+  competenceCatalogue: ['competence', 'catalogue'] as const,
+  competenceAll: ['competence'] as const,
   /** Utvecklingssamtal (D96): the round, and action points per reader (`null`) or per person (their user name, else id). */
   talks: {
     all: ['talks'] as const,

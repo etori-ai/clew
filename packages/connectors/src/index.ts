@@ -7,6 +7,7 @@ import type {
   AreaOverride,
   CapabilityOverride,
   ConnectorAudience,
+  EntityKind,
   ConnectorState,
   MenuEntry,
   MenuHint,
@@ -129,6 +130,12 @@ export interface Capability<I = unknown, O = unknown> {
   kinds?: SearchKind[];
   /** How Clew draws the output (D38). Absent means the generic panel rules. */
   view?: View;
+  /**
+   * The entity kind the capability's rows concern (D97 item 1). A read that declares it takes `AboutInputSchema` and
+   * answers at most one row per key, and Clew decides where that shows; it is never a model tool. Only a connector in
+   * Clew's own process can declare it: a manifest does not carry it until the key on the wire is decided.
+   */
+  about?: EntityKind;
   /** What the view's row is called and marked with when an administrator puts it in the menu (D40). */
   menu?: MenuHint;
   /** For a `propose` (D55): the fact kinds it answers for with step drafts of its own connector. Input is a fact envelope, output a follow response. */
@@ -145,6 +152,9 @@ export const SEARCH_CONNECTOR = 'clew';
 /** A capability is an errand source when it is named `<id>.errands` and is a read (D35, D89); the composite `clew.errands` is never one itself. */
 export const isErrandSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId: string) =>
   c.kind === 'read' && c.name === connectorId + '.errands' && connectorId !== SEARCH_CONNECTOR;
+/** A capability is a source about an entity kind when it is a read that declares it (D97 item 1); the composite `clew.about` never is. */
+export const isAboutSource = (c: Pick<Capability, 'name' | 'kind' | 'about'>, connectorId: string, kind: EntityKind) =>
+  c.kind === 'read' && c.about === kind && connectorId !== SEARCH_CONNECTOR;
 /** The built-in connector of the talks domain (D96 item 9): Clew's own module, which answers the talks profile while it is enabled. */
 export const TALKS_CONNECTOR = 'talks';
 /** A capability answers the talks profile when it is named `<id>.talks` and is a read (D96 item 8); the composite `clew.talks` never does. */
@@ -153,6 +163,8 @@ export const isTalkSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId: 
 /** A capability lists action points when it is named `<id>.commitments` and is a read (D96 item 8); the composite `clew.commitments` never does. */
 export const isCommitmentSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId: string) =>
   c.kind === 'read' && c.name === connectorId + '.commitments' && connectorId !== SEARCH_CONNECTOR;
+/** The built-in connector of the competence domain (D101 item 13): Clew's own module, switched on by an administrator. */
+export const COMPETENCE_CONNECTOR = 'competence';
 const TALK_COMPOSITE = SEARCH_CONNECTOR + '.talks';
 const COMMITMENT_COMPOSITE = SEARCH_CONNECTOR + '.commitments';
 /**
@@ -750,6 +762,22 @@ export class Registry {
         source: c.connector.source,
         ...(this.opens(actor, c.capability) ? { open: this.opens(actor, c.capability)! } : {}),
       }));
+  }
+  /**
+   * The reads about an entity kind that this person may call (D97 item 1), by name. As in `errandSources`, the name is
+   * tested before the scope, so the composite `clew.about` may ask this from its own scope.
+   */
+  aboutSources(actor: Actor, kind: EntityKind) {
+    return [...this.capabilities.values()]
+      .filter(c => isAboutSource(c.capability, c.connector.id, kind) && !!this.allowed(actor, c.capability.name))
+      .map(c => ({
+        name: c.capability.name,
+        connectorId: c.connector.id,
+        source: c.connector.source,
+        title: c.capability.title,
+        view: c.capability.view!,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
   /**
    * The one system that answers the talks profile for this person (D96 item 9). A connector is a candidate when the

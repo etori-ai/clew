@@ -21,6 +21,8 @@ export interface ReconcileDeps {
   bundled: string[];
   /** Internal capability providers have no connector lifecycle (D62). */
   internal?: readonly string[];
+  /** Bundled connectors whose row is created disabled, for an administrator to switch on (D101 item 13). */
+  offAtFirstBoot?: readonly string[];
   clock: () => Date;
   log?: (message: string) => void;
 }
@@ -53,7 +55,14 @@ const canonical = (value: unknown): string =>
  * current description when it differs, the way a remote row takes a refetched manifest: no audit, no version bump,
  * and the administrator's governance of the row untouched.
  */
-export async function syncBundledRows({ registry, store, bundled, internal = [], clock }: ReconcileDeps) {
+export async function syncBundledRows({
+  registry,
+  store,
+  bundled,
+  internal = [],
+  offAtFirstBoot = [],
+  clock,
+}: ReconcileDeps) {
   const at = clock().toISOString();
   for (const id of bundled) {
     const connector = registry.connector(id);
@@ -65,7 +74,7 @@ export async function syncBundledRows({ registry, store, bundled, internal = [],
         bundled: true,
         url: null,
         secret: null,
-        state: 'enabled',
+        state: offAtFirstBoot.includes(id) ? 'disabled' : 'enabled',
         manifest,
         health: { status: 'ok', at },
         createdBy: 'system:boot',
