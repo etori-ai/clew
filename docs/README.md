@@ -54,6 +54,7 @@ Clew's integration contract is the connector protocol. A connector can use an MC
 | Upgrade, diagnose and recover | [Reliability operations](maintainers/reliability-operations.md) |
 | Maintain these docs | [Documentation workflow](maintainers/README.md) |
 | See what is undecided | [Open questions](maintainers/open-questions.md) |
+| Check what the product manager's prototype asks for and whether the architecture carries it | [Prototype parity](reference/prototype-parity.md) |
 | Check or record a dependency's licence | [Licence record](reference/licences.md) |
 | Compare a screen with its design | [Design canvases](reference/design-canvases.md) |
 | See every connector in the repository | [Connectors](../connectors/README.md) |

@@ -46,5 +46,6 @@ Read repository instructions before modifying code. Treat historical reviews, so
 - [Reviews](docs/reviews/README.md): dated evidence and explorations; not an implementation contract.
 - [Vision](docs/vision.md): product direction.
 - [Open questions](docs/maintainers/open-questions.md): what is undecided and who it waits for.
+- [Prototype parity](docs/reference/prototype-parity.md): the product manager's startsidan prototype feature by feature, with a verdict on whether the architecture carries each one, the building blocks that are missing and what is solved outside Clew; a checklist, not a plan.
 - [Licence record](docs/reference/licences.md): what was checked before each dependency was pinned.
 - [History](docs/history/README.md): the frozen handover and session log up to 2026-11-11; history, not instructions.

@@ -2708,6 +2708,24 @@
       ]
     },
     {
+      "path": "docs/reference/prototype-parity.md",
+      "title": "Parity with the startsidan prototype",
+      "category": "integrator-guide",
+      "headings": [
+        "How to read and keep this page",
+        "Summary",
+        "Version 1.0, for managers",
+        "The feature list",
+        "Building blocks",
+        "Tools with their own interface",
+        "Not made for",
+        "Chosen away, and possible",
+        "The requirement specifications",
+        "What HR asked for on 10 November 2026",
+        "The prototype's shared requirements"
+      ]
+    },
+    {
       "path": "docs/reference/reliability-acceptance.md",
       "title": "Reliability: vision, implementation and evidence",
       "category": "integrator-guide",

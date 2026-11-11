@@ -20,6 +20,8 @@ The status is kept as one page per area. Every entry has the same three parts: w
 
 To change an entry, edit its page. A new entry goes on the page for its area and gets a link in the table above; a one-screen adjustment is recorded in the entry of its page ([D102](../decisions/D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)).
 
+What the product manager's prototype asks for, and whether the architecture carries each item, is kept in [prototype parity](prototype-parity.md). When an entry here changes what a row there says, change the row in the same commit.
+
 ## How to read the decision history
 
 There are two records each numbered D37–D39 and D44–D46. Use full filenames: D37 dependencies differs from D37 header logo; D38 declared views differs from D38 municipal branding; D39 landing alignment differs from D39 compact header. D44 covers both connector authority and the administration check result; D45 covers approved execution intent and administration navigation; D46 covers committed browser revisions and the default theme. The [generated index](../decisions/README.md) and [context map](../context.json) retain every record and its original status without renumbering.
