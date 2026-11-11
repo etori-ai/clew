@@ -14,14 +14,14 @@ import { menuRow } from './phonebook';
 
 /** Wide enough for the panel to stand beside the page's column (D50); at the suite's desktop width it lies over it. */
 const wide = { width: 1440, height: 900 };
-/** Hem's box as it is with nothing added: also with a card open beside it (D107 rule 6). */
+/** Hem's box as it is with nothing added: also with a card open beside it (D110 rule 6). */
 const HEM_PLACEHOLDER = 'Skriv eller säg vad du vill göra …';
 
 /**
  * D50: the column is where the person is, the panel is what they hold beside it, and the conversation is never in the
  * panel. Hem (D53) is the one page with a card's state as tabs and the areas as a filter; a row opens its card in the
  * panel, which holds only what was opened, while the day and what happened since yesterday stay the page's own (D72).
- * Opening is not asking (D107 rule 6): a card goes into the box only with "Lägg till i samtalet", and a question asked
+ * Opening is not asking (D110 rule 6): a card goes into the box only with "Lägg till i samtalet", and a question asked
  * with something open beside Hem opens as a conversation with that beside the transcript.
  */
 test.describe("Hem: the day's work", () => {
@@ -244,7 +244,7 @@ test.describe('the panel beside the page', () => {
     expect(await sideways()).toBe(0);
     await fold.click();
     // Folding hides and nothing more (D63 item 14, revised): the address and the row keep the card, the box is as it
-    // was (opening is not asking, D107 rule 6), and the focus stays on the button, which now says the way back, at the
+    // was (opening is not asking, D110 rule 6), and the focus stays on the button, which now says the way back, at the
     // window's edge.
     await expect(panel.locator('#card-fakturor')).toHaveCount(0);
     await expect(page).toHaveURL(/\/\?card=fakturor$/);
@@ -286,7 +286,7 @@ test.describe('the panel beside the page', () => {
     page,
     api: _,
   }) => {
-    // The card's verbs, so the test sees when they show: only for the chip, never for the card merely open (D107 rule 6).
+    // The card's verbs, so the test sees when they show: only for the chip, never for the card merely open (D110 rule 6).
     await page.route('**/api/threads/fakturor/verbs', route =>
       route.fulfill({ json: { verbs: [{ id: 'why', label: 'Varför nu?', kind: 'why', threadId: 'fakturor' }] } }),
     );
@@ -350,7 +350,7 @@ test.describe('the panel beside the page', () => {
     // The day is not the panel's to give way (D72): it stays on the page, one landmark wherever it stands.
     await expect(aside.getByRole('region', { name: 'I dag' })).toBeVisible();
     await expect(page.getByRole('region', { name: 'I dag' })).toHaveCount(1);
-    // Hem is still the column, and its box is as it was: opening is not asking (D107 rule 6).
+    // Hem is still the column, and its box is as it was: opening is not asking (D110 rule 6).
     await expect(heading(page, 1, 'Hej Testa')).toBeVisible();
     await expect(page.getByText(HEM_PLACEHOLDER, { exact: true })).toBeVisible();
     await expect(page.getByText('Om kortet', { exact: true })).toHaveCount(0);
@@ -512,7 +512,7 @@ test.describe('the panel beside the page', () => {
     await expect(log).toContainText('Sök i telefonboken: 2 rader.');
     await expect(panel.getByRole('heading', { level: 2, name: 'Sök i telefonboken' })).toBeFocused();
     await expectNoAxeViolations(page);
-    // No control chooses a surface (D107 rule 7): the tool is in the rail where an administrator put it.
+    // No control chooses a surface (D110 rule 7): the tool is in the rail where an administrator put it.
     await expect(panel.getByText('Öppna som sida')).toHaveCount(0);
     await expect(panel.locator('a[href^="/tools/"]')).toHaveCount(0);
     // The box is in use while the panel is open, and typing there never loses the panel.

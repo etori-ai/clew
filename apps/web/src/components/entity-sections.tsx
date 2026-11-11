@@ -389,7 +389,7 @@ export function SectionFrame({
 
 /**
  * The reader's cards about the person or the unit, each leading to the card, its source at the end of the line. A card
- * opens in the panel of the page it is listed on (D107 rules 2 and 3), with the page's address kept: beside the
+ * opens in the panel of the page it is listed on (D110 rules 2 and 3), with the page's address kept: beside the
  * person's or the unit's page with its section and its way back, and over a person's cards listed beside Personal,
  * which closing the card leaves.
  */
@@ -422,7 +422,7 @@ export function CardList({ cards }: { cards: EntityCard[] }) {
  * system they act in, as the row menu on Personal is (artboard A3). On a phone one button, Åtgärder, the width of its
  * column, holds them all (artboard D). An action starts on the server and its card opens beside the page it was started
  * on (`entity-actions.ts`); a source's refusal is said aloud and stands under the buttons until the next action. They
- * hold what can be done about the entity, never a choice of where Clew shows it (D107 rule 7), and are the one place
+ * hold what can be done about the entity, never a choice of where Clew shows it (D110 rule 7), and are the one place
  * the page draws them: a section shows only what its source read (D97, amended 2026-11-11).
  */
 export function EntityActions({ detail, mobile }: { detail: EntityDetail; mobile: boolean }) {
@@ -530,7 +530,7 @@ export function SourceSection({
   headingLevel?: 2 | 3;
 }) {
   const row = rowOf(answer);
-  // The source's page in Clew over or instead of the page this section is on (`sourcePageHref`, D107 rule 5).
+  // The source's page in Clew over or instead of the page this section is on (`sourcePageHref`, D110 rule 5).
   const { pathname, search } = useLocation();
   const page = answer.source.page
     ? sourcePageHref(answer.source.page, { key: personKey, id: personId }, { pathname, search })

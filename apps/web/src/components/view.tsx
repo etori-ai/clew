@@ -460,7 +460,7 @@ function Rows({
     );
   };
   // A row with a ref of a connector that can read it back can go into the box (D12), as a search hit can, where the
-  // page has a box (D107 rule 6); without one neither the `@` nor its column is drawn.
+  // page has a box (D110 rule 6); without one neither the `@` nor its column is drawn.
   const chips = view.chip && !!view.ref && talk.hasBox;
   const chip = (row: Row) => {
     const ref =

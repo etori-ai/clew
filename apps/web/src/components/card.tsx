@@ -510,7 +510,7 @@ export function useCardAction({
   };
   return { run, apply, busy, settling, pressed, error, selectable, perform, confirmation };
 }
-/** The execute a card reviews one row at a time before it sends (D70): its next step is then "Granska N", which opens the review over the page (D73, D107 rule 5). */
+/** The execute a card reviews one row at a time before it sends (D70): its next step is then "Granska N", which opens the review over the page (D73, D110 rule 5). */
 export const reviewedAction = (thread: Thread) =>
   thread.actions.find(a => a.role === 'primary' && a.kind === 'execute' && a.review === 'each');
 
@@ -544,7 +544,7 @@ function useThreadActions({ thread, onChange, onRead }: ActionProps) {
   // row the review never judged keeps the tick it had, so a review opened and closed again changes nothing (it used to
   // hand back the approved rows as the whole selection, which cleared the connector's marks; the product owner,
   // 2026-11-11). A change to the thread starts it over from the connector's marks. The card stood under the review all
-  // along, wherever it is drawn (D107 rule 5), so the decisions are taken for each entry that hands them back, not only
+  // along, wherever it is drawn (D110 rule 5), so the decisions are taken for each entry that hands them back, not only
   // when the card is drawn.
   const { state, key } = useLocation();
   const returned = returnedReview(state, thread.id);
@@ -636,7 +636,7 @@ type Actions = ReturnType<typeof useThreadActions>;
  * Beside a panel (`compact`) a row keeps the next step alone. On a phone (artboards 11 and 12) a row's next step fills
  * the line under it with "Lägg till i samtalet" as the `@` beside it (`phone`), and the card in the sheet stands its
  * next step and secondary actions full width above the rest (`stacked`). "Lägg till i samtalet" is drawn only where the
- * page has a question box (D107 rule 6).
+ * page has a question box (D110 rule 6).
  */
 function ActionRow({
   thread,
@@ -712,7 +712,7 @@ function ActionRow({
     return () => cancelAnimationFrame(frame);
   }, [returned]);
   // The one next step: the execute itself, or "Granska N" when the rows are reviewed one at a time first (D70), a link
-  // that lays the review over the page it is on (D107 rule 5). A card leaves the panel as it is; a row opens its card in
+  // that lays the review over the page it is on (D110 rule 5). A card leaves the panel as it is; a row opens its card in
   // the panel under the review, as its title would, since the review hands its decisions back to the card.
   const { pathname, search } = useLocation();
   const reviewLink = quiet ? reviewOverCard(pathname, search, thread.id) : withReview(pathname, search, thread.id);
@@ -741,7 +741,7 @@ function ActionRow({
   ) : null;
   const addChip = () =>
     conversation.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id });
-  // Only where the page has a box (D107 rule 6): a card beside Personal, a person or a unit, or over Kalender has none.
+  // Only where the page has a box (D110 rule 6): a card beside Personal, a person or a unit, or over Kalender has none.
   const addToConversation = !conversation.hasBox ? null : phone ? (
     <AddToConversation size="md" added={inConversation} onAdd={addChip} />
   ) : (
@@ -809,7 +809,7 @@ function ActionRow({
         )}
         {viewReview}
         <Text type="supporting">{pending}</Text>
-        {/* The menu's one item is "Lägg till i samtalet": where the page has no box there is no menu (D107 rule 6). */}
+        {/* The menu's one item is "Lägg till i samtalet": where the page has no box there is no menu (D110 rule 6). */}
         {conversation.hasBox && (
           <DropdownMenu
             renderTrigger={trigger => (
@@ -1008,7 +1008,7 @@ export function GenericCard({
   const animatedLayout = useAnimatedLayout({ containerRef: root });
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
-  // One of the card's own reads unfolded in it (`open-card` and `open-action`, D107 amended 2026-11-11), wherever the
+  // One of the card's own reads unfolded in it (`open-card` and `open-action`, D110 amended 2026-11-11), wherever the
   // card is drawn. Pressing its button again, or the section's toggle, folds it. The address is replaced, not pushed:
   // unfolding is a change within the card, as a view's search is, so Back leaves the card as it would without the read
   // and never steps through every unfold and fold, while a reload and the entries either side of it keep it.

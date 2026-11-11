@@ -88,14 +88,14 @@ a review of the screens as they were before this structure, and a card's one tim
 [D49 · A card has one time action](D49-a-card-has-one-time-action-and-always-says-when-it-is-back.md); all three stand, and where that record names the overview, the
 piles' rows in the menu or the box at the overview's foot, this one says where those are now.
 
-**Amended 2026-11-11 (D107): item 7 is withdrawn.** A view in the panel no longer offers "Öppna som sida" for a view
-that is also a tool ([D107](D107-where-something-opens-is-decided-by-what-it-is.md) rule 7, the product owner's answer 5:
+**Amended 2026-11-11 (D110): item 7 is withdrawn.** A view in the panel no longer offers "Öppna som sida" for a view
+that is also a tool ([D110](D110-where-something-opens-is-decided-by-what-it-is.md) rule 7, the product owner's answer 5:
 no control chooses a surface). The tool stays in the rail where an administrator put it, and "Stäng samtalet" still
-leads back to a tool's page when the question was asked there. The other part of this record that D107 replaces, the
+leads back to a tool's page when the question was asked there. The other part of this record that D110 replaces, the
 box asking about the open card by opening it, is changed separately.
 
-**Amended 2026-11-11 (D107 rule 6): opening is not asking.** A card opened beside Hem is no longer put in the question
-box ([D107](D107-where-something-opens-is-decided-by-what-it-is.md) rule 6, the product owner's answer 3). Hem's box
+**Amended 2026-11-11 (D110 rule 6): opening is not asking.** A card opened beside Hem is no longer put in the question
+box ([D110](D110-where-something-opens-is-decided-by-what-it-is.md) rule 6, the product owner's answer 3). Hem's box
 says nothing of the open card: no "Om kortet" scope line, no "Fråga om kortet …" placeholder, no token for it and no
 "Ny fråga i stället" for it; the same on every width. A card goes into the box only with "Lägg till i samtalet", as a
 chip like any other, and its verbs are offered under the box when it is the one chip and nothing is typed. That control
@@ -106,7 +106,7 @@ column opens the conversation with it beside the transcript, and "Stäng samtale
 or view still open; the card is the question's subject only when the person added it. On a tool's page item 5 is
 unchanged: the placeholder names the tool ("Fråga om Telefonbok …") and its view goes with the question as a chip.
 
-**Amended 2026-11-11 (D107 amended): a card's read unfolds in the card.** Item 4's `open-card` and `open-action` no
+**Amended 2026-11-11 (D110 amended): a card's read unfolds in the card.** Item 4's `open-card` and `open-action` no
 longer put a card's read in the panel over the card: they name the read unfolded inside the card, wherever it is drawn.
 A read that answers with a table still opens in the card's place. Item 3's widths give way to one: the panel stands
 beside every page from 1336 px.

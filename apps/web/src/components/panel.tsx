@@ -126,7 +126,7 @@ function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((vie
               .join(' · ');
             // A hit whose source declares its view (D38) opens here, drawn by Startsidan; the link still leads to the
             // source. A hit about an entity leads to the entity instead. "Lägg till i samtalet" only where the page has
-            // a box (D107 rule 6); a hit with none of the three has no line of buttons.
+            // a box (D110 rule 6); a hit with none of the three has no line of buttons.
             const viewHref = !r.subject && r.view && hrefFor ? hrefFor(r.view) : null;
             const link = !r.subject && r.link ? r.link : null;
             return (
@@ -367,7 +367,7 @@ export const RAIL = 256,
 export const PAGE_MIN = 640;
 /**
  * The one window width from which the panel stands beside the page, on every page that holds it (the product owner,
- * 2026-11-11, D107 amended): the rail, Hem's least column and the panel, 256 + 640 + 440 = 1336 px. Narrower, or short
+ * 2026-11-11, D110 amended): the rail, Hem's least column and the panel, 256 + 640 + 440 = 1336 px. Narrower, or short
  * (1.4.10), or on a phone, it is the drawer over the page. A page whose own layout needs more than 640 px does not move
  * this line: it gives way, drawing the narrow layout it already has while the panel is open beside it (its own
  * breakpoint shifted by the panel, `panelBesideQuery`).
@@ -399,7 +399,7 @@ type Options = {
    */
   onClosed?: () => void;
   /**
-   * One thing at a time (Personal, D107 answer 6): what is opened from the page takes the place of what was open, and
+   * One thing at a time (Personal, D110 answer 6): what is opened from the page takes the place of what was open, and
    * the link it was opened with is where the focus goes back to on close. Without it the first opener keeps that role
    * while the others wait as tabs (D66).
    */

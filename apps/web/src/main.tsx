@@ -139,7 +139,7 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
   return (
     <SessionBoundary session={shell.session} onEnded={() => client.clear()}>
       <QueryClientProvider client={client}>
-        {/* One conversation for the whole session's pages (D50): asked on a tool's page, it is still there when the transcript takes the column. Every page has the panel: the pages that draw it beside their column claim it, and the shell draws it over the others. A card's review lies over whichever page it was opened on (D107 rule 5): one overlay for every page, after the page in the tree, so it stacks over the card the same update opens. */}
+        {/* One conversation for the whole session's pages (D50): asked on a tool's page, it is still there when the transcript takes the column. Every page has the panel: the pages that draw it beside their column claim it, and the shell draws it over the others. A card's review lies over whichever page it was opened on (D110 rule 5): one overlay for every page, after the page in the tree, so it stacks over the card the same update opens. */}
         <ConversationProvider>
           <PanelClaims>
             {children(shell)}
@@ -170,7 +170,7 @@ const RouterLink = forwardRef<
  * the areas as `area`; `/conversations/:id` a conversation in the same column (`/conversations/new` while a question
  * asked on another page is being answered). What the panel holds is in the query of whichever page it is beside
  * (`panel-address.ts`), and so is a card's review one row at a time, which lies over the page it was opened on
- * (`?review=<threadId>&step=n`, `review-address.ts`; D73 amended under D107 rule 5). `/calendar` and
+ * (`?review=<threadId>&step=n`, `review-address.ts`; D73 amended under D110 rule 5). `/calendar` and
  * `/tools/:capability` are the tools, each a page of its own in the same shell (D42). `/cards/:threadId/review`, the
  * review's address before that, is a cold link only: it leads to Hem with the card beside the column and the review over
  * both, at the step it named.
@@ -203,7 +203,7 @@ function App() {
         path="/staff"
         element={<Protected>{shell => <StaffPage user={shell.user} admin={shell.admin} />}</Protected>}
       />
-      {/* A person as a page (D97 item 5, D107 rule 3): a name on Personal or on any row that names them; `section` is the chosen source. */}
+      {/* A person as a page (D97 item 5, D110 rule 3): a name on Personal or on any row that names them; `section` is the chosen source. */}
       <Route
         path="/people/:key"
         element={<Protected>{shell => <PersonPage user={shell.user} admin={shell.admin} />}</Protected>}

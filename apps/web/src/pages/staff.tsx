@@ -39,7 +39,7 @@ const PADDING = 32;
 const SHOW = 'show';
 
 /**
- * Personal at `/staff`. A person is a page only (D107 rule 3): an address that drew a person beside the list
+ * Personal at `/staff`. A person is a page only (D110 rule 3): an address that drew a person beside the list
  * (`?person=<key>`, bookmarked or sent before 2026-11-11) leads to the person's page in its place, with the list as the
  * way back, so the person is never silently dropped. So does one that listed a person's cards beside it (`?cards=<key>`,
  * from the same day): to the person's page at Behöver dig, since the panel holds one opened thing.
@@ -57,18 +57,18 @@ export function StaffPage(props: { user: SessionUser; admin: boolean }) {
  * under its label, and "Just nu" with the fields of the chosen sources that need the reader. "Visa" picks a lens, a
  * source an administrator offers, and the list is then that source's view, sorted by need. Each row has its menu,
  * grouped by the system an action works in. A name leads to the person's page. Whatever is opened from the list
- * opens in the page's panel and the list stays beside it (D107 rules 2 and 3): the one card "Just nu" counts
+ * opens in the page's panel and the list stays beside it (D110 rules 2 and 3): the one card "Just nu" counts
  * (`?card=<threadId>`); several lead to the person's page at Behöver dig, since the panel holds one opened thing
- * (D107, amended 2026-11-11). The panel stands beside the list from the one width every page has (`BESIDE_FROM`), and
+ * (D110, amended 2026-11-11). The panel stands beside the list from the one width every page has (`BESIDE_FROM`), and
  * the list gives way: where its table no longer keeps its least width beside the panel, it is drawn as the rows a
  * phone draws. In a narrower window the panel is the drawer over the list. A source that does not answer is said once,
  * with Försök igen; the rest stands.
  *
  * Someone who manages nobody gets an empty list from the server, and the page says whom it is for. One person's
  * utvecklingssamtal is a drawer over the list as it stands, its lens and what its panel holds kept (`?talk=<personId>`,
- * D96, D107 rule 5), reached from its source's way in ("Öppna samtalet") in the row's menu; the drawer reads its own
+ * D96, D110 rule 5), reached from its source's way in ("Öppna samtalet") in the row's menu; the drawer reads its own
  * data, and a cold `/staff?talk=<personId>` is the list with the talk over it. An action from a row's menu starts on
- * the server and opens its card in the page's panel (`entity-actions.ts`, D107 rule 4), and closing the card gives the
+ * the server and opens its card in the page's panel (`entity-actions.ts`, D110 rule 4), and closing the card gives the
  * focus back to the row's menu button; a source's refusal is said aloud and stands over the list until the next action.
  */
 function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {

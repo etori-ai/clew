@@ -299,7 +299,7 @@ test.describe('Personal', () => {
       await expect(panel.getByText('Tre korta sjukperioder sedan juni.', { exact: false })).toBeVisible();
       await expect(panel.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
       await expect(panel.getByRole('button', { name: 'Se mönstret' })).toBeVisible();
-      // Personal has no question box, so nothing offers to add the card to one (D107 rule 6).
+      // Personal has no question box, so nothing offers to add the card to one (D110 rule 6).
       await expect(panel.getByRole('button', { name: 'Inte nu', exact: true }).first()).toBeVisible();
       await expect(page.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
       // Beside the card the list is whole, as it was.
@@ -601,7 +601,7 @@ test.describe('Personal', () => {
         `/staff?show=${PRESENCE_LENS}&talk=karin`,
       );
       // An action starts on the server without the model, and its card opens beside the list it was started on, with
-      // the lens kept and the focus on the card (D107 rule 4): Personal never gives way to Hem.
+      // the lens kept and the focus on the card (D110 rule 4): Personal never gives way to Hem.
       await menu.getByRole('menuitem', { name: 'Boka samtal' }).click();
       await expect(page).toHaveURL(`/staff?show=${PRESENCE_LENS}&card=entity-clew-bookTalk-karin`);
       expect(api.entityStarts).toEqual([{ key: 'karin', capability: 'clew.bookTalk' }]);

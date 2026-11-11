@@ -12,7 +12,7 @@ import {
   withoutReview,
 } from '../src/review-address';
 
-describe('the review lies over the page it was opened on (D73 amended, D107 rule 5)', () => {
+describe('the review lies over the page it was opened on (D73 amended, D110 rule 5)', () => {
   test('its address is the page’s own with the card as `review` and the step, 1-based, the first left out', () => {
     expect(REVIEW_KEYS).toEqual(['review', 'step']);
     expect(withReview('/', '?card=fakturor', 'fakturor')).toBe('/?card=fakturor&review=fakturor');

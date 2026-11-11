@@ -12,7 +12,7 @@ import { useCountdown } from './card';
 /**
  * A live receipt notice: expiry, pending compensation and errors must not leave a stale Undo button. The toast stays
  * until closed (2.2.1), also when the person moves on, so Visa follows them: on Hem it leads to the tab the card went to
- * with the card beside it, on any other page to the card over that page (D107 rule 2).
+ * with the card beside it, on any other page to the card over that page (D110 rule 2).
  */
 export function ReceiptNotice({
   threadId,

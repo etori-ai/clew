@@ -22,7 +22,7 @@ test.describe('a decision the card is left waiting on keeps its way back where t
     await expect(page.locator('#card-samtal').getByRole('button', { name: 'Skicka 2 inbjudningar' })).toBeVisible();
   });
 
-  test('the receipt’s toast stays when the person moves on, and its Visa opens the card over the page they are on (D107)', async ({
+  test('the receipt’s toast stays when the person moves on, and its Visa opens the card over the page they are on (D110)', async ({
     page,
     api: _,
   }) => {

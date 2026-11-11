@@ -2,7 +2,7 @@ import type { EntityPage } from '@clew/contracts';
 import { REVIEW_PARAM } from './review-address';
 
 /**
- * One person's utvecklingssamtal (D96 item 7) lies over the page it was opened on (D107 rule 5): the page's own address
+ * One person's utvecklingssamtal (D96 item 7) lies over the page it was opened on (D110 rule 5): the page's own address
  * with the person's id as `talk`, and everything else in it kept (Personal's lens, a person's section and way back, the
  * card or the cards open in the page's panel). Closing the drawer is the same address without `talk`, so the page is as
  * it was under it. A cold `/staff?talk=<personId>` is Personal with the talk over it.
@@ -40,7 +40,7 @@ export function withoutTalk(pathname: string, search: URLSearchParams | string =
  * A source's page in Clew for one entity (D95, D97: an `about.page`), with `{key}` and `{id}` filled in; null when the
  * page needs Clew's id and the entity has none. This is the one filler, wherever the way in is drawn: a row's menu on
  * Personal, a section on a person's page, a unit's page. An href that is a query alone (`?talk={id}`, the talk) is
- * something laid over the page the person is on (D107 rule 5): its parameters join that page's address and everything
+ * something laid over the page the person is on (D110 rule 5): its parameters join that page's address and everything
  * else in it is kept. An href that is a path is a page of its own; on the page the person is already on, the page's own
  * address (its lens, what its panel holds) is kept under the way in's parameters, as every address over a page keeps the
  * page's (D83).

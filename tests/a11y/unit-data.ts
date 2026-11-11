@@ -68,7 +68,7 @@ export const talkUnitSource: EntitySource = {
   own: true,
 };
 /**
- * An action about a unit (D97, D107 rule 4). No connector in the repository offers one yet; the suite's is the
+ * An action about a unit (D97, D110 rule 4). No connector in the repository offers one yet; the suite's is the
  * calendar's, as a source would declare it with `about: { entity: 'unit', param }`.
  */
 export const unitAction: EntityAction = {

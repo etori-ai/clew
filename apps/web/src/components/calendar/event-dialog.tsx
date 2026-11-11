@@ -161,7 +161,7 @@ export function EventDialog({ item, dayItems, onClose, onChanged, onOpenDay, onA
                     }}
                   />
                 )}
-                {/* Only where the page has a question box (D107 rule 6): Kalender has none. */}
+                {/* Only where the page has a question box (D110 rule 6): Kalender has none. */}
                 {onAddChip && hasBox && (
                   <AddToConversation
                     onAdd={() => {

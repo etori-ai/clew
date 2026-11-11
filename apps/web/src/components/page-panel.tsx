@@ -387,7 +387,7 @@ export function PanelOverPage() {
 }
 function Overlay() {
   // Over the page only: Kalender's end slot holds its own Förslag panel, and Administration's pages grow with the
-  // shell's scroll and have no narrow layout to give way to (D107, amended 2026-11-11).
+  // shell's scroll and have no narrow layout to give way to (D110, amended 2026-11-11).
   const slot = usePanelOnPage({ overlayOnly: true });
   return <>{slot.overlay}</>;
 }

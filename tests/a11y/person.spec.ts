@@ -13,7 +13,7 @@ import { PRESENCE_LENS, SILENT_SECTION, TALK_LENS } from './data';
 import { CONTACT, POINTS, People, pointsOutput, pointsSpec } from './person-data';
 
 /**
- * The opened person (D97 item 5, D107 rule 3: a person is a page only): as a page (artboard C2), on a phone (D) and read
+ * The opened person (D97 item 5, D110 rule 3: a person is a page only): as a page (artboard C2), on a phone (D) and read
  * by a colleague (G). The shared mock answers the list; `person-data.ts` answers the person and their sections, with
  * Kontakt and the talk's action points beside the mock's sources and Kompetenssystemet silent until a test lets it
  * answer. Keyboard, focus, announcements, axe and reflow. An address that drew the person beside Personal's list leads
@@ -116,7 +116,7 @@ test.describe('the person as a page', () => {
     await expect(title).toHaveAttribute('href', '/people/johan?section=needs-you&from=%2Fstaff&card=samtal-svar');
     await title.focus();
     await page.keyboard.press('Enter');
-    // The person's page stays: its address with the card added, its title, its heading and its trail (D107 rule 3).
+    // The person's page stays: its address with the card added, its title, its heading and its trail (D110 rule 3).
     await expect(page).toHaveURL('/people/johan?section=needs-you&from=%2Fstaff&card=samtal-svar');
     const panel = page.getByRole('complementary', { name: 'Kort' });
     await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -253,7 +253,7 @@ test.describe('the person as a page', () => {
     await page.keyboard.press('Escape');
     await expect(menu).toHaveCount(0);
     await expect(page).toHaveURL('/people/johan?from=%2Fstaff');
-    // A person is a page only (D107 rule 7): nothing offers another place to show them.
+    // A person is a page only (D110 rule 7): nothing offers another place to show them.
     await expect(page.getByText('Öppna som sida')).toHaveCount(0);
     await expect(page.getByText('Visa bredvid')).toHaveCount(0);
   });

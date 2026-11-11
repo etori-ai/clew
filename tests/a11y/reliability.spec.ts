@@ -56,7 +56,7 @@ test('two tabs and a reconnect announce a persisted reminder once; Visa opens it
       .getByRole('region', { name: 'Aviseringar' })
       .getByRole('button', { name: 'Visa', exact: true })
       .click();
-    // Visa opens the card over the page the toast was on, Kalender or Hem, never taking the person elsewhere (D107).
+    // Visa opens the card over the page the toast was on, Kalender or Hem, never taking the person elsewhere (D110).
     await expect(winner).toHaveURL(winner === page ? '/calendar?card=ledighet' : '/?card=ledighet');
     await expect(winner.getByRole('article', { name: 'Kort: ' + thread.title })).toBeVisible();
     await Promise.all([page.reload(), second.reload()]);

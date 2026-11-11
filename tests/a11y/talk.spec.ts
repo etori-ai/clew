@@ -14,7 +14,7 @@ import {
 } from './support';
 
 /**
- * One person's utvecklingssamtal (D96 item 7) as a focused overlay over the page it was opened on (D83, D107 rule 5): an
+ * One person's utvecklingssamtal (D96 item 7) as a focused overlay over the page it was opened on (D83, D110 rule 5): an
  * end Drawer on a desktop, a tall sheet on a phone, at the page's own address with `talk=<personId>` (`/staff?talk=` is
  * Personal with the talk over it). Both surfaces are a modal dialog named "Samtal med <name>". Since D97 Personal knows
  * no talk: the way in is the source's page, "Öppna samtalet" in the person's menu and in the talks section of the

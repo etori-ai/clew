@@ -154,14 +154,14 @@ function ChosenCards({ detail, level }: { detail: EntityDetail; level: 'page' | 
 }
 
 /**
- * The person as a page (D97 item 5, artboard C2), at `/people/:key`, the one way a person is shown (D107 rule 3),
+ * The person as a page (D97 item 5, artboard C2), at `/people/:key`, the one way a person is shown (D110 rule 3),
  * reached from a name on Personal or on any row that names them: the trail back to the list, the person's name with
  * their actions (the one place they are drawn, whichever section is open), the list of sections ("Om <namn>", each with
  * its source and one line) and beside it the chosen source's fuller view, `?section=` in the address. On a narrow window the two are the `settings-sidebar` template's
  * drill-in: the list, then the chosen section with the way back to the list. A person the reader may not ask about is
  * the page's own "finns inte" (the server answers 404 for both).
  *
- * The page holds the panel beside its column (D107 rules 2 to 4, `usePagePanel`): a card under Behöver dig and the card
+ * The page holds the panel beside its column (D110 rules 2 to 4, `usePagePanel`): a card under Behöver dig and the card
  * an action makes open there, with the section and the way back kept in the address, and closing leaves the page as it
  * was. Choosing another section keeps what is open beside it. The panel stands beside the page from the one width
  * every page has (`BESIDE_FROM`); the page gives way, not the panel: where the list of sections and the chosen one no
@@ -359,7 +359,7 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
         }
       />
       {panel.overlay}
-      {/* The talk from the talks section's "Öppna samtalet" lies over the page and its panel (D107 rule 5). */}
+      {/* The talk from the talks section's "Öppna samtalet" lies over the page and its panel (D110 rule 5). */}
       {user.role === 'manager' && <TalkOverlay back={detail ? `Tillbaka till ${detail.entity.name}` : 'Tillbaka'} />}
     </Shell>
   );

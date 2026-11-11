@@ -161,8 +161,8 @@ taken out the same day: a menu holds what can be done about a person, never wher
 drawn beside the list where "Just nu" counts several cards, and the focus goes to the row's name when that closes.
 Whether a person is shown beside a list at all, or only as a page, is open and waits for the navigation review.
 
-**Amended 2026-11-11 (D107): a card opens beside the page it is on, and an action's card beside the page it was
-started on.** Under [D107](D107-where-something-opens-is-decided-by-what-it-is.md) rules 2 to 4 the person's page and
+**Amended 2026-11-11 (D110): a card opens beside the page it is on, and an action's card beside the page it was
+started on.** Under [D110](D110-where-something-opens-is-decided-by-what-it-is.md) rules 2 to 4 the person's page and
 the unit's page hold the panel beside their column, as Personal does: a card under their Behöver dig opens there
 (`/people/<key>?section=needs-you&from=<the list>&card=<threadId>`, `/units/<id>?card=<threadId>`), with the section
 and the way back kept, and closing leaves the page as it was. An action about a person or a unit no longer leads to
@@ -171,10 +171,10 @@ the list (`/staff?person=<key>&card=<threadId>`), beside the list from a row's m
 page from their buttons. The unit's page now draws its actions as the person's do, the first two as buttons and the
 rest under "Fler" ("Åtgärder" on a phone); no source in the repository offers an action about a unit yet. This
 replaces the first amendment's sentence that the person's and the unit's pages have no panel and lead to Hem, and that
-an action leads there; the review of a card's rows still opens over Hem (D73) until D107's rule 5 is built.
+an action leads there; the review of a card's rows still opens over Hem (D73) until D110's rule 5 is built.
 
-**Amended 2026-11-11 (D107): a person is a page only, and several cards are listed beside Personal.** Under
-[D107](D107-where-something-opens-is-decided-by-what-it-is.md) rule 3 and the product owner's answers 1 and 6, nothing
+**Amended 2026-11-11 (D110): a person is a page only, and several cards are listed beside Personal.** Under
+[D110](D110-where-something-opens-is-decided-by-what-it-is.md) rule 3 and the product owner's answers 1 and 6, nothing
 draws a person beside a list. `?person=<key>`, the section drilled into on a phone (`person-section`) and the list drawn
 compact beside the person are gone; an address that still holds them leads to the person's page
 (`/people/<key>?from=<the list>`), with `person-section` as the page's `section` and an open card kept. "Just nu" that
@@ -191,15 +191,15 @@ person, and that leave open whether a person is shown beside a list at all.
 beside the name, whichever section is open, and are no longer repeated in the opened section, which shows only what its
 source read (the product owner saw "Registrera frånvaro" twice on a person's page).
 
-**Amended 2026-11-11 (D107 rule 5): a card's review and a person's talk lie over the page they were opened on.** The
-sentences above that keep the review of a card's rows over Hem until D107's rule 5 is built no longer hold: "Granska N"
+**Amended 2026-11-11 (D110 rule 5): a card's review and a person's talk lie over the page they were opened on.** The
+sentences above that keep the review of a card's rows over Hem until D110's rule 5 is built no longer hold: "Granska N"
 on a card beside Personal, a person's or a unit's page opens the review over that page, and closing it leaves the page
 with the card beside it ([D73](D73-the-review-is-a-page-in-the-shell-with-an-address.md), amended the same day). A
 source's `about.page` may be a query alone, which lies over the page its way in is drawn on: the talks section's
 "Öppna samtalet" is `?talk={id}`, so the talk opens over the person's page as well as over Personal
 ([D96](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md), amended the same day).
 
-**Amended 2026-11-11 (D107 amended): several cards lead to the person's page.** The list of a person's cards beside
+**Amended 2026-11-11 (D110 amended): several cards lead to the person's page.** The list of a person's cards beside
 Personal is gone: "Just nu" counting several cards leads to the person's page at Behöver dig
 (`/people/<key>?section=needs-you&from=<the list>`), and an old `/staff?cards=<key>` address leads there in its place.
 Personal's panel stands beside the list from the one width every page has, 1336 px, and the list gives way, drawn as

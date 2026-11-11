@@ -15,7 +15,7 @@ import {
   withoutRead,
 } from '../src/panel-address';
 
-describe('a card opens over the page the person is on (D107 rule 2)', () => {
+describe('a card opens over the page the person is on (D110 rule 2)', () => {
   test('the page keeps its own address, and the card is added to it', () => {
     expect(withCard('/people/johan', '?section=needs-you&from=%2Fstaff', 'samtal-svar')).toBe(
       '/people/johan?section=needs-you&from=%2Fstaff&card=samtal-svar',
@@ -32,7 +32,7 @@ describe('a card opens over the page the person is on (D107 rule 2)', () => {
       '/people/johan?section=x&from=%2Fstaff',
     );
   });
-  test('from the bell, a toast or the search: over the page, letting go of a review or a talk over it (D107 rule 5)', () => {
+  test('from the bell, a toast or the search: over the page, letting go of a review or a talk over it (D110 rule 5)', () => {
     expect(cardOverPage('/admin/connectors', '', 'ledighet')).toBe('/admin/connectors?card=ledighet');
     expect(
       cardOverPage('/staff', '?show=clew.talkPeople&card=samtal&open-card=samtal&open-action=pattern', 'ledighet'),
@@ -46,7 +46,7 @@ describe('a card opens over the page the person is on (D107 rule 2)', () => {
   });
 });
 
-describe("a row's Granska N opens its card beside the page and the review over it (D107 rule 5)", () => {
+describe("a row's Granska N opens its card beside the page and the review over it (D110 rule 5)", () => {
   test('the card in the panel, as the row’s title opens it, and the review of that card', () => {
     expect(reviewOverCard('/', '', 'fakturor')).toBe('/?card=fakturor&review=fakturor');
     expect(reviewOverCard('/', '?tab=done&area=ekonomi', 'fakturor')).toBe(
@@ -75,7 +75,7 @@ describe('a move within the page keeps what is open beside it', () => {
   });
 });
 
-describe('a card’s own read unfolds inside the card (D107, amended 2026-11-11)', () => {
+describe('a card’s own read unfolds inside the card (D110, amended 2026-11-11)', () => {
   test('the read is the card’s state, not a thing in the panel: the panel still holds the card', () => {
     const q = new URLSearchParams('?show=x&card=t1&open-card=t1&open-action=pattern');
     expect(panelOf(q)).toEqual({ kind: 'card', threadId: 't1' });

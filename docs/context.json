@@ -1233,10 +1233,10 @@
       "area": "platform"
     },
     {
-      "key": "D107-where-something-opens-is-decided-by-what-it-is",
-      "number": 107,
-      "path": "docs/decisions/D107-where-something-opens-is-decided-by-what-it-is.md",
-      "title": "D107 · Where something opens is decided by what it is, never by the page it was clicked on",
+      "key": "D110-where-something-opens-is-decided-by-what-it-is",
+      "number": 110,
+      "path": "docs/decisions/D110-where-something-opens-is-decided-by-what-it-is.md",
+      "title": "D110 · Where something opens is decided by what it is, never by the page it was clicked on",
       "status": "provisional (accepted when the rules have been used by people outside the repository: a manager on Personal and one connector author placing a view and a card from the author's page alone)",
       "date": "2026-11-11",
       "area": "ui"
@@ -1762,14 +1762,14 @@
       "headings": []
     },
     {
-      "path": "docs/decisions/D107-where-something-opens-is-decided-by-what-it-is.md",
-      "title": "D107 · Where something opens is decided by what it is, never by the page it was clicked on",
+      "path": "docs/decisions/D11-one-calendar-contract-two-adapters.md",
+      "title": "D11 · One calendar contract, CalDAV and Microsoft 365 as adapters",
       "category": "decision-history",
       "headings": []
     },
     {
-      "path": "docs/decisions/D11-one-calendar-contract-two-adapters.md",
-      "title": "D11 · One calendar contract, CalDAV and Microsoft 365 as adapters",
+      "path": "docs/decisions/D110-where-something-opens-is-decided-by-what-it-is.md",
+      "title": "D110 · Where something opens is decided by what it is, never by the page it was clicked on",
       "category": "decision-history",
       "headings": []
     },

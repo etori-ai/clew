@@ -255,7 +255,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(page).toHaveURL(/\/\?card=fakturor$/);
   });
 
-  test('a card picked in the rail’s search opens over the page the person is on, which stays (D107 rule 2)', async ({
+  test('a card picked in the rail’s search opens over the page the person is on, which stays (D110 rule 2)', async ({
     page,
     api: _,
   }) => {

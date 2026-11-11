@@ -5,7 +5,7 @@ import { useAnnounce } from '@clew/ui';
 let previous: string | null = null;
 /** What the page names, under whatever lies over it (`useOverlayTitle`). */
 let page: string | null = null;
-/** What the focused overlay over the page names while it is open (D107 rule 5), or null. */
+/** What the focused overlay over the page names while it is open (D110 rule 5), or null. */
 let overlay: string | null = null;
 const show = (title: string) => {
   document.title = `${title} · Startsidan`;
@@ -30,7 +30,7 @@ export function usePageTitle(title: string | null, spoken: string | false = titl
 }
 
 /**
- * Names a focused overlay in the tab while it is open (D107 rule 5: a card's review, one person's talk, over whichever
+ * Names a focused overlay in the tab while it is open (D110 rule 5: a card's review, one person's talk, over whichever
  * page they were opened on), and gives the tab back to the page's own name when it closes or names nothing. Never
  * spoken: the overlay says its name itself when the focus enters it, and closing it is not a change of page. Null while
  * the overlay is closed or has nothing to name yet.

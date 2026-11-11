@@ -51,7 +51,7 @@ type RowProps = {
 /** One row of the log with its one way back: Ångra while the window is open, Återöppna on a dismissed card. Its error sits under the row. */
 function HandledRow({ thread: t, now, onChange, conversationHref }: RowProps) {
   const { run, error } = useThreadAction({ onChange });
-  // The row opens its card beside Klart, and a reviewed card's review over it (D80, D107 rule 5): the tab is kept, so
+  // The row opens its card beside Klart, and a reviewed card's review over it (D80, D110 rule 5): the tab is kept, so
   // closing either leaves Klart as it was.
   const { pathname, search } = useLocation();
   const mark = useMarks().ofThread(t);

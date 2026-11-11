@@ -6,9 +6,9 @@ import { TALK_PARAM } from './talk-address';
  * What the panel holds is named in the address (D50), the same way on every page (`usePagePanel`, the shell's drawer):
  * `open` is a view (with `open-title`, `open-input` and `via`, the names a tool's page already uses, D42) and `card` is
  * a card. A view lies over a card: closing the view leaves the card, closing the card leaves the page. The panel holds
- * one opened thing (D107, amended 2026-11-11). Everything else in the address is the page's own and is kept.
+ * one opened thing (D110, amended 2026-11-11). Everything else in the address is the page's own and is kept.
  *
- * `open-card` with `open-action` is one of a card's own reads unfolded inside that card (D107, amended 2026-11-11),
+ * `open-card` with `open-action` is one of a card's own reads unfolded inside that card (D110, amended 2026-11-11),
  * wherever the card is drawn: beside the page, in Hem's sheet, in a conversation's answer. It is the card's state, not
  * a thing in the panel: it stays under a view opened from one of its rows, and goes when the card goes.
  */
@@ -26,7 +26,7 @@ const READ_KEYS = ['open-card', 'open-action'];
 /** Every name the panel's part of an address uses: what a page drops when it opens its own thing in the panel's place. */
 const PANEL_KEYS: readonly string[] = [...VIEW_KEYS, 'card', ...READ_KEYS];
 /**
- * What lies over the page and the panel and holds the focus (D107 rule 5): a card's review (`review-address.ts`) and
+ * What lies over the page and the panel and holds the focus (D110 rule 5): a card's review (`review-address.ts`) and
  * one person's talk (`talk-address.ts`). Closing one leaves the page's address as it was under it.
  */
 const FOCUSED_KEYS: readonly string[] = [...REVIEW_KEYS, TALK_PARAM];
@@ -122,14 +122,14 @@ export function withCard(pathname: string, search: URLSearchParams | string, thr
 }
 /**
  * A card opened from something that belongs to no page (the bell, a toast, the rail's search), over the page the person
- * is on (D107 rule 2): that page's address with the card in its panel. A review or a talk lying over the page is let go
+ * is on (D110 rule 2): that page's address with the card in its panel. A review or a talk lying over the page is let go
  * of, so the card asked for is the thing in front.
  */
 export function cardOverPage(pathname: string, search: URLSearchParams | string, threadId: string): string {
   return withCard(pathname, without(search, FOCUSED_KEYS), threadId);
 }
 /**
- * Where a row's "Granska N" leads (D107 rule 5): the row's card in the page's panel, as the row's title opens it, and the
+ * Where a row's "Granska N" leads (D110 rule 5): the row's card in the page's panel, as the row's title opens it, and the
  * card's review over the page. The review hands its decisions back to the card and its receipt shows there, so a review
  * opened from a row closes to that card beside the page, as one opened from the card itself does.
  */

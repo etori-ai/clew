@@ -105,7 +105,7 @@ for (const [source, heading] of [
     await expect(list).toBeVisible();
     await expectNoAxeViolations(page);
     await list.getByRole('link', { name: /Ledighetsansökan/ }).click();
-    // The card opens over the page the person is on, with that page's own address kept (D107 rule 2): on Kalender in
+    // The card opens over the page the person is on, with that page's own address kept (D110 rule 2): on Kalender in
     // the shell's drawer, on Hem in its panel, over the page at this width, and the focus is in it.
     await expect(page).toHaveURL(`${source}${source.includes('?') ? '&' : '?'}card=ledighet`);
     await expect(list).not.toBeVisible();
@@ -307,7 +307,7 @@ test.describe('the panel over a page that has none of its own', () => {
     const drawer = page.getByRole('dialog', { name: 'Kort' });
     await expect(drawer.locator('#card-fakturor').getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
     await expect.poll(() => drawer.evaluate(el => el.contains(document.activeElement))).toBe(true);
-    // Kalender has no question box, so the card offers no way into one (D107 rule 6).
+    // Kalender has no question box, so the card offers no way into one (D110 rule 6).
     await expect(drawer.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
     // Kalender stays the page under it: its heading, its title and its path.
     await expect(week).toBeAttached();

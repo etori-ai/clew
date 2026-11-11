@@ -116,7 +116,7 @@ function useStaffCount(user: SessionUser, id: string) {
  * rail's tools): Läget on Hem, the person's header and any row that names the unit do, and `from` names the page it was
  * opened from for the way back.
  *
- * The page holds the panel beside its column (D107 rules 2 to 4, `usePagePanel`): a card under Behöver dig and the card
+ * The page holds the panel beside its column (D110 rules 2 to 4, `usePagePanel`): a card under Behöver dig and the card
  * an action makes open there, with the way back kept in the address, and closing leaves the page as it was. It stands
  * beside the page from the one width every page has (`BESIDE_FROM`), and the sections give way to one across where two
  * no longer fit beside it (the grid's own least width); in a narrower window it is the drawer over the page.
@@ -234,7 +234,7 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
         }
       />
       {panel.overlay}
-      {/* A source's way in that is a talk lies over the page and its panel, as on a person's page (D107 rule 5). */}
+      {/* A source's way in that is a talk lies over the page and its panel, as on a person's page (D110 rule 5). */}
       {user.role === 'manager' && <TalkOverlay back={detail ? `Tillbaka till ${detail.entity.name}` : 'Tillbaka'} />}
     </Shell>
   );

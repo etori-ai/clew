@@ -12,7 +12,7 @@
 
 **Verification.** The targeted MCP browser suite (`tests/a11y/mcp.spec.ts`) covers catalogue/App drill-in, close and focus return, draft/filter retention, Back/Forward/reload, old addresses, AI-off, completion and desktop/mobile accessibility. The existing native panel and review suites remain the owners of those established flows. Hillevi's dev account is the live visual check. Production MCP readiness and manual screen-reader conformance are not claimed.
 
-**Amended 2026-11-11 (D107): rule 1's promotion is withdrawn.** Rule 1 of the [reference](../reference/interface-spaces.md#placement-and-return-rules)
+**Amended 2026-11-11 (D110): rule 1's promotion is withdrawn.** Rule 1 of the [reference](../reference/interface-spaces.md#placement-and-return-rules)
 said that only an explicit "Öppna som sida" promotes a contextual view to a tool's page. Under
-[D107](D107-where-something-opens-is-decided-by-what-it-is.md) rule 7 no control does: a view in the panel offers no
+[D110](D110-where-something-opens-is-decided-by-what-it-is.md) rule 7 no control does: a view in the panel offers no
 way to its tool's page, and the tool is reached from the rail. The rule now says so; the other placement rules stand.

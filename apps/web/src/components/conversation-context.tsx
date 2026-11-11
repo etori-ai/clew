@@ -37,7 +37,7 @@ export interface Conversation {
 /**
  * Where a question was asked when it was not asked in a conversation (D50): what the page asks about as chips for the
  * question (a tool's view; nothing on Hem, where a card open beside the column is not the question's subject until the
- * person adds it, D107 rule 6), and the panel's part of the address the conversation opens at, so what the person was
+ * person adds it, D110 rule 6), and the panel's part of the address the conversation opens at, so what the person was
  * looking at is beside the transcript. Asking from it also marks the page as the one "Stäng samtalet" leads back to.
  */
 export interface AskFrom {
@@ -75,7 +75,7 @@ export interface ConversationState {
   input: RefObject<ChatComposerInputHandle | null>;
   /**
    * A question box is on the page (Hem, a conversation, a tool's page). "Lägg till i samtalet" is offered only then
-   * (D107 rule 6): where nothing shows the chip, the control is not drawn at all.
+   * (D110 rule 6): where nothing shows the chip, the control is not drawn at all.
    */
   hasBox: boolean;
   /** The box says it is on the page while it is mounted; the returned function says it has gone. */
@@ -260,7 +260,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     });
   }, []);
   // The box takes the focus from the pressed button, which rests as "I samtalet" (2.4.3). The control is drawn only
-  // where a box is (`hasBox`, D107 rule 6), so adding never takes the person to another page.
+  // where a box is (`hasBox`, D110 rule 6), so adding never takes the person to another page.
   const addChip = useCallback((chip: ChipRef) => {
     known.current.set(chip.ref, chip);
     setChips(list => (list.some(c => c.ref === chip.ref) ? list : [...list, chip]));
@@ -377,7 +377,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       setPending({ text, chips: sent, at: new Date().toISOString(), steps: [], answer: '' });
       setValue('');
       setShown(true);
-      // Asked on a page or on Hem (D50, D107 rule 6): the conversation takes the column at once, with what the page
+      // Asked on a page or on Hem (D50, D110 rule 6): the conversation takes the column at once, with what the page
       // showed beside it, and "Stäng samtalet" leads back to the page as it stood. On Hem the transcript takes the column
       // in place, and the address it gets once answered keeps the card or view open beside it (`onConversation`).
       if (!current && from) {

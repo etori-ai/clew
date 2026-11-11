@@ -218,7 +218,7 @@ export const countText = (kind: CountedKind, n: number): string =>
  * "Just nu"'s links for one person (D97 item 5): "1 att agera på" or "N att agera på" for the cards that wait for the
  * reader's decision, "1 förslag" or "N förslag" for Clew's proposals. Each opens the card beside Personal when the
  * server named the one card there is (it names one only when the person has exactly one card in all), and otherwise
- * leads to the person's page at Behöver dig (D107, amended 2026-11-11), where each card opens beside that page.
+ * leads to the person's page at Behöver dig (D110, amended 2026-11-11), where each card opens beside that page.
  */
 export function cardLinkTexts(list: EntityList, key: string): CardLink[] {
   const a = list.attention.find(x => keyOf(x.key) === keyOf(key));

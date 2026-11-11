@@ -133,7 +133,7 @@ function Dictation({ onResult }: { onResult: (text: string) => void }) {
 /**
  * Where the box sits decides what it says about itself (the canvas's rule H3.3: the scope line always says what the box
  * talks to). On Hem it is the page and says nothing above the field, also with a card open beside it: opening is not
- * asking (D107 rule 6), and a card is what the box asks about only once the person has added it as a chip. In a
+ * asking (D110 rule 6), and a card is what the box asks about only once the person has added it as a chip. In a
  * conversation (H1) it says "Det här samtalet" with the way to a new question; at the foot of a tool's page (D50) the
  * placeholder says what the box asks about, or that it starts a new conversation, and the box keeps to one line.
  */
@@ -187,7 +187,7 @@ export function Composer({
   about?: ComposerAbout | undefined;
 }) {
   const talk = useConversation();
-  // While this box is on the page, "Lägg till i samtalet" is offered (D107 rule 6).
+  // While this box is on the page, "Lägg till i samtalet" is offered (D110 rule 6).
   useClaimBox();
   // A token and an `@` row carry the glyph of the system the ref belongs to (D71, artboard 8): the glyph beside the word, no hue.
   const markOf = useObjectMark();
@@ -197,7 +197,7 @@ export function Composer({
   };
   // A tool page's box hands the conversation what the page shows. Hem's box hands over nothing to ask about, only the
   // way back: the card or view open beside Hem goes beside the transcript and "Stäng samtalet" returns to Hem as it
-  // stood (D107 rule 6). A conversation's own box has nothing to hand over.
+  // stood (D110 rule 6). A conversation's own box has nothing to hand over.
   const from: AskFrom | undefined =
     place === 'conversation' ? undefined : { chips: about?.chips ?? [], search: about?.search ?? '' };
   // What `@` treats as the context: what the page shows (`near`), what is in the drawer and the field, and in a
@@ -330,7 +330,7 @@ export function Composer({
       footerActions={
         <HStack gap={1} wrap="wrap">
           {/* The verbs about a card the person added with "Lägg till i samtalet", the one chip with nothing typed;
-              a card merely open beside Hem brings none (D107 rule 6). */}
+              a card merely open beside Hem brings none (D110 rule 6). */}
           {talk.chips.length === 1 && !plain && talk.verbs.length > 0 && (
             <HStack gap={1} wrap="wrap" role="group" aria-label="Om kortet">
               {talk.verbs.map(v => (

@@ -991,7 +991,7 @@ export type About = Static<typeof AboutSchema>;
  * A page of an owned domain where the person writes about one entity (D95, D96): a core connector's in-process `about`
  * may name one, never a remote manifest. `href` may hold `{key}` and `{id}`, which the web fills in. A path (`/staff?…`)
  * is a page of its own, a destination; a query alone (`?talk={id}`) is something that lies over the page the way in is
- * drawn on, its parameters added to that page's address with everything else in it kept (D107 rule 5).
+ * drawn on, its parameters added to that page's address with everything else in it kept (D110 rule 5).
  */
 export const EntityPageSchema = object({
   title: Type.String({ minLength: 1, maxLength: 60 }),

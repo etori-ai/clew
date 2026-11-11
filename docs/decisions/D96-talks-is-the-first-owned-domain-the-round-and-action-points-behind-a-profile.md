@@ -129,10 +129,10 @@ notes are stored, rewritten with this decision. Refines
 [D94](D94-a-manager-has-a-personal-section-listing-the-people-on-their-units.md) item 3: a click into a person now
 opens their talk.
 
-**Amended 2026-11-11 (D107 rule 5): the talk lies over the page it was opened on.** Item 7's drawer over Personal at
+**Amended 2026-11-11 (D110 rule 5): the talk lies over the page it was opened on.** Item 7's drawer over Personal at
 `/staff?talk=<personId>` was reached from the person's page too, and from there "Öppna samtalet" left the person's
 page for Personal, and from a section drawn beside Personal it dropped the lens. Under
-[D107](D107-where-something-opens-is-decided-by-what-it-is.md) rule 5 the talk is a focused overlay over whichever
+[D110](D110-where-something-opens-is-decided-by-what-it-is.md) rule 5 the talk is a focused overlay over whichever
 page its way in is drawn on: the row's menu on Personal, the talks section on the person's page. Its address is that
 page's own with `talk=<personId>` added and everything else kept (`/staff?show=<lens>&talk=<personId>`,
 `/people/<key>?section=<capability>&from=%2Fstaff&talk=<personId>`); closing it (✕, Esc, the way back) is the same

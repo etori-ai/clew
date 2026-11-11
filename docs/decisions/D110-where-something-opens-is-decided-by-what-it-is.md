@@ -1,4 +1,4 @@
-# D107 · Where something opens is decided by what it is, never by the page it was clicked on
+# D110 · Where something opens is decided by what it is, never by the page it was clicked on
 
 **Status:** provisional (accepted when the rules have been used by people outside the repository: a manager on Personal and one connector author placing a view and a card from the author's page alone) · **Date:** 2026-11-11 · **Area:** ui
 

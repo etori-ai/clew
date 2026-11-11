@@ -140,7 +140,7 @@ const stopAt = (id: string) =>
  * card's state as the tabs (Behöver dig, Väntar på andra, Inte nu, Klart), the areas as a filter, and on a quiet day
  * the person's areas with what they can start. The day and what happened since yesterday are the page's own, beside the
  * day's work, and the panel exists only while a card or a view is open in it (D72); opening one is not
- * asking about it, so the box is unchanged until the person adds it (D107 rule 6).
+ * asking about it, so the box is unchanged until the person adds it (D110 rule 6).
  * A conversation takes the column at `/conversations/:id` (D31), with what it is about in the panel: the view an answer
  * names, the card or view that was open when it was asked, or the page it was asked on. The address is the state
  * throughout (`panel-address.ts`). Every card comes from a connector through the registry; the calendar's proposal
@@ -172,7 +172,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams<{ conversationId?: string }>();
-  // A card's review lies over the page in its own part of the address (`?review=`, D107 rule 5), which Hem reads past:
+  // A card's review lies over the page in its own part of the address (`?review=`, D110 rule 5), which Hem reads past:
   // under it Hem is what the rest of its address draws, the card beside the column (or in its sheet) when `card` names it.
   const [search] = useSearchParams();
   const here = location.pathname;
@@ -348,7 +348,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   /**
    * The panel (D50): the view the address names, or a card, with its own read unfolded in it when the address says so
    * (a table read in the card's place, `unfoldsInCard`). A view that is also a tool offers no
-   * way to its page (D107 rule 7: no control chooses a surface); the tool is in the rail where an administrator put it.
+   * way to its page (D110 rule 7: no control chooses a surface); the tool is in the rail where an administrator put it.
    * In a conversation the card beside the transcript is the one that was open when the question was asked; on a phone
    * Hem draws its cards in the sheet, so a card has no panel there. With nothing open there is no panel: the day and
    * what happened since yesterday are Hem's own (D72). Hem says a view that failed in its own alert, and a done card
@@ -860,7 +860,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     </BottomSheet>
   );
   /**
-   * The card open beside the column. Opening it is not asking about it (D107 rule 6): Hem's box says nothing of it,
+   * The card open beside the column. Opening it is not asking about it (D110 rule 6): Hem's box says nothing of it,
    * and it is the question's subject only once the person adds it with "Lägg till i samtalet". A question asked with it
    * open takes it along beside the transcript, where it is not drawn again.
    */

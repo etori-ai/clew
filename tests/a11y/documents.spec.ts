@@ -94,7 +94,7 @@ test.describe('the shared document and semantic catalogue', () => {
       };
       await open(page, '/?tab=done');
       await page.getByRole('link', { name: card.title, exact: false }).click();
-      // The row opens its card beside Klart and the review over both, in Klart's own address (D107 rule 5).
+      // The row opens its card beside Klart and the review over both, in Klart's own address (D110 rule 5).
       await expect(page).toHaveURL('/?tab=done&card=fakturor&review=fakturor');
       const review = page.getByRole('dialog', { name: 'Visa 3 rader' });
       await expect(review.getByRole('status', { name: 'Sida 1 av 2' })).toBeVisible();

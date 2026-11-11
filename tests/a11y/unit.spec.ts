@@ -153,7 +153,7 @@ test.describe('the unit as a page', () => {
     await expect(title).toHaveAttribute('href', `${school}?from=%2F&card=${unitCard.threadId}`);
     await title.focus();
     await page.keyboard.press('Enter');
-    // The unit's page stays: its address with the card added, its heading and its trail (D107 rules 2 and 3).
+    // The unit's page stays: its address with the card added, its heading and its trail (D110 rules 2 and 3).
     await expect(page).toHaveURL(`${school}?from=%2F&card=${unitCard.threadId}`);
     const panel = page.getByRole('complementary', { name: 'Kort' });
     await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -187,7 +187,7 @@ test.describe('the unit as a page', () => {
     await expect(panel.getByText(`${unitAction.title}: ${ENTITY_UNIT.label}`).first()).toBeVisible();
     await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
     await expect(heading(page, 1, ENTITY_UNIT.label)).toBeVisible();
-    // The unit's page has no question box, so the card offers no way into one (D107 rule 6).
+    // The unit's page has no question box, so the card offers no way into one (D110 rule 6).
     await expect(panel.getByRole('button', { name: 'Inte nu', exact: true }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
     await page.keyboard.press('Escape');

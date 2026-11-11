@@ -4,7 +4,7 @@ import { TALK_LENS } from './data';
 /**
  * Not a test: screenshots of Personal (D97) for the comparison with the canvas: "Alla" (artboard A2) with its Visa menu
  * open, a lens (artboard B), a row's menu (artboard A3), at 1440 × 900 and 390 wide, and one person's cards listed beside
- * the whole list (D107 answer 6), which has no artboard. Run on demand with
+ * the whole list (D110 answer 6), which has no artboard. Run on demand with
  * `CLEW_SCREENS=1 … playwright test -c tests/a11y screens.staff`; the images land in test-results/screens/.
  */
 const out = (name: string) => `test-results/screens/${name}.png`;

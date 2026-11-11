@@ -36,11 +36,11 @@ One page of [implementation status](../status.md). Each entry says what works in
 
 ## Adding to the box
 
-**Works in this checkout.** Pressing Lägg till i samtalet slides the drawer open, scales the chip and the button's check in and fades the verbs in, on Astryx's entry motion; the field has the focus from the same click and a hidden status says the chip's name. The column fades in when the conversation takes Hem's place and when Hem comes back. Reduced motion shows everything at once. Opening is not asking (D107 rule 6): a card opened beside Hem leaves the box as it was, and is the question's subject only once added; the control, on a card, a card's menu, a view's row and a search hit, is drawn only where the page has a box (Hem, a conversation, a tool's page) and is absent on Personal, a person's or a unit's page and in the drawer over Kalender or Administration.
+**Works in this checkout.** Pressing Lägg till i samtalet slides the drawer open, scales the chip and the button's check in and fades the verbs in, on Astryx's entry motion; the field has the focus from the same click and a hidden status says the chip's name. The column fades in when the conversation takes Hem's place and when Hem comes back. Reduced motion shows everything at once. Opening is not asking (D110 rule 6): a card opened beside Hem leaves the box as it was, and is the question's subject only once added; the control, on a card, a card's menu, a view's row and a search hit, is drawn only where the page has a box (Hem, a conversation, a tool's page) and is absent on Personal, a person's or a unit's page and in the drawer over Kalender or Administration.
 
 **Limits and pending work.** The desktop card's text button draws no check. No manual screen-reader pass yet.
 
-**Evidence.** [D92](../../decisions/D92-what-goes-into-the-box-enters-on-astryxs-entry-motion.md), [D107](../../decisions/D107-where-something-opens-is-decided-by-what-it-is.md), [browser evidence](../../../tests/a11y/card-actions.spec.ts), [opening and asking on Hem](../../../tests/a11y/todo.spec.ts), [no box on a person's page](../../../tests/a11y/person.spec.ts)
+**Evidence.** [D92](../../decisions/D92-what-goes-into-the-box-enters-on-astryxs-entry-motion.md), [D110](../../decisions/D110-where-something-opens-is-decided-by-what-it-is.md), [browser evidence](../../../tests/a11y/card-actions.spec.ts), [opening and asking on Hem](../../../tests/a11y/todo.spec.ts), [no box on a person's page](../../../tests/a11y/person.spec.ts)
 
 ## Sedan i går beside Hem
 

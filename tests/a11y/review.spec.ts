@@ -120,7 +120,7 @@ for (const [layout, viewport] of [
   });
 }
 
-test.describe('rows with a document are reviewed one at a time in a drawer over the page, and the receipt earns the check (D70, D73 amended, D107 rule 5)', () => {
+test.describe('rows with a document are reviewed one at a time in a drawer over the page, and the receipt earns the check (D70, D73 amended, D110 rule 5)', () => {
   test.use({ viewport: desktop });
 
   test("a row's Granska opens its card beside Hem and the review over both, each row is decided beside its document with the step in the address, one button writes, and Hem keeps the row in place with the receipt before it goes to Klart", async ({
@@ -131,7 +131,7 @@ test.describe('rows with a document are reviewed one at a time in a drawer over 
     await open(page, '/');
     const row = page.getByRole('main').locator('#thread-fakturor');
     await row.getByRole('link', { name: 'Granska 3' }).click();
-    // A drawer over Hem, in Hem's own address (D107 rule 5): named by its title, Hem under the scrim with the row's card
+    // A drawer over Hem, in Hem's own address (D110 rule 5): named by its title, Hem under the scrim with the row's card
     // beside the column, so the row says "öppet bredvid"; the ✕ is the one close, and no "Spara och stäng" in words.
     await expect(page).toHaveURL('/?card=fakturor&review=fakturor');
     const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
@@ -317,7 +317,7 @@ test.describe('the review where the card stands beside Hem (D73 amended)', () =>
   });
 });
 
-test.describe('the review lies over the page it was opened on and closes to it as it was (D107 rule 5)', () => {
+test.describe('the review lies over the page it was opened on and closes to it as it was (D110 rule 5)', () => {
   test.use({ viewport: desktop });
   const invoices = (page: Page) => page.getByRole('article', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' });
 
