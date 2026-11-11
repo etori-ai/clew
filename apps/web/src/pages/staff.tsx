@@ -25,8 +25,8 @@ import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { AsyncContent, ContentSkeleton } from '../components/loading';
 import { PageHeader } from '../components/page-header';
 import { TalkOverlay } from '../components/talk-overlay';
-import { useCardFrame } from '../components/card-panel';
-import { usePersonPanel } from '../components/person-panel';
+import { usePagePanel } from '../components/page-panel';
+import { LIST_MIN, PERSON_PANEL, usePersonPanel } from '../components/person-panel';
 import { useEntityAction } from '../entity-actions';
 import { answerOf, peopleLine, silentOf, sourcesRead, valueCounts, type Answer } from './staff-model';
 import { AllUnit, CompactUnit, LensUnit, SilentSources, ShowMenu, type Context, type Openers } from './staff-parts';
@@ -44,8 +44,9 @@ const SHOW = 'show';
  * source an administrator offers, and the list is then that source's view, sorted by need. Each row has its menu,
  * grouped by the system an action works in. A name leads to the person's page. "Just nu" with several cards opens
  * the person beside the list (`?person=<key>`, D83 rule 1), and the list is then drawn compact, its names choosing who
- * is beside it; whether a person is shown beside the list at all is open (2026-11-11). A card about a person opens in the same panel (`?card=<threadId>`, `card-panel.tsx`): from
- * "Just nu" beside the list, from the person's Behöver dig over the person; the list never gives way to Hem for it.
+ * is beside it; whether a person is shown beside the list at all is open (2026-11-11). A card about a person opens in the
+ * page's panel (`?card=<threadId>`, `page-panel.tsx`): from "Just nu" beside the list, from the person's Behöver dig over
+ * the person; the list never gives way to Hem for it.
  * A source that does not answer is said once, with Försök igen; the rest stands.
  *
  * Someone who manages nobody gets an empty list from the server, and the page says whom it is for. One person's
@@ -76,11 +77,20 @@ export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }
       predicate: q => q.queryKey.length === 4,
     });
   }, [client]);
-  const card = useCardFrame({ onChange: cardChanged });
-  const panel = usePersonPanel(card.frame);
+  const person = usePersonPanel();
+  // 1.4.10: on a short screen nothing is pinned beside the page, as on a tool's page. One thing at a time: what the
+  // address opens takes the person's place, and the list's link is the way back to it.
+  const panel = usePagePanel({
+    under: person.frame,
+    minMain: LIST_MIN,
+    size: PERSON_PANEL,
+    replaces: true,
+    overlayOnly: short,
+    onChange: cardChanged,
+  });
   // The row the open thing is about, marked in the compact list: the opened person, else the person whose one card it is.
-  const marked =
-    panel.person ?? (card.threadId ? list?.attention.find(a => a.threadId === card.threadId)?.key : undefined);
+  const cardId = search.get('card') ?? undefined;
+  const marked = person.person ?? (cardId ? list?.attention.find(a => a.threadId === cardId)?.key : undefined);
   const groups = list?.groups ?? [];
   const action = useEntityAction();
 
@@ -89,9 +99,9 @@ export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }
   // the focus and says the name, so neither is spoken again.
   const talkId = talkOf(search);
   const sawTalk = useRef(false);
-  if (talkId || panel.person) sawTalk.current = true;
+  if (talkId || person.person) sawTalk.current = true;
   usePageTitle(
-    talkId ? null : panel.name ? `${panel.name} · Personal` : 'Personal',
+    talkId ? null : person.name ? `${person.name} · Personal` : 'Personal',
     sawTalk.current ? false : 'Personal',
   );
 
@@ -128,7 +138,9 @@ export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }
   const animatedLayout = useAnimatedLayout({ containerRef: root });
   const lensAnswer = lens ? answers.get(lens.capability) : undefined;
   const lensSilent = !!lens && lensAnswer?.status !== 'ok' && lensAnswer?.status !== 'pending';
-  const compact = panel.occupied;
+  // The list is drawn whole again in the same step as the person or what lies over them closes, so the row that opened
+  // them is there to take the focus back.
+  const compact = panel.occupied && (!!person.person || !!panel.ref);
   const silentLine = <SilentSources silent={silent} retrying={retrying} onRetry={retry} />;
 
   return (

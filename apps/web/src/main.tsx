@@ -9,6 +9,7 @@ import { Center, LinkProvider, Providers, SessionBoundary, Spinner, type Browser
 import type { SessionUser } from '@clew/contracts';
 import { StartPage } from './pages/start';
 import { ConversationProvider } from './components/conversation-context';
+import { PanelClaims } from './components/page-panel';
 import { CalendarPage } from './pages/calendar';
 import { ToolPage } from './pages/tool';
 import { LoginPage } from './pages/login';
@@ -136,8 +137,10 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
   return (
     <SessionBoundary session={shell.session} onEnded={() => client.clear()}>
       <QueryClientProvider client={client}>
-        {/* One conversation for the whole session's pages (D50): asked on a tool's page, it is still there when the transcript takes the column. */}
-        <ConversationProvider>{children(shell)}</ConversationProvider>
+        {/* One conversation for the whole session's pages (D50): asked on a tool's page, it is still there when the transcript takes the column. Every page has the panel: the pages that draw it beside their column claim it, and the shell draws it over the others. */}
+        <ConversationProvider>
+          <PanelClaims>{children(shell)}</PanelClaims>
+        </ConversationProvider>
         {Devtools && (
           <Suspense fallback={null}>
             <Devtools initialIsOpen={false} buttonPosition="bottom-right" />

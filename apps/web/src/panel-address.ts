@@ -1,7 +1,7 @@
 import type { ViewRef } from '@clew/contracts';
 
 /**
- * What the panel holds is named in the address (D50), the same way on the landing, in a conversation and on Att göra:
+ * What the panel holds is named in the address (D50), the same way on every page (`usePagePanel`, the shell's drawer):
  * `open` is a view (with `open-title`, `open-input` and `via`, the names a tool's page already uses, D42), `open-card`
  * and `open-action` are a card's own read, and `card` is a card. A view lies over a card: closing the view leaves the
  * card, closing the card leaves the page. Everything else in the address is the page's own and is kept.

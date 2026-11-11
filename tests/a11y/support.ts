@@ -1,6 +1,6 @@
 import { test as base, expect, type Locator, type Page, type Route } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import type { MenuEntry, Thread, SiteHeaderView } from '@clew/contracts';
+import type { MenuEntry, PanelViewSpec, Thread, SiteHeaderView } from '@clew/contracts';
 import {
   NEXT_WEEK,
   NOW,
@@ -204,6 +204,8 @@ export class MockApi {
     onDuty: ['Anna Lindqvist 07:00–16:00'],
     absent: [{ name: 'Sara Nyström', kind: 'short' }],
   };
+  /** A card's read that answers with a declared view (D38), by the action's id; any other read answers `output`. */
+  cardReads: Record<string, { output: unknown; view?: PanelViewSpec }> = {};
   unmocked: string[] = [];
   /** Keeps every turn pending until the returned function is called, for a test that works while the answer is on its way: `answerDelay` can run out first on a slow machine. */
   holdAnswer() {
@@ -763,7 +765,8 @@ export class MockApi {
         };
         return json({ kind: 'execute', thread: this.update(id, { state: 'handled', handledAt: NOW, receipt }) });
       }
-      return json({ kind: 'read', output: this.output });
+      const read = body.actionId ? this.cardReads[body.actionId] : undefined;
+      return json(read ? { kind: 'read', ...read } : { kind: 'read', output: this.output });
     }
     if (path.startsWith('/threads/') && !post) return json(this.threads.find(t => t.id === id));
     this.unmocked.push(`${request.method()} ${path}`);

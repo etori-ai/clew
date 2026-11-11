@@ -12,6 +12,7 @@ import {
   test,
 } from './support';
 import { PRESENCE_LENS, TALK_LENS } from './data';
+import { phonebook } from './phonebook';
 
 /**
  * Personal (D94, D97, artboards A2, B and A3): the people the reader may ask about, one card per unit. "Alla" has the
@@ -235,6 +236,37 @@ test.describe('Personal', () => {
       await read.getByRole('button', { name: 'Stäng panelen' }).click();
       await expect(page).toHaveURL('/staff?card=omtanke');
       await expect(card.getByRole('article', { name: 'Kort: Omtankesamtal med Anna Lindqvist' })).toBeVisible();
+    });
+    test('a row in a card’s read beside the list leads to its own view in the same panel, as on Hem, and back', async ({
+      page,
+      api,
+    }) => {
+      // The read answers with a declared view whose rows each have a view of their own: the phone book's people, each
+      // with a contact card.
+      const directory = await phonebook('phonebook.directory', { query: 'lärare' });
+      if (!('output' in directory.body)) throw new Error(directory.body.error);
+      api.cardReads.pattern = directory.body;
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await open(page, '/staff?card=omtanke&open-card=omtanke&open-action=pattern');
+      const read = page.getByRole('complementary', { name: 'Se mönstret' });
+      const name = read.getByRole('link', { name: 'Anna Lindqvist' });
+      // Personal's own address with the row's view in the panel, which leaves the read and keeps the card under it.
+      await expect(name).toHaveAttribute(
+        'href',
+        /^\/staff\?card=omtanke&open=phonebook\.person&open-title=Kontaktkort&open-input=[^&]+&via=1$/,
+      );
+      await expectNoAxeViolations(page);
+      await name.focus();
+      await page.keyboard.press('Enter');
+      const contact = page.getByRole('complementary', { name: 'Kontaktkort' });
+      await expect(contact.getByRole('link', { name: '0980-319 203' })).toBeVisible();
+      await expect(contact.getByRole('heading', { level: 2, name: 'Kontaktkort' })).toBeFocused();
+      await expect(page.getByRole('heading', { level: 1, name: 'Personal' })).toBeVisible();
+      await expect(page.getByRole('complementary')).toHaveCount(1);
+      // The way back is the view's own, and the focus lands on the row that led away.
+      await contact.getByRole('button', { name: 'Tillbaka' }).click();
+      await expect(page).toHaveURL('/staff?card=omtanke&open-card=omtanke&open-action=pattern');
+      await expect(name).toBeFocused();
     });
     test('on a wide window the panel stands on the window’s edge, and the list keeps its width when it closes', async ({
       page,

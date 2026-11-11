@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import type { EntityAction, EntityDetail } from '@clew/contracts';
@@ -19,7 +19,7 @@ import { ApiError } from '../api';
 import { entityDetailQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { actionMenuItems, useEntityAction } from '../entity-actions';
-import { PANEL_KEYS, withCard } from '../panel-address';
+import { PANEL_KEYS, panelOf, withCard } from '../panel-address';
 import {
   PERSON,
   PERSON_SECTION,
@@ -28,8 +28,8 @@ import {
   withPersonSection,
   withoutPerson,
 } from '../person-address';
-import { usePanel, type PanelFrame, type PanelSize } from './panel';
-import { mobileQuery, shortQuery } from './shell';
+import type { PanelFrame, PanelSize } from './panel';
+import { mobileQuery } from './shell';
 import {
   NEEDS_YOU,
   NeedsYouSection,
@@ -45,14 +45,12 @@ import {
 
 /**
  * The person opened beside a list (D97 item 5, D83 rule 1): the selection is `?person=<key>` in the address of the page
- * that shows the list. The page spreads `end` into its `Layout`, renders `overlay`, and draws its list compact while
- * `occupied` is true.
+ * that shows the list. The page hands `frame` to its panel as what lies under whatever the address opens over the
+ * person (`usePagePanel`'s `under`), and draws its list compact while the panel is occupied.
  */
 export interface PersonPanelSlot {
-  end: ReactNode | undefined;
-  overlay: ReactNode;
-  /** Whether the person takes width beside the page. */
-  occupied: boolean;
+  /** The person, or that they cannot be shown, as the panel draws them; null while nothing is to be drawn. */
+  frame: PanelFrame | null;
   /** The key in the address, whether or not the panel fits beside the page. */
   person: string | undefined;
   /** The opened person's name once it has arrived, for the page's title. */
@@ -84,9 +82,9 @@ export const listAddress = (pathname: string, search: URLSearchParams | string):
 export const personPageFromList = (pathname: string, search: URLSearchParams | string, key: string): string =>
   personPageHref(key, { from: listAddress(pathname, search) });
 /** The person's panel is wider than the shared one (artboard C: 520 to 600 px), its width remembered on its own. */
-const PERSON_PANEL: PanelSize = { default: 560, min: 440, max: 640, id: 'clew-person-panel-width' };
+export const PERSON_PANEL: PanelSize = { default: 560, min: 440, max: 640, id: 'clew-person-panel-width' };
 /** What the list beside the person keeps: its names and one mark each (artboard C). */
-const LIST_MIN = 440;
+export const LIST_MIN = 440;
 
 /**
  * The opened person's actions (artboard C): the first two as buttons, the rest under Fler grouped by the system they
@@ -269,22 +267,22 @@ function PhoneBody({
 }
 
 /**
- * The person beside the list (D97 item 5, artboard C), in the one panel (D50), wired as a tool's page wires its view:
- * opening moves focus to the person's name, Esc and ✕ close and give focus back to the link that opened them, one person
- * taking another's place is named aloud, and where the panel does not fit beside the list it is the drawer over it.
+ * The person beside the list (D97 item 5, artboard C), in the page's one panel (D50, `usePagePanel`), wired as a tool's
+ * page wires its view: opening moves focus to the person's name, Esc and ✕ close and give focus back to the link that
+ * opened them, one person taking another's place is named aloud, and where the panel does not fit beside the list it is
+ * the drawer over it.
  *
- * `over` is what the page holds in the same panel over the person: a card opened from the list or from the person's
- * Behöver dig (`card-panel.tsx`). The panel draws it in the person's place, the person's sources are not asked again
- * while it does (D83 rule 7), and closing it leaves the person when one is in the address, else the list.
+ * What the address opens in the panel lies over the person: a card opened from the list or from the person's Behöver
+ * dig, or a view. The panel draws it in the person's place, the person's sources are not asked again while it does (D83
+ * rule 7), and closing it leaves the person when one is in the address, else the list.
  */
-export function usePersonPanel(over: PanelFrame | null = null): PersonPanelSlot {
+export function usePersonPanel(): PersonPanelSlot {
   const [search] = useSearchParams();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const mobile = useMediaQuery(mobileQuery);
-  // 1.4.10: on a short screen nothing is pinned beside the page, as on a tool's page.
-  const short = useMediaQuery(shortQuery);
   const key = search.get(PERSON) || undefined;
+  const covered = panelOf(search) !== null;
   const drill = search.get(PERSON_SECTION) || undefined;
   // The person on screen stays until the next one has arrived: one takes the other's place in one step.
   const read = useQuery({
@@ -293,7 +291,7 @@ export function usePersonPanel(over: PanelFrame | null = null): PersonPanelSlot 
     placeholderData: keepPreviousData,
   });
   const detail = key && !read.isError ? read.data : undefined;
-  const answers = useSectionAnswers(over ? undefined : detail?.entity.key, detail?.sections ?? []);
+  const answers = useSectionAnswers(covered ? undefined : detail?.entity.key, detail?.sections ?? []);
   const missing = !!key && read.isError && read.error instanceof ApiError && read.error.status === 404;
   const list = withoutPerson(pathname, search);
   // The unit's page leads back here, with the person still open (D83 rule 4).
@@ -380,13 +378,5 @@ export function usePersonPanel(over: PanelFrame | null = null): PersonPanelSlot 
               ),
             }
           : null;
-  const slot = usePanel(over ?? frame, { minMain: LIST_MIN, size: PERSON_PANEL, replaces: true, overlayOnly: short });
-  // The list is drawn whole again in the same step as the person or the card closes, so the row that opened them is
-  // there to take the focus back.
-  return {
-    ...slot,
-    occupied: slot.occupied && (!!key || !!over),
-    person: key,
-    name: key ? detail?.entity.name : undefined,
-  };
+  return { frame, person: key, name: key ? detail?.entity.name : undefined };
 }

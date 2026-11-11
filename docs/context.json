@@ -1231,6 +1231,15 @@
       "status": "provisional (product owner chose the generator, 2026-11-11; accepted when the site has been published from `main` and read there)",
       "date": "2026-11-11",
       "area": "platform"
+    },
+    {
+      "key": "D107-where-something-opens-is-decided-by-what-it-is",
+      "number": 107,
+      "path": "docs/decisions/D107-where-something-opens-is-decided-by-what-it-is.md",
+      "title": "D107 · Where something opens is decided by what it is, never by the page it was clicked on",
+      "status": "provisional (accepted when the rules have been used by people outside the repository: a manager on Personal and one connector author placing a view and a card from the author's page alone)",
+      "date": "2026-11-11",
+      "area": "ui"
     }
   ],
   "documents": [
@@ -1749,6 +1758,12 @@
     {
       "path": "docs/decisions/D106-the-documentation-site-is-vitepress-over-docs-as-it-is.md",
       "title": "D106 · The documentation site is VitePress over `docs/` as it is, published to GitHub Pages",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D107-where-something-opens-is-decided-by-what-it-is.md",
+      "title": "D107 · Where something opens is decided by what it is, never by the page it was clicked on",
       "category": "decision-history",
       "headings": []
     },

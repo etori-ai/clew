@@ -268,3 +268,87 @@ test('the person signs out from the phone bar', async ({ page, api }) => {
   await page.getByRole('dialog').getByRole('button', { name: 'Logga ut', exact: true }).click();
   await expect(page.getByRole('link', { name: 'Logga in', exact: true })).toBeVisible();
 });
+
+/**
+ * Every page has the panel (the product owner, 2026-11-11). A page without one beside its own column (Kalender,
+ * Administration, a person's or a unit's page) gets what its address opens, a card or a view, in the drawer over it from
+ * the shell; closing the drawer leaves the page as it was. Nothing links to such an address from Clew yet, so the first
+ * test follows one the way the router follows a link inside Clew, with the focus where the person was.
+ */
+test.describe('the panel over a page that has none of its own', () => {
+  test.use({ viewport: desktop });
+  test('a card in the address lies in the drawer over Kalender, and Esc leaves Kalender as it was with the focus back', async ({
+    page,
+    api: _,
+  }) => {
+    // From Hem, which holds the panel itself and lets go of it when the person leaves.
+    await open(page, '/');
+    await page.getByRole('link', { name: 'Kalender', exact: true }).click();
+    const week = page.getByRole('heading', { level: 1, name: 'Vecka' });
+    await expect(week).toBeVisible();
+    const title = await page.title();
+    const opener = page.getByRole('button', { name: 'Ny bokning' });
+    await opener.focus();
+    await page.evaluate(() => {
+      window.history.pushState(null, '', '/calendar?card=fakturor');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    const drawer = page.getByRole('dialog', { name: 'Kort' });
+    await expect(drawer.locator('#card-fakturor').getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
+    await expect.poll(() => drawer.evaluate(el => el.contains(document.activeElement))).toBe(true);
+    // Kalender stays the page under it: its heading, its title and its path.
+    await expect(week).toBeAttached();
+    await expect(page).toHaveTitle(title);
+    await expectNoAxeViolations(page);
+    await page.keyboard.press('Escape');
+    await expect(drawer).toHaveCount(0);
+    await expect(page).toHaveURL(/\/calendar$/);
+    await expect(opener).toBeFocused();
+    await expect(week).toBeVisible();
+    // Back on Hem the card is Hem's own again, drawn once.
+    await page.evaluate(() => {
+      window.history.pushState(null, '', '/?card=fakturor');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await expect(page.getByRole('heading', { level: 1, name: 'Hej Testa' })).toBeVisible();
+    await expect(drawer.locator('#card-fakturor')).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(1);
+  });
+
+  test('opened by its address the card is there after a load, and ✕ leaves Kalender without the card', async ({
+    page,
+    api: _,
+  }) => {
+    await open(page, '/calendar?card=omtanke');
+    const drawer = page.getByRole('dialog', { name: 'Kort' });
+    await expect(drawer.getByRole('article', { name: 'Kort: Omtankesamtal med Anna Lindqvist' })).toBeVisible();
+    await expect.poll(() => drawer.evaluate(el => el.contains(document.activeElement))).toBe(true);
+    await expectNoAxeViolations(page);
+    await drawer.getByRole('button', { name: 'Stäng', exact: true }).click();
+    await expect(drawer).toHaveCount(0);
+    await expect(page).toHaveURL(/\/calendar$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Vecka' })).toBeVisible();
+    // Nothing is left holding the focus inside the drawer that closed.
+    expect(await page.evaluate(() => !document.activeElement?.closest('dialog'))).toBe(true);
+  });
+
+  test('a card’s read lies over the card in the same drawer, and closing it leaves the card', async ({
+    page,
+    api: _,
+  }) => {
+    await open(page, '/calendar?card=omtanke');
+    const drawer = page.getByRole('dialog', { name: 'Kort' });
+    await drawer.getByRole('button', { name: 'Se mönstret' }).click();
+    await expect(page).toHaveURL('/calendar?card=omtanke&open-card=omtanke&open-action=pattern');
+    const read = page.getByRole('dialog', { name: 'Se mönstret' });
+    await expect(read).toBeVisible();
+    await expect(read.getByRole('heading', { name: 'Se mönstret' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page).toHaveURL('/calendar?card=omtanke');
+    await expect(
+      page
+        .getByRole('dialog', { name: 'Kort' })
+        .getByRole('article', { name: 'Kort: Omtankesamtal med Anna Lindqvist' }),
+    ).toBeVisible();
+  });
+});

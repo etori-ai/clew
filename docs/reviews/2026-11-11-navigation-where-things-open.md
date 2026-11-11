@@ -1,8 +1,10 @@
 # Review: where things open, and a proposal for one place per thing · 2026-11-11
 
-Status: a review with a proposal. Nothing in the proposal is decided or built; it waits for the product owner
-([open questions](../maintainers/open-questions.md)). The inventory in the second half is a reading of the working
-tree on 2026-11-11, not of a running application.
+Status: decided. The product owner answered the seven choices on 2026-11-11 and the rules are
+[D107](../decisions/D107-where-something-opens-is-decided-by-what-it-is.md); choice 6 was answered with the
+alternative, the list of cards beside Personal. The text below is the review as it was written, before the answers.
+The inventory in the second half is a reading of the working tree on 2026-11-11, not of a running application, and
+describes the code before D107 was built.
 
 ## Why
 

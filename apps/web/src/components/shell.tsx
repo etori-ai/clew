@@ -24,11 +24,10 @@ import { headerQuery, threadsQuery } from '../queries';
 import { useSourceBanner } from './source-banner';
 import { api } from '../api';
 import { ReminderBell } from './reminders';
+import { PanelOverPage } from './page-panel';
+import { mobileQuery } from '../media';
 
-/** AppShell moves the SideNav into a drawer below its `md` breakpoint (768 px); every phone decision in the app follows the same line. */
-export const mobileQuery = '(max-width: 767px)';
-/** 1.4.10: with 480 px or less in height nothing is pinned; the page scrolls as one. */
-export const shortQuery = '(max-height: 480px)';
+export { mobileQuery, shortQuery } from '../media';
 /** Until the installation's header has arrived: the site's name and Start, so the bar keeps its height and heading. */
 const PENDING_MENU: SiteMenu = {
   version: 1,
@@ -70,6 +69,10 @@ type Props = {
  * the places the person's header connector lists under them (D88), and the current place's own pages under the band. The rail keeps
  * Clew's own places and conversations. On a phone the shell draws the band's heading row as its bar and the places go
  * into the drawer with the rail.
+ *
+ * Every page has the panel (the product owner, 2026-11-11: what is opened from a page opens beside that page). A page
+ * that holds it beside its own column claims it (`usePagePanel`); on any other page the shell draws what the address
+ * opens, a card or a view, in the drawer over the page, and closing it leaves the page as it was.
  */
 export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   const { mode, setMode, isPersistent } = useAppearance();
@@ -201,6 +204,7 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
       }
     >
       {children}
+      <PanelOverPage />
     </AppShell>
   );
 }

@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**104 in force**: 100 accepted and 4 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 8 proposed and not decided. 5 no longer in force.
+**105 in force**: 100 accepted and 5 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 8 proposed and not decided. 5 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -136,6 +136,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D92 · What goes into the box enters on Astryx's entry motion](D92-what-goes-into-the-box-enters-on-astryxs-entry-motion.md) | 2026-11-09 | accepted |  |
 | [D98 · The installation's theme and logo are saved in Clew by an administrator, the theme as a design tokens file](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md) | 2026-11-10 | accepted |  |
 | [D100 · The people list is read a page at a time and narrowed on the server](D100-the-people-list-is-read-a-page-at-a-time-and-narrowed-on-the-server.md) | 2026-11-11 | accepted |  |
+| [D107 · Where something opens is decided by what it is, never by the page it was clicked on](D107-where-something-opens-is-decided-by-what-it-is.md) | 2026-11-11 | provisional |  |
 
 ## Proposed, not decided
 

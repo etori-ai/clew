@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
-import { keepPreviousData, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Area, MenuEntry, SessionUser, Thread, ViewRef, PanelViewSpec } from '@clew/contracts';
+import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { Area, MenuEntry, SessionUser, Thread, ViewRef } from '@clew/contracts';
 import { isSnoozed } from '@clew/contracts';
 import {
   Badge,
@@ -41,12 +41,12 @@ import {
 import { addDays, dayLabel, displayDate, shortDayLabel, timeLabel, today, weekNumber } from '@clew/calendar/dates';
 import { api } from '../api';
 import { errorMessage } from '../query-policy';
-import { areasQuery, assistantQuery, cardViewQuery, threadsQuery, todayQuery, viewQuery } from '../queries';
+import { areasQuery, assistantQuery, threadsQuery, todayQuery } from '../queries';
 import { applyThread } from '../thread-cache';
 import { keys } from '../query-keys';
 import { groupThreads } from '../stream';
 import { useReceiptArrivals } from '../linger';
-import { panelOf, withAction, withCard, withView, withoutPanel } from '../panel-address';
+import { withAction, withCard, withView, withoutPanel } from '../panel-address';
 import { reviewOf } from '../review-address';
 import { Composer, Suggestions, type ComposerAbout } from '../components/composer';
 import { PageHeader } from '../components/page-header';
@@ -65,24 +65,18 @@ function Entering({ children }: { children: (entry: EntryStyle) => ReactNode }) 
 }
 import { toolHref, useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
-import { GenericCard, ThreadRow } from '../components/card';
+import { ThreadRow } from '../components/card';
 import { ReviewOverlay } from '../components/review-overlay';
 import { ReceiptNotice } from '../components/receipt-notice';
 import { BriefSkeleton } from '../components/brief';
 import { ERRANDS_AREA, MyErrands } from '../components/my-errands';
 import { MyCommitments, TALKS_AREA } from '../components/my-commitments';
 import { AsideSkeleton, AsyncContent } from '../components/loading';
-import {
-  CONVERSATION_MIN,
-  PANEL_EDGE,
-  PanelBody,
-  panelBesideQuery,
-  usePanel,
-  type PanelFrame,
-} from '../components/panel';
+import { CONVERSATION_MIN, PANEL_EDGE, panelBesideQuery } from '../components/panel';
+import { usePagePanel } from '../components/page-panel';
+import { cardBody } from '../components/card-panel';
 import { EventDialog } from '../components/calendar/event-dialog';
 import type { AgendaItem } from '@clew/ui';
-import { ThreadCard } from '../components/thread';
 import { Handled } from '../components/handled';
 import { Today } from '../components/today';
 import { Since } from '../components/since';
@@ -193,14 +187,9 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     [reviewing, addressed],
   );
   const here = reviewing ? '/' : location.pathname;
-  const query = reviewing ? `?${search.toString()}` : location.search;
   const conversationId = params.conversationId && params.conversationId !== 'new' ? params.conversationId : null;
   const tab = tabOf(search.get('tab'));
   const area = search.get('area');
-  // What the panel holds, from the address: a view, a card's own read, or a card (D50).
-  const panel = panelOf(search);
-  const viewPanel = panel?.kind === 'view' ? panel : null;
-  const actionPanel = panel?.kind === 'action' ? panel : null;
   /** The card the address names: the row marked on Hem, and the card in the panel unless a view lies over it. */
   const openId = search.get('card');
   // `via` marks a view opened from another view (a row's contact card): the panel then offers the way back to it.
@@ -318,96 +307,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       uniqueID: 'receipt:' + thread.id,
     });
   });
-  // A view is addressable (integrations.md, "Answers and views"): the panel follows `open` or `open-card` in the address.
-  const viewInput = search.get('open-input');
-  // A declared view with a search field (D38) asks again as the person types: the rows on screen stay until the next ones arrive, so the panel and the field's focus stay put.
-  const capabilityView = useQuery({
-    ...viewQuery(viewPanel?.capability ?? '', viewInput),
-    enabled: !!viewPanel,
-    placeholderData: keepPreviousData,
-  });
-  // The view on screen. Another capability's view takes its place when it has arrived, not before: the panel stays open
-  // between a row and its contact card, and focus can follow. Typing in a view's own field keeps that view's rows meanwhile.
-  const shownView = useRef<{
-    capability: string;
-    title: string;
-    output: unknown;
-    spec: PanelViewSpec | undefined;
-    source: string | undefined;
-    input: Record<string, unknown>;
-    via: boolean;
-    address: string;
-  } | null>(null);
-  // Only a read is asked for from the address. The request is the decision endpoint's (D45/D47), so an address that
-  // named an execute would make the decision when the page loaded, with no button pressed and no confirm asked: a
-  // link someone was sent must never do that. The card's own buttons decide; the address only opens what a read shows.
-  const addressedRead =
-    !!actionPanel &&
-    threads.some(
-      t => t.id === actionPanel.threadId && t.actions.some(a => a.id === actionPanel.actionId && a.kind === 'read'),
-    );
-  const cardView = useQuery({
-    ...cardViewQuery(actionPanel?.threadId ?? '', actionPanel?.actionId ?? ''),
-    enabled: addressedRead,
-  });
-  // What a card action answered is acted on once per answer (StrictMode replays effects): an executed thread goes into the cache, a link opens a tab.
-  const acted = useRef<unknown>(null);
-  useEffect(() => {
-    const result = cardView.data;
-    if (!result || acted.current === result) return;
-    acted.current = result;
-    if (result.kind === 'execute') {
-      replace(result.thread);
-      void applyThread(client, result.thread);
-    } else if (typeof (result.output as { url?: string }).url === 'string')
-      window.open((result.output as { url: string }).url, '_blank', 'noopener');
-  }, [cardView.data, client, replace]);
-  const arrived =
-    capabilityView.data &&
-    (!capabilityView.isPlaceholderData || capabilityView.data.view?.capability === viewPanel?.capability)
-      ? capabilityView.data
-      : undefined;
-  if (!viewPanel || capabilityView.isError) shownView.current = null;
-  else if (arrived)
-    shownView.current = {
-      capability: viewPanel.capability,
-      title: viewPanel.title,
-      output: arrived.output,
-      spec: arrived.view,
-      source: arrived.source,
-      input: viewPanel.input,
-      via: viewPanel.via,
-      address: here + query,
-    };
-  const capabilityShown = viewPanel ? shownView.current : null;
-  const view = useMemo(() => {
-    if (viewPanel)
-      return capabilityShown
-        ? {
-            title: capabilityShown.title,
-            output: capabilityShown.output,
-            spec: capabilityShown.spec,
-            source: capabilityShown.source,
-          }
-        : null;
-    const result = actionPanel ? cardView.data : undefined;
-    if (!result || !actionPanel) return null;
-    const label =
-      threads.find(t => t.id === actionPanel.threadId)?.actions.find(a => a.id === actionPanel.actionId)?.label ?? 'Vy';
-    if (result.kind === 'execute')
-      return { title: label, output: result.thread.receipt, spec: undefined, source: undefined };
-    if (typeof (result.output as { url?: string }).url === 'string') return null;
-    return { title: label, output: result.output, spec: result.view, source: undefined };
-  }, [viewPanel?.capability, actionPanel?.threadId, actionPanel?.actionId, capabilityShown, cardView.data, threads]);
-  // The page's one alert: a read that failed before it had anything to show. A failed refetch keeps the old data and says nothing; the day and the model's status are extras.
-  const failed = [threadsQ, areasQ].find(q => q.isError && q.data === undefined);
-  const error = failed
-    ? errorMessage(failed.error, 'Sidan kunde inte läsas.')
-    : capabilityView.isError
-      ? errorMessage(capabilityView.error, 'Kunde inte hämta.')
-      : cardView.isError
-        ? errorMessage(cardView.error, 'Kunde inte hämta.')
-        : null;
   const openView = (v: ViewRef) => navigate(viewHref(v.capability, v.title, v.input));
   const { areaTitle } = useMarks();
   // The filter changes the rows under it without a change of page: what is shown now is said aloud (4.1.3).
@@ -432,28 +331,70 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   );
   // What closed today (artboard A's "1 klar", the Klart tab's count): cards, not the person's own conversations.
   const closedToday = useMemo(() => all.handledToday.filter(t => t.kind !== 'question'), [all.handledToday]);
-  // Whether what the address names stands beside the column (artboard E) rather than over it: then the column is the narrow one.
-  const panelFits = useMediaQuery(panelBesideQuery(HOME_MIN));
   const older = [
     ...threads.filter(t => t.state === 'open' && t.kind === 'question'),
     ...threads.filter(t => t.state !== 'open'),
   ];
-  const railCurrent: RailCurrent = { surface: 'start', conversationId };
-  const pageTitle = view ? view.title : conversationId ? 'Samtal' : 'Hem';
-  // While the review is open its drawer names the document (D73 amended); Hem's title comes back with Hem's address.
-  usePageTitle(reviewing ? null : pageTitle, view || conversationId ? false : pageTitle);
-  const nav = useRail({ current: railCurrent, admin, manager: user.role === 'manager' });
 
   const openCardView = (threadId: string, actionId: string) => navigate(withAction(here, search, threadId, actionId));
   // On a phone Hem has no panel for a card (artboards 11 and 12): the threads are rows, and the card the address names
   // rises in Astryx's bottom sheet over them; closing the sheet leaves the address as the ✕ beside the column does.
   const cardsInSheet = mobile && !talk.open;
-  const besideOpen = !!panel && !(panel.kind === 'card' && cardsInSheet) && panelFits && !short && !talk.open;
   /** The way on from a done card (D70): the first other card under Nu, else under Senare. */
   const nextFor = (t: Thread) => {
     const next = [...g.nu, ...g.senare].find(x => x.id !== t.id);
     return next ? { title: next.title, href: cardHref(next.id) } : undefined;
   };
+  // A card stays a tab while it is in the stream (D66): snoozed or dismissed, it leaves the row with the pile. A done
+  // card stays while its receipt can still be undone (D70). Reviewed cards remain addressable after that window,
+  // so closing a completed review can return to the same receipt on a phone as on desktop (D80).
+  const inStream = (threadId: string) =>
+    threads.some(
+      t =>
+        t.id === threadId &&
+        ((t.state === 'open' && !isSnoozed(t, now)) ||
+          (t.state === 'handled' &&
+            (t.actions.some(a => a.review === 'each') ||
+              (!!t.receipt?.undoCapability && !!t.receipt.undoUntil && t.receipt.undoUntil > now)))),
+    );
+  /**
+   * The panel (D50): the view the address names, a card's own read, or a card. A view that is also a tool in the
+   * person's menu (D40) offers its page. In a conversation the card beside the transcript is the one the question was
+   * asked about; on a phone Hem draws its cards in the sheet, so a card has no panel there. With nothing open there is no
+   * panel: the day and what happened since yesterday are Hem's own (D72). Hem says a read that failed in its own alert,
+   * and a done card leads on to the next one in the stream.
+   */
+  const slot = usePagePanel({
+    minMain: talk.open ? CONVERSATION_MIN : HOME_MIN,
+    overlayOnly: short,
+    isOpen: id => !id.startsWith('card:') || inStream(id.slice(5)),
+    onClosed: landAfterDrawer,
+    failures: 'page',
+    onChange: replace,
+    next: nextFor,
+    cardElsewhere: cardsInSheet,
+    cardSheet: false,
+    onOpenItem: (item, dayItems) => setOpenItem({ item, dayItems }),
+    viewActions: shown => {
+      const tool = menu.find(e => e.capability === shown.capability);
+      return tool ? (
+        <Button size="sm" variant="ghost" label="Öppna som sida" href={toolHref(tool.capability, shown.input)} />
+      ) : undefined;
+    },
+    // Under a card's review the page reads its address as Hem's with the card beside the column.
+    ...(reviewing ? { at: { pathname: here, search } } : {}),
+  });
+  // The page's one alert: a read that failed before it had anything to show. A failed refetch keeps the old data and says nothing; the day and the model's status are extras.
+  const failed = [threadsQ, areasQ].find(q => q.isError && q.data === undefined);
+  const error = failed ? errorMessage(failed.error, 'Sidan kunde inte läsas.') : (slot.failure?.message ?? null);
+  // Whether what the address names stands beside the column (artboard E) rather than over it: then the column is the narrow one.
+  const besideOpen = !!slot.ref && slot.inline;
+  const railCurrent: RailCurrent = { surface: 'start', conversationId };
+  const pageTitle = slot.view ? slot.view.title : conversationId ? 'Samtal' : 'Hem';
+  // While the review is open its drawer names the document (D73 amended); Hem's title comes back with Hem's address.
+  usePageTitle(reviewing ? null : pageTitle, slot.view || conversationId ? false : pageTitle);
+  const nav = useRail({ current: railCurrent, admin, manager: user.role === 'manager' });
+
   const card = (
     t: Thread,
     options: {
@@ -461,30 +402,15 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       beside?: boolean;
       compact?: boolean;
       sheet?: boolean;
-      next?: { title: string; href: string };
+      next?: { title: string; href: string } | undefined;
     } = {},
   ) =>
-    t.proposals.length ? (
-      <ThreadCard
-        key={t.id}
-        thread={t}
-        compact={options.compact ?? mobile}
-        headingLevel={options.level ?? 3}
-        beside={!!options.beside}
-        onChange={replace}
-      />
-    ) : (
-      <GenericCard
-        key={t.id}
-        thread={t}
-        headingLevel={options.level ?? 3}
-        beside={!!options.beside}
-        sheet={!!options.sheet}
-        next={options.next}
-        onChange={replace}
-        onOpenCardView={openCardView}
-      />
-    );
+    cardBody(t, {
+      ...options,
+      compact: options.compact ?? mobile,
+      onChange: replace,
+      onOpenCardView: openCardView,
+    });
   /**
    * A group's threads (D31, D50, artboard A): rows in one list, the title of each the link to its card beside the column,
    * or in the sheet on a phone, where the next step goes under the line (artboard 11). What is due today stands in a
@@ -918,99 +844,16 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   };
 
   /**
-   * The panel (D50): the view the address names, a card's own read, or a card. A view that is also a tool in the
-   * person's menu (D40) offers its page. In a conversation the card beside the transcript is the one the question was
-   * asked about; on a phone Hem draws its cards in the list, so a card has no panel there. With nothing open there is no
-   * panel: the day and what happened since yesterday are Hem's own (D72).
-   */
-  // A card stays a tab while it is in the stream (D66): snoozed or dismissed, it leaves the row with the pile. A done
-  // card stays while its receipt can still be undone (D70). Reviewed cards remain addressable after that window,
-  // so closing a completed review can return to the same receipt on a phone as on desktop (D80).
-  const inStream = (threadId: string) =>
-    threads.some(
-      t =>
-        t.id === threadId &&
-        ((t.state === 'open' && !isSnoozed(t, now)) ||
-          (t.state === 'handled' &&
-            (t.actions.some(a => a.review === 'each') ||
-              (!!t.receipt?.undoCapability && !!t.receipt.undoUntil && t.receipt.undoUntil > now)))),
-    );
-  const panelCard =
-    panel?.kind === 'card' && !cardsInSheet ? (threads.find(t => t.id === panel.threadId) ?? null) : null;
-  const tool = viewPanel ? menu.find(e => e.capability === viewPanel.capability) : undefined;
-  const frame: PanelFrame | null = view
-    ? {
-        // Named by the view on screen, not by the one on its way: focus follows a view when its rows are there to land on.
-        id: capabilityShown
-          ? `view:${capabilityShown.capability}`
-          : `action:${actionPanel?.threadId}:${actionPanel?.actionId}`,
-        title: view.title,
-        address: capabilityShown?.address ?? here + query,
-        wide: view.spec?.kind === 'table',
-        onClose: closePanel,
-        actions: tool ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            label="Öppna som sida"
-            href={toolHref(tool.capability, capabilityShown?.input)}
-          />
-        ) : undefined,
-        body: inline => (
-          <PanelBody
-            output={view.output}
-            view={view.spec}
-            source={view.source}
-            input={capabilityShown?.input ?? {}}
-            inline={inline}
-            isLoading={capabilityView.isFetching && capabilityView.isPlaceholderData}
-            onOpenItem={(item, dayItems) => setOpenItem({ item, dayItems })}
-            /* A declared view (D38): its controls rewrite the address, so the view stays addressable and the back button undoes a search; a row's own view is a link. A card's view has no controls: its input is the card's. */
-            onInput={
-              capabilityShown && capabilityShown.capability === viewPanel?.capability
-                ? next =>
-                    navigate(viewHref(capabilityShown.capability, capabilityShown.title, next, capabilityShown.via), {
-                      replace: true,
-                    })
-                : undefined
-            }
-            hrefFor={v => viewHref(v.capability, v.title, v.input, true)}
-            onBack={capabilityShown?.via ? () => navigate(-1) : undefined}
-          />
-        ),
-      }
-    : panelCard
-      ? {
-          id: `card:${panelCard.id}`,
-          kind: 'card',
-          title: 'Kort',
-          tab: panelCard.title,
-          address: here + query,
-          onClose: closePanel,
-          // The card's buttons, Inte nu among them, are the card's own: the header holds what is open and ✕ (D66).
-          body: () => card(panelCard, { beside: true, compact: true, level: 3, next: nextFor(panelCard) }),
-        }
-      : null;
-  const slot = usePanel(frame, {
-    minMain: talk.open ? CONVERSATION_MIN : HOME_MIN,
-    overlayOnly: short,
-    isOpen: id => !id.startsWith('card:') || inStream(id.slice(5)),
-    onClosed: landAfterDrawer,
-  });
-  /**
    * The card on a phone (artboard 12): Astryx's BottomSheet over the rows, with the way back to Hem and ✕ on its first
    * line, the card under them as beside the column. The last card shown stays drawn while the sheet slides away.
    */
-  const sheetThread =
-    cardsInSheet && panel?.kind === 'card' && inStream(panel.threadId)
-      ? (threads.find(t => t.id === panel.threadId) ?? null)
-      : null;
+  const sheetId = cardsInSheet && slot.ref?.kind === 'card' ? slot.ref.threadId : null;
+  const sheetThread = sheetId && inStream(sheetId) ? (threads.find(t => t.id === sheetId) ?? null) : null;
   const sheetShown = useRef<Thread | null>(null);
   if (sheetThread) sheetShown.current = sheetThread;
   const sheetCard = sheetShown.current;
-  // The same rule as `usePanel`'s own: beside the page where both fit and the screen is not short, else over it.
-  const panelBeside = (talk.open ? besideTranscript : panelFits) && !short;
-  const inDrawer = panelCard && !panelBeside ? panelCard.id : null;
+  // `usePanel`'s own rule says whether the card is beside the page or over it.
+  const inDrawer = slot.card && !slot.inline ? slot.card.id : null;
   const inSheet = sheetThread?.id ?? null;
   overPage.current = { drawer: inDrawer, sheet: inSheet, close: closePanel };
   // A card that opens over the page starts without a note of one sent away: its dialog gives the focus back to the
@@ -1038,6 +881,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     </BottomSheet>
   );
   /** What Hem's box asks about: the open card, which the conversation then keeps beside the transcript; "Ny fråga i stället" lets go of it. */
+  const panelCard = slot.card;
   const about: ComposerAbout | undefined = panelCard
     ? {
         label: `kortet ${panelCard.title}`,

@@ -420,6 +420,8 @@ export function usePanel(
   overlay: ReactNode;
   /** Whether the panel takes width beside the page: something is open in it, or the person is looking at it empty. */
   occupied: boolean;
+  /** Whether the panel stands beside the page (non-modal) rather than over it: the one rule, so a page never works it out again. */
+  inline: boolean;
 } {
   const width = size?.default ?? PANEL;
   const fits = useMediaQuery(panelBesideQuery(minMain, width));
@@ -850,5 +852,5 @@ export function usePanel(
       />
     </Drawer>
   );
-  return { end, overlay, occupied };
+  return { end, overlay, occupied, inline };
 }
