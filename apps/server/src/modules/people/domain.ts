@@ -70,9 +70,14 @@ export interface Derived {
   protected: boolean;
   grant: Grant | undefined;
 }
+/**
+ * The order of unit ids, which decides the active assignment. The locale is named, so the order is the same whatever
+ * locale the process was started with: the one the server has always run under.
+ */
+const byUnitId = (a: string, b: string) => a.localeCompare(b, 'en');
 export function activeOf(assignments: readonly Assignment[]): Assignment | undefined {
   return [...assignments].sort(
-    (a, b) => Number(b.role === 'manager') - Number(a.role === 'manager') || a.unitId.localeCompare(b.unitId),
+    (a, b) => Number(b.role === 'manager') - Number(a.role === 'manager') || byUnitId(a.unitId, b.unitId),
   )[0];
 }
 /**
@@ -107,7 +112,7 @@ export function deriveAuthority(
     if (held.has(row.groupExternalId) && isCapability(row.capability)) capabilities.add(row.capability);
   const assignments = [...roles.entries()]
     .map(([unitId, role]) => ({ unitId, role }))
-    .sort((a, b) => a.unitId.localeCompare(b.unitId));
+    .sort((a, b) => byUnitId(a.unitId, b.unitId));
   const active = activeOf(assignments),
     sorted = [...capabilities].sort(),
     labelOf = (unitId: string) => labels.get(unitId) ?? knownLabels[unitId] ?? unitId;

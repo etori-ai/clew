@@ -73,15 +73,17 @@ const userMatch = (by: 'userName' | 'externalId', value: string) =>
  */
 const ROW_LOCK = 'no key update' as const;
 const groupColumn = { externalId: schema.groups.externalId, label: schema.groups.label } as const;
+/** How many membership rows one statement writes or removes. */
+const MEMBER_BATCH = 5000;
 /**
  * D100: the people list's search as conditions on `auth_person`. A word is matched as written, so `%` and `_` in it
  * are escaped. `ilike` folds case by the collation of what it reads, and a database created with the locale C folds
  * only a to z there, so each column is read under the ICU collation the order already asks for: å, ä and ö fold the
  * same in every installation, however its database was created.
  */
+const folded = (column: SQL, pattern: string) => sql`${column} collate "sv-x-icu" ilike ${pattern}`;
 const personHas = (table: SQL, ...conditions: Array<SQL | undefined>) =>
   sql`exists (select 1 from ${table} where ${and(...conditions)})`;
-const folded = (column: SQL, pattern: string) => sql`${column} collate "sv-x-icu" ilike ${pattern}`;
 function userSearchConditions(search: UserSearch): Array<SQL | undefined> {
   const granted = personHas(sql`${schema.accessGrants}`, eq(schema.accessGrants.personId, schema.people.id)),
     bound = personHas(sql`${schema.identityBindings}`, eq(schema.identityBindings.personId, schema.people.id));
@@ -375,9 +377,32 @@ export function postgresProvisionStore(): ProvisionStore {
         .orderBy(schema.people.id);
     },
     async setGroupMembers(groupId, personIds) {
-      await tx.delete(schema.groupMembers).where(eq(schema.groupMembers.groupId, groupId));
-      if (personIds.length)
-        await tx.insert(schema.groupMembers).values([...new Set(personIds)].map(personId => ({ groupId, personId })));
+      // Only who came and who went is written, a few thousand rows a statement: a group of ten thousand that gains one
+      // member is one row, and a group of any size stays under the driver's limit on parameters.
+      const wanted = new Set(personIds),
+        held = new Set(
+          (
+            await tx
+              .select({ personId: schema.groupMembers.personId })
+              .from(schema.groupMembers)
+              .where(eq(schema.groupMembers.groupId, groupId))
+          ).map(r => r.personId),
+        ),
+        gone = [...held].filter(id => !wanted.has(id)),
+        come = [...wanted].filter(id => !held.has(id));
+      for (let i = 0; i < gone.length; i += MEMBER_BATCH)
+        await tx
+          .delete(schema.groupMembers)
+          .where(
+            and(
+              eq(schema.groupMembers.groupId, groupId),
+              inArray(schema.groupMembers.personId, gone.slice(i, i + MEMBER_BATCH)),
+            ),
+          );
+      for (let i = 0; i < come.length; i += MEMBER_BATCH)
+        await tx
+          .insert(schema.groupMembers)
+          .values(come.slice(i, i + MEMBER_BATCH).map(personId => ({ groupId, personId })));
     },
     async searchUsers(organisationId, search, page) {
       const where = and(eq(schema.people.organisationId, organisationId), ...userSearchConditions(search));

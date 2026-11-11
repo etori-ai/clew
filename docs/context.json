@@ -273,6 +273,15 @@
       "area": "ui, identity"
     },
     {
+      "key": "D101-a-provisioner-pushes-the-organisation-first-and-adds-before-it-removes-and-a-unit-belongs-to-one-organisation",
+      "number": 101,
+      "path": "docs/decisions/D101-a-provisioner-pushes-the-organisation-first-and-adds-before-it-removes-and-a-unit-belongs-to-one-organisation.md",
+      "title": "D101 · A provisioner pushes the organisation first and adds before it removes, and a unit belongs to one organisation",
+      "status": "accepted (product owner, 2026-11-11: the source can deliver the organisation as a list of its own, the organisation goes in before the people, and every finding of the review is fixed, small and large), built 2026-11-11; items 5 and 6 are choices made in the build and stand until he says otherwise; no provisioner has run against a real source yet",
+      "date": "2026-11-11",
+      "area": "identity"
+    },
+    {
       "key": "D11-one-calendar-contract-two-adapters",
       "number": 11,
       "path": "docs/decisions/D11-one-calendar-contract-two-adapters.md",
@@ -1141,7 +1150,7 @@
       "number": 99,
       "path": "docs/decisions/D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md",
       "title": "D99 · Units form a tree pushed over SCIM, and a manager works with their direct reports",
-      "status": "accepted (product owner, 2026-11-10: units form a tree, the tree is pushed as resources of its own, a manager works with their direct reports and not with everyone below), built 2026-11-10 (the parent on the unit group, the SCIM extension and its refusals, the reporting line in Personal, talks and the calendar's team, the development directory as a tree, the check, Administration › Organisation; see \"As built\"); the transport in item 2 is proposed until a real provisioner has used it, the branch of item 5 has no user yet, and the items under \"Open\" are not decided",
+      "status": "accepted (product owner, 2026-11-10: units form a tree, the tree is pushed as resources of its own, a manager works with their direct reports and not with everyone below), built 2026-11-10 (the parent on the unit group, the SCIM extension and its refusals, the reporting line in Personal, talks and the calendar's team, the development directory as a tree, the check, Administration › Organisation; see \"As built\"); the transport in item 2 is proposed until a real provisioner has used it, the branch of item 5 has no user yet, and the items under \"Open\" are not decided; the order of a push and whose a unit is are D101 (2026-11-11)",
       "date": "2026-11-10",
       "area": "identity, product"
     }
@@ -1586,6 +1595,12 @@
     {
       "path": "docs/decisions/D100-the-people-list-is-read-a-page-at-a-time-and-narrowed-on-the-server.md",
       "title": "D100 · The people list is read a page at a time and narrowed on the server",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D101-a-provisioner-pushes-the-organisation-first-and-adds-before-it-removes-and-a-unit-belongs-to-one-organisation.md",
+      "title": "D101 · A provisioner pushes the organisation first and adds before it removes, and a unit belongs to one organisation",
       "category": "decision-history",
       "headings": []
     },
@@ -3170,6 +3185,22 @@
         "Verification",
         "Outcome",
         "Second pass"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-11-scim-flow-people-and-organisation.md",
+      "title": "Review: the SCIM flow end to end, people and the organisation tree · 2026-11-11",
+      "category": "review-history",
+      "headings": [
+        "Question",
+        "Assessment",
+        "Method",
+        "Findings",
+        "What the source still has to answer",
+        "Recommended order",
+        "Verification",
+        "Outcome",
+        "Second pass: the orders nobody thought of"
       ]
     },
     {

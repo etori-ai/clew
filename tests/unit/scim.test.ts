@@ -373,6 +373,52 @@ describe('SCIM groups and derivation', () => {
       'grant.derived',
     ]);
   });
+  test('a client that removes before it adds leaves the person with no grant in between, and the audit says so; one that adds first never does (D101)', async () => {
+    const { scim, p, store } = harness();
+    const a = (await scim.createUser(p, anna, BASE)).id;
+    const skola = await scim.createGroup(p, group('unit:skola', 'Skolan', [a]), BASE),
+      omsorg = await scim.createGroup(p, group('unit:omsorg', 'Omsorgen', []), BASE);
+    await scim.createGroup(p, group('capability:admin.users', 'Administratörer', [a]), BASE);
+    const members = (target: { id: string }, op: 'add' | 'remove') =>
+      scim.patchGroup(
+        p,
+        target.id,
+        {
+          schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+          Operations: [{ op, path: 'members', value: [{ value: a }] }],
+        },
+        BASE,
+      );
+    const derived = () =>
+      store.state.audit.filter(x => x.subject === 'person:' + a && x.action === 'grant.derived').map(x => x.details);
+    // The wrong order: out of the one unit, then into the other. Between the two the person has no unit, so no grant
+    // and no capability, and a request of theirs would end their session.
+    let before = derived().length;
+    await members(skola, 'remove');
+    expect(store.state.grants.get(a)).toBeUndefined();
+    expect(store.state.assignments.get(a) ?? []).toEqual([]);
+    await members(omsorg, 'add');
+    expect(store.state.grants.get(a)).toEqual({
+      unitId: 'omsorg',
+      unitLabel: 'Omsorgen',
+      role: 'employee',
+      capabilities: ['admin.users'],
+    });
+    expect(derived().slice(before)).toEqual([
+      { removed: true },
+      { unitId: 'omsorg', role: 'employee', capabilities: ['admin.users'], assignments: 1 },
+    ]);
+    // The right order, back again: into the one, then out of the other. A grant the whole way, and one row.
+    before = derived().length;
+    await members(skola, 'add');
+    expect(store.state.grants.get(a)).toMatchObject({ unitId: 'omsorg', capabilities: ['admin.users'] });
+    expect(store.state.assignments.get(a)).toHaveLength(2);
+    await members(omsorg, 'remove');
+    expect(store.state.grants.get(a)).toMatchObject({ unitId: 'skola', capabilities: ['admin.users'] });
+    expect(derived().slice(before)).toEqual([
+      { unitId: 'skola', role: 'employee', capabilities: ['admin.users'], assignments: 1 },
+    ]);
+  });
   test('a manager group may arrive before its unit group: the unit row exists at once and the manager takes the label when the unit group comes', async () => {
     const { scim, p, store } = harness();
     const a = (await scim.createUser(p, anna, BASE)).id;

@@ -98,6 +98,21 @@ function harness() {
   return { store, scim, p, person, id, unit, managers, groups, persona, refusal };
 }
 
+/** A manager of `ORG` signed in, by person id. */
+const harnessPersona = (personId: string): AuthenticatedContext => ({
+  id: personId,
+  name: personId,
+  unitId: 'unit',
+  unitLabel: 'Unit',
+  role: 'manager',
+  organisationId: ORG,
+  principal: { id: 'person:' + personId, kind: 'person' },
+  capabilities: [],
+  authorizationVersion: 'v1',
+  sessionBinding: 'test',
+  expiresAt: '2026-11-10T18:00:00.000Z',
+  authorize: async () => ({ version: 'v1' }),
+});
 describe('the organisation tree over SCIM (D99)', () => {
   test('a tree is pushed from the root down, a node nobody is placed on included, and a unit answers the unit above it', async () => {
     const { scim, p, unit, person, store } = harness();
@@ -124,6 +139,84 @@ describe('the organisation tree over SCIM (D99)', () => {
       details: { externalId: 'unit:ksk-it', parent: 'ksk-avd', members: 1 },
     });
     expect(store.state.audit.find(a => a.subject === 'group:' + root.id)?.details).not.toHaveProperty('parent');
+  });
+  test("a manager of a unit nobody is placed on carries the unit group's name, and its new name when it is renamed (D101)", async () => {
+    const { scim, p, unit, managers, person, id, store } = harness();
+    await person('chef');
+    await person('anna');
+    // The unit first and empty, then its manager group: no unit row names it yet, and the head is no member of it.
+    const forv = await unit('forv', 'Vård- och omsorgsförvaltningen', null);
+    await unit('hemtjanst', 'Hemtjänst', 'forv', ['anna']);
+    await managers('forv', ['chef']);
+    expect(store.state.grants.get(id('chef'))).toEqual({
+      unitId: 'forv',
+      unitLabel: 'Vård- och omsorgsförvaltningen',
+      role: 'manager',
+      capabilities: [],
+    });
+    expect(store.state.units.get('forv')).toEqual({ organisationId: ORG, label: 'Vård- och omsorgsförvaltningen' });
+    expect(store.state.audit.filter(a => a.subject === 'person:' + id('chef')).at(-1)).toMatchObject({
+      actor: 'provisioner:metakatalogen',
+      action: 'grant.derived',
+      details: { unitId: 'forv', role: 'manager', assignments: 1 },
+    });
+    const staff = staffUsecases({ store });
+    expect((await staff.overview(harnessPersona(id('chef')))).units.map(u => u.unitLabel)).toEqual([
+      'Vård- och omsorgsförvaltningen',
+    ]);
+    await scim.patchGroup(
+      p,
+      forv.id,
+      { schemas: [SCIM.patch], Operations: [{ op: 'replace', path: 'displayName', value: 'Omsorgsförvaltningen' }] },
+      BASE,
+    );
+    expect(store.state.grants.get(id('chef'))?.unitLabel).toBe('Omsorgsförvaltningen');
+    expect(store.state.audit.at(-1)).toMatchObject({ action: 'grant.derived', subject: 'person:' + id('chef') });
+  });
+  test('a unit belongs to the organisation that pushed it: another organisation names no manager of it and no unit for its managers, and Personal reads its own organisation (D101)', async () => {
+    const { scim, unit, managers, person, id, refusal, store } = harness();
+    await person('anna');
+    await person('karin');
+    await unit('it', 'IT', null, ['anna']);
+    await managers('it', ['karin']);
+    await unit('hr', 'HR', null, ['anna']);
+    await managers('ekonomi', ['karin']);
+    const other = { id: 'other', organisationId: 'timra', label: 'Timrå' };
+    const olle = await scim.createUser(
+      other,
+      { externalId: 'tm-olle', userName: 'olle', displayName: 'Olle', emails: [{ value: 'olle@timra.test' }] },
+      BASE,
+    );
+    const audited = store.state.audit.length,
+      stored = store.state.groups.size;
+    // The unit's other key is free, and it is the same unit: neither is theirs to take.
+    for (const externalId of ['unit-manager:hr', 'unit:ekonomi']) {
+      const taken = await refusal(
+        scim.createGroup(other, { externalId, displayName: 'Tagen', members: [{ value: olle.id }] }, BASE),
+      );
+      expect(taken).toMatchObject({ status: 400, scimType: 'invalidValue' });
+      expect(taken.detail).toContain('is not a unit of this organisation (D101). The group was not stored.');
+    }
+    // Nor by giving a group of their own the key afterwards.
+    const plain = await scim.createGroup(other, { externalId: 'ad:timra', displayName: 'Timrå', members: [] }, BASE);
+    const rekeyed = await refusal(
+      scim.patchGroup(
+        other,
+        plain.id,
+        { schemas: [SCIM.patch], Operations: [{ op: 'replace', path: 'externalId', value: 'unit-manager:hr' }] },
+        BASE,
+      ),
+    );
+    expect(rekeyed.detail).toContain("The unit 'hr' is not a unit of this organisation (D101)");
+    expect(store.state.groups.size).toBe(stored + 1);
+    expect(store.state.audit.slice(audited).map(a => a.action)).toEqual(['scim.group.created']);
+    expect(store.state.grants.get(olle.id)).toBeUndefined();
+    // An assignment stored before the rule held: the unit's manager is still shown their own organisation's people only.
+    store.state.assignments.set(olle.id, [{ unitId: 'it', role: 'employee' }]);
+    const staff = staffUsecases({ store });
+    expect(
+      (await staff.overview(harnessPersona(id('karin')))).units.find(u => u.unitId === 'it')?.people.map(q => q.name),
+    ).toEqual(['Anna']);
   });
   test('a parent that does not exist, is written wrong, belongs to another organisation or stands on another kind of group is refused, and nothing is stored', async () => {
     const { scim, p, unit, refusal, store } = harness();
@@ -618,5 +711,128 @@ describe('Administration › Organisation (D99)', () => {
       ['top', 0, 2],
     ]);
     expect(view.unplaced).toBe(0);
+  });
+});
+
+/**
+ * The tree in any order (D99). The cases above are orders somebody thought of; these are orders nobody did. A seeded
+ * generator, so a failure names the seed and the step that reproduce it.
+ */
+const seeded = (seed: number) => () => {
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+describe('the tree in any order (D99)', () => {
+  const unitBody = (unit: string, parent: string | null) => ({
+    externalId: 'unit:' + unit,
+    displayName: unit.toUpperCase(),
+    ...(parent ? { [SCIM.unit]: { parent: 'unit:' + parent } } : {}),
+  });
+  const stored = async (store: ReturnType<typeof harness>['store']) =>
+    store.transaction(async tx => Object.fromEntries((await tx.unitTree(ORG)).map(u => [u.id, u.parentId])));
+  test('units created, moved and removed in a random order: the server takes exactly what keeps the tree whole, refuses the rest, and writes one audit row per change', async () => {
+    const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+    let taken = 0,
+      refused = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      const { scim, p, store } = harness(),
+        random = seeded(seed),
+        pick = <T>(list: readonly T[]) => list[Math.floor(random() * list.length)]!;
+      // What the tree should be, kept beside the server: a unit and the unit above it.
+      const model = new Map<string, string | null>(),
+        ids = new Map<string, string>();
+      /** Whether `unit` stands below `above`, however far. */
+      const standsBelow = (unit: string, above: string) => {
+        for (let at = model.get(unit) ?? null; at !== null; at = model.get(at) ?? null) if (at === above) return true;
+        return false;
+      };
+      for (let step = 0; step < 400; step++) {
+        const unit = pick(names),
+          parent = random() < 0.25 ? null : pick(names),
+          operation = pick(['create', 'create', 'move', 'move', 'move', 'remove'] as const),
+          audited = store.state.audit.length;
+        if (operation !== 'create' && !model.has(unit)) continue;
+        const parentStands = parent === null || (model.has(parent) && parent !== unit);
+        const allowed =
+            operation === 'create'
+              ? !model.has(unit) && parentStands
+              : operation === 'move'
+                ? parentStands && (parent === null || !standsBelow(parent, unit))
+                : ![...model.values()].includes(unit),
+          changes = allowed && (operation !== 'move' || model.get(unit) !== parent);
+        const attempt: Promise<unknown> =
+          operation === 'create'
+            ? scim.createGroup(p, unitBody(unit, parent), BASE).then(made => ids.set(unit, made.id))
+            : operation === 'move'
+              ? scim.replaceGroup(p, ids.get(unit)!, unitBody(unit, parent), BASE)
+              : scim.deleteGroup(p, ids.get(unit)!);
+        const outcome = await attempt.then(
+          () => true,
+          error => {
+            expect(error).toBeInstanceOf(ScimError);
+            return false;
+          },
+        );
+        const where = `seed ${seed}, step ${step}: ${operation} ${unit} under ${parent}`;
+        expect([where, outcome]).toEqual([where, allowed]);
+        if (allowed && operation === 'remove') model.delete(unit);
+        else if (allowed) model.set(unit, parent);
+        expect([where, store.state.audit.length - audited]).toEqual([where, changes ? 1 : 0]);
+        expect([where, await stored(store)]).toEqual([where, Object.fromEntries(model)]);
+        if (allowed) taken++;
+        else refused++;
+      }
+    }
+    // The orders were not all easy ones: a good share of each.
+    expect(taken).toBeGreaterThan(500);
+    expect(refused).toBeGreaterThan(500);
+  });
+  test('a client that sends a tree in the wrong order and sends again what was refused ends with the same tree, and removes it the same way', async () => {
+    for (const seed of [11, 12, 13, 14, 15, 16]) {
+      const { scim, p, store } = harness(),
+        random = seeded(seed),
+        shuffled = <T>(list: readonly T[]) =>
+          list
+            .map(value => [random(), value] as const)
+            .sort((a, b) => a[0] - b[0])
+            .map(([, value]) => value);
+      // Twelve units, each under one of those before it or a root, so the tree is whole and its depth is the seed's.
+      const target = new Map<string, string | null>();
+      for (let i = 0; i < 12; i++)
+        target.set('u' + i, i === 0 || random() < 0.15 ? null : 'u' + Math.floor(random() * i));
+      const ids = new Map<string, string>();
+      let refusals = 0;
+      /** Every unit in `order`, again and again, until none is refused; each round has to get somewhere. */
+      const untilTaken = async (order: string[], send: (unit: string) => Promise<unknown>) => {
+        for (let pending = order; pending.length;) {
+          const left: string[] = [];
+          for (const unit of pending)
+            await send(unit).catch(error => {
+              expect(error).toBeInstanceOf(ScimError);
+              refusals++;
+              left.push(unit);
+            });
+          expect([`seed ${seed}`, left.length < pending.length]).toEqual([`seed ${seed}`, true]);
+          pending = left;
+        }
+      };
+      await untilTaken(shuffled([...target.keys()]), async unit => {
+        ids.set(unit, (await scim.createGroup(p, unitBody(unit, target.get(unit)!), BASE)).id);
+      });
+      expect(await stored(store)).toEqual(Object.fromEntries(target));
+      const created = refusals;
+      await untilTaken(shuffled([...target.keys()]), unit => scim.deleteGroup(p, ids.get(unit)!));
+      expect(await stored(store)).toEqual({});
+      // Nothing that was refused left a trace: one row for each unit made and one for each removed.
+      expect(store.state.audit.map(a => a.action).sort()).toEqual([
+        ...Array<string>(12).fill('scim.group.created'),
+        ...Array<string>(12).fill('scim.group.removed'),
+      ]);
+      // The order was wrong somewhere, or the test showed nothing.
+      expect(created).toBeGreaterThan(0);
+      expect(refusals).toBeGreaterThan(created);
+    }
   });
 });

@@ -42,7 +42,16 @@ const some = (names: string[]) =>
   names.slice(0, 5).join(', ') + (names.length > 5 ? ` (and ${names.length - 5} more)` : '');
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-export async function checkProvisioning(baseUrl: string, client: ScimClient, fetchImpl: Fetch = fetch) {
+/** What the caller knows the source to hold, for the check to compare with: how many roots its tree has. */
+export interface Expected {
+  roots?: number;
+}
+export async function checkProvisioning(
+  baseUrl: string,
+  client: ScimClient,
+  fetchImpl: Fetch = fetch,
+  expected: Expected = {},
+) {
   const findings: Finding[] = [],
     say = (level: Finding['level'], text: string) => void findings.push({ level, text });
   const anonymous = await fetchImpl(baseUrl.replace(/\/+$/, '') + '/ServiceProviderConfig');
@@ -118,11 +127,21 @@ export async function checkProvisioning(baseUrl: string, client: ScimClient, fet
     for (let at = above.get(id); at !== undefined && depth < above.size; at = above.get(at)) depth++;
     return depth;
   };
+  const roots = [...above].filter(([, parent]) => parent === undefined || !above.has(parent)).map(([id]) => id);
   if (hasBelow.size) {
-    const roots = [...above].filter(([, parent]) => parent === undefined || !above.has(parent)).length,
-      levels = Math.max(...[...above.keys()].map(depthOf)) + 1;
-    say('ok', `The units form a tree: ${plural(roots, 'root', 'roots')}, ${plural(levels, 'level', 'levels')} deep.`);
+    const levels = Math.max(...[...above.keys()].map(depthOf)) + 1;
+    say(
+      'ok',
+      `The units form a tree: ${plural(roots.length, 'root', 'roots')}, ${plural(levels, 'level', 'levels')} deep.`,
+    );
   } else if (units.length) say('ok', 'No unit names a unit above it: the organisation is flat.');
+  // A unit group written without the extension is a root (D99), so a client that replaces a unit's members and
+  // leaves its parent out flattens the tree one unit at a time. Only the source knows how many roots there should be.
+  if (expected.roots !== undefined && roots.length > expected.roots)
+    say(
+      'warn',
+      `The tree has ${plural(roots.length, 'root', 'roots')} where ${expected.roots} ${expected.roots === 1 ? 'was' : 'were'} expected; a unit written without its parent becomes a root: ${some(roots.map(id => UNIT + id))}.`,
+    );
   // A unit with units below it may be a heading nobody is placed on; one without is a unit somebody should be in.
   const empty = [...units.filter(g => !hasBelow.has(g.externalId!.slice(UNIT.length))), ...managers].filter(
     g => !membersOf.get(g.id),
