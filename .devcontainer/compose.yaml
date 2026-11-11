@@ -53,9 +53,9 @@ services:
     volumes:
       - ${CLEW_HOST_WORKSPACE:-..}:/workspace
       - node_modules:/workspace/node_modules
-  # PostgreSQL 18 keeps its data under /var/lib/postgresql/<major>, so the volume is mounted one level up and has a name
-  # of its own: the PostgreSQL 17 volume (postgres_data) is left as it was. `sh scripts/postgres-upgrade.sh` carries an
-  # existing development database across.
+  # From PostgreSQL 18 the image keeps its data under /var/lib/postgresql/<major>, so the volume is mounted one level up.
+  # It has a new name because the old one (postgres_data) holds a PostgreSQL 17 directory at its root. Development data
+  # is synthetic and seeded, so nothing is carried across: docs/maintainers/local-development.md says how to start again.
   postgres:
     image: postgres:18.6-bookworm@sha256:f1ea2a1a4fb7b68d4836be1fdcb8a6466a89b072158bf9d97663600538c294c5
     environment:
@@ -63,7 +63,7 @@ services:
       POSTGRES_PASSWORD: clew-local
       POSTGRES_DB: clew
     volumes:
-      - postgres_18_data:/var/lib/postgresql
+      - postgres_clusters:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U clew -d clew"]
       interval: 3s
@@ -131,6 +131,11 @@ services:
     volumes:
       - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
       - node_modules:/workspace/node_modules
+    # After app: the workspace is read-only here, so on a fresh checkout the node_modules mount point exists only once
+    # app, which mounts the workspace writable, has started. It runs from the packages app installs (bun install).
+    depends_on:
+      app:
+        condition: service_started
     ports:
       - "127.0.0.1:4047:4010"
     healthcheck:
@@ -254,7 +259,7 @@ services:
 volumes:
   node_modules:
   bun_cache:
-  postgres_18_data:
+  postgres_clusters:
   calendar_data:
   hr_state:
   finance_state:

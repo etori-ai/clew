@@ -9,12 +9,13 @@ Host commands below start Docker infrastructure; application commands run inside
 Everything runs in Docker. Commands go through `docker exec` into the app container (Claude Code and most editors sit outside the devcontainer).
 
 ```sh
-sh scripts/compose.sh up -d --build --wait              # the app image (Node 26.13.0 LTS + Bun 1.4.4), Postgres 18, the six fixture connectors and the local fake of Microsoft Graph
+sh scripts/compose.sh up -d --build --wait app          # the app image (Node 26.13.0 LTS + Bun 1.4.4) and Postgres 18
 docker exec -w /workspace clew-app-1 bun install --frozen-lockfile
+sh scripts/compose.sh up -d --wait                      # the fixture connectors, telemetry and the local fake of Microsoft Graph, which runs from the packages just installed
 docker exec -w /workspace clew-app-1 bun run db:init     # Drizzle migrations
-docker exec -w /workspace clew-app-1 bun run dev:connectors  # fills missing fixture registrations and follower bindings (D61); adds the appraisals fixture as a draft and opens the development round of utvecklingssamtal when none is open (D96); chooses Personal's lenses and columns while none is chosen (D97)
 docker start keycloak                                    # the shared local Keycloak 26.2 at keycloak.orb.local:8090
 docker inspect keycloak --format '{{json .Config.Env}}' | docker exec -i -w /workspace clew-app-1 bun run auth:setup  # Keycloak accounts, the development provisioner's token, and the directory pushed through SCIM in-process (D68); each account binds to its person at its first login
+docker exec -w /workspace clew-app-1 bun run dev:connectors  # after auth:setup, which creates the key the connectors' secrets are sealed with and the people the seed is for: registers the fixture connectors and follower bindings (D61), adds the appraisals fixture as a draft, opens the development round of utvecklingssamtal when none is open (D96), seeds the competence catalogue and holdings, and chooses Personal's lenses and columns while none is chosen (D97)
 docker exec -w /workspace clew-app-1 bun run dev:provision  # optional: the same directory over HTTP against the running BFF, to exercise /scim/v2
 sh scripts/calendar.sh start                             # Nextcloud CalDAV provider + Mailpit, seeded with synthetic people and meetings (Hillevi's and Hassan's calendars)
 docker exec -it -w /workspace clew-app-1 bun run dev                 # BFF on :3000 and Vite on :5173, published as http://localhost:3020
@@ -26,19 +27,14 @@ The cards on Hem come from the six fixture connectors in the stack, generic syst
 
 ## A stack made before PostgreSQL 18 and Nextcloud 35
 
-The development stack moved from PostgreSQL 17 to 18 and from Nextcloud 33 to 35 on 2026-11-11 ([review](../reviews/2026-11-11-dependency-refresh.md)). A stack created before that carries its data across once, with Clew's BFF stopped:
+The development stack moved from PostgreSQL 17 to 18 and from Nextcloud 33 to 35 on 2026-11-11 ([review](../reviews/2026-11-11-dependency-refresh.md)). Everything in it is synthetic and seeded, so nothing is carried across: a stack created before that is removed with its volumes and made again.
 
 ```sh
-sh scripts/compose.sh --profile calendar stop calendar   # nothing may write while the databases are copied
-sh scripts/compose.sh up -d --build --wait postgres app  # PostgreSQL 18 on a volume of its own (postgres_18_data); the 17 volume is left as it was
-sh scripts/postgres-upgrade.sh                           # every database and role from the PostgreSQL 17 volume into the new server
-docker exec -w /workspace clew-app-1 bun install --frozen-lockfile
-docker exec -w /workspace clew-app-1 bun run db:init
-sh scripts/calendar.sh reset                             # Nextcloud upgrades one major version at a time: the 33 volume does not start under 35
-sh scripts/calendar.sh start                             # Nextcloud 35, seeded again
+sh scripts/compose.sh --profile calendar --profile a11y down -v --remove-orphans   # every container and volume of the stack; stops it for everyone who shares it
+docker volume rm clew_postgres_data                                                # the PostgreSQL 17 volume, which compose.yaml no longer names
 ```
 
-`postgres-upgrade.sh` refuses a target that already holds Clew's tables and never changes the old volume; once the new database has been checked, `docker volume rm clew_postgres_data` removes it. The calendar holds synthetic data only, so it is made again and not migrated. A new stack needs none of this.
+Then follow [Run it](#run-it) from the top. Without this the new PostgreSQL starts empty beside the old volume, and the calendar does not start: Nextcloud upgrades one major version at a time and refuses a volume made by 33.
 
 ## Utvecklingssamtal: the round, and switching the answering system
 

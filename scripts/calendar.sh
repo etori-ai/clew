@@ -41,18 +41,7 @@ SQL
     docker exec -u www-data -w /var/www/html "$nc" php /opt/clew-calendar/approval-seed.php
     if [ -n "$app" ]; then docker exec -w /workspace "$app" bun scripts/calendar-seed.ts; fi
     ;;
-  reset)
-    # Synthetic data only. Nextcloud upgrades one major version at a time, so a volume made by an image two or more
-    # majors older does not start under this one: remove the volume and Nextcloud's database, then `start` again.
-    compose rm -sf calendar >/dev/null
-    volume="${COMPOSE_PROJECT_NAME:-clew}_calendar_data"
-    if docker volume inspect "$volume" >/dev/null 2>&1; then docker volume rm "$volume" >/dev/null; fi
-    compose up -d --wait postgres
-    docker exec -i "$(compose ps -q postgres)" psql -U clew -d postgres -v ON_ERROR_STOP=1 -q \
-      -c 'DROP DATABASE IF EXISTS clew_calendar WITH (FORCE)'
-    echo 'The calendar is empty. Run sh scripts/calendar.sh start to create and seed it again.'
-    ;;
   stop) compose stop calendar calendar-mail ;;
   status) compose ps calendar calendar-mail ;;
-  *) echo 'Usage: sh scripts/calendar.sh start|seed|reset|stop|status' >&2; exit 2 ;;
+  *) echo 'Usage: sh scripts/calendar.sh start|seed|stop|status' >&2; exit 2 ;;
 esac

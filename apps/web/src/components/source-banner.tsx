@@ -37,8 +37,9 @@ export function useSourceBanner() {
     });
   const said = useRef(new Set<string>());
   const silent = down.map(d => d.connector).join(' ');
-  // The words name the system and its areas, which `/api/areas` gives. They are spoken once, so they wait for that
-  // answer (or its failure): spoken before it, a person hears the connector's id ("finance") and never the name.
+  // The words name the system and its areas, which `/api/areas` gives. The banner waits for that answer (or its
+  // failure) before it is drawn or spoken: before it, the page would show the connector's id ("finance") in the name's
+  // place, and the words are spoken once, so a person would hear the id and never the name.
   const named = !areasAnswer.isPending;
   useEffect(() => {
     if (sources === undefined || !named) return;
@@ -47,7 +48,7 @@ export function useSourceBanner() {
     for (const c of [...said.current]) if (!down.some(d => d.connector === c)) said.current.delete(c);
     if (fresh.length) announce(fresh.map(d => `${d.title}. ${d.line}`).join(' '));
   }, [silent, named]);
-  if (!down.length) return null;
+  if (!down.length || !named) return null;
   return (
     <VStack gap={0}>
       {down.map(d => (
