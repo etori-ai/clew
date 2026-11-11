@@ -52,8 +52,12 @@
           "name": "auth_access_grant_person_id_auth_person_id_fk",
           "tableFrom": "auth_access_grant",
           "tableTo": "auth_person",
-          "columnsFrom": ["person_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -98,8 +102,12 @@
           "name": "auth_assignment_person_id_auth_person_id_fk",
           "tableFrom": "auth_assignment",
           "tableTo": "auth_person",
-          "columnsFrom": ["person_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -107,8 +115,12 @@
           "name": "auth_assignment_unit_id_auth_unit_id_fk",
           "tableFrom": "auth_assignment",
           "tableTo": "auth_unit",
-          "columnsFrom": ["unit_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "unit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -116,7 +128,10 @@
       "compositePrimaryKeys": {
         "auth_assignment_person_id_unit_id_pk": {
           "name": "auth_assignment_person_id_unit_id_pk",
-          "columns": ["person_id", "unit_id"]
+          "columns": [
+            "person_id",
+            "unit_id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -170,8 +185,12 @@
           "name": "attention_day_person_id_auth_person_id_fk",
           "tableFrom": "attention_day",
           "tableTo": "auth_person",
-          "columnsFrom": ["person_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -595,8 +614,12 @@
           "name": "attention_delivery_person_id_auth_person_id_fk",
           "tableFrom": "attention_delivery",
           "tableTo": "auth_person",
-          "columnsFrom": ["person_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -604,8 +627,12 @@
           "name": "attention_delivery_thread_id_thread_id_fk",
           "tableFrom": "attention_delivery",
           "tableTo": "thread",
-          "columnsFrom": ["thread_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -686,8 +713,12 @@
           "name": "dispatch_outbox_execution_id_execution_id_fk",
           "tableFrom": "dispatch_outbox",
           "tableTo": "execution",
-          "columnsFrom": ["execution_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "execution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -812,8 +843,12 @@
           "name": "execution_job_person_id_auth_person_id_fk",
           "tableFrom": "execution_job",
           "tableTo": "auth_person",
-          "columnsFrom": ["person_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1024,8 +1059,12 @@
           "name": "execution_person_id_auth_person_id_fk",
           "tableFrom": "execution",
           "tableTo": "auth_person",
-          "columnsFrom": ["person_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1196,8 +1235,12 @@
           "name": "followup_policy_thread_id_thread_id_fk",
           "tableFrom": "followup_policy",
           "tableTo": "thread",
-          "columnsFrom": ["thread_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1205,8 +1248,12 @@
           "name": "followup_policy_person_id_auth_person_id_fk",
           "tableFrom": "followup_policy",
           "tableTo": "auth_person",
-          "columnsFrom": ["person_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1244,7 +1291,10 @@
       "compositePrimaryKeys": {
         "auth_group_capability_group_external_id_capability_pk": {
           "name": "auth_group_capability_group_external_id_capability_pk",
-          "columns": ["group_external_id", "capability"]
+          "columns": [
+            "group_external_id",
+            "capability"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1291,8 +1341,12 @@
           "name": "auth_group_member_group_id_auth_group_id_fk",
           "tableFrom": "auth_group_member",
           "tableTo": "auth_group",
-          "columnsFrom": ["group_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "group_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1300,8 +1354,12 @@
           "name": "auth_group_member_person_id_auth_person_id_fk",
           "tableFrom": "auth_group_member",
           "tableTo": "auth_person",
-          "columnsFrom": ["person_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1309,7 +1367,10 @@
       "compositePrimaryKeys": {
         "auth_group_member_group_id_person_id_pk": {
           "name": "auth_group_member_group_id_person_id_pk",
-          "columns": ["group_id", "person_id"]
+          "columns": [
+            "group_id",
+            "person_id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1456,8 +1517,12 @@
           "name": "auth_identity_binding_person_id_auth_person_id_fk",
           "tableFrom": "auth_identity_binding",
           "tableTo": "auth_person",
-          "columnsFrom": ["person_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1465,7 +1530,10 @@
       "compositePrimaryKeys": {
         "auth_identity_binding_issuer_subject_pk": {
           "name": "auth_identity_binding_issuer_subject_pk",
-          "columns": ["issuer", "subject"]
+          "columns": [
+            "issuer",
+            "subject"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1752,7 +1820,10 @@
       "compositePrimaryKeys": {
         "auth_logout_receipt_issuer_jti_pk": {
           "name": "auth_logout_receipt_issuer_jti_pk",
-          "columns": ["issuer", "jti"]
+          "columns": [
+            "issuer",
+            "jti"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1820,8 +1891,12 @@
           "name": "mcp_connection_person_id_auth_person_id_fk",
           "tableFrom": "mcp_connection",
           "tableTo": "auth_person",
-          "columnsFrom": ["person_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1879,8 +1954,12 @@
           "name": "mcp_decision_person_id_auth_person_id_fk",
           "tableFrom": "mcp_decision",
           "tableTo": "auth_person",
-          "columnsFrom": ["person_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1888,8 +1967,12 @@
           "name": "mcp_decision_connection_id_mcp_connection_id_fk",
           "tableFrom": "mcp_decision",
           "tableTo": "mcp_connection",
-          "columnsFrom": ["connection_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "connection_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1897,7 +1980,10 @@
       "compositePrimaryKeys": {
         "mcp_decision_person_id_id_pk": {
           "name": "mcp_decision_person_id_id_pk",
-          "columns": ["person_id", "id"]
+          "columns": [
+            "person_id",
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1958,8 +2044,12 @@
           "name": "mcp_delivery_person_id_auth_person_id_fk",
           "tableFrom": "mcp_delivery",
           "tableTo": "auth_person",
-          "columnsFrom": ["person_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1967,8 +2057,12 @@
           "name": "mcp_delivery_connection_id_mcp_connection_id_fk",
           "tableFrom": "mcp_delivery",
           "tableTo": "mcp_connection",
-          "columnsFrom": ["connection_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "connection_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2009,8 +2103,12 @@
           "name": "model_choice_person_id_auth_person_id_fk",
           "tableFrom": "model_choice",
           "tableTo": "auth_person",
-          "columnsFrom": ["person_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2018,8 +2116,12 @@
           "name": "model_choice_model_id_model_id_fk",
           "tableFrom": "model_choice",
           "tableTo": "model",
-          "columnsFrom": ["model_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "model_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2260,8 +2362,12 @@
           "name": "model_provider_id_model_provider_id_fk",
           "tableFrom": "model",
           "tableTo": "model_provider",
-          "columnsFrom": ["provider_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "provider_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2592,8 +2698,12 @@
           "name": "proposal_thread_id_thread_id_fk",
           "tableFrom": "proposal",
           "tableTo": "thread",
-          "columnsFrom": ["thread_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2601,8 +2711,12 @@
           "name": "proposal_person_id_auth_person_id_fk",
           "tableFrom": "proposal",
           "tableTo": "auth_person",
-          "columnsFrom": ["person_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2824,8 +2938,12 @@
           "name": "refresh_request_person_id_auth_person_id_fk",
           "tableFrom": "refresh_request",
           "tableTo": "auth_person",
-          "columnsFrom": ["person_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2947,8 +3065,12 @@
           "name": "auth_session_person_id_auth_person_id_fk",
           "tableFrom": "auth_session",
           "tableTo": "auth_person",
-          "columnsFrom": ["person_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -3090,8 +3212,12 @@
           "name": "talk_commitment_round_id_talk_round_id_fk",
           "tableFrom": "talk_commitment",
           "tableTo": "talk_round",
-          "columnsFrom": ["round_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "round_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -3099,8 +3225,12 @@
           "name": "talk_commitment_employee_id_auth_person_id_fk",
           "tableFrom": "talk_commitment",
           "tableTo": "auth_person",
-          "columnsFrom": ["employee_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "employee_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -3108,8 +3238,12 @@
           "name": "talk_commitment_owner_id_auth_person_id_fk",
           "tableFrom": "talk_commitment",
           "tableTo": "auth_person",
-          "columnsFrom": ["owner_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -3117,8 +3251,12 @@
           "name": "talk_commitment_done_by_auth_person_id_fk",
           "tableFrom": "talk_commitment",
           "tableTo": "auth_person",
-          "columnsFrom": ["done_by"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "done_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -3126,8 +3264,12 @@
           "name": "talk_commitment_created_by_auth_person_id_fk",
           "tableFrom": "talk_commitment",
           "tableTo": "auth_person",
-          "columnsFrom": ["created_by"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -3135,8 +3277,12 @@
           "name": "talk_commitment_thread_id_thread_id_fk",
           "tableFrom": "talk_commitment",
           "tableTo": "thread",
-          "columnsFrom": ["thread_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -3329,8 +3475,12 @@
           "name": "talk_round_id_talk_round_id_fk",
           "tableFrom": "talk",
           "tableTo": "talk_round",
-          "columnsFrom": ["round_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "round_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -3338,8 +3488,12 @@
           "name": "talk_employee_id_auth_person_id_fk",
           "tableFrom": "talk",
           "tableTo": "auth_person",
-          "columnsFrom": ["employee_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "employee_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -3347,8 +3501,12 @@
           "name": "talk_held_by_auth_person_id_fk",
           "tableFrom": "talk",
           "tableTo": "auth_person",
-          "columnsFrom": ["held_by"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "held_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -3441,8 +3599,12 @@
           "name": "thread_message_thread_id_thread_id_fk",
           "tableFrom": "thread_message",
           "tableTo": "thread",
-          "columnsFrom": ["thread_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3542,8 +3704,12 @@
           "name": "thread_subject_thread_id_thread_id_fk",
           "tableFrom": "thread_subject",
           "tableTo": "thread",
-          "columnsFrom": ["thread_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3551,7 +3717,11 @@
       "compositePrimaryKeys": {
         "thread_subject_thread_id_entity_key_pk": {
           "name": "thread_subject_thread_id_entity_key_pk",
-          "columns": ["thread_id", "entity", "key"]
+          "columns": [
+            "thread_id",
+            "entity",
+            "key"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -3773,8 +3943,12 @@
           "name": "thread_person_id_auth_person_id_fk",
           "tableFrom": "thread",
           "tableTo": "auth_person",
-          "columnsFrom": ["person_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -3939,8 +4113,12 @@
           "name": "timer_intent_person_id_auth_person_id_fk",
           "tableFrom": "timer_intent",
           "tableTo": "auth_person",
-          "columnsFrom": ["person_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -3948,8 +4126,12 @@
           "name": "timer_intent_thread_id_thread_id_fk",
           "tableFrom": "timer_intent",
           "tableTo": "thread",
-          "columnsFrom": ["thread_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -4112,8 +4294,12 @@
           "name": "watch_intent_job_id_execution_job_id_fk",
           "tableFrom": "watch_intent",
           "tableTo": "execution_job",
-          "columnsFrom": ["job_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "job_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -4121,8 +4307,12 @@
           "name": "watch_intent_person_id_auth_person_id_fk",
           "tableFrom": "watch_intent",
           "tableTo": "auth_person",
-          "columnsFrom": ["person_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -4259,8 +4449,12 @@
           "name": "work_occurrence_person_id_auth_person_id_fk",
           "tableFrom": "work_occurrence",
           "tableTo": "auth_person",
-          "columnsFrom": ["person_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -4268,8 +4462,12 @@
           "name": "work_occurrence_thread_id_thread_id_fk",
           "tableFrom": "work_occurrence",
           "tableTo": "thread",
-          "columnsFrom": ["thread_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
