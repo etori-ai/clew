@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import type { OrganisationUnit, SessionUser } from '@clew/contracts';
+import type { OrganisationUnit, SessionUser, StaffPerson } from '@clew/contracts';
 import {
   Avatar,
   AvatarGroup,
@@ -37,7 +37,7 @@ import { usePageTitle } from '../../page-title';
 import { AsyncContent, ContentSkeleton } from '../../components/loading';
 import { PageHeader } from '../../components/page-header';
 import { mobileQuery, shortQuery } from '../../components/shell';
-import { roleOfOne } from './labels';
+import { roleText } from './labels';
 import { AdminShell } from './shell';
 
 /**
@@ -46,7 +46,9 @@ import { AdminShell } from './shell';
  * and in its branch, and a mark for what an import left wrong: people with no manager on the unit or above it, a unit
  * nobody is placed on, a unit people are on that the catalogue never named. A row opens the unit's people as a focused
  * overlay over the tree (D83): an end `Drawer` on a desktop, a `BottomSheet` on a phone, at
- * `/admin/organisation?unit=<unitId>`, composed as the talk on Personal is. Nothing here is edited: the tree is the
+ * `/admin/organisation?unit=<unitId>`, composed as the talk on Personal is. The overlay says who leads the unit first,
+ * then the others placed on it, then who reports to its managers from the units below, which is the reporting line an
+ * administrator otherwise has to read out of the tree's indentation. Nothing here is edited: the tree is the
  * catalogue's, and the page shows what the last import made of it.
  */
 const PATH = '/admin/organisation';
@@ -99,6 +101,38 @@ const leaders = (u: OrganisationUnit) =>
     </AvatarGroup>
   ) : (
     <Avatar size="sm" tooltip={false} aria-hidden {...(u.managers[0] ? { name: u.managers[0].name } : {})} />
+  );
+/**
+ * One group of people in the overlay: a heading, a line about what it holds when one is needed, and the people as a
+ * list named by the heading and the unit. A group nobody is in is not drawn.
+ */
+const group = (heading: string, unitLabel: string, members: StaffPerson[], note?: string) =>
+  members.length > 0 && (
+    <VStack gap={1}>
+      <Heading level={3}>{heading}</Heading>
+      {note && <Text type="supporting">{note}</Text>}
+      <List aria-label={`${heading} · ${unitLabel}`} hasDividers>
+        {members.map(p => (
+          <ListItem
+            key={p.id}
+            startContent={<Avatar name={p.name} size="sm" tooltip={false} />}
+            label={<Text weight="semibold">{p.name}</Text>}
+            description={
+              <VStack gap={0} hAlign="start">
+                <Text type="code" color="secondary">
+                  {p.userName ?? p.id}
+                </Text>
+                <Text type="supporting">
+                  {roleText(p)}
+                  {p.email ? ` · ${p.email}` : ''}
+                </Text>
+              </VStack>
+            }
+            endContent={!p.enabled ? <Badge variant="neutral" label="Avstängd" /> : undefined}
+          />
+        ))}
+      </List>
+    </VStack>
   );
 /** What an import left wrong on a unit, as the tree marks it. A unit with units under it may well be empty. */
 const marksOf = (u: OrganisationUnit, hasBelow: boolean) => [
@@ -313,6 +347,10 @@ function UnitPeople({
   const placed = query.data?.people ?? [];
   // Counted as the tree's row counts them: deactivated people are listed, with their mark, but are not among the placed.
   const off = placed.filter(p => !p.enabled).length;
+  // Who leads the unit first, then the others placed on it, then who reports to its managers from the units below.
+  const leaders = placed.filter(p => p.role === 'manager'),
+    others = placed.filter(p => p.role !== 'manager'),
+    leading = leaders.filter(p => p.enabled).map(p => p.name);
   const content = query.isError ? (
     <Banner
       status="error"
@@ -342,27 +380,14 @@ function UnitPeople({
           <Text type="supporting" role="status">
             {`${people(placed.length - off)} på enheten${off ? `, ${off} ${off === 1 ? 'avstängd' : 'avstängda'}` : ''}`}
           </Text>
-          <List aria-label={`Personer på ${title}`} hasDividers>
-            {placed.map(p => (
-              <ListItem
-                key={p.id}
-                startContent={<Avatar name={p.name} size="sm" tooltip={false} />}
-                label={<Text weight="semibold">{p.name}</Text>}
-                description={
-                  <VStack gap={0} hAlign="start">
-                    <Text type="code" color="secondary">
-                      {p.userName ?? p.id}
-                    </Text>
-                    <Text type="supporting">
-                      {roleOfOne[p.role]}
-                      {p.email ? ` · ${p.email}` : ''}
-                    </Text>
-                  </VStack>
-                }
-                endContent={!p.enabled ? <Badge variant="neutral" label="Avstängd" /> : undefined}
-              />
-            ))}
-          </List>
+          {group(leaders.length === 1 ? 'Chef' : 'Chefer', title, leaders)}
+          {group('Medarbetare', title, others)}
+          {group(
+            `Rapporterar till ${names.format(leading)}`,
+            title,
+            query.data?.reports ?? [],
+            'Från enheterna under: cheferna närmast under, och de som är placerade på en enhet som ingen leder.',
+          )}
         </>
       )}
     </AsyncContent>

@@ -1463,6 +1463,12 @@ export interface OrganisationUnitPeople {
   unitId: string;
   unitLabel: string;
   people: StaffPerson[];
+  /**
+   * Who reports to the unit's managers from the units below it (D99 item 4), each with `below`, by name in Swedish
+   * order: the managers of the nearest units that have one, and the people placed on a unit below that nobody leads.
+   * Empty for a unit nobody leads, since the line passes through it.
+   */
+  reports: StaffPerson[];
 }
 /** D85: one group gives one capability. `groupLabel` is the group's name while the group is provisioned, null when only this row remains. */
 export interface GroupCapability {

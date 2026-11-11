@@ -71,8 +71,12 @@ everyone in the branch.
    is placed on and nothing stands under, a unit people are on that no unit group names, people placed on no unit. A
    row opens the unit's people as a focused overlay over the tree (D83), not as leaves in it: origin the row, space an
    end `Drawer` (a `BottomSheet` on a phone), parent the tree, address `?unit=<unitId>`, close back to the tree with the
-   focus on the row. `scripts/provisioner-check.ts` reports the tree and the units whose people report to nobody over
-   SCIM.
+   focus on the row. The overlay says who leads the unit first, in a group of their own, then the others placed on
+   it, then who reports to its managers from the units below (item 4, the walk Personal makes, answered by the same
+   function), each named by the unit they lead: the product owner, 2026-11-11, opened the municipality, saw its
+   director alone and could not tell from the page that the heads of the administrations report to him; the line was
+   only in the tree's indentation. `scripts/provisioner-check.ts` reports the tree and the units whose people report
+   to nobody over SCIM.
 
 7. **The development stack.** `scripts/provisioner/directory.ts` is a municipality's line organisation as a tree of
    six levels at its deepest: the municipality and its director, five administrations with a head each, departments

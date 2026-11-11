@@ -34,6 +34,7 @@ import {
   usersOverview,
   organisationOverview,
   organisationPeople,
+  organisationReports,
   staffOverview,
   TALKS_FAIL_ERROR,
   TODAY,
@@ -284,7 +285,12 @@ export class MockApi {
         const unitId = decodeURIComponent(unitPeople[1]!),
           unit = this.organisation.units.find(u => u.unitId === unitId);
         return unit
-          ? json({ unitId, unitLabel: unit.unitLabel, people: organisationPeople[unitId] ?? [] })
+          ? json({
+              unitId,
+              unitLabel: unit.unitLabel,
+              people: organisationPeople[unitId] ?? [],
+              reports: organisationReports[unitId] ?? [],
+            })
           : route.fulfill({ status: 400, json: { error: 'Enheten finns inte.', code: 'invalid' } });
       }
       if (path === '/admin/users/group-capabilities' && method === 'POST') {

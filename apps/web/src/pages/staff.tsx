@@ -32,7 +32,7 @@ import { Shell, mobileQuery } from '../components/shell';
 import { AsyncContent, ContentSkeleton } from '../components/loading';
 import { PageHeader } from '../components/page-header';
 import { TalkOverlay } from '../components/talk-overlay';
-import { roleOfOne } from './admin/labels';
+import { roleText } from './admin/labels';
 
 /**
  * Personal (D94, D99): the signed-in manager's reports, as the directory pushed them: the people on the units they
@@ -71,17 +71,6 @@ const who = (p: StaffPerson) => (
     </VStack>
   </HStack>
 );
-const unitNames = new Intl.ListFormat('sv', { type: 'conjunction' });
-/**
- * The role as the list says it. A person assigned to the unit has their role on it; one who reports here from below
- * (D99) is named by the units they lead, or are placed on where nobody leads: "Chef för Utveckling".
- */
-const roleText = (p: StaffPerson) => {
-  const below = p.below ?? [];
-  if (!below.length) return roleOfOne[p.role];
-  const led = below.filter(b => b.role === 'manager');
-  return `${led.length ? 'Chef för' : 'Medarbetare på'} ${unitNames.format((led.length ? led : below).map(b => b.unitLabel))}`;
-};
 const columns = [
   { key: 'person', header: 'Person', width: proportional(2, { minWidth: 240 }), renderCell: (r: Row) => who(r.p) },
   {

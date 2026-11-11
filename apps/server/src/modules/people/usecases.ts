@@ -697,51 +697,73 @@ export type UsersAdminUsecases = ReturnType<typeof usersAdminUsecases>;
  * has its own card. The tree is read once and the people a level at a time, so a wide layer is one read. Nothing is
  * written, so there is no audit row.
  */
+const byName = (a: StaffPerson, b: StaffPerson) => bySwedish(a.name, b.name) || a.id.localeCompare(b.id);
+/** The tree as the units directly below each unit. */
+const unitsUnder = (tree: readonly TreeUnit[]) => {
+  const below = new Map<string, TreeUnit[]>();
+  for (const u of tree) if (u.parentId !== null) below.set(u.parentId, [...(below.get(u.parentId) ?? []), u]);
+  return below;
+};
+/**
+ * D99 item 4, the walk down from one unit: adds to `people` those who report to the unit's managers from the units
+ * below it, each with `below`. `people` holds the unit's own people when it is called, and a person already there
+ * keeps their row. Level by level, each unit once: `seen` also ends the walk if a stored chain were ever a cycle. A
+ * unit in `skip` is left alone with everything under it, and `reader` is never listed.
+ */
+async function addReportsFromBelow(
+  tx: ProvisionTx,
+  below: ReadonlyMap<string, TreeUnit[]>,
+  unitId: string,
+  people: Map<string, StaffPerson>,
+  options: { skip?: ReadonlySet<string>; reader?: string; organisationId?: string } = {},
+) {
+  const seen = new Set([unitId]);
+  for (let level = below.get(unitId) ?? []; level.length;) {
+    const visit = level.filter(u => !seen.has(u.id) && !options.skip?.has(u.id));
+    if (!visit.length) break;
+    for (const u of visit) seen.add(u.id);
+    const placedBelow = await tx.unitPeople(
+      visit.map(u => u.id),
+      options.organisationId,
+    );
+    level = [];
+    for (const next of visit) {
+      const there = placedBelow[next.id] ?? [],
+        leads = there.filter(leadsUnit),
+        report = leads.length ? leads : there;
+      for (const p of report) {
+        if (p.id === options.reader) continue;
+        const held = people.get(p.id) ?? { ...p, below: [] },
+          from = { unitId: next.id, unitLabel: next.label, role: p.role };
+        // Assigned to the unit itself: the row stays as it is. Else the units they report from, a led one first in the role.
+        if (!held.below) continue;
+        people.set(p.id, {
+          ...held,
+          role: held.role === 'manager' || p.role === 'manager' ? 'manager' : 'employee',
+          below: [...held.below, from].sort(
+            (a, b) => bySwedish(a.unitLabel, b.unitLabel) || a.unitId.localeCompare(b.unitId),
+          ),
+        });
+      }
+      if (!leads.length) level.push(...(below.get(next.id) ?? []));
+    }
+  }
+}
 export function staffUsecases(deps: { store: ProvisionStore }) {
-  const byName = (a: StaffPerson, b: StaffPerson) => bySwedish(a.name, b.name) || a.id.localeCompare(b.id);
   return {
     overview: (persona: AuthenticatedContext): Promise<StaffOverview> =>
       deps.store.transaction(async tx => {
         const managed = (await tx.assignmentsOf(persona.id)).filter(a => a.role === 'manager');
         if (!managed.length) throw new ForbiddenError('Sidan Personal är för den som är chef för en enhet.');
-        const below = new Map<string, TreeUnit[]>();
-        for (const u of await tx.unitTree(persona.organisationId))
-          if (u.parentId !== null) below.set(u.parentId, [...(below.get(u.parentId) ?? []), u]);
-        const own = new Set(managed.map(u => u.unitId)),
+        const below = unitsUnder(await tx.unitTree(persona.organisationId)),
+          own = new Set(managed.map(u => u.unitId)),
           placed = await tx.unitPeople([...own]),
           units: StaffUnit[] = [];
         for (const unit of managed) {
           const people = new Map<string, StaffPerson>();
           for (const p of placed[unit.unitId] ?? []) if (p.id !== persona.id) people.set(p.id, p);
-          // Level by level, each unit once: `seen` also ends the walk if a stored chain were ever a cycle.
-          const seen = new Set([unit.unitId]);
-          for (let level = below.get(unit.unitId) ?? []; level.length;) {
-            const visit = level.filter(u => !seen.has(u.id) && !own.has(u.id));
-            if (!visit.length) break;
-            for (const u of visit) seen.add(u.id);
-            const placedBelow = await tx.unitPeople(visit.map(u => u.id));
-            level = [];
-            for (const next of visit) {
-              const there = placedBelow[next.id] ?? [],
-                leads = there.filter(leadsUnit),
-                report = leads.length ? leads : there;
-              for (const p of report) {
-                if (p.id === persona.id) continue;
-                const held = people.get(p.id) ?? { ...p, below: [] },
-                  from = { unitId: next.id, unitLabel: next.label, role: p.role };
-                // Assigned to the managed unit itself: the row stays as it is. Else the units they report from, a led one first in the role.
-                if (!held.below) continue;
-                people.set(p.id, {
-                  ...held,
-                  role: held.role === 'manager' || p.role === 'manager' ? 'manager' : 'employee',
-                  below: [...held.below, from].sort(
-                    (a, b) => bySwedish(a.unitLabel, b.unitLabel) || a.unitId.localeCompare(b.unitId),
-                  ),
-                });
-              }
-              if (!leads.length) level.push(...(below.get(next.id) ?? []));
-            }
-          }
+          // A unit the reader manages too has its own card, so the walk leaves it alone.
+          await addReportsFromBelow(tx, below, unit.unitId, people, { skip: own, reader: persona.id });
           units.push({ unitId: unit.unitId, unitLabel: unit.unitLabel, people: [...people.values()].sort(byName) });
         }
         return { units: units.sort((a, b) => bySwedish(a.unitLabel, b.unitLabel) || a.unitId.localeCompare(b.unitId)) };
@@ -774,8 +796,10 @@ export function organisationUsecases(deps: { store: ProvisionStore }) {
       });
     },
     /**
-     * The people of one unit of the administrator's own organisation. The unit is one the organisation pushed or has
-     * people on, and the people are the organisation's own: a unit of another organisation does not exist here.
+     * The people of one unit of the administrator's own organisation, and who reports to its managers from the units
+     * below (D99 item 4, the same walk Personal makes). The unit is one the organisation pushed or has people on, and
+     * the people are the organisation's own: a unit of another organisation does not exist here. A unit nobody leads
+     * has no reports: the line passes through it to a manager above.
      */
     async unit(persona: AuthenticatedContext, unitId: string): Promise<OrganisationUnitPeople> {
       require(persona);
@@ -784,10 +808,16 @@ export function organisationUsecases(deps: { store: ProvisionStore }) {
           node = group?.organisationId === persona.organisationId ? group : undefined,
           people = (await tx.unitPeople([unitId], persona.organisationId))[unitId] ?? [];
         if (!node && !people.length) throw new InputError('Enheten finns inte.');
+        const held = new Map<string, StaffPerson>(people.map(p => [p.id, p]));
+        if (people.some(leadsUnit))
+          await addReportsFromBelow(tx, unitsUnder(await tx.unitTree(persona.organisationId)), unitId, held, {
+            organisationId: persona.organisationId,
+          });
         return {
           unitId,
           unitLabel: node?.label ?? (await tx.unitLabels([unitId]))[unitId] ?? unitId,
-          people: people.sort((a, b) => bySwedish(a.name, b.name) || a.id.localeCompare(b.id)),
+          people: people.sort(byName),
+          reports: [...held.values()].filter(p => p.below).sort(byName),
         };
       });
     },

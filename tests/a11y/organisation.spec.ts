@@ -134,11 +134,16 @@ test.describe('organisation', () => {
       await expect(people.getByRole('status').filter({ hasText: 'personer' })).toHaveText(
         '3 personer på enheten, 1 avstängd',
       );
-      const rows = people.getByRole('list', { name: 'Personer på Bergsåkers skola' }).getByRole('listitem');
-      await expect(rows).toHaveCount(4);
-      await expect(rows.nth(1)).toContainText('Hillevi Berg');
-      await expect(rows.nth(1)).toContainText('Chef · hillevi@clew.test');
-      await expect(rows.nth(3)).toContainText('Avstängd');
+      // Who leads the unit first, in a group of their own, then the others placed on it; nobody reports from below.
+      await expect(people.getByRole('heading', { level: 3 })).toHaveText(['Chefer', 'Medarbetare']);
+      const leaders = people.getByRole('list', { name: 'Chefer · Bergsåkers skola' }).getByRole('listitem');
+      await expect(leaders).toHaveCount(2);
+      await expect(leaders.first()).toContainText('Hillevi Berg');
+      await expect(leaders.first()).toContainText('Chef · hillevi@clew.test');
+      const others = people.getByRole('list', { name: 'Medarbetare · Bergsåkers skola' }).getByRole('listitem');
+      await expect(others).toHaveCount(2);
+      await expect(others.first()).toContainText('Anna Lindqvist');
+      await expect(others.nth(1)).toContainText('Avstängd');
       await expect(row(/Bergsåkers skola/)).toHaveAttribute('aria-selected', 'true');
       await page.keyboard.press('Escape');
       await expect(people).toBeHidden();
@@ -176,6 +181,29 @@ test.describe('organisation', () => {
         'Enheten finns inte.',
       );
     });
+    test('a unit says who reports to its manager from the units below, after the manager and before nothing else', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/organisation?unit=unit-grundskola');
+      const people = page.getByRole('dialog', { name: 'Personer på Grundskola' });
+      // One manager and nobody else placed here: a group for the manager, none for the others, then the reports.
+      await expect(people.getByRole('heading', { level: 3 })).toHaveText(['Chef', 'Rapporterar till Mattias Eriksson']);
+      await expect(people.getByRole('list', { name: 'Chef · Grundskola' }).getByRole('listitem')).toHaveText([
+        /Mattias Eriksson/,
+      ]);
+      const reports = people
+        .getByRole('list', { name: 'Rapporterar till Mattias Eriksson · Grundskola' })
+        .getByRole('listitem');
+      await expect(reports).toHaveCount(3);
+      // The managers of the nearest led unit, each named by the unit they lead, and a person on a unit nobody leads.
+      await expect(reports.nth(0)).toContainText('Chef för Bergsåkers skola · hillevi@clew.test');
+      await expect(reports.nth(1)).toContainText('Karin Åberg');
+      await expect(reports.nth(2)).toContainText('Medarbetare på Hagaskolan');
+      await expect(people.getByText('Från enheterna under')).toBeVisible();
+      await expectNoAxeViolations(page, { without: TREE_LABEL_RULE });
+    });
     test('an organisation nobody has pushed says so, and without admin.users the server says no and the page says so', async ({
       page,
       api,
@@ -207,6 +235,11 @@ test.describe('organisation', () => {
       await people.getByRole('button', { name: /Stäng/ }).click();
       await expect(people).toBeHidden();
       await expect(tree.getByRole('treeitem', { name: /Bergsåkers skola/ }).first()).toBeVisible();
+      expect(await reflowProblems(page)).toEqual([]);
+      // A unit with a group of its manager, and the people who report to them from below with the units they lead.
+      await open(page, '/admin/organisation?unit=unit-grundskola');
+      const reports = page.getByRole('dialog', { name: 'Personer på Grundskola' });
+      await expect(reports.getByText('Medarbetare på Hagaskolan')).toBeVisible();
       expect(await reflowProblems(page)).toEqual([]);
     });
   });

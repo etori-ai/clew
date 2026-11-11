@@ -1445,4 +1445,49 @@ export const organisationPeople: Record<string, OrganisationUnitPeople['people']
     // Deactivated: listed with the mark, and not among the three the tree's row counts.
     { id: 'vera', name: 'Vera Öst', userName: 'vera.ost', email: null, role: 'employee', enabled: false },
   ],
+  'unit-grundskola': [
+    {
+      id: 'mattias',
+      name: 'Mattias Eriksson',
+      userName: 'mattias.eriksson',
+      email: 'mattias.eriksson@clew.test',
+      role: 'manager',
+      enabled: true,
+    },
+  ],
+};
+/**
+ * Who reports to a unit's managers from the units below it (D99 item 4), for the units a test opens: under Grundskola
+ * the two who lead Bergsåkers skola, and a person placed on Hagaskolan, which nobody leads.
+ */
+export const organisationReports: Record<string, OrganisationUnitPeople['reports']> = {
+  'unit-grundskola': [
+    {
+      id: 'hillevi',
+      name: 'Hillevi Berg',
+      userName: 'hillevi',
+      email: 'hillevi@clew.test',
+      role: 'manager',
+      enabled: true,
+      below: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' }],
+    },
+    {
+      id: 'karin',
+      name: 'Karin Åberg',
+      userName: 'karin.aberg',
+      email: null,
+      role: 'manager',
+      enabled: true,
+      below: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' }],
+    },
+    {
+      id: 'omar',
+      name: 'Omar Hosseini',
+      userName: 'omar.hosseini',
+      email: 'omar.hosseini@clew.test',
+      role: 'employee',
+      enabled: true,
+      below: [{ unitId: 'unit-hagaskolan', unitLabel: 'Hagaskolan', role: 'employee' }],
+    },
+  ],
 };

@@ -546,7 +546,27 @@ describe('Administration › Organisation (D99)', () => {
         },
         { id: h.id('ida'), name: 'Ida', userName: 'ida', email: 'ida@sundsvall.test', role: 'employee', enabled: true },
       ],
+      reports: [],
     });
+    // Who reports to the unit's manager from below: the manager of the nearest led unit, through the unit nobody
+    // leads, and never the people that manager leads. A unit nobody leads has no reports of its own.
+    const ksk = await h.organisation.unit(admin, 'ksk');
+    expect(ksk.people.map(q => [q.name, q.role])).toEqual([
+      ['Karin', 'manager'],
+      ['Stina', 'employee'],
+    ]);
+    expect(ksk.reports).toEqual([
+      {
+        id: h.id('david'),
+        name: 'David',
+        userName: 'david',
+        email: 'david@sundsvall.test',
+        role: 'manager',
+        enabled: true,
+        below: [{ unitId: 'it', unitLabel: 'Digitalisering och IT', role: 'manager' }],
+      },
+    ]);
+    expect((await h.organisation.unit(admin, 'avd')).reports).toEqual([]);
     expect((await h.organisation.unit(admin, 'avd')).people).toEqual([]);
     expect((await h.organisation.unit(admin, 'okand')).people.map(q => q.name)).toEqual(['Nils']);
   });
