@@ -33,16 +33,16 @@ function stack() {
 const ekonomiId = (store: ReturnType<typeof stack>['store'], externalId: string) =>
   [...store.state.users.values()].find(u => u.externalId === externalId)!.id;
 describe('the synthetic provisioner', () => {
-  test('plans D68 groups from units, manager flags, plain groups and capabilities, two hundred and ten people in thirty-four units', () => {
+  test('plans D68 groups from units, manager flags, plain groups and capabilities, two hundred and fifty people in forty-eight units', () => {
     const p = plan(developmentDirectory),
       by = (externalId: string) => p.groups.find(g => g.externalId === externalId)!,
       keyed = (key: string) => p.groups.filter(g => g.externalId.startsWith(key));
-    expect(p.users).toHaveLength(210);
+    expect(p.users).toHaveLength(250);
     expect(p.users.slice(0, 3).map(u => u.body.userName)).toEqual(['hillevi', 'hassan', 'mikael']);
-    expect(new Set(p.users.map(u => u.body.userName)).size).toBe(210);
-    expect(keyed('unit:')).toHaveLength(34);
-    // Two units have no manager group: the area nobody leads, and the fritidshem that is led from the school above it.
-    expect(keyed('unit-manager:')).toHaveLength(32);
+    expect(new Set(p.users.map(u => u.body.userName)).size).toBe(250);
+    expect(keyed('unit:')).toHaveLength(48);
+    // Two units have no manager group: the department nobody leads, and the fritidshem that is led from the school above it.
+    expect(keyed('unit-manager:')).toHaveLength(46);
     expect(keyed('capability:').map(g => g.externalId)).toEqual([
       'capability:admin.appearance',
       'capability:admin.connectors',
@@ -50,14 +50,14 @@ describe('the synthetic provisioner', () => {
     ]);
     // Plain groups of every size: everyone in an administration, a handful in a team, and one nobody is in yet.
     expect(Object.fromEntries(keyed('ad:').map(g => [g.externalId, g.members.length]))).toEqual({
-      'ad:alla-chefer': 32,
+      'ad:alla-chefer': 46,
       'ad:elevhalsa': 6,
       'ad:fackliga-fortroendevalda': 10,
       'ad:forvaltning-kultur': 17,
       'ad:forvaltning-ledning': 27,
-      'ad:forvaltning-omsorg': 63,
-      'ad:forvaltning-stadsbyggnad': 28,
-      'ad:forvaltning-utbildning': 74,
+      'ad:forvaltning-omsorg': 84,
+      'ad:forvaltning-stadsbyggnad': 34,
+      'ad:forvaltning-utbildning': 87,
       'ad:intranat-redaktorer': 13,
       'ad:krisledning': 5,
       'ad:nattpersonal': 12,
@@ -108,7 +108,8 @@ describe('the synthetic provisioner', () => {
       planned.add(g.externalId);
     }
     expect(units.filter(g => !g.parent).map(g => g.externalId)).toEqual(['unit:unit-kommun']);
-    // Five levels: the municipality, an administration, an area, a unit, and a unit under it.
+    // Six levels at the deepest: the municipality, an administration, a department, an area, a unit and a group under
+    // it. Each has a manager of its own, so the line runs through five managers above the group's.
     const path = (unitId: string): string[] => {
       const parent = by(unitId).parent?.slice('unit:'.length);
       return [...(parent ? path(parent) : []), by(unitId).displayName];
@@ -120,6 +121,29 @@ describe('the synthetic provisioner', () => {
       'Bergsåkers skola',
       'Bergsåkers fritidshem',
     ]);
+    expect(path('unit-aldreboende-natt')).toEqual([
+      'Kommunen',
+      'Vård och omsorg',
+      'Särskilt boende',
+      'Äldreboenden norr',
+      'Lindgårdens äldreboende',
+      'Lindgården natt',
+    ]);
+    for (const unitId of path('unit-aldreboende-natt').map(label => units.find(g => g.displayName === label)!))
+      expect(
+        p.groups.find(g => g.externalId === unitId.externalId.replace('unit:', 'unit-manager:'))?.members,
+      ).toHaveLength(1);
+    // A department stands between an administration and its units, and its head is nobody's manager but theirs.
+    expect(path('unit-gymnasium')).toEqual([
+      'Kommunen',
+      'Barn och utbildning',
+      'Gymnasie- och vuxenutbildning',
+      'Selångers gymnasium',
+    ]);
+    expect(by('unit-gymnasie').members).toEqual(
+      p.groups.find(g => g.externalId === 'unit-manager:unit-gymnasie')!.members,
+    );
+    // The depth differs between branches: this administration has its units directly under it.
     expect(path('unit-it')).toEqual(['Kommunen', 'Kommunstyrelsekontoret', 'IT och digitalisering']);
     // An area nobody is placed on and nobody leads is still a node; a unit led from the one above has no manager group.
     expect(by('unit-hemtjanst')).toEqual({
@@ -147,10 +171,10 @@ describe('the synthetic provisioner', () => {
     const { store, client, grantOf } = stack();
     const first = await push(client, developmentDirectory);
     expect(first).toEqual({
-      created: 210,
+      created: 250,
       replaced: 0,
       deactivated: 0,
-      groupsCreated: 84,
+      groupsCreated: 112,
       groupsReplaced: 0,
       groupsRemoved: 0,
     });
@@ -176,8 +200,8 @@ describe('the synthetic provisioner', () => {
     });
     expect(store.state.assignments.get(ekonomiId(store, ekonomi.members[0]!))).toHaveLength(2);
     expect(grantOf(twoUnits.userName)).toMatchObject({ unitId: 'unit-bibliotek', role: 'employee' });
-    // A unit row is for a unit somebody is assigned to: every node but the area nobody is placed on.
-    expect(store.state.units.size).toBe(33);
+    // A unit row is for a unit somebody is assigned to: every node but the department nobody is placed on.
+    expect(store.state.units.size).toBe(47);
     expect([...store.state.groups.values()].find(g => g.externalId === 'unit:unit-skola')?.parentUnitId).toBe(
       'unit-grundskola',
     );
@@ -186,10 +210,10 @@ describe('the synthetic provisioner', () => {
     const second = await push(client, developmentDirectory);
     expect(second).toEqual({
       created: 0,
-      replaced: 210,
+      replaced: 250,
       deactivated: 0,
       groupsCreated: 0,
-      groupsReplaced: 84,
+      groupsReplaced: 112,
       groupsRemoved: 0,
     });
     expect(store.state.audit.length).toBe(audited);
@@ -205,7 +229,7 @@ describe('the synthetic provisioner', () => {
     };
     const summary = await push(client, changed);
     // The users key group and the appearance key group lose their only holder; Hillevi's manager group its only manager.
-    expect(summary).toMatchObject({ created: 0, replaced: 209, deactivated: 1, groupsRemoved: 3 });
+    expect(summary).toMatchObject({ created: 0, replaced: 249, deactivated: 1, groupsRemoved: 3 });
     expect(grantOf('hillevi')?.role).toBe('employee');
     expect(grantOf('mikael')?.capabilities).toEqual(['admin.connectors']);
     const hassan = [...store.state.users.values()].find(u => u.userName === 'hassan')!;
@@ -218,7 +242,7 @@ describe('the synthetic provisioner', () => {
     expect(remaining).not.toContain('unit-manager:unit-skola');
     expect(remaining).not.toContain('capability:admin.users');
     expect(remaining).toContain('unit:unit-omsorg');
-    expect(remaining).toHaveLength(81);
+    expect(remaining).toHaveLength(109);
   });
   test('a unit that moves in the directory moves in Clew, and units that leave it are removed from the leaves up (D99)', async () => {
     const { store, client } = stack();
@@ -311,13 +335,13 @@ describe('the synthetic provisioner', () => {
       'Without a token the endpoint answers 401 with the SCIM error resource.',
       'The token is accepted. PATCH yes, filter yes (at most 200 rows a page), bulk no, sort no, ETags no.',
       // More than the two hundred a page carries, so the check reads a full page of users and one more.
-      '210 users: 210 active, 0 deactivated.',
+      '250 users: 250 active, 0 deactivated.',
       expect.stringMatching(
-        /^\d+ groups: 34 unit, \d+ unit-manager, \d+ capability, \d+ plain \(0 without an externalId\)\.$/,
+        /^\d+ groups: 48 unit, \d+ unit-manager, \d+ capability, \d+ plain \(0 without an externalId\)\.$/,
       ),
       'Every active user is in a unit.',
       // The area nobody is placed on has units below it, so it is a heading and not an emptied unit (D99).
-      'The units form a tree: 1 root, 5 levels deep.',
+      'The units form a tree: 1 root, 6 levels deep.',
     ]);
     // A person the mapping forgot, a managed unit nobody named, an emptied unit and a key stored before D96.
     await client.request('POST', '/Users', {

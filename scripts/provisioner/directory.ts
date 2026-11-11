@@ -5,16 +5,19 @@ import type { Capability } from '@clew/contracts';
  * people. A person has a unit and a manager flag, the two facts the provisioner turns into D68's `unit:` and
  * `unit-manager:` groups; may work in or manage further units; may be in plain directory groups, which mean nothing in
  * Clew until an administrator maps one to a capability (D85) or names it in an audience (D23); and may hold Clew
- * capabilities that become `capability:` groups. Two hundred and ten people in thirty-four units: three personas with
- * a Keycloak account (`login`), seven written by hand for the names a real directory holds, and the rest generated
- * deterministically, so every manager has a team, the users page has something to page and a group has anything from
- * no members to seventy.
+ * capabilities that become `capability:` groups. Two hundred and fifty people in forty-eight units: three personas
+ * with a Keycloak account (`login`), seven written by hand for the names a real directory holds, and the rest
+ * generated deterministically, so every manager has a team, the users page has something to page and a group has
+ * anything from no members to eighty.
  *
- * The units are a tree (D99), as an organisation is: the municipality, its five administrations, an area between an
- * administration and some of its units, the twenty-five units people work in, and a unit under one of those. A unit
- * names the unit above it and nothing else; there are managers on every level, an area nobody leads, so the line
- * passes through it, and a unit that is led from the one above it. Nothing in Clew reads this file; the provisioner
- * does, and `scripts/auth-setup.ts` for the personas' accounts.
+ * The units are a tree (D99), as a municipality's line organisation is, six levels at its deepest: the municipality
+ * and its director; five administrations, each with a head; under three of them departments, each with a head of its
+ * own who reports to the administration's (the managers below the managers); an area between a department and its
+ * units; the units people work in, each with its manager; and a group under a unit. The depth differs between
+ * branches, as it does in an organisation: two administrations have their units directly under them. A unit names the
+ * unit above it and nothing else. There is a department nobody leads, so the line passes through it, a unit that is
+ * led from the one above it, a unit with two managers, and one unit pushed the flat way. Nothing in Clew reads this
+ * file; the provisioner does, and `scripts/auth-setup.ts` for the personas' accounts.
  */
 export interface DirectoryUnit {
   id: string;
@@ -81,14 +84,35 @@ interface UnitPlan extends DirectoryUnit {
 }
 const ROOT = 'unit-kommun';
 const areaUnit = (area: Area) => 'unit-forvaltning-' + area;
+/** A department: a unit under an administration with one person on it, its head. */
+const dept = (id: string, label: string, area: Area): UnitPlan => ({
+  id,
+  label,
+  area,
+  size: 1,
+  parent: areaUnit(area),
+});
 const UNITS: UnitPlan[] = [
   { id: 'unit-skola', label: 'Bergsåkers skola', area: 'utbildning', size: 12, parent: 'unit-grundskola' },
   { id: 'unit-skola-haga', label: 'Hagaskolan', area: 'utbildning', size: 14, parent: 'unit-grundskola' },
   { id: 'unit-skola-nacksta', label: 'Nacksta skola', area: 'utbildning', size: 10, parent: 'unit-grundskola' },
   // A rektor and a biträdande rektor: a unit with two managers.
-  { id: 'unit-gymnasium', label: 'Selångers gymnasium', area: 'utbildning', size: 16, managers: 2 },
-  { id: 'unit-forskola', label: 'Granlo förskola', area: 'utbildning', size: 7 },
-  { id: 'unit-forskola-skonsberg', label: 'Skönsbergs förskola', area: 'utbildning', size: 6 },
+  {
+    id: 'unit-gymnasium',
+    label: 'Selångers gymnasium',
+    area: 'utbildning',
+    size: 16,
+    managers: 2,
+    parent: 'unit-gymnasie',
+  },
+  { id: 'unit-forskola', label: 'Granlo förskola', area: 'utbildning', size: 7, parent: 'unit-forskolor' },
+  {
+    id: 'unit-forskola-skonsberg',
+    label: 'Skönsbergs förskola',
+    area: 'utbildning',
+    size: 6,
+    parent: 'unit-forskolor',
+  },
   // Led from the school above it: nobody here is a manager, and the school's rektor is not pushed as one here either.
   {
     id: 'unit-fritidshem',
@@ -100,14 +124,20 @@ const UNITS: UnitPlan[] = [
   },
   { id: 'unit-omsorg', label: 'Hemtjänst Centrum', area: 'omsorg', size: 14, parent: 'unit-hemtjanst' },
   { id: 'unit-omsorg-norr', label: 'Hemtjänst Norr', area: 'omsorg', size: 12, parent: 'unit-hemtjanst' },
-  { id: 'unit-aldreboende', label: 'Lindgårdens äldreboende', area: 'omsorg', size: 13 },
-  { id: 'unit-lss', label: 'LSS-boende Bosvedjan', area: 'omsorg', size: 8 },
-  { id: 'unit-socialtjanst', label: 'Socialtjänst barn och unga', area: 'omsorg', size: 9 },
-  { id: 'unit-forsorjning', label: 'Försörjningsstöd', area: 'omsorg', size: 6 },
-  { id: 'unit-gata', label: 'Gata och park', area: 'stadsbyggnad', size: 10 },
-  { id: 'unit-bygglov', label: 'Bygglovsenheten', area: 'stadsbyggnad', size: 5 },
-  { id: 'unit-miljo', label: 'Miljö och hälsoskydd', area: 'stadsbyggnad', size: 5 },
-  { id: 'unit-fastighet', label: 'Fastighetsservice', area: 'stadsbyggnad', size: 7 },
+  {
+    id: 'unit-aldreboende',
+    label: 'Lindgårdens äldreboende',
+    area: 'omsorg',
+    size: 13,
+    parent: 'unit-aldreboenden-norr',
+  },
+  { id: 'unit-lss', label: 'LSS-boende Bosvedjan', area: 'omsorg', size: 8, parent: 'unit-funktionsstod' },
+  { id: 'unit-socialtjanst', label: 'Socialtjänst barn och unga', area: 'omsorg', size: 9, parent: 'unit-ifo' },
+  { id: 'unit-forsorjning', label: 'Försörjningsstöd', area: 'omsorg', size: 6, parent: 'unit-ifo' },
+  { id: 'unit-gata', label: 'Gata och park', area: 'stadsbyggnad', size: 10, parent: 'unit-teknik' },
+  { id: 'unit-bygglov', label: 'Bygglovsenheten', area: 'stadsbyggnad', size: 5, parent: 'unit-plan-bygg' },
+  { id: 'unit-miljo', label: 'Miljö och hälsoskydd', area: 'stadsbyggnad', size: 5, parent: 'unit-plan-bygg' },
+  { id: 'unit-fastighet', label: 'Fastighetsservice', area: 'stadsbyggnad', size: 7, parent: 'unit-teknik' },
   { id: 'unit-bibliotek', label: 'Stadsbiblioteket', area: 'kultur', size: 6 },
   { id: 'unit-kulturskolan', label: 'Kulturskolan', area: 'kultur', size: 5 },
   { id: 'unit-fritid', label: 'Idrott och fritid', area: 'kultur', size: 5 },
@@ -130,15 +160,37 @@ const UNITS: UnitPlan[] = [
   { id: 'unit-grundskola', label: 'Grundskola', area: 'utbildning', size: 1, parent: areaUnit('utbildning') },
   { id: 'unit-hemtjanst', label: 'Hemtjänst', area: 'omsorg', size: 0, parent: areaUnit('omsorg') },
   { id: 'unit-skola-fritids', label: 'Bergsåkers fritidshem', area: 'utbildning', size: 2, parent: 'unit-skola' },
+  // The departments between an administration and its units, each with a head of its own who reports to the
+  // administration's: the managers below the managers. Kultur och fritid and Kommunstyrelsekontoret have none, so
+  // their units stand directly under the administration.
+  dept('unit-gymnasie', 'Gymnasie- och vuxenutbildning', 'utbildning'),
+  dept('unit-forskolor', 'Förskola', 'utbildning'),
+  dept('unit-sarskilt-boende', 'Särskilt boende', 'omsorg'),
+  dept('unit-funktionsstod', 'Funktionsstöd', 'omsorg'),
+  dept('unit-ifo', 'Individ- och familjeomsorg', 'omsorg'),
+  dept('unit-teknik', 'Teknik och service', 'stadsbyggnad'),
+  dept('unit-plan-bygg', 'Plan, bygg och miljö', 'stadsbyggnad'),
+  // An area between a department and its units, with a head of its own: the fourth level of six.
+  { id: 'unit-aldreboenden-norr', label: 'Äldreboenden norr', area: 'omsorg', size: 1, parent: 'unit-sarskilt-boende' },
+  // More units people work in, under the departments, and two groups under a unit, each with a manager of its own.
+  { id: 'unit-vuxenutbildning', label: 'Vuxenutbildningen', area: 'utbildning', size: 6, parent: 'unit-gymnasie' },
+  { id: 'unit-forskola-haga', label: 'Haga förskola', area: 'utbildning', size: 5, parent: 'unit-forskolor' },
+  {
+    id: 'unit-aldreboende-sol',
+    label: 'Solgårdens äldreboende',
+    area: 'omsorg',
+    size: 8,
+    parent: 'unit-aldreboenden-norr',
+  },
+  { id: 'unit-aldreboende-natt', label: 'Lindgården natt', area: 'omsorg', size: 4, parent: 'unit-aldreboende' },
+  { id: 'unit-daglig-verksamhet', label: 'Daglig verksamhet', area: 'omsorg', size: 5, parent: 'unit-funktionsstod' },
+  { id: 'unit-park', label: 'Parkskötsel', area: 'stadsbyggnad', size: 4, parent: 'unit-gata' },
 ];
-/** The units people were generated for before the tree: their plain-group rules are theirs alone. */
-const TREE_UNITS = new Set([
-  ROOT,
-  ...(Object.keys(AREAS) as Area[]).map(areaUnit),
-  'unit-grundskola',
-  'unit-hemtjanst',
-  'unit-skola-fritids',
-]);
+/**
+ * The units of the tree above and below the first twenty-five, the ones people were generated for before the tree: the
+ * plain-group rules were written for those first units and are theirs alone.
+ */
+const TREE_UNITS = new Set(UNITS.slice(UNITS.findIndex(u => u.id === ROOT)).map(u => u.id));
 /** The second generated person of the unit on the left also works in the unit on the right. */
 const SECOND_UNIT: Record<string, string> = {
   'unit-bibliotek': 'unit-kommunikation',
@@ -278,6 +330,40 @@ const FAMILY = [
   'Karlsson',
   'Lundgren',
 ];
+const GIVEN_MORE = [
+  'Agnes',
+  'Björn',
+  'Cecilia',
+  'Daniel',
+  'Ebba',
+  'Filip',
+  'Gunilla',
+  'Hugo',
+  'Ines',
+  'Jonas',
+  'Klara',
+  'Liam',
+  'Malin',
+  'Noor',
+  'Oskar',
+  'Pia',
+  'Rasmus',
+  'Selma',
+  'Tobias',
+  'Vera',
+];
+const FAMILY_MORE = [
+  'Åkesson',
+  'Björk',
+  'Dahlberg',
+  'Engström',
+  'Forsberg',
+  'Holm',
+  'Jakobsson',
+  'Mohammed',
+  'Nordin',
+  'Wikström',
+];
 /**
  * Hillevi's school starts with named people, not generated ones: the same five people with the same user names and
  * addresses as the calendar accounts in `packages/calendar/src/accounts.ts` and `.devcontainer/calendar/seed.php`, so
@@ -294,12 +380,18 @@ const SCHOOL: Array<Pick<DirectoryPerson, 'userName' | 'givenName' | 'familyName
 const ascii = (s: string) => s.toLowerCase().replace(/[åä]/g, 'a').replace(/ö/g, 'o').replace(/é/g, 'e');
 /**
  * The `k`th generated name. Each given name meets each family name once in two hundred, and the family name moves on
- * with every person, so a unit is not one family.
+ * with every person, so a unit is not one family; after two hundred the second lists take over in the same way.
  */
-const nameOf = (k: number) => ({
-  givenName: GIVEN[k % GIVEN.length]!,
-  familyName: FAMILY[(k + Math.floor(k / GIVEN.length)) % FAMILY.length]!,
-});
+const nameOf = (k: number) => {
+  // The first two hundred people have the first lists' names; the people after them, added with the deeper tree,
+  // have the second lists', so nobody who was there changes name and no user name is taken twice.
+  const [given, family] = k < GIVEN.length * FAMILY.length ? [GIVEN, FAMILY] : [GIVEN_MORE, FAMILY_MORE],
+    j = k % (GIVEN.length * FAMILY.length);
+  return {
+    givenName: given[j % given.length]!,
+    familyName: family[(j + Math.floor(j / given.length)) % family.length]!,
+  };
+};
 /**
  * Fills every unit up to its size after the hand-written people. The first generated people of a unit manage it (one,
  * or as many as the unit says; none where a persona does or another unit's manager does, and that manager then
