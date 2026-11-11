@@ -44,6 +44,8 @@ export const ScimUserInputSchema = Type.Object(
       ),
     ),
     emails: Type.Optional(Type.Array(ScimEmailSchema)),
+    // D110: optional, and the one attribute a client may send empty or null, which both mean "no title".
+    title: Type.Optional(Type.Union([Type.String({ maxLength: 512 }), Type.Null()])),
     active: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: true },
@@ -132,6 +134,7 @@ export interface ScimUser {
   displayName: string;
   name: { formatted: string };
   emails: Array<{ value: string; type: 'work'; primary: true }>;
+  title?: string;
   active: boolean;
   groups: Array<{ value: string; display: string; $ref: string }>;
   meta: ScimMeta;

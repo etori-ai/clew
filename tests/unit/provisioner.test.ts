@@ -231,6 +231,43 @@ describe('the synthetic provisioner', () => {
     });
     expect(store.state.audit.length).toBe(audited);
   });
+  test("the directory's titles reach Clew as the standard attribute, a new title is one audited change and a lost one is cleared (D110)", async () => {
+    const { store, client, grantOf } = stack();
+    await push(client, developmentDirectory);
+    const held = (userName: string) => [...store.state.users.values()].find(u => u.userName === userName)!,
+      titled = developmentDirectory.people.filter(p => p.title);
+    // Everyone but the one person the directory has no title for: a source has gaps, and a gap is not a mistake.
+    expect(developmentDirectory.people.filter(p => !p.title).map(p => p.userName)).toEqual(['bo.ek']);
+    expect(titled.every(p => held(p.userName).title === p.title)).toBe(true);
+    expect(held('bo.ek').title).toBeNull();
+    // What a person is called and what they are to Clew are two facts: a rektor and a byggchef are both managers,
+    // and so is a biträdande rektor beside the rektor of the same school.
+    const leads = (unit: string) =>
+      plan(developmentDirectory)
+        .groups.find(g => g.externalId === 'unit-manager:' + unit)!
+        .members.map(externalId => held(externalId.slice('dev:'.length)).title);
+    expect(held('hillevi').title).toBe('Rektor');
+    expect(leads('unit-bygglov')).toEqual(['Byggchef']);
+    expect(leads('unit-gymnasium')).toEqual(['Rektor', 'Biträdande rektor']);
+    expect(new Set(titled.map(p => p.title)).size).toBeGreaterThan(60);
+    const grant = structuredClone(grantOf('hillevi')),
+      audited = store.state.audit.length;
+    const changed: Directory = {
+      ...developmentDirectory,
+      people: developmentDirectory.people.map(p => {
+        const { title, ...untitled } = p;
+        return p.userName === 'hillevi' ? { ...p, title: 'Skolchef' } : p.userName === 'hassan' ? untitled : p;
+      }),
+    };
+    await push(client, changed);
+    expect(held('hillevi').title).toBe('Skolchef');
+    expect(held('hassan').title).toBeNull();
+    expect(store.state.audit.slice(audited).map(a => [a.action, a.subject, a.details.changed])).toEqual([
+      ['scim.user.replaced', 'person:' + held('hillevi').id, ['title']],
+      ['scim.user.replaced', 'person:' + held('hassan').id, ['title']],
+    ]);
+    expect(grantOf('hillevi')).toEqual(grant);
+  });
   test('a changed directory moves roles, takes capabilities back, deactivates a leaver and removes an empty key group', async () => {
     const { store, client, grantOf } = stack();
     await push(client, developmentDirectory);

@@ -5,7 +5,8 @@ import type { Capability } from '@clew/contracts';
  * people. A person has a unit and a manager flag, the two facts the provisioner turns into D68's `unit:` and
  * `unit-manager:` groups; may work in or manage further units; may be in plain directory groups, which mean nothing in
  * Clew until an administrator maps one to a capability (D85) or names it in an audience (D23); and may hold Clew
- * capabilities that become `capability:` groups. Two hundred and fifty people in forty-eight units: three personas
+ * capabilities that become `capability:` groups; and has a title, what the source calls their work, which the
+ * provisioner sends as SCIM's `title` (D110) and which decides nothing. Two hundred and fifty people in forty-eight units: three personas
  * with a Keycloak account (`login`), seven written by hand for the names a real directory holds, and the rest
  * generated deterministically, so every manager has a team, the users page has something to page and a group has
  * anything from no members to eighty.
@@ -39,6 +40,8 @@ export interface DirectoryPerson {
   givenName: string;
   familyName: string;
   email: string;
+  /** What the source calls the person's work; absent where the source holds none. */
+  title?: string;
   /** The unit the person works in. */
   department: string;
   /** Whether the person manages that unit. */
@@ -215,6 +218,84 @@ const GROUPS: DirectoryGroup[] = [
   { id: 'ad:projekt-e-arkiv', label: 'Projekt e-arkiv' },
   ...(Object.keys(AREAS) as Area[]).map(area => ({ id: areaGroup(area), label: AREAS[area] })),
 ];
+/**
+ * What the people of a unit are called (D110): the titles of those who lead it, in order, and the titles of the rest,
+ * taken in turn. They are a municipality's own words and differ between units: the manager of Bygglovsenheten is a
+ * byggchef and the manager of a school a rektor, and both are `manager` to Clew. A unit that is not listed here is one
+ * of the tree's: led by a verksamhetschef, with nobody else on it.
+ */
+const SCHOOL_STAFF = ['Lärare', 'Lärare', 'Speciallärare', 'Elevassistent', 'Lärare', 'Skolsköterska', 'Lärare'],
+  PRESCHOOL_STAFF = ['Förskollärare', 'Barnskötare', 'Förskollärare', 'Barnskötare', 'Kock'],
+  HOME_CARE_STAFF = ['Undersköterska', 'Undersköterska', 'Vårdbiträde', 'Undersköterska', 'Samordnare'],
+  CARE_HOME_STAFF = ['Undersköterska', 'Sjuksköterska', 'Undersköterska', 'Vårdbiträde', 'Arbetsterapeut'],
+  DIRECTOR: { lead: string[]; staff: string[] } = { lead: ['Förvaltningsdirektör'], staff: ['Verksamhetsutvecklare'] };
+const TITLES: Record<string, { lead: string[]; staff: string[] }> = {
+  // The school's people as the HR fixture names them (`connectors/hr/fixture.mjs`), so the two sources agree.
+  'unit-skola': {
+    lead: [],
+    staff: [
+      'Lärare',
+      'Lärare',
+      'Specialpedagog',
+      'Lärare',
+      'Lärare',
+      'Lärare',
+      'Lärare',
+      'Fritidspedagog',
+      'Lärare',
+      'Lärare',
+      'Elevassistent',
+    ],
+  },
+  'unit-skola-haga': { lead: ['Rektor'], staff: SCHOOL_STAFF },
+  'unit-skola-nacksta': { lead: ['Rektor'], staff: SCHOOL_STAFF },
+  'unit-gymnasium': {
+    lead: ['Rektor', 'Biträdande rektor'],
+    staff: ['Gymnasielärare', 'Gymnasielärare', 'Studie- och yrkesvägledare', 'Gymnasielärare', 'Kurator'],
+  },
+  'unit-forskola': { lead: ['Rektor'], staff: PRESCHOOL_STAFF },
+  'unit-forskola-skonsberg': { lead: ['Rektor'], staff: PRESCHOOL_STAFF },
+  'unit-forskola-haga': { lead: ['Rektor'], staff: PRESCHOOL_STAFF },
+  'unit-fritidshem': {
+    lead: [],
+    staff: ['Lärare i fritidshem', 'Fritidsledare', 'Lärare i fritidshem', 'Elevassistent'],
+  },
+  'unit-skola-fritids': { lead: ['Biträdande rektor'], staff: ['Lärare i fritidshem'] },
+  'unit-vuxenutbildning': { lead: ['Rektor'], staff: ['Lärare', 'SFI-lärare', 'Studie- och yrkesvägledare'] },
+  'unit-omsorg': { lead: ['Enhetschef'], staff: HOME_CARE_STAFF },
+  'unit-omsorg-norr': { lead: ['Enhetschef'], staff: HOME_CARE_STAFF },
+  'unit-aldreboende': { lead: ['Enhetschef'], staff: CARE_HOME_STAFF },
+  'unit-aldreboende-sol': { lead: ['Enhetschef'], staff: CARE_HOME_STAFF },
+  'unit-aldreboende-natt': { lead: ['Gruppchef'], staff: ['Undersköterska', 'Undersköterska', 'Sjuksköterska'] },
+  'unit-aldreboenden-norr': { lead: ['Områdeschef'], staff: [] },
+  'unit-lss': { lead: ['Enhetschef'], staff: ['Stödassistent', 'Stödassistent', 'Stödpedagog'] },
+  'unit-daglig-verksamhet': { lead: ['Enhetschef'], staff: ['Stödassistent', 'Arbetshandledare', 'Stödpedagog'] },
+  'unit-socialtjanst': { lead: ['Enhetschef'], staff: ['Socialsekreterare', 'Socialsekreterare', 'Familjebehandlare'] },
+  'unit-forsorjning': { lead: ['Enhetschef'], staff: ['Socialsekreterare', 'Handläggare'] },
+  'unit-gata': {
+    lead: ['Enhetschef'],
+    staff: ['Gatuingenjör', 'Anläggningsarbetare', 'Trafikingenjör', 'Projektledare'],
+  },
+  'unit-park': { lead: ['Arbetsledare'], staff: ['Parkarbetare', 'Trädgårdsmästare', 'Parkarbetare'] },
+  'unit-bygglov': { lead: ['Byggchef'], staff: ['Bygglovshandläggare', 'Byggnadsinspektör', 'Bygglovsarkitekt'] },
+  'unit-miljo': { lead: ['Miljöchef'], staff: ['Miljö- och hälsoskyddsinspektör', 'Livsmedelsinspektör'] },
+  'unit-fastighet': { lead: ['Enhetschef'], staff: ['Fastighetstekniker', 'Vaktmästare', 'Fastighetsförvaltare'] },
+  'unit-bibliotek': { lead: ['Bibliotekschef'], staff: ['Bibliotekarie', 'Bibliotekarie', 'Biblioteksassistent'] },
+  'unit-kulturskolan': { lead: ['Kulturskolechef'], staff: ['Musiklärare', 'Danslärare', 'Bildlärare'] },
+  'unit-fritid': { lead: ['Fritidschef'], staff: ['Fritidsledare', 'Anläggningsskötare', 'Föreningskonsulent'] },
+  'unit-it': { lead: ['IT-chef'], staff: ['IT-tekniker', 'Systemutvecklare', 'IT-arkitekt', 'Systemförvaltare'] },
+  'unit-ekonomi': { lead: ['Ekonomichef'], staff: ['Ekonom', 'Controller', 'Redovisningsekonom', 'Upphandlare'] },
+  'unit-hr': { lead: [], staff: ['HR-specialist', 'HR-konsult', 'Lönespecialist', 'Rehabiliteringssamordnare'] },
+  'unit-kommunikation': { lead: ['Kommunikationschef'], staff: ['Kommunikatör', 'Webbredaktör'] },
+  'unit-kansli': { lead: ['Kanslichef'], staff: ['Kommunsekreterare', 'Registrator', 'Nämndsekreterare', 'Jurist'] },
+  [ROOT]: { lead: ['Kommundirektör'], staff: [] },
+  ...Object.fromEntries((Object.keys(AREAS) as Area[]).map(area => [areaUnit(area), DIRECTOR])),
+};
+/** The title of the `n`th generated person of a unit, of which the first `managers` lead it. */
+const titleOf = (unitId: string, n: number, managers: number): string => {
+  const { lead, staff } = TITLES[unitId] ?? { lead: ['Verksamhetschef'], staff: [] };
+  return (n < managers ? lead[n] : staff[(n - managers) % (staff.length || 1)]) ?? 'Handläggare';
+};
 /** A generated person's place: the unit, their number among the unit's generated people, and whether they manage it. */
 interface Seat {
   unit: UnitPlan;
@@ -245,6 +326,7 @@ const personas: DirectoryPerson[] = [
     givenName: 'Hillevi',
     familyName: 'Berg',
     email: 'hillevi@clew.test',
+    title: 'Rektor',
     department: 'unit-skola',
     manager: true,
     groups: ['ad:alla-chefer', 'ad:rektorer'],
@@ -258,6 +340,7 @@ const personas: DirectoryPerson[] = [
     givenName: 'Hassan',
     familyName: 'Ali',
     email: 'hassan@clew.test',
+    title: 'Undersköterska',
     department: 'unit-omsorg',
     manager: false,
     capabilities: [],
@@ -270,6 +353,7 @@ const personas: DirectoryPerson[] = [
     givenName: 'Mikael',
     familyName: 'Lund',
     email: 'mikael@clew.test',
+    title: 'Systemförvaltare',
     department: 'unit-it',
     manager: false,
     groups: ['ad:intranat-redaktorer'],
@@ -280,27 +364,42 @@ const personas: DirectoryPerson[] = [
 /**
  * The names a generator does not come up with and a real directory holds: a hyphen, a particle, an apostrophe,
  * accents, two family names, a name too long for a narrow column, a very short one, and a second person with the same
- * name as somebody else (the first Anna Lindqvist is generated). Employees without a login.
+ * name as somebody else (the first Anna Lindqvist is generated). Employees without a login. Their titles are the
+ * ones a column has to hold too (D110): a long one, one with a hyphen and a slash, and a person the source has no
+ * title for.
  */
-const named = (givenName: string, familyName: string, userName: string, department: string): DirectoryPerson => ({
+const named = (
+  givenName: string,
+  familyName: string,
+  userName: string,
+  department: string,
+  title?: string,
+): DirectoryPerson => ({
   active: true,
   externalId: 'dev:' + userName,
   userName,
   givenName,
   familyName,
   email: userName + '@clew.test',
+  ...(title ? { title } : {}),
   department,
   manager: false,
   capabilities: [],
 });
 const handwritten: DirectoryPerson[] = [
   ...personas,
-  named('Ann-Sofie', 'af Sandeberg', 'ann-sofie.afsandeberg', 'unit-kansli'),
-  named('José', 'Hernández García', 'jose.hernandez', 'unit-gata'),
-  named('Zoë', "O'Connor", 'zoe.oconnor', 'unit-kulturskolan'),
-  named('Åsa', 'Öberg-Ångström', 'asa.oberg-angstrom', 'unit-aldreboende'),
-  named('Anna', 'Lindqvist', 'anna.lindqvist2', 'unit-omsorg-norr'),
-  named('Maximiliana Alexandra', 'von Schwerin-Gyllenstierna', 'maximiliana.vonschwerin', 'unit-ekonomi'),
+  named('Ann-Sofie', 'af Sandeberg', 'ann-sofie.afsandeberg', 'unit-kansli', 'Kommunjurist/dataskyddsombud'),
+  named('José', 'Hernández García', 'jose.hernandez', 'unit-gata', 'Mät- och kartingenjör'),
+  named('Zoë', "O'Connor", 'zoe.oconnor', 'unit-kulturskolan', 'Musiklärare'),
+  named('Åsa', 'Öberg-Ångström', 'asa.oberg-angstrom', 'unit-aldreboende', 'Medicinskt ansvarig sjuksköterska'),
+  named('Anna', 'Lindqvist', 'anna.lindqvist2', 'unit-omsorg-norr', 'Undersköterska'),
+  named(
+    'Maximiliana Alexandra',
+    'von Schwerin-Gyllenstierna',
+    'maximiliana.vonschwerin',
+    'unit-ekonomi',
+    'Verksamhetsutvecklare med ansvar för digitalisering och välfärdsteknik',
+  ),
   named('Bo', 'Ek', 'bo.ek', 'unit-fritid'),
 ];
 const GIVEN = [
@@ -431,6 +530,7 @@ function generated(): DirectoryPerson[] {
         givenName,
         familyName,
         email: userName + '@clew.test',
+        title: titleOf(unit.id, n, managers),
         department: unit.id,
         manager: seat.manager,
         ...(seat.manager && alsoManages.length ? { alsoManages } : {}),

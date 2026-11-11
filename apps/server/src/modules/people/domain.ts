@@ -162,7 +162,7 @@ export const bySwedish = (a: string, b: string) => a.localeCompare(b, 'sv');
 /**
  * D100: what the people list of Administration › Användare is narrowed by, as a store reads it. Every part narrows
  * further and an absent part narrows nothing. `words` each match, without regard to case, somewhere in the name, the
- * user name or the e-mail. `unitIds` is an assignment on one of the units, `role` an assignment with that role, and
+ * title (D110), the user name or the e-mail. `unitIds` is an assignment on one of the units, `role` an assignment with that role, and
  * the two together one assignment that is both. `status` is the row's reading of access (`UserStatus`), `capability`
  * a capability on the grant.
  */
@@ -277,6 +277,8 @@ export interface UserRecord {
   userName: string | null;
   name: string;
   email: string | null;
+  /** D110: the person's title as the source words it; null when the source sent none. */
+  title: string | null;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -293,12 +295,13 @@ export interface GroupRecord {
   createdAt: string;
   updatedAt: string;
 }
-/** The fields a provisioner sets on a person; D68 requires every one of them. */
+/** The fields a provisioner sets on a person; D68 requires every one of them but the title, which is optional (D110). */
 export interface UserFields {
   externalId: string;
   userName: string;
   name: string;
   email: string;
+  title: string | null;
   enabled: boolean;
 }
 export interface GroupFields {
@@ -334,6 +337,8 @@ const noWorkEmail = (emails: readonly unknown[] | undefined): never => {
     'invalidValue',
   );
 };
+/** D110: a title is kept as sent, less the space around it; an empty one and `null` both mean the person has none. */
+export const titleOf = (value: string | null | undefined): string | null => value?.trim() || null;
 /** A full user representation (POST, PUT) to the fields Clew holds, with D68's requirements checked by name. */
 export function userFields(input: ScimUserInput): UserFields {
   const name =
@@ -345,6 +350,7 @@ export function userFields(input: ScimUserInput): UserFields {
     userName: input.userName,
     name: name || need('displayName'),
     email: workEmail(input.emails) ?? noWorkEmail(input.emails),
+    title: titleOf(input.title),
     enabled: input.active ?? true,
   };
 }
@@ -576,6 +582,11 @@ const asString = (value: unknown, path: string): string => {
   if (typeof value === 'string' && value.length > 0 && value.length <= 512) return value;
   throw new ScimError(400, `Attribute '${path}' needs a non-empty string.`, 'invalidValue');
 };
+/** D110: a title may be empty, which clears it; anything but a string of at most 512 characters is a mistake. */
+const asTitle = (value: unknown, path: string): string => {
+  if (typeof value === 'string' && value.length <= 512) return value;
+  throw new ScimError(400, `Attribute '${path}' needs a string of at most 512 characters.`, 'invalidValue');
+};
 const asBoolean = (value: unknown, path: string): boolean => {
   if (typeof value === 'boolean') return value;
   if (value === 'true' || value === 'True') return true;
@@ -623,11 +634,13 @@ const otherAddress = (key: string) => {
   return !!type && type[1] !== 'work';
 };
 /**
- * What a `remove` on a user is aimed at. Clew holds five attributes and requires them all (D68 item 1); every other
- * attribute, an extension's included, is not held, so removing it changes nothing and is accepted, as adding it is.
+ * What a `remove` on a user is aimed at. Clew requires five attributes (D68 item 1) and holds a sixth that it does
+ * not, the title (D110), which a `remove` clears. Every other attribute, an extension's included, is not held, so
+ * removing it changes nothing and is accepted, as adding it is.
  */
-const userRemoval = (key: string): 'required' | 'readOnly' | 'notHeld' => {
+const userRemoval = (key: string): 'required' | 'readOnly' | 'title' | 'notHeld' => {
   if (isReadOnly(key, 'user')) return 'readOnly';
+  if (key === 'title') return 'title';
   if (['username', 'externalid', 'displayname', 'active', 'emails', 'emails.value'].includes(key)) return 'required';
   return key.startsWith('emails[') && !otherAddress(key) ? 'required' : 'notHeld';
 };
@@ -649,6 +662,7 @@ export function applyUserPatch(
     else if (key === 'externalid') next.externalId = asString(value, path);
     else if (key === 'displayname' || key === 'name.formatted') next.name = asString(value, path);
     else if (key === 'active') next.enabled = asBoolean(value, path);
+    else if (key === 'title') next.title = value === null ? null : titleOf(asTitle(value, path));
     else if (key === 'emails') {
       const list = Array.isArray(value) ? value : [value];
       const sent = list
@@ -678,6 +692,7 @@ export function applyUserPatch(
       const aim = userRemoval(coreKey(operation.path, 'user'));
       if (aim === 'readOnly') throw readOnly(operation.path);
       if (aim === 'required') throw required(operation.path);
+      if (aim === 'title') next.title = null;
       continue;
     }
     if (operation.path) set(operation.path, operation.value, false);
@@ -775,6 +790,7 @@ export function userResource(
     displayName: record.name,
     name: { formatted: record.name },
     emails: record.email ? [{ value: record.email, type: 'work', primary: true }] : [],
+    ...(record.title ? { title: record.title } : {}),
     active: record.enabled,
     groups: groups.map(g => ({ value: g.id, display: g.label, $ref: `${base}/Groups/${g.id}` })),
     meta: {
@@ -875,6 +891,7 @@ export const schemaDocuments = (base: string) => [
         required: true,
         subAttributes: [attribute('value', 'string'), attribute('type', 'string'), attribute('primary', 'boolean')],
       }),
+      attribute('title', 'string'),
       attribute('active', 'boolean'),
       attribute('groups', 'complex', {
         multiValued: true,

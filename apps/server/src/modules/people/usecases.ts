@@ -303,6 +303,7 @@ export function scimUsecases(deps: {
     userName: u.userName ?? u.id,
     name: u.name,
     email: u.email ?? '',
+    title: u.title,
     enabled: u.enabled,
   });
   const changedKeys = <T extends object>(before: T, after: T) =>
@@ -662,6 +663,7 @@ export function usersAdminUsecases(deps: {
       userName: u.userName,
       externalId: u.externalId,
       email: u.email,
+      title: u.title,
       enabled: u.enabled,
       bound: await tx.bound(u.id),
       assignments: await tx.assignmentsOf(u.id),

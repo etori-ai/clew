@@ -841,7 +841,7 @@
       "number": 68,
       "path": "docs/decisions/D68-people-are-pushed-into-clew-through-standard-scim.md",
       "title": "D68 · People are pushed into Clew through standard SCIM, and mapping happens outside Clew",
-      "status": "accepted, built 2026-11-09 (the SCIM server, the derivation, the synthetic provisioner, binding at first login, Administration › Användare); the group keys are proposed until a real provisioner has used them; item 2 amended by D85 (2026-11-09): capabilities are mapped from groups in Clew, units and manager roles keep these keys; amended by D99 (2026-11-10): units form a tree, a `unit:` group names the unit above it and the provisioner no longer flattens a hierarchy; item 4 amended by D109 (2026-11-11): a provisioner sends a change when it happens, and the daily run is the reconciliation under it",
+      "status": "accepted, built 2026-11-09 (the SCIM server, the derivation, the synthetic provisioner, binding at first login, Administration › Användare); the group keys are proposed until a real provisioner has used them; item 2 amended by D85 (2026-11-09): capabilities are mapped from groups in Clew, units and manager roles keep these keys; amended by D99 (2026-11-10): units form a tree, a `unit:` group names the unit above it and the provisioner no longer flattens a hierarchy; item 4 amended by D109 (2026-11-11): a provisioner sends a change when it happens, and the daily run is the reconciliation under it; amended by [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) (2026-11-11, provisional): a user has a sixth attribute, the optional `title`, which is shown and searched and decides nothing",
       "date": "2026-11-06",
       "area": "identity"
     },
@@ -1120,7 +1120,7 @@
       "number": 97,
       "path": "docs/decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md",
       "title": "D97 · A source says what its rows are about, and Clew places them",
-      "status": "accepted as the direction (product owner, 2026-11-10), built 2026-11-10 (see \"As built\"); the items under \"Open\" were taken provisionally for the build and are not decided",
+      "status": "accepted as the direction (product owner, 2026-11-10), built 2026-11-10 (see \"As built\"); the items under \"Open\" were taken provisionally for the build and are not decided; item 9 amended by [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) (2026-11-11, provisional: a person's title is one line Clew holds, pushed as SCIM's `title`; phone and employment facts are still read from their source)",
       "date": "2026-11-10",
       "area": "integrations, ui"
     },
@@ -1258,6 +1258,15 @@
       "status": "provisional (product owner, 2026-11-11: with SCIM a change is pushed when it happens, and once a day is not the rule); accepted once a provisioner outside the team sends its changes as they happen; the page, the guide and the comments say it, and the example provisioner still only reconciles",
       "date": "2026-11-11",
       "area": "identity"
+    },
+    {
+      "key": "D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role",
+      "number": 110,
+      "path": "docs/decisions/D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md",
+      "title": "D110 · A person's title is pushed as SCIM's `title` and kept apart from the role",
+      "status": "provisional (product owner, 2026-11-11: the user list should say what a person is called at work, and that is another fact than manager or employee; built against the freeze on new surface on his word), built 2026-11-11; one title per person and the standard attribute are choices made in the build and stand until he says otherwise; accepted once a real directory has pushed titles; no manual screen-reader pass yet",
+      "date": "2026-11-11",
+      "area": "identity, ui"
     }
   ],
   "documents": [
@@ -1802,6 +1811,12 @@
     {
       "path": "docs/decisions/D11-one-calendar-contract-two-adapters.md",
       "title": "D11 · One calendar contract, CalDAV and Microsoft 365 as adapters",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md",
+      "title": "D110 · A person's title is pushed as SCIM's `title` and kept apart from the role",
       "category": "decision-history",
       "headings": []
     },

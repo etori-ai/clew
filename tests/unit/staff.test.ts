@@ -17,6 +17,7 @@ function stack() {
       userName: id,
       name,
       email: id + '@clew.test',
+      title: null,
       enabled,
       createdAt: T,
       updatedAt: T,

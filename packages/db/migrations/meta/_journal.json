@@ -351,6 +351,13 @@
       "when": 1794389155297,
       "tag": "0049_competence",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1794421242543,
+      "tag": "0050_person_title",
+      "breakpoints": true
     }
   ]
 }

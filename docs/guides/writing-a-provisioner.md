@@ -22,7 +22,13 @@ The repository ships one: `scripts/provisioner/`, which pushes the development s
 | `emails` | Send an approved work address. Clew takes the address with `type: "work"`, otherwise an address **without a type**, the primary before the first. An address of any other type (`home`, `other`) is never taken, and a user with such addresses alone is refused with a 400 that says so. |
 | `active` | `false` deactivates. `DELETE` also deactivates, because audit rows and threads reference the person; nothing is erased. A `PUT` without `active` re-enables, since the source is the authority. |
 
-Extension schemas and unknown attributes are accepted and ignored, as the standard asks, in a `PATCH` too: adding, replacing or removing an attribute Clew does not hold (`title`, a phone number, the enterprise extension's `manager`) changes nothing and is not an error. Removing one of the five above is refused with `mutability`. A path-less `PATCH` may repeat the resource's own `id`, `schemas` and `meta`, as Okta does; an `id` that names another resource is refused.
+One more attribute is held and not required ([D110](../decisions/D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md)):
+
+| Attribute | Meaning in Clew |
+|---|---|
+| `title` | What the source calls the person's work, in its own words: Byggchef, Rektor, Specialpedagog. Shown under the person's name and found by the search on Administration › Användare. It decides nothing: whether a person is a manager comes from the `unit-manager:` group and never from a title. One per person, at most 512 characters. An empty string, `null`, a `remove` and a `PUT` without it all clear it. |
+
+Extension schemas and unknown attributes are accepted and ignored, as the standard asks, in a `PATCH` too: adding, replacing or removing an attribute Clew does not hold (a phone number, `name.givenName`, the enterprise extension's `manager`) changes nothing and is not an error. Removing one of the five required attributes is refused with `mutability`. A path-less `PATCH` may repeat the resource's own `id`, `schemas` and `meta`, as Okta does; an `id` that names another resource is refused.
 
 Clew holds one name per person. Send `displayName` (or `name.formatted`) when a name changes: `name.givenName` and `name.familyName` build the name when a person is created without a display name, and do not change it afterwards.
 

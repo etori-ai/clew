@@ -272,7 +272,7 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
             status = !u.enabled ? 'disabled' : !granted ? 'no-access' : bound ? 'signed-in' : 'not-signed-in';
           return (
             (search.words ?? []).every(word =>
-              [u.name, u.userName, u.email].some(value => folded(value).includes(folded(word))),
+              [u.name, u.userName, u.email, u.title].some(value => folded(value).includes(folded(word))),
             ) &&
             (!(search.unitIds || search.role) ||
               (state.assignments.get(u.id) ?? []).some(

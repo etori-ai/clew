@@ -1,6 +1,6 @@
 # D97 · A source says what its rows are about, and Clew places them
 
-**Status:** accepted as the direction (product owner, 2026-11-10), built 2026-11-10 (see "As built"); the items under "Open" were taken provisionally for the build and are not decided · **Date:** 2026-11-10 · **Area:** integrations, ui
+**Status:** accepted as the direction (product owner, 2026-11-10), built 2026-11-10 (see "As built"); the items under "Open" were taken provisionally for the build and are not decided; item 9 amended by [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) (2026-11-11, provisional: a person's title is one line Clew holds, pushed as SCIM's `title`; phone and employment facts are still read from their source) · **Date:** 2026-11-10 · **Area:** integrations, ui
 
 **Decision.** A feature that belongs on top of an entity (a person, a unit, later a room) is not written into the
 entity's page. Its source, a connector or a module Clew owns, declares what its rows are **about**, and Clew decides
