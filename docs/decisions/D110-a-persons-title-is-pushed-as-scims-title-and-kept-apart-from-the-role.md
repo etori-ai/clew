@@ -26,8 +26,8 @@
    without one carries no `title`. The five attributes D68 requires are still required; this is a sixth that is
    not.
 
-   **A title never refuses a request.** Text past 512 characters is cut there, and a value that is not text is read
-   as no title. The first build refused both with a 400, and the review of the change (2026-11-11) turned that
+   **A title never refuses a request.** Text past 512 characters is cut there, a control character in it (a line
+   break, or the NUL that PostgreSQL cannot hold) becomes a space, and a value that is not text is read as no title. The first build refused both with a 400, and the review of the change (2026-11-11) turned that
    round: before this record any `title` was accepted and ignored, a refused `POST` leaves a person without access
    and stops a reconciliation at that person, and a client such as Entra sends several changes in one `PATCH`, so a
    refused title would also have refused the deactivation beside it. An attribute that decides nothing must not be
@@ -43,6 +43,18 @@
 
 7. **Audited by the name of the field.** A changed title is a `scim.user.*` row whose `changed` lists `title`, in the
    transaction of the write. The words themselves are not in the audit.
+
+8. **Attribute names are read without regard to case, in a full representation as in a patch** (RFC 7643 §2.1). A
+   second review (2026-11-11) found that `Title` in a `PUT` was read as an unknown attribute, so a body that carried
+   the title cleared it, while the same spelling in a `PATCH` path set it. The fault was older than the title and
+   wider: `Active: false` in a `PUT` was ignored the same way and enabled the person. A `POST` and a `PUT` now read
+   the names of a user and a group as a patch does, the nested ones of `name`, `emails` and `members` included. The
+   name as the schema writes it wins over the same name in another case.
+
+9. **A required attribute PostgreSQL cannot hold is refused by name.** The same review found that a NUL in a title
+   failed in the store with a 500 and took the deactivation beside it down. For the title that is item 4's rule. For
+   the five required attributes of a user, and a group's name, key, parent and members, a NUL is now a 400
+   `invalidValue` that names the attribute, where it was a 500 that named nothing.
 
 **What this changes in earlier records.**
 

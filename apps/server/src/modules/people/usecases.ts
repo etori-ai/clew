@@ -37,6 +37,8 @@ import {
 import {
   applyGroupPatch,
   applyUserPatch,
+  canonicalGroup,
+  canonicalUser,
   assertAcceptedKey,
   assertAcceptedParent,
   branchOf,
@@ -437,7 +439,7 @@ export function scimUsecases(deps: {
       }),
     createUser: (p: Provisioner, body: unknown, base: string): Promise<ScimUser> =>
       deps.store.transaction(async tx => {
-        const fields = userFields(checked(ScimUserInputSchema, body, 'User'));
+        const fields = userFields(checked(ScimUserInputSchema, canonicalUser(body), 'User'));
         await uniqueUser(tx, fields);
         const at = now(),
           record: UserRecord = {
@@ -481,7 +483,7 @@ export function scimUsecases(deps: {
           tx,
           p,
           await userOr404(tx, p, id, true),
-          userFields(checked(ScimUserInputSchema, body, 'User')),
+          userFields(checked(ScimUserInputSchema, canonicalUser(body), 'User')),
           'scim.user.replaced',
           base,
         ),
@@ -515,7 +517,7 @@ export function scimUsecases(deps: {
       }),
     createGroup: (p: Provisioner, body: unknown, base: string): Promise<ScimGroup> =>
       deps.store.transaction(async tx => {
-        const fields = groupFields(checked(ScimGroupInputSchema, body, 'Group'));
+        const fields = groupFields(checked(ScimGroupInputSchema, canonicalGroup(body), 'Group'));
         assertAcceptedKey(fields);
         assertAcceptedParent(fields);
         if (fields.parent !== null) await tx.lockTree(p.organisationId);
@@ -580,7 +582,7 @@ export function scimUsecases(deps: {
           tx,
           p,
           await groupOr404(tx, p, id, true),
-          groupFields(checked(ScimGroupInputSchema, body, 'Group')),
+          groupFields(checked(ScimGroupInputSchema, canonicalGroup(body), 'Group')),
           'scim.group.replaced',
           base,
         ),
