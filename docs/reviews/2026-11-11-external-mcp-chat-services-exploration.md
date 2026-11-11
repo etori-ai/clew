@@ -3,7 +3,16 @@
 Status: closing note. The prototype of [D81](../decisions/D81-mcp-apps-extend-ai-chat-with-provider-owned-interactions.md)
 was built 2026-11-08 to 2026-11-09 and removed from the code on 2026-11-11. The product owner's reason: consuming a
 vendor's own MCP server is not a use case now. The prototype was built to see whether it fits the architecture and
-can be built. It does and it can. D81 is withdrawn; nothing in the repository depends on it.
+can be built. It does and it can. D81 is withdrawn and no code depends on it.
+
+One decision still names the removed gateway.
+[D101](../decisions/D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) item 2
+builds the Nextcloud Approval loop a second time as an MCP server "reached through the gateway in
+`apps/server/src/mcp/`", and item 5 lifts the freeze on new surface only when the loop works in both builds. That is
+a different question from this one (which wire format a connector written here should speak, not whether a vendor's
+own service can be consumed), but it would have used the same gateway. Whether the freeze still requires that build
+is the product owner's to settle and is listed in [open questions](../maintainers/open-questions.md); D101 is not
+changed by this note.
 
 ## What was asked
 

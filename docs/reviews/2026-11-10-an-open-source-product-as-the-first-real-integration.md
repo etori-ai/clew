@@ -106,3 +106,8 @@ Frappe HR as the second source. [D101](../decisions/D101-the-first-real-integrat
 records the choice, the loop, the two builds to compare and the freeze on new surface until the loop works. With this
 order the first source tests the identity provider's token passed through and live reads; work in the background as
 the person and a vendor's own MCP service wait for the second.
+
+2026-11-11. A second read of Frappe HR, of its `develop` branch, could not confirm two statements in the table above:
+PKCE and refresh tokens in its OAuth server, and the first-party MCP endpoint. Neither was shown to be absent. Both
+are to be checked against a pinned version before the second source is started; see
+[Frappe HR's appraisal cycle against the talks profile](2026-11-11-frappe-hr-appraisals-against-the-talks-profile.md).

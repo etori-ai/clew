@@ -59,3 +59,4 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Review: is the SCIM server standard, and is it easy to run · 2026-11-10](2026-11-10-scim-conformance-and-operability.md)
 - [Review: what the first real integration showed · 2026-11-10](2026-11-10-what-the-first-real-integration-showed.md)
 - [Exploration note: external MCP services in AI chat, built and removed · 2026-11-11](2026-11-11-external-mcp-chat-services-exploration.md)
+- [Comparison: Frappe HR's appraisal cycle against the talks profile · 2026-11-11](2026-11-11-frappe-hr-appraisals-against-the-talks-profile.md)

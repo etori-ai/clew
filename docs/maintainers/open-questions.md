@@ -22,7 +22,8 @@ file as they stood there and have not been checked against the code since.
 | May Clew hold the `protected` fact at all, and where must it stay out? | 2026-11-09 | Same |
 | Which claim does the production identity provider carry for the account name (`OIDC_BINDING_CLAIM`)? | 2026-11-09 | Same |
 | Are people who should not be able to sign in pushed at all? Everyone pushed gets an account. | 2026-11-09 | Same |
-| Should `Actor` in protocol 2 carry the person's `externalId` or `userName`, so a connector can map the person without Clew's id? | 2026-11-09 | Same |
+| Should `Actor` in protocol 2 carry the person's `externalId` or `userName`, so a connector can map the person without Clew's id? The one real product read so far knows a person by the lowercased email claim and does not read `preferred_username`, so neither candidate matches it. | 2026-11-09, evidence 2026-11-11 | Same; [the key in Frappe HR](../reviews/2026-11-11-frappe-hr-appraisals-against-the-talks-profile.md#the-key) |
+| What must a system offer before it is connected? Discussed, not decided: people reach it through the installation's identity provider; the account is the same person as in Clew's directory, by a key both sides hold, created by provisioning and never on first call; the system itself enforces what each person may see; access per person is either the identity provider's token accepted for the system's own audience or a credential the system issues per user; a system with only a service account is fit for aggregate reads alone. | 2026-11-11 | [Frappe HR against the talks profile](../reviews/2026-11-11-frappe-hr-appraisals-against-the-talks-profile.md#what-it-means-for-the-two-tracks) |
 | How far may the assistant act alone, and who sets the level? The direction is chosen, the governance is not designed. | 2026-11-10 | [D104](../decisions/D104-the-model-does-the-work-a-floor-holds-without-it-and-the-assistant-may-act-alone-within-limits.md) |
 
 ## Records whose status needs a look
@@ -44,6 +45,16 @@ changes: [D18](../decisions/D18-errands-are-a-clew-owned-passthrough-domain.md),
 holds new surface until the first real integration works end to end. What remains is listed in the
 [Nextcloud Approval entry](../reference/status/connectors.md#nextcloud-approval) of the implementation status; it is not
 repeated here.
+
+One condition needs the product owner's word (stated 2026-11-11). D101 item 2 builds the Nextcloud loop a second time
+as an MCP server "reached through the gateway in `apps/server/src/mcp/`", and item 5 lifts the freeze only when the
+loop works in both builds and their comparison is a review. That gateway left the code on 2026-11-11 with the external
+MCP lane ([closing note](../reviews/2026-11-11-external-mcp-chat-services-exploration.md)). Does the freeze still require
+the MCP build? If it does, the gateway is rebuilt or restored from history when that build starts. D101 item 3, a
+vendor's own MCP service tested on the second source, hangs on the same answer, and a second read of that source could
+not confirm its MCP endpoint, PKCE or refresh tokens
+([not established](../reviews/2026-11-11-frappe-hr-appraisals-against-the-talks-profile.md#not-established)). D101 is
+unchanged until the owner decides.
 
 ## Accessibility
 
