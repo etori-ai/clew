@@ -123,6 +123,8 @@ export class MockApi {
   mutationFails = false;
   sessionDelay = 0;
   signedIn = true;
+  /** The development sign-in (D6): the personas the sign-in page lists, or undefined for the server's 404 when it is off. */
+  devAccounts: { userName: string; name: string }[] | undefined = undefined;
   /** The session says the person may administer connectors (D23). Off by default so the other suites see the ordinary page. */
   admin = false;
   /** Användare (D85): the people and the group-capability rows the users page shows; the rows change with the page's actions. */
@@ -266,6 +268,8 @@ export class MockApi {
         : route.fulfill({ status: 401, json: { error: 'Ingen session' } });
     }
     if (path === '/auth/activity') return json({ expiresAt: session.expiresAt });
+    if (path === '/auth/dev')
+      return this.devAccounts ? json({ accounts: this.devAccounts }) : route.fulfill({ status: 404, body: '' });
     // The installation's appearance (D98), public: the theme and the logo's address, and the logo itself.
     if (path === '/appearance') {
       const { revision, theme, logo } = this.appearance;

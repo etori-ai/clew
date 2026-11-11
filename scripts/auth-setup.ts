@@ -105,7 +105,8 @@ async function client(id: string, origins: string[], backchannel: string) {
     publicClient: false,
     standardFlowEnabled: true,
     implicitFlowEnabled: false,
-    directAccessGrantsEnabled: false,
+    // The development sign-in (D6) asks for a persona's tokens with its test password. This realm is development only.
+    directAccessGrantsEnabled: true,
     serviceAccountsEnabled: false,
     redirectUris: origins.map(o => o + '/api/auth/callback'),
     webOrigins: [],
@@ -319,7 +320,15 @@ try {
     MASTER_KEY: master,
     AUTH_LOCAL_HTTP: 'true',
   };
-  await writeSettings(localFile, settings);
+  // The development sign-in (D6): one click per persona on the sign-in page. Set AUTH_DEV_LOGIN=false to keep the form.
+  const devAccounts = developmentDirectory.people
+    .filter(p => p.login && testPasswords['TEST_' + p.userName.toUpperCase() + '_PASSWORD'])
+    .map(p => p.userName + ':' + testPasswords['TEST_' + p.userName.toUpperCase() + '_PASSWORD']);
+  await writeSettings(localFile, {
+    ...settings,
+    AUTH_DEV_LOGIN: existing.AUTH_DEV_LOGIN ?? 'true',
+    AUTH_DEV_ACCOUNTS: devAccounts.join(','),
+  });
   await writeSettings(testFile, { ...settings, ...testPasswords });
   await pruneAuthentication();
   console.log(

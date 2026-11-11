@@ -54,6 +54,6 @@ One page of [implementation status](../status.md). Each entry says what works in
 
 **Works in this checkout.** Design intent only; SCIM moved to the Users and identity row.
 
-**Limits and pending work.** No supported Clew MCP server or enterprise ID-JAG flow is established in this checkout. Local dev-login form is also unbuilt.
+**Limits and pending work.** No supported Clew MCP server or enterprise ID-JAG flow is established in this checkout. The development sign-in ([D6](../../decisions/D06-dev-login-local-only.md), amended 2026-11-11) is built as a list of personas on the sign-in page, through the local Keycloak.
 
 **Evidence.** [Identity design](../../architecture/identity.md), [D5](../../decisions/D05-oidc-and-oauth-only-identification-path.md), [D6](../../decisions/D06-dev-login-local-only.md)

@@ -229,7 +229,7 @@
       "number": 6,
       "path": "docs/decisions/D06-dev-login-local-only.md",
       "title": "D6 · Dev login with username and password, local only",
-      "status": "accepted, not built yet",
+      "status": "proposed, amended 2026-11-11 by Oliver Borgström and built: the sign-in page lists the development personas and signs one in with a click, through the local Keycloak, instead of a form that bypasses Keycloak",
       "date": "2026-11-03",
       "area": "identity"
     },
@@ -1699,7 +1699,9 @@
       "path": "docs/decisions/D06-dev-login-local-only.md",
       "title": "D6 · Dev login with username and password, local only",
       "category": "decision-history",
-      "headings": []
+      "headings": [
+        "Amendment, 2026-11-11"
+      ]
     },
     {
       "path": "docs/decisions/D07-bun-is-the-server-runtime.md",

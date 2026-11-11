@@ -6,6 +6,7 @@ import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import { httpInstrumentationMiddleware } from '@hono/otel';
 import { authRoutes } from './routes/auth';
+import { checkDevLogin } from './auth';
 import { api } from './routes/api';
 import { adminRoutes } from './routes/admin';
 import { headerRoutes } from './routes/header';
@@ -44,6 +45,9 @@ for (const file of ['.env.local']) {
     /* absent in CI */
   }
 }
+
+// The development sign-in (D6) is refused outright anywhere but the local stack.
+checkDevLogin();
 
 const app = new Hono();
 // One server span per request when export is on (D91). The URL on the span is the path alone: the sign-in callback's

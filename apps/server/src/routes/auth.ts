@@ -8,6 +8,8 @@ import {
   beginLogin,
   completeLogin,
   cookieOptions,
+  devLogin,
+  listDevAccounts,
   logout,
   receiveLogout,
   verifyMutation,
@@ -35,6 +37,27 @@ authRoutes.get('/callback', async c => {
   c.header('Referrer-Policy', 'no-referrer');
   try {
     const result = await completeLogin(new URL(c.req.url), cookie);
+    const old = getCookie(c, SESSION_COOKIE);
+    if (old) await revokeSession(tokenDigest(old), 'replaced');
+    setCookie(c, SESSION_COOKIE, result.cookie, { ...cookieOptions(), maxAge: 8 * 3600 });
+    return c.redirect(result.returnTo, 303);
+  } catch (error) {
+    return c.redirect('/login?reason=' + (error instanceof AuthError ? error.code : 'invalid'), 303);
+  }
+});
+// Development sign-in (D6): the personas the sign-in page lists, and one click as one of them. 404 when it is off.
+authRoutes.get('/dev', async c => {
+  const accounts = await listDevAccounts();
+  if (!accounts) return c.body(null, 404);
+  c.header('Cache-Control', 'no-store');
+  return c.json({ accounts });
+});
+authRoutes.get('/dev/login', async c => {
+  if (c.req.header('sec-fetch-site') === 'cross-site') return c.body(null, 403);
+  if (!(await listDevAccounts())) return c.body(null, 404);
+  c.header('Cache-Control', 'no-store');
+  try {
+    const result = await devLogin(c.req.query('as') ?? '', c.req.query('returnTo') ?? null);
     const old = getCookie(c, SESSION_COOKIE);
     if (old) await revokeSession(tokenDigest(old), 'replaced');
     setCookie(c, SESSION_COOKIE, result.cookie, { ...cookieOptions(), maxAge: 8 * 3600 });

@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**106 in force**: 100 accepted and 6 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 9 proposed and not decided. 5 no longer in force.
+**105 in force**: 99 accepted and 6 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 10 proposed and not decided. 5 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -57,7 +57,6 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | Decision | Date | Standing | Read with |
 |---|---|---|---|
 | [D5 · OIDC and OAuth 2.1 with JWT access tokens are the only identification path](D05-oidc-and-oauth-only-identification-path.md) | 2026-11-03 | accepted |  |
-| [D6 · Dev login with username and password, local only](D06-dev-login-local-only.md) | 2026-11-03 | accepted |  |
 | [D44 · Authorized reads and Clew-signed connector authority](D44-authorized-reads-and-clew-signed-connector-authority.md) | 2026-11-05 | accepted |  |
 | [D62 · Users are core entities, not connected systems](D62-users-are-core-entities-not-connected-systems.md) | 2026-11-06 | accepted |  |
 | [D68 · People are pushed into Clew through standard SCIM, and mapping happens outside Clew](D68-people-are-pushed-into-clew-through-standard-scim.md) | 2026-11-06 | accepted | [D85](README.md), [D99](README.md), [D109](D109-a-provisioner-sends-a-change-when-it-happens-and-reconciles-the-whole-source-daily.md) |
@@ -143,6 +142,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 
 | Decision | Area | Date | Read with |
 |---|---|---|---|
+| [D6 · Dev login with username and password, local only](D06-dev-login-local-only.md) | identity | 2026-11-03 |  |
 | [D18 · Errands are a Clew-owned pass-through domain; SupportManagement is the first adapter](D18-errands-are-a-clew-owned-passthrough-domain.md) | integrations | 2026-11-04 | [D35](D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md), [D89](D89-an-errand-connector-acts-as-the-person-and-the-case-system-decides-access.md) |
 | [D19 · Change notification is a Clew-owned contract: payload-free CloudEvents over HTTP](D19-change-notification-is-a-clew-owned-contract.md) | integrations | 2026-11-04 |  |
 | [D26 · Questions answered from documents are a search fan-out with citations, not a knowledge module](D26-questions-over-documents-are-search-not-knowledge.md) | product | 2026-11-04 |  |

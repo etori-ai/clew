@@ -111,6 +111,6 @@ See [D75](../decisions/D75-source-snapshots-retain-the-authority-that-produced-t
 - Holding or applying a `protected` membership: the key is refused at the boundary ([D93](../decisions/D93-the-protected-key-is-refused-at-the-scim-boundary.md)) until D68's open question, whether Clew may hold that fact at all, is answered.
 - A real provisioner against a real source, and a real identity provider's claim for `OIDC_BINDING_CLAIM`; the development stack's Keycloak and synthetic directory are the only ones that have run.
 - A stable key for the acting person on the wire: protocol 2's `Actor` carries `userName`, which a provisioner can rename, and not `externalId`. Which one is the person's key is open in D97.
-- Local dev-login without the IdP ([D6](../decisions/D06-dev-login-local-only.md)), a public MCP OAuth surface and cross-domain ID-JAG exchange ([D5](../decisions/D05-oidc-and-oauth-only-identification-path.md)).
+- Signing in without the IdP: the development sign-in ([D6](../decisions/D06-dev-login-local-only.md), amended) lists the personas but still goes through the local Keycloak. Also a public MCP OAuth surface and cross-domain ID-JAG exchange ([D5](../decisions/D05-oidc-and-oauth-only-identification-path.md)).
 
 The early rationale is in the [identity decisions](../decisions/D05-oidc-and-oauth-only-identification-path.md) and the [SCIM review](../reviews/2026-11-06-users-groups-roles-and-scim.md); use the [status matrix](../reference/status.md) for support.
