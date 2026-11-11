@@ -1865,7 +1865,7 @@ export interface UsersAdminOverview {
   units: Array<{ id: string; label: string; parentLabel: string | null }>;
   /**
    * The clients that push people into this organisation (D68) and when each was last heard from. `silent` is the
-   * server's reading of that time: never seen, or not for two days, where a push is due daily.
+   * server's reading of that time: never seen, or not for two days, where a reconciliation is due daily (D109).
    */
   provisioners: ProvisionerAdminRow[];
 }

@@ -841,7 +841,7 @@
       "number": 68,
       "path": "docs/decisions/D68-people-are-pushed-into-clew-through-standard-scim.md",
       "title": "D68 · People are pushed into Clew through standard SCIM, and mapping happens outside Clew",
-      "status": "accepted, built 2026-11-09 (the SCIM server, the derivation, the synthetic provisioner, binding at first login, Administration › Användare); the group keys are proposed until a real provisioner has used them; item 2 amended by D85 (2026-11-09): capabilities are mapped from groups in Clew, units and manager roles keep these keys; amended by D99 (2026-11-10): units form a tree, a `unit:` group names the unit above it and the provisioner no longer flattens a hierarchy",
+      "status": "accepted, built 2026-11-09 (the SCIM server, the derivation, the synthetic provisioner, binding at first login, Administration › Användare); the group keys are proposed until a real provisioner has used them; item 2 amended by D85 (2026-11-09): capabilities are mapped from groups in Clew, units and manager roles keep these keys; amended by D99 (2026-11-10): units form a tree, a `unit:` group names the unit above it and the provisioner no longer flattens a hierarchy; item 4 amended by D109 (2026-11-11): a provisioner sends a change when it happens, and the daily run is the reconciliation under it",
       "date": "2026-11-06",
       "area": "identity"
     },
@@ -1249,6 +1249,15 @@
       "status": "proposed, and built against the freeze on new surface: [D101](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) (the first real integration) item 4 allows no new owned domain, administration page or rail destination until its loop works, and this record is all three. It was begun on a branch cut before that freeze reached `main`, continued in the same working session after the freeze was pointed out, and brought into `main` on 2026-11-11 on that session's instruction, with the question whether it may pass the freeze asked and not answered by the product owner. The module is switched off until an administrator enables it. Whether it stays on `main` is an open question. The direction below was set in that working session on 2026-11-11 and is not yet confirmed by the product owner (decided in the session: a core module shipped with Clew and switched on per installation, competences and certificates in it, a position on the person, the catalogue with the main administrator, search for HR and staffing, a person's own registration approved by their manager, erasure a period after deactivation, the matrix as a page of its own, a review by an HR practitioner before real data); the items marked \"proposed\" are the author's and were not discussed, the items under \"Open\" are not decided; built 2026-11-11 on synthetic data: the catalogue with its page, a manager's registration, the computed status, the reads, the figure, the scan, erasure and export (see \"As built\"); positions, requirements, sources and a person's own registration not built",
       "date": "2026-11-11",
       "area": "product, identity, integrations"
+    },
+    {
+      "key": "D109-a-provisioner-sends-a-change-when-it-happens-and-reconciles-the-whole-source-daily",
+      "number": 109,
+      "path": "docs/decisions/D109-a-provisioner-sends-a-change-when-it-happens-and-reconciles-the-whole-source-daily.md",
+      "title": "D109 · A provisioner sends a change when it happens, and reconciles the whole source at least daily",
+      "status": "provisional (product owner, 2026-11-11: with SCIM a change is pushed when it happens, and once a day is not the rule); accepted once a provisioner outside the team sends its changes as they happen; the page, the guide and the comments say it, and the example provisioner still only reconciles",
+      "date": "2026-11-11",
+      "area": "identity"
     }
   ],
   "documents": [
@@ -1779,6 +1788,12 @@
     {
       "path": "docs/decisions/D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md",
       "title": "D108 · Competence is an owned domain: one holding for competences and certificates, typed against a catalogue",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D109-a-provisioner-sends-a-change-when-it-happens-and-reconciles-the-whole-source-daily.md",
+      "title": "D109 · A provisioner sends a change when it happens, and reconciles the whole source at least daily",
       "category": "decision-history",
       "headings": []
     },
@@ -2542,7 +2557,8 @@
       "category": "integrator-guide",
       "headings": [
         "What Clew expects",
-        "What a provisioner does on every run",
+        "What a provisioner does when something changes",
+        "What a provisioner does on every reconciliation",
         "Checking a push",
         "The example"
       ]

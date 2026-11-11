@@ -84,7 +84,7 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
     const memberships = await tx.memberships(personId),
       rules = await tx.groupCapabilities();
     // Every unit the memberships name, as the unit table knows it: the label of a managed unit without a `unit:` group,
-    // and the comparison that lets an unchanged derivation write nothing (a daily push replays every person).
+    // and the comparison that lets an unchanged derivation write nothing (a reconciliation replays every person).
     const named = [...new Set(memberships.flatMap(m => unitOfKey(m.externalId) ?? []))];
     const knownLabels = named.length ? await tx.unitLabels(named) : {};
     // A unit the person leads without being placed on it is named by its `unit:` group, which they are no member of.
@@ -348,7 +348,7 @@ export function scimUsecases(deps: {
   ) {
     assertAcceptedKey(fields);
     assertAcceptedParent(fields);
-    // The tree is held only by a write that changes it: a daily push replays every unit and moves none.
+    // The tree is held only by a write that changes it: a reconciliation replays every unit and moves none.
     const was = unitGroupOf(current.externalId),
       moved = current.parentUnitId !== fields.parent,
       leaves = was !== undefined && was !== unitGroupOf(fields.externalId);
@@ -635,8 +635,9 @@ export type ScimUsecases = ReturnType<typeof scimUsecases>;
  */
 export const USERS_ADMIN_CAPABILITY: Capability = 'admin.users';
 /**
- * D68 item 4 asks for a push at least daily, because access ends when the push arrives. A provisioner not seen for two
- * days has missed one with a day's margin, and the page says so.
+ * D109: a provisioner sends a change when it happens and reconciles the whole source at least daily, so it is heard
+ * from daily whatever else it sends. One not seen for two days has missed a reconciliation with a day's margin, and
+ * the page says so.
  */
 const PROVISIONER_SILENT_MS = 48 * 60 * 60 * 1000;
 export function usersAdminUsecases(deps: {
