@@ -59,6 +59,25 @@ test('approved input and source evidence are sealed and survive a new adapter in
   const restarted = postgresExecutionStore(sealer, testDurable);
   expect(await restarted.read(e.id)).toEqual(e);
 });
+test('the session bindings of a delegated write are sealed to their row and role and survive a new adapter instance (D26)', async () => {
+  const w = await make(),
+    e = { ...executionRecord(w.personId, w.personId + '-sealed-sessions'), approvingSession: 'synthetic-digest-a' };
+  await w.store.transaction(tx => tx.insert(e));
+  await w.store.transaction(tx => tx.keepCheckingSession(e.id, 'synthetic-digest-b'));
+  const [raw] = await database().select().from(schema.executions).where(eq(schema.executions.id, e.id));
+  expect(raw!.approvingSession).not.toContain('synthetic-digest');
+  expect(raw!.checkingSession).not.toContain('synthetic-digest');
+  expect(await postgresExecutionStore(sealer, testDurable).read(e.id)).toEqual({
+    ...e,
+    checkingSession: 'synthetic-digest-b',
+  });
+  // A sealed binding copied onto another row or role does not open there.
+  await database()
+    .update(schema.executions)
+    .set({ checkingSession: raw!.approvingSession })
+    .where(eq(schema.executions.id, e.id));
+  await expect(w.store.read(e.id)).rejects.toThrow();
+});
 test("a job's steps are sealed and survive a new adapter instance", async () => {
   const w = await make(),
     e = executionRecord(w.personId, w.personId + '-job-step'),

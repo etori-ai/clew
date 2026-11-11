@@ -10,13 +10,13 @@ The manifest field by field, with examples and the rules between fields, is [man
 
 - [hello manifest](hello.manifest.json), from [connector.mjs](../../connectors/hello/connector.mjs): 5 capabilities; scan enabled.
 - [phonebook manifest](phonebook.manifest.json), from [connector.mjs](../../connectors/phonebook/connector.mjs): 5 capabilities; no scan.
-- [hr manifest](hr.manifest.json), from [connector.mjs](../../connectors/hr/connector.mjs): 15 capabilities; scan enabled.
+- [hr manifest](hr.manifest.json), from [connector.mjs](../../connectors/hr/connector.mjs): 17 capabilities; scan enabled.
 - [finance manifest](finance.manifest.json), from [connector.mjs](../../connectors/finance/connector.mjs): 14 capabilities; scan enabled.
 - [incidents manifest](incidents.manifest.json), from [connector.mjs](../../connectors/incidents/connector.mjs): 4 capabilities; scan enabled.
 - [communication manifest](communication.manifest.json), from [connector.mjs](../../connectors/communication/connector.mjs): 3 capabilities; scan enabled.
 - [timesheet manifest](timesheet.manifest.json), from [connector.mjs](../../connectors/timesheet/connector.mjs): 5 capabilities; no scan.
 - [payroll manifest](payroll.manifest.json), from [connector.mjs](../../connectors/payroll/connector.mjs): 3 capabilities; no scan.
-- [appraisals manifest](appraisals.manifest.json), from [connector.mjs](../../connectors/appraisals/connector.mjs): 3 capabilities; no scan.
+- [appraisals manifest](appraisals.manifest.json), from [connector.mjs](../../connectors/appraisals/connector.mjs): 4 capabilities; no scan.
 
 These JSON files are complete, generated inputs, not abbreviated pseudocode. They contain no credentials. The [signed walkthrough](../../scripts/docs-smoke.ts) runs the phone book fixture; the [quickstart](../guides/creating-a-connector.md) explains how to adapt it.
 
@@ -54,6 +54,7 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 | `view` | no | object, one of `kind`: "document" / "metrics" / "activity" / "series" / "record" / "table" / "list" / "detail" / "text" | How Clew draws the output: `table` and `list` over an array of records (`rows`, default "rows"; `title` names the field that names a row and is one of `fields`; `ref` the field holding the connector's ref), `detail` over one record, `text` over one Markdown string. |
 | `review` | no | string | On an execute: the same-connector document or record read taking {ref}, whose version-bound evidence is required on approval. |
 | `menu` | no | object | How this capability's view is named and marked when an administrator puts it in Clew's menu under Verktyg (D40). Only on a read that declares a view and needs no input. |
+| `about` | no | object | What the rows concern (D97). A `read` takes `{ keys }` (an array of at most 200 strings, required) and answers `rows` (or its view's rows), one per key it knows, each with a string `key` it was asked with; a key outside the caller's scope is answered as no row, never as a refusal. It declares a `table` or `list` view, is never a tool (`model: false`), and may answer `heading` and `note`, two strings beside the rows. A `propose` or `execute` names in `param` the input property that takes one key. Clew decides where it shows: an action in the entity's menu, a read as a section on the opened entity, a `warn` or `alert` tone as a mark on its row, a table or list as a lens an administrator may offer. |
 | `follows` | no | array of string | For a `propose` (D55): the fact kinds it answers for. Input is a FactEnvelope, output a FollowResponse; steps name this connector only. |
 | `creates` | no | string | The fact kind this `propose` or `execute` brings about (D55); must be one of the manifest's `facts`. |
 
@@ -78,6 +79,7 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 | `unitId` | yes | string |  |
 | `unitLabel` | yes | string |  |
 | `role` | yes | "manager" / "employee" |  |
+| `userName` | no | string | The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one. |
 
 ## CallRequest
 

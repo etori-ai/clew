@@ -2,7 +2,7 @@
 # (Administration › Anslutna system, or `bun scripts/connector-add.ts` until that page exists), so nothing on
 # Clew's container names it (D23). Replace `hello` with your connector.
 #
-# Clew's own image is not published yet (HANDOVER next steps); until then run the connector next to the devcontainer:
+# Clew's own image is not published yet; until then run the connector next to the devcontainer:
 #   HELLO_SECRET=<16+ characters> docker compose -f connectors/hello/compose.yaml up hello
 # and register it from inside the app container with the same secret:
 #   docker exec -w /workspace clew-app-1 bun scripts/connector-add.ts hello http://host.docker.internal:4010 --secret <the secret> --enable

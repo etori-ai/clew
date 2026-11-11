@@ -182,6 +182,13 @@ test.describe('the panel beside the page', () => {
     const panel = page.getByRole('complementary', { name: 'Kort' });
     const aside = page.getByRole('complementary', { name: 'Bredvid' });
     const work = page.getByRole('tab', { name: /^Behöver dig/ });
+    // The page never scrolls sideways (1.4.10): the folded panel's handle once stood on the window's edge with half of
+    // its grab zone past it, which made the shell's main area 8 px wider inside than it shows. The handle is there
+    // only while the panel is shown.
+    const sideways = () => page.getByRole('main').evaluate(el => el.scrollWidth - el.clientWidth);
+    const handle = page.getByRole('separator', { name: 'Ändra panelens bredd' });
+    expect(await sideways()).toBe(0);
+    await expect(handle).toHaveCount(0);
     // At rest the panel is folded away (D72, revised 2026-11-10): no region for what was opened, the day beside the
     // day's work, and the one button in the page's corner saying the way to the panel.
     await expect(panel).toHaveCount(0);
@@ -203,10 +210,14 @@ test.describe('the panel beside the page', () => {
     await expect(empty.getByRole('heading', { name: 'Inget är öppet bredvid sidan' })).toBeVisible();
     await expect(empty.locator('[aria-level="2"]').filter({ hasText: 'Öppet bredvid' })).toBeFocused();
     await expect(page).toHaveURL(/\/$/);
+    await expect(handle).toBeVisible();
+    expect(await sideways()).toBe(0);
     await expectNoAxeViolations(page);
     await page.keyboard.press('Escape');
     await expect(empty).toHaveCount(0);
     await expect(atRest).toBeFocused();
+    await expect(handle).toHaveCount(0);
+    expect(await sideways()).toBe(0);
     await expect.poll(besideWork).toBe(true);
     // A card opened brings the panel with it alone; the day stays on the page, under the day's work at this width (A2).
     await page.getByRole('link', { name: 'Attestera 3 fakturor, 48 200 kr', exact: true }).click();
@@ -226,6 +237,8 @@ test.describe('the panel beside the page', () => {
     const foldBox = (await fold.boundingBox())!;
     expect(foldBox.y + foldBox.height).toBeLessThanOrEqual((await page.locator('#hem').boundingBox())!.y);
     expect(await fold.evaluate(el => el.closest(':popover-open') !== null)).toBe(true);
+    await expect(handle).toBeVisible();
+    expect(await sideways()).toBe(0);
     await fold.click();
     // Folding hides and nothing more (D63 item 14, revised): the address, the row and the box keep the card, and the
     // focus stays on the button, which now says the way back, at the window's edge.
@@ -236,11 +249,13 @@ test.describe('the panel beside the page', () => {
     const show = page.getByRole('button', { name: 'Visa panelen' });
     await expect(show).toBeFocused();
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Panelen är ihopfälld'));
-    // The panel slides closed (Astryx 0.7.12), so the button reaches the edge when the motion has ended.
+    // The button stands at the window's edge with the folded panel, the handle is gone and nothing scrolls sideways.
     await expect
       .poll(async () => (await show.boundingBox())!.x + (await show.boundingBox())!.width)
       .toBeGreaterThan(1440 - 40);
     expect((await show.boundingBox())!.x + (await show.boundingBox())!.width).toBeLessThanOrEqual(1440 - 18);
+    await expect(handle).toHaveCount(0);
+    expect(await sideways()).toBe(0);
     // Showing it again brings the card back with the focus on its heading.
     await show.click();
     await expect(panel.locator('#card-fakturor').getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
@@ -443,5 +458,109 @@ test.describe('asking from a page on a narrower screen', () => {
     await expect(answer(page).first()).toBeVisible();
     // Neither question named a conversation to continue (the mock answers both under one id, so both turns are drawn).
     expect(api.asked.map(a => a.conversationId ?? null)).toEqual([null, null]);
+  });
+});
+
+/**
+ * D97 item 6, artboards M and N: a card row that names a person is a link to them, in the source's own words. From Hem
+ * the person opens as their page with Hem's address (the card still open beside it) as the way back.
+ */
+test.describe('a card row that names a person', () => {
+  test.use({ viewport: wide });
+
+  test('the name is a link in the order the card is read, it leads to the person, and Back returns to the card', async ({
+    page,
+    api,
+  }) => {
+    api.threads = api.threads.map(t =>
+      t.id === 'omtanke'
+        ? {
+            ...t,
+            items: [
+              {
+                ref: 'hr:person:anna',
+                label: 'Anna Lindqvist',
+                detail: 'Tre sjukperioder sedan juni',
+                selectable: false,
+                selected: false,
+                subject: { entity: 'person', key: 'anna' },
+              },
+            ],
+          }
+        : t,
+    );
+    await open(page, '/?card=omtanke');
+    const card = page.getByRole('complementary', { name: 'Kort' }).locator('#card-omtanke');
+    const name = card.getByRole('link', { name: 'Anna Lindqvist', exact: true });
+    await expect(name).toHaveAttribute('href', '/people/anna?from=%2F%3Fcard%3Domtanke');
+    await expect(card.getByText('Tre sjukperioder sedan juni')).toBeVisible();
+    await expectNoAxeViolations(page);
+    // From the card's heading the name comes before the card's next step.
+    await card.getByRole('heading', { name: 'Omtankesamtal med Anna Lindqvist' }).focus();
+    const order: string[] = [];
+    for (let i = 0; i < 12 && !order.includes('Boka samtalet'); i++) {
+      await page.keyboard.press('Tab');
+      order.push(await page.evaluate(() => document.activeElement?.textContent?.trim() ?? ''));
+    }
+    expect(order.indexOf('Anna Lindqvist')).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf('Anna Lindqvist')).toBeLessThan(order.indexOf('Boka samtalet'));
+    await name.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/people\/anna\?from=%2F%3Fcard%3Domtanke$/);
+    await expect(heading(page, 1, 'Anna Lindqvist')).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL(/\/\?card=omtanke$/);
+    await expect(page.getByRole('complementary', { name: 'Kort' }).locator('#card-omtanke')).toBeVisible();
+  });
+
+  test('a row the person ticks keeps its checkbox, named by the row, and the name inside it is a link of its own', async ({
+    page,
+    api,
+  }) => {
+    const base = api.threads.find(t => t.id === 'fakturor')!;
+    api.threads = [
+      {
+        ...base,
+        id: 'sjuk',
+        topic: 'sjuk',
+        title: 'Sjukanmälan att godkänna',
+        connector: 'hr',
+        area: 'personal',
+        summary: 'Personalsystemet tog emot en sjukanmälan.',
+        items: [
+          {
+            ref: 'hr:sick:1',
+            label: 'Erik Sandström',
+            detail: 'sjuk 10–11 nov · 2 pass berörs',
+            selectable: true,
+            selected: true,
+            subject: { entity: 'person', key: 'erik' },
+          },
+        ],
+        actions: [
+          {
+            id: 'approve',
+            label: 'Godkänn',
+            capability: 'hr.approveSick',
+            kind: 'execute',
+            role: 'primary',
+            usesItems: true,
+          },
+        ],
+      },
+      ...api.threads,
+    ];
+    await open(page, '/?card=sjuk');
+    const card = page.getByRole('complementary', { name: 'Kort' }).locator('#card-sjuk');
+    const box = card.getByRole('checkbox', { name: /Erik Sandström/ });
+    await expect(box).toBeChecked();
+    const name = card.getByRole('link', { name: 'Erik Sandström', exact: true });
+    await expect(name).toHaveAttribute('href', '/people/erik?from=%2F%3Fcard%3Dsjuk');
+    await expectNoAxeViolations(page);
+    // Pressing the link leads away; it does not tick the row.
+    await name.click();
+    await expect(page).toHaveURL(/\/people\/erik\?/);
+    await page.goBack();
+    await expect(card.getByRole('checkbox', { name: /Erik Sandström/ })).toBeChecked();
   });
 });

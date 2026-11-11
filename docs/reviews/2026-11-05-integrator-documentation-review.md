@@ -20,7 +20,7 @@ Scope: repository documentation, connector READMEs, the full decision-file inven
 
 Integrator material lives in docs/overview.md, guides/, reference/ and generated/. The small llms.txt entry and generated docs/context.json give coding agents a scoped reading path, source map and complete document/decision inventory. The original decision files and dated review bodies retain their paths and recorded intent. The old protocol path redirects readers to the current reference. Architecture designs retain their content with explicit status notes; they are not part of the default connector recipe.
 
-The [vision](../vision.md) remains product direction, [personas](../personas.md) remains source-derived use cases, and [HANDOVER.md](../../HANDOVER.md) remains session history. A broken imported-persona link is now identified as a reference to the source repository rather than a missing Clew page.
+The [vision](../vision.md) remains product direction, [personas](../personas.md) remains source-derived use cases, and [HANDOVER.md](../history/README.md) remains session history. A broken imported-persona link is now identified as a reference to the source repository rather than a missing Clew page.
 
 ## Maintenance contract
 

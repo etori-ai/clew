@@ -1,0 +1,23 @@
+# The Nextcloud Approval connector on its own, next to a Clew and a Nextcloud it can reach. An administrator registers it in
+# Clew (Administration › Anslutna system, or `bun scripts/connector-add.ts`), so nothing on Clew's container names it (D23).
+# In the development stack it is the `nextcloud-approval` service of .devcontainer/compose.yaml instead (README.md).
+#
+#   NCA_SECRET=<16+ characters> CLEW_URL=https://clew.example NEXTCLOUD_URL=https://moln.example \
+#     docker compose -f connectors/nextcloud-approval/compose.yaml up nextcloud-approval
+#
+# Without NEXTCLOUD_ADAPTER=nextcloud the connector serves the in-memory stand-in in approvals.mjs. The connector holds no
+# credential for Nextcloud: every call carries the person's own token, which Clew exchanges for NEXTCLOUD_AUDIENCE.
+services:
+  nextcloud-approval:
+    build: .
+    environment:
+      CLEW_CONNECTOR_SECRET: ${NCA_SECRET:?set NCA_SECRET to a shared secret of 16+ characters}
+      CLEW_URL: ${CLEW_URL:?set CLEW_URL to Clew's base URL, https outside local development}
+      NEXTCLOUD_ADAPTER: ${NEXTCLOUD_ADAPTER:-fixture}
+      NEXTCLOUD_URL: ${NEXTCLOUD_URL:-}
+      NEXTCLOUD_ALLOW_HTTP: ${NEXTCLOUD_ALLOW_HTTP:-}
+      NEXTCLOUD_AUDIENCE: ${NEXTCLOUD_AUDIENCE:-}
+      NEXTCLOUD_SOURCE_LABEL: ${NEXTCLOUD_SOURCE_LABEL:-}
+      NEXTCLOUD_PUBLIC_URL: ${NEXTCLOUD_PUBLIC_URL:-}
+    ports:
+      - "127.0.0.1:4052:4052"

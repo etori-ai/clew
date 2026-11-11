@@ -37,7 +37,7 @@ const clewBaseTheme = defineTheme({
     '--color-error': ['#c9303a', red.dark[50]],
     '--color-on-error': white,
   },
-  // Astryx's own control sizes are drawn for a mouse. Under a finger every size reaches HANDOVER §6's 44 px (WCAG 2.5.5).
+  // Astryx's own control sizes are drawn for a mouse. Under a finger every size reaches the 44 px of docs/history/handover.md §6 (WCAG 2.5.5).
   // By the pointer, not the width: a narrow window on a computer keeps its compact controls, a tablet does not.
   adaptations: {
     rules: [

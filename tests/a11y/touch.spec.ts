@@ -33,7 +33,7 @@ const shortTargets = (page: Page) =>
       .filter(target => target.height > 1 && target.height < 44),
   );
 
-test.describe('a finger reaches every control at 44 px (HANDOVER §6)', () => {
+test.describe('a finger reaches every control at 44 px (docs/history/handover.md §6)', () => {
   test.use({ viewport: phone, hasTouch: true, isMobile: true });
 
   test("the calendar's head stays two rows at that size", async ({ page, api: _ }) => {

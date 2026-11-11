@@ -30,6 +30,61 @@ const broken = (base: unknown, change: (m: any) => void) => {
 };
 const transport = { url: 'http://x', assert: async () => 'x' };
 const ajv = addFormats(new Ajv({ strict: false }));
+/** A read asked with a batch of keys and an action that takes one (D97), as a manifest declares them. */
+const keysInput = {
+  type: 'object',
+  properties: { keys: { type: 'array', items: { type: 'string' }, maxItems: 200 } },
+  required: ['keys'],
+};
+const aboutManifest = {
+  protocol: 2,
+  id: 'hr',
+  kind: 'passthrough',
+  source: 'Personalsystemet',
+  scan: false,
+  areas: [],
+  capabilities: [
+    {
+      name: 'hr.employment',
+      kind: 'read',
+      title: 'Anställning',
+      description: 'Anställningen per person.',
+      input: keysInput,
+      output: {
+        type: 'object',
+        properties: {
+          rows: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: { key: { type: 'string' }, title: { type: 'string' } },
+              required: ['key'],
+            },
+          },
+        },
+        required: ['rows'],
+      },
+      model: false,
+      scope: {},
+      about: HANDWRITTEN_EXAMPLES['capabilities[].about'],
+      view: { kind: 'list', title: 'title', fields: [{ key: 'title', label: 'Befattning' }] },
+    },
+    {
+      name: 'hr.bookTalk',
+      kind: 'propose',
+      title: 'Boka samtal',
+      description: 'Föreslår en tid för ett samtal.',
+      input: { type: 'object', properties: { person: { type: 'string' } }, required: ['person'] },
+      output: {},
+      model: false,
+      scope: { roles: ['manager'] },
+      about: {
+        entity: HANDWRITTEN_EXAMPLES['capabilities[].about.entity'],
+        param: HANDWRITTEN_EXAMPLES['capabilities[].about.param'],
+      },
+    },
+  ],
+};
 
 describe('the field list', () => {
   test('covers the whole manifest and every field has a description', () => {
@@ -180,7 +235,10 @@ describe('the field list', () => {
             properties: {
               rows: {
                 type: 'array',
-                items: { type: 'object', properties: { name: { type: 'string' }, state: { type: 'string' } } },
+                items: {
+                  type: 'object',
+                  properties: { name: { type: 'string' }, state: { type: 'string' }, person: { type: 'string' } },
+                },
               },
             },
           },
@@ -189,6 +247,8 @@ describe('the field list', () => {
           view: {
             kind: 'table',
             title: 'name',
+            // The person a case is about (D97 item 6): the case's name links to them.
+            subject: HANDWRITTEN_EXAMPLES['capabilities[].view.subject'],
             fields: [
               { key: 'name', label: 'Namn' },
               {
@@ -196,7 +256,11 @@ describe('the field list', () => {
                 label: 'Status',
                 format: HANDWRITTEN_EXAMPLES['capabilities[].view.fields[].format'],
                 tones: HANDWRITTEN_EXAMPLES['capabilities[].view.fields[].tones'],
+                // The status is the case in one value where one value has room (D97).
+                compact: HANDWRITTEN_EXAMPLES['capabilities[].view.fields[].compact'],
               },
+              // The person in the status's cell (D97).
+              { key: 'person', label: 'Person', beside: HANDWRITTEN_EXAMPLES['capabilities[].view.fields[].beside'] },
             ],
             input: { filter: HANDWRITTEN_EXAMPLES['capabilities[].view.input.filter'] },
             empty: HANDWRITTEN_EXAMPLES['capabilities[].view.empty'],
@@ -206,6 +270,18 @@ describe('the field list', () => {
     };
     expect(manifestProblems(manifest, 'hr')).toEqual([]);
     expect(() => new Registry().register(remoteConnector(parseManifest(manifest, 'hr'), transport))).not.toThrow();
+    // The examples of `about` (D97): a read asked with keys and an action that takes one.
+    expect(manifestProblems(aboutManifest, 'hr')).toEqual([]);
+    expect(() => new Registry().register(remoteConnector(parseManifest(aboutManifest, 'hr'), transport))).not.toThrow();
+    const byPath = Object.fromEntries(reference.fields.map(f => [f.path, f]));
+    expect(byPath['capabilities[].about']!.example).toEqual({ entity: 'person' });
+    expect(byPath['capabilities[].about.entity']!.type).toBe('"person" / "unit"');
+    expect(byPath['capabilities[].about.param']!.rules.map(r => r.id)).toEqual([
+      'about-read-keys',
+      'about-action-param',
+      'about-action-key-alone',
+      'about-action-start',
+    ]);
   });
   test('the job recipe is a working exchange: three manifests that load, an envelope and answers that validate, steps that name their own connector', () => {
     const example = reference.recipes.find(r => r.id === 'job-follower')!.example as {
@@ -296,6 +372,25 @@ describe('the rules', () => {
       }),
       'phonebook',
     ],
+    'view-subject-is-a-string': [
+      broken(phonebook, m => {
+        m.capabilities[0].view.subject = { entity: 'person', key: 'nowhere' };
+      }),
+      'phonebook',
+    ],
+    'view-beside-follows': [
+      broken(phonebook, m => {
+        m.capabilities[0].view.fields[0].beside = true;
+      }),
+      'phonebook',
+    ],
+    'view-compact-once': [
+      broken(phonebook, m => {
+        m.capabilities[0].view.fields[1].compact = true;
+        m.capabilities[0].view.fields[2].compact = true;
+      }),
+      'phonebook',
+    ],
     'menu-needs-open-view': [
       broken(phonebook, m => {
         m.capabilities[0].input = { type: 'object', properties: { q: { type: 'string' } }, required: ['q'] };
@@ -319,6 +414,49 @@ describe('the rules', () => {
         m.areas[0].standing.push('hello.nothing');
       }),
       'hello',
+    ],
+    'about-read-keys': [
+      broken(aboutManifest, m => {
+        m.capabilities[0].input.properties.keys.maxItems = 500;
+      }),
+      'hr',
+    ],
+    'about-read-rows': [
+      broken(aboutManifest, m => {
+        m.capabilities[0].output.properties.rows.items.required = [];
+      }),
+      'hr',
+    ],
+    'about-never-a-tool': [
+      broken(aboutManifest, m => {
+        m.capabilities[0].model = true;
+      }),
+      'hr',
+    ],
+    'about-action-param': [
+      broken(aboutManifest, m => {
+        m.capabilities[1].about.param = 'nobody';
+      }),
+      'hr',
+    ],
+    'about-action-key-alone': [
+      broken(aboutManifest, m => {
+        m.capabilities[1].input.properties.when = { type: 'string' };
+        m.capabilities[1].input.required.push('when');
+      }),
+      'hr',
+    ],
+    'about-not-a-follower': [
+      broken(aboutManifest, m => {
+        m.capabilities[1].follows = ['hr:absence'];
+      }),
+      'hr',
+    ],
+    'about-not-a-profile': [
+      broken(aboutManifest, m => {
+        m.capabilities[0].name = 'hr.search';
+      }),
+      'hr',
     ],
   };
   test('every loader rule has a probe and the loader refuses it', () => {

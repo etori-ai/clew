@@ -1,0 +1,31 @@
+{
+  "description": "The same with an empty etag, which equals the empty etag of a file he cannot reach: 400 with empty data.",
+  "as": "hassan",
+  "request": {
+    "method": "PUT",
+    "path": "/ocs/v2.php/apps/approval/api/v1/approve/627",
+    "headers": {
+      "Authorization": "Bearer <exchanged access token, aud nextcloud, hassan>",
+      "OCS-APIRequest": "true",
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "body": "{\"etag\":\"\"}"
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "ocs": {
+        "meta": {
+          "status": "failure",
+          "statuscode": 400,
+          "message": ""
+        },
+        "data": []
+      }
+    }
+  }
+}

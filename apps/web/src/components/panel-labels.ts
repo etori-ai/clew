@@ -45,6 +45,9 @@ export const fieldLabels: Record<string, string> = {
   title: 'Titel',
   to: 'Till',
   today: 'I dag',
+  // What a source says about a person (D97): the HR system's presence and what is coming.
+  presence: 'Närvaro',
+  upcoming: 'Kommande',
   type: 'Typ',
   undoUntil: 'Kan ångras till',
   vab: 'Vab, dagar',
@@ -92,6 +95,8 @@ export const fieldLabels: Record<string, string> = {
 export const hiddenFields = new Set([
   'recovery',
   'ref',
+  // The key a row about an entity was asked with (D97): the person's user name, never shown as a value.
+  'key',
   'url',
   // A calendar event's handles (D11): the source's id and revision, the thread a proposal belongs to, and what a write may do.
   'id',
@@ -117,6 +122,20 @@ export const hiddenFields = new Set([
   'path',
   'equals',
   'within',
+  // A propose's card draft (D97) is Clew's input, drawn as a card, never as panel fields.
+  'topic',
+  'area',
+  'summary',
+  'reason',
+  'items',
+  'selectable',
+  'selected',
+  'subject',
+  'entity',
+  'actions',
+  'capability',
+  'role',
+  'target',
 ]);
 const dateOnly = new Intl.DateTimeFormat('sv-SE', { dateStyle: 'long' });
 /** "granskad 12 mars 2026", or nothing when the source gives no date. */
@@ -138,7 +157,7 @@ const values: Record<string, string> = {
   held: 'hållet',
   missing: 'saknas',
   closed: 'stängd',
-  // Where a holding stands today (D101 item 4).
+  // Where a holding stands today (D107 item 4).
   expired: 'utgånget',
   expiring: 'går ut snart',
   valid: 'giltigt',

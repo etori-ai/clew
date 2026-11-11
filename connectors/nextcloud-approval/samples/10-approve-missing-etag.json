@@ -1,0 +1,22 @@
+{
+  "description": "Approve without the required etag parameter.",
+  "as": "hillevi",
+  "request": {
+    "method": "PUT",
+    "path": "/ocs/v2.php/apps/approval/api/v1/approve/625",
+    "headers": {
+      "Authorization": "Bearer <exchanged access token, aud nextcloud, hillevi>",
+      "OCS-APIRequest": "true",
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "body": "{\"message\":\"Utan etag\"}"
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "text/html; charset=UTF-8"
+    },
+    "body": ""
+  }
+}

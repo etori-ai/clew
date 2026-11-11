@@ -140,7 +140,7 @@ export type Notifier = (personId: string, draft: NotifyDraft) => Promise<string 
 export interface People {
   personaFor(id: string): Promise<AuthenticatedContext | undefined>;
 }
-/** The follow-up workflow per obligation (D30): started at confirm, cancelled by undo. Temporal runs it; the memory adapter records it. */
+/** The follow-up workflow per obligation (D30): started at confirm, cancelled by undo. The durable engine runs it (D85); the memory adapter records it. */
 export interface ObligationTimers {
   start(input: { threadId: string; personId: string }): Promise<void>;
   cancel(threadId: string): Promise<void>;

@@ -2,51 +2,73 @@ import { and, desc, eq, inArray, isNull, lte, or } from 'drizzle-orm';
 import { database, schema } from '@clew/db';
 import { readThread } from '@clew/db/threads';
 import { withThreadTx, type ThreadStoreOptions } from './postgres';
-import { projectionVersion, type Occurrence, type RefreshRequest, type RefreshStore } from '../refresh-model';
+import {
+  projectionVersion,
+  requestChange,
+  type Occurrence,
+  type RefreshRequest,
+  type RefreshStore,
+} from '../refresh-model';
 
 const jobs = schema.refreshRequests,
   occurrences = schema.workOccurrences;
-const requestOf = (r: typeof jobs.$inferSelect): RefreshRequest => ({
-  ...r,
-  requestedAt: r.requestedAt.toISOString(),
-  nextAt: r.nextAt.toISOString(),
-  leaseUntil: r.leaseUntil?.toISOString() ?? null,
-  lastSuccess: r.lastSuccess?.toISOString() ?? null,
-  observedAt: r.observedAt?.toISOString() ?? null,
-});
-const rowOf = (r: RefreshRequest) => ({
-  ...r,
-  requestedAt: new Date(r.requestedAt),
-  nextAt: new Date(r.nextAt),
-  leaseUntil: r.leaseUntil ? new Date(r.leaseUntil) : null,
-  lastSuccess: r.lastSuccess ? new Date(r.lastSuccess) : null,
-  observedAt: r.observedAt ? new Date(r.observedAt) : null,
-});
-export function postgresRefreshStore(options: ThreadStoreOptions, personId?: string): RefreshStore {
+/** Seals the session binding a request keeps (D26), as the ledger seals its payloads; the composition root passes the installation's key. */
+export interface RefreshSealer {
+  seal(value: string, purpose: string): string;
+  open(value: string, purpose: string): string;
+}
+export interface RefreshStoreOptions extends ThreadStoreOptions {
+  sealer: RefreshSealer;
+}
+export function postgresRefreshStore(options: RefreshStoreOptions, personId?: string): RefreshStore {
+  // The binding is sealed to its own request, so the database alone never says which session stands behind which scan.
+  // One that no longer opens (another installation key, a value moved from another row) names no session: the scan then
+  // answers `authorization-required` until the person's next visit binds it again, and the worker is never stuck on it.
+  const purpose = (id: string) => 'refresh:session:' + id;
+  const openBinding = (value: string | null, id: string) => {
+    if (!value) return null;
+    try {
+      return options.sealer.open(value, purpose(id));
+    } catch {
+      return null;
+    }
+  };
+  const requestOf = (r: typeof jobs.$inferSelect): RefreshRequest => ({
+    ...r,
+    requestedAt: r.requestedAt.toISOString(),
+    nextAt: r.nextAt.toISOString(),
+    leaseUntil: r.leaseUntil?.toISOString() ?? null,
+    lastSuccess: r.lastSuccess?.toISOString() ?? null,
+    observedAt: r.observedAt?.toISOString() ?? null,
+    session: openBinding(r.session, r.id),
+  });
+  const rowOf = (r: RefreshRequest) => ({
+    ...r,
+    requestedAt: new Date(r.requestedAt),
+    nextAt: new Date(r.nextAt),
+    leaseUntil: r.leaseUntil ? new Date(r.leaseUntil) : null,
+    lastSuccess: r.lastSuccess ? new Date(r.lastSuccess) : null,
+    observedAt: r.observedAt ? new Date(r.observedAt) : null,
+    session: r.session ? options.sealer.seal(r.session, purpose(r.id)) : null,
+  });
   return {
     async request(r) {
       await database().transaction(async tx => {
-        const inserted = await tx.insert(jobs).values(rowOf(r)).onConflictDoNothing().returning();
-        const changed = inserted.length
-          ? inserted
-          : await tx
-              .update(jobs)
-              .set({ state: 'pending', requestedAt: new Date(r.requestedAt), nextAt: new Date(r.nextAt) })
-              .where(
-                and(
-                  eq(jobs.id, r.id),
-                  inArray(jobs.state, ['complete', 'failed', 'blocked']),
-                  lte(jobs.nextAt, new Date(r.requestedAt)),
-                ),
-              )
-              .returning();
-        if (changed.length)
+        let changed = (await tx.insert(jobs).values(rowOf(r)).onConflictDoNothing().returning()).length > 0;
+        if (!changed) {
+          // The stored request is locked, so two tabs asking at once coalesce into one change (D47).
+          const [stored] = await tx.select().from(jobs).where(eq(jobs.id, r.id)).for('update');
+          const next = requestChange(stored && requestOf(stored), r);
+          if (next) await tx.update(jobs).set(rowOf(next)).where(eq(jobs.id, r.id));
+          changed = !!next;
+        }
+        if (changed)
           await tx.insert(schema.audit).values({
             actor: `person:${r.personId}`,
             action: 'refresh.requested',
             subject: `refresh:${r.id}`,
             createdAt: new Date(r.requestedAt),
-            details: { connector: r.connector, assignment: r.assignment },
+            details: { connector: r.connector, assignment: r.assignment, ...(r.session ? { session: true } : {}) },
           });
       });
     },

@@ -6,6 +6,7 @@ import {
   expectNoAxeViolations,
   narrow,
   open,
+  phone,
   reflowProblems,
   test,
 } from './support';
@@ -377,6 +378,129 @@ test.describe('1.4.10: a declared view at 320 px', () => {
     await expect(dialog.getByRole('link', { name: 'IK-26110007 · Behörighet, Beställning' })).toBeVisible();
     await expect(dialog.getByText('Verksamhetssystemet svarade inte.')).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
+    await expectNoAxeViolations(page);
+  });
+});
+
+/**
+ * D97 item 6: a view that says which property of a row holds a person's key links the row to the person. The planner's
+ * table (`talks.talks`) declares it; a row that also opens a read keeps that on its name and gets the person as a link
+ * of its own at the row's end, since one cell cannot be two links. A detail's heading links the same way.
+ */
+test.describe('a view row that names a person', () => {
+  test.use({ viewport: desktop });
+  const talks = {
+    kind: 'table' as const,
+    capability: 'talks.talks',
+    connector: 'clew',
+    source: 'Utvecklingssamtal',
+    chip: false,
+    title: 'name',
+    noun: { one: 'person', other: 'personer' },
+    fields: [
+      { key: 'name', label: 'Namn' },
+      { key: 'state', label: 'Samtal', format: 'status' as const, tones: { Saknas: 'warn' as const } },
+      { key: 'at', label: 'När' },
+    ],
+    subject: { entity: 'person' as const, key: 'userName' },
+  };
+  const rows = [
+    { userName: 'anna', name: 'Anna Lindqvist', state: 'Bokat', at: 'mån 16 nov' },
+    { userName: 'karin', name: 'Karin Lindqvist', state: 'Saknas' },
+    // A row without the key names nobody, and is not a link.
+    { name: 'Utan användarnamn', state: 'Saknas' },
+  ];
+  const withOpen = {
+    ...talks,
+    open: { capability: 'talks.commitments', title: 'Åtgärdspunkter', params: { person: 'userName' } },
+  };
+  const serve = (page: import('@playwright/test').Page, view: object) =>
+    page.route('**/api/cap/talks.talks*', route =>
+      route.fulfill({ json: { source: 'Utvecklingssamtal', view, output: { rows } } }),
+    );
+  const planner = `/?open=talks.talks&open-title=${title('Utvecklingssamtal')}`;
+
+  test('the name is the link to the person, with the page as the way back; a row without the key is text', async ({
+    page,
+    api: _,
+  }) => {
+    await serve(page, talks);
+    await open(page, planner);
+    const panel = page.getByRole('dialog', { name: 'Utvecklingssamtal' });
+    await expect(panel.getByRole('columnheader')).toHaveText(['Namn', 'Samtal', 'När']);
+    await expect(panel.getByRole('link', { name: 'Anna Lindqvist', exact: true })).toHaveAttribute(
+      'href',
+      /^\/people\/anna\?from=%2F%3Fopen%3Dtalks\.talks/,
+    );
+    await expect(panel.getByRole('link', { name: 'Karin Lindqvist', exact: true })).toBeVisible();
+    await expect(panel.getByRole('link', { name: 'Utan användarnamn' })).toHaveCount(0);
+    await expect(panel.getByText('Utan användarnamn')).toBeVisible();
+    await expectNoAxeViolations(page);
+    await panel.getByRole('link', { name: 'Anna Lindqvist', exact: true }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Anna Lindqvist' })).toBeVisible();
+  });
+
+  test('a row that also opens a read keeps it on its name and has the person as its own link at the end', async ({
+    page,
+    api: _,
+  }) => {
+    await serve(page, withOpen);
+    await open(page, planner);
+    const panel = page.getByRole('dialog', { name: 'Utvecklingssamtal' });
+    await expect(panel.getByRole('columnheader')).toHaveText(['Namn', 'Samtal', 'När', 'Person']);
+    const anna = panel.getByRole('row').filter({ hasText: 'Anna Lindqvist' });
+    await expect(anna.getByRole('link', { name: 'Anna Lindqvist', exact: true })).toHaveAttribute(
+      'href',
+      /open=talks\.commitments/,
+    );
+    await expect(anna.getByRole('link', { name: 'Öppna Anna Lindqvist' })).toHaveAttribute(
+      'href',
+      /^\/people\/anna\?from=/,
+    );
+    // The row that names nobody and opens nothing has neither.
+    const nobody = panel.getByRole('row').filter({ hasText: 'Utan användarnamn' });
+    await expect(nobody.getByRole('link')).toHaveCount(0);
+    await expectNoAxeViolations(page);
+    // On a phone the table is its list: the person's link stands at the row's end.
+    await page.setViewportSize(phone);
+    const sheet = page.getByRole('dialog', { name: 'Utvecklingssamtal' });
+    const item = sheet.getByRole('listitem').filter({ hasText: 'Anna Lindqvist' });
+    await expect(item.getByRole('link', { name: 'Öppna Anna Lindqvist' })).toHaveAttribute(
+      'href',
+      /^\/people\/anna\?from=/,
+    );
+    await expect(item.getByRole('link', { name: 'Anna Lindqvist', exact: true })).toHaveAttribute(
+      'href',
+      /open=talks\.commitments/,
+    );
+    await page.evaluate(() => Promise.all(document.getAnimations().map(a => a.finished)));
+    await expectNoAxeViolations(page);
+  });
+
+  test("a detail's heading is the link to the person it names", async ({ page, api: _ }) => {
+    await page.route('**/api/cap/hr.employee*', route =>
+      route.fulfill({
+        json: {
+          source: 'Personalsystemet',
+          view: {
+            kind: 'detail',
+            capability: 'hr.employee',
+            connector: 'hr',
+            source: 'Personalsystemet',
+            chip: false,
+            title: 'name',
+            fields: [{ key: 'role', label: 'Befattning' }],
+            subject: { entity: 'person', key: 'userName' },
+          },
+          output: { name: 'Anna Lindqvist', userName: 'anna', role: 'Lärare F–3' },
+        },
+      }),
+    );
+    await open(page, `/?open=hr.employee&open-title=${title('Anställning')}`);
+    const panel = page.getByRole('dialog', { name: 'Anställning' });
+    const name = panel.getByRole('heading', { name: 'Anna Lindqvist' }).getByRole('link', { name: 'Anna Lindqvist' });
+    await expect(name).toHaveAttribute('href', /^\/people\/anna\?from=%2F%3Fopen%3Dhr\.employee/);
+    await expect(panel.getByText('Lärare F–3')).toBeVisible();
     await expectNoAxeViolations(page);
   });
 });

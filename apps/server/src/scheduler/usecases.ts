@@ -6,8 +6,8 @@ import type { Job, JobQueue, People } from './model';
 
 /**
  * Postgres-backed scheduler for v1 (D15). One nightly scan per person with a grant and one timer per undo window.
- * Jobs are claimed with a row lock by the queue adapter, so a second server process is safe. Temporal replaces this
- * when the push engine grows (D17). Built over ports (D25): the tests drive `tick()` with a queue in memory.
+ * Jobs are claimed with a row lock by the queue adapter, so a second server process is safe. The durable engine
+ * runs each job since D85 (`adapters/durable-postgres.ts`). Built over ports (D25): the tests drive `tick()` with a queue in memory.
  */
 export interface SchedulerDeps {
   jobs: JobQueue;

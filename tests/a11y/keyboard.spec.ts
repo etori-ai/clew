@@ -1,6 +1,18 @@
 import type { Page } from '@playwright/test';
 import { menuRows } from './phonebook';
-import { answer, composer, desktop, expect, focused, hiddenFocusStops, open, snoozeFirst, test } from './support';
+import {
+  answer,
+  composer,
+  desktop,
+  expect,
+  expectNoAxeViolations,
+  focused,
+  hiddenFocusStops,
+  open,
+  snoozeFirst,
+  test,
+} from './support';
+import { mergedSearch } from './unit-data';
 
 test.use({ viewport: desktop });
 
@@ -189,5 +201,40 @@ test.describe('D29 the Inte nu picker', () => {
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
     expect((await focused(page)).text).toBe('Inte nu');
+  });
+});
+
+test.describe('D97 a hit about a person', () => {
+  test('one hit per person, its name a link to them, the sources that answered at the end of its line, and no axe violations', async ({
+    page,
+    api: _,
+  }) => {
+    // No source answers a subject on a hit yet: the suite's search does, merged from two sources (artboard P).
+    await page.route('**/api/cap/clew.search*', route => route.fulfill({ json: { output: mergedSearch } }));
+    const input = encodeURIComponent(JSON.stringify({ query: 'byström' }));
+    await open(page, `/?open=clew.search&open-title=K%C3%A4llor&open-input=${input}`);
+    const hits = page.getByRole('dialog').getByRole('list', { name: 'Källor' }).getByRole('listitem');
+    await expect(hits).toHaveCount(2);
+    const person = hits.nth(0);
+    const name = person.getByRole('link', { name: 'Johan Byström', exact: true });
+    // Hem with the search open beside it is the way back.
+    await expect(name).toHaveAttribute('href', /^\/people\/johan\?from=%2F%3Fopen%3Dclew\.search%26/);
+    await expect(person.getByText('Telefonboken · Personalsystemet', { exact: true })).toBeVisible();
+    // The hit leads to the person instead of one source's record: no contact card, no link out.
+    await expect(person.getByRole('link', { name: 'Kontaktkort' })).toHaveCount(0);
+    await expect(person.getByRole('link', { name: /Öppna/ })).toHaveCount(0);
+    await expect(person.getByRole('button', { name: 'Lägg till i samtalet' })).toBeVisible();
+    // A document from one source is drawn as before.
+    const document = hits.nth(1);
+    await expect(document.getByRole('link', { name: 'Öppna' })).toHaveAttribute(
+      'href',
+      'https://intra.example/rutin-samtal',
+    );
+    await expect(document.getByText(/^Intranätet · HR-avdelningen/)).toBeVisible();
+    await expectNoAxeViolations(page);
+    await name.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/people\/johan\?from=/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Johan Byström' })).toBeVisible();
   });
 });

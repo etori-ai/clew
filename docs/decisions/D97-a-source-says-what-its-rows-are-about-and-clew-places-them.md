@@ -1,6 +1,6 @@
 # D97 · A source says what its rows are about, and Clew places them
 
-**Status:** accepted as the direction (product owner, 2026-11-10); the server half of items 1 and 7 and the mark on the row of item 2 built 2026-11-11 for sources in Clew's own process (see "As built"), the section, the lens and the menu not; the items under "Open" are not decided · **Date:** 2026-11-10 · **Area:** integrations, ui
+**Status:** accepted as the direction (product owner, 2026-11-10), built 2026-11-10 (see "As built"); the items under "Open" were taken provisionally for the build and are not decided · **Date:** 2026-11-10 · **Area:** integrations, ui
 
 **Decision.** A feature that belongs on top of an entity (a person, a unit, later a room) is not written into the
 entity's page. Its source, a connector or a module Clew owns, declares what its rows are **about**, and Clew decides
@@ -76,40 +76,70 @@ that chooses its own place: no platform that was read allows it, and it is what 
 every source on every row, pulled live: no platform does it; the list keeps a few chosen sources instead. Clew
 keeping a copy of what sources say about a person: a second record with its own retention, against D95.
 
-**Not established.** Nothing is built and nothing is measured. The canvas **Clew · en entitet, många källor**
+**As built, 2026-11-10.** Built the same day on branch `entity-sources`. Design: `docs/architecture/entities.md`.
+Where the code settled something the items above left open, or differs from them:
+
+- Item 1: `about` is `{ entity, param? }` on a capability, the kinds the closed list `ENTITY_KINDS` in
+  `@clew/contracts`. The loader holds a read about an entity to an input with required `keys` (at most 200), rows
+  that each carry `key`, a `table` or `list` view and no model tool; an action names the input property that takes
+  the key, and that property is its only required input, so the menu can always start it. A core connector may add
+  `about.page`, a page of an owned domain as a second way in ("Öppna samtalet"); a remote manifest cannot.
+- Item 2: a lens is a read with a `table` or `list` view that an administrator chose. Marks come only from sources
+  offered as a lens, and a mark is left out when a column of the same source already warns for that person. The view
+  language gained what the places needed: the tone key `*` (any other non-empty value), `beside` (drawn with the
+  field before it) and `compact` (the row in one value: a column, a summary), and `own` marks Clew's own domains,
+  captioned "Clew".
+- Item 3: the Visa menu sits under the page's title, on "Alla" as under a lens.
+- Item 4: lenses and columns are chosen on the connector's admin page beside "Verktyg i menyn", stored in the
+  capability's overrides (`lens`, `column`), at most three columns per entity kind, with audit rows `connector.lens`
+  and `connector.column`. The count is taken outside the saving transaction, so two administrators at once could
+  pass three. `bun run dev:connectors` chooses for the development stack while nothing is chosen.
+- Item 5: a person opens beside the list at `?person=<key>` and as a page at `/people/<key>`; a unit is a page at
+  `/units/<id>` with no rail entry. Sections are Clew's own first, each read on its own; a section draws the read
+  its view opens as up to five plain lines and gives one way in.
+- Item 6: a subject sits on a card row, on a thread (never drawn: an action point card names its employee this
+  way, which D96 item 6 allows since the model reads only a row's label and detail), on a search hit and on a view
+  row. Names link on card rows, in "Mina åtgärdspunkter", on "Läget på …", in search and in views. "I dag" and
+  "Sedan i går" carry no subject and are not linked, and the calendar's planning card is written past the thread
+  store, so it is not indexed.
+- Item 7: keys go in calls of at most 200, four calls at once, four seconds per source (the conformance check
+  warns above 1.5 seconds), with cancellation and authority checked again after the batch. A row is cut to its key
+  and what its view draws before it leaves the server. A person without a user name, or deactivated, is never asked
+  about. A key outside the rule answers 404.
+- Item 8: the signed actor carries an optional `userName`. "Who may be asked about" is one rule in
+  `modules/entities`: for a person `managed`, `self` or `colleague`; for a unit `member`. The index from entity to
+  cards is migration `0046_thread_subjects`, with no backfill: an older card is indexed when its rows are next
+  written. Personal reads the entities API alone; `GET /api/staff` remains for the talk drawer.
+- Beyond the items: an action about an entity starts a card without the model
+  (`POST /api/entities/:kind/:key/actions`, `apps/server/src/threads/usecases/started.ts`). A propose runs as the
+  person and its draft is the card; an execute never reaches the source before the human decision. The card opens
+  on Hem. `scripts/subject-erase.ts` removes a subject from every row and the index, with an audit row of counts
+  only; a source that still sends the key writes it again at its next scan. `/protocol/preview` runs the dry run on
+  a pasted manifest and draws samples from the declaration; it fetches nothing and calls nothing, since the route is
+  public. `connector-check` probes every capability that is about an entity (`--keys`, `--as`).
+- Sources that exist: `talks.person` and `talks.unit` (Clew's own), `hr.person` and the action `hr.prepareAbsence`
+  ("Registrera frånvaro"), `appraisals.person`, and `qlik.unit`. The appraisals fixture is keyed on the directory's
+  user names and no longer matches on display names.
+
+The open items as taken for the build, each provisional until the product owner decides: the columns on "Alla" are
+pulled live; the key on the wire is `userName`, compared without regard to case; a person's key may sit on card rows,
+with the erasure script; a talk's summary text and employment facts are not shown; `about` is its own mechanism in
+`modules/entities`, and search, errands and the talk seam are unchanged; no two-source list is built as an answer.
+
+What the canvas draws and the product does not: "Boka möte" (the calendar has no propose capability),
+"Boka samtalet som saknas", "Markera som hållet" and "4 i tjänst i dag" (no source offers them); Kompetenser,
+Introduktion, access cards, cases per person or unit, a unit's economy and rooms as entities (no source); the
+person selector and timing on the preview; inflected counts ("3 bokade"); "Inga" in the supporting colour; the
+check mark in the Visa menu (Astryx draws radio circles); the avatar in the phone's header.
+
+**Not established.** Written before the build: nothing is built and nothing is measured. After it: what a live read
+of two or three sources for a list costs is still not measured; the full WCAG suite was not run in one go, only the
+specs the build touched; no manual screen-reader pass was made; no real source has answered. The canvas **Clew · en entitet, många källor**
 (https://claude.ai/artifact/Muchzp6aRAx9uxokwFLAfj) was written but not rendered and checked, is drawn in plain
 markup, and shows sources Clew does not have. The Astryx components for the Visa menu and the person's panel and
 page have not been looked up. The pattern is unproven beyond people and units. No HR practitioner has seen it.
 
-**As built.** 2026-11-11, branch `competence-module`, built with [D101](D101-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md)
-in the same working session, without the author of this record; only what the items above already decide, and
-nothing under "Open". Item 1: `ENTITY_KINDS` (`person`, `unit`) in `@clew/contracts`, and `about` on a capability in
-`@clew/connectors`; a read that declares it takes `AboutInputSchema` (up to 200 keys), answers at most one row per key
-and must declare a view and not be a model tool (`connectorProblems`). Item 7: `modules/about` and the composite
-`clew.about`, joined into the core connector as the errand list is: every read about the kind that the reader may call
-is asked with the same keys at once, each under its own budget inside one for the whole; a key outside the reader's
-reach is dropped without a word; a source that is late, fails, or answers a key it was not asked or one key twice says
-so in its own section. Who may be asked about a person is `aboutReach` in `composition/about.ts`: the reader and the
-people who report to them (D99 item 4); a unit has no rule yet. The first source is `competence.standing`.
-
-The mark of item 2, on Personal (`apps/web/src/pages/staff.tsx`, `apps/web/src/about.ts`): the page asks
-`clew.about` once for everyone it lists and knows no source by name. Where a source gives a status field a `warn` or
-`alert` tone, the person's row has, under a column **Behöver dig**, the status as a badge and the source's title as a
-link named for the person, which opens the read the source's view declares under `open` in the context panel, over
-the list (D83: origin the mark, space the panel as its drawer, parent the list, address `?open=…&open-input=…`, close
-back to the list with the focus on the mark). With no source about people the column is not there; a source that did
-not answer is named once in a status line. The panel is always over the list here, never beside it, since the page
-scrolls as a whole and the table needs its width.
-
-Not built: the section when a person is opened, the lens and the menu of item 2, items 3 to 6, and item 8 beyond the
-reach rule: there is no person panel or page, and Personal still has its hard-wired talk columns beside the marks. A remote connector cannot declare `about`,
-since the manifest does not carry it while the key on the wire is open; for a source in process the key of a person is
-Clew's person id. A read about a person runs with the reader's current scope through the registry, but not yet "as a
-figure does under D75" with cancellation. Tests: `tests/unit/about.test.ts`, `apps/web/tests/about.test.ts` and
-`tests/a11y/staff-about.spec.ts` (keyboard, focus return, axe and reflow at desktop, phone and 320 px); not seen
-signed in on the development stack, and no manual pass with a screen reader.
-
-**Replaces.** Nothing yet. When built it refines
+**Replaces.** As built it refines
 [D94](D94-a-manager-has-a-personal-section-listing-the-people-on-their-units.md) item 3 (a person gets a panel and a
 page), [D96](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) item 7 (the status
 column on Personal becomes a lens and a section) and the line in `docs/architecture/working-across-connectors.md`

@@ -136,7 +136,7 @@ script name goes to `playwright test`. The full suite runs on one worker and tak
   so read the WCAG check of the previous landing before landing on `main` again, and fix a red check before new work
   lands.
 - A test that passes alone and fails on a slower runner is holding a timer it should hold a promise for (see
-  `api.holdAnswer()` and HANDOVER session 41).
+  `api.holdAnswer()` and session 41 in `docs/history/session-log.md`).
 - Two runs in the same checkout empty each other's `test-results`; give the second `--output=test-results/<name>`.
 
 ## What is ported

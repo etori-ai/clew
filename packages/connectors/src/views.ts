@@ -1,4 +1,14 @@
-import { openRef, rowsKey, viewRows, type MenuHint, type MenuIcon, type View } from '@clew/contracts';
+import {
+  fieldTone,
+  markFields,
+  openRef,
+  rowsKey,
+  viewRows,
+  type MenuHint,
+  type MenuIcon,
+  type View,
+  type ViewField,
+} from '@clew/contracts';
 import {
   ActivitySchema,
   DocumentBundleSchema,
@@ -8,15 +18,16 @@ import {
   checkContract,
 } from '@clew/contracts';
 import { Value } from '@sinclair/typebox/value';
+import type { AboutPlace } from './protocol';
 
-export { openRef, rowsKey, viewRows };
+export { fieldTone, markFields, openRef, rowsKey, viewRows };
 
 /**
  * Declared views (D38), the pure part: the rules a declaration must keep, the rows it points at, what the model is
  * handed instead of the content, and the view a row opens. No I/O. The registry holds bundled connectors to the rules
  * when they register, the manifest loader holds remote ones to them, and the browser draws from the same declaration.
  */
-type Schema = { properties?: Record<string, Schema>; items?: Schema };
+type Schema = { properties?: Record<string, Schema>; items?: Schema; type?: unknown };
 /** What the rules need to know about a capability: its name, kind, schemas and view. */
 export interface ViewSubject {
   name: string;
@@ -28,6 +39,18 @@ export interface ViewSubject {
   review?: string;
 }
 const props = (schema: unknown): Record<string, Schema> | undefined => (schema as Schema | undefined)?.properties;
+/**
+ * Why a list of fields may not be drawn as declared (D97): a field `beside` the one before it needs one before it, and
+ * only one field can be the row in one value (`compact`).
+ */
+function placementProblem(name: string, fields: readonly ViewField[]): string | undefined {
+  const first = fields[0];
+  if (first?.beside) return `${name}: view field "${first.key}" is beside nothing: the first field cannot be beside`;
+  const compact = fields.filter(f => f.compact);
+  if (compact.length > 1)
+    return `${name}: view fields ${compact.map(f => `"${f.key}"`).join(', ')} are all compact: at most one field is the row in one value`;
+  return undefined;
+}
 
 /**
  * Why a capability's view may not be used, or undefined when it may. A view belongs to a read; its input controls bind
@@ -51,6 +74,8 @@ export function viewProblem(subject: ViewSubject, siblings: ViewSubject[]): stri
   if (new Set(keys).size !== keys.length) return `${subject.name}: a view field is listed twice`;
   const unitless = view.fields.find(f => f.unit && f.format !== 'number');
   if (unitless) return `${subject.name}: view field "${unitless.key}" has a unit but is not a number`;
+  const placement = placementProblem(subject.name, view.fields);
+  if (placement) return placement;
   let record = props(subject.output);
   if (view.kind === 'table' || view.kind === 'list') {
     if (!keys.includes(view.title)) return `${subject.name}: view title "${view.title}" must be one of its fields`;
@@ -81,6 +106,12 @@ export function viewProblem(subject: ViewSubject, siblings: ViewSubject[]): stri
   if (record)
     for (const key of view.kind === 'detail' || view.kind === 'record' ? [view.title, ...keys] : keys)
       if (!record[key]) return `${subject.name}: view field "${key}" is not in the output schema`;
+  // The entity a record names (D97 item 6): a string property of the record, holding a person's user name or a unit's id.
+  if ((view.kind === 'table' || view.kind === 'list' || view.kind === 'detail') && view.subject && record) {
+    const property = record[view.subject.key];
+    if (!property) return `${subject.name}: view subject "${view.subject.key}" is not in the output schema`;
+    if (property.type !== 'string') return `${subject.name}: view subject "${view.subject.key}" is not a string`;
+  }
   if (view.kind === 'record') {
     for (const key of [view.document, view.recovery, view.metrics, view.series, view.activity, view.items?.rows].filter(
       Boolean,
@@ -92,6 +123,8 @@ export function viewProblem(subject: ViewSubject, siblings: ViewSubject[]): stri
         return `${subject.name}: item title must name a displayed field`;
       if (new Set(items.fields.map(f => f.key)).size !== items.fields.length)
         return `${subject.name}: item fields must be unique`;
+      const itemPlacement = placementProblem(subject.name, items.fields);
+      if (itemPlacement) return itemPlacement;
       const item = record?.[items.rows]?.items?.properties;
       for (const field of items.fields) {
         if (item && !item[field.key]) return `${subject.name}: unknown item field "${field.key}"`;
@@ -187,3 +220,20 @@ export function viewSummary(
   };
 }
 export const readsSummary = (view: View | undefined) => view?.modelReads === 'summary';
+
+/**
+ * Where Clew would show a capability that is about an entity (D97 item 2), from the declaration alone and in the order
+ * a preview lists them: an action in the entity's menu; a read as a section on the opened entity, a lens when its view
+ * is a table or list, and a mark on the row when a field gives some value a `warn` or `alert` tone. Lenses, columns and
+ * marks still wait for an administrator's choice; nothing here is a place by itself.
+ */
+export function placesOf(subject: Pick<ViewSubject, 'kind' | 'view'> & { about?: unknown }): AboutPlace[] {
+  if (!subject.about) return [];
+  if (subject.kind !== 'read') return ['menu'];
+  const view = subject.view;
+  return [
+    ...(view?.kind === 'table' || view?.kind === 'list' ? (['lens'] as const) : []),
+    ...(markFields(view).length ? (['mark'] as const) : []),
+    'section',
+  ];
+}

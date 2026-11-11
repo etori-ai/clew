@@ -189,4 +189,19 @@ describe('authorization and invocation boundaries', () => {
     };
     expect(decodeJwt(await authority.assert('hello', withSessionFields)).actor).toEqual(actorOf(actor));
   });
+  test("the person's user name is signed into the actor when they have one; a callback grant verifies with it and without it (D44, D97)", async () => {
+    const authority = await testAuthority();
+    const named = { ...actor, userName: 'person.one' };
+    expect(actorOf(named)).toEqual({ ...actorOf(actor), userName: 'person.one' });
+    const request = await authority.assert('hello', named, ['source.count']);
+    expect(decodeJwt(request).actor).toEqual(actorOf(named));
+    expect(verifyAssertion(request, authority.jwks, 'hello')).toEqual(actorOf(named));
+    expect((await authority.verify(decodeJwt(request).callback as string)).actor).toEqual(actorOf(named));
+    const plain = await authority.assert('hello', actor, ['source.count']);
+    expect(decodeJwt(plain).actor).not.toHaveProperty('userName');
+    expect((await authority.verify(decodeJwt(plain).callback as string)).actor).toEqual(actorOf(actor));
+    // An empty user name is no user name: neither cut into the actor nor signed.
+    expect(actorOf({ ...actor, userName: '' })).not.toHaveProperty('userName');
+    expect(decodeJwt(await authority.assert('hello', { ...actor, userName: '' })).actor).toEqual(actorOf(actor));
+  });
 });

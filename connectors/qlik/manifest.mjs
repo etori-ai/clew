@@ -124,6 +124,77 @@ const trendCapability = {
   },
 };
 
+/** The most keys Clew sends in one call to a read about an entity (D97). */
+export const KEYS_MAX = 200;
+// A read about a unit (D97): Clew asks with a batch of its unit ids and places the answer itself, as the section
+// "Sjukfrånvaro" on the opened unit. One row per unit id the manager is manager of, through the unit map; any other id is
+// no row. The rate is the latest closed month's, of the first of the unit's source units with a rate to show, as the
+// area's figure takes it. `watch` is there only when the operator set a rate to watch from.
+const unitAboutCapability = {
+  name: 'qlik.unit',
+  kind: 'read',
+  title: 'Sjukfrånvaro',
+  model: false,
+  scope: { roles: ['manager'] },
+  about: { entity: 'unit' },
+  description:
+    'Sjukfrånvaro i procent den senaste månaden för enheter du är chef för, mot samma månad i fjol. Bara sammanställningar per enhet, aldrig personer.',
+  input: {
+    type: 'object',
+    properties: {
+      keys: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 256 }, maxItems: KEYS_MAX },
+    },
+    required: ['keys'],
+    additionalProperties: false,
+  },
+  output: {
+    type: 'object',
+    properties: {
+      rows: {
+        type: 'array',
+        maxItems: KEYS_MAX,
+        items: {
+          type: 'object',
+          properties: {
+            key: string,
+            ref: string,
+            unit: string,
+            month: string,
+            total: number,
+            watch: string,
+            lastYear: number,
+            change: number,
+            headcount: integer,
+            note: string,
+          },
+          required: ['key', 'ref', 'unit', 'month'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['rows'],
+    additionalProperties: false,
+  },
+  view: {
+    kind: 'list',
+    title: 'total',
+    empty: 'Statistiken har ingen uppgift om enheten.',
+    open: { capability: 'qlik.sickLeaveTrend', title: 'Visa utvecklingen', params: { unit: 'ref' } },
+    fields: [
+      { key: 'total', label: 'Sjukfrånvaro', format: 'number', unit: { one: '%', other: '%' } },
+      { key: 'watch', label: 'Läge', format: 'status', tones: { Bevaka: 'warn' } },
+      { key: 'month', label: 'Avser' },
+      {
+        key: 'change',
+        label: 'Mot samma månad i fjol',
+        format: 'number',
+        unit: { one: 'procentenhet', other: 'procentenheter' },
+      },
+      { key: 'note', label: 'Anmärkning' },
+    ],
+  },
+};
+
 export const manifest = {
   protocol: 2,
   id: 'qlik',
@@ -140,6 +211,6 @@ export const manifest = {
       figure: true,
     },
   ],
-  capabilities: [unitRatesCapability, trendCapability],
+  capabilities: [unitRatesCapability, trendCapability, unitAboutCapability],
   scan: false,
 };

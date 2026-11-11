@@ -1,20 +1,23 @@
 import { useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
-import type { CompetenceType, StaffPerson } from '@clew/contracts';
+import { useLocation, useNavigate, useSearchParams } from 'react-router';
+import { useQuery } from '@tanstack/react-query';
+import type { CompetenceType } from '@clew/contracts';
 import { Button, DateInput, Dialog, DialogHeader, FormLayout, Selector, VStack, useMediaQuery } from '@clew/ui';
 import { today } from '@clew/calendar/dates';
 import { api } from '../api';
 import { useAdminAction } from '../mutations';
+import { competenceTypesQuery, staffQuery } from '../queries';
 import { keys } from '../query-keys';
 import { registerOf, withoutRegister } from '../register-address';
 import { DialogFrame } from './dialog-frame';
 import { mobileQuery } from './shell';
 
 /**
- * Registering a certificate for a person who reports to the manager (D101 item 7): which competence, the day it was
+ * Registering a certificate for a person who reports to the manager (D107 item 7): which competence, the day it was
  * issued and, where the issuer set one, the day it ends. A dialog over the list, with the person named in its heading
  * and in the address (`?register=<personId>`, D83): closing it, by Avbryt, Esc or the close button, is the list again
- * with the focus on what opened it, which Astryx gives back. The server computes where the holding stands; the form
+ * with the focus on what opened it, which Astryx gives back. The way in is the page the competence module declares on
+ * its read about a person (D97): "Registrera intyg" in the person's Kompetens section. The server computes where the holding stands; the form
  * only says what the certificate says.
  *
  * The date fields take any day: a field that refused a day would drop what was typed without a word, and the form
@@ -35,24 +38,22 @@ const options = (types: CompetenceType[]) => {
 };
 const months = (n: number) => (n % 12 === 0 ? `${n / 12} år` : `${n} månader`);
 
-export function RegisterHolding({
-  pathname,
-  people,
-  types,
-}: {
-  pathname: string;
-  /** The people the reader may register for: the ones on the list who are not deactivated. */
-  people: StaffPerson[];
-  types: CompetenceType[];
-}) {
+export function RegisterHolding() {
   const mobile = useMediaQuery(mobileQuery);
   const [search] = useSearchParams();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const personId = registerOf(search);
+  // Read only when the address names someone: the people the reader manages, as the talk drawer reads them, and the
+  // catalogue, which is refused (null) while the module is off for the reader.
+  const staffQ = useQuery({ ...staffQuery, enabled: !!personId });
+  const typesQ = useQuery({ ...competenceTypesQuery, enabled: !!personId });
+  const people = (staffQ.data?.units ?? []).flatMap(u => u.people).filter(p => p.enabled);
+  const types = (typesQ.data?.rows ?? []).filter(t => !t.archived);
   // Nobody is named unless there is something to register: with the module off, or an empty catalogue, the address
   // opens nothing.
   const person = personId && types.length ? people.find(p => p.id === personId) : undefined;
-  const action = useAdminAction({ invalidate: [keys.aboutAll, keys.viewAll], toastId: 'competence:register' });
+  const action = useAdminAction({ invalidate: [keys.entities.all, keys.viewAll], toastId: 'competence:register' });
   const [typeId, setTypeId] = useState<string | undefined>(undefined);
   const [issuedOn, setIssuedOn] = useState<string | undefined>(undefined);
   const [expiresOn, setExpiresOn] = useState<string | undefined>(undefined);

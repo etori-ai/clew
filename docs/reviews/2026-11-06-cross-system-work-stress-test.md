@@ -140,7 +140,7 @@ row of its own above these; it does not change them.
 
 **12. Names.** Artboard J reads "Sjukfrånvaro för Hassan i dag". Principle 7 says names of individuals stay in the source
 system, never in a card ([vision](../vision.md)); the product owner decided on 2026-11-03 that the canvas wins for
-card rows ([HANDOVER](../../HANDOVER.md)), and the HR mock still writes "Namnet visas i personalsystemet, inte här"
+card rows ([HANDOVER](../history/README.md)), and the HR mock still writes "Namnet visas i personalsystemet, inte här"
 on its rehab card ([hr.ts](../../connectors/hr/connector.mjs)). **Tension**, recorded as F11 in the
 2026-11-05 architecture review and not decided here.
 
@@ -241,7 +241,7 @@ absence-registering execute on the HR mock are follow-ups, after the decision la
 ### G10 · Names in cards
 
 Artboard J names the employee in the proposal; principle 7 forbids it ([vision](../vision.md)) and the 2026-11-03
-decision allows it in card rows ([HANDOVER](../../HANDOVER.md)). The HR mock's own rehab card sides with the
+decision allows it in card rows ([HANDOVER](../history/README.md)). The HR mock's own rehab card sides with the
 principle ([hr.ts](../../connectors/hr/connector.mjs)). **Change:** none here. F11 in the architecture
 review already asks for one baseline; the job card should follow whatever that decision says, and the step rows
 (which name systems, not people) are unaffected.

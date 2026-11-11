@@ -8,12 +8,15 @@ import type {
   ConnectorPatchInput,
   ConnectorPreview,
   ConnectorSummary,
+  EntityKind,
   ManifestDiff,
   PreviewQuery,
   RefreshManifestInput,
   Role,
   RotateSecretInput,
+  View,
 } from '@clew/contracts';
+import { ENTITY_COLUMNS_MAX } from '@clew/contracts';
 import { menuRowOf, type Actor, type Connector, type Governance, type Registry } from '@clew/connectors';
 import type { ConnectorManifest } from '@clew/connectors/protocol';
 import { ForbiddenError, InputError } from '../../context';
@@ -141,6 +144,37 @@ export function connectorUsecases(deps: AdminDeps) {
     const described = m?.capabilities.find(c => c.name === name);
     return described ? menuRowOf(described) : undefined;
   };
+  /**
+   * What an administrator may place of a read about an entity (D97 items 3 and 4): its kind and the fields of its table
+   * or list; undefined when the capability is not such a read. Asked of the live capability first, as the menu row is.
+   */
+  const aboutRead = (row: ConnectorRecord, name: string, m = manifestOf(row)) => {
+    const c: { kind: string; about?: { entity: EntityKind }; view?: View } | undefined =
+      registry.connector(row.id)?.capabilities.find(x => x.name === name) ?? m?.capabilities.find(x => x.name === name);
+    const view = c?.view;
+    if (c?.kind !== 'read' || !c.about || (view?.kind !== 'table' && view?.kind !== 'list')) return undefined;
+    return { entity: c.about.entity, fields: view.fields };
+  };
+  /** The column a row shows for one capability (D97 item 4): the stored field while it is still in the view. */
+  const columnOf = (row: ConnectorRecord, name: string, capabilities = row.capabilities, m = manifestOf(row)) => {
+    const key = capabilities[name]?.column;
+    const about = key ? aboutRead(row, name, m) : undefined;
+    const field = about?.fields.find(f => f.key === key);
+    return about && field ? { entity: about.entity, field } : undefined;
+  };
+  /** How many columns each entity kind has on "Alla" across the installation, with this row's capabilities as given. */
+  const columnCounts = async (id: string, capabilities: ConnectorRecord['capabilities']) => {
+    const counts = new Map<EntityKind, number>();
+    for (const r of await store.list()) {
+      const own = r.id === id ? capabilities : r.capabilities,
+        m = manifestOf(r);
+      for (const name of Object.keys(own)) {
+        const column = columnOf(r, name, own, m);
+        if (column) counts.set(column.entity, (counts.get(column.entity) ?? 0) + 1);
+      }
+    }
+    return counts;
+  };
   function summary(row: ConnectorRecord): ConnectorSummary {
     const m = manifestOf(row),
       live: Connector | undefined = registry.connector(row.id);
@@ -196,6 +230,17 @@ export function connectorUsecases(deps: AdminDeps) {
           row.capabilities[c.name]?.model !== false &&
           row.capabilities[c.name]?.enabled !== false,
         menu: (r => (r ? { ...r, on: row.capabilities[c.name]?.menu === true } : null))(menuRow(row, c.name, m)),
+        ...(c.about ? { about: c.about.entity } : {}),
+        ...(about =>
+          about
+            ? {
+                lens: { on: row.capabilities[c.name]?.lens === true },
+                column: {
+                  fields: about.fields.map(f => ({ key: f.key, label: f.label })),
+                  on: columnOf(row, c.name, row.capabilities, m)?.field.key ?? null,
+                },
+              }
+            : {})(aboutRead(row, c.name, m)),
       })),
       areas: (m?.areas ?? []).map(a => ({
         id: a.id,
@@ -279,6 +324,25 @@ export function connectorUsecases(deps: AdminDeps) {
     if (patch.capabilities)
       for (const name of Object.keys(patch.capabilities))
         if (!m?.capabilities.some(c => c.name === name)) throw new InputError('Okänd förmåga: ' + name);
+    if (patch.lens)
+      for (const [name, on] of Object.entries(patch.lens)) {
+        if (!m?.capabilities.some(c => c.name === name)) throw new InputError('Okänd förmåga: ' + name);
+        if (on && !aboutRead(row, name, m))
+          throw new InputError(
+            'Förmågan kan inte erbjudas under Visa: det kan bara en läsning om en person eller en enhet som visas som tabell eller lista.',
+          );
+      }
+    if (patch.column)
+      for (const [name, key] of Object.entries(patch.column)) {
+        if (!m?.capabilities.some(c => c.name === name)) throw new InputError('Okänd förmåga: ' + name);
+        if (key === null) continue;
+        const about = aboutRead(row, name, m);
+        if (!about)
+          throw new InputError(
+            'Förmågan kan inte ge en kolumn under Alla: det kan bara en läsning om en person eller en enhet.',
+          );
+        if (!about.fields.some(f => f.key === key)) throw new InputError('Fältet finns inte i förmågans vy: ' + key);
+      }
     if (patch.figures)
       for (const area of Object.keys(patch.figures))
         if (!m?.areas.some(a => a.id === area && a.figure))
@@ -326,12 +390,16 @@ export function connectorUsecases(deps: AdminDeps) {
     }
     if (patch.capabilities !== undefined) {
       const merged = { ...row.capabilities };
-      // The two switches are replaced as sent; whether the view is in the menu is its own question (below) and stays.
+      // The two switches are replaced as sent; whether the view is in the menu, offered as a lens or shown as a column
+      // (D40, D97) are their own questions (below) and stay.
       for (const [name, override] of Object.entries(patch.capabilities)) {
+        const kept = row.capabilities[name];
         const clean = {
           ...(override.enabled === false ? { enabled: false as const } : {}),
           ...(override.model === false ? { model: false as const } : {}),
-          ...(row.capabilities[name]?.menu ? { menu: true as const } : {}),
+          ...(kept?.menu ? { menu: true as const } : {}),
+          ...(kept?.lens ? { lens: true as const } : {}),
+          ...(kept?.column ? { column: kept.column } : {}),
         };
         if (Object.keys(clean).length) merged[name] = clean;
         else delete merged[name];
@@ -358,6 +426,53 @@ export function connectorUsecases(deps: AdminDeps) {
             ...(menuRow(row, name, m) ? { label: menuRow(row, name, m)!.label } : {}),
           },
         });
+      }
+      if (JSON.stringify(merged) !== JSON.stringify(next.capabilities ?? row.capabilities)) next.capabilities = merged;
+    }
+    if (patch.lens !== undefined) {
+      // A read offered under Visa on its entity's list or not (D97 item 3): one audit row per read that changed.
+      const merged = { ...(next.capabilities ?? row.capabilities) };
+      for (const [name, on] of Object.entries(patch.lens)) {
+        if ((merged[name]?.lens === true) === on) continue;
+        const { lens: _lens, ...rest } = merged[name] ?? {};
+        const clean = { ...rest, ...(on ? { lens: true as const } : {}) };
+        if (Object.keys(clean).length) merged[name] = clean;
+        else delete merged[name];
+        changes.push({
+          action: 'connector.lens',
+          details: { capability: name, to: on, title: m?.capabilities.find(c => c.name === name)?.title ?? name },
+        });
+      }
+      if (JSON.stringify(merged) !== JSON.stringify(next.capabilities ?? row.capabilities)) next.capabilities = merged;
+    }
+    if (patch.column !== undefined) {
+      // A field of a read as a column on "Alla" or none (D97 item 4): one audit row per read that changed. At most
+      // ENTITY_COLUMNS_MAX columns for one entity kind across every connector, counted as the header holder is found
+      // (D88): over the stored rows, with this one as it will be.
+      const merged = { ...(next.capabilities ?? row.capabilities) };
+      const gained = new Set<EntityKind>();
+      for (const [name, key] of Object.entries(patch.column)) {
+        const from = merged[name]?.column ?? null;
+        if (from === key) continue;
+        const { column: _column, ...rest } = merged[name] ?? {};
+        const clean = { ...rest, ...(key !== null ? { column: key } : {}) };
+        if (Object.keys(clean).length) merged[name] = clean;
+        else delete merged[name];
+        const about = aboutRead(row, name, m);
+        if (key !== null && about) gained.add(about.entity);
+        const label = key === null ? undefined : about?.fields.find(f => f.key === key)?.label;
+        changes.push({
+          action: 'connector.column',
+          details: { capability: name, to: key, from, ...(label ? { label } : {}) },
+        });
+      }
+      if (gained.size) {
+        const counts = await columnCounts(id, merged);
+        for (const kind of gained)
+          if ((counts.get(kind) ?? 0) > ENTITY_COLUMNS_MAX)
+            throw new InputError(
+              `Högst ${ENTITY_COLUMNS_MAX} kolumner kan visas under Alla för ${kind === 'person' ? 'personer' : 'enheter'}. Ta bort en annan kolumn först.`,
+            );
       }
       if (JSON.stringify(merged) !== JSON.stringify(next.capabilities ?? row.capabilities)) next.capabilities = merged;
     }

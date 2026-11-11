@@ -8,7 +8,7 @@ The relevant code is the [card decision use case](../../apps/server/src/threads/
 
 ## Establish background source access
 
-Scans and durable execution do not run inside the person's interactive session. They recheck the current local grant, but do not receive a delegated user token. A generic remote execute on a connector declaring delegation can remain pending with `needs-session`; a working delegated read is not evidence of supported durable actions. Establish source credentials and actor-level access for background work first; see [authorization](authorization.md).
+Scans and durable execution do not run inside the person's interactive session. They recheck the current local grant. On a connector declaring delegation they also get the person's token, but only from the person's own session that approved the write or asked for the scan, and only while it is active: an execute without one remains pending with `needs-session`, a scan answers `authorization-required`. Work that must happen while the person is away needs source credentials and actor-level access of its own; see [authorization](authorization.md#work-the-persons-own-session-stands-behind).
 
 ## Scan an occurrence into a card
 

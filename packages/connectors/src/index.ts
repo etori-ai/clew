@@ -2,6 +2,7 @@ import type { TSchema } from '@sinclair/typebox';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import type {
+  About,
   Area,
   AreaFigure,
   AreaOverride,
@@ -9,6 +10,7 @@ import type {
   ConnectorAudience,
   EntityKind,
   ConnectorState,
+  EntityPage,
   MenuEntry,
   MenuHint,
   MenuIcon,
@@ -28,8 +30,11 @@ import { menuEligible, menuRowOf } from './views';
 import { viewOutputProblem } from './views';
 import {
   DocumentBundleSchema,
+  ENTITY_KEYS_MAX,
   MAX_DOCUMENT_BYTES,
   SiteHeaderOutputSchema,
+  SubjectSchema,
+  isEntityKind,
   type DocumentRequest,
   type DocumentContent,
   type SiteHeaderOutput,
@@ -38,10 +43,13 @@ import { Value } from '@sinclair/typebox/value';
 import { connectorProblems } from './validation';
 export {
   MENU_DEFAULT_ICON,
+  fieldTone,
+  markFields,
   menuEligible,
   menuProblem,
   menuRowOf,
   openRef,
+  placesOf,
   readsSummary,
   rowsKey,
   viewProblem,
@@ -61,8 +69,11 @@ export {
  */
 export type CapabilityKind = 'read' | 'propose' | 'execute';
 export type ConnectorKind = 'core' | 'passthrough' | 'derived';
-/** The caller as capabilities see it: identity and scope, never tokens. */
-export type Actor = Pick<SessionUser, 'id' | 'name' | 'unitId' | 'unitLabel' | 'role'>;
+/**
+ * The caller as capabilities see it: identity and scope, never tokens. `userName` is the person's provisioned directory
+ * user name, signed into a connector's actor (D44) as the key other systems know them by (D97); absent without one.
+ */
+export type Actor = Pick<SessionUser, 'id' | 'name' | 'unitId' | 'unitLabel' | 'role'> & { userName?: string };
 /** The actor a capability sees, cut from an authenticated context: identity and scope, never tokens. */
 export const actorOf = (persona: Actor): Actor => ({
   id: persona.id,
@@ -70,6 +81,7 @@ export const actorOf = (persona: Actor): Actor => ({
   unitId: persona.unitId,
   unitLabel: persona.unitLabel,
   role: persona.role,
+  ...(persona.userName ? { userName: persona.userName } : {}),
 });
 /**
  * Who may call a capability. Declarative so a remote manifest can carry it: no `roles` means every signed-in
@@ -91,9 +103,10 @@ export interface Clew {
   /** Run another connector's `read` or `propose` as the same actor. Scope applies; `execute` is refused. */
   call<O = unknown>(name: string, input?: unknown): Promise<O>;
   /**
-   * The person's IdP token for an audience, by token exchange from the session behind this call (D26). Missing when no
-   * session is behind the run (a scan, a figure, a connector's callback); resolves undefined under a session without IdP
-   * tokens. Never logged, never in an output.
+   * The person's IdP token for an audience, by token exchange from the session behind this call (D26): the request's own,
+   * or, for an approved write and a scan, the person's session that approved or asked for it while it is active. Missing
+   * when no session is behind the run (a figure, a connector's callback, a scan no live session asked for); resolves
+   * undefined under a session without IdP tokens. Never logged, never in an output.
    */
   delegate?: (audience: string) => Promise<string | undefined>;
 }
@@ -130,18 +143,18 @@ export interface Capability<I = unknown, O = unknown> {
   kinds?: SearchKind[];
   /** How Clew draws the output (D38). Absent means the generic panel rules. */
   view?: View;
-  /**
-   * The entity kind the capability's rows concern (D97 item 1). A read that declares it takes `AboutInputSchema` and
-   * answers at most one row per key, and Clew decides where that shows; it is never a model tool. Only a connector in
-   * Clew's own process can declare it: a manifest does not carry it until the key on the wire is decided.
-   */
-  about?: EntityKind;
   /** What the view's row is called and marked with when an administrator puts it in the menu (D40). */
   menu?: MenuHint;
   /** For a `propose` (D55): the fact kinds it answers for with step drafts of its own connector. Input is a fact envelope, output a follow response. */
   follows?: string[];
   /** The fact kind this capability brings about (D55); one of the connector's `facts`. */
   creates?: string;
+  /**
+   * What its rows concern (D97): a read asked with a batch of keys, or a propose or execute that takes one in `param`.
+   * Only Clew's own connectors may add `page`, the owned domain's page where the person writes (D95, D96); a manifest
+   * cannot carry it, so a remote connector never claims a page inside Clew.
+   */
+  about?: About & { page?: EntityPage };
   run: (actor: Actor, input: I, clew: Clew) => Promise<O>;
 }
 /** A capability is a search source when it is named `<id>.search` and is a read (D26); the composite `clew.search` is never one itself. */
@@ -152,9 +165,6 @@ export const SEARCH_CONNECTOR = 'clew';
 /** A capability is an errand source when it is named `<id>.errands` and is a read (D35, D89); the composite `clew.errands` is never one itself. */
 export const isErrandSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId: string) =>
   c.kind === 'read' && c.name === connectorId + '.errands' && connectorId !== SEARCH_CONNECTOR;
-/** A capability is a source about an entity kind when it is a read that declares it (D97 item 1); the composite `clew.about` never is. */
-export const isAboutSource = (c: Pick<Capability, 'name' | 'kind' | 'about'>, connectorId: string, kind: EntityKind) =>
-  c.kind === 'read' && c.about === kind && connectorId !== SEARCH_CONNECTOR;
 /** The built-in connector of the talks domain (D96 item 9): Clew's own module, which answers the talks profile while it is enabled. */
 export const TALKS_CONNECTOR = 'talks';
 /** A capability answers the talks profile when it is named `<id>.talks` and is a read (D96 item 8); the composite `clew.talks` never does. */
@@ -163,7 +173,7 @@ export const isTalkSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId: 
 /** A capability lists action points when it is named `<id>.commitments` and is a read (D96 item 8); the composite `clew.commitments` never does. */
 export const isCommitmentSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId: string) =>
   c.kind === 'read' && c.name === connectorId + '.commitments' && connectorId !== SEARCH_CONNECTOR;
-/** The built-in connector of the competence domain (D101 item 13): Clew's own module, switched on by an administrator. */
+/** The built-in connector of the competence domain (D107 item 13): Clew's own module, switched on by an administrator. */
 export const COMPETENCE_CONNECTOR = 'competence';
 const TALK_COMPOSITE = SEARCH_CONNECTOR + '.talks';
 const COMMITMENT_COMPOSITE = SEARCH_CONNECTOR + '.commitments';
@@ -182,6 +192,45 @@ export interface TalkSource {
   /** The same connector's `<id>.commitments` read, when it declares one the person may call. */
   commitments?: string;
 }
+/**
+ * A read about an entity kind as `Registry.aboutReads` names it for one person (D97): what the entities module needs to
+ * offer it as a lens, a column or a section, and to call it.
+ */
+export interface AboutRead {
+  name: string;
+  connectorId: string;
+  /** The source as a person reads it: the connector's `source`. */
+  source: string;
+  title: string;
+  /** The declared table or list, with a row's `open` only when the person may call that read. */
+  view: View;
+  /** The page of Clew's own domain where the person writes about one entity (D95, D96), from a core connector. */
+  page?: EntityPage;
+  /** The most keys one call takes: the read's own `maxItems`, never more than `ENTITY_KEYS_MAX`. */
+  batch: number;
+  /** The administrator offers it under Visa on the entity's list (D97 item 3). */
+  lens: boolean;
+  /** The field of its view the administrator shows as a column on "Alla" (D97 item 4). */
+  column?: string;
+  /** The connector is one of Clew's own (`kind: 'core'`): the source is Clew's own domain (D97). */
+  core?: true;
+}
+/** A propose or execute about an entity kind as `Registry.aboutActions` names it for one person (D97). */
+export interface AboutAction {
+  name: string;
+  connectorId: string;
+  source: string;
+  title: string;
+  kind: 'propose' | 'execute';
+  /** The input property that takes the entity's key. */
+  param: string;
+  /** The connector is one of Clew's own (`kind: 'core'`). */
+  core?: true;
+}
+/** Plain ordering of ids and names, the same in every locale. */
+const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+/** The longest key a card row may name an entity by (`SubjectSchema`). */
+const SUBJECT_KEY_MAX = SubjectSchema.properties.key.maxLength ?? 256;
 /** What an execute capability returns: the source system's answer, row by row, read back. */
 export interface ExecuteResult {
   headline: string;
@@ -669,7 +718,17 @@ export class Registry {
    * it names a capability of the connector that pushed it, with that capability's own kind. Otherwise a connector could put
    * another system's execute on its card, or call an execute a read so the card would run it without a receipt or an audit row.
    */
-  draftProblem(connectorId: string, draft: Pick<ThreadDraft, 'actions'>): string | undefined {
+  draftProblem(connectorId: string, draft: Pick<ThreadDraft, 'actions' | 'items'>): string | undefined {
+    // A row may name the person or unit it is about (D97 item 6): a known kind and a key that fits. Clew does not check
+    // that the key exists; the index from entity to cards only ever answers for an entity the reader may ask about.
+    for (const item of draft.items ?? []) {
+      const subject = item.subject as { entity?: unknown; key?: unknown } | undefined;
+      if (subject === undefined) continue;
+      if (typeof subject?.entity !== 'string' || !isEntityKind(subject.entity))
+        return `row ${item.ref} names an entity of an unknown kind`;
+      if (typeof subject.key !== 'string' || !subject.key.length || subject.key.length > SUBJECT_KEY_MAX)
+        return `row ${item.ref} names a ${subject.entity} without a key of 1 to ${SUBJECT_KEY_MAX} characters`;
+    }
     for (const a of draft.actions) {
       const found = this.capabilities.get(a.capability);
       if (!found || found.connector.id !== connectorId)
@@ -709,12 +768,17 @@ export class Registry {
     }
     return drafts;
   }
-  async scanOne(actor: Actor, connectorId: string): Promise<ScanObservation> {
+  /**
+   * One connector's scan for one actor. A connector that acts as the person (D26) is scanned only with a token from the
+   * person's own session, obtained here first: without a delegate in `context`, or when the session yields no token, it
+   * answers `authorization-required` and is never called. The delegate travels into the scan like any run's (`clewFor`).
+   */
+  async scanOne(actor: Actor, connectorId: string, context: RunContext = {}): Promise<ScanObservation> {
     await this.refresh();
     const m = this.connectors.get(connectorId);
     if (!m?.scan || !this.visible(actor, connectorId) || !this.governance(connectorId).scanEnabled)
       throw new CapabilityError(UNKNOWN);
-    if (m.delegation)
+    if (m.delegation && !(context.delegate && (await context.delegate(m.delegation.audience))))
       return {
         drafts: [],
         observation: {
@@ -725,7 +789,7 @@ export class Registry {
           exhausted: false,
         },
       };
-    const value = await m.scan(actor, this.clewFor(actor, {}, m.id));
+    const value = await m.scan(actor, this.clewFor(actor, context, m.id));
     const result = Array.isArray(value) ? { drafts: value } : value;
     const drafts = result.drafts.filter(d => !this.draftProblem(m.id, d));
     return {
@@ -764,20 +828,69 @@ export class Registry {
       }));
   }
   /**
-   * The reads about an entity kind that this person may call (D97 item 1), by name. As in `errandSources`, the name is
-   * tested before the scope, so the composite `clew.about` may ask this from its own scope.
+   * The reads about an entity kind a person may call (D97), connector by connector and by name within one, with what the
+   * entities module places them by: the view as the person gets it (a row's `open` only when they may call that read),
+   * how many keys one call takes, and the administrator's lens and column (a column only while its field is in the
+   * view). As in `errandSources`, `about` is tested before the scope and Clew's core connector is skipped: a core
+   * capability's scope may ask the registry, and must never be asked from here.
    */
-  aboutSources(actor: Actor, kind: EntityKind) {
+  aboutReads(actor: Actor, entity: EntityKind): AboutRead[] {
+    return this.aboutCapabilities(actor, entity, true).flatMap(({ connector, capability }) => {
+      const view = capability.view;
+      if (view?.kind !== 'table' && view?.kind !== 'list') return [];
+      const { open: _open, ...rest } = view;
+      const open = this.opens(actor, capability);
+      const choice = this.governance(connector.id).capabilities[capability.name];
+      const column = choice?.column && view.fields.some(f => f.key === choice.column) ? choice.column : undefined;
+      const declared = (capability.input as { properties?: { keys?: { maxItems?: unknown } } }).properties?.keys
+        ?.maxItems;
+      return [
+        {
+          name: capability.name,
+          connectorId: connector.id,
+          source: connector.source,
+          title: capability.title,
+          view: { ...rest, ...(open ? { open } : {}) } as View,
+          ...(capability.about?.page ? { page: capability.about.page } : {}),
+          batch:
+            typeof declared === 'number' && declared >= 1
+              ? Math.min(ENTITY_KEYS_MAX, Math.floor(declared))
+              : ENTITY_KEYS_MAX,
+          lens: choice?.lens === true,
+          ...(column ? { column } : {}),
+          ...(connector.kind === 'core' ? { core: true as const } : {}),
+        },
+      ];
+    });
+  }
+  /** The proposes and executes about an entity kind a person may call (D97), in the order of `aboutReads`, each with the input property that takes the key. */
+  aboutActions(actor: Actor, entity: EntityKind): AboutAction[] {
+    return this.aboutCapabilities(actor, entity, false).flatMap(({ connector, capability }) =>
+      capability.kind !== 'read' && capability.about?.param
+        ? [
+            {
+              name: capability.name,
+              connectorId: connector.id,
+              source: connector.source,
+              title: capability.title,
+              kind: capability.kind,
+              param: capability.about.param,
+              ...(connector.kind === 'core' ? { core: true as const } : {}),
+            },
+          ]
+        : [],
+    );
+  }
+  private aboutCapabilities(actor: Actor, entity: EntityKind, reads: boolean) {
     return [...this.capabilities.values()]
-      .filter(c => isAboutSource(c.capability, c.connector.id, kind) && !!this.allowed(actor, c.capability.name))
-      .map(c => ({
-        name: c.capability.name,
-        connectorId: c.connector.id,
-        source: c.connector.source,
-        title: c.capability.title,
-        view: c.capability.view!,
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .filter(
+        c =>
+          c.capability.about?.entity === entity &&
+          (c.capability.kind === 'read') === reads &&
+          c.connector.id !== SEARCH_CONNECTOR &&
+          !!this.allowed(actor, c.capability.name),
+      )
+      .sort((a, b) => compare(a.connector.id, b.connector.id) || compare(a.capability.name, b.capability.name));
   }
   /**
    * The one system that answers the talks profile for this person (D96 item 9). A connector is a candidate when the
@@ -928,6 +1041,8 @@ export class Registry {
    * The per-connector search sources are left out while the composite search is registered, so the model sees one search tool (D26).
    * The per-connector errand lists are left out the same way while `clew.errands` is registered (D35 item 4).
    * The talks profile and its composites are never tools, registered or not: no read of that domain reaches a model (D96 item 6).
+   * A read about an entity is never a tool either (D97 item 7): the loader refuses `model: true` on one, and this holds
+   * whatever a registration says.
    */
   tools(actor: Actor) {
     const composite = this.capabilities.has(SEARCH_CONNECTOR + '.search');
@@ -941,6 +1056,7 @@ export class Registry {
       .filter(c => !(errands && isErrandSource(c.capability, c.connector.id)))
       .filter(c => !isTalkSource(c.capability, c.connector.id) && !isCommitmentSource(c.capability, c.connector.id))
       .filter(c => c.capability.name !== TALK_COMPOSITE && c.capability.name !== COMMITMENT_COMPOSITE)
+      .filter(c => !(c.capability.kind === 'read' && c.capability.about))
       .map(c => ({
         name: c.capability.name,
         title: c.capability.title,

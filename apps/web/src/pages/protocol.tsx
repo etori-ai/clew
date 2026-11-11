@@ -10,6 +10,7 @@ import {
   Layout,
   LayoutContent,
   LayoutPanel,
+  Link,
   Markdown,
   MetadataList,
   MetadataListItem,
@@ -173,6 +174,16 @@ function Article({ reference }: { reference: ManifestReference }) {
       target.focus?.();
     }
   }, []);
+  // An address with an entry's anchor (a field, or a rule the manifest preview links to) lands on it once it is drawn:
+  // the article arrives after the page, so the browser's own jump to the fragment found nothing.
+  useEffect(() => {
+    const id = decodeURIComponent(window.location.hash.slice(1));
+    const target = id ? document.getElementById(id) : null;
+    if (!target) return;
+    target.scrollIntoView({ block: 'start' });
+    if (target.hasAttribute('tabindex')) target.focus({ preventScroll: true });
+    setActiveId(id);
+  }, []);
   const byPath = useMemo(() => new Map(reference.fields.map(f => [f.path, f])), [reference]);
   const pathOf = useMemo(() => new Map(reference.fields.map(f => [f.id, f.path])), [reference]);
   const [filter, setFilter] = useState('');
@@ -223,8 +234,9 @@ function Article({ reference }: { reference: ManifestReference }) {
                 Swedish in examples is what a person reads in Clew; everything else in a manifest is English.
               </Text>
               <Text as="p" color="secondary">
-                The routes on both sides are on <a href="/api/protocol">the OpenAPI page</a>. A manifest can be dry-run
-                with <code>POST /api/protocol/manifest</code>; this page as data is{' '}
+                The routes on both sides are on <a href="/api/protocol">the OpenAPI page</a>. A manifest can be tried on{' '}
+                <Link href="/protocol/preview">the manifest preview</Link>, which says what Clew would do with it, or
+                dry-run with <code>POST /api/protocol/manifest</code>; this page as data is{' '}
                 <a href="/api/protocol/manifest-reference.json">manifest-reference.json</a>.
               </Text>
               {mobile && (
@@ -286,13 +298,19 @@ function Article({ reference }: { reference: ManifestReference }) {
                 Where Clew applies each: when the manifest is loaded, when the connector is registered, in the
                 conformance check, or on each call.
               </Text>
-              <Markdown>
-                {reference.rules
-                  .map(r =>
-                    ruleLine(r, ` Applied ${where[r.enforced]}. Fields: ${r.fields.map(f => `\`${f}\``).join(', ')}.`),
-                  )
-                  .join('\n')}
-              </Markdown>
+              {/* One block per rule, so the manifest preview can link to the rule a problem breaks (`#rule-<id>`). */}
+              <VStack gap={1}>
+                {reference.rules.map(r => (
+                  <div key={r.id} id={`rule-${r.id}`} tabIndex={-1}>
+                    <Markdown>
+                      {ruleLine(
+                        r,
+                        ` Applied ${where[r.enforced]}. Fields: ${r.fields.map(f => `\`${f}\``).join(', ')}.`,
+                      )}
+                    </Markdown>
+                  </div>
+                ))}
+              </VStack>
             </VStack>
           </VStack>
         </LayoutContent>

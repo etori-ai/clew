@@ -72,7 +72,7 @@ const REVIEW_WIDTH = 1040;
  * `/cards/:threadId/review` draws Hem with the card beside the column (or in its sheet), as `/?card=` does, and this
  * overlay over it; `threadId` is the card the route names, null on every other start route. The step is the address's
  * `step`, rewritten in place. Closing (✕, Esc, the scrim, a swipe on the sheet) keeps the decisions: the overlay slides
- * away first and then leads to `/?card=<threadId>` with them as the card's selection, so the page (or the card's sheet)
+ * away first and then leads to `/?card=<threadId>` with them laid over the card's selection, so the page (or the card's sheet)
  * is no longer inert when the card puts the focus back on its "Granska N". The decisions live here, above the surface,
  * so a resize across the phone's width swaps the drawer for the sheet without losing them. The card comes from the
  * threads list, the cache Hem's cards are drawn from (D33). A card that is not reviewed, or a step it does not have,
@@ -148,18 +148,17 @@ export function ReviewOverlay({ threadId }: { threadId: string | null }) {
   usePageTitle(isOpen && (shown || missing) ? title : null, false);
 
   const approved = items.filter(i => decisions[i.ref] === 'approve').map(i => i.ref);
+  const left = items.filter(i => decisions[i.ref] === 'leave').map(i => i.ref);
   /** Back to the card beside Hem, or to Hem when the card is not there; with the decisions when there was a step to take them on. */
   const leave = (state?: ReviewReturn) =>
     setLeaving({ to: live ? cardAddress(live.id) : '/', ...(state ? { state } : {}) });
   // ✕, Esc and the scrim save and close, as "Spara och stäng" did (D73 item 3); nothing closes while Skicka waits on the source.
   const onOpenChange = (open: boolean) => {
     if (open || sending || leaving) return;
+    // A sent card's review is read, not decided: it hands back no decisions, only the way back to "Granska N".
     leave(
       shown && step !== null
-        ? reviewReturn(
-            shown.thread.id,
-            readOnly ? shown.thread.items.filter(i => i.selected).map(i => i.ref) : approved,
-          )
+        ? reviewReturn(shown.thread.id, readOnly ? [] : approved, readOnly ? [] : left)
         : undefined,
     );
   };
@@ -361,7 +360,7 @@ function Review({
   const undecided = items.filter(i => !decisions[i.ref]).length;
   const verb = verbOf(action);
   const mark = useMarks().ofThread(thread);
-  const source = thread.trigger.source.toLowerCase();
+  const source = thread.trigger.source;
   // A step is a place in the address, rewritten in place, so the browser's Back leaves the review (D73 item 1).
   const goTo = (n: number) => navigate(reviewHref(thread.id, n), { replace: true });
   const decide = (d: Decision) => {
@@ -373,7 +372,7 @@ function Review({
   // and only then does the overlay lead back to the card, where the row keeps its place with the receipt (D70 item 1).
   // The mutation response can arrive before the list query notifies this render. Keep that confirmed answer too.
   const response = useRef<Thread | null>(null);
-  const { settling, error, perform, run } = useCardAction({
+  const { settling, error, perform, run, confirmation } = useCardAction({
     thread: live,
     onChange: thread => {
       response.current = thread;
@@ -640,7 +639,7 @@ function Review({
             <Text weight="semibold">Vad som händer när du skickar</Text>
             <Text as="p" type="supporting">
               {verb} skrivs till {source} i ett beslut och läses tillbaka rad för rad som kvitto. Grönt bara när{' '}
-              {source} har bekräftat. Ångra i 10 minuter. Kortet går till Klart
+              {source} har bekräftat. Kortet går till Klart
               {left + undecided > 0
                 ? `; det som lämnas kvar ligger kvar på kortet och kommer som ett eget kort vid nästa genomgång.`
                 : '.'}
@@ -653,6 +652,7 @@ function Review({
           {error}
         </Text>
       )}
+      {confirmation}
     </VStack>
   );
   const flowStatus = readOnly ? (

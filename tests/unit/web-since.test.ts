@@ -59,7 +59,7 @@ describe('Sedan i går names a few cards and sums the rest (D65)', () => {
       ],
     });
     expect(doneLine).toBe(
-      '3 klara: ny rutin vid hot och våld, kvitto läst från kommunikation 13:00, attestera 3 fakturor, 37 050 kr 12:00 och tillbud 2026-1182, halkolycka i duschen, avfärdad 11:30.',
+      '3 klara: ny rutin vid hot och våld, kvitto läst från Kommunikation 13:00, attestera 3 fakturor, 37 050 kr 12:00 och tillbud 2026-1182, halkolycka i duschen, avfärdad 11:30.',
     );
   });
   test("Hillevi's day: thirty-four closed cards read as one short sentence", () => {

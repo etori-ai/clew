@@ -11,13 +11,17 @@ function pinnedCalendarAppVersion(string $path): string {
     return $version;
 }
 
-/** Refresh only the two image-owned apps before Apache starts. */
+/**
+ * Refresh only the image-owned apps before Apache starts: every app the image ships in its custom_apps (the Dockerfile
+ * pins calendar, roomvox, user_oidc and approval), so an app added there reaches an existing volume too.
+ */
 function refreshPinnedCalendarApps(string $imageApps, string $nextcloudRoot): void {
-    $apps = ['calendar', 'roomvox'];
+    $apps = array_values(array_filter(scandir($imageApps) ?: [], fn($app) => $app[0] !== '.' && is_dir("$imageApps/$app")));
+    if ($apps === []) throw new RuntimeException("No image-owned apps in $imageApps");
     $installedApps = $nextcloudRoot . '/custom_apps';
     $pending = $installedApps . '/.clew-app-upgrade-pending';
     $changed = is_file($pending);
-    // Validate every app before changing either one. Never downgrade persisted app code.
+    // Validate every app before changing any. Never downgrade persisted app code.
     foreach ($apps as $app) {
         $expected = pinnedCalendarAppVersion("$imageApps/$app/appinfo/info.xml");
         $metadata = "$installedApps/$app/appinfo/info.xml";

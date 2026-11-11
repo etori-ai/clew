@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { memoryCompetenceStore } from '../../apps/server/src/modules/competence/adapters/memory';
 import { competenceStoreContract } from '../competence-store-contract';
 
-/** The competence store contract on the memory adapter (D101, D25); `tests/db/postgres-competence-store.test.ts` runs it on Postgres. */
+/** The competence store contract on the memory adapter (D107, D25); `tests/db/postgres-competence-store.test.ts` runs it on Postgres. */
 competenceStoreContract('memory', async () => {
   const store = memoryCompetenceStore();
   return {

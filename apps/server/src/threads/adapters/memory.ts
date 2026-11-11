@@ -1,7 +1,7 @@
 import { unresolvedExecution, type Thread } from '@clew/contracts';
 import type { AuditEntry, JobInput, ThreadStore, ThreadTx, TimerIntent, WorkflowStart } from '../model';
 import { admitAttention, type AttentionDay } from '../attention-domain';
-import { reminderWorkflowId } from '../domain';
+import { namedAmong, namedSubjects, reminderWorkflowId, withoutSubject } from '../domain';
 
 /**
  * The store in memory: the unit tests' adapter (D25). Same contract as Postgres, held to it by `tests/store-contract.ts`.
@@ -106,7 +106,8 @@ export function memoryThreadStore(): MemoryThreadStore {
       return row ? withTimers(row.thread) : undefined;
     },
     async insertThread(thread) {
-      const { personId, ...rest } = thread;
+      // A thread names no entity of its own unless it says so, as Postgres reads an empty column back (D97).
+      const { personId, subjects, ...rest } = thread;
       const clash = [...threads.values()].some(
         r =>
           r.personId === personId &&
@@ -119,6 +120,7 @@ export function memoryThreadStore(): MemoryThreadStore {
         personId,
         thread: {
           ...copy(rest),
+          ...(subjects?.length ? { subjects: copy(subjects) } : {}),
           receipt: null,
           handledAt: null,
           remindedAt: null,
@@ -151,6 +153,21 @@ export function memoryThreadStore(): MemoryThreadStore {
     },
     async scheduleJob(job) {
       if (!jobs.some(j => j.id === job.id)) jobs.push(copy(job));
+    },
+    // The index from entity to cards is the threads' own rows here, read as Postgres reads its index (D97).
+    async eraseSubject(subject) {
+      const erased = { cards: 0, rows: 0, cardSubjects: 0 };
+      for (const row of threads.values()) {
+        const left = withoutSubject(row.thread, subject);
+        if (!left) continue;
+        const { subjects, erased: counts, items } = left;
+        const { subjects: _, ...thread } = row.thread;
+        row.thread = { ...thread, items, ...(subjects.length ? { subjects } : {}) };
+        erased.cards++;
+        erased.rows += counts.rows;
+        erased.cardSubjects += counts.cardSubjects;
+      }
+      return erased;
     },
   };
   const store: MemoryThreadStore = {
@@ -202,6 +219,19 @@ export function memoryThreadStore(): MemoryThreadStore {
         r => r.personId === personId && r.thread.topic === topic && r.thread.state === 'open',
       );
       return row ? withTimers(row.thread) : undefined;
+    },
+    async threadsNaming(personId, subjects) {
+      return [...threads.values()]
+        .filter(
+          r =>
+            r.personId === personId &&
+            r.thread.kind === 'pushed' &&
+            (r.thread.state === 'open' || unresolvedExecution(r.thread)),
+        )
+        .map(r => ({ thread: r.thread, subjects: namedAmong(namedSubjects(r.thread), subjects) }))
+        .filter(r => r.subjects.length)
+        .sort((a, b) => Date.parse(b.thread.createdAt) - Date.parse(a.thread.createdAt))
+        .map(r => ({ thread: withTimers(r.thread), subjects: r.subjects }));
     },
     async transaction(fn) {
       const previous = transactions;

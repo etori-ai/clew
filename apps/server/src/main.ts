@@ -25,11 +25,11 @@ import { signingAuthority } from './connectors/signing';
 import { startupReadiness } from './startup';
 import { startRefresh } from './composition/refresh';
 import { startJobs } from './composition/jobs';
-import { mcpRoutes } from './routes/mcp';
-import { startMcpWatches } from './composition/mcp';
 import { scimRoutes } from './routes/scim';
 import { SCIM_CONTENT_TYPE, ScimError } from './modules/people/contracts';
 import { staffRoutes } from './routes/staff';
+import { entityRoutes } from './routes/entities';
+import { entities, entityActions } from './composition/entities';
 import { scim } from './composition/people';
 import { talkRoutes } from './routes/talks';
 import { talks } from './composition/talks';
@@ -60,7 +60,6 @@ const startup = startupReadiness({
     startDurableRuntime();
     watchConnectors(connectorReconcile);
     startJobs();
-    startMcpWatches();
     startAssistantProbe();
     startRefresh();
     void loadConnectors(registry)
@@ -100,13 +99,15 @@ app.route('/scim/v2', scimRoutes(scim, logPort('scim', 'error')));
 app.route('/api/admin', adminRoutes);
 // Personal (D94): a manager's people, scoped by the use case.
 app.route('/api/staff', staffRoutes);
+// Entities (D97): a person or a unit and what the sources about it say, behind the core rule of who may be asked about,
+// and an action from its menu, which becomes a card (D8).
+app.route('/api/entities', entityRoutes({ entities, actions: entityActions }));
 // The talks module's writes (D96), only while Clew's own module answers the talks profile for the person.
 app.route('/api/talks', talkRoutes({ talks, writable: talksWritable }));
-// The competence module's catalogue and registrations (D101), only while the built-in module is switched on for the person.
+// The competence module's catalogue and registrations (D107), only while the built-in module is switched on for the person.
 app.route('/api/competence', competenceRoutes({ competence, writable: competenceWritable }));
 // The shared header (D88): what the person's header connector lists for them.
 app.route('/api/header', headerRoutes);
-app.route('/api/chat-services', mcpRoutes);
 app.route('/api', api);
 app.notFound(c => c.json({ error: 'Okänd adress.' }, 404));
 // Hono hands handler errors to onError, not to the middleware chain: map auth, calendar and input errors here.

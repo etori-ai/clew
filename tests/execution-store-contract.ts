@@ -29,6 +29,8 @@ export const executionRecord = (personId: string, id: string): Execution => ({
   dispatchedAt: null,
   attempt: 0,
   leaseUntil: null,
+  approvingSession: null,
+  checkingSession: null,
 });
 /** A job (D55) over two step executions; the watch step carries the read input a Postgres adapter must seal. */
 export const jobRecord = (personId: string, id: string, steps: Execution[]): Job => ({
@@ -225,6 +227,42 @@ export function executionStoreContract(name: string, create: () => Promise<Execu
       ).rejects.toThrow('crash');
       expect(await w.store.readJob(w.personId + '-job-rollback')).toBeUndefined();
       expect(await w.store.read(e.id)).toBeUndefined();
+    });
+    test("a delegated write's session bindings (D26) survive a round trip, and the checking session is kept alone and rolled back with its transaction", async () => {
+      const w = await create(),
+        e: Execution = {
+          ...executionRecord(w.personId, w.personId + '-sessions'),
+          approvingSession: 'synthetic-approving-session',
+        };
+      await w.store.transaction(async tx => {
+        await tx.insert(e);
+      });
+      expect(await w.store.read(e.id)).toEqual(e);
+      expect(await w.store.readDecision(w.personId, e.decisionId)).toEqual(e);
+      await w.store.transaction(tx => tx.keepCheckingSession(e.id, 'synthetic-checking-session'));
+      expect(await w.store.read(e.id)).toEqual({ ...e, checkingSession: 'synthetic-checking-session' });
+      await expect(
+        w.store.transaction(async tx => {
+          await tx.keepCheckingSession(e.id, 'synthetic-other-session');
+          throw new Error('crash');
+        }),
+      ).rejects.toThrow('crash');
+      expect((await w.store.read(e.id))?.checkingSession).toBe('synthetic-checking-session');
+      await w.store.transaction(async tx => {
+        const row = (await tx.lock(e.id))!;
+        expect(row).toMatchObject({
+          approvingSession: 'synthetic-approving-session',
+          checkingSession: 'synthetic-checking-session',
+        });
+        await tx.update({ ...row, state: 'unknown', reason: 'needs-session' });
+      });
+      expect(await w.store.read(e.id)).toEqual({
+        ...e,
+        state: 'unknown',
+        reason: 'needs-session',
+        checkingSession: 'synthetic-checking-session',
+      });
+      expect(await w.auditCount()).toBe(0);
     });
     test('a workflow start is idempotent by its id: a reconciliation under a new id is a second start, a repeat is none', async () => {
       const w = await create(),

@@ -20,7 +20,7 @@ export const reopened = (thread: Thread): Thread => ({
 });
 /**
  * At rest: nothing the person asked for still waits on the source's reply or the scheduler's acknowledgement. A decision
- * the source has not confirmed (D45) and a timer Temporal has not yet taken (D47) are committed intent on its way; an
+ * the source has not confirmed (D45) and a timer the durable engine has not yet taken (D47) are committed intent on its way; an
  * execution that is unknown, partial or failed needs the person, so it counts as rest and is shown at once.
  */
 export const atRest = (thread: Pick<Thread, 'execution' | 'timers'>): boolean =>

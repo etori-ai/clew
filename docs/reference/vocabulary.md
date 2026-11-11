@@ -107,6 +107,22 @@ A source system owns records. A connector exposes capabilities that read those r
 | Grant | The one assignment a person acts as, with their capabilities: the derived projection every request and connector reads. |
 | Binding | The link from an identity provider's subject to a person, written at the first login. (Distinct from a follower binding in the integration vocabulary.) |
 
+## Entity vocabulary
+
+[D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md) gives *entity* a narrow meaning, narrower than the "entity map" in this page's title. [Entities](../architecture/entities.md) describes the mechanism.
+
+| Term | In the product | Meaning |
+|---|---|---|
+| Entity | **person**, **enhet** | A person or a unit Clew holds, which a source's rows can be about. The kinds are the closed list `ENTITY_KINDS`, `person` and `unit`. Not an entity in the domain-driven sense. |
+| Key | Not shown | How an entity is named on the wire: a person's provisioned user name, compared without regard to case, or a unit's id. Clew's own person id is never a key. |
+| About | Not shown | A capability's declaration of the entity kind its rows concern (`about`). The source says what, never where; Clew places it. |
+| Subject | The name as a link | The entity a card row, a search hit or a view record names, by kind and key. Its name then links to the person or unit. |
+| Lens | An item under **Visa** | A read about an entity that an administrator offers on the entity's list. Chosen under "Visa", the list becomes that source's view, sorted by need. "Alla" is the list without a lens. |
+| Mark | A badge under **Just nu** | A value of a lens with a `warn` or `alert` tone, shown on the entity's row on "Alla". "Just nu" also counts the reader's cards about the person ("1 att agera på", "2 förslag"). |
+| Section | **Behöver dig**, then each source's title | One source's part of the opened person or unit, named with its source ("Clew" for Clew's own domain). "Behöver dig" is the section of the reader's own cards that name the entity. |
+| Column on "Alla" | A column heading with the source under it | One field of a read about an entity, chosen by an administrator under "Kolumn på Alla" and shown to everyone who has the list. At most three per entity kind. |
+| Opened entity | **Öppna som sida**; the list **Om <namn>** | A person beside the list or as a page, or a unit as a page. |
+
 ## Naming rules
 
 - Say **person** in code, tables and documentation, **användare** in the Swedish interface (the administrator's word; the page is Användare, D62), and **User** only for the SCIM resource at `/scim/v2`. The person is the human; the account is the binding; the User is the standard's name for the person as pushed.
@@ -134,6 +150,7 @@ These names clarify product language without renaming types, API routes or store
 | Receipt | [`Receipt`](../../packages/contracts/src/index.ts) is the displayed outcome; connector execution results provide the underlying evidence. |
 | Context chip and object | [`Chip` and `ClewObject`](../../packages/contracts/src/index.ts) provide references for conversation context and object selection. |
 | Side panel and tab | [`PanelFrame` and `OpenTab`](../../apps/web/src/components/panel.tsx) hold opened content. Their existing `card` and `view` names remain implementation identifiers. |
+| Entity, subject, lens, section and column | [`EntityKind`, `Subject`, `About`, `EntityList`, `EntityDetail`, `EntitySource` and `EntityColumn`](../../packages/contracts/src/index.ts); the use cases in [`modules/entities`](../../apps/server/src/modules/entities/); the index from entity to cards is the table `thread_subject` in [the schema](../../packages/db/src/schema.ts). A capability's lens and column are `lens` and `column` in its stored overrides. |
 | Person, group, assignment and grant | [`auth_person`, `auth_group`, `auth_assignment` and `auth_access_grant`](../../packages/db/src/schema.ts); the SCIM resources `User` and `Group` are drawn from them in [`modules/people/domain.ts`](../../apps/server/src/modules/people/domain.ts). A group's name is `label` in Clew and `displayName` on the wire. |
 
 Earlier decisions and reviews retain their historical wording. Read their uses of *card* or *thread* in context, and use this vocabulary when writing new product explanations.

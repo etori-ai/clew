@@ -188,6 +188,92 @@ test.describe('administration', () => {
       await toggle.click();
       await expect.poll(() => api.figuresOff).toEqual([]);
     });
+    test('"På Personal och andra listor" offers a read about a person under Visa and one of its fields as a column, and shows the refusal (D97)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      // The connector's reads about a person, as the admin read gives them (D97 items 3 and 4); the PATCHes are kept.
+      const patches: unknown[] = [];
+      let lens = false;
+      let column: string | null = null;
+      let refuse = false;
+      const detail = () => {
+        const base = connectorDetail(api.connectors.find(c => c.id === 'hr')!);
+        return {
+          ...base,
+          capabilities: [
+            ...base.capabilities,
+            {
+              name: 'hr.presence',
+              kind: 'read' as const,
+              title: 'Frånvaro',
+              description: 'Närvaro i dag och kommande frånvaro.',
+              model: false,
+              roles: null,
+              enabled: true,
+              tool: false,
+              menu: null,
+              about: 'person' as const,
+              lens: { on: lens },
+              column: {
+                fields: [
+                  { key: 'today', label: 'Närvaro' },
+                  { key: 'upcoming', label: 'Kommande' },
+                ],
+                on: column,
+              },
+            },
+          ],
+        };
+      };
+      await page.route('**/api/admin/connectors/hr', async route => {
+        if (route.request().method() !== 'PATCH') return route.fulfill({ json: detail() });
+        const body = route.request().postDataJSON() as {
+          lens?: Record<string, boolean>;
+          column?: Record<string, string | null>;
+        };
+        patches.push(body);
+        if (body.column && refuse)
+          return route.fulfill({
+            status: 400,
+            json: { error: 'Högst 3 kolumner kan visas under Alla för personer. Ta bort en annan kolumn först.' },
+          });
+        if (body.lens) lens = body.lens['hr.presence'] ?? lens;
+        if (body.column) column = body.column['hr.presence'] ?? null;
+        return route.fulfill({ json: detail() });
+      });
+      await open(page, '/admin/connectors/hr');
+      const lists = (await pickSection(page, 'Områden')).getByRole('list', { name: 'På Personal och andra listor' });
+      const row = lists.getByRole('listitem').filter({ hasText: 'Frånvaro' });
+      await expect(row.getByText('Om en person')).toBeVisible();
+      await expectNoAxeViolations(page);
+      const toggle = row.getByRole('switch', { name: 'Visa Frånvaro under Visa' });
+      await expect(toggle).not.toBeChecked();
+      await toggle.focus();
+      await page.keyboard.press('Space');
+      await expect(toggle).toBeChecked();
+      await expect.poll(() => patches).toContainEqual({ lens: { 'hr.presence': true } });
+      await expect(
+        page.getByRole('region', { name: 'Aviseringar' }).getByText('Frånvaro går att välja under Visa.'),
+      ).toBeVisible();
+      await expect(toggle).toBeFocused();
+      // The column: one field of the view, or none.
+      const select = row.getByRole('combobox', { name: 'Kolumn på Alla' });
+      await expect(select).toContainText('Ingen kolumn');
+      await select.click();
+      await page.getByRole('option', { name: 'Närvaro' }).click();
+      await expect.poll(() => patches).toContainEqual({ column: { 'hr.presence': 'today' } });
+      await expect(select).toContainText('Närvaro');
+      // The server's limit of three columns is said as the server says it.
+      refuse = true;
+      await select.click();
+      await page.getByRole('option', { name: 'Kommande' }).click();
+      await expect(
+        page.getByRole('alert').filter({ hasText: 'Högst 3 kolumner kan visas under Alla för personer.' }),
+      ).toBeVisible();
+      await expectNoAxeViolations(page);
+    });
     test('the list names each connector, its status in words and its audience', async ({ page, api }) => {
       api.admin = true;
       await open(page, '/admin/connectors');

@@ -192,3 +192,15 @@ narrows a desktop review to a phone and keeps the step and the decisions; 320 px
 The drawer/sheet, address, source-write boundary, receipt and return-focus rules remain in force. The changes are composed from Astryx controls and motion; D79's content-renderer exception is unchanged.
 
 **Amended 2026-11-08: results stay accessible and rejected rows can recover.** [D80](D80-recover-rejected-rows-without-replaying-confirmed-writes.md) keeps submitted reviews openable from the card and Klart after the undo window closes, with receipt outcomes and current source documents. Connector-declared corrections use a separate human execution. Definitively rejected rows can start a new review without resending confirmed rows. Unknown results require reconciliation first. The completion cue is now shared UI feedback, used by receipts and successful saves as well as reviews; it never celebrates an unconfirmed result.
+
+**Amended 2026-11-11: the decisions are laid over the card's selection, they do not replace it.** Item 3 and the
+amendments say closing leads back "with the decisions as the card's selection". As built, the review handed back the
+approved rows as the whole selection, so a review that was opened and closed with nothing judged cleared the ticks the
+source had set: the invoice card showed its two rows that match an order ticked before "Granska 3" and none after (the
+product owner, 2026-11-11). The state on the entry for `/?card=<threadId>` is now
+`{ review: { threadId, approved, left } }`, and the card applies it to the selection it has
+(`selectionAfterReview` in `apps/web/src/review-address.ts`): a row chosen for approval is ticked, a row left behind is
+not, and a row the review never judged keeps the tick it had, whether the source or the person set it. A sent card's
+review, which is read and not decided, hands back no decisions. The address, the focus on "Granska N" and what is
+written are unchanged: the card's ticks still write nothing on a card whose next step is the review, and the review
+still starts with no row judged. Evidence: `apps/web/tests/review-address.test.ts`, `tests/a11y/review.spec.ts`.

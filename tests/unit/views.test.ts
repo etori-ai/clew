@@ -2,6 +2,8 @@ import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import type { SearchResult, View } from '../../packages/contracts/src/index';
 import {
+  fieldTone,
+  markFields,
   openRef,
   viewProblem,
   viewRows,
@@ -144,6 +146,81 @@ describe('the rules of a declared view', () => {
       ]),
     ).toMatch(/not a read/);
   });
+  test("a record names an entity by a string property it holds: a row's for a table or list, the record's own for a detail (D97 item 6)", () => {
+    const people = {
+      type: 'object',
+      properties: {
+        rows: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              phone: {},
+              userName: { type: 'string' },
+              count: { type: 'number' },
+            },
+          },
+        },
+      },
+    };
+    const subject = (key: string) => ({ ...table, subject: { entity: 'person', key } });
+    expect(viewProblem(read({ output: people, view: subject('userName') }), [])).toBeUndefined();
+    expect(viewProblem(read({ output: people, view: subject('nobody') }), [])).toMatch(
+      /view subject "nobody" is not in the output schema/,
+    );
+    expect(viewProblem(read({ output: people, view: subject('count') }), [])).toMatch(
+      /view subject "count" is not a string/,
+    );
+    // An output that does not say what it holds is checked when a real answer is read, as every other key is.
+    expect(viewProblem(read({ output: {}, view: subject('anything') }), [])).toBeUndefined();
+    const detail = {
+      kind: 'detail',
+      title: 'name',
+      fields: [{ key: 'name', label: 'Namn' }],
+      subject: { entity: 'unit', key: 'unitId' },
+    };
+    const record = (unitId: unknown) => ({
+      type: 'object',
+      properties: { name: { type: 'string' }, ...(unitId ? { unitId } : {}) },
+    });
+    expect(viewProblem(read({ output: record({ type: 'string' }), view: detail }), [])).toBeUndefined();
+    expect(viewProblem(read({ output: record(undefined), view: detail }), [])).toMatch(/view subject "unitId"/);
+    expect(viewProblem(read({ output: record({ type: 'integer' }), view: detail }), [])).toMatch(/is not a string/);
+  });
+  test('a field beside another follows one, and at most one field is the row in one value (D97)', () => {
+    const fields = (...extra: Array<Record<string, unknown>>) =>
+      ({ ...table, fields: table.fields.map((f, i) => ({ ...f, ...extra[i] })) }) as View;
+    // The phone beside the name, the name the row in one value: one cell where the whole row is drawn.
+    expect(viewProblem(read({ view: fields({ compact: true }, { beside: true }) }), [])).toBeUndefined();
+    expect(viewProblem(read({ view: fields({ beside: true }) }), [])).toMatch(
+      /view field "name" is beside nothing: the first field cannot be beside/,
+    );
+    expect(viewProblem(read({ view: fields({ compact: true }, { compact: true }) }), [])).toMatch(
+      /view fields "name", "phone" are all compact: at most one field is the row in one value/,
+    );
+    // A detail and a record's items keep the same rules.
+    const detail = { kind: 'detail', title: 'name', fields: [{ key: 'name', label: 'Namn', beside: true }] };
+    expect(viewProblem(read({ output: {}, view: detail }), [])).toMatch(/beside nothing/);
+    const record = {
+      kind: 'record',
+      title: 'name',
+      fields: [{ key: 'name', label: 'Namn' }],
+      items: {
+        rows: 'lines',
+        title: 'text',
+        fields: [
+          { key: 'text', label: 'Rad', compact: true },
+          { key: 'sum', label: 'Summa', format: 'number', compact: true },
+        ],
+      },
+    };
+    expect(viewProblem(read({ output: {}, view: record }), [])).toMatch(/are all compact/);
+    // The manifest loader holds a remote connector to them (the reference's probes break each once).
+    const manifest = JSON.parse(JSON.stringify(phonebookManifest));
+    manifest.capabilities[0].view.fields[0].beside = true;
+    expect(() => parseManifest(manifest, 'phonebook')).toThrow(/beside nothing/);
+  });
   test('the manifest loader and the registry refuse a connector whose view breaks a rule; markup is not a thing a view can carry', () => {
     expect(parseManifest(phonebookManifest, 'phonebook').capabilities[0]!.view?.kind).toBe('table');
     expect(() =>
@@ -258,6 +335,32 @@ describe('the rules of a declared view', () => {
       source: 'X',
     });
     expect(openRef(open, { name: 'A' }, 'X')).toBeUndefined();
+  });
+  test('a tone is the one named for the value, else the `*` tone for any other value that is present (D97); only warn and alert mark a row', () => {
+    const late = { key: 'late', label: 'Försenade', format: 'status' as const, tones: { '*': 'warn' as const } };
+    expect(fieldTone(late, '2 försenade')).toBe('warn');
+    expect(fieldTone(late, 0)).toBe('warn');
+    expect(fieldTone(late, false)).toBe('warn');
+    for (const absent of [undefined, null, '']) expect(fieldTone(late, absent)).toBe('none');
+    const state = {
+      key: 'state',
+      label: 'Samtal',
+      format: 'status' as const,
+      tones: { Saknas: 'alert' as const, Hållet: 'ok' as const, '*': 'warn' as const },
+    };
+    expect(fieldTone(state, 'Saknas')).toBe('alert');
+    expect(fieldTone(state, 'Hållet')).toBe('ok');
+    expect(fieldTone(state, 'Bokat')).toBe('warn');
+    expect(fieldTone({ tones: { true: 'warn' } }, true)).toBe('warn');
+    expect(fieldTone({ tones: { true: 'warn' } }, false)).toBe('none');
+    expect(fieldTone({}, 'any')).toBe('none');
+    const quiet = { key: 'at', label: 'När', format: 'status' as const, tones: { Bokat: 'ok' as const } };
+    expect(markFields({ kind: 'list', title: 'state', fields: [state, quiet, late] }).map(f => f.key)).toEqual([
+      'state',
+      'late',
+    ]);
+    expect(markFields({ kind: 'detail', title: 'state', fields: [state] })).toEqual([]);
+    expect(markFields(undefined)).toEqual([]);
   });
 });
 

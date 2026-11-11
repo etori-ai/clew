@@ -2,6 +2,7 @@ import type {
   CommitmentsResult,
   TalkRound,
   TalksResult,
+  UserAdminRow,
   UsersAdminOverview,
   OrganisationOverview,
   OrganisationUnitPeople,
@@ -13,6 +14,15 @@ import type {
   ProviderSummary,
   ProviderTestReport,
   SiteHeaderView,
+} from '@clew/contracts';
+import type {
+  EntityAction,
+  EntityDetail,
+  EntityList,
+  EntityRef,
+  EntityRows,
+  EntitySource,
+  View,
 } from '@clew/contracts';
 import type {
   Area,
@@ -1047,7 +1057,10 @@ export const units = [
   { id: 'unit-it', label: 'IT och digitalisering' },
 ];
 /** Administration › Användare (D85): the provisioned people and the mapping as the page lists them. */
-/** Personal (D94): what the test person, a rektor, manages: their own school and a fritidshem with a co-manager. */
+/**
+ * Personal (D94): what the test person, a rektor, manages: their own school and a fritidshem with a co-manager. Since
+ * D97 the page lists `entityList()`; this is what the talk's drawer still reads for the person it opens.
+ */
 export const staffOverview = (): StaffOverview => ({
   units: [
     {
@@ -1064,19 +1077,19 @@ export const staffOverview = (): StaffOverview => ({
         },
         {
           id: 'erik',
-          name: 'Erik Nyström',
-          userName: 'erik.nystrom',
-          email: 'erik.nystrom@clew.test',
+          name: 'Erik Sandström',
+          userName: 'erik.sandstrom',
+          email: 'erik.sandstrom@clew.test',
           role: 'employee',
           enabled: true,
         },
         {
-          id: 'sara',
-          name: 'Sara Pettersson',
-          userName: 'sara.pettersson',
-          email: 'sara.pettersson@clew.test',
+          id: 'karin',
+          name: 'Karin Lindqvist',
+          userName: 'karin.lindqvist',
+          email: 'karin.lindqvist@clew.test',
           role: 'employee',
-          enabled: false,
+          enabled: true,
         },
       ],
     },
@@ -1106,7 +1119,8 @@ export const staffOverview = (): StaffOverview => ({
 });
 /**
  * Utvecklingssamtal (D96), as `clew.talks` and `clew.commitments` answer them over the people of `staffOverview()`
- * (the same ids). Anna's talk is held, Erik's and Lena's are booked, Sara's is missing; Omar, the fritidshem's
+ * (the same ids, and for the school the same people as `entityList()`). Anna's talk is held, Erik's and Lena's are
+ * booked, Karin's is missing; Omar, the fritidshem's
  * co-manager, is not in the round, so a page also meets a person without a row. Action points: Anna has one carried
  * over, two open this round and one done; Erik one carried over (overdue) and one done from an earlier round; the test
  * person, as an employee in their own talk, has their own and one their manager owns.
@@ -1141,7 +1155,7 @@ export const talkRows = (): Array<Omit<TalkEntry, 'openCommitments'>> =>
   [
     { id: 'anna', state: 'held' as const, at: '2026-11-03' },
     { id: 'erik', state: 'booked' as const, at: '2026-11-11T08:00:00.000Z' },
-    { id: 'sara', state: 'missing' as const },
+    { id: 'karin', state: 'missing' as const },
     { id: 'lena', state: 'booked' as const, at: '2026-11-12T13:30:00.000Z' },
   ].map(({ id, ...row }) => ({ ...person(id), ref: `talk:talks:${id}`, ...row }));
 const commitment = (
@@ -1291,70 +1305,83 @@ export const readOnlyCommitments = (result: CommitmentsResult): CommitmentsResul
   writable: false,
   source: TALKS_READ_ONLY_SOURCE,
 });
+/** The people of Administration › Användare as the suite lists them (D100), by name. */
+export const usersPeople = (): UserAdminRow[] => [
+  {
+    id: 'hassan',
+    name: 'Hassan Ali',
+    userName: 'hassan',
+    externalId: 'dev:hassan',
+    email: 'hassan@clew.test',
+    enabled: true,
+    bound: true,
+    assignments: [{ unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum', role: 'employee' }],
+    active: { unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum', role: 'employee' },
+    capabilities: [],
+  },
+  {
+    id: 'hillevi',
+    name: 'Hillevi Berg',
+    userName: 'hillevi',
+    externalId: 'dev:hillevi',
+    email: 'hillevi@clew.test',
+    enabled: true,
+    bound: true,
+    assignments: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' }],
+    active: { unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' },
+    capabilities: [],
+  },
+  {
+    id: 'mikael',
+    name: 'Mikael Lund',
+    userName: 'mikael',
+    externalId: 'dev:mikael',
+    email: 'mikael@clew.test',
+    enabled: true,
+    bound: false,
+    assignments: [{ unitId: 'unit-it', unitLabel: 'IT och digitalisering', role: 'employee' }],
+    active: { unitId: 'unit-it', unitLabel: 'IT och digitalisering', role: 'employee' },
+    capabilities: ['admin.connectors', 'admin.users'],
+  },
+  {
+    id: 'omar',
+    name: 'Omar Ny',
+    userName: 'omar',
+    externalId: 'dev:omar',
+    email: 'omar@clew.test',
+    enabled: true,
+    bound: false,
+    assignments: [],
+    active: null,
+    capabilities: [],
+  },
+];
+/** Enough people for three pages: sixty on one unit, by name, after which nobody in `usersPeople` sorts. */
+export const manyPeople = (): UserAdminRow[] =>
+  Array.from({ length: 60 }, (_, i) => {
+    const n = String(i + 1).padStart(2, '0'),
+      placed = { unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum', role: 'employee' as const };
+    return {
+      id: 'p' + n,
+      name: 'Person ' + n,
+      userName: 'person' + n,
+      externalId: 'dev:p' + n,
+      email: `person${n}@clew.test`,
+      enabled: true,
+      bound: false,
+      assignments: [placed],
+      active: placed,
+      capabilities: [],
+    };
+  });
 export const usersOverview = (): UsersAdminOverview => ({
-  users: [
-    {
-      id: 'hassan',
-      name: 'Hassan Ali',
-      userName: 'hassan',
-      externalId: 'dev:hassan',
-      email: 'hassan@clew.test',
-      enabled: true,
-      bound: true,
-      assignments: [{ unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum', role: 'employee' }],
-      active: { unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum', role: 'employee' },
-      capabilities: [],
-      groups: [{ externalId: 'unit:unit-omsorg', label: 'Hemtjänst Centrum' }],
-    },
-    {
-      id: 'hillevi',
-      name: 'Hillevi Berg',
-      userName: 'hillevi',
-      externalId: 'dev:hillevi',
-      email: 'hillevi@clew.test',
-      enabled: true,
-      bound: true,
-      assignments: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' }],
-      active: { unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' },
-      capabilities: [],
-      groups: [
-        { externalId: 'unit:unit-skola', label: 'Bergsåkers skola' },
-        { externalId: 'unit-manager:unit-skola', label: 'Chefer · Bergsåkers skola' },
-        { externalId: 'S-1-5-21-rektorer', label: 'Rektorer' },
-      ],
-    },
-    {
-      id: 'mikael',
-      name: 'Mikael Lund',
-      userName: 'mikael',
-      externalId: 'dev:mikael',
-      email: 'mikael@clew.test',
-      enabled: true,
-      bound: false,
-      assignments: [{ unitId: 'unit-it', unitLabel: 'IT och digitalisering', role: 'employee' }],
-      active: { unitId: 'unit-it', unitLabel: 'IT och digitalisering', role: 'employee' },
-      capabilities: ['admin.connectors', 'admin.users'],
-      groups: [
-        { externalId: 'unit:unit-it', label: 'IT och digitalisering' },
-        { externalId: 'S-1-5-21-it-staff', label: 'IT-personal' },
-      ],
-    },
-    {
-      id: 'omar',
-      name: 'Omar Ny',
-      userName: 'omar',
-      externalId: 'dev:omar',
-      email: 'omar@clew.test',
-      enabled: true,
-      bound: false,
-      assignments: [],
-      active: null,
-      capabilities: [],
-      groups: [],
-    },
-  ],
   groupCapabilities: [
     { groupExternalId: 'S-1-5-21-it-staff', groupLabel: 'IT-personal', capability: 'admin.connectors' },
+  ],
+  units: [
+    { id: 'unit-skola', label: 'Bergsåkers skola', parentLabel: 'Grundskola' },
+    { id: 'unit-omsorg', label: 'Hemtjänst Centrum', parentLabel: null },
+    { id: 'unit-it', label: 'IT och digitalisering', parentLabel: null },
   ],
   groups: [
     { id: 'unit:unit-skola', label: 'Bergsåkers skola' },
@@ -1372,6 +1399,196 @@ export const groups = [
   { id: 'S-1-5-21-it-staff', label: 'IT-personal' },
   { id: 'S-1-5-21-rektorer', label: 'Rektorer' },
 ];
+
+/**
+ * Entities (D97), as the canvas draws Personal (artboards A2, B, A3 and C): one school, five people keyed by user name,
+ * two sources about a person that an administrator chose as columns and lenses, one action from each, and a third
+ * source on the opened person that does not answer. The two sources' views are the ones the talks module
+ * (`talks.person`) and the HR fixture (`hr.person`) declare, under the suite's own capability names. Times are fixed
+ * against the frozen clock (Wednesday 4 November).
+ */
+export const ENTITY_UNIT = { id: 'unit-skola', label: 'Bergsåkers skola' };
+/** Clew's own talks module, under its connector's source (`TALKS_SOURCE` on the server). */
+export const TALK_LENS = 'clew.talkPeople';
+export const PRESENCE_LENS = 'hr.presence';
+/** A source an opened person has that never answers in the suite. */
+export const SILENT_SECTION = 'competence.skills';
+/** As `talks.person` declares it (D97): the time beside the state, the late points beside the open ones, the next talk the row in one value. */
+const talkView: View = {
+  kind: 'list',
+  title: 'state',
+  noun: { one: 'person', other: 'personer' },
+  fields: [
+    { key: 'state', label: 'Samtal', format: 'status', tones: { Saknas: 'warn', Bokat: 'none', Hållet: 'ok' } },
+    { key: 'at', label: 'När', format: 'instant', beside: true },
+    { key: 'next', label: 'Nästa samtal', format: 'status', tones: { 'Inte bokat': 'warn' }, compact: true },
+    { key: 'open', label: 'Åtgärdspunkter' },
+    { key: 'overdue', label: 'Försenade', format: 'status', tones: { '*': 'warn' }, beside: true },
+  ],
+};
+/** As `hr.person` declares it: presence is the row in one value, so a section reads "I dag" and "Kommande". */
+const presenceView: View = {
+  kind: 'list',
+  title: 'presence',
+  noun: { one: 'medarbetare', other: 'medarbetare' },
+  fields: [
+    {
+      key: 'presence',
+      label: 'Närvaro',
+      format: 'status',
+      tones: { 'Sjuk · dag 1': 'none', 'Sjuk · dag 2': 'none', Sjukskriven: 'none', VAB: 'none', Semester: 'none' },
+      compact: true,
+    },
+    { key: 'today', label: 'I dag' },
+    { key: 'upcoming', label: 'Kommande' },
+  ],
+};
+const competenceView: View = {
+  kind: 'list',
+  title: 'name',
+  fields: [
+    { key: 'name', label: 'Kompetens' },
+    { key: 'validTo', label: 'Giltig till', format: 'date' },
+  ],
+};
+export const talkSource: EntitySource = {
+  capability: TALK_LENS,
+  connector: 'clew',
+  source: TALKS_SOURCE,
+  title: 'Utvecklingssamtal',
+  view: talkView,
+  page: { title: 'Öppna samtalet', href: '/staff?talk={id}' },
+  // Clew's own domain (a core connector): its section and its lens are captioned "Clew".
+  own: true,
+};
+export const presenceSource: EntitySource = {
+  capability: PRESENCE_LENS,
+  connector: 'hr',
+  source: 'Personalsystemet',
+  title: 'Frånvaro',
+  view: presenceView,
+};
+const competenceSource: EntitySource = {
+  capability: SILENT_SECTION,
+  connector: 'competence',
+  source: 'Kompetenssystemet',
+  title: 'Kompetenser',
+  view: competenceView,
+};
+export const entityActions = (): EntityAction[] => [
+  {
+    capability: 'clew.bookTalk',
+    connector: 'clew',
+    source: TALKS_SOURCE,
+    title: 'Boka samtal',
+    kind: 'propose',
+    param: 'person',
+    own: true,
+  },
+  {
+    capability: 'hr.registerAbsence',
+    connector: 'hr',
+    source: 'Personalsystemet',
+    title: 'Registrera frånvaro',
+    kind: 'propose',
+    param: 'person',
+  },
+];
+const entityPerson = (key: string, name: string, detail: string): EntityRef => ({
+  kind: 'person',
+  key,
+  name,
+  detail: `${detail} · ${ENTITY_UNIT.label}`,
+  id: key,
+});
+/**
+ * `GET /api/entities/person`: the directory's order, which is the list's order on "Alla". "Just nu" as artboard A2:
+ * Erik and Johan each have a card to act on, Karin one of Clew's proposals; each is the one card, so its link opens it.
+ */
+export const entityList = (): EntityList => ({
+  kind: 'person',
+  attention: [
+    { key: 'erik', act: 1, proposals: 0, threadId: 'omtanke' },
+    { key: 'johan', act: 1, proposals: 0, threadId: 'samtal-svar' },
+    { key: 'karin', act: 0, proposals: 1, threadId: 'samtal' },
+  ],
+  groups: [
+    {
+      ...ENTITY_UNIT,
+      entities: [
+        entityPerson('anna', 'Anna Lindqvist', 'Lärare F–3'),
+        entityPerson('erik', 'Erik Sandström', 'Fritidspedagog'),
+        entityPerson('johan', 'Johan Byström', 'Lärare 4–6'),
+        entityPerson('karin', 'Karin Lindqvist', 'Speciallärare'),
+        entityPerson('maria', 'Maria Källström', 'Lärare 4–6'),
+      ],
+    },
+  ],
+  columns: [
+    { capability: PRESENCE_LENS, source: 'Personalsystemet', title: 'Frånvaro', field: presenceView.fields[0]! },
+    { capability: TALK_LENS, source: TALKS_SOURCE, title: 'Utvecklingssamtal', field: talkView.fields[2]!, own: true },
+  ],
+  lenses: [talkSource, presenceSource],
+  actions: entityActions(),
+});
+/** `GET /api/entities/person/rows?capability=`: each source's rows, one per person it knows, in its own order. */
+export const entityRows = (): Record<string, EntityRows> => ({
+  [TALK_LENS]: {
+    capability: TALK_LENS,
+    status: 'ok',
+    heading: 'Utvecklingssamtal 2026',
+    note: 'Senast lör 28 nov',
+    rows: [
+      { key: 'anna', state: 'Bokat', at: '2026-11-16T10:00:00.000Z', next: 'mån 16 nov', open: 'Inga' },
+      { key: 'erik', state: 'Bokat', at: '2026-11-17T08:00:00.000Z', next: 'tis 17 nov', open: '1 öppen' },
+      {
+        key: 'johan',
+        state: 'Bokat',
+        at: '2026-11-12T08:00:00.000Z',
+        next: 'tors 12 nov',
+        open: '3 öppna',
+        overdue: '2 försenade',
+      },
+      { key: 'karin', state: 'Saknas', next: 'Inte bokat', open: 'Inga' },
+      { key: 'maria', state: 'Hållet', at: '2026-11-04', next: 'Hållet 4 nov', open: '2 öppna' },
+    ],
+  },
+  [PRESENCE_LENS]: {
+    capability: PRESENCE_LENS,
+    status: 'ok',
+    rows: [
+      { key: 'anna', presence: 'I tjänst', today: 'På plats 07:30–16:00' },
+      { key: 'erik', presence: 'Sjuk · dag 1', today: 'Sjuk · dag 1, till fre 6 nov' },
+      { key: 'johan', presence: 'I tjänst', today: 'På plats', upcoming: 'Semester 21–23 dec' },
+      { key: 'karin', presence: 'I tjänst', today: 'På plats 08:00–16:30' },
+      { key: 'maria', presence: 'I tjänst', today: 'På plats 07:00–15:30' },
+    ],
+  },
+});
+/** `GET /api/entities/person/:key`: the opened person, Johan as artboard C draws him, the others with no cards. */
+export function entityDetail(list: EntityList, key: string): EntityDetail | undefined {
+  const group = list.groups.find(g => g.entities.some(e => e.key === key));
+  const entity = group?.entities.find(e => e.key === key);
+  if (!group || !entity) return undefined;
+  return {
+    entity: { ...entity, unit: { id: group.id, label: group.label } },
+    relation: 'managed',
+    actions: list.actions,
+    sections: [talkSource, presenceSource, competenceSource],
+    cards:
+      key === 'johan'
+        ? [
+            {
+              threadId: 'samtal-svar',
+              title: 'En åtgärdspunkt skulle vara klar 3 nov',
+              source: TALKS_SOURCE,
+              kind: 'act',
+            },
+            { threadId: 'brandskydd', title: 'Intyg i HLR gick ut 15 sep', source: 'Kompetenssystemet', kind: 'fyi' },
+          ]
+        : [],
+  };
+}
 
 /** The shared header (D88) as the suite draws it: Clew's default, no connector behind it. */
 export const siteHeader = (): SiteHeaderView => ({

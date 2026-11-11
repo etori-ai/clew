@@ -3,17 +3,17 @@
 // offsets from "today", so the round is always the open one. Edit these tables to change what the fixture answers.
 
 /**
- * The people in the round, with their manager in this system. The five are the people on Bergsåkers skola
- * (`unit-skola`) in the development directory, and their user names follow its rule: given and family name in lower
- * case, å/ä to a and ö to o, joined by a dot (`scripts/provisioner/directory.ts`). Clew drops a row about a person who
- * is not on the reader's own units, so a name here that the directory does not have is simply not shown.
+ * The people in the round, with their manager in this system. The five are the named people on Bergsåkers skola
+ * (`unit-skola`) in the development directory, under the user names the directory gives them
+ * (`scripts/provisioner/directory.ts`, `SCHOOL`). Clew drops a row about a person who is not on the reader's own units, so
+ * a user name here that the directory does not have is simply not shown.
  */
 export const PEOPLE = [
-  { userName: 'anna.lindqvist', name: 'Anna Lindqvist', manager: 'hillevi' },
-  { userName: 'erik.sandstrom', name: 'Erik Sandström', manager: 'hillevi' },
-  { userName: 'maria.kallstrom', name: 'Maria Källström', manager: 'hillevi' },
-  { userName: 'johan.bystrom', name: 'Johan Byström', manager: 'hillevi' },
-  { userName: 'karin.lindqvist', name: 'Karin Lindqvist', manager: 'hillevi' },
+  { userName: 'anna', name: 'Anna Lindqvist', manager: 'hillevi' },
+  { userName: 'erik', name: 'Erik Sandström', manager: 'hillevi' },
+  { userName: 'maria', name: 'Maria Källström', manager: 'hillevi' },
+  { userName: 'johan', name: 'Johan Byström', manager: 'hillevi' },
+  { userName: 'karin', name: 'Karin Lindqvist', manager: 'hillevi' },
 ];
 
 /** The managers this system knows, by user name, with their names (see `callerOf` in connector.mjs). */
@@ -27,10 +27,10 @@ export const ROUND = { id: 'current', opensIn: -30, dueIn: 50 };
  * local time it is booked. A person without an entry has no talk yet.
  */
 export const TALKS = {
-  'anna.lindqvist': { state: 'held', day: -12 },
-  'erik.sandstrom': { state: 'booked', day: 3, time: '09:00' },
-  'johan.bystrom': { state: 'booked', day: 8, time: '13:30' },
-  'karin.lindqvist': { state: 'held', day: -4 },
+  anna: { state: 'held', day: -12 },
+  erik: { state: 'booked', day: 3, time: '09:00' },
+  johan: { state: 'booked', day: 8, time: '13:30' },
+  karin: { state: 'held', day: -4 },
 };
 
 /**
@@ -41,7 +41,7 @@ export const TALKS = {
 export const COMMITMENTS = [
   {
     id: 'ap-101',
-    person: 'erik.sandstrom',
+    person: 'erik',
     owner: 'employee',
     round: 'earlier',
     text: 'Prova ett ämnesövergripande projekt med årskurs 8',
@@ -49,7 +49,7 @@ export const COMMITMENTS = [
   },
   {
     id: 'ap-102',
-    person: 'johan.bystrom',
+    person: 'johan',
     owner: 'manager',
     round: 'earlier',
     text: 'Se över ljudmiljön i klassrummet',
@@ -57,7 +57,7 @@ export const COMMITMENTS = [
   },
   {
     id: 'ap-103',
-    person: 'anna.lindqvist',
+    person: 'anna',
     owner: 'employee',
     round: 'earlier',
     text: 'Läsa in sig på det nya stödet för betygssättning',
@@ -66,7 +66,7 @@ export const COMMITMENTS = [
   },
   {
     id: 'ap-201',
-    person: 'anna.lindqvist',
+    person: 'anna',
     owner: 'employee',
     round: 'current',
     text: 'Gå handledarutbildningen för nya lärare',
@@ -74,7 +74,7 @@ export const COMMITMENTS = [
   },
   {
     id: 'ap-202',
-    person: 'anna.lindqvist',
+    person: 'anna',
     owner: 'manager',
     round: 'current',
     text: 'Lägga in en planeringsdag i månaden i schemat',
@@ -82,7 +82,7 @@ export const COMMITMENTS = [
   },
   {
     id: 'ap-203',
-    person: 'karin.lindqvist',
+    person: 'karin',
     owner: 'employee',
     round: 'current',
     text: 'Leda ämneslagets uppföljning av läsförståelsen',
@@ -90,7 +90,7 @@ export const COMMITMENTS = [
   },
   {
     id: 'ap-204',
-    person: 'karin.lindqvist',
+    person: 'karin',
     owner: 'manager',
     round: 'current',
     text: 'Boka en extra genomgång av elevhälsans rutiner',

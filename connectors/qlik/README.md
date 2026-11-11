@@ -20,6 +20,7 @@ No dependencies beyond Node; nothing here imports the rest of the repository.
 |---|---|---|
 | `qlik.sickLeaveByUnit` "Sjukfrånvaro per enhet" | A table: unit, month, total, short-term and long-term rate, same month last year, change, headcount | The latest closed month. A row opens the unit's trend |
 | `qlik.sickLeaveTrend` "Sjukfrånvaro per månad" | A table of twelve months, newest first | Opens without input for the first of the manager's units |
+| `qlik.unit` "Sjukfrånvaro" | A read about a unit ([D97](../../docs/decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): asked with Clew's unit ids (`{ keys }`, at most 200), one row for the manager's own unit through the unit map, with the rate, the month, the change against last year and `watch` ("Bevaka") when the operator set `QLIK_SICK_LEAVE_WARN_ABOVE` and the rate is at or above it | Clew draws it as the section Sjukfrånvaro on the opened unit. Any other unit id is no row. Of several source units, the first with a rate to show, as the figure takes it. Never a model tool. A row opens the unit's trend |
 | Area `sick-leave` "Sjukfrånvaro" | Both reads as standing actions, and a figure: "Sjukfrånvaro 5,3 %", "oktober 2026 · 5,5 % i fjol, −0,2" | A tile on Läget (D54) that opens the table of units |
 
 Both views can be menu tools (D40). An employee does not see the area, and the connector refuses an employee itself.
@@ -36,7 +37,7 @@ reads the aggregates.
 | `QLIK_ADAPTER` | `fixture` (default, made-up statistics) or `engine` (Qlik's Engine API) |
 | `QLIK_UNIT_MAP` | JSON object, Clew unit id to an array of the source's unit names: `{"unit-skola":["Barn- och utbildningsförvaltningen"]}`. Required for `engine`; a unit without an entry sees nothing |
 | `QLIK_MIN_GROUP` | The smallest headcount whose rates are shown. Default 5, a placeholder: HR and the data protection officer decide |
-| `QLIK_SICK_LEAVE_WARN_ABOVE` | Optional rate in percent from which the sick-leave figure's tone is `warn`, and `ok` below. Without it the tone is `none` |
+| `QLIK_SICK_LEAVE_WARN_ABOVE` | Optional rate in percent from which the sick-leave figure's tone is `warn`, and `ok` below, and from which `qlik.unit` says "Bevaka". Without it the tone is `none` |
 | `QLIK_CACHE_SECONDS` | How long the aggregates stay in memory. Default 300 |
 | `QLIK_URL` | The engine's base: `wss://<host>/<virtual proxy>` (Qlik Sense Enterprise) or `wss://<tenant>` (Qlik Cloud). `/app/<id>` is appended |
 | `QLIK_APP_ID` | The app holding the sick-leave aggregate |

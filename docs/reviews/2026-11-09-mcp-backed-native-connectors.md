@@ -20,11 +20,11 @@ The practical recommendation is to preserve direct MCP integration, prove a smal
 
 The second choice follows [D4](../decisions/D04-foreign-mcp-servers-are-wrapped.md). The first follows [D81](../decisions/D81-mcp-apps-extend-ai-chat-with-provider-owned-interactions.md). A provider can support both, but the operator should choose one delivery owner for each kind of work so a poll does not appear twice.
 
-MCP itself does not require a language model to invoke a tool. Deterministic application code can call it. Clew's restriction of the direct MCP lane to AI-enabled users is a **product policy**, not a transport limitation. A native connector using MCP internally can work without an AI model under the existing native-connector policy. See the [MCP interaction model](https://modelcontextprotocol.io/specification/2025-11-25/server/tools) and [Clew's two integration lanes](../architecture/mcp-chat-services.md#two-integration-lanes).
+MCP itself does not require a language model to invoke a tool. Deterministic application code can call it. Clew's restriction of the direct MCP lane to AI-enabled users is a **product policy**, not a transport limitation. A native connector using MCP internally can work without an AI model under the existing native-connector policy. See the [MCP interaction model](https://modelcontextprotocol.io/specification/2025-11-25/server/tools) and [Clew's two integration lanes](2026-11-11-external-mcp-chat-services-exploration.md).
 
 ## What the fake poll actually provides
 
-The independent [provider implementation](../../fixtures/mcp-pulse/service.mjs) exposes:
+The independent provider implementation (`fixtures/mcp-pulse/service.mjs`) exposes:
 
 | Surface | Actual data or behavior | Integration consequence |
 |---|---|---|
@@ -39,15 +39,15 @@ There is one synthetic provider identity, one current poll and an in-memory answ
 
 The read tool has no declared `outputSchema`. A wrapper must validate the particular result shape it depends on, and fail visibly if it changes. The score schema describes a valid argument; it does not describe the complete question presentation, choice labels, respondent permissions or retention policy.
 
-The source defines an internal resource notification hook, but its [HTTP transport](../../fixtures/mcp-http.mjs) is POST-only and does not deliver a server stream. The current host does not subscribe. Background delivery today comes from scheduled reads, not provider push.
+The source defines an internal resource notification hook, but its HTTP transport (`fixtures/mcp-http.mjs`) is POST-only and does not deliver a server stream. The current host does not subscribe. Background delivery today comes from scheduled reads, not provider push.
 
 ### The direct MCP path already works in development
 
-[Registration](../../scripts/dev-mcp.ts) allowlists the read and submit tools. Its watch uses `/pollId` as identity and `/answered == false` as eligibility. Temporal performs the read, and Clew persists a deduplicated delivery. Opening it fetches the current tool result and App resource. A changed poll identity prevents an old card from opening the new week's poll.
+Registration (`scripts/dev-mcp.ts`) allowlists the read and submit tools. Its watch uses `/pollId` as identity and `/answered == false` as eligibility. Temporal performs the read, and Clew persists a deduplicated delivery. Opening it fetches the current tool result and App resource. A changed poll identity prevents an old card from opening the new week's poll.
 
-The [human decision endpoint](../../apps/server/src/mcp/usecases.ts) validates the selected tool and arguments, records approval before dispatch, and replays a saved receipt for the same decision. An ambiguous response remains unknown and is not automatically retried.
+The human decision endpoint (`apps/server/src/mcp/usecases.ts`) validates the selected tool and arguments, records approval before dispatch, and replays a saved receipt for the same decision. An ambiguous response remains unknown and is not automatically retried.
 
-These are separate MCP delivery and decision records. They do not acquire native work-item dismissal, snooze, completion, job participation or undo merely because their cards look similar. Production OAuth, general model tool routing, a complete Apps host, unread/expiry and attention handling remain unfinished. See [implemented behavior and gaps](../architecture/mcp-chat-services.md#scope-of-the-runnable-mock).
+These are separate MCP delivery and decision records. They do not acquire native work-item dismissal, snooze, completion, job participation or undo merely because their cards look similar. Production OAuth, general model tool routing, a complete Apps host, unread/expiry and attention handling remain unfinished. See [implemented behavior and gaps](2026-11-11-external-mcp-chat-services-exploration.md).
 
 ## What a native adapter would look like
 
@@ -119,7 +119,7 @@ Use Streamable HTTP as the remote baseline. A local `stdio` server can sit behin
 
 ### Make native adapters easier to write
 
-Provide an optional example or reusable library for transport, discovery, source authentication, schema validation and error mapping. Keep business mapping explicit and versioned. A standalone connector must not import Clew server internals; the existing [host client](../../apps/server/src/mcp/adapters/http.ts) illustrates the transport but its current resource port only returns App HTML.
+Provide an optional example or reusable library for transport, discovery, source authentication, schema validation and error mapping. Keep business mapping explicit and versioned. A standalone connector must not import Clew server internals; the existing host client (`apps/server/src/mcp/adapters/http.ts`) illustrates the transport but its current resource port only returns App HTML.
 
 An authoring tool could inspect an MCP catalogue and generate **disabled draft capabilities**. An integrator would then supply the missing scope, actor mapping, output transformation, view and lifecycle rules. Generating files is useful; automatic activation and unrestricted runtime conversion are not.
 

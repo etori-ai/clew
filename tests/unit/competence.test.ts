@@ -3,7 +3,6 @@ import {
   checkContract,
   CompetenceAttentionOutputSchema,
   CompetenceHoldingsOutputSchema,
-  CompetenceStandingOutputSchema,
   type AuthenticatedContext,
   type StaffOverview,
   type StaffPerson,
@@ -18,7 +17,7 @@ import {
   attentionView,
   competenceConnector,
   holdingsView,
-  standingView,
+  personView,
 } from '../../apps/server/src/modules/competence/capabilities';
 import { addMonths, deciding, endOf, statusOn } from '../../apps/server/src/modules/competence/domain';
 import type { HoldingRecord, TypeRecord } from '../../apps/server/src/modules/competence/model';
@@ -30,7 +29,7 @@ import {
 import { Registry } from '../registry';
 
 /**
- * The competence module's use cases (D101) on the memory adapter, with a clock, ids and a staff port the test owns:
+ * The competence module's use cases (D107) on the memory adapter, with a clock, ids and a staff port the test owns:
  * every mutation's audit row and that none carries a person's or a type's name; where a holding stands is computed
  * from the dates on the day asked; a manager's reach is their reports now, so a former manager reaches nothing; and
  * the built-in connector answers through the registry with a figure and cards derived from the same dates.
@@ -508,22 +507,23 @@ describe('the reads', () => {
     await expect(competence.attention(asAnna)).rejects.toBeInstanceOf(ForbiddenError);
     expect(await competence.summary(asAnna)).toBeNull();
   });
-  test('where a person stands: the worst status and the counts, for the reader and their reports only', async () => {
+  test('about people: one row per report asked by user name, the counts, and a row for someone who holds nothing', async () => {
     await world();
-    const out = await competence.standing(boss, ['anna', 'bo', 'cia', 'dan', 'boss', 'nobody', 'anna']);
-    expect(checkContract(CompetenceStandingOutputSchema, out)).toBe(true);
-    // Cia is deactivated, Dan reports to another manager, the manager holds nothing: none of them has a row.
+    staff.get('boss')!.units[0]!.people.push(person('eve', 'Eve Ek', 'eve.e'));
+    // Asked without regard to case; Bo has no user name, Cia is deactivated, Dan reports to another manager.
+    const out = await competence.aboutPeople(boss, ['Anna.A', 'eve.e', 'bo', 'cia.c', 'dan.d', 'nobody', 'Anna.A']);
     expect(out.rows).toEqual([
-      { key: 'anna', person: 'anna.a', status: 'expired', expired: 1, expiring: 1, holdings: 3 },
-      { key: 'bo', person: 'bo', status: 'valid', expired: 0, expiring: 0, holdings: 1 },
+      { key: 'Anna.A', expired: 1, expiring: 1, holdings: 3 },
+      // Nothing registered yet: the row is where a first certificate is registered from.
+      { key: 'eve.e', expired: 0, expiring: 0, holdings: 0 },
     ]);
-    // A person asks about themselves and nobody else; the other manager reaches none of them.
-    expect((await competence.standing(asAnna, ['anna', 'bo'])).rows.map(r => r.key)).toEqual(['anna']);
-    expect((await competence.standing(other, ['anna', 'bo'])).rows).toEqual([]);
-    expect((await competence.standing(boss, [])).rows).toEqual([]);
-    // The row's `person` opens the holdings, the reader's own included.
+    // Someone who manages nobody, and another manager, reach none of them.
+    expect((await competence.aboutPeople(asAnna, ['anna.a', 'eve.e'])).rows).toEqual([]);
+    expect((await competence.aboutPeople(other, ['anna.a'])).rows).toEqual([]);
+    expect((await competence.aboutPeople(boss, [])).rows).toEqual([]);
+    // A row's key opens the holdings, the reader's own included.
+    expect((await competence.holdings(boss, { person: 'anna.a' })).rows).toHaveLength(3);
     expect((await competence.holdings(asAnna, { person: 'anna.a' })).rows).toHaveLength(3);
-    expect((await competence.holdings(boss, { person: 'bo' })).rows).toHaveLength(1);
   });
   test('the day decides: the same holdings read later have moved on, with nothing rewritten', async () => {
     await world();
@@ -623,15 +623,43 @@ describe('the built-in connector', () => {
     const c = connector();
     expect(() => registry()).not.toThrow();
     expect(c).toMatchObject({ id: 'competence', kind: 'core', source: 'Kompetens' });
-    expect(c.capabilities.map(x => [x.name, x.kind, x.model, x.about ?? null])).toEqual([
+    expect(c.capabilities.map(x => [x.name, x.kind, x.model, x.about?.entity ?? null])).toEqual([
       ['competence.attention', 'read', false, null],
       ['competence.holdings', 'read', false, null],
-      ['competence.standing', 'read', false, 'person'],
+      ['competence.person', 'read', false, 'person'],
     ]);
     for (const x of c.capabilities) expect(viewProblem(x, c.capabilities)).toBeUndefined();
     // The read about a person takes the keys it is asked with, so it is no place in the menu.
     expect(c.capabilities.map(x => menuEligible(x))).toEqual([true, true, false]);
-    expect('ref' in attentionView || 'ref' in holdingsView || 'ref' in standingView).toBe(false);
+    expect('ref' in attentionView || 'ref' in holdingsView || 'ref' in personView).toBe(false);
+  });
+
+  test('the read about a person is placed by the registry: a section source with the dialog as its page, and words a person reads', async () => {
+    await world();
+    const r = registry();
+    const [read] = r.aboutReads(actor(boss), 'person');
+    expect(read).toMatchObject({
+      name: 'competence.person',
+      source: 'Kompetens',
+      title: 'Kompetens',
+      core: true,
+      lens: false,
+      page: { title: 'Registrera intyg', href: '/staff?register={id}' },
+    });
+    expect(r.aboutReads(actor(asAnna), 'person')).toEqual([]);
+    staff.get('boss')!.units[0]!.people.push(person('eve', 'Eve Ek', 'eve.e'));
+    const out = await r.run<{ rows: unknown[] }>(actor(boss), 'competence.person', {
+      keys: ['anna.a', 'eve.e', 'dan.d'],
+    });
+    expect(out.rows).toEqual([
+      { key: 'anna.a', status: 'Utgånget', due: '1 har gått ut, 1 går ut inom 90 dagar', held: '2 registrerade' },
+      { key: 'eve.e', status: 'Inget registrerat', held: 'Inga' },
+    ]);
+    // Only what has run out or soon will has a tone, so only that is a mark on a row.
+    expect(personView.kind === 'list' && personView.fields[0]!.tones).toEqual({
+      Utgånget: 'alert',
+      'Går ut snart': 'warn',
+    });
   });
 
   test('the reads answer through the registry within their scope', async () => {

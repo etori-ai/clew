@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { competenceCatalogue } from './about';
+import { competenceCatalogue } from './competence';
 import {
   desktop,
   expect,
@@ -13,7 +13,7 @@ import {
 } from './support';
 
 /**
- * Administration › Kompetens (D101 items 2, 3 and 8): the catalogue of competence types as its administrator keeps it.
+ * Administration › Kompetens (D107 items 2, 3 and 8): the catalogue of competence types as its administrator keeps it.
  * The list with an archived type marked; a type added in a dialog, with what is missing said on its field; a change of
  * the validity that says what it does to the holdings before it is saved; archiving asked for twice; the server's
  * refusal as an alert that keeps what was typed; and the page's own answer when the module is off or the capability is

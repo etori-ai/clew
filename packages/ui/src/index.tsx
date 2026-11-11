@@ -50,6 +50,7 @@ export { useLayer } from '@astryxdesign/core/Layer';
 export {
   DropdownMenu,
   DropdownMenuDivider,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -107,11 +108,14 @@ export { MetadataList, MetadataListItem } from '@astryxdesign/core/MetadataList'
 export { RadioList, RadioListItem } from '@astryxdesign/core/RadioList';
 export { Breadcrumbs, BreadcrumbItem } from '@astryxdesign/core/Breadcrumbs';
 export { Toolbar } from '@astryxdesign/core/Toolbar';
+export { Pagination } from '@astryxdesign/core/Pagination';
 export { TreeList, type TreeListItemData } from '@astryxdesign/core/TreeList';
 export { FormLayout } from '@astryxdesign/core/FormLayout';
 export { TextInput } from '@astryxdesign/core/TextInput';
 export { NumberInput } from '@astryxdesign/core/NumberInput';
 export { FileInput } from '@astryxdesign/core/FileInput';
+// The manifest preview (D60, D97): a manifest is pasted as a document of many lines.
+export { TextArea } from '@astryxdesign/core/TextArea';
 export { Theme } from '@astryxdesign/core/theme';
 export { InfoTip } from '@astryxdesign/core/InfoTip';
 export { Code } from '@astryxdesign/core/Code';

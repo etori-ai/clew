@@ -42,9 +42,6 @@ import { addDays, dayLabel, displayDate, shortDayLabel, timeLabel, today, weekNu
 import { api } from '../api';
 import { errorMessage } from '../query-policy';
 import { areasQuery, assistantQuery, cardViewQuery, threadsQuery, todayQuery, viewQuery } from '../queries';
-import { chatServicesQuery } from '../queries';
-import { ServiceCard } from '../components/service-card';
-import { withServices } from '../service-address';
 import { applyThread } from '../thread-cache';
 import { keys } from '../query-keys';
 import { groupThreads } from '../stream';
@@ -171,7 +168,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const areasQ = useQuery(areasQuery);
   const dayQ = useQuery(todayQuery);
   const assistantQ = useQuery(assistantQuery);
-  const servicesQ = useQuery({ ...chatServicesQuery, enabled: !!assistantQ.data?.configured });
   const threads = threadsQ.data?.threads ?? EMPTY_THREADS;
   // The first read of the cards (D36): until it is here the page draws their shape, never "nothing needs you".
   const loadingThreads = threadsQ.isPending && !threadsQ.isFetched;
@@ -624,6 +620,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           sources={sources}
           now={now}
           unitLabel={user.unitLabel}
+          unitId={user.unitId || undefined}
           viewHref={(capability, title) => viewHref(capability, title)}
           twoAcross={mobile}
         />
@@ -771,7 +768,15 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
                 <BriefSkeleton compact={mobile} />
               </VStack>
               {tab === 'needs-you' && !area && (
-                <Lage areas={[]} loading now={now} unitLabel={user.unitLabel} viewHref={() => ''} twoAcross={mobile} />
+                <Lage
+                  areas={[]}
+                  loading
+                  now={now}
+                  unitLabel={user.unitLabel}
+                  unitId={user.unitId || undefined}
+                  viewHref={() => ''}
+                  twoAcross={mobile}
+                />
               )}
             </VStack>
           }
@@ -870,30 +875,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     );
     const box = <Composer place="landing" near={near} about={about} />;
     const menarDu = <Suggestions viewHref={viewHref} cardHref={cardHref} />;
-    const column = (
-      <VStack gap={6}>
-        {assistant?.configured && !!servicesQ.data?.services.length && (
-          <VStack as="section" aria-label="Från dina tjänster" gap={3}>
-            <HStack gap={2} justify="between" vAlign="center" wrap="wrap">
-              <Heading level={3} accessibilityLevel={2}>
-                Från dina tjänster
-              </Heading>
-              <Button
-                data-service-focus-return
-                label={`Alla tjänster (${servicesQ.data.services.length})`}
-                href={withServices(location.pathname, location.search)}
-                variant="secondary"
-                size="sm"
-              />
-            </HStack>
-            {servicesQ.data.deliveries.slice(0, 3).map(delivery => (
-              <ServiceCard key={delivery.id} delivery={delivery} />
-            ))}
-          </VStack>
-        )}
-        {work()}
-      </VStack>
-    );
+    const column = <VStack gap={6}>{work()}</VStack>;
     // One flow from the top on every screen: the greeting and the box (docked at the foot on a phone), then the day's work
     // with the day and what happened since yesterday beside it (artboard A's two columns) from 1024 px while nothing is
     // open (D72, A1). With the panel open beside the page they stay beside the work where all three fit (A3), else they

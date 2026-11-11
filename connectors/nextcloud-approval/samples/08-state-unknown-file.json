@@ -1,0 +1,31 @@
+{
+  "description": "A file id that does not exist: 0 (nothing), status 200.",
+  "as": "hillevi",
+  "request": {
+    "method": "GET",
+    "path": "/ocs/v2.php/apps/approval/api/v1/state/99999999",
+    "headers": {
+      "Authorization": "Bearer <exchanged access token, aud nextcloud, hillevi>",
+      "OCS-APIRequest": "true",
+      "Accept": "application/json"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "ocs": {
+        "meta": {
+          "status": "ok",
+          "statuscode": 200,
+          "message": "OK"
+        },
+        "data": {
+          "state": 0
+        }
+      }
+    }
+  }
+}

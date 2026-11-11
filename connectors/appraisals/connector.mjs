@@ -1,8 +1,9 @@
 // The appraisals connector (D96 items 8 and 9): a generic stand-in for a third-party system that holds the round of
 // development talks and the action points agreed in them. It answers the talks profile, `appraisals.talks` and
 // `appraisals.commitments`, in the shapes Clew's pages read, keyed on the provisioned user name; Clew shows them
-// read-only and a row opens this system by its link. Stateless: the records are the tables in fixture.mjs, dated from
-// today. No dependencies beyond Node; nothing here imports Clew, so the profile's shapes are written out below.
+// read-only and a row opens this system by its link. `appraisals.person` says what its rows are about (D97): a person,
+// asked by a batch of user names. Stateless: the records are the tables in fixture.mjs, dated from today. No
+// dependencies beyond Node; nothing here imports Clew, so the profile's shapes are written out below.
 import { createVerifier } from './verification.mjs';
 import { COMMITMENTS, MANAGERS, PEOPLE, ROUND, TALKS } from './fixture.mjs';
 
@@ -96,6 +97,28 @@ const OverviewOutput = object({
   },
 });
 
+/**
+ * A read about a person (D97): Clew asks with a batch of user names, at most 200, and the system answers one row per
+ * person the caller is manager of here, carrying the key it was asked with. Anyone else is no row, never a refusal.
+ */
+const KEYS_MAX = 200;
+export const PersonInput = object({ keys: { type: 'array', items: userName, maxItems: KEYS_MAX } });
+export const PersonOutput = object({
+  rows: {
+    type: 'array',
+    maxItems: KEYS_MAX,
+    items: object(
+      {
+        key: userName,
+        state: { type: 'string', enum: Object.values(STATE_WORDS) },
+        at: { anyOf: [calendarDay, instant] },
+        overdue: { type: 'integer', minimum: 0 },
+      },
+      ['key', 'state', 'overdue'],
+    ),
+  },
+});
+
 export const manifest = {
   protocol: 2,
   id: CONNECTOR,
@@ -171,6 +194,31 @@ export const manifest = {
         ],
       },
     },
+    // What its rows are about (D97): Clew draws it as a section on the opened person, may offer it as a lens on
+    // Personal, and marks a row whose talk is missing. Never a model tool; the row opens the person's action points.
+    {
+      name: 'appraisals.person',
+      kind: 'read',
+      title: 'Utvecklingssamtal',
+      description:
+        'Var varje medarbetare som du är chef för står i den öppna omgången utvecklingssamtal, och hur många åtgärdspunkter som är försenade.',
+      model: false,
+      scope: { roles: ['manager'] },
+      about: { entity: 'person' },
+      input: PersonInput,
+      output: PersonOutput,
+      view: {
+        kind: 'list',
+        title: 'state',
+        empty: 'Ingen av dem är med i omgången.',
+        fields: [
+          { key: 'state', label: 'Samtal', format: 'status', tones: { Saknas: 'warn' } },
+          { key: 'at', label: 'När', format: 'instant' },
+          { key: 'overdue', label: 'Försenade', format: 'number' },
+        ],
+        open: { capability: 'appraisals.commitments', title: 'Åtgärdspunkter', params: { person: 'key' } },
+      },
+    },
   ],
 };
 
@@ -230,8 +278,10 @@ export function recordsFor(today, linkBase = DEFAULT_LINK_BASE) {
       },
     };
   });
-  return { round, talks, commitments, managerOf: userName => people.get(userName)?.manager };
+  return { round, talks, commitments, managerOf: userName => people.get(sameName(userName))?.manager };
 }
+/** User names are compared without regard to case (SCIM's default for `userName`); the tables hold them in lower case. */
+const sameName = value => String(value).toLowerCase();
 
 const STATE_ORDER = ['missing', 'booked', 'held'];
 /** Carried first, then open before done, then by the day due: the order the next talk goes through them in. */
@@ -247,7 +297,8 @@ class Invalid extends Error {}
 
 /**
  * Build the service. `jwks` and `clewUrl` are how it verifies Clew's assertions; `today` gives the day the records are
- * dated from (default: the clock, in Swedish time); `personMap` maps a Clew person id to this system's user name.
+ * dated from (default: the clock, in Swedish time); `personMap` maps a Clew person id to this system's user name, for a
+ * person Clew knows without one.
  */
 export function createConnector({
   jwks,
@@ -262,15 +313,16 @@ export function createConnector({
   const known = [...PEOPLE, ...MANAGERS];
 
   /**
-   * Who is asking, in this system's terms. Clew's assertion carries the person's id and name, not their user name, so:
-   * the operator's map first (`FIXTURE_PERSON_MAP`), then an id that is a user name here (the persona `hillevi`),
-   * then, for the development stack whose person ids are generated, the name. A real connector maps from what its
-   * installation gives it; matching on a name is a fixture's shortcut.
+   * Who is asking, in this system's terms. Clew signs the person's provisioned user name into the assertion (D97), and
+   * that is the key this system holds: it comes first. A person Clew knows without one is found by the operator's map
+   * (`FIXTURE_PERSON_MAP`, Clew person id to user name), then by an id that is a user name here (a test's persona).
+   * Never by the name: two people can share one.
    */
   function callerOf(actor) {
-    if (typeof personMap[actor.id] === 'string') return personMap[actor.id];
-    if (known.some(p => p.userName === actor.id)) return actor.id;
-    return known.find(p => p.name === actor.name)?.userName ?? actor.id;
+    if (typeof actor.userName === 'string' && actor.userName) return sameName(actor.userName);
+    if (typeof personMap[actor.id] === 'string') return sameName(personMap[actor.id]);
+    if (known.some(p => p.userName === sameName(actor.id))) return sameName(actor.id);
+    return actor.id;
   }
 
   const capabilities = {
@@ -288,9 +340,12 @@ export function createConnector({
     'appraisals.commitments': (caller, input) => {
       const keys = Object.keys(input);
       if (keys.some(k => k !== 'person')) throw new Invalid('Ogiltig förfrågan.');
-      const person = input.person;
-      if (person !== undefined && (typeof person !== 'string' || !person.length || person.length > 512))
+      if (
+        input.person !== undefined &&
+        (typeof input.person !== 'string' || !input.person.length || input.person.length > 512)
+      )
         throw new Invalid('Ogiltig förfrågan.');
+      const person = input.person === undefined ? undefined : sameName(input.person);
       const { commitments, managerOf } = recordsFor(today(), linkBase);
       const rows =
         person === undefined
@@ -325,6 +380,35 @@ export function createConnector({
         .sort((a, b) => a.name.localeCompare(b.name, 'sv'));
       return { rows };
     },
+    // One row per key asked about a person the caller is manager of, with the key as it was asked; a key asked twice,
+    // an unknown one and anyone else's person are no row.
+    'appraisals.person': (caller, input) => {
+      const keys = input.keys;
+      if (
+        Object.keys(input).some(k => k !== 'keys') ||
+        !Array.isArray(keys) ||
+        keys.length > KEYS_MAX ||
+        keys.some(k => typeof k !== 'string' || !k.length || k.length > 512)
+      )
+        throw new Invalid('Ogiltig förfrågan.');
+      const day = today();
+      const { talks, commitments } = recordsFor(day, linkBase);
+      const answered = new Set();
+      const rows = [];
+      for (const key of keys) {
+        const talk = talks.find(t => t.row.userName === sameName(key) && t.manager === caller);
+        if (!talk || answered.has(talk.row.userName)) continue;
+        answered.add(talk.row.userName);
+        const { state, at } = talk.row;
+        rows.push({
+          key,
+          state: STATE_WORDS[state],
+          ...(at ? { at } : {}),
+          overdue: commitments.filter(c => c.userName === talk.row.userName && !c.done && c.dueOn < day).length,
+        });
+      }
+      return { rows };
+    },
   };
 
   const json = (body, status = 200) =>
@@ -351,7 +435,8 @@ export function createConnector({
     const capability = capabilities[name];
     if (!capability) return fail('not-found', 'Okänd förmåga.', 404);
     const input = body && typeof body.input === 'object' && body.input && !Array.isArray(body.input) ? body.input : {};
-    if (name === 'appraisals.round' && actor.role !== 'manager') return fail('denied', 'Bara för chefer.', 403);
+    if ((name === 'appraisals.round' || name === 'appraisals.person') && actor.role !== 'manager')
+      return fail('denied', 'Bara för chefer.', 403);
     try {
       return json({ output: capability(callerOf(actor), input) });
     } catch (error) {

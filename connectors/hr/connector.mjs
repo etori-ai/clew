@@ -2,8 +2,8 @@
 // state.mjs the store. Independently runnable with Node; imports nothing from the rest of the repository (D21).
 import { createHash } from 'node:crypto';
 import { createVerifier } from './verification.mjs';
-import { manifest, ABSENCE_FACT, CONNECTOR } from './manifest.mjs';
-import { addDays, dateIn, daysBetween, seed, shortDate, sickLeaveOf } from './fixture.mjs';
+import { manifest, ABSENCE_FACT, CONNECTOR, KEYS_MAX, SICK_DAYS, sickOnDay } from './manifest.mjs';
+import { addDays, dateIn, daysBetween, period, seed, shortDate, sickLeaveOf } from './fixture.mjs';
 import { memoryState } from './state.mjs';
 
 export { manifest };
@@ -95,6 +95,61 @@ export function createConnector({
     undoCapability: 'hr.withdrawAbsence',
     undoMinutes: 10,
   });
+  /**
+   * Every absence of one employee the HR system knows of, as periods: the recorded ones, the sick reports registered
+   * through Clew's jobs, and the leave requests not turned down (an undecided one says so). Inclusive dates.
+   */
+  function absencesOf(employee) {
+    const done = decided();
+    const leaveWord = type => (type === 'semester' ? 'Semester' : 'Ledig');
+    return [
+      ...records()
+        .absences.filter(a => a.employee === employee.ref)
+        .map(a => ({ from: a.from, to: a.to, kind: a.kind })),
+      ...Object.values(reported())
+        .filter(r => r.person === employee.ref)
+        .map(r => ({ from: r.from, to: r.to, kind: daysBetween(r.from, r.to) >= SICK_DAYS ? 'long' : 'short' })),
+      ...records()
+        .leaveRequests.filter(r => r.employee === employee.ref && done[r.ref]?.decision !== 'reject')
+        .map(r => ({ from: r.from, to: r.to, kind: 'leave', word: leaveWord(r.type), pending: !done[r.ref] })),
+    ];
+  }
+  /** What an absence is called on its `day` of it: "Sjuk · dag 1", "Sjukskriven", "VAB", "Semester". */
+  const absenceWord = (a, day) => {
+    if (a.kind === 'vab') return 'VAB';
+    if (a.kind === 'leave') return a.word;
+    const n = daysBetween(a.from, day) + 1;
+    return a.kind === 'short' && n <= SICK_DAYS ? sickOnDay(n) : 'Sjukskriven';
+  };
+  /**
+   * One employee's row for `hr.person` (D97): presence today, today in a few more words (the shift, or the absence and
+   * when it ends), and the next absence that is known, an undecided leave request saying so.
+   */
+  function presenceOf(employee, key, day = today()) {
+    const all = absencesOf(employee);
+    // A sick report or a vab outranks leave on the same day.
+    const now = all
+      .filter(a => a.from <= day && a.to >= day)
+      .sort((a, b) => Number(a.kind === 'leave') - Number(b.kind === 'leave'))[0];
+    const next = all.filter(a => a.from > day).sort((a, b) => a.from.localeCompare(b.from))[0];
+    const shift = records().shifts.find(s => s.employee === employee.ref && s.date === day);
+    const presence = now ? absenceWord(now, day) : 'I tjänst';
+    const longWord = now && now.kind === 'long' ? `${presence} · dag ${daysBetween(now.from, day) + 1}` : presence;
+    return {
+      key,
+      ref: employee.ref,
+      presence,
+      today: now
+        ? `${longWord}${now.to > day ? `, till ${period(now.to)}` : ''}`
+        : `På plats${shift ? ` ${shift.start}–${shift.end}` : ''}`,
+      ...(next
+        ? {
+            upcoming: `${next.kind === 'leave' ? next.word : absenceWord(next, next.from).replace(/ · dag \d+$/, '')} ${period(next.from, next.to)}${next.pending ? ', väntar på beslut' : ''}`,
+          }
+        : {}),
+    };
+  }
+
   const conflictRows = (refs, label) => ({
     headline: 'Posten har ändrats i personalsystemet.',
     rows: refs.map(ref => ({
@@ -179,6 +234,23 @@ export function createConnector({
       return { today: { start: mine.start, end: mine.end, ward: mine.ward, colleagues } };
     },
     'hr.myBalance': () => ({ vacationDaysLeft: 6, mustUseBy: today().slice(0, 4) + '-12-31' }),
+    // A read about a person (D97): one row per key that is an employee of the manager's unit here, by user name without
+    // regard to case, with the key as it was asked. Anyone else, an unknown key and a key asked twice are no row.
+    'hr.person': (actor, input) => {
+      const keys = input.keys;
+      if (!Array.isArray(keys) || keys.length > KEYS_MAX || keys.some(k => typeof k !== 'string' || !k))
+        throw new Invalid('Ogiltig förfrågan.');
+      const unit = managerOf(actor, unitOf(actor)) ? staff(unitOf(actor)) : [];
+      const answered = new Set();
+      const rows = [];
+      for (const key of keys) {
+        const employee = unit.find(e => e.personId.toLowerCase() === key.toLowerCase());
+        if (!employee || answered.has(employee.ref)) continue;
+        answered.add(employee.ref);
+        rows.push(presenceOf(employee, key));
+      }
+      return { rows };
+    },
     'hr.lookup': (actor, input) => {
       const op = state.get('op:' + input.operationId);
       return op && op.person === personKey(actor) ? { found: true, result: op.result } : { found: false };
@@ -200,6 +272,54 @@ export function createConnector({
             payload: { person: a.person, from: a.from, ...(a.to ? { to: a.to } : {}), extent },
             title: 'Sjukanmälan registreras',
             detail: `Från ${shortDate(a.from)}, ${extent} %`,
+          },
+        ],
+      };
+    },
+    // An action about a person (D97): the employee by user name, as hr.person finds them, on the manager's own unit only;
+    // anyone else is refused, as hr.absencePattern refuses. Nothing is written: the card's button is hr.reportAbsence
+    // with this payload, run after the manager's decision. A day the employee is already away is refused.
+    'hr.prepareAbsence': (actor, input) => {
+      const key = input.person;
+      const unit = managerOf(actor, unitOf(actor)) ? staff(unitOf(actor)) : [];
+      const employee = typeof key === 'string' && unit.find(e => e.personId.toLowerCase() === key.toLowerCase());
+      if (!employee) throw new Invalid('Medarbetaren finns inte i din enhet.');
+      const from = input.from ?? today();
+      if (absencesOf(employee).some(a => a.kind !== 'leave' && a.from <= from && a.to >= from))
+        throw new Invalid(`${employee.name} är redan frånvarande ${period(from)}.`);
+      return {
+        topic: `hr:absence-draft:${employee.ref}:${from}`,
+        area: 'employees',
+        title: 'Sjukanmälan att registrera',
+        summary: `Registreras i personalsystemet när du beslutar: sjukfrånvaro ${period(from)}, en dag, heltid.`,
+        reason: 'Chefen valde Registrera frånvaro',
+        items: [
+          {
+            ref: employee.ref,
+            label: employee.name,
+            detail: `Sjuk ${period(from)} · 100 %`,
+            selectable: false,
+            selected: true,
+            subject: { entity: 'person', key },
+          },
+        ],
+        actions: [
+          {
+            id: 'report',
+            label: 'Registrera sjukanmälan',
+            capability: 'hr.reportAbsence',
+            kind: 'execute',
+            role: 'primary',
+            input: { person: employee.ref, from, to: from, extent: 100 },
+          },
+          {
+            id: 'pattern',
+            label: 'Se mönstret i personalsystemet',
+            capability: 'hr.absencePattern',
+            kind: 'read',
+            role: 'secondary',
+            target: 'panel',
+            input: { ref: employee.ref },
           },
         ],
       };
@@ -377,6 +497,8 @@ export function createConnector({
             'Tredje korta sjukfrånvaron på sex månader. Kommunens rehabrutin 4.2 säger samtal inom två veckor. Namnet visas i personalsystemet, inte här.',
           reason: `Rutinens tvåveckorsgräns går ut ${shortDate(dueBy)}`,
           deadline: dueBy,
+          // The row names the employee by key only (D97): the card shows on that person for the manager, and the text
+          // keeps the name in the HR system.
           items: [
             {
               ref: c.employee.ref,
@@ -384,6 +506,7 @@ export function createConnector({
               detail: `${c.periods.length} korta perioder sedan ${shortDate(c.periods[0].from)}`,
               selectable: false,
               selected: true,
+              subject: { entity: 'person', key: c.employee.personId },
             },
           ],
           actions: [
@@ -411,6 +534,7 @@ export function createConnector({
       const open = records().leaveRequests.filter(r => !done[r.ref] && unit.includes(r.employee));
       for (const r of open) {
         const clash = open.some(o => o.ref !== r.ref && o.from <= r.to && o.to >= r.from);
+        const asker = records().employees.find(e => e.ref === r.employee);
         drafts.push({
           topic: `hr:leave:${r.ref}`,
           area: 'employees',
@@ -418,7 +542,8 @@ export function createConnector({
           summary: `${r.days} dagar ${r.type}. ${clash ? 'En kollega har sökt samma period.' : 'Ingen annan i arbetslaget är ledig då'} och saldot räcker.`,
           reason: `Ansökan kom ${new Date(r.submittedAt).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' })}`,
           deadline: null,
-          // Names stay inside the source system: the card says what and when, "Se i personalsystemet" says who.
+          // The card says what and when; the row names who by key only (D97), so the card shows on that person, and
+          // "Se i personalsystemet" shows the source's record.
           items: [
             {
               ref: r.ref,
@@ -426,6 +551,7 @@ export function createConnector({
               detail: `${shortDate(r.from)}–${shortDate(r.to)} · ${r.days} dagar ${r.type}`,
               selectable: false,
               selected: true,
+              ...(asker ? { subject: { entity: 'person', key: asker.personId } } : {}),
             },
           ],
           actions: [

@@ -1,6 +1,6 @@
 # D10 · Integrations fulfil Clew's API; adapters are the fallback
 
-**Status:** accepted · **Date:** 2026-11-03 · **Area:** integrations
+**Status:** accepted, order of work amended by [D100](D100-the-vision-is-narrowed-to-what-clew-can-keep-today.md) (2026-11-10: an adapter is the normal case; asking the system's owner first is no longer a fixed step) · **Date:** 2026-11-03 · **Area:** integrations
 
 **Decision.** When a system is connected to Clew, the order is fixed. First, the integration is asked to
 implement the API Clew has defined for that domain (the capability descriptors in `packages/contracts` and

@@ -165,6 +165,92 @@ describe('a remote connector in the registry', () => {
       { url: 'http://clew/api/connectors/call', auth: 'Bearer ', body: { name: 'calendar.today', input: {} } },
     ]);
   });
+  test("keeps a capability's about from the manifest (D97), and signs the person's user name into the actor the service reads", async () => {
+    const hello = helloManifest as { capabilities: object[] };
+    const withAbout = {
+      ...hello,
+      capabilities: [
+        ...hello.capabilities,
+        {
+          name: 'hello.person',
+          kind: 'read',
+          title: 'Saker per person',
+          description: 'Öppna saker per person.',
+          input: {
+            type: 'object',
+            properties: { keys: { type: 'array', items: { type: 'string' }, maxItems: 200 } },
+            required: ['keys'],
+          },
+          output: {
+            type: 'object',
+            properties: {
+              rows: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: { key: { type: 'string' }, open: { type: 'string' } },
+                  required: ['key'],
+                },
+              },
+            },
+          },
+          model: false,
+          scope: {},
+          about: { entity: 'person' },
+          view: {
+            kind: 'list',
+            title: 'open',
+            fields: [{ key: 'open', label: 'Öppna', format: 'status', tones: { '*': 'warn' } }],
+          },
+        },
+        {
+          name: 'hello.remind',
+          kind: 'propose',
+          title: 'Påminn',
+          description: 'Föreslår en påminnelse.',
+          input: { type: 'object', properties: { person: { type: 'string' } }, required: ['person'] },
+          output: {},
+          model: false,
+          scope: { roles: ['manager'] },
+          about: { entity: 'person', param: 'person' },
+        },
+      ],
+    };
+    const loaded = remoteConnector(parseManifest(withAbout, 'hello'), {
+      url: 'http://hello',
+      key: secret,
+      assert: async () => 'x',
+    });
+    const about = (name: string) => loaded.capabilities.find(c => c.name === name)!.about;
+    expect(about('hello.person')).toEqual({ entity: 'person' });
+    expect(about('hello.remind')).toEqual({ entity: 'person', param: 'person' });
+    expect(about('hello.greeting')).toBeUndefined();
+
+    const service = createConnector({ jwks: testJwks, secret });
+    const seen: Array<{ claim: unknown; body: unknown }> = [];
+    const fetch: FetchLike = (input, init) => {
+      if (init?.body)
+        seen.push({
+          claim: decodeJwt(new Headers(init.headers).get('authorization')!.slice('Bearer '.length)).actor,
+          body: JSON.parse(String(init.body)).actor,
+        });
+      return service.handle(new Request(input, init));
+    };
+    const registry = new Registry().register(
+      remoteConnector(parseManifest(helloManifest, 'hello'), {
+        url: 'http://hello',
+        key: secret,
+        assert: assertionFor('hello', secret),
+        fetch,
+      }),
+    );
+    const named: Actor = { ...hassan, userName: 'hassan.ali' };
+    expect(await registry.run(named, 'hello.greeting', {})).toMatchObject({ text: expect.stringContaining('Hassan') });
+    expect(seen.at(-1)).toEqual({ claim: named, body: named });
+    // A person provisioned without a user name is signed as before, and an existing service reads them the same way.
+    await registry.run(hassan, 'hello.greeting', {});
+    expect(seen.at(-1)).toEqual({ claim: hassan, body: hassan });
+  });
   test('refuses a call signed with another secret, on the connector side', async () => {
     const { registry, connectorFetch } = stack();
     registry.register(
@@ -505,6 +591,159 @@ describe('connector-check holds a scan to the card-action rule (D35)', () => {
       description:
         'Kortet hello:open-items avvisades: action done names finance.approve, which is not a capability of hello',
     });
+  });
+});
+
+describe('connector-check asks a read about an entity as Clew does (D97)', () => {
+  const people = ['anna', 'erik'];
+  const aboutManifest = (model = false) => {
+    const hello = helloManifest as { capabilities: object[] };
+    return {
+      ...hello,
+      capabilities: [
+        ...hello.capabilities,
+        {
+          name: 'hello.person',
+          kind: 'read',
+          title: 'Saker per person',
+          description: 'Öppna saker per person.',
+          input: {
+            type: 'object',
+            properties: { keys: { type: 'array', items: { type: 'string' }, maxItems: 200 } },
+            required: ['keys'],
+          },
+          output: {
+            type: 'object',
+            properties: {
+              rows: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: { key: { type: 'string' }, open: { type: 'string' } },
+                  required: ['key'],
+                },
+              },
+            },
+          },
+          model: false,
+          scope: { roles: ['manager'] },
+          about: { entity: 'person' },
+          view: {
+            kind: 'list',
+            title: 'open',
+            fields: [{ key: 'open', label: 'Öppna', format: 'status', tones: { '*': 'warn' } }],
+          },
+        },
+        {
+          name: 'hello.remind',
+          kind: 'propose',
+          title: 'Påminn',
+          description: 'Föreslår en påminnelse.',
+          input: { type: 'object', properties: { person: { type: 'string' } }, required: ['person'] },
+          output: {},
+          model,
+          scope: { roles: ['manager'] },
+          about: { entity: 'person', param: 'person' },
+        },
+      ],
+    };
+  };
+  type Fault = 'none' | 'stranger' | 'twice' | 'refuse' | 'leak' | 'slow';
+  /** The hello service with a read about a person in front: its people are on unit-skola, and a fault to show. */
+  const service = (fault: Fault, model = false) => {
+    const hello = createConnector({ jwks: testJwks, secret });
+    const fetch: FetchLike = async (input, init) => {
+      const url = String(input);
+      if (url.endsWith('/clew/manifest')) return Response.json(aboutManifest(model));
+      if (!url.endsWith('/clew/capabilities/hello.person')) return hello.handle(new Request(input, init));
+      const { actor, input: asked } = JSON.parse(String(init!.body)) as {
+        actor: Actor;
+        input: { keys: string[] };
+      };
+      if (fault === 'refuse' && asked.keys.some(k => !people.includes(k)))
+        return Response.json({ error: { code: 'invalid', message: 'Okänd person.' } }, { status: 400 });
+      // Slow for the batch alone, so the test stays inside its own time limit.
+      if (fault === 'slow' && actor.unitId === 'unit-skola' && asked.keys.includes('anna'))
+        await new Promise(resolve => setTimeout(resolve, 1600));
+      const mine = fault === 'leak' || actor.unitId === 'unit-skola';
+      const rows = asked.keys
+        .filter(k => mine && (people.includes(k) || fault === 'leak'))
+        .map(k => ({ key: k, open: '1 öppen' }));
+      if (fault === 'stranger') rows.push({ key: 'zed', open: '1 öppen' });
+      if (fault === 'twice' && rows[0]) rows.push(rows[0]);
+      return Response.json({ output: { rows } });
+    };
+    return checkConnector({
+      key: secret,
+      url: 'http://hello',
+      id: 'hello',
+      assert: assertionFor('hello', secret),
+      assertForeign: assertionFor('hello', 'another-secret-another'),
+      fetch,
+      about: { keys: ['anna', 'erik', 'nils'], as: { ...hillevi, userName: 'hillevi' } },
+    });
+  };
+  const about = (report: Awaited<ReturnType<typeof service>>) =>
+    report.findings
+      .filter(f => f.text.startsWith('hello.') && f.text.includes(' about person'))
+      .map(f => `${f.level} ${f.text}`.replace(/, \d+ ms \(/, ', n ms ('));
+
+  test('an honest source passes: the batch, the key, one row per key, an unknown key and another unit', async () => {
+    const report = await service('none');
+    expect(report.findings.filter(f => f.level === 'fail')).toEqual([]);
+    expect(about(report)).toEqual([
+      'ok hello.person about person, batch: 3 keys asked, 2 rows, n ms (budget 1500 ms)',
+      'ok hello.person about person, key: every row carries a key it was asked with',
+      'ok hello.person about person, one row per key',
+      'ok hello.person about person, unknown key: no row, no error',
+      "ok hello.person about person, out of scope: the 3 keys asked by the check's manager on unit-check: no row, no error",
+      'ok hello.remind about person, propose, input: takes person',
+      'ok hello.remind about person, propose, model tool: not offered to the model',
+    ]);
+    expect(report.items.find(i => i.capability === 'hello.remind')).toMatchObject({
+      level: 'ok',
+      description: 'Medarbetare nekas som väntat. Tar emot en person i "person". Erbjuds inte till modellen.',
+    });
+  });
+
+  test('a row with a key not asked, a key answered twice, a refused unknown key and a leak to another unit fail', async () => {
+    const failures = async (fault: Fault) =>
+      (await service(fault)).findings.filter(f => f.level === 'fail').map(f => f.text);
+    // The stray row comes back to every question, so the unknown key and the other unit are answered with it too.
+    expect(await failures('stranger')).toEqual([
+      'hello.person about person, key: 1 rows carry a key that was not asked ("zed")',
+      'hello.person about person, unknown key: answered 1 rows',
+      "hello.person about person, out of scope: the check's manager on unit-check was answered 1 rows",
+    ]);
+    expect(await failures('twice')).toEqual([
+      'hello.person about person, one row per key: 1 keys answered more than once',
+    ]);
+    expect(await failures('refuse')).toEqual([
+      'hello.person about person, batch as hillevi: Okänd person.',
+      'hello.person about person, unknown key: refused (Okänd person.); answer an unknown key as no row',
+      "hello.person about person, out of scope: refused for the check's manager on unit-check (Okänd person.); answer a key out of scope as no row",
+    ]);
+    const leak = await service('leak');
+    expect(leak.ok).toBe(false);
+    expect(leak.findings.filter(f => f.level === 'fail').map(f => f.text)).toEqual([
+      'hello.person about person, unknown key: answered 1 rows',
+      "hello.person about person, out of scope: the check's manager on unit-check was answered 3 rows",
+    ]);
+    expect(leak.items.find(i => i.capability === 'hello.person')).toMatchObject({
+      level: 'fail',
+      description: expect.stringContaining('En person utanför behörigheten besvaras med en rad.'),
+    });
+  });
+
+  test('a slow answer is over the budget; an action offered to the model is a warning', async () => {
+    const slow = await service('slow');
+    expect(slow.findings.filter(f => f.level === 'warn').map(f => f.text.replace(/\d+ ms,/, 'n ms,'))).toContain(
+      'hello.person about person, budget: answered in n ms, over 1500 ms; Clew shows the section as not answering',
+    );
+    const offered = about(await service('none', true));
+    expect(offered).toContain(
+      "warn hello.remind about person, propose, model tool: offered to the model; an action in an entity's menu is a person's decision",
+    );
   });
 });
 

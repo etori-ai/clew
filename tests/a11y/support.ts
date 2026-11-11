@@ -32,10 +32,15 @@ import {
   providerDetail,
   providerReport,
   usersOverview,
+  usersPeople,
   organisationOverview,
   organisationPeople,
   organisationReports,
   staffOverview,
+  entityDetail,
+  entityList,
+  entityRows,
+  SILENT_SECTION,
   TALKS_FAIL_ERROR,
   TODAY,
   USER_NAME,
@@ -51,7 +56,6 @@ import {
   type TalkEntry,
 } from './data';
 import type {
-  AboutResult,
   AppearanceAdminView,
   CompetenceHoldingBody,
   CompetenceType,
@@ -61,17 +65,23 @@ import type {
   AppearanceLogoInputType,
   CommitmentAddBody,
   CommitmentsInput,
+  EntityDetail,
+  EntityList,
+  EntityRows,
+  EntitySection,
   ModelSummary,
   ProviderSummary,
   TalkHeldBody,
   TalkRound,
+  UsersAdminQueryType,
 } from '@clew/contracts';
 import { THEME_BASE_COLORS, parseThemeFile, themeFileOf } from '../../packages/contracts/src/theme-file';
 import { personSearch, phonebook } from './phonebook';
 import { rooms, roomsSpec } from './rooms';
-import { holdingsOutput, holdingsSpec } from './about';
+import { holdingsOutput, holdingsSpec } from './competence';
 import { errandsOutput, errandsSpec, smErrandOutput, smErrandSpec } from './errands';
 import { manifestReference } from '../../packages/connectors/src/reference';
+import { previewManifest } from '../../packages/connectors/src/preview';
 import { parseManifest } from '../../packages/connectors/src/remote';
 import { manifest as helloManifest } from '../../connectors/hello/connector.mjs';
 import { manifest as phonebookManifest } from '../../connectors/phonebook/connector.mjs';
@@ -117,6 +127,11 @@ export class MockApi {
   admin = false;
   /** Användare (D85): the people and the group-capability rows the users page shows; the rows change with the page's actions. */
   users = usersOverview();
+  /** Användare (D100): the people the list is read from, a page at a time, and every question the page has asked. */
+  people = usersPeople();
+  peopleQueries: UsersAdminQueryType[] = [];
+  /** Användare: the list cannot be read, while the rest of the page can. A 400, which the page does not ask twice. */
+  peopleRefused = false;
   /** The users page for someone with `admin.connectors` but not `admin.users`: the server refuses. */
   usersForbidden = false;
   /** Organisation (D99): the tree the organisation page shows; it shares `usersForbidden`, as the two share a capability. */
@@ -135,19 +150,32 @@ export class MockApi {
   /** Personal for someone who manages no unit: the server refuses whatever the session's role says. */
   staffForbidden = false;
   /**
+   * Entities (D97): the list of people, each source's rows over them, and the opened person, as `data.ts` draws the
+   * canvas. A test may replace any of them.
+   */
+  entityList: EntityList = entityList();
+  entityRows: Record<string, EntityRows> = entityRows();
+  /** The reader may ask about nobody (manages no unit): the list answers with no groups, as the server does. */
+  entitiesEmpty = false;
+  /** Sources that do not answer, by capability: their rows and sections come back with this status and nothing else. */
+  entitySilent: Record<string, 'unavailable' | 'timeout'> = { [SILENT_SECTION]: 'unavailable' };
+  /** How long one source's rows take, by capability, so a test can see the page while a lens loads. */
+  entityRowsDelay: Record<string, number> = {};
+  /** Every entities read that reached the mock, as path and query, in order. */
+  entityReads: string[] = [];
+  /** Every action started from an entity's menu (D97), as person key and capability, in order. */
+  entityStarts: Array<{ key: string; capability: string }> = [];
+  /** Actions the source refuses, by capability, with its Swedish sentence (a 400, as the server passes it on). */
+  entityRefusals: Record<string, string> = {};
+  /** The opened person whose actions a start is checked against; a spec that answers the person itself sets it. */
+  entityDetailOf?: (key: string) => EntityDetail | undefined;
+  /**
    * The session person is an employee who manages nobody: the session's role is `employee`, Personal is refused, the
    * round lists nobody and their own action points are only the ones about them. For Hem without Personal.
    */
   employee = false;
   /**
-   * What the sources say about people (D97): what `clew.about` answers. Null: no source about people answers for the
-   * person, so the read is refused as the registry refuses it and Personal is as it was.
-   */
-  about: AboutResult | null = null;
-  /** The next read of `clew.about` fails as a source that broke would, once. */
-  aboutFail = false;
-  /**
-   * Kompetens (D101): the catalogue a certificate is registered from. Null: the module is switched off for the person,
+   * Kompetens (D107): the catalogue a certificate is registered from. Null: the module is switched off for the person,
    * so its routes are refused and Personal offers no registration.
    */
   competenceTypes: CompetenceType[] | null = null;
@@ -218,6 +246,16 @@ export class MockApi {
     const json = (body: unknown) => route.fulfill({ json: body });
     const id = path.split('/')[2] ?? '';
     if (path === '/protocol/manifest-reference.json') return json(reference);
+    // The manifest dry run (D60, D97) as the server runs it: the real preview over the posted document.
+    if (path === '/protocol/manifest' && post) {
+      let document: unknown;
+      try {
+        document = JSON.parse(request.postData() ?? '');
+      } catch {
+        return route.fulfill({ status: 400, json: { error: 'The body is not JSON.' } });
+      }
+      return json(previewManifest(document, url.searchParams.get('id') ? { id: url.searchParams.get('id')! } : {}));
+    }
     if (path === '/changes')
       return route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'retry: 60000\n\n' });
     if (path === `/threads/${id}/execution/check`) return json(this.threads.find(t => t.id === id));
@@ -245,8 +283,10 @@ export class MockApi {
     }
     // The shared header (D88): what the person's header connector lists for them, Clew's default until a test says otherwise.
     if (path === '/header') return json(this.header);
-    // The MCP service inbox (D81): empty unless a spec routes it itself.
-    if (path === '/chat-services') return json({ services: [], deliveries: [] });
+    // Entities (D97): the people the reader may ask about, one source over them, the opened person and one source's
+    // answer for them. A key the reader may not ask about answers 404 as if it did not exist.
+    if (path.startsWith('/entities/') && !post) return this.entities(route, path, url);
+    if (path.startsWith('/entities/') && post) return this.entityStart(route, path);
     // Personal (D94): the manager's units and their people, or the server's refusal.
     if (path === '/staff')
       return this.staffForbidden || this.employee
@@ -305,6 +345,36 @@ export class MockApi {
         return this.usersForbidden
           ? route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } })
           : json(this.users);
+      if (path === '/admin/users/search' && method === 'POST') {
+        if (this.usersForbidden)
+          return route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } });
+        // The server's reading of a question (D100), on the suite's people: every part narrows, then one page.
+        const asked = request.postDataJSON() as UsersAdminQueryType,
+          words = (asked.text ?? '').toLocaleLowerCase('sv').split(/\s+/).filter(Boolean),
+          status = (u: (typeof this.people)[number]) =>
+            !u.enabled ? 'disabled' : !u.active ? 'no-access' : u.bound ? 'signed-in' : 'not-signed-in';
+        this.peopleQueries.push(asked);
+        if (this.peopleRefused) return route.fulfill({ status: 400, json: { error: 'Ogiltig förfrågan.' } });
+        const matching = this.people.filter(
+          u =>
+            words.every(w => [u.name, u.userName, u.email].some(v => (v ?? '').toLocaleLowerCase('sv').includes(w))) &&
+            (!(asked.unitId || asked.role) ||
+              u.assignments.some(
+                a => (!asked.unitId || a.unitId === asked.unitId) && (!asked.role || a.role === asked.role),
+              )) &&
+            (!asked.status || status(u) === asked.status) &&
+            (!asked.capability || u.capabilities.includes(asked.capability)),
+        );
+        const pageSize = asked.pageSize ?? 25,
+          page = Math.min(asked.page ?? 1, Math.max(1, Math.ceil(matching.length / pageSize)));
+        return json({
+          rows: matching.slice((page - 1) * pageSize, page * pageSize),
+          total: matching.length,
+          all: this.people.length,
+          page,
+          pageSize,
+        });
+      }
       if (path === '/admin/organisation' && method === 'GET')
         return this.usersForbidden
           ? route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } })
@@ -525,13 +595,11 @@ export class MockApi {
     }
     // The calendar's rooms (D69, amended): the one calendar read with a declared view, drawn by the one renderer.
     if (path === '/cap/calendar.rooms') return json({ output: { rows: rooms }, source: 'Kalendern', view: roomsSpec });
-    // No MCP service is registered for the person here (D81); mcp.spec.ts routes its own answers over this one.
-    if (path === '/chat-services') return json({ services: [], deliveries: [] });
     // The combined errand list (D35 item 4, D89) and one errand in the system a row came from.
     if (path === '/cap/clew.errands') return json({ output: errandsOutput, source: 'Startsidan', view: errandsSpec });
     if (path === '/cap/sm.errand')
       return json({ output: smErrandOutput, source: 'Ärendesystemet', view: smErrandSpec });
-    // Kompetens (D101): the catalogue and a manager's registration.
+    // Kompetens (D107): the catalogue and a manager's registration.
     if (path.startsWith('/competence/') && !this.competenceTypes)
       return route.fulfill({
         status: 403,
@@ -595,16 +663,7 @@ export class MockApi {
       this.registered.push({ personId: decodeURIComponent(registering[1]!), body });
       return route.fulfill({ status: 201, json: { id: 'holding-' + this.registered.length } });
     }
-    // What the sources say about people (D97) and the view a mark opens.
-    if (path === '/cap/clew.about') {
-      if (this.aboutFail) {
-        this.aboutFail = false;
-        return route.fulfill({ status: 502, json: { error: 'Källorna svarar inte just nu.' } });
-      }
-      return this.about
-        ? json({ output: this.about, source: 'Clew' })
-        : route.fulfill({ status: 400, json: { error: 'Du saknar behörighet för åtgärden.' } });
-    }
+    // Kompetens (D107): one person's holdings, the view the person's section opens.
     if (path === '/cap/competence.holdings')
       return json({ output: holdingsOutput, source: 'Kompetens', view: holdingsSpec });
     // Utvecklingssamtal (D96): the two composites and the built-in module's writes.
@@ -797,6 +856,85 @@ export class MockApi {
     if (path.startsWith('/threads/') && !post) return json(this.threads.find(t => t.id === id));
     this.unmocked.push(`${request.method()} ${path}`);
     return route.fulfill({ status: 500, json: { error: 'Inte mockat' } });
+  }
+  /**
+   * Entities (D97), answered as the `entities` module would: only `person` is listed here; a person outside the list is
+   * a 404, a source in `entitySilent` answers with that status and no rows, and someone who manages nobody gets a list
+   * with no groups (no refusal).
+   */
+  /**
+   * An action from an entity's menu (D97, D8), answered as the server would: an action the opened person does not offer
+   * is a 404, a refusal is the source's sentence as a 400, and otherwise the card it became, which joins the stream and
+   * is opened on Hem. The same start while that card is open gives the same card.
+   */
+  private entityStart(route: Route, path: string) {
+    const [, , kind, key = '', sub] = path.split('/');
+    const capability = (route.request().postDataJSON() as { capability?: string } | null)?.capability ?? '';
+    const opened = decodeURIComponent(key);
+    const detail =
+      kind === 'person' && sub === 'actions'
+        ? (this.entityDetailOf?.(opened) ?? entityDetail(this.entityList, opened))
+        : undefined;
+    const action = detail?.actions.find(a => a.capability === capability);
+    if (!detail || !action) return route.fulfill({ status: 404, json: { error: 'Okänd adress.' } });
+    this.entityStarts.push({ key: detail.entity.key, capability });
+    const refusal = this.entityRefusals[capability];
+    if (refusal) return route.fulfill({ status: 400, json: { error: refusal } });
+    const id = `entity-${capability.replace(/\W/g, '-')}-${detail.entity.key}`;
+    if (!this.threads.some(t => t.id === id))
+      this.threads.push({
+        ...this.threads[0]!,
+        id,
+        topic: id,
+        connector: action.connector,
+        area: 'personal',
+        title: `${action.title}: ${detail.entity.name}`,
+        trigger: {
+          ...this.threads[0]!.trigger,
+          reason: `Du valde ${action.title} för ${detail.entity.name}`,
+          source: action.source,
+        },
+        summary: 'Inget har gjorts ännu. Du bestämmer på kortet.',
+        state: 'open',
+        items: [],
+        actions: [],
+        proposals: [],
+        receipt: null,
+        deadline: null,
+      });
+    return route.fulfill({ json: { threadId: id } });
+  }
+  private async entities(route: Route, path: string, url: URL) {
+    const json = (body: unknown) => route.fulfill({ json: body });
+    const missing = () => route.fulfill({ status: 404, json: { error: 'Personen finns inte.', code: 'not_found' } });
+    this.entityReads.push(path + url.search);
+    const [, , kind, key, sub] = path.split('/');
+    if (kind !== 'person') return route.fulfill({ status: 404, json: { error: 'Sidan finns inte.' } });
+    const list: EntityList = this.entitiesEmpty || this.employee ? { ...this.entityList, groups: [] } : this.entityList;
+    const capability = url.searchParams.get('capability') ?? '';
+    const silent = this.entitySilent[capability];
+    if (key === undefined) return json(list);
+    if (key === 'rows') {
+      const delay = this.entityRowsDelay[capability];
+      if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+      const known = new Set(list.groups.flatMap(g => g.entities.map(e => e.key)));
+      const rows = this.entityRows[capability];
+      const answer: EntityRows = silent
+        ? { capability, status: silent, rows: [] }
+        : rows
+          ? { ...rows, rows: rows.rows.filter(r => known.has(String(r.key))) }
+          : { capability, status: 'ok', rows: [] };
+      return json(answer);
+    }
+    const detail = entityDetail(list, decodeURIComponent(key));
+    if (!detail) return missing();
+    if (sub === undefined) return json(detail);
+    if (sub !== 'section' || !detail.sections.some(s => s.capability === capability)) return missing();
+    const row = this.entityRows[capability]?.rows.find(r => r.key === detail.entity.key);
+    const section: EntitySection = silent
+      ? { capability, status: silent }
+      : { capability, status: 'ok', ...(row ? { row } : {}) };
+    return json(section);
   }
   /**
    * Utvecklingssamtal (D96), answered as the server would: the reads through the capability route (refused for a person

@@ -10,7 +10,7 @@ Read these in order if you are new to the project:
 2. [Architecture overview](architecture/overview.md): the running components, data boundaries and end-to-end read, scan and action flows.
 3. [Implementation status](reference/status.md): what works in this checkout and what remains a fixture, proposal or release gate.
 
-[Interface spaces and navigation](reference/interface-spaces.md) defines where pages, contextual details, service catalogues, Apps and confirmations open, and how people return.
+[Interface spaces and navigation](reference/interface-spaces.md) defines where pages, contextual details, overlays and confirmations open, and how people return.
 
 The [vocabulary and entity map](reference/vocabulary.md) defines work items, cards, proposals, conversations and interface containers, and connects those terms to the current code.
 
@@ -29,18 +29,15 @@ A connector is your independently deployed HTTP service. It translates a source 
 | Verify the actor and narrow source access | [Authorization](guides/authorization.md) | [Standalone verifier](../connectors/hello/verification.mjs) |
 | Discover work and add approved actions | [Actions and receipts](guides/actions-and-receipts.md) | [Durable synthetic source](../connectors/reference/README.md) |
 | Coordinate reads, changes and follow-up across systems | [Working across connectors](architecture/working-across-connectors.md) | [Job scenario](../tests/unit/fixture-job.test.ts), [read callback](../connectors/hello/connector.mjs) |
+| Show what your system knows about a person or a unit | [Say what your rows are about](guides/creating-a-connector.md#8-say-what-your-rows-are-about) | [Appraisals fixture](../connectors/appraisals/connector.mjs) |
 | Check, register and operate the service | [Testing and deployment](guides/testing-and-deployment.md) | [Conformance checker](../packages/connectors/src/check.ts) |
 | Push people, units and groups into an installation | [Writing a provisioner](guides/writing-a-provisioner.md) | [Synthetic provisioner](../scripts/provisioner/push.ts) |
 
 The [guide index](guides/README.md) separates the minimum read integration from optional search, scan, write and composition features.
 
-## Consume an existing MCP service
+## A source that speaks MCP
 
-A vendor that already exposes standard MCP does not need to build a Clew connector or supply a Clew manifest. The separate, AI-enabled chat path consumes discovered tools and optional provider-owned MCP Apps. Clew can also run an approved read on a schedule and deliver a separate card when meaningful source evidence changes.
-
-Read [MCP chat services](architecture/mcp-chat-services.md) for the ownership boundary, standard OAuth requirements, delivery flow and implementation map. The [independent poll/status demo](../fixtures/mcp-pulse/README.md) runs this path for an explicitly registered development user. This is a development prototype; OAuth and production hosting remain unfinished. The [provider review](reviews/2026-11-08-mcp-services-and-provider-compatibility.md) distinguishes verified vendor tools from the illustrative poll App.
-
-For tighter native integration, an independent connector can use MCP as its source API. The [MCP-backed connector exploration](reviews/2026-11-09-mcp-backed-native-connectors.md) compares the options using the poll fixture and separates existing support from proposed forms and App handoffs.
+Clew's integration contract is the connector protocol. A connector can use an MCP server as its source API; the [MCP-backed connector exploration](reviews/2026-11-09-mcp-backed-native-connectors.md) compares the options. Consuming a vendor's MCP server and MCP App directly in AI chat was prototyped and removed on 2026-11-11; the [closing note](reviews/2026-11-11-external-mcp-chat-services-exploration.md) says what it showed.
 
 ## Develop and operate Clew
 
@@ -49,12 +46,17 @@ For tighter native integration, an independent connector can use MCP as its sour
 | Start the full development stack | [Local development](maintainers/local-development.md) |
 | Find code and understand dependency rules | [Backend structure](architecture/backend-structure.md) |
 | Understand identity, capability dispatch or scheduling | [Architecture index](architecture/README.md) |
+| Understand how sources attach what they know to a person or a unit, and where Clew shows it | [Entities](architecture/entities.md) |
 | Place and run tests | [Testing](architecture/testing.md) |
 | Configure connectors and model providers | [Connector administration](architecture/connector-administration.md) |
 | Customize colors and logo | [Branding](maintainers/branding.md) |
 | Decide whether a feature is built into Clew or reached through a connector | [Core or connector](maintainers/core-or-connector.md) |
 | Upgrade, diagnose and recover | [Reliability operations](maintainers/reliability-operations.md) |
 | Maintain these docs | [Documentation workflow](maintainers/README.md) |
+| See what is undecided | [Open questions](maintainers/open-questions.md) |
+| Check or record a dependency's licence | [Licence record](reference/licences.md) |
+| Compare a screen with its design | [Design canvases](reference/design-canvases.md) |
+| See every connector in the repository | [Connectors](../connectors/README.md) |
 
 ## Look up the contract
 
@@ -66,7 +68,7 @@ For tighter native integration, an independent connector can use MCP as its sour
 
 ## Current documentation and history
 
-The architecture pages explain the current system; the [reliability plan](architecture/reliability-and-authorization-plan.md) retains milestone acceptance criteria. [Decisions](decisions/README.md), [dated reviews](reviews/README.md) and [session notes](../HANDOVER.md) preserve intent and evidence at a point in time. An accepted decision does not by itself establish implementation.
+The architecture pages explain the current system; the [reliability plan](architecture/reliability-and-authorization-plan.md) retains milestone acceptance criteria. [Decisions in force](decisions/in-force.md) lists the decisions that bind today; the full [decision log](decisions/README.md), [dated reviews](reviews/README.md) and the frozen [history](history/README.md) preserve intent and evidence at a point in time. An accepted decision does not by itself establish implementation.
 
 Code and behavioral tests define implemented behavior. Generated schemas and examples expose the contract. Guides explain it. When these disagree, resolve the discrepancy against the implementation and update the affected pages.
 

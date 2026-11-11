@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { TALKS_FAIL_ERROR } from './data';
+import { TALKS_FAIL_ERROR, TALK_LENS } from './data';
 import {
   desktop,
   expect,
@@ -14,11 +14,13 @@ import {
 
 /**
  * One person's utvecklingssamtal (D96 item 7) as a focused overlay over Personal (D83): an end Drawer on a desktop, a
- * tall sheet on a phone, at `/staff?talk=<personId>`. Both surfaces are a modal dialog named "Samtal med <name>". The
+ * tall sheet on a phone, at `/staff?talk=<personId>`. Both surfaces are a modal dialog named "Samtal med <name>". Since
+ * D97 Personal knows no talk: the way in from the list is the source's page, "Öppna samtalet" in the person's menu. The
  * mock's round (`data.ts`): Anna's talk is held with one action point carried over, two of this round's and one done;
- * Erik's is booked with one carried over; Sara's is missing with none; Lena's is booked with none.
+ * Erik's is booked with one carried over; Karin's is missing with none; Lena's is booked with none.
  */
 const talk = (page: Page, name: string) => page.getByRole('dialog', { name: `Samtal med ${name}`, exact: true });
+const menuOf = (page: Page, name: string) => page.getByRole('button', { name: `Åtgärder för ${name}`, exact: true });
 const notices = (page: Page) => page.getByRole('region', { name: 'Aviseringar' });
 
 for (const [layout, viewport] of [
@@ -29,8 +31,8 @@ for (const [layout, viewport] of [
     test.use({ viewport });
     for (const [id, name, state] of [
       ['anna', 'Anna Lindqvist', 'Hållet'],
-      ['erik', 'Erik Nyström', 'Bokat'],
-      ['sara', 'Sara Pettersson', 'Saknas'],
+      ['erik', 'Erik Sandström', 'Bokat'],
+      ['karin', 'Karin Lindqvist', 'Saknas'],
       ['lena', 'Lena Berg', 'Bokat'],
     ] as const)
       test(`${name}'s talk (${state}) has no axe violations and every focus stop in it is marked`, async ({
@@ -97,11 +99,18 @@ for (const [layout, viewport] of [
       api,
     }) => {
       await open(page, '/staff');
-      const opener = page.getByRole('link', { name: 'Samtal med Sara Pettersson', exact: true });
+      // The way in is the source's page in the person's menu (D97): open the menu, go to Öppna samtalet, take it.
+      const opener = menuOf(page, 'Karin Lindqvist');
       await opener.focus();
       await page.keyboard.press('Enter');
-      await expect(page).toHaveURL('/staff?talk=sara');
-      const dialog = talk(page, 'Sara Pettersson');
+      const item = page.getByRole('menuitem', { name: 'Öppna samtalet' });
+      await expect(item).toBeVisible();
+      for (let i = 0; i < 3 && !(await item.evaluate(el => el === document.activeElement)); i++)
+        await page.keyboard.press('ArrowDown');
+      await expect(item).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(page).toHaveURL('/staff?talk=karin');
+      const dialog = talk(page, 'Karin Lindqvist');
       await expect(dialog).toBeVisible();
       await expect(dialog.getByText('Saknas', { exact: true })).toBeVisible();
 
@@ -127,7 +136,7 @@ for (const [layout, viewport] of [
       await expect(date).toHaveValue('');
       expect(api.talkWrites.at(-1)).toEqual({
         method: 'POST',
-        path: '/talks/sara/commitments',
+        path: '/talks/karin/commitments',
         body: { owner: 'manager', text: 'Ta fram en plan för introduktionen', dueOn: '2026-11-20' },
       });
       const thisRound = dialog.getByRole('list', { name: 'Från det här samtalet' });
@@ -176,7 +185,7 @@ for (const [layout, viewport] of [
 
     test('a failing write shows the server sentence as an alert and keeps what was typed', async ({ page, api }) => {
       await open(page, '/staff?talk=erik');
-      const dialog = talk(page, 'Erik Nyström');
+      const dialog = talk(page, 'Erik Sandström');
       const form = dialog.getByRole('form', { name: 'Ny åtgärdspunkt' });
       const text = form.getByRole('textbox', { name: /Vad ska göras/ });
       await text.fill('Gå en kurs i konflikthantering');
@@ -205,30 +214,34 @@ for (const [layout, viewport] of [
     }) => {
       expect(api.talksRound).not.toBeNull();
       await open(page, '/staff?talk=erik');
-      await expect(talk(page, 'Erik Nyström')).toBeVisible();
+      await expect(talk(page, 'Erik Sandström')).toBeVisible();
       await page.reload();
-      const dialog = talk(page, 'Erik Nyström');
+      const dialog = talk(page, 'Erik Sandström');
       await expect(dialog).toBeVisible();
       await expect(dialog.getByText('Se över schemat för rastvakter')).toBeVisible();
       await dialog.getByRole('button', { name: 'Stäng', exact: true }).click();
       await expect(dialog).toBeHidden();
       await expect(page).toHaveURL('/staff');
-      await expect(page.getByRole('link', { name: 'Samtal med Erik Nyström', exact: true })).toBeFocused();
+      // Nothing on the page opened it after the reload: the person's own link on the list takes the focus.
+      await expect(page.getByRole('link', { name: 'Erik Sandström', exact: true })).toBeFocused();
     });
 
     test('Back closes the talk and Forward opens it again', async ({ page, api }) => {
       expect(api.talksWritable).toBe(true);
-      await open(page, '/staff');
-      const opener = page.getByRole('link', { name: 'Samtal med Anna Lindqvist', exact: true });
+      await open(page, `/staff?show=${TALK_LENS}`);
+      const opener = menuOf(page, 'Anna Lindqvist');
       await opener.click();
+      await page.getByRole('menuitem', { name: 'Öppna samtalet' }).click();
+      // The way in keeps the lens the list was under.
+      await expect(page).toHaveURL(`/staff?show=${TALK_LENS}&talk=anna`);
       const dialog = talk(page, 'Anna Lindqvist');
       await expect(dialog).toBeVisible();
       await page.goBack();
-      await expect(page).toHaveURL('/staff');
+      await expect(page).toHaveURL(`/staff?show=${TALK_LENS}`);
       await expect(dialog).toBeHidden();
       await expect(opener).toBeFocused();
       await page.goForward();
-      await expect(page).toHaveURL('/staff?talk=anna');
+      await expect(page).toHaveURL(`/staff?show=${TALK_LENS}&talk=anna`);
       await expect(dialog).toBeVisible();
     });
 
@@ -258,7 +271,7 @@ for (const [layout, viewport] of [
       await expectNoAxeViolations(page);
     });
 
-    test('when the round cannot be read the list says so with Försök igen and the talk says so too', async ({
+    test('when the round cannot be read the talk says so with Försök igen and the list stands', async ({
       page,
       api,
     }) => {
@@ -273,13 +286,9 @@ for (const [layout, viewport] of [
       await expectNoAxeViolations(page);
       await dialog.getByRole('button', { name: 'Stäng', exact: true }).click();
       await expect(dialog).toBeHidden();
-      await expect(
-        page.getByRole('alert').filter({ hasText: 'Utvecklingssamtalen svarar inte just nu.' }),
-      ).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Försök igen' })).toBeVisible();
-      // The people are still listed, without the round's columns.
-      await expect(page.getByText('Anna Lindqvist').first()).toBeVisible();
-      await expect(page.getByRole('link', { name: /^Samtal med/ })).toHaveCount(0);
+      // Personal reads no talk of its own (D97): the list stands as it was, with nothing to say about the round.
+      await expect(page.getByRole('link', { name: 'Anna Lindqvist', exact: true })).toBeVisible();
+      await expect(page.getByText('Utvecklingssamtalen svarar inte just nu.')).toHaveCount(0);
     });
 
     test('when the action points cannot be read the talk says so with Försök igen', async ({ page, api }) => {

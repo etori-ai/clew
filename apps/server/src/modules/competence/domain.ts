@@ -4,19 +4,18 @@ import {
   daysUntil,
   stockholmDate,
   type CompetenceHoldingRow,
-  type CompetenceStandingRow,
   type CompetenceStatus,
   type CompetenceType,
 } from '@clew/contracts';
 import type { HoldingRecord, PersonRef, TypeRecord } from './model';
 
 /**
- * The rules of the competence domain (D101) as pure functions: when a holding ends, where it stands on a day, which of
+ * The rules of the competence domain (D107) as pure functions: when a holding ends, where it stands on a day, which of
  * several holdings of one type decides, what a type's name may be, and the refs, keys and rows the reads carry. No I/O,
  * no clock: the use case hands in every day.
  */
 
-/** A holding that ends within this many days is expiring (D101 item 4). */
+/** A holding that ends within this many days is expiring (D107 item 4). */
 export const EXPIRING_DAYS = 90;
 export const TYPE_NAME_MAX = 120;
 export const TYPE_AREA_MAX = 80;
@@ -58,7 +57,7 @@ export function addMonths(day: string, months: number): string {
   return new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(d, last))).toISOString().slice(0, 10);
 }
 /**
- * The last day a holding is valid (D101 item 3): the issuer's date where the holding has one, else the employer's rule
+ * The last day a holding is valid (D107 item 3): the issuer's date where the holding has one, else the employer's rule
  * counted from the issue date, else null (it does not end). `validityMonths` is the type's now, so a change of the rule
  * moves every holding counted from it.
  */
@@ -69,7 +68,7 @@ export function endOf(
   if (holding.expiresOn) return holding.expiresOn;
   return type.validityMonths ? addMonths(holding.issuedOn, type.validityMonths) : null;
 }
-/** Where a holding that ends on `end` stands on `today` (D101 item 4). The last day is still valid. */
+/** Where a holding that ends on `end` stands on `today` (D107 item 4). The last day is still valid. */
 export function statusOn(end: string | null, today: string): CompetenceStatus {
   if (end === null) return 'valid';
   const days = daysUntil(end, today);
@@ -86,7 +85,7 @@ export interface Standing {
   status: CompetenceStatus;
 }
 /**
- * For each person and type, the one holding that decides (D101 item 9): of the ones that count, the one that ends last,
+ * For each person and type, the one holding that decides (D107 item 9): of the ones that count, the one that ends last,
  * one that never ends before any that does, the most recently issued on a tie. Holdings of an unknown type are left out.
  */
 export function deciding(
@@ -153,20 +152,15 @@ export function holdingRow(
     evidence: standing.holding.evidence,
   };
 }
-/** Where one person stands: the worst status among their standings (`COMPETENCE_STATUSES` is worst first) and the counts. */
-export function standingRow(
-  person: Pick<PersonRef, 'id' | 'userName'>,
-  standings: readonly Standing[],
-): CompetenceStandingRow {
+/** What a person's standings add up to: how many have run out, how many soon will, and how many count at all. */
+export interface PersonSummary {
+  expired: number;
+  expiring: number;
+  holdings: number;
+}
+export function summarise(standings: readonly Pick<Standing, 'status'>[]): PersonSummary {
   const count = (status: CompetenceStatus) => standings.filter(s => s.status === status).length;
-  return {
-    key: person.id,
-    person: personKey(person),
-    status: COMPETENCE_STATUSES.find(status => count(status) > 0) ?? 'valid',
-    expired: count('expired'),
-    expiring: count('expiring'),
-    holdings: standings.length,
-  };
+  return { expired: count('expired'), expiring: count('expiring'), holdings: standings.length };
 }
 /** One type as the catalogue lists it. */
 export function typeRow(type: TypeRecord): CompetenceType {

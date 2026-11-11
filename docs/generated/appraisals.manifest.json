@@ -396,6 +396,126 @@
           }
         ]
       }
+    },
+    {
+      "name": "appraisals.person",
+      "kind": "read",
+      "title": "Utvecklingssamtal",
+      "description": "Var varje medarbetare som du är chef för står i den öppna omgången utvecklingssamtal, och hur många åtgärdspunkter som är försenade.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "about": {
+        "entity": "person"
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "maxItems": 200
+          }
+        },
+        "required": [
+          "keys"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "Saknas",
+                    "Bokat",
+                    "Hållet"
+                  ]
+                },
+                "at": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                      "maxLength": 10
+                    },
+                    {
+                      "type": "string",
+                      "format": "date-time",
+                      "maxLength": 40
+                    }
+                  ]
+                },
+                "overdue": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "key",
+                "state",
+                "overdue"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "list",
+        "title": "state",
+        "empty": "Ingen av dem är med i omgången.",
+        "fields": [
+          {
+            "key": "state",
+            "label": "Samtal",
+            "format": "status",
+            "tones": {
+              "Saknas": "warn"
+            }
+          },
+          {
+            "key": "at",
+            "label": "När",
+            "format": "instant"
+          },
+          {
+            "key": "overdue",
+            "label": "Försenade",
+            "format": "number"
+          }
+        ],
+        "open": {
+          "capability": "appraisals.commitments",
+          "title": "Åtgärdspunkter",
+          "params": {
+            "person": "key"
+          }
+        }
+      }
     }
   ]
 }

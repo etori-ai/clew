@@ -12,7 +12,8 @@ A running Clew serves the protocol it speaks under `/api/protocol`, public, with
 | `GET /protocol/manifest` | The manifest field by field: what each field does, type, presence, constraints, an example and the rules between fields, with three recipes. Drawn by the web app from `GET /api/protocol/manifest-reference.json`; committed as [manifest-reference.md](../generated/manifest-reference.md). |
 | `GET /api/protocol/openapi.json` | The OpenAPI 3.1 document: the routes a connector serves (tag Connector) and the routes Clew serves (tag Clew), with `components.schemas` equal to the bundle's `$defs` and `x-clew-protocol` naming the versions this instance loads. |
 | `GET /api/protocol/connector-protocol.schema.json` | The JSON Schema bundle. |
-| `POST /api/protocol/manifest?id=<id>` | A dry run: a manifest document in, a `ManifestPreview` out with every problem the loader would refuse it for, else what Clew would make of it (who may call what, what the model is offered, which views could be menu rows, what the conformance check would exercise). No service, registration or sign-in needed. |
+| `POST /api/protocol/manifest?id=<id>` | A dry run: a manifest document in, a `ManifestPreview` out with every problem the loader would refuse it for, each placed in `issues` (its path in the document, its manifest reference entry, the rule it breaks), else what Clew would make of it (who may call what, what the model is offered, which views could be menu rows, what the conformance check would exercise and, for a capability about an entity, its `places`, `audience`, `openedFrom` and sample rows). No service, registration or sign-in needed. |
+| `GET /protocol/preview` | The manifest preview ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): paste a manifest or choose its file, and the web app posts it to the dry run and draws the answer, with the row mark, the section and the menu drawn by Clew's own components from sample rows. The samples come from the declaration; no connector is called. |
 
 ```sh
 curl -s -X POST "http://localhost:3020/api/protocol/manifest?id=phonebook" -H 'content-type: application/json' --data @docs/generated/phonebook.manifest.json
@@ -32,7 +33,7 @@ Paths are relative to the registered connector base URL. Bodies and responses ar
 | `POST /clew/figure` | `FigureRequest` (`actor`, `area`) | `FigureResponse` (`figure` or null) | For an area declaring `figure: true`. |
 | `POST /clew/capabilities/<header capability>` | `CallRequest` | `CallResponse` whose `output` is a `SiteHeaderOutput` (`site`, `items` with their `children`, optional `logo`) | When the manifest declares `header: { capability }` ([D88](../decisions/D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md)): the read that gives Clew its shared header for the acting person. A read without input; the first enabled declaring connector in registration order answers. |
 
-Every POST requires both `Authorization: Bearer <Clew assertion>` and `X-Clew-Connector-Key: <transport key>`. Trust the actor from the verified assertion, not the body. See [authorization](../guides/authorization.md) for exact claims, callbacks and optional delegated tokens.
+Every POST requires both `Authorization: Bearer <Clew assertion>` and `X-Clew-Connector-Key: <transport key>`. Trust the actor from the verified assertion, not the body. The actor is `id`, `name`, `unitId`, `unitLabel`, `role` and, when the person was provisioned with one, `userName`: the directory user name your system knows them by, and the key a read about a person is asked with. See [authorization](../guides/authorization.md) for exact claims, callbacks and optional delegated tokens.
 
 Clew validates capability input and output against the declaration. Your connector also validates inputs and enforces source access. The [remote transport](../../packages/connectors/src/remote.ts) defaults to a five-second manifest fetch and a ten-second POST timeout. A timeout, malformed response or server failure is unavailable to a caller; for a source write it does not establish whether the effect happened. Follow [actions and receipts](../guides/actions-and-receipts.md).
 
@@ -46,8 +47,50 @@ The [manifest field reference](../generated/manifest-reference.md) covers every 
 - An area's standing capabilities must exist. A view belongs to a read and opens a read of its own connector.
 - Operator governance and the capability scope both have to allow the call. Missing governance denies access.
 - Scan actions belong to the scanning connector and declare the actual capability kind. An undo belongs to the same connector and is an execute.
+- A capability that declares `about` follows the rules in the next section.
 
 JSON Schema validation alone does not prove these relationships or source authorization. Use the conformance checker and targeted behavioral tests.
+
+## Reads and actions about an entity
+
+A capability may say what its rows are **about** ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): `about: { entity }` on a read, `about: { entity, param }` on a propose or execute. The entity kinds are `person`, keyed on the provisioned SCIM `userName` and compared without regard to case, and `unit`, keyed on the unit id. The source says what, never where. Clew places it from the declaration:
+
+| Declaration | Where Clew shows it |
+|---|---|
+| A propose or execute about the kind | The entity's menu, run after a human decision |
+| A read about the kind | A section on the opened entity |
+| The same read | A lens under "Visa" on the entity's list, when an administrator offers it; one field of it as a column on "Alla", when an administrator chooses it |
+| A field of that read's view with a `warn` or `alert` tone | A mark on the entity's row, for a lens an administrator offers |
+
+The loader refuses, with the field named ([validation.ts](../../packages/connectors/src/validation.ts)):
+
+- A read about an entity that does not take `{ keys }`: an object input whose required `keys` is an array of strings with `maxItems` at most 200. A read declares no `param`.
+- A read about an entity without a `table` or `list` view, or whose rows (`rows`, or the view's `rows`) are not an array whose items require a string `key`.
+- A read about an entity with `model: true`. It is never a model tool.
+- An action whose `param` is not a string property of its input, or whose input requires anything besides `param`. The menu starts it with the key alone.
+- `about` together with `follows`, on a profile read (`<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.talks`, `<id>.commitments`), on a capability with `kinds`, or on the header's read.
+- `about.page` in a remote manifest. A page inside Clew where the person writes about the entity is named only by Clew's own core connectors.
+
+A read about an entity is called with a batch of keys and answers one row per key it knows:
+
+```json
+{ "actor": { "id": "…", "name": "…", "unitId": "…", "unitLabel": "…", "role": "manager", "userName": "hillevi" },
+  "input": { "keys": ["johan", "maria", "okand"] } }
+```
+
+```json
+{ "output": { "rows": [{ "key": "johan", "state": "Bokat", "at": "2026-11-12T08:00:00+01:00", "overdue": 0 }] } }
+```
+
+Each row carries `key` as it was asked. A key you do not know, and a key outside the acting person's scope in your system, is answered as no row, never as an error: a missing row stands for both "none" and "not allowed". Beside `rows` the output may hold `heading` and `note`, two strings your output schema declares, which Clew draws over a lens. Clew sends only keys of entities the person may already be asked about, at most 200 in one call, and keeps nothing; it drops a row for a key it did not ask and a second row for a key. What Clew does around the call is in [Entities](../architecture/entities.md#how-a-source-is-asked).
+
+An action about an entity is started from the entity's menu with `{ "<param>": "<key>" }` and nothing else. A propose answers a `ThreadDraft`, which becomes the person's card; an execute is not called until the person decides on its card. Refuse a key outside the person's scope as any call is refused, with a Swedish message.
+
+Rows may also name an entity without being about one, so the name links to the person or unit in Clew: `subject: { entity, key }` on a scan's card row (`ThreadItem`) or a draft's row, `subject` on a `SearchHit` (hits from several sources with the same subject become one), and `view.subject: { entity, key }` on a `table`, `list` or `detail` view, where `key` names the record property that holds the entity's key. Clew does not check that a key exists.
+
+Three view additions serve these places, and any view may use them: the `tones` key `*` gives the tone of any other present value, so "2 försenade" can warn while an absent value stays neutral; `beside: true` draws a field in the same cell or line as the field before it, never on the first field; `compact: true` marks the one field that is the row in one value, drawn in a column or a one-line summary and left out where the whole row is drawn. At most one field of a view is `compact`.
+
+The [conformance check](../../packages/connectors/src/check.ts) asks every read about an entity with an unknown key and with the same keys asked by the check's own people on a unit no installation has, and expects no row and no error. With `--keys` and `--as` it also asks a batch of real keys signed as a person who may see them, and checks one row per key, each carrying a key it was asked with. See [Create a connector](../guides/creating-a-connector.md#8-say-what-your-rows-are-about) for a worked example.
 
 ## Document and semantic views
 
@@ -93,5 +136,6 @@ Keep existing capability names and schemas compatible with stored cards and call
 | Signing and callbacks | [authority.ts](../../apps/server/src/connectors/authority.ts), [routes](../../apps/server/src/routes/connectors.ts) | [remote connector tests](../../tests/unit/remote-connector.test.ts) |
 | Source verification | [standalone verifier](../../connectors/hello/verification.mjs) | [executable documentation](../../scripts/docs-smoke.ts) |
 | Conformance | [check.ts](../../packages/connectors/src/check.ts) | [phone book tests](../../tests/unit/phonebook-connector.test.ts) |
+| Reads and actions about an entity | [validation.ts](../../packages/connectors/src/validation.ts), [entities module](../../apps/server/src/modules/entities/) | [manifest rules](../../tests/unit/manifest-reference.test.ts), [remote connector tests](../../tests/unit/remote-connector.test.ts), [entities tests](../../tests/unit/entities.test.ts) |
 
 For intent and supersessions, see the [decision log](../decisions/README.md). For availability, see [implementation status](status.md).

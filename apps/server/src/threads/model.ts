@@ -1,4 +1,4 @@
-import type { MessageMeta, Thread } from '@clew/contracts';
+import type { MessageMeta, Subject, Thread } from '@clew/contracts';
 
 /**
  * The ports of the stream (D25): what a use case may read, and what it may write inside one transaction. The
@@ -132,6 +132,23 @@ export interface ThreadTx {
   updateTimer(timer: TimerIntent): Promise<void>;
   /** Start a durable workflow with this commit (D86): rolled back with it, dequeued by the engine once committed. Idempotent by workflow id. */
   enqueue(start: WorkflowStart): Promise<void>;
+  /**
+   * Remove one entity from every thread of every person (D97): the `subject` of each row that names it and the thread's
+   * own subject, with the index rows, the rows' text left as the source wrote it. A key is compared as Clew compares it
+   * (`foldEntityKey`). Neither `updatedAt` nor anything the person decided on moves.
+   */
+  eraseSubject(subject: Subject): Promise<SubjectErasure>;
+}
+/** What `eraseSubject` touched: the threads, the rows that named the entity and the threads' own subjects. Counts only. */
+export interface SubjectErasure {
+  cards: number;
+  rows: number;
+  cardSubjects: number;
+}
+/** A thread found by the entities it names (D97 item 6), with those it names among the ones asked, in the asked spelling. */
+export interface NamingThread {
+  thread: Thread;
+  subjects: Subject[];
 }
 export interface ThreadStore {
   /** Every unresolved pushed thread, plus at most 50 conversations/recently handled threads, newest first. */
@@ -143,5 +160,11 @@ export interface ThreadStore {
   readTimer(id: string): Promise<TimerIntent | undefined>;
   /** The person's open pushed thread on a topic. */
   openThread(personId: string, topic: string): Promise<Thread | undefined>;
+  /**
+   * The index from entity to cards (D97 item 6): the person's unresolved work threads (a pushed card that is open, or
+   * whose execution has not settled, as `listThreads` lists work) whose rows, or which themselves, name one of these
+   * entities, newest first. A key is compared as Clew compares it (`foldEntityKey`); one read for the whole list.
+   */
+  threadsNaming(personId: string, subjects: readonly Subject[]): Promise<NamingThread[]>;
   transaction<T>(fn: (tx: ThreadTx) => Promise<T>): Promise<T>;
 }

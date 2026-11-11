@@ -592,7 +592,7 @@
                               ]
                             },
                             "tones": {
-                              "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                              "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). The key `*` is the tone of any other value that is present, so a count such as \"2 försenade\" can warn while an absent value stays neutral (D97). A value without one is neutral; give a tone only to the value that needs the person.",
                               "type": "object",
                               "patternProperties": {
                                 "^(.*)$": {
@@ -639,6 +639,16 @@
                                   "type": "string"
                                 }
                               }
+                            },
+                            "beside": {
+                              "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                              "const": true,
+                              "type": "boolean"
+                            },
+                            "compact": {
+                              "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                              "const": true,
+                              "type": "boolean"
                             }
                           }
                         }
@@ -758,7 +768,7 @@
                                   ]
                                 },
                                 "tones": {
-                                  "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                                  "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). The key `*` is the tone of any other value that is present, so a count such as \"2 försenade\" can warn while an absent value stays neutral (D97). A value without one is neutral; give a tone only to the value that needs the person.",
                                   "type": "object",
                                   "patternProperties": {
                                     "^(.*)$": {
@@ -805,6 +815,16 @@
                                       "type": "string"
                                     }
                                   }
+                                },
+                                "beside": {
+                                  "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                                  "const": true,
+                                  "type": "boolean"
+                                },
+                                "compact": {
+                                  "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                                  "const": true,
+                                  "type": "boolean"
                                 }
                               }
                             }
@@ -915,7 +935,7 @@
                               ]
                             },
                             "tones": {
-                              "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                              "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). The key `*` is the tone of any other value that is present, so a count such as \"2 försenade\" can warn while an absent value stays neutral (D97). A value without one is neutral; give a tone only to the value that needs the person.",
                               "type": "object",
                               "patternProperties": {
                                 "^(.*)$": {
@@ -962,6 +982,16 @@
                                   "type": "string"
                                 }
                               }
+                            },
+                            "beside": {
+                              "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                              "const": true,
+                              "type": "boolean"
+                            },
+                            "compact": {
+                              "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                              "const": true,
+                              "type": "boolean"
                             }
                           }
                         }
@@ -1027,6 +1057,36 @@
                                 "type": "string"
                               }
                             }
+                          }
+                        }
+                      },
+                      "subject": {
+                        "additionalProperties": false,
+                        "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it; a record without the property links nowhere.",
+                        "type": "object",
+                        "required": [
+                          "entity",
+                          "key"
+                        ],
+                        "properties": {
+                          "entity": {
+                            "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.",
+                            "anyOf": [
+                              {
+                                "const": "person",
+                                "type": "string"
+                              },
+                              {
+                                "const": "unit",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "key": {
+                            "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                            "maxLength": 40,
+                            "description": "The record property holding the entity's key, a string: a person's provisioned `userName`, a unit's id.",
+                            "type": "string"
                           }
                         }
                       },
@@ -1227,7 +1287,7 @@
                               ]
                             },
                             "tones": {
-                              "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                              "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). The key `*` is the tone of any other value that is present, so a count such as \"2 försenade\" can warn while an absent value stays neutral (D97). A value without one is neutral; give a tone only to the value that needs the person.",
                               "type": "object",
                               "patternProperties": {
                                 "^(.*)$": {
@@ -1274,6 +1334,16 @@
                                   "type": "string"
                                 }
                               }
+                            },
+                            "beside": {
+                              "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                              "const": true,
+                              "type": "boolean"
+                            },
+                            "compact": {
+                              "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                              "const": true,
+                              "type": "boolean"
                             }
                           }
                         }
@@ -1339,6 +1409,36 @@
                                 "type": "string"
                               }
                             }
+                          }
+                        }
+                      },
+                      "subject": {
+                        "additionalProperties": false,
+                        "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it; a record without the property links nowhere.",
+                        "type": "object",
+                        "required": [
+                          "entity",
+                          "key"
+                        ],
+                        "properties": {
+                          "entity": {
+                            "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.",
+                            "anyOf": [
+                              {
+                                "const": "person",
+                                "type": "string"
+                              },
+                              {
+                                "const": "unit",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "key": {
+                            "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                            "maxLength": 40,
+                            "description": "The record property holding the entity's key, a string: a person's provisioned `userName`, a unit's id.",
+                            "type": "string"
                           }
                         }
                       },
@@ -1533,7 +1633,7 @@
                               ]
                             },
                             "tones": {
-                              "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                              "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). The key `*` is the tone of any other value that is present, so a count such as \"2 försenade\" can warn while an absent value stays neutral (D97). A value without one is neutral; give a tone only to the value that needs the person.",
                               "type": "object",
                               "patternProperties": {
                                 "^(.*)$": {
@@ -1580,7 +1680,47 @@
                                   "type": "string"
                                 }
                               }
+                            },
+                            "beside": {
+                              "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                              "const": true,
+                              "type": "boolean"
+                            },
+                            "compact": {
+                              "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                              "const": true,
+                              "type": "boolean"
                             }
+                          }
+                        }
+                      },
+                      "subject": {
+                        "additionalProperties": false,
+                        "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it; a record without the property links nowhere.",
+                        "type": "object",
+                        "required": [
+                          "entity",
+                          "key"
+                        ],
+                        "properties": {
+                          "entity": {
+                            "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.",
+                            "anyOf": [
+                              {
+                                "const": "person",
+                                "type": "string"
+                              },
+                              {
+                                "const": "unit",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "key": {
+                            "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                            "maxLength": 40,
+                            "description": "The record property holding the entity's key, a string: a person's provisioned `userName`, a unit's id.",
+                            "type": "string"
                           }
                         }
                       },
@@ -1699,6 +1839,35 @@
                         "type": "string"
                       }
                     ]
+                  }
+                }
+              },
+              "about": {
+                "additionalProperties": false,
+                "description": "What the rows concern (D97). A `read` takes `{ keys }` (an array of at most 200 strings, required) and answers `rows` (or its view's rows), one per key it knows, each with a string `key` it was asked with; a key outside the caller's scope is answered as no row, never as a refusal. It declares a `table` or `list` view, is never a tool (`model: false`), and may answer `heading` and `note`, two strings beside the rows. A `propose` or `execute` names in `param` the input property that takes one key. Clew decides where it shows: an action in the entity's menu, a read as a section on the opened entity, a `warn` or `alert` tone as a mark on its row, a table or list as a lens an administrator may offer.",
+                "type": "object",
+                "required": [
+                  "entity"
+                ],
+                "properties": {
+                  "entity": {
+                    "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.",
+                    "anyOf": [
+                      {
+                        "const": "person",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unit",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "param": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                    "maxLength": 40,
+                    "description": "On a `propose` or `execute` only: the string property of the input that takes the key of the one entity it acts on. A read takes its keys in `keys` and declares none.",
+                    "type": "string"
                   }
                 }
               },
@@ -1847,6 +2016,12 @@
               "type": "string"
             }
           ]
+        },
+        "userName": {
+          "minLength": 1,
+          "maxLength": 512,
+          "description": "The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one.",
+          "type": "string"
         }
       }
     },
@@ -1895,6 +2070,12 @@
                   "type": "string"
                 }
               ]
+            },
+            "userName": {
+              "minLength": 1,
+              "maxLength": 512,
+              "description": "The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one.",
+              "type": "string"
             }
           }
         },
@@ -2165,6 +2346,12 @@
                   "type": "string"
                 }
               ]
+            },
+            "userName": {
+              "minLength": 1,
+              "maxLength": 512,
+              "description": "The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one.",
+              "type": "string"
             }
           }
         },
@@ -2654,6 +2841,12 @@
                   "type": "string"
                 }
               ]
+            },
+            "userName": {
+              "minLength": 1,
+              "maxLength": 512,
+              "description": "The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one.",
+              "type": "string"
             }
           }
         }
@@ -2764,6 +2957,36 @@
                     },
                     "selected": {
                       "type": "boolean"
+                    },
+                    "subject": {
+                      "additionalProperties": false,
+                      "description": "The person or unit the row is about (D97 item 6): the web links the row to it, and the card shows on that entity for its owner. A key, never a name; the row's text stays the source's. Clew does not check that the key exists.",
+                      "type": "object",
+                      "required": [
+                        "entity",
+                        "key"
+                      ],
+                      "properties": {
+                        "entity": {
+                          "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.",
+                          "anyOf": [
+                            {
+                              "const": "person",
+                              "type": "string"
+                            },
+                            {
+                              "const": "unit",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "key": {
+                          "minLength": 1,
+                          "maxLength": 256,
+                          "description": "The entity's key: a person's `userName`, a unit's id.",
+                          "type": "string"
+                        }
+                      }
                     }
                   }
                 }
@@ -3048,6 +3271,36 @@
               },
               "selected": {
                 "type": "boolean"
+              },
+              "subject": {
+                "additionalProperties": false,
+                "description": "The person or unit the row is about (D97 item 6): the web links the row to it, and the card shows on that entity for its owner. A key, never a name; the row's text stays the source's. Clew does not check that the key exists.",
+                "type": "object",
+                "required": [
+                  "entity",
+                  "key"
+                ],
+                "properties": {
+                  "entity": {
+                    "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.",
+                    "anyOf": [
+                      {
+                        "const": "person",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unit",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "key": {
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "description": "The entity's key: a person's `userName`, a unit's id.",
+                    "type": "string"
+                  }
+                }
               }
             }
           }
@@ -3209,6 +3462,12 @@
                   "type": "string"
                 }
               ]
+            },
+            "userName": {
+              "minLength": 1,
+              "maxLength": 512,
+              "description": "The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one.",
+              "type": "string"
             }
           }
         },
@@ -3469,6 +3728,36 @@
         },
         "score": {
           "type": "number"
+        },
+        "subject": {
+          "additionalProperties": false,
+          "description": "An entity a row names (D97): the web links the row to it. Clew never checks that the key exists; a reader only ever reaches an entity they may ask about.",
+          "type": "object",
+          "required": [
+            "entity",
+            "key"
+          ],
+          "properties": {
+            "entity": {
+              "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.",
+              "anyOf": [
+                {
+                  "const": "person",
+                  "type": "string"
+                },
+                {
+                  "const": "unit",
+                  "type": "string"
+                }
+              ]
+            },
+            "key": {
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "The entity's key: a person's `userName`, a unit's id.",
+              "type": "string"
+            }
+          }
         }
       }
     },
@@ -3562,6 +3851,36 @@
               },
               "score": {
                 "type": "number"
+              },
+              "subject": {
+                "additionalProperties": false,
+                "description": "An entity a row names (D97): the web links the row to it. Clew never checks that the key exists; a reader only ever reaches an entity they may ask about.",
+                "type": "object",
+                "required": [
+                  "entity",
+                  "key"
+                ],
+                "properties": {
+                  "entity": {
+                    "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.",
+                    "anyOf": [
+                      {
+                        "const": "person",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unit",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "key": {
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "description": "The entity's key: a person's `userName`, a unit's id.",
+                    "type": "string"
+                  }
+                }
               }
             }
           }
@@ -4400,7 +4719,7 @@
                     ]
                   },
                   "tones": {
-                    "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                    "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). The key `*` is the tone of any other value that is present, so a count such as \"2 försenade\" can warn while an absent value stays neutral (D97). A value without one is neutral; give a tone only to the value that needs the person.",
                     "type": "object",
                     "patternProperties": {
                       "^(.*)$": {
@@ -4447,6 +4766,16 @@
                         "type": "string"
                       }
                     }
+                  },
+                  "beside": {
+                    "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                    "const": true,
+                    "type": "boolean"
+                  },
+                  "compact": {
+                    "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                    "const": true,
+                    "type": "boolean"
                   }
                 }
               }
@@ -4566,7 +4895,7 @@
                         ]
                       },
                       "tones": {
-                        "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                        "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). The key `*` is the tone of any other value that is present, so a count such as \"2 försenade\" can warn while an absent value stays neutral (D97). A value without one is neutral; give a tone only to the value that needs the person.",
                         "type": "object",
                         "patternProperties": {
                           "^(.*)$": {
@@ -4613,6 +4942,16 @@
                             "type": "string"
                           }
                         }
+                      },
+                      "beside": {
+                        "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "compact": {
+                        "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                        "const": true,
+                        "type": "boolean"
                       }
                     }
                   }
@@ -4723,7 +5062,7 @@
                     ]
                   },
                   "tones": {
-                    "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                    "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). The key `*` is the tone of any other value that is present, so a count such as \"2 försenade\" can warn while an absent value stays neutral (D97). A value without one is neutral; give a tone only to the value that needs the person.",
                     "type": "object",
                     "patternProperties": {
                       "^(.*)$": {
@@ -4770,6 +5109,16 @@
                         "type": "string"
                       }
                     }
+                  },
+                  "beside": {
+                    "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                    "const": true,
+                    "type": "boolean"
+                  },
+                  "compact": {
+                    "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                    "const": true,
+                    "type": "boolean"
                   }
                 }
               }
@@ -4835,6 +5184,36 @@
                       "type": "string"
                     }
                   }
+                }
+              }
+            },
+            "subject": {
+              "additionalProperties": false,
+              "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it; a record without the property links nowhere.",
+              "type": "object",
+              "required": [
+                "entity",
+                "key"
+              ],
+              "properties": {
+                "entity": {
+                  "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.",
+                  "anyOf": [
+                    {
+                      "const": "person",
+                      "type": "string"
+                    },
+                    {
+                      "const": "unit",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "key": {
+                  "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                  "maxLength": 40,
+                  "description": "The record property holding the entity's key, a string: a person's provisioned `userName`, a unit's id.",
+                  "type": "string"
                 }
               }
             },
@@ -5035,7 +5414,7 @@
                     ]
                   },
                   "tones": {
-                    "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                    "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). The key `*` is the tone of any other value that is present, so a count such as \"2 försenade\" can warn while an absent value stays neutral (D97). A value without one is neutral; give a tone only to the value that needs the person.",
                     "type": "object",
                     "patternProperties": {
                       "^(.*)$": {
@@ -5082,6 +5461,16 @@
                         "type": "string"
                       }
                     }
+                  },
+                  "beside": {
+                    "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                    "const": true,
+                    "type": "boolean"
+                  },
+                  "compact": {
+                    "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                    "const": true,
+                    "type": "boolean"
                   }
                 }
               }
@@ -5147,6 +5536,36 @@
                       "type": "string"
                     }
                   }
+                }
+              }
+            },
+            "subject": {
+              "additionalProperties": false,
+              "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it; a record without the property links nowhere.",
+              "type": "object",
+              "required": [
+                "entity",
+                "key"
+              ],
+              "properties": {
+                "entity": {
+                  "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.",
+                  "anyOf": [
+                    {
+                      "const": "person",
+                      "type": "string"
+                    },
+                    {
+                      "const": "unit",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "key": {
+                  "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                  "maxLength": 40,
+                  "description": "The record property holding the entity's key, a string: a person's provisioned `userName`, a unit's id.",
+                  "type": "string"
                 }
               }
             },
@@ -5341,7 +5760,7 @@
                     ]
                   },
                   "tones": {
-                    "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.",
+                    "description": "For `status`: the tone per value (a yes/no value is keyed `true` and `false`). The key `*` is the tone of any other value that is present, so a count such as \"2 försenade\" can warn while an absent value stays neutral (D97). A value without one is neutral; give a tone only to the value that needs the person.",
                     "type": "object",
                     "patternProperties": {
                       "^(.*)$": {
@@ -5388,7 +5807,47 @@
                         "type": "string"
                       }
                     }
+                  },
+                  "beside": {
+                    "description": "Drawn in the same cell or on the same line as the field before it, under that field's label: a state and its time (\"Bokat\", \"tors 12 nov kl. 09:00\"), a count and what is late in it (\"3 öppna\", \"2 försenade\"). Never on the first field (D97).",
+                    "const": true,
+                    "type": "boolean"
+                  },
+                  "compact": {
+                    "description": "The row in one value (\"tors 12 nov\", \"Inte bokat\"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).",
+                    "const": true,
+                    "type": "boolean"
                   }
+                }
+              }
+            },
+            "subject": {
+              "additionalProperties": false,
+              "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it; a record without the property links nowhere.",
+              "type": "object",
+              "required": [
+                "entity",
+                "key"
+              ],
+              "properties": {
+                "entity": {
+                  "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.",
+                  "anyOf": [
+                    {
+                      "const": "person",
+                      "type": "string"
+                    },
+                    {
+                      "const": "unit",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "key": {
+                  "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                  "maxLength": 40,
+                  "description": "The record property holding the entity's key, a string: a person's provisioned `userName`, a unit's id.",
+                  "type": "string"
                 }
               }
             },

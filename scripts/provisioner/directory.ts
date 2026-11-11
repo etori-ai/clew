@@ -368,7 +368,8 @@ const FAMILY_MORE = [
  * Hillevi's school starts with named people, not generated ones: the same five people with the same user names and
  * addresses as the calendar accounts in `packages/calendar/src/accounts.ts` and `.devcontainer/calendar/seed.php`, so
  * the people the planner proposes talks for (D96 item 3) have calendars. The generator's counter still advances past
- * them, so every other unit keeps its people, and the rest of the school is generated.
+ * them, so every other unit keeps its people, and the rest of the school is generated; the calendar seeds give those
+ * generated people accounts too, from `unitCalendarPeople()` in `scripts/calendar-fixtures.ts`.
  */
 const SCHOOL: Array<Pick<DirectoryPerson, 'userName' | 'givenName' | 'familyName'>> = [
   { userName: 'anna', givenName: 'Anna', familyName: 'Lindqvist' },

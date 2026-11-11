@@ -1,9 +1,10 @@
-import type {
-  ManifestReference,
-  ReferenceField,
-  ReferenceRecipe,
-  ReferenceRule,
-  ReferenceSection,
+import {
+  ENTITY_KEYS_MAX,
+  type ManifestReference,
+  type ReferenceField,
+  type ReferenceRecipe,
+  type ReferenceRule,
+  type ReferenceSection,
 } from '@clew/contracts';
 import { ConnectorManifestSchema, PROTOCOL_ACCEPTED, PROTOCOL_VERSION, type ConnectorManifest } from './protocol';
 /** TypeBox itself, for the test that evaluates the generated source and compares the schema it emits with the JSON it came from. */
@@ -182,6 +183,8 @@ export const HANDWRITTEN_EXAMPLES: Record<string, unknown> = {
   'capabilities[].view.empty': 'Inga träffar.',
   'capabilities[].view.fields[].format': 'status',
   'capabilities[].view.fields[].tones': { open: 'warn', closed: 'ok' },
+  'capabilities[].view.fields[].beside': true,
+  'capabilities[].view.fields[].compact': true,
   'capabilities[].view.input.filter': {
     key: 'state',
     label: 'Status',
@@ -199,6 +202,12 @@ export const HANDWRITTEN_EXAMPLES: Record<string, unknown> = {
   'capabilities[].view.input.filter.options[].value': 'open',
   'capabilities[].view.input.filter.options[].label': 'Öppna',
   'capabilities[].view.modelReads': 'summary',
+  'capabilities[].view.subject': { entity: 'person', key: 'person' },
+  'capabilities[].view.subject.entity': 'person',
+  'capabilities[].view.subject.key': 'person',
+  'capabilities[].about': { entity: 'person' },
+  'capabilities[].about.entity': 'person',
+  'capabilities[].about.param': 'person',
 };
 
 /** The rules between fields, as Clew applies them. Each `loader` rule is proven by a test that breaks it and reads the problem. */
@@ -275,6 +284,30 @@ export const RULES: Rule[] = [
     text: "`open.capability` is a `read` of this manifest, and every key of `params` is an input property of that read, taken from a property the row has. A card's buttons and a row's link stay within one system.",
   },
   {
+    id: 'view-subject-is-a-string',
+    title: 'A record names an entity by a string it holds',
+    fields: ['capabilities[].output', 'capabilities[].view.subject', 'capabilities[].view.subject.key'],
+    enforced: 'loader',
+    decision: 'D97',
+    text: "Where the output schema declares `properties`, `subject.key` is one of the record's properties (a row's for a table or list) and its type is `string`: a person's provisioned `userName` or a unit's id. The record's title then links to that person or unit for a reader who may open it; Clew never checks that the key exists, and a record without the value links nowhere.",
+  },
+  {
+    id: 'view-beside-follows',
+    title: 'A field beside another follows one',
+    fields: ['capabilities[].view.fields[].beside'],
+    enforced: 'loader',
+    decision: 'D97',
+    text: "`beside` draws a field in the same cell or on the same line as the field before it, under that field's label: a state and its time, a count and what is late in it. It is never on the first field of a view or of a record's items.",
+  },
+  {
+    id: 'view-compact-once',
+    title: 'One field is the row in one value',
+    fields: ['capabilities[].view.fields[].compact'],
+    enforced: 'loader',
+    decision: 'D97',
+    text: "At most one field of a view (or of a record's items) is `compact`: the row in one value, drawn where there is room for one value (a column on a list, a one-line summary) and left out where the whole row is drawn (a lens, a section, a detail).",
+  },
+  {
     id: 'menu-needs-open-view',
     title: 'A menu row is a view that opens without a question',
     fields: ['capabilities[].menu', 'capabilities[].view', 'capabilities[].input'],
@@ -304,6 +337,62 @@ export const RULES: Rule[] = [
     enforced: 'loader',
     decision: 'D55',
     text: "`creates` must name one of the manifest's `facts`, so followers know the attributes they will receive.",
+  },
+  {
+    id: 'about-read-keys',
+    title: 'A read about an entity is asked with a batch of keys',
+    fields: ['capabilities[].about', 'capabilities[].about.param', 'capabilities[].input'],
+    enforced: 'loader',
+    decision: 'D97',
+    text: `A \`read\` that declares \`about\` takes \`{ keys }\`: its input is an object whose required \`keys\` is an array of strings with \`maxItems\` at most ${ENTITY_KEYS_MAX}. It declares no \`param\`.`,
+  },
+  {
+    id: 'about-read-rows',
+    title: 'Each row carries the key it was asked with',
+    fields: ['capabilities[].about', 'capabilities[].output', 'capabilities[].view', 'capabilities[].view.rows'],
+    enforced: 'loader',
+    decision: 'D97',
+    text: "A read about an entity declares a `table` or `list` view, and its rows (`rows`, or the view's `rows`) are an array in the output schema whose items require a string `key`: the key the row was asked with.",
+  },
+  {
+    id: 'about-never-a-tool',
+    title: 'A read about an entity is never a tool',
+    fields: ['capabilities[].about', 'capabilities[].model'],
+    enforced: 'loader',
+    decision: 'D97',
+    text: 'A `read` that declares `about` must declare `model: false`. Clew never offers it to the model, whatever an administrator enables.',
+  },
+  {
+    id: 'about-action-param',
+    title: 'An action about an entity names the input that takes the key',
+    fields: ['capabilities[].kind', 'capabilities[].about.param', 'capabilities[].input'],
+    enforced: 'loader',
+    decision: 'D97',
+    text: "A `propose` or `execute` that declares `about` names in `param` a string property of its input schema. Clew fills it with the key of the entity the person chose the action on; it shows in that entity's menu and runs, as every action does, after a human decision.",
+  },
+  {
+    id: 'about-action-key-alone',
+    title: 'An action about an entity starts with the key alone',
+    fields: ['capabilities[].about.param', 'capabilities[].input'],
+    enforced: 'loader',
+    decision: 'D97',
+    text: "On a `propose` or `execute` that declares `about`, `param` is the one property the input requires. Anything else is optional, with a default the source chooses, so the entity's menu can start the action without asking a question (D8).",
+  },
+  {
+    id: 'about-not-a-follower',
+    title: 'A follower is about no entity',
+    fields: ['capabilities[].about', 'capabilities[].follows'],
+    enforced: 'loader',
+    decision: 'D97',
+    text: '`follows` and `about` exclude each other: a follower is asked with a `FactEnvelope`, not with keys.',
+  },
+  {
+    id: 'about-not-a-profile',
+    title: 'A profile read and the header are about no entity',
+    fields: ['capabilities[].about', 'capabilities[].name', 'capabilities[].kinds', 'header.capability'],
+    enforced: 'loader',
+    decision: 'D97',
+    text: '`<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.talks`, `<id>.commitments`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`.',
   },
   {
     id: 'scan-route',
@@ -342,7 +431,23 @@ export const RULES: Rule[] = [
     fields: ['delegation.audience'],
     enforced: 'call',
     decision: 'D26',
-    text: "With `delegation`, Clew exchanges the person's session for a token bound to `audience` and sends it in `X-Clew-Delegated-Token` beside the assertion. Scans, figures, callbacks and sessions without an IdP token carry none; the connector then answers `denied`.",
+    text: "With `delegation`, Clew exchanges the person's session for a token bound to `audience` and sends it in `X-Clew-Delegated-Token` beside the assertion: on a request, on an approved write while the session that approved it is active, and on a scan the person's active session asked for (Clew does not call the scan without one). Figures, callbacks and sessions without an IdP token carry none; the connector then answers `denied`.",
+  },
+  {
+    id: 'about-call',
+    title: 'A read about an entity answers for the keys it may',
+    fields: ['capabilities[].about', 'capabilities[].about.entity'],
+    enforced: 'call',
+    decision: 'D97',
+    text: `Clew calls the read as the person with \`{ keys }\`: a person's provisioned \`userName\` (compare without regard to case; the caller's own is \`actor.userName\`) or a unit's id, only for entities the person may already see, at most ${ENTITY_KEYS_MAX} in one call. Answer one row per key you know, carrying \`key\` as it was asked; a key outside the person's scope is answered as no row, never as a refusal. Beside the rows you may answer \`heading\` and \`note\`, two short strings. Clew keeps nothing and decides where the rows show: a section on the opened entity, and a lens, a column or a mark on the row where an administrator chose the source.`,
+  },
+  {
+    id: 'about-action-start',
+    title: 'An action about an entity becomes a card',
+    fields: ['capabilities[].kind', 'capabilities[].about.param'],
+    enforced: 'call',
+    decision: 'D97',
+    text: "When the person chooses the action in an entity's menu, Clew starts it without the model, as the person, with `{ <param>: key }`. A `propose` answers a `ThreadDraft`, the shape a scan pushes: its actions name capabilities of this connector, it prepares and writes nothing, and it becomes the person's card. Clew writes the card's reason itself (the person chose it), so your `reason` is not shown. Refuse a key outside the person's scope in Swedish, as any call is refused. An `execute` is not called: Clew makes a card whose button is the human decision, and the execute runs only after it, with its write safety. The same request while the card is open gives the same card.",
   },
 ];
 

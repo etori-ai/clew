@@ -1,5 +1,5 @@
 /**
- * Seed the competence domain of the development organisation (D101): a small catalogue and holdings for the people the
+ * Seed the competence domain of the development organisation (D107): a small catalogue and holdings for the people the
  * synthetic provisioner pushed, so that a manager's list, the figure and the cards have something to show. Some
  * holdings have expired, some expire within 90 days, most are valid; which person gets what follows from their place
  * in the list of people by id, so two runs on the same directory give the same result. Runs inside the app container

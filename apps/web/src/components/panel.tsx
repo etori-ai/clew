@@ -20,6 +20,7 @@ import {
   LayoutContent,
   LayoutHeader,
   LayoutPanel,
+  Link,
   List,
   ListItem,
   ResizeHandle,
@@ -42,6 +43,7 @@ import { AddToConversation } from './add-to-conversation';
 import { DeclaredView } from './view';
 import { useMarks } from '../marks';
 import { areasQuery } from '../queries';
+import { entityHref } from '../person-address';
 
 const plain = (address: string) => {
   try {
@@ -92,10 +94,13 @@ const NEVER = 'not all';
 /**
  * Found text as objects (D12, D26): every hit is numbered as the answer cites it, opens where it lives and can be added to
  * the conversation as a chip. The row itself is not interactive, so its two buttons are the only stops (Astryx's rule).
+ * A hit about a person or a unit (D97 item 6, artboard P) leads to them instead of to one source's record: its name is
+ * the link, and a hit several sources answered for names them all at the end of its line.
  */
 function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((view: ViewRef) => string) | undefined }) {
   const talk = useConversation();
   const marks = useMarks();
+  const { pathname, search } = useLocation();
   const missed = result.sources.filter(s => s.status !== 'ok');
   return (
     <VStack gap={3}>
@@ -110,35 +115,53 @@ function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((vie
             const reviewed = r.reviewedAt ?? r.updatedAt;
             const note = r.kind === 'document' ? staleLabel(r.stale, reviewed) : '';
             const mark = marks.ofObject(`document:${r.connector}:`);
+            const title = `${r.label}${r.section ? ` · ${r.section}` : ''}`;
+            // Every source that answered for the same entity, the hit's own first: said once, on the hit's line.
+            const merged = r.sources?.map(s => s.source).join(' · ');
+            const meta = [merged ? '' : r.source, r.owner, reviewLabel(reviewed), r.stale ? '' : note.toLowerCase()]
+              .filter(Boolean)
+              .join(' · ');
             return (
               <ListItem
                 key={ref}
                 align="start"
                 startContent={<Badge variant="neutral" label={String(i + 1)} />}
                 label={
-                  <Text weight="semibold">
-                    {r.label}
-                    {r.section ? ` · ${r.section}` : ''}
-                  </Text>
+                  r.subject || merged ? (
+                    <HStack gap={2} justify="between" vAlign="center" wrap="wrap">
+                      {r.subject ? (
+                        <Link href={entityHref(r.subject, pathname + search)} weight="semibold" hasUnderline>
+                          {title}
+                        </Link>
+                      ) : (
+                        <Text weight="semibold">{title}</Text>
+                      )}
+                      {merged && <Text type="supporting">{merged}</Text>}
+                    </HStack>
+                  ) : (
+                    <Text weight="semibold">{title}</Text>
+                  )
                 }
                 description={
                   <VStack gap={1}>
                     <Text type="supporting">{r.snippet}</Text>
                     {/* The meta line starts with the source's glyph and word, so an answer from three systems shows where each hit came from. */}
-                    <HStack gap={2} vAlign="center" wrap="wrap">
-                      <AreaLine {...(mark?.icon ? { icon: mark.icon } : {})}>
-                        {[r.source, r.owner, reviewLabel(reviewed), r.stale ? '' : note.toLowerCase()]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </AreaLine>
-                      {r.stale && note && <Badge variant="warning" label={note} />}
-                    </HStack>
+                    {(meta || (r.stale && note)) && (
+                      <HStack gap={2} vAlign="center" wrap="wrap">
+                        {merged ? (
+                          meta && <Text type="supporting">{meta}</Text>
+                        ) : (
+                          <AreaLine {...(mark?.icon ? { icon: mark.icon } : {})}>{meta}</AreaLine>
+                        )}
+                        {r.stale && note && <Badge variant="warning" label={note} />}
+                      </HStack>
+                    )}
                     <HStack gap={1} wrap="wrap">
-                      {/* A hit whose source declares its view (D38) opens here, drawn by Startsidan; the link still leads to the source. */}
-                      {r.view && hrefFor && (
+                      {/* A hit whose source declares its view (D38) opens here, drawn by Startsidan; the link still leads to the source. A hit about an entity leads to the entity instead. */}
+                      {!r.subject && r.view && hrefFor && (
                         <Button size="sm" variant="secondary" label={r.view.title} href={hrefFor(r.view)} />
                       )}
-                      {r.link && (
+                      {!r.subject && r.link && (
                         <Button
                           size="sm"
                           variant="secondary"
@@ -319,6 +342,10 @@ export interface PanelFrame {
   kind?: 'card' | 'view';
   /** The thing's own name for its tab when several are open beside the page (D66): a card's title; a view keeps `title`. */
   tab?: string;
+  /** What stands before the heading, as a person's avatar does (D97, artboard C); over the page, the drawer header's start. */
+  lead?: ReactNode;
+  /** One line under the heading, as a person's role and unit (D97, artboard C). */
+  subtitle?: ReactNode;
 }
 /** One thing opened beside the page, waiting as a tab while another is current (D66). */
 type OpenTab = { id: string; name: string; search: string };
@@ -332,12 +359,25 @@ const searchOf = (address: string) => {
 export const RAIL = 256,
   PANEL = 440;
 /**
- * What stands on the panel's inner edge beside its width: the 1 px resize handle, as measured in the browser. The fold
- * button floats over the page beside the handle (D63 item 14, revised 2026-11-10), so it takes no width of its own.
+ * What stands on the panel's inner edge beside its width while it is shown: the 1 px resize handle, as measured in the
+ * browser. The fold button floats over the page beside it (D63 item 14, revised 2026-11-10), so it takes no width of
+ * its own.
  */
 export const PANEL_EDGE = 1;
-/** The window width from which the panel fits beside a column that needs `minMain` px. */
-export const panelBesideQuery = (minMain: number) => `(min-width: ${RAIL + minMain + PANEL}px)`;
+/** How far in from the panel's own edge the fold button stands: 20 px in from the handle, which is on that edge while the panel is shown. */
+const FOLD_OFFSET = 20 + PANEL_EDGE;
+/** The window width from which the panel, `width` px wide, fits beside a column that needs `minMain` px. */
+export const panelBesideQuery = (minMain: number, width: number = PANEL) => `(min-width: ${RAIL + minMain + width}px)`;
+/**
+ * A panel of its own width (D97: the opened person is drawn 520 to 600 px wide, artboard C): its width at first, the
+ * narrowest and widest it can be dragged to, and the name its width is remembered under in this browser.
+ */
+export interface PanelSize {
+  default: number;
+  min: number;
+  max: number;
+  id: string;
+}
 /** What a transcript needs beside the panel: a conversation asked on a page brings the page along only where both fit (D50). */
 export const CONVERSATION_MIN = 600;
 type Options = {
@@ -352,6 +392,14 @@ type Options = {
    * under it is inert; a page whose opener is gone (the row of a card that was sent away) sends the focus on from here.
    */
   onClosed?: () => void;
+  /** The panel's own width; without it the shared panel's 440 px (320 to 560), remembered for every page. */
+  size?: PanelSize;
+  /**
+   * One thing at a time (D97: one person beside a list): what is opened from the page takes the place of what was open,
+   * and the link it was opened with is where the focus goes back to on close. Without it the first opener keeps that role
+   * while the others wait as tabs (D66).
+   */
+  replaces?: boolean;
 };
 /**
  * The panel (D50): the one place beside the page's column for what the person holds next to it, a view, a source or a
@@ -366,14 +414,15 @@ type Options = {
 const TYPING = 'input, textarea, [contenteditable="true"], [role="textbox"], [role="combobox"]';
 export function usePanel(
   panel: PanelFrame | null,
-  { minMain, overlayOnly = false, isOpen, onClosed }: Options,
+  { minMain, overlayOnly = false, isOpen, onClosed, size, replaces = false }: Options,
 ): {
   end: ReactNode | undefined;
   overlay: ReactNode;
   /** Whether the panel takes width beside the page: something is open in it, or the person is looking at it empty. */
   occupied: boolean;
 } {
-  const fits = useMediaQuery(panelBesideQuery(minMain));
+  const width = size?.default ?? PANEL;
+  const fits = useMediaQuery(panelBesideQuery(minMain, width));
   const inline = fits && !overlayOnly;
   const announce = useAnnounce();
   const navigate = useNavigate();
@@ -396,11 +445,12 @@ export function usePanel(
   // with the one button that floats over the page on the panel's inner edge, at the top, so it rides that edge in and
   // out (the product owner, 2026-11-06: an icon in the top right corner, never a button among the page's own;
   // 2026-11-10: "float to the left of the sidebar", after the button's own column had stood the height of the page
-  // beside the panel). It is an Astryx layer anchored to the resize handle (`useLayer`: a manual popover, so no light
+  // beside the panel). It is an Astryx layer anchored to the panel's inner edge (`useLayer`: a manual popover, so no light
   // dismiss and no Esc), which takes no width from the page or the panel and is there when the panel has none. It
   // stands in the page's top right corner, inside the 32 px every page keeps free above its header (D74) and 20 px
   // in from the handle, so it lies over neither the page's content nor a scrollbar that takes space (15 to 17 px),
-  // whether or not the page scrolls: Astryx has no way to ask how wide the page's scrollbar is. The width is
+  // whether or not the page scrolls: Astryx has no way to ask how wide the page's scrollbar is. The layer is anchored
+  // to the panel itself, which is in the layout at no width while it is folded; the handle is not (see `end`). The width is
   // remembered per browser; the fold is not, so a card opened later is seen. The button is there wherever the panel
   // fits beside the page, also while nothing is open (the product owner, 2026-11-10, revising D72 item 1): at rest
   // the panel is folded away, and shown it says that nothing is open.
@@ -412,11 +462,11 @@ export function usePanel(
     else edge.hide();
   }, [inline]);
   const resizable = useResizable({
-    defaultSize: PANEL,
-    minSize: 320,
-    maxSize: 560,
+    defaultSize: width,
+    minSize: size?.min ?? 320,
+    maxSize: size?.max ?? 560,
     collapsible: true,
-    autoSaveId: 'clew-panel-width',
+    autoSaveId: size?.id ?? 'clew-panel-width',
     isCollapsed: collapsed,
     onCollapseChange: setCollapsed,
   });
@@ -453,7 +503,7 @@ export function usePanel(
         onClick={collapsed ? expand : collapse}
       />
     </VStack>,
-    { placement: 'start', alignment: 'start', offset: 20 },
+    { placement: 'start', alignment: 'start', offset: FOLD_OFFSET },
   );
   const opener = useRef<HTMLElement | null>(null);
   const shown = useRef<{ id: string; address: string | undefined } | null>(null);
@@ -491,7 +541,8 @@ export function usePanel(
     const was = lastId.current;
     lastId.current = id;
     if (id !== null) {
-      if (!address || !name) return;
+      // One thing at a time keeps no tabs: what is opened takes the place of what was open.
+      if (!address || !name || replaces) return;
       const current = tabsRef.current;
       const search = searchOf(address);
       const i = current.findIndex(t => t.id === id);
@@ -541,6 +592,12 @@ export function usePanel(
       return;
     }
     if (from?.id === id) return;
+    // One thing at a time: a link on the page that opened another thing in its place is the new way back.
+    if (from && replaces && inline) {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && active !== document.body && !region.current?.contains(active))
+        opener.current = active;
+    }
     if (!from) {
       const active = document.activeElement;
       if (!inline || (active instanceof HTMLElement && active.matches(TYPING))) return;
@@ -642,15 +699,54 @@ export function usePanel(
       />
     </VStack>
   );
+  const titleHeading = panel && (
+    <Heading
+      ref={heading}
+      tabIndex={-1}
+      level={panel.kind === 'card' ? 4 : 2}
+      accessibilityLevel={2}
+      color={panel.kind === 'card' ? 'secondary' : 'primary'}
+    >
+      {panel.title}
+    </Heading>
+  );
+  // What stands before the heading and the line under it, when the frame has them (D97, artboard C): a person's avatar
+  // beside their name, their role and unit under it.
+  const titleBlock =
+    panel && (panel.lead || panel.subtitle) ? (
+      <HStack gap={3} vAlign="center">
+        {panel.lead}
+        <VStack gap={0}>
+          {titleHeading}
+          {panel.subtitle && <Text type="supporting">{panel.subtitle}</Text>}
+        </VStack>
+      </HStack>
+    ) : (
+      titleHeading
+    );
+  // The handle stands between the page and the panel only while the panel is shown, as Astryx's `ai-chat` template
+  // mounts its handle with the open panel. A folded panel has no width to change, and its handle would stand on the
+  // window's edge with half of its 16 px grab zone past it: Astryx keeps the whole zone for a folded region, the
+  // shell's main area then scrolled sideways by those 8 px, and a scrollbar stood at the foot of every page with a
+  // panel (the product owner, 2026-11-11). The fold button is the way back; it needs no second one on the edge.
+  // Folded, the panel is a plain one of no width, there for the fold button's layer to stand beside: the region sizes
+  // it only while its handle is there. Left to the region without the handle, the emptied panel kept its width over
+  // the page for most of a second after a fold, and the button with it (measured).
   const end = inline ? (
     <>
       {toggle}
-      <ResizeHandle ref={edge.ref} isReversed hasDivider resizable={resizable.props} label="Ändra panelens bredd" />
+      {!collapsed && <ResizeHandle isReversed hasDivider resizable={resizable.props} label="Ändra panelens bredd" />}
       <LayoutPanel
-        resizable={resizable.props}
+        ref={edge.ref}
         hasDivider={false}
         // Folded away it has no width and nothing in it: not a landmark to land on.
-        {...(collapsed ? {} : { role: 'complementary' as const, label: panel?.title ?? 'Öppet bredvid' })}
+        {...(collapsed
+          ? { width: 0 }
+          : {
+              resizable: resizable.props,
+              role: 'complementary' as const,
+              label: panel?.title ?? 'Öppet bredvid',
+            })}
         padding={0}
         isScrollable={false}
       >
@@ -676,18 +772,8 @@ export function usePanel(
               /* A heading and a button, not a toolbar: the heading takes the focus when the panel opens, and a toolbar would offer its arrow keys there. With several things open the menu of them stands where the heading stood, and ✕ beside it closes the one it names. */
               header={
                 <LayoutHeader hasDivider={panel.kind !== 'card' || !!tabRow}>
-                  <HStack justify="between" vAlign="center" gap={2}>
-                    {tabRow ?? (
-                      <Heading
-                        ref={heading}
-                        tabIndex={-1}
-                        level={panel.kind === 'card' ? 4 : 2}
-                        accessibilityLevel={2}
-                        color={panel.kind === 'card' ? 'secondary' : 'primary'}
-                      >
-                        {panel.title}
-                      </Heading>
-                    )}
+                  <HStack justify="between" vAlign={panel.lead || panel.subtitle ? 'start' : 'center'} gap={2}>
+                    {tabRow ?? titleBlock}
                     <HStack gap={1} vAlign="center">
                       {panel.actions}
                       {more}
@@ -735,11 +821,18 @@ export function usePanel(
       isOpen={panel !== null}
       onOpenChange={close}
       side="end"
-      width={panel?.wide ? 'min(1100px, 100vw)' : PANEL}
+      width={panel?.wide ? 'min(1100px, 100vw)' : width}
       label={lastTitle.current ?? 'Vy'}
     >
       <Layout
-        header={<DrawerHeader title={lastTitle.current ?? 'Vy'} onOpenChange={close} />}
+        header={
+          <DrawerHeader
+            title={lastTitle.current ?? 'Vy'}
+            onOpenChange={close}
+            {...(panel?.lead ? { startContent: panel.lead } : {})}
+            {...(panel?.subtitle ? { subtitle: panel.subtitle } : {})}
+          />
+        }
         content={
           <LayoutContent>
             <VStack gap={3}>

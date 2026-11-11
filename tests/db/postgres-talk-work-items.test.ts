@@ -308,6 +308,31 @@ describe('the action point card (D96 items 5 and 6)', () => {
     expect((await store.listThreads(owner, now.toISOString())).find(t => t.id === id)?.timers).toBeUndefined();
   });
 
+  test("the card is about the talk's employee by key on the thread, never on a row, and leaves the index with the card (D97)", async () => {
+    const { owner } = await people();
+    const id = card();
+    const employee = { entity: 'person' as const, key: `Talks.Employee-${id}` };
+    await run(items =>
+      items.open({
+        threadId: id,
+        personId: owner,
+        commitmentId: `commitment-${id}`,
+        dueOn: '2026-03-12',
+        at: now.toISOString(),
+        subject: employee,
+      }),
+    );
+    const store = postgresThreadStore(options);
+    const read = (await store.readThread(owner, id))!;
+    expect(read.subjects).toEqual([employee]);
+    expect(read.items).toEqual([]);
+    expect((await store.threadsNaming(owner, [employee])).map(n => n.thread.id)).toEqual([id]);
+    await run(items => items.remove([id]));
+    expect(await database().select().from(schema.threadSubjects).where(eq(schema.threadSubjects.threadId, id))).toEqual(
+      [],
+    );
+  });
+
   test('a due timer handed to the reminder path is skipped and writes nothing', async () => {
     const { owner } = await people();
     const id = card();

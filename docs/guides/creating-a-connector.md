@@ -184,9 +184,102 @@ The [testing and deployment guide](testing-and-deployment.md) covers this from a
 | Writes and undo | Source permissions, preconditions, evidence and recovery are established | [Actions and receipts](actions-and-receipts.md) |
 | Callbacks and jobs | A read needs another source, or one task needs changes/follow-up in several systems | [Working across connectors](../architecture/working-across-connectors.md) |
 | The talks profile | Your system holds utvecklingssamtal and their action points, and an installation uses it instead of Clew's own module | Reads `<id>.talks` and `<id>.commitments` in the [protocol](../reference/connector-protocol.md#related-profiles), [D96](../decisions/D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md), the fixture [connectors/appraisals](../../connectors/appraisals/README.md) |
+| Rows about a person or a unit | Your records concern a person or a unit Clew holds and belong on the opened person or unit, as a lens on Personal, or as an action in the person's menu | [Say what your rows are about](#8-say-what-your-rows-are-about), [Entities](../architecture/entities.md) |
 
 For a connector that participates in multi-system tasks, declare the fact kinds it creates and the facts its proposal capabilities follow. Clew assembles those offered steps into a job for one approval after an administrator binds them. Each connector supplies only its own writes or watches; Clew coordinates their progress. [The job design](../architecture/working-across-connectors.md#jobs-facts-followers-and-one-approval) also explains the planned next proposal after a confirmed result.
 
-A delegated interactive read does not establish background authorization. Scans/figures/callbacks do not get session tokens, and generic durable remote actions can remain pending with `needs-session`. Resolve that source constraint before adding them.
+A delegated interactive read does not establish background authorization. Figures and callbacks do not get session tokens. Approved writes and scans on a delegating connector get the person's token only while the session that approved or asked for them is active; otherwise a write remains pending with `needs-session` and Clew does not call the scan. Resolve the source's own background authorization before promising work that must happen while the person is away.
 
 Keep deployment versions independent of protocol `2`. The current manifest has no `version` or `deprecated` field. [Implementation status](../reference/status.md) is the guide to supported features.
+
+## 8. Say what your rows are about
+
+When your system knows something about a person or a unit Clew holds (a talk's state, today's absence, a unit's sick-leave rate), declare what the capability's rows are **about** ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)). Clew then decides where they show. You never name a place and never change a page in Clew. [Entities](../architecture/entities.md) describes what Clew does with the declaration; the [protocol reference](../reference/connector-protocol.md#reads-and-actions-about-an-entity) lists the rules.
+
+The appraisals fixture is the worked example. Its read about a person, from [connectors/appraisals/connector.mjs](../../connectors/appraisals/connector.mjs):
+
+```js
+const calendarDay = { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', maxLength: 10 };
+const instant = { type: 'string', format: 'date-time', maxLength: 40 };
+const userName = { type: 'string', minLength: 1, maxLength: 512 };
+const object = (properties, required = Object.keys(properties)) => ({
+  type: 'object',
+  properties,
+  required,
+  additionalProperties: false,
+});
+const STATE_WORDS = { missing: 'Saknas', booked: 'Bokat', held: 'Hållet' };
+
+const KEYS_MAX = 200;
+export const PersonInput = object({ keys: { type: 'array', items: userName, maxItems: KEYS_MAX } });
+export const PersonOutput = object({
+  rows: {
+    type: 'array',
+    maxItems: KEYS_MAX,
+    items: object(
+      {
+        key: userName,
+        state: { type: 'string', enum: Object.values(STATE_WORDS) },
+        at: { anyOf: [calendarDay, instant] },
+        overdue: { type: 'integer', minimum: 0 },
+      },
+      ['key', 'state', 'overdue'],
+    ),
+  },
+});
+
+// In manifest.capabilities:
+{
+  name: 'appraisals.person',
+  kind: 'read',
+  title: 'Utvecklingssamtal',
+  description:
+    'Var varje medarbetare som du är chef för står i den öppna omgången utvecklingssamtal, och hur många åtgärdspunkter som är försenade.',
+  model: false,
+  scope: { roles: ['manager'] },
+  about: { entity: 'person' },
+  input: PersonInput,
+  output: PersonOutput,
+  view: {
+    kind: 'list',
+    title: 'state',
+    empty: 'Ingen av dem är med i omgången.',
+    fields: [
+      { key: 'state', label: 'Samtal', format: 'status', tones: { Saknas: 'warn' } },
+      { key: 'at', label: 'När', format: 'instant' },
+      { key: 'overdue', label: 'Försenade', format: 'number' },
+    ],
+    open: { capability: 'appraisals.commitments', title: 'Åtgärdspunkter', params: { person: 'key' } },
+  },
+},
+```
+
+What each part buys:
+
+| Part | What Clew does with it |
+|---|---|
+| `about: { entity: 'person' }` on a read | A section "Utvecklingssamtal" on the opened person, captioned with the connector's `source` ("Samtalssystemet"); once an administrator chooses to, a lens under "Visa" on Personal and one of its fields as a column on "Alla" |
+| The `list` view | How the section, the lens and the column draw the rows; a read about an entity must declare a table or a list |
+| `tones: { Saknas: 'warn' }` | A row whose talk is missing gets a mark under "Just nu", where the read is a lens |
+| `open` with `params: { person: 'key' }` | The fuller read under the section and on the person's page |
+| `model: false` | Required: a read about an entity is never a model tool |
+
+The handler answers one row per key it knows, each carrying `key` as Clew asked it, and nothing for an unknown key or a person outside the caller's scope in your system. Compare a person's key without regard to case. The caller's own user name is `actor.userName` in the verified assertion; the fixture uses it to find the manager. Beside `rows` an output may declare `heading` and `note`, two strings Clew draws over the lens.
+
+An action about a person names the input property that takes the key, and requires nothing else. The HR fixture's `hr.prepareAbsence` ([manifest](../../connectors/hr/manifest.mjs)) declares `about: { entity: 'person', param: 'person' }` with an input that requires only `person`; it shows as "Registrera frånvaro" in a manager's menu on a person. Clew starts it with `{ person: <key> }` without the model: a propose answers a `ThreadDraft`, which becomes the manager's card, and an execute is a card whose button is the human decision.
+
+For values drawn in a column or a section, three view options help: the `tones` key `*` warns for any present value ("2 försenade") while an absent one stays neutral; `beside: true` draws a field on the line of the one before it ("Bokat", "tors 12 nov kl. 09:00"); `compact: true` marks the one field that says the row in one value where there is room for only one ("Inte bokat").
+
+**Preview it.** Open `/protocol/preview` on a running instance and paste the manifest or choose its file. The page posts it to the dry run and shows every problem placed in the document, where each capability about an entity would show, who would see it there, and the row mark, the section and the menu drawn with sample rows. The samples are made from your declaration; nothing is called. The same answer comes from `POST /api/protocol/manifest?id=<id>` as `places`, `audience` and `samples`.
+
+**Check it.** The conformance check asks every read about an entity with an unknown key and with the same keys asked by the check's own people on a unit no installation has, and expects no row and no error. Give it real keys and a person who may see them to check the rows too:
+
+```sh
+docker exec -w /workspace clew-app-1 bun scripts/connector-check.ts http://127.0.0.1:4051 --id appraisals --secret <transport key> --keys anna,erik --as hillevi
+```
+
+`--keys` are user names (or unit ids) asked in one batch; `--as` is the user name of a person in that installation's directory to sign the batch as. Without `--as` the batch is signed as the check's own manager, for whom every real key is out of scope; without `--keys` the rows are not checked.
+
+**Place it.** Registration places nothing. An administrator offers the read as a lens and chooses a column on the connector's page under Administration › Anslutna system, in "På Personal och andra listor".
+
+Not available: a read about an entity is never offered to the model, the entity kinds are `person` and `unit` only, and a page inside Clew where the person writes (`about.page`) is for Clew's own domains.

@@ -1,5 +1,6 @@
 import { Type, type Static } from '@sinclair/typebox';
 import {
+  AboutSchema,
   MenuHintSchema,
   MenuIconSchema,
   PreviewOutputSchema,
@@ -32,7 +33,8 @@ import {
  * A read capability may declare a `view` (D38): how Clew draws its output (a table, a list, one record, a text), as data.
  * The connector never sends markup; a capability without a view is drawn by Clew's generic rules. A view that
  * opens without input can be a tool in Clew's menu (D40): an administrator chooses which, and `menu` on the capability
- * says what its row is called.
+ * says what its row is called. A capability may say what its rows are `about` (D97), a person or a unit: a read asked
+ * with a batch of keys, or an action that takes one. It never says where it shows; Clew places it from the declaration.
  *
  * Routes a connector serves (all JSON, all under the base URL Clew is configured with):
  *   GET  /clew/manifest                 -> ConnectorManifest
@@ -62,6 +64,14 @@ export const ActorSchema = object(
     unitId: Type.String(),
     unitLabel: Type.String(),
     role: RoleSchema,
+    userName: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 512,
+        description:
+          "The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one.",
+      }),
+    ),
   },
   'The acting person as Clew knows them. Never a token.',
 );
@@ -219,6 +229,7 @@ export const ManifestCapabilitySchema = object({
     }),
   ),
   menu: Type.Optional(MenuHintSchema),
+  about: Type.Optional(AboutSchema),
   follows: Type.Optional(
     Type.Array(FactKindName, {
       uniqueItems: true,
@@ -559,6 +570,9 @@ export const PROTOCOL_RETIRED: Readonly<Record<number, string>> = {
 const previewRoles = Type.Array(RoleSchema, {
   description: 'Who may call it: both roles when the capability names none.',
 });
+/** The places Clew gives a capability that is about an entity (D97 item 2), in the order the preview lists them. */
+export const ABOUT_PLACES = ['lens', 'mark', 'section', 'menu'] as const;
+export type AboutPlace = (typeof ABOUT_PLACES)[number];
 export const ManifestPreviewCapabilitySchema = object({
   name: Type.String(),
   kind: Type.Union([Type.Literal('read'), Type.Literal('propose'), Type.Literal('execute')]),
@@ -589,7 +603,60 @@ export const ManifestPreviewCapabilitySchema = object({
   }),
   follows: Type.Optional(Type.Array(FactKindName)),
   creates: Type.Optional(FactKindName),
+  about: Type.Optional(AboutSchema),
+  places: Type.Array(Type.Union(ABOUT_PLACES.map(p => Type.Literal(p))), {
+    description:
+      "Where Clew would show it on the entity it is about (D97), from the declaration alone: `lens` a table or list an administrator may offer under Visa on the entity's list, `mark` a `warn` or `alert` tone that marks the entity's row where an administrator chose the source, `section` a section on the opened entity, `menu` an action in the entity's menu, run after a human decision. Empty when it is about nothing.",
+  }),
+  openedFrom: Type.Array(Type.String(), {
+    description:
+      "The reads of this manifest whose rows open it (their view's `open`). Opened from a read about an entity, it is drawn under that read's section and in full on the entity's page; from any other read, a row opens it beside the list. Empty when nothing opens it.",
+  }),
+  audience: Type.Array(
+    object({
+      places: Type.Array(Type.Union([...ABOUT_PLACES.map(p => Type.Literal(p)), Type.Literal('tool')]), {
+        minItems: 1,
+      }),
+      who: Type.String({ description: 'Who would see it there, in a sentence.' }),
+    }),
+    {
+      description:
+        'Who would see a capability about an entity, place by place (D97), from its scope and the declaration alone: the lens and the mark reach a person who has a list of that kind once an administrator chooses the source, the section anyone who opens an entity the connector answers a row for, the menu anyone who opens one and may call the action; `tool` says whether the model is offered it. Empty when it is about nothing.',
+    },
+  ),
+  samples: Type.Optional(
+    Type.Array(Type.Record(Type.String(), Type.Unknown()), {
+      description:
+        'For a read about an entity: rows made from the declaration alone, to draw its places with before any service runs. Each carries a synthetic `key`; a status field takes in turn each value its view gives a tone, an instant a fixed time, any other field a value its output schema allows or a placeholder. Samples, never data: no connector is called.',
+    }),
+  ),
 });
+/** The places a problem points at (D60, D97): the field in the document, its entry in the manifest reference, the rule it breaks. */
+export const ManifestIssueSchema = object(
+  {
+    problem: Type.String({ description: 'The problem as `problems` lists it.' }),
+    path: Type.String({
+      description:
+        'Where in the document, with indices: `capabilities[0].output.properties.rows.items`. Empty for the document as a whole.',
+    }),
+    field: Type.String({
+      description:
+        'The manifest reference entry the path falls under, without indices: `capabilities[].output`. Empty when none does.',
+    }),
+    anchor: Type.String({
+      description:
+        'The element id on the manifest reference page (`/protocol/manifest#<anchor>`): the rule when there is one, else the field.',
+    }),
+    rule: Type.Optional(
+      object(
+        { id: Type.String(), title: Type.String() },
+        "The rule between fields it breaks, as the manifest reference names it; absent for a problem of the schema's own.",
+      ),
+    ),
+  },
+  'One problem, placed.',
+);
+export type ManifestIssue = Static<typeof ManifestIssueSchema>;
 export const ManifestPreviewSchema = object(
   {
     ok: Type.Boolean({ description: 'Whether Clew would load the document.' }),
@@ -599,6 +666,10 @@ export const ManifestPreviewSchema = object(
     ),
     problems: Type.Array(Type.String(), {
       description: 'Every reason the document would be refused, in the order Clew finds them. Empty when ok.',
+    }),
+    issues: Type.Array(ManifestIssueSchema, {
+      description:
+        'The same problems in the same order, each placed: its path in the document, its manifest reference entry and the rule it breaks. Empty when ok.',
     }),
     manifest: Type.Optional(
       object(
@@ -703,7 +774,7 @@ export function openApiDocument(options: OpenApiOptions = {}) {
     in: 'header',
     required: false,
     schema: text(
-      "The person's own token for the connector's system (D26), present only when the manifest declares `delegation` and a session is behind the call.",
+      "The person's own token for the connector's system (D26), present only when the manifest declares `delegation` and one of the person's live sessions is behind the call: the request's own, the session that approved a write, or the session that asked for a scan.",
     ),
   };
   return {
@@ -782,8 +853,9 @@ export function openApiDocument(options: OpenApiOptions = {}) {
           operationId: 'scan',
           summary: "Drafts for the person's cards",
           description:
-            'Only when the manifest says `scan: true`. Called nightly and on first visit per person; must be idempotent: the same occurrence gives the same topic.',
+            'Only when the manifest says `scan: true`. Called nightly and on first visit per person; must be idempotent: the same occurrence gives the same topic. A manifest that declares `delegation` is scanned only while a live session of the person asked for it, with their token; otherwise Clew does not call it.',
           security: signed,
+          parameters: [delegated],
           requestBody: body('ScanRequest'),
           responses: { '200': json('ScanResponse', 'Drafts and, optionally, what was observed.'), ...refused },
         },

@@ -3,7 +3,13 @@ import type { ExecuteResult, WriteSafety } from '@clew/connectors';
 
 export type ExecutionState = 'pending' | 'running' | 'succeeded' | 'partial' | 'failed' | 'unknown';
 export type { WriteSafety };
-/** Payloads contain approved inputs only. Adapters encrypt them; tokens and sessions are never persisted. */
+/**
+ * Payloads contain approved inputs only. Adapters encrypt them, and the two session bindings with them; a token is never
+ * persisted. A binding names one of the person's own signed-in sessions (the session's digest, never its tokens), kept
+ * only for a connector that acts as the person (D26): `approvingSession` is the session that approved the write and the
+ * only one that may stand behind its dispatch or a replay; `checkingSession` is the latest session in which the person
+ * asked to check a dispatched write again, and may stand behind its read-back only.
+ */
 export interface Execution {
   presentation?: { threadId: string; version: string; actionId: string; newTitle?: string } | null;
   id: string;
@@ -27,6 +33,8 @@ export interface Execution {
   dispatchedAt: string | null;
   attempt: number;
   leaseUntil: string | null;
+  approvingSession: string | null;
+  checkingSession: string | null;
 }
 export interface ExecutionAudit {
   actor: string;
@@ -151,6 +159,8 @@ export interface ExecutionTx {
   insert(execution: Execution): Promise<{ inserted: boolean; execution: Execution }>;
   lock(id: string): Promise<Execution | undefined>;
   update(execution: Execution): Promise<void>;
+  /** Keep the session in which the person asked to check an execution again (read-back only). Nothing the card shows changes, so nothing is projected. */
+  keepCheckingSession(id: string, binding: string): Promise<void>;
   /** Start a durable workflow with this commit (D86): rolled back with it, dequeued by the engine once committed. Idempotent by workflow id. */
   enqueue(start: WorkflowStart): Promise<void>;
   audit(entry: ExecutionAudit): Promise<void>;
@@ -170,6 +180,7 @@ export interface ExecutionStore {
   transaction<T>(fn: (tx: ExecutionTx) => Promise<T>): Promise<T>;
 }
 export interface ExecutionSource {
+  /** `needsSession`: the connector acts as the person (D26), so one of their live sessions must stand behind dispatch and read-back. */
   authorize(
     persona: AuthenticatedContext,
     operation: string,
@@ -185,10 +196,36 @@ export interface WatchSource {
   authorize(persona: AuthenticatedContext, operation: string, input: unknown): Promise<{ connector: string }>;
   read(persona: AuthenticatedContext, operation: string, input: unknown): Promise<unknown>;
 }
+/** A signed-in session a binding names, while it is active: whose it is, and its delegate (D26). */
+export interface StandingSession {
+  personId: string;
+  delegate: NonNullable<AuthenticatedContext['delegate']>;
+}
+/**
+ * The person's own live session behind a write on a connector that acts as the person (D26). The use case decides which
+ * kept binding may stand behind what, and that the session is the person's; the port only answers what a binding names now.
+ */
+export interface ExecutionSessions {
+  /**
+   * The session a binding names while it is active and still bound to its person; undefined once it ended, was revoked or
+   * never was a session. Its delegate reads the session again on every call, so a session revoked after this answer yields
+   * no further token. Never a stored token, a service credential or another binding's session.
+   */
+  find(binding: string): Promise<StandingSession | undefined>;
+  /**
+   * Obtain the token for the execution's connector through the persona's delegate before dispatch is recorded, so an
+   * identity provider that cannot exchange one leaves the write undispatched rather than uncertain: false when the session
+   * yields none (a session without IdP tokens), a throw when the identity provider cannot answer now. The token stays in
+   * the session's short-lived cache for the call that follows; it is never returned or stored.
+   */
+  ready(persona: AuthenticatedContext, execution: Execution): Promise<boolean>;
+}
 export interface ExecutionDeps {
   review?: (persona: AuthenticatedContext, operation: string, payload: unknown) => Promise<void>;
   store: ExecutionStore;
   source: ExecutionSource;
+  /** Absent: no session can stand behind delegated work, which then stays pending with `needs-session`. */
+  sessions?: ExecutionSessions;
   watch?: WatchSource;
   clock: () => Date;
   ids: () => string;

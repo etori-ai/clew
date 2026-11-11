@@ -20,7 +20,7 @@ import type {
  * with `sink.fires`.
  */
 export type WorkItemCall =
-  | { op: 'open'; threadId: string; personId: string; commitmentId: string; dueOn: string; at: string }
+  | ({ op: 'open' } & Parameters<WorkItemTx['open']>[0])
   | { op: 'close'; threadId: string; at: string }
   | { op: 'reopen'; threadId: string; dueOn: string; at: string }
   | { op: 'fire'; threadId: string; generation: number; at: string; fired: boolean }

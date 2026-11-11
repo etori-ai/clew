@@ -11,7 +11,7 @@ const roots = ['apps/server/src', 'packages', 'connectors'];
 /** Pure by rule: every domain file, and every use case folder that has been ported to ports (D25). Grows as files are ported. */
 const covered = (path: string) =>
   /(^|\/)domain(\.ts$|\/)/.test(path) ||
-  (/^apps\/server\/src\/(threads|modules\/[^/]+|scheduler|assistant|mcp|connectors\/usecases)\//.test(path) &&
+  (/^apps\/server\/src\/(threads|modules\/[^/]+|scheduler|assistant|connectors\/usecases)\//.test(path) &&
     !/\/adapters\/|\/connector\.ts$/.test(path)) ||
   path === 'packages/calendar/src/proposals.ts';
 const banned: Array<{ pattern: RegExp; why: string }> = [

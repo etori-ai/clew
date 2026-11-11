@@ -1045,6 +1045,171 @@
       }
     },
     {
+      "name": "hr.prepareAbsence",
+      "kind": "propose",
+      "title": "Registrera frånvaro",
+      "description": "Förbereder en sjukanmälan för en medarbetare i chefens enhet, från i dag och en dag, som chefen läser och beslutar om på ett kort.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "about": {
+        "entity": "person",
+        "param": "person"
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "person": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "Medarbetarens användarnamn i katalogen."
+          },
+          "from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Första frånvarodagen; i dag när den saknas."
+          }
+        },
+        "required": [
+          "person"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string"
+                },
+                "selectable": {
+                  "type": "boolean"
+                },
+                "selected": {
+                  "type": "boolean"
+                },
+                "subject": {
+                  "type": "object",
+                  "properties": {
+                    "entity": {
+                      "const": "person"
+                    },
+                    "key": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  },
+                  "required": [
+                    "entity",
+                    "key"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "ref",
+                "label",
+                "detail",
+                "selectable",
+                "selected"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "capability": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
+                  "maxLength": 80
+                },
+                "kind": {
+                  "enum": [
+                    "read",
+                    "propose",
+                    "execute"
+                  ]
+                },
+                "role": {
+                  "enum": [
+                    "primary",
+                    "secondary",
+                    "overflow"
+                  ]
+                },
+                "target": {
+                  "enum": [
+                    "panel",
+                    "link"
+                  ]
+                },
+                "input": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "capability",
+                "kind",
+                "role"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "topic",
+          "area",
+          "title",
+          "summary",
+          "reason",
+          "items",
+          "actions"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "hr.withdrawAbsence",
       "kind": "execute",
       "title": "Ta bort sjukanmälan",
@@ -1396,6 +1561,133 @@
           "found"
         ],
         "additionalProperties": false
+      }
+    },
+    {
+      "name": "hr.person",
+      "kind": "read",
+      "title": "Frånvaro",
+      "description": "Om medarbetaren är i tjänst i dag, frånvaron i dag och nästa frånvaro som är känd. Bara för chefen.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "about": {
+        "entity": "person"
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "maxItems": 200
+          }
+        },
+        "required": [
+          "keys"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "ref": {
+                  "type": "string",
+                  "pattern": "^hr:emp:[0-9]+$"
+                },
+                "presence": {
+                  "type": "string"
+                },
+                "today": {
+                  "type": "string"
+                },
+                "upcoming": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "ref",
+                "presence",
+                "today"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "list",
+        "title": "presence",
+        "modelReads": "summary",
+        "noun": {
+          "one": "medarbetare",
+          "other": "medarbetare"
+        },
+        "empty": "Personalsystemet har ingen uppgift om dem.",
+        "fields": [
+          {
+            "key": "presence",
+            "label": "Närvaro",
+            "format": "status",
+            "tones": {
+              "Sjuk · dag 1": "none",
+              "Sjuk · dag 2": "none",
+              "Sjuk · dag 3": "none",
+              "Sjuk · dag 4": "none",
+              "Sjuk · dag 5": "none",
+              "Sjuk · dag 6": "none",
+              "Sjuk · dag 7": "none",
+              "Sjuk · dag 8": "none",
+              "Sjuk · dag 9": "none",
+              "Sjuk · dag 10": "none",
+              "Sjuk · dag 11": "none",
+              "Sjuk · dag 12": "none",
+              "Sjuk · dag 13": "none",
+              "Sjuk · dag 14": "none",
+              "Sjukskriven": "none",
+              "VAB": "none",
+              "Semester": "none",
+              "Ledig": "none"
+            },
+            "compact": true
+          },
+          {
+            "key": "today",
+            "label": "I dag"
+          },
+          {
+            "key": "upcoming",
+            "label": "Kommande"
+          }
+        ],
+        "open": {
+          "capability": "hr.absencePattern",
+          "title": "Frånvaromönster",
+          "params": {
+            "ref": "ref"
+          }
+        }
       }
     }
   ]

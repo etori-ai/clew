@@ -1,5 +1,5 @@
 {
-  "id": "2dda4039-3830-4d61-a3d6-e1333ea273a0",
+  "id": "e26221da-075f-4d1a-a56a-4cb27ec038c1",
   "prevId": "437506de-6091-41d2-a567-9d7c6591c71f",
   "version": "7",
   "dialect": "postgresql",
@@ -310,283 +310,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.competence_holding": {
-      "name": "competence_holding",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "person_id": {
-          "name": "person_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "type_id": {
-          "name": "type_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "issued_on": {
-          "name": "issued_on",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_on": {
-          "name": "expires_on",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "evidence": {
-          "name": "evidence",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "registered_by": {
-          "name": "registered_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "revoked_by": {
-          "name": "revoked_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "competence_holding_person": {
-          "name": "competence_holding_person",
-          "columns": [
-            {
-              "expression": "person_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "competence_holding_type": {
-          "name": "competence_holding_type",
-          "columns": [
-            {
-              "expression": "type_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "competence_holding_person_id_auth_person_id_fk": {
-          "name": "competence_holding_person_id_auth_person_id_fk",
-          "tableFrom": "competence_holding",
-          "tableTo": "auth_person",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "competence_holding_type_id_competence_type_id_fk": {
-          "name": "competence_holding_type_id_competence_type_id_fk",
-          "tableFrom": "competence_holding",
-          "tableTo": "competence_type",
-          "columnsFrom": [
-            "type_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "competence_holding_registered_by_auth_person_id_fk": {
-          "name": "competence_holding_registered_by_auth_person_id_fk",
-          "tableFrom": "competence_holding",
-          "tableTo": "auth_person",
-          "columnsFrom": [
-            "registered_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "competence_holding_revoked_by_auth_person_id_fk": {
-          "name": "competence_holding_revoked_by_auth_person_id_fk",
-          "tableFrom": "competence_holding",
-          "tableTo": "auth_person",
-          "columnsFrom": [
-            "revoked_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "competence_holding_evidence": {
-          "name": "competence_holding_evidence",
-          "value": "\"competence_holding\".\"evidence\" IN ('system', 'manager', 'self')"
-        },
-        "competence_holding_state": {
-          "name": "competence_holding_state",
-          "value": "\"competence_holding\".\"state\" IN ('pending', 'valid', 'rejected', 'revoked')"
-        },
-        "competence_holding_period": {
-          "name": "competence_holding_period",
-          "value": "\"competence_holding\".\"expires_on\" IS NULL OR \"competence_holding\".\"expires_on\" >= \"competence_holding\".\"issued_on\""
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.competence_type": {
-      "name": "competence_type",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "organisation_id": {
-          "name": "organisation_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "area": {
-          "name": "area",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "validity_months": {
-          "name": "validity_months",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "archived_at": {
-          "name": "archived_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "competence_type_name": {
-          "name": "competence_type_name",
-          "columns": [
-            {
-              "expression": "organisation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "lower(\"name\")",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"competence_type\".\"archived_at\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "competence_type_kind": {
-          "name": "competence_type_kind",
-          "value": "\"competence_type\".\"kind\" IN ('certificate', 'degree', 'course', 'authorisation')"
-        },
-        "competence_type_validity": {
-          "name": "competence_type_validity",
-          "value": "\"competence_type\".\"validity_months\" IS NULL OR \"competence_type\".\"validity_months\" BETWEEN 1 AND 600"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.connector_signing_key": {
@@ -3879,6 +3602,115 @@
       },
       "isRLSEnabled": false
     },
+    "public.thread_subject": {
+      "name": "thread_subject",
+      "schema": "",
+      "columns": {
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entity": {
+          "name": "entity",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "thread_subject_owner": {
+          "name": "thread_subject_owner",
+          "columns": [
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "entity",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "thread_subject_entity": {
+          "name": "thread_subject_entity",
+          "columns": [
+            {
+              "expression": "entity",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "thread_subject_thread_id_thread_id_fk": {
+          "name": "thread_subject_thread_id_thread_id_fk",
+          "tableFrom": "thread_subject",
+          "tableTo": "thread",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "thread_subject_thread_id_entity_key_pk": {
+          "name": "thread_subject_thread_id_entity_key_pk",
+          "columns": [
+            "thread_id",
+            "entity",
+            "key"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.thread": {
       "name": "thread",
       "schema": "",
@@ -3967,6 +3799,13 @@
         },
         "items": {
           "name": "items",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "subjects": {
+          "name": "subjects",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true,

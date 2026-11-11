@@ -1,8 +1,17 @@
-import type { Area, CheckFinding, CheckGroup, CheckItem, CheckLevel, CheckReport, Role } from '@clew/contracts';
+import type {
+  Area,
+  CheckFinding,
+  CheckGroup,
+  CheckItem,
+  CheckLevel,
+  CheckReport,
+  EntityKind,
+  Role,
+} from '@clew/contracts';
 import { Registry, openGovernance, type Actor } from './index';
 import { fetchManifest, remoteConnector, type FetchLike } from './remote';
-import type { ConnectorManifest } from './protocol';
-import { menuRowOf, rowsKey, viewRows, viewOutputProblem } from './views';
+import type { AboutPlace, ConnectorManifest } from './protocol';
+import { menuRowOf, placesOf, rowsKey, viewRows, viewOutputProblem } from './views';
 
 /**
  * The conformance check of a connector service (D21, D23): what `scripts/connector-check.ts` prints and what the admin
@@ -23,7 +32,17 @@ export interface CheckOptions {
   fetch?: FetchLike;
   /** Validates `{}` against a capability's input schema with a real validator. Absent, a schema that lists `required` properties is taken to need input. */
   acceptsEmptyInput?: (schema: object) => boolean;
+  /**
+   * For the reads about an entity (D97): `keys` are asked in one batch, signed as `as`, a person who may see them
+   * (the check's manager when absent, for whom every real key is out of scope). Without keys the rows are not checked;
+   * an unknown key and the keys asked from another unit are checked anyway.
+   */
+  about?: { keys?: string[]; as?: Actor };
 }
+/** How long a read about an entity may take before Clew shows its section as not answering (D97 item 7, D75). */
+export const ABOUT_BUDGET_MS = 1500;
+/** A key no installation gives a person or a unit: an unknown key must be no row and no error. */
+export const UNKNOWN_KEY = 'clew-check-unknown-key';
 /** A read that needs input is not called by the check: its refusal of `{}` is the right answer, not a fault. This is the rule without a validator library. */
 const listsNothingRequired = (schema: object) =>
   !((schema as { required?: unknown }).required as unknown[] | undefined)?.length;
@@ -33,6 +52,7 @@ export const CHECK_MANAGER: Actor = {
   unitId: 'unit-check',
   unitLabel: 'Kontrollenheten',
   role: 'manager',
+  userName: 'check-manager',
 };
 export const CHECK_EMPLOYEE: Actor = {
   id: 'check-employee',
@@ -40,6 +60,7 @@ export const CHECK_EMPLOYEE: Actor = {
   unitId: 'unit-check',
   unitLabel: 'Kontrollenheten',
   role: 'employee',
+  userName: 'check-employee',
 };
 const UNAVAILABLE = /svarar inte just nu/;
 const ROLE: Record<Role, string> = { manager: 'chef', employee: 'medarbetare' };
@@ -53,6 +74,18 @@ const VIEW: Record<NonNullable<ConnectorManifest['capabilities'][number]['view']
   metrics: 'nyckeltal',
   series: 'diagram och tabell',
   activity: 'historik',
+};
+/** An entity kind as the administrator reads it (D97): about "en person", out of scope "En person utanför…". */
+const ENTITY: Record<EntityKind, { one: string; plural: string }> = {
+  person: { one: 'person', plural: 'personer' },
+  unit: { one: 'enhet', plural: 'enheter' },
+};
+/** Where a capability about an entity would show (D97 item 2), in the administrator's words. */
+const PLACE: Record<AboutPlace, (entity: EntityKind) => string> = {
+  menu: e => `i menyn för en ${ENTITY[e].one}`,
+  section: e => `som avsnitt när en ${ENTITY[e].one} öppnas`,
+  lens: () => 'som lins över listan',
+  mark: () => 'som markering på raden',
 };
 const worst = (a: CheckLevel, b: CheckLevel): CheckLevel =>
   a === 'fail' || b === 'fail' ? 'fail' : a === 'warn' || b === 'warn' ? 'warn' : 'ok';
@@ -197,7 +230,151 @@ export async function checkConnector(
       row.note('warn', `Ingen rad har ${unseen.map(k => `"${k}"`).join(', ')}, så kolumnen blir tom.`);
     }
   };
+  type Declared = ConnectorManifest['capabilities'][number];
+  const inRoles = (c: Declared) =>
+    [CHECK_MANAGER, CHECK_EMPLOYEE].filter(a => !c.scope.roles || c.scope.roles.includes(a.role));
+  const rowsOf = (c: Declared, output: unknown) => (c.view ? (viewRows(c.view, output) ?? []) : []);
+  /** A call that should answer with no row: whether it did, refused, or answered rows. */
+  const noRow = async (c: Declared, actor: Actor, keys: string[]) => {
+    try {
+      const rows = rowsOf(c, await registry.run(actor, c.name, { keys }));
+      return rows.length ? { rows: rows.length } : { ok: true as const };
+    } catch (error) {
+      return { error: (error as Error).message };
+    }
+  };
+  /**
+   * A read about an entity (D97 item 7), asked as Clew asks it: a batch of keys answered one row per key, each row
+   * carrying a key it was asked with, within the budget; an unknown key and keys asked from another unit are no row and
+   * no error. The rows are checked only with the keys an operator gives, signed as a person who may see them.
+   */
+  const probeAboutRead = async (c: Declared, row: Row) => {
+    const entity = c.about!.entity;
+    const head = `${c.name} about ${entity}`;
+    const actors = inRoles(c);
+    const keys = [...new Set(options.about?.keys ?? [])];
+    const as = options.about?.as ?? actors[0] ?? CHECK_MANAGER;
+    if (!keys.length) {
+      warn(`${head}, batch: no keys given; pass --keys (and --as a person who may see them) to check the rows`);
+      row.note('warn', 'Inga nycklar gavs, så raderna är inte prövade.');
+    } else {
+      const started = Date.now();
+      try {
+        const output = await registry.run(as, c.name, { keys });
+        const ms = Date.now() - started;
+        const rows = rowsOf(c, output);
+        const asked = new Set(keys.map(k => k.toLowerCase()));
+        const keyOf = (r: Record<string, unknown>) => (typeof r.key === 'string' ? r.key.toLowerCase() : undefined);
+        if (!row.answered.includes(as.role)) row.answered.push(as.role);
+        if (rows.length) {
+          ok(`${head}, batch: ${keys.length} keys asked, ${rows.length} rows, ${ms} ms (budget ${ABOUT_BUDGET_MS} ms)`);
+          row.note('ok', `${count(keys.length, 'nyckel', 'nycklar')} gav ${count(rows.length, 'rad', 'rader')}.`);
+        } else {
+          warn(
+            `${head}, batch: ${keys.length} keys asked, no row, ${ms} ms; sign --as a person who may see them to check the rows`,
+          );
+          row.note('warn', `${count(keys.length, 'nyckel', 'nycklar')} gav ingen rad, så raderna är inte prövade.`);
+        }
+        const strangers = rows.filter(r => !asked.has(keyOf(r) ?? ''));
+        if (strangers.length) {
+          fail(
+            `${head}, key: ${strangers.length} rows carry a key that was not asked (${strangers.map(r => JSON.stringify(r.key)).join(', ')})`,
+          );
+          row.note('fail', 'En rad bär en nyckel som inte efterfrågades.');
+        } else if (rows.length) ok(`${head}, key: every row carries a key it was asked with`);
+        const seen = new Set<string>();
+        const twice = rows.map(keyOf).filter(k => k !== undefined && (seen.has(k) || !seen.add(k)));
+        if (twice.length) {
+          fail(`${head}, one row per key: ${twice.length} keys answered more than once`);
+          row.note('fail', 'Samma nyckel besvaras med flera rader.');
+        } else if (rows.length) ok(`${head}, one row per key`);
+        if (ms > ABOUT_BUDGET_MS) {
+          warn(
+            `${head}, budget: answered in ${ms} ms, over ${ABOUT_BUDGET_MS} ms; Clew shows the section as not answering`,
+          );
+          row.note('warn', `Svaret tog ${ms} ms, mer än ${ABOUT_BUDGET_MS} ms. Då visar Clew att källan inte svarade.`);
+        }
+        if (rows.length) checkView(c, output, row);
+      } catch (error) {
+        fail(`${head}, batch as ${as.userName ?? as.id}: ${(error as Error).message}`);
+        row.note('fail', `Frågan med nycklarna gav fel: ${(error as Error).message}`);
+      }
+    }
+    // An unknown key, asked by the same person: no row and no error.
+    const unknown = await noRow(c, as, [UNKNOWN_KEY]);
+    if ('ok' in unknown) {
+      ok(`${head}, unknown key: no row, no error`);
+      row.note('ok', 'En okänd nyckel ger ingen rad.');
+    } else if ('error' in unknown) {
+      fail(`${head}, unknown key: refused (${unknown.error}); answer an unknown key as no row`);
+      row.note('fail', `En okänd nyckel ger fel i stället för ingen rad: ${unknown.error}`);
+    } else {
+      fail(`${head}, unknown key: answered ${unknown.rows} rows`);
+      row.note('fail', 'En okänd nyckel ger en rad.');
+    }
+    // The same keys from a unit no installation has: every real key is out of scope for the check's own people.
+    const outside = keys.length ? keys : [UNKNOWN_KEY];
+    for (const actor of actors) {
+      const result = await noRow(c, actor, outside);
+      const who = `the check's ${actor.role} on ${actor.unitId}`;
+      if ('ok' in result) {
+        ok(
+          `${head}, out of scope: ${keys.length ? `the ${keys.length} keys asked by ${who}` : `asked by ${who} (no keys given, so the key is synthetic)`}: no row, no error`,
+        );
+        if (!row.answered.includes(actor.role)) row.answered.push(actor.role);
+      } else if ('error' in result) {
+        fail(`${head}, out of scope: refused for ${who} (${result.error}); answer a key out of scope as no row`);
+        row.note('fail', `En ${ENTITY[entity].one} utanför behörigheten ger fel i stället för ingen rad.`);
+      } else {
+        fail(`${head}, out of scope: ${who} was answered ${result.rows} rows`);
+        row.note('fail', `En ${ENTITY[entity].one} utanför behörigheten besvaras med en rad.`);
+      }
+    }
+    if (keys.length && !row.notes.some(n => n.includes('utanför behörigheten')))
+      row.note('ok', `En ${ENTITY[entity].one} utanför behörigheten ger ingen rad.`);
+  };
+  /** An action about an entity (D97): the input takes the key in `param`, and a person decides, not the model. */
+  const probeAboutAction = (c: Declared, row: Row) => {
+    const { entity, param } = c.about!;
+    const head = `${c.name} about ${entity}, ${c.kind}`;
+    const input = (c.input as { properties?: Record<string, { type?: unknown }> }).properties;
+    if (param && input?.[param]?.type === 'string') {
+      ok(`${head}, input: takes ${param}`);
+      row.note('ok', `Tar emot en ${ENTITY[entity].one} i "${param}".`);
+    } else {
+      fail(`${head}, input: param "${param ?? ''}" is not a string property of the input`);
+      row.note('fail', `Fältet "${param ?? ''}" finns inte i indata.`);
+    }
+    const offered = [CHECK_MANAGER, CHECK_EMPLOYEE].some(a => registry.tools(a).some(t => t.name === c.name));
+    if (offered) {
+      warn(`${head}, model tool: offered to the model; an action in an entity's menu is a person's decision`);
+      row.note('warn', 'Erbjuds till modellen som verktyg.');
+    } else {
+      ok(`${head}, model tool: not offered to the model`);
+      row.note('ok', 'Erbjuds inte till modellen.');
+    }
+  };
   for (const c of manifest.capabilities) {
+    if (c.about) {
+      const row = newRow();
+      // The role scope still holds: a role outside it is refused before anything is asked.
+      for (const actor of [CHECK_MANAGER, CHECK_EMPLOYEE].filter(a => !inRoles(c).includes(a)))
+        try {
+          await registry.run(actor, c.name, c.kind === 'read' ? { keys: [UNKNOWN_KEY] } : {});
+          fail(`${c.name}: ${actor.role} is out of scope but the registry let the call through`);
+          row.note('fail', `Anropet släpptes igenom för ${ROLE[actor.role]}, som inte ska få det.`);
+        } catch {
+          ok(`${c.name}: ${actor.role} refused by scope`);
+          row.refused.push(actor.role);
+        }
+      if (c.kind === 'read') await probeAboutRead(c, row);
+      else {
+        if (c.kind === 'execute') ok(`${c.name}: execute, not a tool, not called by the check`);
+        probeAboutAction(c, row);
+      }
+      item(row.level, 'capabilities', c.title, rowText(row), c.name);
+      continue;
+    }
     if (c.kind === 'execute') {
       ok(`${c.name}: execute, not a tool, not called by the check`);
       item(
@@ -258,6 +435,26 @@ export async function checkConnector(
       }
     }
     item(row.level, 'capabilities', c.title, rowText(row), c.name);
+  }
+  // Where the capabilities about an entity would show (D97 item 2), one row per entity kind; an administrator still
+  // chooses the lenses and columns.
+  for (const entity of ['person', 'unit'] as const) {
+    const about = manifest.capabilities.filter(c => c.about?.entity === entity);
+    if (!about.length) continue;
+    ok(`about ${entity}: ${about.map(c => `${c.name} (${placesOf(c).join(', ')})`).join('; ')}`);
+    item(
+      'ok',
+      'surfaces',
+      `Om ${ENTITY[entity].plural}`,
+      about
+        .map(
+          c =>
+            `${c.title} kan visas ${placesOf(c)
+              .map(p => PLACE[p](entity))
+              .join(', ')}.`,
+        )
+        .join(' '),
+    );
   }
   const tools = manifest.capabilities.map(c => ({ name: c.name, row: menuRowOf(c) })).filter(t => t.row);
   if (tools.length) {

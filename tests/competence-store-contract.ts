@@ -7,7 +7,7 @@ import type {
 } from '../apps/server/src/modules/competence/model';
 
 /**
- * The competence store (D101): the catalogue, holdings, the people the domain names, erasure and export. One suite, two
+ * The competence store (D107): the catalogue, holdings, the people the domain names, erasure and export. One suite, two
  * adapters: `tests/unit/competence-store.test.ts` on memory, `tests/db/postgres-competence-store.test.ts` on Postgres.
  */
 export interface CompetenceStoreHarness {

@@ -1,6 +1,6 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
-import type { SearchHit } from '../../packages/contracts/src/index';
+import type { SearchHit, Subject } from '../../packages/contracts/src/index';
 import { CapabilityError, type Actor, type Connector } from '../../packages/connectors/src/index';
 import { headingFollowUps, merge, staleness } from '../../apps/server/src/modules/search/domain';
 import { searchConnector } from '../../apps/server/src/modules/search/connector';
@@ -60,6 +60,74 @@ describe("staleness is computed in code, from the source's dates", () => {
         NOW,
       ),
     ).toHaveLength(10);
+  });
+  test('hits about the same person from several sources are one hit, the first one where it came, naming every source that answered (D97 item 6)', () => {
+    const anna = { entity: 'person' as const, key: 'anna.l' };
+    const person = (ref: string, source: string, subject: Subject = anna) =>
+      hit({ ref, kind: 'person', label: 'Anna Lindqvist', source, subject });
+    const rows = merge(
+      [
+        {
+          id: 'phonebook',
+          source: 'Telefonboken',
+          status: 'ok',
+          rows: [person('p1', 'Telefonboken'), hit({ ref: 'd1' })],
+        },
+        // The key without regard to case for a person; a second hit of the same source adds no source.
+        {
+          id: 'hr',
+          source: 'Personalsystemet',
+          status: 'ok',
+          rows: [person('h1', 'Personalsystemet', { ...anna, key: 'Anna.L' }), person('h2', 'Personalsystemet')],
+        },
+        { id: 'docs', source: 'Intranätet', status: 'ok', rows: [hit({ ref: 'x1' }), hit({ ref: 'x2' })] },
+        {
+          id: 'unit',
+          source: 'Lokalsystemet',
+          status: 'ok',
+          rows: [person('u1', 'Lokalsystemet', { entity: 'unit', key: 'anna.l' })],
+        },
+      ],
+      NOW,
+    );
+    expect(rows.map(r => [r.connector, r.ref, r.sources?.map(s => s.source)])).toEqual([
+      ['phonebook', 'p1', ['Telefonboken', 'Personalsystemet']],
+      ['docs', 'x1', undefined],
+      // A unit with the same key is another entity.
+      ['unit', 'u1', undefined],
+      ['phonebook', 'd1', undefined],
+      ['docs', 'x2', undefined],
+    ]);
+    expect(rows[0]).toMatchObject({
+      label: 'Anna Lindqvist',
+      source: 'Telefonboken',
+      subject: anna,
+      connector: 'phonebook',
+    });
+    expect(rows[0]!.sources).toEqual([
+      { connector: 'phonebook', source: 'Telefonboken' },
+      { connector: 'hr', source: 'Personalsystemet' },
+    ]);
+    // A source whose hit about a listed person came after the list was full still answered for her.
+    const full = merge(
+      [
+        {
+          id: 'a',
+          source: 'A',
+          status: 'ok',
+          rows: [person('pa', 'A'), ...Array.from({ length: 12 }, (_, i) => hit({ ref: 'a' + i }))],
+        },
+        {
+          id: 'b',
+          source: 'B',
+          status: 'ok',
+          rows: [...Array.from({ length: 12 }, (_, i) => hit({ ref: 'b' + i })), person('pb', 'B')],
+        },
+      ],
+      NOW,
+    );
+    expect(full).toHaveLength(10);
+    expect(full[0]!.sources?.map(s => s.connector)).toEqual(['a', 'b']);
   });
   test('headings become the follow-ups without a model, three at most, no repeats', () => {
     expect(

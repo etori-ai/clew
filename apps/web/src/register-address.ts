@@ -1,5 +1,5 @@
 /**
- * Registering a certificate for one person has an address of its own (D101 item 7, D83): Personal with the person's id
+ * Registering a certificate for one person has an address of its own (D107 item 7, D83): Personal with the person's id
  * as `register`, `/staff?register=<personId>`. The list stays the page and the form is a dialog over it, so closing the
  * dialog is the same page without `register`. Everything else in the address is the page's own and is kept.
  */

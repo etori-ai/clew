@@ -58,6 +58,10 @@ For a directory table or contact detail:
 
 The browser and model never obtain a connector's source credentials. A ref returned by a previous read does not bypass the current access check.
 
+## Reads about a person or a unit
+
+A capability may declare that its rows are `about` a person or a unit ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)). The core `entities` module decides who the reader may ask about, sends each such read a batch of keys under a time budget, keeps nothing of the answer, and places the rows: a section on the opened person or unit, and a lens, a column or a mark on Personal where an administrator chose the source. A card row, a search hit or a view record that names an entity links to it, and the thread store keeps an index from entity to cards. See [Entities](entities.md).
+
 ## Discovering work without slowing the page
 
 A **scan** is a deterministic source read that returns work item drafts (`ThreadDraft`) and occurrence identities. The page presents persisted work items as cards or rows while requesting a coalesced refresh. Background workers refresh sources independently under bounded concurrency and source deadlines.
@@ -98,7 +102,7 @@ The workflow start is one more write in the approval's transaction ([D86](../dec
 
 There is no transaction spanning Clew and an arbitrary source. A source can commit while its reply is lost. Clew retains the original operation identity and uses the connector's declared lookup/replay guarantees to recover evidence. It does not turn a timeout into success or blindly repeat an uncertain effect. Undo is a separately authorized compensating execution, not deletion of the original receipt.
 
-Session-backed token delegation currently supports interactive reads. Generic durable remote execution does not obtain that session token: connectors declaring delegation can remain pending with `needs-session`. Establish a supported background authorization path before promising scans or durable actions. See [authorization](../guides/authorization.md) and [actions and receipts](../guides/actions-and-receipts.md).
+Session-backed token delegation covers interactive reads and the work the person's own live session stands behind. On a connector that declares delegation, an approved write is dispatched with the token of the session that approved it, and a scan runs with the token of the session that last asked for it, while that session is active (for a scan, also only while the person has been active in it within the last 15 minutes); the execution and the refresh request keep a sealed binding to the session, never a token. Without such a session the write stays pending with `needs-session` and the scan answers `authorization-required`, so nothing runs as the person once their session has ended. A source whose work must happen while the person is away still needs its own background authorization path. See [authorization](../guides/authorization.md#work-the-persons-own-session-stands-behind) and [actions and receipts](../guides/actions-and-receipts.md).
 
 ## One task across several connectors
 

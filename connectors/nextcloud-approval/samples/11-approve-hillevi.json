@@ -1,0 +1,31 @@
+{
+  "description": "Hillevi approves a file with its current etag and a message: 200, empty data.",
+  "as": "hillevi",
+  "request": {
+    "method": "PUT",
+    "path": "/ocs/v2.php/apps/approval/api/v1/approve/625",
+    "headers": {
+      "Authorization": "Bearer <exchanged access token, aud nextcloud, hillevi>",
+      "OCS-APIRequest": "true",
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "body": "{\"etag\":\"5629f2f17acb44987ae83f7b64f69ff5\",\"message\":\"Godkänt, beställ före fredag.\"}"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "ocs": {
+        "meta": {
+          "status": "ok",
+          "statuscode": 200,
+          "message": "OK"
+        },
+        "data": []
+      }
+    }
+  }
+}

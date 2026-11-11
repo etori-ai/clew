@@ -13,8 +13,10 @@ import {
   type SnoozePreset,
   type Thread,
   type ThreadAction,
+  type ThreadItem,
 } from '@clew/contracts';
 import {
+  AlertDialog,
   AreaChip,
   AreaLine,
   Badge,
@@ -51,6 +53,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'react-router';
 import { displayDate, today } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
+import { confirmParts } from '../confirm-parts';
 import { snoozePresetsQuery } from '../queries';
 import { useSettling, useThreadAction, type RunAction } from '../mutations';
 import { dismissed, reopened, snoozed } from '../optimistic';
@@ -59,8 +62,9 @@ import { useConversation } from './conversation-context';
 import { executionStatus } from '../execution-status';
 import { useMarks, type Mark, type Marks } from '../marks';
 import { AddToConversation } from './add-to-conversation';
-import { returnedSelection, reviewHref } from '../review-address';
+import { returnedReview, reviewHref, selectionAfterReview } from '../review-address';
 import { canUndoReceipt, receiptComplete } from '../receipt-state';
+import { entityHref } from '../person-address';
 
 const outcomeDot = {
   done: { variant: 'success', label: 'Klart' },
@@ -78,7 +82,7 @@ export const ReceiptCheck = CompletionMark;
 /** What a decision's row says (D70): the receipt's headline and when the source answered. */
 export const receiptLine = (thread: Thread) =>
   thread.receipt
-    ? `${thread.receipt.headline.replace(/\.$/, '')} · ${thread.trigger.source.toLowerCase()} svarade ${clock(thread.receipt.at)}`
+    ? `${thread.receipt.headline.replace(/\.$/, '')} · ${thread.trigger.source} svarade ${clock(thread.receipt.at)}`
     : '';
 export function useCountdown(until: string | null) {
   const [now, setNow] = useState(Date.now());
@@ -418,6 +422,9 @@ type ActionProps = {
  * error as from the card. Busy never disables the buttons: a disabled button drops the focus it holds (2.4.3).
  * Action-buttons wait on their own promise. The thread an action returns goes into the cache for every screen (D33);
  * `onChange` lets the page move focus first. `perform` says whether it ran: a confirm the person declined runs nothing.
+ * An action with `confirm` asks in an alert dialog (`confirmation`, which the caller renders): Avbryt has the focus,
+ * Esc cancels, and the dialog closes on the answer, so the focus is back on the pressed button before the card shows
+ * the wait and the source's answer, as for an action that asks nothing (D45, D64).
  */
 export function useCardAction({
   thread,
@@ -434,13 +441,44 @@ export function useCardAction({
     if (!settling) setPressed(null);
   }, [settling]);
   const selectable = thread.items.some(i => i.selectable);
+  // The question an action asks before it runs. The one asked stays in the dialog while it closes.
+  const [asked, setAsked] = useState<ThreadAction | null>(null);
+  const answered = useRef<((yes: boolean) => void) | null>(null);
+  const question = useRef<ThreadAction | null>(null);
+  if (asked) question.current = asked;
+  // Astryx runs a button's `clickAction` as a transition, which holds every state change until the action has ended.
+  // The question is therefore asked a task later, outside it, so the dialog can open while a caller waits for the answer.
+  const ask = (action: ThreadAction) =>
+    new Promise<boolean>(resolve => {
+      answered.current = resolve;
+      setTimeout(() => setAsked(action), 0);
+    });
+  const answer = (yes: boolean) => {
+    answered.current?.(yes);
+    answered.current = null;
+    setAsked(null);
+  };
+  const parts = question.current ? confirmParts(question.current) : null;
+  const confirmation = (
+    <AlertDialog
+      isOpen={asked !== null}
+      onOpenChange={open => {
+        if (!open) answer(false);
+      }}
+      title={parts?.title ?? ''}
+      description={parts?.description ?? ''}
+      actionLabel={question.current?.label ?? ''}
+      cancelLabel="Avbryt"
+      onAction={() => answer(true)}
+    />
+  );
   const perform = async (
     action: ThreadAction,
     refs?: string[],
     reviews?: import('@clew/contracts').ReviewEvidence[],
   ): Promise<boolean> => {
     if (busy) return false;
-    if (action.confirm && !window.confirm(action.confirm)) return false;
+    if (action.confirm && !(await ask(action))) return false;
     const chosen = selectable ? refs : undefined;
     if (action.kind === 'read') {
       if (action.target === 'link') {
@@ -467,7 +505,7 @@ export function useCardAction({
     );
     return true;
   };
-  return { run, apply, busy, settling, pressed, error, selectable, perform };
+  return { run, apply, busy, settling, pressed, error, selectable, perform, confirmation };
 }
 /** The execute a card reviews one row at a time before it sends (D70): its next step is then "Granska N", which leads to the review's address (D73). */
 export const reviewedAction = (thread: Thread) =>
@@ -484,6 +522,7 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
     error,
     selectable,
     perform: performRefs,
+    confirmation,
   } = useCardAction({
     thread,
     onChange,
@@ -497,32 +536,41 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
     lastStatus.current = status;
     announce(status ?? thread.receipt?.headline ?? 'Åtgärden är kontrollerad.');
   }, [status, settling, announce, thread.receipt?.headline]);
-  // Back from the review's drawer with ✕, Esc or the scrim (D73), the card starts from the rows the review approved;
-  // otherwise from what the connector marked. A change to the thread starts it over from the connector's marks. The card
-  // usually stood under the drawer all along (D73 amended), so the selection is taken again for each entry that hands
-  // one back, not only when the card is drawn.
+  // The card starts from the rows the connector marked. Back from the review's drawer with ✕, Esc or the scrim (D73),
+  // the review's decisions are laid over the selection: a row chosen for approval is ticked, a row left behind is not,
+  // and a row the review never judged keeps the tick it had, so a review opened and closed again changes nothing (it
+  // used to hand back the approved rows as the whole selection, which cleared the connector's marks; the product owner,
+  // 2026-11-11). A change to the thread starts it over from the connector's marks. The card usually stood under the
+  // drawer all along (D73 amended), so the decisions are taken for each entry that hands them back, not only when the
+  // card is drawn.
   const { state, key } = useLocation();
-  const returned = returnedSelection(state, thread.id);
+  const returned = returnedReview(state, thread.id);
   const returnedAt = returned ? key : null;
-  const [selected, setSelected] = useState<string[]>(
-    () => returned ?? thread.items.filter(i => i.selected).map(i => i.ref),
+  const marked = () => thread.items.filter(i => i.selected).map(i => i.ref);
+  const [selected, setSelected] = useState<string[]>(() =>
+    returned ? selectionAfterReview(marked(), returned) : marked(),
   );
   const seededReturn = useRef(returnedAt);
   useEffect(() => {
     if (!returned || seededReturn.current === returnedAt) return;
     seededReturn.current = returnedAt;
-    setSelected(returned);
+    setSelected(current => selectionAfterReview(current, returned));
   }, [returnedAt]);
   const seededAt = useRef(thread.updatedAt);
   useEffect(() => {
     if (seededAt.current === thread.updatedAt) return;
     seededAt.current = thread.updatedAt;
-    setSelected(thread.items.filter(i => i.selected).map(i => i.ref));
+    setSelected(marked());
   }, [thread.updatedAt]);
   const client = useQueryClient();
   const leave = useLeaveWithUndo(apply);
-  const perform = async (action: ThreadAction, refs?: string[]) => {
-    await performRefs(action, refs ?? selected);
+  // A button waits on its action (the pressed button loads until the source has answered). An action that asks first
+  // is not waited on: the button stays as it is, enabled, while the question is open, so the focus can come back to
+  // it on Avbryt; after a yes it loads as `pressed` while the card settles.
+  const perform = (action: ThreadAction, refs?: string[]): Promise<void> | void => {
+    const ran = performRefs(action, refs ?? selected).then(() => undefined);
+    if (action.confirm) return;
+    return ran;
   };
   // A card whose next step is a review (D70): "Granska N" leads to the review's drawer, which sends once with the approved refs (D73).
   const reviewed = reviewedAction(thread);
@@ -570,6 +618,8 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
     reviewed,
     /** The history entry the review handed its decisions back on, or null: the card's "Granska N" takes the focus once per entry. */
     returned: returnedAt,
+    /** The alert dialog an action with `confirm` asks in; the card and the row render it. */
+    confirmation,
   };
 }
 type Actions = ReturnType<typeof useThreadActions>;
@@ -877,6 +927,19 @@ function Flags({ thread }: { thread: Thread }) {
     </>
   );
 }
+/**
+ * A row's name (D97 item 6): the source's own words, and a link to the person or unit the row names when it names one,
+ * with the page it was opened on as the way back. Never a name the row did not have.
+ */
+function ItemLabel({ item, from }: { item: ThreadItem; from: string }) {
+  return item.subject ? (
+    <Link href={entityHref(item.subject, from)} weight="semibold" hasUnderline>
+      {item.label}
+    </Link>
+  ) : (
+    <Text weight="semibold">{item.label}</Text>
+  );
+}
 type Props = ActionProps & {
   position?: string;
   headingLevel?: 2 | 3 | 4;
@@ -918,6 +981,7 @@ export function GenericCard({
   const mark = marks.ofThread(thread);
   const systems = rowSystems(thread, marks);
   const rowChipped = (ref: string) => conversation.chipped.includes(ref);
+  const { pathname, search } = useLocation();
   const inConversation = rowChipped('thread:' + thread.id) || thread.items.some(i => rowChipped(i.ref));
   const open = thread.state === 'open';
   const level = attentionLevel(thread, today());
@@ -980,7 +1044,7 @@ export function GenericCard({
                   key={i.ref}
                   value={i.ref}
                   align="start"
-                  label={<Text weight="semibold">{i.label}</Text>}
+                  label={<ItemLabel item={i} from={pathname + search} />}
                   description={
                     systems.multi ? (
                       <SystemLine mark={systems.of.get(i.ref)} words={i.detail} />
@@ -997,7 +1061,7 @@ export function GenericCard({
                 <ListItem
                   key={i.ref}
                   isSelected={rowChipped(i.ref)}
-                  label={<Text weight="semibold">{i.label}</Text>}
+                  label={<ItemLabel item={i} from={pathname + search} />}
                   description={
                     systems.multi ? (
                       <SystemLine mark={systems.of.get(i.ref)} words={i.detail} />
@@ -1048,6 +1112,7 @@ export function GenericCard({
           {error}
         </Text>
       )}
+      {actions.confirmation}
       <ActionRow thread={thread} level={level} actions={actions} stacked={sheet} />
       {/* The way on from a done card (D70, artboard D): the first card that needs the person, never opened on its own. */}
       {receipt && next && (
@@ -1063,14 +1128,15 @@ export function GenericCard({
           </VStack>
         </Card>
       )}
-      {/* What the next step does (artboard E): written to the source and read back, undone within the window, without the model. */}
+      {/* What the next step does (artboard E): written to the source and read back, without the model. The source's name
+          stands as the source wrote it ("Nextcloud" is a name, not a noun), and nothing is said about undo here: whether
+          a write can be undone, and for how long, is only known from the receipt, which offers Ångra when the source does. */}
       {open &&
         !receipt &&
         primary?.kind === 'execute' &&
         (!executionStatus(thread.execution) || (actions.settling && actions.pressed !== null)) && (
           <Text type="supporting" as="p">
-            {primary.label} skrivs till {thread.trigger.source.toLowerCase()} och läses tillbaka som kvitto. Ångra i 10
-            minuter. Fungerar utan modellen.
+            {primary.label} skrivs till {thread.trigger.source} och läses tillbaka som kvitto. Fungerar utan modellen.
           </Text>
         )}
       {/* Why the card is here, folded away as the artboard draws it; the words can be read and announced, never a tooltip (D28). */}
@@ -1272,6 +1338,7 @@ export function ThreadRow({
               {error}
             </Text>
           )}
+          {actions.confirmation}
         </VStack>
       }
       endContent={

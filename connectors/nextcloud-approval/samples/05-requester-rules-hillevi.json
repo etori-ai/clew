@@ -1,0 +1,57 @@
+{
+  "description": "Rules Hillevi may request approval with (the rule shape, display names filled in).",
+  "as": "hillevi",
+  "request": {
+    "method": "GET",
+    "path": "/ocs/v2.php/apps/approval/api/v1/user-requester-rules",
+    "headers": {
+      "Authorization": "Bearer <exchanged access token, aud nextcloud, hillevi>",
+      "OCS-APIRequest": "true",
+      "Accept": "application/json"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "ocs": {
+        "meta": {
+          "status": "ok",
+          "statuscode": 200,
+          "message": "OK"
+        },
+        "data": [
+          {
+            "id": 1,
+            "tagPending": "1",
+            "tagApproved": "2",
+            "tagRejected": "3",
+            "description": "Underlag att godkänna",
+            "approvers": [
+              {
+                "entityId": "hillevi",
+                "type": "user",
+                "displayName": "Hillevi Berg"
+              },
+              {
+                "entityId": "hassan",
+                "type": "user",
+                "displayName": "Hassan Ali"
+              }
+            ],
+            "requesters": [
+              {
+                "entityId": "calendar-staff",
+                "type": "group",
+                "displayName": "calendar-staff"
+              }
+            ],
+            "unapproveWhenModified": false
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
+  ANY_TONE,
   ViewRefSchema,
   checkContract,
+  fieldTone,
   openRef,
   viewRows,
   type Activity,
@@ -12,7 +14,9 @@ import {
   type ViewField,
   type ViewInput,
   type ViewRef,
+  type ViewTone,
 } from '@clew/contracts';
+import { displayDate, shortDayLabel, timeLabel } from '@clew/calendar/dates';
 import {
   AreaChip,
   MetricView,
@@ -42,11 +46,14 @@ import {
   useMediaQuery,
 } from '@clew/ui';
 import { counted, fieldValue, statusWord } from './panel-labels';
+import { groupFields, rowGroups, wholeRow, type FieldGroup } from '../view-fields';
 import { useMarks } from '../marks';
 import { useConversation } from './conversation-context';
 import { AddToConversation } from './add-to-conversation';
 import { PageHeader } from './page-header';
 import { DocumentReader } from './document-reader';
+import { useLocation } from 'react-router';
+import { entityHref } from '../person-address';
 
 /**
  * A declared view (D38): the connector says what the output holds (a table, a list, one record, a text, and which
@@ -82,7 +89,30 @@ export interface DeclaredViewProps {
 
 const dateOnly = new Intl.DateTimeFormat('sv-SE', { dateStyle: 'long' });
 const tone = { ok: 'success', warn: 'warning', alert: 'error', none: 'neutral' } as const;
-const toneOf = (field: ViewField, value: unknown) => field.tones?.[String(value)] ?? 'none';
+/** The Astryx Badge variant a view's tone is drawn in: only what needs the person has a status colour. */
+export const badgeVariant = (t: ViewTone) => tone[t];
+/** The tone a field gives a value, by the one reading of `tones` the server shares (`fieldTone`, so `*` counts). */
+const toneOf = (field: ViewField, value: unknown) => fieldTone(field, value);
+/** Whether the view gives this value a tone of its own: named for it, or `*` for any value that is present (D97). */
+const hasTone = (field: ViewField, value: unknown) => {
+  const tones = field.tones;
+  if (!tones || value === undefined || value === null) return false;
+  const own = (key: string) => Object.prototype.hasOwnProperty.call(tones, key);
+  return own(String(value)) || (value !== '' && own(ANY_TONE));
+};
+/**
+ * A moment as the lists say it: the short weekday, the day, the month and the time, in Swedish time ("tors 12 nov. kl.
+ * 09:00"). A calendar day without a time ("2026-11-04", a talk held that day) is the day alone ("ons 4 nov.").
+ */
+export function instantText(value: string): string | null {
+  if (Number.isNaN(Date.parse(value))) return null;
+  try {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return shortDayLabel(value);
+    return `${shortDayLabel(displayDate(value))} kl. ${timeLabel(value)}`;
+  } catch {
+    return null;
+  }
+}
 /** A number as Swedish digits, its unit after it when the field declares one: "12 platser", "11 200 kr". */
 const amount = (field: ViewField, value: unknown) =>
   typeof value === 'number'
@@ -92,9 +122,10 @@ const amount = (field: ViewField, value: unknown) =>
     : `${String(value)}${field.unit ? ` ${field.unit.other}` : ''}`;
 /**
  * A status is a badge only where it is a state with a word of its own (D71): a bare yes or no, which takes the field's
- * label as its word, or a value the view gives a tone because it needs the person. Any other status is supporting text.
+ * label as its word, or a value the view gives a tone, which a source does for the value that needs the person or, with
+ * the tone `none`, for a state it wants drawn as a neutral badge ("Bokat"). Any other status is supporting text.
  */
-const badged = (field: ViewField, value: unknown) => typeof value === 'boolean' || toneOf(field, value) !== 'none';
+export const isBadged = (field: ViewField, value: unknown) => typeof value === 'boolean' || hasTone(field, value);
 /** The one word in its tone: only the state that needs the person has a status colour, the other is neutral, and a yes carries its check. */
 function StatusBadge({ field, value }: { field: ViewField; value: unknown }) {
   return (
@@ -151,53 +182,132 @@ const dial = (value: string) => {
 const isMail = (value: string) => /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/.test(value);
 const isWeb = (value: string) => /^https?:\/\/[^\s]+$/i.test(value);
 const linked = (field: ViewField) => field.format === 'phone' || field.format === 'email' || field.format === 'link';
+/** A field drawn wherever the whole row is, compact or not: the title that names a row (D97). */
+const drawnWhole = ({ compact: _compact, ...field }: ViewField): ViewField => field;
+/**
+ * One cell of a row (D97): the field that names it, then each field beside it on the same line, a value beside another
+ * in supporting text unless it is a badge or a link.
+ */
+function Cell({ group, row, lead }: { group: FieldGroup; row: Row; lead?: ReactNode }): ReactNode {
+  if (!group.beside.length) return lead ?? <Value field={group.lead} value={row[group.lead.key]} />;
+  const beside = group.beside.filter(f => !empty(row[f.key]));
+  const first = lead ?? (empty(row[group.lead.key]) ? null : <Value field={group.lead} value={row[group.lead.key]} />);
+  if (!beside.length) return first ?? <Value field={group.lead} value={undefined} />;
+  return (
+    <HStack gap={2} vAlign="center" wrap="wrap">
+      {first}
+      {beside.map(f => (
+        <Value key={f.key} field={f} value={row[f.key]} text="supporting" />
+      ))}
+    </HStack>
+  );
+}
+export { Cell as FieldCell };
 
-/** One value, drawn by its declared format. What cannot be drawn as the format says is drawn as plain text, never as a broken link. */
-function Value({ field, value }: { field: ViewField; value: unknown }): ReactNode {
+/**
+ * How a value that is neither a badge nor a link reads (D97): as `ordinary` text, or in `supporting` text, as a time
+ * beside a state's badge does. Left out, a value reads as a declared view has always drawn it: a status without a tone
+ * in supporting text, anything else ordinary.
+ */
+export type ValueText = 'ordinary' | 'supporting';
+/**
+ * One value, drawn by its declared format. What cannot be drawn as the format says is drawn as plain text, never as a
+ * broken link. Exported as `FieldValue` for a page that places one field of one row itself (Personal's columns and lens,
+ * the opened person's sections, D97), with `text` saying how a value without a badge reads there.
+ */
+function Value({ field, value, text }: { field: ViewField; value: unknown; text?: ValueText }): ReactNode {
   if (empty(value)) return <Text type="supporting">–</Text>;
-  const text = String(value);
+  const raw = String(value);
+  const words = (said: string, fallback: ValueText = 'ordinary') =>
+    (text ?? fallback) === 'supporting' ? <Text type="supporting">{said}</Text> : <Text>{said}</Text>;
   switch (field.format) {
     case 'phone': {
-      const number = dial(text);
+      const number = dial(raw);
       return number ? (
         <Link href={`tel:${number}`} hasUnderline>
-          {text}
+          {raw}
         </Link>
       ) : (
-        <Text>{text}</Text>
+        words(raw)
       );
     }
     case 'email':
-      return isMail(text) ? (
-        <Link href={`mailto:${text}`} hasUnderline>
-          {text}
+      return isMail(raw) ? (
+        <Link href={`mailto:${raw}`} hasUnderline>
+          {raw}
         </Link>
       ) : (
-        <Text>{text}</Text>
+        words(raw)
       );
     case 'link':
-      return isWeb(text) ? (
-        <Link href={text} isExternalLink>
+      return isWeb(raw) ? (
+        <Link href={raw} isExternalLink>
           {field.label}
         </Link>
       ) : (
         <Text type="supporting">–</Text>
       );
-    case 'date': {
-      const at = Date.parse(text);
-      return <Text>{Number.isNaN(at) ? text : dateOnly.format(at)}</Text>;
-    }
     case 'number':
-      return <Text hasTabularNumbers>{amount(field, value)}</Text>;
+      return text === 'supporting' ? (
+        <Text type="supporting" hasTabularNumbers>
+          {fieldText(field, value)}
+        </Text>
+      ) : (
+        <Text hasTabularNumbers>{fieldText(field, value)}</Text>
+      );
     case 'status':
-      return badged(field, value) ? (
+      return isBadged(field, value) ? (
         <StatusBadge field={field} value={value} />
       ) : (
-        <Text type="supporting">{statusWord(field.label, value)}</Text>
+        words(fieldText(field, value), 'supporting')
       );
     default:
-      return <Text>{fieldValue(value)}</Text>;
+      return words(fieldText(field, value));
   }
+}
+
+export { Value as FieldValue };
+/**
+ * A value as words without its label (D97: the time beside a state, a value in a one-line summary): a date or a moment
+ * in Swedish, a number with its unit, a status its word, anything else as given.
+ */
+export function fieldText(field: ViewField, value: unknown): string {
+  const raw = String(value);
+  switch (field.format) {
+    case 'date': {
+      const at = Date.parse(raw);
+      return Number.isNaN(at) ? raw : dateOnly.format(at);
+    }
+    case 'instant':
+      return instantText(raw) ?? raw;
+    case 'number':
+      return amount(field, value);
+    case 'status':
+      return statusWord(field.label, value);
+    case 'phone':
+    case 'email':
+    case 'link':
+      return raw;
+    default:
+      return fieldValue(value);
+  }
+}
+/**
+ * One field of a row as a line of words says it (D71): a status its word, a number with its unit ("40 platser") or its
+ * label ("Perioder: 3"), a date or a moment with its label, a bare yes or no with its label, any other text as given.
+ */
+export function fieldWord(f: ViewField, value: unknown): string {
+  if (f.format === 'status') return statusWord(f.label, value);
+  if (f.format === 'number') return f.unit ? amount(f, value) : `${f.label}: ${amount(f, value)}`;
+  if (f.format === 'date' && !Number.isNaN(Date.parse(String(value))))
+    return `${f.label}: ${dateOnly.format(Date.parse(String(value)))}`;
+  if (f.format === 'instant') {
+    const at = instantText(String(value));
+    if (at) return `${f.label}: ${at}`;
+  }
+  // A bare yes or no is said with its label, never as "Ja · Ja".
+  const labelled = (f.format && f.format !== 'text') || typeof value === 'boolean';
+  return labelled ? `${f.label}: ${fieldValue(value)}` : fieldValue(value);
 }
 
 /** The view's own controls: a search field and a choice, each bound to one input of the capability. Typing asks again after a pause, Enter at once. */
@@ -299,7 +409,15 @@ function Rows({
 }) {
   const talk = useConversation();
   const titleField = view.fields.find(f => f.key === view.title)!;
-  const others = view.fields.filter(f => f.key !== view.title);
+  // The whole row (D97): the compact field is left out and a field beside another shares its cell; the title names the
+  // row and is always drawn, in a cell of its own.
+  const groups = rowGroups(
+    view.fields.map(f => (f.key === view.title ? drawnWhole(f) : f)),
+    { lead: view.title },
+  );
+  const titleGroup = groups.find(g => g.lead.key === view.title);
+  const columnGroups = groups.filter(g => g !== titleGroup);
+  const others = groups.flatMap(groupFields).filter(f => f.key !== view.title);
   const opens = (row: Row) => {
     if (!hrefFor) return undefined;
     // A row of Clew's own combined list opens in the system it came from (D35 item 4); any other row opens its connector's own read.
@@ -307,8 +425,31 @@ function Rows({
     const ref = own ?? (view.open ? openRef(view.open, row, view.source) : undefined);
     return ref ? hrefFor(ref) : undefined;
   };
+  // The person or unit a row names (D97 item 6): the row's key for it leads to the entity, with this page as the way back.
+  const { pathname, search } = useLocation();
+  const entityOf = (row: Row) => {
+    const key = view.subject ? row[view.subject.key] : undefined;
+    return view.subject && typeof key === 'string' && key
+      ? entityHref({ entity: view.subject.entity, key }, pathname + search)
+      : undefined;
+  };
+  // A row that opens a read keeps that on its name; the entity is then a link of its own at the row's end, named for it.
+  const entityLink = (row: Row) => {
+    const href = opens(row) ? entityOf(row) : undefined;
+    if (!href) return null;
+    const label = empty(row[view.title])
+      ? view.subject!.entity === 'unit'
+        ? 'Öppna enheten'
+        : 'Öppna personen'
+      : `Öppna ${String(row[view.title])}`;
+    return (
+      <Link href={href} weight="semibold" isStandalone>
+        {label}
+      </Link>
+    );
+  };
   const name = (row: Row) => {
-    const href = opens(row);
+    const href = opens(row) ?? entityOf(row);
     const label = empty(row[view.title]) ? '–' : String(row[view.title]);
     return href ? (
       <Link href={href} weight="semibold" hasUnderline>
@@ -338,17 +479,34 @@ function Rows({
     // (equal weights would give every column the widest floor, and a table wider than its panel).
     const share = (floor: number) => proportional(floor / 100, { minWidth: floor });
     const columns = [
-      { key: view.title, header: titleField.label, width: share(130), renderCell: (r: TableRow) => name(r.row) },
-      ...others.map(f => ({
+      {
+        key: view.title,
+        header: titleField.label,
+        width: share(130),
+        renderCell: (r: TableRow) =>
+          titleGroup ? <Cell group={titleGroup} row={r.row} lead={name(r.row)} /> : name(r.row),
+      },
+      ...columnGroups.map(({ lead: f, beside }) => ({
         key: f.key,
         header: f.label,
-        width: f.format === 'phone' ? pixel(118) : share(f.format === 'email' ? 248 : 145),
+        width: f.format === 'phone' && !beside.length ? pixel(118) : share(f.format === 'email' ? 248 : 145),
         // Numbers are tabular and end-aligned, so the digits stand under each other (artboard 7).
-        ...(f.format === 'number' ? { align: 'end' as const } : {}),
-        renderCell: (r: TableRow) => <Value field={f} value={r.row[f.key]} />,
+        ...(f.format === 'number' && !beside.length ? { align: 'end' as const } : {}),
+        renderCell: (r: TableRow) => <Cell group={{ lead: f, beside }} row={r.row} />,
       })),
       ...(view.chip && view.ref
         ? [{ key: 'clew-chip', header: 'Samtal', width: pixel(66), renderCell: (r: TableRow) => chip(r.row) }]
+        : []),
+      // One cell cannot be two links: a row whose name opens a read has the entity it names in a column of its own.
+      ...(view.subject && rows.some(row => opens(row) && entityOf(row))
+        ? [
+            {
+              key: 'clew-entity',
+              header: view.subject.entity === 'unit' ? 'Enhet' : 'Person',
+              width: share(145),
+              renderCell: (r: TableRow) => entityLink(r.row),
+            },
+          ]
         : []),
     ];
     // The table in a bordered card, as artboard I draws it.
@@ -370,20 +528,18 @@ function Rows({
       {rows.map((row, i) => {
         const shown = others.filter(f => !empty(row[f.key]));
         // The meta line holds the words, the badges stand at the row's end, the links under the line (D71: the row level).
-        const marks = shown.filter(f => f.format === 'status' && badged(f, row[f.key])),
+        const marks = shown.filter(f => f.format === 'status' && isBadged(f, row[f.key])),
           links = shown.filter(linked),
-          words = shown.filter(f => !linked(f) && !marks.includes(f));
-        const word = (f: ViewField) => {
-          const value = row[f.key];
-          if (f.format === 'status') return statusWord(f.label, value);
-          // A number with its unit says what it is ("40 platser"); one without keeps its label ("Perioder: 3").
-          if (f.format === 'number') return f.unit ? amount(f, value) : `${f.label}: ${amount(f, value)}`;
-          if (f.format === 'date' && !Number.isNaN(Date.parse(String(value))))
-            return `${f.label}: ${dateOnly.format(Date.parse(String(value)))}`;
-          // A bare yes or no is said with its label, never as "Ja · Ja".
-          const labelled = (f.format && f.format !== 'text') || typeof value === 'boolean';
-          return labelled ? `${f.label}: ${fieldValue(value)}` : fieldValue(value);
-        };
+          worded = shown.filter(f => !linked(f) && !marks.includes(f));
+        // A word beside another follows it on the line without a label of its own (D97): "Samtal: Bokat tors 12 nov".
+        const words = groups
+          .map(g =>
+            groupFields(g)
+              .filter(f => worded.includes(f))
+              .map(f => (f === g.lead ? fieldWord(f, row[f.key]) : fieldText(f, row[f.key])))
+              .join(' '),
+          )
+          .filter(Boolean);
         // The numbers and the address share a line and wrap where they must, so a long address never pushes the row sideways (1.4.10) and a person takes three lines, not five.
         return (
           <ListItem
@@ -391,12 +547,13 @@ function Rows({
             align="start"
             label={name(row)}
             endContent={
-              marks.length > 0 ? (
+              marks.length > 0 || entityLink(row) ? (
                 <HStack gap={2} vAlign="center" wrap="wrap" justify="end">
                   {marks.map(f => (
                     <StatusBadge key={f.key} field={f} value={row[f.key]} />
                   ))}
                   {chip(row)}
+                  {entityLink(row)}
                 </HStack>
               ) : (
                 chip(row)
@@ -404,7 +561,7 @@ function Rows({
             }
             description={
               <VStack gap={1}>
-                {words.length > 0 && <Text type="supporting">{words.map(word).join(' · ')}</Text>}
+                {words.length > 0 && <Text type="supporting">{words.join(' · ')}</Text>}
                 {links.length > 0 && (
                   <HStack gap={3} wrap="wrap">
                     {links.map(f => (
@@ -438,6 +595,7 @@ export function DeclaredView({
   onShowAll,
 }: DeclaredViewProps) {
   const wide = useMediaQuery(tableQuery);
+  const { pathname, search } = useLocation();
   // A count that changes while someone types is spoken as one message, the latest (4.1.3); the visible line says the same.
   const announce = useAnnounce({ hasReplace: true });
   const all = view.kind === 'table' || view.kind === 'list' ? (viewRows(view, output) ?? []) : null;
@@ -504,25 +662,40 @@ export function DeclaredView({
   }
   if (view.kind === 'detail' || view.kind === 'record') {
     const record = output && typeof output === 'object' && !Array.isArray(output) ? (output as Row) : {};
-    const shown = view.fields.filter(
+    // The whole record (D97): the compact field is left out, and a fact beside another shares its line and its label.
+    const shown = wholeRow(view.fields).filter(
       f => !empty(record[f.key]) && (f.format !== 'link' || isWeb(String(record[f.key]))),
     );
     const facts = shown.filter(f => f.format !== 'link'),
       out = shown.filter(f => f.format === 'link');
+    const factLines = rowGroups(view.fields).filter(g => groupFields(g).some(f => facts.includes(f)));
+    // The person or unit the record names (D97 item 6): its heading leads to the entity.
+    const subject = view.kind === 'detail' ? view.subject : undefined;
+    const named = subject ? record[subject.key] : undefined;
+    const entity =
+      subject && typeof named === 'string' && named
+        ? entityHref({ entity: subject.entity, key: named }, pathname + search)
+        : undefined;
     return (
       <VStack gap={3}>
         {header}
         {/* The record's title is the open card's level (D71: level 2), under the surface's own heading in the outline. */}
         {!empty(record[view.title]) && (
           <Heading level={2} accessibilityLevel={headingLevel}>
-            {String(record[view.title])}
+            {entity ? (
+              <Link href={entity} hasUnderline>
+                {String(record[view.title])}
+              </Link>
+            ) : (
+              String(record[view.title])
+            )}
           </Heading>
         )}
         {facts.length > 0 && (
           <MetadataList>
-            {facts.map(f => (
-              <MetadataListItem key={f.key} label={f.label}>
-                <Value field={f} value={record[f.key]} />
+            {factLines.map(g => (
+              <MetadataListItem key={g.lead.key} label={g.lead.label}>
+                <Cell group={{ lead: g.lead, beside: g.beside.filter(f => facts.includes(f)) }} row={record} />
               </MetadataListItem>
             ))}
           </MetadataList>

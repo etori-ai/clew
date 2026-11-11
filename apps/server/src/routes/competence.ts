@@ -14,7 +14,7 @@ import { failure, InputError, privateHeaders, protectedRoute, type Env } from '.
 import type { CompetenceUsecases } from '../modules/competence/usecases';
 
 /**
- * The competence module's own routes (D101): the catalogue an administrator keeps, and a manager's registration of a
+ * The competence module's own routes (D107): the catalogue an administrator keeps, and a manager's registration of a
  * certificate. A person's holdings and what needs attention have no route here: Clew reads `competence.holdings` and
  * `competence.attention` through the capability route. Each route parses, validates, calls one use case and maps its
  * errors; the use cases own who may do what. Every route first refuses unless the built-in module is switched on and

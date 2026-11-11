@@ -10,8 +10,6 @@ export const keys = {
   attention: ['attention'] as const,
   completions: ['completions'] as const,
   assistant: ['assistant'] as const,
-  chatServices: ['chat-services'] as const,
-  chatService: (id: string, deliveryId?: string) => ['chat-service', id, deliveryId ?? null] as const,
   /** The prefix of every loaded week; invalidated when a thread with proposals changes. */
   calendarAll: ['calendar'] as const,
   calendar: (week: string) => ['calendar', week] as const,
@@ -33,10 +31,16 @@ export const keys = {
   header: ['header'] as const,
   /** Personal (D94): the manager's units and their people. */
   staff: ['staff'] as const,
-  /** What the sources say about these people (D97), by their ids in the order asked. */
-  about: (keys: readonly string[]) => ['about', 'person', keys.join(',')] as const,
-  aboutAll: ['about'] as const,
-  /** Kompetens (D101): the catalogue a certificate is registered from. */
+  /** Entities (D97): the list per kind, one source's rows over it, one opened entity and one source's section on it. */
+  entities: {
+    all: ['entities'] as const,
+    list: (kind: string) => ['entities', kind, 'list'] as const,
+    rows: (kind: string, capability: string) => ['entities', kind, 'rows', capability] as const,
+    detail: (kind: string, key: string) => ['entities', kind, 'detail', key] as const,
+    section: (kind: string, key: string, capability: string) =>
+      ['entities', kind, 'detail', key, 'section', capability] as const,
+  },
+  /** Kompetens (D107): the catalogue a certificate is registered from, and the administrator's whole catalogue. */
   competenceTypes: ['competence', 'types'] as const,
   competenceCatalogue: ['competence', 'catalogue'] as const,
   competenceAll: ['competence'] as const,
@@ -54,6 +58,8 @@ export const keys = {
     units: ['admin', 'units'] as const,
     groups: ['admin', 'groups'] as const,
     users: ['admin', 'users'] as const,
+    /** Under `users`, so what invalidates the overview also invalidates every page of the people (D100). */
+    usersPage: (query: object) => ['admin', 'users', 'page', query] as const,
     organisation: ['admin', 'organisation'] as const,
     organisationUnit: (unitId: string) => ['admin', 'organisation', 'unit', unitId] as const,
     appearance: ['admin', 'appearance'] as const,

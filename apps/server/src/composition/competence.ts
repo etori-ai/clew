@@ -7,7 +7,7 @@ import { staff as staffUsecases } from './people';
 import { clock, ids } from './ambient';
 
 /**
- * The competence module's live wiring (D101, D25). Its own file because the registry registers the built-in competence
+ * The competence module's live wiring (D107, D25). Its own file because the registry registers the built-in competence
  * connector over what is built here, and `composition/index.ts` builds the stream over the registry: this file imports
  * neither.
  */

@@ -1,15 +1,15 @@
 # How authentication works end to end
 
-Clew has two integration lanes, and each authenticates differently. This page is the orientation before the field-level rules in [Authorize every connector request](authorization.md). Read it when deciding how a new system, such as a case system, identifies the person and accepts a write.
+This page is the orientation before the field-level rules in [Authorize every connector request](authorization.md). Read it when deciding how a new system, such as a case system, identifies the person and accepts a write.
 
-| Question | Native connector | Standard MCP service |
-|---|---|---|
-| Who tells the connector which person is acting? | Clew, with a short-lived RS256 assertion it signs | The provider's own OAuth login, per person |
-| How does the connector reach the source? | A policy the connector chooses: service credential, bound account or a delegated IdP token | The provider's OAuth token |
-| Where is a write approved? | The human decision endpoint, written to the execution ledger before dispatch | A human confirmation per App tool call |
-| Status (see the [support matrix](../reference/status.md)) | Built: assertions, transport key, callbacks, token exchange, ledger | Development gate only; provider OAuth is required by [D81](../decisions/D81-mcp-apps-extend-ai-chat-with-provider-owned-interactions.md) and not built |
+| Question | Connector |
+|---|---|
+| Who tells the connector which person is acting? | Clew, with a short-lived RS256 assertion it signs |
+| How does the connector reach the source? | A policy the connector chooses: service credential, bound account or a delegated IdP token |
+| Where is a write approved? | The human decision endpoint, written to the execution ledger before dispatch |
+| Status (see the [support matrix](../reference/status.md)) | Built: assertions, transport key, callbacks, token exchange, ledger |
 
-A case system is a native connector ([D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md)): one container per system, registered by an administrator, with reads as `read` capabilities and a note or a status change as an `execute` capability. It is not an MCP tool. The rest of this page follows a note written to a case through that lane, then states what the MCP lane has and lacks.
+A case system is a native connector ([D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md)): one container per system, registered by an administrator, with reads as `read` capabilities and a note or a status change as an `execute` capability. It is not an MCP tool. The rest of this page follows a note written to a case through a connector.
 
 ## 1. The person signs in to Clew
 
@@ -38,8 +38,8 @@ The Clew assertion identifies the person to the connector. It is not a credentia
 
 This is where "OAuth" fits the native lane: standard OIDC and token exchange against the municipality's own identity provider, not a per-vendor authorization dance. Delegation has a cost to weigh before choosing it for a case system:
 
-- A delegated token exists only while the person has a live session. Scans, figures, connector callbacks and durable executions run without one.
-- A connector that declares delegation is recorded as needing a session. An approved execute on it can stop with `needs-session` before dispatch ([executions composition](../../apps/server/src/composition/executions.ts)), and there is no sign-in-and-resume flow yet.
+- A delegated token exists only while the person has a live session. Figures, connector callbacks and the nightly scan run without one.
+- On a connector that declares delegation, an approved execute is dispatched with the token of the session that approved it, and a scan with the token of the session that asked for it, while that session is active. Without one the execute stops with `needs-session` before dispatch and the scan answers `authorization-required` ([executions composition](../../apps/server/src/composition/executions.ts), [refresh composition](../../apps/server/src/composition/refresh.ts)); there is no sign-in-and-resume flow for a write left pending.
 - A service credential with actor-scoped queries keeps scans and background writes possible. Prove the case system's background authorization path before promising either.
 
 ## 4. A note on a case is a human decision, never a tool
@@ -53,15 +53,9 @@ The model can read and propose; it cannot execute. A note the assistant drafts b
 
 A connector calling another connector during a request uses the separate `callback` grant from its assertion and may read or propose, never execute ([Call another connector](authorization.md#call-another-connector)).
 
-## The MCP chat lane
+## A source that only offers MCP
 
-The second lane consumes an existing vendor MCP server in an AI-enabled conversation ([D81](../decisions/D81-mcp-apps-extend-ai-chat-with-provider-owned-interactions.md), [architecture](../architecture/mcp-chat-services.md)). Its authentication is the provider's, not Clew's:
-
-- The person signs in to the provider through standard MCP authorization: protected-resource and authorization-server discovery, Authorization Code with PKCE, administrator-provided or dynamically registered client credentials, encrypted server-side tokens and per-person account binding. Clew's own login is not a credential the vendor accepts, and there is no fallback to an owner-level token.
-- Clew still decides who may discover and enable the service, and every tool call passes Clew's session and model gates.
-- An App's write still passes a human confirmation (`POST /api/mcp/:id/decisions`) that binds the exact tool and arguments to an immutable decision before dispatch.
-
-None of the provider OAuth is implemented. The development slice runs two synthetic providers with one identity and no login, behind `CLEW_POC=true`. Treat the lane as a prototype until the support matrix says otherwise. If a case system only offers an MCP server, the native path remains available: a connector can use MCP as its source API behind the protocol above ([Use MCP behind a native connector](../architecture/integration-paths.md#use-mcp-behind-a-native-connector)), and the connector then supplies the actor mapping and write guarantees that tool discovery alone cannot.
+If a case system only offers an MCP server, a connector can use MCP as its source API behind the protocol above ([Use MCP behind a native connector](../architecture/integration-paths.md#use-mcp-behind-a-native-connector)). The connector then supplies the actor mapping and write guarantees that tool discovery alone cannot. Consuming a vendor's MCP server directly in chat, with the provider's own OAuth login per person, was prototyped without that OAuth and removed on 2026-11-11 ([closing note](../reviews/2026-11-11-external-mcp-chat-services-exploration.md)).
 
 ## Where to go next
 

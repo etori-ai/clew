@@ -1,5 +1,53 @@
-import { dayRhythm, stockholmClock, stockholmDate, stockholmInstant, type RhythmPoint } from '@clew/contracts';
-import type { TimerIntent, WorkflowStart } from './model';
+import {
+  dayRhythm,
+  foldEntityKey,
+  sameSubject,
+  stockholmClock,
+  stockholmDate,
+  stockholmInstant,
+  type RhythmPoint,
+  type Subject,
+  type Thread,
+} from '@clew/contracts';
+import type { SubjectErasure, TimerIntent, WorkflowStart } from './model';
+
+/**
+ * What a thread is indexed under (D97 item 6): every entity its rows or the thread itself name, once each, with the key as
+ * Clew compares it (`foldEntityKey`). The thread store writes these rows with the thread's items.
+ */
+export function namedSubjects(thread: Pick<Thread, 'items' | 'subjects'>): Subject[] {
+  const out = new Map<string, Subject>();
+  for (const s of [...thread.items.flatMap(i => (i.subject ? [i.subject] : [])), ...(thread.subjects ?? [])]) {
+    const key = foldEntityKey(s.entity, s.key);
+    out.set(`${s.entity}\u0000${key}`, { entity: s.entity, key });
+  }
+  return [...out.values()];
+}
+/** The entities among `asked` that a thread's index rows name, each in the asked spelling and once. */
+export function namedAmong(named: readonly Subject[], asked: readonly Subject[]): Subject[] {
+  const out: Subject[] = [];
+  for (const a of asked) if (named.some(n => sameSubject(n, a)) && !out.some(o => sameSubject(o, a))) out.push(a);
+  return out;
+}
+/**
+ * A thread's items and own subjects without one entity (D97: erasure): each row that names it loses its `subject`, the
+ * row's text left as it is; undefined when the thread does not name it.
+ */
+export function withoutSubject(
+  thread: Pick<Thread, 'items' | 'subjects'>,
+  subject: Subject,
+): (Pick<Thread, 'items'> & { subjects: Subject[]; erased: Omit<SubjectErasure, 'cards'> }) | undefined {
+  let rows = 0;
+  const items = thread.items.map(item => {
+    if (!item.subject || !sameSubject(item.subject, subject)) return item;
+    rows++;
+    const { subject: _, ...rest } = item;
+    return rest;
+  });
+  const subjects = (thread.subjects ?? []).filter(s => !sameSubject(s, subject));
+  const cardSubjects = (thread.subjects ?? []).length - subjects.length;
+  return rows || cardSubjects ? { items, subjects, erased: { rows, cardSubjects } } : undefined;
+}
 
 /** The `durableReminder` workflow of a timer generation (D47, D86): the id every start and cancel of it uses. */
 export const reminderWorkflowId = (timer: Pick<TimerIntent, 'id' | 'generation'>) =>

@@ -42,6 +42,11 @@ export interface AuthenticatedContext extends SessionUser {
   capabilities: string[];
   /** The external ids of the provisioned groups the person is in (D68): what a connector audience's `groups` match. Absent means none. */
   groups?: string[];
+  /**
+   * The person's provisioned `userName` (D68): the key another system knows them by, signed into a connector's actor
+   * (D44, D97). Absent for a person provisioned without one. Never in `SessionUser`.
+   */
+  userName?: string;
   authorizationVersion: string;
   sessionBinding: string;
   expiresAt: string;
@@ -233,6 +238,38 @@ export const ViewRefSchema = object({
 export type ViewRef = Static<typeof ViewRefSchema>;
 
 /**
+ * The entities a source's rows can be about (D97): a closed list, as `CAPABILITIES` is. A new kind is a contract change
+ * that comes with the core rule saying who may be asked about it. A person's key is their directory `userName`, compared
+ * without regard to case (a person without one cannot be asked about); a unit's key is its unit id.
+ */
+export const ENTITY_KINDS = ['person', 'unit'] as const;
+export const EntityKind = Type.Union(
+  ENTITY_KINDS.map(kind => Type.Literal(kind)),
+  {
+    description:
+      '`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.',
+  },
+);
+export type EntityKind = (typeof ENTITY_KINDS)[number];
+export const isEntityKind = (value: string): value is EntityKind => (ENTITY_KINDS as readonly string[]).includes(value);
+const entityKey = Type.String({
+  minLength: 1,
+  maxLength: 256,
+  description: "The entity's key: a person's `userName`, a unit's id.",
+});
+/** A row that names an entity (D97 item 6): a card row, a search hit or a view field may carry one, so it links to the entity. */
+export const SubjectSchema = object(
+  { entity: EntityKind, key: entityKey },
+  'An entity a row names (D97): the web links the row to it. Clew never checks that the key exists; a reader only ever reaches an entity they may ask about.',
+);
+export type Subject = Static<typeof SubjectSchema>;
+/** A key as Clew compares it (D97): a person's user name without regard to case (RFC 7643's default), a unit's id exactly. */
+export const foldEntityKey = (entity: EntityKind, key: string) => (entity === 'person' ? key.toLowerCase() : key);
+/** Whether two subjects name the same entity. */
+export const sameSubject = (a: Subject, b: Subject) =>
+  a.entity === b.entity && foldEntityKey(a.entity, a.key) === foldEntityKey(b.entity, b.key);
+
+/**
  * A declared view (D38): how a read capability's output is shown, said by the connector as data and drawn by Clew with
  * Astryx. A closed catalogue of kinds, fields with a Swedish label and a format, and nothing else: no layout, no
  * styling, no HTML. A capability without one is drawn by the generic panel rules, as before.
@@ -267,6 +304,9 @@ export const ViewTone = Type.Union([
   Type.Literal('alert'),
   Type.Literal('none'),
 ]);
+export type ViewTone = Static<typeof ViewTone>;
+/** The key of `tones` that gives the tone of any other value that is present (D97): "2 försenade" warns, nothing does not. */
+export const ANY_TONE = '*';
 /** A word in its singular and plural (D71 amendment): "plats" and "platser", so one row reads "1 plats" and the rest "12 platser". */
 export const ViewNounSchema = object(
   {
@@ -287,7 +327,7 @@ export const ViewFieldSchema = object({
   tones: Type.Optional(
     Type.Record(Type.String({ maxLength: 40 }), ViewTone, {
       description:
-        'For `status`: the tone per value (a yes/no value is keyed `true` and `false`). A value without one is neutral; give a tone only to the value that needs the person.',
+        'For `status`: the tone per value (a yes/no value is keyed `true` and `false`). The key `*` is the tone of any other value that is present, so a count such as "2 försenade" can warn while an absent value stays neutral (D97). A value without one is neutral; give a tone only to the value that needs the person.',
     }),
   ),
   unit: Type.Optional({
@@ -295,8 +335,33 @@ export const ViewFieldSchema = object({
     description:
       'For `number`: the unit drawn after the value, so a row reads "12 platser" and never "Platser: 12". Only where the unit alone says what the number is.',
   }),
+  beside: Type.Optional(
+    Type.Literal(true, {
+      description:
+        'Drawn in the same cell or on the same line as the field before it, under that field\'s label: a state and its time ("Bokat", "tors 12 nov kl. 09:00"), a count and what is late in it ("3 öppna", "2 försenade"). Never on the first field (D97).',
+    }),
+  ),
+  compact: Type.Optional(
+    Type.Literal(true, {
+      description:
+        'The row in one value ("tors 12 nov", "Inte bokat"): drawn where there is room for one value, a column on a list or a one-line summary, and left out where the whole row is drawn, a lens, a section or a detail. At most one field of a view (D97).',
+    }),
+  ),
 });
 export type ViewField = Static<typeof ViewFieldSchema>;
+/**
+ * The tone a field gives a value (D38, D97): the tone named for the value, else the `*` tone when the value is present
+ * (not absent, null or empty), else `none`. The one reading of `tones`, for the browser and the server alike.
+ */
+export function fieldTone(field: Pick<ViewField, 'tones'>, value: unknown): ViewTone {
+  const tones = field.tones;
+  if (!tones) return 'none';
+  const named = value === undefined || value === null ? undefined : tones[String(value)];
+  if (named) return named;
+  return value === undefined || value === null || value === '' ? 'none' : (tones[ANY_TONE] ?? 'none');
+}
+/** Whether a tone means the value needs the person (D97 item 2): what makes a mark on a row. */
+export const needsPerson = (tone: ViewTone) => tone === 'warn' || tone === 'alert';
 /** What the person may type or choose above the rows: each control is bound to one property of the capability's input, and a change reads the capability again. */
 export const ViewInputSchema = object(
   {
@@ -347,6 +412,19 @@ export const ViewOpenSchema = object(
   'A row opens another read of the same connector as a view (D35, D38).',
 );
 export type ViewOpen = Static<typeof ViewOpenSchema>;
+/** A record names an entity (D97 item 6): the property holding its key, so the web links the row's title to the entity. */
+export const RecordSubjectSchema = object(
+  {
+    entity: EntityKind,
+    key: {
+      ...viewKey,
+      description:
+        "The record property holding the entity's key, a string: a person's provisioned `userName`, a unit's id.",
+    },
+  },
+  "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it; a record without the property links nowhere.",
+);
+export type RecordSubject = Static<typeof RecordSubjectSchema>;
 /**
  * What the model is handed when it calls the capability as a tool: the output, or only a summary (how many rows are
  * shown, never their content), so names and numbers reach the person through the view and neither the model nor the
@@ -389,6 +467,7 @@ const rowsView = <K extends 'table' | 'list'>(kind: K) =>
         'What a row is called, for the count in the view\'s header: "3 fakturor", "1 rum". Default "rad", "rader".',
     }),
     open: Type.Optional(ViewOpenSchema),
+    subject: Type.Optional(RecordSubjectSchema),
     input: Type.Optional(ViewInputSchema),
     empty: Type.Optional(
       Type.String({ minLength: 1, maxLength: 120, description: 'Swedish. Shown when there are no rows.' }),
@@ -461,6 +540,7 @@ export const ViewSchema = Type.Union(
         maxItems: 24,
         description: "The record's fields, in this order.",
       }),
+      subject: Type.Optional(RecordSubjectSchema),
       modelReads,
     }),
     object({
@@ -484,6 +564,14 @@ export function viewRows(view: View, output: unknown): Record<string, unknown>[]
   if (!key || !isViewRecord(output) || !Array.isArray(output[key])) return undefined;
   return (output[key] as unknown[]).filter(isViewRecord);
 }
+/**
+ * The fields of a table or list that can mark a row (D97 item 2): those giving some value a `warn` or `alert` tone. A
+ * read about an entity with one of them can mark the entity's row where an administrator chose the source.
+ */
+export const markFields = (view: View | undefined): ViewField[] =>
+  view && (view.kind === 'table' || view.kind === 'list')
+    ? view.fields.filter(f => Object.values(f.tones ?? {}).some(needsPerson))
+    : [];
 /** The view a row (or a search hit) opens: the declared read with its input taken from the row. Undefined when the row lacks a value the read needs. */
 export function openRef(open: ViewOpen, row: Record<string, unknown>, source: string): ViewRef | undefined {
   const input: Record<string, unknown> = {};
@@ -611,6 +699,8 @@ export const SearchHitSchema = object({
   reviewIntervalDays: Type.Optional(Type.Integer({ minimum: 1, maximum: 3650 })),
   /** The source's own relevance, higher is better; only compared within one source. */
   score: Type.Optional(Type.Number()),
+  /** The person or unit the hit is (D97 item 6): hits from several sources about the same one become one. */
+  subject: Type.Optional(SubjectSchema),
 });
 export type SearchHit = Static<typeof SearchHitSchema>;
 /** What `<id>.search` returns. */
@@ -625,13 +715,18 @@ export const SearchSourceSchema = object({
 export type SearchSource = Static<typeof SearchSourceSchema>;
 /** What the composite `clew.search` returns: merged hits, each marked stale or not (null when the source gives no date), and every source's status. */
 export const SearchResultSchema = object({
-  /** `view` is the read that shows this hit in the panel, when its source declares one (D38): a person's contact card, a case. */
+  /**
+   * `view` is the read that shows this hit in the panel, when its source declares one (D38): a person's contact card, a
+   * case. `sources` is set on a hit that several sources found about the same entity (D97 item 6): every source that
+   * answered for it, the hit's own first, in the order their hits came; the hit itself is the first one's.
+   */
   rows: Type.Array(
     object({
       ...SearchHitSchema.properties,
       stale: Type.Union([Type.Boolean(), Type.Null()]),
       connector: Type.String(),
       view: Type.Optional(ViewRefSchema),
+      sources: Type.Optional(Type.Array(object({ connector: Type.String(), source: Type.String() }), { minItems: 2 })),
     }),
   ),
   sources: Type.Array(SearchSourceSchema),
@@ -716,60 +811,6 @@ export const ErrandsResultSchema = object({
   unanswered: Type.Array(Type.String()),
 });
 export type ErrandsResult = Static<typeof ErrandsResultSchema>;
-/**
- * What a capability's rows may be about (D97 item 1): a closed list. A source declares the kind and never where its
- * rows show; Clew places them.
- */
-export const ENTITY_KINDS = ['person', 'unit'] as const;
-export const EntityKind = Type.Union(ENTITY_KINDS.map(kind => Type.Literal(kind)));
-export type EntityKind = (typeof ENTITY_KINDS)[number];
-/** A row about an entity: the key it was asked with and the source's own properties. */
-export type AboutRow = { key: string } & Record<string, unknown>;
-const aboutRow = Type.Unsafe<AboutRow>(Type.Object({ key: id }, { additionalProperties: true }));
-/** The most entities one read about them is asked for at a time (D97 item 7). */
-export const ABOUT_KEYS_MAX = 200;
-/**
- * What a read that declares `about` takes (D97 items 1 and 7): the keys of the entities the reader may already see. For
- * a connector in Clew's own process the key of a person is Clew's person id; the key on the wire to a remote connector
- * is not decided.
- */
-export const AboutInputSchema = object({
-  keys: Type.Array(id, { minItems: 1, maxItems: ABOUT_KEYS_MAX, uniqueItems: true }),
-});
-export type AboutInput = Static<typeof AboutInputSchema>;
-/**
- * What such a read answers, as far as Clew checks it: at most one row per key it was asked with, each carrying that
- * key. An entity the source has nothing about, or that is outside the caller's scope there, is answered as no row,
- * never as a refusal. The other properties are the source's own, drawn by its declared view.
- */
-export const AboutOutputSchema = Type.Object(
-  { rows: Type.Array(aboutRow, { maxItems: ABOUT_KEYS_MAX }) },
-  { additionalProperties: true },
-);
-export type AboutOutput = Static<typeof AboutOutputSchema>;
-/** What the composite `clew.about` takes: the kind and the entities; keys outside what the reader may see are dropped. */
-export const AboutQuerySchema = object({
-  kind: EntityKind,
-  keys: Type.Array(id, { minItems: 1, maxItems: ABOUT_KEYS_MAX }),
-});
-export type AboutQuery = Static<typeof AboutQuerySchema>;
-/**
- * What `clew.about` returns (D97 items 2, 5 and 7): one section per source that declares a read about the kind and is
- * visible to the reader, in the order of the sources' names. A source that did not answer in time or answered what it
- * was not asked says so in its own section and the rest stand.
- */
-export const AboutSectionSchema = object({
-  connector: id,
-  source: Type.String({ description: 'Swedish. The source as a person reads it.' }),
-  capability: Type.String({ description: 'The read that answered, by full name.' }),
-  title: Type.String({ description: "Swedish. The read's title." }),
-  view: Type.Unsafe<View>(Type.Unknown({ description: "The read's declared view (D38), which draws a row." })),
-  status: Type.Union([Type.Literal('ok'), Type.Literal('timeout'), Type.Literal('unavailable')]),
-  rows: Type.Array(aboutRow, { maxItems: ABOUT_KEYS_MAX }),
-});
-export type AboutSection = Static<typeof AboutSectionSchema>;
-export const AboutResultSchema = object({ kind: EntityKind, sections: Type.Array(AboutSectionSchema) });
-export type AboutResult = Static<typeof AboutResultSchema>;
 /** A calendar day, `YYYY-MM-DD`, read in Swedish time: a round's dates, the day a talk was held, an action point's due date. */
 const calendarDay = Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$', maxLength: 10 });
 /** A user's account name as provisioned (SCIM `userName`, D68): what another system knows a person by, since it cannot know Clew's ids. */
@@ -925,8 +966,159 @@ export const CommitmentAddBodySchema = object({
   dueOn: calendarDay,
 });
 export type CommitmentAddBody = Static<typeof CommitmentAddBodySchema>;
+
+/** The most keys Clew sends in one call to a read about an entity (D97 item 7); a longer list is split. */
+export const ENTITY_KEYS_MAX = 200;
+/** The most columns "Alla" shows for one entity kind across the installation (D97 item 4), chosen by an administrator. */
+export const ENTITY_COLUMNS_MAX = 3;
 /**
- * What a competence type is (D101 item 2). A closed list: a certificate and a competence are one record, a holding, and
+ * What a capability's rows concern (D97 item 1). A source says what, never where: Clew places it from the declaration.
+ * `param` only on a propose or execute: the input property that takes the key.
+ */
+export const AboutSchema = object(
+  {
+    entity: EntityKind,
+    param: Type.Optional({
+      ...viewKey,
+      description:
+        'On a `propose` or `execute` only: the string property of the input that takes the key of the one entity it acts on. A read takes its keys in `keys` and declares none.',
+    }),
+  },
+  "What the rows concern (D97). A `read` takes `{ keys }` (an array of at most 200 strings, required) and answers `rows` (or its view's rows), one per key it knows, each with a string `key` it was asked with; a key outside the caller's scope is answered as no row, never as a refusal. It declares a `table` or `list` view, is never a tool (`model: false`), and may answer `heading` and `note`, two strings beside the rows. A `propose` or `execute` names in `param` the input property that takes one key. Clew decides where it shows: an action in the entity's menu, a read as a section on the opened entity, a `warn` or `alert` tone as a mark on its row, a table or list as a lens an administrator may offer.",
+);
+export type About = Static<typeof AboutSchema>;
+/**
+ * A page of an owned domain where the person writes about one entity (D95, D96): a core connector's in-process `about`
+ * may name one, never a remote manifest. `href` may hold `{key}` and `{id}`, which the web fills in.
+ */
+export const EntityPageSchema = object({
+  title: Type.String({ minLength: 1, maxLength: 60 }),
+  href: Type.String({ minLength: 1, maxLength: 200, pattern: '^/' }),
+});
+export type EntityPage = Static<typeof EntityPageSchema>;
+/** How one source answered for a list or a section: it answered, it did not, or not in time. */
+const entityAnswer = Type.Union([Type.Literal('ok'), Type.Literal('unavailable'), Type.Literal('timeout')]);
+/** An entity as the browser gets it (D97). `detail` is one line ("Lärare 4–6 · Bergsåkers skola") when known; `id` is Clew's own id, never sent to a connector. */
+export const EntityRefSchema = object({
+  kind: EntityKind,
+  key: entityKey,
+  name: Type.String(),
+  detail: Type.Optional(Type.String()),
+  id: Type.Optional(id),
+});
+export type EntityRef = Static<typeof EntityRefSchema>;
+/**
+ * The source is Clew's own domain (D97): a core connector of Clew's, such as the talks module. A section and a lens's
+ * fact line then name it "Clew", while a column's second line and the row menu's group keep its `source`.
+ */
+const own = Type.Optional(Type.Literal(true));
+/** A read about an entity kind as a lens or a section (D97): whose it is, the connector's Swedish `source`, its view, and, for Clew's own domain, the page where the person writes. */
+export const EntitySourceSchema = object({
+  capability: Type.String(),
+  connector: Type.String(),
+  source: Type.String(),
+  title: Type.String(),
+  view: ViewSchema,
+  page: Type.Optional(EntityPageSchema),
+  own,
+});
+export type EntitySource = Static<typeof EntitySourceSchema>;
+/** One column on "Alla" (D97 item 4): one field of a source's view, chosen by an administrator. */
+export const EntityColumnSchema = object({
+  capability: Type.String(),
+  source: Type.String(),
+  title: Type.String(),
+  field: ViewFieldSchema,
+  own,
+});
+export type EntityColumn = Static<typeof EntityColumnSchema>;
+/** An action about an entity (D97): it shows in the entity's menu and runs through the human decision as every propose and execute does. */
+export const EntityActionSchema = object({
+  capability: Type.String(),
+  connector: Type.String(),
+  source: Type.String(),
+  title: Type.String(),
+  kind: Type.Union([Type.Literal('propose'), Type.Literal('execute')]),
+  param: Type.String(),
+  own,
+});
+export type EntityAction = Static<typeof EntityActionSchema>;
+/** `GET /api/entities/:kind`: the entities the reader may ask about, in groups (for a person, one per unit the reader manages), with the administrator's columns and lenses and the actions. */
+/**
+ * "Just nu" on the list (D97 item 5): for one entity, how many of the reader's cards that name it wait for the reader's
+ * decision (`act`) or are Clew's proposals (`proposals`), and the card when there is exactly one of those, so "1 att agera
+ * på" opens it. An entity without such a card is absent.
+ */
+export const EntityAttentionSchema = object({
+  key: entityKey,
+  act: Type.Integer({ minimum: 0 }),
+  proposals: Type.Integer({ minimum: 0 }),
+  threadId: Type.Optional(id),
+});
+export type EntityAttention = Static<typeof EntityAttentionSchema>;
+export const EntityListSchema = object({
+  kind: EntityKind,
+  groups: Type.Array(object({ id: Type.String(), label: Type.String(), entities: Type.Array(EntityRefSchema) })),
+  columns: Type.Array(EntityColumnSchema, { maxItems: ENTITY_COLUMNS_MAX }),
+  lenses: Type.Array(EntitySourceSchema),
+  actions: Type.Array(EntityActionSchema),
+  attention: Type.Array(EntityAttentionSchema),
+});
+export type EntityList = Static<typeof EntityListSchema>;
+/** `GET /api/entities/:kind/rows?capability=`: one source over every entity the reader may ask about. Each row carries `key`; an entity without a row is absent. */
+export const EntityRowsSchema = object({
+  capability: Type.String(),
+  status: entityAnswer,
+  rows: Type.Array(Type.Record(Type.String(), Type.Unknown())),
+  heading: Type.Optional(Type.String()),
+  note: Type.Optional(Type.String()),
+});
+export type EntityRows = Static<typeof EntityRowsSchema>;
+/** A card of the reader's whose rows name the entity: "Behöver dig" on the opened entity (D97 item 5). */
+export const EntityCardSchema = object({
+  threadId: id,
+  title: Type.String(),
+  source: Type.String(),
+  kind: Type.Union([Type.Literal('act'), Type.Literal('proposal'), Type.Literal('fyi')]),
+});
+export type EntityCard = Static<typeof EntityCardSchema>;
+/** `GET /api/entities/:kind/:key`: the opened entity, how the reader stands to it, its actions, one section per source and the cards about it. */
+export const EntityDetailSchema = object({
+  entity: object({
+    ...EntityRefSchema.properties,
+    unit: Type.Optional(object({ id: Type.String(), label: Type.String() })),
+  }),
+  relation: Type.Union([
+    Type.Literal('managed'),
+    Type.Literal('self'),
+    Type.Literal('colleague'),
+    Type.Literal('member'),
+  ]),
+  actions: Type.Array(EntityActionSchema),
+  sections: Type.Array(EntitySourceSchema),
+  cards: Type.Array(EntityCardSchema),
+});
+export type EntityDetail = Static<typeof EntityDetailSchema>;
+/** `GET /api/entities/:kind/:key/section?capability=`: one source's answer for one entity. */
+export const EntitySectionSchema = object({
+  capability: Type.String(),
+  status: entityAnswer,
+  row: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+});
+export type EntitySection = Static<typeof EntitySectionSchema>;
+/** `POST /api/entities/:kind/:key/actions`: start one of the entity's actions (D97, D8), named as `EntityAction.capability`. */
+export const EntityActionInputSchema = object({
+  capability: Type.String({ minLength: 3, maxLength: 120 }),
+});
+export type EntityActionInput = Static<typeof EntityActionInputSchema>;
+/**
+ * What starting an action about an entity gave: the card the person decides on, opened as Hem opens a card. The same
+ * request while that card is open gives the same card; nothing has reached a source's write.
+ */
+export const EntityActionStartedSchema = object({ threadId: id });
+export type EntityActionStarted = Static<typeof EntityActionStartedSchema>;
+/**
+ * What a competence type is (D107 item 2). A closed list: a certificate and a competence are one record, a holding, and
  * the kind says which the type is.
  */
 export const COMPETENCE_KINDS = ['certificate', 'degree', 'course', 'authorisation'] as const;
@@ -939,7 +1131,7 @@ export const CompetenceKind = Type.Union(
 );
 export type CompetenceKind = (typeof COMPETENCE_KINDS)[number];
 /**
- * Where a holding stands on a day (D101 item 4), computed when read and never stored. The order here is the order a
+ * Where a holding stands on a day (D107 item 4), computed when read and never stored. The order here is the order a
  * list is drawn in: what needs a person first.
  */
 export const COMPETENCE_STATUSES = ['expired', 'expiring', 'valid'] as const;
@@ -951,13 +1143,13 @@ export const CompetenceStatus = Type.Union(
   },
 );
 export type CompetenceStatus = (typeof COMPETENCE_STATUSES)[number];
-/** How a holding is attested (D101 items 7 and 9): read from a system, registered by a manager, or the person's own word. */
+/** How a holding is attested (D107 items 7 and 9): read from a system, registered by a manager, or the person's own word. */
 export const COMPETENCE_EVIDENCE = ['system', 'manager', 'self'] as const;
 export type CompetenceEvidence = (typeof COMPETENCE_EVIDENCE)[number];
 const competenceName = Type.String({ minLength: 1, maxLength: 120 });
 const competenceArea = Type.String({ minLength: 1, maxLength: 80 });
 const validityMonths = Type.Integer({ minimum: 1, maximum: 600 });
-/** One row of the catalogue (D101 item 2) as the administration and the registration form list it. */
+/** One row of the catalogue (D107 item 2) as the administration and the registration form list it. */
 export const CompetenceTypeSchema = object(
   {
     id: id,
@@ -970,12 +1162,12 @@ export const CompetenceTypeSchema = object(
     }),
     archived: Type.Boolean({ description: 'An archived type takes no new holdings; the ones it has stay.' }),
   },
-  'A competence type in the catalogue (D101).',
+  'A competence type in the catalogue (D107).',
 );
 export type CompetenceType = Static<typeof CompetenceTypeSchema>;
 export const CompetenceTypesOutputSchema = object({ rows: Type.Array(CompetenceTypeSchema, { maxItems: 2000 }) });
 export type CompetenceTypesOutput = Static<typeof CompetenceTypesOutputSchema>;
-/** One holding as a read lists it (D101): who, what, since when, until when and where it stands today. */
+/** One holding as a read lists it (D107): who, what, since when, until when and where it stands today. */
 export const CompetenceHoldingRowSchema = object(
   {
     ref: Type.String({
@@ -997,7 +1189,7 @@ export const CompetenceHoldingRowSchema = object(
     status: CompetenceStatus,
     evidence: Type.Union(COMPETENCE_EVIDENCE.map(e => Type.Literal(e))),
   },
-  'One holding of one person (D101).',
+  'One holding of one person (D107).',
 );
 export type CompetenceHoldingRow = Static<typeof CompetenceHoldingRowSchema>;
 /** What `competence.holdings` takes: a person the reader manages, by user name (or id when they have none); absent for the reader's own. */
@@ -1013,33 +1205,10 @@ export const CompetenceAttentionInputSchema = object({});
 export type CompetenceAttentionInput = Static<typeof CompetenceAttentionInputSchema>;
 export const CompetenceAttentionOutputSchema = object(
   { rows: Type.Array(CompetenceHoldingRowSchema, { maxItems: 500 }) },
-  "What has expired or expires within 90 days among the reader's reports (D101 item 11), the expired first.",
+  "What has expired or expires within 90 days among the reader's reports (D107 item 11), the expired first.",
 );
 export type CompetenceAttentionOutput = Static<typeof CompetenceAttentionOutputSchema>;
-/**
- * Where one person stands as `competence.standing` answers it, a read about a person (D97 item 1): the worst status
- * among their holdings and how many have run out or soon will. A person with no holding has no row.
- */
-export const CompetenceStandingRowSchema = object(
-  {
-    key: { ...id, description: 'The person the row is about, by the key it was asked with.' },
-    person: {
-      ...userName,
-      description: "The person's user name, or their id when they have none: what `competence.holdings` takes.",
-    },
-    status: CompetenceStatus,
-    expired: Type.Integer({ minimum: 0, description: 'Holdings whose end date has passed.' }),
-    expiring: Type.Integer({ minimum: 0, description: 'Holdings that end within 90 days.' }),
-    holdings: Type.Integer({ minimum: 1, description: 'Holdings that count, one per type.' }),
-  },
-  'Where one person stands (D101, D97).',
-);
-export type CompetenceStandingRow = Static<typeof CompetenceStandingRowSchema>;
-export const CompetenceStandingOutputSchema = object({
-  rows: Type.Array(CompetenceStandingRowSchema, { maxItems: ABOUT_KEYS_MAX }),
-});
-export type CompetenceStandingOutput = Static<typeof CompetenceStandingOutputSchema>;
-/** An administrator adds a type to the catalogue (D101 item 2). */
+/** An administrator adds a type to the catalogue (D107 item 2). */
 export const CompetenceTypeBodySchema = object({
   name: competenceName,
   area: competenceArea,
@@ -1055,14 +1224,14 @@ export const CompetenceTypePatchSchema = object({
   validityMonths: Type.Optional(Type.Union([validityMonths, Type.Null()])),
 });
 export type CompetenceTypePatch = Static<typeof CompetenceTypePatchSchema>;
-/** What a change of a type's validity would do to the holdings counted from it (D101 item 3), before it is confirmed. */
+/** What a change of a type's validity would do to the holdings counted from it (D107 item 3), before it is confirmed. */
 export interface CompetenceValidityImpact {
   /** Holdings that end by the rule: the ones with no date of the issuer's. */
   holdings: number;
   expiredBefore: number;
   expiredAfter: number;
 }
-/** A manager registers a certificate for a person who reports to them (D101 item 7). */
+/** A manager registers a certificate for a person who reports to them (D107 item 7). */
 export const CompetenceHoldingBodySchema = object({
   typeId: id,
   issuedOn: calendarDay,
@@ -1168,6 +1337,11 @@ export const ThreadItemSchema = object({
   detail: Type.String(),
   selectable: Type.Boolean(),
   selected: Type.Boolean(),
+  subject: Type.Optional({
+    ...SubjectSchema,
+    description:
+      "The person or unit the row is about (D97 item 6): the web links the row to it, and the card shows on that entity for its owner. A key, never a name; the row's text stays the source's. Clew does not check that the key exists.",
+  }),
 });
 export type ThreadItem = Static<typeof ThreadItemSchema>;
 /** One action slot on a card (thread action contract). Connectors contribute actions, never layout. */
@@ -1276,6 +1450,12 @@ export const ThreadSchema = object({
   /** One sentence the card leads with. */
   summary: Type.String(),
   items: Type.Array(ThreadItemSchema),
+  /**
+   * The entities a card of Clew's own is about while none of its rows may name them (D97 item 6, D96 item 6): an action
+   * point's card is about the employee of the talk. Never drawn on the card and never read by the assistant; it only
+   * places the card under "Behöver dig" on that entity for its owner.
+   */
+  subjects: Type.Optional(Type.Array(SubjectSchema, { maxItems: 20 })),
   actions: Type.Array(ThreadActionSchema),
   /** Set when the thread waits on someone else: it is listed under "Pågår utan dig" and never notifies. */
   waitingOn: Type.Union([Type.String(), Type.Null()]),
@@ -1575,7 +1755,7 @@ export type Role = Static<typeof RoleSchema>;
  * The grant capabilities Clew enforces (D85): a closed list. A group mapping, a `capability:` group key or the development
  * seed may name nothing else; a new name is a contract change. `admin.connectors` administers connected systems (D23),
  * `admin.users` the users page and the group-to-capability mapping (D85), `admin.appearance` the installation's theme
- * and logo (D98), `admin.competence` the catalogue of competence types (D101 item 8).
+ * and logo (D98), `admin.competence` the catalogue of competence types (D107 item 8).
  */
 export const CAPABILITIES = ['admin.connectors', 'admin.users', 'admin.appearance', 'admin.competence'] as const;
 export type Capability = (typeof CAPABILITIES)[number];
@@ -1595,7 +1775,6 @@ export interface UserAdminRow {
   /** The assignment the person acts as, from the grant projection; null when the person has no unit. */
   active: { unitId: string; unitLabel: string; role: Role } | null;
   capabilities: string[];
-  groups: Array<{ externalId: string | null; label: string }>;
 }
 /** Personal (D94): a person on a unit the signed-in manager manages, as the page lists them. No token, no subject. */
 export interface StaffPerson {
@@ -1675,16 +1854,64 @@ export interface GroupCapability {
   capability: Capability;
 }
 export interface UsersAdminOverview {
-  users: UserAdminRow[];
   groupCapabilities: GroupCapability[];
   /** The provisioned groups with an external id, as the editor offers them. */
   groups: Array<{ id: string; label: string }>;
   capabilities: Capability[];
   /**
+   * The organisation's units as the people list offers them to narrow by (D100): the nodes of the tree (D99), by label
+   * in Swedish order. `parentLabel` tells two units with one name apart; null on a root.
+   */
+  units: Array<{ id: string; label: string; parentLabel: string | null }>;
+  /**
    * The clients that push people into this organisation (D68) and when each was last heard from. `silent` is the
    * server's reading of that time: never seen, or not for two days, where a push is due daily.
    */
   provisioners: Array<{ id: string; label: string; lastSeenAt: string | null; silent: boolean }>;
+}
+/**
+ * D100: what a person's row says about their access, as the people list narrows by it. `disabled` is a deactivated
+ * person; of the others, `no-access` has no unit and so no grant (D68), and the two remaining say whether an identity
+ * binding exists. The words are addresses (D43), so English.
+ */
+export const USER_STATUSES = ['signed-in', 'not-signed-in', 'no-access', 'disabled'] as const;
+export type UserStatus = (typeof USER_STATUSES)[number];
+/** D100: how many people a page of the list may hold; the first is the default. */
+export const USERS_PAGE_SIZES = [25, 50, 100] as const;
+/**
+ * D100: the most a question about the people may hold. The page holds what it sends to the same limits, so that
+ * nothing a person types or an address names is refused as a malformed request.
+ */
+export const USERS_QUERY_LIMITS = { text: 200, unitId: 512, page: 1_000_000 } as const;
+/**
+ * D100: one page of Administration › Användare, asked for in a request body so that a searched name is never part of
+ * an address. Every part narrows the list further. `text` is words matched without regard to case against name, user
+ * name and e-mail, each word in one of them. `unitId` is a unit with everything below it in the tree. `role` is a role
+ * on some unit, and with `unitId` on one of those units.
+ */
+export const UsersAdminQuery = Type.Object(
+  {
+    text: Type.Optional(Type.String({ maxLength: USERS_QUERY_LIMITS.text })),
+    unitId: Type.Optional(Type.String({ minLength: 1, maxLength: USERS_QUERY_LIMITS.unitId })),
+    role: Type.Optional(RoleSchema),
+    status: Type.Optional(Type.Union(USER_STATUSES.map(s => Type.Literal(s)))),
+    capability: Type.Optional(CapabilitySchema),
+    page: Type.Optional(Type.Integer({ minimum: 1, maximum: USERS_QUERY_LIMITS.page })),
+    pageSize: Type.Optional(Type.Union(USERS_PAGE_SIZES.map(n => Type.Literal(n)))),
+  },
+  { additionalProperties: false },
+);
+export type UsersAdminQueryType = Static<typeof UsersAdminQuery>;
+/** D100: one page of the people list, by name in Swedish order. */
+export interface UsersAdminPage {
+  rows: UserAdminRow[];
+  /** How many people the query matches, across every page. */
+  total: number;
+  /** How many people the organisation has, whatever the query. */
+  all: number;
+  /** The page that was read, 1-based: the one asked for, or the last one when the list has become shorter than that. */
+  page: number;
+  pageSize: number;
 }
 export const GroupCapabilityInput = Type.Object(
   { groupExternalId: Type.String({ minLength: 1, maxLength: 512 }), capability: CapabilitySchema },
@@ -1731,12 +1958,15 @@ export const CapabilitySwitchSchema = object({
 /**
  * What is stored per capability: the two narrowing switches, and `menu: true` when the administrator put the capability's
  * view in the menu (D40). The menu is a place, not access, so it is the one value that is switched on, and only for a
- * view that can be a tool.
+ * view that can be a tool. A read about an entity has two more places an administrator chooses (D97): `lens: true`
+ * offers it under Visa on the entity's list, and `column` names the one field of its view shown on "Alla".
  */
 export const CapabilityOverrideSchema = object({
   enabled: Type.Optional(Type.Literal(false)),
   model: Type.Optional(Type.Literal(false)),
   menu: Type.Optional(Type.Literal(true)),
+  lens: Type.Optional(Type.Literal(true)),
+  column: Type.Optional({ ...viewKey, description: 'The key of the field of the view shown as a column on "Alla".' }),
 });
 export type CapabilityOverride = Static<typeof CapabilityOverrideSchema>;
 /** What is stored per area of a connector (D54): `figure: false` when the administrator switched its figure off on Hem. Narrowing only. */
@@ -1760,6 +1990,10 @@ export const ConnectorPatchInput = Type.Partial(
     url: connectorUrl,
     /** Views in the menu (D40), by capability name: true puts the view under Verktyg, false takes it out. */
     menu: Type.Record(Type.String({ maxLength: 80 }), Type.Boolean()),
+    /** Lenses on an entity's list (D97), by capability name: true offers the read under Visa, false takes it out. */
+    lens: Type.Record(Type.String({ maxLength: 80 }), Type.Boolean()),
+    /** Columns on "Alla" (D97), by capability name: the key of the view field shown, null takes the column out. */
+    column: Type.Record(Type.String({ maxLength: 80 }), Type.Union([viewKey, Type.Null()])),
     /** Figures on Hem (D54), by area id: false switches the area's figure off for the connector's audience, true back on. */
     figures: Type.Record(Type.String({ maxLength: 80 }), Type.Boolean()),
   }),
@@ -1803,6 +2037,16 @@ export interface ConnectorCapabilityView {
   tool: boolean;
   /** The row this capability's view would be in the menu (D40) and whether it is there; null when it cannot be a tool (not a read with a view that opens without input). */
   menu: { label: string; icon: MenuIcon; on: boolean } | null;
+  /** The entity kind its rows concern (D97); absent when it declares no `about`. */
+  about?: EntityKind;
+  /** A read about an entity offered under Visa on the entity's list (D97 item 3) and whether it is; absent when it cannot be a lens. */
+  lens?: { on: boolean };
+  /**
+   * A read about an entity as a column on "Alla" (D97 item 4): the fields of its view it may give and the one shown, null
+   * for none; absent when it cannot give a column. At most `ENTITY_COLUMNS_MAX` are shown for one entity kind across the
+   * installation, which the server enforces.
+   */
+  column?: { fields: Array<{ key: string; label: string }>; on: string | null };
 }
 export interface ConnectorAreaView {
   id: string;
@@ -2319,7 +2563,6 @@ export interface SiteHeaderView {
   /** The connector the header came from, or null for the default. */
   source: { id: string; label: string } | null;
 }
-export type { McpTool, McpResult, McpWatch, McpRegistration, McpDelivery, McpService, McpView } from './mcp';
 
 // Named one by one: the server runs under Node through tsx, where a star re-export's names are not visible to an importer.
 export {

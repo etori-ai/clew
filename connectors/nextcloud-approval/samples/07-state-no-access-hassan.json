@@ -1,0 +1,31 @@
+{
+  "description": "The same file read by Hassan, an approver of the rule without access to it: 0 (nothing).",
+  "as": "hassan",
+  "request": {
+    "method": "GET",
+    "path": "/ocs/v2.php/apps/approval/api/v1/state/625",
+    "headers": {
+      "Authorization": "Bearer <exchanged access token, aud nextcloud, hassan>",
+      "OCS-APIRequest": "true",
+      "Accept": "application/json"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "ocs": {
+        "meta": {
+          "status": "ok",
+          "statuscode": 200,
+          "message": "OK"
+        },
+        "data": {
+          "state": 0
+        }
+      }
+    }
+  }
+}

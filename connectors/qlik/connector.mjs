@@ -4,7 +4,7 @@
 import { createHash } from 'node:crypto';
 import { createVerifier } from './verification.mjs';
 import { StatisticsUnavailable, createFixtureStatistics, fixtureUnitMap } from './statistics.mjs';
-import { manifest, unitRefPattern } from './manifest.mjs';
+import { KEYS_MAX, manifest, unitRefPattern } from './manifest.mjs';
 
 export { manifest };
 
@@ -135,6 +135,45 @@ export function createConnector({
       const periods = [...new Set(data.rows.filter(r => r.unit === unit).map(r => r.period))].sort().reverse();
       output.rows = periods.slice(0, 12).map(period => ({ ref: 'month:' + period, ...present(data, unit, period) }));
       return output;
+    },
+
+    // A read about a unit (D97): Clew's unit ids, at most KEYS_MAX. Only the manager's own unit is in scope, through
+    // the unit map; any other id, or one asked twice, is no row and never a refusal. Per unit the latest closed month of
+    // the first source unit with a rate to show, as the figure takes it, or the first one with the reason it is not shown.
+    'qlik.unit': async (actor, input) => {
+      requireManager(actor);
+      const keys = input.keys;
+      if (
+        Object.keys(input).some(k => k !== 'keys') ||
+        !Array.isArray(keys) ||
+        keys.length > KEYS_MAX ||
+        keys.some(k => typeof k !== 'string' || !k || k.length > 256)
+      )
+        throw new Invalid('Ogiltig förfrågan.');
+      const units = unitsOf(actor);
+      if (!units.length || !keys.includes(actor.unitId)) return { rows: [] };
+      const data = await read();
+      const latest = latestFor(data, units);
+      if (!latest) return { rows: [] };
+      const shown = units.map(unit => ({ unit, ...present(data, unit, latest) }));
+      const pick = shown.find(s => s.total !== undefined) ?? shown[0];
+      const watch = typeof warnAbove === 'number' && pick.total !== undefined && pick.total >= warnAbove;
+      return {
+        rows: [
+          {
+            key: actor.unitId,
+            ref: refOf(pick.unit),
+            unit: pick.unit,
+            month: pick.month,
+            ...(pick.total !== undefined ? { total: pick.total } : {}),
+            ...(watch ? { watch: 'Bevaka' } : {}),
+            ...(pick.lastYear !== undefined ? { lastYear: pick.lastYear } : {}),
+            ...(pick.change !== undefined ? { change: pick.change } : {}),
+            ...(pick.headcount !== undefined ? { headcount: pick.headcount } : {}),
+            ...(pick.note ? { note: pick.note } : {}),
+          },
+        ],
+      };
     },
   };
 

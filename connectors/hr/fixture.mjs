@@ -1,7 +1,9 @@
 // The generic HR system's records (D52: a kind of system, no vendor; every name is made up). The records are generated
 // from the day the fixture is seeded, so the scenarios hold whenever a developer starts the stack: three short absences
 // within the rehab rule's window, two leave requests waiting, a delegation about to expire, a long sick leave and a vab
-// running today. Refs are stable; only the dates move with the seed day. Reseed with FIXTURE_RESEED=true.
+// running today, and a sick report made this morning. Refs are stable; only the dates move with the seed day. Reseed
+// with FIXTURE_RESEED=true. An employee's `personId` is their user name; the people the development directory has on
+// Bergsåkers skola carry the ones it gives them.
 
 export const UNIT = 'unit-skola';
 export const WARD = 'Björken';
@@ -15,6 +17,18 @@ export const addDays = (day, n) => new Date(Date.parse(day + 'T12:00:00Z') + n *
 export const daysBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
 export const shortDate = day =>
   new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'short' }).format(new Date(day + 'T12:00:00'));
+const dayAndMonth = day =>
+  new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+    .formatToParts(new Date(day + 'T12:00:00Z'))
+    .map(p => (p.type === 'month' ? p.value.replace(/\.$/, '') : p.value))
+    .join('');
+/** A period as a line reads it, without the month's full stop: "21 dec", "21–23 dec", "30 dec–2 jan". */
+export function period(from, to = from) {
+  if (to === from) return dayAndMonth(from);
+  const [a, b] = [dayAndMonth(from), dayAndMonth(to)];
+  const month = s => s.split(' ').slice(1).join(' ');
+  return month(a) === month(b) && from.slice(0, 4) === to.slice(0, 4) ? `${a.split(' ')[0]}–${b}` : `${a}–${b}`;
+}
 export const isWeekday = day => {
   const n = new Date(day + 'T12:00:00Z').getUTCDay();
   return n >= 1 && n <= 5;
@@ -45,6 +59,15 @@ export function seed(today) {
     employee(1010, 'mona', 'Mona Berg', 'Skoladministratör'),
     employee(1011, 'jonas', 'Jonas Kask', 'Lärare'),
     employee(1012, 'aisha', 'Aisha El Amin', 'Kurator'),
+    // The rest of Bergsåkers skola in the development directory, by the user names it gives them, so every person on
+    // the manager's Personal has an answer from `hr.person` (D97).
+    employee(1013, 'karin', 'Karin Lindqvist', 'Lärare'),
+    employee(1014, 'lars.bergstrom', 'Lars Bergström', 'Lärare'),
+    employee(1015, 'maria.eriksson', 'Maria Eriksson', 'Lärare'),
+    employee(1016, 'omar.hosseini', 'Omar Hosseini', 'Fritidspedagog'),
+    employee(1017, 'petra.karlsson', 'Petra Karlsson', 'Lärare'),
+    employee(1018, 'sven.lundgren', 'Sven Lundgren', 'Lärare'),
+    employee(1019, 'yusuf.lindqvist', 'Yusuf Lindqvist', 'Elevassistent'),
   ];
   /** Inclusive dates. `short` is sjuk up to 14 days, `vab`, `long` is sjukskrivning. */
   const absences = [
@@ -56,6 +79,8 @@ export function seed(today) {
     { employee: 'hr:emp:1008', from: d(-1), to: d(-1), kind: 'short' },
     { employee: 'hr:emp:1011', from: d(-1), to: d(0), kind: 'vab' },
     { employee: 'hr:emp:1002', from: d(-51), to: d(-50), kind: 'short' },
+    // Erik reported sick this morning: the first day of a short absence (Personal's "Sjuk · dag 1").
+    { employee: 'hr:emp:1002', from: d(0), to: d(0), kind: 'short' },
   ];
   const leaveRequests = [
     {

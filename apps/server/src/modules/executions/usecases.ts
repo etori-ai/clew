@@ -42,7 +42,9 @@ type ApproveInput = {
   compensates?: string;
   presentation?: Execution['presentation'];
 };
-export function executionUsecases({ store, source, watch, clock, ids, digest, review }: ExecutionDeps) {
+/** Which of the person's kept sessions stood behind a call to a connector that acts as them (D26); what the audit records instead of a binding. */
+type Backing = 'approving' | 'checking';
+export function executionUsecases({ store, source, sessions, watch, clock, ids, digest, review }: ExecutionDeps) {
   /** Everything an approval needs before its transaction: authority, the source's write safety and, for an undo, the compensation rule. No I/O on the store beyond reading the original. */
   async function prepare(persona: AuthenticatedContext, input: ApproveInput, at: string): Promise<Execution> {
     if (!DECISION.test(input.decisionId)) throw new ExecutionError('Ogiltigt beslut.');
@@ -62,6 +64,9 @@ export function executionUsecases({ store, source, watch, clock, ids, digest, re
       if (digest(input.payload) !== digest(undoInputOf(original!)))
         throw new ExecutionError('Ångra måste gälla exakt den bekräftade åtgärden.');
     }
+    // A connector that acts as the person (D26): the signed-in session that approves is the one that may stand behind the
+    // dispatch. Without one (or without a port to find it again) the write waits for a session, as it always did.
+    const approvingSession = access.needsSession && sessions && persona.delegate ? persona.sessionBinding : null;
     return {
       id: ids(),
       decisionId: input.decisionId,
@@ -82,7 +87,7 @@ export function executionUsecases({ store, source, watch, clock, ids, digest, re
       safety: access.safety,
       ...(input.presentation ? { presentation: input.presentation } : {}),
       state: 'pending',
-      reason: access.needsSession ? 'needs-session' : null,
+      reason: access.needsSession && !approvingSession ? 'needs-session' : null,
       result: null,
       compensates: input.compensates ?? null,
       createdAt: at,
@@ -91,6 +96,8 @@ export function executionUsecases({ store, source, watch, clock, ids, digest, re
       dispatchedAt: null,
       attempt: 0,
       leaseUntil: null,
+      approvingSession,
+      checkingSession: null,
     };
   }
   /** One approved intent into the ledger: the row, its audit and its workflow start (D86), or the existing row for the same decision. Composable, so a job commits its steps in one transaction. */
@@ -110,6 +117,7 @@ export function executionUsecases({ store, source, watch, clock, ids, digest, re
           operation: execution.operation,
           digest: execution.digest,
           compensates: execution.compensates,
+          ...(execution.approvingSession ? { session: 'approving' } : {}),
         },
       });
       await tx.enqueue(executionStart('execution:' + execution.id, execution.id));
@@ -427,15 +435,27 @@ export function executionUsecases({ store, source, watch, clock, ids, digest, re
     const matched = seen(output, step.expect, digest);
     return settleWatch(matched ? 'seen' : 'waiting', null, { check, at, seen: matched });
   }
-  async function read(persona: AuthenticatedContext, id: string) {
+  /** The execution and its source's current answer, while the persona may read it (D75, D77). */
+  async function readable(persona: AuthenticatedContext, id: string) {
     const e = await store.read(id);
     if (!e || !retainsAuthority(persona, e)) return undefined;
     await persona.authorize();
-    if ((await source.authorize(persona, e.operation, e.payload)).connector !== e.connector) return undefined;
+    const access = await source.authorize(persona, e.operation, e.payload);
+    if (access.connector !== e.connector) return undefined;
     await persona.authorize();
-    return executionView(e);
+    return { e, access };
   }
-  async function settle(e: Execution, state: Execution['state'], reason: string | null, result?: ExecuteResult | null) {
+  async function read(persona: AuthenticatedContext, id: string) {
+    const found = await readable(persona, id);
+    return found && executionView(found.e);
+  }
+  async function settle(
+    e: Execution,
+    state: Execution['state'],
+    reason: string | null,
+    result?: ExecuteResult | null,
+    backing?: Backing,
+  ) {
     const at = clock().toISOString();
     return store.transaction(async tx => {
       const current = await tx.lock(e.id);
@@ -448,9 +468,35 @@ export function executionUsecases({ store, source, watch, clock, ids, digest, re
         action: 'execution.' + state,
         subject: 'execution:' + e.id,
         at,
-        details: { attempt: e.attempt, reason, outcomes: evidence?.rows.map(row => row.outcome) ?? [] },
+        details: {
+          attempt: e.attempt,
+          reason,
+          outcomes: evidence?.rows.map(row => row.outcome) ?? [],
+          ...(backing ? { session: backing } : {}),
+        },
       });
     });
+  }
+  /**
+   * The person's own live session behind work on a connector that acts as them (D26): the session that approved it for a
+   * dispatch or a replay, and, for the read-back of a write already dispatched, also the session in which they last asked
+   * to check it. A session that has ended, was revoked, is someone else's or yields no token stands behind nothing; there
+   * is no fallback to a service credential, a stored token or any other session. Throws when the identity provider
+   * cannot exchange a token now.
+   */
+  async function standing(e: Execution, persona: AuthenticatedContext) {
+    const kept: Array<[string | null, Backing]> = [
+      [e.approvingSession, 'approving'],
+      [e.dispatchedAt ? e.checkingSession : null, 'checking'],
+    ];
+    for (const [binding, backing] of kept) {
+      if (!binding || !sessions) continue;
+      const session = await sessions.find(binding);
+      if (!session || session.personId !== e.personId) continue;
+      const delegated: AuthenticatedContext = { ...persona, delegate: session.delegate };
+      if (await sessions.ready(delegated, e)) return { persona: delegated, backing };
+    }
+    return undefined;
   }
   /** One bounded activity. Recovery investigates dispatched state; it never blindly replays a write. */
   async function progress(id: string): Promise<'done' | 'busy' | 'reconcile'> {
@@ -479,17 +525,15 @@ export function executionUsecases({ store, source, watch, clock, ids, digest, re
     });
     if (!e) return 'done';
     if (e === 'busy') return 'busy';
-    let persona: AuthenticatedContext | undefined;
+    let persona: AuthenticatedContext | undefined,
+      needsSession = false;
     try {
       persona = await source.current(e.personId);
       if (!persona || persona.unitId !== e.unitId || persona.authorizationVersion !== e.authorizationVersion)
         throw new Error('revoked');
       await persona.authorize();
       const access = await source.authorize(persona, e.operation, e.payload);
-      if (access.needsSession) {
-        await settle(e, e.dispatchedAt ? 'unknown' : 'pending', 'needs-session');
-        return 'done';
-      }
+      needsSession = access.needsSession;
       if (!sameSafety(access.safety, e.safety)) {
         await settle(e, e.dispatchedAt ? 'unknown' : 'pending', 'source-contract-changed');
         return 'done';
@@ -498,28 +542,54 @@ export function executionUsecases({ store, source, watch, clock, ids, digest, re
       await settle(e, e.dispatchedAt ? 'unknown' : 'pending', 'authority-revoked');
       return 'done';
     }
+    // An approval that was never sent lives 24 hours (D45), whether or not a session could stand behind it meanwhile.
+    if (!e.dispatchedAt && e.expiresAt <= at) {
+      await settle(e, 'failed', 'approval-expired');
+      return 'done';
+    }
+    // A connector that acts as the person gets the person's own token or nothing (D26). The current grant was checked
+    // above; the session adds the token and never more authority than the grant.
+    let backing: Backing | undefined;
+    if (needsSession) {
+      let stood: Awaited<ReturnType<typeof standing>>;
+      try {
+        stood = await standing(e, persona);
+      } catch {
+        // A live session, but no token to be had now: nothing has been sent.
+        await settle(e, e.dispatchedAt ? 'unknown' : 'pending', 'source-unavailable');
+        return 'done';
+      }
+      if (!stood) {
+        await settle(e, e.dispatchedAt ? 'unknown' : 'pending', 'needs-session');
+        return 'done';
+      }
+      persona = stood.persona;
+      backing = stood.backing;
+    }
     if (e.dispatchedAt) {
       if (e.safety.strategy === 'manual') {
-        await settle(e, 'unknown', 'manual-reconciliation');
+        await settle(e, 'unknown', 'manual-reconciliation', undefined, backing);
         return 'done';
       }
       try {
         const found = await source.lookup(persona, e);
         if (found) {
-          await settle(e, outcome(found), null, found);
+          await settle(e, outcome(found), null, found, backing);
           return 'done';
         }
       } catch {
-        await settle(e, 'unknown', 'source-unavailable');
+        await settle(e, 'unknown', 'source-unavailable', undefined, backing);
         return 'done';
       }
       if (!mayReplay(e, at)) {
-        await settle(e, 'unknown', 'replay-not-safe');
+        await settle(e, 'unknown', 'replay-not-safe', undefined, backing);
         return 'done';
       }
-    } else if (e.expiresAt <= at) {
-      await settle(e, 'failed', 'approval-expired');
-      return 'done';
+      // A replay is a write: the session that only asked to check it stands behind the read-back, never behind a write.
+      if (backing === 'checking') {
+        await settle(e, 'unknown', 'needs-session', undefined, backing);
+        return 'done';
+      }
     }
     // Persist dispatch BEFORE I/O. A crash from this point must be reconciled, even if no request reached the source.
     const dispatched = await store.transaction(async tx => {
@@ -532,33 +602,42 @@ export function executionUsecases({ store, source, watch, clock, ids, digest, re
         action: 'execution.dispatched',
         subject: 'execution:' + id,
         at: time,
-        details: { attempt: e.attempt },
+        details: { attempt: e.attempt, ...(backing ? { session: backing } : {}) },
       });
       return true;
     });
     if (!dispatched) return 'done';
     try {
       const result = await source.execute(persona, e);
-      await settle(e, outcome(result), null, result);
+      await settle(e, outcome(result), null, result, backing);
       return 'done';
     } catch {
-      await settle(e, 'unknown', 'source-outcome-unknown');
+      await settle(e, 'unknown', 'source-outcome-unknown', undefined, backing);
       return e.dispatchedAt ? 'done' : 'reconcile';
     }
   }
-  /** A human asks to check the original operation again; this never allocates another source key. */
+  /**
+   * A human asks to check the original operation again; this never allocates another source key. On a connector that
+   * acts as the person, the session that asks is kept for the read-back of a write already dispatched (D26): it may
+   * stand behind the lookup when the approving session has ended, never behind a dispatch or a replay.
+   */
   async function reconcile(persona: AuthenticatedContext, id: string) {
-    if (!(await read(persona, id))) throw new ExecutionError('Åtgärden finns inte.');
+    const found = await readable(persona, id);
+    if (!found) throw new ExecutionError('Åtgärden finns inte.');
+    const asking = found.access.needsSession && sessions && persona.delegate ? persona.sessionBinding : null;
     const at = clock().toISOString();
     await store.transaction(async tx => {
       const e = await tx.lock(id);
       if (!e || e.reason === 'source-reset' || !['pending', 'unknown'].includes(e.state)) return;
+      const checking = asking && e.dispatchedAt && asking !== e.approvingSession ? asking : null;
+      if (checking && checking !== e.checkingSession) await tx.keepCheckingSession(id, checking);
       await tx.enqueue(executionStart('reconcile:' + id + ':' + e.attempt, id));
       await tx.audit({
         actor: persona.principal.id,
         action: 'execution.reconciliation_requested',
         subject: 'execution:' + id,
         at,
+        ...(checking ? { details: { session: 'checking' } } : {}),
       });
     });
     return read(persona, id);

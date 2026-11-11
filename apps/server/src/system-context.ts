@@ -19,6 +19,7 @@ export async function systemContext(
     unitId: access.grant.unitId,
     unitLabel: access.grant.unitLabel,
     role: access.grant.role,
+    ...(access.person.userName ? { userName: access.person.userName } : {}),
     organisationId: access.person.organisationId,
     principal: { id: 'person:' + personId, kind: 'person' },
     capabilities: access.grant.capabilities,

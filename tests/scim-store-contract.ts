@@ -308,6 +308,83 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         expect((await tx.childUnits(root)).map(u => u.id)).toEqual([mid]);
       });
     });
+    test('the people list is searched by word, unit, role, status and capability, in Swedish order and a page at a time (D100)', async () => {
+      const h = await make(),
+        p = h.prefix,
+        org = p + '-org',
+        [u1, u2] = [p + '-u1', p + '-u2'],
+        [anna, bo, zara] = [p + '-anna', p + '-bo', p + '-zara'],
+        [ake, orjan, other] = [p + '-ake', p + '-orjan', p + '-other'];
+      await h.store.transaction(async tx => {
+        await tx.insertUser(userRow(anna, org, { name: 'Anna Berg', userName: p + '.ANNBER' }));
+        await tx.insertUser(userRow(bo, org, { name: 'Bo Av', enabled: false }));
+        await tx.insertUser(userRow(zara, org, { name: 'Zara Öst', email: 'zara@skola.' + p + '.test' }));
+        await tx.insertUser(userRow(ake, org, { name: 'Åke 100% Lind' }));
+        await tx.insertUser(userRow(orjan, org, { name: 'Örjan Ek', userName: null, email: null }));
+        await tx.insertUser(userRow(other, p + '-elsewhere', { name: 'Anna Annan' }));
+        await tx.writeUnits(org, [
+          { id: u1, label: 'Enhet 1' },
+          { id: u2, label: 'Enhet 2' },
+        ]);
+        await tx.replaceAssignments(anna, [
+          { unitId: u1, role: 'manager' },
+          { unitId: u2, role: 'employee' },
+        ]);
+        await tx.replaceAssignments(zara, [{ unitId: u2, role: 'employee' }]);
+        await tx.replaceAssignments(ake, [{ unitId: u2, role: 'manager' }]);
+        await tx.writeGrant(anna, { unitId: u1, unitLabel: 'Enhet 1', role: 'manager', capabilities: ['admin.users'] });
+        await tx.writeGrant(zara, { unitId: u2, unitLabel: 'Enhet 2', role: 'employee', capabilities: [] });
+        await tx.writeGrant(ake, { unitId: u2, unitLabel: 'Enhet 2', role: 'manager', capabilities: [] });
+      });
+      await h.bind(anna);
+      await h.store.transaction(async tx => {
+        const every = { startIndex: 1, count: 100 };
+        const found = async (search: Parameters<typeof tx.searchUsers>[1], organisationId = org) =>
+          (await tx.searchUsers(organisationId, search, every)).rows.map(r => r.id);
+        // By name as Swedish orders it: å and ö after z. Within the organisation only.
+        const all = await tx.searchUsers(org, {}, every);
+        expect(all.total).toBe(5);
+        expect(all.rows.map(r => r.id)).toEqual([anna, bo, zara, ake, orjan]);
+        expect(all.rows[0]).toEqual(userRow(anna, org, { name: 'Anna Berg', userName: p + '.ANNBER' }));
+        expect(await found({}, p + '-elsewhere')).toEqual([other]);
+        // A page is a slice of that order with the whole count; a count of 0 only counts.
+        const second = await tx.searchUsers(org, {}, { startIndex: 2, count: 2 });
+        expect(second.total).toBe(5);
+        expect(second.rows.map(r => r.id)).toEqual([bo, zara]);
+        expect(await tx.searchUsers(org, { words: ['berg'] }, { startIndex: 1, count: 0 })).toEqual({
+          total: 1,
+          rows: [],
+        });
+        // Words: each one somewhere in the name, the user name or the e-mail, without regard to case, å included.
+        expect(await found({ words: ['BERG'] })).toEqual([anna]);
+        expect(await found({ words: ['åke'] })).toEqual([ake]);
+        expect(await found({ words: ['ÖST'] })).toEqual([zara]);
+        expect(await found({ words: ['anna', 'berg'] })).toEqual([anna]);
+        expect(await found({ words: ['anna', 'öst'] })).toEqual([]);
+        expect(await found({ words: [p + '.annber'] })).toEqual([anna]);
+        expect(await found({ words: ['skola.' + p] })).toEqual([zara]);
+        // A word is matched as written: a per cent sign is a per cent sign.
+        expect(await found({ words: ['%'] })).toEqual([ake]);
+        expect(await found({ words: ['100%'] })).toEqual([ake]);
+        // A unit, a role, and the two as one assignment: Anna leads the first unit and is an employee on the second.
+        expect(await found({ unitIds: [u1] })).toEqual([anna]);
+        expect(await found({ unitIds: [u2] })).toEqual([anna, zara, ake]);
+        expect(await found({ unitIds: [u1, u2, p + '-nowhere'] })).toEqual([anna, zara, ake]);
+        expect(await found({ role: 'manager' })).toEqual([anna, ake]);
+        expect(await found({ unitIds: [u2], role: 'manager' })).toEqual([ake]);
+        expect(await found({ unitIds: [u2], role: 'employee' })).toEqual([anna, zara]);
+        // Access as the row reads it: deactivated first, then no grant, then whether a binding exists.
+        expect(await found({ status: 'disabled' })).toEqual([bo]);
+        expect(await found({ status: 'no-access' })).toEqual([orjan]);
+        expect(await found({ status: 'signed-in' })).toEqual([anna]);
+        expect(await found({ status: 'not-signed-in' })).toEqual([zara, ake]);
+        expect(await found({ capability: 'admin.users' })).toEqual([anna]);
+        expect(await found({ capability: 'admin.connectors' })).toEqual([]);
+        // Every part narrows further.
+        expect(await found({ words: ['a'], unitIds: [u2], status: 'not-signed-in' })).toEqual([zara, ake]);
+        expect(await found({ words: ['zara'], role: 'manager' })).toEqual([]);
+      });
+    });
     test('a locked person and a locked group read as they do unlocked', async () => {
       const { store, prefix: p } = await make();
       await store.transaction(async tx => {

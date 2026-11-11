@@ -33,7 +33,7 @@ test.describe('a decision the card is left waiting on keeps its way back where t
     // The row keeps its place for a moment with what was done; its one control is still the ✕ of the open card (D66), and
     // the open card has its own Ångra allt.
     const row = page.getByRole('main').locator('#thread-samtal');
-    await expect(row).toContainText('2 av 2 kalenderändringar är bekräftade · kalendern svarade');
+    await expect(row).toContainText('2 av 2 kalenderändringar är bekräftade · Kalendern svarade');
     await expect(row.getByRole('button', { name: 'Stäng kortet' })).toBeVisible();
     await expect(card.getByRole('button', { name: /^Ångra allt · / })).toBeVisible();
     // The toast says where the card went, with the way there and the way back, and stays until closed.
@@ -51,7 +51,7 @@ test.describe('a decision the card is left waiting on keeps its way back where t
       .click();
     await page.getByRole('tab', { name: /^Väntar på andra/ }).click();
     const waiting = page.getByRole('main').locator('#thread-samtal');
-    await expect(waiting).toContainText('kalendern svarade');
+    await expect(waiting).toContainText('Kalendern svarade');
     await expect(waiting).toContainText('väntar på svar från medarbetarna');
     await expect(waiting.getByRole('button', { name: 'Påminn mig' })).toBeVisible();
     await expectNoAxeViolations(page);
@@ -62,6 +62,6 @@ test.describe('a decision the card is left waiting on keeps its way back where t
     await page.getByRole('tab', { name: /^Behöver dig/ }).click();
     const back = page.getByRole('main').locator('#thread-samtal');
     await expect(back).toBeVisible();
-    await expect(back).not.toContainText('kalendern svarade');
+    await expect(back).not.toContainText('Kalendern svarade');
   });
 });

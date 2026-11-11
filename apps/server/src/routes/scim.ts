@@ -58,7 +58,8 @@ export function scimRoutes(scim: ScimUsecases, log: ScimLog) {
     if (Number(c.req.header('content-length') ?? 0) > BODY_LIMIT)
       throw new ScimError(413, 'The request body is too large.');
     const text = await c.req.raw.text();
-    if (text.length > BODY_LIMIT) throw new ScimError(413, 'The request body is too large.');
+    // In bytes, as the limit is: a body of names with å, ä and ö is longer than its characters.
+    if (new TextEncoder().encode(text).length > BODY_LIMIT) throw new ScimError(413, 'The request body is too large.');
     try {
       return JSON.parse(text);
     } catch {

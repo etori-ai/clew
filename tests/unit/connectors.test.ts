@@ -2,6 +2,7 @@ import { Registry } from '../registry';
 import { invoiceInput } from '../document-fixtures';
 import { describe, expect, test } from 'bun:test';
 import { openGovernance, receipt, type Actor, type Connector } from '../../packages/connectors/src/index';
+import type { ThreadItem } from '../../packages/contracts/src/index';
 import { fixtureConnectors } from '../fixture-connectors';
 
 const hillevi: Actor = {
@@ -62,6 +63,58 @@ describe('registry', () => {
     expect(names).toContain('hr.absenceOverview');
     expect(names).not.toContain('finance.approve');
     expect(r.tools(hassan).map(t => t.name)).not.toContain('hr.absenceOverview');
+  });
+  test('a read about an entity is never a tool, whatever its registration says; an action about one keeps its own rule (D97)', () => {
+    const keyed = { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] };
+    const about: Connector = {
+      id: 'talk',
+      kind: 'core',
+      source: 'Samtal',
+      areas: [],
+      capabilities: [
+        {
+          name: 'talk.person',
+          kind: 'read',
+          title: 'Samtal',
+          description: 'Samtalet per person.',
+          input: {
+            type: 'object',
+            properties: { keys: { type: 'array', items: { type: 'string' }, maxItems: 200 } },
+            required: ['keys'],
+          } as never,
+          output: { type: 'object', properties: { rows: { type: 'array', items: keyed } } } as never,
+          model: false,
+          scope: {},
+          about: { entity: 'person' },
+          view: { kind: 'list', title: 'key', fields: [{ key: 'key', label: 'Person' }] },
+          run: async () => ({ rows: [] }),
+        },
+        {
+          name: 'talk.remind',
+          kind: 'propose',
+          title: 'Påminn',
+          description: 'Föreslår en påminnelse om samtalet.',
+          input: { type: 'object', properties: { person: { type: 'string' } }, required: ['person'] } as never,
+          output: {} as never,
+          model: true,
+          scope: {},
+          about: { entity: 'person', param: 'person' },
+          run: async () => ({}),
+        },
+      ],
+    };
+    const r = new Registry();
+    r.register(about);
+    // The loader refuses `model: true` on such a read; a declaration changed after registration is still left out.
+    r.find('talk.person')!.capability.model = true;
+    expect(r.tools(hillevi).map(t => t.name)).toEqual(['talk.remind']);
+    expect(() =>
+      new Registry().register({
+        ...about,
+        id: 'talk2',
+        capabilities: [{ ...about.capabilities[0]!, name: 'talk2.person', model: true }],
+      }),
+    ).toThrow(/never a tool/);
   });
   test('areas follow the role and carry figures and standing actions', async () => {
     const { r } = registry();
@@ -531,6 +584,37 @@ describe("a card is one system's: its actions name the pushing connector's capab
     expect(r.draftProblem('finance', action({ review: 'each', preview: 'finance.preview', usesItems: false }))).toMatch(
       /only an execute over the items/,
     );
+  });
+  test('a row may name the person or unit it is about: a known kind and a key that fits, or the draft is refused (D97 item 6)', () => {
+    const r = new Registry();
+    for (const c of fixtureConnectors({ only: ['finance'] }).connectors) r.register(c);
+    const rowNaming = (subject: unknown) => ({
+      actions: [],
+      items: [
+        { ref: 'finance:inv:1', label: 'Skolgrossisten', detail: '6451', selectable: false, selected: false },
+        {
+          ref: 'finance:inv:2',
+          label: 'Anna Lindqvist',
+          detail: 'utlägg',
+          selectable: false,
+          selected: false,
+          subject,
+        },
+      ] as ThreadItem[],
+    });
+    expect(r.draftProblem('finance', rowNaming({ entity: 'person', key: 'anna.l' }))).toBeUndefined();
+    expect(r.draftProblem('finance', rowNaming({ entity: 'unit', key: 'unit-skola' }))).toBeUndefined();
+    // Clew does not check that the key exists: a person nobody may ask about is simply never answered for.
+    expect(r.draftProblem('finance', rowNaming({ entity: 'person', key: 'nobody-at-all' }))).toBeUndefined();
+    expect(r.draftProblem('finance', rowNaming({ entity: 'room', key: 'r1' }))).toBe(
+      'row finance:inv:2 names an entity of an unknown kind',
+    );
+    expect(r.draftProblem('finance', rowNaming(null))).toMatch(/unknown kind/);
+    expect(r.draftProblem('finance', rowNaming({ entity: 'person', key: '' }))).toBe(
+      'row finance:inv:2 names a person without a key of 1 to 256 characters',
+    );
+    expect(r.draftProblem('finance', rowNaming({ entity: 'person', key: 'x'.repeat(257) }))).toMatch(/1 to 256/);
+    expect(r.draftProblem('finance', rowNaming({ entity: 'person' }))).toMatch(/without a key/);
   });
   test('every fixture connector keeps the rule', async () => {
     const refused: string[] = [];

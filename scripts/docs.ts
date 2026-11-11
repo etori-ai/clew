@@ -62,7 +62,23 @@ const decisions = files('docs/decisions')
     if (!record.title || !record.status || !record.date || !record.area)
       throw new Error(`Missing decision metadata: ${path}`);
     return record;
-  });
+  })
+  .sort((a, b) => a.number - b.number || a.path.localeCompare(b.path));
+/**
+ * A record's standing is the first word of its status; the rest of the status is the record's own prose. The digest
+ * of decisions in force is drawn from it, so a status that starts with anything else fails the generation.
+ */
+const STANDINGS = ['accepted', 'provisional', 'proposed', 'superseded', 'withdrawn'] as const;
+type Standing = (typeof STANDINGS)[number];
+function standingOf(record: { path: string; status: string }): Standing {
+  const word = record.status.toLowerCase().match(/^[a-z]+/)?.[0];
+  const standing = STANDINGS.find(s => s === word);
+  if (!standing)
+    throw new Error(
+      `${record.path}: the status must start with one of ${STANDINGS.join(', ')} (it starts "${record.status.slice(0, 40)}")`,
+    );
+  return standing;
+}
 const duplicates = [
   ...new Set(
     decisions.filter(a => decisions.some(b => a.number === b.number && a.path !== b.path)).map(d => `D${d.number}`),
@@ -153,7 +169,9 @@ generated.set(
   'docs/decisions/README.md',
   banner +
     '# Decision log\n\n' +
+    'For the decisions that bind today, one line each, read [Decisions in force](in-force.md). This index lists every record.\n\n' +
     'These records preserve why choices were made. The status below is copied from each original record, not inferred from code. An accepted decision may be partly implemented, and an older status may lag delivery. Use [implementation status](../reference/status.md) and the [current protocol](../reference/connector-protocol.md) when building a connector.\n\n' +
+    'Since [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md) a record is `proposed`, `provisional` (chosen, but tested by nothing outside the repository) or `accepted`, and later `superseded` or `withdrawn`; the status starts with that word; a one-screen adjustment is not a numbered record; and a number is taken from this index on the day the change lands on `main`.\n\n' +
     `Historical numbering collisions: **${duplicates.join(', ')}** each identify more than one file. The full filename is the unique key. Keep existing filenames and links; never interpret a bare collided number without its title. No decisions were renumbered or accepted by this index.\n\n` +
     '| Record | Area | Date | Recorded status |\n|---|---|---|---|\n' +
     decisions
@@ -161,7 +179,58 @@ generated.set(
       .join('\n') +
     '\n\n## Add a decision\n\n' +
     `Use [TEMPLATE.md](TEMPLATE.md) and a new unused number (currently D${Math.max(...decisions.map(d => d.number)) + 1}). Include status, date, area, decision, rationale and what it replaces. ` +
-    'Preserve earlier decision bodies; record supersession explicitly. Refer to the full filename when a number is ambiguous. Update the implementation-status guide when delivery changes, add a session note to [HANDOVER.md](../../HANDOVER.md), and run `bun run docs:generate` followed by `bun run docs:check`. The generated context map includes every record.\n',
+    'Preserve earlier decision bodies; record supersession explicitly. Refer to the full filename when a number is ambiguous. Update the implementation-status guide when delivery changes, say what changed and why in the commit message, and run `bun run docs:generate` followed by `bun run docs:check`. The generated context map includes every record.\n',
+);
+// The digest: which decisions bind today, one line each, grouped by the first area a record names.
+const AREAS = ['product', 'integrations', 'identity', 'platform', 'ui'];
+const fileOf = (d: { path: string }) => d.path.split('/').at(-1)!;
+const primaryArea = (d: { area: string }) => d.area.split(',')[0]!.trim().toLowerCase();
+/** The later decisions a status names ("refined by D95", "amended by D100"): read together with the record. */
+const namedIn = (d: (typeof decisions)[number]) =>
+  [...new Set([...d.status.matchAll(/\bD(\d+)\b/g)].map(m => Number(m[1])))]
+    .filter(n => n !== d.number)
+    .sort((a, b) => a - b)
+    .map(n => {
+      const hits = decisions.filter(o => o.number === n);
+      return hits.length ? `[D${n}](${hits.length === 1 ? fileOf(hits[0]!) : 'README.md'})` : `D${n}`;
+    })
+    .join(', ');
+const inForce = decisions.filter(d => ['accepted', 'provisional'].includes(standingOf(d)));
+const proposedRecords = decisions.filter(d => standingOf(d) === 'proposed');
+const retired = decisions.filter(d => ['superseded', 'withdrawn'].includes(standingOf(d)));
+const digestAreas = [...AREAS, ...[...new Set(inForce.map(primaryArea))].filter(a => !AREAS.includes(a)).sort()].filter(
+  area => inForce.some(d => primaryArea(d) === area),
+);
+generated.set(
+  'docs/decisions/in-force.md',
+  banner +
+    '# Decisions in force\n\n' +
+    "Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.\n\n" +
+    `**${inForce.length} in force**: ${inForce.filter(d => standingOf(d) === 'accepted').length} accepted and ${inForce.filter(d => standingOf(d) === 'provisional').length} provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). ` +
+    `${proposedRecords.length} proposed and not decided. ${retired.length} no longer in force.\n\n` +
+    'In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record\'s status says refine, amend or replace part of it.\n\n' +
+    digestAreas
+      .map(
+        area =>
+          `## ${area === 'ui' ? 'Interface' : area[0]!.toUpperCase() + area.slice(1)}\n\n` +
+          '| Decision | Date | Standing | Read with |\n|---|---|---|---|\n' +
+          inForce
+            .filter(d => primaryArea(d) === area)
+            .map(d => `| [${table(d.title)}](${fileOf(d)}) | ${d.date} | ${standingOf(d)} | ${namedIn(d)} |`)
+            .join('\n'),
+      )
+      .join('\n\n') +
+    '\n\n## Proposed, not decided\n\n' +
+    '| Decision | Area | Date | Read with |\n|---|---|---|---|\n' +
+    proposedRecords
+      .map(d => `| [${table(d.title)}](${fileOf(d)}) | ${d.area} | ${d.date} | ${namedIn(d)} |`)
+      .join('\n') +
+    '\n\n## No longer in force\n\n' +
+    '| Decision | Date | Standing | See |\n|---|---|---|---|\n' +
+    retired
+      .map(d => `| [${table(d.title)}](${fileOf(d)}) | ${d.date} | ${standingOf(d)} | ${namedIn(d)} |`)
+      .join('\n') +
+    '\n',
 );
 generated.set(
   'docs/reviews/README.md',
@@ -200,7 +269,6 @@ const docPaths = [
   ...new Set([
     'README.md',
     'CLAUDE.md',
-    'HANDOVER.md',
     'llms.txt',
     ...files('docs'),
     ...files('connectors').filter(p => p.endsWith('.md')),
@@ -210,7 +278,7 @@ const docPaths = [
   .filter(p => p.endsWith('.md') || p === 'llms.txt')
   .sort();
 const category = (path: string) =>
-  path === 'HANDOVER.md'
+  path.startsWith('docs/history/')
     ? 'session-history'
     : path === 'CLAUDE.md'
       ? 'repository-instructions'

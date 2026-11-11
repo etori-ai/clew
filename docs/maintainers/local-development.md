@@ -12,7 +12,7 @@ Everything runs in Docker. Commands go through `docker exec` into the app contai
 sh scripts/compose.sh up -d --build --wait              # the app image (Node 26.13.0 LTS + Bun 1.4.4), Postgres 17, the six fixture connectors and the local fake of Microsoft Graph
 docker exec -w /workspace clew-app-1 bun install --frozen-lockfile
 docker exec -w /workspace clew-app-1 bun run db:init     # Drizzle migrations
-docker exec -w /workspace clew-app-1 bun run dev:connectors  # fills missing fixture registrations and follower bindings (D61); adds the appraisals fixture as a draft and opens the development round of utvecklingssamtal when none is open (D96)
+docker exec -w /workspace clew-app-1 bun run dev:connectors  # fills missing fixture registrations and follower bindings (D61); adds the appraisals fixture as a draft and opens the development round of utvecklingssamtal when none is open (D96); chooses Personal's lenses and columns while none is chosen (D97)
 docker start keycloak                                    # the shared local Keycloak 26.2 at keycloak.orb.local:8090
 docker inspect keycloak --format '{{json .Config.Env}}' | docker exec -i -w /workspace clew-app-1 bun run auth:setup  # Keycloak accounts, the development provisioner's token, and the directory pushed through SCIM in-process (D68); each account binds to its person at its first login
 docker exec -w /workspace clew-app-1 bun run dev:provision  # optional: the same directory over HTTP against the running BFF, to exercise /scim/v2

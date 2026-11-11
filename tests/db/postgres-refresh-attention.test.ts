@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from 'bun:test';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { eq, inArray } from 'drizzle-orm';
 import { database, schema, closeDatabase } from '../../packages/db/src';
 import { postgresRefreshStore } from '../../apps/server/src/threads/adapters/refresh-postgres';
@@ -12,6 +12,10 @@ import { Registry, openGovernance, type ScanObservation } from '../../packages/c
 import { threadAccess } from '../../apps/server/src/threads/access';
 import { draft } from '../store-contract';
 import { forgetTestWorkflows, testDurable } from './durable';
+import { openSecret, sealSecret } from '../../apps/server/src/auth-crypto';
+
+process.env.MASTER_KEY ??= randomBytes(32).toString('base64');
+const sealer = { seal: sealSecret, open: openSecret };
 
 const people: string[] = [],
   subjects: string[] = [],
@@ -55,7 +59,7 @@ async function person() {
 }
 test('postgres refresh coalesces, preserves dismissal, fences stale scans and only resolves complete observations', async () => {
   const actor = await person(),
-    store = postgresRefreshStore({ durable: testDurable }, actor.id),
+    store = postgresRefreshStore({ durable: testDurable, sealer }, actor.id),
     threads = postgresThreadStore({ durable: testDurable });
   let time = Date.parse('2098-11-05T09:00:00.000Z');
   const clock = () => new Date(time),
@@ -227,7 +231,7 @@ test('postgres source snapshots reject transferred and renewed authority without
   let current = await person(),
     time = Date.parse('2098-11-05T09:00:00.000Z');
   const clock = () => new Date(time),
-    store = postgresRefreshStore({ durable: testDurable }, current.id),
+    store = postgresRefreshStore({ durable: testDurable, sealer }, current.id),
     threads = postgresThreadStore({ durable: testDurable });
   const registry = new Registry()
     .register({ id: 'reference', kind: 'passthrough', source: 'Reference', areas: [], capabilities: [] })

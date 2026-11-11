@@ -7,10 +7,21 @@
 import { fixtureDirectory, fakeGraphToken } from '@clew/calendar/accounts';
 import { createCalendarProvider } from '@clew/calendar/adapters';
 import { fakeGraph } from '@clew/calendar/fake-graph';
-import { fixtureWeeks, seedCalendar } from './calendar-fixtures';
+import { fixtureWeeks, seedCalendar, unitCalendarPeople } from './calendar-fixtures';
 
 if (process.env.CLEW_POC !== 'true') throw new Error('CLEW_POC=true is required: the fake is a development fixture.');
-const directory = fixtureDirectory();
+// The fixture personas and rooms, and everyone on Hillevi's unit as the development directory has them, so a calendar
+// bound to the fake (CALENDAR_ADAPTER=microsoft365) can read the free time of every person the planner asks about.
+const fixtures = fixtureDirectory();
+const directory = {
+  ...fixtures,
+  people: [
+    ...fixtures.people,
+    ...unitCalendarPeople()
+      .filter(p => !fixtures.people.some(known => known.email === p.email))
+      .map(({ email, name }) => ({ email, name })),
+  ],
+};
 const graph = fakeGraph({ ...directory, roomDelayMs: Number(process.env.GRAPH_ROOM_DELAY_MS ?? 2000) });
 let seeded = false;
 const server = Bun.serve({

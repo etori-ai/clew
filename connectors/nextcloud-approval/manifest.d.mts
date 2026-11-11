@@ -1,0 +1,10 @@
+export declare const CONNECTOR: 'nextcloud-approval';
+export declare const DEFAULT_AUDIENCE: string;
+export declare const DEFAULT_SOURCE: string;
+export declare const AREA: string;
+export declare const fileRefPattern: string;
+export declare const STATUS: Record<'none' | 'others' | 'approved' | 'rejected' | 'mine', string>;
+export declare const decisionInput: unknown;
+export declare const executeResult: unknown;
+export declare function createManifest(options?: { audience?: string; source?: string }): unknown;
+export declare const manifest: unknown;

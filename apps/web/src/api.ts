@@ -6,6 +6,8 @@ import type {
   TalksResult,
   GroupCapabilityInputType,
   UsersAdminOverview,
+  UsersAdminPage,
+  UsersAdminQueryType,
   StaffOverview,
   ManifestReference,
   DocumentRequest,
@@ -70,15 +72,18 @@ import type {
   OrganisationOverview,
   OrganisationUnitPeople,
 } from '@clew/contracts';
-import type { McpDelivery, McpService, McpView, McpResult } from '@clew/contracts';
 import type {
-  AboutQuery,
-  AboutResult,
   CompetenceHoldingBody,
   CompetenceTypeBody,
   CompetenceTypePatch,
   CompetenceTypesOutput,
   CompetenceValidityImpact,
+  EntityActionStarted,
+  EntityDetail,
+  EntityKind,
+  EntityList,
+  EntityRows,
+  EntitySection,
 } from '@clew/contracts';
 
 import { ApiError } from './api-error';
@@ -176,6 +181,28 @@ export const api = {
   /** Personal (D94): the people on the units the signed-in manager manages; 403 for anyone else. */
   staff: () => call<StaffOverview>('/api/staff'),
   /**
+   * Entities (D97): what sources say about a person or a unit, placed by Clew. `list` is the page's people or units with
+   * the administrator's columns, lenses and the actions; `rows` is one source over all of them (a lens, a column, the
+   * marks); `detail` is one opened entity; `section` is one source's answer for it. A key the reader may not ask about
+   * answers 404.
+   */
+  entities: {
+    list: (kind: EntityKind) => call<EntityList>(`/api/entities/${kind}`),
+    rows: (kind: EntityKind, capability: string) =>
+      call<EntityRows>(`/api/entities/${kind}/rows?capability=${encodeURIComponent(capability)}`),
+    detail: (kind: EntityKind, key: string) => call<EntityDetail>(`/api/entities/${kind}/${encodeURIComponent(key)}`),
+    section: (kind: EntityKind, key: string, capability: string) =>
+      call<EntitySection>(
+        `/api/entities/${kind}/${encodeURIComponent(key)}/section?capability=${encodeURIComponent(capability)}`,
+      ),
+    /**
+     * Start one of the entity's actions from its menu, without the model (D97, D8): the answer is the card the person
+     * decides on. A refusal is the source's Swedish sentence (400); an action the entity does not offer is a 404.
+     */
+    start: (kind: EntityKind, key: string, capability: string) =>
+      post<EntityActionStarted>(`/api/entities/${kind}/${encodeURIComponent(key)}/actions`, { capability }),
+  },
+  /**
    * Utvecklingssamtal (D96 items 7 to 9): the two composites of Clew's core connector and the built-in module's writes.
    * A person without a talks system has the reads refused; `queries.ts` turns that refusal into `null`. The writes are
    * only offered when a read said `writable`.
@@ -200,12 +227,7 @@ export const api = {
     reopen: (id: string) => del<void>(`${commitmentPath(id)}/done`),
   },
   /**
-   * What the sources say about people (D97): `clew.about`, one section per source that declares a read about a person.
-   * A person with no such source has the read refused; `queries.ts` turns that refusal into `null`.
-   */
-  about: (keys: string[]) => read<AboutResult>('clew.about', { kind: 'person', keys } satisfies AboutQuery),
-  /**
-   * Kompetens (D101): the built-in module's own routes. They are refused while the module is switched off for the
+   * Kompetens (D107): the built-in module's own routes. They are refused while the module is switched off for the
    * person, and the catalogue is refused to someone who neither manages anyone nor administers it; `queries.ts` turns
    * that refusal into `null`.
    */
@@ -228,18 +250,6 @@ export const api = {
     register: (personId: string, body: CompetenceHoldingBody) =>
       post<{ id: string }>(`/api/competence/people/${encodeURIComponent(personId)}/holdings`, body),
   },
-  chatServices: () => call<{ services: McpService[]; deliveries: McpDelivery[] }>('/api/chat-services'),
-  chatService: (id: string, deliveryId?: string) =>
-    call<McpView>(
-      '/api/chat-services/' +
-        encodeURIComponent(id) +
-        (deliveryId ? '?delivery=' + encodeURIComponent(deliveryId) : ''),
-    ),
-  decideService: (id: string, input: { decisionId: string; name: string; arguments: Record<string, unknown> }) =>
-    call<McpResult>('/api/chat-services/' + encodeURIComponent(id) + '/decisions', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
   /** The manifest field by field (D60): a public document, read with the plain fetch since no session or token belongs on it. */
   manifestReference: async () => {
     const response = await fetch('/api/protocol/manifest-reference.json');
@@ -329,6 +339,8 @@ export const api = {
     groups: () => call<{ groups: Array<{ id: string; label: string }> }>('/api/admin/groups'),
     // Användare (D62, D85): the provisioned people and the group-capability rows.
     users: () => call<UsersAdminOverview>('/api/admin/users'),
+    // One page of the people (D100). A read sent as a body, so a searched name is in no address.
+    usersPage: (query: UsersAdminQueryType) => post<UsersAdminPage>('/api/admin/users/search', query),
     addGroupCapability: (input: GroupCapabilityInputType) =>
       post<UsersAdminOverview>('/api/admin/users/group-capabilities', input),
     removeGroupCapability: (input: GroupCapabilityInputType) =>

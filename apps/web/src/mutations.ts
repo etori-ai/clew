@@ -227,3 +227,48 @@ export function useTalkAction({ fallback = 'Något gick fel.', toastId }: { fall
     reset: mutation.reset,
   };
 }
+
+/** The entity an action is started on (D97): its kind and its key, for the reads that follow the new card. */
+type EntityStart = { fn: Action<{ threadId: string }>; kind: string; key: string };
+/** What starting an action gave: the new card, the Swedish sentence of a refusal, or nothing for a start while one runs. */
+export type EntityStarted = { threadId: string } | { error: string } | null;
+/**
+ * Start an action from an entity's menu (D97, D8): the server makes the card the person decides on, without the model.
+ * `start(fn, entity)` settles, never rejects: it resolves the new card's thread id, or the source's refusal in Swedish,
+ * which also stays in `error` until the next start. The stream is read again before it resolves, so the page that opens
+ * the card has it; the list's "Just nu" and the opened entity's Behöver dig follow without waiting. A second start while
+ * one is in flight is ignored.
+ */
+export function useEntityStart({ fallback = 'Åtgärden kunde inte startas.' }: { fallback?: string } = {}) {
+  const client = useQueryClient();
+  const mutation = useMutation<{ threadId: string }, unknown, EntityStart>({
+    mutationFn: vars => vars.fn(),
+    onSuccess: async (_started, vars) => {
+      void client.invalidateQueries({ queryKey: keys.entities.list(vars.kind) });
+      void client.invalidateQueries({ queryKey: keys.entities.detail(vars.kind, vars.key), exact: true });
+      await client.invalidateQueries({ queryKey: keys.threads, refetchType: 'all' });
+    },
+  });
+  const inFlight = useRef(false);
+  const { mutateAsync } = mutation;
+  const start = useCallback(
+    async (fn: Action<{ threadId: string }>, entity: { kind: string; key: string }): Promise<EntityStarted> => {
+      if (inFlight.current) return null;
+      inFlight.current = true;
+      try {
+        return { threadId: (await mutateAsync({ fn, ...entity })).threadId };
+      } catch (error) {
+        return { error: errorMessage(error, fallback) };
+      } finally {
+        inFlight.current = false;
+      }
+    },
+    [mutateAsync, fallback],
+  );
+  return {
+    start,
+    busy: mutation.isPending,
+    error: mutation.isError ? errorMessage(mutation.error, fallback) : null,
+    reset: mutation.reset,
+  };
+}

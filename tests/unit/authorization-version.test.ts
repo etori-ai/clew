@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { randomBytes } from 'node:crypto';
-import { authorityOf, authorizationVersion } from '../../apps/server/src/auth-crypto';
+import { authorityOf, authorizationVersion, keyedDigest } from '../../apps/server/src/auth-crypto';
 
 process.env.MASTER_KEY ??= randomBytes(32).toString('base64');
 
@@ -65,5 +65,26 @@ describe('authorizationVersion', () => {
       capabilities: ['admin.connectors', 'calendar:plan'],
       version: 1,
     });
+  });
+});
+
+/**
+ * The signer for evidence Clew hands out and checks again (a document review's proof). From D68 until 2026-11-11 the
+ * review was wired to `authorizationVersion`, which reads an access record, so every preview threw on the server.
+ */
+describe('keyed digest', () => {
+  const evidence = { purpose: 'document-review', person: 'hillevi', unit: 'unit-skola', bundle: { revision: 'r1' } };
+  test('signs any value, the same way every time', () => {
+    expect(keyedDigest('document-review', evidence)).toMatch(/^[0-9a-f]{64}$/);
+    expect(keyedDigest('document-review', evidence)).toBe(keyedDigest('document-review', { ...evidence }));
+    for (const value of ['text', 7, null, [], {}]) expect(keyedDigest('document-review', value)).toHaveLength(64);
+  });
+  test('a changed value or another purpose gives another digest', () => {
+    const digest = keyedDigest('document-review', evidence);
+    expect(keyedDigest('document-review', { ...evidence, unit: 'unit-omsorg' })).not.toBe(digest);
+    expect(keyedDigest('something-else', evidence)).not.toBe(digest);
+  });
+  test('the authorization fingerprint is not a signer: it refuses a value that is not an access record', () => {
+    expect(() => authorizationVersion(evidence as never)).toThrow();
   });
 });

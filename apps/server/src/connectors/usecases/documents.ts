@@ -15,7 +15,8 @@ import { InputError } from '../../context';
 export interface DocumentReviewDeps {
   registry: Pick<Registry, 'allowed'>;
   run(persona: AuthenticatedContext, capability: string, input: unknown): Promise<unknown>;
-  sign(input: unknown): string;
+  /** A keyed digest of any value. A property, not a method, so the compiler refuses a signer that takes less than `unknown`. */
+  sign: (input: unknown) => string;
   clock(): Date;
 }
 /** Stateless, integrity-protected review evidence; no file content or unsigned client claims grant authority. */

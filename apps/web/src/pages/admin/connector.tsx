@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
+import { ENTITY_COLUMNS_MAX } from '@clew/contracts';
 import type { CheckReport, ConnectorAudience, ConnectorDetail, ManifestDiff, SessionUser } from '@clew/contracts';
 import {
   AlertDialog,
@@ -21,6 +22,7 @@ import {
   MetadataList,
   MetadataListItem,
   Section,
+  Selector,
   StatusDot,
   Switch,
   SystemSwatch,
@@ -74,6 +76,8 @@ interface CapRow extends Record<string, unknown> {
   c: ConnectorDetail['capabilities'][number];
 }
 const EMPTY_UNITS: Array<{ id: string; label: string }> = [];
+/** The choice "Ingen kolumn" in the column selector: never a field's key, which a view keeps to letters and digits. */
+const NO_COLUMN = '-';
 
 type CapabilityView = ConnectorDetail['capabilities'][number];
 /** The "Assistent" switch of one capability, disabled with its reason when the manifest, the kind or the connector says no. */
@@ -186,6 +190,8 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
   const capRows: CapRow[] = c.capabilities.map(x => ({ name: x.name, c: x }));
   // The views that can be tools in the menu (D40), each with the row it would be.
   const tools = c.capabilities.flatMap(x => (x.menu ? [{ ...x, menu: x.menu }] : []));
+  // The reads about an entity that can be a lens or give a column on "Alla" (D97 items 3 and 4), as the server says.
+  const lists = c.capabilities.filter(x => x.about && (x.lens || x.column));
   const setCap = (name: string, patch: { enabled?: false; model?: false }) =>
     run(async () => {
       await api.admin.update(id, { capabilities: { [name]: patch } });
@@ -581,6 +587,83 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                               })
                             }
                           />
+                        }
+                      />
+                    ))}
+                  </List>
+                )}
+                {/* På Personal och andra listor (D97 items 3 and 4): every read about a person or a unit, offered under Visa on the list and as one column on Alla. Choosing places it; it gives no one access. */}
+                {lists.length > 0 && (
+                  <List
+                    aria-label="På Personal och andra listor"
+                    header={
+                      <VStack gap={0}>
+                        <Text weight="semibold">På Personal och andra listor</Text>
+                        <Text type="supporting">
+                          Välj vilka av anslutningens läsningar om en person eller en enhet som går att välja under
+                          Visa, och vilket fält som visas som kolumn under Alla. Högst {ENTITY_COLUMNS_MAX} kolumner
+                          visas, från alla anslutningar tillsammans.
+                        </Text>
+                      </VStack>
+                    }
+                  >
+                    {lists.map(l => (
+                      <ListItem
+                        key={l.name}
+                        align="start"
+                        label={<Text>{l.title}</Text>}
+                        description={
+                          <VStack gap={2}>
+                            <Text type="supporting">
+                              {l.about === 'unit' ? 'Om en enhet' : 'Om en person'}
+                              {l.enabled ? '' : ' · funktionen är avstängd'}
+                            </Text>
+                            {l.column && (
+                              <HStack>
+                                <Selector
+                                  size="sm"
+                                  label="Kolumn på Alla"
+                                  value={l.column.on ?? NO_COLUMN}
+                                  isDisabled={busy || !l.enabled}
+                                  disabledMessage="Funktionen är avstängd under Funktioner."
+                                  options={[
+                                    { value: NO_COLUMN, label: 'Ingen kolumn' },
+                                    ...l.column.fields.map(f => ({ value: f.key, label: f.label })),
+                                  ]}
+                                  onChange={value =>
+                                    void run(async () => {
+                                      const field = value === NO_COLUMN ? null : value;
+                                      await api.admin.update(id, { column: { [l.name]: field } });
+                                      const label = l.column!.fields.find(f => f.key === field)?.label;
+                                      return label
+                                        ? `${label} ur ${l.title} visas som kolumn under Alla.`
+                                        : `${l.title} visas inte längre som kolumn under Alla.`;
+                                    })
+                                  }
+                                />
+                              </HStack>
+                            )}
+                          </VStack>
+                        }
+                        endContent={
+                          l.lens && (
+                            <Switch
+                              size="sm"
+                              label={`Visa ${l.title} under Visa`}
+                              isLabelHidden
+                              value={l.lens.on}
+                              isDisabled={busy || !l.enabled}
+                              disabledMessage="Funktionen är avstängd under Funktioner."
+                              changeAction={on =>
+                                run(async () => {
+                                  await api.admin.update(id, { lens: { [l.name]: on } });
+                                  return on
+                                    ? `${l.title} går att välja under Visa.`
+                                    : `${l.title} går inte längre att välja under Visa.`;
+                                })
+                              }
+                            />
+                          )
                         }
                       />
                     ))}

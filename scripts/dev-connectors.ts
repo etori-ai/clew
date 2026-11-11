@@ -1,9 +1,11 @@
 /**
  * The development chain (D61): registers the fixture connectors that `.devcontainer/compose.yaml` runs beside Clew,
  * enabling each except the ones `FIXTURES` marks `enable: false` (added as drafts), binds their followers of `hr:absence` (D55), and opens the
- * development organisation's round of talks when it has none (D96, `talk-round.ts`) and seeds its competence catalogue and holdings where they are missing (D101, `competence-seed.ts`), idempotently. Runs inside the app container, where the
+ * development organisation's round of talks when it has none (D96, `talk-round.ts`) and seeds its competence catalogue and holdings where they are missing (D107, `competence-seed.ts`), idempotently. Runs inside the app container, where the
  * services are reachable by name; `postCreateCommand` runs it after the migrations, and `bun run dev:connectors` runs it
  * again to fill missing registrations. Existing configuration is preserved; refresh manifests explicitly in administration. The transport secret is the one compose gives the services, CLEW_DEV_CONNECTOR_SECRET.
+ * Last it makes the administrator's choice for Personal (D97) that the canvas draws, while nobody has chosen any:
+ * `ENTITY_CHOICE`, through the same use case as Administration › Anslutna system.
  *
  *   bun scripts/dev-connectors.ts [--within PT3M] [--host <name or address, default: the service names>]
  */
@@ -11,9 +13,17 @@ import { requireFixtureDevelopment } from './fixture-development';
 import { assertFixtureCutover } from './fixture-maintenance';
 import { resolve } from 'node:path';
 import { closeDatabase } from '@clew/db';
+import type { AuthenticatedContext } from '@clew/contracts';
 import { registerConnector, listConnectors } from './connector-registry';
 import { bindFixtureFollowers, describeBinding } from './job-bindings';
 import { DEVELOPMENT_ROUND, openTalkRound } from './talk-round';
+import { bundledIds, internalIds, offAtFirstBoot, registry } from '../apps/server/src/connectors/registry';
+import { postgresConnectorStore, postgresGroups, postgresUnits } from '../apps/server/src/connectors/adapters/postgres';
+import { connectorUsecases } from '../apps/server/src/connectors/usecases/admin';
+import { syncBundledRows } from '../apps/server/src/connectors/reconcile';
+import { secretPurpose } from '../apps/server/src/connectors/remote';
+import { openSecret, sealSecret } from '../apps/server/src/auth-crypto';
+import { fetchManifest } from '../packages/connectors/src/remote';
 import { seedCompetence } from './competence-seed';
 
 try {
@@ -41,6 +51,15 @@ export const FIXTURES: Array<[id: string, port: number, options?: { enable: bool
   // registered for an administrator to switch to on Anslutna system, never enabled here.
   ['appraisals', 4051, { enable: false }],
 ];
+/**
+ * Personal as the canvas draws it (D97, artboard A2): absence and the round of talks under "Visa", and their presence
+ * and next talk as the two columns on "Alla", in this order. An administrator's choice, made here for the development
+ * stack only while no lens or column is chosen anywhere, so a later choice on Anslutna system is kept.
+ */
+export const ENTITY_CHOICE: Array<{ connector: string; capability: string; column: string }> = [
+  { connector: 'hr', capability: 'hr.person', column: 'presence' },
+  { connector: 'talks', capability: 'talks.person', column: 'next' },
+];
 const secret = process.env.CLEW_DEV_CONNECTOR_SECRET;
 if (!secret) {
   console.error(
@@ -50,6 +69,83 @@ if (!secret) {
 }
 const host = option('host');
 const urlOf = (id: string, port: number) => `http://${host ?? id}:${port}`;
+
+/**
+ * Make `ENTITY_CHOICE` with the connector administration's own use case (`connectorUsecases.update`), as the bootstrap
+ * operator: the same checks (an about read with a table or list view, the field in it, at most three columns), one audit
+ * row per change. The live registry here is this process's; the BFF picks the rows up as it watches them.
+ */
+async function chooseForPersonal() {
+  const store = postgresConnectorStore();
+  const secrets = {
+    seal: (value: string, id: string) => sealSecret(value, secretPurpose(id)),
+    open: (sealed: string, id: string) => openSecret(sealed, secretPurpose(id)),
+  };
+  const live = { register: () => undefined, unregister: () => undefined };
+  const clock = () => new Date();
+  // The built-in talks connector's row and its described capabilities, as the BFF writes them at boot.
+  await syncBundledRows({
+    registry,
+    store,
+    secrets,
+    live,
+    bundled: bundledIds,
+    internal: internalIds,
+    offAtFirstBoot,
+    clock,
+  });
+  const rows = await store.list();
+  if (rows.some(r => Object.values(r.capabilities).some(c => c.lens || c.column))) {
+    console.log('entities       kept the lenses and columns an administrator chose');
+    return;
+  }
+  const stale = ENTITY_CHOICE.filter(c => {
+    const manifest = rows.find(r => r.id === c.connector)?.manifest as { capabilities?: Array<{ name: string }> };
+    return !manifest?.capabilities?.some(x => x.name === c.capability);
+  });
+  if (stale.length) {
+    console.log(
+      `entities       not chosen: ${stale.map(c => c.capability).join(', ')} not in the stored manifest; refresh it on Anslutna system and run this again`,
+    );
+    return;
+  }
+  const admin = connectorUsecases({
+    internal: internalIds,
+    store,
+    registry,
+    secrets,
+    live,
+    units: postgresUnits(),
+    groups: postgresGroups(),
+    clock,
+    transport: {
+      fetchManifest: (url, id) => fetchManifest(url, id),
+      check: () => Promise.reject(new Error('The development choice runs no connection check.')),
+    },
+  });
+  const operator: AuthenticatedContext = {
+    id: 'bootstrap',
+    name: 'Utvecklingsmiljön',
+    unitId: '',
+    unitLabel: '',
+    role: 'employee',
+    organisationId: DEVELOPMENT_ROUND.organisationId,
+    principal: { id: 'bootstrap:connector', kind: 'person' },
+    capabilities: ['admin.connectors'],
+    authorizationVersion: 'bootstrap',
+    sessionBinding: 'bootstrap:connector',
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    authorize: async () => ({ version: 'bootstrap' }),
+  };
+  for (const c of ENTITY_CHOICE)
+    await admin.update(operator, c.connector, {
+      lens: { [c.capability]: true },
+      column: { [c.capability]: c.column },
+    });
+  console.log(
+    `entities       chose for Personal: lenses ${ENTITY_CHOICE.map(c => c.capability).join(', ')}; columns ${ENTITY_CHOICE.map(c => `${c.capability} ${c.column}`).join(', ')}`,
+  );
+}
 
 /** A service may still be starting when this runs right after the stack came up. */
 async function waitForManifest(url: string, seconds = 60) {
@@ -94,12 +190,13 @@ try {
       ? `talks          kept the open round ${round.kept} of organisation "${DEVELOPMENT_ROUND.organisationId}"`
       : `talks          opened round ${round.opened} for organisation "${DEVELOPMENT_ROUND.organisationId}" (${DEVELOPMENT_ROUND.opensOn} to ${DEVELOPMENT_ROUND.dueOn})`,
   );
-  // The competence module's catalogue and holdings (D101): the types the development organisation lacks and holdings
+  // The competence module's catalogue and holdings (D107): the types the development organisation lacks and holdings
   // for the people who have none. The module itself stays off until an administrator switches it on (item 13).
   const seeded = await seedCompetence(DEVELOPMENT_ROUND.organisationId);
   console.log(
     `competence     seeded ${seeded.types} new types and ${seeded.holdings} holdings for ${seeded.people} people of organisation "${DEVELOPMENT_ROUND.organisationId}"`,
   );
+  await chooseForPersonal();
 } finally {
   await closeDatabase();
 }

@@ -21,7 +21,7 @@ export interface ReconcileDeps {
   bundled: string[];
   /** Internal capability providers have no connector lifecycle (D62). */
   internal?: readonly string[];
-  /** Bundled connectors whose row is created disabled, for an administrator to switch on (D101 item 13). */
+  /** Bundled connectors whose row is created disabled, for an administrator to switch on (D107 item 13). */
   offAtFirstBoot?: readonly string[];
   clock: () => Date;
   log?: (message: string) => void;

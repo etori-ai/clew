@@ -1,12 +1,11 @@
+import { Type, type Static } from '@sinclair/typebox';
 import { COMPETENCE_CONNECTOR, type Actor, type Capability, type Connector, type ThreadDraft } from '@clew/connectors';
 import {
-  AboutInputSchema,
   CompetenceAttentionInputSchema,
   CompetenceAttentionOutputSchema,
   CompetenceHoldingsInputSchema,
   CompetenceHoldingsOutputSchema,
-  CompetenceStandingOutputSchema,
-  type AboutInput,
+  ENTITY_KEYS_MAX,
   type AuthenticatedContext,
   type CompetenceAttentionInput,
   type CompetenceHoldingsInput,
@@ -17,7 +16,7 @@ import { swedishDayAndMonth } from './domain';
 import type { CompetenceUsecases } from './usecases';
 
 /**
- * The competence module as Clew's built-in connector (D101 items 11 to 13): two reads with declared views and a third
+ * The competence module as Clew's built-in connector (D107 items 11 to 13): two reads with declared views and a third
  * about a person (D97), the area
  * whose figure says how much has run out among a manager's reports, and the scan that turns what needs a person into a
  * card. No read is a model tool, and neither view declares a `ref`, so no row can be added to a conversation as a chip.
@@ -53,22 +52,61 @@ export const holdingsView: View = {
   ],
 };
 /**
- * Where one person stands, the read about a person (D97): Clew draws it as a section when the person is opened and as
- * a mark on their row where the status has a tone; the row opens the person's holdings.
+ * The read about a person (D97): asked with a batch of user names, it answers one row per person the reader manages.
+ * Clew places it from the declaration: a section on the opened person, a lens and a column on Personal when an
+ * administrator chooses them, and a mark where the status warns. Never a model tool.
  */
-export const standingView: View = {
+const KeysSchema = Type.Object(
+  { keys: Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { maxItems: ENTITY_KEYS_MAX }) },
+  { additionalProperties: false },
+);
+type Keys = Static<typeof KeysSchema>;
+/** Where a person stands, in the word a person reads; only what has run out or soon will has a tone. */
+export const STANDING_WORDS = {
+  expired: 'Utgånget',
+  expiring: 'Går ut snart',
+  valid: 'Giltigt',
+  none: 'Inget registrerat',
+} as const;
+export const PersonCompetenceRowSchema = Type.Object(
+  {
+    key: Type.String({ minLength: 1, maxLength: 256 }),
+    status: Type.Union(Object.values(STANDING_WORDS).map(word => Type.Literal(word))),
+    due: Type.Optional(Type.String({ maxLength: 60 })),
+    held: Type.String({ maxLength: 40 }),
+  },
+  { additionalProperties: false },
+);
+export const PersonCompetenceOutputSchema = Type.Object(
+  { rows: Type.Array(PersonCompetenceRowSchema, { maxItems: ENTITY_KEYS_MAX }) },
+  { additionalProperties: false },
+);
+/**
+ * One person's competence in a row: the status as a badge, the one value where only one has room; beside it how many
+ * have run out or soon will; then how many are registered. A row opens the person's holdings.
+ */
+export const personView: View = {
   kind: 'list',
   title: 'status',
   noun: { one: 'person', other: 'personer' },
-  empty: 'Inga registrerade kompetenser.',
+  empty: 'Ingen av dem rapporterar till dig.',
   fields: [
-    { key: 'status', label: 'Status', format: 'status', tones: { expired: 'alert', expiring: 'warn' } },
-    { key: 'expired', label: 'Har gått ut', format: 'number' },
-    { key: 'expiring', label: 'Går ut inom 90 dagar', format: 'number' },
-    { key: 'holdings', label: 'Registrerade', format: 'number' },
+    {
+      key: 'status',
+      label: 'Kompetens',
+      format: 'status',
+      tones: { [STANDING_WORDS.expired]: 'alert', [STANDING_WORDS.expiring]: 'warn' },
+      compact: true,
+    },
+    { key: 'due', label: 'Att åtgärda', beside: true },
+    { key: 'held', label: 'Registrerade' },
   ],
-  open: { capability: COMPETENCE_CONNECTOR + '.holdings', title: 'Kompetenser', params: { person: 'person' } },
+  open: { capability: COMPETENCE_CONNECTOR + '.holdings', title: 'Kompetenser', params: { person: 'key' } },
 };
+const dueWords = (expired: number, expiring: number) =>
+  [...(expired ? [`${expired} har gått ut`] : []), ...(expiring ? [`${expiring} går ut inom 90 dagar`] : [])].join(
+    ', ',
+  );
 /** The persona a use case takes, built from the person's current grant as the talks connector does. */
 async function systemPersona(actor: Actor): Promise<AuthenticatedContext> {
   const persona = await systemContext(actor.id, 'connector:' + COMPETENCE_CONNECTOR);
@@ -106,18 +144,33 @@ export function competenceConnector(
     scope: () => true,
     run: async (actor, input) => competence.holdings(await persona(actor), input),
   };
-  const standing: Capability<AboutInput> = {
-    name: COMPETENCE_CONNECTOR + '.standing',
+  const aboutPerson: Capability<Keys> = {
+    name: COMPETENCE_CONNECTOR + '.person',
     kind: 'read',
     title: 'Kompetens',
     model: false,
-    description: 'Var en person står: om något intyg har gått ut eller går ut inom 90 dagar.',
-    input: AboutInputSchema,
-    output: CompetenceStandingOutputSchema,
-    view: standingView,
-    about: 'person',
-    scope: () => true,
-    run: async (actor, input) => competence.standing(await persona(actor), input.keys),
+    description:
+      'Var varje person du är chef för står: om något intyg har gått ut eller går ut inom 90 dagar, och hur många som är registrerade.',
+    input: KeysSchema,
+    output: PersonCompetenceOutputSchema,
+    view: personView,
+    scope: { roles: ['manager'] },
+    // A certificate is registered on Personal, in the dialog (D107 item 7): the section's second way in.
+    about: { entity: 'person', page: { title: 'Registrera intyg', href: '/staff?register={id}' } },
+    run: async (actor, input) => {
+      const { rows } = await competence.aboutPeople(await persona(actor), input.keys);
+      return {
+        rows: rows.map(r => {
+          const due = dueWords(r.expired, r.expiring);
+          return {
+            key: r.key,
+            status: STANDING_WORDS[r.expired ? 'expired' : r.expiring ? 'expiring' : r.holdings ? 'valid' : 'none'],
+            ...(due ? { due } : {}),
+            held: r.holdings ? `${r.holdings} registrerade` : 'Inga',
+          };
+        }),
+      };
+    },
   };
   return {
     id: COMPETENCE_CONNECTOR,
@@ -147,9 +200,9 @@ export function competenceConnector(
         },
       },
     ],
-    capabilities: [attention as Capability, holdings as Capability, standing as Capability],
+    capabilities: [attention as Capability, holdings as Capability, aboutPerson as Capability],
     /**
-     * What needs a person (D101 item 12), derived from the dates each time and never stored: the card goes when a
+     * What needs a person (D107 item 12), derived from the dates each time and never stored: the card goes when a
      * certificate is registered. A person gets one card per holding of their own, with its end date as the deadline.
      * A manager gets one card that counts their reports' holdings and names nobody: its rows are the read it opens.
      */

@@ -5,7 +5,6 @@ import type {
   CompetenceHoldingBody,
   CompetenceHoldingsInput,
   CompetenceHoldingsOutput,
-  CompetenceStandingOutput,
   CompetenceType,
   CompetenceTypeBody,
   CompetenceTypePatch,
@@ -25,24 +24,25 @@ import {
   orderHoldingRows,
   orderTypes,
   personKey,
-  standingRow,
   statusOn,
+  summarise,
   swedishDay,
   typeRow,
+  type PersonSummary,
   type Standing,
 } from './domain';
 import { TypeNameTaken, type CompetenceDeps, type CompetenceExport, type CompetenceTx, type TypeRecord } from './model';
 
-/** A request the competence module turns down for what it asks, not who asks (D101); a 400 with this message. */
+/** A request the competence module turns down for what it asks, not who asks (D107); a 400 with this message. */
 export class CompetenceError extends InputError {
   constructor(message: string) {
     super(message);
     this.name = 'CompetenceError';
   }
 }
-/** The grant capability behind the catalogue (D101 item 8). */
+/** The grant capability behind the catalogue (D107 item 8). */
 export const COMPETENCE_ADMIN: Capability = 'admin.competence';
-/** The version of the export document (D101 item 14); a breaking change is a new version. */
+/** The version of the export document (D107 item 14); a breaking change is a new version. */
 export const COMPETENCE_EXPORT_FORMAT = 'clew.competence/1';
 const NOT_A_MANAGER = 'Intyg registreras av den som är chef för en enhet.';
 const NOT_YOURS = 'Personen finns inte bland dem du är chef för.';
@@ -55,7 +55,7 @@ const BAD_AREA = 'Ange ett område på högst 80 tecken.';
 const NOT_ALLOWED = 'Du kan inte ändra det här intyget.';
 
 /**
- * The competence module's use cases (D101): the catalogue, a manager's registration of a certificate, and the reads
+ * The competence module's use cases (D107): the catalogue, a manager's registration of a certificate, and the reads
  * that work out where every holding stands today. A manager's reach is their reports, computed when asked
  * (`deps.staff`, D99 item 4) and never stored, so a former manager reads and writes nothing the day the line changes.
  * Every change is one `deps.store` transaction with its audit row. Audit rows carry ids, dates, counts and kinds:
@@ -184,7 +184,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
 
   return {
     /**
-     * The catalogue (D101 item 2). An administrator of it reads every type, archived ones included; a manager reads the
+     * The catalogue (D107 item 2). An administrator of it reads every type, archived ones included; a manager reads the
      * ones a certificate can be registered for; anyone else is refused.
      */
     async types(persona: AuthenticatedContext): Promise<{ rows: CompetenceType[] }> {
@@ -204,7 +204,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
       insertType(actor, organisationId, body),
 
     /**
-     * What a new validity would do to the holdings counted from this type's rule (D101 item 3): how many there are and
+     * What a new validity would do to the holdings counted from this type's rule (D107 item 3): how many there are and
      * how many are expired today under the current rule and under the new one. Nothing is written.
      */
     async validityImpact(
@@ -230,7 +230,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
 
     /**
      * An administrator changes a type: its name, area, kind or the employer's validity. A new validity applies at once
-     * to every holding counted from the rule (D101 item 3); `validityImpact` says what that does before this is called.
+     * to every holding counted from the rule (D107 item 3); `validityImpact` says what that does before this is called.
      */
     async updateType(persona: AuthenticatedContext, typeId: string, body: CompetenceTypePatch): Promise<void> {
       await admin(persona);
@@ -283,7 +283,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
     },
 
     /**
-     * The manager a person reports to registers a certificate for them (D101 item 7): the type, the day it was issued
+     * The manager a person reports to registers a certificate for them (D107 item 7): the type, the day it was issued
      * and, where the issuer set one, its end date. Returns the holding's id.
      */
     async registerHolding(
@@ -348,32 +348,39 @@ export function competenceUsecases(deps: CompetenceDeps) {
     },
 
     /**
-     * `competence.standing`, the read about a person (D97 item 1, D101 item 11): for each asked person the reader may
-     * see, themselves or someone who reports to them, where they stand: the worst status among their holdings and how
-     * many have run out or soon will. A person outside that reach, or with no holding, has no row and is never a refusal.
+     * What `competence.person` answers (D97): for each asked person who reports to the reader, by their user name
+     * without regard to case, how many of their holdings have run out, how many soon will and how many count. A
+     * person with no holding has a row too, since it is where a first certificate is registered from. A key that is
+     * nobody the reader manages has no row, and is never a refusal.
      */
-    async standing(persona: AuthenticatedContext, keys: readonly string[]): Promise<CompetenceStandingOutput> {
+    async aboutPeople(
+      persona: AuthenticatedContext,
+      keys: readonly string[],
+    ): Promise<{ rows: Array<{ key: string } & PersonSummary> }> {
       const { people } = await reports(persona);
-      const asked = [...new Set(keys)].filter(id => id === persona.id || people.has(id));
+      const byUserName = new Map(
+        [...people.values()].flatMap(p => (p.userName ? [[p.userName.toLowerCase(), p.id] as const] : [])),
+      );
+      const asked = [...new Set(keys)].flatMap(key => {
+        const id = byUserName.get(key.toLowerCase());
+        return id ? [{ key, id }] : [];
+      });
       if (!asked.length) return { rows: [] };
       const today = swedishDay(now());
-      return deps.store.transaction(async tx => {
-        const byPerson = new Map<string, Standing[]>();
-        for (const s of await standings(tx, asked, today))
-          byPerson.set(s.holding.personId, [...(byPerson.get(s.holding.personId) ?? []), s]);
-        const persons = new Map((await tx.persons([...byPerson.keys()])).map(p => [p.id, p]));
-        return {
-          rows: asked.flatMap(id => {
-            const own = byPerson.get(id),
-              person = persons.get(id);
-            return own && person ? [standingRow(person, own)] : [];
-          }),
-        };
-      });
+      const all = await deps.store.transaction(tx =>
+        standings(
+          tx,
+          asked.map(a => a.id),
+          today,
+        ),
+      );
+      return {
+        rows: asked.map(a => ({ key: a.key, ...summarise(all.filter(s => s.holding.personId === a.id)) })),
+      };
     },
 
     /**
-     * `competence.attention` (D101 item 11): what has expired or expires within 90 days among the manager's reports,
+     * `competence.attention` (D107 item 11): what has expired or expires within 90 days among the manager's reports,
      * the expired first.
      */
     async attention(persona: AuthenticatedContext): Promise<CompetenceAttentionOutput> {
@@ -418,7 +425,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
     },
 
     /**
-     * Erase one person from the domain (D101 item 14): their holdings, and their id on the holdings they registered or
+     * Erase one person from the domain (D107 item 14): their holdings, and their id on the holdings they registered or
      * revoked for others. `actor` is the operator's.
      */
     async erasePerson(actor: string, personId: string): Promise<{ holdings: number; cleared: number }> {
@@ -437,7 +444,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
       });
     },
 
-    /** The whole domain of one organisation as one versioned document (D101 item 14). */
+    /** The whole domain of one organisation as one versioned document (D107 item 14). */
     async exportDomain(
       actor: string,
       organisationId: string,

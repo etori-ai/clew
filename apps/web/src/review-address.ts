@@ -19,19 +19,31 @@ export function stepOf(search: URLSearchParams, steps: number): number | null {
 }
 
 /**
- * What the review hands back to the card beside Hem when it is closed with ✕, Esc or the scrim (D73): the approved rows
- * as the card's selection. There is no selection on the server, so it rides in the router's navigation state of the one
- * entry it leads to, where the card reads it, whether it is drawn then or stood under the drawer all along, and puts the
- * focus back on its "Granska N".
+ * What the review hands back to the card beside Hem when it is closed with ✕, Esc or the scrim (D73): its decisions,
+ * the rows chosen for approval and the rows left behind. There is no selection on the server, so they ride in the
+ * router's navigation state of the one entry it leads to, where the card reads them, whether it is drawn then or stood
+ * under the drawer all along, and puts the focus back on its "Granska N".
  */
-export type ReviewReturn = { review: { threadId: string; selected: string[] } };
+export type ReviewReturn = { review: { threadId: string; approved: string[]; left: string[] } };
 
-export const reviewReturn = (threadId: string, selected: string[]): ReviewReturn => ({
-  review: { threadId, selected },
+export const reviewReturn = (threadId: string, approved: string[], left: string[]): ReviewReturn => ({
+  review: { threadId, approved, left },
 });
 
-/** The rows the review handed back to this card, or null when the address was reached some other way. */
-export function returnedSelection(state: unknown, threadId: string): string[] | null {
+/** What the review handed back to this card, or null when the address was reached some other way. The state's own object, so it is the same one on every render of the entry. */
+export function returnedReview(state: unknown, threadId: string): ReviewReturn['review'] | null {
   const review = (state as Partial<ReviewReturn> | null)?.review;
-  return review && review.threadId === threadId && Array.isArray(review.selected) ? review.selected : null;
+  return review && review.threadId === threadId && Array.isArray(review.approved) && Array.isArray(review.left)
+    ? review
+    : null;
 }
+
+/**
+ * The card's selection after a review (D73, amended 2026-11-11): a row chosen for approval is ticked, a row left behind
+ * is not, and a row the review never judged keeps the tick it had. So a review that is opened and closed again leaves
+ * the card as it was, with the rows the source marked still ticked, where it used to clear every tick.
+ */
+export const selectionAfterReview = (selected: string[], review: Pick<ReviewReturn['review'], 'approved' | 'left'>) => [
+  ...selected.filter(ref => !review.approved.includes(ref) && !review.left.includes(ref)),
+  ...review.approved,
+];

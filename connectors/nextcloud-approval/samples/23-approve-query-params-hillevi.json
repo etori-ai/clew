@@ -1,0 +1,29 @@
+{
+  "description": "Parameters in the query string instead of a JSON body (the third file): 200.",
+  "as": "hillevi",
+  "request": {
+    "method": "PUT",
+    "path": "/ocs/v2.php/apps/approval/api/v1/approve/627?etag=31d19d46ff3881c5f960a1de9c079a7c&message=Godk%C3%A4nt.",
+    "headers": {
+      "Authorization": "Bearer <exchanged access token, aud nextcloud, hillevi>",
+      "OCS-APIRequest": "true",
+      "Accept": "application/json"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "ocs": {
+        "meta": {
+          "status": "ok",
+          "statuscode": 200,
+          "message": "OK"
+        },
+        "data": []
+      }
+    }
+  }
+}

@@ -13,12 +13,15 @@ import { CalendarPage } from './pages/calendar';
 import { ToolPage } from './pages/tool';
 import { LoginPage } from './pages/login';
 import { ManifestReferencePage } from './pages/protocol';
+import { ManifestPreviewPage } from './pages/protocol-preview';
 import { AdminConnectorsPage } from './pages/admin/connectors';
 import { AdminConnectorPage } from './pages/admin/connector';
 import { AdminModelsPage } from './pages/admin/models';
 import { AdminUsersPage } from './pages/admin/users';
 import { AdminOrganisationPage } from './pages/admin/organisation';
 import { StaffPage } from './pages/staff';
+import { PersonPage } from './pages/person';
+import { UnitPage } from './pages/unit';
 import { AdminModelPage } from './pages/admin/model';
 import { AdminProviderPage } from './pages/admin/provider';
 import { NotAdmin } from './pages/admin/shell';
@@ -31,13 +34,6 @@ type Shell = { session: BrowserSession; user: SessionUser; admin: boolean };
 const Devtools = import.meta.env.DEV
   ? lazy(() => import('@tanstack/react-query-devtools').then(m => ({ default: m.ReactQueryDevtools })))
   : null;
-// D81: synthetic service lab; excluded from normal production builds.
-const McpPreview =
-  import.meta.env.DEV || import.meta.env.VITE_MCP_PREVIEW === 'true' ? lazy(() => import('./labs/mcp/preview')) : null;
-const McpServiceOverlay =
-  import.meta.env.DEV || import.meta.env.VITE_MCP_PREVIEW === 'true'
-    ? lazy(() => import('./labs/mcp/services-overlay'))
-    : null;
 /**
  * The protected tree mounts only after a live session is confirmed. No user content is kept in browser storage: the
  * query cache (D33) is one client per confirmed session, in memory, emptied once the boundary has shown the ended card.
@@ -142,14 +138,7 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
     <SessionBoundary session={shell.session} onEnded={() => client.clear()}>
       <QueryClientProvider client={client}>
         {/* One conversation for the whole session's pages (D50): asked on a tool's page, it is still there when the transcript takes the column. */}
-        <ConversationProvider>
-          {children(shell)}
-          {McpServiceOverlay && (
-            <Suspense fallback={null}>
-              <McpServiceOverlay />
-            </Suspense>
-          )}
-        </ConversationProvider>
+        <ConversationProvider>{children(shell)}</ConversationProvider>
         {Devtools && (
           <Suspense fallback={null}>
             <Devtools initialIsOpen={false} buttonPosition="bottom-right" />
@@ -188,29 +177,11 @@ function App() {
   );
   return (
     <Routes>
-      {McpPreview && (
-        <Route
-          path="/labs/mcp"
-          element={
-            <Suspense fallback={<Spinner label="Öppnar prototypen …" />}>
-              <Protected>{() => <McpPreview />}</Protected>
-            </Suspense>
-          }
-        />
-      )}
-      {McpPreview && (
-        <Route
-          path="/chat/services/:connectionId?"
-          element={
-            <Suspense fallback={<Spinner label="Hämtar tjänster …" />}>
-              <Protected>{() => <McpPreview />}</Protected>
-            </Suspense>
-          }
-        />
-      )}
       <Route path="/login" element={<LoginPage returnTo="/" />} />
       {/* Integrator documentation, public like the login (D60): the manifest field by field, drawn from the instance's own schema. */}
       <Route path="/protocol/manifest" element={<ManifestReferencePage />} />
+      {/* What Clew would do with a manifest, before anything is registered (D60, D97): public, the document posted to the dry run. */}
+      <Route path="/protocol/preview" element={<ManifestPreviewPage />} />
       <Route
         path="/calendar"
         element={<Protected>{shell => <CalendarPage user={shell.user} admin={shell.admin} />}</Protected>}
@@ -223,6 +194,16 @@ function App() {
       <Route
         path="/staff"
         element={<Protected>{shell => <StaffPage user={shell.user} admin={shell.admin} />}</Protected>}
+      />
+      {/* A person as a page (D97 item 5): "Öppna som sida" from the person beside a list; `section` is the chosen source. */}
+      <Route
+        path="/people/:key"
+        element={<Protected>{shell => <PersonPage user={shell.user} admin={shell.admin} />}</Protected>}
+      />
+      {/* A unit as a page (D97 items 5 and 6): reached from Läget on Hem and any row that names the unit; no rail entry. */}
+      <Route
+        path="/units/:id"
+        element={<Protected>{shell => <UnitPage user={shell.user} admin={shell.admin} />}</Protected>}
       />
       <Route
         path="/admin"

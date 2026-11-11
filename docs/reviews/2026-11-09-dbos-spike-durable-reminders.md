@@ -78,3 +78,7 @@ The spike removes the technical doubt: DBOS carries Clew's timer contract, and t
 3. **Waiting cheaply.** Use `DBOS.sleep` with `cancelWorkflow` for timers, or `recv` with a long polling interval since cancels arrive by NOTIFY; never put a concurrency limit on a queue of sleeping workflows.
 
 If the product owner accepts those three as Clew's responsibilities, the recommendation is to switch now, while there are seven workflows and no production state: port the seven workflows (`continueAsNew` loops become bounded loops), fold the outbox's "start the workflow" step into the ledger transaction through `enqueue_workflow`, remove the Temporal services from the devcontainer, and rewrite the reliability runbook for one database. That is a decision record of its own, amending D15, D17, D45 and D47, and a review of the result against D47's process-death matrix before it lands. If the owner would rather keep the operational maturity and the UI, Temporal stays and this review closes the question until the first self-hosting municipality asks for it.
+
+## Outcome
+
+The switch was made the same day: [D85](../decisions/D85-dbos-transact-replaces-temporal-as-the-durable-engine.md). The spike package `spikes/dbos-reminders` was removed from the repository on 2026-11-11; it is in the history up to commit `923968f`, with its two recorded runs under `results/`.

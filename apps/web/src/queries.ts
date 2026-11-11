@@ -1,5 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
-import type { Role, DocumentRequest } from '@clew/contracts';
+import type { Role, DocumentRequest, EntityKind, UsersAdminQueryType } from '@clew/contracts';
 import { api } from './api';
 import { keys } from './query-keys';
 import { unlessRefused } from './query-policy';
@@ -14,6 +14,30 @@ export const threadQuery = (id: string) => queryOptions({ queryKey: keys.thread(
 export const areasQuery = queryOptions({ queryKey: keys.areas, queryFn: () => api.areas() });
 /** Personal (D94): the people on the units the manager manages; a 403 is the page's own state, not retried. */
 export const staffQuery = queryOptions({ queryKey: keys.staff, queryFn: () => api.staff(), retry: false });
+/**
+ * Entities (D97). Not retried: a refusal or a missing entity is the page's own state. A source's rows and a section are
+ * read live and never kept past the visit's default; a source that did not answer comes back as a `status`, not an error.
+ */
+export const entityListQuery = (kind: EntityKind) =>
+  queryOptions({ queryKey: keys.entities.list(kind), queryFn: () => api.entities.list(kind), retry: false });
+export const entityRowsQuery = (kind: EntityKind, capability: string) =>
+  queryOptions({
+    queryKey: keys.entities.rows(kind, capability),
+    queryFn: () => api.entities.rows(kind, capability),
+    retry: false,
+  });
+export const entityDetailQuery = (kind: EntityKind, key: string) =>
+  queryOptions({
+    queryKey: keys.entities.detail(kind, key),
+    queryFn: () => api.entities.detail(kind, key),
+    retry: false,
+  });
+export const entitySectionQuery = (kind: EntityKind, key: string, capability: string) =>
+  queryOptions({
+    queryKey: keys.entities.section(kind, key, capability),
+    queryFn: () => api.entities.section(kind, key, capability),
+    retry: false,
+  });
 /**
  * Utvecklingssamtal (D96): the round, and action points. `null` means the person has no talks system (the capability is
  * refused, not offered): nothing to show and no error. Any other failure stays an error the page shows with Försök igen.
@@ -32,18 +56,7 @@ export const commitmentsQuery = (person?: string) =>
     retry: false,
   });
 /**
- * What the sources say about the people on a list (D97): `null` when no source about people answers for the reader
- * (the capability is refused, not offered), which is nothing to show and no error. Not retried: the list stands
- * without its marks, and says so.
- */
-export const aboutQuery = (people: string[]) =>
-  queryOptions({
-    queryKey: keys.about(people),
-    queryFn: () => unlessRefused(api.about(people)),
-    retry: false,
-  });
-/**
- * Kompetens (D101): the types a certificate can be registered for. `null` when the module is switched off for the
+ * Kompetens (D107): the types a certificate can be registered for. `null` when the module is switched off for the
  * person or they may not register: nothing is offered then, and it is no error. Not retried.
  */
 export const competenceTypesQuery = queryOptions({
@@ -66,20 +79,6 @@ export const assistantQuery = queryOptions({
   queryFn: () => api.assistantStatus(),
   retry: false,
 });
-export const chatServicesQuery = queryOptions({
-  queryKey: keys.chatServices,
-  queryFn: () => api.chatServices(),
-  retry: false,
-  refetchInterval: 10_000,
-});
-export const chatServiceQuery = (id: string, deliveryId?: string) =>
-  queryOptions({
-    queryKey: keys.chatService(id, deliveryId),
-    queryFn: () => api.chatService(id, deliveryId),
-    retry: false,
-    gcTime: 0,
-    refetchOnWindowFocus: false,
-  });
 export const calendarWeekQuery = (week: string) =>
   queryOptions({ queryKey: keys.calendar(week), queryFn: () => api.calendar(week) });
 export const membersQuery = queryOptions({
@@ -153,7 +152,7 @@ export const cardViewQuery = (threadId: string, actionId: string) =>
 /** The shared header (D88): what the person's header connector lists for them, read once per visit. */
 export const headerQuery = queryOptions({ queryKey: keys.header, queryFn: () => api.header(), staleTime: Infinity });
 /**
- * Administration › Kompetens (D101): the whole catalogue, archived types included, for an administrator of it. A
+ * Administration › Kompetens (D107): the whole catalogue, archived types included, for an administrator of it. A
  * refusal is the page's own state (the module is off, or the capability is missing), so it is not retried.
  */
 export const competenceCatalogueQuery = queryOptions({
@@ -166,6 +165,8 @@ export const adminQueries = {
   units: queryOptions({ queryKey: keys.admin.units, queryFn: () => api.admin.units() }),
   groups: queryOptions({ queryKey: keys.admin.groups, queryFn: () => api.admin.groups() }),
   users: queryOptions({ queryKey: keys.admin.users, queryFn: () => api.admin.users() }),
+  usersPage: (query: UsersAdminQueryType) =>
+    queryOptions({ queryKey: keys.admin.usersPage(query), queryFn: () => api.admin.usersPage(query) }),
   organisation: queryOptions({ queryKey: keys.admin.organisation, queryFn: () => api.admin.organisation() }),
   organisationUnit: (unitId: string) =>
     queryOptions({

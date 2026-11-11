@@ -8,11 +8,15 @@ import {
   type GroupCapability,
   type OrganisationOverview,
   type OrganisationUnitPeople,
+  type Role,
   type StaffOverview,
   type StaffPerson,
   type StaffUnit,
   type UserAdminRow,
   type UsersAdminOverview,
+  type UsersAdminPage,
+  type UsersAdminQueryType,
+  USERS_PAGE_SIZES,
 } from '@clew/contracts';
 import { ForbiddenError, InputError } from '../../context';
 import {
@@ -30,6 +34,7 @@ import {
   applyUserPatch,
   assertAcceptedKey,
   assertAcceptedParent,
+  branchOf,
   bySwedish,
   closesCycle,
   deriveAuthority,
@@ -42,6 +47,7 @@ import {
   parseFilter,
   project,
   sameGrant,
+  searchWords,
   unitGroupOf,
   unitOfKey,
   userFields,
@@ -56,6 +62,7 @@ import {
   type TreeUnit,
   type UserFields,
   type UserRecord,
+  type UserSearch,
 } from './domain';
 import type { Provisioner, ProvisionStore, ProvisionTx } from './ports';
 
@@ -77,7 +84,16 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
     // and the comparison that lets an unchanged derivation write nothing (a daily push replays every person).
     const named = [...new Set(memberships.flatMap(m => unitOfKey(m.externalId) ?? []))];
     const knownLabels = named.length ? await tx.unitLabels(named) : {};
-    const derived = deriveAuthority(memberships, rules, knownLabels);
+    // A unit the person leads without being placed on it is named by its `unit:` group, which they are no member of.
+    // The unit table has no row for a unit nobody was assigned to before them, so without this read the head of a
+    // unit nobody else is placed on would carry the unit's id as its name (D101).
+    const placedOn = new Set(memberships.flatMap(m => unitGroupOf(m.externalId) ?? [])),
+      pushedLabels: Record<string, string> = {};
+    for (const id of named) {
+      const node = placedOn.has(id) ? undefined : await tx.findGroup('externalId', UNIT_KEY + id);
+      if (node) pushedLabels[id] = node.label;
+    }
+    const derived = deriveAuthority(memberships, rules, { ...knownLabels, ...pushedLabels });
     const movedUnits = derived.units.filter(u => knownLabels[u.id] !== u.label);
     if (movedUnits.length) await tx.writeUnits(person.organisationId, movedUnits);
     const held = await tx.assignmentsOf(personId),
@@ -221,6 +237,20 @@ export function scimUsecases(deps: {
    * the unit it is given to. Read under the tree's lock, which the caller took.
    */
   const refused = (detail: string) => new ScimError(400, `${detail} The group was not stored.`, 'invalidValue');
+  /**
+   * D101: a unit belongs to the organisation that pushed it. `unit:<id>` and `unit-manager:<id>` are two keys for one
+   * unit, so the uniqueness of each does not stop one organisation from naming a manager of another's unit; this
+   * does. Asked after the unit is held (`lockUnitsOf`), so two organisations cannot take one unit at once.
+   */
+  const unitOfOwnOrganisation = async (tx: ProvisionTx, p: Provisioner, fields: GroupFields) => {
+    const unit = unitOfKey(fields.externalId);
+    if (unit === undefined) return;
+    for (const key of [UNIT_KEY + unit, MANAGER_KEY + unit]) {
+      const held = await tx.findGroup('externalId', key);
+      if (held && held.organisationId !== p.organisationId)
+        throw refused(`The unit '${unit}' is not a unit of this organisation (D101).`);
+    }
+  };
   const placeInTree = async (tx: ProvisionTx, p: Provisioner, fields: GroupFields) => {
     const unit = unitGroupOf(fields.externalId);
     if (fields.parent === null || unit === undefined) return;
@@ -322,6 +352,7 @@ export function scimUsecases(deps: {
     if (moved || leaves) await tx.lockTree(p.organisationId);
     await lockUnitsOf(tx, current.externalId, fields.externalId);
     await uniqueGroup(tx, fields, current.id);
+    await unitOfOwnOrganisation(tx, p, fields);
     if (leaves) {
       const below = await unitsBelow(tx, was);
       if (below) throw refused(below);
@@ -329,8 +360,10 @@ export function scimUsecases(deps: {
     if (moved) await placeInTree(tx, p, fields);
     await membersExist(tx, p, fields.members);
     const before = (await tx.groupMembers(current.id)).map(m => m.id),
-      added = fields.members.filter(id => !before.includes(id)),
-      removed = before.filter(id => !fields.members.includes(id)),
+      had = new Set(before),
+      wanted = new Set(fields.members),
+      added = fields.members.filter(id => !had.has(id)),
+      removed = before.filter(id => !wanted.has(id)),
       renamed = current.label !== fields.label || current.externalId !== fields.externalId,
       at = now();
     if (!renamed && !moved && !added.length && !removed.length) return groupView(tx, current, base);
@@ -482,6 +515,7 @@ export function scimUsecases(deps: {
         if (fields.parent !== null) await tx.lockTree(p.organisationId);
         await lockUnitsOf(tx, fields.externalId);
         await uniqueGroup(tx, fields);
+        await unitOfOwnOrganisation(tx, p, fields);
         await placeInTree(tx, p, fields);
         await membersExist(tx, p, fields.members);
         const at = now(),
@@ -591,6 +625,10 @@ export type ScimUsecases = ReturnType<typeof scimUsecases>;
  * units and roles are read only here; they come from the provisioner. The one thing written is D85's rows, a group gives
  * a capability: audited per row (`group-capability.added`, `group-capability.removed`), and every current member of the
  * group is re-derived in the same transaction, so a grant never lags the row that produced it.
+ *
+ * The people are read a page at a time (D100): the store narrows, orders and counts, and only the rows of the page are
+ * filled in with unit, grant and binding, so a page costs the same in an organisation of two hundred and one of
+ * twenty thousand. A read writes nothing, so it has no audit row.
  */
 export const USERS_ADMIN_CAPABILITY: Capability = 'admin.users';
 /**
@@ -604,35 +642,38 @@ export function usersAdminUsecases(deps: { store: ProvisionStore; clock: () => D
     if (!persona.capabilities.includes(USERS_ADMIN_CAPABILITY)) throw new ForbiddenError();
   };
   const sorted = (capabilities: readonly string[]) => [...capabilities].filter(isCapability).sort();
+  async function rowOf(tx: ProvisionTx, u: UserRecord): Promise<UserAdminRow> {
+    const grant = await tx.grant(u.id);
+    return {
+      id: u.id,
+      name: u.name,
+      userName: u.userName,
+      externalId: u.externalId,
+      email: u.email,
+      enabled: u.enabled,
+      bound: await tx.bound(u.id),
+      assignments: await tx.assignmentsOf(u.id),
+      active: grant ? { unitId: grant.unitId, unitLabel: grant.unitLabel, role: grant.role } : null,
+      capabilities: grant ? sorted(grant.capabilities) : [],
+    };
+  }
   async function overviewWithin(tx: ProvisionTx, persona: AuthenticatedContext): Promise<UsersAdminOverview> {
-    const users: UserAdminRow[] = [];
-    for (let startIndex = 1; ;) {
-      const page = await tx.listUsers(persona.organisationId, { startIndex, count: 200 });
-      for (const u of page.rows) {
-        const grant = await tx.grant(u.id);
-        users.push({
-          id: u.id,
-          name: u.name,
-          userName: u.userName,
-          externalId: u.externalId,
-          email: u.email,
-          enabled: u.enabled,
-          bound: await tx.bound(u.id),
-          assignments: await tx.assignmentsOf(u.id),
-          active: grant ? { unitId: grant.unitId, unitLabel: grant.unitLabel, role: grant.role } : null,
-          capabilities: grant ? sorted(grant.capabilities) : [],
-          groups: (await tx.userGroups(u.id)).map(g => ({ externalId: g.externalId, label: g.label })),
-        });
-      }
-      startIndex += page.rows.length;
-      if (!page.rows.length || startIndex > page.total) break;
-    }
+    const tree = await tx.unitTree(persona.organisationId),
+      unitLabel = new Map(tree.map(n => [n.id, n.label])),
+      units = tree
+        .map(n => ({ id: n.id, label: n.label, parentLabel: (n.parentId && unitLabel.get(n.parentId)) || null }))
+        .sort((a, b) => bySwedish(a.label, b.label) || a.id.localeCompare(b.id));
     const groups = (await tx.listGroups(persona.organisationId, { startIndex: 1, count: 10_000 })).rows
       .filter(g => g.externalId)
       .map(g => ({ id: g.externalId!, label: g.label }))
       .sort((a, b) => a.label.localeCompare(b.label, 'sv') || a.id.localeCompare(b.id));
     const names = new Map(groups.map(g => [g.id, g.label]));
-    const groupCapabilities: GroupCapability[] = (await tx.groupCapabilities())
+    // The rows of this organisation's groups, and the rows whose group is gone (D85: a row outlives its group and
+    // applies again when the group returns). A row on another organisation's group is not shown here (D101).
+    const rules: GroupCapabilityRule[] = [];
+    for (const m of await tx.groupCapabilities())
+      if (names.has(m.groupExternalId) || !(await tx.findGroup('externalId', m.groupExternalId))) rules.push(m);
+    const groupCapabilities: GroupCapability[] = rules
       .filter((m): m is GroupCapabilityRule & { capability: Capability } => isCapability(m.capability))
       .map(m => ({
         groupExternalId: m.groupExternalId,
@@ -644,7 +685,6 @@ export function usersAdminUsecases(deps: { store: ProvisionStore; clock: () => D
           (a.groupLabel ?? a.groupExternalId).localeCompare(b.groupLabel ?? b.groupExternalId, 'sv') ||
           a.capability.localeCompare(b.capability),
       );
-    users.sort((a, b) => a.name.localeCompare(b.name, 'sv') || a.id.localeCompare(b.id));
     const at = deps.clock().toISOString(),
       provisioners = (await tx.provisioners(persona.organisationId)).map(p => ({
         id: p.id,
@@ -652,7 +692,7 @@ export function usersAdminUsecases(deps: { store: ProvisionStore; clock: () => D
         lastSeenAt: p.lastSeenAt,
         silent: p.lastSeenAt === null || since(at, p.lastSeenAt) > PROVISIONER_SILENT_MS,
       }));
-    return { users, groupCapabilities, groups, capabilities: [...CAPABILITIES], provisioners };
+    return { groupCapabilities, groups, capabilities: [...CAPABILITIES], units, provisioners };
   }
   async function change(persona: AuthenticatedContext, input: GroupCapabilityInputType, present: boolean) {
     require(persona);
@@ -660,7 +700,10 @@ export function usersAdminUsecases(deps: { store: ProvisionStore; clock: () => D
     if (!isCapability(input.capability)) throw new InputError('Okänd behörighet.');
     return deps.store.transaction(async tx => {
       const group = await tx.findGroup('externalId', input.groupExternalId);
-      if (!group && present) throw new InputError('Gruppen finns inte bland de provisionerade grupperna.');
+      // D101: another organisation's group does not exist for this administrator, to add a row or to remove one. A
+      // row whose group is gone may still be removed.
+      if (group ? group.organisationId !== persona.organisationId : present)
+        throw new InputError('Gruppen finns inte bland de provisionerade grupperna.');
       const changed = await tx.setGroupCapability(input.groupExternalId, input.capability, present);
       if (changed) {
         await tx.audit({
@@ -678,6 +721,36 @@ export function usersAdminUsecases(deps: { store: ProvisionStore; clock: () => D
     async overview(persona: AuthenticatedContext) {
       require(persona);
       return deps.store.transaction(tx => overviewWithin(tx, persona));
+    },
+    /**
+     * One page of the organisation's people (D100), by name in Swedish order. A unit is asked for with everything
+     * below it in the tree, so the count is the one Organisation gives the unit's branch, deactivated people included
+     * here. A page past the end, which a list that became shorter leaves behind, answers with the last page.
+     */
+    async people(persona: AuthenticatedContext, query: UsersAdminQueryType = {}): Promise<UsersAdminPage> {
+      require(persona);
+      const pageSize = query.pageSize ?? USERS_PAGE_SIZES[0];
+      return deps.store.transaction(async tx => {
+        const search: UserSearch = {
+          words: searchWords(query.text),
+          ...(query.unitId === undefined
+            ? {}
+            : { unitIds: branchOf(await tx.unitTree(persona.organisationId), query.unitId) }),
+          ...(query.role === undefined ? {} : { role: query.role }),
+          ...(query.status === undefined ? {} : { status: query.status }),
+          ...(query.capability === undefined ? {} : { capability: query.capability }),
+        };
+        const read = (page: number) =>
+          tx.searchUsers(persona.organisationId, search, { startIndex: (page - 1) * pageSize + 1, count: pageSize });
+        let page = query.page ?? 1,
+          listed = await read(page);
+        if (!listed.rows.length && listed.total) listed = await read((page = Math.ceil(listed.total / pageSize)));
+        if (!listed.total) page = 1;
+        const rows: UserAdminRow[] = [];
+        for (const u of listed.rows) rows.push(await rowOf(tx, u));
+        const all = (await tx.searchUsers(persona.organisationId, {}, { startIndex: 1, count: 0 })).total;
+        return { rows, total: listed.total, all, page, pageSize };
+      });
     },
     addGroupCapability: (persona: AuthenticatedContext, input: GroupCapabilityInputType) =>
       change(persona, input, true),
@@ -750,23 +823,77 @@ async function addReportsFromBelow(
   }
 }
 export function staffUsecases(deps: { store: ProvisionStore }) {
+  /**
+   * The people on each of these units except the reader, with those who report to the unit from below (D99), by
+   * name; the units by label.
+   */
+  async function peopleOn(
+    tx: ProvisionTx,
+    persona: AuthenticatedContext,
+    managed: Array<{ unitId: string; unitLabel: string }>,
+  ): Promise<StaffUnit[]> {
+    const below = unitsUnder(await tx.unitTree(persona.organisationId)),
+      own = new Set(managed.map(u => u.unitId)),
+      // Within the reader's organisation, as the tree is: a unit id names nobody elsewhere (D101, a unit belongs to
+      // one organisation).
+      placed = await tx.unitPeople([...own], persona.organisationId),
+      units: StaffUnit[] = [];
+    for (const unit of managed) {
+      const people = new Map<string, StaffPerson>();
+      for (const p of placed[unit.unitId] ?? []) if (p.id !== persona.id) people.set(p.id, p);
+      // A unit the reader manages too has its own card, so the walk leaves it alone.
+      await addReportsFromBelow(tx, below, unit.unitId, people, {
+        skip: own,
+        reader: persona.id,
+        organisationId: persona.organisationId,
+      });
+      units.push({ unitId: unit.unitId, unitLabel: unit.unitLabel, people: [...people.values()].sort(byName) });
+    }
+    return units.sort((a, b) => bySwedish(a.unitLabel, b.unitLabel) || a.unitId.localeCompare(b.unitId));
+  }
   return {
     overview: (persona: AuthenticatedContext): Promise<StaffOverview> =>
       deps.store.transaction(async tx => {
         const managed = (await tx.assignmentsOf(persona.id)).filter(a => a.role === 'manager');
         if (!managed.length) throw new ForbiddenError('Sidan Personal är för den som är chef för en enhet.');
-        const below = unitsUnder(await tx.unitTree(persona.organisationId)),
-          own = new Set(managed.map(u => u.unitId)),
-          placed = await tx.unitPeople([...own]),
-          units: StaffUnit[] = [];
-        for (const unit of managed) {
-          const people = new Map<string, StaffPerson>();
-          for (const p of placed[unit.unitId] ?? []) if (p.id !== persona.id) people.set(p.id, p);
-          // A unit the reader manages too has its own card, so the walk leaves it alone.
-          await addReportsFromBelow(tx, below, unit.unitId, people, { skip: own, reader: persona.id });
-          units.push({ unitId: unit.unitId, unitLabel: unit.unitLabel, people: [...people.values()].sort(byName) });
-        }
-        return { units: units.sort((a, b) => bySwedish(a.unitLabel, b.unitLabel) || a.unitId.localeCompare(b.unitId)) };
+        return { units: await peopleOn(tx, persona, managed) };
+      }),
+    /**
+     * Where the reader stands (D97, who may be asked about): every unit they are assigned to with their role there, and
+     * the units they manage with the people on them as `overview` lists them. It refuses nobody: someone who manages no
+     * unit has nothing under `managed`.
+     */
+    reach: (
+      persona: AuthenticatedContext,
+    ): Promise<{ units: Array<{ unitId: string; unitLabel: string; role: Role }>; managed: StaffUnit[] }> =>
+      deps.store.transaction(async tx => {
+        const units = await tx.assignmentsOf(persona.id);
+        return {
+          units,
+          managed: await peopleOn(
+            tx,
+            persona,
+            units.filter(a => a.role === 'manager'),
+          ),
+        };
+      }),
+    /**
+     * Another person in the reader's organisation, found by user name without regard to case (D97: a colleague is
+     * anyone active in the directory), with the unit they act in; undefined for nobody, someone in another organisation
+     * or a deactivated person. Read on every call, never cached.
+     */
+    colleague: (persona: AuthenticatedContext, userName: string) =>
+      deps.store.transaction(async tx => {
+        const found = await tx.findUser('userName', userName);
+        if (!found || found.organisationId !== persona.organisationId || !found.enabled) return undefined;
+        const grant = await tx.grant(found.id);
+        return {
+          id: found.id,
+          name: found.name,
+          userName: found.userName,
+          enabled: true as const,
+          unit: grant ? { unitId: grant.unitId, unitLabel: grant.unitLabel } : null,
+        };
       }),
   };
 }

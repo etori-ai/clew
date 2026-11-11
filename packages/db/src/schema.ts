@@ -14,7 +14,6 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
-import type { McpWatch } from '@clew/contracts';
 import type {
   ConnectorAudience,
   InstallationTheme,
@@ -24,6 +23,7 @@ import type {
   MessageMeta,
   ProviderHealth,
   Receipt,
+  Subject,
   ThreadAction,
   ThreadItem,
 } from '@clew/contracts';
@@ -232,6 +232,8 @@ export const threads = pgTable(
     area: text('area').notNull().default('calendar'),
     summary: text('summary').notNull().default(''),
     items: jsonb('items').$type<ThreadItem[]>().notNull().default([]),
+    // The entities a card of Clew's own is about while no row may name them (D97 item 6): never drawn, never read by the assistant.
+    subjects: jsonb('subjects').$type<Subject[]>().notNull().default([]),
     actions: jsonb('actions').$type<ThreadAction[]>().notNull().default([]),
     waitingOn: text('waiting_on'),
     deadline: text('deadline'),
@@ -272,6 +274,25 @@ export const threadMessages = pgTable(
   t => [
     index('thread_message_thread').on(t.threadId, t.createdAt, t.seq),
     check('thread_message_role', sql`${t.role} IN ('assistant', 'user')`),
+  ],
+);
+// The index from entity to cards (D97 item 6): one row per thread and entity its rows (or the thread itself) name, with
+// the key as Clew compares it (a person's in lower case). Written by the thread store in the transaction that writes the
+// thread's items, gone with the thread. `person_id` is the thread's owner, so "my cards about Anna" is one index lookup.
+export const threadSubjects = pgTable(
+  'thread_subject',
+  {
+    threadId: text('thread_id')
+      .notNull()
+      .references(() => threads.id, { onDelete: 'cascade' }),
+    personId: text('person_id').notNull(),
+    entity: text('entity').$type<Subject['entity']>().notNull(),
+    key: text('key').notNull(),
+  },
+  t => [
+    primaryKey({ columns: [t.threadId, t.entity, t.key] }),
+    index('thread_subject_owner').on(t.personId, t.entity, t.key),
+    index('thread_subject_entity').on(t.entity, t.key),
   ],
 );
 // A proposal is the assistant's suggestion; it becomes a calendar event only through the human decision endpoint.
@@ -336,7 +357,8 @@ export const audit = pgTable(
   },
   t => [index('audit_subject').on(t.subject, t.createdAt)],
 );
-// Postgres-backed scheduler for v1: a nightly scan and a timer per undo window. Temporal comes with the second use case.
+// The scheduler's jobs (D15): a nightly scan and a timer per undo window. The durable engine runs them since D85; the
+// status value `temporal` is the engine owner's historical name (see jobs.ts).
 export const jobs = pgTable(
   'job',
   {
@@ -528,6 +550,10 @@ export const executions = pgTable(
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
     leaseUntil: timestamp('lease_until', { withTimezone: true }),
+    // The person's own signed-in sessions behind a write on a connector that acts as them (D26), sealed by the adapter:
+    // the one that approved it (dispatch, replay, read-back) and the one that last asked to check it (read-back only).
+    approvingSession: text('approving_session'),
+    checkingSession: text('checking_session'),
   },
   t => [
     uniqueIndex('execution_decision').on(t.personId, t.decisionId),
@@ -695,6 +721,9 @@ export const refreshRequests = pgTable(
     lastSuccess: timestamp('last_success', { withTimezone: true }),
     observedAt: timestamp('observed_at', { withTimezone: true }),
     error: text('error'),
+    // The signed-in session that last asked for this refresh, sealed by the adapter: what a scan of a connector that acts
+    // as the person runs with while it is active (D26). Null when no session asked since the last request without one.
+    session: text('session'),
   },
   t => [index('refresh_due').on(t.nextAt)],
 );
@@ -729,48 +758,6 @@ export const attentionDays = pgTable('attention_day', {
   dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
 });
 
-// MCP is a separate standards-based lane (D81). A registration currently binds one development identity.
-export const mcpConnections = pgTable('mcp_connection', {
-  id: text('id').primaryKey(),
-  personId: text('person_id')
-    .notNull()
-    .references(() => people.id),
-  url: text('url').notNull(),
-  enabled: boolean('enabled').notNull().default(true),
-  readTools: jsonb('read_tools').$type<string[]>().notNull(),
-  writeTools: jsonb('write_tools').$type<string[]>().notNull(),
-  watch: jsonb('watch').$type<McpWatch>().notNull(),
-  lastKey: text('last_key'),
-});
-export const mcpDeliveries = pgTable('mcp_delivery', {
-  id: text('id').primaryKey(),
-  personId: text('person_id')
-    .notNull()
-    .references(() => people.id),
-  connectionId: text('connection_id')
-    .notNull()
-    .references(() => mcpConnections.id),
-  title: text('title').notNull(),
-  text: text('text').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
-  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
-});
-export const mcpDecisions = pgTable(
-  'mcp_decision',
-  {
-    id: text('id').notNull(),
-    personId: text('person_id')
-      .notNull()
-      .references(() => people.id),
-    connectionId: text('connection_id')
-      .notNull()
-      .references(() => mcpConnections.id),
-    digest: text('digest').notNull(),
-    state: text('state').$type<'unknown' | 'succeeded' | 'failed'>().notNull(),
-    result: text('result'),
-  },
-  t => [primaryKey({ columns: [t.personId, t.id] })],
-);
 export const deliveries = pgTable(
   'attention_delivery',
   {
@@ -897,7 +884,7 @@ export const talkCommitments = pgTable(
   ],
 );
 /**
- * The catalogue of competence types (D101 item 2): rows per installation, never an enumeration in code. Archived, never
+ * The catalogue of competence types (D107 item 2): rows per installation, never an enumeration in code. Archived, never
  * deleted; one name per organisation among the types that are not archived, without regard to case.
  */
 export const competenceTypes = pgTable(
@@ -924,7 +911,7 @@ export const competenceTypes = pgTable(
   ],
 );
 /**
- * What one person holds of one type (D101 item 1): a competence and a certificate are the same record. Where it stands
+ * What one person holds of one type (D107 item 1): a competence and a certificate are the same record. Where it stands
  * is computed when read and never stored (item 4). `expires_on` is the issuer's own date only (item 3). The person's
  * rows go with the person; the people who registered or revoked a row are nulled by erasure.
  */

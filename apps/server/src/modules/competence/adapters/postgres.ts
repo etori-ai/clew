@@ -38,7 +38,7 @@ const holdingOf = (r: HoldingRow): HoldingRecord => ({
 });
 
 /**
- * The competence tables (D101) on one Postgres transaction. Reads that a write follows take a row lock. The catalogue's
+ * The competence tables (D107) on one Postgres transaction. Reads that a write follows take a row lock. The catalogue's
  * order is Swedish and is sorted here, since the database's collation is not Clew's to choose.
  */
 export function competenceTx(tx: Transaction): CompetenceTx {

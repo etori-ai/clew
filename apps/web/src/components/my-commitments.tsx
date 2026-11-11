@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router';
 import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import { today } from '@clew/calendar/dates';
 import { Badge, Button, Card, Heading, HStack, Link, List, ListItem, Text, VStack, useToast } from '@clew/ui';
@@ -6,6 +7,7 @@ import { api } from '../api';
 import { useTalkAction } from '../mutations';
 import { commitmentsQuery } from '../queries';
 import { dueText, isOverdue, splitMine, type CommitmentEntry } from '../talks';
+import { personPageHref } from '../person-address';
 import { ContentArrival } from './loading';
 
 /** The area of the talks domain (D96 item 7): with it chosen, Hem still shows the person's action points. */
@@ -44,7 +46,9 @@ export function MyCommitments() {
     if (!target) return;
     const section = heading.current?.closest('section');
     const rows = [...(section?.querySelectorAll('li') ?? [])];
-    const control = (row?: Element) => row?.querySelector<HTMLElement>('button, a') ?? null;
+    // The row's own control: its Klar, else its link out; the name of the person it concerns is not the row's control.
+    const control = (row?: Element) =>
+      row?.querySelector<HTMLElement>('button') ?? row?.querySelector<HTMLElement>('a') ?? null;
     if ('back' in target) {
       if (!open.some(row => row.id === target.back)) return;
       focusAfter.current = null;
@@ -137,14 +141,32 @@ export function MyCommitments() {
 /**
  * The words under an action point: when it is due, whether it is from an earlier talk, and whom it concerns. A manager's
  * own point is about an employee, so it names them; one the other party owns says who answers for it; an employee's own
- * point is about themselves and names nobody.
+ * point is about themselves and names nobody. The employee's name, where it is said, leads to them (D97 item 6, artboard
+ * M): the row carries their user name, which is the person's key.
  */
-function meta(row: CommitmentEntry): string {
+function Meta({ row }: { row: CommitmentEntry }) {
+  const { pathname, search } = useLocation();
   const words = [`Senast ${dueText(row)}`];
   if (row.carried) words.push('Från tidigare samtal');
-  if (row.mine && row.owner === 'manager') words.push(`Samtal med ${row.name}`);
-  if (!row.mine) words.push(row.owner === 'manager' ? 'Din chef ansvarar' : `${row.name} ansvarar`);
-  return words.join(' · ');
+  const lead = words.join(' · ');
+  const name = (
+    <Link href={personPageHref(row.userName, { from: pathname + search })} hasUnderline>
+      {row.name}
+    </Link>
+  );
+  if (row.mine && row.owner === 'manager')
+    return (
+      <Text type="supporting">
+        {lead} · Samtal med {name}
+      </Text>
+    );
+  if (!row.mine && row.owner === 'employee')
+    return (
+      <Text type="supporting">
+        {lead} · {name} ansvarar
+      </Text>
+    );
+  return <Text type="supporting">{row.mine ? lead : `${lead} · Din chef ansvarar`}</Text>;
 }
 
 /** One action point. The owner ticks it off with Klar when Clew can write; read-only, the text opens the other system. */
@@ -195,7 +217,7 @@ function CommitmentRow({
       description={
         <VStack gap={1}>
           <HStack gap={2} wrap="wrap" vAlign="center">
-            <Text type="supporting">{meta(row)}</Text>
+            <Meta row={row} />
             {overdue && <Badge variant="warning" label="Försenad" />}
           </HStack>
           {error && (

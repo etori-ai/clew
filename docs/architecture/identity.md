@@ -26,7 +26,7 @@ Users and grants are core entities ([D62](../decisions/D62-users-are-core-entiti
 
 People, units and groups enter an installation through Clew's SCIM 2.0 server at `/scim/v2` and in no other way (D68; `apps/server/src/routes/scim.ts` over `modules/people/usecases.ts`). A **provisioner**, the installation's own process, reads the organisation's source and pushes; Clew never reads the source and never learns its name ([guide](../guides/writing-a-provisioner.md)). The server offers `Users` and `Groups` with `POST`, `GET`, `PUT`, `PATCH` and `DELETE`, `filter` as one equality (`userName`/`externalId` on users, `externalId`/`displayName` on groups), `startIndex`/`count` paging, `attributes`/`excludedAttributes` and the discovery resources; bulk, sorting and ETags are not offered. A provisioner authenticates with a bearer token whose digest Clew holds (`auth_provisioner`; issued, listed, rotated with a grace period and revoked with `bun scripts/provisioner-token.ts`), and Clew records when it last called; users are read and written within the token's organisation, while `userName` and `externalId` are unique across the installation (`userName` without regard to case, the standard's default, because a login carries no organisation), and a group belongs to the organisation of the provisioner that pushed it, with an `externalId` unique across the installation. Every mutation writes its `scim.*` audit row and re-derives the grants it touched in the same transaction. A derivation locks the person and a write locks the group, so requests sent in parallel give the grant they would give one after the other (`tests/db/postgres-scim-concurrency.test.ts`). `DELETE` on a user deactivates, never erases. The answers are English: a machine reads them.
 
-Units form a tree ([D99](../decisions/D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md)). A `unit:` group is a node, also one nobody is placed on, and names the unit above it in the extension `urn:clew:params:scim:schemas:extension:unit:2.0:Group` (`parent`, the `externalId` of that unit's group; absent on a root). The server refuses a parent that does not exist, one in another organisation, one that would close a cycle and the extension on any other group, and answers 409 to the removal of a unit with units below it, so a tree is pushed from the root down and removed from the leaves up. A move is a change of `parent`, audited with the unit above before and after; it re-derives nobody. A write that changes the tree holds the organisation's tree for its transaction, so two of them run one after the other. Clew never infers the tree from the people.
+Units form a tree ([D99](../decisions/D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md)). A `unit:` group is a node, also one nobody is placed on, and names the unit above it in the extension `urn:clew:params:scim:schemas:extension:unit:2.0:Group` (`parent`, the `externalId` of that unit's group; absent on a root). The server refuses a parent that does not exist, one in another organisation, one that would close a cycle and the extension on any other group, and answers 409 to the removal of a unit with units below it, so a tree is pushed from the root down and removed from the leaves up. A move is a change of `parent`, audited with the unit above before and after; it re-derives nobody. A write that changes the tree holds the organisation's tree for its transaction, so two of them run one after the other. Clew never infers the tree from the people. A unit belongs to the organisation that pushed it ([D101](../decisions/D101-a-provisioner-pushes-the-organisation-first-and-adds-before-it-removes-and-a-unit-belongs-to-one-organisation.md)): a `unit:` or `unit-manager:` key whose unit another organisation holds under either key is refused, Personal reads the reader's own organisation, and an administrator maps a capability onto a group of their own organisation only. A manager who leads a unit without being placed on it is handed the name of its `unit:` group by the derivation. A provisioner pushes the organisation first, then the people, then the memberships with additions before removals, so a person who moves is never without a unit.
 
 ![The identity tables: what the provisioner writes, what the administrator writes, what Clew derives and what a login binds](figures/identity-tables.svg)
 
@@ -44,7 +44,9 @@ In development the provisioner is `scripts/provisioner/`: `bun run auth:setup` c
 
 ## Administration › Användare
 
-The page (`apps/web/src/pages/admin/users.tsx`, behind `admin.users`) shows each provisioner with when it last called and a warning after two days of silence, the provisioned people with unit, role, capabilities, groups and whether they have signed in, and holds D85's mapping from a group to a capability. Adding or removing a row steps up, writes `group-capability.added`/`removed` and re-derives the group's members in the same transaction. It edits no identity: who exists and where they belong is the source's.
+The page (`apps/web/src/pages/admin/users.tsx`, behind `admin.users`) shows each provisioner with when it last called and a warning after two days of silence, the provisioned people with unit, role, capabilities and whether they have signed in, and holds D85's mapping from a group to a capability. Adding or removing a row steps up, writes `group-capability.added`/`removed` and re-derives the group's members in the same transaction. It edits no identity: who exists and where they belong is the source's.
+
+The people are read a page at a time ([D100](../decisions/D100-the-people-list-is-read-a-page-at-a-time-and-narrowed-on-the-server.md)): `POST /api/admin/users/search` answers one page by name in Swedish order, narrowed by words (name, user name, e-mail), a unit with everything below it in the tree, a role, a status and a capability. The store narrows, orders and counts (`ProvisionTx.searchUsers`); only the rows of the page are filled in. The unit, role, status, capability, page and page size are in the page's address (`/admin/users?unit=…&role=manager`), so a narrowed list can be linked; the typed search is sent in the request body and is in no address.
 
 ## Administration › Organisation
 
@@ -59,7 +61,22 @@ Protocol 2 requires both:
 
 Only Clew holds the signing private key. The connector pins its trusted Clew base URL and fetches public keys from `/api/connectors/jwks`. It takes the actor from verified claims, never from an unverified body. The transport secret cannot sign identity.
 
+The signed actor is the person's id, name, unit, unit label and role and, when the person was provisioned with one, their `userName` ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md); [authority.ts](../../apps/server/src/connectors/authority.ts)). It is the key another system knows the person by, and it is read from the person's row on every request and for background work, so a renamed user name reaches the connector at once. `externalId` is not sent. The user name never reaches the browser: `SessionUser` does not carry it.
+
 The connector still maps that actor to the source's person/unit and enforces record-level access. Clew's `manager` role is not permission to read every source unit. A ref is not an access token.
+
+## Who may be asked about
+
+A read about a person or a unit ([Entities](entities.md)) sends a connector other people's keys, not only the actor's. Before any source is called, a core rule per entity kind decides which keys the reader may send (`resolve` and `listedKeys` in [the entities module](../../apps/server/src/modules/entities/usecases.ts)):
+
+| Kind | Relation | Meaning |
+|---|---|---|
+| Person | `self` | The reader, by their own user name. |
+| Person | `managed` | An active person on a unit the reader manages: the people Personal lists. |
+| Person | `colleague` | Any other active person in the reader's organisation, found by user name, when the reader opens them. |
+| Unit | `member` | A unit the reader manages or is assigned to. |
+
+A person without a user name, or deactivated, is never asked about. A key outside the rule is answered 404, like an unknown address, and no source hears of it. Inside the rule each source narrows further as the person and answers a key it may not show as no row. The rule is read from the assignments on every call and nothing about the answer is stored, so a transfer or a removed membership shows from the next read.
 
 See [the verifier](../../connectors/hello/verification.mjs), [signing authority](../../apps/server/src/connectors/authority.ts) and [authorization guide](../guides/authorization.md) for key rotation and exact claims.
 
@@ -75,7 +92,7 @@ A source can use a service credential narrowed to the actor, a bound personal cr
 
 For interactive calls, a connector declaring `delegation` can receive `X-Clew-Delegated-Token` after session-backed IdP token exchange. The source must accept that issuer/audience and enforce its own permissions.
 
-Background work uses [systemContext](../../apps/server/src/system-context.ts), built from the person's current local grant. It carries no session tokens. Scans, figures and callbacks do not receive a delegated token. Generic durable execution records a connector declaring delegation as needing a session and can remain pending with `needs-session`; there is no complete sign-in-and-resume action path.
+Background work uses [systemContext](../../apps/server/src/system-context.ts), built from the person's current local grant. It carries no session tokens. Figures, callbacks and the nightly scan do not receive a delegated token. On a connector declaring delegation, an approved write and a scan the person asked for get the token of the person's own session that approved or asked for them, through `standingSession` in [auth.ts](../../apps/server/src/auth.ts), only while that session is active and still theirs; otherwise the write remains pending with `needs-session` and the scan answers `authorization-required`. There is no sign-in-and-resume path for a write left pending ([authorization](../guides/authorization.md#work-the-persons-own-session-stands-behind)).
 
 A valid delegated search therefore does not prove the source can support unattended scans, watches or actions. Establish and test the source's background authorization arrangement before enabling those features.
 
@@ -93,7 +110,7 @@ See [D75](../decisions/D75-source-snapshots-retain-the-authority-that-produced-t
 - Anything that follows a branch of the tree rather than the reporting line: an audience that names a unit and means everything below it, a figure summed over a branch, the path above the acting person's unit in what a connector is told (D99 item 5 and "Open").
 - Holding or applying a `protected` membership: the key is refused at the boundary ([D93](../decisions/D93-the-protected-key-is-refused-at-the-scim-boundary.md)) until D68's open question, whether Clew may hold that fact at all, is answered.
 - A real provisioner against a real source, and a real identity provider's claim for `OIDC_BINDING_CLAIM`; the development stack's Keycloak and synthetic directory are the only ones that have run.
-- A way for a connector to map the acting person beyond Clew's id: protocol 2's `Actor` carries neither `externalId` nor `userName`.
+- A stable key for the acting person on the wire: protocol 2's `Actor` carries `userName`, which a provisioner can rename, and not `externalId`. Which one is the person's key is open in D97.
 - Local dev-login without the IdP ([D6](../decisions/D06-dev-login-local-only.md)), a public MCP OAuth surface and cross-domain ID-JAG exchange ([D5](../decisions/D05-oidc-and-oauth-only-identification-path.md)).
 
 The early rationale is in the [identity decisions](../decisions/D05-oidc-and-oauth-only-identification-path.md) and the [SCIM review](../reviews/2026-11-06-users-groups-roles-and-scim.md); use the [status matrix](../reference/status.md) for support.

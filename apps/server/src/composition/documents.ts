@@ -1,12 +1,19 @@
 import type { AuthenticatedContext, DocumentRequest } from '@clew/contracts';
 import { CapabilityError } from '@clew/connectors';
 import { registry, runCapability, actorOf } from '../connectors/registry';
-import { authorizationVersion } from '../auth-crypto';
+import { keyedDigest } from '../auth-crypto';
 import { InputError } from '../context';
 import { documentReviews } from '../connectors/usecases/documents';
 import { clock } from './ambient';
 
-export const reviewDocuments = documentReviews({ registry, run: runCapability, sign: authorizationVersion, clock });
+// The proof on review evidence is a keyed digest of the evidence itself. It was wired to `authorizationVersion` until
+// 2026-11-11, which reads an access record since D68 and threw on every preview.
+export const reviewDocuments = documentReviews({
+  registry,
+  run: runCapability,
+  sign: input => keyedDigest('document-review', input),
+  clock,
+});
 export async function readDocument(persona: AuthenticatedContext, request: DocumentRequest, signal?: AbortSignal) {
   await persona.authorize();
   try {

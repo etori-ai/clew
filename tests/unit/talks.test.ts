@@ -7,11 +7,33 @@ import {
   type StaffOverview,
   type StaffPerson,
 } from '../../packages/contracts/src/index';
-import { menuEligible, viewProblem, type Actor } from '../../packages/connectors/src/index';
+import {
+  fieldTone,
+  markFields,
+  menuEligible,
+  placesOf,
+  viewProblem,
+  type Actor,
+} from '../../packages/connectors/src/index';
 import { ForbiddenError } from '../../apps/server/src/context';
 import { memoryTalkStore, type MemoryTalkStore } from '../../apps/server/src/modules/talks/adapters/memory';
-import { commitmentsView, talksConnector, talksView } from '../../apps/server/src/modules/talks/capabilities';
-import { swedishDayAndMonth, normaliseText, orderCommitmentRows } from '../../apps/server/src/modules/talks/domain';
+import {
+  PersonTalksOutputSchema,
+  UnitTalksOutputSchema,
+  commitmentsView,
+  personTalksView,
+  talksConnector,
+  talksView,
+} from '../../apps/server/src/modules/talks/capabilities';
+import {
+  nextTalk,
+  normaliseText,
+  openWords,
+  orderCommitmentRows,
+  overdueWords,
+  swedishDayAndMonth,
+  swedishShortDay,
+} from '../../apps/server/src/modules/talks/domain';
 import { TalkError, talkUsecases, type TalkUsecases } from '../../apps/server/src/modules/talks/usecases';
 import { Registry } from '../registry';
 
@@ -286,6 +308,7 @@ describe('action points', () => {
     });
     expect(store.state.commitments.get(forBoss)).toMatchObject({ ownerRole: 'manager', ownerId: 'boss' });
     const threadId = store.state.commitments.get(forAnna)!.threadId!;
+    // Either card is about the employee of the talk, by user name (D97 item 6), whoever owns it.
     expect(store.calls()[0]).toEqual({
       op: 'open',
       threadId,
@@ -293,8 +316,14 @@ describe('action points', () => {
       commitmentId: forAnna,
       dueOn: '2026-12-15',
       at: at(),
+      subject: { entity: 'person', key: 'anna.a' },
     });
-    expect(store.calls()[1]).toMatchObject({ op: 'open', personId: 'boss', commitmentId: forBoss });
+    expect(store.calls()[1]).toMatchObject({
+      op: 'open',
+      personId: 'boss',
+      commitmentId: forBoss,
+      subject: { entity: 'person', key: 'anna.a' },
+    });
     expect(store.audit().filter(a => a.action === 'talks.commitment_added')).toEqual([
       {
         actor: 'person:boss',
@@ -312,6 +341,10 @@ describe('action points', () => {
       },
     ]);
     expect((await talks.round(boss)).rows.find(r => r.userName === 'anna.a')?.openCommitments).toBe(2);
+    // Someone provisioned without a user name cannot be asked about, so their action point's card names nobody.
+    await talks.addCommitment(boss, 'bo', { owner: 'manager', text: 'Boka ett möte', dueOn: '2027-01-15' });
+    expect(store.calls()[2]).toMatchObject({ op: 'open', personId: 'boss' });
+    expect(store.calls()[2]).not.toHaveProperty('subject');
   });
 
   test('a blank or too long text, no round, an employee and a manager of another unit are refused, and nothing is written', async () => {
@@ -596,6 +629,14 @@ describe('domain', () => {
     expect(normaliseText('å'.repeat(280))).toHaveLength(280);
     expect(normaliseText('å'.repeat(281))).toBeUndefined();
     expect(swedishDayAndMonth('2026-11-28')).toBe('28 november');
+    // The words of a list about people (D97): a day without the month's full stop, the next talk, the counts.
+    expect(swedishShortDay('2026-11-28')).toBe('lör 28 nov');
+    expect(swedishShortDay('2026-05-04', false)).toBe('4 maj');
+    expect(nextTalk('booked', '2026-11-15T23:30:00.000Z')).toBe('mån 16 nov');
+    expect(nextTalk('held', '2026-11-04')).toBe('Hållet 4 nov');
+    expect(nextTalk('missing', undefined)).toBe('Inte bokat');
+    expect([0, 1, 3].map(openWords)).toEqual(['Inga', '1 öppen', '3 öppna']);
+    expect([0, 1, 2].map(overdueWords)).toEqual([undefined, '1 försenad', '2 försenade']);
     const row = (ref: string, carried: boolean, done: boolean, dueOn: string, mine = true) => ({
       ref,
       carried,
@@ -645,7 +686,7 @@ describe('the built-in connector', () => {
       }),
     );
 
-  test('it passes the registry validation, its reads are no model tools, and both views open without input', () => {
+  test('it passes the registry validation, its reads are no model tools, and the profile views open without input', () => {
     const connector = talksConnector(talks, async () => boss);
     expect(() => registry()).not.toThrow();
     expect(connector).toMatchObject({ id: 'talks', kind: 'core', source: 'Utvecklingssamtal' });
@@ -653,14 +694,128 @@ describe('the built-in connector', () => {
     expect(reads.map(c => [c.name, c.kind, c.model])).toEqual([
       ['talks.talks', 'read', false],
       ['talks.commitments', 'read', false],
+      ['talks.person', 'read', false],
+      ['talks.unit', 'read', false],
     ]);
     for (const c of reads) {
       expect(viewProblem(c, reads)).toBeUndefined();
-      expect(menuEligible(c)).toBe(true);
       // No row can be added to a conversation as a chip: the text never reaches a model (D96 item 6).
       expect(c.view && 'ref' in c.view).toBe(false);
     }
+    // The profile reads open from the menu without a question; the reads about an entity take their keys (D97).
+    expect(reads.map(c => [c.name, menuEligible(c)])).toEqual([
+      ['talks.talks', true],
+      ['talks.commitments', true],
+      ['talks.person', false],
+      ['talks.unit', false],
+    ]);
     expect('ref' in talksView || 'ref' in commitmentsView).toBe(false);
+  });
+
+  test('the reads about a person and a unit declare about (D97), the page where the talk is written, and are never tools', () => {
+    const connector = talksConnector(talks, async () => boss);
+    const about = Object.fromEntries(connector.capabilities.map(c => [c.name, c.about]));
+    expect(about).toEqual({
+      'talks.talks': undefined,
+      'talks.commitments': undefined,
+      'talks.person': { entity: 'person', page: { title: 'Öppna samtalet', href: '/staff?talk={id}' } },
+      'talks.unit': { entity: 'unit', page: { title: 'Visa i Personal', href: '/staff?show=talks.person' } },
+    });
+    const person = connector.capabilities.find(c => c.name === 'talks.person')!;
+    expect(placesOf(person)).toEqual(['lens', 'mark', 'section']);
+    expect(markFields(person.view).map(f => f.key)).toEqual(['state', 'next', 'overdue']);
+    const state = personTalksView.kind === 'list' ? personTalksView.fields[0]! : undefined;
+    expect([fieldTone(state!, 'Saknas'), fieldTone(state!, 'Bokat'), fieldTone(state!, 'Hållet')]).toEqual([
+      'warn',
+      'none',
+      'ok',
+    ]);
+    expect(placesOf(connector.capabilities.find(c => c.name === 'talks.unit')!)).toEqual(['lens', 'mark', 'section']);
+    expect(registry().tools(actor(boss))).toEqual([]);
+    // Where the whole row is drawn (a lens, a section) it is two cells, "Samtal" with its time and "Åtgärdspunkter" with
+    // the late ones; the next talk is the row in one value, for a column or a one-line summary (D97, artboards A2 and B).
+    const fields = personTalksView.kind === 'list' ? personTalksView.fields : [];
+    expect(fields.filter(f => f.beside).map(f => f.key)).toEqual(['at', 'overdue']);
+    expect(fields.filter(f => f.compact).map(f => f.key)).toEqual(['next']);
+    expect(viewProblem({ ...person, view: personTalksView }, connector.capabilities)).toBeUndefined();
+  });
+
+  test('talks.person answers one row per person the manager plans a talk with, keyed as asked; anyone else is no row', async () => {
+    const r = registry();
+    // No open round: nothing to say about anyone, and no heading.
+    expect(await r.run(actor(boss), 'talks.person', { keys: ['anna.a'] })).toEqual({ rows: [] });
+    await open();
+    await talks.markHeld(boss, 'anna', { heldOn: '2026-11-03' });
+    await talks.addCommitment(boss, 'anna', { owner: 'employee', text: 'Läsa boken', dueOn: '2026-11-05' });
+    await talks.addCommitment(boss, 'anna', { owner: 'manager', text: 'Boka kursen', dueOn: '2026-12-15' });
+    const done = await talks.addCommitment(boss, 'anna', { owner: 'manager', text: 'Ringa', dueOn: '2026-11-01' });
+    await talks.completeCommitment(boss, done);
+    const output = await r.run(actor(boss), 'talks.person', {
+      // A key in other case, a booked person, a person without a user name (keyed on nothing), another manager's
+      // person, an unknown key, and the first person again in its own case.
+      keys: ['ANNA.A', 'dan.d', 'bo', 'eve.e', 'nobody', 'anna.a'],
+    });
+    expect(checkContract(PersonTalksOutputSchema, output)).toBe(true);
+    expect(output).toEqual({
+      heading: 'Utvecklingssamtal hösten 2026',
+      note: 'Senast lör 28 nov',
+      rows: [
+        {
+          key: 'ANNA.A',
+          state: 'Hållet',
+          at: '2026-11-03',
+          next: 'Hållet 3 nov',
+          open: '2 öppna',
+          overdue: '1 försenad',
+        },
+        { key: 'dan.d', state: 'Bokat', at: '2026-11-20T09:00:00.000Z', next: 'fre 20 nov', open: 'Inga' },
+      ],
+    });
+    // Another manager is answered nothing about them, and an employee may not call it at all.
+    expect(await r.run(actor(other), 'talks.person', { keys: ['anna.a', 'dan.d', 'eve.e'] })).toMatchObject({
+      rows: [{ key: 'eve.e', state: 'Saknas', next: 'Inte bokat', open: 'Inga' }],
+    });
+    await expect(r.run(actor(asAnna), 'talks.person', { keys: ['anna.a'] })).rejects.toThrow(
+      'Du saknar behörighet för åtgärden.',
+    );
+    // The row opens the person's action points with its key as asked.
+    const points = await r.run<{ rows: Array<{ userName: string }> }>(actor(boss), 'talks.commitments', {
+      person: 'ANNA.A',
+    });
+    expect(points.rows.map(p => p.userName)).toEqual(['anna.a', 'anna.a', 'anna.a']);
+    // More keys than a batch holds are refused by the input schema.
+    await expect(
+      r.run(actor(boss), 'talks.person', { keys: Array.from({ length: 201 }, (_, i) => 'k' + i) }),
+    ).rejects.toThrow('Ogiltig förfrågan');
+  });
+
+  test('when the calendar does not answer, the note says so and a booked talk reads as missing', async () => {
+    const r = registry();
+    await open();
+    bookings = undefined;
+    const output = await r.run<{ note?: string; rows: Array<Record<string, string>> }>(actor(boss), 'talks.person', {
+      keys: ['dan.d'],
+    });
+    expect(output.note).toBe('Senast lör 28 nov · kalendern svarade inte, så bokade samtal kan saknas');
+    expect(output.rows).toEqual([{ key: 'dan.d', state: 'Saknas', next: 'Inte bokat', open: 'Inga' }]);
+  });
+
+  test('talks.unit counts held, booked and missing per unit the manager manages; another unit is no row', async () => {
+    const r = registry();
+    await open();
+    await talks.markHeld(boss, 'anna', { heldOn: '2026-11-03' });
+    const output = await r.run(actor(boss), 'talks.unit', { keys: ['u1', 'u2', 'u3', 'nope'] });
+    expect(checkContract(UnitTalksOutputSchema, output)).toBe(true);
+    // u1: Anna held, Bo missing (Cia is deactivated, the manager is not due one); u2: Anna held, Dan booked.
+    expect(output).toEqual({
+      heading: 'Utvecklingssamtal hösten 2026',
+      note: 'Senast lör 28 nov',
+      rows: [
+        { key: 'u1', held: '1 av 2 hållna', missing: '1 saknas' },
+        { key: 'u2', held: '1 av 2 hållna', booked: '1 bokat' },
+      ],
+    });
+    expect(await r.run(actor(other), 'talks.unit', { keys: ['u1', 'u2'] })).toMatchObject({ rows: [] });
   });
 
   test('the figure counts held out of everyone due and opens the round; nothing for an employee or without a round', async () => {

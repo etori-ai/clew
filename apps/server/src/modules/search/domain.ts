@@ -1,4 +1,4 @@
-import type { SearchHit, SearchResult, SearchSource } from '@clew/contracts';
+import { foldEntityKey, type SearchHit, type SearchResult, type SearchSource } from '@clew/contracts';
 
 /**
  * The pure part of the composite search (D26): what "stale" means, how hits from several sources become one list, and
@@ -24,11 +24,25 @@ export function staleness(
 export type SourceOutcome = { id: string; source: string } & (
   { status: 'ok'; rows: SearchHit[] } | { status: 'unavailable' | 'timeout' }
 );
-/** One list from every source that answered: each source's own order is kept and the sources are interleaved, so a slow source with a strong hit is not buried under a fast one with ten weak ones. */
+/**
+ * One list from every source that answered: each source's own order is kept and the sources are interleaved, so a slow
+ * source with a strong hit is not buried under a fast one with ten weak ones. Hits from several sources about the same
+ * person or unit are one hit (D97 item 6): the first one's, where it came, with `sources` naming every source that
+ * answered for it in the order their hits came. A hit without a subject is as its source gave it.
+ */
 export function merge(outcomes: SourceOutcome[], now: number, limit = ROW_LIMIT): SearchResult['rows'] {
   const seen = new Set<string>();
   const queues = outcomes.filter(o => o.status === 'ok').map(o => ({ connector: o.id, rows: [...o.rows] }));
   const out: SearchResult['rows'] = [];
+  const entities = new Map<string, SearchResult['rows'][number]>();
+  const entityOf = (hit: SearchHit) =>
+    hit.subject && `${hit.subject.entity}\u0000${foldEntityKey(hit.subject.entity, hit.subject.key)}`;
+  /** Another source's hit about an entity already listed: its source joins the first hit's, once. */
+  const join = (first: SearchResult['rows'][number], connector: string, hit: SearchHit) => {
+    const sources = first.sources ?? [{ connector: first.connector, source: first.source }];
+    if (!sources.some(s => s.connector === connector)) sources.push({ connector, source: hit.source });
+    if (sources.length > 1) first.sources = sources;
+  };
   while (out.length < limit && queues.some(q => q.rows.length)) {
     for (const q of queues) {
       const hit = q.rows.shift();
@@ -36,10 +50,25 @@ export function merge(outcomes: SourceOutcome[], now: number, limit = ROW_LIMIT)
       const key = q.connector + ':' + hit.ref;
       if (seen.has(key)) continue;
       seen.add(key);
-      out.push({ ...hit, snippet: clip(hit.snippet), stale: staleness(hit, now), connector: q.connector });
+      const entity = entityOf(hit);
+      const first = entity && entities.get(entity);
+      if (first) {
+        join(first, q.connector, hit);
+        continue;
+      }
+      const row = { ...hit, snippet: clip(hit.snippet), stale: staleness(hit, now), connector: q.connector };
+      if (entity) entities.set(entity, row);
+      out.push(row);
       if (out.length >= limit) break;
     }
   }
+  // A source whose hit about a listed entity came after the list was full still answered for it.
+  for (const q of queues)
+    for (const hit of q.rows) {
+      const entity = entityOf(hit);
+      const first = entity && entities.get(entity);
+      if (first) join(first, q.connector, hit);
+    }
   return out;
 }
 export const clip = (text: string, limit = SNIPPET_LIMIT) =>

@@ -7,7 +7,6 @@ export function a11yWebConfig() {
     ...webConfig(),
     root: resolve(import.meta.dirname, '../../apps/web'),
     envDir: false as const,
-    define: { 'import.meta.env.VITE_MCP_PREVIEW': '"true"' },
     build: { outDir: resolve(import.meta.dirname, '../../test-results/apps/web') },
   };
 }

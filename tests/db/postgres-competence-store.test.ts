@@ -5,7 +5,7 @@ import { database, schema } from '../../packages/db/src/index';
 import { postgresCompetenceStore } from '../../apps/server/src/modules/competence/adapters/postgres';
 import { competenceStoreContract } from '../competence-store-contract';
 
-/** The competence store contract on Postgres (D101). Run with `bun run test:db` inside the devcontainer. */
+/** The competence store contract on Postgres (D107). Run with `bun run test:db` inside the devcontainer. */
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
 const prefixes: string[] = [];

@@ -77,7 +77,11 @@ export function authorizationVersion(access: Parameters<typeof authorityOf>[0]) 
     .update(JSON.stringify(authorityOf(access)))
     .digest('hex');
 }
-/** A keyed digest for a value that a plain hash would leave guessable (a poll answer, a decision), bound to a purpose. */
+/**
+ * A keyed digest of any value, bound to a purpose so a digest made for one use is never valid for another. This is
+ * the signer for evidence Clew hands out and later checks (a document review). `authorizationVersion` above is not
+ * one: it reads an access record and nothing else.
+ */
 export function keyedDigest(purpose: string, value: unknown) {
   return createHmac('sha256', masterKey()).update(JSON.stringify({ purpose, value })).digest('hex');
 }

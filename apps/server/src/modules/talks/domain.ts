@@ -32,6 +32,61 @@ export function isCalendarDay(value: string): boolean {
 const dayAndMonth = new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'long', timeZone: 'UTC' });
 /** A calendar day as a person reads it in a sentence: `2026-11-28` is "28 november". */
 export const swedishDayAndMonth = (day: string) => dayAndMonth.format(new Date(day + 'T12:00:00Z'));
+const shortDay = new Intl.DateTimeFormat('sv-SE', {
+  weekday: 'short',
+  day: 'numeric',
+  month: 'short',
+  timeZone: 'UTC',
+});
+/**
+ * A calendar day as a list line reads it: `2026-11-28` is "lör 28 nov", or "28 nov" without the weekday. Built from the
+ * parts so the abbreviated month carries no full stop.
+ */
+export function swedishShortDay(day: string, weekday = true): string {
+  const parts = shortDay.formatToParts(new Date(day + 'T12:00:00Z'));
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(p => p.type === type)?.value.replace(/\.$/, '') ?? '';
+  return [weekday ? part('weekday') : '', part('day'), part('month')].filter(Boolean).join(' ');
+}
+
+/**
+ * A key of a person as another system holds it (D97): the provisioned user name, compared without regard to case. A
+ * person provisioned without one cannot be asked about.
+ */
+export const sameUserName = (userName: string | null | undefined, key: string) =>
+  !!userName && userName.toLowerCase() === key.toLowerCase();
+
+/** How a list about people (D97) says where a person stands in the round: the words Personal uses. */
+export const TALK_STATE_WORDS: Record<TalkState, string> = { missing: 'Saknas', booked: 'Bokat', held: 'Hållet' };
+/**
+ * The next talk in a column (D97, artboard A2): the day it is booked ("mån 16 nov"), the day it was held ("Hållet 4
+ * nov"), or "Inte bokat". `at` is the booked instant or the held calendar day.
+ */
+export function nextTalk(state: TalkState, at: string | undefined): string {
+  if (state === 'booked' && at) return swedishShortDay(stockholmDate(at));
+  if (state === 'held' && at) return 'Hållet ' + swedishShortDay(at.slice(0, 10), false);
+  return 'Inte bokat';
+}
+/** Open action points as words: "Inga", "1 öppen", "3 öppna". */
+export const openWords = (n: number) => (n === 0 ? 'Inga' : n === 1 ? '1 öppen' : `${n} öppna`);
+/** Overdue action points as words, only when there are any: "1 försenad", "2 försenade". */
+export const overdueWords = (n: number) => (n <= 0 ? undefined : n === 1 ? '1 försenad' : `${n} försenade`);
+/** An open action point whose due day is before `today` (both `YYYY-MM-DD`) is overdue. */
+export const isOverdue = (c: Pick<CommitmentRecord, 'doneAt' | 'dueOn'>, today: string) =>
+  c.doneAt === null && c.dueOn < today;
+/** How many overdue action points each employee has. */
+export function overdueCounts(
+  commitments: readonly Pick<CommitmentRecord, 'doneAt' | 'dueOn' | 'employeeId'>[],
+  today: string,
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const c of commitments) if (isOverdue(c, today)) counts.set(c.employeeId, (counts.get(c.employeeId) ?? 0) + 1);
+  return counts;
+}
+/** Held of everyone due on a unit, as words: "1 av 5 hållna". */
+export const heldWords = (held: number, due: number) => `${held} av ${due} hållna`;
+/** A count of talks in one state as words, only when there are any: "1 saknas", "3 bokade". */
+export const missingWords = (n: number) => (n > 0 ? `${n} saknas` : undefined);
+export const bookedWords = (n: number) => (n <= 0 ? undefined : n === 1 ? '1 bokat' : `${n} bokade`);
 
 /**
  * An action point's text as stored: trimmed, every run of white space (a line break included) one space, since it is

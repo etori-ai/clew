@@ -90,6 +90,45 @@ export const executeResult = object(
   },
   ['headline', 'rows'],
 );
+/**
+ * What an action about a person answers when it is a propose (D97): the protocol's ThreadDraft, the card the manager
+ * reads and decides on. A row may name the person it is about by key (`subject`), never by more.
+ */
+const cardItem = object(
+  {
+    ref: string,
+    label: string,
+    detail: string,
+    selectable: boolean,
+    selected: boolean,
+    subject: object({ entity: { const: 'person' }, key: { type: 'string', minLength: 1, maxLength: 256 } }),
+  },
+  ['ref', 'label', 'detail', 'selectable', 'selected'],
+);
+const cardAction = object(
+  {
+    id: string,
+    label: string,
+    capability: capabilityName,
+    kind: { enum: ['read', 'propose', 'execute'] },
+    role: { enum: ['primary', 'secondary', 'overflow'] },
+    target: { enum: ['panel', 'link'] },
+    input: { type: 'object' },
+  },
+  ['id', 'label', 'capability', 'kind', 'role'],
+);
+const threadDraft = object(
+  {
+    topic: string,
+    area: string,
+    title: string,
+    summary: string,
+    reason: string,
+    items: array(cardItem),
+    actions: array(cardAction),
+  },
+  ['topic', 'area', 'title', 'summary', 'reason', 'items', 'actions'],
+);
 /** Every write is deduplicated by Clew's approved operation id and read back through `hr.lookup` (D45). */
 const deduplicated = { strategy: 'deduplicated', retentionSeconds: 86400, lookup: 'hr.lookup' };
 const manager = { roles: ['manager'] };
@@ -271,6 +310,29 @@ const reportAbsence = {
   output: executeResult,
 };
 
+// An action about a person (D97): "Registrera frånvaro" in the manager's menu on a person. It writes nothing. It finds the
+// employee by user name as hr.person does and prepares the sick report hr.reportAbsence registers after the manager's
+// decision on the card: from today unless `from` says otherwise, one day, full time. It declares no `creates`: the report
+// is one write in this system, and a job that tells the other systems (the follower's path above) is started by the fact.
+const prepareAbsence = {
+  name: 'hr.prepareAbsence',
+  kind: 'propose',
+  title: 'Registrera frånvaro',
+  description:
+    'Förbereder en sjukanmälan för en medarbetare i chefens enhet, från i dag och en dag, som chefen läser och beslutar om på ett kort.',
+  model: false,
+  scope: manager,
+  about: { entity: 'person', param: 'person' },
+  input: object(
+    {
+      person: { type: 'string', minLength: 1, maxLength: 256, description: 'Medarbetarens användarnamn i katalogen.' },
+      from: { type: 'string', pattern: DATE, description: 'Första frånvarodagen; i dag när den saknas.' },
+    },
+    ['person'],
+  ),
+  output: threadDraft,
+};
+
 const withdrawAbsence = {
   name: 'hr.withdrawAbsence',
   kind: 'execute',
@@ -319,6 +381,71 @@ const renewDelegation = {
   execution: deduplicated,
   input: object({ refs: array({ type: 'string', pattern: '^hr:deleg:' }), when: string }, ['refs']),
   output: executeResult,
+};
+
+/** The most keys Clew sends in one call to a read about an entity (D97). */
+export const KEYS_MAX = 200;
+/** The word for a short sick leave on day N; the HR system counts one as short for up to 14 days. */
+export const SICK_DAYS = 14;
+export const sickOnDay = n => `Sjuk · dag ${n}`;
+/**
+ * Where each person stands today (D97): a read about a person, asked with a batch of user names, one row per employee of
+ * the manager's unit in this system, carrying the key it was asked with. Anyone else is no row. Presence is the column
+ * "Närvaro" on Personal: "I tjänst" is plain, an absence a neutral badge, so only the absences carry a tone. It is the
+ * row in one value (`compact`): where the whole row is drawn, a section reads "I dag" and "Kommande".
+ */
+const person = {
+  name: 'hr.person',
+  kind: 'read',
+  title: 'Frånvaro',
+  description: 'Om medarbetaren är i tjänst i dag, frånvaron i dag och nästa frånvaro som är känd. Bara för chefen.',
+  model: false,
+  scope: manager,
+  about: { entity: 'person' },
+  input: object({
+    keys: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 256 }, maxItems: KEYS_MAX },
+  }),
+  output: object({
+    rows: {
+      type: 'array',
+      maxItems: KEYS_MAX,
+      items: object(
+        {
+          key: string,
+          ref: { type: 'string', pattern: '^hr:emp:[0-9]+$' },
+          presence: string,
+          today: string,
+          upcoming: string,
+        },
+        ['key', 'ref', 'presence', 'today'],
+      ),
+    },
+  }),
+  view: {
+    kind: 'list',
+    title: 'presence',
+    modelReads: 'summary',
+    noun: { one: 'medarbetare', other: 'medarbetare' },
+    empty: 'Personalsystemet har ingen uppgift om dem.',
+    fields: [
+      {
+        key: 'presence',
+        label: 'Närvaro',
+        format: 'status',
+        tones: {
+          ...Object.fromEntries(Array.from({ length: SICK_DAYS }, (_, i) => [sickOnDay(i + 1), 'none'])),
+          Sjukskriven: 'none',
+          VAB: 'none',
+          Semester: 'none',
+          Ledig: 'none',
+        },
+        compact: true,
+      },
+      { key: 'today', label: 'I dag' },
+      { key: 'upcoming', label: 'Kommande' },
+    ],
+    open: { capability: 'hr.absencePattern', title: 'Frånvaromönster', params: { ref: 'ref' } },
+  },
 };
 
 const lookup = {
@@ -374,10 +501,12 @@ export const manifest = {
     undecideLeave,
     proposeAbsence,
     reportAbsence,
+    prepareAbsence,
     withdrawAbsence,
     myShift,
     myBalance,
     renewDelegation,
     lookup,
+    person,
   ],
 };
